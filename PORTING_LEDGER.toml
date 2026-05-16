@@ -394,7 +394,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Stream reports include initial codec_name, profile, level, codec_type, codec_tag_string, numeric codec_tag, MOV raw VisualSampleEntry depth as bits_per_raw_sample, avg_frame_rate, and MOV visual sample-entry side fields for sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
+notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Stream reports include initial codec_name, profile, level, codec_type, codec_tag_string, numeric codec_tag, MOV raw VisualSampleEntry depth as bits_per_raw_sample, MOV non-empty sample-entry extradata_size, avg_frame_rate, and MOV visual sample-entry side fields for sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
 blocked_reason = ""
 
 [[component]]
@@ -532,6 +532,26 @@ differential_tests = []
 fate_tests = []
 fuzz_targets = []
 notes = "MOV raw video sample entries now preserve full VisualSampleEntry metadata when a raw sample entry carries the complete visual payload, and ffprobe-rs reports that depth as bits_per_raw_sample for raw video streams. The current fixture proves a raw VisualSampleEntry depth of 24 as bits_per_raw_sample 24 in JSON output. No pinned-oracle differential/FATE coverage exists yet."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-ffprobe-mov-extradata-size"
+kind = "cli"
+ffmpeg_name = "ffprobe MOV extradata_size field"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_streams -of json <input.mp4>"
+rust_command = "cargo test -p fftools ffprobe"
+unit_tests = [
+  "ffprobe::tests::renders_default_report_sections",
+  "ffprobe::tests::outputs_mov_stream_json",
+  "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffprobe-rs now reports extradata_size for constrained MOV/MP4 streams when the Rust MovDemuxer parsed non-empty stsd sample-entry extra data. The current fixtures prove raw VisualSampleEntry and avc1 VisualSampleEntry sizes in default and JSON stream output. No pinned-oracle differential/FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]

@@ -107,6 +107,7 @@ pub struct FfprobeStreamReport {
     width: Option<u32>,
     height: Option<u32>,
     bits_per_raw_sample: Option<u16>,
+    extradata_size: Option<usize>,
     sample_aspect_ratio: Option<String>,
     display_aspect_ratio: Option<String>,
     color_range: Option<String>,
@@ -166,6 +167,10 @@ impl FfprobeStreamReport {
 
     pub fn bits_per_raw_sample(&self) -> Option<u16> {
         self.bits_per_raw_sample
+    }
+
+    pub fn extradata_size(&self) -> Option<usize> {
+        self.extradata_size
     }
 
     pub fn sample_aspect_ratio(&self) -> Option<&str> {
@@ -591,6 +596,7 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                 width: track.width(),
                 height: track.height(),
                 bits_per_raw_sample: mov_bits_per_raw_sample(track.codec_tag(), video_sample_entry),
+                extradata_size: mov_extradata_size(track),
                 sample_aspect_ratio: video_sample_entry.and_then(mov_sample_aspect_ratio),
                 display_aspect_ratio: mov_display_aspect_ratio(
                     track.width(),
@@ -672,6 +678,7 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
                 width: Some(stream.width()),
                 height: Some(stream.height()),
                 bits_per_raw_sample: Some(stream.bit_count()),
+                extradata_size: None,
                 sample_aspect_ratio: None,
                 display_aspect_ratio: None,
                 color_range: None,
@@ -856,6 +863,15 @@ fn mov_bits_per_raw_sample(
         return Some(video?.depth());
     }
     None
+}
+
+fn mov_extradata_size(track: &MovTrackInfo) -> Option<usize> {
+    let size = track.codec_parameters()?.extra_data().len();
+    if size == 0 {
+        None
+    } else {
+        Some(size)
+    }
 }
 
 fn avc_profile_name(profile_indication: u8) -> &'static str {
@@ -1072,6 +1088,9 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             if let Some(bits_per_raw_sample) = stream.bits_per_raw_sample {
                 out.push_str(&format!("bits_per_raw_sample={bits_per_raw_sample}\n"));
             }
+            if let Some(extradata_size) = stream.extradata_size {
+                out.push_str(&format!("extradata_size={extradata_size}\n"));
+            }
             if let Some(sample_aspect_ratio) = &stream.sample_aspect_ratio {
                 out.push_str(&format!("sample_aspect_ratio={sample_aspect_ratio}\n"));
             }
@@ -1202,6 +1221,9 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     }
     if let Some(bits_per_raw_sample) = stream.bits_per_raw_sample {
         fields.push(json_number("bits_per_raw_sample", bits_per_raw_sample));
+    }
+    if let Some(extradata_size) = stream.extradata_size {
+        fields.push(json_number("extradata_size", extradata_size));
     }
     if let Some(sample_aspect_ratio) = &stream.sample_aspect_ratio {
         fields.push(json_string("sample_aspect_ratio", sample_aspect_ratio));
@@ -1459,6 +1481,7 @@ mod tests {
         assert!(rendered.contains("codec_tag_string=raw \n"));
         assert!(rendered.contains("codec_tag=0x20776172\n"));
         assert!(rendered.contains("bits_per_raw_sample=24\n"));
+        assert!(rendered.contains("extradata_size=70\n"));
         assert!(rendered.contains("sample_aspect_ratio=1:1\n"));
         assert!(rendered.contains("display_aspect_ratio=16:9\n"));
         assert!(rendered.contains("color_range=tv\n"));
@@ -1550,6 +1573,8 @@ mod tests {
 
     #[test]
     fn outputs_mov_stream_json() {
+        let expected_extradata_size =
+            visual_sample_entry_extra_data(1_920, 1_080, "Rust AVC", 24, &[]).len();
         let stsd = visual_stsd_box(*b"raw ", 1_920, 1_080, &[]);
         let path = write_temp_mov(
             "show-streams",
@@ -1577,6 +1602,7 @@ mod tests {
         assert!(stdout.contains("\"width\": 1920"));
         assert!(stdout.contains("\"height\": 1080"));
         assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
+        assert!(stdout.contains(&format!("\"extradata_size\": {expected_extradata_size}")));
         assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
         assert!(!stdout.contains("\"format\""));
     }
@@ -1592,6 +1618,8 @@ mod tests {
             colr_nclx_box(1, 13, 6, true),
         ]
         .concat();
+        let expected_extradata_size =
+            visual_sample_entry_extra_data(720, 576, "Rust AVC", 24, &child_boxes).len();
         let stsd = visual_stsd_box(*b"avc1", 720, 576, &child_boxes);
         let path = write_temp_mov(
             "show-streams-visual",
@@ -1615,6 +1643,7 @@ mod tests {
         assert!(stdout.contains("\"codec_tag\": \"0x31637661\""));
         assert!(stdout.contains("\"width\": 720"));
         assert!(stdout.contains("\"height\": 576"));
+        assert!(stdout.contains(&format!("\"extradata_size\": {expected_extradata_size}")));
         assert!(stdout.contains("\"sample_aspect_ratio\": \"4:3\""));
         assert!(stdout.contains("\"display_aspect_ratio\": \"5:3\""));
         assert!(stdout.contains("\"color_range\": \"pc\""));
@@ -1866,6 +1895,7 @@ mod tests {
                 width: Some(1920),
                 height: Some(1080),
                 bits_per_raw_sample: Some(24),
+                extradata_size: Some(70),
                 sample_aspect_ratio: Some("1:1".to_string()),
                 display_aspect_ratio: Some("16:9".to_string()),
                 color_range: Some("tv".to_string()),
