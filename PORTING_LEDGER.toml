@@ -499,6 +499,25 @@ notes = "ffmpeg-rs command execution supports raw pcm_s16le input packet-copy to
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffmpeg-pcm-s16le-wav-file-output"
+kind = "cli"
+ffmpeg_name = "ffmpeg raw pcm_s16le to WAV file"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -f s16le -ar <rate> -ac <channels> -i <input.raw> -f wav <output.wav>"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_s16le_to_wav_file_output",
+  "ffmpeg::tests::rejects_wav_file_output_overwrite",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffmpeg-rs command execution supports raw pcm_s16le input packet-copy to a local WAV output file with explicit -f s16le/pcm_s16le input parameters and explicit -f wav/wave output format. It uses the Rust raw PCM demuxer and WavMuxer, creates output files with no overwrite, validates the generated output through the Rust WAV demuxer in tests, and has no oracle differential/FATE coverage yet. Transcoding, WAV output from non-raw-PCM inputs, overwrite confirmation flags, RF64/WAVE64, metadata chunks, and broader muxer selection remain pending."
+blocked_reason = ""
+
+[[component]]
 id = "fftools-ffmpeg-rawvideo-framecrc-null"
 kind = "cli"
 ffmpeg_name = "ffmpeg rawvideo to framecrc/null"
@@ -789,7 +808,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial RIFF/WAVE muxer writes canonical PCM s16le headers and stream-0 packet payloads with size and sample-frame validation. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, metadata chunks, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial RIFF/WAVE muxer writes canonical PCM s16le headers and stream-0 packet payloads with size and sample-frame validation. It is wired to a constrained ffmpeg-rs raw pcm_s16le to WAV file-output path. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, metadata chunks, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]

@@ -4,7 +4,7 @@ use crate::{
 use avformat::{
     register_mov_probe, FrameCrcMuxer, Image2Demuxer, Image2Entry, Image2Pattern, MovDemuxer,
     NullMuxer, PcmS16leDemuxer, PcmS16leMuxer, ProbeRegistry, ProbeRequest, RawVideoDemuxer,
-    RawVideoMuxer, RawVideoPixelFormat, WavDemuxer, Yuv4MpegDemuxer,
+    RawVideoMuxer, RawVideoPixelFormat, WavDemuxer, WavMuxer, Yuv4MpegDemuxer,
 };
 use avutil::{Packet, Rational};
 use std::{fmt, fs, io::Write, path::Path};
@@ -132,6 +132,7 @@ enum OutputMuxer {
     FrameCrc,
     PcmS16le,
     RawVideo,
+    Wav,
 }
 
 impl OutputMuxer {
@@ -141,6 +142,7 @@ impl OutputMuxer {
             Self::FrameCrc => "framecrc",
             Self::PcmS16le => "s16le",
             Self::RawVideo => "rawvideo",
+            Self::Wav => "wav",
         }
     }
 }
@@ -271,6 +273,7 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 OutputMuxer::PcmS16le => {
                     run_pcm_s16le_file_muxer(output, sample_rate, channels, read_packet)
                 }
+                OutputMuxer::Wav => run_wav_file_muxer(output, sample_rate, channels, read_packet),
                 OutputMuxer::Null | OutputMuxer::FrameCrc => {
                     run_output_muxer(output_muxer, read_packet)
                 }
@@ -307,6 +310,7 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                     run_output_muxer(output_muxer, read_packet)
                 }
                 OutputMuxer::PcmS16le => run_output_muxer(output_muxer, read_packet),
+                OutputMuxer::Wav => run_output_muxer(output_muxer, read_packet),
             }
         }
         InputFormat::Wav => {
@@ -368,6 +372,10 @@ fn validate_output_endpoint(muxer: OutputMuxer, output: &PlannedFile) -> Result<
         }
         OutputMuxer::RawVideo => {
             local_output_path(output, "rawvideo")?;
+            Ok(())
+        }
+        OutputMuxer::Wav => {
+            local_output_path(output, "wav")?;
             Ok(())
         }
     }
@@ -743,7 +751,7 @@ fn validate_output_options(output: &PlannedFile) -> Result<(), FfmpegError> {
 fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> {
     let format = last_option_value(output.options(), "f").ok_or_else(|| {
         FfmpegError::usage(
-            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f s16le`, or `-f rawvideo`",
+            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f s16le`, `-f rawvideo`, or `-f wav`",
         )
     })?;
 
@@ -752,6 +760,7 @@ fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> 
         "framecrc" => Ok(OutputMuxer::FrameCrc),
         "s16le" | "pcm_s16le" => Ok(OutputMuxer::PcmS16le),
         "rawvideo" => Ok(OutputMuxer::RawVideo),
+        "wav" | "wave" => Ok(OutputMuxer::Wav),
         _ => Err(FfmpegError::unsupported(format!(
             "output format `{format}` is not implemented"
         ))),
@@ -852,6 +861,9 @@ where
         OutputMuxer::RawVideo => Err(FfmpegError::unsupported(
             "ffmpeg-rs rawvideo output is only implemented for rawvideo inputs",
         )),
+        OutputMuxer::Wav => Err(FfmpegError::unsupported(
+            "ffmpeg-rs WAV output is only implemented for raw pcm_s16le inputs",
+        )),
     }
 }
 
@@ -923,6 +935,43 @@ where
         String::new(),
         String::new(),
         OutputMuxer::RawVideo,
+        packet_count,
+        byte_count,
+    ))
+}
+
+fn run_wav_file_muxer<F>(
+    output: &PlannedFile,
+    sample_rate: u32,
+    channels: u16,
+    mut read_packet: F,
+) -> Result<FfmpegOutput, FfmpegError>
+where
+    F: FnMut() -> Result<Option<Packet>, FfmpegError>,
+{
+    let output_path = local_output_path(output, "wav")?;
+    let mut muxer = WavMuxer::new_pcm_s16le(channels, sample_rate).map_err(|err| {
+        FfmpegError::invalid_data(format!("failed to configure WAV muxer: {err}"))
+    })?;
+
+    while let Some(packet) = read_packet()? {
+        muxer
+            .write_packet(&packet)
+            .map_err(|err| FfmpegError::invalid_data(format!("failed to mux WAV packet: {err}")))?;
+    }
+
+    let packet_count = muxer.packets();
+    let output_bytes = muxer
+        .finish()
+        .map_err(|err| FfmpegError::invalid_data(format!("failed to finish WAV muxer: {err}")))?;
+    let byte_count = u64::try_from(output_bytes.len())
+        .map_err(|_| FfmpegError::invalid_data("WAV output size does not fit u64"))?;
+    write_new_output_file(output_path, &output_bytes)?;
+
+    Ok(FfmpegOutput::media(
+        String::new(),
+        String::new(),
+        OutputMuxer::Wav,
         packet_count,
         byte_count,
     ))
@@ -1299,6 +1348,79 @@ mod tests {
             output_arg.as_str(),
         ]))
         .expect_err("raw PCM file output should not overwrite existing files");
+        let existing = fs::read(&output_path).expect("existing output file should remain readable");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert!(err.message().contains("failed to create output"));
+        assert_eq!(existing, b"existing");
+    }
+
+    #[test]
+    fn runs_s16le_to_wav_file_output() {
+        let payload = [0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0];
+        let input_path = write_temp_bytes("raw-pcm-wav-input", "raw", &payload);
+        let output_path = unique_temp_path("raw-pcm-wav-output", "wav");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "s16le",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "wav",
+            output_arg.as_str(),
+        ]))
+        .expect("raw PCM to WAV file output path should execute");
+        let written = fs::read(&output_path).expect("WAV output file should be readable");
+        let mut demuxer =
+            WavDemuxer::open(&written).expect("WAV output should parse with Rust demuxer");
+        let packet = demuxer
+            .read_packet()
+            .expect("WAV packet read should succeed")
+            .expect("WAV output should contain one packet");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert_eq!(output.output_format(), Some("wav"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), u64::try_from(written.len()).unwrap());
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+        assert_eq!(demuxer.info().channels(), 2);
+        assert_eq!(demuxer.info().sample_rate(), 48_000);
+        assert_eq!(packet.data(), payload);
+        assert_eq!(packet.duration(), 3);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn rejects_wav_file_output_overwrite() {
+        let input_path = write_temp_bytes("raw-pcm-wav-overwrite-input", "raw", &[0, 0, 1, 0]);
+        let output_path = write_temp_bytes("raw-pcm-wav-overwrite-output", "wav", b"existing");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "s16le",
+            "-ar",
+            "44100",
+            "-ac",
+            "1",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "wav",
+            output_arg.as_str(),
+        ]))
+        .expect_err("WAV file output should not overwrite existing files");
         let existing = fs::read(&output_path).expect("existing output file should remain readable");
 
         remove_temp_files(&[input_path, output_path]);
