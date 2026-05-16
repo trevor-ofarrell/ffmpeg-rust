@@ -893,6 +893,7 @@ fn merge_metadata(target: &mut Dictionary, source: Dictionary) -> AvResult<()> {
 enum MetadataValueKind {
     Text,
     NumberPair,
+    GenreIndex,
 }
 
 fn metadata_item_mapping(box_type: [u8; 4]) -> Option<(&'static str, MetadataValueKind)> {
@@ -907,6 +908,7 @@ fn metadata_item_mapping(box_type: [u8; 4]) -> Option<(&'static str, MetadataVal
         [b'd', b'e', b's', b'c'] => Some(("description", MetadataValueKind::Text)),
         [b'l', b'd', b'e', b's'] => Some(("long_description", MetadataValueKind::Text)),
         [0xa9, b't', b'o', b'o'] => Some(("encoder", MetadataValueKind::Text)),
+        [b'g', b'n', b'r', b'e'] => Some(("genre", MetadataValueKind::GenreIndex)),
         [b't', b'r', b'k', b'n'] => Some(("track", MetadataValueKind::NumberPair)),
         [b'd', b'i', b's', b'k'] => Some(("disc", MetadataValueKind::NumberPair)),
         _ => None,
@@ -924,6 +926,7 @@ fn parse_metadata_data(payload: &[u8], value_kind: MetadataValueKind) -> AvResul
     match value_kind {
         MetadataValueKind::Text => parse_text_metadata_value(data_type, value),
         MetadataValueKind::NumberPair => parse_number_pair_metadata_value(data_type, value),
+        MetadataValueKind::GenreIndex => parse_genre_index_metadata_value(data_type, value),
     }
 }
 
@@ -978,6 +981,109 @@ fn parse_number_pair_metadata_value(data_type: u32, value: &[u8]) -> AvResult<Op
         Ok(Some(format!("{current}/{total}")))
     }
 }
+
+fn parse_genre_index_metadata_value(data_type: u32, value: &[u8]) -> AvResult<Option<String>> {
+    if data_type != METADATA_DATA_TYPE_RESERVED {
+        return Ok(None);
+    }
+    let mut reader = ByteReader::new(value);
+    ensure_remaining(&reader, 2, "MOV/MP4 genre metadata index")?;
+    let one_based_index = reader.read_u16_be()?;
+    ensure_box_consumed(&reader, "MOV/MP4 genre metadata index")?;
+    if one_based_index == 0 {
+        return Ok(None);
+    }
+    let index = usize::from(one_based_index - 1);
+    let genre = ID3V1_GENRES.get(index).ok_or_else(|| {
+        AvError::invalid_data(format!(
+            "MOV/MP4 genre metadata index {one_based_index} is not recognized"
+        ))
+    })?;
+    Ok(Some((*genre).to_owned()))
+}
+
+const ID3V1_GENRES: &[&str] = &[
+    "Blues",
+    "Classic Rock",
+    "Country",
+    "Dance",
+    "Disco",
+    "Funk",
+    "Grunge",
+    "Hip-Hop",
+    "Jazz",
+    "Metal",
+    "New Age",
+    "Oldies",
+    "Other",
+    "Pop",
+    "R&B",
+    "Rap",
+    "Reggae",
+    "Rock",
+    "Techno",
+    "Industrial",
+    "Alternative",
+    "Ska",
+    "Death Metal",
+    "Pranks",
+    "Soundtrack",
+    "Euro-Techno",
+    "Ambient",
+    "Trip-Hop",
+    "Vocal",
+    "Jazz+Funk",
+    "Fusion",
+    "Trance",
+    "Classical",
+    "Instrumental",
+    "Acid",
+    "House",
+    "Game",
+    "Sound Clip",
+    "Gospel",
+    "Noise",
+    "Alternative Rock",
+    "Bass",
+    "Soul",
+    "Punk",
+    "Space",
+    "Meditative",
+    "Instrumental Pop",
+    "Instrumental Rock",
+    "Ethnic",
+    "Gothic",
+    "Darkwave",
+    "Techno-Industrial",
+    "Electronic",
+    "Pop-Folk",
+    "Eurodance",
+    "Dream",
+    "Southern Rock",
+    "Comedy",
+    "Cult",
+    "Gangsta",
+    "Top 40",
+    "Christian Rap",
+    "Pop/Funk",
+    "Jungle",
+    "Native US",
+    "Cabaret",
+    "New Wave",
+    "Psychedelic",
+    "Rave",
+    "Showtunes",
+    "Trailer",
+    "Lo-Fi",
+    "Tribal",
+    "Acid Punk",
+    "Acid Jazz",
+    "Polka",
+    "Retro",
+    "Musical",
+    "Rock & Roll",
+    "Hard Rock",
+];
 
 fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
     let mut codec_parameters = None;
@@ -2275,6 +2381,16 @@ mod tests {
     }
 
     #[test]
+    fn extracts_genre_metadata_from_ilst_index_atoms() {
+        let ilst = ilst_box(&[ilst_genre_index_item(18)]);
+        let bytes = mp4_with_moov_extra_box(box_(*UDTA_ID, &meta_box(ilst)));
+
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(demuxer.info().metadata().get("genre"), Some("Rock"));
+    }
+
+    #[test]
     fn extracts_track_metadata_from_track_udta() {
         let track_udta = box_(
             *UDTA_ID,
@@ -2329,6 +2445,32 @@ mod tests {
             &metadata_data_box_payload(METADATA_DATA_TYPE_UTF16, &[0xd8, 0x00]),
         );
         let item = box_([0xa9, b'n', b'a', b'm'], &bad_utf16);
+        let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
+            *UDTA_ID,
+            &meta_box(ilst_box(&[item])),
+        )))
+        .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_genre = box_(
+            *DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_RESERVED, &[0x00]),
+        );
+        let item = box_(*b"gnre", &bad_genre);
+        let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
+            *UDTA_ID,
+            &meta_box(ilst_box(&[item])),
+        )))
+        .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_genre = box_(
+            *DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_RESERVED, &999_u16.to_be_bytes()),
+        );
+        let item = box_(*b"gnre", &bad_genre);
         let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
             *UDTA_ID,
             &meta_box(ilst_box(&[item])),
@@ -3113,6 +3255,14 @@ mod tests {
             &metadata_data_box_payload(METADATA_DATA_TYPE_UTF16, &bytes),
         );
         box_(kind, &data)
+    }
+
+    fn ilst_genre_index_item(one_based_index: u16) -> Vec<u8> {
+        let data = box_(
+            *DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_RESERVED, &one_based_index.to_be_bytes()),
+        );
+        box_(*b"gnre", &data)
     }
 
     fn ilst_number_pair_item(kind: [u8; 4], current: u16, total: u16) -> Vec<u8> {
