@@ -419,13 +419,33 @@ id = "avformat-null-muxer"
 kind = "muxer"
 ffmpeg_name = "null"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -f lavfi -i testsrc -f null -"
+rust_command = "cargo test -p avformat null_muxer"
+unit_tests = [
+  "null_muxer::tests::tracks_packet_and_stream_statistics",
+  "null_muxer::tests::empty_packets_count_without_bytes",
+  "null_muxer::tests::finish_prevents_more_writes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial internal null muxer sink discards packet payloads and reports packet, byte, duration, stream, and timestamp statistics. It is not wired into CLI execution or differential/FATE tests yet."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-hash-muxer"
+kind = "muxer"
+ffmpeg_name = "hash/md5"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -i <input> -f hash -"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple muxer target after basic avformat infrastructure."
+notes = "Next simple muxer target after null muxer."
 blocked_reason = ""

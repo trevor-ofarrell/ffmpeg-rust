@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-probe` is implemented and verified with descriptor validation and deterministic signature, MIME type, and extension scoring. The next priority component is `avformat-null-muxer`.
+`avformat-null-muxer` is implemented and verified as an internal packet sink that discards payload bytes while reporting packet, byte, duration, stream, and timestamp statistics. The next priority component is `avformat-hash-muxer`.
 
 ## Last Successful Commands
 
@@ -30,6 +30,7 @@
 - `cargo test -p fftools io_plan`
 - `cargo test -p avformat avio`
 - `cargo test -p avformat probe`
+- `cargo test -p avformat null_muxer`
 
 ## Last Failing Commands
 
@@ -40,13 +41,13 @@
 
 ## Current Focus Component
 
-`avformat-null-muxer` is the next highest-priority incomplete component after `avformat-probe`.
+`avformat-hash-muxer` is the next highest-priority incomplete component after `avformat-null-muxer`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avformat probe`.
+1. Run `cargo test -p avformat null_muxer`.
 2. Run formatting, workspace tests, and clippy.
-3. Add the first null muxer primitive.
+3. Add the first hash/md5 muxer primitive using `avutil` checksum helpers.
 
 ## Known Blockers
 
@@ -56,4 +57,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avformat-probe` registry/scoring primitive.
+Latest committed slice: add `avformat-null-muxer` packet sink.
