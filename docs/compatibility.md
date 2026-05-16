@@ -19,6 +19,7 @@
 - `avformat` has an initial packet-data hash muxer sink for Adler-32 and IEEE CRC-32.
 - `avformat` has an initial framecrc-style packet checksum sink with one CRC-32 record per packet.
 - `avformat` has an initial RIFF/WAVE PCM s16le demuxer that validates `fmt ` and `data` chunks and emits the data chunk as one packet.
+- `avformat` has an initial RIFF/WAVE PCM s16le muxer that writes canonical headers and stream-0 packet payloads.
 - `avcodec` has an initial rawvideo decoder for `gray`, `rgb24`, `rgba`, and `yuv420p` packet payloads.
 - `avcodec` has an initial packed `pcm_s16le` decoder for mono and multichannel packet payloads.
 - `avutil` has initial typed errors, rational normalization/comparison, timestamp rescaling, bounded byte I/O helpers, MSB-first bit reader/writer helpers, metadata dictionary helpers, AVOption-like descriptor/value validation, Adler-32 and IEEE CRC-32 checksum helpers, packet timestamp/flag/side-data skeletons, frame shape validation, and an in-memory logging abstraction.
@@ -39,6 +40,7 @@ All media parsing, decoding, encoding, muxing, demuxing, filtering, playback, pr
 - Hash muxer support is internal and limited to Adler-32/CRC-32 packet-data hashing; it is not wired to CLI execution, MD5/SHA variants, or FATE yet.
 - Framecrc muxer support is internal and not byte-identical to FFmpeg framecrc output yet.
 - WAV demuxing is internal only and currently limited to RIFF/WAVE PCM s16le with one packet for the data chunk. RF64, WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, packet chunking, probing, CLI execution, differential tests, FATE, and fuzzing are pending.
+- WAV muxing is internal only and currently limited to canonical RIFF/WAVE PCM s16le stream-0 payloads. RF64, WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, metadata chunks, CLI execution, differential tests, FATE, and fuzzing are pending.
 - Rawvideo decoding is internal only and supports a small initial pixel-format set; CLI demux/decode wiring is pending.
 - PCM decoding is internal only and currently limited to packed little-endian signed 16-bit samples.
 - The version banner is compatibility-oriented but not byte-identical to upstream FFmpeg.

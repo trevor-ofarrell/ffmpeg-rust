@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-wav-demuxer` is implemented and verified for a narrow RIFF/WAVE PCM s16le path. It validates the container header, `fmt ` and `data` chunks, RIFF word padding, stream fields, and whole sample-frame payloads before emitting the data chunk as one stream-0 packet. The next priority component is `avformat-wav-muxer`.
+`avformat-wav-muxer` is implemented and verified for a narrow RIFF/WAVE PCM s16le path. It writes canonical headers and stream-0 packet payloads, validates stream parameters, rejects split sample frames, and round-trips through the current WAV demuxer. The next priority component is `avformat-yuv4mpegpipe-demuxer`.
 
 ## Last Successful Commands
 
@@ -40,6 +40,11 @@
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
+- `cargo fmt --all`
+- `cargo test -p avformat wav`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
 
 ## Last Failing Commands
 
@@ -50,13 +55,13 @@
 
 ## Current Focus Component
 
-`avformat-wav-muxer` is the next highest-priority incomplete component after the initial WAV demuxer.
+`avformat-yuv4mpegpipe-demuxer` is the next highest-priority incomplete component after the initial WAV muxer.
 
 ## Next 3 Concrete Actions
 
-1. Add an internal WAV PCM s16le muxer that writes a valid RIFF/WAVE header and packet payload.
-2. Add unit tests for valid output, header sizing, finalization behavior, and invalid stream parameters.
-3. Update the ledger, docs, and state after the muxer slice passes focused and workspace checks.
+1. Add an internal YUV4MPEG2 demuxer for a narrow yuv4mpegpipe profile.
+2. Add unit tests for header parsing, frame extraction, invalid headers, and unsupported chroma/rate fields.
+3. Update the ledger, docs, and state after the demuxer slice passes focused and workspace checks.
 
 ## Known Blockers
 
@@ -66,4 +71,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-wav-demuxer` for RIFF/WAVE PCM s16le packet extraction with unit tests and compatibility documentation.
+Latest slice: add `avformat-wav-muxer` for canonical RIFF/WAVE PCM s16le output with header, packet validation, round-trip, and finished-state tests.

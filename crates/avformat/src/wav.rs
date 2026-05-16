@@ -1,4 +1,10 @@
-use avutil::{AvError, AvErrorKind, AvResult, ByteReader, Packet};
+use avutil::{AvError, AvErrorKind, AvResult, ByteReader, ByteWriter, Packet};
+
+const PCM_S16LE_FORMAT_TAG: u16 = 1;
+const PCM_S16LE_BITS_PER_SAMPLE: u16 = 16;
+const WAV_FMT_CHUNK_SIZE: u32 = 16;
+const WAV_HEADER_SIZE: usize = 44;
+const MAX_RIFF_DATA_SIZE: usize = u32::MAX as usize - 36;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WavInfo {
@@ -130,6 +136,121 @@ impl<'a> WavDemuxer<'a> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WavMuxer {
+    info: WavInfo,
+    data: Vec<u8>,
+    packets: u64,
+    finished: bool,
+}
+
+impl WavMuxer {
+    pub fn new_pcm_s16le(channels: u16, sample_rate: u32) -> AvResult<Self> {
+        let block_align = channels
+            .checked_mul(2)
+            .ok_or_else(|| AvError::invalid_argument("WAV block align overflow"))?;
+        let byte_rate = sample_rate
+            .checked_mul(u32::from(block_align))
+            .ok_or_else(|| AvError::invalid_argument("WAV byte rate overflow"))?;
+        let info = WavInfo {
+            channels,
+            sample_rate,
+            byte_rate,
+            block_align,
+            bits_per_sample: PCM_S16LE_BITS_PER_SAMPLE,
+            data_size: 0,
+        };
+        validate_pcm_s16le(&info)?;
+
+        Ok(Self {
+            info,
+            data: Vec::new(),
+            packets: 0,
+            finished: false,
+        })
+    }
+
+    pub fn info(&self) -> &WavInfo {
+        &self.info
+    }
+
+    pub fn packets(&self) -> u64 {
+        self.packets
+    }
+
+    pub fn data_len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    pub fn write_packet(&mut self, packet: &Packet) -> AvResult<()> {
+        if self.finished {
+            return Err(AvError::invalid_argument(
+                "cannot write packet after WAV muxer is finished",
+            ));
+        }
+        if packet.stream_index() != 0 {
+            return Err(AvError::invalid_argument(format!(
+                "WAV muxer only accepts stream 0, got stream {}",
+                packet.stream_index()
+            )));
+        }
+        if packet.data().len() % usize::from(self.info.block_align) != 0 {
+            return Err(AvError::invalid_data(
+                "WAV packet does not contain whole sample frames",
+            ));
+        }
+
+        let new_len = self
+            .data
+            .len()
+            .checked_add(packet.data().len())
+            .ok_or_else(|| AvError::invalid_argument("WAV data size overflow"))?;
+        validate_data_len(new_len)?;
+
+        self.data.extend_from_slice(packet.data());
+        self.info.data_size = self.data.len();
+        self.packets = self
+            .packets
+            .checked_add(1)
+            .ok_or_else(|| AvError::invalid_argument("WAV packet count overflow"))?;
+        Ok(())
+    }
+
+    pub fn render(&self) -> AvResult<Vec<u8>> {
+        validate_data_len(self.data.len())?;
+        let riff_size = u32::try_from(36 + self.data.len())
+            .map_err(|_| AvError::invalid_argument("WAV RIFF size does not fit u32"))?;
+        let data_size = u32::try_from(self.data.len())
+            .map_err(|_| AvError::invalid_argument("WAV data size does not fit u32"))?;
+
+        let mut writer = ByteWriter::with_capacity(WAV_HEADER_SIZE + self.data.len());
+        writer.write_all(b"RIFF");
+        writer.write_u32_le(riff_size);
+        writer.write_all(b"WAVE");
+        writer.write_all(b"fmt ");
+        writer.write_u32_le(WAV_FMT_CHUNK_SIZE);
+        writer.write_u16_le(PCM_S16LE_FORMAT_TAG);
+        writer.write_u16_le(self.info.channels);
+        writer.write_u32_le(self.info.sample_rate);
+        writer.write_u32_le(self.info.byte_rate);
+        writer.write_u16_le(self.info.block_align);
+        writer.write_u16_le(self.info.bits_per_sample);
+        writer.write_all(b"data");
+        writer.write_u32_le(data_size);
+        writer.write_all(&self.data);
+        Ok(writer.into_inner())
+    }
+
+    pub fn finish(&mut self) -> AvResult<Vec<u8>> {
+        self.finished = true;
+        self.render()
+    }
+}
+
 fn parse_fmt(data: &[u8]) -> AvResult<WavInfo> {
     if data.len() < 16 {
         return Err(AvError::new(
@@ -140,7 +261,7 @@ fn parse_fmt(data: &[u8]) -> AvResult<WavInfo> {
 
     let mut reader = ByteReader::new(data);
     let audio_format = reader.read_u16_le()?;
-    if audio_format != 1 {
+    if audio_format != PCM_S16LE_FORMAT_TAG {
         return Err(AvError::unsupported(format!(
             "unsupported WAV audio format {audio_format}"
         )));
@@ -163,7 +284,7 @@ fn validate_pcm_s16le(info: &WavInfo) -> AvResult<()> {
     if info.sample_rate == 0 {
         return Err(AvError::invalid_data("WAV sample rate must be non-zero"));
     }
-    if info.bits_per_sample != 16 {
+    if info.bits_per_sample != PCM_S16LE_BITS_PER_SAMPLE {
         return Err(AvError::unsupported(format!(
             "unsupported WAV bits per sample {}",
             info.bits_per_sample
@@ -198,6 +319,15 @@ fn validate_pcm_s16le(info: &WavInfo) -> AvResult<()> {
         ));
     }
 
+    Ok(())
+}
+
+fn validate_data_len(data_len: usize) -> AvResult<()> {
+    if data_len > MAX_RIFF_DATA_SIZE {
+        return Err(AvError::invalid_argument(
+            "WAV data is too large for classic RIFF",
+        ));
+    }
     Ok(())
 }
 
@@ -273,6 +403,86 @@ mod tests {
         assert!(WavDemuxer::open(&wav_with_bad_block_align()).is_err());
         assert!(WavDemuxer::open(&wav_with_bad_byte_rate()).is_err());
         assert!(WavDemuxer::open(&wav_bytes(2, 48_000, &[0, 1, 2])).is_err());
+    }
+
+    #[test]
+    fn muxer_writes_pcm_s16le_header_and_payload() {
+        let mut muxer = WavMuxer::new_pcm_s16le(2, 48_000).unwrap();
+        let packet = Packet::new(vec![0, 0, 1, 0, 2, 0, 3, 0], 0);
+
+        muxer.write_packet(&packet).unwrap();
+        let bytes = muxer.finish().unwrap();
+
+        assert!(muxer.is_finished());
+        assert_eq!(muxer.packets(), 1);
+        assert_eq!(muxer.data_len(), 8);
+        assert_eq!(&bytes[0..4], b"RIFF");
+        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 44);
+        assert_eq!(&bytes[8..12], b"WAVE");
+        assert_eq!(&bytes[12..16], b"fmt ");
+        assert_eq!(u32::from_le_bytes(bytes[16..20].try_into().unwrap()), 16);
+        assert_eq!(u16::from_le_bytes(bytes[20..22].try_into().unwrap()), 1);
+        assert_eq!(u16::from_le_bytes(bytes[22..24].try_into().unwrap()), 2);
+        assert_eq!(
+            u32::from_le_bytes(bytes[24..28].try_into().unwrap()),
+            48_000
+        );
+        assert_eq!(
+            u32::from_le_bytes(bytes[28..32].try_into().unwrap()),
+            192_000
+        );
+        assert_eq!(u16::from_le_bytes(bytes[32..34].try_into().unwrap()), 4);
+        assert_eq!(u16::from_le_bytes(bytes[34..36].try_into().unwrap()), 16);
+        assert_eq!(&bytes[36..40], b"data");
+        assert_eq!(u32::from_le_bytes(bytes[40..44].try_into().unwrap()), 8);
+        assert_eq!(&bytes[44..], &[0, 0, 1, 0, 2, 0, 3, 0]);
+    }
+
+    #[test]
+    fn muxer_output_round_trips_through_demuxer() {
+        let mut muxer = WavMuxer::new_pcm_s16le(1, 44_100).unwrap();
+        muxer
+            .write_packet(&Packet::new(vec![1, 0, 2, 0], 0))
+            .unwrap();
+        muxer.write_packet(&Packet::new(vec![3, 0], 0)).unwrap();
+        let bytes = muxer.finish().unwrap();
+
+        let mut demuxer = WavDemuxer::open(&bytes).unwrap();
+        let packet = demuxer.read_packet().unwrap().unwrap();
+
+        assert_eq!(demuxer.info().channels(), 1);
+        assert_eq!(demuxer.info().sample_rate(), 44_100);
+        assert_eq!(packet.data(), &[1, 0, 2, 0, 3, 0]);
+        assert_eq!(packet.duration(), 3);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn muxer_validates_stream_parameters_and_packets() {
+        assert!(WavMuxer::new_pcm_s16le(0, 48_000).is_err());
+        assert!(WavMuxer::new_pcm_s16le(1, 0).is_err());
+        assert!(WavMuxer::new_pcm_s16le(32_768, 48_000).is_err());
+        assert!(WavMuxer::new_pcm_s16le(2, u32::MAX).is_err());
+
+        let mut muxer = WavMuxer::new_pcm_s16le(2, 48_000).unwrap();
+        assert!(muxer.write_packet(&Packet::new(vec![0, 0], 1)).is_err());
+        assert!(muxer.write_packet(&Packet::new(vec![0, 0, 1], 0)).is_err());
+        assert_eq!(muxer.data_len(), 0);
+        assert_eq!(muxer.packets(), 0);
+    }
+
+    #[test]
+    fn muxer_finish_prevents_more_writes() {
+        let mut muxer = WavMuxer::new_pcm_s16le(1, 48_000).unwrap();
+        let packet = Packet::new(vec![0, 0], 0);
+
+        muxer.write_packet(&packet).unwrap();
+        muxer.finish().unwrap();
+        let err = muxer.write_packet(&packet).unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(muxer.data_len(), 2);
+        assert_eq!(muxer.packets(), 1);
     }
 
     fn wav_bytes(channels: u16, sample_rate: u32, data: &[u8]) -> Vec<u8> {

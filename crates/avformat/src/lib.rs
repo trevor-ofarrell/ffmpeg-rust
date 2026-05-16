@@ -14,6 +14,6 @@ pub use framecrc_muxer::{FrameCrcMuxer, FrameCrcRecord};
 pub use hash_muxer::{HashAlgorithm, HashMuxer, HashMuxerReport};
 pub use null_muxer::{NullMuxer, NullMuxerReport, NullStreamStats};
 pub use probe::{ProbeDescriptor, ProbeMatch, ProbeRegistry, ProbeRequest, ProbeScore};
-pub use wav::{WavDemuxer, WavInfo};
+pub use wav::{WavDemuxer, WavInfo, WavMuxer};
 
 pub const COMPONENT_KIND: &str = "avformat";

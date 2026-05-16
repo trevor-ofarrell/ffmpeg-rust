@@ -545,13 +545,34 @@ id = "avformat-wav-muxer"
 kind = "muxer"
 ffmpeg_name = "wav"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -f s16le -ar <rate> -ac <channels> -i <input> -f wav <output.wav>"
+rust_command = "cargo test -p avformat wav"
+unit_tests = [
+  "wav::tests::muxer_writes_pcm_s16le_header_and_payload",
+  "wav::tests::muxer_output_round_trips_through_demuxer",
+  "wav::tests::muxer_validates_stream_parameters_and_packets",
+  "wav::tests::muxer_finish_prevents_more_writes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial RIFF/WAVE muxer writes canonical PCM s16le headers and stream-0 packet payloads with size and sample-frame validation. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, metadata chunks, CLI wiring, differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-yuv4mpegpipe-demuxer"
+kind = "demuxer"
+ffmpeg_name = "yuv4mpegpipe"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -f yuv4mpegpipe -i <input.y4m> -f framecrc -"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple container target after the initial WAV demuxer."
+notes = "Next simple format target after WAV mux/demux primitives."
 blocked_reason = ""
