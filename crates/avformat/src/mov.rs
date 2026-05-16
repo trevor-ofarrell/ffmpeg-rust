@@ -1405,6 +1405,16 @@ mod tests {
     }
 
     #[test]
+    fn rejects_multiple_sample_description_entries_explicitly() {
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_multiple_sample_description_entries())
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::Unsupported
+        );
+    }
+
+    #[test]
     fn reads_packets_from_co64_offsets() {
         let bytes = mp4_with_samples(true, &[b"xy".as_slice()], &[42]);
         let mut demuxer = MovDemuxer::open(&bytes).unwrap();
@@ -1935,6 +1945,15 @@ mod tests {
         out
     }
 
+    fn mp4_with_multiple_sample_description_entries() -> Vec<u8> {
+        let moov =
+            moov_v0_with_custom_stsd_payload(0, &[2], &[1_000], stsd_box_with_multiple_entries());
+        let mut out = Vec::new();
+        out.extend_from_slice(&ftyp_box());
+        out.extend_from_slice(&box_(*MOOV_ID, &moov));
+        out
+    }
+
     fn mp4_with_short_mdat_payload() -> Vec<u8> {
         mp4_with_sample_tables(
             false,
@@ -2290,6 +2309,22 @@ mod tests {
         data_reference_index: u16,
         extra_data: &[u8],
     ) -> Vec<u8> {
+        let sample_entry = sample_entry(codec_tag, data_reference_index, extra_data);
+        let mut body = Vec::new();
+        body.extend_from_slice(&1_u32.to_be_bytes());
+        body.extend_from_slice(&sample_entry);
+        box_(*STSD_ID, &full_box(0, &body))
+    }
+
+    fn stsd_box_with_multiple_entries() -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&2_u32.to_be_bytes());
+        body.extend_from_slice(&sample_entry(b"raw ", 1, &[]));
+        body.extend_from_slice(&sample_entry(b"avc1", 1, b"\x01\x64"));
+        box_(*STSD_ID, &full_box(0, &body))
+    }
+
+    fn sample_entry(codec_tag: &[u8; 4], data_reference_index: u16, extra_data: &[u8]) -> Vec<u8> {
         let mut sample_entry = Vec::new();
         let entry_size = u32::try_from(16 + extra_data.len()).unwrap();
         sample_entry.extend_from_slice(&entry_size.to_be_bytes());
@@ -2297,11 +2332,7 @@ mod tests {
         sample_entry.extend_from_slice(&[0; 6]);
         sample_entry.extend_from_slice(&data_reference_index.to_be_bytes());
         sample_entry.extend_from_slice(extra_data);
-
-        let mut body = Vec::new();
-        body.extend_from_slice(&1_u32.to_be_bytes());
-        body.extend_from_slice(&sample_entry);
-        box_(*STSD_ID, &full_box(0, &body))
+        sample_entry
     }
 
     fn stts_box(durations: &[u32]) -> Vec<u8> {

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, records generic `stsd` codec parameters, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, and sample description indexes other than 1, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, records generic `stsd` codec parameters, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, and sample description indexes other than 1, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
 
 ## Last Successful Commands
 
@@ -18,6 +18,8 @@
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
 - `cargo run -p fate-runner -- list`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
 - `cargo fmt --all`
 - `cargo test -p avformat mov::tests`
 - `cargo fmt --all`
@@ -164,6 +166,12 @@
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
 - `cargo run -p fate-runner -- list`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
 
 ## Last Failing Commands
 
@@ -178,13 +186,13 @@
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current focus; the next slice is codec-specific sample-entry and multi-entry `stsd` boundary coverage.
+`avformat-mov-demuxer` remains the current focus; the next slice is codec-specific sample-entry and metadata atom boundary coverage.
 
 ## Next 3 Concrete Actions
 
 1. Expand MOV/MP4 codec-specific sample-entry parsing beyond generic codec tag, data-reference index, and extra data.
-2. Add explicit unsupported coverage for multiple `stsd` sample entries.
-3. Add MOV metadata atom boundary coverage.
+2. Add MOV metadata atom boundary coverage.
+3. Add MOV probe/registry integration coverage.
 
 ## Known Blockers
 
@@ -194,4 +202,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add explicit `edts`/`elst` edit-list MOV/MP4 coverage so edit-list timelines return a typed unsupported error instead of being silently ignored.
+Latest slice: add explicit multiple-entry `stsd` MOV/MP4 coverage so files with multiple sample descriptions return a typed unsupported error instead of being silently accepted.
