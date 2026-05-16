@@ -1288,6 +1288,16 @@ mod tests {
     }
 
     #[test]
+    fn rejects_multiple_populated_tracks_explicitly() {
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_two_populated_tracks())
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::Unsupported
+        );
+    }
+
+    #[test]
     fn reads_packets_from_simple_sample_table() {
         let bytes = mp4_with_samples(
             false,
@@ -1605,6 +1615,45 @@ mod tests {
     fn mp4_with_movie_fragment() -> Vec<u8> {
         let mut out = mp4_with_samples(false, &[b"aa".as_slice()], &[10]);
         out.extend_from_slice(&box_(*MOOF_ID, &box_(*b"traf", &[])));
+        out
+    }
+
+    fn mp4_with_two_populated_tracks() -> Vec<u8> {
+        let mut out = Vec::new();
+        let sample_sizes = [2];
+        let durations = [1_000];
+        let moov_payload = [
+            mvhd_v0(1_000, 1_000),
+            trak_v0_with_stbl(
+                1,
+                1_000,
+                90_000,
+                1_000,
+                0,
+                &sample_sizes,
+                &durations,
+                false,
+                1,
+                None,
+                None,
+            ),
+            trak_v0_with_stbl(
+                2,
+                1_000,
+                48_000,
+                1_000,
+                0,
+                &sample_sizes,
+                &durations,
+                false,
+                1,
+                None,
+                None,
+            ),
+        ]
+        .concat();
+        out.extend_from_slice(&ftyp_box());
+        out.extend_from_slice(&box_(*MOOV_ID, &moov_payload));
         out
     }
 

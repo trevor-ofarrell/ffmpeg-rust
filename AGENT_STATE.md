@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, explicitly rejects fragmented `mvex`/`moof` layouts, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, explicitly rejects fragmented `mvex`/`moof` layouts and multiple populated tracks, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
 
 ## Last Successful Commands
 
@@ -142,6 +142,12 @@
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
 - `cargo run -p fate-runner -- list`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
 
 ## Last Failing Commands
 
@@ -155,13 +161,13 @@
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current focus; the next slice is sample-description and multi-track boundary coverage.
+`avformat-mov-demuxer` remains the current focus; the next slice is sample-description and codec-parameter coverage.
 
 ## Next 3 Concrete Actions
 
-1. Add tests for multiple populated tracks returning unsupported rather than silently selecting one.
-2. Represent MOV/MP4 sample descriptions as codec parameter records instead of only a FourCC string.
-3. Add explicit coverage for sample description indexes other than 1.
+1. Represent MOV/MP4 sample descriptions as codec parameter records instead of only a FourCC string.
+2. Add explicit coverage for sample description indexes other than 1.
+3. Add edit-list unsupported or parsing coverage.
 
 ## Known Blockers
 
@@ -171,4 +177,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add explicit `mvex`/`moof` fragmented MOV/MP4 detection so fragmented layouts return typed unsupported errors instead of being silently ignored.
+Latest slice: add explicit multiple-populated-track MOV/MP4 coverage so multi-track packet extraction returns a typed unsupported error instead of silently selecting one track.
