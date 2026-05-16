@@ -640,6 +640,26 @@ notes = "ffmpeg-rs command execution supports explicit image2 %d/%0Nd numbered s
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffmpeg-image2-file-output"
+kind = "cli"
+ffmpeg_name = "ffmpeg image2 to image2 file output"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -f image2 -framerate <rate> -i <input-or-pattern> -f image2 <output-or-pattern>"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_image2_single_to_image2_file_output",
+  "ffmpeg::tests::runs_image2_sequence_to_image2_file_output",
+  "ffmpeg::tests::rejects_image2_file_output_overwrite",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffmpeg-rs command execution supports packet-copy from explicit image2 single-file or contiguous %d/%0Nd sequence inputs to local image2 output files/patterns. It uses the Rust image2 demuxer and Image2Muxer, preflights generated output paths for create-new/no-overwrite behavior, writes generated entries to the filesystem, and rejects multi-frame input to a single-image output through the muxer instead of dropping frames. No oracle differential/FATE coverage exists yet. start_number, glob patterns, timestamp modes, image codec validation, overwrite confirmation flags, and non-image2 inputs remain pending."
+blocked_reason = ""
+
+[[component]]
 id = "avformat-avio"
 kind = "api"
 ffmpeg_name = "AVIO-like I/O"
@@ -998,7 +1018,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial image2 muxer maps stream-0 packets to single-image or contiguous %d/%0Nd output entries, validates non-empty packet payloads, formats output paths, rejects duplicate single-image writes, round-trips through the demuxer, and prevents writes after finish. Filesystem writes, glob patterns, timestamp modes, looping, codec-specific image validation, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial image2 muxer maps stream-0 packets to single-image or contiguous %d/%0Nd output entries, validates non-empty packet payloads, formats output paths, rejects duplicate single-image writes, round-trips through the demuxer, and prevents writes after finish. It is wired to a constrained ffmpeg-rs image2 input to image2 filesystem-output path. Glob patterns, timestamp modes, looping, codec-specific image validation, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]

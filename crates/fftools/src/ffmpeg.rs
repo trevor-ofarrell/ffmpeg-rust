@@ -2,9 +2,10 @@ use crate::{
     build_io_plan, parse_ffmpeg_args, version_banner, CliOption, Endpoint, IoPlan, PlannedFile,
 };
 use avformat::{
-    register_mov_probe, FrameCrcMuxer, Image2Demuxer, Image2Entry, Image2Pattern, MovDemuxer,
-    NullMuxer, PcmS16leDemuxer, PcmS16leMuxer, ProbeRegistry, ProbeRequest, RawVideoDemuxer,
-    RawVideoMuxer, RawVideoPixelFormat, WavDemuxer, WavMuxer, Yuv4MpegDemuxer, Yuv4MpegMuxer,
+    register_mov_probe, FrameCrcMuxer, Image2Demuxer, Image2Entry, Image2Muxer, Image2Pattern,
+    MovDemuxer, NullMuxer, PcmS16leDemuxer, PcmS16leMuxer, ProbeRegistry, ProbeRequest,
+    RawVideoDemuxer, RawVideoMuxer, RawVideoPixelFormat, WavDemuxer, WavMuxer, Yuv4MpegDemuxer,
+    Yuv4MpegMuxer,
 };
 use avutil::{Packet, Rational};
 use std::{fmt, fs, io::Write, path::Path};
@@ -130,6 +131,7 @@ impl std::error::Error for FfmpegError {}
 enum OutputMuxer {
     Null,
     FrameCrc,
+    Image2,
     PcmS16le,
     RawVideo,
     Wav,
@@ -141,6 +143,7 @@ impl OutputMuxer {
         match self {
             Self::Null => "null",
             Self::FrameCrc => "framecrc",
+            Self::Image2 => "image2",
             Self::PcmS16le => "s16le",
             Self::RawVideo => "rawvideo",
             Self::Wav => "wav",
@@ -237,7 +240,7 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
     let input_path = local_input_path(input)?;
     let explicit_input = explicit_input_format(input)?;
     if let Some(InputFormat::Image2 { frame_rate }) = explicit_input {
-        return run_image2_input(input_path, frame_rate, output_muxer);
+        return run_image2_input(input_path, frame_rate, output, output_muxer);
     }
 
     let bytes = fs::read(input_path)
@@ -246,7 +249,7 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
 
     match input_format {
         InputFormat::Image2 { frame_rate } => {
-            run_image2_input(input_path, frame_rate, output_muxer)
+            run_image2_input(input_path, frame_rate, output, output_muxer)
         }
         InputFormat::Mov => {
             let mut demuxer = MovDemuxer::open(&bytes).map_err(|err| {
@@ -279,7 +282,7 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 OutputMuxer::Null | OutputMuxer::FrameCrc => {
                     run_output_muxer(output_muxer, read_packet)
                 }
-                OutputMuxer::RawVideo | OutputMuxer::Yuv4MpegPipe => {
+                OutputMuxer::Image2 | OutputMuxer::RawVideo | OutputMuxer::Yuv4MpegPipe => {
                     run_output_muxer(output_muxer, read_packet)
                 }
             }
@@ -315,6 +318,7 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 }
                 OutputMuxer::PcmS16le => run_output_muxer(output_muxer, read_packet),
                 OutputMuxer::Wav => run_output_muxer(output_muxer, read_packet),
+                OutputMuxer::Image2 => run_output_muxer(output_muxer, read_packet),
                 OutputMuxer::Yuv4MpegPipe => run_yuv4mpegpipe_file_muxer(
                     output,
                     width,
@@ -378,6 +382,10 @@ fn validate_stdout_output(output: &PlannedFile) -> Result<(), FfmpegError> {
 fn validate_output_endpoint(muxer: OutputMuxer, output: &PlannedFile) -> Result<(), FfmpegError> {
     match muxer {
         OutputMuxer::Null | OutputMuxer::FrameCrc => validate_stdout_output(output),
+        OutputMuxer::Image2 => {
+            local_output_path(output, "image2")?;
+            Ok(())
+        }
         OutputMuxer::PcmS16le => {
             local_output_path(output, "pcm_s16le")?;
             Ok(())
@@ -415,16 +423,22 @@ fn local_output_path<'a>(
 fn run_image2_input(
     path: &str,
     frame_rate: Rational,
+    output: &PlannedFile,
     output_muxer: OutputMuxer,
 ) -> Result<FfmpegOutput, FfmpegError> {
     let entries = image2_entries_for_path(path)?;
     let mut demuxer = Image2Demuxer::open(path, entries, 0, frame_rate)
         .map_err(|err| FfmpegError::invalid_data(format!("failed to parse image2 input: {err}")))?;
-    run_output_muxer(output_muxer, || {
+    let read_packet = || {
         demuxer.read_packet().map_err(|err| {
             FfmpegError::invalid_data(format!("failed to read image2 packet: {err}"))
         })
-    })
+    };
+
+    match output_muxer {
+        OutputMuxer::Image2 => run_image2_file_muxer(output, frame_rate, read_packet),
+        _ => run_output_muxer(output_muxer, read_packet),
+    }
 }
 
 fn image2_entries_for_path(path: &str) -> Result<Vec<Image2Entry>, FfmpegError> {
@@ -767,13 +781,14 @@ fn validate_output_options(output: &PlannedFile) -> Result<(), FfmpegError> {
 fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> {
     let format = last_option_value(output.options(), "f").ok_or_else(|| {
         FfmpegError::usage(
-            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f s16le`, `-f rawvideo`, `-f wav`, or `-f yuv4mpegpipe`",
+            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f image2`, `-f s16le`, `-f rawvideo`, `-f wav`, or `-f yuv4mpegpipe`",
         )
     })?;
 
     match format.to_ascii_lowercase().as_str() {
         "null" => Ok(OutputMuxer::Null),
         "framecrc" => Ok(OutputMuxer::FrameCrc),
+        "image2" => Ok(OutputMuxer::Image2),
         "s16le" | "pcm_s16le" => Ok(OutputMuxer::PcmS16le),
         "rawvideo" => Ok(OutputMuxer::RawVideo),
         "wav" | "wave" => Ok(OutputMuxer::Wav),
@@ -872,6 +887,9 @@ where
     match output_muxer {
         OutputMuxer::Null => run_null_muxer(read_packet),
         OutputMuxer::FrameCrc => run_framecrc_muxer(read_packet),
+        OutputMuxer::Image2 => Err(FfmpegError::unsupported(
+            "ffmpeg-rs image2 output is only implemented for image2 inputs",
+        )),
         OutputMuxer::PcmS16le => Err(FfmpegError::unsupported(
             "ffmpeg-rs s16le output is only implemented for raw pcm_s16le inputs",
         )),
@@ -917,6 +935,58 @@ where
         String::new(),
         String::new(),
         OutputMuxer::PcmS16le,
+        packet_count,
+        byte_count,
+    ))
+}
+
+fn run_image2_file_muxer<F>(
+    output: &PlannedFile,
+    frame_rate: Rational,
+    mut read_packet: F,
+) -> Result<FfmpegOutput, FfmpegError>
+where
+    F: FnMut() -> Result<Option<Packet>, FfmpegError>,
+{
+    let output_path = local_output_path(output, "image2")?;
+    let mut muxer = Image2Muxer::new(output_path, 0, frame_rate).map_err(|err| {
+        FfmpegError::invalid_data(format!("failed to configure image2 muxer: {err}"))
+    })?;
+
+    while let Some(packet) = read_packet()? {
+        muxer.write_packet(&packet).map_err(|err| {
+            FfmpegError::invalid_data(format!("failed to mux image2 packet: {err}"))
+        })?;
+    }
+
+    let entries = muxer.finish();
+    for entry in &entries {
+        if Path::new(entry.path()).exists() {
+            return Err(FfmpegError::io(format!(
+                "failed to create output `{}`: file already exists",
+                entry.path()
+            )));
+        }
+    }
+
+    let packet_count = u64::try_from(entries.len())
+        .map_err(|_| FfmpegError::invalid_data("image2 frame count does not fit u64"))?;
+    let byte_count = entries.iter().try_fold(0_u64, |total, entry| {
+        let len = u64::try_from(entry.data().len())
+            .map_err(|_| FfmpegError::invalid_data("image2 output size does not fit u64"))?;
+        total
+            .checked_add(len)
+            .ok_or_else(|| FfmpegError::invalid_data("image2 output byte count overflow"))
+    })?;
+
+    for entry in entries {
+        write_new_output_file(entry.path(), entry.data())?;
+    }
+
+    Ok(FfmpegOutput::media(
+        String::new(),
+        String::new(),
+        OutputMuxer::Image2,
         packet_count,
         byte_count,
     ))
@@ -1948,6 +2018,38 @@ mod tests {
     }
 
     #[test]
+    fn runs_image2_single_to_image2_file_output() {
+        let payload = b"\x89PNG\r\n\x1a\n";
+        let input_path = write_temp_bytes("image2-file-input", "png", payload);
+        let output_path = unique_temp_path("image2-file-output", "png");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-framerate",
+            "25",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "image2",
+            output_arg.as_str(),
+        ]))
+        .expect("single image2 file output path should execute");
+        let written = fs::read(&output_path).expect("image2 output file should be readable");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert_eq!(output.output_format(), Some("image2"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), u64::try_from(payload.len()).unwrap());
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+        assert_eq!(written, payload);
+    }
+
+    #[test]
     fn runs_image2_sequence_to_framecrc_stdout() {
         let (pattern, paths) = write_temp_image2_sequence(
             "image2-sequence-framecrc",
@@ -2019,6 +2121,77 @@ mod tests {
         assert_eq!(output.byte_count(), 10);
         assert!(output.stdout().is_empty());
         assert!(output.stderr().is_empty());
+    }
+
+    #[test]
+    fn runs_image2_sequence_to_image2_file_output() {
+        let (input_pattern, input_paths) = write_temp_image2_sequence(
+            "image2-sequence-file-input",
+            "png",
+            &[(0, b"zero".as_slice()), (1, b"one".as_slice())],
+        );
+        let output_pattern = unique_temp_path("image2-sequence-file-output-%03d", "png");
+        let output_pattern_arg = output_pattern.to_string_lossy().into_owned();
+        let output_pattern = Image2Pattern::parse(output_pattern_arg.clone())
+            .expect("generated output pattern should parse");
+        let output_zero = PathBuf::from(output_pattern.path_for_frame_number(0).unwrap());
+        let output_one = PathBuf::from(output_pattern.path_for_frame_number(1).unwrap());
+        let input_arg = input_pattern.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-framerate",
+            "25",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "image2",
+            output_pattern_arg.as_str(),
+        ]))
+        .expect("image2 sequence file output path should execute");
+        let written_zero =
+            fs::read(&output_zero).expect("first image2 output file should be readable");
+        let written_one =
+            fs::read(&output_one).expect("second image2 output file should be readable");
+
+        remove_temp_files(&input_paths);
+        remove_temp_files(&[output_zero, output_one]);
+
+        assert_eq!(output.output_format(), Some("image2"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 7);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+        assert_eq!(written_zero, b"zero");
+        assert_eq!(written_one, b"one");
+    }
+
+    #[test]
+    fn rejects_image2_file_output_overwrite() {
+        let input_path = write_temp_bytes("image2-overwrite-input", "png", b"new-png");
+        let output_path = write_temp_bytes("image2-overwrite-output", "png", b"existing");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-framerate",
+            "1",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "image2",
+            output_arg.as_str(),
+        ]))
+        .expect_err("image2 file output should not overwrite existing files");
+        let existing = fs::read(&output_path).expect("existing output file should remain readable");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert!(err.message().contains("failed to create output"));
+        assert_eq!(existing, b"existing");
     }
 
     #[test]
