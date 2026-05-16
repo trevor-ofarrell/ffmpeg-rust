@@ -403,6 +403,7 @@ rust_command = "cargo test -p avformat probe"
 unit_tests = [
   "probe::tests::descriptor_validation_rejects_empty_or_invalid_fields",
   "probe::tests::signature_match_scores_higher_than_extension",
+  "probe::tests::offset_signature_matches_nonzero_offsets",
   "probe::tests::mime_type_scores_higher_than_extension",
   "probe::tests::extension_matching_is_case_insensitive_and_path_aware",
   "probe::tests::duplicate_descriptor_names_are_rejected_case_insensitively",
@@ -411,7 +412,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial registry/scoring primitive implemented for signature, MIME type, and extension matches with deterministic tie handling. It is not populated from FFmpeg inventories and has no demuxer implementations yet."
+notes = "Initial registry/scoring primitive implemented for prefix and offset signature, MIME type, and extension matches with deterministic tie handling. MOV/MP4 has a hand-written descriptor, but the probe table is not generated from FFmpeg inventories yet."
 blocked_reason = ""
 
 [[component]]
@@ -791,6 +792,7 @@ unit_tests = [
   "mov::tests::rejects_invalid_full_boxes_and_ftyp_payloads",
   "mov::tests::validates_movie_metadata_atom_boundaries",
   "mov::tests::rejects_malformed_movie_metadata_atom_boundaries",
+  "mov::tests::registers_mov_probe_descriptor_for_signature_extension_and_mime",
   "mov::tests::rejects_fragmented_movie_boxes_explicitly",
   "mov::tests::rejects_edit_lists_explicitly",
   "mov::tests::rejects_multiple_populated_tracks_explicitly",
@@ -812,5 +814,5 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; validates udta/meta/ilst metadata atom boundaries without extracting metadata values; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; parses VisualSampleEntry width, height, frame count, compressor name, depth, child boxes, and avcC/hvcC configuration payloads for known video sample entries; explicitly rejects fragmented mvex/moof layouts, edit-list edts boxes, multiple populated tracks, multiple stsd sample entries, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed metadata atoms, malformed sample tables, malformed VisualSampleEntry child boxes, and truncated media data. Packet extraction for multiple populated tracks, actual fragment parsing, edit-list timeline application, metadata value extraction, additional codec-specific child-box handling such as pasp/colr, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; validates udta/meta/ilst metadata atom boundaries without extracting metadata values; registers a hand-written ftyp/extension/MIME probe descriptor; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; parses VisualSampleEntry width, height, frame count, compressor name, depth, child boxes, and avcC/hvcC configuration payloads for known video sample entries; explicitly rejects fragmented mvex/moof layouts, edit-list edts boxes, multiple populated tracks, multiple stsd sample entries, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed metadata atoms, malformed sample tables, malformed VisualSampleEntry child boxes, and truncated media data. Packet extraction for multiple populated tracks, actual fragment parsing, edit-list timeline application, metadata value extraction, additional codec-specific child-box handling such as pasp/colr, CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""

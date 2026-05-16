@@ -1,3 +1,4 @@
+use crate::probe::{ProbeDescriptor, ProbeRegistry};
 use avutil::{AvError, AvErrorKind, AvResult, ByteReader, Packet, SideData};
 
 const FTYP_ID: &[u8; 4] = b"ftyp";
@@ -27,6 +28,28 @@ const MDAT_ID: &[u8; 4] = b"mdat";
 const AVCC_ID: &[u8; 4] = b"avcC";
 const HVCC_ID: &[u8; 4] = b"hvcC";
 const MAX_MOV_SAMPLE_COUNT: usize = 1_000_000;
+const MOV_PROBE_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
+const MOV_PROBE_EXTENSIONS: &[&str] = &["mov", "mp4", "m4a", "3gp", "3g2", "mj2"];
+const MOV_PROBE_MIME_TYPES: &[&str] = &[
+    "video/quicktime",
+    "video/mp4",
+    "audio/mp4",
+    "application/mp4",
+];
+
+pub fn mov_probe_descriptor() -> AvResult<ProbeDescriptor> {
+    ProbeDescriptor::new_with_offset_signatures(
+        MOV_PROBE_NAME,
+        MOV_PROBE_EXTENSIONS,
+        MOV_PROBE_MIME_TYPES,
+        &[],
+        &[(4, FTYP_ID.as_slice())],
+    )
+}
+
+pub fn register_mov_probe(registry: &mut ProbeRegistry) -> AvResult<()> {
+    registry.register(mov_probe_descriptor()?)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MovInfo {
@@ -1517,6 +1540,43 @@ mod tests {
         let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(*UDTA_ID, &meta))).unwrap_err();
 
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+    }
+
+    #[test]
+    fn registers_mov_probe_descriptor_for_signature_extension_and_mime() {
+        let mut registry = ProbeRegistry::new();
+        register_mov_probe(&mut registry).unwrap();
+
+        let descriptor = mov_probe_descriptor().unwrap();
+        assert_eq!(descriptor.name(), MOV_PROBE_NAME);
+        let expected_extensions = MOV_PROBE_EXTENSIONS
+            .iter()
+            .map(|extension| extension.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(descriptor.extensions(), expected_extensions.as_slice());
+
+        let ftyp = ftyp_box();
+        let signature_match = registry
+            .probe(crate::probe::ProbeRequest::new(&ftyp).with_extension("clip.bin"))
+            .unwrap();
+        assert_eq!(signature_match.descriptor().name(), MOV_PROBE_NAME);
+        assert_eq!(signature_match.score(), crate::probe::ProbeScore::SIGNATURE);
+
+        let extension_match = registry
+            .probe(crate::probe::ProbeRequest::new(b"not mov").with_extension("clip.MP4"))
+            .unwrap();
+        assert_eq!(extension_match.descriptor().name(), MOV_PROBE_NAME);
+        assert_eq!(extension_match.score(), crate::probe::ProbeScore::EXTENSION);
+
+        let mime_match = registry
+            .probe(crate::probe::ProbeRequest::new(b"").with_mime_type("Video/QuickTime"))
+            .unwrap();
+        assert_eq!(mime_match.descriptor().name(), MOV_PROBE_NAME);
+        assert_eq!(mime_match.score(), crate::probe::ProbeScore::MIME_TYPE);
+
+        assert!(registry
+            .probe(crate::probe::ProbeRequest::new(b"RIFF....AVI ").with_extension("clip.avi"))
+            .is_none());
     }
 
     #[test]

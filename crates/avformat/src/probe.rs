@@ -16,11 +16,47 @@ impl ProbeScore {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProbeSignature {
+    offset: usize,
+    bytes: Vec<u8>,
+}
+
+impl ProbeSignature {
+    pub fn new(offset: usize, bytes: &[u8]) -> AvResult<Self> {
+        if bytes.is_empty() {
+            return Err(AvError::invalid_argument(
+                "probe signature must not be empty",
+            ));
+        }
+
+        Ok(Self {
+            offset,
+            bytes: bytes.to_vec(),
+        })
+    }
+
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    fn matches(&self, header: &[u8]) -> bool {
+        let Some(end) = self.offset.checked_add(self.bytes.len()) else {
+            return false;
+        };
+        header.get(self.offset..end) == Some(self.bytes.as_slice())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProbeDescriptor {
     name: String,
     extensions: Vec<String>,
     mime_types: Vec<String>,
-    signatures: Vec<Vec<u8>>,
+    signatures: Vec<ProbeSignature>,
 }
 
 impl ProbeDescriptor {
@@ -41,7 +77,7 @@ impl ProbeDescriptor {
             .collect::<AvResult<Vec<_>>>()?;
         let signatures = signatures
             .iter()
-            .map(validate_signature)
+            .map(|signature| ProbeSignature::new(0, signature))
             .collect::<AvResult<Vec<_>>>()?;
 
         Ok(Self {
@@ -50,6 +86,23 @@ impl ProbeDescriptor {
             mime_types,
             signatures,
         })
+    }
+
+    pub fn new_with_offset_signatures(
+        name: impl Into<String>,
+        extensions: &[&str],
+        mime_types: &[&str],
+        signatures: &[&[u8]],
+        offset_signatures: &[(usize, &[u8])],
+    ) -> AvResult<Self> {
+        let mut descriptor = Self::new(name, extensions, mime_types, signatures)?;
+        descriptor.signatures.extend(
+            offset_signatures
+                .iter()
+                .map(|(offset, signature)| ProbeSignature::new(*offset, signature))
+                .collect::<AvResult<Vec<_>>>()?,
+        );
+        Ok(descriptor)
     }
 
     pub fn name(&self) -> &str {
@@ -64,7 +117,7 @@ impl ProbeDescriptor {
         &self.mime_types
     }
 
-    pub fn signatures(&self) -> &[Vec<u8>] {
+    pub fn signatures(&self) -> &[ProbeSignature] {
         &self.signatures
     }
 
@@ -72,7 +125,7 @@ impl ProbeDescriptor {
         if self
             .signatures
             .iter()
-            .any(|signature| request.header.starts_with(signature))
+            .any(|signature| signature.matches(request.header))
         {
             return ProbeScore::SIGNATURE;
         }
@@ -218,16 +271,6 @@ fn validate_text(label: &str, value: String) -> AvResult<String> {
     Ok(value)
 }
 
-fn validate_signature(signature: &&[u8]) -> AvResult<Vec<u8>> {
-    if signature.is_empty() {
-        return Err(AvError::invalid_argument(
-            "probe signature must not be empty",
-        ));
-    }
-
-    Ok(signature.to_vec())
-}
-
 fn normalize_extension(extension: &str) -> AvResult<String> {
     let extension = extension.trim_start_matches('.');
     validate_text("probe extension", extension.to_ascii_lowercase())
@@ -274,6 +317,33 @@ mod tests {
 
         assert_eq!(matched.descriptor().name(), "wav");
         assert_eq!(matched.score(), ProbeScore::SIGNATURE);
+    }
+
+    #[test]
+    fn offset_signature_matches_nonzero_offsets() {
+        let mut registry = ProbeRegistry::new();
+        registry
+            .register(
+                ProbeDescriptor::new_with_offset_signatures(
+                    "mov",
+                    &["mov"],
+                    &[],
+                    &[],
+                    &[(4, b"ftyp".as_slice())],
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let matched = registry
+            .probe(ProbeRequest::new(b"\0\0\0\x18ftypisom").with_extension("clip.bin"))
+            .unwrap();
+
+        assert_eq!(matched.descriptor().name(), "mov");
+        assert_eq!(matched.score(), ProbeScore::SIGNATURE);
+        assert!(registry.probe(ProbeRequest::new(b"\0\0\0")).is_none());
+        assert_eq!(registry.descriptors()[0].signatures()[0].offset(), 4);
+        assert_eq!(registry.descriptors()[0].signatures()[0].bytes(), b"ftyp");
     }
 
     #[test]
