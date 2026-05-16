@@ -21,7 +21,14 @@ struct FfprobeCommand {
     show_streams: bool,
     show_packets: bool,
     writer_format: WriterFormat,
+    input_format: Option<ForcedInputFormat>,
     input_url: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ForcedInputFormat {
+    Avi,
+    Mov,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -280,17 +287,22 @@ pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
     }
 
     let command = parse_ffprobe_args(args)?;
-    let report = probe_local_file_inner(command.input_url.as_str(), command.show_packets)?;
+    let report = probe_local_file_inner(
+        command.input_url.as_str(),
+        command.show_packets,
+        command.input_format,
+    )?;
     Ok(render_report(&command, &report))
 }
 
 pub fn probe_local_file(path: &str) -> Result<FfprobeReport, FfprobeError> {
-    probe_local_file_inner(path, false)
+    probe_local_file_inner(path, false, None)
 }
 
 fn probe_local_file_inner(
     path: &str,
     collect_packets: bool,
+    forced_format: Option<ForcedInputFormat>,
 ) -> Result<FfprobeReport, FfprobeError> {
     if path == "-" || path.starts_with("pipe:") {
         return Err(FfprobeError::unsupported(
@@ -301,15 +313,15 @@ fn probe_local_file_inner(
     let bytes = fs::read(path)
         .map_err(|err| FfprobeError::io(format!("failed to read `{path}`: {err}")))?;
 
+    if let Some(forced_format) = forced_format {
+        return match forced_format {
+            ForcedInputFormat::Avi => probe_avi_bytes(path, &bytes, collect_packets),
+            ForcedInputFormat::Mov => probe_mov_bytes(path, &bytes, 100, collect_packets),
+        };
+    }
+
     if is_avi_input(path, &bytes) {
-        let mut demuxer = AviDemuxer::open(&bytes).map_err(|err| {
-            FfprobeError::invalid_data(format!("failed to parse AVI input: {err}"))
-        })?;
-        let mut report = report_from_avi(path, demuxer.info());
-        if collect_packets {
-            report.packets = collect_avi_packets(&mut demuxer, &report.streams)?;
-        }
-        return Ok(report);
+        return probe_avi_bytes(path, &bytes, collect_packets);
     }
 
     let mut registry = ProbeRegistry::new();
@@ -326,10 +338,33 @@ fn probe_local_file_inner(
         )));
     }
 
-    let mut demuxer = MovDemuxer::open(&bytes).map_err(|err| {
+    probe_mov_bytes(path, &bytes, matched.score().get(), collect_packets)
+}
+
+fn probe_avi_bytes(
+    path: &str,
+    bytes: &[u8],
+    collect_packets: bool,
+) -> Result<FfprobeReport, FfprobeError> {
+    let mut demuxer = AviDemuxer::open(bytes)
+        .map_err(|err| FfprobeError::invalid_data(format!("failed to parse AVI input: {err}")))?;
+    let mut report = report_from_avi(path, demuxer.info());
+    if collect_packets {
+        report.packets = collect_avi_packets(&mut demuxer, &report.streams)?;
+    }
+    Ok(report)
+}
+
+fn probe_mov_bytes(
+    path: &str,
+    bytes: &[u8],
+    probe_score: u8,
+    collect_packets: bool,
+) -> Result<FfprobeReport, FfprobeError> {
+    let mut demuxer = MovDemuxer::open(bytes).map_err(|err| {
         FfprobeError::invalid_data(format!("failed to parse MOV/MP4 input: {err}"))
     })?;
-    let mut report = report_from_mov(path, matched.score().get(), demuxer.info());
+    let mut report = report_from_mov(path, probe_score, demuxer.info());
     if collect_packets {
         report.packets = collect_mov_packets(&mut demuxer, &report.streams)?;
     }
@@ -341,6 +376,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
     let mut show_streams = false;
     let mut show_packets = false;
     let mut writer_format = WriterFormat::Default;
+    let mut input_format = None;
     let mut input_url = None;
     let mut index = 0;
 
@@ -363,6 +399,11 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
             "-of" | "-print_format" => {
                 let value = take_value(args, index, arg)?;
                 writer_format = parse_writer_format(value)?;
+                index += 2;
+            }
+            "-f" => {
+                let value = take_value(args, index, arg)?;
+                set_input_format(&mut input_format, parse_forced_input_format(value)?)?;
                 index += 2;
             }
             "-v" | "-loglevel" => {
@@ -394,6 +435,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
         show_streams,
         show_packets,
         writer_format,
+        input_format,
         input_url,
     })
 }
@@ -424,6 +466,29 @@ fn parse_writer_format(value: &str) -> Result<WriterFormat, FfprobeError> {
             "unsupported writer format `{value}`"
         ))),
     }
+}
+
+fn parse_forced_input_format(value: &str) -> Result<ForcedInputFormat, FfprobeError> {
+    match value {
+        "avi" => Ok(ForcedInputFormat::Avi),
+        "mov" | "mp4" | MOV_FORMAT_NAME => Ok(ForcedInputFormat::Mov),
+        _ => Err(FfprobeError::unsupported(format!(
+            "unsupported input format `{value}`"
+        ))),
+    }
+}
+
+fn set_input_format(
+    input_format: &mut Option<ForcedInputFormat>,
+    value: ForcedInputFormat,
+) -> Result<(), FfprobeError> {
+    if input_format.is_some() {
+        return Err(FfprobeError::usage(
+            "ffprobe-rs currently supports one forced input format",
+        ));
+    }
+    *input_format = Some(value);
+    Ok(())
 }
 
 fn set_input_url(input_url: &mut Option<String>, value: &str) -> Result<(), FfprobeError> {
@@ -932,6 +997,8 @@ mod tests {
             "-show_format",
             "-of",
             "json",
+            "-f",
+            "avi",
             "clip.mp4",
         ]))
         .unwrap();
@@ -940,6 +1007,7 @@ mod tests {
         assert!(command.show_format);
         assert!(command.show_packets);
         assert_eq!(command.writer_format, WriterFormat::Json);
+        assert_eq!(command.input_format, Some(ForcedInputFormat::Avi));
         assert_eq!(command.input_url, "clip.mp4");
     }
 
@@ -953,6 +1021,33 @@ mod tests {
             .unwrap_err()
             .message()
             .contains("missing input"));
+    }
+
+    #[test]
+    fn parses_and_rejects_forced_input_formats() {
+        let command =
+            parse_ffprobe_args(&strings(&["-show_format", "-f", "mp4", "clip.bin"])).unwrap();
+
+        assert_eq!(command.input_format, Some(ForcedInputFormat::Mov));
+        assert_eq!(command.input_url, "clip.bin");
+
+        assert!(
+            parse_ffprobe_args(&strings(&["-show_format", "-f", "matroska", "clip.mkv"]))
+                .unwrap_err()
+                .message()
+                .contains("unsupported input format `matroska`")
+        );
+        assert!(parse_ffprobe_args(&strings(&[
+            "-show_format",
+            "-f",
+            "avi",
+            "-f",
+            "mp4",
+            "clip.bin"
+        ]))
+        .unwrap_err()
+        .message()
+        .contains("one forced input format"));
     }
 
     #[test]
@@ -1148,6 +1243,53 @@ mod tests {
         assert!(stdout.contains("duration_ts=2\n"));
         assert!(stdout.contains("duration=0.080000\n"));
         assert!(stdout.contains("probe_score=100\n"));
+    }
+
+    #[test]
+    fn forced_avi_format_opens_non_avi_extension() {
+        let frame = [0, 1, 2, 3, 4, 5];
+        let path = write_temp_bytes(
+            "forced-avi",
+            "bin",
+            &avi_file_bytes(2, 1, Rational::new(30, 1).unwrap(), &[&frame]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&["-show_format", "-f", "avi", path_arg.as_str()]))
+            .expect("forced AVI ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("format_name=avi\n"));
+        assert!(stdout.contains("duration=0.033333\n"));
+    }
+
+    #[test]
+    fn forced_mov_format_opens_non_mov_extension() {
+        let path = write_temp_bytes("forced-mov", "bin", &minimal_mov_file());
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&["-show_format", "-f", "mp4", path_arg.as_str()]))
+            .expect("forced MOV/MP4 ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("format_name=mov,mp4,m4a,3gp,3g2,mj2\n"));
+        assert!(stdout.contains("duration=5.000000\n"));
+        assert!(stdout.contains("probe_score=100\n"));
+    }
+
+    #[test]
+    fn forced_avi_format_rejects_mismatched_input() {
+        let path = write_temp_bytes("forced-avi-bad", "bin", &minimal_mov_file());
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffprobe_output(&strings(&["-show_format", "-f", "avi", path_arg.as_str()]))
+            .expect_err("forced AVI should use AVI demuxer and reject MOV bytes");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("failed to parse AVI input"));
     }
 
     #[test]

@@ -439,6 +439,27 @@ notes = "Initial ffprobe-rs AVI reporting detects RIFF/AVI signatures or .avi ex
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffprobe-input-format-forcing"
+kind = "cli"
+ffmpeg_name = "ffprobe -f input format"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -f avi -show_format <input>; ffprobe -f mp4 -show_format <input>"
+rust_command = "cargo test -p fftools ffprobe"
+unit_tests = [
+  "ffprobe::tests::parses_and_rejects_forced_input_formats",
+  "ffprobe::tests::forced_avi_format_opens_non_avi_extension",
+  "ffprobe::tests::forced_mov_format_opens_non_mov_extension",
+  "ffprobe::tests::forced_avi_format_rejects_mismatched_input",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial ffprobe-rs -f input format forcing accepts avi, mov, mp4, and the MOV alias string for the constrained Rust AVI and MOV/MP4 demuxer paths. Forced formats bypass extension/signature selection and route bytes to the selected Rust demuxer so mismatches fail as parser errors. Broader format names, aliases, option ordering parity, oracle differential tests, and FATE coverage are pending."
+blocked_reason = ""
+
+[[component]]
 id = "fftools-ffmpeg-mov-framecrc-null"
 kind = "cli"
 ffmpeg_name = "ffmpeg MOV/MP4 to framecrc/null"
