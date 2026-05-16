@@ -393,7 +393,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
+notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Stream reports include initial codec_name, codec_type, codec_tag_string, numeric codec_tag, and avg_frame_rate fields when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
 blocked_reason = ""
 
 [[component]]
@@ -435,7 +435,27 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Output is deterministic but not byte-identical to upstream and has no oracle differential/FATE coverage yet."
+notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Stream reports include initial codec_name, codec_type, codec_tag_string, numeric codec_tag, and avg_frame_rate fields for the constrained video stream. Output is deterministic but not byte-identical to upstream and has no oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-ffprobe-stream-codec-fields"
+kind = "cli"
+ffmpeg_name = "ffprobe stream codec fields"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams -of json <input.avi>"
+rust_command = "cargo test -p fftools ffprobe"
+unit_tests = [
+  "ffprobe::tests::renders_default_report_sections",
+  "ffprobe::tests::outputs_mov_stream_json",
+  "ffprobe::tests::outputs_avi_stream_json",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffprobe-rs stream reports now carry codec_name, codec_type, codec_tag_string, numeric codec_tag, and avg_frame_rate for constrained MOV/MP4 and AVI video streams using Rust demuxer metadata. The codec-name map is deliberately limited to known tags currently represented by the Rust parsers, and there is no pinned-oracle differential/FATE coverage yet."
 blocked_reason = ""
 
 [[component]]

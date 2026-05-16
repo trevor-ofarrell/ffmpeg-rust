@@ -1,6 +1,6 @@
 use avformat::{
-    register_avi_probe, register_mov_probe, AviDemuxer, AviInfo, MovDemuxer, MovInfo,
-    ProbeRegistry, ProbeRequest,
+    register_avi_probe, register_mov_probe, AviDemuxer, AviInfo, AviMediaType, MovDemuxer, MovInfo,
+    MovTrackInfo, ProbeRegistry, ProbeRequest,
 };
 use std::{fmt, fs};
 
@@ -97,12 +97,16 @@ impl FfprobeReport {
 pub struct FfprobeStreamReport {
     index: usize,
     id: u32,
+    codec_name: Option<String>,
+    codec_type: String,
     codec_tag_string: Option<String>,
+    codec_tag: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
     time_base_num: u32,
     time_base_den: u32,
     time_base: String,
+    avg_frame_rate: Option<String>,
     duration_ts: Option<u64>,
     duration: Option<String>,
     nb_frames: usize,
@@ -118,8 +122,20 @@ impl FfprobeStreamReport {
         self.id
     }
 
+    pub fn codec_name(&self) -> Option<&str> {
+        self.codec_name.as_deref()
+    }
+
+    pub fn codec_type(&self) -> &str {
+        &self.codec_type
+    }
+
     pub fn codec_tag_string(&self) -> Option<&str> {
         self.codec_tag_string.as_deref()
+    }
+
+    pub fn codec_tag(&self) -> Option<&str> {
+        self.codec_tag.as_deref()
     }
 
     pub fn width(&self) -> Option<u32> {
@@ -132,6 +148,10 @@ impl FfprobeStreamReport {
 
     pub fn time_base(&self) -> &str {
         &self.time_base
+    }
+
+    pub fn avg_frame_rate(&self) -> Option<&str> {
+        self.avg_frame_rate.as_deref()
     }
 
     pub fn duration_ts(&self) -> Option<u64> {
@@ -505,26 +525,40 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
         .tracks()
         .iter()
         .enumerate()
-        .map(|(index, track)| FfprobeStreamReport {
-            index,
-            id: track.id(),
-            codec_tag_string: track.codec_tag().map(str::to_owned),
-            width: track.width(),
-            height: track.height(),
-            time_base_num: 1,
-            time_base_den: track.media_timescale(),
-            time_base: format!("1/{}", track.media_timescale()),
-            duration_ts: track.media_duration(),
-            duration: track
-                .media_duration()
-                .map(|duration| format_duration(duration, track.media_timescale())),
-            nb_frames: track.sample_count(),
-            tags: track
-                .metadata()
-                .entries()
-                .iter()
-                .map(|entry| (entry.key().to_owned(), entry.value().to_owned()))
-                .collect(),
+        .map(|(index, track)| {
+            let codec_tag_string = track.codec_tag().map(str::to_owned);
+            FfprobeStreamReport {
+                index,
+                id: track.id(),
+                codec_name: codec_tag_string
+                    .as_deref()
+                    .and_then(codec_name_for_tag)
+                    .map(str::to_owned),
+                codec_type: mov_codec_type(track).to_owned(),
+                codec_tag: codec_tag_string.as_deref().and_then(fourcc_codec_tag),
+                codec_tag_string,
+                width: track.width(),
+                height: track.height(),
+                time_base_num: 1,
+                time_base_den: track.media_timescale(),
+                time_base: format!("1/{}", track.media_timescale()),
+                avg_frame_rate: average_frame_rate(
+                    track.sample_count(),
+                    track.media_duration(),
+                    track.media_timescale(),
+                ),
+                duration_ts: track.media_duration(),
+                duration: track
+                    .media_duration()
+                    .map(|duration| format_duration(duration, track.media_timescale())),
+                nb_frames: track.sample_count(),
+                tags: track
+                    .metadata()
+                    .entries()
+                    .iter()
+                    .map(|entry| (entry.key().to_owned(), entry.value().to_owned()))
+                    .collect(),
+            }
         })
         .collect::<Vec<_>>();
 
@@ -559,12 +593,16 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
             FfprobeStreamReport {
                 index: stream.index(),
                 id: u32::try_from(stream.index()).unwrap_or(u32::MAX),
+                codec_name: codec_name_for_tag(stream.handler()).map(str::to_owned),
+                codec_type: avi_codec_type(stream.media_type()).to_owned(),
+                codec_tag: fourcc_codec_tag(stream.handler()),
                 codec_tag_string: Some(stream.handler().to_owned()),
                 width: Some(stream.width()),
                 height: Some(stream.height()),
                 time_base_num,
                 time_base_den,
                 time_base: stream.time_base().to_string(),
+                avg_frame_rate: Some(stream.frame_rate().to_string()),
                 duration_ts: Some(u64::from(stream.length())),
                 duration: Some(format_rational_duration(
                     u64::from(stream.length()),
@@ -679,6 +717,65 @@ fn collect_avi_packets(
     Ok(packets)
 }
 
+fn mov_codec_type(track: &MovTrackInfo) -> &'static str {
+    if track.width().is_some() || track.height().is_some() {
+        "video"
+    } else {
+        "unknown"
+    }
+}
+
+fn avi_codec_type(media_type: AviMediaType) -> &'static str {
+    match media_type {
+        AviMediaType::Video => "video",
+    }
+}
+
+fn codec_name_for_tag(tag: &str) -> Option<&'static str> {
+    match tag {
+        "DIB " | "raw " => Some("rawvideo"),
+        "avc1" | "avc3" => Some("h264"),
+        "hvc1" | "hev1" => Some("hevc"),
+        "mp4v" => Some("mpeg4"),
+        _ => None,
+    }
+}
+
+fn fourcc_codec_tag(tag: &str) -> Option<String> {
+    let bytes: [u8; 4] = tag.as_bytes().try_into().ok()?;
+    Some(format!("0x{:08x}", u32::from_le_bytes(bytes)))
+}
+
+fn average_frame_rate(
+    sample_count: usize,
+    duration_ts: Option<u64>,
+    time_base_den: u32,
+) -> Option<String> {
+    let duration_ts = duration_ts?;
+    if sample_count == 0 || duration_ts == 0 || time_base_den == 0 {
+        return None;
+    }
+    let numerator = u128::try_from(sample_count).ok()? * u128::from(time_base_den);
+    Some(format_reduced_u128_ratio(
+        numerator,
+        u128::from(duration_ts),
+    ))
+}
+
+fn format_reduced_u128_ratio(numerator: u128, denominator: u128) -> String {
+    let divisor = gcd_u128(numerator, denominator);
+    format!("{}/{}", numerator / divisor, denominator / divisor)
+}
+
+fn gcd_u128(mut left: u128, mut right: u128) -> u128 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left.max(1)
+}
+
 fn packet_flags(bits: u32) -> String {
     if bits & 1 != 0 {
         "K_".to_string()
@@ -717,8 +814,15 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             out.push_str("[STREAM]\n");
             out.push_str(&format!("index={}\n", stream.index));
             out.push_str(&format!("id={}\n", stream.id));
+            if let Some(codec_name) = &stream.codec_name {
+                out.push_str(&format!("codec_name={codec_name}\n"));
+            }
+            out.push_str(&format!("codec_type={}\n", stream.codec_type));
             if let Some(codec_tag_string) = &stream.codec_tag_string {
                 out.push_str(&format!("codec_tag_string={codec_tag_string}\n"));
+            }
+            if let Some(codec_tag) = &stream.codec_tag {
+                out.push_str(&format!("codec_tag={codec_tag}\n"));
             }
             if let Some(width) = stream.width {
                 out.push_str(&format!("width={width}\n"));
@@ -727,6 +831,9 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
                 out.push_str(&format!("height={height}\n"));
             }
             out.push_str(&format!("time_base={}\n", stream.time_base));
+            if let Some(avg_frame_rate) = &stream.avg_frame_rate {
+                out.push_str(&format!("avg_frame_rate={avg_frame_rate}\n"));
+            }
             if let Some(duration_ts) = stream.duration_ts {
                 out.push_str(&format!("duration_ts={duration_ts}\n"));
             }
@@ -808,17 +915,27 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     let mut fields = vec![
         json_number("index", stream.index),
         json_number("id", stream.id),
+        json_string("codec_type", &stream.codec_type),
         json_string("time_base", &stream.time_base),
         json_number("nb_frames", stream.nb_frames),
     ];
+    if let Some(codec_name) = &stream.codec_name {
+        fields.push(json_string("codec_name", codec_name));
+    }
     if let Some(codec_tag_string) = &stream.codec_tag_string {
         fields.push(json_string("codec_tag_string", codec_tag_string));
+    }
+    if let Some(codec_tag) = &stream.codec_tag {
+        fields.push(json_string("codec_tag", codec_tag));
     }
     if let Some(width) = stream.width {
         fields.push(json_number("width", width));
     }
     if let Some(height) = stream.height {
         fields.push(json_number("height", height));
+    }
+    if let Some(avg_frame_rate) = &stream.avg_frame_rate {
+        fields.push(json_string("avg_frame_rate", avg_frame_rate));
     }
     if let Some(duration_ts) = stream.duration_ts {
         fields.push(json_number("duration_ts", duration_ts));
@@ -1043,7 +1160,11 @@ mod tests {
         let rendered = render_report(&command, &report);
 
         assert!(rendered.contains("[STREAM]\n"));
+        assert!(rendered.contains("codec_name=rawvideo\n"));
+        assert!(rendered.contains("codec_type=video\n"));
         assert!(rendered.contains("codec_tag_string=raw \n"));
+        assert!(rendered.contains("codec_tag=0x20776172\n"));
+        assert!(rendered.contains("avg_frame_rate=30/1\n"));
         assert!(rendered.contains("[FORMAT]\n"));
         assert!(rendered.contains("format_name=mov,mp4,m4a,3gp,3g2,mj2\n"));
         assert!(rendered.contains("duration=5.000000\n"));
@@ -1128,7 +1249,10 @@ mod tests {
 
     #[test]
     fn outputs_mov_stream_json() {
-        let path = write_temp_mov("show-streams", &minimal_mov_file());
+        let path = write_temp_mov(
+            "show-streams",
+            &sampled_mov_file(&[b"abc".as_slice()], &[3_000]),
+        );
         let path_arg = path.to_string_lossy().into_owned();
 
         let stdout = ffprobe_output(&strings(&[
@@ -1144,8 +1268,13 @@ mod tests {
         assert!(stdout.contains("\"streams\""));
         assert!(stdout.contains("\"index\": 0"));
         assert!(stdout.contains("\"id\": 1"));
+        assert!(stdout.contains("\"codec_name\": \"rawvideo\""));
+        assert!(stdout.contains("\"codec_type\": \"video\""));
+        assert!(stdout.contains("\"codec_tag_string\": \"raw \""));
+        assert!(stdout.contains("\"codec_tag\": \"0x20776172\""));
         assert!(stdout.contains("\"width\": 1920"));
         assert!(stdout.contains("\"height\": 1080"));
+        assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
         assert!(!stdout.contains("\"format\""));
     }
 
@@ -1298,10 +1427,14 @@ mod tests {
         assert!(stdout.contains("\"streams\""));
         assert!(stdout.contains("\"index\": 0"));
         assert!(stdout.contains("\"id\": 0"));
+        assert!(stdout.contains("\"codec_name\": \"rawvideo\""));
+        assert!(stdout.contains("\"codec_type\": \"video\""));
         assert!(stdout.contains("\"codec_tag_string\": \"DIB \""));
+        assert!(stdout.contains("\"codec_tag\": \"0x20424944\""));
         assert!(stdout.contains("\"width\": 2"));
         assert!(stdout.contains("\"height\": 1"));
         assert!(stdout.contains("\"time_base\": \"1/25\""));
+        assert!(stdout.contains("\"avg_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"duration_ts\": 1"));
         assert!(!stdout.contains("\"format\""));
     }
@@ -1376,12 +1509,16 @@ mod tests {
             streams: vec![FfprobeStreamReport {
                 index: 0,
                 id: 1,
+                codec_name: Some("rawvideo".to_string()),
+                codec_type: "video".to_string(),
                 codec_tag_string: Some("raw ".to_string()),
+                codec_tag: Some("0x20776172".to_string()),
                 width: Some(1920),
                 height: Some(1080),
                 time_base_num: 1,
                 time_base_den: 90_000,
                 time_base: "1/90000".to_string(),
+                avg_frame_rate: Some("30/1".to_string()),
                 duration_ts: Some(450_000),
                 duration: Some("5.000000".to_string()),
                 nb_frames: 0,
