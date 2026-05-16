@@ -8,6 +8,9 @@ const MOOF_ID: &[u8; 4] = b"moof";
 const TRAK_ID: &[u8; 4] = b"trak";
 const TKHD_ID: &[u8; 4] = b"tkhd";
 const EDTS_ID: &[u8; 4] = b"edts";
+const UDTA_ID: &[u8; 4] = b"udta";
+const META_ID: &[u8; 4] = b"meta";
+const ILST_ID: &[u8; 4] = b"ilst";
 const MDIA_ID: &[u8; 4] = b"mdia";
 const MDHD_ID: &[u8; 4] = b"mdhd";
 const MINF_ID: &[u8; 4] = b"minf";
@@ -414,6 +417,7 @@ fn parse_moov(input: &[u8], moov: &BoxHeader) -> AvResult<MovieData> {
             MVHD_ID => header = Some(parse_mvhd(child.payload(input))?),
             MVEX_ID => has_movie_extends = true,
             TRAK_ID => tracks.push(parse_trak(input, &child)?),
+            UDTA_ID => validate_udta(input, &child)?,
             _ => {}
         }
     }
@@ -439,6 +443,7 @@ fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
                 ));
             }
             MDIA_ID => media_data = Some(parse_mdia(input, &child)?),
+            UDTA_ID => validate_udta(input, &child)?,
             _ => {}
         }
     }
@@ -497,6 +502,39 @@ fn parse_minf(input: &[u8], minf: &BoxHeader) -> AvResult<Option<SampleTable>> {
         }
     }
     Ok(sample_table)
+}
+
+fn validate_udta(input: &[u8], udta: &BoxHeader) -> AvResult<()> {
+    for child in read_box_headers(input, udta.payload_start, udta.payload_end, "MOV/MP4 udta")? {
+        if child.box_type == *META_ID {
+            validate_meta(input, &child)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_meta(input: &[u8], meta: &BoxHeader) -> AvResult<()> {
+    let payload = meta.payload(input);
+    let mut reader = ByteReader::new(payload);
+    read_full_box_header(&mut reader, "MOV/MP4 meta")?;
+    for child in read_box_headers(payload, reader.position(), payload.len(), "MOV/MP4 meta")? {
+        if child.box_type == *ILST_ID {
+            validate_ilst(payload, &child)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_ilst(input: &[u8], ilst: &BoxHeader) -> AvResult<()> {
+    for item in read_box_headers(input, ilst.payload_start, ilst.payload_end, "MOV/MP4 ilst")? {
+        read_box_headers(
+            input,
+            item.payload_start,
+            item.payload_end,
+            "MOV/MP4 ilst metadata item",
+        )?;
+    }
+    Ok(())
 }
 
 fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
@@ -1457,6 +1495,31 @@ mod tests {
     }
 
     #[test]
+    fn validates_movie_metadata_atom_boundaries() {
+        let data_box = box_(*b"data", b"\0\0\0\x01\0\0\0\0Rust");
+        let item = box_(*b"name", &data_box);
+        let ilst = box_(*ILST_ID, &item);
+        let meta = box_(*META_ID, &full_box(0, &ilst));
+        let bytes = mp4_with_moov_extra_box(box_(*UDTA_ID, &meta));
+
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(demuxer.info().tracks()[0].id(), 1);
+        assert!(!demuxer.info().has_media_data());
+    }
+
+    #[test]
+    fn rejects_malformed_movie_metadata_atom_boundaries() {
+        let bad_data_box = box_with_declared_size(*b"data", 16, b"\0");
+        let item = box_(*b"name", &bad_data_box);
+        let ilst = box_(*ILST_ID, &item);
+        let meta = box_(*META_ID, &full_box(0, &ilst));
+        let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(*UDTA_ID, &meta))).unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+    }
+
+    #[test]
     fn rejects_fragmented_movie_boxes_explicitly() {
         assert_eq!(
             MovDemuxer::open(&mp4_with_movie_extends())
@@ -1908,6 +1971,15 @@ mod tests {
     fn mp4_with_movie_fragment() -> Vec<u8> {
         let mut out = mp4_with_samples(false, &[b"aa".as_slice()], &[10]);
         out.extend_from_slice(&box_(*MOOF_ID, &box_(*b"traf", &[])));
+        out
+    }
+
+    fn mp4_with_moov_extra_box(extra_box: Vec<u8>) -> Vec<u8> {
+        let mut moov_payload = moov_v0_box_payload();
+        moov_payload.extend_from_slice(&extra_box);
+        let mut out = Vec::new();
+        out.extend_from_slice(&ftyp_box());
+        out.extend_from_slice(&box_(*MOOV_ID, &moov_payload));
         out
     }
 
