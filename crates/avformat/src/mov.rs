@@ -142,6 +142,7 @@ pub struct MovVideoSampleEntry {
     frame_count: u16,
     compressor_name: String,
     depth: u16,
+    avc_decoder_configuration: Option<MovAvcDecoderConfiguration>,
     pixel_aspect_ratio: Option<MovPixelAspectRatio>,
     color_information: Option<MovColorInformation>,
     child_boxes: Vec<MovSampleEntryChildBox>,
@@ -166,6 +167,10 @@ impl MovVideoSampleEntry {
 
     pub fn depth(&self) -> u16 {
         self.depth
+    }
+
+    pub fn avc_decoder_configuration(&self) -> Option<&MovAvcDecoderConfiguration> {
+        self.avc_decoder_configuration.as_ref()
     }
 
     pub fn pixel_aspect_ratio(&self) -> Option<&MovPixelAspectRatio> {
@@ -193,6 +198,52 @@ impl MovVideoSampleEntry {
             .iter()
             .find(|child| child.box_type.as_bytes() == box_type)
             .map(MovSampleEntryChildBox::payload)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAvcDecoderConfiguration {
+    configuration_version: u8,
+    profile_indication: u8,
+    profile_compatibility: u8,
+    level_indication: u8,
+    nal_length_size: u8,
+    sequence_parameter_sets: Vec<Vec<u8>>,
+    picture_parameter_sets: Vec<Vec<u8>>,
+    extension_data: Vec<u8>,
+}
+
+impl MovAvcDecoderConfiguration {
+    pub fn configuration_version(&self) -> u8 {
+        self.configuration_version
+    }
+
+    pub fn profile_indication(&self) -> u8 {
+        self.profile_indication
+    }
+
+    pub fn profile_compatibility(&self) -> u8 {
+        self.profile_compatibility
+    }
+
+    pub fn level_indication(&self) -> u8 {
+        self.level_indication
+    }
+
+    pub fn nal_length_size(&self) -> u8 {
+        self.nal_length_size
+    }
+
+    pub fn sequence_parameter_sets(&self) -> &[Vec<u8>] {
+        &self.sequence_parameter_sets
+    }
+
+    pub fn picture_parameter_sets(&self) -> &[Vec<u8>] {
+        &self.picture_parameter_sets
+    }
+
+    pub fn extension_data(&self) -> &[u8] {
+        &self.extension_data
     }
 }
 
@@ -881,6 +932,7 @@ fn parse_visual_sample_entry(extra_data: &[u8]) -> AvResult<MovVideoSampleEntry>
         extra_data.len(),
         "MOV/MP4 VisualSampleEntry children",
     )?;
+    let avc_decoder_configuration = parse_visual_sample_entry_avc_configuration(&child_boxes)?;
     let pixel_aspect_ratio = parse_visual_sample_entry_pixel_aspect_ratio(&child_boxes)?;
     let color_information = parse_visual_sample_entry_color_information(&child_boxes)?;
     Ok(MovVideoSampleEntry {
@@ -889,6 +941,7 @@ fn parse_visual_sample_entry(extra_data: &[u8]) -> AvResult<MovVideoSampleEntry>
         frame_count,
         compressor_name,
         depth,
+        avc_decoder_configuration,
         pixel_aspect_ratio,
         color_information,
         child_boxes,
@@ -912,6 +965,16 @@ fn parse_sample_entry_child_boxes(
         .collect()
 }
 
+fn parse_visual_sample_entry_avc_configuration(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovAvcDecoderConfiguration>> {
+    child_boxes
+        .iter()
+        .find(|child| child.box_type.as_bytes() == AVCC_ID)
+        .map(|child| parse_avcc(child.payload()))
+        .transpose()
+}
+
 fn parse_visual_sample_entry_pixel_aspect_ratio(
     child_boxes: &[MovSampleEntryChildBox],
 ) -> AvResult<Option<MovPixelAspectRatio>> {
@@ -931,6 +994,64 @@ fn parse_visual_sample_entry_color_information(
         .map(|child| parse_colr(child.payload()))
         .transpose()
         .map(Option::flatten)
+}
+
+fn parse_avcc(payload: &[u8]) -> AvResult<MovAvcDecoderConfiguration> {
+    let mut reader = ByteReader::new(payload);
+    ensure_remaining(&reader, 6, "MOV/MP4 avcC")?;
+    let configuration_version = reader.read_u8()?;
+    if configuration_version != 1 {
+        return Err(AvError::unsupported(
+            "MOV/MP4 avcC configurationVersion values other than 1 are not implemented",
+        ));
+    }
+    let profile_indication = reader.read_u8()?;
+    let profile_compatibility = reader.read_u8()?;
+    let level_indication = reader.read_u8()?;
+    let nal_length_size = (reader.read_u8()? & 0x03) + 1;
+    let sequence_parameter_set_count = reader.read_u8()? & 0x1f;
+    let sequence_parameter_sets = parse_avcc_parameter_sets(
+        &mut reader,
+        usize::from(sequence_parameter_set_count),
+        "SPS",
+    )?;
+
+    ensure_remaining(&reader, 1, "MOV/MP4 avcC picture parameter set count")?;
+    let picture_parameter_set_count = reader.read_u8()?;
+    let picture_parameter_sets =
+        parse_avcc_parameter_sets(&mut reader, usize::from(picture_parameter_set_count), "PPS")?;
+    let extension_data = reader.read_exact(reader.remaining())?.to_vec();
+
+    Ok(MovAvcDecoderConfiguration {
+        configuration_version,
+        profile_indication,
+        profile_compatibility,
+        level_indication,
+        nal_length_size,
+        sequence_parameter_sets,
+        picture_parameter_sets,
+        extension_data,
+    })
+}
+
+fn parse_avcc_parameter_sets(
+    reader: &mut ByteReader<'_>,
+    count: usize,
+    label: &str,
+) -> AvResult<Vec<Vec<u8>>> {
+    let mut parameter_sets = Vec::with_capacity(count);
+    for _ in 0..count {
+        ensure_remaining(reader, 2, format!("MOV/MP4 avcC {label} length"))?;
+        let len = usize::from(reader.read_u16_be()?);
+        if len == 0 {
+            return Err(AvError::invalid_data(format!(
+                "MOV/MP4 avcC {label} parameter set must not be empty"
+            )));
+        }
+        ensure_remaining(reader, len, format!("MOV/MP4 avcC {label} data"))?;
+        parameter_sets.push(reader.read_exact(len)?.to_vec());
+    }
+    Ok(parameter_sets)
 }
 
 fn parse_pasp(payload: &[u8]) -> AvResult<MovPixelAspectRatio> {
@@ -1536,8 +1657,13 @@ fn read_full_box_header(reader: &mut ByteReader<'_>, context: &str) -> AvResult<
     Ok((version, [flags[0], flags[1], flags[2]]))
 }
 
-fn ensure_remaining(reader: &ByteReader<'_>, count: usize, context: &str) -> AvResult<()> {
+fn ensure_remaining(
+    reader: &ByteReader<'_>,
+    count: usize,
+    context: impl AsRef<str>,
+) -> AvResult<()> {
     if reader.remaining() < count {
+        let context = context.as_ref();
         return Err(AvError::new(
             AvErrorKind::EndOfFile,
             format!("{context} box payload is truncated"),
@@ -1976,7 +2102,15 @@ mod tests {
 
     #[test]
     fn parses_visual_sample_entry_codec_parameters() {
-        let child_box = box_(*AVCC_ID, b"\x01\x64\x00\x1f");
+        let avcc = avcc_payload(
+            100,
+            0,
+            31,
+            4,
+            &[b"\x67\x64".as_slice()],
+            &[b"\x68".as_slice()],
+        );
+        let child_box = box_(*AVCC_ID, &avcc);
         let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &child_box);
         let bytes = mp4_with_sample_description_entry(b"avc1", 2, &extra_data);
         let demuxer = MovDemuxer::open(&bytes).unwrap();
@@ -1995,11 +2129,23 @@ mod tests {
         assert_eq!(video.depth(), 24);
         assert_eq!(video.child_boxes().len(), 1);
         assert_eq!(video.child_boxes()[0].box_type(), "avcC");
-        assert_eq!(video.child_boxes()[0].payload(), b"\x01\x64\x00\x1f");
+        assert_eq!(video.child_boxes()[0].payload(), avcc.as_slice());
         assert_eq!(
             video.avc_decoder_configuration_record(),
-            Some(b"\x01\x64\x00\x1f".as_slice())
+            Some(avcc.as_slice())
         );
+        let configuration = video.avc_decoder_configuration().unwrap();
+        assert_eq!(configuration.configuration_version(), 1);
+        assert_eq!(configuration.profile_indication(), 100);
+        assert_eq!(configuration.profile_compatibility(), 0);
+        assert_eq!(configuration.level_indication(), 31);
+        assert_eq!(configuration.nal_length_size(), 4);
+        assert_eq!(
+            configuration.sequence_parameter_sets(),
+            &[b"\x67\x64".to_vec()]
+        );
+        assert_eq!(configuration.picture_parameter_sets(), &[b"\x68".to_vec()]);
+        assert!(configuration.extension_data().is_empty());
         assert_eq!(video.hevc_decoder_configuration_record(), None);
     }
 
@@ -2032,7 +2178,10 @@ mod tests {
         let child_boxes = [
             pasp_box(4, 3),
             colr_nclx_box(1, 13, 6, true),
-            box_(*AVCC_ID, b"\x01\x64\x00\x1f"),
+            box_(
+                *AVCC_ID,
+                &avcc_payload(100, 0, 31, 4, &[b"\x67".as_slice()], &[b"\x68".as_slice()]),
+            ),
         ]
         .concat();
         let extra_data = visual_sample_entry_extra_data(720, 576, "PAL AVC", 24, &child_boxes);
@@ -2078,6 +2227,27 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_avcc = box_(
+            *AVCC_ID,
+            &avcc_payload(100, 0, 31, 4, &[b"".as_slice()], &[b"\x68".as_slice()]),
+        );
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &bad_avcc);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"avc1", 1, &extra_data))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let mut unsupported_avcc =
+            avcc_payload(100, 0, 31, 4, &[b"\x67".as_slice()], &[b"\x68".as_slice()]);
+        unsupported_avcc[0] = 2;
+        let unsupported_avcc = box_(*AVCC_ID, &unsupported_avcc);
+        let extra_data =
+            visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &unsupported_avcc);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"avc1", 1, &extra_data))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
     }
 
     #[test]
@@ -3098,6 +3268,34 @@ mod tests {
         out.extend_from_slice(&depth.to_be_bytes());
         out.extend_from_slice(&u16::MAX.to_be_bytes());
         out.extend_from_slice(child_boxes);
+        out
+    }
+
+    fn avcc_payload(
+        profile_indication: u8,
+        profile_compatibility: u8,
+        level_indication: u8,
+        nal_length_size: u8,
+        sequence_parameter_sets: &[&[u8]],
+        picture_parameter_sets: &[&[u8]],
+    ) -> Vec<u8> {
+        let mut out = vec![
+            1,
+            profile_indication,
+            profile_compatibility,
+            level_indication,
+            0b1111_1100 | (nal_length_size - 1),
+            0b1110_0000 | u8::try_from(sequence_parameter_sets.len()).unwrap(),
+        ];
+        for parameter_set in sequence_parameter_sets {
+            out.extend_from_slice(&u16::try_from(parameter_set.len()).unwrap().to_be_bytes());
+            out.extend_from_slice(parameter_set);
+        }
+        out.push(u8::try_from(picture_parameter_sets.len()).unwrap());
+        for parameter_set in picture_parameter_sets {
+            out.extend_from_slice(&u16::try_from(parameter_set.len()).unwrap().to_be_bytes());
+            out.extend_from_slice(parameter_set);
+        }
         out
     }
 
