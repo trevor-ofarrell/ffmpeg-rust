@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Initial Rust workspace slice is implemented and committed for the FFmpeg 8.1.1 compatibility rewrite. The repository started empty and was initialized as a Git repository during this turn.
+`avutil-byteio` is implemented and verified with endian-aware byte reading/writing plus invalid-input tests. The next priority primitive is `avutil-bitreader`.
 
 ## Last Successful Commands
 
@@ -14,20 +14,26 @@ Initial Rust workspace slice is implemented and committed for the FFmpeg 8.1.1 c
 - `cargo run -p fate-runner -- list`
 - `cargo run -p oracle -- --help`
 - `cargo run -p xtask -- quick`
+- `cargo fmt --all`
+- `cargo test -p avutil byteio`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo test --workspace --all-features`
 
 ## Last Failing Commands
 
 - `git status --short` before initialization failed because the directory was not a Git repository.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on a test literal grouping in `byteio.rs`; the literal was normalized and clippy passed on rerun.
 
 ## Current Focus Component
 
-`avutil-byteio` is the next highest-priority incomplete component after this initial slice.
+`avutil-bitreader` is the next highest-priority incomplete component after `avutil-byteio`.
 
 ## Next 3 Concrete Actions
 
-1. Run formatting, unit tests, CLI integration tests, and clippy for the workspace.
-2. Fix any compile, test, or lint failures from the initial slice.
-3. Implement `avutil-byteio` with endian-aware read/write tests.
+1. Run `cargo test -p avutil byteio`.
+2. Run formatting, workspace tests, and clippy.
+3. Implement `avutil-bitreader` with bounded bit reads and invalid-input tests.
 
 ## Known Blockers
 
@@ -37,4 +43,4 @@ Initial Rust workspace slice is implemented and committed for the FFmpeg 8.1.1 c
 
 ## Summary Of Latest Commit Or Changes
 
-Committed initial workspace slice: `Initialize FFmpeg rewrite workspace`.
+Latest committed slice: add `avutil-byteio` endian helpers.

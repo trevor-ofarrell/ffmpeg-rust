@@ -1,5 +1,6 @@
 //! Shared primitives for the FFmpeg-compatible Rust implementation.
 
+pub mod byteio;
 pub mod error;
 pub mod frame;
 pub mod logging;
@@ -7,6 +8,7 @@ pub mod packet;
 pub mod rational;
 pub mod timebase;
 
+pub use byteio::{ByteReader, ByteWriter};
 pub use error::{AvError, AvErrorKind, AvResult};
 pub use frame::{AudioFrame, Frame, FrameData, VideoFrame};
 pub use logging::{LogLevel, LogRecord, Logger};

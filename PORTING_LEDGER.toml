@@ -172,15 +172,22 @@ id = "avutil-byteio"
 kind = "utility"
 ffmpeg_name = "AVIO byte helpers"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 1
 oracle_command = ""
-rust_command = ""
-unit_tests = []
+rust_command = "cargo test -p avutil byteio"
+unit_tests = [
+  "byteio::tests::reads_unsigned_integers_in_both_endiannesses",
+  "byteio::tests::reads_signed_integers_in_both_endiannesses",
+  "byteio::tests::reports_typed_eof_without_advancing_past_end",
+  "byteio::tests::skip_and_exact_reads_advance_position",
+  "byteio::tests::writes_unsigned_integers_in_both_endiannesses",
+  "byteio::tests::writer_rejects_values_too_wide_for_u24",
+]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next highest-priority primitive."
+notes = "Endian-aware byte reader/writer implemented for common 8/16/24/32/64-bit integer operations. Fuzz coverage is still pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]
@@ -214,4 +221,3 @@ fate_tests = []
 fuzz_targets = []
 notes = ""
 blocked_reason = ""
-
