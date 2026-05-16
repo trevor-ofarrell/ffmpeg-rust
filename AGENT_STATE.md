@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, records generic `stsd` codec parameters, parses VisualSampleEntry fields for known video sample entries, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, and sample description indexes other than 1, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries including `avcC` configuration payload access, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, and malformed VisualSampleEntry child boxes, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
 
 ## Last Successful Commands
 
@@ -24,6 +24,12 @@
 - `cargo test -p avformat mov::tests`
 - `cargo fmt --all`
 - `cargo test -p avformat mov::tests`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
 - `cargo fmt --all`
 - `cargo test -p avformat mov::tests`
 - `cargo test --workspace --all-features`
@@ -188,11 +194,11 @@
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current focus; the next slice is codec-specific child-box parsing and metadata atom boundary coverage.
+`avformat-mov-demuxer` remains the current focus; the next slice is additional codec-specific child-box parsing and metadata atom boundary coverage.
 
 ## Next 3 Concrete Actions
 
-1. Parse codec-specific child boxes such as `avcC` or `hvcC` instead of leaving them only in raw sample-entry extra data.
+1. Parse additional codec-specific child boxes such as `hvcC` instead of leaving them only in raw sample-entry extra data.
 2. Add MOV metadata atom boundary coverage.
 3. Add MOV probe/registry integration coverage.
 
@@ -204,4 +210,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: parse VisualSampleEntry fields for known MOV/MP4 video sample entries and keep unknown sample-entry types on the generic codec-parameter path.
+Latest slice: parse VisualSampleEntry child boxes for known MOV/MP4 video sample entries, expose `avcC` configuration payloads, and reject malformed child-box boundaries.

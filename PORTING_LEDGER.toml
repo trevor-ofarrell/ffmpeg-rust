@@ -795,6 +795,7 @@ unit_tests = [
   "mov::tests::reads_packets_from_simple_sample_table",
   "mov::tests::parses_sample_description_codec_parameters",
   "mov::tests::parses_visual_sample_entry_codec_parameters",
+  "mov::tests::rejects_malformed_visual_sample_entry_child_box",
   "mov::tests::rejects_sample_description_indexes_other_than_one",
   "mov::tests::rejects_multiple_sample_description_entries_explicitly",
   "mov::tests::reads_packets_from_co64_offsets",
@@ -808,5 +809,5 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; parses VisualSampleEntry width, height, frame count, compressor name, and depth for known video sample entries; explicitly rejects fragmented mvex/moof layouts, edit-list edts boxes, multiple populated tracks, multiple stsd sample entries, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables and truncated media data. Packet extraction for multiple populated tracks, actual fragment parsing, edit-list timeline application, codec-specific child-box parsing such as avcC/hvcC, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; parses VisualSampleEntry width, height, frame count, compressor name, depth, child boxes, and avcC configuration payloads for known video sample entries; explicitly rejects fragmented mvex/moof layouts, edit-list edts boxes, multiple populated tracks, multiple stsd sample entries, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables, malformed VisualSampleEntry child boxes, and truncated media data. Packet extraction for multiple populated tracks, actual fragment parsing, edit-list timeline application, additional codec-specific child-box handling such as hvcC, CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""

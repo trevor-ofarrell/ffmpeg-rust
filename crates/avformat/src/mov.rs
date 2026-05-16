@@ -21,6 +21,7 @@ const STSS_ID: &[u8; 4] = b"stss";
 const STCO_ID: &[u8; 4] = b"stco";
 const CO64_ID: &[u8; 4] = b"co64";
 const MDAT_ID: &[u8; 4] = b"mdat";
+const AVCC_ID: &[u8; 4] = b"avcC";
 const MAX_MOV_SAMPLE_COUNT: usize = 1_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,6 +104,7 @@ pub struct MovVideoSampleEntry {
     frame_count: u16,
     compressor_name: String,
     depth: u16,
+    child_boxes: Vec<MovSampleEntryChildBox>,
 }
 
 impl MovVideoSampleEntry {
@@ -124,6 +126,33 @@ impl MovVideoSampleEntry {
 
     pub fn depth(&self) -> u16 {
         self.depth
+    }
+
+    pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.child_boxes
+    }
+
+    pub fn avc_decoder_configuration_record(&self) -> Option<&[u8]> {
+        self.child_boxes
+            .iter()
+            .find(|child| child.box_type.as_bytes() == AVCC_ID)
+            .map(MovSampleEntryChildBox::payload)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovSampleEntryChildBox {
+    box_type: String,
+    payload: Vec<u8>,
+}
+
+impl MovSampleEntryChildBox {
+    pub fn box_type(&self) -> &str {
+        &self.box_type
+    }
+
+    pub fn payload(&self) -> &[u8] {
+        &self.payload
     }
 }
 
@@ -598,13 +627,37 @@ fn parse_visual_sample_entry(extra_data: &[u8]) -> AvResult<MovVideoSampleEntry>
     let compressor_name = parse_pascal_string_31(reader.read_exact(32)?);
     let depth = reader.read_u16_be()?;
     reader.skip(2)?;
+    let child_boxes = parse_sample_entry_child_boxes(
+        extra_data,
+        reader.position(),
+        extra_data.len(),
+        "MOV/MP4 VisualSampleEntry children",
+    )?;
     Ok(MovVideoSampleEntry {
         width,
         height,
         frame_count,
         compressor_name,
         depth,
+        child_boxes,
     })
+}
+
+fn parse_sample_entry_child_boxes(
+    input: &[u8],
+    start: usize,
+    end: usize,
+    context: &str,
+) -> AvResult<Vec<MovSampleEntryChildBox>> {
+    read_box_headers(input, start, end, context)?
+        .into_iter()
+        .map(|header| {
+            Ok(MovSampleEntryChildBox {
+                box_type: fourcc_to_string(header.box_type),
+                payload: header.payload(input).to_vec(),
+            })
+        })
+        .collect()
 }
 
 fn parse_pascal_string_31(input: &[u8]) -> String {
@@ -1497,6 +1550,23 @@ mod tests {
         assert_eq!(video.frame_count(), 1);
         assert_eq!(video.compressor_name(), "Rust AVC");
         assert_eq!(video.depth(), 24);
+        assert_eq!(video.child_boxes().len(), 1);
+        assert_eq!(video.child_boxes()[0].box_type(), "avcC");
+        assert_eq!(video.child_boxes()[0].payload(), b"\x01\x64\x00\x1f");
+        assert_eq!(
+            video.avc_decoder_configuration_record(),
+            Some(b"\x01\x64\x00\x1f".as_slice())
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_visual_sample_entry_child_box() {
+        let child_box = box_with_declared_size(*AVCC_ID, 12, b"\x01");
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &child_box);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"avc1", 1, &extra_data))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
     }
 
     #[test]
@@ -2667,6 +2737,14 @@ mod tests {
         let size = u32::try_from(8 + payload.len()).unwrap();
         let mut out = ByteWriter::new();
         out.write_u32_be(size);
+        out.write_all(&kind);
+        out.write_all(payload);
+        out.into_inner()
+    }
+
+    fn box_with_declared_size(kind: [u8; 4], declared_size: u32, payload: &[u8]) -> Vec<u8> {
+        let mut out = ByteWriter::new();
+        out.write_u32_be(declared_size);
         out.write_all(&kind);
         out.write_all(payload);
         out.into_inner()
