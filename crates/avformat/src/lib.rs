@@ -22,7 +22,8 @@ pub use hash_muxer::{HashAlgorithm, HashMuxer, HashMuxerReport};
 pub use image2::{Image2Demuxer, Image2Entry, Image2Frame, Image2Info, Image2Muxer, Image2Pattern};
 pub use mov::{
     mov_probe_descriptor, register_mov_probe, MovAvcDecoderConfiguration, MovColorInformation,
-    MovDemuxer, MovInfo, MovPixelAspectRatio, MovTrackInfo,
+    MovDemuxer, MovHevcDecoderConfiguration, MovHevcDecoderConfigurationArray, MovInfo,
+    MovPixelAspectRatio, MovTrackInfo,
 };
 pub use null_muxer::{NullMuxer, NullMuxerReport, NullStreamStats};
 pub use pcm::{PcmS16leDemuxer, PcmS16leInfo, PcmS16leMuxer, PcmS16leMuxerInfo};

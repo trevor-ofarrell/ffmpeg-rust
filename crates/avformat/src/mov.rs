@@ -132,7 +132,7 @@ impl MovCodecParameters {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MovSampleEntryDetails {
     Generic,
-    Video(MovVideoSampleEntry),
+    Video(Box<MovVideoSampleEntry>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +143,7 @@ pub struct MovVideoSampleEntry {
     compressor_name: String,
     depth: u16,
     avc_decoder_configuration: Option<MovAvcDecoderConfiguration>,
+    hevc_decoder_configuration: Option<MovHevcDecoderConfiguration>,
     pixel_aspect_ratio: Option<MovPixelAspectRatio>,
     color_information: Option<MovColorInformation>,
     child_boxes: Vec<MovSampleEntryChildBox>,
@@ -171,6 +172,10 @@ impl MovVideoSampleEntry {
 
     pub fn avc_decoder_configuration(&self) -> Option<&MovAvcDecoderConfiguration> {
         self.avc_decoder_configuration.as_ref()
+    }
+
+    pub fn hevc_decoder_configuration(&self) -> Option<&MovHevcDecoderConfiguration> {
+        self.hevc_decoder_configuration.as_ref()
     }
 
     pub fn pixel_aspect_ratio(&self) -> Option<&MovPixelAspectRatio> {
@@ -244,6 +249,123 @@ impl MovAvcDecoderConfiguration {
 
     pub fn extension_data(&self) -> &[u8] {
         &self.extension_data
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovHevcDecoderConfiguration {
+    configuration_version: u8,
+    general_profile_space: u8,
+    general_tier_flag: bool,
+    general_profile_idc: u8,
+    general_profile_compatibility_flags: u32,
+    general_constraint_indicator_flags: u64,
+    general_level_idc: u8,
+    min_spatial_segmentation_idc: u16,
+    parallelism_type: u8,
+    chroma_format: u8,
+    bit_depth_luma: u8,
+    bit_depth_chroma: u8,
+    average_frame_rate: u16,
+    constant_frame_rate: u8,
+    num_temporal_layers: u8,
+    temporal_id_nested: bool,
+    nal_length_size: u8,
+    arrays: Vec<MovHevcDecoderConfigurationArray>,
+}
+
+impl MovHevcDecoderConfiguration {
+    pub fn configuration_version(&self) -> u8 {
+        self.configuration_version
+    }
+
+    pub fn general_profile_space(&self) -> u8 {
+        self.general_profile_space
+    }
+
+    pub fn general_tier_flag(&self) -> bool {
+        self.general_tier_flag
+    }
+
+    pub fn general_profile_idc(&self) -> u8 {
+        self.general_profile_idc
+    }
+
+    pub fn general_profile_compatibility_flags(&self) -> u32 {
+        self.general_profile_compatibility_flags
+    }
+
+    pub fn general_constraint_indicator_flags(&self) -> u64 {
+        self.general_constraint_indicator_flags
+    }
+
+    pub fn general_level_idc(&self) -> u8 {
+        self.general_level_idc
+    }
+
+    pub fn min_spatial_segmentation_idc(&self) -> u16 {
+        self.min_spatial_segmentation_idc
+    }
+
+    pub fn parallelism_type(&self) -> u8 {
+        self.parallelism_type
+    }
+
+    pub fn chroma_format(&self) -> u8 {
+        self.chroma_format
+    }
+
+    pub fn bit_depth_luma(&self) -> u8 {
+        self.bit_depth_luma
+    }
+
+    pub fn bit_depth_chroma(&self) -> u8 {
+        self.bit_depth_chroma
+    }
+
+    pub fn average_frame_rate(&self) -> u16 {
+        self.average_frame_rate
+    }
+
+    pub fn constant_frame_rate(&self) -> u8 {
+        self.constant_frame_rate
+    }
+
+    pub fn num_temporal_layers(&self) -> u8 {
+        self.num_temporal_layers
+    }
+
+    pub fn temporal_id_nested(&self) -> bool {
+        self.temporal_id_nested
+    }
+
+    pub fn nal_length_size(&self) -> u8 {
+        self.nal_length_size
+    }
+
+    pub fn arrays(&self) -> &[MovHevcDecoderConfigurationArray] {
+        &self.arrays
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovHevcDecoderConfigurationArray {
+    array_completeness: bool,
+    nal_unit_type: u8,
+    nal_units: Vec<Vec<u8>>,
+}
+
+impl MovHevcDecoderConfigurationArray {
+    pub fn array_completeness(&self) -> bool {
+        self.array_completeness
+    }
+
+    pub fn nal_unit_type(&self) -> u8 {
+        self.nal_unit_type
+    }
+
+    pub fn nal_units(&self) -> &[Vec<u8>] {
+        &self.nal_units
     }
 }
 
@@ -908,9 +1030,9 @@ fn parse_sample_entry_details(
     extra_data: &[u8],
 ) -> AvResult<MovSampleEntryDetails> {
     match codec_tag.as_bytes() {
-        b"avc1" | b"hvc1" | b"hev1" | b"mp4v" => {
-            parse_visual_sample_entry(extra_data).map(MovSampleEntryDetails::Video)
-        }
+        b"avc1" | b"hvc1" | b"hev1" | b"mp4v" => parse_visual_sample_entry(extra_data)
+            .map(Box::new)
+            .map(MovSampleEntryDetails::Video),
         _ => Ok(MovSampleEntryDetails::Generic),
     }
 }
@@ -933,6 +1055,7 @@ fn parse_visual_sample_entry(extra_data: &[u8]) -> AvResult<MovVideoSampleEntry>
         "MOV/MP4 VisualSampleEntry children",
     )?;
     let avc_decoder_configuration = parse_visual_sample_entry_avc_configuration(&child_boxes)?;
+    let hevc_decoder_configuration = parse_visual_sample_entry_hevc_configuration(&child_boxes)?;
     let pixel_aspect_ratio = parse_visual_sample_entry_pixel_aspect_ratio(&child_boxes)?;
     let color_information = parse_visual_sample_entry_color_information(&child_boxes)?;
     Ok(MovVideoSampleEntry {
@@ -942,6 +1065,7 @@ fn parse_visual_sample_entry(extra_data: &[u8]) -> AvResult<MovVideoSampleEntry>
         compressor_name,
         depth,
         avc_decoder_configuration,
+        hevc_decoder_configuration,
         pixel_aspect_ratio,
         color_information,
         child_boxes,
@@ -972,6 +1096,16 @@ fn parse_visual_sample_entry_avc_configuration(
         .iter()
         .find(|child| child.box_type.as_bytes() == AVCC_ID)
         .map(|child| parse_avcc(child.payload()))
+        .transpose()
+}
+
+fn parse_visual_sample_entry_hevc_configuration(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovHevcDecoderConfiguration>> {
+    child_boxes
+        .iter()
+        .find(|child| child.box_type.as_bytes() == HVCC_ID)
+        .map(|child| parse_hvcc(child.payload()))
         .transpose()
 }
 
@@ -1052,6 +1186,92 @@ fn parse_avcc_parameter_sets(
         parameter_sets.push(reader.read_exact(len)?.to_vec());
     }
     Ok(parameter_sets)
+}
+
+fn parse_hvcc(payload: &[u8]) -> AvResult<MovHevcDecoderConfiguration> {
+    let mut reader = ByteReader::new(payload);
+    ensure_remaining(&reader, 23, "MOV/MP4 hvcC")?;
+    let configuration_version = reader.read_u8()?;
+    if configuration_version != 1 {
+        return Err(AvError::unsupported(
+            "MOV/MP4 hvcC configurationVersion values other than 1 are not implemented",
+        ));
+    }
+
+    let profile = reader.read_u8()?;
+    let general_profile_space = profile >> 6;
+    let general_tier_flag = profile & 0x20 != 0;
+    let general_profile_idc = profile & 0x1f;
+    let general_profile_compatibility_flags = reader.read_u32_be()?;
+    let general_constraint_indicator_flags = read_u48_be(&mut reader)?;
+    let general_level_idc = reader.read_u8()?;
+    let min_spatial_segmentation_idc = reader.read_u16_be()? & 0x0fff;
+    let parallelism_type = reader.read_u8()? & 0x03;
+    let chroma_format = reader.read_u8()? & 0x03;
+    let bit_depth_luma = (reader.read_u8()? & 0x07) + 8;
+    let bit_depth_chroma = (reader.read_u8()? & 0x07) + 8;
+    let average_frame_rate = reader.read_u16_be()?;
+    let frame_packing = reader.read_u8()?;
+    let constant_frame_rate = frame_packing >> 6;
+    let num_temporal_layers = (frame_packing >> 3) & 0x07;
+    let temporal_id_nested = frame_packing & 0x04 != 0;
+    let nal_length_size = (frame_packing & 0x03) + 1;
+    let array_count = usize::from(reader.read_u8()?);
+    let arrays = parse_hvcc_arrays(&mut reader, array_count)?;
+    ensure_box_consumed(&reader, "MOV/MP4 hvcC")?;
+
+    Ok(MovHevcDecoderConfiguration {
+        configuration_version,
+        general_profile_space,
+        general_tier_flag,
+        general_profile_idc,
+        general_profile_compatibility_flags,
+        general_constraint_indicator_flags,
+        general_level_idc,
+        min_spatial_segmentation_idc,
+        parallelism_type,
+        chroma_format,
+        bit_depth_luma,
+        bit_depth_chroma,
+        average_frame_rate,
+        constant_frame_rate,
+        num_temporal_layers,
+        temporal_id_nested,
+        nal_length_size,
+        arrays,
+    })
+}
+
+fn parse_hvcc_arrays(
+    reader: &mut ByteReader<'_>,
+    count: usize,
+) -> AvResult<Vec<MovHevcDecoderConfigurationArray>> {
+    let mut arrays = Vec::with_capacity(count);
+    for _ in 0..count {
+        ensure_remaining(reader, 3, "MOV/MP4 hvcC NAL unit array header")?;
+        let header = reader.read_u8()?;
+        let array_completeness = header & 0x80 != 0;
+        let nal_unit_type = header & 0x3f;
+        let nal_unit_count = usize::from(reader.read_u16_be()?);
+        let mut nal_units = Vec::with_capacity(nal_unit_count);
+        for _ in 0..nal_unit_count {
+            ensure_remaining(reader, 2, "MOV/MP4 hvcC NAL unit length")?;
+            let len = usize::from(reader.read_u16_be()?);
+            if len == 0 {
+                return Err(AvError::invalid_data(
+                    "MOV/MP4 hvcC NAL units must not be empty",
+                ));
+            }
+            ensure_remaining(reader, len, "MOV/MP4 hvcC NAL unit data")?;
+            nal_units.push(reader.read_exact(len)?.to_vec());
+        }
+        arrays.push(MovHevcDecoderConfigurationArray {
+            array_completeness,
+            nal_unit_type,
+            nal_units,
+        });
+    }
+    Ok(arrays)
 }
 
 fn parse_pasp(payload: &[u8]) -> AvResult<MovPixelAspectRatio> {
@@ -1751,6 +1971,13 @@ fn read_fourcc(reader: &mut ByteReader<'_>) -> AvResult<[u8; 4]> {
     Ok([bytes[0], bytes[1], bytes[2], bytes[3]])
 }
 
+fn read_u48_be(reader: &mut ByteReader<'_>) -> AvResult<u64> {
+    let bytes = reader.read_exact(6)?;
+    Ok(bytes
+        .iter()
+        .fold(0_u64, |value, byte| (value << 8) | u64::from(*byte)))
+}
+
 fn fourcc_to_string(fourcc: [u8; 4]) -> String {
     String::from_utf8_lossy(&fourcc).into_owned()
 }
@@ -2151,7 +2378,12 @@ mod tests {
 
     #[test]
     fn parses_hevc_sample_entry_codec_parameters() {
-        let child_box = box_(*HVCC_ID, b"\x01\x01\x60\x00\x00\x00\x90");
+        let hvcc = hvcc_payload(
+            &[b"\x40\x01".as_slice()],
+            &[b"\x42\x01".as_slice()],
+            &[b"\x44".as_slice()],
+        );
+        let child_box = box_(*HVCC_ID, &hvcc);
         let extra_data = visual_sample_entry_extra_data(1920, 1080, "Rust HEVC", 24, &child_box);
         let bytes = mp4_with_sample_description_entry(b"hvc1", 1, &extra_data);
         let demuxer = MovDemuxer::open(&bytes).unwrap();
@@ -2168,9 +2400,42 @@ mod tests {
         assert_eq!(video.child_boxes()[0].box_type(), "hvcC");
         assert_eq!(
             video.hevc_decoder_configuration_record(),
-            Some(b"\x01\x01\x60\x00\x00\x00\x90".as_slice())
+            Some(hvcc.as_slice())
         );
         assert_eq!(video.avc_decoder_configuration_record(), None);
+        assert!(video.avc_decoder_configuration().is_none());
+
+        let configuration = video.hevc_decoder_configuration().unwrap();
+        assert_eq!(configuration.configuration_version(), 1);
+        assert_eq!(configuration.general_profile_space(), 0);
+        assert!(!configuration.general_tier_flag());
+        assert_eq!(configuration.general_profile_idc(), 1);
+        assert_eq!(
+            configuration.general_profile_compatibility_flags(),
+            0x6000_0000
+        );
+        assert_eq!(configuration.general_constraint_indicator_flags(), 0x90);
+        assert_eq!(configuration.general_level_idc(), 120);
+        assert_eq!(configuration.min_spatial_segmentation_idc(), 0);
+        assert_eq!(configuration.parallelism_type(), 0);
+        assert_eq!(configuration.chroma_format(), 1);
+        assert_eq!(configuration.bit_depth_luma(), 8);
+        assert_eq!(configuration.bit_depth_chroma(), 8);
+        assert_eq!(configuration.average_frame_rate(), 0);
+        assert_eq!(configuration.constant_frame_rate(), 0);
+        assert_eq!(configuration.num_temporal_layers(), 1);
+        assert!(configuration.temporal_id_nested());
+        assert_eq!(configuration.nal_length_size(), 4);
+
+        let arrays = configuration.arrays();
+        assert_eq!(arrays.len(), 3);
+        assert!(arrays[0].array_completeness());
+        assert_eq!(arrays[0].nal_unit_type(), 32);
+        assert_eq!(arrays[0].nal_units(), &[b"\x40\x01".to_vec()]);
+        assert_eq!(arrays[1].nal_unit_type(), 33);
+        assert_eq!(arrays[1].nal_units(), &[b"\x42\x01".to_vec()]);
+        assert_eq!(arrays[2].nal_unit_type(), 34);
+        assert_eq!(arrays[2].nal_units(), &[b"\x44".to_vec()]);
     }
 
     #[test]
@@ -2245,6 +2510,41 @@ mod tests {
         let extra_data =
             visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &unsupported_avcc);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"avc1", 1, &extra_data))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+
+        let bad_hvcc = box_(*HVCC_ID, b"\x01\x01");
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust HEVC", 24, &bad_hvcc);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"hvc1", 1, &extra_data))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_hvcc = box_(
+            *HVCC_ID,
+            &hvcc_payload(
+                &[b"".as_slice()],
+                &[b"\x42".as_slice()],
+                &[b"\x44".as_slice()],
+            ),
+        );
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust HEVC", 24, &bad_hvcc);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"hvc1", 1, &extra_data))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let mut unsupported_hvcc = hvcc_payload(
+            &[b"\x40".as_slice()],
+            &[b"\x42".as_slice()],
+            &[b"\x44".as_slice()],
+        );
+        unsupported_hvcc[0] = 2;
+        let unsupported_hvcc = box_(*HVCC_ID, &unsupported_hvcc);
+        let extra_data =
+            visual_sample_entry_extra_data(640, 360, "Rust HEVC", 24, &unsupported_hvcc);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"hvc1", 1, &extra_data))
             .unwrap_err();
 
         assert_eq!(err.kind(), AvErrorKind::Unsupported);
@@ -3295,6 +3595,39 @@ mod tests {
         for parameter_set in picture_parameter_sets {
             out.extend_from_slice(&u16::try_from(parameter_set.len()).unwrap().to_be_bytes());
             out.extend_from_slice(parameter_set);
+        }
+        out
+    }
+
+    fn hvcc_payload(
+        video_parameter_sets: &[&[u8]],
+        sequence_parameter_sets: &[&[u8]],
+        picture_parameter_sets: &[&[u8]],
+    ) -> Vec<u8> {
+        let mut out = vec![1, 1];
+        out.extend_from_slice(&0x6000_0000_u32.to_be_bytes());
+        out.extend_from_slice(&0x90_u64.to_be_bytes()[2..]);
+        out.push(120);
+        out.extend_from_slice(&0xf000_u16.to_be_bytes());
+        out.push(0xfc);
+        out.push(0xfd);
+        out.push(0xf8);
+        out.push(0xf8);
+        out.extend_from_slice(&0_u16.to_be_bytes());
+        out.push(0x0f);
+        out.push(3);
+
+        for (nal_unit_type, nal_units) in [
+            (32_u8, video_parameter_sets),
+            (33_u8, sequence_parameter_sets),
+            (34_u8, picture_parameter_sets),
+        ] {
+            out.push(0x80 | nal_unit_type);
+            out.extend_from_slice(&u16::try_from(nal_units.len()).unwrap().to_be_bytes());
+            for nal_unit in nal_units {
+                out.extend_from_slice(&u16::try_from(nal_unit.len()).unwrap().to_be_bytes());
+                out.extend_from_slice(nal_unit);
+            }
         }
         out
     }
