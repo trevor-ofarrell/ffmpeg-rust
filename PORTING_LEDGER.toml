@@ -524,13 +524,34 @@ id = "avformat-wav-demuxer"
 kind = "demuxer"
 ffmpeg_name = "wav"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -i <input.wav> -f framecrc -"
+rust_command = "cargo test -p avformat wav"
+unit_tests = [
+  "wav::tests::parses_pcm_s16le_wav_and_returns_single_packet",
+  "wav::tests::skips_unknown_chunks_and_odd_chunk_padding",
+  "wav::tests::rejects_missing_or_invalid_required_chunks",
+  "wav::tests::validates_pcm_s16le_format_consistency",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial RIFF/WAVE demuxer parses PCM s16le fmt/data chunks, skips padded unknown chunks, validates stream parameters, and emits one data packet. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, packet chunking, probing, CLI wiring, differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-wav-muxer"
+kind = "muxer"
+ffmpeg_name = "wav"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -f s16le -ar <rate> -ac <channels> -i <input> -f wav <output.wav>"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple container target after rawvideo and PCM primitives."
+notes = "Next simple container target after the initial WAV demuxer."
 blocked_reason = ""

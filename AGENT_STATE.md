@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avcodec-pcm-s16le` is implemented and verified for packed little-endian signed 16-bit PCM packet payloads with sample-rate/channel validation, whole sample-frame validation, zero-sample handling, and PTS propagation. The next priority component is `avformat-wav-demuxer`.
+`avformat-wav-demuxer` is implemented and verified for a narrow RIFF/WAVE PCM s16le path. It validates the container header, `fmt ` and `data` chunks, RIFF word padding, stream fields, and whole sample-frame payloads before emitting the data chunk as one stream-0 packet. The next priority component is `avformat-wav-muxer`.
 
 ## Last Successful Commands
 
@@ -35,6 +35,11 @@
 - `cargo test -p avformat framecrc_muxer`
 - `cargo test -p avcodec rawvideo`
 - `cargo test -p avcodec pcm`
+- `cargo test -p avformat wav`
+- `cargo fmt --all`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
 
 ## Last Failing Commands
 
@@ -45,13 +50,13 @@
 
 ## Current Focus Component
 
-`avformat-wav-demuxer` is the next highest-priority incomplete component after `avcodec-pcm-s16le`.
+`avformat-wav-muxer` is the next highest-priority incomplete component after the initial WAV demuxer.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avcodec pcm`.
-2. Run formatting, workspace tests, and clippy.
-3. Add the first WAV demuxer primitive.
+1. Add an internal WAV PCM s16le muxer that writes a valid RIFF/WAVE header and packet payload.
+2. Add unit tests for valid output, header sizing, finalization behavior, and invalid stream parameters.
+3. Update the ledger, docs, and state after the muxer slice passes focused and workspace checks.
 
 ## Known Blockers
 
@@ -61,4 +66,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avcodec-pcm-s16le` packed PCM decoder.
+Latest slice: add `avformat-wav-demuxer` for RIFF/WAVE PCM s16le packet extraction with unit tests and compatibility documentation.
