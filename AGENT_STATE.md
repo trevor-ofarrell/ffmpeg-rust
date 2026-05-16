@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, validates `udta/meta/ilst` metadata atom boundaries without extracting metadata values, registers a hand-written MOV/MP4 `ftyp`/extension/MIME probe descriptor, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries including `avcC` and `hvcC` configuration payload access, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, and malformed VisualSampleEntry child boxes, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, extracts common movie-level and track-level `udta/meta/ilst` metadata values from `data` atoms for UTF-8 text fields and track/disc number pairs, registers a hand-written MOV/MP4 `ftyp`/extension/MIME probe descriptor, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries including `avcC` and `hvcC` configuration payload access, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, and malformed VisualSampleEntry child boxes, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
 
 ## Last Successful Commands
 
@@ -199,6 +199,12 @@
 - `cargo test --workspace --all-features`
 - `cargo fmt --all -- --check`
 - `cargo run -p fate-runner -- list`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo run -p fate-runner -- list`
 
 ## Last Failing Commands
 
@@ -215,12 +221,12 @@
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current focus; the next slice is metadata value extraction for common `udta/meta/ilst` entries.
+`avformat-mov-demuxer` remains the current focus; the next slice is additional sample-entry child boxes such as `pasp`/`colr` or deeper `avcC`/`hvcC` semantic validation.
 
 ## Next 3 Concrete Actions
 
-1. Add metadata value extraction for common `udta/meta/ilst` entries.
-2. Add additional sample-entry child boxes such as `pasp`/`colr` or deeper `avcC`/`hvcC` semantic validation.
+1. Add additional sample-entry child boxes such as `pasp`/`colr` or deeper `avcC`/`hvcC` semantic validation.
+2. Add remaining MOV metadata value classes such as UTF-16 text, genre indexes, integer/boolean atoms, freeform atoms, or cover art.
 3. Add CLI wiring for MOV probing or demuxer selection once the command execution path exists.
 
 ## Known Blockers
@@ -231,4 +237,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add offset-signature probe support and register a MOV/MP4 probe descriptor for `ftyp`, common extensions, and common MIME types.
+Latest slice: extract common MOV `udta/meta/ilst` metadata values into movie-level and track-level dictionaries for UTF-8 text fields and track/disc number pairs.
