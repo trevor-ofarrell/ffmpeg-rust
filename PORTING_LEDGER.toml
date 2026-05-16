@@ -440,6 +440,26 @@ notes = "Initial ffmpeg-rs command execution path supports exactly one local see
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffmpeg-wav-framecrc-null"
+kind = "cli"
+ffmpeg_name = "ffmpeg WAV to framecrc/null"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -i <input.wav> -f framecrc -; ffmpeg -i <input.wav> -f null -"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_wav_to_framecrc_stdout",
+  "ffmpeg::tests::runs_explicit_wav_input_format_to_null",
+  "ffmpeg::tests::rejects_unimplemented_input_format_option",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffmpeg-rs command execution now supports exactly one local seekable PCM s16le RIFF/WAVE input and one stdout pipe output with explicit -f null or -f framecrc. It detects WAV by RIFF/WAVE signature or .wav extension, accepts explicit -f wav/-f wave, uses the Rust WAV demuxer and Rust null/framecrc muxers, and keeps raw s16le rejected until that demuxer is deliberately wired. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
 id = "avformat-avio"
 kind = "api"
 ffmpeg_name = "AVIO-like I/O"

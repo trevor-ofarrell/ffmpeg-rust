@@ -3,8 +3,10 @@ use crate::{
 };
 use avformat::{
     register_mov_probe, FrameCrcMuxer, MovDemuxer, NullMuxer, ProbeRegistry, ProbeRequest,
+    WavDemuxer,
 };
-use std::{fmt, fs};
+use avutil::Packet;
+use std::{fmt, fs, path::Path};
 
 const MOV_FORMAT_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
 
@@ -138,6 +140,21 @@ impl OutputMuxer {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputFormat {
+    Mov,
+    Wav,
+}
+
+impl InputFormat {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Mov => "MOV/MP4",
+            Self::Wav => "WAV",
+        }
+    }
+}
+
 pub fn run_ffmpeg_tool(args: &[String]) -> i32 {
     match ffmpeg_output(args) {
         Ok(output) => {
@@ -186,7 +203,6 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
 
     let input = &plan.inputs()[0];
     let output = &plan.outputs()[0];
-    validate_input_options(input)?;
     let output_muxer = parse_output_muxer(output)?;
     validate_output_options(output)?;
     validate_stdout_output(output)?;
@@ -194,14 +210,29 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
     let input_path = local_input_path(input)?;
     let bytes = fs::read(input_path)
         .map_err(|err| FfmpegError::io(format!("failed to read `{input_path}`: {err}")))?;
-    validate_mov_probe(input_path, &bytes)?;
-    let mut demuxer = MovDemuxer::open(&bytes).map_err(|err| {
-        FfmpegError::invalid_data(format!("failed to parse MOV/MP4 input: {err}"))
-    })?;
+    let input_format = detect_input_format(input, input_path, &bytes)?;
 
-    match output_muxer {
-        OutputMuxer::Null => run_null_muxer(&mut demuxer),
-        OutputMuxer::FrameCrc => run_framecrc_muxer(&mut demuxer),
+    match input_format {
+        InputFormat::Mov => {
+            let mut demuxer = MovDemuxer::open(&bytes).map_err(|err| {
+                FfmpegError::invalid_data(format!("failed to parse MOV/MP4 input: {err}"))
+            })?;
+            run_output_muxer(output_muxer, || {
+                demuxer.read_packet().map_err(|err| {
+                    FfmpegError::invalid_data(format!("failed to read MOV/MP4 packet: {err}"))
+                })
+            })
+        }
+        InputFormat::Wav => {
+            let mut demuxer = WavDemuxer::open(&bytes).map_err(|err| {
+                FfmpegError::invalid_data(format!("failed to parse WAV input: {err}"))
+            })?;
+            run_output_muxer(output_muxer, || {
+                demuxer.read_packet().map_err(|err| {
+                    FfmpegError::invalid_data(format!("failed to read WAV packet: {err}"))
+                })
+            })
+        }
     }
 }
 
@@ -232,7 +263,29 @@ fn validate_stdout_output(output: &PlannedFile) -> Result<(), FfmpegError> {
     }
 }
 
-fn validate_input_options(input: &PlannedFile) -> Result<(), FfmpegError> {
+fn detect_input_format(
+    input: &PlannedFile,
+    path: &str,
+    bytes: &[u8],
+) -> Result<InputFormat, FfmpegError> {
+    let explicit = explicit_input_format(input)?;
+    if let Some(format) = explicit {
+        validate_input_signature(format, path, bytes)?;
+        return Ok(format);
+    }
+
+    if is_wav_like(path, bytes) {
+        return Ok(InputFormat::Wav);
+    }
+
+    if is_mov_like(path, bytes)? {
+        return Ok(InputFormat::Mov);
+    }
+
+    Err(FfmpegError::unsupported("unsupported input format"))
+}
+
+fn explicit_input_format(input: &PlannedFile) -> Result<Option<InputFormat>, FfmpegError> {
     for option in input.options() {
         if option.name() != "f" {
             return Err(FfmpegError::unsupported(format!(
@@ -242,16 +295,15 @@ fn validate_input_options(input: &PlannedFile) -> Result<(), FfmpegError> {
         }
     }
 
-    if let Some(format) = last_option_value(input.options(), "f") {
-        match format.to_ascii_lowercase().as_str() {
-            "mov" | "mp4" | "m4a" | "3gp" | "3g2" | "mj2" => Ok(()),
+    last_option_value(input.options(), "f")
+        .map(|format| match format.to_ascii_lowercase().as_str() {
+            "mov" | "mp4" | "m4a" | "3gp" | "3g2" | "mj2" => Ok(InputFormat::Mov),
+            "wav" | "wave" => Ok(InputFormat::Wav),
             _ => Err(FfmpegError::unsupported(format!(
                 "input format `{format}` is not implemented"
             ))),
-        }
-    } else {
-        Ok(())
-    }
+        })
+        .transpose()
 }
 
 fn validate_output_options(output: &PlannedFile) -> Result<(), FfmpegError> {
@@ -290,6 +342,45 @@ fn last_option_value<'a>(options: &'a [CliOption], name: &str) -> Option<&'a str
         .and_then(CliOption::value_ref)
 }
 
+fn validate_input_signature(
+    format: InputFormat,
+    path: &str,
+    bytes: &[u8],
+) -> Result<(), FfmpegError> {
+    match format {
+        InputFormat::Mov => validate_mov_probe(path, bytes),
+        InputFormat::Wav if is_wav_like(path, bytes) => Ok(()),
+        InputFormat::Wav => Err(FfmpegError::invalid_data(format!(
+            "{} input signature was not found",
+            format.name()
+        ))),
+    }
+}
+
+fn is_wav_like(path: &str, bytes: &[u8]) -> bool {
+    has_wav_signature(bytes) || path_has_extension(path, "wav")
+}
+
+fn has_wav_signature(bytes: &[u8]) -> bool {
+    bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WAVE"
+}
+
+fn path_has_extension(path: &str, extension: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case(extension))
+}
+
+fn is_mov_like(path: &str, bytes: &[u8]) -> Result<bool, FfmpegError> {
+    let mut registry = ProbeRegistry::new();
+    register_mov_probe(&mut registry)
+        .map_err(|err| FfmpegError::invalid_data(format!("failed to register MOV probe: {err}")))?;
+    Ok(registry
+        .probe(ProbeRequest::new(bytes).with_extension(path))
+        .is_some_and(|matched| matched.descriptor().name() == MOV_FORMAT_NAME))
+}
+
 fn validate_mov_probe(path: &str, bytes: &[u8]) -> Result<(), FfmpegError> {
     let mut registry = ProbeRegistry::new();
     register_mov_probe(&mut registry)
@@ -306,12 +397,25 @@ fn validate_mov_probe(path: &str, bytes: &[u8]) -> Result<(), FfmpegError> {
     Ok(())
 }
 
-fn run_null_muxer(demuxer: &mut MovDemuxer<'_>) -> Result<FfmpegOutput, FfmpegError> {
+fn run_output_muxer<F>(
+    output_muxer: OutputMuxer,
+    read_packet: F,
+) -> Result<FfmpegOutput, FfmpegError>
+where
+    F: FnMut() -> Result<Option<Packet>, FfmpegError>,
+{
+    match output_muxer {
+        OutputMuxer::Null => run_null_muxer(read_packet),
+        OutputMuxer::FrameCrc => run_framecrc_muxer(read_packet),
+    }
+}
+
+fn run_null_muxer<F>(mut read_packet: F) -> Result<FfmpegOutput, FfmpegError>
+where
+    F: FnMut() -> Result<Option<Packet>, FfmpegError>,
+{
     let mut muxer = NullMuxer::new();
-    while let Some(packet) = demuxer
-        .read_packet()
-        .map_err(|err| FfmpegError::invalid_data(format!("failed to read MOV/MP4 packet: {err}")))?
-    {
+    while let Some(packet) = read_packet()? {
         muxer.write_packet(&packet).map_err(|err| {
             FfmpegError::invalid_data(format!("failed to mux null packet: {err}"))
         })?;
@@ -327,15 +431,15 @@ fn run_null_muxer(demuxer: &mut MovDemuxer<'_>) -> Result<FfmpegOutput, FfmpegEr
     ))
 }
 
-fn run_framecrc_muxer(demuxer: &mut MovDemuxer<'_>) -> Result<FfmpegOutput, FfmpegError> {
+fn run_framecrc_muxer<F>(mut read_packet: F) -> Result<FfmpegOutput, FfmpegError>
+where
+    F: FnMut() -> Result<Option<Packet>, FfmpegError>,
+{
     let mut muxer = FrameCrcMuxer::new();
     let mut packet_count = 0_u64;
     let mut byte_count = 0_u64;
 
-    while let Some(packet) = demuxer
-        .read_packet()
-        .map_err(|err| FfmpegError::invalid_data(format!("failed to read MOV/MP4 packet: {err}")))?
-    {
+    while let Some(packet) = read_packet()? {
         packet_count = packet_count
             .checked_add(1)
             .ok_or_else(|| FfmpegError::invalid_data("packet count overflow"))?;
@@ -452,6 +556,59 @@ mod tests {
     }
 
     #[test]
+    fn runs_wav_to_framecrc_stdout() {
+        let payload = [0, 0, 1, 0, 2, 0, 3, 0];
+        let path = write_temp_bytes("wav-framecrc", "wav", &wav_file_bytes(2, 48_000, &payload));
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-hide_banner",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect("ffmpeg WAV command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("framecrc"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 8);
+        assert!(output.stderr().is_empty());
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=0 dts=0 duration=2 size=8"));
+    }
+
+    #[test]
+    fn runs_explicit_wav_input_format_to_null() {
+        let payload = [1, 0, 2, 0, 3, 0, 4, 0];
+        let path = write_temp_bytes("explicit-wav", "bin", &wav_file_bytes(1, 44_100, &payload));
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "wav",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("explicit WAV command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 8);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
     fn rejects_unsupported_output_muxer() {
         let path = write_temp_mov("unsupported-muxer", &sampled_mov_file(&[b"abc"], &[1_000]));
         let path_arg = path.to_string_lossy().into_owned();
@@ -499,6 +656,27 @@ mod tests {
         assert!(err.message().contains("unsupported input format"));
     }
 
+    #[test]
+    fn rejects_unimplemented_input_format_option() {
+        let path = write_temp_bytes("raw-pcm", "raw", &[0, 0, 1, 0]);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "s16le",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("raw PCM input is not wired into ffmpeg-rs yet");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("input format `s16le`"));
+    }
+
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
     }
@@ -518,6 +696,14 @@ mod tests {
         ));
         fs::write(&path, bytes).expect("temp media file should be writable");
         path
+    }
+
+    fn wav_file_bytes(channels: u16, sample_rate: u32, payload: &[u8]) -> Vec<u8> {
+        let mut muxer = avformat::WavMuxer::new_pcm_s16le(channels, sample_rate).unwrap();
+        muxer
+            .write_packet(&Packet::new(payload.to_vec(), 0))
+            .unwrap();
+        muxer.finish().unwrap()
     }
 
     fn sampled_mov_file(samples: &[&[u8]], durations: &[u32]) -> Vec<u8> {

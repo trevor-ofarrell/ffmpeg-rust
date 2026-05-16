@@ -6,6 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 avformat = { path = "../avformat" }
+avutil = { path = "../avutil" }
 
 [lib]
 path = "src/lib.rs"
