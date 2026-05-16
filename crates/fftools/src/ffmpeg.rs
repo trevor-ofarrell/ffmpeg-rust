@@ -3,9 +3,9 @@ use crate::{
 };
 use avformat::{
     register_mov_probe, FrameCrcMuxer, MovDemuxer, NullMuxer, PcmS16leDemuxer, ProbeRegistry,
-    ProbeRequest, WavDemuxer,
+    ProbeRequest, RawVideoDemuxer, RawVideoPixelFormat, WavDemuxer,
 };
-use avutil::Packet;
+use avutil::{Packet, Rational};
 use std::{fmt, fs, path::Path};
 
 const MOV_FORMAT_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
@@ -143,7 +143,16 @@ impl OutputMuxer {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InputFormat {
     Mov,
-    PcmS16le { sample_rate: u32, channels: u16 },
+    PcmS16le {
+        sample_rate: u32,
+        channels: u16,
+    },
+    RawVideo {
+        width: usize,
+        height: usize,
+        pixel_format: RawVideoPixelFormat,
+        frame_rate: Rational,
+    },
     Wav,
 }
 
@@ -152,6 +161,7 @@ impl InputFormat {
         match self {
             Self::Mov => "MOV/MP4",
             Self::PcmS16le { .. } => "pcm_s16le",
+            Self::RawVideo { .. } => "rawvideo",
             Self::Wav => "WAV",
         }
     }
@@ -239,6 +249,24 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 })
             })
         }
+        InputFormat::RawVideo {
+            width,
+            height,
+            pixel_format,
+            frame_rate,
+        } => {
+            let mut demuxer =
+                RawVideoDemuxer::open(&bytes, width, height, pixel_format, frame_rate).map_err(
+                    |err| {
+                        FfmpegError::invalid_data(format!("failed to parse rawvideo input: {err}"))
+                    },
+                )?;
+            run_output_muxer(output_muxer, || {
+                demuxer.read_packet().map_err(|err| {
+                    FfmpegError::invalid_data(format!("failed to read rawvideo packet: {err}"))
+                })
+            })
+        }
         InputFormat::Wav => {
             let mut demuxer = WavDemuxer::open(&bytes).map_err(|err| {
                 FfmpegError::invalid_data(format!("failed to parse WAV input: {err}"))
@@ -303,7 +331,7 @@ fn detect_input_format(
 
 fn explicit_input_format(input: &PlannedFile) -> Result<Option<InputFormat>, FfmpegError> {
     for option in input.options() {
-        if !matches!(option.name(), "f" | "ar" | "ac") {
+        if !matches!(option.name(), "f" | "ar" | "ac" | "s" | "r" | "pix_fmt") {
             return Err(FfmpegError::unsupported(format!(
                 "input option `-{}` is not implemented",
                 option.name()
@@ -327,6 +355,7 @@ fn explicit_input_format(input: &PlannedFile) -> Result<Option<InputFormat>, Ffm
             Ok(Some(InputFormat::Mov))
         }
         "s16le" | "pcm_s16le" => parse_pcm_s16le_input(input).map(Some),
+        "rawvideo" => parse_rawvideo_input(input).map(Some),
         "wav" | "wave" => {
             reject_stream_parameter_options(input, "WAV")?;
             Ok(Some(InputFormat::Wav))
@@ -353,12 +382,42 @@ fn reject_stream_parameter_options(
 }
 
 fn parse_pcm_s16le_input(input: &PlannedFile) -> Result<InputFormat, FfmpegError> {
+    reject_options_except(input, "pcm_s16le", &["f", "ar", "ac"])?;
     let sample_rate = parse_u32_option(input, "ar", "pcm_s16le sample rate")?;
     let channels = parse_u16_option(input, "ac", "pcm_s16le channel count")?;
     Ok(InputFormat::PcmS16le {
         sample_rate,
         channels,
     })
+}
+
+fn parse_rawvideo_input(input: &PlannedFile) -> Result<InputFormat, FfmpegError> {
+    reject_options_except(input, "rawvideo", &["f", "s", "r", "pix_fmt"])?;
+    let (width, height) = parse_video_size_option(input)?;
+    let pixel_format = parse_rawvideo_pixel_format(input)?;
+    let frame_rate = parse_frame_rate_option(input)?;
+    Ok(InputFormat::RawVideo {
+        width,
+        height,
+        pixel_format,
+        frame_rate,
+    })
+}
+
+fn reject_options_except(
+    input: &PlannedFile,
+    format_name: &str,
+    allowed: &[&str],
+) -> Result<(), FfmpegError> {
+    for option in input.options() {
+        if !allowed.contains(&option.name()) {
+            return Err(FfmpegError::unsupported(format!(
+                "input option `-{}` is not implemented for {format_name}",
+                option.name()
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn parse_u32_option(file: &PlannedFile, name: &str, description: &str) -> Result<u32, FfmpegError> {
@@ -378,6 +437,75 @@ fn parse_u32_option(file: &PlannedFile, name: &str, description: &str) -> Result
 fn parse_u16_option(file: &PlannedFile, name: &str, description: &str) -> Result<u16, FfmpegError> {
     let value = parse_u32_option(file, name, description)?;
     u16::try_from(value).map_err(|_| FfmpegError::usage(format!("{description} is out of range")))
+}
+
+fn parse_video_size_option(file: &PlannedFile) -> Result<(usize, usize), FfmpegError> {
+    let value = last_option_value(file.options(), "s")
+        .ok_or_else(|| FfmpegError::usage("rawvideo dimensions require `-s`"))?;
+    let (width, height) = value
+        .split_once(['x', 'X'])
+        .ok_or_else(|| FfmpegError::usage(format!("invalid rawvideo dimensions `{value}`")))?;
+    let width = parse_nonzero_usize(width, "rawvideo width")?;
+    let height = parse_nonzero_usize(height, "rawvideo height")?;
+    Ok((width, height))
+}
+
+fn parse_nonzero_usize(value: &str, description: &str) -> Result<usize, FfmpegError> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| FfmpegError::usage(format!("invalid {description} `{value}`")))?;
+    if parsed == 0 {
+        return Err(FfmpegError::usage(format!(
+            "{description} must be non-zero"
+        )));
+    }
+    Ok(parsed)
+}
+
+fn parse_rawvideo_pixel_format(file: &PlannedFile) -> Result<RawVideoPixelFormat, FfmpegError> {
+    let value = last_option_value(file.options(), "pix_fmt")
+        .ok_or_else(|| FfmpegError::usage("rawvideo pixel format requires `-pix_fmt`"))?;
+    match value.to_ascii_lowercase().as_str() {
+        "gray" | "gray8" => Ok(RawVideoPixelFormat::Gray8),
+        "rgb24" => Ok(RawVideoPixelFormat::Rgb24),
+        "rgba" => Ok(RawVideoPixelFormat::Rgba),
+        "yuv420p" => Ok(RawVideoPixelFormat::Yuv420p),
+        _ => Err(FfmpegError::unsupported(format!(
+            "rawvideo pixel format `{value}` is not implemented"
+        ))),
+    }
+}
+
+fn parse_frame_rate_option(file: &PlannedFile) -> Result<Rational, FfmpegError> {
+    let value = last_option_value(file.options(), "r")
+        .ok_or_else(|| FfmpegError::usage("rawvideo frame rate requires `-r`"))?;
+    let (num, den) = if let Some((num, den)) = value.split_once('/') {
+        (
+            parse_i32_rate_part(num, value, "numerator")?,
+            parse_i32_rate_part(den, value, "denominator")?,
+        )
+    } else {
+        (parse_i32_rate_part(value, value, "value")?, 1)
+    };
+    if num <= 0 || den <= 0 {
+        return Err(FfmpegError::usage(format!(
+            "rawvideo frame rate `{value}` must be positive"
+        )));
+    }
+    Rational::new(num, den)
+        .map_err(|err| FfmpegError::usage(format!("invalid rawvideo frame rate `{value}`: {err}")))
+}
+
+fn parse_i32_rate_part(
+    value: &str,
+    full_value: &str,
+    description: &str,
+) -> Result<i32, FfmpegError> {
+    value.parse::<i32>().map_err(|_| {
+        FfmpegError::usage(format!(
+            "invalid rawvideo frame rate {description} `{value}` in `{full_value}`"
+        ))
+    })
 }
 
 fn validate_output_options(output: &PlannedFile) -> Result<(), FfmpegError> {
@@ -424,6 +552,7 @@ fn validate_input_signature(
     match format {
         InputFormat::Mov => validate_mov_probe(path, bytes),
         InputFormat::PcmS16le { .. } => Ok(()),
+        InputFormat::RawVideo { .. } => Ok(()),
         InputFormat::Wav if is_wav_like(path, bytes) => Ok(()),
         InputFormat::Wav => Err(FfmpegError::invalid_data(format!(
             "{} input signature was not found",
@@ -850,6 +979,159 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(err.message().contains("partial sample frame"));
+    }
+
+    #[test]
+    fn runs_rawvideo_to_framecrc_stdout() {
+        let path = write_temp_bytes(
+            "rawvideo-framecrc",
+            "raw",
+            &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            "2x1",
+            "-r",
+            "30",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect("rawvideo command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("framecrc"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 12);
+        assert!(output.stderr().is_empty());
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=0 dts=0 duration=1 size=6"));
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=1 dts=1 duration=1 size=6"));
+    }
+
+    #[test]
+    fn runs_rawvideo_to_null_stdout() {
+        let path = write_temp_bytes("rawvideo-null", "raw", &[0, 1, 2, 3]);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "gray8",
+            "-s",
+            "2x2",
+            "-r",
+            "1/1",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("rawvideo command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 4);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
+    fn rejects_rawvideo_without_required_stream_parameters() {
+        let path = write_temp_bytes("rawvideo-missing-params", "raw", &[0, 1, 2, 3]);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let missing_size = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "gray8",
+            "-r",
+            "1",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("rawvideo input requires dimensions");
+        let missing_pixel_format = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-s",
+            "2x2",
+            "-r",
+            "1",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("rawvideo input requires a pixel format");
+        let missing_frame_rate = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "gray8",
+            "-s",
+            "2x2",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("rawvideo input requires a frame rate");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(missing_size.message().contains("dimensions"));
+        assert!(missing_pixel_format.message().contains("pixel format"));
+        assert!(missing_frame_rate.message().contains("frame rate"));
+    }
+
+    #[test]
+    fn rejects_rawvideo_truncated_frame() {
+        let path = write_temp_bytes("rawvideo-partial", "raw", &[0, 1, 2, 3, 4]);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            "2x1",
+            "-r",
+            "30/1",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("rawvideo input must contain whole frames");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("partial frame"));
     }
 
     fn strings(values: &[&str]) -> Vec<String> {
