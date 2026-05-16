@@ -4,7 +4,7 @@ use crate::{
 use avformat::{
     register_mov_probe, FrameCrcMuxer, Image2Demuxer, Image2Entry, Image2Pattern, MovDemuxer,
     NullMuxer, PcmS16leDemuxer, PcmS16leMuxer, ProbeRegistry, ProbeRequest, RawVideoDemuxer,
-    RawVideoPixelFormat, WavDemuxer, Yuv4MpegDemuxer,
+    RawVideoMuxer, RawVideoPixelFormat, WavDemuxer, Yuv4MpegDemuxer,
 };
 use avutil::{Packet, Rational};
 use std::{fmt, fs, io::Write, path::Path};
@@ -131,6 +131,7 @@ enum OutputMuxer {
     Null,
     FrameCrc,
     PcmS16le,
+    RawVideo,
 }
 
 impl OutputMuxer {
@@ -139,6 +140,7 @@ impl OutputMuxer {
             Self::Null => "null",
             Self::FrameCrc => "framecrc",
             Self::PcmS16le => "s16le",
+            Self::RawVideo => "rawvideo",
         }
     }
 }
@@ -272,6 +274,7 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 OutputMuxer::Null | OutputMuxer::FrameCrc => {
                     run_output_muxer(output_muxer, read_packet)
                 }
+                OutputMuxer::RawVideo => run_output_muxer(output_muxer, read_packet),
             }
         }
         InputFormat::RawVideo {
@@ -286,11 +289,25 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                         FfmpegError::invalid_data(format!("failed to parse rawvideo input: {err}"))
                     },
                 )?;
-            run_output_muxer(output_muxer, || {
+            let read_packet = || {
                 demuxer.read_packet().map_err(|err| {
                     FfmpegError::invalid_data(format!("failed to read rawvideo packet: {err}"))
                 })
-            })
+            };
+            match output_muxer {
+                OutputMuxer::RawVideo => run_rawvideo_file_muxer(
+                    output,
+                    width,
+                    height,
+                    pixel_format,
+                    frame_rate,
+                    read_packet,
+                ),
+                OutputMuxer::Null | OutputMuxer::FrameCrc => {
+                    run_output_muxer(output_muxer, read_packet)
+                }
+                OutputMuxer::PcmS16le => run_output_muxer(output_muxer, read_packet),
+            }
         }
         InputFormat::Wav => {
             let mut demuxer = WavDemuxer::open(&bytes).map_err(|err| {
@@ -346,18 +363,25 @@ fn validate_output_endpoint(muxer: OutputMuxer, output: &PlannedFile) -> Result<
     match muxer {
         OutputMuxer::Null | OutputMuxer::FrameCrc => validate_stdout_output(output),
         OutputMuxer::PcmS16le => {
-            local_output_path(output)?;
+            local_output_path(output, "pcm_s16le")?;
+            Ok(())
+        }
+        OutputMuxer::RawVideo => {
+            local_output_path(output, "rawvideo")?;
             Ok(())
         }
     }
 }
 
-fn local_output_path(output: &PlannedFile) -> Result<&str, FfmpegError> {
+fn local_output_path<'a>(
+    output: &'a PlannedFile,
+    format_name: &str,
+) -> Result<&'a str, FfmpegError> {
     match output.endpoint() {
         Endpoint::File(path) => Ok(path),
-        Endpoint::Pipe { .. } => Err(FfmpegError::unsupported(
-            "ffmpeg-rs pcm_s16le output currently supports only local file outputs",
-        )),
+        Endpoint::Pipe { .. } => Err(FfmpegError::unsupported(format!(
+            "ffmpeg-rs {format_name} output currently supports only local file outputs"
+        ))),
         Endpoint::Protocol { name, .. } => Err(FfmpegError::unsupported(format!(
             "ffmpeg-rs output protocol `{name}` is not implemented"
         ))),
@@ -719,7 +743,7 @@ fn validate_output_options(output: &PlannedFile) -> Result<(), FfmpegError> {
 fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> {
     let format = last_option_value(output.options(), "f").ok_or_else(|| {
         FfmpegError::usage(
-            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, or `-f s16le`",
+            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f s16le`, or `-f rawvideo`",
         )
     })?;
 
@@ -727,6 +751,7 @@ fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> 
         "null" => Ok(OutputMuxer::Null),
         "framecrc" => Ok(OutputMuxer::FrameCrc),
         "s16le" | "pcm_s16le" => Ok(OutputMuxer::PcmS16le),
+        "rawvideo" => Ok(OutputMuxer::RawVideo),
         _ => Err(FfmpegError::unsupported(format!(
             "output format `{format}` is not implemented"
         ))),
@@ -824,6 +849,9 @@ where
         OutputMuxer::PcmS16le => Err(FfmpegError::unsupported(
             "ffmpeg-rs s16le output is only implemented for raw pcm_s16le inputs",
         )),
+        OutputMuxer::RawVideo => Err(FfmpegError::unsupported(
+            "ffmpeg-rs rawvideo output is only implemented for rawvideo inputs",
+        )),
     }
 }
 
@@ -836,7 +864,7 @@ fn run_pcm_s16le_file_muxer<F>(
 where
     F: FnMut() -> Result<Option<Packet>, FfmpegError>,
 {
-    let output_path = local_output_path(output)?;
+    let output_path = local_output_path(output, "pcm_s16le")?;
     let mut muxer = PcmS16leMuxer::new(sample_rate, channels).map_err(|err| {
         FfmpegError::invalid_data(format!("failed to configure pcm_s16le muxer: {err}"))
     })?;
@@ -857,6 +885,44 @@ where
         String::new(),
         String::new(),
         OutputMuxer::PcmS16le,
+        packet_count,
+        byte_count,
+    ))
+}
+
+fn run_rawvideo_file_muxer<F>(
+    output: &PlannedFile,
+    width: usize,
+    height: usize,
+    pixel_format: RawVideoPixelFormat,
+    frame_rate: Rational,
+    mut read_packet: F,
+) -> Result<FfmpegOutput, FfmpegError>
+where
+    F: FnMut() -> Result<Option<Packet>, FfmpegError>,
+{
+    let output_path = local_output_path(output, "rawvideo")?;
+    let mut muxer = RawVideoMuxer::new(width, height, pixel_format, frame_rate).map_err(|err| {
+        FfmpegError::invalid_data(format!("failed to configure rawvideo muxer: {err}"))
+    })?;
+
+    while let Some(packet) = read_packet()? {
+        muxer.write_packet(&packet).map_err(|err| {
+            FfmpegError::invalid_data(format!("failed to mux rawvideo packet: {err}"))
+        })?;
+    }
+
+    let packet_count = u64::try_from(muxer.info().frame_count())
+        .map_err(|_| FfmpegError::invalid_data("rawvideo frame count does not fit u64"))?;
+    let output_bytes = muxer.finish();
+    let byte_count = u64::try_from(output_bytes.len())
+        .map_err(|_| FfmpegError::invalid_data("rawvideo output size does not fit u64"))?;
+    write_new_output_file(output_path, &output_bytes)?;
+
+    Ok(FfmpegOutput::media(
+        String::new(),
+        String::new(),
+        OutputMuxer::RawVideo,
         packet_count,
         byte_count,
     ))
@@ -1371,6 +1437,73 @@ mod tests {
         assert_eq!(output.byte_count(), 4);
         assert!(output.stdout().is_empty());
         assert!(output.stderr().is_empty());
+    }
+
+    #[test]
+    fn runs_rawvideo_to_rawvideo_file_output() {
+        let payload = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        let input_path = write_temp_bytes("rawvideo-file-input", "raw", &payload);
+        let output_path = unique_temp_path("rawvideo-file-output", "raw");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            "2x1",
+            "-r",
+            "30",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "rawvideo",
+            output_arg.as_str(),
+        ]))
+        .expect("rawvideo file output path should execute");
+        let written = fs::read(&output_path).expect("rawvideo output file should be readable");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert_eq!(output.output_format(), Some("rawvideo"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), u64::try_from(payload.len()).unwrap());
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+        assert_eq!(written, payload);
+    }
+
+    #[test]
+    fn rejects_rawvideo_file_output_overwrite() {
+        let input_path = write_temp_bytes("rawvideo-overwrite-input", "raw", &[0, 1, 2, 3]);
+        let output_path = write_temp_bytes("rawvideo-overwrite-output", "raw", b"existing");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "gray8",
+            "-s",
+            "2x2",
+            "-r",
+            "1",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "rawvideo",
+            output_arg.as_str(),
+        ]))
+        .expect_err("rawvideo file output should not overwrite existing files");
+        let existing = fs::read(&output_path).expect("existing output file should remain readable");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert!(err.message().contains("failed to create output"));
+        assert_eq!(existing, b"existing");
     }
 
     #[test]

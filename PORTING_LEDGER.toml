@@ -520,6 +520,25 @@ notes = "ffmpeg-rs command execution now supports exactly one local seekable raw
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffmpeg-rawvideo-file-output"
+kind = "cli"
+ffmpeg_name = "ffmpeg rawvideo to rawvideo file"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -f rawvideo -pix_fmt <fmt> -s <WxH> -r <rate> -i <input.raw> -f rawvideo <output.raw>"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_rawvideo_to_rawvideo_file_output",
+  "ffmpeg::tests::rejects_rawvideo_file_output_overwrite",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffmpeg-rs command execution supports explicit rawvideo input packet-copy to a local rawvideo output file with explicit -f rawvideo, -pix_fmt, -s, and -r input parameters and explicit -f rawvideo output format. It uses the Rust rawvideo demuxer and RawVideoMuxer, creates output files with no overwrite, and has no oracle differential/FATE coverage yet. Transcoding, stdout rawvideo output, overwrite confirmation flags, broad muxer selection, and non-rawvideo inputs remain pending."
+blocked_reason = ""
+
+[[component]]
 id = "fftools-ffmpeg-yuv4mpegpipe-framecrc-null"
 kind = "cli"
 ffmpeg_name = "ffmpeg yuv4mpegpipe to framecrc/null"
@@ -897,7 +916,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial rawvideo muxer concatenates validated stream-0 fixed-size frame packet payloads for gray, rgb24, rgba, and yuv420p, tracks frame/byte counts, supports empty output, and prevents writes after finish. CLI wiring, probe integration, more pixel formats, differential tests, FATE, and fuzzing are pending."
+notes = "Initial rawvideo muxer concatenates validated stream-0 fixed-size frame packet payloads for gray, rgb24, rgba, and yuv420p, tracks frame/byte counts, supports empty output, and prevents writes after finish. It is wired to a constrained ffmpeg-rs rawvideo file-output path. Probe integration, more pixel formats, broader CLI execution, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
