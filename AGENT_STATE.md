@@ -2,12 +2,18 @@
 
 ## Current Status
 
-`avformat-yuv4mpegpipe-demuxer` is implemented and verified for a narrow progressive 4:2:0 `C420jpeg` path. It validates stream headers, dimensions, frame rates, interlace/chroma fields, frame headers, and truncated payloads, then emits one stream-0 packet per frame with incrementing PTS. The next priority component is `avformat-image2-demuxer`.
+`avformat-image2-demuxer` is implemented and verified for a narrow packetization path over caller-provided image entries. It supports a single literal image or contiguous `%d`/`%0Nd` numbered sequence, validates patterns and frame rates, rejects gaps/duplicates/unmatched entries, and emits one stream-0 packet per image with path side data. The next priority component is `avformat-rawvideo-demuxer`.
 
 ## Last Successful Commands
 
 - `git init`
 - `cargo fmt --all`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo test -p avformat image2`
+- `cargo fmt --all`
+- `cargo test -p avformat image2`
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
@@ -61,13 +67,13 @@
 
 ## Current Focus Component
 
-`avformat-image2-demuxer` is the next highest-priority incomplete component after the initial yuv4mpegpipe demuxer.
+`avformat-rawvideo-demuxer` is the next highest-priority incomplete component after the initial image2 demuxer.
 
 ## Next 3 Concrete Actions
 
-1. Add an internal image2 demuxer scaffold for a narrow, testable single-image or sequence path.
-2. Add unit tests for pattern parsing, deterministic frame ordering, and invalid input handling.
-3. Update the ledger, docs, and state after the image2 slice passes focused and workspace checks.
+1. Add an internal rawvideo demuxer that slices fixed-size raw frame packets from a byte stream.
+2. Add unit tests for frame sizing, packet timing, pixel-format validation, and truncated data handling.
+3. Update the ledger, docs, and state after the rawvideo demuxer passes focused and workspace checks.
 
 ## Known Blockers
 
@@ -77,4 +83,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-yuv4mpegpipe-demuxer` for progressive 4:2:0 `C420jpeg` packet extraction with header, frame, EOF, unsupported-field, and truncation tests.
+Latest slice: add `avformat-image2-demuxer` for single image and contiguous numbered sequence packetization with pattern, ordering, side-data, and invalid-entry tests.

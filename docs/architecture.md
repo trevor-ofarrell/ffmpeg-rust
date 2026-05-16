@@ -38,6 +38,8 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `Yuv4MpegDemuxer` implements an initial yuv4mpegpipe parser for progressive 4:2:0 `C420jpeg` streams. It parses the stream header, validates dimensions, frame rate, interlace, chroma, and frame headers, then emits one packet per raw frame with monotonically increasing PTS.
 
+`Image2Demuxer` implements an initial image2 packetizer over caller-provided image entries. It supports a single literal image path or a contiguous `%d`/`%0Nd` numbered sequence, sorts frames by frame number, rejects gaps and duplicates, and emits one packet per image with path side data.
+
 ## CLI Compatibility Model
 
 CLI compatibility is treated as a first-class surface. The current implementation supports version banners for `ffmpeg-rs` and `ffprobe-rs` plus an internal parser that groups a small known set of FFmpeg-style options onto global scope, the next `-i` input, or the next output filename. `IoPlan` turns parsed input/output URLs into validated file, pipe, or protocol endpoints for future command execution. Unsupported command forms still exit non-zero and are recorded as incomplete in the ledger.
