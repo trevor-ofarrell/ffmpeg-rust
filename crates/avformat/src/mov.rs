@@ -894,6 +894,8 @@ enum MetadataValueKind {
     Text,
     NumberPair,
     GenreIndex,
+    Int8NoPadding,
+    Int8WithPadding,
 }
 
 fn metadata_item_mapping(box_type: [u8; 4]) -> Option<(&'static str, MetadataValueKind)> {
@@ -908,8 +910,18 @@ fn metadata_item_mapping(box_type: [u8; 4]) -> Option<(&'static str, MetadataVal
         [b'd', b'e', b's', b'c'] => Some(("description", MetadataValueKind::Text)),
         [b'l', b'd', b'e', b's'] => Some(("long_description", MetadataValueKind::Text)),
         [0xa9, b't', b'o', b'o'] => Some(("encoder", MetadataValueKind::Text)),
+        [b'a', b'k', b'I', b'D'] => Some(("account_type", MetadataValueKind::Int8NoPadding)),
+        [b'c', b'p', b'i', b'l'] => Some(("compilation", MetadataValueKind::Int8NoPadding)),
+        [b'e', b'g', b'i', b'd'] => Some(("episode_uid", MetadataValueKind::Int8NoPadding)),
         [b'g', b'n', b'r', b'e'] => Some(("genre", MetadataValueKind::GenreIndex)),
+        [b'h', b'd', b'v', b'd'] => Some(("hd_video", MetadataValueKind::Int8NoPadding)),
+        [b'p', b'c', b's', b't'] => Some(("podcast", MetadataValueKind::Int8NoPadding)),
+        [b'p', b'g', b'a', b'p'] => Some(("gapless_playback", MetadataValueKind::Int8NoPadding)),
+        [b'r', b't', b'n', b'g'] => Some(("rating", MetadataValueKind::Int8NoPadding)),
+        [b's', b't', b'i', b'k'] => Some(("media_type", MetadataValueKind::Int8NoPadding)),
         [b't', b'r', b'k', b'n'] => Some(("track", MetadataValueKind::NumberPair)),
+        [b't', b'v', b'e', b's'] => Some(("episode_sort", MetadataValueKind::Int8WithPadding)),
+        [b't', b'v', b's', b'n'] => Some(("season_number", MetadataValueKind::Int8WithPadding)),
         [b'd', b'i', b's', b'k'] => Some(("disc", MetadataValueKind::NumberPair)),
         _ => None,
     }
@@ -927,6 +939,8 @@ fn parse_metadata_data(payload: &[u8], value_kind: MetadataValueKind) -> AvResul
         MetadataValueKind::Text => parse_text_metadata_value(data_type, value),
         MetadataValueKind::NumberPair => parse_number_pair_metadata_value(data_type, value),
         MetadataValueKind::GenreIndex => parse_genre_index_metadata_value(data_type, value),
+        MetadataValueKind::Int8NoPadding => parse_int8_metadata_value(value, 0),
+        MetadataValueKind::Int8WithPadding => parse_int8_metadata_value(value, 3),
     }
 }
 
@@ -1000,6 +1014,15 @@ fn parse_genre_index_metadata_value(data_type: u32, value: &[u8]) -> AvResult<Op
         ))
     })?;
     Ok(Some((*genre).to_owned()))
+}
+
+fn parse_int8_metadata_value(value: &[u8], padding_bytes: usize) -> AvResult<Option<String>> {
+    let mut reader = ByteReader::new(value);
+    ensure_remaining(&reader, padding_bytes + 1, "MOV/MP4 int8 metadata")?;
+    if padding_bytes > 0 {
+        reader.skip(padding_bytes)?;
+    }
+    Ok(Some(reader.read_u8()?.to_string()))
 }
 
 const ID3V1_GENRES: &[&str] = &[
@@ -2197,6 +2220,8 @@ mod tests {
     use super::*;
     use avutil::ByteWriter;
 
+    const METADATA_DATA_TYPE_SIGNED_INTEGER: u32 = 21;
+
     #[test]
     fn parses_ftyp_movie_and_track_metadata() {
         let bytes = mp4_v0_fixture();
@@ -2391,6 +2416,37 @@ mod tests {
     }
 
     #[test]
+    fn extracts_int8_metadata_from_ilst_data_atoms() {
+        let ilst = ilst_box(&[
+            ilst_int8_item(*b"akID", 2),
+            ilst_int8_item(*b"cpil", 1),
+            ilst_int8_item(*b"egid", 7),
+            ilst_int8_item(*b"hdvd", 1),
+            ilst_int8_item(*b"pcst", 1),
+            ilst_int8_item(*b"pgap", 0),
+            ilst_int8_item(*b"rtng", 4),
+            ilst_int8_item(*b"stik", 10),
+            ilst_padded_int8_item(*b"tves", 5),
+            ilst_padded_int8_item(*b"tvsn", 3),
+        ]);
+        let bytes = mp4_with_moov_extra_box(box_(*UDTA_ID, &meta_box(ilst)));
+
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let metadata = demuxer.info().metadata();
+
+        assert_eq!(metadata.get("account_type"), Some("2"));
+        assert_eq!(metadata.get("compilation"), Some("1"));
+        assert_eq!(metadata.get("episode_uid"), Some("7"));
+        assert_eq!(metadata.get("hd_video"), Some("1"));
+        assert_eq!(metadata.get("podcast"), Some("1"));
+        assert_eq!(metadata.get("gapless_playback"), Some("0"));
+        assert_eq!(metadata.get("rating"), Some("4"));
+        assert_eq!(metadata.get("media_type"), Some("10"));
+        assert_eq!(metadata.get("episode_sort"), Some("5"));
+        assert_eq!(metadata.get("season_number"), Some("3"));
+    }
+
+    #[test]
     fn extracts_track_metadata_from_track_udta() {
         let track_udta = box_(
             *UDTA_ID,
@@ -2478,6 +2534,32 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_int8 = box_(
+            *DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_SIGNED_INTEGER, &[]),
+        );
+        let item = box_(*b"cpil", &bad_int8);
+        let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
+            *UDTA_ID,
+            &meta_box(ilst_box(&[item])),
+        )))
+        .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_padded_int8 = box_(
+            *DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_SIGNED_INTEGER, &[0, 0, 0]),
+        );
+        let item = box_(*b"tves", &bad_padded_int8);
+        let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
+            *UDTA_ID,
+            &meta_box(ilst_box(&[item])),
+        )))
+        .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
     }
 
     #[test]
@@ -3263,6 +3345,22 @@ mod tests {
             &metadata_data_box_payload(METADATA_DATA_TYPE_RESERVED, &one_based_index.to_be_bytes()),
         );
         box_(*b"gnre", &data)
+    }
+
+    fn ilst_int8_item(kind: [u8; 4], value: u8) -> Vec<u8> {
+        let data = box_(
+            *DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_SIGNED_INTEGER, &[value]),
+        );
+        box_(kind, &data)
+    }
+
+    fn ilst_padded_int8_item(kind: [u8; 4], value: u8) -> Vec<u8> {
+        let data = box_(
+            *DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_SIGNED_INTEGER, &[0, 0, 0, value]),
+        );
+        box_(kind, &data)
     }
 
     fn ilst_number_pair_item(kind: [u8; 4], current: u16, total: u16) -> Vec<u8> {
