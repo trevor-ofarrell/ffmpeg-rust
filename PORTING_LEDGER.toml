@@ -460,13 +460,34 @@ id = "avformat-framecrc-muxer"
 kind = "muxer"
 ffmpeg_name = "framecrc"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -i <input> -f framecrc -"
+rust_command = "cargo test -p avformat framecrc_muxer"
+unit_tests = [
+  "framecrc_muxer::tests::records_packet_crc_and_timing_fields",
+  "framecrc_muxer::tests::renders_multiple_records_in_write_order",
+  "framecrc_muxer::tests::empty_packets_produce_zero_size_crc_records",
+  "framecrc_muxer::tests::finish_prevents_more_writes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial internal framecrc-style muxer records one CRC-32 line per packet with stream index, PTS/DTS, duration, size, and checksum. Exact FFmpeg framecrc formatting, CLI wiring, and differential/FATE tests are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avcodec-rawvideo"
+kind = "decoder"
+ffmpeg_name = "rawvideo"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -f rawvideo -pix_fmt <fmt> -s <size> -i <input> -f framecrc -"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next checksum-style muxer target after aggregate hash muxer."
+notes = "Next simple codec target after checksum muxer primitives."
 blocked_reason = ""

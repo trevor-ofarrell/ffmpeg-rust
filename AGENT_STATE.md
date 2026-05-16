@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-hash-muxer` is implemented and verified as an internal packet-data hash sink for Adler-32 and IEEE CRC-32 with packet/byte accounting. The next priority component is `avformat-framecrc-muxer`.
+`avformat-framecrc-muxer` is implemented and verified as an internal per-packet CRC-32 record sink with stream index, PTS/DTS, duration, size, and checksum output. The next priority component is `avcodec-rawvideo`.
 
 ## Last Successful Commands
 
@@ -32,6 +32,7 @@
 - `cargo test -p avformat probe`
 - `cargo test -p avformat null_muxer`
 - `cargo test -p avformat hash_muxer`
+- `cargo test -p avformat framecrc_muxer`
 
 ## Last Failing Commands
 
@@ -42,13 +43,13 @@
 
 ## Current Focus Component
 
-`avformat-framecrc-muxer` is the next highest-priority incomplete component after `avformat-hash-muxer`.
+`avcodec-rawvideo` is the next highest-priority incomplete component after `avformat-framecrc-muxer`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avformat hash_muxer`.
+1. Run `cargo test -p avformat framecrc_muxer`.
 2. Run formatting, workspace tests, and clippy.
-3. Add the first framecrc-style packet checksum muxer primitive.
+3. Add the first rawvideo frame decoder primitive.
 
 ## Known Blockers
 
@@ -58,4 +59,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avformat-hash-muxer` packet-data checksum sink.
+Latest committed slice: add `avformat-framecrc-muxer` packet checksum records.
