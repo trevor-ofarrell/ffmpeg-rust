@@ -195,15 +195,22 @@ id = "avutil-bitreader"
 kind = "utility"
 ffmpeg_name = "GetBitContext"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 1
 oracle_command = ""
-rust_command = ""
-unit_tests = []
+rust_command = "cargo test -p avutil bitreader"
+unit_tests = [
+  "bitreader::tests::reads_msb_first_bits_across_byte_boundaries",
+  "bitreader::tests::peek_does_not_advance_cursor",
+  "bitreader::tests::skip_and_align_update_cursor",
+  "bitreader::tests::zero_bit_reads_are_valid_noops",
+  "bitreader::tests::eof_errors_do_not_advance_cursor",
+  "bitreader::tests::rejects_reads_wider_than_u64",
+]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = ""
+notes = "Bounded MSB-first bit reader implemented. Deeper GetBitContext compatibility vectors and fuzzing are pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]

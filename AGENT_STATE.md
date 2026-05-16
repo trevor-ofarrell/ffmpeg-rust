@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avutil-byteio` is implemented and verified with endian-aware byte reading/writing plus invalid-input tests. The next priority primitive is `avutil-bitreader`.
+`avutil-bitreader` is implemented and verified with bounded MSB-first reads, peeks, skips, byte alignment, and invalid-input tests. The next priority primitive is `avutil-bitwriter`.
 
 ## Last Successful Commands
 
@@ -19,21 +19,24 @@
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
 - `cargo test --workspace --all-features`
+- `cargo test -p avutil bitreader`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 
 ## Last Failing Commands
 
 - `git status --short` before initialization failed because the directory was not a Git repository.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on a test literal grouping in `byteio.rs`; the literal was normalized and clippy passed on rerun.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on a loop-counter pattern and boolean assert style in `bitreader.rs`; both were corrected and clippy passed on rerun.
 
 ## Current Focus Component
 
-`avutil-bitreader` is the next highest-priority incomplete component after `avutil-byteio`.
+`avutil-bitwriter` is the next highest-priority incomplete component after `avutil-bitreader`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avutil byteio`.
+1. Run `cargo test -p avutil bitreader`.
 2. Run formatting, workspace tests, and clippy.
-3. Implement `avutil-bitreader` with bounded bit reads and invalid-input tests.
+3. Implement `avutil-bitwriter` with byte flush and invalid-width tests.
 
 ## Known Blockers
 
@@ -43,4 +46,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avutil-byteio` endian helpers.
+Latest committed slice: add `avutil-bitreader` bounded MSB-first reads.
