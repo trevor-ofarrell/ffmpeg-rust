@@ -16,6 +16,7 @@
 - `avformat` has initial AVIO-like read/write wrappers for seekable byte streams with typed EOF/external errors.
 - `avformat` has an initial probe registry for signature, MIME type, and extension scoring.
 - `avformat` has an initial null muxer sink that discards packets while reporting packet, byte, duration, and timestamp statistics.
+- `avformat` has an initial packet-data hash muxer sink for Adler-32 and IEEE CRC-32.
 - `avutil` has initial typed errors, rational normalization/comparison, timestamp rescaling, bounded byte I/O helpers, MSB-first bit reader/writer helpers, metadata dictionary helpers, AVOption-like descriptor/value validation, Adler-32 and IEEE CRC-32 checksum helpers, packet timestamp/flag/side-data skeletons, frame shape validation, and an in-memory logging abstraction.
 - `oracle inventory` can execute a pinned FFmpeg binary and capture the required inventory command outputs.
 
@@ -31,6 +32,7 @@ All media parsing, decoding, encoding, muxing, demuxing, filtering, playback, pr
 - AVIO support is limited to seekable Rust `Read`/`Write` objects and is not yet wired to protocol implementations.
 - Probe support is a registry/scoring primitive only; no real demuxer probe table has been generated from the pinned oracle yet.
 - Null muxer support is an internal packet sink only; it is not wired to `ffmpeg-rs -f null` execution or FATE yet.
+- Hash muxer support is internal and limited to Adler-32/CRC-32 packet-data hashing; it is not wired to CLI execution, MD5/SHA variants, or FATE yet.
 - The version banner is compatibility-oriented but not byte-identical to upstream FFmpeg.
 - No inventory snapshot has been generated because no pinned FFmpeg oracle binary exists in this workspace yet.
 - FATE components are listed from the ledger, but runnable FATE mappings have not been implemented.

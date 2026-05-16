@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-null-muxer` is implemented and verified as an internal packet sink that discards payload bytes while reporting packet, byte, duration, stream, and timestamp statistics. The next priority component is `avformat-hash-muxer`.
+`avformat-hash-muxer` is implemented and verified as an internal packet-data hash sink for Adler-32 and IEEE CRC-32 with packet/byte accounting. The next priority component is `avformat-framecrc-muxer`.
 
 ## Last Successful Commands
 
@@ -31,6 +31,7 @@
 - `cargo test -p avformat avio`
 - `cargo test -p avformat probe`
 - `cargo test -p avformat null_muxer`
+- `cargo test -p avformat hash_muxer`
 
 ## Last Failing Commands
 
@@ -41,13 +42,13 @@
 
 ## Current Focus Component
 
-`avformat-hash-muxer` is the next highest-priority incomplete component after `avformat-null-muxer`.
+`avformat-framecrc-muxer` is the next highest-priority incomplete component after `avformat-hash-muxer`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avformat null_muxer`.
+1. Run `cargo test -p avformat hash_muxer`.
 2. Run formatting, workspace tests, and clippy.
-3. Add the first hash/md5 muxer primitive using `avutil` checksum helpers.
+3. Add the first framecrc-style packet checksum muxer primitive.
 
 ## Known Blockers
 
@@ -57,4 +58,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avformat-null-muxer` packet sink.
+Latest committed slice: add `avformat-hash-muxer` packet-data checksum sink.

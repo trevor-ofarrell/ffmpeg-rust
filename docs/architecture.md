@@ -24,6 +24,8 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `NullMuxer` implements the first muxer-shaped sink: it discards packet payload bytes while preserving observable accounting for packets, bytes, stream indexes, durations, and last timestamps.
 
+`HashMuxer` implements an initial packet-data hash sink over write order, using `avutil` checksum state for Adler-32 and IEEE CRC-32 while tracking packet and byte counts.
+
 ## CLI Compatibility Model
 
 CLI compatibility is treated as a first-class surface. The current implementation supports version banners for `ffmpeg-rs` and `ffprobe-rs` plus an internal parser that groups a small known set of FFmpeg-style options onto global scope, the next `-i` input, or the next output filename. `IoPlan` turns parsed input/output URLs into validated file, pipe, or protocol endpoints for future command execution. Unsupported command forms still exit non-zero and are recorded as incomplete in the ledger.

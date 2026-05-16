@@ -439,13 +439,34 @@ id = "avformat-hash-muxer"
 kind = "muxer"
 ffmpeg_name = "hash/md5"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -i <input> -f hash -"
+rust_command = "cargo test -p avformat hash_muxer"
+unit_tests = [
+  "hash_muxer::tests::crc32_hashes_packet_data_in_write_order",
+  "hash_muxer::tests::adler32_hashes_packet_data_in_write_order",
+  "hash_muxer::tests::empty_packets_count_but_do_not_change_empty_digest",
+  "hash_muxer::tests::finish_prevents_more_writes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial internal packet-data hash muxer supports Adler-32 and IEEE CRC-32 with packet/byte accounting. MD5/SHA variants, exact FFmpeg hash muxer output semantics, CLI wiring, and differential/FATE tests are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-framecrc-muxer"
+kind = "muxer"
+ffmpeg_name = "framecrc"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -i <input> -f framecrc -"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple muxer target after null muxer."
+notes = "Next checksum-style muxer target after aggregate hash muxer."
 blocked_reason = ""
