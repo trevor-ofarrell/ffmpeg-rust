@@ -394,7 +394,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Stream reports include initial codec_name, codec_type, codec_tag_string, numeric codec_tag, avg_frame_rate, and MOV visual sample-entry side fields for sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
+notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Stream reports include initial codec_name, profile, level, codec_type, codec_tag_string, numeric codec_tag, avg_frame_rate, and MOV visual sample-entry side fields for sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
 blocked_reason = ""
 
 [[component]]
@@ -457,6 +457,24 @@ differential_tests = []
 fate_tests = []
 fuzz_targets = []
 notes = "ffprobe-rs stream reports now carry codec_name, codec_type, codec_tag_string, numeric codec_tag, and avg_frame_rate for constrained MOV/MP4 and AVI video streams using Rust demuxer metadata. The codec-name map is deliberately limited to known tags currently represented by the Rust parsers, and there is no pinned-oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-ffprobe-mov-codec-profile-level"
+kind = "cli"
+ffmpeg_name = "ffprobe MOV codec profile/level fields"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_streams -of json <input.mp4>"
+rust_command = "cargo test -p fftools ffprobe"
+unit_tests = [
+  "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffprobe-rs now surfaces profile and level for constrained MOV/MP4 video streams when the Rust MovDemuxer parsed avcC or hvcC decoder configuration. The current fixture coverage proves an avc1/avcC profile_idc 100 as profile High and level_idc 31 as level 31. No pinned-oracle differential/FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]

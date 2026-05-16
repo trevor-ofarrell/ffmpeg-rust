@@ -99,6 +99,8 @@ pub struct FfprobeStreamReport {
     index: usize,
     id: u32,
     codec_name: Option<String>,
+    profile: Option<String>,
+    level: Option<u32>,
     codec_type: String,
     codec_tag_string: Option<String>,
     codec_tag: Option<String>,
@@ -131,6 +133,14 @@ impl FfprobeStreamReport {
 
     pub fn codec_name(&self) -> Option<&str> {
         self.codec_name.as_deref()
+    }
+
+    pub fn profile(&self) -> Option<&str> {
+        self.profile.as_deref()
+    }
+
+    pub fn level(&self) -> Option<u32> {
+        self.level
     }
 
     pub fn codec_type(&self) -> &str {
@@ -568,6 +578,8 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                     .as_deref()
                     .and_then(codec_name_for_tag)
                     .map(str::to_owned),
+                profile: video_sample_entry.and_then(mov_codec_profile),
+                level: video_sample_entry.and_then(mov_codec_level),
                 codec_type: mov_codec_type(track).to_owned(),
                 codec_tag: codec_tag_string.as_deref().and_then(fourcc_codec_tag),
                 codec_tag_string,
@@ -646,6 +658,8 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
                 index: stream.index(),
                 id: u32::try_from(stream.index()).unwrap_or(u32::MAX),
                 codec_name: codec_name_for_tag(stream.handler()).map(str::to_owned),
+                profile: None,
+                level: None,
                 codec_type: avi_codec_type(stream.media_type()).to_owned(),
                 codec_tag: fourcc_codec_tag(stream.handler()),
                 codec_tag_string: Some(stream.handler().to_owned()),
@@ -805,6 +819,50 @@ fn mov_display_aspect_ratio(
         width * u128::from(pixel_aspect_ratio.horizontal_spacing()),
         height * u128::from(pixel_aspect_ratio.vertical_spacing()),
     ))
+}
+
+fn mov_codec_profile(video: &MovVideoSampleEntry) -> Option<String> {
+    if let Some(configuration) = video.avc_decoder_configuration() {
+        return Some(avc_profile_name(configuration.profile_indication()).to_owned());
+    }
+    if let Some(configuration) = video.hevc_decoder_configuration() {
+        return Some(hevc_profile_name(configuration.general_profile_idc()).to_owned());
+    }
+    None
+}
+
+fn mov_codec_level(video: &MovVideoSampleEntry) -> Option<u32> {
+    if let Some(configuration) = video.avc_decoder_configuration() {
+        return Some(u32::from(configuration.level_indication()));
+    }
+    if let Some(configuration) = video.hevc_decoder_configuration() {
+        return Some(u32::from(configuration.general_level_idc()));
+    }
+    None
+}
+
+fn avc_profile_name(profile_indication: u8) -> &'static str {
+    match profile_indication {
+        44 => "CAVLC 4:4:4",
+        66 => "Baseline",
+        77 => "Main",
+        88 => "Extended",
+        100 => "High",
+        110 => "High 10",
+        122 => "High 4:2:2",
+        244 => "High 4:4:4 Predictive",
+        _ => "unknown",
+    }
+}
+
+fn hevc_profile_name(general_profile_idc: u8) -> &'static str {
+    match general_profile_idc {
+        1 => "Main",
+        2 => "Main 10",
+        3 => "Main Still Picture",
+        4 => "Range Extension",
+        _ => "unknown",
+    }
 }
 
 fn mov_color_range(color: &avformat::MovColorInformation) -> Option<&'static str> {
@@ -978,6 +1036,9 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             if let Some(codec_name) = &stream.codec_name {
                 out.push_str(&format!("codec_name={codec_name}\n"));
             }
+            if let Some(profile) = &stream.profile {
+                out.push_str(&format!("profile={profile}\n"));
+            }
             out.push_str(&format!("codec_type={}\n", stream.codec_type));
             if let Some(codec_tag_string) = &stream.codec_tag_string {
                 out.push_str(&format!("codec_tag_string={codec_tag_string}\n"));
@@ -1008,6 +1069,9 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             }
             if let Some(color_primaries) = &stream.color_primaries {
                 out.push_str(&format!("color_primaries={color_primaries}\n"));
+            }
+            if let Some(level) = stream.level {
+                out.push_str(&format!("level={level}\n"));
             }
             out.push_str(&format!("time_base={}\n", stream.time_base));
             if let Some(avg_frame_rate) = &stream.avg_frame_rate {
@@ -1101,6 +1165,9 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     if let Some(codec_name) = &stream.codec_name {
         fields.push(json_string("codec_name", codec_name));
     }
+    if let Some(profile) = &stream.profile {
+        fields.push(json_string("profile", profile));
+    }
     if let Some(codec_tag_string) = &stream.codec_tag_string {
         fields.push(json_string("codec_tag_string", codec_tag_string));
     }
@@ -1130,6 +1197,9 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     }
     if let Some(color_primaries) = &stream.color_primaries {
         fields.push(json_string("color_primaries", color_primaries));
+    }
+    if let Some(level) = stream.level {
+        fields.push(json_number("level", level));
     }
     if let Some(avg_frame_rate) = &stream.avg_frame_rate {
         fields.push(json_string("avg_frame_rate", avg_frame_rate));
@@ -1514,6 +1584,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("\"codec_name\": \"h264\""));
+        assert!(stdout.contains("\"profile\": \"High\""));
         assert!(stdout.contains("\"codec_tag_string\": \"avc1\""));
         assert!(stdout.contains("\"codec_tag\": \"0x31637661\""));
         assert!(stdout.contains("\"width\": 720"));
@@ -1524,6 +1595,7 @@ mod tests {
         assert!(stdout.contains("\"color_space\": \"smpte170m\""));
         assert!(stdout.contains("\"color_transfer\": \"iec61966-2-1\""));
         assert!(stdout.contains("\"color_primaries\": \"bt709\""));
+        assert!(stdout.contains("\"level\": 31"));
         assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
     }
 
@@ -1759,6 +1831,8 @@ mod tests {
                 index: 0,
                 id: 1,
                 codec_name: Some("rawvideo".to_string()),
+                profile: None,
+                level: None,
                 codec_type: "video".to_string(),
                 codec_tag_string: Some("raw ".to_string()),
                 codec_tag: Some("0x20776172".to_string()),
