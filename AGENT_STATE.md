@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-avi-muxer` is implemented and verified for a constrained one-stream RGB24 RIFF AVI path. It writes classic `avih`, `strh`, and `strf` headers, emits stream-0 `00db` chunks in a `movi` list, validates fixed-size packet payloads, handles RIFF word padding, and round-trips through the current AVI demuxer. The next priority component is `avformat-mov-demuxer`.
+`avformat-mov-demuxer` has an initial metadata-only implementation. It validates ISOBMFF/MOV/MP4 box bounds, supports classic, extended-size, and top-level size-zero boxes, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, and returns an explicit unsupported error for packet extraction until sample tables are implemented.
 
 ## Last Successful Commands
 
@@ -11,6 +11,13 @@
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
+- `cargo fmt --all`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
 - `cargo run -p fate-runner -- list`
 - `cargo test -p avformat pcm`
 - `cargo fmt --all`
@@ -110,16 +117,18 @@
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on a test literal grouping in `byteio.rs`; the literal was normalized and clippy passed on rerun.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on a loop-counter pattern and boolean assert style in `bitreader.rs`; both were corrected and clippy passed on rerun.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on a redundant closure in `probe.rs`; it was replaced with the function reference and clippy passed on rerun.
+- `rg "read_u64|write_u64" crates/avutil/src crates/avformat/src` failed because ripgrep is not installed in this shell; PowerShell-native file inspection was used instead.
+- `cargo test -p avformat mov` initially failed because the malformed `ftyp` fixture truncated the next top-level box before reaching the intended validation; the fixture was narrowed and `cargo test -p avformat mov::tests` passed.
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` is the next highest-priority incomplete component after the initial constrained AVI demuxer/muxer pair.
+`avformat-mov-demuxer` remains the current focus; the next slice is sample table parsing and packet extraction.
 
 ## Next 3 Concrete Actions
 
-1. Add an initial ISOBMFF atom reader for box size/type parsing, extended sizes, and bounds validation.
-2. Add a constrained MOV/MP4 demuxer metadata path for `ftyp`, `moov`, `mvhd`, `trak`, `tkhd`, and `mdhd` using small fixtures.
-3. Record unsupported media/sample tables explicitly until packet extraction is implemented.
+1. Add minimal `stbl` parsing for `stsd`, `stts`, `stsc`, `stsz`, and `stco`/`co64` on one track.
+2. Use the parsed sample table and `mdat` offsets to emit stream-0 packets with PTS/DTS/duration for a small uncompressed fixture.
+3. Add invalid table and truncated `mdat` tests before replacing the current unsupported packet-extraction path.
 
 ## Known Blockers
 
@@ -129,4 +138,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-avi-muxer` for constrained one-stream RGB24 RIFF AVI writing with classic headers, `00db` movi output, packet validation, odd-size chunk padding, demuxer round-trip tests, and ledger/docs updates.
+Latest slice: add `avformat-mov-demuxer` metadata parsing for `ftyp`, `mvhd`, `tkhd`, and `mdhd` with classic, extended-size, and size-zero box handling, required-metadata validation, explicit unsupported packet extraction, and ledger/docs updates.

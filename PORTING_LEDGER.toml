@@ -779,13 +779,19 @@ id = "avformat-mov-demuxer"
 kind = "demuxer"
 ffmpeg_name = "mov,mp4,m4a,3gp,3g2,mj2"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 4
 oracle_command = "ffmpeg -i <input.mp4> -f framecrc -"
-rust_command = ""
-unit_tests = []
+rust_command = "cargo test -p avformat mov::tests"
+unit_tests = [
+  "mov::tests::parses_ftyp_movie_and_track_metadata",
+  "mov::tests::supports_extended_size_boxes_and_version_one_headers",
+  "mov::tests::accepts_size_zero_top_level_box_as_remaining_payload",
+  "mov::tests::rejects_bad_box_bounds_and_required_metadata",
+  "mov::tests::rejects_invalid_full_boxes_and_ftyp_payloads",
+]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next container target after initial constrained AVI demuxer/muxer support."
+notes = "Initial MOV/MP4 demuxer metadata path validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; rejects malformed bounds and required metadata; and returns an explicit unsupported error for packet extraction until sample tables are implemented. Sample table parsing, mdat packet output, fragments, edit lists, codec parameters, CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
