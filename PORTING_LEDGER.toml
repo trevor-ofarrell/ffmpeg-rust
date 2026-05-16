@@ -566,13 +566,34 @@ id = "avformat-yuv4mpegpipe-demuxer"
 kind = "demuxer"
 ffmpeg_name = "yuv4mpegpipe"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -f yuv4mpegpipe -i <input.y4m> -f framecrc -"
+rust_command = "cargo test -p avformat yuv4mpegpipe"
+unit_tests = [
+  "yuv4mpegpipe::tests::parses_header_and_reads_multiple_frames",
+  "yuv4mpegpipe::tests::defaults_missing_chroma_and_allows_clean_eof_after_header",
+  "yuv4mpegpipe::tests::rejects_bad_or_incomplete_stream_headers",
+  "yuv4mpegpipe::tests::rejects_bad_frame_headers_and_truncated_payloads",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial YUV4MPEG2 demuxer parses progressive 4:2:0 C420jpeg headers, validates dimensions/frame rate/interlace/chroma fields, and emits one stream-0 packet per frame with incrementing PTS. Other chroma modes, interlaced modes, frame header overrides, CLI wiring, differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-image2-demuxer"
+kind = "demuxer"
+ffmpeg_name = "image2"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -f image2 -i <pattern> -f framecrc -"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple format target after WAV mux/demux primitives."
+notes = "Next simple format target after initial yuv4mpegpipe demuxing."
 blocked_reason = ""

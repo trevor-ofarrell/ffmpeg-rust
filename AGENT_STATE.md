@@ -2,12 +2,18 @@
 
 ## Current Status
 
-`avformat-wav-muxer` is implemented and verified for a narrow RIFF/WAVE PCM s16le path. It writes canonical headers and stream-0 packet payloads, validates stream parameters, rejects split sample frames, and round-trips through the current WAV demuxer. The next priority component is `avformat-yuv4mpegpipe-demuxer`.
+`avformat-yuv4mpegpipe-demuxer` is implemented and verified for a narrow progressive 4:2:0 `C420jpeg` path. It validates stream headers, dimensions, frame rates, interlace/chroma fields, frame headers, and truncated payloads, then emits one stream-0 packet per frame with incrementing PTS. The next priority component is `avformat-image2-demuxer`.
 
 ## Last Successful Commands
 
 - `git init`
 - `cargo fmt --all`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo test -p avformat yuv4mpegpipe`
+- `cargo fmt --all`
+- `cargo test -p avformat yuv4mpegpipe`
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
@@ -55,13 +61,13 @@
 
 ## Current Focus Component
 
-`avformat-yuv4mpegpipe-demuxer` is the next highest-priority incomplete component after the initial WAV muxer.
+`avformat-image2-demuxer` is the next highest-priority incomplete component after the initial yuv4mpegpipe demuxer.
 
 ## Next 3 Concrete Actions
 
-1. Add an internal YUV4MPEG2 demuxer for a narrow yuv4mpegpipe profile.
-2. Add unit tests for header parsing, frame extraction, invalid headers, and unsupported chroma/rate fields.
-3. Update the ledger, docs, and state after the demuxer slice passes focused and workspace checks.
+1. Add an internal image2 demuxer scaffold for a narrow, testable single-image or sequence path.
+2. Add unit tests for pattern parsing, deterministic frame ordering, and invalid input handling.
+3. Update the ledger, docs, and state after the image2 slice passes focused and workspace checks.
 
 ## Known Blockers
 
@@ -71,4 +77,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-wav-muxer` for canonical RIFF/WAVE PCM s16le output with header, packet validation, round-trip, and finished-state tests.
+Latest slice: add `avformat-yuv4mpegpipe-demuxer` for progressive 4:2:0 `C420jpeg` packet extraction with header, frame, EOF, unsupported-field, and truncation tests.

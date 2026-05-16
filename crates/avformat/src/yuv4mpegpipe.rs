@@ -1,0 +1,391 @@
+use avutil::{AvError, AvErrorKind, AvResult, Packet, Rational};
+
+const Y4M_MAGIC: &str = "YUV4MPEG2";
+const FRAME_MAGIC: &str = "FRAME";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Yuv4MpegChroma {
+    C420Jpeg,
+}
+
+impl Yuv4MpegChroma {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::C420Jpeg => "420jpeg",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Yuv4MpegInterlace {
+    Progressive,
+}
+
+impl Yuv4MpegInterlace {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Progressive => "p",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Yuv4MpegInfo {
+    width: u32,
+    height: u32,
+    frame_rate: Rational,
+    sample_aspect_ratio: Option<Rational>,
+    interlace: Yuv4MpegInterlace,
+    chroma: Yuv4MpegChroma,
+    frame_size: usize,
+}
+
+impl Yuv4MpegInfo {
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn frame_rate(&self) -> Rational {
+        self.frame_rate
+    }
+
+    pub fn sample_aspect_ratio(&self) -> Option<Rational> {
+        self.sample_aspect_ratio
+    }
+
+    pub fn interlace(&self) -> Yuv4MpegInterlace {
+        self.interlace
+    }
+
+    pub fn chroma(&self) -> Yuv4MpegChroma {
+        self.chroma
+    }
+
+    pub fn frame_size(&self) -> usize {
+        self.frame_size
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Yuv4MpegDemuxer<'a> {
+    info: Yuv4MpegInfo,
+    input: &'a [u8],
+    position: usize,
+    next_pts: i64,
+}
+
+impl<'a> Yuv4MpegDemuxer<'a> {
+    pub fn open(input: &'a [u8]) -> AvResult<Self> {
+        let mut position = 0;
+        let header = read_required_line(input, &mut position, "YUV4MPEG2 header")?;
+        let info = parse_header(header)?;
+
+        Ok(Self {
+            info,
+            input,
+            position,
+            next_pts: 0,
+        })
+    }
+
+    pub fn info(&self) -> &Yuv4MpegInfo {
+        &self.info
+    }
+
+    pub fn read_packet(&mut self) -> AvResult<Option<Packet>> {
+        if self.position == self.input.len() {
+            return Ok(None);
+        }
+
+        let frame_header =
+            read_required_line(self.input, &mut self.position, "YUV4MPEG2 frame header")?;
+        parse_frame_header(frame_header)?;
+
+        let frame_end = self
+            .position
+            .checked_add(self.info.frame_size)
+            .ok_or_else(|| AvError::invalid_data("YUV4MPEG2 frame size overflow"))?;
+        if frame_end > self.input.len() {
+            return Err(AvError::new(
+                AvErrorKind::EndOfFile,
+                "YUV4MPEG2 frame payload is truncated",
+            ));
+        }
+
+        let mut packet = Packet::new(self.input[self.position..frame_end].to_vec(), 0);
+        packet.set_pts(Some(self.next_pts));
+        packet.set_dts(Some(self.next_pts));
+        packet.set_duration(1)?;
+        self.position = frame_end;
+        self.next_pts = self
+            .next_pts
+            .checked_add(1)
+            .ok_or_else(|| AvError::invalid_data("YUV4MPEG2 PTS overflow"))?;
+        Ok(Some(packet))
+    }
+}
+
+fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
+    if line != Y4M_MAGIC && !line.starts_with("YUV4MPEG2 ") {
+        return Err(AvError::invalid_data("YUV4MPEG2 header missing magic"));
+    }
+
+    let mut width = None;
+    let mut height = None;
+    let mut frame_rate = None;
+    let mut sample_aspect_ratio = None;
+    let mut interlace = Yuv4MpegInterlace::Progressive;
+    let mut chroma = Yuv4MpegChroma::C420Jpeg;
+
+    for field in line[Y4M_MAGIC.len()..].split_ascii_whitespace() {
+        let (tag, value) = field.split_at(1);
+        if value.is_empty() {
+            return Err(AvError::invalid_data(format!(
+                "YUV4MPEG2 header field `{field}` has no value"
+            )));
+        }
+
+        match tag {
+            "W" => width = Some(parse_positive_u32(value, "YUV4MPEG2 width")?),
+            "H" => height = Some(parse_positive_u32(value, "YUV4MPEG2 height")?),
+            "F" => frame_rate = Some(parse_positive_rational(value, "YUV4MPEG2 frame rate")?),
+            "A" => {
+                sample_aspect_ratio = Some(parse_positive_rational(
+                    value,
+                    "YUV4MPEG2 sample aspect ratio",
+                )?)
+            }
+            "I" => {
+                if value != Yuv4MpegInterlace::Progressive.tag() {
+                    return Err(AvError::unsupported(format!(
+                        "unsupported YUV4MPEG2 interlace mode `{value}`"
+                    )));
+                }
+                interlace = Yuv4MpegInterlace::Progressive;
+            }
+            "C" => {
+                if value != Yuv4MpegChroma::C420Jpeg.name() {
+                    return Err(AvError::unsupported(format!(
+                        "unsupported YUV4MPEG2 chroma mode `{value}`"
+                    )));
+                }
+                chroma = Yuv4MpegChroma::C420Jpeg;
+            }
+            "X" => {}
+            _ => {
+                return Err(AvError::unsupported(format!(
+                    "unsupported YUV4MPEG2 header field `{field}`"
+                )))
+            }
+        }
+    }
+
+    let width = width.ok_or_else(|| AvError::invalid_data("YUV4MPEG2 missing width"))?;
+    let height = height.ok_or_else(|| AvError::invalid_data("YUV4MPEG2 missing height"))?;
+    let frame_rate =
+        frame_rate.ok_or_else(|| AvError::invalid_data("YUV4MPEG2 missing frame rate"))?;
+    let frame_size = yuv420_frame_size(width, height)?;
+
+    Ok(Yuv4MpegInfo {
+        width,
+        height,
+        frame_rate,
+        sample_aspect_ratio,
+        interlace,
+        chroma,
+        frame_size,
+    })
+}
+
+fn parse_frame_header(line: &str) -> AvResult<()> {
+    if line != FRAME_MAGIC && !line.starts_with("FRAME ") {
+        return Err(AvError::invalid_data(
+            "YUV4MPEG2 frame header missing FRAME",
+        ));
+    }
+
+    for field in line[FRAME_MAGIC.len()..].split_ascii_whitespace() {
+        if !field.starts_with('X') {
+            return Err(AvError::unsupported(format!(
+                "unsupported YUV4MPEG2 frame field `{field}`"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_positive_u32(value: &str, name: &str) -> AvResult<u32> {
+    let value = value
+        .parse::<u32>()
+        .map_err(|_| AvError::invalid_data(format!("{name} is not a positive integer")))?;
+    if value == 0 {
+        return Err(AvError::invalid_data(format!("{name} must be non-zero")));
+    }
+    Ok(value)
+}
+
+fn parse_positive_rational(value: &str, name: &str) -> AvResult<Rational> {
+    let (num, den) = value
+        .split_once(':')
+        .ok_or_else(|| AvError::invalid_data(format!("{name} must use N:D syntax")))?;
+    let num = parse_i32_component(num, name)?;
+    let den = parse_i32_component(den, name)?;
+    if num <= 0 || den <= 0 {
+        return Err(AvError::invalid_data(format!(
+            "{name} numerator and denominator must be positive"
+        )));
+    }
+    Rational::new(num, den)
+}
+
+fn parse_i32_component(value: &str, name: &str) -> AvResult<i32> {
+    value
+        .parse::<i32>()
+        .map_err(|_| AvError::invalid_data(format!("{name} component is out of range")))
+}
+
+fn yuv420_frame_size(width: u32, height: u32) -> AvResult<usize> {
+    if width % 2 != 0 || height % 2 != 0 {
+        return Err(AvError::unsupported(
+            "YUV4MPEG2 4:2:0 requires even width and height",
+        ));
+    }
+
+    let luma = usize::try_from(width)
+        .ok()
+        .and_then(|width| {
+            usize::try_from(height)
+                .ok()
+                .and_then(|height| width.checked_mul(height))
+        })
+        .ok_or_else(|| AvError::invalid_data("YUV4MPEG2 frame dimensions overflow"))?;
+    luma.checked_add(luma / 2)
+        .ok_or_else(|| AvError::invalid_data("YUV4MPEG2 frame size overflow"))
+}
+
+fn read_required_line<'a>(
+    input: &'a [u8],
+    position: &mut usize,
+    context: &str,
+) -> AvResult<&'a str> {
+    let start = *position;
+    let line_end = input[start..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map(|relative| start + relative)
+        .ok_or_else(|| AvError::new(AvErrorKind::EndOfFile, format!("{context} is incomplete")))?;
+    *position = line_end + 1;
+
+    let mut line = &input[start..line_end];
+    if line.ends_with(b"\r") {
+        line = &line[..line.len() - 1];
+    }
+    std::str::from_utf8(line)
+        .map_err(|_| AvError::invalid_data(format!("{context} is not valid UTF-8")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_header_and_reads_multiple_frames() {
+        let first = frame_bytes(12, 0x10);
+        let second = frame_bytes(12, 0x80);
+        let input = y4m_bytes("W4 H2 F30000:1001 Ip A1:1 C420jpeg", &[&first, &second]);
+        let mut demuxer = Yuv4MpegDemuxer::open(&input).unwrap();
+
+        assert_eq!(demuxer.info().width(), 4);
+        assert_eq!(demuxer.info().height(), 2);
+        assert_eq!(
+            demuxer.info().frame_rate(),
+            Rational::new(30000, 1001).unwrap()
+        );
+        assert_eq!(demuxer.info().sample_aspect_ratio(), Some(Rational::ONE));
+        assert_eq!(demuxer.info().interlace(), Yuv4MpegInterlace::Progressive);
+        assert_eq!(demuxer.info().chroma(), Yuv4MpegChroma::C420Jpeg);
+        assert_eq!(demuxer.info().frame_size(), 12);
+
+        let first_packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first_packet.data(), first.as_slice());
+        assert_eq!(first_packet.pts(), Some(0));
+        assert_eq!(first_packet.dts(), Some(0));
+        assert_eq!(first_packet.duration(), 1);
+
+        let second_packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second_packet.data(), second.as_slice());
+        assert_eq!(second_packet.pts(), Some(1));
+        assert_eq!(second_packet.duration(), 1);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn defaults_missing_chroma_and_allows_clean_eof_after_header() {
+        let input = b"YUV4MPEG2 W2 H2 F25:1 Ip\n";
+        let mut demuxer = Yuv4MpegDemuxer::open(input).unwrap();
+
+        assert_eq!(demuxer.info().chroma(), Yuv4MpegChroma::C420Jpeg);
+        assert_eq!(demuxer.info().frame_size(), 6);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn rejects_bad_or_incomplete_stream_headers() {
+        assert_eq!(
+            Yuv4MpegDemuxer::open(b"not y4m\n").unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 H2 F25:1 Ip C420jpeg\n").is_err());
+        assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W0 H2 F25:1 Ip C420jpeg\n").is_err());
+        assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W3 H2 F25:1 Ip C420jpeg\n").is_err());
+        assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W2 H2 F0:1 Ip C420jpeg\n").is_err());
+        assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W2 H2 F25:0 Ip C420jpeg\n").is_err());
+        assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W2 H2 Fabc Ip C420jpeg\n").is_err());
+        assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W2 H2 F25:1 It C420jpeg\n").is_err());
+        assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W2 H2 F25:1 Ip C422\n").is_err());
+    }
+
+    #[test]
+    fn rejects_bad_frame_headers_and_truncated_payloads() {
+        let truncated = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\nFRAME\nabc";
+        let mut demuxer = Yuv4MpegDemuxer::open(truncated).unwrap();
+        assert_eq!(
+            demuxer.read_packet().unwrap_err().kind(),
+            AvErrorKind::EndOfFile
+        );
+
+        let bad_header = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\nFIELD\nabcdef";
+        let mut demuxer = Yuv4MpegDemuxer::open(bad_header).unwrap();
+        assert_eq!(
+            demuxer.read_packet().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let unsupported_frame_field = b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\nFRAME Iu\nabcdef";
+        let mut demuxer = Yuv4MpegDemuxer::open(unsupported_frame_field).unwrap();
+        assert_eq!(
+            demuxer.read_packet().unwrap_err().kind(),
+            AvErrorKind::Unsupported
+        );
+    }
+
+    fn y4m_bytes(header_fields: &str, frames: &[&[u8]]) -> Vec<u8> {
+        let mut out = format!("{Y4M_MAGIC} {header_fields}\n").into_bytes();
+        for frame in frames {
+            out.extend_from_slice(b"FRAME\n");
+            out.extend_from_slice(frame);
+        }
+        out
+    }
+
+    fn frame_bytes(len: usize, start: u8) -> Vec<u8> {
+        (0..len)
+            .map(|offset| start.wrapping_add(offset as u8))
+            .collect()
+    }
+}

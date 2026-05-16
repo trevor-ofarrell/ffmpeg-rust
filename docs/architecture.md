@@ -36,6 +36,8 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `WavMuxer` implements the matching initial muxer path for canonical RIFF/WAVE PCM s16le output. It validates stream parameters, stream-0 packet ownership, whole sample-frame packet payloads, and classic RIFF size limits before rendering a WAV byte stream.
 
+`Yuv4MpegDemuxer` implements an initial yuv4mpegpipe parser for progressive 4:2:0 `C420jpeg` streams. It parses the stream header, validates dimensions, frame rate, interlace, chroma, and frame headers, then emits one packet per raw frame with monotonically increasing PTS.
+
 ## CLI Compatibility Model
 
 CLI compatibility is treated as a first-class surface. The current implementation supports version banners for `ffmpeg-rs` and `ffprobe-rs` plus an internal parser that groups a small known set of FFmpeg-style options onto global scope, the next `-i` input, or the next output filename. `IoPlan` turns parsed input/output URLs into validated file, pipe, or protocol endpoints for future command execution. Unsupported command forms still exit non-zero and are recorded as incomplete in the ledger.
