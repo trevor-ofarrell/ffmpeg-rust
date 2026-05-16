@@ -13,6 +13,7 @@ const STSD_ID: &[u8; 4] = b"stsd";
 const STTS_ID: &[u8; 4] = b"stts";
 const STSC_ID: &[u8; 4] = b"stsc";
 const STSZ_ID: &[u8; 4] = b"stsz";
+const STSS_ID: &[u8; 4] = b"stss";
 const STCO_ID: &[u8; 4] = b"stco";
 const CO64_ID: &[u8; 4] = b"co64";
 const MDAT_ID: &[u8; 4] = b"mdat";
@@ -230,6 +231,7 @@ struct SampleTable {
     sample_durations: Vec<u32>,
     sample_to_chunks: Vec<SampleToChunkEntry>,
     chunk_offsets: Vec<u64>,
+    sync_samples: Option<Vec<bool>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -370,6 +372,7 @@ fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
     let mut sample_to_chunks = None;
     let mut sample_sizes = None;
     let mut chunk_offsets = None;
+    let mut sync_sample_numbers = None;
 
     for child in read_box_headers(input, stbl.payload_start, stbl.payload_end, "MOV/MP4 stbl")? {
         match &child.box_type {
@@ -377,6 +380,7 @@ fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
             STTS_ID => sample_durations = Some(parse_stts(child.payload(input))?),
             STSC_ID => sample_to_chunks = Some(parse_stsc(child.payload(input))?),
             STSZ_ID => sample_sizes = Some(parse_stsz(child.payload(input))?),
+            STSS_ID => sync_sample_numbers = Some(parse_stss(child.payload(input))?),
             STCO_ID => chunk_offsets = Some(parse_stco(child.payload(input))?),
             CO64_ID => chunk_offsets = Some(parse_co64(child.payload(input))?),
             _ => {}
@@ -399,6 +403,9 @@ fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
             sample_sizes.len()
         )));
     }
+    let sync_samples = sync_sample_numbers
+        .map(|sample_numbers| sync_sample_flags(sample_numbers, sample_sizes.len()))
+        .transpose()?;
 
     Ok(SampleTable {
         codec_tag,
@@ -406,6 +413,7 @@ fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
         sample_durations,
         sample_to_chunks,
         chunk_offsets,
+        sync_samples,
     })
 }
 
@@ -543,6 +551,33 @@ fn parse_stsz(payload: &[u8]) -> AvResult<Vec<usize>> {
     };
     ensure_box_consumed(&reader, "MOV/MP4 stsz")?;
     Ok(sample_sizes)
+}
+
+fn parse_stss(payload: &[u8]) -> AvResult<Vec<u32>> {
+    let mut reader = ByteReader::new(payload);
+    read_full_box_header(&mut reader, "MOV/MP4 stss")?;
+    let entry_count = usize::try_from(reader.read_u32_be()?)
+        .map_err(|_| AvError::invalid_data("MOV/MP4 stss entry count is out of range"))?;
+    if entry_count > MAX_MOV_SAMPLE_COUNT {
+        return Err(AvError::unsupported(
+            "MOV/MP4 stss entry count exceeds current implementation limit",
+        ));
+    }
+    let mut sample_numbers = Vec::with_capacity(entry_count);
+    let mut previous_sample_number = 0;
+    for _ in 0..entry_count {
+        ensure_remaining(&reader, 4, "MOV/MP4 stss entry")?;
+        let sample_number = reader.read_u32_be()?;
+        if sample_number == 0 || sample_number <= previous_sample_number {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 stss sample numbers must be positive and increasing",
+            ));
+        }
+        previous_sample_number = sample_number;
+        sample_numbers.push(sample_number);
+    }
+    ensure_box_consumed(&reader, "MOV/MP4 stss")?;
+    Ok(sample_numbers)
 }
 
 fn parse_stco(payload: &[u8]) -> AvResult<Vec<u64>> {
@@ -711,7 +746,7 @@ fn build_packets(
     let mut packets = Vec::with_capacity(sample_spans.len());
     let mut pts = 0_i64;
 
-    for span in sample_spans {
+    for (sample_index, span) in sample_spans.into_iter().enumerate() {
         let start = usize::try_from(span.offset)
             .map_err(|_| AvError::invalid_data("MOV/MP4 sample offset is out of range"))?;
         let end = start
@@ -728,7 +763,7 @@ fn build_packets(
         packet.set_pts(Some(pts));
         packet.set_dts(Some(pts));
         packet.set_duration(i64::from(span.duration))?;
-        packet.set_key(true);
+        packet.set_key(is_sync_sample(table, sample_index));
         packet.push_side_data(SideData::new(
             "mov_track_id",
             track.info.id.to_be_bytes().to_vec(),
@@ -744,6 +779,13 @@ fn build_packets(
     }
 
     Ok(Some(packets))
+}
+
+fn is_sync_sample(table: &SampleTable, sample_index: usize) -> bool {
+    table
+        .sync_samples
+        .as_ref()
+        .map_or(true, |sync_samples| sync_samples[sample_index])
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -830,6 +872,21 @@ fn range_within_mdat(start: usize, end: usize, mdat_ranges: &[(usize, usize)]) -
     mdat_ranges
         .iter()
         .any(|(mdat_start, mdat_end)| start >= *mdat_start && end <= *mdat_end)
+}
+
+fn sync_sample_flags(sample_numbers: Vec<u32>, sample_count: usize) -> AvResult<Vec<bool>> {
+    let mut flags = vec![false; sample_count];
+    for sample_number in sample_numbers {
+        let sample_index = usize::try_from(sample_number - 1)
+            .map_err(|_| AvError::invalid_data("MOV/MP4 stss sample number is out of range"))?;
+        let Some(flag) = flags.get_mut(sample_index) else {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 stss sample number exceeds stsz sample count",
+            ));
+        };
+        *flag = true;
+    }
+    Ok(flags)
 }
 
 fn read_box_headers(
@@ -1182,6 +1239,28 @@ mod tests {
     }
 
     #[test]
+    fn reads_sync_sample_table_for_key_flags() {
+        let bytes = mp4_with_samples_and_sync(
+            false,
+            &[b"aa".as_slice(), b"bb".as_slice(), b"cc".as_slice()],
+            &[10, 20, 30],
+            &[1, 3],
+        );
+        let mut demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        let second = demuxer.read_packet().unwrap().unwrap();
+        let third = demuxer.read_packet().unwrap().unwrap();
+
+        assert!(first.flags().contains(avutil::PacketFlags::KEY));
+        assert!(!second.flags().contains(avutil::PacketFlags::KEY));
+        assert!(third.flags().contains(avutil::PacketFlags::KEY));
+        assert_eq!(third.pts(), Some(30));
+        assert_eq!(third.duration(), 30);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn rejects_invalid_sample_tables_and_truncated_mdat_payloads() {
         assert_eq!(
             MovDemuxer::open(&mp4_with_mismatched_sample_counts())
@@ -1200,6 +1279,18 @@ mod tests {
                 .unwrap_err()
                 .kind(),
             AvErrorKind::EndOfFile
+        );
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_sync_samples(&[3]))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_sync_samples(&[2, 2]))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
         );
     }
 
@@ -1272,7 +1363,23 @@ mod tests {
     }
 
     fn mp4_with_samples(use_co64: bool, samples: &[&[u8]], durations: &[u32]) -> Vec<u8> {
-        mp4_with_sample_tables(use_co64, samples, durations, samples, 1)
+        mp4_with_sample_tables(use_co64, samples, durations, samples, 1, None)
+    }
+
+    fn mp4_with_samples_and_sync(
+        use_co64: bool,
+        samples: &[&[u8]],
+        durations: &[u32],
+        sync_sample_numbers: &[u32],
+    ) -> Vec<u8> {
+        mp4_with_sample_tables(
+            use_co64,
+            samples,
+            durations,
+            samples,
+            1,
+            Some(sync_sample_numbers),
+        )
     }
 
     fn mp4_with_mismatched_sample_counts() -> Vec<u8> {
@@ -1282,6 +1389,7 @@ mod tests {
             &[1_000],
             &[b"aa".as_slice(), b"bb".as_slice()],
             1,
+            None,
         )
     }
 
@@ -1292,6 +1400,7 @@ mod tests {
             &[1_000],
             &[b"aa".as_slice()],
             sample_description_index,
+            None,
         )
     }
 
@@ -1302,6 +1411,18 @@ mod tests {
             &[1_000],
             &[b"abc".as_slice()],
             1,
+            None,
+        )
+    }
+
+    fn mp4_with_sync_samples(sync_sample_numbers: &[u32]) -> Vec<u8> {
+        mp4_with_sample_tables(
+            false,
+            &[b"aa".as_slice(), b"bb".as_slice()],
+            &[1_000, 1_000],
+            &[b"aa".as_slice(), b"bb".as_slice()],
+            1,
+            Some(sync_sample_numbers),
         )
     }
 
@@ -1311,6 +1432,7 @@ mod tests {
         durations: &[u32],
         mdat_samples: &[&[u8]],
         sample_description_index: u32,
+        sync_sample_numbers: Option<&[u32]>,
     ) -> Vec<u8> {
         let ftyp = ftyp_box();
         let mdat_payload = mdat_samples.concat();
@@ -1326,6 +1448,7 @@ mod tests {
                 durations,
                 use_co64,
                 sample_description_index,
+                sync_sample_numbers,
             ),
         );
         let chunk_offset = u64::try_from(ftyp.len() + placeholder_moov.len() + 8).unwrap();
@@ -1337,6 +1460,7 @@ mod tests {
                 durations,
                 use_co64,
                 sample_description_index,
+                sync_sample_numbers,
             ),
         );
 
@@ -1357,6 +1481,7 @@ mod tests {
         durations: &[u32],
         use_co64: bool,
         sample_description_index: u32,
+        sync_sample_numbers: Option<&[u32]>,
     ) -> Vec<u8> {
         let media_duration = durations.iter().copied().sum::<u32>();
         [
@@ -1371,6 +1496,7 @@ mod tests {
                 durations,
                 use_co64,
                 sample_description_index,
+                sync_sample_numbers,
             ),
         ]
         .concat()
@@ -1409,6 +1535,7 @@ mod tests {
         durations: &[u32],
         use_co64: bool,
         sample_description_index: u32,
+        sync_sample_numbers: Option<&[u32]>,
     ) -> Vec<u8> {
         let stbl = stbl_box(
             chunk_offset,
@@ -1416,6 +1543,7 @@ mod tests {
             durations,
             use_co64,
             sample_description_index,
+            sync_sample_numbers,
         );
         let minf = box_(*MINF_ID, &stbl);
         let mdia = box_(
@@ -1455,26 +1583,27 @@ mod tests {
         durations: &[u32],
         use_co64: bool,
         sample_description_index: u32,
+        sync_sample_numbers: Option<&[u32]>,
     ) -> Vec<u8> {
         let chunk_offset_box = if use_co64 {
             co64_box(chunk_offset)
         } else {
             stco_box(u32::try_from(chunk_offset).unwrap())
         };
-        box_(
-            *STBL_ID,
-            &[
-                stsd_box(),
-                stts_box(durations),
-                stsc_box(
-                    u32::try_from(sample_sizes.len()).unwrap(),
-                    sample_description_index,
-                ),
-                stsz_box(sample_sizes),
-                chunk_offset_box,
-            ]
-            .concat(),
-        )
+        let mut boxes = vec![
+            stsd_box(),
+            stts_box(durations),
+            stsc_box(
+                u32::try_from(sample_sizes.len()).unwrap(),
+                sample_description_index,
+            ),
+            stsz_box(sample_sizes),
+        ];
+        if let Some(sync_sample_numbers) = sync_sample_numbers {
+            boxes.push(stss_box(sync_sample_numbers));
+        }
+        boxes.push(chunk_offset_box);
+        box_(*STBL_ID, &boxes.concat())
     }
 
     fn stsd_box() -> Vec<u8> {
@@ -1517,6 +1646,15 @@ mod tests {
             body.extend_from_slice(&sample_size.to_be_bytes());
         }
         box_(*STSZ_ID, &full_box(0, &body))
+    }
+
+    fn stss_box(sync_sample_numbers: &[u32]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&(u32::try_from(sync_sample_numbers.len()).unwrap()).to_be_bytes());
+        for sample_number in sync_sample_numbers {
+            body.extend_from_slice(&sample_number.to_be_bytes());
+        }
+        box_(*STSS_ID, &full_box(0, &body))
     }
 
     fn stco_box(chunk_offset: u32) -> Vec<u8> {

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, parses simple `stsd`, `stts`, `stsc`, `stsz`, and `stco`/`co64` sample tables for one populated track, and emits packets from `mdat` with PTS/DTS/duration and MOV side data.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, parses simple `stsd`, `stts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, and emits packets from `mdat` with PTS/DTS/duration, sync-sample key flags, and MOV side data.
 
 ## Last Successful Commands
 
@@ -112,6 +112,12 @@
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
 
 ## Last Failing Commands
 
@@ -121,16 +127,17 @@
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on a redundant closure in `probe.rs`; it was replaced with the function reference and clippy passed on rerun.
 - `rg "read_u64|write_u64" crates/avutil/src crates/avformat/src` failed because ripgrep is not installed in this shell; PowerShell-native file inspection was used instead.
 - `cargo test -p avformat mov` initially failed because the malformed `ftyp` fixture truncated the next top-level box before reaching the intended validation; the fixture was narrowed and `cargo test -p avformat mov::tests` passed.
+- `cargo test -p avformat mov::tests` was initially blocked by Windows Application Control for the generated test executable; rerunning with the approved `cargo test` prefix passed.
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current focus; the next slice is broader sample timing/keyframe support.
+`avformat-mov-demuxer` remains the current focus; the next slice is composition timestamp support and broader sample-table coverage.
 
 ## Next 3 Concrete Actions
 
-1. Add `stss` sync-sample parsing so keyframe flags are not blindly assigned to every MOV/MP4 packet.
-2. Add `ctts` composition offset parsing or explicitly reject files that need PTS/DTS separation.
-3. Expand sample-to-chunk tests beyond a single chunk while keeping multi-track extraction blocked until it has coverage.
+1. Add `ctts` composition offset parsing or explicitly reject files that need PTS/DTS separation.
+2. Expand sample-to-chunk coverage beyond a single chunk and entry.
+3. Keep multi-track extraction blocked until it has tests for stream selection, timing, and packet interleaving.
 
 ## Known Blockers
 
@@ -140,4 +147,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: extend `avformat-mov-demuxer` with simple sample table parsing and `mdat` packet extraction for one populated track, including `stco` and `co64` offsets, packet timing, side data, and invalid/truncated media tests.
+Latest slice: extend `avformat-mov-demuxer` with `stss` sync-sample parsing so packet key flags follow the MOV/MP4 sync sample table, including invalid sync sample tests.

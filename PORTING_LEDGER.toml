@@ -791,10 +791,11 @@ unit_tests = [
   "mov::tests::rejects_invalid_full_boxes_and_ftyp_payloads",
   "mov::tests::reads_packets_from_simple_sample_table",
   "mov::tests::reads_packets_from_co64_offsets",
+  "mov::tests::reads_sync_sample_table_for_key_flags",
   "mov::tests::rejects_invalid_sample_tables_and_truncated_mdat_payloads",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; parses simple stsd/stts/stsc/stsz/stco/co64 tables for one populated track; emits packets from mdat with PTS/DTS/duration and side data; and rejects malformed sample tables and truncated media data. Multiple populated tracks, ctts, stss, complex chunk maps, fragments, edit lists, codec parameters, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; parses simple stsd/stts/stsc/stsz/stss/stco/co64 tables for one populated track; emits packets from mdat with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables and truncated media data. Multiple populated tracks, ctts, complex chunk maps, fragments, edit lists, codec parameters, CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
