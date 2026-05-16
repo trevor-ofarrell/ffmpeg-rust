@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avutil-options` is implemented and verified with AVOption-like descriptors, default/current values, bool/int/float/string parsing, duplicate detection, type validation, range validation, and invalid string checks. The next priority primitive is `avutil-hash`.
+`avutil-hash` is implemented and verified with Adler-32 and IEEE CRC-32 one-shot and streaming helpers plus known-vector tests. The next priority component is `fftools-option-parser`.
 
 ## Last Successful Commands
 
@@ -24,6 +24,7 @@
 - `cargo test -p avutil bitwriter`
 - `cargo test -p avutil dict`
 - `cargo test -p avutil options`
+- `cargo test -p avutil hash`
 
 ## Last Failing Commands
 
@@ -33,13 +34,13 @@
 
 ## Current Focus Component
 
-`avutil-hash` is the next highest-priority incomplete component after `avutil-options`.
+`fftools-option-parser` is the next highest-priority incomplete component after `avutil-hash`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avutil options`.
+1. Run `cargo test -p avutil hash`.
 2. Run formatting, workspace tests, and clippy.
-3. Add `avutil-hash` checksum/hash helper primitives.
+3. Add the first `fftools` option parser primitive for FFmpeg-style option grouping/order.
 
 ## Known Blockers
 
@@ -49,4 +50,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avutil-options` descriptor and value validation helpers.
+Latest committed slice: add `avutil-hash` Adler-32 and IEEE CRC-32 helpers.

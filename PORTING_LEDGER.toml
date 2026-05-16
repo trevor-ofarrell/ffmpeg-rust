@@ -289,13 +289,34 @@ id = "avutil-hash"
 kind = "utility"
 ffmpeg_name = "hash/checksum helpers"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 1
 oracle_command = ""
+rust_command = "cargo test -p avutil hash"
+unit_tests = [
+  "hash::tests::adler32_matches_standard_vectors",
+  "hash::tests::adler32_streaming_matches_single_shot",
+  "hash::tests::crc32_ieee_matches_standard_vectors",
+  "hash::tests::crc32_streaming_matches_single_shot",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Adler-32 and IEEE CRC-32 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests. FFmpeg-specific hash muxer and framehash behavior are pending."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-option-parser"
+kind = "cli"
+ffmpeg_name = "ffmpeg option parser"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 2
+oracle_command = "ffmpeg -h; ffprobe -h"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next shared primitive after option metadata."
+notes = "Next CLI compatibility primitive after shared avutil infrastructure."
 blocked_reason = ""
