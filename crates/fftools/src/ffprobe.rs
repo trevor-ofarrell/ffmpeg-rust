@@ -14,6 +14,7 @@ enum WriterFormat {
 struct FfprobeCommand {
     show_format: bool,
     show_streams: bool,
+    show_packets: bool,
     writer_format: WriterFormat,
     input_url: String,
 }
@@ -30,6 +31,7 @@ pub struct FfprobeReport {
     time_base: String,
     tags: Vec<(String, String)>,
     streams: Vec<FfprobeStreamReport>,
+    packets: Vec<FfprobePacketReport>,
 }
 
 impl FfprobeReport {
@@ -72,6 +74,10 @@ impl FfprobeReport {
     pub fn streams(&self) -> &[FfprobeStreamReport] {
         &self.streams
     }
+
+    pub fn packets(&self) -> &[FfprobePacketReport] {
+        &self.packets
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +87,7 @@ pub struct FfprobeStreamReport {
     codec_tag_string: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
+    time_base_den: u32,
     time_base: String,
     duration_ts: Option<u64>,
     duration: Option<String>,
@@ -127,6 +134,62 @@ impl FfprobeStreamReport {
 
     pub fn tags(&self) -> &[(String, String)] {
         &self.tags
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FfprobePacketReport {
+    index: usize,
+    stream_index: usize,
+    pts: Option<i64>,
+    pts_time: Option<String>,
+    dts: Option<i64>,
+    dts_time: Option<String>,
+    duration: i64,
+    duration_time: String,
+    size: usize,
+    flags: String,
+}
+
+impl FfprobePacketReport {
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    pub fn stream_index(&self) -> usize {
+        self.stream_index
+    }
+
+    pub fn pts(&self) -> Option<i64> {
+        self.pts
+    }
+
+    pub fn pts_time(&self) -> Option<&str> {
+        self.pts_time.as_deref()
+    }
+
+    pub fn dts(&self) -> Option<i64> {
+        self.dts
+    }
+
+    pub fn dts_time(&self) -> Option<&str> {
+        self.dts_time.as_deref()
+    }
+
+    pub fn duration(&self) -> i64 {
+        self.duration
+    }
+
+    pub fn duration_time(&self) -> &str {
+        &self.duration_time
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn flags(&self) -> &str {
+        &self.flags
     }
 }
 
@@ -211,11 +274,18 @@ pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
     }
 
     let command = parse_ffprobe_args(args)?;
-    let report = probe_local_file(command.input_url.as_str())?;
+    let report = probe_local_file_inner(command.input_url.as_str(), command.show_packets)?;
     Ok(render_report(&command, &report))
 }
 
 pub fn probe_local_file(path: &str) -> Result<FfprobeReport, FfprobeError> {
+    probe_local_file_inner(path, false)
+}
+
+fn probe_local_file_inner(
+    path: &str,
+    collect_packets: bool,
+) -> Result<FfprobeReport, FfprobeError> {
     if path == "-" || path.starts_with("pipe:") {
         return Err(FfprobeError::unsupported(
             "ffprobe-rs currently supports only local seekable files",
@@ -238,15 +308,20 @@ pub fn probe_local_file(path: &str) -> Result<FfprobeReport, FfprobeError> {
         )));
     }
 
-    let demuxer = MovDemuxer::open(&bytes).map_err(|err| {
+    let mut demuxer = MovDemuxer::open(&bytes).map_err(|err| {
         FfprobeError::invalid_data(format!("failed to parse MOV/MP4 input: {err}"))
     })?;
-    Ok(report_from_mov(path, matched.score().get(), demuxer.info()))
+    let mut report = report_from_mov(path, matched.score().get(), demuxer.info());
+    if collect_packets {
+        report.packets = collect_mov_packets(&mut demuxer, &report.streams)?;
+    }
+    Ok(report)
 }
 
 fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
     let mut show_format = false;
     let mut show_streams = false;
+    let mut show_packets = false;
     let mut writer_format = WriterFormat::Default;
     let mut input_url = None;
     let mut index = 0;
@@ -261,6 +336,10 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
             }
             "-show_streams" => {
                 show_streams = true;
+                index += 1;
+            }
+            "-show_packets" => {
+                show_packets = true;
                 index += 1;
             }
             "-of" | "-print_format" => {
@@ -287,7 +366,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
         }
     }
 
-    if !show_format && !show_streams {
+    if !show_format && !show_streams && !show_packets {
         return Err(FfprobeError::usage("missing command"));
     }
 
@@ -295,6 +374,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
     Ok(FfprobeCommand {
         show_format,
         show_streams,
+        show_packets,
         writer_format,
         input_url,
     })
@@ -349,6 +429,7 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
             codec_tag_string: track.codec_tag().map(str::to_owned),
             width: track.width(),
             height: track.height(),
+            time_base_den: track.media_timescale(),
             time_base: format!("1/{}", track.media_timescale()),
             duration_ts: track.media_duration(),
             duration: track
@@ -382,6 +463,45 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
             .map(|entry| (entry.key().to_owned(), entry.value().to_owned()))
             .collect(),
         streams,
+        packets: Vec::new(),
+    }
+}
+
+fn collect_mov_packets(
+    demuxer: &mut MovDemuxer<'_>,
+    streams: &[FfprobeStreamReport],
+) -> Result<Vec<FfprobePacketReport>, FfprobeError> {
+    let mut packets = Vec::new();
+    while let Some(packet) = demuxer.read_packet().map_err(|err| {
+        FfprobeError::invalid_data(format!("failed to read MOV/MP4 packet: {err}"))
+    })? {
+        let stream = streams
+            .get(packet.stream_index())
+            .ok_or_else(|| FfprobeError::invalid_data("packet references an unknown stream"))?;
+        let pts = packet.pts();
+        let dts = packet.dts();
+        let duration = packet.duration();
+        packets.push(FfprobePacketReport {
+            index: packets.len(),
+            stream_index: packet.stream_index(),
+            pts,
+            pts_time: pts.map(|pts| format_signed_time(pts, stream.time_base_den)),
+            dts,
+            dts_time: dts.map(|dts| format_signed_time(dts, stream.time_base_den)),
+            duration,
+            duration_time: format_signed_time(duration, stream.time_base_den),
+            size: packet.data().len(),
+            flags: packet_flags(packet.flags().bits()),
+        });
+    }
+    Ok(packets)
+}
+
+fn packet_flags(bits: u32) -> String {
+    if bits & 1 != 0 {
+        "K_".to_string()
+    } else {
+        "__".to_string()
     }
 }
 
@@ -394,6 +514,22 @@ fn render_report(command: &FfprobeCommand, report: &FfprobeReport) -> String {
 
 fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     let mut out = String::new();
+    if command.show_packets {
+        for packet in &report.packets {
+            out.push_str("[PACKET]\n");
+            out.push_str(&format!("stream_index={}\n", packet.stream_index));
+            out.push_str(&format!("pts={}\n", optional_i64(packet.pts)));
+            out.push_str(&format!("pts_time={}\n", optional_str(&packet.pts_time)));
+            out.push_str(&format!("dts={}\n", optional_i64(packet.dts)));
+            out.push_str(&format!("dts_time={}\n", optional_str(&packet.dts_time)));
+            out.push_str(&format!("duration={}\n", packet.duration));
+            out.push_str(&format!("duration_time={}\n", packet.duration_time));
+            out.push_str(&format!("size={}\n", packet.size));
+            out.push_str(&format!("flags={}\n", packet.flags));
+            out.push_str("[/PACKET]\n");
+        }
+    }
+
     if command.show_streams {
         for stream in &report.streams {
             out.push_str("[STREAM]\n");
@@ -447,6 +583,15 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
 
 fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
     let mut sections = Vec::new();
+    if command.show_packets {
+        let packets = report
+            .packets
+            .iter()
+            .map(render_packet_json)
+            .collect::<Vec<_>>()
+            .join(",\n    ");
+        sections.push(format!("  \"packets\": [\n    {packets}\n  ]"));
+    }
     if command.show_streams {
         let streams = report
             .streams
@@ -460,6 +605,21 @@ fn render_json(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         sections.push(format!("  \"format\": {}", render_format_json(report)));
     }
     format!("{{\n{}\n}}\n", sections.join(",\n"))
+}
+
+fn render_packet_json(packet: &FfprobePacketReport) -> String {
+    let fields = vec![
+        json_number("stream_index", packet.stream_index),
+        json_optional_number("pts", packet.pts),
+        json_optional_string("pts_time", packet.pts_time.as_deref()),
+        json_optional_number("dts", packet.dts),
+        json_optional_string("dts_time", packet.dts_time.as_deref()),
+        json_number("duration", packet.duration),
+        json_string("duration_time", &packet.duration_time),
+        json_number("size", packet.size),
+        json_string("flags", &packet.flags),
+    ];
+    format!("{{{}}}", fields.join(", "))
 }
 
 fn render_stream_json(stream: &FfprobeStreamReport) -> String {
@@ -519,6 +679,24 @@ fn json_number(key: &str, value: impl fmt::Display) -> String {
     format!("\"{}\": {value}", escape_json(key))
 }
 
+fn json_optional_number(key: &str, value: Option<i64>) -> String {
+    match value {
+        Some(value) => json_number(key, value),
+        None => json_null(key),
+    }
+}
+
+fn json_optional_string(key: &str, value: Option<&str>) -> String {
+    match value {
+        Some(value) => json_string(key, value),
+        None => json_null(key),
+    }
+}
+
+fn json_null(key: &str) -> String {
+    format!("\"{}\": null", escape_json(key))
+}
+
 fn json_object(key: &str, pairs: &[(String, String)]) -> String {
     let fields = pairs
         .iter()
@@ -551,6 +729,21 @@ fn format_duration(duration_ts: u64, timescale: u32) -> String {
     format!("{}.{:06}", micros / 1_000_000, micros % 1_000_000)
 }
 
+fn format_signed_time(value: i64, timescale: u32) -> String {
+    let micros = (i128::from(value) * 1_000_000) / i128::from(timescale);
+    let sign = if micros < 0 { "-" } else { "" };
+    let abs = micros.abs();
+    format!("{sign}{}.{:06}", abs / 1_000_000, abs % 1_000_000)
+}
+
+fn optional_i64(value: Option<i64>) -> String {
+    value.map_or_else(|| "N/A".to_string(), |value| value.to_string())
+}
+
+fn optional_str(value: &Option<String>) -> &str {
+    value.as_deref().unwrap_or("N/A")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -567,6 +760,14 @@ mod tests {
     const TKHD_ID: [u8; 4] = *b"tkhd";
     const MDIA_ID: [u8; 4] = *b"mdia";
     const MDHD_ID: [u8; 4] = *b"mdhd";
+    const MINF_ID: [u8; 4] = *b"minf";
+    const STBL_ID: [u8; 4] = *b"stbl";
+    const STSD_ID: [u8; 4] = *b"stsd";
+    const STTS_ID: [u8; 4] = *b"stts";
+    const STSC_ID: [u8; 4] = *b"stsc";
+    const STSZ_ID: [u8; 4] = *b"stsz";
+    const STSS_ID: [u8; 4] = *b"stss";
+    const STCO_ID: [u8; 4] = *b"stco";
     const MDAT_ID: [u8; 4] = *b"mdat";
 
     #[test]
@@ -576,6 +777,7 @@ mod tests {
             "-v",
             "error",
             "-show_streams",
+            "-show_packets",
             "-show_format",
             "-of",
             "json",
@@ -585,6 +787,7 @@ mod tests {
 
         assert!(command.show_streams);
         assert!(command.show_format);
+        assert!(command.show_packets);
         assert_eq!(command.writer_format, WriterFormat::Json);
         assert_eq!(command.input_url, "clip.mp4");
     }
@@ -617,6 +820,24 @@ mod tests {
     }
 
     #[test]
+    fn renders_default_packet_sections() {
+        let command =
+            parse_ffprobe_args(&strings(&["-show_packets", "-show_format", "clip.mp4"])).unwrap();
+        let report = sample_report();
+
+        let rendered = render_report(&command, &report);
+
+        assert!(rendered.starts_with("[PACKET]\n"));
+        assert!(rendered.contains("stream_index=0\n"));
+        assert!(rendered.contains("pts=0\n"));
+        assert!(rendered.contains("pts_time=0.000000\n"));
+        assert!(rendered.contains("duration_time=0.011111\n"));
+        assert!(rendered.contains("size=3\n"));
+        assert!(rendered.contains("flags=K_\n"));
+        assert!(rendered.contains("[FORMAT]\n"));
+    }
+
+    #[test]
     fn renders_json_report_sections() {
         let command =
             parse_ffprobe_args(&strings(&["-show_format", "-of", "json", "clip.mp4"])).unwrap();
@@ -628,6 +849,7 @@ mod tests {
         assert!(rendered.contains("\"filename\": \"clip.mp4\""));
         assert!(rendered.contains("\"title\": \"Rust \\\"MOV\\\"\""));
         assert!(!rendered.contains("\"streams\""));
+        assert!(!rendered.contains("\"packets\""));
     }
 
     #[test]
@@ -698,6 +920,61 @@ mod tests {
     }
 
     #[test]
+    fn outputs_mov_packet_sections() {
+        let path = write_temp_mov(
+            "show-packets",
+            &sampled_mov_file(&[b"abc".as_slice(), b"defg".as_slice()], &[1_000, 2_000]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&["-show_packets", path_arg.as_str()]))
+            .expect("ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("[PACKET]\n"));
+        assert!(stdout.contains("stream_index=0\n"));
+        assert!(stdout.contains("pts=0\n"));
+        assert!(stdout.contains("dts=0\n"));
+        assert!(stdout.contains("duration=1000\n"));
+        assert!(stdout.contains("duration_time=0.011111\n"));
+        assert!(stdout.contains("size=3\n"));
+        assert!(stdout.contains("flags=K_\n"));
+        assert!(stdout.contains("pts=1000\n"));
+        assert!(stdout.contains("duration=2000\n"));
+        assert!(stdout.contains("size=4\n"));
+        assert!(stdout.contains("flags=__\n"));
+    }
+
+    #[test]
+    fn outputs_mov_packet_json_without_stream_or_format_sections() {
+        let path = write_temp_mov(
+            "show-packets-json",
+            &sampled_mov_file(&[b"abc".as_slice(), b"defg".as_slice()], &[1_000, 2_000]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-show_packets",
+            "-of",
+            "json",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("\"packets\""));
+        assert!(stdout.contains("\"stream_index\": 0"));
+        assert!(stdout.contains("\"pts\": 1000"));
+        assert!(stdout.contains("\"pts_time\": \"0.011111\""));
+        assert!(stdout.contains("\"duration_time\": \"0.022222\""));
+        assert!(stdout.contains("\"flags\": \"__\""));
+        assert!(!stdout.contains("\"streams\""));
+        assert!(!stdout.contains("\"format\""));
+    }
+
+    #[test]
     fn rejects_unmatched_local_input_format() {
         let path = write_temp_bytes("not-mov", "bin", b"not a movie");
         let path_arg = path.to_string_lossy().into_owned();
@@ -727,11 +1004,24 @@ mod tests {
                 codec_tag_string: Some("raw ".to_string()),
                 width: Some(1920),
                 height: Some(1080),
+                time_base_den: 90_000,
                 time_base: "1/90000".to_string(),
                 duration_ts: Some(450_000),
                 duration: Some("5.000000".to_string()),
                 nb_frames: 0,
                 tags: Vec::new(),
+            }],
+            packets: vec![FfprobePacketReport {
+                index: 0,
+                stream_index: 0,
+                pts: Some(0),
+                pts_time: Some("0.000000".to_string()),
+                dts: Some(0),
+                dts_time: Some("0.000000".to_string()),
+                duration: 1_000,
+                duration_time: "0.011111".to_string(),
+                size: 3,
+                flags: "K_".to_string(),
             }],
         }
     }
@@ -766,6 +1056,134 @@ mod tests {
         ));
         out.extend_from_slice(&box_(MDAT_ID, &[]));
         out
+    }
+
+    fn sampled_mov_file(samples: &[&[u8]], durations: &[u32]) -> Vec<u8> {
+        let ftyp = ftyp_box();
+        let sample_sizes = samples
+            .iter()
+            .map(|sample| u32::try_from(sample.len()).unwrap())
+            .collect::<Vec<_>>();
+        let placeholder_moov = box_(*b"moov", &moov_with_samples(0, &sample_sizes, durations));
+        let chunk_offset = u32::try_from(ftyp.len() + placeholder_moov.len() + 8).unwrap();
+        let moov = box_(
+            MOOV_ID,
+            &moov_with_samples(chunk_offset, &sample_sizes, durations),
+        );
+        let mut out = Vec::new();
+        out.extend_from_slice(&ftyp);
+        out.extend_from_slice(&moov);
+        out.extend_from_slice(&box_(MDAT_ID, &samples.concat()));
+        out
+    }
+
+    fn moov_with_samples(chunk_offset: u32, sample_sizes: &[u32], durations: &[u32]) -> Vec<u8> {
+        let media_duration = durations.iter().copied().sum::<u32>();
+        [
+            mvhd_v0(1_000, media_duration),
+            trak_with_sample_table(
+                1,
+                media_duration,
+                90_000,
+                sample_sizes,
+                durations,
+                chunk_offset,
+            ),
+        ]
+        .concat()
+    }
+
+    fn trak_with_sample_table(
+        track_id: u32,
+        media_duration: u32,
+        timescale: u32,
+        sample_sizes: &[u32],
+        durations: &[u32],
+        chunk_offset: u32,
+    ) -> Vec<u8> {
+        let stbl = box_(
+            STBL_ID,
+            &[
+                stsd_box(),
+                stts_box(durations),
+                stsc_box(u32::try_from(sample_sizes.len()).unwrap()),
+                stsz_box(sample_sizes),
+                stss_box(&[1]),
+                stco_box(chunk_offset),
+            ]
+            .concat(),
+        );
+        let minf = box_(MINF_ID, &stbl);
+        let mdia = box_(
+            MDIA_ID,
+            &[mdhd_v0(timescale, media_duration), minf].concat(),
+        );
+        box_(
+            TRAK_ID,
+            &[tkhd_v0(track_id, media_duration, 1_920, 1_080), mdia].concat(),
+        )
+    }
+
+    fn stsd_box() -> Vec<u8> {
+        let mut sample_entry = Vec::new();
+        sample_entry.extend_from_slice(&16_u32.to_be_bytes());
+        sample_entry.extend_from_slice(b"raw ");
+        sample_entry.extend_from_slice(&[0; 6]);
+        sample_entry.extend_from_slice(&1_u16.to_be_bytes());
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&1_u32.to_be_bytes());
+        body.extend_from_slice(&sample_entry);
+        box_(STSD_ID, &full_box(0, &body))
+    }
+
+    fn stts_box(durations: &[u32]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&u32::try_from(durations.len()).unwrap().to_be_bytes());
+        for duration in durations {
+            body.extend_from_slice(&1_u32.to_be_bytes());
+            body.extend_from_slice(&duration.to_be_bytes());
+        }
+        box_(STTS_ID, &full_box(0, &body))
+    }
+
+    fn stsc_box(samples_per_chunk: u32) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&1_u32.to_be_bytes());
+        body.extend_from_slice(&1_u32.to_be_bytes());
+        body.extend_from_slice(&samples_per_chunk.to_be_bytes());
+        body.extend_from_slice(&1_u32.to_be_bytes());
+        box_(STSC_ID, &full_box(0, &body))
+    }
+
+    fn stsz_box(sample_sizes: &[u32]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&0_u32.to_be_bytes());
+        body.extend_from_slice(&u32::try_from(sample_sizes.len()).unwrap().to_be_bytes());
+        for sample_size in sample_sizes {
+            body.extend_from_slice(&sample_size.to_be_bytes());
+        }
+        box_(STSZ_ID, &full_box(0, &body))
+    }
+
+    fn stss_box(sync_sample_numbers: &[u32]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(
+            &u32::try_from(sync_sample_numbers.len())
+                .unwrap()
+                .to_be_bytes(),
+        );
+        for sample_number in sync_sample_numbers {
+            body.extend_from_slice(&sample_number.to_be_bytes());
+        }
+        box_(STSS_ID, &full_box(0, &body))
+    }
+
+    fn stco_box(chunk_offset: u32) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&1_u32.to_be_bytes());
+        body.extend_from_slice(&chunk_offset.to_be_bytes());
+        box_(STCO_ID, &full_box(0, &body))
     }
 
     fn ftyp_box() -> Vec<u8> {

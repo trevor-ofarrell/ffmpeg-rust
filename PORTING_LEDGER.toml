@@ -396,6 +396,27 @@ notes = "Initial ffprobe-rs command execution path supports local seekable MOV/M
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffprobe-mov-show-packets"
+kind = "cli"
+ffmpeg_name = "ffprobe MOV/MP4 -show_packets"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_packets -of json <input.mp4>"
+rust_command = "cargo test -p fftools ffprobe"
+unit_tests = [
+  "ffprobe::tests::parses_ffprobe_show_options_and_input",
+  "ffprobe::tests::renders_default_packet_sections",
+  "ffprobe::tests::outputs_mov_packet_sections",
+  "ffprobe::tests::outputs_mov_packet_json_without_stream_or_format_sections",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet stream index, PTS/DTS, time fields, duration, size, and key flags in default and json writers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential coverage yet."
+blocked_reason = ""
+
+[[component]]
 id = "avformat-avio"
 kind = "api"
 ffmpeg_name = "AVIO-like I/O"
