@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` has an initial metadata-only implementation. It validates ISOBMFF/MOV/MP4 box bounds, supports classic, extended-size, and top-level size-zero boxes, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, and returns an explicit unsupported error for packet extraction until sample tables are implemented.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, parses simple `stsd`, `stts`, `stsc`, `stsz`, and `stco`/`co64` sample tables for one populated track, and emits packets from `mdat` with PTS/DTS/duration and MOV side data.
 
 ## Last Successful Commands
 
@@ -18,6 +18,8 @@
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
 - `cargo run -p fate-runner -- list`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
 - `cargo run -p fate-runner -- list`
 - `cargo test -p avformat pcm`
 - `cargo fmt --all`
@@ -122,13 +124,13 @@
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current focus; the next slice is sample table parsing and packet extraction.
+`avformat-mov-demuxer` remains the current focus; the next slice is broader sample timing/keyframe support.
 
 ## Next 3 Concrete Actions
 
-1. Add minimal `stbl` parsing for `stsd`, `stts`, `stsc`, `stsz`, and `stco`/`co64` on one track.
-2. Use the parsed sample table and `mdat` offsets to emit stream-0 packets with PTS/DTS/duration for a small uncompressed fixture.
-3. Add invalid table and truncated `mdat` tests before replacing the current unsupported packet-extraction path.
+1. Add `stss` sync-sample parsing so keyframe flags are not blindly assigned to every MOV/MP4 packet.
+2. Add `ctts` composition offset parsing or explicitly reject files that need PTS/DTS separation.
+3. Expand sample-to-chunk tests beyond a single chunk while keeping multi-track extraction blocked until it has coverage.
 
 ## Known Blockers
 
@@ -138,4 +140,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-mov-demuxer` metadata parsing for `ftyp`, `mvhd`, `tkhd`, and `mdhd` with classic, extended-size, and size-zero box handling, required-metadata validation, explicit unsupported packet extraction, and ledger/docs updates.
+Latest slice: extend `avformat-mov-demuxer` with simple sample table parsing and `mdat` packet extraction for one populated track, including `stco` and `co64` offsets, packet timing, side data, and invalid/truncated media tests.
