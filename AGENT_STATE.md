@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avcodec-rawvideo` is implemented and verified for gray, rgb24, rgba, and yuv420p packet payloads with strict frame geometry and packet-size validation. The next priority component is `avcodec-pcm-s16le`.
+`avcodec-pcm-s16le` is implemented and verified for packed little-endian signed 16-bit PCM packet payloads with sample-rate/channel validation, whole sample-frame validation, zero-sample handling, and PTS propagation. The next priority component is `avformat-wav-demuxer`.
 
 ## Last Successful Commands
 
@@ -34,6 +34,7 @@
 - `cargo test -p avformat hash_muxer`
 - `cargo test -p avformat framecrc_muxer`
 - `cargo test -p avcodec rawvideo`
+- `cargo test -p avcodec pcm`
 
 ## Last Failing Commands
 
@@ -44,13 +45,13 @@
 
 ## Current Focus Component
 
-`avcodec-pcm-s16le` is the next highest-priority incomplete component after `avcodec-rawvideo`.
+`avformat-wav-demuxer` is the next highest-priority incomplete component after `avcodec-pcm-s16le`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avcodec rawvideo`.
+1. Run `cargo test -p avcodec pcm`.
 2. Run formatting, workspace tests, and clippy.
-3. Add the first PCM s16le decoder primitive.
+3. Add the first WAV demuxer primitive.
 
 ## Known Blockers
 
@@ -60,4 +61,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avcodec-rawvideo` fixed-size raw frame decoder.
+Latest committed slice: add `avcodec-pcm-s16le` packed PCM decoder.

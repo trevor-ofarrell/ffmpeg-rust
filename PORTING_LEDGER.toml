@@ -502,13 +502,35 @@ id = "avcodec-pcm-s16le"
 kind = "decoder"
 ffmpeg_name = "pcm_s16le"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -f s16le -ar <rate> -ac <channels> -i <input> -f framecrc -"
+rust_command = "cargo test -p avcodec pcm"
+unit_tests = [
+  "pcm::tests::decodes_stereo_s16le_packet_to_packed_audio_frame",
+  "pcm::tests::accepts_empty_packets_as_zero_samples",
+  "pcm::tests::validates_constructor_arguments",
+  "pcm::tests::rejects_packets_that_split_sample_frames",
+  "pcm::tests::computes_sample_counts_for_mono_and_multichannel_packets",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial packed pcm_s16le decoder emits avutil audio frames with strict sample-rate/channel validation and whole sample-frame packet validation. Other PCM variants, demuxer wiring, differential tests, and FATE coverage are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-wav-demuxer"
+kind = "demuxer"
+ffmpeg_name = "wav"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -i <input.wav> -f framecrc -"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple audio codec target after rawvideo."
+notes = "Next simple container target after rawvideo and PCM primitives."
 blocked_reason = ""
