@@ -40,6 +40,8 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `Image2Demuxer` implements an initial image2 packetizer over caller-provided image entries. It supports a single literal image path or a contiguous `%d`/`%0Nd` numbered sequence, sorts frames by frame number, rejects gaps and duplicates, and emits one packet per image with path side data.
 
+`RawVideoDemuxer` implements an initial rawvideo packet slicer for fixed-size `gray`, `rgb24`, `rgba`, and `yuv420p` frame payloads. It validates dimensions, frame rate, yuv420p parity, and whole-frame byte counts before emitting monotonically timed packets.
+
 ## CLI Compatibility Model
 
 CLI compatibility is treated as a first-class surface. The current implementation supports version banners for `ffmpeg-rs` and `ffprobe-rs` plus an internal parser that groups a small known set of FFmpeg-style options onto global scope, the next `-i` input, or the next output filename. `IoPlan` turns parsed input/output URLs into validated file, pipe, or protocol endpoints for future command execution. Unsupported command forms still exit non-zero and are recorded as incomplete in the ledger.

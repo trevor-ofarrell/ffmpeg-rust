@@ -2,12 +2,18 @@
 
 ## Current Status
 
-`avformat-image2-demuxer` is implemented and verified for a narrow packetization path over caller-provided image entries. It supports a single literal image or contiguous `%d`/`%0Nd` numbered sequence, validates patterns and frame rates, rejects gaps/duplicates/unmatched entries, and emits one stream-0 packet per image with path side data. The next priority component is `avformat-rawvideo-demuxer`.
+`avformat-rawvideo-demuxer` is implemented and verified for a narrow fixed-frame packet slicing path. It supports `gray`, `rgb24`, `rgba`, and `yuv420p`, validates geometry and frame rate, rejects truncated raw streams, and emits stream-0 packets with monotonic PTS. The next priority component is `avformat-pcm-s16le-demuxer`.
 
 ## Last Successful Commands
 
 - `git init`
 - `cargo fmt --all`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo test -p avformat rawvideo`
+- `cargo fmt --all`
+- `cargo test -p avformat rawvideo`
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
@@ -67,13 +73,13 @@
 
 ## Current Focus Component
 
-`avformat-rawvideo-demuxer` is the next highest-priority incomplete component after the initial image2 demuxer.
+`avformat-pcm-s16le-demuxer` is the next highest-priority incomplete component after the initial rawvideo demuxer.
 
 ## Next 3 Concrete Actions
 
-1. Add an internal rawvideo demuxer that slices fixed-size raw frame packets from a byte stream.
-2. Add unit tests for frame sizing, packet timing, pixel-format validation, and truncated data handling.
-3. Update the ledger, docs, and state after the rawvideo demuxer passes focused and workspace checks.
+1. Add an internal PCM s16le demuxer that slices whole interleaved sample-frame packets from a byte stream.
+2. Add unit tests for sample-frame sizing, packet timing, channel/sample-rate validation, and truncated input handling.
+3. Update the ledger, docs, and state after the PCM demuxer passes focused and workspace checks.
 
 ## Known Blockers
 
@@ -83,4 +89,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-image2-demuxer` for single image and contiguous numbered sequence packetization with pattern, ordering, side-data, and invalid-entry tests.
+Latest slice: add `avformat-rawvideo-demuxer` for fixed-size raw frame packet slicing with pixel-format sizing, timing, zero-frame, and truncated-input tests.

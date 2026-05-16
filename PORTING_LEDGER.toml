@@ -608,13 +608,34 @@ id = "avformat-rawvideo-demuxer"
 kind = "demuxer"
 ffmpeg_name = "rawvideo"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -f rawvideo -pix_fmt <fmt> -s <size> -framerate <rate> -i <input> -f framecrc -"
+rust_command = "cargo test -p avformat rawvideo"
+unit_tests = [
+  "rawvideo::tests::slices_fixed_size_rgb_frames_with_timing",
+  "rawvideo::tests::computes_frame_sizes_for_supported_pixel_formats",
+  "rawvideo::tests::accepts_empty_input_as_zero_frames_when_geometry_is_valid",
+  "rawvideo::tests::rejects_invalid_geometry_frame_rate_and_truncated_frames",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial rawvideo demuxer slices fixed-size frame packets for gray, rgb24, rgba, and yuv420p with frame-rate validation, monotonic PTS, and truncated-frame rejection. CLI wiring, probe integration, more pixel formats, differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-pcm-s16le-demuxer"
+kind = "demuxer"
+ffmpeg_name = "s16le"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -f s16le -ar <rate> -ac <channels> -i <input> -f framecrc -"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple format target to pair with the existing rawvideo decoder."
+notes = "Next simple raw audio format target to pair with the existing pcm_s16le decoder."
 blocked_reason = ""
