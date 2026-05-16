@@ -13,6 +13,9 @@ const UDTA_ID: &[u8; 4] = b"udta";
 const META_ID: &[u8; 4] = b"meta";
 const ILST_ID: &[u8; 4] = b"ilst";
 const DATA_ID: &[u8; 4] = b"data";
+const FREEFORM_ID: &[u8; 4] = b"----";
+const MEAN_ID: &[u8; 4] = b"mean";
+const NAME_ID: &[u8; 4] = b"name";
 const MDIA_ID: &[u8; 4] = b"mdia";
 const MDHD_ID: &[u8; 4] = b"mdhd";
 const MINF_ID: &[u8; 4] = b"minf";
@@ -857,23 +860,34 @@ fn parse_ilst(input: &[u8], ilst: &BoxHeader) -> AvResult<Dictionary> {
             item.payload_end,
             "MOV/MP4 ilst metadata item",
         )?;
+        if item.box_type == *FREEFORM_ID {
+            if let Some((key, value)) = parse_freeform_metadata_item(input, &children)? {
+                set_metadata_value(&mut metadata, &key, value)?;
+            }
+            continue;
+        }
         let Some((key, value_kind)) = metadata_item_mapping(item.box_type) else {
             continue;
         };
         for child in children {
             if child.box_type == *DATA_ID {
                 if let Some(value) = parse_metadata_data(child.payload(input), value_kind)? {
-                    metadata.set(key, value).map_err(|err| {
-                        AvError::invalid_data(format!(
-                            "MOV/MP4 metadata value for {key} is invalid: {}",
-                            err.message()
-                        ))
-                    })?;
+                    set_metadata_value(&mut metadata, key, value)?;
                 }
             }
         }
     }
     Ok(metadata)
+}
+
+fn set_metadata_value(metadata: &mut Dictionary, key: &str, value: String) -> AvResult<()> {
+    metadata.set(key, value).map_err(|err| {
+        AvError::invalid_data(format!(
+            "MOV/MP4 metadata value for {key} is invalid: {}",
+            err.message()
+        ))
+    })?;
+    Ok(())
 }
 
 fn merge_metadata(target: &mut Dictionary, source: Dictionary) -> AvResult<()> {
@@ -887,6 +901,62 @@ fn merge_metadata(target: &mut Dictionary, source: Dictionary) -> AvResult<()> {
         })?;
     }
     Ok(())
+}
+
+fn parse_freeform_metadata_item(
+    input: &[u8],
+    children: &[BoxHeader],
+) -> AvResult<Option<(String, String)>> {
+    let mut mean = None;
+    let mut name = None;
+    let mut value = None;
+
+    for child in children {
+        match &child.box_type {
+            MEAN_ID => mean = Some(parse_freeform_text_child(child.payload(input), "mean")?),
+            NAME_ID => name = Some(parse_freeform_text_child(child.payload(input), "name")?),
+            DATA_ID => value = parse_freeform_data_child(child.payload(input))?,
+            _ => {}
+        }
+    }
+
+    let Some(mean) = mean else {
+        return Ok(None);
+    };
+    let Some(name) = name else {
+        return Ok(None);
+    };
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if mean.is_empty() || name.is_empty() || name == "cdec" {
+        return Ok(None);
+    }
+    Ok(Some((name, value)))
+}
+
+fn parse_freeform_text_child(payload: &[u8], child_name: &str) -> AvResult<String> {
+    let mut reader = ByteReader::new(payload);
+    read_full_box_header(&mut reader, "MOV/MP4 freeform metadata child")?;
+    let value = reader.read_exact(reader.remaining())?;
+    std::str::from_utf8(value)
+        .map(|value| value.to_owned())
+        .map_err(|_| {
+            AvError::invalid_data(format!(
+                "MOV/MP4 freeform metadata {child_name} is not valid UTF-8"
+            ))
+        })
+}
+
+fn parse_freeform_data_child(payload: &[u8]) -> AvResult<Option<String>> {
+    let mut reader = ByteReader::new(payload);
+    read_full_box_header(&mut reader, "MOV/MP4 freeform metadata data")?;
+    ensure_remaining(&reader, 4, "MOV/MP4 freeform metadata data")?;
+    reader.skip(4)?;
+    let value = reader.read_exact(reader.remaining())?;
+    std::str::from_utf8(value)
+        .map(|value| Some(value.to_owned()))
+        .map_err(|_| AvError::invalid_data("MOV/MP4 freeform metadata data is not valid UTF-8"))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2447,6 +2517,21 @@ mod tests {
     }
 
     #[test]
+    fn extracts_freeform_metadata_from_ilst_atoms() {
+        let ilst = ilst_box(&[
+            ilst_freeform_item("com.apple.iTunes", "iTunSMPB", " 00000000 00000840"),
+            ilst_freeform_item("com.apple.iTunes", "cdec", "ignored"),
+        ]);
+        let bytes = mp4_with_moov_extra_box(box_(*UDTA_ID, &meta_box(ilst)));
+
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let metadata = demuxer.info().metadata();
+
+        assert_eq!(metadata.get("iTunSMPB"), Some(" 00000000 00000840"));
+        assert_eq!(metadata.get("cdec"), None);
+    }
+
+    #[test]
     fn extracts_track_metadata_from_track_udta() {
         let track_udta = box_(
             *UDTA_ID,
@@ -2553,6 +2638,41 @@ mod tests {
             &metadata_data_box_payload(METADATA_DATA_TYPE_SIGNED_INTEGER, &[0, 0, 0]),
         );
         let item = box_(*b"tves", &bad_padded_int8);
+        let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
+            *UDTA_ID,
+            &meta_box(ilst_box(&[item])),
+        )))
+        .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_freeform_name = box_(*NAME_ID, &full_box(0, b"\xff"));
+        let item = box_(
+            *FREEFORM_ID,
+            &[
+                freeform_text_child(*MEAN_ID, "com.apple.iTunes"),
+                bad_freeform_name,
+            ]
+            .concat(),
+        );
+        let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
+            *UDTA_ID,
+            &meta_box(ilst_box(&[item])),
+        )))
+        .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_freeform_data = box_(*DATA_ID, &full_box(0, b"\xff"));
+        let item = box_(
+            *FREEFORM_ID,
+            &[
+                freeform_text_child(*MEAN_ID, "com.apple.iTunes"),
+                freeform_text_child(*NAME_ID, "iTunSMPB"),
+                bad_freeform_data,
+            ]
+            .concat(),
+        );
         let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
             *UDTA_ID,
             &meta_box(ilst_box(&[item])),
@@ -3361,6 +3481,29 @@ mod tests {
             &metadata_data_box_payload(METADATA_DATA_TYPE_SIGNED_INTEGER, &[0, 0, 0, value]),
         );
         box_(kind, &data)
+    }
+
+    fn ilst_freeform_item(mean: &str, name: &str, value: &str) -> Vec<u8> {
+        box_(
+            *FREEFORM_ID,
+            &[
+                freeform_text_child(*MEAN_ID, mean),
+                freeform_text_child(*NAME_ID, name),
+                freeform_data_child(value),
+            ]
+            .concat(),
+        )
+    }
+
+    fn freeform_text_child(kind: [u8; 4], value: &str) -> Vec<u8> {
+        box_(kind, &full_box(0, value.as_bytes()))
+    }
+
+    fn freeform_data_child(value: &str) -> Vec<u8> {
+        box_(
+            *DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_UTF8, value.as_bytes()),
+        )
     }
 
     fn ilst_number_pair_item(kind: [u8; 4], current: u16, total: u16) -> Vec<u8> {
