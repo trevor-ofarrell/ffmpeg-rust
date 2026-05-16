@@ -22,6 +22,7 @@ const STCO_ID: &[u8; 4] = b"stco";
 const CO64_ID: &[u8; 4] = b"co64";
 const MDAT_ID: &[u8; 4] = b"mdat";
 const AVCC_ID: &[u8; 4] = b"avcC";
+const HVCC_ID: &[u8; 4] = b"hvcC";
 const MAX_MOV_SAMPLE_COUNT: usize = 1_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,9 +134,17 @@ impl MovVideoSampleEntry {
     }
 
     pub fn avc_decoder_configuration_record(&self) -> Option<&[u8]> {
+        self.child_payload_for_fourcc(AVCC_ID)
+    }
+
+    pub fn hevc_decoder_configuration_record(&self) -> Option<&[u8]> {
+        self.child_payload_for_fourcc(HVCC_ID)
+    }
+
+    fn child_payload_for_fourcc(&self, box_type: &[u8; 4]) -> Option<&[u8]> {
         self.child_boxes
             .iter()
-            .find(|child| child.box_type.as_bytes() == AVCC_ID)
+            .find(|child| child.box_type.as_bytes() == box_type)
             .map(MovSampleEntryChildBox::payload)
     }
 }
@@ -1533,7 +1542,7 @@ mod tests {
 
     #[test]
     fn parses_visual_sample_entry_codec_parameters() {
-        let child_box = box_(*b"avcC", b"\x01\x64\x00\x1f");
+        let child_box = box_(*AVCC_ID, b"\x01\x64\x00\x1f");
         let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &child_box);
         let bytes = mp4_with_sample_description_entry(b"avc1", 2, &extra_data);
         let demuxer = MovDemuxer::open(&bytes).unwrap();
@@ -1557,6 +1566,31 @@ mod tests {
             video.avc_decoder_configuration_record(),
             Some(b"\x01\x64\x00\x1f".as_slice())
         );
+        assert_eq!(video.hevc_decoder_configuration_record(), None);
+    }
+
+    #[test]
+    fn parses_hevc_sample_entry_codec_parameters() {
+        let child_box = box_(*HVCC_ID, b"\x01\x01\x60\x00\x00\x00\x90");
+        let extra_data = visual_sample_entry_extra_data(1920, 1080, "Rust HEVC", 24, &child_box);
+        let bytes = mp4_with_sample_description_entry(b"hvc1", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "hvc1");
+        let MovSampleEntryDetails::Video(video) = codec_parameters.details() else {
+            panic!("expected visual sample entry details");
+        };
+        assert_eq!(video.width(), 1920);
+        assert_eq!(video.height(), 1080);
+        assert_eq!(video.compressor_name(), "Rust HEVC");
+        assert_eq!(video.child_boxes().len(), 1);
+        assert_eq!(video.child_boxes()[0].box_type(), "hvcC");
+        assert_eq!(
+            video.hevc_decoder_configuration_record(),
+            Some(b"\x01\x01\x60\x00\x00\x00\x90".as_slice())
+        );
+        assert_eq!(video.avc_decoder_configuration_record(), None);
     }
 
     #[test]
