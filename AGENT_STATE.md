@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions, and emits packets from `mdat` with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
 
 ## Last Successful Commands
 
@@ -14,6 +14,12 @@
 - `cargo fmt --all`
 - `cargo test -p avformat mov::tests`
 - `cargo fmt --all`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
@@ -143,12 +149,12 @@
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current focus; the next slice is multiple-`mdat` coverage or explicit unsupported-layout handling.
+`avformat-mov-demuxer` remains the current focus; the next slice is fragmented/movie-fragment unsupported-layout handling.
 
 ## Next 3 Concrete Actions
 
-1. Add explicit coverage for multiple `mdat` ranges or reject unsupported layouts with typed errors.
-2. Add tests for fragmented/movie-fragment boxes as unsupported rather than silently ignored where sample extraction would be misleading.
+1. Add tests for fragmented/movie-fragment boxes as unsupported rather than silently ignored where sample extraction would be misleading.
+2. Add an explicit unsupported path for compressed or non-raw sample descriptions once codec parameters are represented.
 3. Keep multi-track extraction blocked until it has tests for stream selection, timing, and packet interleaving.
 
 ## Known Blockers
@@ -159,4 +165,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: strengthen `avformat-mov-demuxer` with gapped multi-chunk `stsc`/`stco` fixture coverage, including `stsc` entry transitions and invalid unmapped sample rejection.
+Latest slice: strengthen `avformat-mov-demuxer` with explicit multiple-`mdat` fixture coverage so chunk offsets can point into separate top-level media-data boxes.

@@ -1335,6 +1335,26 @@ mod tests {
     }
 
     #[test]
+    fn reads_packets_from_multiple_mdat_ranges() {
+        let bytes = mp4_with_multiple_mdat_ranges();
+        let mut demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        assert!(demuxer.info().has_media_data());
+        assert_eq!(demuxer.info().tracks()[0].sample_count(), 2);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        let second = demuxer.read_packet().unwrap().unwrap();
+
+        assert_eq!(first.data(), b"aa");
+        assert_eq!(first.pts(), Some(0));
+        assert_eq!(first.duration(), 10);
+        assert_eq!(second.data(), b"bbb");
+        assert_eq!(second.pts(), Some(10));
+        assert_eq!(second.duration(), 11);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn reads_sync_sample_table_for_key_flags() {
         let bytes = mp4_with_samples_and_sync(
             false,
@@ -1616,6 +1636,54 @@ mod tests {
         out.extend_from_slice(&ftyp);
         out.extend_from_slice(&moov);
         out.extend_from_slice(&box_(*MDAT_ID, &mdat_payload));
+        out
+    }
+
+    fn mp4_with_multiple_mdat_ranges() -> Vec<u8> {
+        let ftyp = ftyp_box();
+        let samples = [b"aa".as_slice(), b"bbb".as_slice()];
+        let durations = [10, 11];
+        let declared_sizes = samples
+            .iter()
+            .map(|sample| u32::try_from(sample.len()).unwrap())
+            .collect::<Vec<_>>();
+        let stsc_entries = [(1, 1, 1)];
+        let placeholder_offsets = [0, 0];
+        let placeholder_moov = box_(
+            *MOOV_ID,
+            &moov_v0_with_chunk_layout_payload(
+                &placeholder_offsets,
+                &declared_sizes,
+                &durations,
+                false,
+                &stsc_entries,
+            ),
+        );
+        let first_mdat = box_(*MDAT_ID, samples[0]);
+        let separator = box_(*b"free", b"skip");
+        let first_offset = u64::try_from(ftyp.len() + placeholder_moov.len() + 8).unwrap();
+        let second_offset = u64::try_from(
+            ftyp.len() + placeholder_moov.len() + first_mdat.len() + separator.len() + 8,
+        )
+        .unwrap();
+        let moov = box_(
+            *MOOV_ID,
+            &moov_v0_with_chunk_layout_payload(
+                &[first_offset, second_offset],
+                &declared_sizes,
+                &durations,
+                false,
+                &stsc_entries,
+            ),
+        );
+        let second_mdat = box_(*MDAT_ID, samples[1]);
+
+        let mut out = Vec::new();
+        out.extend_from_slice(&ftyp);
+        out.extend_from_slice(&moov);
+        out.extend_from_slice(&first_mdat);
+        out.extend_from_slice(&separator);
+        out.extend_from_slice(&second_mdat);
         out
     }
 

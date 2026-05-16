@@ -40,7 +40,7 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `AviMuxer` implements the matching initial constrained RIFF AVI writer for one RGB24 video stream. It validates stream-0 fixed-size packet payloads, writes classic `avih`/`strh`/`strf` headers, emits `00db` chunks in a `movi` list, handles RIFF word padding, and round-trips through the current demuxer.
 
-`MovDemuxer` implements the first constrained ISOBMFF/MOV/MP4 parser path. It validates top-level and nested box bounds, supports classic, extended-size, and size-zero boxes, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, and emits packets for a single populated track with simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables, including multi-chunk `stsc` entry transitions.
+`MovDemuxer` implements the first constrained ISOBMFF/MOV/MP4 parser path. It validates top-level and nested box bounds, supports classic, extended-size, and size-zero boxes, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, and emits packets for a single populated track with simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables, including multi-chunk `stsc` entry transitions and sample ranges split across multiple `mdat` boxes.
 
 `Yuv4MpegDemuxer` implements an initial yuv4mpegpipe parser for progressive 4:2:0 `C420jpeg` streams. It parses the stream header, validates dimensions, frame rate, interlace, chroma, and frame headers, then emits one packet per raw frame with monotonically increasing PTS.
 
