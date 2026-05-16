@@ -1,3 +1,4 @@
+use avformat::mov::{MovSampleEntryDetails, MovVideoSampleEntry};
 use avformat::{
     register_avi_probe, register_mov_probe, AviDemuxer, AviInfo, AviMediaType, MovDemuxer, MovInfo,
     MovTrackInfo, ProbeRegistry, ProbeRequest,
@@ -103,6 +104,12 @@ pub struct FfprobeStreamReport {
     codec_tag: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
+    sample_aspect_ratio: Option<String>,
+    display_aspect_ratio: Option<String>,
+    color_range: Option<String>,
+    color_space: Option<String>,
+    color_transfer: Option<String>,
+    color_primaries: Option<String>,
     time_base_num: u32,
     time_base_den: u32,
     time_base: String,
@@ -144,6 +151,30 @@ impl FfprobeStreamReport {
 
     pub fn height(&self) -> Option<u32> {
         self.height
+    }
+
+    pub fn sample_aspect_ratio(&self) -> Option<&str> {
+        self.sample_aspect_ratio.as_deref()
+    }
+
+    pub fn display_aspect_ratio(&self) -> Option<&str> {
+        self.display_aspect_ratio.as_deref()
+    }
+
+    pub fn color_range(&self) -> Option<&str> {
+        self.color_range.as_deref()
+    }
+
+    pub fn color_space(&self) -> Option<&str> {
+        self.color_space.as_deref()
+    }
+
+    pub fn color_transfer(&self) -> Option<&str> {
+        self.color_transfer.as_deref()
+    }
+
+    pub fn color_primaries(&self) -> Option<&str> {
+        self.color_primaries.as_deref()
     }
 
     pub fn time_base(&self) -> &str {
@@ -527,6 +558,9 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
         .enumerate()
         .map(|(index, track)| {
             let codec_tag_string = track.codec_tag().map(str::to_owned);
+            let video_sample_entry = mov_video_sample_entry(track);
+            let color_information =
+                video_sample_entry.and_then(MovVideoSampleEntry::color_information);
             FfprobeStreamReport {
                 index,
                 id: track.id(),
@@ -539,6 +573,24 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                 codec_tag_string,
                 width: track.width(),
                 height: track.height(),
+                sample_aspect_ratio: video_sample_entry.and_then(mov_sample_aspect_ratio),
+                display_aspect_ratio: mov_display_aspect_ratio(
+                    track.width(),
+                    track.height(),
+                    video_sample_entry,
+                ),
+                color_range: color_information
+                    .and_then(mov_color_range)
+                    .map(str::to_owned),
+                color_space: color_information
+                    .and_then(avformat::MovColorInformation::matrix_coefficients)
+                    .map(color_space_name),
+                color_transfer: color_information
+                    .and_then(avformat::MovColorInformation::transfer_characteristics)
+                    .map(color_transfer_name),
+                color_primaries: color_information
+                    .and_then(avformat::MovColorInformation::color_primaries)
+                    .map(color_primaries_name),
                 time_base_num: 1,
                 time_base_den: track.media_timescale(),
                 time_base: format!("1/{}", track.media_timescale()),
@@ -599,6 +651,12 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
                 codec_tag_string: Some(stream.handler().to_owned()),
                 width: Some(stream.width()),
                 height: Some(stream.height()),
+                sample_aspect_ratio: None,
+                display_aspect_ratio: None,
+                color_range: None,
+                color_space: None,
+                color_transfer: None,
+                color_primaries: None,
                 time_base_num,
                 time_base_den,
                 time_base: stream.time_base().to_string(),
@@ -717,6 +775,104 @@ fn collect_avi_packets(
     Ok(packets)
 }
 
+fn mov_video_sample_entry(track: &MovTrackInfo) -> Option<&MovVideoSampleEntry> {
+    match track.codec_parameters()?.details() {
+        MovSampleEntryDetails::Generic => None,
+        MovSampleEntryDetails::Video(video) => Some(video.as_ref()),
+    }
+}
+
+fn mov_sample_aspect_ratio(video: &MovVideoSampleEntry) -> Option<String> {
+    let pixel_aspect_ratio = video.pixel_aspect_ratio()?;
+    Some(format_reduced_u128_colon(
+        u128::from(pixel_aspect_ratio.horizontal_spacing()),
+        u128::from(pixel_aspect_ratio.vertical_spacing()),
+    ))
+}
+
+fn mov_display_aspect_ratio(
+    width: Option<u32>,
+    height: Option<u32>,
+    video: Option<&MovVideoSampleEntry>,
+) -> Option<String> {
+    let width = u128::from(width?);
+    let height = u128::from(height?);
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let pixel_aspect_ratio = video?.pixel_aspect_ratio()?;
+    Some(format_reduced_u128_colon(
+        width * u128::from(pixel_aspect_ratio.horizontal_spacing()),
+        height * u128::from(pixel_aspect_ratio.vertical_spacing()),
+    ))
+}
+
+fn mov_color_range(color: &avformat::MovColorInformation) -> Option<&'static str> {
+    color
+        .full_range()
+        .map(|full_range| if full_range { "pc" } else { "tv" })
+}
+
+fn color_space_name(value: u16) -> String {
+    match value {
+        1 => "bt709",
+        4 => "fcc",
+        5 => "bt470bg",
+        6 => "smpte170m",
+        7 => "smpte240m",
+        8 => "ycgco",
+        9 => "bt2020nc",
+        10 => "bt2020c",
+        11 => "smpte2085",
+        12 => "chroma-derived-nc",
+        13 => "chroma-derived-c",
+        14 => "ictcp",
+        _ => "unknown",
+    }
+    .to_owned()
+}
+
+fn color_transfer_name(value: u16) -> String {
+    match value {
+        1 => "bt709",
+        4 => "gamma22",
+        5 => "gamma28",
+        6 => "smpte170m",
+        7 => "smpte240m",
+        8 => "linear",
+        9 => "log",
+        10 => "log_sqrt",
+        11 => "iec61966-2-4",
+        12 => "bt1361e",
+        13 => "iec61966-2-1",
+        14 => "bt2020-10",
+        15 => "bt2020-12",
+        16 => "smpte2084",
+        17 => "smpte428",
+        18 => "arib-std-b67",
+        _ => "unknown",
+    }
+    .to_owned()
+}
+
+fn color_primaries_name(value: u16) -> String {
+    match value {
+        1 => "bt709",
+        4 => "bt470m",
+        5 => "bt470bg",
+        6 => "smpte170m",
+        7 => "smpte240m",
+        8 => "film",
+        9 => "bt2020",
+        10 => "smpte428",
+        11 => "smpte431",
+        12 => "smpte432",
+        22 => "ebu3213",
+        _ => "unknown",
+    }
+    .to_owned()
+}
+
 fn mov_codec_type(track: &MovTrackInfo) -> &'static str {
     if track.width().is_some() || track.height().is_some() {
         "video"
@@ -765,6 +921,11 @@ fn average_frame_rate(
 fn format_reduced_u128_ratio(numerator: u128, denominator: u128) -> String {
     let divisor = gcd_u128(numerator, denominator);
     format!("{}/{}", numerator / divisor, denominator / divisor)
+}
+
+fn format_reduced_u128_colon(numerator: u128, denominator: u128) -> String {
+    let divisor = gcd_u128(numerator, denominator);
+    format!("{}:{}", numerator / divisor, denominator / divisor)
 }
 
 fn gcd_u128(mut left: u128, mut right: u128) -> u128 {
@@ -829,6 +990,24 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             }
             if let Some(height) = stream.height {
                 out.push_str(&format!("height={height}\n"));
+            }
+            if let Some(sample_aspect_ratio) = &stream.sample_aspect_ratio {
+                out.push_str(&format!("sample_aspect_ratio={sample_aspect_ratio}\n"));
+            }
+            if let Some(display_aspect_ratio) = &stream.display_aspect_ratio {
+                out.push_str(&format!("display_aspect_ratio={display_aspect_ratio}\n"));
+            }
+            if let Some(color_range) = &stream.color_range {
+                out.push_str(&format!("color_range={color_range}\n"));
+            }
+            if let Some(color_space) = &stream.color_space {
+                out.push_str(&format!("color_space={color_space}\n"));
+            }
+            if let Some(color_transfer) = &stream.color_transfer {
+                out.push_str(&format!("color_transfer={color_transfer}\n"));
+            }
+            if let Some(color_primaries) = &stream.color_primaries {
+                out.push_str(&format!("color_primaries={color_primaries}\n"));
             }
             out.push_str(&format!("time_base={}\n", stream.time_base));
             if let Some(avg_frame_rate) = &stream.avg_frame_rate {
@@ -933,6 +1112,24 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     }
     if let Some(height) = stream.height {
         fields.push(json_number("height", height));
+    }
+    if let Some(sample_aspect_ratio) = &stream.sample_aspect_ratio {
+        fields.push(json_string("sample_aspect_ratio", sample_aspect_ratio));
+    }
+    if let Some(display_aspect_ratio) = &stream.display_aspect_ratio {
+        fields.push(json_string("display_aspect_ratio", display_aspect_ratio));
+    }
+    if let Some(color_range) = &stream.color_range {
+        fields.push(json_string("color_range", color_range));
+    }
+    if let Some(color_space) = &stream.color_space {
+        fields.push(json_string("color_space", color_space));
+    }
+    if let Some(color_transfer) = &stream.color_transfer {
+        fields.push(json_string("color_transfer", color_transfer));
+    }
+    if let Some(color_primaries) = &stream.color_primaries {
+        fields.push(json_string("color_primaries", color_primaries));
     }
     if let Some(avg_frame_rate) = &stream.avg_frame_rate {
         fields.push(json_string("avg_frame_rate", avg_frame_rate));
@@ -1086,6 +1283,10 @@ mod tests {
     const STSS_ID: [u8; 4] = *b"stss";
     const STCO_ID: [u8; 4] = *b"stco";
     const MDAT_ID: [u8; 4] = *b"mdat";
+    const AVCC_ID: [u8; 4] = *b"avcC";
+    const PASP_ID: [u8; 4] = *b"pasp";
+    const COLR_ID: [u8; 4] = *b"colr";
+    const NCLX_ID: [u8; 4] = *b"nclx";
 
     #[test]
     fn parses_ffprobe_show_options_and_input() {
@@ -1164,6 +1365,12 @@ mod tests {
         assert!(rendered.contains("codec_type=video\n"));
         assert!(rendered.contains("codec_tag_string=raw \n"));
         assert!(rendered.contains("codec_tag=0x20776172\n"));
+        assert!(rendered.contains("sample_aspect_ratio=1:1\n"));
+        assert!(rendered.contains("display_aspect_ratio=16:9\n"));
+        assert!(rendered.contains("color_range=tv\n"));
+        assert!(rendered.contains("color_space=bt709\n"));
+        assert!(rendered.contains("color_transfer=bt709\n"));
+        assert!(rendered.contains("color_primaries=bt709\n"));
         assert!(rendered.contains("avg_frame_rate=30/1\n"));
         assert!(rendered.contains("[FORMAT]\n"));
         assert!(rendered.contains("format_name=mov,mp4,m4a,3gp,3g2,mj2\n"));
@@ -1276,6 +1483,48 @@ mod tests {
         assert!(stdout.contains("\"height\": 1080"));
         assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
         assert!(!stdout.contains("\"format\""));
+    }
+
+    #[test]
+    fn outputs_mov_visual_stream_aspect_and_color_json() {
+        let child_boxes = [
+            box_(
+                AVCC_ID,
+                &avcc_payload(100, 0, 31, 4, &[b"\x67".as_slice()], &[b"\x68".as_slice()]),
+            ),
+            pasp_box(4, 3),
+            colr_nclx_box(1, 13, 6, true),
+        ]
+        .concat();
+        let stsd = visual_stsd_box(*b"avc1", 720, 576, &child_boxes);
+        let path = write_temp_mov(
+            "show-streams-visual",
+            &sampled_mov_file_with_stsd(&[b"abcd".as_slice()], &[3_000], 720, 576, &stsd),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-show_streams",
+            "-of",
+            "json",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("\"codec_name\": \"h264\""));
+        assert!(stdout.contains("\"codec_tag_string\": \"avc1\""));
+        assert!(stdout.contains("\"codec_tag\": \"0x31637661\""));
+        assert!(stdout.contains("\"width\": 720"));
+        assert!(stdout.contains("\"height\": 576"));
+        assert!(stdout.contains("\"sample_aspect_ratio\": \"4:3\""));
+        assert!(stdout.contains("\"display_aspect_ratio\": \"5:3\""));
+        assert!(stdout.contains("\"color_range\": \"pc\""));
+        assert!(stdout.contains("\"color_space\": \"smpte170m\""));
+        assert!(stdout.contains("\"color_transfer\": \"iec61966-2-1\""));
+        assert!(stdout.contains("\"color_primaries\": \"bt709\""));
+        assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
     }
 
     #[test]
@@ -1515,6 +1764,12 @@ mod tests {
                 codec_tag: Some("0x20776172".to_string()),
                 width: Some(1920),
                 height: Some(1080),
+                sample_aspect_ratio: Some("1:1".to_string()),
+                display_aspect_ratio: Some("16:9".to_string()),
+                color_range: Some("tv".to_string()),
+                color_space: Some("bt709".to_string()),
+                color_transfer: Some("bt709".to_string()),
+                color_primaries: Some("bt709".to_string()),
                 time_base_num: 1,
                 time_base_den: 90_000,
                 time_base: "1/90000".to_string(),
@@ -1564,6 +1819,15 @@ mod tests {
         path
     }
 
+    struct MovSampleTableFixture<'a> {
+        sample_sizes: &'a [u32],
+        durations: &'a [u32],
+        chunk_offset: u32,
+        track_width: u32,
+        track_height: u32,
+        stsd: &'a [u8],
+    }
+
     fn minimal_mov_file() -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(&ftyp_box());
@@ -1576,16 +1840,44 @@ mod tests {
     }
 
     fn sampled_mov_file(samples: &[&[u8]], durations: &[u32]) -> Vec<u8> {
+        let stsd = stsd_box();
+        sampled_mov_file_with_stsd(samples, durations, 1_920, 1_080, &stsd)
+    }
+
+    fn sampled_mov_file_with_stsd(
+        samples: &[&[u8]],
+        durations: &[u32],
+        track_width: u32,
+        track_height: u32,
+        stsd: &[u8],
+    ) -> Vec<u8> {
         let ftyp = ftyp_box();
         let sample_sizes = samples
             .iter()
             .map(|sample| u32::try_from(sample.len()).unwrap())
             .collect::<Vec<_>>();
-        let placeholder_moov = box_(*b"moov", &moov_with_samples(0, &sample_sizes, durations));
+        let placeholder_moov = box_(
+            MOOV_ID,
+            &moov_with_samples_and_stsd(
+                0,
+                &sample_sizes,
+                durations,
+                track_width,
+                track_height,
+                stsd,
+            ),
+        );
         let chunk_offset = u32::try_from(ftyp.len() + placeholder_moov.len() + 8).unwrap();
         let moov = box_(
             MOOV_ID,
-            &moov_with_samples(chunk_offset, &sample_sizes, durations),
+            &moov_with_samples_and_stsd(
+                chunk_offset,
+                &sample_sizes,
+                durations,
+                track_width,
+                track_height,
+                stsd,
+            ),
         );
         let mut out = Vec::new();
         out.extend_from_slice(&ftyp);
@@ -1604,39 +1896,45 @@ mod tests {
         muxer.finish().unwrap()
     }
 
-    fn moov_with_samples(chunk_offset: u32, sample_sizes: &[u32], durations: &[u32]) -> Vec<u8> {
+    fn moov_with_samples_and_stsd(
+        chunk_offset: u32,
+        sample_sizes: &[u32],
+        durations: &[u32],
+        track_width: u32,
+        track_height: u32,
+        stsd: &[u8],
+    ) -> Vec<u8> {
         let media_duration = durations.iter().copied().sum::<u32>();
+        let fixture = MovSampleTableFixture {
+            sample_sizes,
+            durations,
+            chunk_offset,
+            track_width,
+            track_height,
+            stsd,
+        };
         [
             mvhd_v0(1_000, media_duration),
-            trak_with_sample_table(
-                1,
-                media_duration,
-                90_000,
-                sample_sizes,
-                durations,
-                chunk_offset,
-            ),
+            trak_with_sample_table_and_stsd(1, media_duration, 90_000, &fixture),
         ]
         .concat()
     }
 
-    fn trak_with_sample_table(
+    fn trak_with_sample_table_and_stsd(
         track_id: u32,
         media_duration: u32,
         timescale: u32,
-        sample_sizes: &[u32],
-        durations: &[u32],
-        chunk_offset: u32,
+        fixture: &MovSampleTableFixture<'_>,
     ) -> Vec<u8> {
         let stbl = box_(
             STBL_ID,
             &[
-                stsd_box(),
-                stts_box(durations),
-                stsc_box(u32::try_from(sample_sizes.len()).unwrap()),
-                stsz_box(sample_sizes),
+                fixture.stsd.to_vec(),
+                stts_box(fixture.durations),
+                stsc_box(u32::try_from(fixture.sample_sizes.len()).unwrap()),
+                stsz_box(fixture.sample_sizes),
                 stss_box(&[1]),
-                stco_box(chunk_offset),
+                stco_box(fixture.chunk_offset),
             ]
             .concat(),
         );
@@ -1647,7 +1945,16 @@ mod tests {
         );
         box_(
             TRAK_ID,
-            &[tkhd_v0(track_id, media_duration, 1_920, 1_080), mdia].concat(),
+            &[
+                tkhd_v0(
+                    track_id,
+                    media_duration,
+                    fixture.track_width,
+                    fixture.track_height,
+                ),
+                mdia,
+            ]
+            .concat(),
         )
     }
 
@@ -1662,6 +1969,100 @@ mod tests {
         body.extend_from_slice(&1_u32.to_be_bytes());
         body.extend_from_slice(&sample_entry);
         box_(STSD_ID, &full_box(0, &body))
+    }
+
+    fn visual_stsd_box(codec_tag: [u8; 4], width: u16, height: u16, child_boxes: &[u8]) -> Vec<u8> {
+        let extra_data = visual_sample_entry_extra_data(width, height, "Rust AVC", 24, child_boxes);
+        let mut sample_entry = Vec::new();
+        sample_entry
+            .extend_from_slice(&u32::try_from(16 + extra_data.len()).unwrap().to_be_bytes());
+        sample_entry.extend_from_slice(&codec_tag);
+        sample_entry.extend_from_slice(&[0; 6]);
+        sample_entry.extend_from_slice(&1_u16.to_be_bytes());
+        sample_entry.extend_from_slice(&extra_data);
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&1_u32.to_be_bytes());
+        body.extend_from_slice(&sample_entry);
+        box_(STSD_ID, &full_box(0, &body))
+    }
+
+    fn visual_sample_entry_extra_data(
+        width: u16,
+        height: u16,
+        compressor_name: &str,
+        depth: u16,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&[0; 16]);
+        out.extend_from_slice(&width.to_be_bytes());
+        out.extend_from_slice(&height.to_be_bytes());
+        out.extend_from_slice(&0x0048_0000_u32.to_be_bytes());
+        out.extend_from_slice(&0x0048_0000_u32.to_be_bytes());
+        out.extend_from_slice(&0_u32.to_be_bytes());
+        out.extend_from_slice(&1_u16.to_be_bytes());
+
+        let name_bytes = compressor_name.as_bytes();
+        let name_len = name_bytes.len().min(31);
+        out.push(u8::try_from(name_len).unwrap());
+        out.extend_from_slice(&name_bytes[..name_len]);
+        out.resize(out.len() + (31 - name_len), 0);
+
+        out.extend_from_slice(&depth.to_be_bytes());
+        out.extend_from_slice(&u16::MAX.to_be_bytes());
+        out.extend_from_slice(child_boxes);
+        out
+    }
+
+    fn avcc_payload(
+        profile_indication: u8,
+        profile_compatibility: u8,
+        level_indication: u8,
+        nal_length_size: u8,
+        sequence_parameter_sets: &[&[u8]],
+        picture_parameter_sets: &[&[u8]],
+    ) -> Vec<u8> {
+        let mut out = vec![
+            1,
+            profile_indication,
+            profile_compatibility,
+            level_indication,
+            0b1111_1100 | (nal_length_size - 1),
+            0b1110_0000 | u8::try_from(sequence_parameter_sets.len()).unwrap(),
+        ];
+        for parameter_set in sequence_parameter_sets {
+            out.extend_from_slice(&u16::try_from(parameter_set.len()).unwrap().to_be_bytes());
+            out.extend_from_slice(parameter_set);
+        }
+        out.push(u8::try_from(picture_parameter_sets.len()).unwrap());
+        for parameter_set in picture_parameter_sets {
+            out.extend_from_slice(&u16::try_from(parameter_set.len()).unwrap().to_be_bytes());
+            out.extend_from_slice(parameter_set);
+        }
+        out
+    }
+
+    fn pasp_box(horizontal_spacing: u32, vertical_spacing: u32) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&horizontal_spacing.to_be_bytes());
+        body.extend_from_slice(&vertical_spacing.to_be_bytes());
+        box_(PASP_ID, &body)
+    }
+
+    fn colr_nclx_box(
+        color_primaries: u16,
+        transfer_characteristics: u16,
+        matrix_coefficients: u16,
+        full_range: bool,
+    ) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&NCLX_ID);
+        body.extend_from_slice(&color_primaries.to_be_bytes());
+        body.extend_from_slice(&transfer_characteristics.to_be_bytes());
+        body.extend_from_slice(&matrix_coefficients.to_be_bytes());
+        body.push(if full_range { 0x80 } else { 0 });
+        box_(COLR_ID, &body)
     }
 
     fn stts_box(durations: &[u32]) -> Vec<u8> {
