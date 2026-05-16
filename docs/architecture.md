@@ -60,11 +60,11 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 ## CLI Compatibility Model
 
-CLI compatibility is treated as a first-class surface. The current implementation supports version banners for `ffmpeg-rs` and `ffprobe-rs` plus an internal parser that groups a small known set of FFmpeg-style options onto global scope, the next `-i` input, or the next output filename. `IoPlan` turns parsed input/output URLs into validated file, pipe, or protocol endpoints for future command execution. Unsupported command forms still exit non-zero and are recorded as incomplete in the ledger.
+CLI compatibility is treated as a first-class surface. The current implementation supports version banners for `ffmpeg-rs` and `ffprobe-rs` plus an internal parser that groups a small known set of FFmpeg-style options onto global scope, the next `-i` input, or the next output filename. `IoPlan` turns parsed input/output URLs into validated file, pipe, or protocol endpoints for future command execution. `ffprobe-rs` also has the first Rust-native command execution path for local seekable MOV/MP4 files: it probes with the MOV descriptor, opens the `MovDemuxer`, and renders a small `-show_format`/`-show_streams` summary with default and JSON writers. Unsupported command forms still exit non-zero and are recorded as incomplete in the ledger.
 
 ## Test Architecture
 
-The test hierarchy is unit tests first, followed by golden parser tests, differential tests against the pinned oracle, FATE-derived tests, fuzz harnesses, integration tests, and performance benchmarks. Current coverage is limited to unit and CLI integration tests for the first primitives.
+The test hierarchy is unit tests first, followed by golden parser tests, differential tests against the pinned oracle, FATE-derived tests, fuzz harnesses, integration tests, and performance benchmarks. Current coverage is limited to unit and in-process command tests for the first primitives and the initial ffprobe MOV path; separate cargo-built integration test executables are currently blocked by Windows Application Control in this environment.
 
 ## FFI And Export Policy
 

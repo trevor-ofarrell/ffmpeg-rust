@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, extracts common movie-level and track-level `udta/meta/ilst` metadata values from `data` atoms for UTF-8 and UTF-16 text fields, classic `gnre` genre indexes, one-byte integer/boolean metadata atoms, iTunes-style freeform `----` atoms, `covr` cover-art payloads, and track/disc number pairs, registers a hand-written MOV/MP4 `ftyp`/extension/MIME probe descriptor, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries including structured `avcC` version/profile/level/NAL-length-size/SPS/PPS data, structured `hvcC` profile/timing/NAL-length-size/NAL-array data, `pasp` pixel aspect ratio, and `nclx`/`nclc`/`rICC`/`prof` `colr` color information, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, malformed VisualSampleEntry child boxes, malformed metadata atoms, malformed text encodings, malformed integer/boolean metadata payloads, malformed freeform metadata payloads, malformed cover-art payloads, malformed `avcC`/`hvcC`/`pasp`/`colr` payloads, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, extracts common movie-level and track-level `udta/meta/ilst` metadata values from `data` atoms for UTF-8 and UTF-16 text fields, classic `gnre` genre indexes, one-byte integer/boolean metadata atoms, iTunes-style freeform `----` atoms, `covr` cover-art payloads, and track/disc number pairs, registers a hand-written MOV/MP4 `ftyp`/extension/MIME probe descriptor, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries including structured `avcC` version/profile/level/NAL-length-size/SPS/PPS data, structured `hvcC` profile/timing/NAL-length-size/NAL-array data, `pasp` pixel aspect ratio, and `nclx`/`nclc`/`rICC`/`prof` `colr` color information, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, malformed VisualSampleEntry child boxes, malformed metadata atoms, malformed text encodings, malformed integer/boolean metadata payloads, malformed freeform metadata payloads, malformed cover-art payloads, malformed `avcC`/`hvcC`/`pasp`/`colr` payloads, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data. `ffprobe-rs` now has an initial local MOV/MP4 `-show_format`/`-show_streams` execution path that probes with the Rust MOV descriptor, opens `MovDemuxer`, and renders default or JSON summaries.
 
 ## Last Successful Commands
 
@@ -271,6 +271,13 @@
 - `cargo test --workspace --all-features`
 - `cargo run -p fate-runner -- list`
 - `git diff --check`
+- `cargo fmt --all`
+- `cargo test -p fftools ffprobe`
+- `cargo test -p fftools`
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo run -p fate-runner -- list`
 
 ## Last Failing Commands
 
@@ -287,23 +294,27 @@
 - `cargo fmt --all` initially failed after adding the malformed `colr` fixture because the byte literal used an invalid `\1` escape; the fixture was corrected to `\x01` and formatting passed on rerun.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed after adding the `avcC` fixture helper because of `vec_init_then_push`; the helper now uses `vec![..]` and clippy passed on rerun.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed after adding structured `hvcC` parsing because `MovSampleEntryDetails::Video` became a large enum variant; the video details are now boxed and clippy passed on rerun.
+- `cargo test -p fftools ffprobe` failed after rebuilding `ffprobe-rs` because Windows Application Control blocked the test-spawned binary; rerunning outside the sandbox did not change the policy result.
+- `cargo test -p fftools --test version ffprobe_rs_prints_version_banner` failed for the same Windows Application Control block on the rebuilt `ffprobe-rs` binary.
+- `cargo test -p fftools` then failed when Windows Application Control blocked the separate `ffprobe_mov` integration-test executable; the coverage was moved into the `fftools` unit-test binary, which runs successfully in this environment.
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current focus; the next slice is MOV CLI wiring or deeper packet/timeline support.
+`fftools-ffprobe-mov-show-format` is the current focus; the next slice is broader ffprobe packet/timeline reporting or `ffmpeg-rs` command execution using the existing MOV demuxer path.
 
 ## Next 3 Concrete Actions
 
-1. Add CLI wiring for MOV probing or demuxer selection once the command execution path exists.
+1. Add `ffprobe-rs -show_packets` for the current one-track MOV packet extraction path.
 2. Add MOV timeline support such as edit-list application or fragmented `moof`/`mdat` parsing.
-3. Add deeper MOV sample-description validation such as VPS/SPS/PPS bitstream checks.
+3. Add `ffmpeg-rs` command execution for a constrained MOV-to-null or MOV-to-framecrc path once packet reporting is covered.
 
 ## Known Blockers
 
 - No pinned FFmpeg 8.1.1 oracle binary exists at `third_party/ffmpeg-oracle/build/bin/ffmpeg`, so oracle snapshots and differential tests have not been generated.
 - FATE samples and target mappings are not configured.
 - `./xtask quick` cannot be a file command while `xtask/` is a crate directory on this filesystem; use `cargo run -p xtask -- quick`.
+- Windows Application Control blocks some freshly built child executables and separate integration-test executables. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: parse MOV `covr` cover-art metadata into binary `MovCoverArt` entries, including JPEG/PNG/BMP data types and PNG/JPEG magic correction, while rejecting short data payloads.
+Latest slice: wire `ffprobe-rs -show_format` and `-show_streams` to local MOV/MP4 probing and `MovDemuxer`, with default and JSON summaries plus in-process command tests over generated MP4 fixtures.

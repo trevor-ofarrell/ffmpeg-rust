@@ -2,9 +2,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod ffprobe;
 pub mod io_plan;
 pub mod option_parser;
 
+pub use ffprobe::{
+    ffprobe_output, probe_local_file, run_ffprobe_tool, FfprobeError, FfprobeReport,
+};
 pub use io_plan::{build_io_plan, Endpoint, FileRole, IoPlan, IoPlanError, PlannedFile};
 pub use option_parser::{parse_ffmpeg_args, CliFile, CliOption, CliParseError, ParsedCommand};
 

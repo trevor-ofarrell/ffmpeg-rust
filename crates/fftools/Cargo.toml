@@ -5,6 +5,7 @@ version.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+avformat = { path = "../avformat" }
 
 [lib]
 path = "src/lib.rs"
@@ -16,4 +17,3 @@ path = "src/bin/ffmpeg-rs.rs"
 [[bin]]
 name = "ffprobe-rs"
 path = "src/bin/ffprobe-rs.rs"
-

@@ -140,15 +140,16 @@ upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "implemented"
 priority = 2
 oracle_command = "ffmpeg -version; ffprobe -version"
-rust_command = "cargo test -p fftools --test version"
-unit_tests = ["version_banner_names_target_and_libraries", "version_request_exits_successfully"]
-differential_tests = [
-  "ffmpeg_rs_prints_version_banner",
-  "ffprobe_rs_prints_version_banner",
+rust_command = "cargo test -p fftools version"
+unit_tests = [
+  "tests::version_banner_names_target_and_libraries",
+  "tests::version_request_exits_successfully",
+  "ffprobe::tests::ffprobe_output_prints_version_banner",
 ]
+differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Version command support exists but is not byte-identical to upstream."
+notes = "Version command support exists but is not byte-identical to upstream. Process-spawn integration tests are blocked by Windows Application Control in this environment, so version output is covered through in-process command helpers."
 blocked_reason = ""
 
 [[component]]
@@ -336,10 +337,10 @@ upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "implemented"
 priority = 2
 oracle_command = "ffmpeg -hide_banner -version; ffprobe -hide_banner -version"
-rust_command = "cargo test -p fftools --test version hide_banner"
+rust_command = "cargo test -p fftools hide_banner"
 unit_tests = [
-  "hide_banner_is_accepted_with_version",
-  "hide_banner_alone_does_not_print_version_banner",
+  "ffprobe::tests::ffprobe_output_accepts_hide_banner_with_version",
+  "ffprobe::tests::hide_banner_alone_returns_missing_command",
 ]
 differential_tests = []
 fate_tests = []
@@ -368,6 +369,30 @@ differential_tests = []
 fate_tests = []
 fuzz_targets = []
 notes = "Initial I/O planning validates at least one input and output, preserves grouped options, and classifies file, pipe, and protocol endpoints. It is not wired to demuxers, muxers, protocol implementations, or command execution."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-ffprobe-mov-show-format"
+kind = "cli"
+ffmpeg_name = "ffprobe MOV/MP4 -show_format/-show_streams"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_format -show_streams -of json <input.mp4>"
+rust_command = "cargo test -p fftools ffprobe"
+unit_tests = [
+  "ffprobe::tests::parses_ffprobe_show_options_and_input",
+  "ffprobe::tests::rejects_missing_command_or_input",
+  "ffprobe::tests::renders_default_report_sections",
+  "ffprobe::tests::renders_json_report_sections",
+  "ffprobe::tests::opens_local_mov_file_for_show_format",
+  "ffprobe::tests::outputs_mov_stream_json",
+  "ffprobe::tests::rejects_unmatched_local_input_format",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
 blocked_reason = ""
 
 [[component]]
