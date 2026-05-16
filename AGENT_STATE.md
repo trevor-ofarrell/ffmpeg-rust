@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, explicitly rejects fragmented `mvex`/`moof` layouts and multiple populated tracks, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, records generic `stsd` codec parameters, explicitly rejects fragmented `mvex`/`moof` layouts, multiple populated tracks, and sample description indexes other than 1, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
 
 ## Last Successful Commands
 
@@ -148,6 +148,14 @@
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
 - `cargo run -p fate-runner -- list`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
 
 ## Last Failing Commands
 
@@ -158,16 +166,17 @@
 - `rg "read_u64|write_u64" crates/avutil/src crates/avformat/src` failed because ripgrep is not installed in this shell; PowerShell-native file inspection was used instead.
 - `cargo test -p avformat mov` initially failed because the malformed `ftyp` fixture truncated the next top-level box before reaching the intended validation; the fixture was narrowed and `cargo test -p avformat mov::tests` passed.
 - `cargo test -p avformat mov::tests` was initially blocked by Windows Application Control for the generated test executable; rerunning with the approved `cargo test` prefix passed.
+- `cargo test -p avformat mov::tests` initially failed after adding a custom `stsd` fixture because the fixture computed an `mdat` payload offset from the `moov` payload length instead of the boxed `moov` length; the fixture was corrected and the MOV suite passed on rerun.
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current focus; the next slice is sample-description and codec-parameter coverage.
+`avformat-mov-demuxer` remains the current focus; the next slice is edit-list and codec-specific sample-entry coverage.
 
 ## Next 3 Concrete Actions
 
-1. Represent MOV/MP4 sample descriptions as codec parameter records instead of only a FourCC string.
-2. Add explicit coverage for sample description indexes other than 1.
-3. Add edit-list unsupported or parsing coverage.
+1. Add edit-list unsupported or parsing coverage.
+2. Expand MOV/MP4 codec-specific sample-entry parsing beyond generic codec tag, data-reference index, and extra data.
+3. Add explicit unsupported coverage for multiple `stsd` sample entries.
 
 ## Known Blockers
 
@@ -177,4 +186,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add explicit multiple-populated-track MOV/MP4 coverage so multi-track packet extraction returns a typed unsupported error instead of silently selecting one track.
+Latest slice: represent MOV/MP4 `stsd` sample entries as generic codec parameter records and add named coverage for unsupported sample description indexes other than 1.

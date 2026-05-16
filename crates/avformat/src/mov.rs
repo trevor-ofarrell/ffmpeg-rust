@@ -64,6 +64,27 @@ impl MovInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovCodecParameters {
+    codec_tag: String,
+    data_reference_index: u16,
+    extra_data: Vec<u8>,
+}
+
+impl MovCodecParameters {
+    pub fn codec_tag(&self) -> &str {
+        &self.codec_tag
+    }
+
+    pub fn data_reference_index(&self) -> u16 {
+        self.data_reference_index
+    }
+
+    pub fn extra_data(&self) -> &[u8] {
+        &self.extra_data
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MovTrackInfo {
     id: u32,
     duration: Option<u64>,
@@ -71,7 +92,7 @@ pub struct MovTrackInfo {
     height: Option<u32>,
     media_timescale: u32,
     media_duration: Option<u64>,
-    codec_tag: Option<String>,
+    codec_parameters: Option<MovCodecParameters>,
     sample_count: usize,
 }
 
@@ -101,7 +122,13 @@ impl MovTrackInfo {
     }
 
     pub fn codec_tag(&self) -> Option<&str> {
-        self.codec_tag.as_deref()
+        self.codec_parameters
+            .as_ref()
+            .map(MovCodecParameters::codec_tag)
+    }
+
+    pub fn codec_parameters(&self) -> Option<&MovCodecParameters> {
+        self.codec_parameters.as_ref()
     }
 
     pub fn sample_count(&self) -> usize {
@@ -239,7 +266,7 @@ struct MediaData {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SampleTable {
-    codec_tag: String,
+    codec_parameters: MovCodecParameters,
     sample_sizes: Vec<usize>,
     sample_durations: Vec<u32>,
     composition_offsets: Option<Vec<i64>>,
@@ -334,10 +361,10 @@ fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
         track_header.ok_or_else(|| AvError::invalid_data("MOV/MP4 track missing tkhd box"))?;
     let media_data =
         media_data.ok_or_else(|| AvError::invalid_data("MOV/MP4 track missing mdhd box"))?;
-    let codec_tag = media_data
+    let codec_parameters = media_data
         .sample_table
         .as_ref()
-        .map(|table| table.codec_tag.clone());
+        .map(|table| table.codec_parameters.clone());
     let sample_count = media_data
         .sample_table
         .as_ref()
@@ -351,7 +378,7 @@ fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
             height: track_header.height,
             media_timescale: media_data.header.timescale,
             media_duration: media_data.header.duration,
-            codec_tag,
+            codec_parameters,
             sample_count,
         },
         sample_table: media_data.sample_table,
@@ -387,7 +414,7 @@ fn parse_minf(input: &[u8], minf: &BoxHeader) -> AvResult<Option<SampleTable>> {
 }
 
 fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
-    let mut codec_tag = None;
+    let mut codec_parameters = None;
     let mut sample_durations = None;
     let mut composition_offsets = None;
     let mut sample_to_chunks = None;
@@ -397,7 +424,7 @@ fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
 
     for child in read_box_headers(input, stbl.payload_start, stbl.payload_end, "MOV/MP4 stbl")? {
         match &child.box_type {
-            STSD_ID => codec_tag = Some(parse_stsd(child.payload(input))?),
+            STSD_ID => codec_parameters = Some(parse_stsd(child.payload(input))?),
             STTS_ID => sample_durations = Some(parse_stts(child.payload(input))?),
             CTTS_ID => composition_offsets = Some(parse_ctts(child.payload(input))?),
             STSC_ID => sample_to_chunks = Some(parse_stsc(child.payload(input))?),
@@ -409,7 +436,8 @@ fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
         }
     }
 
-    let codec_tag = codec_tag.ok_or_else(|| AvError::invalid_data("MOV/MP4 stbl missing stsd"))?;
+    let codec_parameters =
+        codec_parameters.ok_or_else(|| AvError::invalid_data("MOV/MP4 stbl missing stsd"))?;
     let sample_durations =
         sample_durations.ok_or_else(|| AvError::invalid_data("MOV/MP4 stbl missing stts"))?;
     let sample_to_chunks =
@@ -439,7 +467,7 @@ fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
         .transpose()?;
 
     Ok(SampleTable {
-        codec_tag,
+        codec_parameters,
         sample_sizes,
         sample_durations,
         composition_offsets,
@@ -449,7 +477,7 @@ fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
     })
 }
 
-fn parse_stsd(payload: &[u8]) -> AvResult<String> {
+fn parse_stsd(payload: &[u8]) -> AvResult<MovCodecParameters> {
     let mut reader = ByteReader::new(payload);
     read_full_box_header(&mut reader, "MOV/MP4 stsd")?;
     let entry_count = reader.read_u32_be()?;
@@ -481,13 +509,19 @@ fn parse_stsd(payload: &[u8]) -> AvResult<String> {
             "MOV/MP4 stsd sample entry exceeds box payload",
         ));
     }
-    reader.skip(remaining_entry)?;
+    reader.skip(6)?;
+    let data_reference_index = reader.read_u16_be()?;
+    let extra_data = reader.read_exact(entry_size - 16)?.to_vec();
     if !reader.is_eof() {
         return Err(AvError::invalid_data(
             "MOV/MP4 stsd contains trailing sample entry data",
         ));
     }
-    Ok(fourcc_to_string(entry_type))
+    Ok(MovCodecParameters {
+        codec_tag: fourcc_to_string(entry_type),
+        data_reference_index,
+        extra_data,
+    })
 }
 
 fn parse_stts(payload: &[u8]) -> AvResult<Vec<u32>> {
@@ -842,7 +876,7 @@ fn build_packets(
         )?);
         packet.push_side_data(SideData::new(
             "mov_codec_tag",
-            table.codec_tag.as_bytes().to_vec(),
+            table.codec_parameters.codec_tag.as_bytes().to_vec(),
         )?);
         dts = dts
             .checked_add(i64::from(span.duration))
@@ -1308,6 +1342,10 @@ mod tests {
 
         let track = &demuxer.info().tracks()[0];
         assert_eq!(track.codec_tag(), Some("raw "));
+        let codec_parameters = track.codec_parameters().unwrap();
+        assert_eq!(codec_parameters.codec_tag(), "raw ");
+        assert_eq!(codec_parameters.data_reference_index(), 1);
+        assert_eq!(codec_parameters.extra_data(), b"");
         assert_eq!(track.sample_count(), 2);
 
         let first = demuxer.read_packet().unwrap().unwrap();
@@ -1328,6 +1366,28 @@ mod tests {
         assert_eq!(second.dts(), Some(1_000));
         assert_eq!(second.duration(), 2_000);
         assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn parses_sample_description_codec_parameters() {
+        let bytes = mp4_with_sample_description_extra_data(b"\x01\x64\x00\x1f");
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let track = &demuxer.info().tracks()[0];
+        let codec_parameters = track.codec_parameters().unwrap();
+        assert_eq!(track.codec_tag(), Some("avc1"));
+        assert_eq!(codec_parameters.codec_tag(), "avc1");
+        assert_eq!(codec_parameters.data_reference_index(), 2);
+        assert_eq!(codec_parameters.extra_data(), b"\x01\x64\x00\x1f");
+    }
+
+    #[test]
+    fn rejects_sample_description_indexes_other_than_one() {
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_sample_description_index(2))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::Unsupported
+        );
     }
 
     #[test]
@@ -1813,6 +1873,33 @@ mod tests {
         )
     }
 
+    fn mp4_with_sample_description_extra_data(extra_data: &[u8]) -> Vec<u8> {
+        let ftyp = ftyp_box();
+        let sample_sizes = [2];
+        let durations = [1_000];
+        let sample_description = stsd_box_with_entry(b"avc1", 2, extra_data);
+        let placeholder_moov_payload = moov_v0_with_custom_stsd_payload(
+            0,
+            &sample_sizes,
+            &durations,
+            sample_description.clone(),
+        );
+        let placeholder_moov = box_(*MOOV_ID, &placeholder_moov_payload);
+        let chunk_offset = u64::try_from(ftyp.len() + placeholder_moov.len() + 8).unwrap();
+        let moov = moov_v0_with_custom_stsd_payload(
+            chunk_offset,
+            &sample_sizes,
+            &durations,
+            sample_description,
+        );
+
+        let mut out = Vec::new();
+        out.extend_from_slice(&ftyp);
+        out.extend_from_slice(&box_(*MOOV_ID, &moov));
+        out.extend_from_slice(&box_(*MDAT_ID, b"aa"));
+        out
+    }
+
     fn mp4_with_short_mdat_payload() -> Vec<u8> {
         mp4_with_sample_tables(
             false,
@@ -1931,6 +2018,32 @@ mod tests {
             ),
         ]
         .concat()
+    }
+
+    fn moov_v0_with_custom_stsd_payload(
+        chunk_offset: u64,
+        sample_sizes: &[u32],
+        durations: &[u32],
+        sample_description_box: Vec<u8>,
+    ) -> Vec<u8> {
+        let media_duration = durations.iter().copied().sum::<u32>();
+        let stbl = stbl_box_with_stsd(
+            sample_description_box,
+            chunk_offset,
+            sample_sizes,
+            durations,
+            false,
+            1,
+            None,
+            None,
+        );
+        let minf = box_(*MINF_ID, &stbl);
+        let mdia = box_(*MDIA_ID, &[mdhd_v0(90_000, media_duration), minf].concat());
+        let trak = box_(
+            *TRAK_ID,
+            &[tkhd_v0(1, media_duration, 1_920, 1_080), mdia].concat(),
+        );
+        [mvhd_v0(1_000, media_duration), trak].concat()
     }
 
     fn moov_v0_with_chunk_layout_payload(
@@ -2061,13 +2174,36 @@ mod tests {
         sync_sample_numbers: Option<&[u32]>,
         composition_offsets: Option<(u8, &[(u32, i32)])>,
     ) -> Vec<u8> {
+        stbl_box_with_stsd(
+            stsd_box(),
+            chunk_offset,
+            sample_sizes,
+            durations,
+            use_co64,
+            sample_description_index,
+            sync_sample_numbers,
+            composition_offsets,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn stbl_box_with_stsd(
+        sample_description_box: Vec<u8>,
+        chunk_offset: u64,
+        sample_sizes: &[u32],
+        durations: &[u32],
+        use_co64: bool,
+        sample_description_index: u32,
+        sync_sample_numbers: Option<&[u32]>,
+        composition_offsets: Option<(u8, &[(u32, i32)])>,
+    ) -> Vec<u8> {
         let chunk_offset_box = if use_co64 {
             co64_box(chunk_offset)
         } else {
             stco_box(u32::try_from(chunk_offset).unwrap())
         };
         let mut boxes = vec![
-            stsd_box(),
+            sample_description_box,
             stts_box(durations),
             stsc_box(
                 u32::try_from(sample_sizes.len()).unwrap(),
@@ -2111,11 +2247,21 @@ mod tests {
     }
 
     fn stsd_box() -> Vec<u8> {
+        stsd_box_with_entry(b"raw ", 1, &[])
+    }
+
+    fn stsd_box_with_entry(
+        codec_tag: &[u8; 4],
+        data_reference_index: u16,
+        extra_data: &[u8],
+    ) -> Vec<u8> {
         let mut sample_entry = Vec::new();
-        sample_entry.extend_from_slice(&16_u32.to_be_bytes());
-        sample_entry.extend_from_slice(b"raw ");
+        let entry_size = u32::try_from(16 + extra_data.len()).unwrap();
+        sample_entry.extend_from_slice(&entry_size.to_be_bytes());
+        sample_entry.extend_from_slice(codec_tag);
         sample_entry.extend_from_slice(&[0; 6]);
-        sample_entry.extend_from_slice(&1_u16.to_be_bytes());
+        sample_entry.extend_from_slice(&data_reference_index.to_be_bytes());
+        sample_entry.extend_from_slice(extra_data);
 
         let mut body = Vec::new();
         body.extend_from_slice(&1_u32.to_be_bytes());

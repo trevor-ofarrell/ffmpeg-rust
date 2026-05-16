@@ -792,6 +792,8 @@ unit_tests = [
   "mov::tests::rejects_fragmented_movie_boxes_explicitly",
   "mov::tests::rejects_multiple_populated_tracks_explicitly",
   "mov::tests::reads_packets_from_simple_sample_table",
+  "mov::tests::parses_sample_description_codec_parameters",
+  "mov::tests::rejects_sample_description_indexes_other_than_one",
   "mov::tests::reads_packets_from_co64_offsets",
   "mov::tests::reads_packets_from_multiple_chunks_and_stsc_entries",
   "mov::tests::reads_packets_from_multiple_mdat_ranges",
@@ -803,5 +805,5 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; explicitly rejects fragmented mvex/moof layouts and multiple populated tracks; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables and truncated media data. Packet extraction for multiple populated tracks, sample description indexes other than 1, actual fragment parsing, edit lists, codec parameters, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; explicitly rejects fragmented mvex/moof layouts, multiple populated tracks, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables and truncated media data. Packet extraction for multiple populated tracks, actual fragment parsing, edit lists, codec-specific sample-entry parsing, CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
