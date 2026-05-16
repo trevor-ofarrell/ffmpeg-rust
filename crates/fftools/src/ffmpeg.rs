@@ -2,10 +2,10 @@ use crate::{
     build_io_plan, parse_ffmpeg_args, version_banner, CliOption, Endpoint, IoPlan, PlannedFile,
 };
 use avformat::{
-    register_mov_probe, FrameCrcMuxer, Image2Demuxer, Image2Entry, Image2Muxer, Image2Pattern,
-    MovDemuxer, NullMuxer, PcmS16leDemuxer, PcmS16leMuxer, ProbeRegistry, ProbeRequest,
-    RawVideoDemuxer, RawVideoMuxer, RawVideoPixelFormat, WavDemuxer, WavMuxer, Yuv4MpegDemuxer,
-    Yuv4MpegMuxer,
+    register_mov_probe, AviMuxer, FrameCrcMuxer, Image2Demuxer, Image2Entry, Image2Muxer,
+    Image2Pattern, MovDemuxer, NullMuxer, PcmS16leDemuxer, PcmS16leMuxer, ProbeRegistry,
+    ProbeRequest, RawVideoDemuxer, RawVideoMuxer, RawVideoPixelFormat, WavDemuxer, WavMuxer,
+    Yuv4MpegDemuxer, Yuv4MpegMuxer,
 };
 use avutil::{Packet, Rational};
 use std::{fmt, fs, io::Write, path::Path};
@@ -129,6 +129,7 @@ impl std::error::Error for FfmpegError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputMuxer {
+    Avi,
     Null,
     FrameCrc,
     Image2,
@@ -141,6 +142,7 @@ enum OutputMuxer {
 impl OutputMuxer {
     fn name(self) -> &'static str {
         match self {
+            Self::Avi => "avi",
             Self::Null => "null",
             Self::FrameCrc => "framecrc",
             Self::Image2 => "image2",
@@ -288,9 +290,10 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 OutputMuxer::Null | OutputMuxer::FrameCrc => {
                     run_output_muxer(output_muxer, read_packet)
                 }
-                OutputMuxer::Image2 | OutputMuxer::RawVideo | OutputMuxer::Yuv4MpegPipe => {
-                    run_output_muxer(output_muxer, read_packet)
-                }
+                OutputMuxer::Avi
+                | OutputMuxer::Image2
+                | OutputMuxer::RawVideo
+                | OutputMuxer::Yuv4MpegPipe => run_output_muxer(output_muxer, read_packet),
             }
         }
         InputFormat::RawVideo {
@@ -325,6 +328,9 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 OutputMuxer::PcmS16le => run_output_muxer(output_muxer, read_packet),
                 OutputMuxer::Wav => run_output_muxer(output_muxer, read_packet),
                 OutputMuxer::Image2 => run_output_muxer(output_muxer, read_packet),
+                OutputMuxer::Avi => {
+                    run_avi_file_muxer(output, width, height, pixel_format, frame_rate, read_packet)
+                }
                 OutputMuxer::Yuv4MpegPipe => run_yuv4mpegpipe_file_muxer(
                     output,
                     width,
@@ -388,6 +394,10 @@ fn validate_stdout_output(output: &PlannedFile) -> Result<(), FfmpegError> {
 fn validate_output_endpoint(muxer: OutputMuxer, output: &PlannedFile) -> Result<(), FfmpegError> {
     match muxer {
         OutputMuxer::Null | OutputMuxer::FrameCrc => validate_stdout_output(output),
+        OutputMuxer::Avi => {
+            local_output_path(output, "avi")?;
+            Ok(())
+        }
         OutputMuxer::Image2 => {
             local_output_path(output, "image2")?;
             Ok(())
@@ -817,11 +827,12 @@ fn validate_output_options(muxer: OutputMuxer, output: &PlannedFile) -> Result<(
 fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> {
     let format = last_option_value(output.options(), "f").ok_or_else(|| {
         FfmpegError::usage(
-            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f image2`, `-f s16le`, `-f rawvideo`, `-f wav`, or `-f yuv4mpegpipe`",
+            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f image2`, `-f s16le`, `-f rawvideo`, `-f wav`, `-f yuv4mpegpipe`, or `-f avi`",
         )
     })?;
 
     match format.to_ascii_lowercase().as_str() {
+        "avi" => Ok(OutputMuxer::Avi),
         "null" => Ok(OutputMuxer::Null),
         "framecrc" => Ok(OutputMuxer::FrameCrc),
         "image2" => Ok(OutputMuxer::Image2),
@@ -923,6 +934,9 @@ where
     match output_muxer {
         OutputMuxer::Null => run_null_muxer(read_packet),
         OutputMuxer::FrameCrc => run_framecrc_muxer(read_packet),
+        OutputMuxer::Avi => Err(FfmpegError::unsupported(
+            "ffmpeg-rs AVI output is only implemented for rgb24 rawvideo inputs",
+        )),
         OutputMuxer::Image2 => Err(FfmpegError::unsupported(
             "ffmpeg-rs image2 output is only implemented for image2 inputs",
         )),
@@ -1063,6 +1077,56 @@ where
         String::new(),
         String::new(),
         OutputMuxer::RawVideo,
+        packet_count,
+        byte_count,
+    ))
+}
+
+fn run_avi_file_muxer<F>(
+    output: &PlannedFile,
+    width: usize,
+    height: usize,
+    pixel_format: RawVideoPixelFormat,
+    frame_rate: Rational,
+    mut read_packet: F,
+) -> Result<FfmpegOutput, FfmpegError>
+where
+    F: FnMut() -> Result<Option<Packet>, FfmpegError>,
+{
+    if pixel_format != RawVideoPixelFormat::Rgb24 {
+        return Err(FfmpegError::unsupported(
+            "ffmpeg-rs AVI output currently supports only rgb24 rawvideo input",
+        ));
+    }
+
+    let output_path = local_output_path(output, "avi")?;
+    let width = u32::try_from(width)
+        .map_err(|_| FfmpegError::invalid_data("AVI width does not fit u32"))?;
+    let height = u32::try_from(height)
+        .map_err(|_| FfmpegError::invalid_data("AVI height does not fit u32"))?;
+    let mut muxer = AviMuxer::new_rgb24(width, height, frame_rate).map_err(|err| {
+        FfmpegError::invalid_data(format!("failed to configure AVI muxer: {err}"))
+    })?;
+
+    while let Some(packet) = read_packet()? {
+        muxer
+            .write_packet(&packet)
+            .map_err(|err| FfmpegError::invalid_data(format!("failed to mux AVI packet: {err}")))?;
+    }
+
+    let packet_count = u64::try_from(muxer.packet_count())
+        .map_err(|_| FfmpegError::invalid_data("AVI frame count does not fit u64"))?;
+    let output_bytes = muxer
+        .finish()
+        .map_err(|err| FfmpegError::invalid_data(format!("failed to finish AVI muxer: {err}")))?;
+    let byte_count = u64::try_from(output_bytes.len())
+        .map_err(|_| FfmpegError::invalid_data("AVI output size does not fit u64"))?;
+    write_new_output_file(output_path, &output_bytes)?;
+
+    Ok(FfmpegOutput::media(
+        String::new(),
+        String::new(),
+        OutputMuxer::Avi,
         packet_count,
         byte_count,
     ))
@@ -1774,6 +1838,67 @@ mod tests {
     }
 
     #[test]
+    fn runs_rawvideo_rgb24_to_avi_file_output() {
+        let first = [0, 1, 2, 3, 4, 5];
+        let second = [6, 7, 8, 9, 10, 11];
+        let payload = [first.as_slice(), second.as_slice()].concat();
+        let input_path = write_temp_bytes("rawvideo-avi-file-input", "raw", &payload);
+        let output_path = unique_temp_path("rawvideo-avi-file-output", "avi");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            "2x1",
+            "-r",
+            "25",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "avi",
+            output_arg.as_str(),
+        ]))
+        .expect("rawvideo rgb24 to AVI file output path should execute");
+        let written = fs::read(&output_path).expect("AVI output file should be readable");
+        let mut demuxer = avformat::AviDemuxer::open(&written).expect("AVI output should parse");
+        let first_packet = demuxer
+            .read_packet()
+            .expect("first AVI packet read should succeed")
+            .expect("first frame should exist");
+        let second_packet = demuxer
+            .read_packet()
+            .expect("second AVI packet read should succeed")
+            .expect("second frame should exist");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert_eq!(output.output_format(), Some("avi"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), u64::try_from(written.len()).unwrap());
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+        assert_eq!(demuxer.info().width(), 2);
+        assert_eq!(demuxer.info().height(), 1);
+        assert_eq!(demuxer.info().total_frames(), 2);
+        assert_eq!(demuxer.info().packet_count(), 2);
+        let stream = &demuxer.info().streams()[0];
+        assert_eq!(stream.width(), 2);
+        assert_eq!(stream.height(), 1);
+        assert_eq!(stream.frame_rate(), Rational::new(25, 1).unwrap());
+        assert_eq!(stream.bit_count(), 24);
+        assert_eq!(stream.compression(), "BI_RGB");
+        assert_eq!(first_packet.data(), first);
+        assert_eq!(first_packet.pts(), Some(0));
+        assert_eq!(second_packet.data(), second);
+        assert_eq!(second_packet.pts(), Some(1));
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn rejects_rawvideo_file_output_overwrite() {
         let input_path = write_temp_bytes("rawvideo-overwrite-input", "raw", &[0, 1, 2, 3]);
         let output_path = write_temp_bytes("rawvideo-overwrite-output", "raw", b"existing");
@@ -1802,6 +1927,67 @@ mod tests {
 
         assert!(err.message().contains("failed to create output"));
         assert_eq!(existing, b"existing");
+    }
+
+    #[test]
+    fn rejects_avi_file_output_overwrite() {
+        let input_path =
+            write_temp_bytes("rawvideo-avi-overwrite-input", "raw", &[0, 1, 2, 3, 4, 5]);
+        let output_path = write_temp_bytes("rawvideo-avi-overwrite-output", "avi", b"existing");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            "2x1",
+            "-r",
+            "25",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "avi",
+            output_arg.as_str(),
+        ]))
+        .expect_err("AVI file output should not overwrite existing files");
+        let existing = fs::read(&output_path).expect("existing output file should remain readable");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert!(err.message().contains("failed to create output"));
+        assert_eq!(existing, b"existing");
+    }
+
+    #[test]
+    fn rejects_avi_file_output_for_non_rgb24_rawvideo() {
+        let input_path = write_temp_bytes("rawvideo-avi-yuv-input", "raw", &[0, 1, 2, 3, 4, 5]);
+        let output_path = unique_temp_path("rawvideo-avi-yuv-output", "avi");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            "-s",
+            "2x2",
+            "-r",
+            "25",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "avi",
+            output_arg.as_str(),
+        ]))
+        .expect_err("AVI output should reject non-rgb24 rawvideo input");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert!(err.message().contains("supports only rgb24"));
     }
 
     #[test]
