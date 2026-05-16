@@ -42,6 +42,8 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `Image2Demuxer` implements an initial image2 packetizer over caller-provided image entries. It supports a single literal image path or a contiguous `%d`/`%0Nd` numbered sequence, sorts frames by frame number, rejects gaps and duplicates, and emits one packet per image with path side data.
 
+`Image2Muxer` implements the matching initial image2 muxer path. It maps stream-0 packet payloads to single-image or numbered output entries without touching the filesystem, validating path generation and non-empty image payloads before recording entries.
+
 `RawVideoDemuxer` implements an initial rawvideo packet slicer for fixed-size `gray`, `rgb24`, `rgba`, and `yuv420p` frame payloads. It validates dimensions, frame rate, yuv420p parity, and whole-frame byte counts before emitting monotonically timed packets.
 
 `RawVideoMuxer` implements the matching initial rawvideo muxer path. It validates stream-0 packet ownership and exact fixed-size frame payloads before concatenating raw frame bytes and updating frame accounting.

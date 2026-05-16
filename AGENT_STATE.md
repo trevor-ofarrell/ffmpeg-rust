@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-yuv4mpegpipe-muxer` is implemented and verified for a narrow progressive 4:2:0 C420jpeg output path. It writes a canonical YUV4MPEG2 header, emits one `FRAME` record per exact-size stream-0 packet, supports optional sample aspect ratio, and round-trips through the existing demuxer. The next priority component is `avformat-image2-muxer`.
+`avformat-image2-muxer` is implemented and verified for a narrow single-image and numbered-sequence output path. It maps stream-0 packet payloads to generated `Image2Entry` values, validates non-empty payloads, formats `%d`/`%0Nd` paths, rejects duplicate single-image writes, and round-trips through the existing demuxer. The next priority component is `avformat-avi-demuxer`.
 
 ## Last Successful Commands
 
@@ -84,6 +84,11 @@
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
+- `cargo fmt --all`
+- `cargo test -p avformat image2`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
 
 ## Last Failing Commands
 
@@ -94,13 +99,13 @@
 
 ## Current Focus Component
 
-`avformat-image2-muxer` is the next highest-priority incomplete component after the initial yuv4mpegpipe muxer.
+`avformat-avi-demuxer` is the next highest-priority incomplete component after the initial simple raw/PCM/WAV/hash/image2/yuv4mpegpipe surface.
 
 ## Next 3 Concrete Actions
 
-1. Add an internal image2 muxer that maps stream-0 image packets to literal or numbered output entries.
-2. Add unit tests for pattern formatting, packet ordering, duplicate path rejection, packet validation, and finalization behavior.
-3. Update the ledger, docs, and state after the image2 muxer passes focused and workspace checks.
+1. Add the first small AVI demuxer parser for a constrained RIFF AVI fixture.
+2. Add unit tests for RIFF/AVI headers, stream metadata extraction, movi packet extraction, invalid chunk bounds, and unsupported cases.
+3. Update the ledger, docs, and state after the AVI demuxer passes focused and workspace checks.
 
 ## Known Blockers
 
@@ -110,4 +115,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-yuv4mpegpipe-muxer` for canonical progressive C420jpeg YUV4MPEG2 header/frame rendering with stream validation, packet-size validation, empty-output, round-trip, and finalization tests.
+Latest slice: add `avformat-image2-muxer` for single-image and numbered-sequence entry generation with stream validation, non-empty packet validation, path formatting, duplicate single-output rejection, round-trip, and finalization tests.

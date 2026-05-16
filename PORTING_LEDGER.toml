@@ -714,13 +714,35 @@ id = "avformat-image2-muxer"
 kind = "muxer"
 ffmpeg_name = "image2"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -i <input> -f image2 <pattern>"
+rust_command = "cargo test -p avformat image2"
+unit_tests = [
+  "image2::tests::muxer_writes_numbered_sequence_and_round_trips_through_demuxer",
+  "image2::tests::muxer_supports_single_image_output",
+  "image2::tests::muxer_formats_unpadded_and_zero_padded_paths",
+  "image2::tests::muxer_rejects_invalid_parameters_packets_and_duplicate_single_path",
+  "image2::tests::muxer_finish_prevents_more_writes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial image2 muxer maps stream-0 packets to single-image or contiguous %d/%0Nd output entries, validates non-empty packet payloads, formats output paths, rejects duplicate single-image writes, round-trips through the demuxer, and prevents writes after finish. Filesystem writes, glob patterns, timestamp modes, looping, codec-specific image validation, CLI wiring, differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-avi-demuxer"
+kind = "demuxer"
+ffmpeg_name = "avi"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 4
+oracle_command = "ffmpeg -i <input.avi> -f framecrc -"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple image sequence muxer target to pair with the image2 demuxer."
+notes = "Next container target after the initial simple raw/PCM/WAV/hash/image2/yuv4mpegpipe surface."
 blocked_reason = ""

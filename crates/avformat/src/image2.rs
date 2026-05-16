@@ -125,6 +125,34 @@ impl Image2Pattern {
             }
         }
     }
+
+    pub fn path_for_frame_number(&self, number: i64) -> AvResult<String> {
+        if number < 0 {
+            return Err(AvError::invalid_argument(
+                "image2 frame number must not be negative",
+            ));
+        }
+
+        match &self.kind {
+            Image2PatternKind::Single(single) => Ok(single.clone()),
+            Image2PatternKind::Numbered {
+                prefix,
+                suffix,
+                width,
+            } => {
+                let digits = if let Some(width) = width {
+                    format!("{number:0width$}")
+                } else {
+                    number.to_string()
+                };
+                let mut path = String::with_capacity(prefix.len() + digits.len() + suffix.len());
+                path.push_str(prefix);
+                path.push_str(&digits);
+                path.push_str(suffix);
+                Ok(path)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -281,6 +309,110 @@ impl Image2Demuxer {
         )?);
         self.next_index += 1;
         Ok(Some(packet))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Image2Muxer {
+    info: Image2Info,
+    entries: Vec<Image2Entry>,
+    next_number: i64,
+    finished: bool,
+}
+
+impl Image2Muxer {
+    pub fn new(
+        pattern: impl Into<String>,
+        start_number: i64,
+        frame_rate: Rational,
+    ) -> AvResult<Self> {
+        validate_frame_rate(frame_rate)?;
+        if start_number < 0 {
+            return Err(AvError::invalid_argument(
+                "image2 start number must not be negative",
+            ));
+        }
+
+        let pattern = Image2Pattern::parse(pattern)?;
+        Ok(Self {
+            info: Image2Info {
+                pattern,
+                start_number,
+                frame_rate,
+                frame_count: 0,
+            },
+            entries: Vec::new(),
+            next_number: start_number,
+            finished: false,
+        })
+    }
+
+    pub fn info(&self) -> &Image2Info {
+        &self.info
+    }
+
+    pub fn entries(&self) -> &[Image2Entry] {
+        &self.entries
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    pub fn write_packet(&mut self, packet: &Packet) -> AvResult<()> {
+        if self.finished {
+            return Err(AvError::invalid_argument(
+                "cannot write packet after image2 muxer is finished",
+            ));
+        }
+        if packet.stream_index() != 0 {
+            return Err(AvError::invalid_argument(format!(
+                "image2 muxer only accepts stream 0, got stream {}",
+                packet.stream_index()
+            )));
+        }
+        if packet.data().is_empty() {
+            return Err(AvError::invalid_data(
+                "image2 packet payload must not be empty",
+            ));
+        }
+        if !self.info.pattern.is_sequence() && !self.entries.is_empty() {
+            return Err(AvError::invalid_argument(
+                "single-image image2 output accepts exactly one packet",
+            ));
+        }
+
+        let path = self.info.pattern.path_for_frame_number(self.next_number)?;
+        if self.entries.iter().any(|entry| entry.path() == path) {
+            return Err(AvError::invalid_data(format!(
+                "duplicate image2 output path `{path}`"
+            )));
+        }
+
+        let entry = Image2Entry::new(path, packet.data().to_vec())?;
+        let next_number = self
+            .next_number
+            .checked_add(1)
+            .ok_or_else(|| AvError::invalid_argument("image2 frame number overflow"))?;
+        let frame_count = self
+            .info
+            .frame_count
+            .checked_add(1)
+            .ok_or_else(|| AvError::invalid_argument("image2 frame count overflow"))?;
+
+        self.entries.push(entry);
+        self.next_number = next_number;
+        self.info.frame_count = frame_count;
+        Ok(())
+    }
+
+    pub fn render(&self) -> Vec<Image2Entry> {
+        self.entries.clone()
+    }
+
+    pub fn finish(&mut self) -> Vec<Image2Entry> {
+        self.finished = true;
+        self.render()
     }
 }
 
@@ -505,6 +637,112 @@ mod tests {
             Rational::new(1, 1).unwrap(),
         )
         .is_err());
+    }
+
+    #[test]
+    fn muxer_writes_numbered_sequence_and_round_trips_through_demuxer() {
+        let mut muxer =
+            Image2Muxer::new("frame-%03d.png", 2, Rational::new(25, 1).unwrap()).unwrap();
+
+        muxer
+            .write_packet(&Packet::new(b"two".to_vec(), 0))
+            .unwrap();
+        muxer
+            .write_packet(&Packet::new(b"three".to_vec(), 0))
+            .unwrap();
+
+        assert!(muxer.info().pattern().is_sequence());
+        assert_eq!(muxer.info().start_number(), 2);
+        assert_eq!(muxer.info().frame_rate(), Rational::new(25, 1).unwrap());
+        assert_eq!(muxer.info().frame_count(), 2);
+        assert_eq!(muxer.entries()[0].path(), "frame-002.png");
+        assert_eq!(muxer.entries()[1].path(), "frame-003.png");
+        assert_eq!(muxer.entries()[0].data(), b"two");
+
+        let entries = muxer.finish();
+        let mut demuxer =
+            Image2Demuxer::open("frame-%03d.png", entries, 2, Rational::new(25, 1).unwrap())
+                .unwrap();
+        assert_eq!(demuxer.read_packet().unwrap().unwrap().data(), b"two");
+        assert_eq!(demuxer.read_packet().unwrap().unwrap().data(), b"three");
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn muxer_supports_single_image_output() {
+        let mut muxer =
+            Image2Muxer::new("cover%%final.png", 0, Rational::new(1, 1).unwrap()).unwrap();
+
+        muxer
+            .write_packet(&Packet::new(b"png bytes".to_vec(), 0))
+            .unwrap();
+
+        assert!(!muxer.info().pattern().is_sequence());
+        assert_eq!(muxer.entries()[0].path(), "cover%final.png");
+        assert_eq!(muxer.entries()[0].data(), b"png bytes");
+        assert_eq!(muxer.info().frame_count(), 1);
+    }
+
+    #[test]
+    fn muxer_formats_unpadded_and_zero_padded_paths() {
+        let unpadded = Image2Pattern::parse("img-%d.jpeg").unwrap();
+        let padded = Image2Pattern::parse("img-%04d.jpeg").unwrap();
+
+        assert_eq!(unpadded.path_for_frame_number(12).unwrap(), "img-12.jpeg");
+        assert_eq!(padded.path_for_frame_number(12).unwrap(), "img-0012.jpeg");
+        assert_eq!(
+            padded.path_for_frame_number(12_345).unwrap(),
+            "img-12345.jpeg"
+        );
+        assert!(padded.path_for_frame_number(-1).is_err());
+    }
+
+    #[test]
+    fn muxer_rejects_invalid_parameters_packets_and_duplicate_single_path() {
+        assert!(Image2Muxer::new("", 0, Rational::new(1, 1).unwrap()).is_err());
+        assert!(Image2Muxer::new("frame-%d.png", -1, Rational::new(1, 1).unwrap()).is_err());
+        assert!(Image2Muxer::new("frame-%d.png", 0, Rational::new(0, 1).unwrap()).is_err());
+
+        let mut muxer = Image2Muxer::new("frame-%d.png", 0, Rational::new(1, 1).unwrap()).unwrap();
+        let wrong_stream = muxer.write_packet(&Packet::new(b"x".to_vec(), 1));
+        assert_eq!(
+            wrong_stream.unwrap_err().kind(),
+            avutil::AvErrorKind::InvalidArgument
+        );
+        let empty_packet = muxer.write_packet(&Packet::new(Vec::new(), 0));
+        assert_eq!(
+            empty_packet.unwrap_err().kind(),
+            avutil::AvErrorKind::InvalidData
+        );
+        assert_eq!(muxer.info().frame_count(), 0);
+        assert!(muxer.entries().is_empty());
+
+        let mut single = Image2Muxer::new("cover.png", 0, Rational::new(1, 1).unwrap()).unwrap();
+        single.write_packet(&Packet::new(b"x".to_vec(), 0)).unwrap();
+        let duplicate = single.write_packet(&Packet::new(b"y".to_vec(), 0));
+        assert_eq!(
+            duplicate.unwrap_err().kind(),
+            avutil::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(single.info().frame_count(), 1);
+        assert_eq!(single.entries().len(), 1);
+    }
+
+    #[test]
+    fn muxer_finish_prevents_more_writes() {
+        let mut muxer = Image2Muxer::new("frame-%d.png", 0, Rational::new(1, 1).unwrap()).unwrap();
+
+        muxer.write_packet(&Packet::new(b"x".to_vec(), 0)).unwrap();
+        let entries = muxer.finish();
+        let err = muxer
+            .write_packet(&Packet::new(b"y".to_vec(), 0))
+            .unwrap_err();
+
+        assert!(muxer.is_finished());
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path(), "frame-0.png");
+        assert_eq!(err.kind(), avutil::AvErrorKind::InvalidArgument);
+        assert_eq!(muxer.info().frame_count(), 1);
     }
 
     fn entry(path: &str, data: &[u8]) -> Image2Entry {
