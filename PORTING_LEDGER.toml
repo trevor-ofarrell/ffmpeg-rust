@@ -396,13 +396,36 @@ id = "avformat-probe"
 kind = "api"
 ffmpeg_name = "probe logic"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 2
 oracle_command = ""
+rust_command = "cargo test -p avformat probe"
+unit_tests = [
+  "probe::tests::descriptor_validation_rejects_empty_or_invalid_fields",
+  "probe::tests::signature_match_scores_higher_than_extension",
+  "probe::tests::mime_type_scores_higher_than_extension",
+  "probe::tests::extension_matching_is_case_insensitive_and_path_aware",
+  "probe::tests::duplicate_descriptor_names_are_rejected_case_insensitively",
+  "probe::tests::no_match_returns_none_and_ties_keep_registration_order",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial registry/scoring primitive implemented for signature, MIME type, and extension matches with deterministic tie handling. It is not populated from FFmpeg inventories and has no demuxer implementations yet."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-null-muxer"
+kind = "muxer"
+ffmpeg_name = "null"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -f lavfi -i testsrc -f null -"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next avformat infrastructure slice before demuxers/muxers."
+notes = "Next simple muxer target after basic avformat infrastructure."
 blocked_reason = ""

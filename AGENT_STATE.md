@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-avio` is implemented and verified with seekable AVIO-like reader/writer wrappers, typed avutil errors, exact-read EOF rewind, skip/seek, read-to-end, write, overwrite, and flush coverage. The next priority component is `avformat-probe`.
+`avformat-probe` is implemented and verified with descriptor validation and deterministic signature, MIME type, and extension scoring. The next priority component is `avformat-null-muxer`.
 
 ## Last Successful Commands
 
@@ -29,22 +29,24 @@
 - `cargo test -p fftools --test version hide_banner`
 - `cargo test -p fftools io_plan`
 - `cargo test -p avformat avio`
+- `cargo test -p avformat probe`
 
 ## Last Failing Commands
 
 - `git status --short` before initialization failed because the directory was not a Git repository.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on a test literal grouping in `byteio.rs`; the literal was normalized and clippy passed on rerun.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on a loop-counter pattern and boolean assert style in `bitreader.rs`; both were corrected and clippy passed on rerun.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on a redundant closure in `probe.rs`; it was replaced with the function reference and clippy passed on rerun.
 
 ## Current Focus Component
 
-`avformat-probe` is the next highest-priority incomplete component after `avformat-avio`.
+`avformat-null-muxer` is the next highest-priority incomplete component after `avformat-probe`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avformat avio`.
+1. Run `cargo test -p avformat probe`.
 2. Run formatting, workspace tests, and clippy.
-3. Add the first avformat probe registry/scoring primitive.
+3. Add the first null muxer primitive.
 
 ## Known Blockers
 
@@ -54,4 +56,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avformat-avio` seekable reader/writer wrappers.
+Latest committed slice: add `avformat-probe` registry/scoring primitive.

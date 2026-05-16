@@ -20,7 +20,7 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 Early shared types intentionally encode invariants at construction boundaries. `Rational` rejects zero denominators and normalizes signs. `ByteReader` bounds-checks every read and returns typed EOF errors without advancing past failed reads. `ByteWriter` validates constrained widths such as 24-bit integer fields. `BitReader` performs bounded MSB-first bit reads, peeks, skips, and byte alignment without advancing on failed reads. `BitWriter` writes MSB-first fields, validates requested widths, and zero-pads byte alignment explicitly. `Dictionary` preserves metadata insertion order, uses ASCII case-insensitive matching by default, and rejects empty/NUL-containing keys. `OptionSet` stores AVOption-like descriptors and current values with type/range validation before mutation. `Adler32` and `Crc32` provide streaming checksum state plus one-shot helpers. `Packet` represents missing PTS/DTS with `Option<i64>` over an internal `AV_NOPTS_VALUE`. `Frame` currently models typed audio/video payload shells with explicit shape validation.
 
-`AvioReader` and `AvioWriter` wrap seekable byte streams with typed `avutil` errors. Exact reads rewind to the starting offset on EOF so parsers can fail without losing their previous probe position.
+`AvioReader` and `AvioWriter` wrap seekable byte streams with typed `avutil` errors. Exact reads rewind to the starting offset on EOF so parsers can fail without losing their previous probe position. `ProbeRegistry` records format probe descriptors and deterministically scores signature, MIME type, and extension matches.
 
 ## CLI Compatibility Model
 
