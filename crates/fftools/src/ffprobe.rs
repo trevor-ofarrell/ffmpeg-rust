@@ -108,6 +108,8 @@ pub struct FfprobeStreamReport {
     height: Option<u32>,
     bits_per_raw_sample: Option<u16>,
     extradata_size: Option<usize>,
+    is_avc: Option<bool>,
+    nal_length_size: Option<u8>,
     sample_aspect_ratio: Option<String>,
     display_aspect_ratio: Option<String>,
     color_range: Option<String>,
@@ -171,6 +173,14 @@ impl FfprobeStreamReport {
 
     pub fn extradata_size(&self) -> Option<usize> {
         self.extradata_size
+    }
+
+    pub fn is_avc(&self) -> Option<bool> {
+        self.is_avc
+    }
+
+    pub fn nal_length_size(&self) -> Option<u8> {
+        self.nal_length_size
     }
 
     pub fn sample_aspect_ratio(&self) -> Option<&str> {
@@ -597,6 +607,8 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                 height: track.height(),
                 bits_per_raw_sample: mov_bits_per_raw_sample(track.codec_tag(), video_sample_entry),
                 extradata_size: mov_extradata_size(track),
+                is_avc: mov_is_avc(video_sample_entry),
+                nal_length_size: mov_nal_length_size(video_sample_entry),
                 sample_aspect_ratio: video_sample_entry.and_then(mov_sample_aspect_ratio),
                 display_aspect_ratio: mov_display_aspect_ratio(
                     track.width(),
@@ -679,6 +691,8 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
                 height: Some(stream.height()),
                 bits_per_raw_sample: Some(stream.bit_count()),
                 extradata_size: None,
+                is_avc: None,
+                nal_length_size: None,
                 sample_aspect_ratio: None,
                 display_aspect_ratio: None,
                 color_range: None,
@@ -872,6 +886,21 @@ fn mov_extradata_size(track: &MovTrackInfo) -> Option<usize> {
     } else {
         Some(size)
     }
+}
+
+fn mov_is_avc(video: Option<&MovVideoSampleEntry>) -> Option<bool> {
+    video?.avc_decoder_configuration().map(|_| true)
+}
+
+fn mov_nal_length_size(video: Option<&MovVideoSampleEntry>) -> Option<u8> {
+    let video = video?;
+    if let Some(configuration) = video.avc_decoder_configuration() {
+        return Some(configuration.nal_length_size());
+    }
+    if let Some(configuration) = video.hevc_decoder_configuration() {
+        return Some(configuration.nal_length_size());
+    }
+    None
 }
 
 fn avc_profile_name(profile_indication: u8) -> &'static str {
@@ -1091,6 +1120,12 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             if let Some(extradata_size) = stream.extradata_size {
                 out.push_str(&format!("extradata_size={extradata_size}\n"));
             }
+            if let Some(is_avc) = stream.is_avc {
+                out.push_str(&format!("is_avc={}\n", bool_string(is_avc)));
+            }
+            if let Some(nal_length_size) = stream.nal_length_size {
+                out.push_str(&format!("nal_length_size={nal_length_size}\n"));
+            }
             if let Some(sample_aspect_ratio) = &stream.sample_aspect_ratio {
                 out.push_str(&format!("sample_aspect_ratio={sample_aspect_ratio}\n"));
             }
@@ -1225,6 +1260,12 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     if let Some(extradata_size) = stream.extradata_size {
         fields.push(json_number("extradata_size", extradata_size));
     }
+    if let Some(is_avc) = stream.is_avc {
+        fields.push(json_string("is_avc", bool_string(is_avc)));
+    }
+    if let Some(nal_length_size) = stream.nal_length_size {
+        fields.push(json_string("nal_length_size", &nal_length_size.to_string()));
+    }
     if let Some(sample_aspect_ratio) = &stream.sample_aspect_ratio {
         fields.push(json_string("sample_aspect_ratio", sample_aspect_ratio));
     }
@@ -1280,6 +1321,14 @@ fn render_format_json(report: &FfprobeReport) -> String {
         fields.push(json_object("tags", &report.tags));
     }
     format!("{{{}}}", fields.join(", "))
+}
+
+fn bool_string(value: bool) -> &'static str {
+    if value {
+        "true"
+    } else {
+        "false"
+    }
 }
 
 fn json_string(key: &str, value: &str) -> String {
@@ -1644,6 +1693,8 @@ mod tests {
         assert!(stdout.contains("\"width\": 720"));
         assert!(stdout.contains("\"height\": 576"));
         assert!(stdout.contains(&format!("\"extradata_size\": {expected_extradata_size}")));
+        assert!(stdout.contains("\"is_avc\": \"true\""));
+        assert!(stdout.contains("\"nal_length_size\": \"4\""));
         assert!(stdout.contains("\"sample_aspect_ratio\": \"4:3\""));
         assert!(stdout.contains("\"display_aspect_ratio\": \"5:3\""));
         assert!(stdout.contains("\"color_range\": \"pc\""));
@@ -1896,6 +1947,8 @@ mod tests {
                 height: Some(1080),
                 bits_per_raw_sample: Some(24),
                 extradata_size: Some(70),
+                is_avc: None,
+                nal_length_size: None,
                 sample_aspect_ratio: Some("1:1".to_string()),
                 display_aspect_ratio: Some("16:9".to_string()),
                 color_range: Some("tv".to_string()),
