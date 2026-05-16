@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`fftools-basic-io` is implemented and verified as an I/O planning layer that validates input/output presence, preserves grouped file options, and classifies file, pipe, and protocol endpoints. The next priority component is `avformat-avio`.
+`avformat-avio` is implemented and verified with seekable AVIO-like reader/writer wrappers, typed avutil errors, exact-read EOF rewind, skip/seek, read-to-end, write, overwrite, and flush coverage. The next priority component is `avformat-probe`.
 
 ## Last Successful Commands
 
@@ -28,6 +28,7 @@
 - `cargo test -p fftools option_parser`
 - `cargo test -p fftools --test version hide_banner`
 - `cargo test -p fftools io_plan`
+- `cargo test -p avformat avio`
 
 ## Last Failing Commands
 
@@ -37,13 +38,13 @@
 
 ## Current Focus Component
 
-`avformat-avio` is the next highest-priority incomplete component after `fftools-basic-io`.
+`avformat-probe` is the next highest-priority incomplete component after `avformat-avio`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p fftools io_plan`.
+1. Run `cargo test -p avformat avio`.
 2. Run formatting, workspace tests, and clippy.
-3. Add the first AVIO-like reader abstraction in `avformat`.
+3. Add the first avformat probe registry/scoring primitive.
 
 ## Known Blockers
 
@@ -53,4 +54,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `fftools-basic-io` I/O planning.
+Latest committed slice: add `avformat-avio` seekable reader/writer wrappers.

@@ -375,6 +375,27 @@ id = "avformat-avio"
 kind = "api"
 ffmpeg_name = "AVIO-like I/O"
 upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = ""
+rust_command = "cargo test -p avformat avio"
+unit_tests = [
+  "avio::tests::reader_reads_seeks_and_skips",
+  "avio::tests::exact_read_eof_returns_typed_error_and_rewinds",
+  "avio::tests::skip_rejects_negative_positions",
+  "avio::tests::writer_writes_seeks_overwrites_and_flushes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial seekable AVIO-like reader/writer implemented with typed avutil errors, exact-read EOF rewind, skip/seek, read-to-end, write, overwrite, and flush coverage. Protocols and non-seekable streams are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-probe"
+kind = "api"
+ffmpeg_name = "probe logic"
+upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "not_started"
 priority = 2
 oracle_command = ""
@@ -383,5 +404,5 @@ unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next infrastructure slice needed before simple demuxers/muxers."
+notes = "Next avformat infrastructure slice before demuxers/muxers."
 blocked_reason = ""

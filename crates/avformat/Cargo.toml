@@ -4,6 +4,8 @@ edition.workspace = true
 version.workspace = true
 rust-version.workspace = true
 
+[dependencies]
+avutil = { path = "../avutil" }
+
 [lib]
 path = "src/lib.rs"
-

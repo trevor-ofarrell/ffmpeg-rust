@@ -2,4 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod avio;
+
+pub use avio::{AvioReader, AvioWriter};
+
 pub const COMPONENT_KIND: &str = "avformat";
