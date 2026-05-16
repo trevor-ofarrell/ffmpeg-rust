@@ -539,7 +539,27 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution now supports exactly one local seekable single-image image2 input and one stdout pipe output with explicit -f image2 plus required -framerate or -r. It uses the Rust image2 demuxer with one caller-provided entry and Rust null/framecrc muxers, rejects missing frame rate and empty image payloads, and has no oracle differential/FATE coverage yet. Numbered sequence filesystem discovery remains pending."
+notes = "ffmpeg-rs command execution supports exactly one local seekable single-image image2 input and one stdout pipe output with explicit -f image2 plus required -framerate or -r. It uses the Rust image2 demuxer with one caller-provided entry and Rust null/framecrc muxers, rejects missing frame rate and empty image payloads, and has no oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-ffmpeg-image2-sequence-framecrc-null"
+kind = "cli"
+ffmpeg_name = "ffmpeg image2 numbered sequence to framecrc/null"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -f image2 -framerate <rate> -i <pattern> -f framecrc -; ffmpeg -f image2 -framerate <rate> -i <pattern> -f null -"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_image2_sequence_to_framecrc_stdout",
+  "ffmpeg::tests::runs_image2_sequence_to_null_stdout",
+  "ffmpeg::tests::rejects_image2_sequence_missing_frame",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffmpeg-rs command execution supports explicit image2 %d/%0Nd numbered sequence inputs discovered from the pattern parent directory, using the Rust image2 demuxer and Rust null/framecrc muxers. The current path fixes start_number at 0, requires contiguous frame numbers, rejects gaps, and has no oracle differential/FATE coverage yet. Glob patterns, timestamp modes, looping, codec probing, filesystem image2 writes, and broad CLI execution remain pending."
 blocked_reason = ""
 
 [[component]]

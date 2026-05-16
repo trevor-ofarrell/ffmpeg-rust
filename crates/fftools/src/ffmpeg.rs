@@ -2,9 +2,9 @@ use crate::{
     build_io_plan, parse_ffmpeg_args, version_banner, CliOption, Endpoint, IoPlan, PlannedFile,
 };
 use avformat::{
-    register_mov_probe, FrameCrcMuxer, Image2Demuxer, Image2Entry, MovDemuxer, NullMuxer,
-    PcmS16leDemuxer, ProbeRegistry, ProbeRequest, RawVideoDemuxer, RawVideoPixelFormat, WavDemuxer,
-    Yuv4MpegDemuxer,
+    register_mov_probe, FrameCrcMuxer, Image2Demuxer, Image2Entry, Image2Pattern, MovDemuxer,
+    NullMuxer, PcmS16leDemuxer, ProbeRegistry, ProbeRequest, RawVideoDemuxer, RawVideoPixelFormat,
+    WavDemuxer, Yuv4MpegDemuxer,
 };
 use avutil::{Packet, Rational};
 use std::{fmt, fs, path::Path};
@@ -227,24 +227,18 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
     validate_stdout_output(output)?;
 
     let input_path = local_input_path(input)?;
+    let explicit_input = explicit_input_format(input)?;
+    if let Some(InputFormat::Image2 { frame_rate }) = explicit_input {
+        return run_image2_input(input_path, frame_rate, output_muxer);
+    }
+
     let bytes = fs::read(input_path)
         .map_err(|err| FfmpegError::io(format!("failed to read `{input_path}`: {err}")))?;
-    let input_format = detect_input_format(input, input_path, &bytes)?;
+    let input_format = detect_input_format(explicit_input, input_path, &bytes)?;
 
     match input_format {
         InputFormat::Image2 { frame_rate } => {
-            let entry = Image2Entry::new(input_path.to_string(), bytes).map_err(|err| {
-                FfmpegError::invalid_data(format!("failed to prepare image2 input: {err}"))
-            })?;
-            let mut demuxer =
-                Image2Demuxer::open(input_path, vec![entry], 0, frame_rate).map_err(|err| {
-                    FfmpegError::invalid_data(format!("failed to parse image2 input: {err}"))
-                })?;
-            run_output_muxer(output_muxer, || {
-                demuxer.read_packet().map_err(|err| {
-                    FfmpegError::invalid_data(format!("failed to read image2 packet: {err}"))
-                })
-            })
+            run_image2_input(input_path, frame_rate, output_muxer)
         }
         InputFormat::Mov => {
             let mut demuxer = MovDemuxer::open(&bytes).map_err(|err| {
@@ -338,12 +332,122 @@ fn validate_stdout_output(output: &PlannedFile) -> Result<(), FfmpegError> {
     }
 }
 
+fn run_image2_input(
+    path: &str,
+    frame_rate: Rational,
+    output_muxer: OutputMuxer,
+) -> Result<FfmpegOutput, FfmpegError> {
+    let entries = image2_entries_for_path(path)?;
+    let mut demuxer = Image2Demuxer::open(path, entries, 0, frame_rate)
+        .map_err(|err| FfmpegError::invalid_data(format!("failed to parse image2 input: {err}")))?;
+    run_output_muxer(output_muxer, || {
+        demuxer.read_packet().map_err(|err| {
+            FfmpegError::invalid_data(format!("failed to read image2 packet: {err}"))
+        })
+    })
+}
+
+fn image2_entries_for_path(path: &str) -> Result<Vec<Image2Entry>, FfmpegError> {
+    let pattern = Image2Pattern::parse(path).map_err(|err| {
+        FfmpegError::invalid_data(format!("failed to parse image2 pattern: {err}"))
+    })?;
+
+    if pattern.is_sequence() {
+        return discover_image2_sequence_entries(&pattern);
+    }
+
+    let actual_path = pattern.path_for_frame_number(0).map_err(|err| {
+        FfmpegError::invalid_data(format!("failed to resolve image2 input path: {err}"))
+    })?;
+    let entry = read_image2_entry(actual_path.clone(), Path::new(&actual_path))?;
+    Ok(vec![entry])
+}
+
+fn discover_image2_sequence_entries(
+    pattern: &Image2Pattern,
+) -> Result<Vec<Image2Entry>, FfmpegError> {
+    let first_path = pattern.path_for_frame_number(0).map_err(|err| {
+        FfmpegError::invalid_data(format!("failed to resolve image2 sequence path: {err}"))
+    })?;
+    let parent = Path::new(&first_path)
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let entries = fs::read_dir(parent).map_err(|err| {
+        FfmpegError::io(format!(
+            "failed to read image2 sequence directory `{}`: {err}",
+            parent.display()
+        ))
+    })?;
+
+    let mut image_entries = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|err| {
+            FfmpegError::io(format!(
+                "failed to read image2 sequence directory entry in `{}`: {err}",
+                parent.display()
+            ))
+        })?;
+        let file_type = entry.file_type().map_err(|err| {
+            FfmpegError::io(format!(
+                "failed to inspect image2 sequence path `{}`: {err}",
+                entry.path().display()
+            ))
+        })?;
+        if !file_type.is_file() {
+            continue;
+        }
+
+        if let Some(matched_path) = matched_image2_path(pattern, &entry.path()) {
+            image_entries.push(read_image2_entry(matched_path, &entry.path())?);
+        }
+    }
+
+    if image_entries.is_empty() {
+        return Err(FfmpegError::invalid_data(format!(
+            "no image2 files matched pattern `{}`",
+            pattern.raw()
+        )));
+    }
+
+    Ok(image_entries)
+}
+
+fn matched_image2_path(pattern: &Image2Pattern, path: &Path) -> Option<String> {
+    let mut candidates = Vec::with_capacity(3);
+    let full_path = path.to_string_lossy().into_owned();
+    candidates.push(full_path.clone());
+
+    let slash_path = full_path.replace('\\', "/");
+    if slash_path != full_path {
+        candidates.push(slash_path);
+    }
+
+    if let Some(file_name) = path.file_name().and_then(|value| value.to_str()) {
+        candidates.push(file_name.to_string());
+    }
+
+    candidates
+        .into_iter()
+        .find(|candidate| pattern.frame_number_for_path(candidate).is_some())
+}
+
+fn read_image2_entry(entry_path: String, read_path: &Path) -> Result<Image2Entry, FfmpegError> {
+    let bytes = fs::read(read_path).map_err(|err| {
+        FfmpegError::io(format!(
+            "failed to read image2 input `{}`: {err}",
+            read_path.display()
+        ))
+    })?;
+    Image2Entry::new(entry_path, bytes)
+        .map_err(|err| FfmpegError::invalid_data(format!("failed to prepare image2 input: {err}")))
+}
+
 fn detect_input_format(
-    input: &PlannedFile,
+    explicit: Option<InputFormat>,
     path: &str,
     bytes: &[u8],
 ) -> Result<InputFormat, FfmpegError> {
-    let explicit = explicit_input_format(input)?;
     if let Some(format) = explicit {
         validate_input_signature(format, path, bytes)?;
         return Ok(format);
@@ -1264,6 +1368,107 @@ mod tests {
     }
 
     #[test]
+    fn runs_image2_sequence_to_framecrc_stdout() {
+        let (pattern, paths) = write_temp_image2_sequence(
+            "image2-sequence-framecrc",
+            "png",
+            &[
+                (0, b"zero".as_slice()),
+                (1, b"one".as_slice()),
+                (2, b"three".as_slice()),
+            ],
+        );
+        let pattern_arg = pattern.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-framerate",
+            "25",
+            "-i",
+            pattern_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect("image2 sequence command path should execute");
+
+        remove_temp_files(&paths);
+
+        assert_eq!(output.output_format(), Some("framecrc"));
+        assert_eq!(output.packet_count(), 3);
+        assert_eq!(output.byte_count(), 12);
+        assert!(output.stderr().is_empty());
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=0 dts=0 duration=1 size=4"));
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=1 dts=1 duration=1 size=3"));
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=2 dts=2 duration=1 size=5"));
+    }
+
+    #[test]
+    fn runs_image2_sequence_to_null_stdout() {
+        let (pattern, paths) = write_temp_image2_sequence(
+            "image2-sequence-null",
+            "jpg",
+            &[(0, b"jpeg0".as_slice()), (1, b"jpeg1".as_slice())],
+        );
+        let pattern_arg = pattern.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-r",
+            "1/1",
+            "-i",
+            pattern_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("image2 sequence command path should execute");
+
+        remove_temp_files(&paths);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 10);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
+    fn rejects_image2_sequence_missing_frame() {
+        let (pattern, paths) = write_temp_image2_sequence(
+            "image2-sequence-gap",
+            "png",
+            &[(0, b"zero".as_slice()), (2, b"two".as_slice())],
+        );
+        let pattern_arg = pattern.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-framerate",
+            "25",
+            "-i",
+            pattern_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("image2 sequence input should reject missing frames");
+
+        remove_temp_files(&paths);
+
+        assert!(err.message().contains("missing frame number 1"));
+    }
+
+    #[test]
     fn rejects_image2_without_frame_rate() {
         let path = write_temp_bytes("image2-missing-rate", "png", b"\x89PNG\r\n\x1a\n");
         let path_arg = path.to_string_lossy().into_owned();
@@ -1418,6 +1623,35 @@ mod tests {
         ));
         fs::write(&path, bytes).expect("temp media file should be writable");
         path
+    }
+
+    fn write_temp_image2_sequence(
+        label: &str,
+        extension: &str,
+        frames: &[(usize, &[u8])],
+    ) -> (PathBuf, Vec<PathBuf>) {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos();
+        let prefix = format!("ffmpegrust-{}-{label}-{unique}", std::process::id());
+        let temp_dir = std::env::temp_dir();
+        let pattern = temp_dir.join(format!("{prefix}-%03d.{extension}"));
+        let mut paths = Vec::new();
+
+        for (number, bytes) in frames {
+            let path = temp_dir.join(format!("{prefix}-{number:03}.{extension}"));
+            fs::write(&path, bytes).expect("temp image2 sequence file should be writable");
+            paths.push(path);
+        }
+
+        (pattern, paths)
+    }
+
+    fn remove_temp_files(paths: &[PathBuf]) {
+        for path in paths {
+            let _ = fs::remove_file(path);
+        }
     }
 
     fn wav_file_bytes(channels: u16, sample_rate: u32, payload: &[u8]) -> Vec<u8> {
