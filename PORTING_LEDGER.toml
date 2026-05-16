@@ -758,13 +758,34 @@ id = "avformat-avi-muxer"
 kind = "muxer"
 ffmpeg_name = "avi"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 4
 oracle_command = "ffmpeg -i <input> -f avi <output.avi>"
+rust_command = "cargo test -p avformat avi::tests"
+unit_tests = [
+  "avi::tests::muxer_writes_headers_and_round_trips_through_demuxer",
+  "avi::tests::muxer_rejects_invalid_parameters_and_packets",
+  "avi::tests::muxer_finish_prevents_more_writes",
+  "avi::tests::muxer_pads_odd_sized_chunks_without_exposing_padding_as_payload",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial RIFF AVI muxer writes constrained one-stream RGB24 AVI files with avih/strh/strf headers, 00db movi chunks, word padding, stream-0 payload validation, finalization checks, and demuxer round-trip tests. Audio streams, indexes, OpenDML, palettes, compressed video, interleaving, metadata, CLI wiring, differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-mov-demuxer"
+kind = "demuxer"
+ffmpeg_name = "mov,mp4,m4a,3gp,3g2,mj2"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 4
+oracle_command = "ffmpeg -i <input.mp4> -f framecrc -"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next container target to pair with the initial constrained AVI demuxer."
+notes = "Next container target after initial constrained AVI demuxer/muxer support."
 blocked_reason = ""

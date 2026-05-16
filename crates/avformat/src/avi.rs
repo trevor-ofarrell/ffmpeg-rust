@@ -1,4 +1,4 @@
-use avutil::{AvError, AvErrorKind, AvResult, ByteReader, Packet, Rational, SideData};
+use avutil::{AvError, AvErrorKind, AvResult, ByteReader, ByteWriter, Packet, Rational, SideData};
 
 const RIFF_ID: &[u8; 4] = b"RIFF";
 const LIST_ID: &[u8; 4] = b"LIST";
@@ -208,6 +208,149 @@ impl AviDemuxer {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AviMuxer {
+    width: u32,
+    height: u32,
+    frame_rate: Rational,
+    frame_size: usize,
+    packets: Vec<Vec<u8>>,
+    finished: bool,
+}
+
+impl AviMuxer {
+    pub fn new_rgb24(width: u32, height: u32, frame_rate: Rational) -> AvResult<Self> {
+        validate_video_geometry(width, height)?;
+        validate_positive_frame_rate(frame_rate)?;
+        let frame_size = rgb24_frame_size(width, height)?;
+
+        Ok(Self {
+            width,
+            height,
+            frame_rate,
+            frame_size,
+            packets: Vec::new(),
+            finished: false,
+        })
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn frame_rate(&self) -> Rational {
+        self.frame_rate
+    }
+
+    pub fn frame_size(&self) -> usize {
+        self.frame_size
+    }
+
+    pub fn packet_count(&self) -> usize {
+        self.packets.len()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    pub fn write_packet(&mut self, packet: &Packet) -> AvResult<()> {
+        if self.finished {
+            return Err(AvError::invalid_argument(
+                "cannot write packet after AVI muxer is finished",
+            ));
+        }
+        if packet.stream_index() != 0 {
+            return Err(AvError::invalid_argument(format!(
+                "AVI muxer only accepts stream 0, got stream {}",
+                packet.stream_index()
+            )));
+        }
+        if packet.data().len() != self.frame_size {
+            return Err(AvError::invalid_data(format!(
+                "AVI packet has {} bytes, expected {}",
+                packet.data().len(),
+                self.frame_size
+            )));
+        }
+        if self.packets.len() == usize::try_from(u32::MAX).unwrap_or(usize::MAX) {
+            return Err(AvError::invalid_argument(
+                "AVI frame count exceeds classic RIFF header range",
+            ));
+        }
+
+        self.packets.push(packet.data().to_vec());
+        Ok(())
+    }
+
+    pub fn render(&self) -> AvResult<Vec<u8>> {
+        let frame_count = u32::try_from(self.packets.len()).map_err(|_| {
+            AvError::invalid_argument("AVI frame count does not fit classic RIFF headers")
+        })?;
+        let frame_size_u32 = u32_len(self.frame_size, "AVI frame size")?;
+        let frame_rate_num = positive_u32_from_i32(self.frame_rate.num(), "AVI frame rate")?;
+        let frame_rate_den = positive_u32_from_i32(self.frame_rate.den(), "AVI frame rate")?;
+        let microseconds_per_frame = microseconds_per_frame(self.frame_rate)?;
+        let max_bytes_per_second = max_bytes_per_second(self.frame_size, self.frame_rate)?;
+
+        let hdrl = write_list(
+            *HDRL_LIST,
+            &[
+                write_chunk(
+                    *AVIH_ID,
+                    &main_header_payload(
+                        microseconds_per_frame,
+                        max_bytes_per_second,
+                        frame_count,
+                        self.width,
+                        self.height,
+                        frame_size_u32,
+                    ),
+                )?,
+                write_list(
+                    *STRL_LIST,
+                    &[
+                        write_chunk(
+                            *STRH_ID,
+                            &stream_header_payload(
+                                *b"DIB ",
+                                frame_rate_den,
+                                frame_rate_num,
+                                frame_count,
+                                frame_size_u32,
+                                self.width,
+                                self.height,
+                            )?,
+                        )?,
+                        write_chunk(
+                            *STRF_ID,
+                            &bitmap_info_payload(self.width, self.height, 24, frame_size_u32)?,
+                        )?,
+                    ],
+                )?,
+            ],
+        )?;
+
+        let movi_chunks = self
+            .packets
+            .iter()
+            .map(|packet| write_chunk(*b"00db", packet))
+            .collect::<AvResult<Vec<_>>>()?;
+        let movi = write_list(*MOVI_LIST, &movi_chunks)?;
+        write_riff_avi(&[hdrl, movi])
+    }
+
+    pub fn finish(&mut self) -> AvResult<Vec<u8>> {
+        let output = self.render()?;
+        self.finished = true;
+        Ok(output)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct AviMainHeader {
     microseconds_per_frame: u32,
@@ -261,6 +404,213 @@ fn parse_hdrl(payload: &[u8]) -> AvResult<(AviMainHeader, Vec<AviStreamInfo>)> {
     let main_header =
         main_header.ok_or_else(|| AvError::invalid_data("AVI missing avih header"))?;
     Ok((main_header, streams))
+}
+
+fn write_riff_avi(chunks: &[Vec<u8>]) -> AvResult<Vec<u8>> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(AVI_FORM);
+    for chunk in chunks {
+        payload.extend_from_slice(chunk);
+    }
+
+    let mut out = ByteWriter::new();
+    out.write_all(RIFF_ID);
+    out.write_u32_le(u32_len(payload.len(), "AVI RIFF payload")?);
+    out.write_all(&payload);
+    Ok(out.into_inner())
+}
+
+fn write_list(kind: [u8; 4], chunks: &[Vec<u8>]) -> AvResult<Vec<u8>> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&kind);
+    for chunk in chunks {
+        payload.extend_from_slice(chunk);
+    }
+    write_chunk(*LIST_ID, &payload)
+}
+
+fn write_chunk(id: [u8; 4], payload: &[u8]) -> AvResult<Vec<u8>> {
+    let mut out = ByteWriter::new();
+    out.write_all(&id);
+    out.write_u32_le(u32_len(payload.len(), "AVI chunk payload")?);
+    out.write_all(payload);
+    if payload.len() % 2 == 1 {
+        out.write_u8(0);
+    }
+    Ok(out.into_inner())
+}
+
+fn main_header_payload(
+    microseconds_per_frame: u32,
+    max_bytes_per_second: u32,
+    total_frames: u32,
+    width: u32,
+    height: u32,
+    suggested_buffer_size: u32,
+) -> Vec<u8> {
+    let mut out = ByteWriter::new();
+    out.write_u32_le(microseconds_per_frame);
+    out.write_u32_le(max_bytes_per_second);
+    out.write_u32_le(0);
+    out.write_u32_le(0x10);
+    out.write_u32_le(total_frames);
+    out.write_u32_le(0);
+    out.write_u32_le(1);
+    out.write_u32_le(suggested_buffer_size);
+    out.write_u32_le(width);
+    out.write_u32_le(height);
+    for _ in 0..4 {
+        out.write_u32_le(0);
+    }
+    out.into_inner()
+}
+
+fn stream_header_payload(
+    handler: [u8; 4],
+    scale: u32,
+    rate: u32,
+    length: u32,
+    suggested_buffer_size: u32,
+    width: u32,
+    height: u32,
+) -> AvResult<Vec<u8>> {
+    let width = i32_from_u32(width, "AVI stream frame width")?;
+    let height = i32_from_u32(height, "AVI stream frame height")?;
+
+    let mut out = ByteWriter::new();
+    out.write_all(VIDEO_STREAM_TYPE);
+    out.write_all(&handler);
+    out.write_u32_le(0);
+    out.write_u16_le(0);
+    out.write_u16_le(0);
+    out.write_u32_le(0);
+    out.write_u32_le(scale);
+    out.write_u32_le(rate);
+    out.write_u32_le(0);
+    out.write_u32_le(length);
+    out.write_u32_le(suggested_buffer_size);
+    out.write_u32_le(u32::MAX);
+    out.write_u32_le(0);
+    out.write_i32_le(0);
+    out.write_i32_le(0);
+    out.write_i32_le(width);
+    out.write_i32_le(height);
+    Ok(out.into_inner())
+}
+
+fn bitmap_info_payload(
+    width: u32,
+    height: u32,
+    bit_count: u16,
+    image_size: u32,
+) -> AvResult<Vec<u8>> {
+    let width = i32::try_from(width)
+        .map_err(|_| AvError::invalid_argument("AVI width does not fit BITMAPINFOHEADER"))?;
+    let height = i32::try_from(height)
+        .map_err(|_| AvError::invalid_argument("AVI height does not fit BITMAPINFOHEADER"))?;
+
+    let mut out = ByteWriter::new();
+    out.write_u32_le(40);
+    out.write_i32_le(width);
+    out.write_i32_le(height);
+    out.write_u16_le(1);
+    out.write_u16_le(bit_count);
+    out.write_u32_le(0);
+    out.write_u32_le(image_size);
+    out.write_i32_le(0);
+    out.write_i32_le(0);
+    out.write_u32_le(0);
+    out.write_u32_le(0);
+    Ok(out.into_inner())
+}
+
+fn validate_video_geometry(width: u32, height: u32) -> AvResult<()> {
+    if width == 0 || height == 0 {
+        return Err(AvError::invalid_argument(
+            "AVI video dimensions must be non-zero",
+        ));
+    }
+    i32_from_u32(width, "AVI video width")?;
+    i32_from_u32(height, "AVI video height")?;
+    Ok(())
+}
+
+fn validate_positive_frame_rate(frame_rate: Rational) -> AvResult<()> {
+    positive_u32_from_i32(frame_rate.num(), "AVI frame rate numerator")?;
+    positive_u32_from_i32(frame_rate.den(), "AVI frame rate denominator")?;
+    Ok(())
+}
+
+fn rgb24_frame_size(width: u32, height: u32) -> AvResult<usize> {
+    let pixels = u64::from(width)
+        .checked_mul(u64::from(height))
+        .ok_or_else(|| AvError::invalid_argument("AVI frame dimensions overflow"))?;
+    let bytes = pixels
+        .checked_mul(3)
+        .ok_or_else(|| AvError::invalid_argument("AVI RGB24 frame size overflow"))?;
+    let frame_size = usize::try_from(bytes)
+        .map_err(|_| AvError::invalid_argument("AVI RGB24 frame size is out of range"))?;
+    u32_len(frame_size, "AVI RGB24 frame size")?;
+    Ok(frame_size)
+}
+
+fn microseconds_per_frame(frame_rate: Rational) -> AvResult<u32> {
+    let rate = u128::from(positive_u32_from_i32(
+        frame_rate.num(),
+        "AVI frame rate numerator",
+    )?);
+    let scale = u128::from(positive_u32_from_i32(
+        frame_rate.den(),
+        "AVI frame rate denominator",
+    )?);
+    let microseconds = 1_000_000_u128
+        .checked_mul(scale)
+        .ok_or_else(|| AvError::invalid_argument("AVI frame duration overflow"))?
+        / rate;
+    if microseconds == 0 {
+        return Err(AvError::invalid_argument(
+            "AVI frame rate is too high for microsecond header precision",
+        ));
+    }
+    u32::try_from(microseconds)
+        .map_err(|_| AvError::invalid_argument("AVI frame duration is out of range"))
+}
+
+fn max_bytes_per_second(frame_size: usize, frame_rate: Rational) -> AvResult<u32> {
+    let rate = u128::from(positive_u32_from_i32(
+        frame_rate.num(),
+        "AVI frame rate numerator",
+    )?);
+    let scale = u128::from(positive_u32_from_i32(
+        frame_rate.den(),
+        "AVI frame rate denominator",
+    )?);
+    let bytes = (frame_size as u128)
+        .checked_mul(rate)
+        .ok_or_else(|| AvError::invalid_argument("AVI max bytes per second overflow"))?;
+    let rounded = bytes
+        .checked_add(scale - 1)
+        .ok_or_else(|| AvError::invalid_argument("AVI max bytes per second overflow"))?
+        / scale;
+    u32::try_from(rounded)
+        .map_err(|_| AvError::invalid_argument("AVI max bytes per second is out of range"))
+}
+
+fn positive_u32_from_i32(value: i32, name: &str) -> AvResult<u32> {
+    if value <= 0 {
+        return Err(AvError::invalid_argument(format!(
+            "{name} must be positive"
+        )));
+    }
+    u32::try_from(value).map_err(|_| AvError::invalid_argument(format!("{name} is out of range")))
+}
+
+fn i32_from_u32(value: u32, name: &str) -> AvResult<i32> {
+    i32::try_from(value).map_err(|_| AvError::invalid_argument(format!("{name} is out of range")))
+}
+
+fn u32_len(len: usize, context: &str) -> AvResult<u32> {
+    u32::try_from(len).map_err(|_| AvError::invalid_argument(format!("{context} exceeds 32 bits")))
 }
 
 fn parse_main_header(data: &[u8]) -> AvResult<AviMainHeader> {
@@ -709,6 +1059,144 @@ mod tests {
             AviDemuxer::open(&bytes).unwrap_err().kind(),
             AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn muxer_writes_headers_and_round_trips_through_demuxer() {
+        let first = frame_bytes(12, 0x10);
+        let second = frame_bytes(12, 0x80);
+        let mut muxer = AviMuxer::new_rgb24(2, 2, Rational::new(25, 1).unwrap()).unwrap();
+
+        assert_eq!(muxer.width(), 2);
+        assert_eq!(muxer.height(), 2);
+        assert_eq!(muxer.frame_rate(), Rational::new(25, 1).unwrap());
+        assert_eq!(muxer.frame_size(), 12);
+        assert_eq!(muxer.packet_count(), 0);
+
+        muxer.write_packet(&Packet::new(first.clone(), 0)).unwrap();
+        muxer.write_packet(&Packet::new(second.clone(), 0)).unwrap();
+        assert_eq!(muxer.packet_count(), 2);
+
+        let bytes = muxer.finish().unwrap();
+        assert!(muxer.is_finished());
+
+        let mut demuxer = AviDemuxer::open(&bytes).unwrap();
+        assert_eq!(demuxer.info().microseconds_per_frame(), 40_000);
+        assert_eq!(demuxer.info().max_bytes_per_second(), 300);
+        assert_eq!(demuxer.info().total_frames(), 2);
+        assert_eq!(demuxer.info().width(), 2);
+        assert_eq!(demuxer.info().height(), 2);
+        assert_eq!(demuxer.info().packet_count(), 2);
+
+        let stream = &demuxer.info().streams()[0];
+        assert_eq!(stream.handler(), "DIB ");
+        assert_eq!(stream.time_base(), Rational::new(1, 25).unwrap());
+        assert_eq!(stream.frame_rate(), Rational::new(25, 1).unwrap());
+        assert_eq!(stream.length(), 2);
+        assert_eq!(stream.sample_size(), 0);
+        assert_eq!(stream.width(), 2);
+        assert_eq!(stream.height(), 2);
+        assert_eq!(stream.bit_count(), 24);
+        assert_eq!(stream.compression(), "BI_RGB");
+
+        let first_packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first_packet.data(), first);
+        assert_eq!(first_packet.pts(), Some(0));
+        assert_eq!(first_packet.dts(), Some(0));
+        assert_eq!(first_packet.duration(), 1);
+        assert_eq!(first_packet.side_data()[0].data(), b"00db");
+
+        let second_packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second_packet.data(), second);
+        assert_eq!(second_packet.pts(), Some(1));
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn muxer_rejects_invalid_parameters_and_packets() {
+        let rate = Rational::new(25, 1).unwrap();
+
+        assert_eq!(
+            AviMuxer::new_rgb24(0, 2, rate).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            AviMuxer::new_rgb24(2, 0, rate).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            AviMuxer::new_rgb24(2, 2, Rational::ZERO)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            AviMuxer::new_rgb24(i32::MAX as u32 + 1, 1, rate)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let mut muxer = AviMuxer::new_rgb24(2, 2, rate).unwrap();
+        assert_eq!(
+            muxer
+                .write_packet(&Packet::new(frame_bytes(12, 0x01), 1))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(muxer.packet_count(), 0);
+
+        assert_eq!(
+            muxer
+                .write_packet(&Packet::new(frame_bytes(11, 0x01), 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            muxer
+                .write_packet(&Packet::new(frame_bytes(13, 0x01), 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(muxer.packet_count(), 0);
+    }
+
+    #[test]
+    fn muxer_finish_prevents_more_writes() {
+        let mut muxer = AviMuxer::new_rgb24(2, 2, Rational::new(25, 1).unwrap()).unwrap();
+        muxer
+            .write_packet(&Packet::new(frame_bytes(12, 0x10), 0))
+            .unwrap();
+
+        let output = muxer.finish().unwrap();
+        assert!(!output.is_empty());
+        assert!(muxer.is_finished());
+        assert_eq!(
+            muxer
+                .write_packet(&Packet::new(frame_bytes(12, 0x20), 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(muxer.packet_count(), 1);
+    }
+
+    #[test]
+    fn muxer_pads_odd_sized_chunks_without_exposing_padding_as_payload() {
+        let frame = vec![1, 2, 3];
+        let mut muxer = AviMuxer::new_rgb24(1, 1, Rational::new(1, 1).unwrap()).unwrap();
+        muxer.write_packet(&Packet::new(frame.clone(), 0)).unwrap();
+
+        let bytes = muxer.finish().unwrap();
+        assert_eq!(bytes.len() % 2, 0);
+
+        let mut demuxer = AviDemuxer::open(&bytes).unwrap();
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), frame);
+        assert!(demuxer.read_packet().unwrap().is_none());
     }
 
     fn avi_fixture(frames: &[&[u8]]) -> Vec<u8> {

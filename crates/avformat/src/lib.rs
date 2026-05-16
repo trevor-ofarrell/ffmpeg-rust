@@ -14,7 +14,7 @@ pub mod rawvideo;
 pub mod wav;
 pub mod yuv4mpegpipe;
 
-pub use avi::{AviDemuxer, AviInfo, AviMediaType, AviStreamInfo};
+pub use avi::{AviDemuxer, AviInfo, AviMediaType, AviMuxer, AviStreamInfo};
 pub use avio::{AvioReader, AvioWriter};
 pub use framecrc_muxer::{FrameCrcMuxer, FrameCrcRecord};
 pub use hash_muxer::{HashAlgorithm, HashMuxer, HashMuxerReport};

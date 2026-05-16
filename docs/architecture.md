@@ -38,6 +38,8 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `AviDemuxer` implements an initial constrained RIFF AVI parser for video-only files. It parses `avih`, `strh`, and `strf` metadata, walks simple `movi` chunks including `rec ` lists, and emits packet payloads with per-stream PTS/DTS counters.
 
+`AviMuxer` implements the matching initial constrained RIFF AVI writer for one RGB24 video stream. It validates stream-0 fixed-size packet payloads, writes classic `avih`/`strh`/`strf` headers, emits `00db` chunks in a `movi` list, handles RIFF word padding, and round-trips through the current demuxer.
+
 `Yuv4MpegDemuxer` implements an initial yuv4mpegpipe parser for progressive 4:2:0 `C420jpeg` streams. It parses the stream header, validates dimensions, frame rate, interlace, chroma, and frame headers, then emits one packet per raw frame with monotonically increasing PTS.
 
 `Yuv4MpegMuxer` implements the matching initial yuv4mpegpipe muxer path. It writes a canonical progressive `C420jpeg` stream header and one `FRAME` record per exact-size yuv420p stream-0 packet.

@@ -21,6 +21,7 @@
 - `avformat` has an initial RIFF/WAVE PCM s16le demuxer that validates `fmt ` and `data` chunks and emits the data chunk as one packet.
 - `avformat` has an initial RIFF/WAVE PCM s16le muxer that writes canonical headers and stream-0 packet payloads.
 - `avformat` has an initial constrained RIFF AVI demuxer for video-only `avih`/`strh`/`strf` files with simple `movi` packet extraction.
+- `avformat` has an initial constrained RIFF AVI muxer for one RGB24 video stream with classic headers and `00db` `movi` packet output.
 - `avformat` has initial yuv4mpegpipe demuxer and muxer support for progressive 4:2:0 `C420jpeg` streams.
 - `avformat` has initial image2 demuxer and muxer support for single-image entries and contiguous `%d`/`%0Nd` numbered sequences.
 - `avformat` has an initial rawvideo demuxer for fixed-size `gray`, `rgb24`, `rgba`, and `yuv420p` frame payloads.
@@ -49,6 +50,7 @@ All media parsing, decoding, encoding, muxing, demuxing, filtering, playback, pr
 - WAV demuxing is internal only and currently limited to RIFF/WAVE PCM s16le with one packet for the data chunk. RF64, WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, packet chunking, probing, CLI execution, differential tests, FATE, and fuzzing are pending.
 - WAV muxing is internal only and currently limited to canonical RIFF/WAVE PCM s16le stream-0 payloads. RF64, WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, metadata chunks, CLI execution, differential tests, FATE, and fuzzing are pending.
 - AVI demuxing is internal only and currently limited to constrained video-only RIFF AVI files with `avih`, `strh`, `strf`, and simple `movi` chunks. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, probing, CLI execution, differential tests, FATE, and fuzzing are pending.
+- AVI muxing is internal only and currently limited to one RGB24 stream-0 packet sequence with classic RIFF AVI headers and `00db` chunks. Audio streams, indexes, OpenDML, palettes, compressed video, interleaving, metadata, CLI execution, differential tests, FATE, and fuzzing are pending.
 - yuv4mpegpipe demuxing and muxing are internal only and currently limited to progressive 4:2:0 `C420jpeg` packet extraction/writing. Other chroma modes, interlaced modes, frame header overrides, probing, CLI execution, differential tests, FATE, and fuzzing are pending.
 - image2 demuxing and muxing are internal only and currently limited to caller-provided entries for a single image or contiguous `%d`/`%0Nd` numbered sequence. Filesystem discovery/writes, glob patterns, timestamp modes, looping, codec probing, CLI execution, differential tests, FATE, and fuzzing are pending.
 - Rawvideo demuxing and muxing are internal only and currently limited to fixed-size packet slicing/writing for `gray`, `rgb24`, `rgba`, and `yuv420p`; CLI execution, probing, more pixel formats, differential tests, FATE, and fuzzing are pending.

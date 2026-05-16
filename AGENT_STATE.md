@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-avi-demuxer` is implemented and verified for a constrained video-only RIFF AVI path. It parses `avih`, `strh`, and `strf` metadata, extracts simple `movi` video packets including `rec ` lists, validates chunk bounds, rejects unsupported streams, and emits per-stream packet timing. The next priority component is `avformat-avi-muxer`.
+`avformat-avi-muxer` is implemented and verified for a constrained one-stream RGB24 RIFF AVI path. It writes classic `avih`, `strh`, and `strf` headers, emits stream-0 `00db` chunks in a `movi` list, validates fixed-size packet payloads, handles RIFF word padding, and round-trips through the current AVI demuxer. The next priority component is `avformat-mov-demuxer`.
 
 ## Last Successful Commands
 
@@ -11,6 +11,7 @@
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
 - `cargo test -p avformat pcm`
 - `cargo fmt --all`
 - `cargo test -p avformat pcm::tests`
@@ -97,6 +98,11 @@
 - `cargo test -p avformat avi::tests`
 - `cargo test --workspace --all-features`
 - `cargo fmt --all -- --check`
+- `cargo fmt --all`
+- `cargo test -p avformat avi::tests`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
 
 ## Last Failing Commands
 
@@ -107,13 +113,13 @@
 
 ## Current Focus Component
 
-`avformat-avi-muxer` is the next highest-priority incomplete component after the initial constrained AVI demuxer.
+`avformat-mov-demuxer` is the next highest-priority incomplete component after the initial constrained AVI demuxer/muxer pair.
 
 ## Next 3 Concrete Actions
 
-1. Add the first small AVI muxer for the same constrained video-only RIFF AVI surface.
-2. Add unit tests for avih/strh/strf rendering, movi chunk output, demux round-trip, invalid packets, and finalization behavior.
-3. Update the ledger, docs, and state after the AVI muxer passes focused and workspace checks.
+1. Add an initial ISOBMFF atom reader for box size/type parsing, extended sizes, and bounds validation.
+2. Add a constrained MOV/MP4 demuxer metadata path for `ftyp`, `moov`, `mvhd`, `trak`, `tkhd`, and `mdhd` using small fixtures.
+3. Record unsupported media/sample tables explicitly until packet extraction is implemented.
 
 ## Known Blockers
 
@@ -123,4 +129,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-avi-demuxer` for constrained video-only RIFF AVI parsing with metadata extraction, simple movi packet extraction, rec-list traversal, chunk-bound validation, unsupported-stream rejection, and packet timing tests.
+Latest slice: add `avformat-avi-muxer` for constrained one-stream RGB24 RIFF AVI writing with classic headers, `00db` movi output, packet validation, odd-size chunk padding, demuxer round-trip tests, and ledger/docs updates.
