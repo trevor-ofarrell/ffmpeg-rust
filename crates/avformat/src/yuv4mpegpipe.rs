@@ -129,6 +129,138 @@ impl<'a> Yuv4MpegDemuxer<'a> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Yuv4MpegMuxer {
+    info: Yuv4MpegInfo,
+    payload: Vec<u8>,
+    frame_count: usize,
+    finished: bool,
+}
+
+impl Yuv4MpegMuxer {
+    pub fn new(
+        width: u32,
+        height: u32,
+        frame_rate: Rational,
+        sample_aspect_ratio: Option<Rational>,
+    ) -> AvResult<Self> {
+        validate_positive_dimension(width, "YUV4MPEG2 width")?;
+        validate_positive_dimension(height, "YUV4MPEG2 height")?;
+        validate_positive_rational(frame_rate, "YUV4MPEG2 frame rate")?;
+        if let Some(sample_aspect_ratio) = sample_aspect_ratio {
+            validate_positive_rational(sample_aspect_ratio, "YUV4MPEG2 sample aspect ratio")?;
+        }
+
+        let frame_size = yuv420_frame_size(width, height)?;
+        if frame_size == 0 {
+            return Err(AvError::invalid_argument(
+                "YUV4MPEG2 frame size must be non-zero",
+            ));
+        }
+
+        Ok(Self {
+            info: Yuv4MpegInfo {
+                width,
+                height,
+                frame_rate,
+                sample_aspect_ratio,
+                interlace: Yuv4MpegInterlace::Progressive,
+                chroma: Yuv4MpegChroma::C420Jpeg,
+                frame_size,
+            },
+            payload: Vec::new(),
+            frame_count: 0,
+            finished: false,
+        })
+    }
+
+    pub fn info(&self) -> &Yuv4MpegInfo {
+        &self.info
+    }
+
+    pub fn frame_count(&self) -> usize {
+        self.frame_count
+    }
+
+    pub fn payload_len(&self) -> usize {
+        self.payload.len()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    pub fn header(&self) -> String {
+        let mut header = format!(
+            "{Y4M_MAGIC} W{} H{} F{}:{} I{}",
+            self.info.width,
+            self.info.height,
+            self.info.frame_rate.num(),
+            self.info.frame_rate.den(),
+            self.info.interlace.tag()
+        );
+        if let Some(sample_aspect_ratio) = self.info.sample_aspect_ratio {
+            header.push_str(&format!(
+                " A{}:{}",
+                sample_aspect_ratio.num(),
+                sample_aspect_ratio.den()
+            ));
+        }
+        header.push_str(&format!(" C{}\n", self.info.chroma.name()));
+        header
+    }
+
+    pub fn write_packet(&mut self, packet: &Packet) -> AvResult<()> {
+        if self.finished {
+            return Err(AvError::invalid_argument(
+                "cannot write packet after YUV4MPEG2 muxer is finished",
+            ));
+        }
+        if packet.stream_index() != 0 {
+            return Err(AvError::invalid_argument(format!(
+                "YUV4MPEG2 muxer only accepts stream 0, got stream {}",
+                packet.stream_index()
+            )));
+        }
+        if packet.data().len() != self.info.frame_size {
+            return Err(AvError::invalid_data(format!(
+                "YUV4MPEG2 packet has {} bytes, expected {}",
+                packet.data().len(),
+                self.info.frame_size
+            )));
+        }
+
+        let new_payload_len = self
+            .payload
+            .len()
+            .checked_add(packet.data().len())
+            .ok_or_else(|| AvError::invalid_argument("YUV4MPEG2 payload size overflow"))?;
+        let new_frame_count = self
+            .frame_count
+            .checked_add(1)
+            .ok_or_else(|| AvError::invalid_argument("YUV4MPEG2 frame count overflow"))?;
+
+        self.payload.reserve(new_payload_len - self.payload.len());
+        self.payload.extend_from_slice(packet.data());
+        self.frame_count = new_frame_count;
+        Ok(())
+    }
+
+    pub fn render(&self) -> Vec<u8> {
+        let mut output = self.header().into_bytes();
+        for frame in self.payload.chunks_exact(self.info.frame_size) {
+            output.extend_from_slice(b"FRAME\n");
+            output.extend_from_slice(frame);
+        }
+        output
+    }
+
+    pub fn finish(&mut self) -> Vec<u8> {
+        self.finished = true;
+        self.render()
+    }
+}
+
 fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
     if line != Y4M_MAGIC && !line.starts_with("YUV4MPEG2 ") {
         return Err(AvError::invalid_data("YUV4MPEG2 header missing magic"));
@@ -223,10 +355,27 @@ fn parse_positive_u32(value: &str, name: &str) -> AvResult<u32> {
     let value = value
         .parse::<u32>()
         .map_err(|_| AvError::invalid_data(format!("{name} is not a positive integer")))?;
-    if value == 0 {
-        return Err(AvError::invalid_data(format!("{name} must be non-zero")));
-    }
+    validate_positive_dimension(value, name)
+        .map_err(|err| AvError::invalid_data(err.message().to_string()))?;
     Ok(value)
+}
+
+fn validate_positive_dimension(value: u32, name: &str) -> AvResult<()> {
+    if value == 0 {
+        return Err(AvError::invalid_argument(format!(
+            "{name} must be non-zero"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_positive_rational(value: Rational, name: &str) -> AvResult<()> {
+    if value.num() <= 0 || value.den() <= 0 {
+        return Err(AvError::invalid_argument(format!(
+            "{name} numerator and denominator must be positive"
+        )));
+    }
+    Ok(())
 }
 
 fn parse_positive_rational(value: &str, name: &str) -> AvResult<Rational> {
@@ -372,6 +521,85 @@ mod tests {
             demuxer.read_packet().unwrap_err().kind(),
             AvErrorKind::Unsupported
         );
+    }
+
+    #[test]
+    fn muxer_writes_header_frames_and_round_trips_through_demuxer() {
+        let first = frame_bytes(6, 0x10);
+        let second = frame_bytes(6, 0x80);
+        let mut muxer =
+            Yuv4MpegMuxer::new(2, 2, Rational::new(25, 1).unwrap(), Some(Rational::ONE)).unwrap();
+
+        muxer.write_packet(&Packet::new(first.clone(), 0)).unwrap();
+        muxer.write_packet(&Packet::new(second.clone(), 0)).unwrap();
+        let output = muxer.finish();
+
+        assert!(muxer.is_finished());
+        assert_eq!(muxer.info().width(), 2);
+        assert_eq!(muxer.info().height(), 2);
+        assert_eq!(muxer.info().frame_size(), 6);
+        assert_eq!(muxer.frame_count(), 2);
+        assert_eq!(muxer.payload_len(), 12);
+        assert!(output.starts_with(b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\nFRAME\n"));
+
+        let mut demuxer = Yuv4MpegDemuxer::open(&output).unwrap();
+        assert_eq!(demuxer.info().sample_aspect_ratio(), Some(Rational::ONE));
+        assert_eq!(demuxer.read_packet().unwrap().unwrap().data(), first);
+        assert_eq!(demuxer.read_packet().unwrap().unwrap().data(), second);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn muxer_omits_sample_aspect_ratio_when_absent_and_allows_empty_output() {
+        let mut muxer =
+            Yuv4MpegMuxer::new(4, 2, Rational::new(30000, 1001).unwrap(), None).unwrap();
+
+        assert_eq!(muxer.header(), "YUV4MPEG2 W4 H2 F30000:1001 Ip C420jpeg\n");
+        let output = muxer.finish();
+
+        assert_eq!(output, b"YUV4MPEG2 W4 H2 F30000:1001 Ip C420jpeg\n");
+        assert_eq!(muxer.frame_count(), 0);
+        assert_eq!(muxer.payload_len(), 0);
+        let mut demuxer = Yuv4MpegDemuxer::open(&output).unwrap();
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn muxer_rejects_invalid_parameters_streams_and_packet_sizes() {
+        assert!(Yuv4MpegMuxer::new(0, 2, Rational::new(25, 1).unwrap(), None).is_err());
+        assert!(Yuv4MpegMuxer::new(3, 2, Rational::new(25, 1).unwrap(), None).is_err());
+        assert!(Yuv4MpegMuxer::new(2, 2, Rational::new(0, 1).unwrap(), None).is_err());
+        assert!(
+            Yuv4MpegMuxer::new(2, 2, Rational::new(25, 1).unwrap(), Some(Rational::ZERO)).is_err()
+        );
+
+        let mut muxer = Yuv4MpegMuxer::new(2, 2, Rational::new(25, 1).unwrap(), None).unwrap();
+        let wrong_stream = muxer.write_packet(&Packet::new(frame_bytes(6, 0), 1));
+        assert_eq!(
+            wrong_stream.unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        let short_frame = muxer.write_packet(&Packet::new(frame_bytes(5, 0), 0));
+        assert_eq!(short_frame.unwrap_err().kind(), AvErrorKind::InvalidData);
+        let long_frame = muxer.write_packet(&Packet::new(frame_bytes(7, 0), 0));
+        assert_eq!(long_frame.unwrap_err().kind(), AvErrorKind::InvalidData);
+        assert_eq!(muxer.frame_count(), 0);
+        assert_eq!(muxer.payload_len(), 0);
+    }
+
+    #[test]
+    fn muxer_finish_prevents_more_writes() {
+        let frame = frame_bytes(6, 0x20);
+        let mut muxer = Yuv4MpegMuxer::new(2, 2, Rational::new(24, 1).unwrap(), None).unwrap();
+
+        muxer.write_packet(&Packet::new(frame.clone(), 0)).unwrap();
+        let output = muxer.finish();
+        let err = muxer.write_packet(&Packet::new(frame, 0)).unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert!(output.ends_with(b"FRAME\n !\"#$%"));
+        assert_eq!(muxer.frame_count(), 1);
+        assert_eq!(muxer.payload_len(), 6);
     }
 
     fn y4m_bytes(header_fields: &str, frames: &[&[u8]]) -> Vec<u8> {

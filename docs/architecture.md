@@ -38,6 +38,8 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `Yuv4MpegDemuxer` implements an initial yuv4mpegpipe parser for progressive 4:2:0 `C420jpeg` streams. It parses the stream header, validates dimensions, frame rate, interlace, chroma, and frame headers, then emits one packet per raw frame with monotonically increasing PTS.
 
+`Yuv4MpegMuxer` implements the matching initial yuv4mpegpipe muxer path. It writes a canonical progressive `C420jpeg` stream header and one `FRAME` record per exact-size yuv420p stream-0 packet.
+
 `Image2Demuxer` implements an initial image2 packetizer over caller-provided image entries. It supports a single literal image path or a contiguous `%d`/`%0Nd` numbered sequence, sorts frames by frame number, rejects gaps and duplicates, and emits one packet per image with path side data.
 
 `RawVideoDemuxer` implements an initial rawvideo packet slicer for fixed-size `gray`, `rgb24`, `rgba`, and `yuv420p` frame payloads. It validates dimensions, frame rate, yuv420p parity, and whole-frame byte counts before emitting monotonically timed packets.

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-rawvideo-muxer` is implemented and verified for a narrow raw video output path. It validates geometry, frame rate, stream-0 packet ownership, and exact fixed-size frame payloads, then concatenates packet bytes while tracking frame counts. The next priority component is `avformat-yuv4mpegpipe-muxer`.
+`avformat-yuv4mpegpipe-muxer` is implemented and verified for a narrow progressive 4:2:0 C420jpeg output path. It writes a canonical YUV4MPEG2 header, emits one `FRAME` record per exact-size stream-0 packet, supports optional sample aspect ratio, and round-trips through the existing demuxer. The next priority component is `avformat-image2-muxer`.
 
 ## Last Successful Commands
 
@@ -79,6 +79,11 @@
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
+- `cargo fmt --all`
+- `cargo test -p avformat yuv4mpegpipe`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
 
 ## Last Failing Commands
 
@@ -89,13 +94,13 @@
 
 ## Current Focus Component
 
-`avformat-yuv4mpegpipe-muxer` is the next highest-priority incomplete component after the initial rawvideo muxer.
+`avformat-image2-muxer` is the next highest-priority incomplete component after the initial yuv4mpegpipe muxer.
 
 ## Next 3 Concrete Actions
 
-1. Add an internal yuv4mpegpipe muxer for progressive yuv420p/C420jpeg frames.
-2. Add unit tests for stream header rendering, frame header/payload emission, parameter validation, packet-size validation, and finalization behavior.
-3. Update the ledger, docs, and state after the yuv4mpegpipe muxer passes focused and workspace checks.
+1. Add an internal image2 muxer that maps stream-0 image packets to literal or numbered output entries.
+2. Add unit tests for pattern formatting, packet ordering, duplicate path rejection, packet validation, and finalization behavior.
+3. Update the ledger, docs, and state after the image2 muxer passes focused and workspace checks.
 
 ## Known Blockers
 
@@ -105,4 +110,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-rawvideo-muxer` for fixed-size raw frame packet concatenation with geometry validation, stream validation, empty-output, accounting, and finalization tests.
+Latest slice: add `avformat-yuv4mpegpipe-muxer` for canonical progressive C420jpeg YUV4MPEG2 header/frame rendering with stream validation, packet-size validation, empty-output, round-trip, and finalization tests.

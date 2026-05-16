@@ -693,13 +693,34 @@ id = "avformat-yuv4mpegpipe-muxer"
 kind = "muxer"
 ffmpeg_name = "yuv4mpegpipe"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -f rawvideo -pix_fmt yuv420p -s <size> -framerate <rate> -i <input> -f yuv4mpegpipe <output.y4m>"
+rust_command = "cargo test -p avformat yuv4mpegpipe"
+unit_tests = [
+  "yuv4mpegpipe::tests::muxer_writes_header_frames_and_round_trips_through_demuxer",
+  "yuv4mpegpipe::tests::muxer_omits_sample_aspect_ratio_when_absent_and_allows_empty_output",
+  "yuv4mpegpipe::tests::muxer_rejects_invalid_parameters_streams_and_packet_sizes",
+  "yuv4mpegpipe::tests::muxer_finish_prevents_more_writes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial YUV4MPEG2 muxer writes progressive C420jpeg stream headers and FRAME payloads for exact-size yuv420p stream-0 packets, supports optional sample aspect ratio, empty output, round-trip demuxing, and finalization checks. Other chroma modes, interlaced modes, frame header overrides, CLI wiring, differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-image2-muxer"
+kind = "muxer"
+ffmpeg_name = "image2"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -i <input> -f image2 <pattern>"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple container muxer target to pair with the yuv4mpegpipe demuxer."
+notes = "Next simple image sequence muxer target to pair with the image2 demuxer."
 blocked_reason = ""

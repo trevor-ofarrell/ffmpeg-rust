@@ -22,6 +22,8 @@ pub use pcm::{PcmS16leDemuxer, PcmS16leInfo, PcmS16leMuxer, PcmS16leMuxerInfo};
 pub use probe::{ProbeDescriptor, ProbeMatch, ProbeRegistry, ProbeRequest, ProbeScore};
 pub use rawvideo::{RawVideoDemuxer, RawVideoInfo, RawVideoMuxer, RawVideoPixelFormat};
 pub use wav::{WavDemuxer, WavInfo, WavMuxer};
-pub use yuv4mpegpipe::{Yuv4MpegChroma, Yuv4MpegDemuxer, Yuv4MpegInfo, Yuv4MpegInterlace};
+pub use yuv4mpegpipe::{
+    Yuv4MpegChroma, Yuv4MpegDemuxer, Yuv4MpegInfo, Yuv4MpegInterlace, Yuv4MpegMuxer,
+};
 
 pub const COMPONENT_KIND: &str = "avformat";
