@@ -650,13 +650,34 @@ id = "avformat-pcm-s16le-muxer"
 kind = "muxer"
 ffmpeg_name = "s16le"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -i <input> -f s16le <output.raw>"
+rust_command = "cargo test -p avformat pcm::tests"
+unit_tests = [
+  "pcm::tests::muxer_concatenates_stream_zero_packets_and_tracks_samples",
+  "pcm::tests::muxer_counts_empty_packets_without_changing_output",
+  "pcm::tests::muxer_rejects_invalid_stream_parameters_and_packets",
+  "pcm::tests::muxer_finish_prevents_more_writes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial raw pcm_s16le muxer concatenates validated stream-0 packet payloads, tracks packet/byte/sample counts, accepts empty packets, and prevents writes after finish. CLI wiring, probe integration, other PCM formats, differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-rawvideo-muxer"
+kind = "muxer"
+ffmpeg_name = "rawvideo"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -i <input> -f rawvideo <output.raw>"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple raw audio muxer target to pair with the pcm_s16le demuxer and decoder."
+notes = "Next simple raw video muxer target to pair with the rawvideo demuxer and decoder."
 blocked_reason = ""

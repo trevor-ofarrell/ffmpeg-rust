@@ -39,6 +39,32 @@ impl PcmS16leInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PcmS16leMuxerInfo {
+    sample_rate: u32,
+    channels: u16,
+    bytes_per_sample_frame: usize,
+    samples_per_channel: usize,
+}
+
+impl PcmS16leMuxerInfo {
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub fn channels(&self) -> u16 {
+        self.channels
+    }
+
+    pub fn bytes_per_sample_frame(&self) -> usize {
+        self.bytes_per_sample_frame
+    }
+
+    pub fn samples_per_channel(&self) -> usize {
+        self.samples_per_channel
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcmS16leDemuxer<'a> {
     info: PcmS16leInfo,
     input: &'a [u8],
@@ -136,6 +162,111 @@ impl<'a> PcmS16leDemuxer<'a> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PcmS16leMuxer {
+    info: PcmS16leMuxerInfo,
+    data: Vec<u8>,
+    packets: u64,
+    finished: bool,
+}
+
+impl PcmS16leMuxer {
+    pub fn new(sample_rate: u32, channels: u16) -> AvResult<Self> {
+        if sample_rate == 0 {
+            return Err(AvError::invalid_argument(
+                "pcm_s16le sample rate must be non-zero",
+            ));
+        }
+        if channels == 0 {
+            return Err(AvError::invalid_argument(
+                "pcm_s16le channel count must be non-zero",
+            ));
+        }
+
+        let bytes_per_sample_frame = usize::from(channels)
+            .checked_mul(BYTES_PER_S16_SAMPLE)
+            .ok_or_else(|| AvError::invalid_argument("pcm_s16le sample frame size overflow"))?;
+
+        Ok(Self {
+            info: PcmS16leMuxerInfo {
+                sample_rate,
+                channels,
+                bytes_per_sample_frame,
+                samples_per_channel: 0,
+            },
+            data: Vec::new(),
+            packets: 0,
+            finished: false,
+        })
+    }
+
+    pub fn info(&self) -> &PcmS16leMuxerInfo {
+        &self.info
+    }
+
+    pub fn packets(&self) -> u64 {
+        self.packets
+    }
+
+    pub fn data_len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    pub fn write_packet(&mut self, packet: &Packet) -> AvResult<()> {
+        if self.finished {
+            return Err(AvError::invalid_argument(
+                "cannot write packet after pcm_s16le muxer is finished",
+            ));
+        }
+        if packet.stream_index() != 0 {
+            return Err(AvError::invalid_argument(format!(
+                "pcm_s16le muxer only accepts stream 0, got stream {}",
+                packet.stream_index()
+            )));
+        }
+        if packet.data().len() % self.info.bytes_per_sample_frame != 0 {
+            return Err(AvError::invalid_data(
+                "pcm_s16le packet does not contain whole sample frames",
+            ));
+        }
+
+        let packet_samples = packet.data().len() / self.info.bytes_per_sample_frame;
+        let new_len = self
+            .data
+            .len()
+            .checked_add(packet.data().len())
+            .ok_or_else(|| AvError::invalid_argument("pcm_s16le data size overflow"))?;
+        let new_samples = self
+            .info
+            .samples_per_channel
+            .checked_add(packet_samples)
+            .ok_or_else(|| AvError::invalid_argument("pcm_s16le sample count overflow"))?;
+        let new_packets = self
+            .packets
+            .checked_add(1)
+            .ok_or_else(|| AvError::invalid_argument("pcm_s16le packet count overflow"))?;
+
+        self.data.reserve(new_len - self.data.len());
+        self.data.extend_from_slice(packet.data());
+        self.info.samples_per_channel = new_samples;
+        self.packets = new_packets;
+        Ok(())
+    }
+
+    pub fn render(&self) -> Vec<u8> {
+        self.data.clone()
+    }
+
+    pub fn finish(&mut self) -> Vec<u8> {
+        self.finished = true;
+        self.render()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +336,69 @@ mod tests {
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
         let err = PcmS16leDemuxer::open(&[0, 0, 1, 0, 2, 0], 48_000, 2, 1).unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+    }
+
+    #[test]
+    fn muxer_concatenates_stream_zero_packets_and_tracks_samples() {
+        let mut muxer = PcmS16leMuxer::new(48_000, 2).unwrap();
+        let first = Packet::new(vec![0, 0, 1, 0, 2, 0, 3, 0], 0);
+        let second = Packet::new(vec![4, 0, 5, 0], 0);
+
+        muxer.write_packet(&first).unwrap();
+        muxer.write_packet(&second).unwrap();
+
+        assert_eq!(muxer.info().sample_rate(), 48_000);
+        assert_eq!(muxer.info().channels(), 2);
+        assert_eq!(muxer.info().bytes_per_sample_frame(), 4);
+        assert_eq!(muxer.info().samples_per_channel(), 3);
+        assert_eq!(muxer.packets(), 2);
+        assert_eq!(muxer.data_len(), 12);
+        assert_eq!(muxer.render(), vec![0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0]);
+    }
+
+    #[test]
+    fn muxer_counts_empty_packets_without_changing_output() {
+        let mut muxer = PcmS16leMuxer::new(44_100, 1).unwrap();
+
+        muxer.write_packet(&Packet::new(Vec::new(), 0)).unwrap();
+
+        assert_eq!(muxer.packets(), 1);
+        assert_eq!(muxer.data_len(), 0);
+        assert_eq!(muxer.info().samples_per_channel(), 0);
+        assert!(muxer.render().is_empty());
+    }
+
+    #[test]
+    fn muxer_rejects_invalid_stream_parameters_and_packets() {
+        assert!(PcmS16leMuxer::new(0, 2).is_err());
+        assert!(PcmS16leMuxer::new(48_000, 0).is_err());
+
+        let mut muxer = PcmS16leMuxer::new(48_000, 2).unwrap();
+        let wrong_stream = muxer.write_packet(&Packet::new(vec![0, 0, 1, 0], 1));
+        assert_eq!(
+            wrong_stream.unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        let partial_frame = muxer.write_packet(&Packet::new(vec![0, 0], 0));
+        assert_eq!(partial_frame.unwrap_err().kind(), AvErrorKind::InvalidData);
+        assert_eq!(muxer.packets(), 0);
+        assert_eq!(muxer.data_len(), 0);
+        assert_eq!(muxer.info().samples_per_channel(), 0);
+    }
+
+    #[test]
+    fn muxer_finish_prevents_more_writes() {
+        let mut muxer = PcmS16leMuxer::new(48_000, 1).unwrap();
+        let packet = Packet::new(vec![0, 0, 1, 0], 0);
+
+        muxer.write_packet(&packet).unwrap();
+        let output = muxer.finish();
+        let err = muxer.write_packet(&packet).unwrap_err();
+
+        assert!(muxer.is_finished());
+        assert_eq!(output, vec![0, 0, 1, 0]);
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(muxer.packets(), 1);
+        assert_eq!(muxer.info().samples_per_channel(), 2);
     }
 }
