@@ -156,6 +156,7 @@ impl OutputMuxer {
 enum InputFormat {
     Image2 {
         frame_rate: Rational,
+        start_number: i64,
     },
     Mov,
     PcmS16le {
@@ -234,13 +235,17 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
     let input = &plan.inputs()[0];
     let output = &plan.outputs()[0];
     let output_muxer = parse_output_muxer(output)?;
-    validate_output_options(output)?;
+    validate_output_options(output_muxer, output)?;
     validate_output_endpoint(output_muxer, output)?;
 
     let input_path = local_input_path(input)?;
     let explicit_input = explicit_input_format(input)?;
-    if let Some(InputFormat::Image2 { frame_rate }) = explicit_input {
-        return run_image2_input(input_path, frame_rate, output, output_muxer);
+    if let Some(InputFormat::Image2 {
+        frame_rate,
+        start_number,
+    }) = explicit_input
+    {
+        return run_image2_input(input_path, frame_rate, start_number, output, output_muxer);
     }
 
     let bytes = fs::read(input_path)
@@ -248,9 +253,10 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
     let input_format = detect_input_format(explicit_input, input_path, &bytes)?;
 
     match input_format {
-        InputFormat::Image2 { frame_rate } => {
-            run_image2_input(input_path, frame_rate, output, output_muxer)
-        }
+        InputFormat::Image2 {
+            frame_rate,
+            start_number,
+        } => run_image2_input(input_path, frame_rate, start_number, output, output_muxer),
         InputFormat::Mov => {
             let mut demuxer = MovDemuxer::open(&bytes).map_err(|err| {
                 FfmpegError::invalid_data(format!("failed to parse MOV/MP4 input: {err}"))
@@ -423,11 +429,12 @@ fn local_output_path<'a>(
 fn run_image2_input(
     path: &str,
     frame_rate: Rational,
+    start_number: i64,
     output: &PlannedFile,
     output_muxer: OutputMuxer,
 ) -> Result<FfmpegOutput, FfmpegError> {
-    let entries = image2_entries_for_path(path)?;
-    let mut demuxer = Image2Demuxer::open(path, entries, 0, frame_rate)
+    let entries = image2_entries_for_path(path, start_number)?;
+    let mut demuxer = Image2Demuxer::open(path, entries, start_number, frame_rate)
         .map_err(|err| FfmpegError::invalid_data(format!("failed to parse image2 input: {err}")))?;
     let read_packet = || {
         demuxer.read_packet().map_err(|err| {
@@ -441,13 +448,13 @@ fn run_image2_input(
     }
 }
 
-fn image2_entries_for_path(path: &str) -> Result<Vec<Image2Entry>, FfmpegError> {
+fn image2_entries_for_path(path: &str, start_number: i64) -> Result<Vec<Image2Entry>, FfmpegError> {
     let pattern = Image2Pattern::parse(path).map_err(|err| {
         FfmpegError::invalid_data(format!("failed to parse image2 pattern: {err}"))
     })?;
 
     if pattern.is_sequence() {
-        return discover_image2_sequence_entries(&pattern);
+        return discover_image2_sequence_entries(&pattern, start_number);
     }
 
     let actual_path = pattern.path_for_frame_number(0).map_err(|err| {
@@ -459,8 +466,9 @@ fn image2_entries_for_path(path: &str) -> Result<Vec<Image2Entry>, FfmpegError> 
 
 fn discover_image2_sequence_entries(
     pattern: &Image2Pattern,
+    start_number: i64,
 ) -> Result<Vec<Image2Entry>, FfmpegError> {
-    let first_path = pattern.path_for_frame_number(0).map_err(|err| {
+    let first_path = pattern.path_for_frame_number(start_number).map_err(|err| {
         FfmpegError::invalid_data(format!("failed to resolve image2 sequence path: {err}"))
     })?;
     let parent = Path::new(&first_path)
@@ -566,7 +574,7 @@ fn explicit_input_format(input: &PlannedFile) -> Result<Option<InputFormat>, Ffm
     for option in input.options() {
         if !matches!(
             option.name(),
-            "f" | "ar" | "ac" | "s" | "r" | "framerate" | "pix_fmt"
+            "f" | "ar" | "ac" | "s" | "r" | "framerate" | "pix_fmt" | "start_number"
         ) {
             return Err(FfmpegError::unsupported(format!(
                 "input option `-{}` is not implemented",
@@ -633,9 +641,13 @@ fn parse_pcm_s16le_input(input: &PlannedFile) -> Result<InputFormat, FfmpegError
 }
 
 fn parse_image2_input(input: &PlannedFile) -> Result<InputFormat, FfmpegError> {
-    reject_options_except(input, "image2", &["f", "r", "framerate"])?;
+    reject_options_except(input, "image2", &["f", "r", "framerate", "start_number"])?;
     let frame_rate = parse_image2_frame_rate_option(input)?;
-    Ok(InputFormat::Image2 { frame_rate })
+    let start_number = parse_optional_i64_option(input, "start_number", "image2 start number", 0)?;
+    Ok(InputFormat::Image2 {
+        frame_rate,
+        start_number,
+    })
 }
 
 fn parse_rawvideo_input(input: &PlannedFile) -> Result<InputFormat, FfmpegError> {
@@ -684,6 +696,26 @@ fn parse_u32_option(file: &PlannedFile, name: &str, description: &str) -> Result
 fn parse_u16_option(file: &PlannedFile, name: &str, description: &str) -> Result<u16, FfmpegError> {
     let value = parse_u32_option(file, name, description)?;
     u16::try_from(value).map_err(|_| FfmpegError::usage(format!("{description} is out of range")))
+}
+
+fn parse_optional_i64_option(
+    file: &PlannedFile,
+    name: &str,
+    description: &str,
+    default: i64,
+) -> Result<i64, FfmpegError> {
+    let Some(value) = last_option_value(file.options(), name) else {
+        return Ok(default);
+    };
+    let parsed = value
+        .parse::<i64>()
+        .map_err(|_| FfmpegError::usage(format!("invalid {description} `{value}`")))?;
+    if parsed < 0 {
+        return Err(FfmpegError::usage(format!(
+            "{description} must be non-negative"
+        )));
+    }
+    Ok(parsed)
 }
 
 fn parse_video_size_option(file: &PlannedFile) -> Result<(usize, usize), FfmpegError> {
@@ -766,9 +798,13 @@ fn parse_i32_rate_part(
     })
 }
 
-fn validate_output_options(output: &PlannedFile) -> Result<(), FfmpegError> {
+fn validate_output_options(muxer: OutputMuxer, output: &PlannedFile) -> Result<(), FfmpegError> {
     for option in output.options() {
-        if option.name() != "f" {
+        let is_allowed = match muxer {
+            OutputMuxer::Image2 => matches!(option.name(), "f" | "start_number"),
+            _ => option.name() == "f",
+        };
+        if !is_allowed {
             return Err(FfmpegError::unsupported(format!(
                 "output option `-{}` is not implemented",
                 option.name()
@@ -949,7 +985,9 @@ where
     F: FnMut() -> Result<Option<Packet>, FfmpegError>,
 {
     let output_path = local_output_path(output, "image2")?;
-    let mut muxer = Image2Muxer::new(output_path, 0, frame_rate).map_err(|err| {
+    let start_number =
+        parse_optional_i64_option(output, "start_number", "image2 output start number", 0)?;
+    let mut muxer = Image2Muxer::new(output_path, start_number, frame_rate).map_err(|err| {
         FfmpegError::invalid_data(format!("failed to configure image2 muxer: {err}"))
     })?;
 
@@ -2124,6 +2162,44 @@ mod tests {
     }
 
     #[test]
+    fn runs_image2_sequence_with_input_start_number_to_framecrc_stdout() {
+        let (pattern, paths) = write_temp_image2_sequence(
+            "image2-sequence-input-start",
+            "png",
+            &[(5, b"five".as_slice()), (6, b"six".as_slice())],
+        );
+        let pattern_arg = pattern.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-framerate",
+            "25",
+            "-start_number",
+            "5",
+            "-i",
+            pattern_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect("image2 sequence with input start_number should execute");
+
+        remove_temp_files(&paths);
+
+        assert_eq!(output.output_format(), Some("framecrc"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 7);
+        assert!(output.stderr().is_empty());
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=0 dts=0 duration=1 size=4"));
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=1 dts=1 duration=1 size=3"));
+    }
+
+    #[test]
     fn runs_image2_sequence_to_image2_file_output() {
         let (input_pattern, input_paths) = write_temp_image2_sequence(
             "image2-sequence-file-input",
@@ -2165,6 +2241,52 @@ mod tests {
         assert!(output.stderr().is_empty());
         assert_eq!(written_zero, b"zero");
         assert_eq!(written_one, b"one");
+    }
+
+    #[test]
+    fn runs_image2_sequence_with_output_start_number_to_image2_file_output() {
+        let (input_pattern, input_paths) = write_temp_image2_sequence(
+            "image2-sequence-file-output-start-input",
+            "png",
+            &[(0, b"zero".as_slice()), (1, b"one".as_slice())],
+        );
+        let output_pattern = unique_temp_path("image2-sequence-file-output-start-%03d", "png");
+        let output_pattern_arg = output_pattern.to_string_lossy().into_owned();
+        let output_pattern = Image2Pattern::parse(output_pattern_arg.clone())
+            .expect("generated output pattern should parse");
+        let output_seven = PathBuf::from(output_pattern.path_for_frame_number(7).unwrap());
+        let output_eight = PathBuf::from(output_pattern.path_for_frame_number(8).unwrap());
+        let input_arg = input_pattern.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-framerate",
+            "25",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "image2",
+            "-start_number",
+            "7",
+            output_pattern_arg.as_str(),
+        ]))
+        .expect("image2 sequence output start_number should control generated filenames");
+        let written_seven =
+            fs::read(&output_seven).expect("first numbered image2 output should be readable");
+        let written_eight =
+            fs::read(&output_eight).expect("second numbered image2 output should be readable");
+
+        remove_temp_files(&input_paths);
+        remove_temp_files(&[output_seven, output_eight]);
+
+        assert_eq!(output.output_format(), Some("image2"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 7);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+        assert_eq!(written_seven, b"zero");
+        assert_eq!(written_eight, b"one");
     }
 
     #[test]
@@ -2219,6 +2341,35 @@ mod tests {
         remove_temp_files(&paths);
 
         assert!(err.message().contains("missing frame number 1"));
+    }
+
+    #[test]
+    fn rejects_image2_invalid_start_number() {
+        let (pattern, paths) = write_temp_image2_sequence(
+            "image2-sequence-bad-start",
+            "png",
+            &[(0, b"zero".as_slice())],
+        );
+        let pattern_arg = pattern.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-framerate",
+            "25",
+            "-start_number",
+            "abc",
+            "-i",
+            pattern_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("image2 input should reject invalid start_number");
+
+        remove_temp_files(&paths);
+
+        assert!(err.message().contains("invalid image2 start number"));
     }
 
     #[test]

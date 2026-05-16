@@ -194,8 +194,10 @@ fn option_spec(name: &str) -> Option<OptionSpec> {
         "an" | "vn" | "sn" | "dn" | "shortest" | "bitexact" => {
             (OptionScope::File, OptionArity::Flag)
         }
-        "f" | "c" | "codec" | "map" | "ar" | "ac" | "s" | "r" | "framerate" | "pix_fmt" | "vf"
-        | "af" | "filter" | "metadata" => (OptionScope::File, OptionArity::Value),
+        "f" | "c" | "codec" | "map" | "ar" | "ac" | "s" | "r" | "framerate" | "pix_fmt"
+        | "start_number" | "vf" | "af" | "filter" | "metadata" => {
+            (OptionScope::File, OptionArity::Value)
+        }
         _ => return None,
     };
 
@@ -328,6 +330,30 @@ mod tests {
 
         assert_eq!(parsed.outputs()[0].url(), "-");
         assert_eq!(parsed.outputs()[0].options()[0].name(), "f");
+    }
+
+    #[test]
+    fn treats_start_number_as_file_scoped_value_option() {
+        let args = strings(&[
+            "-f",
+            "image2",
+            "-start_number",
+            "5",
+            "-i",
+            "in-%03d.png",
+            "-f",
+            "image2",
+            "-start_number",
+            "9",
+            "out-%03d.png",
+        ]);
+
+        let parsed = parse_ffmpeg_args(&args).unwrap();
+
+        assert_eq!(parsed.inputs()[0].options()[1].name(), "start_number");
+        assert_eq!(parsed.inputs()[0].options()[1].value_ref(), Some("5"));
+        assert_eq!(parsed.outputs()[0].options()[1].name(), "start_number");
+        assert_eq!(parsed.outputs()[0].options()[1].value_ref(), Some("9"));
     }
 
     #[test]

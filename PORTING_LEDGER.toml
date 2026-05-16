@@ -320,13 +320,14 @@ unit_tests = [
   "option_parser::tests::handles_multiple_inputs_and_outputs",
   "option_parser::tests::global_options_do_not_consume_pending_file_options",
   "option_parser::tests::treats_single_dash_as_output_url",
+  "option_parser::tests::treats_start_number_as_file_scoped_value_option",
   "option_parser::tests::rejects_missing_values_and_dangling_file_options",
   "option_parser::tests::rejects_unknown_options",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial parser groups a small known option set into global options, next input, or next output according to FFmpeg option ordering. It deliberately rejects unknown options and is not yet wired into command execution."
+notes = "Initial parser groups a small known option set, including file-scoped -start_number, into global options, next input, or next output according to FFmpeg option ordering. It deliberately rejects unknown options and is only partially wired into command execution."
 blocked_reason = ""
 
 [[component]]
@@ -636,7 +637,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports explicit image2 %d/%0Nd numbered sequence inputs discovered from the pattern parent directory, using the Rust image2 demuxer and Rust null/framecrc muxers. The current path fixes start_number at 0, requires contiguous frame numbers, rejects gaps, and has no oracle differential/FATE coverage yet. Glob patterns, timestamp modes, looping, codec probing, filesystem image2 writes, and broad CLI execution remain pending."
+notes = "ffmpeg-rs command execution supports explicit image2 %d/%0Nd numbered sequence inputs discovered from the pattern parent directory, using the Rust image2 demuxer and Rust null/framecrc muxers. The current path supports explicit input -start_number, requires contiguous frame numbers from the selected start number, rejects gaps, and has no oracle differential/FATE coverage yet. Glob patterns, timestamp modes, looping, codec probing, and broad CLI execution remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -656,7 +657,28 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports packet-copy from explicit image2 single-file or contiguous %d/%0Nd sequence inputs to local image2 output files/patterns. It uses the Rust image2 demuxer and Image2Muxer, preflights generated output paths for create-new/no-overwrite behavior, writes generated entries to the filesystem, and rejects multi-frame input to a single-image output through the muxer instead of dropping frames. No oracle differential/FATE coverage exists yet. start_number, glob patterns, timestamp modes, image codec validation, overwrite confirmation flags, and non-image2 inputs remain pending."
+notes = "ffmpeg-rs command execution supports packet-copy from explicit image2 single-file or contiguous %d/%0Nd sequence inputs to local image2 output files/patterns. It uses the Rust image2 demuxer and Image2Muxer, preflights generated output paths for create-new/no-overwrite behavior, writes generated entries to the filesystem, and rejects multi-frame input to a single-image output through the muxer instead of dropping frames. No oracle differential/FATE coverage exists yet. Output -start_number is covered separately; glob patterns, timestamp modes, image codec validation, overwrite confirmation flags, and non-image2 inputs remain pending."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-ffmpeg-image2-start-number"
+kind = "cli"
+ffmpeg_name = "ffmpeg image2 -start_number"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -f image2 -framerate <rate> -start_number <n> -i <input-pattern> -f framecrc -; ffmpeg -f image2 -framerate <rate> -i <input-pattern> -f image2 -start_number <n> <output-pattern>"
+rust_command = "cargo test -p fftools option_parser; cargo test -p fftools ffmpeg"
+unit_tests = [
+  "option_parser::tests::treats_start_number_as_file_scoped_value_option",
+  "ffmpeg::tests::runs_image2_sequence_with_input_start_number_to_framecrc_stdout",
+  "ffmpeg::tests::runs_image2_sequence_with_output_start_number_to_image2_file_output",
+  "ffmpeg::tests::rejects_image2_invalid_start_number",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "The constrained ffmpeg-rs image2 command path accepts file-scoped -start_number on image2 inputs and image2 outputs. Input start_number controls sequence discovery and the first accepted frame number; output start_number controls generated numbered output filenames. Values are parsed as non-negative i64s and still have no oracle differential/FATE coverage."
 blocked_reason = ""
 
 [[component]]
@@ -1018,7 +1040,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial image2 muxer maps stream-0 packets to single-image or contiguous %d/%0Nd output entries, validates non-empty packet payloads, formats output paths, rejects duplicate single-image writes, round-trips through the demuxer, and prevents writes after finish. It is wired to a constrained ffmpeg-rs image2 input to image2 filesystem-output path. Glob patterns, timestamp modes, looping, codec-specific image validation, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial image2 muxer maps stream-0 packets to single-image or contiguous %d/%0Nd output entries, validates non-empty packet payloads, formats output paths from a configurable start number, rejects duplicate single-image writes, round-trips through the demuxer, and prevents writes after finish. It is wired to a constrained ffmpeg-rs image2 input to image2 filesystem-output path. Glob patterns, timestamp modes, looping, codec-specific image validation, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
