@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avutil-dict` is implemented and verified with ordered metadata entries, ASCII case-insensitive default matching, case-sensitive lookup, prefix lookup, keep-existing, append, removal, and invalid string checks. The next priority primitive is `avutil-options`.
+`avutil-options` is implemented and verified with AVOption-like descriptors, default/current values, bool/int/float/string parsing, duplicate detection, type validation, range validation, and invalid string checks. The next priority primitive is `avutil-hash`.
 
 ## Last Successful Commands
 
@@ -23,6 +23,7 @@
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test -p avutil bitwriter`
 - `cargo test -p avutil dict`
+- `cargo test -p avutil options`
 
 ## Last Failing Commands
 
@@ -32,13 +33,13 @@
 
 ## Current Focus Component
 
-`avutil-options` is the next highest-priority incomplete component after `avutil-dict`.
+`avutil-hash` is the next highest-priority incomplete component after `avutil-options`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avutil dict`.
+1. Run `cargo test -p avutil options`.
 2. Run formatting, workspace tests, and clippy.
-3. Add `avutil-options` option metadata and value validation primitives.
+3. Add `avutil-hash` checksum/hash helper primitives.
 
 ## Known Blockers
 
@@ -48,4 +49,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avutil-dict` metadata dictionary helpers.
+Latest committed slice: add `avutil-options` descriptor and value validation helpers.

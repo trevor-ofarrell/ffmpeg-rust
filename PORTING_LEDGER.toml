@@ -266,6 +266,29 @@ id = "avutil-options"
 kind = "utility"
 ffmpeg_name = "AVOption"
 upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = ""
+rust_command = "cargo test -p avutil options"
+unit_tests = [
+  "options::tests::definitions_validate_ranges_names_and_defaults",
+  "options::tests::option_set_stores_defaults_and_preserves_order",
+  "options::tests::set_from_str_parses_supported_value_types",
+  "options::tests::rejects_unknown_options_type_mismatches_and_out_of_range_values",
+  "options::tests::duplicate_definitions_are_rejected_case_insensitively",
+  "options::tests::string_options_enforce_empty_and_nul_rules",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. CLI option ordering, flags, child classes, ranges with units, and oracle differential vectors are pending, so this is not marked complete."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-hash"
+kind = "utility"
+ffmpeg_name = "hash/checksum helpers"
+upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "not_started"
 priority = 1
 oracle_command = ""
@@ -274,5 +297,5 @@ unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next shared primitive after metadata dictionaries."
+notes = "Next shared primitive after option metadata."
 blocked_reason = ""
