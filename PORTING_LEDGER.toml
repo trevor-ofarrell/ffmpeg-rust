@@ -352,6 +352,29 @@ id = "fftools-basic-io"
 kind = "cli"
 ffmpeg_name = "basic input/output path"
 upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = ""
+rust_command = "cargo test -p fftools io_plan"
+unit_tests = [
+  "io_plan::tests::builds_file_input_and_output_plan_with_options",
+  "io_plan::tests::maps_single_dash_by_file_role",
+  "io_plan::tests::classifies_explicit_pipe_and_protocol_urls",
+  "io_plan::tests::keeps_windows_drive_paths_as_files",
+  "io_plan::tests::rejects_commands_without_required_file_roles",
+  "io_plan::tests::rejects_invalid_pipe_descriptors",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial I/O planning validates at least one input and output, preserves grouped options, and classifies file, pipe, and protocol endpoints. It is not wired to demuxers, muxers, protocol implementations, or command execution."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-avio"
+kind = "api"
+ffmpeg_name = "AVIO-like I/O"
+upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "not_started"
 priority = 2
 oracle_command = ""
@@ -360,5 +383,5 @@ unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next CLI infrastructure slice before simple muxers/codecs."
+notes = "Next infrastructure slice needed before simple demuxers/muxers."
 blocked_reason = ""

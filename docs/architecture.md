@@ -22,7 +22,7 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 ## CLI Compatibility Model
 
-CLI compatibility is treated as a first-class surface. The current implementation supports version banners for `ffmpeg-rs` and `ffprobe-rs` plus an internal parser that groups a small known set of FFmpeg-style options onto global scope, the next `-i` input, or the next output filename. Unsupported command forms still exit non-zero and are recorded as incomplete in the ledger.
+CLI compatibility is treated as a first-class surface. The current implementation supports version banners for `ffmpeg-rs` and `ffprobe-rs` plus an internal parser that groups a small known set of FFmpeg-style options onto global scope, the next `-i` input, or the next output filename. `IoPlan` turns parsed input/output URLs into validated file, pipe, or protocol endpoints for future command execution. Unsupported command forms still exit non-zero and are recorded as incomplete in the ledger.
 
 ## Test Architecture
 

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`fftools-hide-banner` behavior is verified for `-hide_banner -version` and `-hide_banner` alone. The next priority component is `fftools-basic-io`.
+`fftools-basic-io` is implemented and verified as an I/O planning layer that validates input/output presence, preserves grouped file options, and classifies file, pipe, and protocol endpoints. The next priority component is `avformat-avio`.
 
 ## Last Successful Commands
 
@@ -27,6 +27,7 @@
 - `cargo test -p avutil hash`
 - `cargo test -p fftools option_parser`
 - `cargo test -p fftools --test version hide_banner`
+- `cargo test -p fftools io_plan`
 
 ## Last Failing Commands
 
@@ -36,13 +37,13 @@
 
 ## Current Focus Component
 
-`fftools-basic-io` is the next highest-priority incomplete component after `fftools-hide-banner`.
+`avformat-avio` is the next highest-priority incomplete component after `fftools-basic-io`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p fftools --test version hide_banner`.
+1. Run `cargo test -p fftools io_plan`.
 2. Run formatting, workspace tests, and clippy.
-3. Add the first basic input/output path model for CLI execution.
+3. Add the first AVIO-like reader abstraction in `avformat`.
 
 ## Known Blockers
 
@@ -52,4 +53,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `fftools-hide-banner` CLI behavior coverage.
+Latest committed slice: add `fftools-basic-io` I/O planning.
