@@ -99,6 +99,7 @@ pub struct FfprobeStreamReport {
     index: usize,
     id: u32,
     codec_name: Option<String>,
+    codec_long_name: Option<String>,
     profile: Option<String>,
     level: Option<u32>,
     codec_type: String,
@@ -137,6 +138,10 @@ impl FfprobeStreamReport {
 
     pub fn codec_name(&self) -> Option<&str> {
         self.codec_name.as_deref()
+    }
+
+    pub fn codec_long_name(&self) -> Option<&str> {
+        self.codec_long_name.as_deref()
     }
 
     pub fn profile(&self) -> Option<&str> {
@@ -598,6 +603,10 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                     .as_deref()
                     .and_then(codec_name_for_tag)
                     .map(str::to_owned),
+                codec_long_name: codec_tag_string
+                    .as_deref()
+                    .and_then(codec_long_name_for_tag)
+                    .map(str::to_owned),
                 profile: video_sample_entry.and_then(mov_codec_profile),
                 level: video_sample_entry.and_then(mov_codec_level),
                 codec_type: mov_codec_type(track).to_owned(),
@@ -682,6 +691,7 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
                 index: stream.index(),
                 id: u32::try_from(stream.index()).unwrap_or(u32::MAX),
                 codec_name: codec_name_for_tag(stream.handler()).map(str::to_owned),
+                codec_long_name: codec_long_name_for_tag(stream.handler()).map(str::to_owned),
                 profile: None,
                 level: None,
                 codec_type: avi_codec_type(stream.media_type()).to_owned(),
@@ -1017,6 +1027,16 @@ fn codec_name_for_tag(tag: &str) -> Option<&'static str> {
     }
 }
 
+fn codec_long_name_for_tag(tag: &str) -> Option<&'static str> {
+    match tag {
+        "DIB " | "raw " => Some("raw video"),
+        "avc1" | "avc3" => Some("H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10"),
+        "hvc1" | "hev1" => Some("H.265 / HEVC (High Efficiency Video Coding)"),
+        "mp4v" => Some("MPEG-4 part 2"),
+        _ => None,
+    }
+}
+
 fn fourcc_codec_tag(tag: &str) -> Option<String> {
     let bytes: [u8; 4] = tag.as_bytes().try_into().ok()?;
     Some(format!("0x{:08x}", u32::from_le_bytes(bytes)))
@@ -1097,6 +1117,9 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             out.push_str(&format!("id={}\n", stream.id));
             if let Some(codec_name) = &stream.codec_name {
                 out.push_str(&format!("codec_name={codec_name}\n"));
+            }
+            if let Some(codec_long_name) = &stream.codec_long_name {
+                out.push_str(&format!("codec_long_name={codec_long_name}\n"));
             }
             if let Some(profile) = &stream.profile {
                 out.push_str(&format!("profile={profile}\n"));
@@ -1238,6 +1261,9 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     ];
     if let Some(codec_name) = &stream.codec_name {
         fields.push(json_string("codec_name", codec_name));
+    }
+    if let Some(codec_long_name) = &stream.codec_long_name {
+        fields.push(json_string("codec_long_name", codec_long_name));
     }
     if let Some(profile) = &stream.profile {
         fields.push(json_string("profile", profile));
@@ -1526,6 +1552,7 @@ mod tests {
 
         assert!(rendered.contains("[STREAM]\n"));
         assert!(rendered.contains("codec_name=rawvideo\n"));
+        assert!(rendered.contains("codec_long_name=raw video\n"));
         assert!(rendered.contains("codec_type=video\n"));
         assert!(rendered.contains("codec_tag_string=raw \n"));
         assert!(rendered.contains("codec_tag=0x20776172\n"));
@@ -1645,6 +1672,7 @@ mod tests {
         assert!(stdout.contains("\"index\": 0"));
         assert!(stdout.contains("\"id\": 1"));
         assert!(stdout.contains("\"codec_name\": \"rawvideo\""));
+        assert!(stdout.contains("\"codec_long_name\": \"raw video\""));
         assert!(stdout.contains("\"codec_type\": \"video\""));
         assert!(stdout.contains("\"codec_tag_string\": \"raw \""));
         assert!(stdout.contains("\"codec_tag\": \"0x20776172\""));
@@ -1687,6 +1715,9 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("\"codec_name\": \"h264\""));
+        assert!(
+            stdout.contains("\"codec_long_name\": \"H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10\"")
+        );
         assert!(stdout.contains("\"profile\": \"High\""));
         assert!(stdout.contains("\"codec_tag_string\": \"avc1\""));
         assert!(stdout.contains("\"codec_tag\": \"0x31637661\""));
@@ -1855,6 +1886,7 @@ mod tests {
         assert!(stdout.contains("\"index\": 0"));
         assert!(stdout.contains("\"id\": 0"));
         assert!(stdout.contains("\"codec_name\": \"rawvideo\""));
+        assert!(stdout.contains("\"codec_long_name\": \"raw video\""));
         assert!(stdout.contains("\"codec_type\": \"video\""));
         assert!(stdout.contains("\"codec_tag_string\": \"DIB \""));
         assert!(stdout.contains("\"codec_tag\": \"0x20424944\""));
@@ -1938,6 +1970,7 @@ mod tests {
                 index: 0,
                 id: 1,
                 codec_name: Some("rawvideo".to_string()),
+                codec_long_name: Some("raw video".to_string()),
                 profile: None,
                 level: None,
                 codec_type: "video".to_string(),
