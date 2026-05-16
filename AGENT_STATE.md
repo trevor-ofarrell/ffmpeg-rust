@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, extracts common movie-level and track-level `udta/meta/ilst` metadata values from `data` atoms for UTF-8 and UTF-16 text fields, classic `gnre` genre indexes, one-byte integer/boolean metadata atoms, iTunes-style freeform `----` atoms, and track/disc number pairs, registers a hand-written MOV/MP4 `ftyp`/extension/MIME probe descriptor, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries including structured `avcC` version/profile/level/NAL-length-size/SPS/PPS data, structured `hvcC` profile/timing/NAL-length-size/NAL-array data, `pasp` pixel aspect ratio, and `nclx`/`nclc`/`rICC`/`prof` `colr` color information, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, malformed VisualSampleEntry child boxes, malformed metadata atoms, malformed text encodings, malformed integer/boolean metadata payloads, malformed freeform metadata payloads, malformed `avcC`/`hvcC`/`pasp`/`colr` payloads, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, extracts common movie-level and track-level `udta/meta/ilst` metadata values from `data` atoms for UTF-8 and UTF-16 text fields, classic `gnre` genre indexes, one-byte integer/boolean metadata atoms, iTunes-style freeform `----` atoms, `covr` cover-art payloads, and track/disc number pairs, registers a hand-written MOV/MP4 `ftyp`/extension/MIME probe descriptor, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries including structured `avcC` version/profile/level/NAL-length-size/SPS/PPS data, structured `hvcC` profile/timing/NAL-length-size/NAL-array data, `pasp` pixel aspect ratio, and `nclx`/`nclc`/`rICC`/`prof` `colr` color information, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, malformed VisualSampleEntry child boxes, malformed metadata atoms, malformed text encodings, malformed integer/boolean metadata payloads, malformed freeform metadata payloads, malformed cover-art payloads, malformed `avcC`/`hvcC`/`pasp`/`colr` payloads, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
 
 ## Last Successful Commands
 
@@ -39,6 +39,8 @@
 - `cargo fmt --all -- --check`
 - `cargo run -p fate-runner -- list`
 - `git diff --check`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
 - `cargo fmt --all`
 - `cargo test -p avformat mov::tests`
 - `cargo fmt --all`
@@ -288,13 +290,13 @@
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current focus; the next slice is cover-art metadata, MOV CLI wiring, or deeper packet/timeline support.
+`avformat-mov-demuxer` remains the current focus; the next slice is MOV CLI wiring or deeper packet/timeline support.
 
 ## Next 3 Concrete Actions
 
-1. Add remaining MOV metadata value classes such as cover art.
-2. Add CLI wiring for MOV probing or demuxer selection once the command execution path exists.
-3. Add MOV timeline support such as edit-list application or fragmented `moof`/`mdat` parsing.
+1. Add CLI wiring for MOV probing or demuxer selection once the command execution path exists.
+2. Add MOV timeline support such as edit-list application or fragmented `moof`/`mdat` parsing.
+3. Add deeper MOV sample-description validation such as VPS/SPS/PPS bitstream checks.
 
 ## Known Blockers
 
@@ -304,4 +306,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: parse MOV iTunes-style freeform `----` metadata atoms with `mean`/`name`/`data` children while ignoring `cdec` and rejecting malformed UTF-8 or short data payloads.
+Latest slice: parse MOV `covr` cover-art metadata into binary `MovCoverArt` entries, including JPEG/PNG/BMP data types and PNG/JPEG magic correction, while rejecting short data payloads.

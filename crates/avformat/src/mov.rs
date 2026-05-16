@@ -13,6 +13,7 @@ const UDTA_ID: &[u8; 4] = b"udta";
 const META_ID: &[u8; 4] = b"meta";
 const ILST_ID: &[u8; 4] = b"ilst";
 const DATA_ID: &[u8; 4] = b"data";
+const COVR_ID: &[u8; 4] = b"covr";
 const FREEFORM_ID: &[u8; 4] = b"----";
 const MEAN_ID: &[u8; 4] = b"mean";
 const NAME_ID: &[u8; 4] = b"name";
@@ -41,6 +42,10 @@ const MAX_MOV_SAMPLE_COUNT: usize = 1_000_000;
 const METADATA_DATA_TYPE_RESERVED: u32 = 0;
 const METADATA_DATA_TYPE_UTF8: u32 = 1;
 const METADATA_DATA_TYPE_UTF16: u32 = 2;
+const METADATA_DATA_TYPE_JPEG: u32 = 0x0d;
+const METADATA_DATA_TYPE_PNG: u32 = 0x0e;
+const METADATA_DATA_TYPE_BMP: u32 = 0x1b;
+const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
 const MOV_PROBE_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
 const MOV_PROBE_EXTENSIONS: &[&str] = &["mov", "mp4", "m4a", "3gp", "3g2", "mj2"];
 const MOV_PROBE_MIME_TYPES: &[&str] = &[
@@ -72,6 +77,7 @@ pub struct MovInfo {
     timescale: u32,
     duration: Option<u64>,
     metadata: Dictionary,
+    cover_art: Vec<MovCoverArt>,
     tracks: Vec<MovTrackInfo>,
     has_media_data: bool,
 }
@@ -101,12 +107,42 @@ impl MovInfo {
         &self.metadata
     }
 
+    pub fn cover_art(&self) -> &[MovCoverArt] {
+        &self.cover_art
+    }
+
     pub fn tracks(&self) -> &[MovTrackInfo] {
         &self.tracks
     }
 
     pub fn has_media_data(&self) -> bool {
         self.has_media_data
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovCoverArt {
+    codec: String,
+    mime_type: String,
+    data_type: u32,
+    data: Vec<u8>,
+}
+
+impl MovCoverArt {
+    pub fn codec(&self) -> &str {
+        &self.codec
+    }
+
+    pub fn mime_type(&self) -> &str {
+        &self.mime_type
+    }
+
+    pub fn data_type(&self) -> u32 {
+        self.data_type
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
     }
 }
 
@@ -488,6 +524,7 @@ pub struct MovTrackInfo {
     media_timescale: u32,
     media_duration: Option<u64>,
     metadata: Dictionary,
+    cover_art: Vec<MovCoverArt>,
     codec_parameters: Option<MovCodecParameters>,
     sample_count: usize,
 }
@@ -521,6 +558,10 @@ impl MovTrackInfo {
         &self.metadata
     }
 
+    pub fn cover_art(&self) -> &[MovCoverArt] {
+        &self.cover_art
+    }
+
     pub fn codec_tag(&self) -> Option<&str> {
         self.codec_parameters
             .as_ref()
@@ -550,6 +591,7 @@ impl<'a> MovDemuxer<'a> {
         let mut ftyp = None;
         let mut movie_header = None;
         let mut movie_metadata = Dictionary::new();
+        let mut movie_cover_art = Vec::new();
         let mut tracks = Vec::new();
         let mut mdat_ranges = Vec::new();
         let mut has_movie_extends = false;
@@ -563,6 +605,7 @@ impl<'a> MovDemuxer<'a> {
                     let movie = parse_moov(input, &header)?;
                     movie_header = Some(movie.header);
                     movie_metadata = movie.metadata;
+                    movie_cover_art = movie.cover_art;
                     tracks = movie.tracks;
                     has_movie_extends = movie.has_movie_extends;
                 }
@@ -594,6 +637,7 @@ impl<'a> MovDemuxer<'a> {
                 timescale: movie_header.timescale,
                 duration: movie_header.duration,
                 metadata: movie_metadata,
+                cover_art: movie_cover_art,
                 tracks: track_info,
                 has_media_data: !mdat_ranges.is_empty(),
             },
@@ -638,6 +682,7 @@ struct MovieHeader {
 struct MovieData {
     header: MovieHeader,
     metadata: Dictionary,
+    cover_art: Vec<MovCoverArt>,
     tracks: Vec<TrackData>,
     has_movie_extends: bool,
 }
@@ -729,7 +774,7 @@ fn parse_ftyp(payload: &[u8]) -> AvResult<FtypInfo> {
 
 fn parse_moov(input: &[u8], moov: &BoxHeader) -> AvResult<MovieData> {
     let mut header = None;
-    let mut metadata = Dictionary::new();
+    let mut metadata = ParsedMetadata::new();
     let mut tracks = Vec::new();
     let mut has_movie_extends = false;
 
@@ -746,7 +791,8 @@ fn parse_moov(input: &[u8], moov: &BoxHeader) -> AvResult<MovieData> {
     let header = header.ok_or_else(|| AvError::invalid_data("MOV/MP4 missing mvhd box"))?;
     Ok(MovieData {
         header,
-        metadata,
+        metadata: metadata.tags,
+        cover_art: metadata.cover_art,
         tracks,
         has_movie_extends,
     })
@@ -755,7 +801,7 @@ fn parse_moov(input: &[u8], moov: &BoxHeader) -> AvResult<MovieData> {
 fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
     let mut track_header = None;
     let mut media_data = None;
-    let mut metadata = Dictionary::new();
+    let mut metadata = ParsedMetadata::new();
 
     for child in read_box_headers(input, trak.payload_start, trak.payload_end, "MOV/MP4 trak")? {
         match &child.box_type {
@@ -792,7 +838,8 @@ fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
             height: track_header.height,
             media_timescale: media_data.header.timescale,
             media_duration: media_data.header.duration,
-            metadata,
+            metadata: metadata.tags,
+            cover_art: metadata.cover_art,
             codec_parameters,
             sample_count,
         },
@@ -828,8 +875,20 @@ fn parse_minf(input: &[u8], minf: &BoxHeader) -> AvResult<Option<SampleTable>> {
     Ok(sample_table)
 }
 
-fn parse_udta(input: &[u8], udta: &BoxHeader) -> AvResult<Dictionary> {
-    let mut metadata = Dictionary::new();
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ParsedMetadata {
+    tags: Dictionary,
+    cover_art: Vec<MovCoverArt>,
+}
+
+impl ParsedMetadata {
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
+fn parse_udta(input: &[u8], udta: &BoxHeader) -> AvResult<ParsedMetadata> {
+    let mut metadata = ParsedMetadata::new();
     for child in read_box_headers(input, udta.payload_start, udta.payload_end, "MOV/MP4 udta")? {
         if child.box_type == *META_ID {
             merge_metadata(&mut metadata, parse_meta(input, &child)?)?;
@@ -838,8 +897,8 @@ fn parse_udta(input: &[u8], udta: &BoxHeader) -> AvResult<Dictionary> {
     Ok(metadata)
 }
 
-fn parse_meta(input: &[u8], meta: &BoxHeader) -> AvResult<Dictionary> {
-    let mut metadata = Dictionary::new();
+fn parse_meta(input: &[u8], meta: &BoxHeader) -> AvResult<ParsedMetadata> {
+    let mut metadata = ParsedMetadata::new();
     let payload = meta.payload(input);
     let mut reader = ByteReader::new(payload);
     read_full_box_header(&mut reader, "MOV/MP4 meta")?;
@@ -851,8 +910,8 @@ fn parse_meta(input: &[u8], meta: &BoxHeader) -> AvResult<Dictionary> {
     Ok(metadata)
 }
 
-fn parse_ilst(input: &[u8], ilst: &BoxHeader) -> AvResult<Dictionary> {
-    let mut metadata = Dictionary::new();
+fn parse_ilst(input: &[u8], ilst: &BoxHeader) -> AvResult<ParsedMetadata> {
+    let mut metadata = ParsedMetadata::new();
     for item in read_box_headers(input, ilst.payload_start, ilst.payload_end, "MOV/MP4 ilst")? {
         let children = read_box_headers(
             input,
@@ -860,9 +919,15 @@ fn parse_ilst(input: &[u8], ilst: &BoxHeader) -> AvResult<Dictionary> {
             item.payload_end,
             "MOV/MP4 ilst metadata item",
         )?;
+        if item.box_type == *COVR_ID {
+            metadata
+                .cover_art
+                .extend(parse_cover_art_metadata_item(input, &children)?);
+            continue;
+        }
         if item.box_type == *FREEFORM_ID {
             if let Some((key, value)) = parse_freeform_metadata_item(input, &children)? {
-                set_metadata_value(&mut metadata, &key, value)?;
+                set_metadata_value(&mut metadata.tags, &key, value)?;
             }
             continue;
         }
@@ -872,7 +937,7 @@ fn parse_ilst(input: &[u8], ilst: &BoxHeader) -> AvResult<Dictionary> {
         for child in children {
             if child.box_type == *DATA_ID {
                 if let Some(value) = parse_metadata_data(child.payload(input), value_kind)? {
-                    set_metadata_value(&mut metadata, key, value)?;
+                    set_metadata_value(&mut metadata.tags, key, value)?;
                 }
             }
         }
@@ -890,9 +955,56 @@ fn set_metadata_value(metadata: &mut Dictionary, key: &str, value: String) -> Av
     Ok(())
 }
 
-fn merge_metadata(target: &mut Dictionary, source: Dictionary) -> AvResult<()> {
-    for entry in source.entries() {
-        target.set(entry.key(), entry.value()).map_err(|err| {
+fn parse_cover_art_metadata_item(
+    input: &[u8],
+    children: &[BoxHeader],
+) -> AvResult<Vec<MovCoverArt>> {
+    let mut cover_art = Vec::new();
+    for child in children {
+        if child.box_type == *DATA_ID {
+            if let Some(art) = parse_cover_art_data_child(child.payload(input))? {
+                cover_art.push(art);
+            }
+        }
+    }
+    Ok(cover_art)
+}
+
+fn parse_cover_art_data_child(payload: &[u8]) -> AvResult<Option<MovCoverArt>> {
+    let (data_type, value) = parse_metadata_data_payload(payload, "MOV/MP4 cover art data")?;
+    let Some((codec, mime_type)) = cover_art_codec(data_type, value) else {
+        return Ok(None);
+    };
+    Ok(Some(MovCoverArt {
+        codec: codec.to_owned(),
+        mime_type: mime_type.to_owned(),
+        data_type,
+        data: value.to_vec(),
+    }))
+}
+
+fn cover_art_codec(data_type: u32, value: &[u8]) -> Option<(&'static str, &'static str)> {
+    let declared = match data_type {
+        METADATA_DATA_TYPE_JPEG => Some(("mjpeg", "image/jpeg")),
+        METADATA_DATA_TYPE_PNG => Some(("png", "image/png")),
+        METADATA_DATA_TYPE_BMP => Some(("bmp", "image/bmp")),
+        _ => None,
+    }?;
+    if data_type != METADATA_DATA_TYPE_BMP && value.len() >= PNG_SIGNATURE.len() {
+        if value.starts_with(PNG_SIGNATURE) {
+            Some(("png", "image/png"))
+        } else {
+            Some(("mjpeg", "image/jpeg"))
+        }
+    } else {
+        Some(declared)
+    }
+}
+
+fn merge_metadata(target: &mut ParsedMetadata, source: ParsedMetadata) -> AvResult<()> {
+    let ParsedMetadata { tags, cover_art } = source;
+    for entry in tags.entries() {
+        target.tags.set(entry.key(), entry.value()).map_err(|err| {
             AvError::invalid_data(format!(
                 "MOV/MP4 metadata value for {} is invalid: {}",
                 entry.key(),
@@ -900,6 +1012,7 @@ fn merge_metadata(target: &mut Dictionary, source: Dictionary) -> AvResult<()> {
             ))
         })?;
     }
+    target.cover_art.extend(cover_art);
     Ok(())
 }
 
@@ -998,12 +1111,7 @@ fn metadata_item_mapping(box_type: [u8; 4]) -> Option<(&'static str, MetadataVal
 }
 
 fn parse_metadata_data(payload: &[u8], value_kind: MetadataValueKind) -> AvResult<Option<String>> {
-    let mut reader = ByteReader::new(payload);
-    let (_version, flags) = read_full_box_header(&mut reader, "MOV/MP4 metadata data")?;
-    ensure_remaining(&reader, 4, "MOV/MP4 metadata data")?;
-    reader.skip(4)?;
-    let value = reader.read_exact(reader.remaining())?;
-    let data_type = u32::from(flags[0]) << 16 | u32::from(flags[1]) << 8 | u32::from(flags[2]);
+    let (data_type, value) = parse_metadata_data_payload(payload, "MOV/MP4 metadata data")?;
 
     match value_kind {
         MetadataValueKind::Text => parse_text_metadata_value(data_type, value),
@@ -1012,6 +1120,19 @@ fn parse_metadata_data(payload: &[u8], value_kind: MetadataValueKind) -> AvResul
         MetadataValueKind::Int8NoPadding => parse_int8_metadata_value(value, 0),
         MetadataValueKind::Int8WithPadding => parse_int8_metadata_value(value, 3),
     }
+}
+
+fn parse_metadata_data_payload<'a>(
+    payload: &'a [u8],
+    context: &'static str,
+) -> AvResult<(u32, &'a [u8])> {
+    let mut reader = ByteReader::new(payload);
+    let (_version, flags) = read_full_box_header(&mut reader, context)?;
+    ensure_remaining(&reader, 4, context)?;
+    reader.skip(4)?;
+    let value = reader.read_exact(reader.remaining())?;
+    let data_type = u32::from(flags[0]) << 16 | u32::from(flags[1]) << 8 | u32::from(flags[2]);
+    Ok((data_type, value))
 }
 
 fn parse_text_metadata_value(data_type: u32, value: &[u8]) -> AvResult<Option<String>> {
@@ -2532,6 +2653,32 @@ mod tests {
     }
 
     #[test]
+    fn extracts_cover_art_metadata_from_ilst_atoms() {
+        let png = b"\x89PNG\r\n\x1a\npayload";
+        let jpeg = b"\xff\xd8\xff\xe0JFIF payload";
+        let unknown = b"ignored cover";
+        let ilst = ilst_box(&[
+            ilst_cover_art_item(METADATA_DATA_TYPE_JPEG, png),
+            ilst_cover_art_item(METADATA_DATA_TYPE_PNG, jpeg),
+            ilst_cover_art_item(0xffff, unknown),
+        ]);
+        let bytes = mp4_with_moov_extra_box(box_(*UDTA_ID, &meta_box(ilst)));
+
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let cover_art = demuxer.info().cover_art();
+
+        assert_eq!(cover_art.len(), 2);
+        assert_eq!(cover_art[0].data_type(), METADATA_DATA_TYPE_JPEG);
+        assert_eq!(cover_art[0].codec(), "png");
+        assert_eq!(cover_art[0].mime_type(), "image/png");
+        assert_eq!(cover_art[0].data(), png);
+        assert_eq!(cover_art[1].data_type(), METADATA_DATA_TYPE_PNG);
+        assert_eq!(cover_art[1].codec(), "mjpeg");
+        assert_eq!(cover_art[1].mime_type(), "image/jpeg");
+        assert_eq!(cover_art[1].data(), jpeg);
+    }
+
+    #[test]
     fn extracts_track_metadata_from_track_udta() {
         let track_udta = box_(
             *UDTA_ID,
@@ -2673,6 +2820,16 @@ mod tests {
             ]
             .concat(),
         );
+        let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
+            *UDTA_ID,
+            &meta_box(ilst_box(&[item])),
+        )))
+        .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_cover = box_(*DATA_ID, &full_box(0, b"\0"));
+        let item = box_(*COVR_ID, &bad_cover);
         let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
             *UDTA_ID,
             &meta_box(ilst_box(&[item])),
@@ -3503,6 +3660,13 @@ mod tests {
         box_(
             *DATA_ID,
             &metadata_data_box_payload(METADATA_DATA_TYPE_UTF8, value.as_bytes()),
+        )
+    }
+
+    fn ilst_cover_art_item(data_type: u32, value: &[u8]) -> Vec<u8> {
+        box_(
+            *COVR_ID,
+            &box_(*DATA_ID, &metadata_data_box_payload(data_type, value)),
         )
     }
 
