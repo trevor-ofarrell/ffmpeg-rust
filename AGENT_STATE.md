@@ -2,12 +2,18 @@
 
 ## Current Status
 
-`avformat-rawvideo-demuxer` is implemented and verified for a narrow fixed-frame packet slicing path. It supports `gray`, `rgb24`, `rgba`, and `yuv420p`, validates geometry and frame rate, rejects truncated raw streams, and emits stream-0 packets with monotonic PTS. The next priority component is `avformat-pcm-s16le-demuxer`.
+`avformat-pcm-s16le-demuxer` is implemented and verified for a narrow raw audio packet slicing path. It validates sample rate, channel count, packet sample count, and whole interleaved sample-frame input, then emits stream-0 packets with PTS measured in samples. The next priority component is `avformat-pcm-s16le-muxer`.
 
 ## Last Successful Commands
 
 - `git init`
 - `cargo fmt --all`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo test -p avformat pcm`
+- `cargo fmt --all`
+- `cargo test -p avformat pcm::tests`
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
@@ -73,13 +79,13 @@
 
 ## Current Focus Component
 
-`avformat-pcm-s16le-demuxer` is the next highest-priority incomplete component after the initial rawvideo demuxer.
+`avformat-pcm-s16le-muxer` is the next highest-priority incomplete component after the initial pcm_s16le demuxer.
 
 ## Next 3 Concrete Actions
 
-1. Add an internal PCM s16le demuxer that slices whole interleaved sample-frame packets from a byte stream.
-2. Add unit tests for sample-frame sizing, packet timing, channel/sample-rate validation, and truncated input handling.
-3. Update the ledger, docs, and state after the PCM demuxer passes focused and workspace checks.
+1. Add an internal PCM s16le muxer that concatenates validated stream-0 packet payloads.
+2. Add unit tests for packet validation, byte/sample accounting, finalization behavior, and invalid sample-frame boundaries.
+3. Update the ledger, docs, and state after the PCM muxer passes focused and workspace checks.
 
 ## Known Blockers
 
@@ -89,4 +95,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-rawvideo-demuxer` for fixed-size raw frame packet slicing with pixel-format sizing, timing, zero-frame, and truncated-input tests.
+Latest slice: add `avformat-pcm-s16le-demuxer` for raw interleaved sample-frame packet slicing with timing, short-final-packet, zero-input, and invalid-parameter tests.

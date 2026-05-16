@@ -629,13 +629,34 @@ id = "avformat-pcm-s16le-demuxer"
 kind = "demuxer"
 ffmpeg_name = "s16le"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -f s16le -ar <rate> -ac <channels> -i <input> -f framecrc -"
+rust_command = "cargo test -p avformat pcm::tests"
+unit_tests = [
+  "pcm::tests::slices_interleaved_stereo_packets_with_sample_timing",
+  "pcm::tests::emits_short_final_packet_on_sample_frame_boundary",
+  "pcm::tests::accepts_empty_input_as_zero_packets_when_parameters_are_valid",
+  "pcm::tests::rejects_invalid_parameters_and_partial_sample_frames",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial raw pcm_s16le demuxer slices whole interleaved sample-frame packets with configurable packet sample counts, sample-rate/channel validation, PTS measured in samples, and partial-frame rejection. CLI wiring, probe integration, other PCM formats, differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-pcm-s16le-muxer"
+kind = "muxer"
+ffmpeg_name = "s16le"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -i <input> -f s16le <output.raw>"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple raw audio format target to pair with the existing pcm_s16le decoder."
+notes = "Next simple raw audio muxer target to pair with the pcm_s16le demuxer and decoder."
 blocked_reason = ""

@@ -42,6 +42,8 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `RawVideoDemuxer` implements an initial rawvideo packet slicer for fixed-size `gray`, `rgb24`, `rgba`, and `yuv420p` frame payloads. It validates dimensions, frame rate, yuv420p parity, and whole-frame byte counts before emitting monotonically timed packets.
 
+`PcmS16leDemuxer` implements an initial raw PCM audio packet slicer for packed little-endian signed 16-bit samples. It validates sample rate, channel count, packet sample count, and whole interleaved sample-frame input before emitting packets with sample-count durations.
+
 ## CLI Compatibility Model
 
 CLI compatibility is treated as a first-class surface. The current implementation supports version banners for `ffmpeg-rs` and `ffprobe-rs` plus an internal parser that groups a small known set of FFmpeg-style options onto global scope, the next `-i` input, or the next output filename. `IoPlan` turns parsed input/output URLs into validated file, pipe, or protocol endpoints for future command execution. Unsupported command forms still exit non-zero and are recorded as incomplete in the ledger.
