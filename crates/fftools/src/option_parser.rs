@@ -194,8 +194,8 @@ fn option_spec(name: &str) -> Option<OptionSpec> {
         "an" | "vn" | "sn" | "dn" | "shortest" | "bitexact" => {
             (OptionScope::File, OptionArity::Flag)
         }
-        "f" | "c" | "codec" | "map" | "ar" | "ac" | "s" | "r" | "pix_fmt" | "vf" | "af"
-        | "filter" | "metadata" => (OptionScope::File, OptionArity::Value),
+        "f" | "c" | "codec" | "map" | "ar" | "ac" | "s" | "r" | "framerate" | "pix_fmt" | "vf"
+        | "af" | "filter" | "metadata" => (OptionScope::File, OptionArity::Value),
         _ => return None,
     };
 
@@ -237,6 +237,8 @@ mod tests {
             "lavfi",
             "-pix_fmt",
             "rgb24",
+            "-framerate",
+            "25",
             "-i",
             "testsrc=size=16x16",
             "-map",
@@ -254,6 +256,8 @@ mod tests {
         assert_eq!(parsed.inputs()[0].options()[0].value_ref(), Some("lavfi"));
         assert_eq!(parsed.inputs()[0].options()[1].name(), "pix_fmt");
         assert_eq!(parsed.inputs()[0].options()[1].value_ref(), Some("rgb24"));
+        assert_eq!(parsed.inputs()[0].options()[2].name(), "framerate");
+        assert_eq!(parsed.inputs()[0].options()[2].value_ref(), Some("25"));
         assert_eq!(parsed.outputs()[0].url(), "out.yuv");
         assert_eq!(parsed.outputs()[0].options()[0].name(), "map");
         assert_eq!(parsed.outputs()[0].options()[1].name(), "c:v");

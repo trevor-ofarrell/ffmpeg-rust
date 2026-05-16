@@ -2,8 +2,9 @@ use crate::{
     build_io_plan, parse_ffmpeg_args, version_banner, CliOption, Endpoint, IoPlan, PlannedFile,
 };
 use avformat::{
-    register_mov_probe, FrameCrcMuxer, MovDemuxer, NullMuxer, PcmS16leDemuxer, ProbeRegistry,
-    ProbeRequest, RawVideoDemuxer, RawVideoPixelFormat, WavDemuxer, Yuv4MpegDemuxer,
+    register_mov_probe, FrameCrcMuxer, Image2Demuxer, Image2Entry, MovDemuxer, NullMuxer,
+    PcmS16leDemuxer, ProbeRegistry, ProbeRequest, RawVideoDemuxer, RawVideoPixelFormat, WavDemuxer,
+    Yuv4MpegDemuxer,
 };
 use avutil::{Packet, Rational};
 use std::{fmt, fs, path::Path};
@@ -142,6 +143,9 @@ impl OutputMuxer {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InputFormat {
+    Image2 {
+        frame_rate: Rational,
+    },
     Mov,
     PcmS16le {
         sample_rate: u32,
@@ -160,6 +164,7 @@ enum InputFormat {
 impl InputFormat {
     fn name(self) -> &'static str {
         match self {
+            Self::Image2 { .. } => "image2",
             Self::Mov => "MOV/MP4",
             Self::PcmS16le { .. } => "pcm_s16le",
             Self::RawVideo { .. } => "rawvideo",
@@ -227,6 +232,20 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
     let input_format = detect_input_format(input, input_path, &bytes)?;
 
     match input_format {
+        InputFormat::Image2 { frame_rate } => {
+            let entry = Image2Entry::new(input_path.to_string(), bytes).map_err(|err| {
+                FfmpegError::invalid_data(format!("failed to prepare image2 input: {err}"))
+            })?;
+            let mut demuxer =
+                Image2Demuxer::open(input_path, vec![entry], 0, frame_rate).map_err(|err| {
+                    FfmpegError::invalid_data(format!("failed to parse image2 input: {err}"))
+                })?;
+            run_output_muxer(output_muxer, || {
+                demuxer.read_packet().map_err(|err| {
+                    FfmpegError::invalid_data(format!("failed to read image2 packet: {err}"))
+                })
+            })
+        }
         InputFormat::Mov => {
             let mut demuxer = MovDemuxer::open(&bytes).map_err(|err| {
                 FfmpegError::invalid_data(format!("failed to parse MOV/MP4 input: {err}"))
@@ -347,7 +366,10 @@ fn detect_input_format(
 
 fn explicit_input_format(input: &PlannedFile) -> Result<Option<InputFormat>, FfmpegError> {
     for option in input.options() {
-        if !matches!(option.name(), "f" | "ar" | "ac" | "s" | "r" | "pix_fmt") {
+        if !matches!(
+            option.name(),
+            "f" | "ar" | "ac" | "s" | "r" | "framerate" | "pix_fmt"
+        ) {
             return Err(FfmpegError::unsupported(format!(
                 "input option `-{}` is not implemented",
                 option.name()
@@ -366,6 +388,7 @@ fn explicit_input_format(input: &PlannedFile) -> Result<Option<InputFormat>, Ffm
     };
 
     match format.to_ascii_lowercase().as_str() {
+        "image2" => parse_image2_input(input).map(Some),
         "mov" | "mp4" | "m4a" | "3gp" | "3g2" | "mj2" => {
             reject_stream_parameter_options(input, "MOV/MP4")?;
             Ok(Some(InputFormat::Mov))
@@ -409,6 +432,12 @@ fn parse_pcm_s16le_input(input: &PlannedFile) -> Result<InputFormat, FfmpegError
         sample_rate,
         channels,
     })
+}
+
+fn parse_image2_input(input: &PlannedFile) -> Result<InputFormat, FfmpegError> {
+    reject_options_except(input, "image2", &["f", "r", "framerate"])?;
+    let frame_rate = parse_image2_frame_rate_option(input)?;
+    Ok(InputFormat::Image2 { frame_rate })
 }
 
 fn parse_rawvideo_input(input: &PlannedFile) -> Result<InputFormat, FfmpegError> {
@@ -496,9 +525,20 @@ fn parse_rawvideo_pixel_format(file: &PlannedFile) -> Result<RawVideoPixelFormat
     }
 }
 
+fn parse_image2_frame_rate_option(file: &PlannedFile) -> Result<Rational, FfmpegError> {
+    let value = last_option_value(file.options(), "framerate")
+        .or_else(|| last_option_value(file.options(), "r"))
+        .ok_or_else(|| FfmpegError::usage("image2 frame rate requires `-framerate` or `-r`"))?;
+    parse_positive_rate(value, "image2 frame rate")
+}
+
 fn parse_frame_rate_option(file: &PlannedFile) -> Result<Rational, FfmpegError> {
     let value = last_option_value(file.options(), "r")
         .ok_or_else(|| FfmpegError::usage("rawvideo frame rate requires `-r`"))?;
+    parse_positive_rate(value, "rawvideo frame rate")
+}
+
+fn parse_positive_rate(value: &str, description: &str) -> Result<Rational, FfmpegError> {
     let (num, den) = if let Some((num, den)) = value.split_once('/') {
         (
             parse_i32_rate_part(num, value, "numerator")?,
@@ -509,11 +549,11 @@ fn parse_frame_rate_option(file: &PlannedFile) -> Result<Rational, FfmpegError> 
     };
     if num <= 0 || den <= 0 {
         return Err(FfmpegError::usage(format!(
-            "rawvideo frame rate `{value}` must be positive"
+            "{description} `{value}` must be positive"
         )));
     }
     Rational::new(num, den)
-        .map_err(|err| FfmpegError::usage(format!("invalid rawvideo frame rate `{value}`: {err}")))
+        .map_err(|err| FfmpegError::usage(format!("invalid {description} `{value}`: {err}")))
 }
 
 fn parse_i32_rate_part(
@@ -570,6 +610,7 @@ fn validate_input_signature(
     bytes: &[u8],
 ) -> Result<(), FfmpegError> {
     match format {
+        InputFormat::Image2 { .. } => Ok(()),
         InputFormat::Mov => validate_mov_probe(path, bytes),
         InputFormat::PcmS16le { .. } => Ok(()),
         InputFormat::RawVideo { .. } => Ok(()),
@@ -1164,6 +1205,106 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(err.message().contains("partial frame"));
+    }
+
+    #[test]
+    fn runs_image2_single_to_framecrc_stdout() {
+        let path = write_temp_bytes("image2-framecrc", "png", b"\x89PNG\r\n\x1a\n");
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-framerate",
+            "25",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect("image2 command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("framecrc"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 8);
+        assert!(output.stderr().is_empty());
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=0 dts=0 duration=1 size=8"));
+    }
+
+    #[test]
+    fn runs_image2_single_to_null_stdout() {
+        let path = write_temp_bytes("image2-null", "jpg", b"jpeg bytes");
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-r",
+            "1/1",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("image2 command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 10);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
+    fn rejects_image2_without_frame_rate() {
+        let path = write_temp_bytes("image2-missing-rate", "png", b"\x89PNG\r\n\x1a\n");
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("image2 input requires an explicit frame rate");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("frame rate"));
+    }
+
+    #[test]
+    fn rejects_image2_empty_payload() {
+        let path = write_temp_bytes("image2-empty", "png", b"");
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "image2",
+            "-framerate",
+            "1",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("image2 input should reject empty image payloads");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("payload must not be empty"));
     }
 
     #[test]
