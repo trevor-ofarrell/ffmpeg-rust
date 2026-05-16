@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, parses simple `stsd`, `stts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, and emits packets from `mdat` with PTS/DTS/duration, sync-sample key flags, and MOV side data.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, and emits packets from `mdat` with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data.
 
 ## Last Successful Commands
 
@@ -14,6 +14,12 @@
 - `cargo fmt --all`
 - `cargo test -p avformat mov::tests`
 - `cargo fmt --all`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
@@ -131,12 +137,12 @@
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current focus; the next slice is composition timestamp support and broader sample-table coverage.
+`avformat-mov-demuxer` remains the current focus; the next slice is broader sample-to-chunk coverage.
 
 ## Next 3 Concrete Actions
 
-1. Add `ctts` composition offset parsing or explicitly reject files that need PTS/DTS separation.
-2. Expand sample-to-chunk coverage beyond a single chunk and entry.
+1. Expand `stsc`/chunk-offset coverage beyond a single chunk and entry.
+2. Add explicit coverage for multiple `mdat` ranges or reject unsupported layouts with typed errors.
 3. Keep multi-track extraction blocked until it has tests for stream selection, timing, and packet interleaving.
 
 ## Known Blockers
@@ -147,4 +153,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: extend `avformat-mov-demuxer` with `stss` sync-sample parsing so packet key flags follow the MOV/MP4 sync sample table, including invalid sync sample tests.
+Latest slice: extend `avformat-mov-demuxer` with `ctts` composition time offsets so packet PTS can differ from DTS, including unsigned, signed, mismatched, zero-count, and unsupported-version tests.

@@ -11,6 +11,7 @@ const MINF_ID: &[u8; 4] = b"minf";
 const STBL_ID: &[u8; 4] = b"stbl";
 const STSD_ID: &[u8; 4] = b"stsd";
 const STTS_ID: &[u8; 4] = b"stts";
+const CTTS_ID: &[u8; 4] = b"ctts";
 const STSC_ID: &[u8; 4] = b"stsc";
 const STSZ_ID: &[u8; 4] = b"stsz";
 const STSS_ID: &[u8; 4] = b"stss";
@@ -229,6 +230,7 @@ struct SampleTable {
     codec_tag: String,
     sample_sizes: Vec<usize>,
     sample_durations: Vec<u32>,
+    composition_offsets: Option<Vec<i64>>,
     sample_to_chunks: Vec<SampleToChunkEntry>,
     chunk_offsets: Vec<u64>,
     sync_samples: Option<Vec<bool>>,
@@ -369,6 +371,7 @@ fn parse_minf(input: &[u8], minf: &BoxHeader) -> AvResult<Option<SampleTable>> {
 fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
     let mut codec_tag = None;
     let mut sample_durations = None;
+    let mut composition_offsets = None;
     let mut sample_to_chunks = None;
     let mut sample_sizes = None;
     let mut chunk_offsets = None;
@@ -378,6 +381,7 @@ fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
         match &child.box_type {
             STSD_ID => codec_tag = Some(parse_stsd(child.payload(input))?),
             STTS_ID => sample_durations = Some(parse_stts(child.payload(input))?),
+            CTTS_ID => composition_offsets = Some(parse_ctts(child.payload(input))?),
             STSC_ID => sample_to_chunks = Some(parse_stsc(child.payload(input))?),
             STSZ_ID => sample_sizes = Some(parse_stsz(child.payload(input))?),
             STSS_ID => sync_sample_numbers = Some(parse_stss(child.payload(input))?),
@@ -403,6 +407,15 @@ fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
             sample_sizes.len()
         )));
     }
+    if let Some(offsets) = &composition_offsets {
+        if offsets.len() != sample_sizes.len() {
+            return Err(AvError::invalid_data(format!(
+                "MOV/MP4 ctts describes {} samples but stsz describes {}",
+                offsets.len(),
+                sample_sizes.len()
+            )));
+        }
+    }
     let sync_samples = sync_sample_numbers
         .map(|sample_numbers| sync_sample_flags(sample_numbers, sample_sizes.len()))
         .transpose()?;
@@ -411,6 +424,7 @@ fn parse_stbl(input: &[u8], stbl: &BoxHeader) -> AvResult<SampleTable> {
         codec_tag,
         sample_sizes,
         sample_durations,
+        composition_offsets,
         sample_to_chunks,
         chunk_offsets,
         sync_samples,
@@ -483,6 +497,43 @@ fn parse_stts(payload: &[u8]) -> AvResult<Vec<u32>> {
     }
     ensure_box_consumed(&reader, "MOV/MP4 stts")?;
     Ok(durations)
+}
+
+fn parse_ctts(payload: &[u8]) -> AvResult<Vec<i64>> {
+    let mut reader = ByteReader::new(payload);
+    let (version, _) = read_full_box_header(&mut reader, "MOV/MP4 ctts")?;
+    if version > 1 {
+        return Err(AvError::unsupported(format!(
+            "unsupported MOV/MP4 ctts version {version}"
+        )));
+    }
+
+    let entry_count = reader.read_u32_be()?;
+    let mut offsets = Vec::new();
+    for _ in 0..entry_count {
+        ensure_remaining(&reader, 8, "MOV/MP4 ctts entry")?;
+        let sample_count = checked_sample_count(reader.read_u32_be()?, "MOV/MP4 ctts")?;
+        let sample_offset = if version == 0 {
+            i64::from(reader.read_u32_be()?)
+        } else {
+            i64::from(reader.read_i32_be()?)
+        };
+        let new_len = offsets
+            .len()
+            .checked_add(sample_count)
+            .ok_or_else(|| AvError::invalid_data("MOV/MP4 ctts sample count overflow"))?;
+        if new_len > MAX_MOV_SAMPLE_COUNT {
+            return Err(AvError::unsupported(
+                "MOV/MP4 ctts sample count exceeds current implementation limit",
+            ));
+        }
+        offsets.resize(new_len, sample_offset);
+    }
+    if offsets.is_empty() {
+        return Err(AvError::invalid_data("MOV/MP4 ctts describes zero samples"));
+    }
+    ensure_box_consumed(&reader, "MOV/MP4 ctts")?;
+    Ok(offsets)
 }
 
 fn parse_stsc(payload: &[u8]) -> AvResult<Vec<SampleToChunkEntry>> {
@@ -744,7 +795,7 @@ fn build_packets(
     let (stream_index, track, table) = tracks_with_tables[0];
     let sample_spans = build_sample_spans(table)?;
     let mut packets = Vec::with_capacity(sample_spans.len());
-    let mut pts = 0_i64;
+    let mut dts = 0_i64;
 
     for (sample_index, span) in sample_spans.into_iter().enumerate() {
         let start = usize::try_from(span.offset)
@@ -760,8 +811,11 @@ fn build_packets(
         }
 
         let mut packet = Packet::new(input[start..end].to_vec(), stream_index);
+        let pts = dts
+            .checked_add(composition_offset(table, sample_index))
+            .ok_or_else(|| AvError::invalid_data("MOV/MP4 packet PTS overflow"))?;
         packet.set_pts(Some(pts));
-        packet.set_dts(Some(pts));
+        packet.set_dts(Some(dts));
         packet.set_duration(i64::from(span.duration))?;
         packet.set_key(is_sync_sample(table, sample_index));
         packet.push_side_data(SideData::new(
@@ -772,9 +826,9 @@ fn build_packets(
             "mov_codec_tag",
             table.codec_tag.as_bytes().to_vec(),
         )?);
-        pts = pts
+        dts = dts
             .checked_add(i64::from(span.duration))
-            .ok_or_else(|| AvError::invalid_data("MOV/MP4 packet PTS overflow"))?;
+            .ok_or_else(|| AvError::invalid_data("MOV/MP4 packet DTS overflow"))?;
         packets.push(packet);
     }
 
@@ -786,6 +840,13 @@ fn is_sync_sample(table: &SampleTable, sample_index: usize) -> bool {
         .sync_samples
         .as_ref()
         .map_or(true, |sync_samples| sync_samples[sample_index])
+}
+
+fn composition_offset(table: &SampleTable, sample_index: usize) -> i64 {
+    table
+        .composition_offsets
+        .as_ref()
+        .map_or(0, |offsets| offsets[sample_index])
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1261,6 +1322,52 @@ mod tests {
     }
 
     #[test]
+    fn reads_composition_offsets_for_packet_pts() {
+        let bytes = mp4_with_samples_and_ctts(
+            false,
+            &[b"aa".as_slice(), b"bb".as_slice(), b"cc".as_slice()],
+            &[10, 20, 30],
+            0,
+            &[(2, 5), (1, 7)],
+        );
+        let mut demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        let second = demuxer.read_packet().unwrap().unwrap();
+        let third = demuxer.read_packet().unwrap().unwrap();
+
+        assert_eq!(first.dts(), Some(0));
+        assert_eq!(first.pts(), Some(5));
+        assert_eq!(second.dts(), Some(10));
+        assert_eq!(second.pts(), Some(15));
+        assert_eq!(third.dts(), Some(30));
+        assert_eq!(third.pts(), Some(37));
+        assert_eq!(third.duration(), 30);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn reads_signed_composition_offsets_for_packet_pts() {
+        let bytes = mp4_with_samples_and_ctts(
+            false,
+            &[b"aa".as_slice(), b"bb".as_slice()],
+            &[10, 10],
+            1,
+            &[(1, -2), (1, 0)],
+        );
+        let mut demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        let second = demuxer.read_packet().unwrap().unwrap();
+
+        assert_eq!(first.dts(), Some(0));
+        assert_eq!(first.pts(), Some(-2));
+        assert_eq!(second.dts(), Some(10));
+        assert_eq!(second.pts(), Some(10));
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn rejects_invalid_sample_tables_and_truncated_mdat_payloads() {
         assert_eq!(
             MovDemuxer::open(&mp4_with_mismatched_sample_counts())
@@ -1291,6 +1398,24 @@ mod tests {
                 .unwrap_err()
                 .kind(),
             AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_composition_offsets(0, &[(1, 0)]))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_composition_offsets(0, &[(0, 0)]))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_composition_offsets(2, &[(2, 0)]))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::Unsupported
         );
     }
 
@@ -1363,7 +1488,7 @@ mod tests {
     }
 
     fn mp4_with_samples(use_co64: bool, samples: &[&[u8]], durations: &[u32]) -> Vec<u8> {
-        mp4_with_sample_tables(use_co64, samples, durations, samples, 1, None)
+        mp4_with_sample_tables(use_co64, samples, durations, samples, 1, None, None)
     }
 
     fn mp4_with_samples_and_sync(
@@ -1379,6 +1504,25 @@ mod tests {
             samples,
             1,
             Some(sync_sample_numbers),
+            None,
+        )
+    }
+
+    fn mp4_with_samples_and_ctts(
+        use_co64: bool,
+        samples: &[&[u8]],
+        durations: &[u32],
+        ctts_version: u8,
+        composition_entries: &[(u32, i32)],
+    ) -> Vec<u8> {
+        mp4_with_sample_tables(
+            use_co64,
+            samples,
+            durations,
+            samples,
+            1,
+            None,
+            Some((ctts_version, composition_entries)),
         )
     }
 
@@ -1389,6 +1533,7 @@ mod tests {
             &[1_000],
             &[b"aa".as_slice(), b"bb".as_slice()],
             1,
+            None,
             None,
         )
     }
@@ -1401,6 +1546,7 @@ mod tests {
             &[b"aa".as_slice()],
             sample_description_index,
             None,
+            None,
         )
     }
 
@@ -1411,6 +1557,7 @@ mod tests {
             &[1_000],
             &[b"abc".as_slice()],
             1,
+            None,
             None,
         )
     }
@@ -1423,6 +1570,22 @@ mod tests {
             &[b"aa".as_slice(), b"bb".as_slice()],
             1,
             Some(sync_sample_numbers),
+            None,
+        )
+    }
+
+    fn mp4_with_composition_offsets(
+        ctts_version: u8,
+        composition_entries: &[(u32, i32)],
+    ) -> Vec<u8> {
+        mp4_with_sample_tables(
+            false,
+            &[b"aa".as_slice(), b"bb".as_slice()],
+            &[1_000, 1_000],
+            &[b"aa".as_slice(), b"bb".as_slice()],
+            1,
+            None,
+            Some((ctts_version, composition_entries)),
         )
     }
 
@@ -1433,6 +1596,7 @@ mod tests {
         mdat_samples: &[&[u8]],
         sample_description_index: u32,
         sync_sample_numbers: Option<&[u32]>,
+        composition_offsets: Option<(u8, &[(u32, i32)])>,
     ) -> Vec<u8> {
         let ftyp = ftyp_box();
         let mdat_payload = mdat_samples.concat();
@@ -1449,6 +1613,7 @@ mod tests {
                 use_co64,
                 sample_description_index,
                 sync_sample_numbers,
+                composition_offsets,
             ),
         );
         let chunk_offset = u64::try_from(ftyp.len() + placeholder_moov.len() + 8).unwrap();
@@ -1461,6 +1626,7 @@ mod tests {
                 use_co64,
                 sample_description_index,
                 sync_sample_numbers,
+                composition_offsets,
             ),
         );
 
@@ -1482,6 +1648,7 @@ mod tests {
         use_co64: bool,
         sample_description_index: u32,
         sync_sample_numbers: Option<&[u32]>,
+        composition_offsets: Option<(u8, &[(u32, i32)])>,
     ) -> Vec<u8> {
         let media_duration = durations.iter().copied().sum::<u32>();
         [
@@ -1497,6 +1664,7 @@ mod tests {
                 use_co64,
                 sample_description_index,
                 sync_sample_numbers,
+                composition_offsets,
             ),
         ]
         .concat()
@@ -1536,6 +1704,7 @@ mod tests {
         use_co64: bool,
         sample_description_index: u32,
         sync_sample_numbers: Option<&[u32]>,
+        composition_offsets: Option<(u8, &[(u32, i32)])>,
     ) -> Vec<u8> {
         let stbl = stbl_box(
             chunk_offset,
@@ -1544,6 +1713,7 @@ mod tests {
             use_co64,
             sample_description_index,
             sync_sample_numbers,
+            composition_offsets,
         );
         let minf = box_(*MINF_ID, &stbl);
         let mdia = box_(
@@ -1584,6 +1754,7 @@ mod tests {
         use_co64: bool,
         sample_description_index: u32,
         sync_sample_numbers: Option<&[u32]>,
+        composition_offsets: Option<(u8, &[(u32, i32)])>,
     ) -> Vec<u8> {
         let chunk_offset_box = if use_co64 {
             co64_box(chunk_offset)
@@ -1599,6 +1770,9 @@ mod tests {
             ),
             stsz_box(sample_sizes),
         ];
+        if let Some((version, composition_entries)) = composition_offsets {
+            boxes.push(ctts_box(version, composition_entries));
+        }
         if let Some(sync_sample_numbers) = sync_sample_numbers {
             boxes.push(stss_box(sync_sample_numbers));
         }
@@ -1627,6 +1801,24 @@ mod tests {
             body.extend_from_slice(&duration.to_be_bytes());
         }
         box_(*STTS_ID, &full_box(0, &body))
+    }
+
+    fn ctts_box(version: u8, composition_entries: &[(u32, i32)]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&(u32::try_from(composition_entries.len()).unwrap()).to_be_bytes());
+        for (sample_count, sample_offset) in composition_entries {
+            body.extend_from_slice(&sample_count.to_be_bytes());
+            if version == 0 {
+                body.extend_from_slice(
+                    &u32::try_from(*sample_offset)
+                        .expect("version 0 ctts fixture offsets must be non-negative")
+                        .to_be_bytes(),
+                );
+            } else {
+                body.extend_from_slice(&sample_offset.to_be_bytes());
+            }
+        }
+        box_(*CTTS_ID, &full_box(version, &body))
     }
 
     fn stsc_box(samples_per_chunk: u32, sample_description_index: u32) -> Vec<u8> {
