@@ -418,6 +418,27 @@ notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffprobe-avi-show-format-streams-packets"
+kind = "cli"
+ffmpeg_name = "ffprobe AVI -show_format/-show_streams/-show_packets"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_format -show_streams -show_packets -of json <input.avi>"
+rust_command = "cargo test -p fftools ffprobe"
+unit_tests = [
+  "ffprobe::tests::opens_local_avi_file_for_show_format",
+  "ffprobe::tests::outputs_avi_stream_json",
+  "ffprobe::tests::outputs_avi_packet_sections",
+  "ffprobe::tests::rejects_bad_avi_input",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial ffprobe-rs AVI reporting detects RIFF/AVI signatures or .avi extension, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Output is deterministic but not byte-identical to upstream and has no oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
 id = "fftools-ffmpeg-mov-framecrc-null"
 kind = "cli"
 ffmpeg_name = "ffmpeg MOV/MP4 to framecrc/null"
@@ -1102,7 +1123,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, and packet timing side data. It is wired to constrained ffmpeg-rs AVI input to stdout null/framecrc output paths. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, and packet timing side data. It is wired to constrained ffmpeg-rs AVI input to stdout null/framecrc output paths and ffprobe-rs AVI format/stream/packet summaries. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]

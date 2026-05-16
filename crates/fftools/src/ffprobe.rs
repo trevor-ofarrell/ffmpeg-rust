@@ -1,8 +1,13 @@
-use avformat::{register_mov_probe, MovDemuxer, MovInfo, ProbeRegistry, ProbeRequest};
-use std::{fmt, fs};
+use avformat::{
+    register_mov_probe, AviDemuxer, AviInfo, MovDemuxer, MovInfo, ProbeRegistry, ProbeRequest,
+};
+use std::{fmt, fs, path::Path};
 
 const MOV_FORMAT_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
 const MOV_FORMAT_LONG_NAME: &str = "QuickTime / MOV";
+const AVI_FORMAT_NAME: &str = "avi";
+const AVI_FORMAT_LONG_NAME: &str = "AVI (Audio Video Interleaved)";
+const AVI_PROBE_SCORE: u8 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WriterFormat {
@@ -87,6 +92,7 @@ pub struct FfprobeStreamReport {
     codec_tag_string: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
+    time_base_num: u32,
     time_base_den: u32,
     time_base: String,
     duration_ts: Option<u64>,
@@ -294,6 +300,18 @@ fn probe_local_file_inner(
 
     let bytes = fs::read(path)
         .map_err(|err| FfprobeError::io(format!("failed to read `{path}`: {err}")))?;
+
+    if is_avi_input(path, &bytes) {
+        let mut demuxer = AviDemuxer::open(&bytes).map_err(|err| {
+            FfprobeError::invalid_data(format!("failed to parse AVI input: {err}"))
+        })?;
+        let mut report = report_from_avi(path, demuxer.info());
+        if collect_packets {
+            report.packets = collect_avi_packets(&mut demuxer, &report.streams)?;
+        }
+        return Ok(report);
+    }
+
     let mut registry = ProbeRegistry::new();
     register_mov_probe(&mut registry).map_err(|err| {
         FfprobeError::invalid_data(format!("failed to register MOV probe: {err}"))
@@ -429,6 +447,7 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
             codec_tag_string: track.codec_tag().map(str::to_owned),
             width: track.width(),
             height: track.height(),
+            time_base_num: 1,
             time_base_den: track.media_timescale(),
             time_base: format!("1/{}", track.media_timescale()),
             duration_ts: track.media_duration(),
@@ -467,6 +486,58 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
     }
 }
 
+fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
+    let streams = info
+        .streams()
+        .iter()
+        .map(|stream| {
+            let (time_base_num, time_base_den) = rational_parts(stream.time_base());
+            FfprobeStreamReport {
+                index: stream.index(),
+                id: u32::try_from(stream.index()).unwrap_or(u32::MAX),
+                codec_tag_string: Some(stream.handler().to_owned()),
+                width: Some(stream.width()),
+                height: Some(stream.height()),
+                time_base_num,
+                time_base_den,
+                time_base: stream.time_base().to_string(),
+                duration_ts: Some(u64::from(stream.length())),
+                duration: Some(format_rational_duration(
+                    u64::from(stream.length()),
+                    time_base_num,
+                    time_base_den,
+                )),
+                nb_frames: stream.length() as usize,
+                tags: Vec::new(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let duration_stream = streams.first();
+
+    FfprobeReport {
+        filename: path.to_owned(),
+        format_name: AVI_FORMAT_NAME.to_owned(),
+        format_long_name: AVI_FORMAT_LONG_NAME.to_owned(),
+        probe_score: AVI_PROBE_SCORE,
+        nb_streams: streams.len(),
+        duration_ts: Some(u64::from(info.total_frames())),
+        duration: duration_stream.map(|stream| {
+            format_rational_duration(
+                u64::from(info.total_frames()),
+                stream.time_base_num,
+                stream.time_base_den,
+            )
+        }),
+        time_base: duration_stream.map_or_else(
+            || "1/1000000".to_string(),
+            |stream| stream.time_base.clone(),
+        ),
+        tags: Vec::new(),
+        streams,
+        packets: Vec::new(),
+    }
+}
+
 fn collect_mov_packets(
     demuxer: &mut MovDemuxer<'_>,
     streams: &[FfprobeStreamReport],
@@ -485,11 +556,58 @@ fn collect_mov_packets(
             index: packets.len(),
             stream_index: packet.stream_index(),
             pts,
-            pts_time: pts.map(|pts| format_signed_time(pts, stream.time_base_den)),
+            pts_time: pts.map(|pts| {
+                format_rational_signed_time(pts, stream.time_base_num, stream.time_base_den)
+            }),
             dts,
-            dts_time: dts.map(|dts| format_signed_time(dts, stream.time_base_den)),
+            dts_time: dts.map(|dts| {
+                format_rational_signed_time(dts, stream.time_base_num, stream.time_base_den)
+            }),
             duration,
-            duration_time: format_signed_time(duration, stream.time_base_den),
+            duration_time: format_rational_signed_time(
+                duration,
+                stream.time_base_num,
+                stream.time_base_den,
+            ),
+            size: packet.data().len(),
+            flags: packet_flags(packet.flags().bits()),
+        });
+    }
+    Ok(packets)
+}
+
+fn collect_avi_packets(
+    demuxer: &mut AviDemuxer,
+    streams: &[FfprobeStreamReport],
+) -> Result<Vec<FfprobePacketReport>, FfprobeError> {
+    let mut packets = Vec::new();
+    while let Some(packet) = demuxer
+        .read_packet()
+        .map_err(|err| FfprobeError::invalid_data(format!("failed to read AVI packet: {err}")))?
+    {
+        let stream = streams
+            .get(packet.stream_index())
+            .ok_or_else(|| FfprobeError::invalid_data("packet references an unknown stream"))?;
+        let pts = packet.pts();
+        let dts = packet.dts();
+        let duration = packet.duration();
+        packets.push(FfprobePacketReport {
+            index: packets.len(),
+            stream_index: packet.stream_index(),
+            pts,
+            pts_time: pts.map(|pts| {
+                format_rational_signed_time(pts, stream.time_base_num, stream.time_base_den)
+            }),
+            dts,
+            dts_time: dts.map(|dts| {
+                format_rational_signed_time(dts, stream.time_base_num, stream.time_base_den)
+            }),
+            duration,
+            duration_time: format_rational_signed_time(
+                duration,
+                stream.time_base_num,
+                stream.time_base_den,
+            ),
             size: packet.data().len(),
             flags: packet_flags(packet.flags().bits()),
         });
@@ -724,13 +842,45 @@ fn escape_json(value: &str) -> String {
     escaped
 }
 
+fn is_avi_input(path: &str, bytes: &[u8]) -> bool {
+    has_avi_signature(bytes) || path_has_extension(path, "avi")
+}
+
+fn has_avi_signature(bytes: &[u8]) -> bool {
+    bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"AVI "
+}
+
+fn path_has_extension(path: &str, expected: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(expected))
+}
+
+fn rational_parts(rational: avutil::Rational) -> (u32, u32) {
+    (
+        positive_i32_to_u32(rational.num()),
+        positive_i32_to_u32(rational.den()),
+    )
+}
+
+fn positive_i32_to_u32(value: i32) -> u32 {
+    u32::try_from(value).unwrap_or(1).max(1)
+}
+
 fn format_duration(duration_ts: u64, timescale: u32) -> String {
-    let micros = (u128::from(duration_ts) * 1_000_000) / u128::from(timescale);
+    format_rational_duration(duration_ts, 1, timescale)
+}
+
+fn format_rational_duration(duration_ts: u64, time_base_num: u32, time_base_den: u32) -> String {
+    let micros = (u128::from(duration_ts) * u128::from(time_base_num) * 1_000_000)
+        / u128::from(time_base_den);
     format!("{}.{:06}", micros / 1_000_000, micros % 1_000_000)
 }
 
-fn format_signed_time(value: i64, timescale: u32) -> String {
-    let micros = (i128::from(value) * 1_000_000) / i128::from(timescale);
+fn format_rational_signed_time(value: i64, time_base_num: u32, time_base_den: u32) -> String {
+    let micros =
+        (i128::from(value) * i128::from(time_base_num) * 1_000_000) / i128::from(time_base_den);
     let sign = if micros < 0 { "-" } else { "" };
     let abs = micros.abs();
     format!("{sign}{}.{:06}", abs / 1_000_000, abs % 1_000_000)
@@ -747,6 +897,7 @@ fn optional_str(value: &Option<String>) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use avutil::{Packet, Rational};
     use std::{
         fs,
         path::PathBuf,
@@ -975,6 +1126,104 @@ mod tests {
     }
 
     #[test]
+    fn opens_local_avi_file_for_show_format() {
+        let first = [0, 1, 2, 3, 4, 5];
+        let second = [6, 7, 8, 9, 10, 11];
+        let path = write_temp_avi(
+            "avi-show-format",
+            &avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[&first, &second]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&["-show_format", path_arg.as_str()]))
+            .expect("ffprobe AVI command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("[FORMAT]\n"));
+        assert!(stdout.contains("format_name=avi\n"));
+        assert!(stdout.contains("format_long_name=AVI (Audio Video Interleaved)\n"));
+        assert!(stdout.contains("nb_streams=1\n"));
+        assert!(stdout.contains("time_base=1/25\n"));
+        assert!(stdout.contains("duration_ts=2\n"));
+        assert!(stdout.contains("duration=0.080000\n"));
+        assert!(stdout.contains("probe_score=100\n"));
+    }
+
+    #[test]
+    fn outputs_avi_stream_json() {
+        let frame = [0, 1, 2, 3, 4, 5];
+        let path = write_temp_avi(
+            "avi-show-streams",
+            &avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[&frame]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-show_streams",
+            "-of",
+            "json",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe AVI command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("\"streams\""));
+        assert!(stdout.contains("\"index\": 0"));
+        assert!(stdout.contains("\"id\": 0"));
+        assert!(stdout.contains("\"codec_tag_string\": \"DIB \""));
+        assert!(stdout.contains("\"width\": 2"));
+        assert!(stdout.contains("\"height\": 1"));
+        assert!(stdout.contains("\"time_base\": \"1/25\""));
+        assert!(stdout.contains("\"duration_ts\": 1"));
+        assert!(!stdout.contains("\"format\""));
+    }
+
+    #[test]
+    fn outputs_avi_packet_sections() {
+        let first = [0, 1, 2, 3, 4, 5];
+        let second = [6, 7, 8, 9, 10, 11];
+        let path = write_temp_avi(
+            "avi-show-packets",
+            &avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[&first, &second]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&["-show_packets", path_arg.as_str()]))
+            .expect("ffprobe AVI command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("[PACKET]\n"));
+        assert!(stdout.contains("stream_index=0\n"));
+        assert!(stdout.contains("pts=0\n"));
+        assert!(stdout.contains("pts_time=0.000000\n"));
+        assert!(stdout.contains("dts=0\n"));
+        assert!(stdout.contains("dts_time=0.000000\n"));
+        assert!(stdout.contains("duration=1\n"));
+        assert!(stdout.contains("duration_time=0.040000\n"));
+        assert!(stdout.contains("size=6\n"));
+        assert!(stdout.contains("flags=__\n"));
+        assert!(stdout.contains("pts=1\n"));
+        assert!(stdout.contains("dts=1\n"));
+        assert!(stdout.contains("pts_time=0.040000\n"));
+    }
+
+    #[test]
+    fn rejects_bad_avi_input() {
+        let path = write_temp_bytes("avi-bad-input", "avi", b"not an avi");
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffprobe_output(&strings(&["-show_format", path_arg.as_str()]))
+            .expect_err("malformed AVI input should fail");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("failed to parse AVI input"));
+    }
+
+    #[test]
     fn rejects_unmatched_local_input_format() {
         let path = write_temp_bytes("not-mov", "bin", b"not a movie");
         let path_arg = path.to_string_lossy().into_owned();
@@ -1004,6 +1253,7 @@ mod tests {
                 codec_tag_string: Some("raw ".to_string()),
                 width: Some(1920),
                 height: Some(1080),
+                time_base_num: 1,
                 time_base_den: 90_000,
                 time_base: "1/90000".to_string(),
                 duration_ts: Some(450_000),
@@ -1032,6 +1282,10 @@ mod tests {
 
     fn write_temp_mov(label: &str, bytes: &[u8]) -> PathBuf {
         write_temp_bytes(label, "mp4", bytes)
+    }
+
+    fn write_temp_avi(label: &str, bytes: &[u8]) -> PathBuf {
+        write_temp_bytes(label, "avi", bytes)
     }
 
     fn write_temp_bytes(label: &str, extension: &str, bytes: &[u8]) -> PathBuf {
@@ -1075,6 +1329,16 @@ mod tests {
         out.extend_from_slice(&moov);
         out.extend_from_slice(&box_(MDAT_ID, &samples.concat()));
         out
+    }
+
+    fn avi_file_bytes(width: u32, height: u32, frame_rate: Rational, frames: &[&[u8]]) -> Vec<u8> {
+        let mut muxer = avformat::AviMuxer::new_rgb24(width, height, frame_rate).unwrap();
+        for frame in frames {
+            muxer
+                .write_packet(&Packet::new((*frame).to_vec(), 0))
+                .unwrap();
+        }
+        muxer.finish().unwrap()
     }
 
     fn moov_with_samples(chunk_offset: u32, sample_sizes: &[u32], durations: &[u32]) -> Vec<u8> {
