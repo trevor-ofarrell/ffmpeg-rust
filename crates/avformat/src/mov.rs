@@ -7,6 +7,7 @@ const MVEX_ID: &[u8; 4] = b"mvex";
 const MOOF_ID: &[u8; 4] = b"moof";
 const TRAK_ID: &[u8; 4] = b"trak";
 const TKHD_ID: &[u8; 4] = b"tkhd";
+const EDTS_ID: &[u8; 4] = b"edts";
 const MDIA_ID: &[u8; 4] = b"mdia";
 const MDHD_ID: &[u8; 4] = b"mdhd";
 const MINF_ID: &[u8; 4] = b"minf";
@@ -352,6 +353,11 @@ fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
     for child in read_box_headers(input, trak.payload_start, trak.payload_end, "MOV/MP4 trak")? {
         match &child.box_type {
             TKHD_ID => track_header = Some(parse_tkhd(child.payload(input))?),
+            EDTS_ID => {
+                return Err(AvError::unsupported(
+                    "MOV/MP4 edit lists with edts/elst boxes are not implemented",
+                ));
+            }
             MDIA_ID => media_data = Some(parse_mdia(input, &child)?),
             _ => {}
         }
@@ -1322,6 +1328,14 @@ mod tests {
     }
 
     #[test]
+    fn rejects_edit_lists_explicitly() {
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_edit_list()).unwrap_err().kind(),
+            AvErrorKind::Unsupported
+        );
+    }
+
+    #[test]
     fn rejects_multiple_populated_tracks_explicitly() {
         assert_eq!(
             MovDemuxer::open(&mp4_with_two_populated_tracks())
@@ -1675,6 +1689,27 @@ mod tests {
     fn mp4_with_movie_fragment() -> Vec<u8> {
         let mut out = mp4_with_samples(false, &[b"aa".as_slice()], &[10]);
         out.extend_from_slice(&box_(*MOOF_ID, &box_(*b"traf", &[])));
+        out
+    }
+
+    fn mp4_with_edit_list() -> Vec<u8> {
+        let mut edit_entry = Vec::new();
+        edit_entry.extend_from_slice(&1_u32.to_be_bytes());
+        edit_entry.extend_from_slice(&1_000_u32.to_be_bytes());
+        edit_entry.extend_from_slice(&0_i32.to_be_bytes());
+        edit_entry.extend_from_slice(&1_i16.to_be_bytes());
+        edit_entry.extend_from_slice(&0_u16.to_be_bytes());
+        let edts = box_(*EDTS_ID, &box_(*b"elst", &full_box(0, &edit_entry)));
+        let mdia = box_(*MDIA_ID, &mdhd_v0(90_000, 450_000));
+        let trak = box_(
+            *TRAK_ID,
+            &[tkhd_v0(1, 5_000, 1_920, 1_080), edts, mdia].concat(),
+        );
+        let moov_payload = [mvhd_v0(1_000, 5_000), trak].concat();
+
+        let mut out = Vec::new();
+        out.extend_from_slice(&ftyp_box());
+        out.extend_from_slice(&box_(*MOOV_ID, &moov_payload));
         out
     }
 

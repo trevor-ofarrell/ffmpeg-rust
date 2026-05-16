@@ -790,6 +790,7 @@ unit_tests = [
   "mov::tests::rejects_bad_box_bounds_and_required_metadata",
   "mov::tests::rejects_invalid_full_boxes_and_ftyp_payloads",
   "mov::tests::rejects_fragmented_movie_boxes_explicitly",
+  "mov::tests::rejects_edit_lists_explicitly",
   "mov::tests::rejects_multiple_populated_tracks_explicitly",
   "mov::tests::reads_packets_from_simple_sample_table",
   "mov::tests::parses_sample_description_codec_parameters",
@@ -805,5 +806,5 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; explicitly rejects fragmented mvex/moof layouts, multiple populated tracks, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables and truncated media data. Packet extraction for multiple populated tracks, actual fragment parsing, edit lists, codec-specific sample-entry parsing, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; explicitly rejects fragmented mvex/moof layouts, edit-list edts boxes, multiple populated tracks, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables and truncated media data. Packet extraction for multiple populated tracks, actual fragment parsing, edit-list timeline application, codec-specific sample-entry parsing, CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
