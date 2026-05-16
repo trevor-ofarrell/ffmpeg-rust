@@ -11,7 +11,7 @@
 
 - `ffmpeg-rs -version` prints a version banner naming the pinned target and ABI versions.
 - `ffprobe-rs -version` prints a version banner naming the pinned target and ABI versions.
-- `avutil` has initial typed errors, rational normalization/comparison, timestamp rescaling, bounded byte I/O helpers, MSB-first bit reader/writer helpers, packet timestamp/flag/side-data skeletons, frame shape validation, and an in-memory logging abstraction.
+- `avutil` has initial typed errors, rational normalization/comparison, timestamp rescaling, bounded byte I/O helpers, MSB-first bit reader/writer helpers, metadata dictionary helpers, packet timestamp/flag/side-data skeletons, frame shape validation, and an in-memory logging abstraction.
 - `oracle inventory` can execute a pinned FFmpeg binary and capture the required inventory command outputs.
 
 ## Incomplete

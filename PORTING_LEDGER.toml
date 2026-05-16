@@ -242,6 +242,30 @@ id = "avutil-dict"
 kind = "utility"
 ffmpeg_name = "AVDictionary"
 upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = ""
+rust_command = "cargo test -p avutil dict"
+unit_tests = [
+  "dict::tests::default_set_replaces_case_insensitive_key",
+  "dict::tests::case_sensitive_mode_allows_distinct_keys",
+  "dict::tests::keep_existing_preserves_original_entry",
+  "dict::tests::append_mode_concatenates_existing_value",
+  "dict::tests::prefix_lookup_returns_first_matching_entry",
+  "dict::tests::remove_defaults_to_requested_match_mode",
+  "dict::tests::rejects_empty_or_nul_keys_and_nul_values",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Order-preserving metadata dictionary implemented with ASCII case-insensitive default matching, case-sensitive lookup, prefix lookup, keep-existing, append, removal, and invalid string checks. Differential vectors and fuzzing are pending, so this is not marked complete."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-options"
+kind = "utility"
+ffmpeg_name = "AVOption"
+upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "not_started"
 priority = 1
 oracle_command = ""
@@ -250,5 +274,5 @@ unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next metadata primitive after bit I/O."
+notes = "Next shared primitive after metadata dictionaries."
 blocked_reason = ""
