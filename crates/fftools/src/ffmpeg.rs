@@ -3,7 +3,7 @@ use crate::{
 };
 use avformat::{
     register_mov_probe, FrameCrcMuxer, MovDemuxer, NullMuxer, PcmS16leDemuxer, ProbeRegistry,
-    ProbeRequest, RawVideoDemuxer, RawVideoPixelFormat, WavDemuxer,
+    ProbeRequest, RawVideoDemuxer, RawVideoPixelFormat, WavDemuxer, Yuv4MpegDemuxer,
 };
 use avutil::{Packet, Rational};
 use std::{fmt, fs, path::Path};
@@ -154,6 +154,7 @@ enum InputFormat {
         frame_rate: Rational,
     },
     Wav,
+    Yuv4MpegPipe,
 }
 
 impl InputFormat {
@@ -163,6 +164,7 @@ impl InputFormat {
             Self::PcmS16le { .. } => "pcm_s16le",
             Self::RawVideo { .. } => "rawvideo",
             Self::Wav => "WAV",
+            Self::Yuv4MpegPipe => "yuv4mpegpipe",
         }
     }
 }
@@ -277,6 +279,16 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 })
             })
         }
+        InputFormat::Yuv4MpegPipe => {
+            let mut demuxer = Yuv4MpegDemuxer::open(&bytes).map_err(|err| {
+                FfmpegError::invalid_data(format!("failed to parse YUV4MPEG2 input: {err}"))
+            })?;
+            run_output_muxer(output_muxer, || {
+                demuxer.read_packet().map_err(|err| {
+                    FfmpegError::invalid_data(format!("failed to read YUV4MPEG2 packet: {err}"))
+                })
+            })
+        }
     }
 }
 
@@ -322,6 +334,10 @@ fn detect_input_format(
         return Ok(InputFormat::Wav);
     }
 
+    if is_yuv4mpegpipe_like(path, bytes) {
+        return Ok(InputFormat::Yuv4MpegPipe);
+    }
+
     if is_mov_like(path, bytes)? {
         return Ok(InputFormat::Mov);
     }
@@ -359,6 +375,10 @@ fn explicit_input_format(input: &PlannedFile) -> Result<Option<InputFormat>, Ffm
         "wav" | "wave" => {
             reject_stream_parameter_options(input, "WAV")?;
             Ok(Some(InputFormat::Wav))
+        }
+        "yuv4mpegpipe" => {
+            reject_stream_parameter_options(input, "yuv4mpegpipe")?;
+            Ok(Some(InputFormat::Yuv4MpegPipe))
         }
         _ => Err(FfmpegError::unsupported(format!(
             "input format `{format}` is not implemented"
@@ -558,6 +578,10 @@ fn validate_input_signature(
             "{} input signature was not found",
             format.name()
         ))),
+        InputFormat::Yuv4MpegPipe if is_yuv4mpegpipe_like(path, bytes) => Ok(()),
+        InputFormat::Yuv4MpegPipe => Err(FfmpegError::invalid_data(
+            "yuv4mpegpipe input signature was not found",
+        )),
     }
 }
 
@@ -567,6 +591,14 @@ fn is_wav_like(path: &str, bytes: &[u8]) -> bool {
 
 fn has_wav_signature(bytes: &[u8]) -> bool {
     bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WAVE"
+}
+
+fn is_yuv4mpegpipe_like(path: &str, bytes: &[u8]) -> bool {
+    has_yuv4mpegpipe_signature(bytes) || path_has_extension(path, "y4m")
+}
+
+fn has_yuv4mpegpipe_signature(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"YUV4MPEG2")
 }
 
 fn path_has_extension(path: &str, extension: &str) -> bool {
@@ -1134,6 +1166,98 @@ mod tests {
         assert!(err.message().contains("partial frame"));
     }
 
+    #[test]
+    fn runs_yuv4mpegpipe_to_framecrc_stdout() {
+        let first = y4m_frame(6, 0x10);
+        let second = y4m_frame(6, 0x80);
+        let path = write_temp_bytes(
+            "y4m-framecrc",
+            "bin",
+            &y4m_file_bytes(2, 2, &[first, second]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "yuv4mpegpipe",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect("YUV4MPEG2 command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("framecrc"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 12);
+        assert!(output.stderr().is_empty());
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=0 dts=0 duration=1 size=6"));
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=1 dts=1 duration=1 size=6"));
+    }
+
+    #[test]
+    fn runs_detected_yuv4mpegpipe_to_null_stdout() {
+        let frame = y4m_frame(6, 0x20);
+        let path = write_temp_bytes("y4m-null", "y4m", &y4m_file_bytes(2, 2, &[frame]));
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&["-i", path_arg.as_str(), "-f", "null", "-"]))
+            .expect("YUV4MPEG2 command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 6);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
+    fn rejects_yuv4mpegpipe_bad_header() {
+        let path = write_temp_bytes("y4m-bad-header", "y4m", b"YUV4MPEG2 H2 F25:1 Ip C420jpeg\n");
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "yuv4mpegpipe",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("YUV4MPEG2 input should reject missing width");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("missing width"));
+    }
+
+    #[test]
+    fn rejects_yuv4mpegpipe_truncated_frame() {
+        let path = write_temp_bytes(
+            "y4m-truncated-frame",
+            "y4m",
+            b"YUV4MPEG2 W2 H2 F25:1 Ip C420jpeg\nFRAME\nabc",
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&["-i", path_arg.as_str(), "-f", "framecrc", "-"]))
+            .expect_err("YUV4MPEG2 input should reject truncated frames");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("truncated"));
+    }
+
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
     }
@@ -1161,6 +1285,22 @@ mod tests {
             .write_packet(&Packet::new(payload.to_vec(), 0))
             .unwrap();
         muxer.finish().unwrap()
+    }
+
+    fn y4m_file_bytes(width: u32, height: u32, frames: &[Vec<u8>]) -> Vec<u8> {
+        let mut muxer =
+            avformat::Yuv4MpegMuxer::new(width, height, Rational::new(25, 1).unwrap(), None)
+                .unwrap();
+        for frame in frames {
+            muxer.write_packet(&Packet::new(frame.clone(), 0)).unwrap();
+        }
+        muxer.finish()
+    }
+
+    fn y4m_frame(len: usize, start: u8) -> Vec<u8> {
+        (0..len)
+            .map(|offset| start.wrapping_add(offset as u8))
+            .collect()
     }
 
     fn sampled_mov_file(samples: &[&[u8]], durations: &[u32]) -> Vec<u8> {

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, extracts common movie-level and track-level `udta/meta/ilst` metadata values from `data` atoms for UTF-8 and UTF-16 text fields, classic `gnre` genre indexes, one-byte integer/boolean metadata atoms, iTunes-style freeform `----` atoms, `covr` cover-art payloads, and track/disc number pairs, registers a hand-written MOV/MP4 `ftyp`/extension/MIME probe descriptor, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries including structured `avcC` version/profile/level/NAL-length-size/SPS/PPS data, structured `hvcC` profile/timing/NAL-length-size/NAL-array data, `pasp` pixel aspect ratio, and `nclx`/`nclc`/`rICC`/`prof` `colr` color information, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, malformed VisualSampleEntry child boxes, malformed metadata atoms, malformed text encodings, malformed integer/boolean metadata payloads, malformed freeform metadata payloads, malformed cover-art payloads, malformed `avcC`/`hvcC`/`pasp`/`colr` payloads, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data. `ffprobe-rs` now has an initial local MOV/MP4 `-show_format`/`-show_streams`/`-show_packets` execution path that probes with the Rust MOV descriptor, opens `MovDemuxer`, and renders default or JSON summaries. `ffmpeg-rs` now has constrained local MOV/MP4, PCM s16le RIFF/WAVE, raw `pcm_s16le`, and explicit `rawvideo` command execution paths for stdout `-f null -` and `-f framecrc -`, using Rust demuxers and Rust muxers while rejecting unsupported inputs, outputs, muxers, missing raw stream parameters, malformed raw PCM packet boundaries, and malformed rawvideo frame boundaries.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, extracts common movie-level and track-level `udta/meta/ilst` metadata values from `data` atoms for UTF-8 and UTF-16 text fields, classic `gnre` genre indexes, one-byte integer/boolean metadata atoms, iTunes-style freeform `----` atoms, `covr` cover-art payloads, and track/disc number pairs, registers a hand-written MOV/MP4 `ftyp`/extension/MIME probe descriptor, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries including structured `avcC` version/profile/level/NAL-length-size/SPS/PPS data, structured `hvcC` profile/timing/NAL-length-size/NAL-array data, `pasp` pixel aspect ratio, and `nclx`/`nclc`/`rICC`/`prof` `colr` color information, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, malformed VisualSampleEntry child boxes, malformed metadata atoms, malformed text encodings, malformed integer/boolean metadata payloads, malformed freeform metadata payloads, malformed cover-art payloads, malformed `avcC`/`hvcC`/`pasp`/`colr` payloads, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data. `ffprobe-rs` now has an initial local MOV/MP4 `-show_format`/`-show_streams`/`-show_packets` execution path that probes with the Rust MOV descriptor, opens `MovDemuxer`, and renders default or JSON summaries. `ffmpeg-rs` now has constrained local MOV/MP4, PCM s16le RIFF/WAVE, raw `pcm_s16le`, explicit `rawvideo`, and yuv4mpegpipe command execution paths for stdout `-f null -` and `-f framecrc -`, using Rust demuxers and Rust muxers while rejecting unsupported inputs, outputs, muxers, missing raw stream parameters, malformed raw PCM packet boundaries, malformed rawvideo frame boundaries, and malformed YUV4MPEG2 stream/frame boundaries.
 
 ## Last Successful Commands
 
@@ -324,6 +324,14 @@
 - `cargo test --workspace --all-features`
 - `cargo run -p fate-runner -- list`
 - `git diff --check`
+- `cargo fmt --all`
+- `cargo test -p fftools ffmpeg`
+- `cargo test -p fftools`
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
 
 ## Last Failing Commands
 
@@ -346,11 +354,11 @@
 
 ## Current Focus Component
 
-`fftools-ffmpeg-rawvideo-framecrc-null` is the current focus; the next slice is broader `ffmpeg-rs` command execution coverage or deeper MOV timeline support.
+`fftools-ffmpeg-yuv4mpegpipe-framecrc-null` is the current focus; the next slice is broader `ffmpeg-rs` command execution coverage or deeper MOV timeline support.
 
 ## Next 3 Concrete Actions
 
-1. Extend `ffmpeg-rs` command execution to another already-implemented demuxer such as yuv4mpegpipe or image2 to framecrc/null.
+1. Extend `ffmpeg-rs` command execution to another already-implemented demuxer such as image2 to framecrc/null.
 2. Add MOV timeline support such as edit-list application or fragmented `moof`/`mdat` parsing.
 3. Add pinned-oracle differential coverage once an FFmpeg 8.1.1 oracle binary exists.
 
@@ -363,4 +371,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: extend constrained `ffmpeg-rs` execution to explicit `rawvideo` inputs for stdout `-f framecrc -` or `-f null -`, requiring explicit `-pix_fmt`, `-s`, and `-r`, using the Rust rawvideo demuxer and Rust muxers with in-process unit coverage.
+Latest slice: extend constrained `ffmpeg-rs` execution to yuv4mpegpipe inputs for stdout `-f framecrc -` or `-f null -`, using explicit `-f yuv4mpegpipe` or YUV4MPEG2/.y4m detection plus the Rust YUV4MPEG2 demuxer and Rust muxers with in-process unit coverage.
