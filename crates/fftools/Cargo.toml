@@ -1,0 +1,19 @@
+[package]
+name = "fftools"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "ffmpeg-rs"
+path = "src/bin/ffmpeg-rs.rs"
+
+[[bin]]
+name = "ffprobe-rs"
+path = "src/bin/ffprobe-rs.rs"
+

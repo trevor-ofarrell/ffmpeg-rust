@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/avutil",
+    "crates/avcodec",
+    "crates/avformat",
+    "crates/avfilter",
+    "crates/swscale",
+    "crates/swresample",
+    "crates/avdevice",
+    "crates/fftools",
+    "crates/oracle",
+    "crates/fate-runner",
+    "xtask",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+rust-version = "1.75"
+

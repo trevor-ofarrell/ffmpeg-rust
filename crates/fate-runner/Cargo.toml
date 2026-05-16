@@ -1,0 +1,10 @@
+[package]
+name = "fate-runner"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "fate-runner"
+path = "src/main.rs"
+

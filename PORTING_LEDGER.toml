@@ -1,0 +1,217 @@
+target_version = "8.1.1"
+target_release = "Hoare"
+default_profile = "ffmpeg-8.1.1-default-native"
+
+[[component]]
+id = "avutil-error"
+kind = "utility"
+ffmpeg_name = "AVERROR"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = ""
+rust_command = "cargo test -p avutil error"
+unit_tests = ["error::tests::error_exposes_kind_and_message"]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Typed Rust error model implemented. No differential or FATE oracle applies yet."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-rational"
+kind = "utility"
+ffmpeg_name = "AVRational"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = ""
+rust_command = "cargo test -p avutil rational"
+unit_tests = [
+  "rational::tests::rational_normalizes_sign_and_gcd",
+  "rational::tests::rational_rejects_zero_denominator",
+  "rational::tests::rational_compares_without_float_rounding",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Basic normalized rational behavior implemented. Needs deeper parity tests for FFmpeg rounding edge cases."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-timebase"
+kind = "utility"
+ffmpeg_name = "av_rescale_q"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = ""
+rust_command = "cargo test -p avutil timebase"
+unit_tests = [
+  "timebase::tests::rescales_between_common_media_timebases",
+  "timebase::tests::supports_explicit_rounding_modes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial timestamp rescaling implemented with explicit rounding modes. Needs FFmpeg edge-case differential vectors."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-packet"
+kind = "utility"
+ffmpeg_name = "AVPacket"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = ""
+rust_command = "cargo test -p avutil packet"
+unit_tests = [
+  "packet::tests::packet_defaults_to_no_timestamps",
+  "packet::tests::packet_tracks_timestamps_flags_and_side_data",
+  "packet::tests::packet_rejects_negative_duration_and_empty_side_data_kind",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Packet skeleton validates timestamps, duration, flags, and side-data shape. Not ABI complete."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-frame"
+kind = "utility"
+ffmpeg_name = "AVFrame"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = ""
+rust_command = "cargo test -p avutil frame"
+unit_tests = [
+  "frame::tests::video_frame_validates_required_shape",
+  "frame::tests::audio_frame_validates_required_shape",
+  "frame::tests::frame_wraps_audio_or_video_with_optional_pts",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Frame skeleton validates required audio/video shape. Pixel/sample format models are not complete."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-logging"
+kind = "utility"
+ffmpeg_name = "av_log"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = ""
+rust_command = "cargo test -p avutil logging"
+unit_tests = [
+  "logging::tests::logger_filters_by_level",
+  "logging::tests::quiet_suppresses_all_records",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "In-memory log filtering abstraction implemented. Formatting and callback parity are incomplete."
+blocked_reason = ""
+
+[[component]]
+id = "oracle-inventory"
+kind = "utility"
+ffmpeg_name = "ffmpeg inventory commands"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg --out compat/ffmpeg-8.1.1"
+rust_command = "cargo run -p oracle -- --help"
+unit_tests = []
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Inventory tool captures required command outputs when a pinned oracle binary is present."
+blocked_reason = "No pinned FFmpeg oracle binary is present in this workspace, so snapshots have not been generated."
+
+[[component]]
+id = "fftools-version"
+kind = "cli"
+ffmpeg_name = "ffmpeg/ffprobe -version"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -version; ffprobe -version"
+rust_command = "cargo test -p fftools --test version"
+unit_tests = ["version_banner_names_target_and_libraries", "version_request_exits_successfully"]
+differential_tests = [
+  "ffmpeg_rs_prints_version_banner",
+  "ffprobe_rs_prints_version_banner",
+]
+fate_tests = []
+fuzz_targets = []
+notes = "Version command support exists but is not byte-identical to upstream."
+blocked_reason = ""
+
+[[component]]
+id = "fate-runner"
+kind = "utility"
+ffmpeg_name = "FATE"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "scaffolded"
+priority = 2
+oracle_command = "make fate"
+rust_command = "cargo run -p fate-runner -- list"
+unit_tests = []
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Can list ledger component IDs. Runnable FATE mapping intentionally returns an error until real mappings exist."
+blocked_reason = "No FATE samples path or component mapping has been configured."
+
+[[component]]
+id = "avutil-byteio"
+kind = "utility"
+ffmpeg_name = "AVIO byte helpers"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 1
+oracle_command = ""
+rust_command = ""
+unit_tests = []
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Next highest-priority primitive."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-bitreader"
+kind = "utility"
+ffmpeg_name = "GetBitContext"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 1
+oracle_command = ""
+rust_command = ""
+unit_tests = []
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = ""
+blocked_reason = ""
+
+[[component]]
+id = "avutil-bitwriter"
+kind = "utility"
+ffmpeg_name = "PutBitContext"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 1
+oracle_command = ""
+rust_command = ""
+unit_tests = []
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = ""
+blocked_reason = ""
+
