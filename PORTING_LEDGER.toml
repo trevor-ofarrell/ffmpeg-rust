@@ -671,13 +671,35 @@ id = "avformat-rawvideo-muxer"
 kind = "muxer"
 ffmpeg_name = "rawvideo"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -i <input> -f rawvideo <output.raw>"
+rust_command = "cargo test -p avformat rawvideo"
+unit_tests = [
+  "rawvideo::tests::muxer_concatenates_fixed_size_stream_zero_frames",
+  "rawvideo::tests::muxer_supports_empty_output_when_geometry_is_valid",
+  "rawvideo::tests::muxer_computes_yuv420p_frame_size",
+  "rawvideo::tests::muxer_rejects_invalid_geometry_rate_stream_and_frame_size",
+  "rawvideo::tests::muxer_finish_prevents_more_writes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial rawvideo muxer concatenates validated stream-0 fixed-size frame packet payloads for gray, rgb24, rgba, and yuv420p, tracks frame/byte counts, supports empty output, and prevents writes after finish. CLI wiring, probe integration, more pixel formats, differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-yuv4mpegpipe-muxer"
+kind = "muxer"
+ffmpeg_name = "yuv4mpegpipe"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -f rawvideo -pix_fmt yuv420p -s <size> -framerate <rate> -i <input> -f yuv4mpegpipe <output.y4m>"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple raw video muxer target to pair with the rawvideo demuxer and decoder."
+notes = "Next simple container muxer target to pair with the yuv4mpegpipe demuxer."
 blocked_reason = ""

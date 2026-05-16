@@ -20,7 +20,7 @@ pub use image2::{Image2Demuxer, Image2Entry, Image2Frame, Image2Info, Image2Patt
 pub use null_muxer::{NullMuxer, NullMuxerReport, NullStreamStats};
 pub use pcm::{PcmS16leDemuxer, PcmS16leInfo, PcmS16leMuxer, PcmS16leMuxerInfo};
 pub use probe::{ProbeDescriptor, ProbeMatch, ProbeRegistry, ProbeRequest, ProbeScore};
-pub use rawvideo::{RawVideoDemuxer, RawVideoInfo, RawVideoPixelFormat};
+pub use rawvideo::{RawVideoDemuxer, RawVideoInfo, RawVideoMuxer, RawVideoPixelFormat};
 pub use wav::{WavDemuxer, WavInfo, WavMuxer};
 pub use yuv4mpegpipe::{Yuv4MpegChroma, Yuv4MpegDemuxer, Yuv4MpegInfo, Yuv4MpegInterlace};
 

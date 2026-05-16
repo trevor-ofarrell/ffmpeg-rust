@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-pcm-s16le-muxer` is implemented and verified for a narrow raw audio output path. It validates sample rate, channel count, stream-0 packet ownership, and whole interleaved sample-frame payloads, then concatenates packet bytes while tracking packet and sample counts. The next priority component is `avformat-rawvideo-muxer`.
+`avformat-rawvideo-muxer` is implemented and verified for a narrow raw video output path. It validates geometry, frame rate, stream-0 packet ownership, and exact fixed-size frame payloads, then concatenates packet bytes while tracking frame counts. The next priority component is `avformat-yuv4mpegpipe-muxer`.
 
 ## Last Successful Commands
 
@@ -74,6 +74,11 @@
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
+- `cargo fmt --all`
+- `cargo test -p avformat rawvideo`
+- `cargo test --workspace --all-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --all -- --check`
 
 ## Last Failing Commands
 
@@ -84,13 +89,13 @@
 
 ## Current Focus Component
 
-`avformat-rawvideo-muxer` is the next highest-priority incomplete component after the initial pcm_s16le muxer.
+`avformat-yuv4mpegpipe-muxer` is the next highest-priority incomplete component after the initial rawvideo muxer.
 
 ## Next 3 Concrete Actions
 
-1. Add an internal rawvideo muxer that concatenates validated stream-0 fixed-size frame packet payloads.
-2. Add unit tests for geometry/pixel-format validation, frame-size validation, byte/frame accounting, and finalization behavior.
-3. Update the ledger, docs, and state after the rawvideo muxer passes focused and workspace checks.
+1. Add an internal yuv4mpegpipe muxer for progressive yuv420p/C420jpeg frames.
+2. Add unit tests for stream header rendering, frame header/payload emission, parameter validation, packet-size validation, and finalization behavior.
+3. Update the ledger, docs, and state after the yuv4mpegpipe muxer passes focused and workspace checks.
 
 ## Known Blockers
 
@@ -100,4 +105,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-pcm-s16le-muxer` for raw interleaved sample-frame packet concatenation with stream validation, empty-packet, accounting, and finalization tests.
+Latest slice: add `avformat-rawvideo-muxer` for fixed-size raw frame packet concatenation with geometry validation, stream validation, empty-output, accounting, and finalization tests.

@@ -42,6 +42,8 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `RawVideoDemuxer` implements an initial rawvideo packet slicer for fixed-size `gray`, `rgb24`, `rgba`, and `yuv420p` frame payloads. It validates dimensions, frame rate, yuv420p parity, and whole-frame byte counts before emitting monotonically timed packets.
 
+`RawVideoMuxer` implements the matching initial rawvideo muxer path. It validates stream-0 packet ownership and exact fixed-size frame payloads before concatenating raw frame bytes and updating frame accounting.
+
 `PcmS16leDemuxer` implements an initial raw PCM audio packet slicer for packed little-endian signed 16-bit samples. It validates sample rate, channel count, packet sample count, and whole interleaved sample-frame input before emitting packets with sample-count durations.
 
 `PcmS16leMuxer` implements the matching initial raw PCM audio muxer path. It validates stream-0 packet ownership and whole interleaved sample-frame payloads before concatenating payload bytes and updating packet/sample accounting.

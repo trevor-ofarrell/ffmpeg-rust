@@ -157,6 +157,102 @@ impl<'a> RawVideoDemuxer<'a> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawVideoMuxer {
+    info: RawVideoInfo,
+    data: Vec<u8>,
+    finished: bool,
+}
+
+impl RawVideoMuxer {
+    pub fn new(
+        width: usize,
+        height: usize,
+        pixel_format: RawVideoPixelFormat,
+        frame_rate: Rational,
+    ) -> AvResult<Self> {
+        validate_dimensions(width, height)?;
+        validate_frame_rate(frame_rate)?;
+        let frame_size = pixel_format.frame_size(width, height)?;
+        if frame_size == 0 {
+            return Err(AvError::invalid_argument(
+                "rawvideo frame size must be non-zero",
+            ));
+        }
+
+        Ok(Self {
+            info: RawVideoInfo {
+                width,
+                height,
+                pixel_format,
+                frame_rate,
+                frame_size,
+                frame_count: 0,
+            },
+            data: Vec::new(),
+            finished: false,
+        })
+    }
+
+    pub fn info(&self) -> &RawVideoInfo {
+        &self.info
+    }
+
+    pub fn data_len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    pub fn write_packet(&mut self, packet: &Packet) -> AvResult<()> {
+        if self.finished {
+            return Err(AvError::invalid_argument(
+                "cannot write packet after rawvideo muxer is finished",
+            ));
+        }
+        if packet.stream_index() != 0 {
+            return Err(AvError::invalid_argument(format!(
+                "rawvideo muxer only accepts stream 0, got stream {}",
+                packet.stream_index()
+            )));
+        }
+        if packet.data().len() != self.info.frame_size {
+            return Err(AvError::invalid_data(format!(
+                "rawvideo packet has {} bytes, expected {}",
+                packet.data().len(),
+                self.info.frame_size
+            )));
+        }
+
+        let new_len = self
+            .data
+            .len()
+            .checked_add(packet.data().len())
+            .ok_or_else(|| AvError::invalid_argument("rawvideo data size overflow"))?;
+        let new_frame_count = self
+            .info
+            .frame_count
+            .checked_add(1)
+            .ok_or_else(|| AvError::invalid_argument("rawvideo frame count overflow"))?;
+
+        self.data.reserve(new_len - self.data.len());
+        self.data.extend_from_slice(packet.data());
+        self.info.frame_count = new_frame_count;
+        Ok(())
+    }
+
+    pub fn render(&self) -> Vec<u8> {
+        self.data.clone()
+    }
+
+    pub fn finish(&mut self) -> Vec<u8> {
+        self.finished = true;
+        self.render()
+    }
+}
+
 fn validate_dimensions(width: usize, height: usize) -> AvResult<()> {
     if width == 0 || height == 0 {
         return Err(AvError::invalid_argument(
@@ -316,5 +412,127 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+    }
+
+    #[test]
+    fn muxer_concatenates_fixed_size_stream_zero_frames() {
+        let mut muxer = RawVideoMuxer::new(
+            1,
+            2,
+            RawVideoPixelFormat::Rgb24,
+            Rational::new(30, 1).unwrap(),
+        )
+        .unwrap();
+        let first = Packet::new(vec![0, 1, 2, 3, 4, 5], 0);
+        let second = Packet::new(vec![6, 7, 8, 9, 10, 11], 0);
+
+        muxer.write_packet(&first).unwrap();
+        muxer.write_packet(&second).unwrap();
+
+        assert_eq!(muxer.info().width(), 1);
+        assert_eq!(muxer.info().height(), 2);
+        assert_eq!(muxer.info().pixel_format(), RawVideoPixelFormat::Rgb24);
+        assert_eq!(muxer.info().frame_rate(), Rational::new(30, 1).unwrap());
+        assert_eq!(muxer.info().frame_size(), 6);
+        assert_eq!(muxer.info().frame_count(), 2);
+        assert_eq!(muxer.data_len(), 12);
+        assert_eq!(muxer.render(), vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    }
+
+    #[test]
+    fn muxer_supports_empty_output_when_geometry_is_valid() {
+        let mut muxer = RawVideoMuxer::new(
+            2,
+            2,
+            RawVideoPixelFormat::Gray8,
+            Rational::new(24, 1).unwrap(),
+        )
+        .unwrap();
+
+        let output = muxer.finish();
+
+        assert!(muxer.is_finished());
+        assert_eq!(muxer.info().frame_size(), 4);
+        assert_eq!(muxer.info().frame_count(), 0);
+        assert_eq!(muxer.data_len(), 0);
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn muxer_computes_yuv420p_frame_size() {
+        let muxer = RawVideoMuxer::new(
+            4,
+            2,
+            RawVideoPixelFormat::Yuv420p,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(muxer.info().frame_size(), 12);
+    }
+
+    #[test]
+    fn muxer_rejects_invalid_geometry_rate_stream_and_frame_size() {
+        assert!(RawVideoMuxer::new(
+            0,
+            2,
+            RawVideoPixelFormat::Gray8,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv420p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            2,
+            2,
+            RawVideoPixelFormat::Gray8,
+            Rational::new(0, 1).unwrap(),
+        )
+        .is_err());
+
+        let mut muxer = RawVideoMuxer::new(
+            2,
+            2,
+            RawVideoPixelFormat::Gray8,
+            Rational::new(1, 1).unwrap(),
+        )
+        .unwrap();
+        let wrong_stream = muxer.write_packet(&Packet::new(vec![0, 1, 2, 3], 1));
+        assert_eq!(
+            wrong_stream.unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        let short_frame = muxer.write_packet(&Packet::new(vec![0, 1, 2], 0));
+        assert_eq!(short_frame.unwrap_err().kind(), AvErrorKind::InvalidData);
+        let long_frame = muxer.write_packet(&Packet::new(vec![0, 1, 2, 3, 4], 0));
+        assert_eq!(long_frame.unwrap_err().kind(), AvErrorKind::InvalidData);
+        assert_eq!(muxer.info().frame_count(), 0);
+        assert_eq!(muxer.data_len(), 0);
+    }
+
+    #[test]
+    fn muxer_finish_prevents_more_writes() {
+        let mut muxer = RawVideoMuxer::new(
+            2,
+            2,
+            RawVideoPixelFormat::Gray8,
+            Rational::new(1, 1).unwrap(),
+        )
+        .unwrap();
+        let packet = Packet::new(vec![0, 1, 2, 3], 0);
+
+        muxer.write_packet(&packet).unwrap();
+        let output = muxer.finish();
+        let err = muxer.write_packet(&packet).unwrap_err();
+
+        assert!(muxer.is_finished());
+        assert_eq!(output, vec![0, 1, 2, 3]);
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(muxer.info().frame_count(), 1);
     }
 }
