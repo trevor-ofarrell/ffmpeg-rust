@@ -120,6 +120,7 @@ pub struct FfprobeStreamReport {
     time_base_num: u32,
     time_base_den: u32,
     time_base: String,
+    r_frame_rate: Option<String>,
     avg_frame_rate: Option<String>,
     duration_ts: Option<u64>,
     duration: Option<String>,
@@ -214,6 +215,10 @@ impl FfprobeStreamReport {
 
     pub fn time_base(&self) -> &str {
         &self.time_base
+    }
+
+    pub fn r_frame_rate(&self) -> Option<&str> {
+        self.r_frame_rate.as_deref()
     }
 
     pub fn avg_frame_rate(&self) -> Option<&str> {
@@ -596,6 +601,11 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
             let video_sample_entry = mov_video_sample_entry(track);
             let color_information =
                 video_sample_entry.and_then(MovVideoSampleEntry::color_information);
+            let frame_rate = average_frame_rate(
+                track.sample_count(),
+                track.media_duration(),
+                track.media_timescale(),
+            );
             FfprobeStreamReport {
                 index,
                 id: track.id(),
@@ -639,11 +649,8 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                 time_base_num: 1,
                 time_base_den: track.media_timescale(),
                 time_base: format!("1/{}", track.media_timescale()),
-                avg_frame_rate: average_frame_rate(
-                    track.sample_count(),
-                    track.media_duration(),
-                    track.media_timescale(),
-                ),
+                r_frame_rate: frame_rate.clone(),
+                avg_frame_rate: frame_rate,
                 duration_ts: track.media_duration(),
                 duration: track
                     .media_duration()
@@ -712,6 +719,7 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
                 time_base_num,
                 time_base_den,
                 time_base: stream.time_base().to_string(),
+                r_frame_rate: Some(stream.frame_rate().to_string()),
                 avg_frame_rate: Some(stream.frame_rate().to_string()),
                 duration_ts: Some(u64::from(stream.length())),
                 duration: Some(format_rational_duration(
@@ -1171,6 +1179,9 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
                 out.push_str(&format!("level={level}\n"));
             }
             out.push_str(&format!("time_base={}\n", stream.time_base));
+            if let Some(r_frame_rate) = &stream.r_frame_rate {
+                out.push_str(&format!("r_frame_rate={r_frame_rate}\n"));
+            }
             if let Some(avg_frame_rate) = &stream.avg_frame_rate {
                 out.push_str(&format!("avg_frame_rate={avg_frame_rate}\n"));
             }
@@ -1312,6 +1323,9 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     }
     if let Some(level) = stream.level {
         fields.push(json_number("level", level));
+    }
+    if let Some(r_frame_rate) = &stream.r_frame_rate {
+        fields.push(json_string("r_frame_rate", r_frame_rate));
     }
     if let Some(avg_frame_rate) = &stream.avg_frame_rate {
         fields.push(json_string("avg_frame_rate", avg_frame_rate));
@@ -1564,6 +1578,7 @@ mod tests {
         assert!(rendered.contains("color_space=bt709\n"));
         assert!(rendered.contains("color_transfer=bt709\n"));
         assert!(rendered.contains("color_primaries=bt709\n"));
+        assert!(rendered.contains("r_frame_rate=30/1\n"));
         assert!(rendered.contains("avg_frame_rate=30/1\n"));
         assert!(rendered.contains("[FORMAT]\n"));
         assert!(rendered.contains("format_name=mov,mp4,m4a,3gp,3g2,mj2\n"));
@@ -1680,6 +1695,7 @@ mod tests {
         assert!(stdout.contains("\"height\": 1080"));
         assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
         assert!(stdout.contains(&format!("\"extradata_size\": {expected_extradata_size}")));
+        assert!(stdout.contains("\"r_frame_rate\": \"30/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
         assert!(!stdout.contains("\"format\""));
     }
@@ -1733,6 +1749,7 @@ mod tests {
         assert!(stdout.contains("\"color_transfer\": \"iec61966-2-1\""));
         assert!(stdout.contains("\"color_primaries\": \"bt709\""));
         assert!(stdout.contains("\"level\": 31"));
+        assert!(stdout.contains("\"r_frame_rate\": \"30/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
     }
 
@@ -1894,6 +1911,7 @@ mod tests {
         assert!(stdout.contains("\"height\": 1"));
         assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
         assert!(stdout.contains("\"time_base\": \"1/25\""));
+        assert!(stdout.contains("\"r_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"duration_ts\": 1"));
         assert!(!stdout.contains("\"format\""));
@@ -1991,6 +2009,7 @@ mod tests {
                 time_base_num: 1,
                 time_base_den: 90_000,
                 time_base: "1/90000".to_string(),
+                r_frame_rate: Some("30/1".to_string()),
                 avg_frame_rate: Some("30/1".to_string()),
                 duration_ts: Some(450_000),
                 duration: Some("5.000000".to_string()),
