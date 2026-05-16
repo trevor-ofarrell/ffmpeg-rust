@@ -69,6 +69,7 @@ pub struct MovCodecParameters {
     codec_tag: String,
     data_reference_index: u16,
     extra_data: Vec<u8>,
+    details: MovSampleEntryDetails,
 }
 
 impl MovCodecParameters {
@@ -82,6 +83,47 @@ impl MovCodecParameters {
 
     pub fn extra_data(&self) -> &[u8] {
         &self.extra_data
+    }
+
+    pub fn details(&self) -> &MovSampleEntryDetails {
+        &self.details
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MovSampleEntryDetails {
+    Generic,
+    Video(MovVideoSampleEntry),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovVideoSampleEntry {
+    width: u16,
+    height: u16,
+    frame_count: u16,
+    compressor_name: String,
+    depth: u16,
+}
+
+impl MovVideoSampleEntry {
+    pub fn width(&self) -> u16 {
+        self.width
+    }
+
+    pub fn height(&self) -> u16 {
+        self.height
+    }
+
+    pub fn frame_count(&self) -> u16 {
+        self.frame_count
+    }
+
+    pub fn compressor_name(&self) -> &str {
+        &self.compressor_name
+    }
+
+    pub fn depth(&self) -> u16 {
+        self.depth
     }
 }
 
@@ -523,11 +565,52 @@ fn parse_stsd(payload: &[u8]) -> AvResult<MovCodecParameters> {
             "MOV/MP4 stsd contains trailing sample entry data",
         ));
     }
+    let codec_tag = fourcc_to_string(entry_type);
+    let details = parse_sample_entry_details(&codec_tag, &extra_data)?;
     Ok(MovCodecParameters {
-        codec_tag: fourcc_to_string(entry_type),
+        codec_tag,
         data_reference_index,
         extra_data,
+        details,
     })
+}
+
+fn parse_sample_entry_details(
+    codec_tag: &str,
+    extra_data: &[u8],
+) -> AvResult<MovSampleEntryDetails> {
+    match codec_tag.as_bytes() {
+        b"avc1" | b"hvc1" | b"hev1" | b"mp4v" => {
+            parse_visual_sample_entry(extra_data).map(MovSampleEntryDetails::Video)
+        }
+        _ => Ok(MovSampleEntryDetails::Generic),
+    }
+}
+
+fn parse_visual_sample_entry(extra_data: &[u8]) -> AvResult<MovVideoSampleEntry> {
+    let mut reader = ByteReader::new(extra_data);
+    ensure_remaining(&reader, 70, "MOV/MP4 VisualSampleEntry")?;
+    reader.skip(16)?;
+    let width = reader.read_u16_be()?;
+    let height = reader.read_u16_be()?;
+    reader.skip(12)?;
+    let frame_count = reader.read_u16_be()?;
+    let compressor_name = parse_pascal_string_31(reader.read_exact(32)?);
+    let depth = reader.read_u16_be()?;
+    reader.skip(2)?;
+    Ok(MovVideoSampleEntry {
+        width,
+        height,
+        frame_count,
+        compressor_name,
+        depth,
+    })
+}
+
+fn parse_pascal_string_31(input: &[u8]) -> String {
+    let declared_len = input.first().copied().unwrap_or(0) as usize;
+    let len = declared_len.min(31).min(input.len().saturating_sub(1));
+    String::from_utf8_lossy(&input[1..1 + len]).into_owned()
 }
 
 fn parse_stts(payload: &[u8]) -> AvResult<Vec<u32>> {
@@ -1384,14 +1467,36 @@ mod tests {
 
     #[test]
     fn parses_sample_description_codec_parameters() {
-        let bytes = mp4_with_sample_description_extra_data(b"\x01\x64\x00\x1f");
+        let bytes = mp4_with_sample_description_entry(b"zzzz", 2, b"\x01\x64\x00\x1f");
         let demuxer = MovDemuxer::open(&bytes).unwrap();
         let track = &demuxer.info().tracks()[0];
         let codec_parameters = track.codec_parameters().unwrap();
-        assert_eq!(track.codec_tag(), Some("avc1"));
-        assert_eq!(codec_parameters.codec_tag(), "avc1");
+        assert_eq!(track.codec_tag(), Some("zzzz"));
+        assert_eq!(codec_parameters.codec_tag(), "zzzz");
         assert_eq!(codec_parameters.data_reference_index(), 2);
         assert_eq!(codec_parameters.extra_data(), b"\x01\x64\x00\x1f");
+        assert_eq!(codec_parameters.details(), &MovSampleEntryDetails::Generic);
+    }
+
+    #[test]
+    fn parses_visual_sample_entry_codec_parameters() {
+        let child_box = box_(*b"avcC", b"\x01\x64\x00\x1f");
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &child_box);
+        let bytes = mp4_with_sample_description_entry(b"avc1", 2, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "avc1");
+        assert_eq!(codec_parameters.data_reference_index(), 2);
+        assert_eq!(codec_parameters.extra_data(), extra_data.as_slice());
+        let MovSampleEntryDetails::Video(video) = codec_parameters.details() else {
+            panic!("expected visual sample entry details");
+        };
+        assert_eq!(video.width(), 640);
+        assert_eq!(video.height(), 360);
+        assert_eq!(video.frame_count(), 1);
+        assert_eq!(video.compressor_name(), "Rust AVC");
+        assert_eq!(video.depth(), 24);
     }
 
     #[test]
@@ -1918,11 +2023,15 @@ mod tests {
         )
     }
 
-    fn mp4_with_sample_description_extra_data(extra_data: &[u8]) -> Vec<u8> {
+    fn mp4_with_sample_description_entry(
+        codec_tag: &[u8; 4],
+        data_reference_index: u16,
+        extra_data: &[u8],
+    ) -> Vec<u8> {
         let ftyp = ftyp_box();
         let sample_sizes = [2];
         let durations = [1_000];
-        let sample_description = stsd_box_with_entry(b"avc1", 2, extra_data);
+        let sample_description = stsd_box_with_entry(codec_tag, data_reference_index, extra_data);
         let placeholder_moov_payload = moov_v0_with_custom_stsd_payload(
             0,
             &sample_sizes,
@@ -2333,6 +2442,34 @@ mod tests {
         sample_entry.extend_from_slice(&data_reference_index.to_be_bytes());
         sample_entry.extend_from_slice(extra_data);
         sample_entry
+    }
+
+    fn visual_sample_entry_extra_data(
+        width: u16,
+        height: u16,
+        compressor_name: &str,
+        depth: u16,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&[0; 16]);
+        out.extend_from_slice(&width.to_be_bytes());
+        out.extend_from_slice(&height.to_be_bytes());
+        out.extend_from_slice(&0x0048_0000_u32.to_be_bytes());
+        out.extend_from_slice(&0x0048_0000_u32.to_be_bytes());
+        out.extend_from_slice(&0_u32.to_be_bytes());
+        out.extend_from_slice(&1_u16.to_be_bytes());
+
+        let name_bytes = compressor_name.as_bytes();
+        let name_len = name_bytes.len().min(31);
+        out.push(u8::try_from(name_len).unwrap());
+        out.extend_from_slice(&name_bytes[..name_len]);
+        out.resize(out.len() + (31 - name_len), 0);
+
+        out.extend_from_slice(&depth.to_be_bytes());
+        out.extend_from_slice(&u16::MAX.to_be_bytes());
+        out.extend_from_slice(child_boxes);
+        out
     }
 
     fn stts_box(durations: &[u32]) -> Vec<u8> {
