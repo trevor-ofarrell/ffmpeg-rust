@@ -436,7 +436,26 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Stream reports include initial codec_name, codec_type, codec_tag_string, numeric codec_tag, and avg_frame_rate fields for the constrained video stream. Output is deterministic but not byte-identical to upstream and has no oracle differential/FATE coverage yet."
+notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Stream reports include initial codec_name, codec_type, codec_tag_string, numeric codec_tag, bits_per_raw_sample from BITMAPINFOHEADER bit count, and avg_frame_rate fields for the constrained video stream. Output is deterministic but not byte-identical to upstream and has no oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-ffprobe-avi-bits-per-raw-sample"
+kind = "cli"
+ffmpeg_name = "ffprobe AVI bits_per_raw_sample field"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_streams -of json <input.avi>"
+rust_command = "cargo test -p fftools ffprobe"
+unit_tests = [
+  "ffprobe::tests::renders_default_report_sections",
+  "ffprobe::tests::outputs_avi_stream_json",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffprobe-rs stream reports now carry bits_per_raw_sample for constrained AVI video streams by rendering the parsed BITMAPINFOHEADER bit_count from the Rust AviDemuxer. The current AVI fixture proves a 24-bit DIB stream as bits_per_raw_sample 24 in JSON output. No pinned-oracle differential/FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]

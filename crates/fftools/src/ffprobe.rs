@@ -106,6 +106,7 @@ pub struct FfprobeStreamReport {
     codec_tag: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
+    bits_per_raw_sample: Option<u16>,
     sample_aspect_ratio: Option<String>,
     display_aspect_ratio: Option<String>,
     color_range: Option<String>,
@@ -161,6 +162,10 @@ impl FfprobeStreamReport {
 
     pub fn height(&self) -> Option<u32> {
         self.height
+    }
+
+    pub fn bits_per_raw_sample(&self) -> Option<u16> {
+        self.bits_per_raw_sample
     }
 
     pub fn sample_aspect_ratio(&self) -> Option<&str> {
@@ -585,6 +590,7 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                 codec_tag_string,
                 width: track.width(),
                 height: track.height(),
+                bits_per_raw_sample: None,
                 sample_aspect_ratio: video_sample_entry.and_then(mov_sample_aspect_ratio),
                 display_aspect_ratio: mov_display_aspect_ratio(
                     track.width(),
@@ -665,6 +671,7 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
                 codec_tag_string: Some(stream.handler().to_owned()),
                 width: Some(stream.width()),
                 height: Some(stream.height()),
+                bits_per_raw_sample: Some(stream.bit_count()),
                 sample_aspect_ratio: None,
                 display_aspect_ratio: None,
                 color_range: None,
@@ -1052,6 +1059,9 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             if let Some(height) = stream.height {
                 out.push_str(&format!("height={height}\n"));
             }
+            if let Some(bits_per_raw_sample) = stream.bits_per_raw_sample {
+                out.push_str(&format!("bits_per_raw_sample={bits_per_raw_sample}\n"));
+            }
             if let Some(sample_aspect_ratio) = &stream.sample_aspect_ratio {
                 out.push_str(&format!("sample_aspect_ratio={sample_aspect_ratio}\n"));
             }
@@ -1179,6 +1189,9 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     }
     if let Some(height) = stream.height {
         fields.push(json_number("height", height));
+    }
+    if let Some(bits_per_raw_sample) = stream.bits_per_raw_sample {
+        fields.push(json_number("bits_per_raw_sample", bits_per_raw_sample));
     }
     if let Some(sample_aspect_ratio) = &stream.sample_aspect_ratio {
         fields.push(json_string("sample_aspect_ratio", sample_aspect_ratio));
@@ -1435,6 +1448,7 @@ mod tests {
         assert!(rendered.contains("codec_type=video\n"));
         assert!(rendered.contains("codec_tag_string=raw \n"));
         assert!(rendered.contains("codec_tag=0x20776172\n"));
+        assert!(rendered.contains("bits_per_raw_sample=24\n"));
         assert!(rendered.contains("sample_aspect_ratio=1:1\n"));
         assert!(rendered.contains("display_aspect_ratio=16:9\n"));
         assert!(rendered.contains("color_range=tv\n"));
@@ -1754,6 +1768,7 @@ mod tests {
         assert!(stdout.contains("\"codec_tag\": \"0x20424944\""));
         assert!(stdout.contains("\"width\": 2"));
         assert!(stdout.contains("\"height\": 1"));
+        assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
         assert!(stdout.contains("\"time_base\": \"1/25\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"duration_ts\": 1"));
@@ -1838,6 +1853,7 @@ mod tests {
                 codec_tag: Some("0x20776172".to_string()),
                 width: Some(1920),
                 height: Some(1080),
+                bits_per_raw_sample: Some(24),
                 sample_aspect_ratio: Some("1:1".to_string()),
                 display_aspect_ratio: Some("16:9".to_string()),
                 color_range: Some("tv".to_string()),
