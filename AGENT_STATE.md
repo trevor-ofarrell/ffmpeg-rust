@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-image2-muxer` is implemented and verified for a narrow single-image and numbered-sequence output path. It maps stream-0 packet payloads to generated `Image2Entry` values, validates non-empty payloads, formats `%d`/`%0Nd` paths, rejects duplicate single-image writes, and round-trips through the existing demuxer. The next priority component is `avformat-avi-demuxer`.
+`avformat-avi-demuxer` is implemented and verified for a constrained video-only RIFF AVI path. It parses `avih`, `strh`, and `strf` metadata, extracts simple `movi` video packets including `rec ` lists, validates chunk bounds, rejects unsupported streams, and emits per-stream packet timing. The next priority component is `avformat-avi-muxer`.
 
 ## Last Successful Commands
 
@@ -89,6 +89,14 @@
 - `cargo test --workspace --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --all -- --check`
+- `cargo fmt --all`
+- `cargo test -p avformat avi`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test -p avformat avi::tests`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
 
 ## Last Failing Commands
 
@@ -99,13 +107,13 @@
 
 ## Current Focus Component
 
-`avformat-avi-demuxer` is the next highest-priority incomplete component after the initial simple raw/PCM/WAV/hash/image2/yuv4mpegpipe surface.
+`avformat-avi-muxer` is the next highest-priority incomplete component after the initial constrained AVI demuxer.
 
 ## Next 3 Concrete Actions
 
-1. Add the first small AVI demuxer parser for a constrained RIFF AVI fixture.
-2. Add unit tests for RIFF/AVI headers, stream metadata extraction, movi packet extraction, invalid chunk bounds, and unsupported cases.
-3. Update the ledger, docs, and state after the AVI demuxer passes focused and workspace checks.
+1. Add the first small AVI muxer for the same constrained video-only RIFF AVI surface.
+2. Add unit tests for avih/strh/strf rendering, movi chunk output, demux round-trip, invalid packets, and finalization behavior.
+3. Update the ledger, docs, and state after the AVI muxer passes focused and workspace checks.
 
 ## Known Blockers
 
@@ -115,4 +123,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: add `avformat-image2-muxer` for single-image and numbered-sequence entry generation with stream validation, non-empty packet validation, path formatting, duplicate single-output rejection, round-trip, and finalization tests.
+Latest slice: add `avformat-avi-demuxer` for constrained video-only RIFF AVI parsing with metadata extraction, simple movi packet extraction, rec-list traversal, chunk-bound validation, unsupported-stream rejection, and packet timing tests.

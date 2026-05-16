@@ -36,6 +36,8 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `WavMuxer` implements the matching initial muxer path for canonical RIFF/WAVE PCM s16le output. It validates stream parameters, stream-0 packet ownership, whole sample-frame packet payloads, and classic RIFF size limits before rendering a WAV byte stream.
 
+`AviDemuxer` implements an initial constrained RIFF AVI parser for video-only files. It parses `avih`, `strh`, and `strf` metadata, walks simple `movi` chunks including `rec ` lists, and emits packet payloads with per-stream PTS/DTS counters.
+
 `Yuv4MpegDemuxer` implements an initial yuv4mpegpipe parser for progressive 4:2:0 `C420jpeg` streams. It parses the stream header, validates dimensions, frame rate, interlace, chroma, and frame headers, then emits one packet per raw frame with monotonically increasing PTS.
 
 `Yuv4MpegMuxer` implements the matching initial yuv4mpegpipe muxer path. It writes a canonical progressive `C420jpeg` stream header and one `FRAME` record per exact-size yuv420p stream-0 packet.

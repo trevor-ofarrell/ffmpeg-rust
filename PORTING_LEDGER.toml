@@ -736,13 +736,35 @@ id = "avformat-avi-demuxer"
 kind = "demuxer"
 ffmpeg_name = "avi"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 4
 oracle_command = "ffmpeg -i <input.avi> -f framecrc -"
+rust_command = "cargo test -p avformat avi"
+unit_tests = [
+  "avi::tests::parses_video_metadata_and_movi_packets",
+  "avi::tests::skips_unknown_chunks_and_reads_rec_lists",
+  "avi::tests::rejects_bad_riff_headers_and_chunk_bounds",
+  "avi::tests::rejects_missing_required_headers_and_stream_mismatch",
+  "avi::tests::rejects_unsupported_streams_and_unknown_packet_streams",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, and packet timing side data. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, CLI wiring, differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-avi-muxer"
+kind = "muxer"
+ffmpeg_name = "avi"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 4
+oracle_command = "ffmpeg -i <input> -f avi <output.avi>"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next container target after the initial simple raw/PCM/WAV/hash/image2/yuv4mpegpipe surface."
+notes = "Next container target to pair with the initial constrained AVI demuxer."
 blocked_reason = ""
