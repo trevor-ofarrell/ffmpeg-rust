@@ -590,7 +590,7 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                 codec_tag_string,
                 width: track.width(),
                 height: track.height(),
-                bits_per_raw_sample: None,
+                bits_per_raw_sample: mov_bits_per_raw_sample(track.codec_tag(), video_sample_entry),
                 sample_aspect_ratio: video_sample_entry.and_then(mov_sample_aspect_ratio),
                 display_aspect_ratio: mov_display_aspect_ratio(
                     track.width(),
@@ -844,6 +844,16 @@ fn mov_codec_level(video: &MovVideoSampleEntry) -> Option<u32> {
     }
     if let Some(configuration) = video.hevc_decoder_configuration() {
         return Some(u32::from(configuration.general_level_idc()));
+    }
+    None
+}
+
+fn mov_bits_per_raw_sample(
+    codec_tag: Option<&str>,
+    video: Option<&MovVideoSampleEntry>,
+) -> Option<u16> {
+    if codec_tag == Some("raw ") {
+        return Some(video?.depth());
     }
     None
 }
@@ -1540,9 +1550,10 @@ mod tests {
 
     #[test]
     fn outputs_mov_stream_json() {
+        let stsd = visual_stsd_box(*b"raw ", 1_920, 1_080, &[]);
         let path = write_temp_mov(
             "show-streams",
-            &sampled_mov_file(&[b"abc".as_slice()], &[3_000]),
+            &sampled_mov_file_with_stsd(&[b"abc".as_slice()], &[3_000], 1_920, 1_080, &stsd),
         );
         let path_arg = path.to_string_lossy().into_owned();
 
@@ -1565,6 +1576,7 @@ mod tests {
         assert!(stdout.contains("\"codec_tag\": \"0x20776172\""));
         assert!(stdout.contains("\"width\": 1920"));
         assert!(stdout.contains("\"height\": 1080"));
+        assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
         assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
         assert!(!stdout.contains("\"format\""));
     }

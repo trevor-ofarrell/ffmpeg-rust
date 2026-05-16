@@ -1421,6 +1421,9 @@ fn parse_sample_entry_details(
         b"avc1" | b"hvc1" | b"hev1" | b"mp4v" => parse_visual_sample_entry(extra_data)
             .map(Box::new)
             .map(MovSampleEntryDetails::Video),
+        b"raw " if extra_data.len() >= 70 => parse_visual_sample_entry(extra_data)
+            .map(Box::new)
+            .map(MovSampleEntryDetails::Video),
         _ => Ok(MovSampleEntryDetails::Generic),
     }
 }
@@ -3007,6 +3010,25 @@ mod tests {
         assert_eq!(configuration.picture_parameter_sets(), &[b"\x68".to_vec()]);
         assert!(configuration.extension_data().is_empty());
         assert_eq!(video.hevc_decoder_configuration_record(), None);
+    }
+
+    #[test]
+    fn parses_raw_visual_sample_entry_codec_parameters() {
+        let extra_data = visual_sample_entry_extra_data(320, 240, "Rust Raw", 16, &[]);
+        let bytes = mp4_with_sample_description_entry(b"raw ", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "raw ");
+        assert_eq!(codec_parameters.extra_data(), extra_data.as_slice());
+        let MovSampleEntryDetails::Video(video) = codec_parameters.details() else {
+            panic!("expected raw visual sample entry details");
+        };
+        assert_eq!(video.width(), 320);
+        assert_eq!(video.height(), 240);
+        assert_eq!(video.compressor_name(), "Rust Raw");
+        assert_eq!(video.depth(), 16);
+        assert!(video.child_boxes().is_empty());
     }
 
     #[test]
