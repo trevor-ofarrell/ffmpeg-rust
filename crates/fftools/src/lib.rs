@@ -2,10 +2,12 @@
 
 #![forbid(unsafe_code)]
 
+pub mod ffmpeg;
 pub mod ffprobe;
 pub mod io_plan;
 pub mod option_parser;
 
+pub use ffmpeg::{ffmpeg_output, run_ffmpeg_tool, FfmpegError, FfmpegOutput};
 pub use ffprobe::{
     ffprobe_output, probe_local_file, run_ffprobe_tool, FfprobeError, FfprobeReport,
 };

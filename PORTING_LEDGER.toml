@@ -417,6 +417,29 @@ notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffmpeg-mov-framecrc-null"
+kind = "cli"
+ffmpeg_name = "ffmpeg MOV/MP4 to framecrc/null"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -i <input.mp4> -f framecrc -; ffmpeg -i <input.mp4> -f null -"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::ffmpeg_output_prints_version_banner",
+  "ffmpeg::tests::runs_mov_to_framecrc_stdout",
+  "ffmpeg::tests::runs_mov_to_null_without_media_stdout",
+  "ffmpeg::tests::rejects_unsupported_output_muxer",
+  "ffmpeg::tests::rejects_non_file_input_and_non_stdout_output",
+  "ffmpeg::tests::rejects_unmatched_local_input_format",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial ffmpeg-rs command execution path supports exactly one local seekable MOV/MP4 input and one stdout pipe output with explicit -f null or -f framecrc. It uses the Rust MOV probe/demuxer and Rust null/framecrc muxers, rejects unsupported inputs, output endpoints, muxers, and options, and has in-process unit coverage because process-spawn integration tests are blocked by Windows Application Control. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
 id = "avformat-avio"
 kind = "api"
 ffmpeg_name = "AVIO-like I/O"
