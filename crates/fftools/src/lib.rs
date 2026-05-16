@@ -2,6 +2,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod option_parser;
+
+pub use option_parser::{parse_ffmpeg_args, CliFile, CliOption, CliParseError, ParsedCommand};
+
 pub const TARGET_FFMPEG_VERSION: &str = "8.1.1";
 pub const TARGET_RELEASE_NAME: &str = "Hoare";
 

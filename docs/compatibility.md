@@ -11,6 +11,7 @@
 
 - `ffmpeg-rs -version` prints a version banner naming the pinned target and ABI versions.
 - `ffprobe-rs -version` prints a version banner naming the pinned target and ABI versions.
+- `fftools` has an initial option parser for a small known FFmpeg option set, preserving option ordering for input/output grouping.
 - `avutil` has initial typed errors, rational normalization/comparison, timestamp rescaling, bounded byte I/O helpers, MSB-first bit reader/writer helpers, metadata dictionary helpers, AVOption-like descriptor/value validation, Adler-32 and IEEE CRC-32 checksum helpers, packet timestamp/flag/side-data skeletons, frame shape validation, and an in-memory logging abstraction.
 - `oracle inventory` can execute a pinned FFmpeg binary and capture the required inventory command outputs.
 
@@ -20,7 +21,8 @@ All media parsing, decoding, encoding, muxing, demuxing, filtering, playback, pr
 
 ## Known Behavior Deltas
 
-- CLI support is limited to `-version`; most FFmpeg/ffprobe options return unsupported-command errors.
+- CLI execution support is limited to `-version`; most FFmpeg/ffprobe options return unsupported-command errors.
+- The option parser intentionally rejects unknown options and only covers a small initial compatibility set.
 - The version banner is compatibility-oriented but not byte-identical to upstream FFmpeg.
 - No inventory snapshot has been generated because no pinned FFmpeg oracle binary exists in this workspace yet.
 - FATE components are listed from the ledger, but runnable FATE mappings have not been implemented.

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avutil-hash` is implemented and verified with Adler-32 and IEEE CRC-32 one-shot and streaming helpers plus known-vector tests. The next priority component is `fftools-option-parser`.
+`fftools-option-parser` is implemented and verified with ordered grouping for a small known FFmpeg option set across global options, `-i` inputs, and output files. The next priority component is `fftools-hide-banner`.
 
 ## Last Successful Commands
 
@@ -25,6 +25,7 @@
 - `cargo test -p avutil dict`
 - `cargo test -p avutil options`
 - `cargo test -p avutil hash`
+- `cargo test -p fftools option_parser`
 
 ## Last Failing Commands
 
@@ -34,13 +35,13 @@
 
 ## Current Focus Component
 
-`fftools-option-parser` is the next highest-priority incomplete component after `avutil-hash`.
+`fftools-hide-banner` is the next highest-priority incomplete component after `fftools-option-parser`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avutil hash`.
+1. Run `cargo test -p fftools option_parser`.
 2. Run formatting, workspace tests, and clippy.
-3. Add the first `fftools` option parser primitive for FFmpeg-style option grouping/order.
+3. Wire `-hide_banner` behavior into `ffmpeg-rs`/`ffprobe-rs` version output handling.
 
 ## Known Blockers
 
@@ -50,4 +51,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avutil-hash` Adler-32 and IEEE CRC-32 helpers.
+Latest committed slice: add `fftools-option-parser` for initial FFmpeg-style option grouping.

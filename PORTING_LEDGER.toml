@@ -310,13 +310,36 @@ id = "fftools-option-parser"
 kind = "cli"
 ffmpeg_name = "ffmpeg option parser"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 2
 oracle_command = "ffmpeg -h; ffprobe -h"
+rust_command = "cargo test -p fftools option_parser"
+unit_tests = [
+  "option_parser::tests::groups_input_and_output_options_by_order",
+  "option_parser::tests::handles_multiple_inputs_and_outputs",
+  "option_parser::tests::global_options_do_not_consume_pending_file_options",
+  "option_parser::tests::treats_single_dash_as_output_url",
+  "option_parser::tests::rejects_missing_values_and_dangling_file_options",
+  "option_parser::tests::rejects_unknown_options",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial parser groups a small known option set into global options, next input, or next output according to FFmpeg option ordering. It deliberately rejects unknown options and is not yet wired into command execution."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-hide-banner"
+kind = "cli"
+ffmpeg_name = "ffmpeg/ffprobe -hide_banner"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 2
+oracle_command = "ffmpeg -hide_banner -version; ffprobe -hide_banner -version"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next CLI compatibility primitive after shared avutil infrastructure."
+notes = "Next CLI behavior slice after option parsing."
 blocked_reason = ""
