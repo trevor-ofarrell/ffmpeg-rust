@@ -18,7 +18,7 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 ## Type Model
 
-Early shared types intentionally encode invariants at construction boundaries. `Rational` rejects zero denominators and normalizes signs. `ByteReader` bounds-checks every read and returns typed EOF errors without advancing past failed reads. `ByteWriter` validates constrained widths such as 24-bit integer fields. `BitReader` performs bounded MSB-first bit reads, peeks, skips, and byte alignment without advancing on failed reads. `Packet` represents missing PTS/DTS with `Option<i64>` over an internal `AV_NOPTS_VALUE`. `Frame` currently models typed audio/video payload shells with explicit shape validation.
+Early shared types intentionally encode invariants at construction boundaries. `Rational` rejects zero denominators and normalizes signs. `ByteReader` bounds-checks every read and returns typed EOF errors without advancing past failed reads. `ByteWriter` validates constrained widths such as 24-bit integer fields. `BitReader` performs bounded MSB-first bit reads, peeks, skips, and byte alignment without advancing on failed reads. `BitWriter` writes MSB-first fields, validates requested widths, and zero-pads byte alignment explicitly. `Packet` represents missing PTS/DTS with `Option<i64>` over an internal `AV_NOPTS_VALUE`. `Frame` currently models typed audio/video payload shells with explicit shape validation.
 
 ## CLI Compatibility Model
 

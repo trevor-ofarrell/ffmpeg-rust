@@ -218,6 +218,30 @@ id = "avutil-bitwriter"
 kind = "utility"
 ffmpeg_name = "PutBitContext"
 upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = ""
+rust_command = "cargo test -p avutil bitwriter"
+unit_tests = [
+  "bitwriter::tests::writes_msb_first_bits_across_byte_boundaries",
+  "bitwriter::tests::round_trips_with_bitreader",
+  "bitwriter::tests::byte_align_zero_pads_partial_byte",
+  "bitwriter::tests::zero_bit_zero_value_write_is_noop",
+  "bitwriter::tests::rejects_values_that_do_not_fit_width_without_advancing",
+  "bitwriter::tests::rejects_nonzero_zero_width_write",
+  "bitwriter::tests::rejects_widths_wider_than_u64",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Bounded MSB-first bit writer implemented. Deeper PutBitContext compatibility vectors and fuzzing are pending, so this is not marked complete."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-dict"
+kind = "utility"
+ffmpeg_name = "AVDictionary"
+upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "not_started"
 priority = 1
 oracle_command = ""
@@ -226,5 +250,5 @@ unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = ""
+notes = "Next metadata primitive after bit I/O."
 blocked_reason = ""

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avutil-bitreader` is implemented and verified with bounded MSB-first reads, peeks, skips, byte alignment, and invalid-input tests. The next priority primitive is `avutil-bitwriter`.
+`avutil-bitwriter` is implemented and verified with bounded MSB-first writes, explicit zero byte alignment, round-trip coverage through `BitReader`, and invalid-width tests. The next priority primitive is `avutil-dict`.
 
 ## Last Successful Commands
 
@@ -21,6 +21,7 @@
 - `cargo test --workspace --all-features`
 - `cargo test -p avutil bitreader`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test -p avutil bitwriter`
 
 ## Last Failing Commands
 
@@ -30,13 +31,13 @@
 
 ## Current Focus Component
 
-`avutil-bitwriter` is the next highest-priority incomplete component after `avutil-bitreader`.
+`avutil-dict` is the next highest-priority incomplete component after `avutil-bitwriter`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avutil bitreader`.
+1. Run `cargo test -p avutil bitwriter`.
 2. Run formatting, workspace tests, and clippy.
-3. Implement `avutil-bitwriter` with byte flush and invalid-width tests.
+3. Add `avutil-dict` metadata dictionary semantics with case-sensitive and case-insensitive lookup tests.
 
 ## Known Blockers
 
@@ -46,4 +47,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avutil-bitreader` bounded MSB-first reads.
+Latest committed slice: add `avutil-bitwriter` bounded MSB-first writes.
