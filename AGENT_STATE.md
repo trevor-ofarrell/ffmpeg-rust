@@ -2,12 +2,19 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, extracts common movie-level and track-level `udta/meta/ilst` metadata values from `data` atoms for UTF-8 and UTF-16 text fields, classic `gnre` genre indexes, one-byte integer/boolean metadata atoms, iTunes-style freeform `----` atoms, `covr` cover-art payloads, and track/disc number pairs, registers a hand-written MOV/MP4 `ftyp`/extension/MIME probe descriptor, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries including structured `avcC` version/profile/level/NAL-length-size/SPS/PPS data, structured `hvcC` profile/timing/NAL-length-size/NAL-array data, `pasp` pixel aspect ratio, and `nclx`/`nclc`/`rICC`/`prof` `colr` color information, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, malformed VisualSampleEntry child boxes, malformed metadata atoms, malformed text encodings, malformed integer/boolean metadata payloads, malformed freeform metadata payloads, malformed cover-art payloads, malformed `avcC`/`hvcC`/`pasp`/`colr` payloads, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data. `ffprobe-rs` now has initial local MOV/MP4 and constrained AVI `-show_format`/`-show_streams`/`-show_packets` execution paths that use the Rust MOV probe descriptor or RIFF/AVI detection, can force those Rust demuxer paths with `-f avi`/`-f mov`/`-f mp4`, open `MovDemuxer` or `AviDemuxer`, and render default or JSON summaries. `ffmpeg-rs` now has constrained local MOV/MP4, AVI, PCM s16le RIFF/WAVE, raw `pcm_s16le`, explicit `rawvideo`, yuv4mpegpipe, and explicit image2 single-file/numbered-sequence command execution paths for stdout `-f null -` and `-f framecrc -`, plus raw `pcm_s16le` packet-copy to local `-f s16le` and `-f wav` files, rawvideo packet-copy to local `-f rawvideo` files, raw yuv420p packet-copy to local `-f yuv4mpegpipe` files, raw rgb24 packet-copy to local `-f avi` files, and image2 packet-copy to local `-f image2` file or numbered-pattern outputs with image2 `-start_number` on input and output groups, using Rust demuxers and Rust muxers while rejecting unsupported inputs, outputs, muxers, missing raw/image stream parameters, malformed AVI headers, malformed raw PCM packet boundaries, malformed rawvideo frame boundaries, non-yuv420p yuv4mpegpipe file outputs, non-rgb24 AVI file outputs, malformed YUV4MPEG2 stream/frame boundaries, empty image2 payloads, non-contiguous image2 sequences, and file-output overwrites.
+`avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, and `mdia/mdhd` metadata, extracts common movie-level and track-level `udta/meta/ilst` metadata values from `data` atoms for UTF-8 and UTF-16 text fields, classic `gnre` genre indexes, one-byte integer/boolean metadata atoms, iTunes-style freeform `----` atoms, `covr` cover-art payloads, and track/disc number pairs, registers a hand-written MOV/MP4 `ftyp`/extension/MIME probe descriptor, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries including structured `avcC` version/profile/level/NAL-length-size/SPS/PPS data, structured `hvcC` profile/timing/NAL-length-size/NAL-array data, `pasp` pixel aspect ratio, and `nclx`/`nclc`/`rICC`/`prof` `colr` color information, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, malformed VisualSampleEntry child boxes, malformed metadata atoms, malformed text encodings, malformed integer/boolean metadata payloads, malformed freeform metadata payloads, malformed cover-art payloads, malformed `avcC`/`hvcC`/`pasp`/`colr` payloads, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data. `avformat-avi-probe` now has a hand-written descriptor for the offset-8 RIFF `AVI ` form tag, `.avi` extension, and common AVI MIME types. `ffprobe-rs` now has initial local MOV/MP4 and constrained AVI `-show_format`/`-show_streams`/`-show_packets` execution paths that register AVI and MOV descriptors in the shared Rust `ProbeRegistry`, can force those Rust demuxer paths with `-f avi`/`-f mov`/`-f mp4`, open `AviDemuxer` or `MovDemuxer`, and render default or JSON summaries. `ffmpeg-rs` now has constrained local MOV/MP4, AVI, PCM s16le RIFF/WAVE, raw `pcm_s16le`, explicit `rawvideo`, yuv4mpegpipe, and explicit image2 single-file/numbered-sequence command execution paths for stdout `-f null -` and `-f framecrc -`, plus raw `pcm_s16le` packet-copy to local `-f s16le` and `-f wav` files, rawvideo packet-copy to local `-f rawvideo` files, raw yuv420p packet-copy to local `-f yuv4mpegpipe` files, raw rgb24 packet-copy to local `-f avi` files, and image2 packet-copy to local `-f image2` file or numbered-pattern outputs with image2 `-start_number` on input and output groups, using Rust demuxers and Rust muxers while rejecting unsupported inputs, outputs, muxers, missing raw/image stream parameters, malformed AVI headers, malformed raw PCM packet boundaries, malformed rawvideo frame boundaries, non-yuv420p yuv4mpegpipe file outputs, non-rgb24 AVI file outputs, malformed YUV4MPEG2 stream/frame boundaries, empty image2 payloads, non-contiguous image2 sequences, and file-output overwrites.
 
 ## Last Successful Commands
 
 - `cargo fmt --all`
+- `cargo test -p avformat avi::tests`
+- `cargo test -p avformat probe`
 - `cargo test -p fftools ffprobe`
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
 - `cargo test -p fftools`
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
@@ -457,11 +464,11 @@
 
 ## Current Focus Component
 
-`fftools-ffprobe-input-format-forcing` is the current focus; the latest slice wires constrained `ffprobe-rs -f avi`/`-f mov`/`-f mp4` input forcing.
+`avformat-avi-probe` is the current focus; the latest slice adds a shared AVI probe descriptor and routes `ffprobe-rs` AVI/MOV auto-detection through `ProbeRegistry`.
 
 ## Next 3 Concrete Actions
 
-1. Add broader AVI probe-table integration or improve ffprobe stream metadata fields for AVI/MOV reports.
+1. Improve ffprobe stream metadata fields for AVI/MOV reports.
 2. Add more image2 or AVI option parity such as image2 pattern type/glob handling, timestamp modes, or deeper AVI stream metadata.
 3. Add pinned-oracle differential coverage once an FFmpeg 8.1.1 oracle binary exists.
 
@@ -474,4 +481,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: wire constrained `ffprobe-rs -f avi`, `-f mov`, and `-f mp4` input forcing. Forced formats bypass extension/signature selection and route to the selected Rust demuxer, with tests for nonstandard extensions, mismatched forced input rejection, unsupported forced formats, and duplicate `-f` rejection.
+Latest slice: add a hand-written AVI probe descriptor for RIFF `AVI ` signatures, `.avi` extension, and common AVI MIME types; export it from `avformat`; and route `ffprobe-rs` auto-detection through the shared `ProbeRegistry` for both AVI and MOV/MP4. Focused tests cover the AVI descriptor, shared probe matching, and existing `ffprobe` AVI/MOV behavior.

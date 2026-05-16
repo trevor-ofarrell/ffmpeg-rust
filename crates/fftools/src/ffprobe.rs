@@ -1,7 +1,8 @@
 use avformat::{
-    register_mov_probe, AviDemuxer, AviInfo, MovDemuxer, MovInfo, ProbeRegistry, ProbeRequest,
+    register_avi_probe, register_mov_probe, AviDemuxer, AviInfo, MovDemuxer, MovInfo,
+    ProbeRegistry, ProbeRequest,
 };
-use std::{fmt, fs, path::Path};
+use std::{fmt, fs};
 
 const MOV_FORMAT_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
 const MOV_FORMAT_LONG_NAME: &str = "QuickTime / MOV";
@@ -320,25 +321,23 @@ fn probe_local_file_inner(
         };
     }
 
-    if is_avi_input(path, &bytes) {
-        return probe_avi_bytes(path, &bytes, collect_packets);
-    }
-
     let mut registry = ProbeRegistry::new();
+    register_avi_probe(&mut registry).map_err(|err| {
+        FfprobeError::invalid_data(format!("failed to register AVI probe: {err}"))
+    })?;
     register_mov_probe(&mut registry).map_err(|err| {
         FfprobeError::invalid_data(format!("failed to register MOV probe: {err}"))
     })?;
     let matched = registry
         .probe(ProbeRequest::new(&bytes).with_extension(path))
         .ok_or_else(|| FfprobeError::unsupported("unsupported input format"))?;
-    if matched.descriptor().name() != MOV_FORMAT_NAME {
-        return Err(FfprobeError::unsupported(format!(
-            "unsupported input format `{}`",
-            matched.descriptor().name()
-        )));
+    match matched.descriptor().name() {
+        AVI_FORMAT_NAME => probe_avi_bytes(path, &bytes, collect_packets),
+        MOV_FORMAT_NAME => probe_mov_bytes(path, &bytes, matched.score().get(), collect_packets),
+        name => Err(FfprobeError::unsupported(format!(
+            "unsupported input format `{name}`"
+        ))),
     }
-
-    probe_mov_bytes(path, &bytes, matched.score().get(), collect_packets)
 }
 
 fn probe_avi_bytes(
@@ -905,21 +904,6 @@ fn escape_json(value: &str) -> String {
         }
     }
     escaped
-}
-
-fn is_avi_input(path: &str, bytes: &[u8]) -> bool {
-    has_avi_signature(bytes) || path_has_extension(path, "avi")
-}
-
-fn has_avi_signature(bytes: &[u8]) -> bool {
-    bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"AVI "
-}
-
-fn path_has_extension(path: &str, expected: &str) -> bool {
-    Path::new(path)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case(expected))
 }
 
 fn rational_parts(rational: avutil::Rational) -> (u32, u32) {

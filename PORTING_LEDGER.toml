@@ -435,7 +435,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial ffprobe-rs AVI reporting detects RIFF/AVI signatures or .avi extension, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Output is deterministic but not byte-identical to upstream and has no oracle differential/FATE coverage yet."
+notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Output is deterministic but not byte-identical to upstream and has no oracle differential/FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -801,11 +801,33 @@ unit_tests = [
   "probe::tests::extension_matching_is_case_insensitive_and_path_aware",
   "probe::tests::duplicate_descriptor_names_are_rejected_case_insensitively",
   "probe::tests::no_match_returns_none_and_ties_keep_registration_order",
+  "avi::tests::registers_avi_probe_descriptor_for_signature_extension_and_mime",
+  "mov::tests::registers_mov_probe_descriptor_for_signature_extension_and_mime",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial registry/scoring primitive implemented for prefix and offset signature, MIME type, and extension matches with deterministic tie handling. MOV/MP4 has a hand-written descriptor, but the probe table is not generated from FFmpeg inventories yet."
+notes = "Initial registry/scoring primitive implemented for prefix and offset signature, MIME type, and extension matches with deterministic tie handling. AVI and MOV/MP4 have hand-written descriptors, but the probe table is not generated from FFmpeg inventories yet."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-avi-probe"
+kind = "format"
+ffmpeg_name = "avi probe"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_format <input.avi>"
+rust_command = "cargo test -p avformat avi::tests; cargo test -p avformat probe; cargo test -p fftools ffprobe"
+unit_tests = [
+  "avi::tests::registers_avi_probe_descriptor_for_signature_extension_and_mime",
+  "ffprobe::tests::opens_local_avi_file_for_show_format",
+  "ffprobe::tests::rejects_bad_avi_input",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Hand-written AVI probe descriptor matches the RIFF AVI form tag at offset 8, .avi extension, and common AVI MIME types. ffprobe-rs auto-detection now registers AVI and MOV/MP4 descriptors in the shared ProbeRegistry before routing to the Rust demuxer. No pinned-oracle differential, FATE, or fuzz coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -1144,7 +1166,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, and packet timing side data. It is wired to constrained ffmpeg-rs AVI input to stdout null/framecrc output paths and ffprobe-rs AVI format/stream/packet summaries. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, and packet timing side data. It has a hand-written ProbeRegistry descriptor for RIFF/AVI signature, .avi extension, and common AVI MIME types, and is wired to constrained ffmpeg-rs AVI input to stdout null/framecrc output paths and ffprobe-rs AVI format/stream/packet summaries. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]

@@ -1,3 +1,4 @@
+use crate::probe::{ProbeDescriptor, ProbeRegistry};
 use avutil::{AvError, AvErrorKind, AvResult, ByteReader, ByteWriter, Packet, Rational, SideData};
 
 const RIFF_ID: &[u8; 4] = b"RIFF";
@@ -11,6 +12,23 @@ const AVIH_ID: &[u8; 4] = b"avih";
 const STRH_ID: &[u8; 4] = b"strh";
 const STRF_ID: &[u8; 4] = b"strf";
 const VIDEO_STREAM_TYPE: &[u8; 4] = b"vids";
+const AVI_PROBE_NAME: &str = "avi";
+const AVI_PROBE_EXTENSIONS: &[&str] = &["avi"];
+const AVI_PROBE_MIME_TYPES: &[&str] = &["video/x-msvideo", "video/avi", "video/msvideo"];
+
+pub fn avi_probe_descriptor() -> AvResult<ProbeDescriptor> {
+    ProbeDescriptor::new_with_offset_signatures(
+        AVI_PROBE_NAME,
+        AVI_PROBE_EXTENSIONS,
+        AVI_PROBE_MIME_TYPES,
+        &[],
+        &[(8, AVI_FORM.as_slice())],
+    )
+}
+
+pub fn register_avi_probe(registry: &mut ProbeRegistry) -> AvResult<()> {
+    registry.register(avi_probe_descriptor()?)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AviMediaType {
@@ -1059,6 +1077,43 @@ mod tests {
             AviDemuxer::open(&bytes).unwrap_err().kind(),
             AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn registers_avi_probe_descriptor_for_signature_extension_and_mime() {
+        let mut registry = ProbeRegistry::new();
+        register_avi_probe(&mut registry).unwrap();
+
+        let descriptor = avi_probe_descriptor().unwrap();
+        assert_eq!(descriptor.name(), AVI_PROBE_NAME);
+        let expected_extensions = AVI_PROBE_EXTENSIONS
+            .iter()
+            .map(|extension| extension.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(descriptor.extensions(), expected_extensions.as_slice());
+
+        let bytes = avi_fixture(&[&frame_bytes(12, 0x10)]);
+        let signature_match = registry
+            .probe(crate::probe::ProbeRequest::new(&bytes).with_extension("clip.bin"))
+            .unwrap();
+        assert_eq!(signature_match.descriptor().name(), AVI_PROBE_NAME);
+        assert_eq!(signature_match.score(), crate::probe::ProbeScore::SIGNATURE);
+
+        let extension_match = registry
+            .probe(crate::probe::ProbeRequest::new(b"not avi").with_extension("clip.AVI"))
+            .unwrap();
+        assert_eq!(extension_match.descriptor().name(), AVI_PROBE_NAME);
+        assert_eq!(extension_match.score(), crate::probe::ProbeScore::EXTENSION);
+
+        let mime_match = registry
+            .probe(crate::probe::ProbeRequest::new(b"").with_mime_type("Video/X-MsVideo"))
+            .unwrap();
+        assert_eq!(mime_match.descriptor().name(), AVI_PROBE_NAME);
+        assert_eq!(mime_match.score(), crate::probe::ProbeScore::MIME_TYPE);
+
+        assert!(registry
+            .probe(crate::probe::ProbeRequest::new(b"RIFF....WAVE").with_extension("clip.bin"))
+            .is_none());
     }
 
     #[test]
