@@ -2,10 +2,10 @@ use crate::{
     build_io_plan, parse_ffmpeg_args, version_banner, CliOption, Endpoint, IoPlan, PlannedFile,
 };
 use avformat::{
-    register_mov_probe, AviMuxer, FrameCrcMuxer, Image2Demuxer, Image2Entry, Image2Muxer,
-    Image2Pattern, MovDemuxer, NullMuxer, PcmS16leDemuxer, PcmS16leMuxer, ProbeRegistry,
-    ProbeRequest, RawVideoDemuxer, RawVideoMuxer, RawVideoPixelFormat, WavDemuxer, WavMuxer,
-    Yuv4MpegDemuxer, Yuv4MpegMuxer,
+    register_mov_probe, AviDemuxer, AviMuxer, FrameCrcMuxer, Image2Demuxer, Image2Entry,
+    Image2Muxer, Image2Pattern, MovDemuxer, NullMuxer, PcmS16leDemuxer, PcmS16leMuxer,
+    ProbeRegistry, ProbeRequest, RawVideoDemuxer, RawVideoMuxer, RawVideoPixelFormat, WavDemuxer,
+    WavMuxer, Yuv4MpegDemuxer, Yuv4MpegMuxer,
 };
 use avutil::{Packet, Rational};
 use std::{fmt, fs, io::Write, path::Path};
@@ -156,6 +156,7 @@ impl OutputMuxer {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InputFormat {
+    Avi,
     Image2 {
         frame_rate: Rational,
         start_number: i64,
@@ -178,6 +179,7 @@ enum InputFormat {
 impl InputFormat {
     fn name(self) -> &'static str {
         match self {
+            Self::Avi => "AVI",
             Self::Image2 { .. } => "image2",
             Self::Mov => "MOV/MP4",
             Self::PcmS16le { .. } => "pcm_s16le",
@@ -255,6 +257,16 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
     let input_format = detect_input_format(explicit_input, input_path, &bytes)?;
 
     match input_format {
+        InputFormat::Avi => {
+            let mut demuxer = AviDemuxer::open(&bytes).map_err(|err| {
+                FfmpegError::invalid_data(format!("failed to parse AVI input: {err}"))
+            })?;
+            run_output_muxer(output_muxer, || {
+                demuxer.read_packet().map_err(|err| {
+                    FfmpegError::invalid_data(format!("failed to read AVI packet: {err}"))
+                })
+            })
+        }
         InputFormat::Image2 {
             frame_rate,
             start_number,
@@ -569,6 +581,10 @@ fn detect_input_format(
         return Ok(InputFormat::Wav);
     }
 
+    if is_avi_like(path, bytes) {
+        return Ok(InputFormat::Avi);
+    }
+
     if is_yuv4mpegpipe_like(path, bytes) {
         return Ok(InputFormat::Yuv4MpegPipe);
     }
@@ -604,6 +620,10 @@ fn explicit_input_format(input: &PlannedFile) -> Result<Option<InputFormat>, Ffm
     };
 
     match format.to_ascii_lowercase().as_str() {
+        "avi" => {
+            reject_stream_parameter_options(input, "AVI")?;
+            Ok(Some(InputFormat::Avi))
+        }
         "image2" => parse_image2_input(input).map(Some),
         "mov" | "mp4" | "m4a" | "3gp" | "3g2" | "mj2" => {
             reject_stream_parameter_options(input, "MOV/MP4")?;
@@ -861,6 +881,10 @@ fn validate_input_signature(
 ) -> Result<(), FfmpegError> {
     match format {
         InputFormat::Image2 { .. } => Ok(()),
+        InputFormat::Avi if is_avi_like(path, bytes) => Ok(()),
+        InputFormat::Avi => Err(FfmpegError::invalid_data(
+            "AVI input signature was not found",
+        )),
         InputFormat::Mov => validate_mov_probe(path, bytes),
         InputFormat::PcmS16le { .. } => Ok(()),
         InputFormat::RawVideo { .. } => Ok(()),
@@ -882,6 +906,14 @@ fn is_wav_like(path: &str, bytes: &[u8]) -> bool {
 
 fn has_wav_signature(bytes: &[u8]) -> bool {
     bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WAVE"
+}
+
+fn is_avi_like(path: &str, bytes: &[u8]) -> bool {
+    has_avi_signature(bytes) || path_has_extension(path, "avi")
+}
+
+fn has_avi_signature(bytes: &[u8]) -> bool {
+    bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"AVI "
 }
 
 fn is_yuv4mpegpipe_like(path: &str, bytes: &[u8]) -> bool {
@@ -1370,6 +1402,84 @@ mod tests {
         assert_eq!(output.byte_count(), 7);
         assert!(output.stdout().is_empty());
         assert!(output.stderr().is_empty());
+    }
+
+    #[test]
+    fn runs_avi_to_framecrc_stdout() {
+        let first = [0, 1, 2, 3, 4, 5];
+        let second = [6, 7, 8, 9, 10, 11];
+        let path = write_temp_bytes(
+            "avi-framecrc",
+            "avi",
+            &avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[&first, &second]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-hide_banner",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect("AVI command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("framecrc"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 12);
+        assert!(output.stderr().is_empty());
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=0 dts=0 duration=1 size=6"));
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=1 dts=1 duration=1 size=6"));
+    }
+
+    #[test]
+    fn runs_explicit_avi_input_format_to_null() {
+        let frame = [0, 1, 2, 3, 4, 5];
+        let path = write_temp_bytes(
+            "explicit-avi",
+            "bin",
+            &avi_file_bytes(2, 1, Rational::new(30, 1).unwrap(), &[&frame]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "avi",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("explicit AVI command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 6);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
+    fn rejects_avi_bad_header() {
+        let path = write_temp_bytes("avi-bad-header", "avi", b"not an avi");
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&["-i", path_arg.as_str(), "-f", "framecrc", "-"]))
+            .expect_err("AVI input should reject malformed headers");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("failed to parse AVI input"));
     }
 
     #[test]
@@ -2765,6 +2875,16 @@ mod tests {
             muxer.write_packet(&Packet::new(frame.clone(), 0)).unwrap();
         }
         muxer.finish()
+    }
+
+    fn avi_file_bytes(width: u32, height: u32, frame_rate: Rational, frames: &[&[u8]]) -> Vec<u8> {
+        let mut muxer = avformat::AviMuxer::new_rgb24(width, height, frame_rate).unwrap();
+        for frame in frames {
+            muxer
+                .write_packet(&Packet::new((*frame).to_vec(), 0))
+                .unwrap();
+        }
+        muxer.finish().unwrap()
     }
 
     fn y4m_frame(len: usize, start: u8) -> Vec<u8> {

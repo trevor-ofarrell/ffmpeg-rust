@@ -441,6 +441,26 @@ notes = "Initial ffmpeg-rs command execution path supports exactly one local see
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffmpeg-avi-framecrc-null"
+kind = "cli"
+ffmpeg_name = "ffmpeg AVI to framecrc/null"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -i <input.avi> -f framecrc -; ffmpeg -f avi -i <input> -f null -"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_avi_to_framecrc_stdout",
+  "ffmpeg::tests::runs_explicit_avi_input_format_to_null",
+  "ffmpeg::tests::rejects_avi_bad_header",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffmpeg-rs command execution supports exactly one local seekable constrained video-only AVI input and one stdout pipe output with explicit -f null or -f framecrc. It detects AVI by RIFF/AVI signature or .avi extension, accepts explicit -f avi, uses the Rust AVI demuxer and Rust null/framecrc muxers, and rejects malformed AVI headers with typed errors. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
 id = "fftools-ffmpeg-wav-framecrc-null"
 kind = "cli"
 ffmpeg_name = "ffmpeg WAV to framecrc/null"
@@ -1082,7 +1102,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, and packet timing side data. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, and packet timing side data. It is wired to constrained ffmpeg-rs AVI input to stdout null/framecrc output paths. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
