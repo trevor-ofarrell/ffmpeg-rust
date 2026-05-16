@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`fftools-option-parser` is implemented and verified with ordered grouping for a small known FFmpeg option set across global options, `-i` inputs, and output files. The next priority component is `fftools-hide-banner`.
+`fftools-hide-banner` behavior is verified for `-hide_banner -version` and `-hide_banner` alone. The next priority component is `fftools-basic-io`.
 
 ## Last Successful Commands
 
@@ -26,6 +26,7 @@
 - `cargo test -p avutil options`
 - `cargo test -p avutil hash`
 - `cargo test -p fftools option_parser`
+- `cargo test -p fftools --test version hide_banner`
 
 ## Last Failing Commands
 
@@ -35,13 +36,13 @@
 
 ## Current Focus Component
 
-`fftools-hide-banner` is the next highest-priority incomplete component after `fftools-option-parser`.
+`fftools-basic-io` is the next highest-priority incomplete component after `fftools-hide-banner`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p fftools option_parser`.
+1. Run `cargo test -p fftools --test version hide_banner`.
 2. Run formatting, workspace tests, and clippy.
-3. Wire `-hide_banner` behavior into `ffmpeg-rs`/`ffprobe-rs` version output handling.
+3. Add the first basic input/output path model for CLI execution.
 
 ## Known Blockers
 
@@ -51,4 +52,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `fftools-option-parser` for initial FFmpeg-style option grouping.
+Latest committed slice: add `fftools-hide-banner` CLI behavior coverage.

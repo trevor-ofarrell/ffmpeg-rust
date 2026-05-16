@@ -333,13 +333,32 @@ id = "fftools-hide-banner"
 kind = "cli"
 ffmpeg_name = "ffmpeg/ffprobe -hide_banner"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 2
 oracle_command = "ffmpeg -hide_banner -version; ffprobe -hide_banner -version"
+rust_command = "cargo test -p fftools --test version hide_banner"
+unit_tests = [
+  "hide_banner_is_accepted_with_version",
+  "hide_banner_alone_does_not_print_version_banner",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Existing version command path is covered for -hide_banner with -version and -hide_banner alone. It is not byte-identical to upstream and is not wired to full command execution."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-basic-io"
+kind = "cli"
+ffmpeg_name = "basic input/output path"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 2
+oracle_command = ""
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next CLI behavior slice after option parsing."
+notes = "Next CLI infrastructure slice before simple muxers/codecs."
 blocked_reason = ""

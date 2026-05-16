@@ -9,8 +9,8 @@
 
 ## Compatible Today
 
-- `ffmpeg-rs -version` prints a version banner naming the pinned target and ABI versions.
-- `ffprobe-rs -version` prints a version banner naming the pinned target and ABI versions.
+- `ffmpeg-rs -version` and `ffmpeg-rs -hide_banner -version` print a version banner naming the pinned target and ABI versions.
+- `ffprobe-rs -version` and `ffprobe-rs -hide_banner -version` print a version banner naming the pinned target and ABI versions.
 - `fftools` has an initial option parser for a small known FFmpeg option set, preserving option ordering for input/output grouping.
 - `avutil` has initial typed errors, rational normalization/comparison, timestamp rescaling, bounded byte I/O helpers, MSB-first bit reader/writer helpers, metadata dictionary helpers, AVOption-like descriptor/value validation, Adler-32 and IEEE CRC-32 checksum helpers, packet timestamp/flag/side-data skeletons, frame shape validation, and an in-memory logging abstraction.
 - `oracle inventory` can execute a pinned FFmpeg binary and capture the required inventory command outputs.
