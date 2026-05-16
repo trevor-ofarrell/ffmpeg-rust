@@ -3,6 +3,8 @@ use avutil::{AvError, AvErrorKind, AvResult, ByteReader, Packet, SideData};
 const FTYP_ID: &[u8; 4] = b"ftyp";
 const MOOV_ID: &[u8; 4] = b"moov";
 const MVHD_ID: &[u8; 4] = b"mvhd";
+const MVEX_ID: &[u8; 4] = b"mvex";
+const MOOF_ID: &[u8; 4] = b"moof";
 const TRAK_ID: &[u8; 4] = b"trak";
 const TKHD_ID: &[u8; 4] = b"tkhd";
 const MDIA_ID: &[u8; 4] = b"mdia";
@@ -122,6 +124,8 @@ impl<'a> MovDemuxer<'a> {
         let mut movie_header = None;
         let mut tracks = Vec::new();
         let mut mdat_ranges = Vec::new();
+        let mut has_movie_extends = false;
+        let mut has_movie_fragment = false;
 
         for header in top_level {
             let payload = &input[header.payload_start..header.payload_end];
@@ -131,8 +135,10 @@ impl<'a> MovDemuxer<'a> {
                     let movie = parse_moov(input, &header)?;
                     movie_header = Some(movie.header);
                     tracks = movie.tracks;
+                    has_movie_extends = movie.has_movie_extends;
                 }
                 MDAT_ID => mdat_ranges.push((header.payload_start, header.payload_end)),
+                MOOF_ID => has_movie_fragment = true,
                 _ => {}
             }
         }
@@ -140,6 +146,11 @@ impl<'a> MovDemuxer<'a> {
         let ftyp = ftyp.ok_or_else(|| AvError::invalid_data("MOV/MP4 missing ftyp box"))?;
         let movie_header =
             movie_header.ok_or_else(|| AvError::invalid_data("MOV/MP4 missing moov box"))?;
+        if has_movie_extends || has_movie_fragment {
+            return Err(AvError::unsupported(
+                "fragmented MOV/MP4 files with mvex/moof boxes are not implemented",
+            ));
+        }
         if tracks.is_empty() {
             return Err(AvError::invalid_data("MOV/MP4 missing trak boxes"));
         }
@@ -197,6 +208,7 @@ struct MovieHeader {
 struct MovieData {
     header: MovieHeader,
     tracks: Vec<TrackData>,
+    has_movie_extends: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -287,17 +299,23 @@ fn parse_ftyp(payload: &[u8]) -> AvResult<FtypInfo> {
 fn parse_moov(input: &[u8], moov: &BoxHeader) -> AvResult<MovieData> {
     let mut header = None;
     let mut tracks = Vec::new();
+    let mut has_movie_extends = false;
 
     for child in read_box_headers(input, moov.payload_start, moov.payload_end, "MOV/MP4 moov")? {
         match &child.box_type {
             MVHD_ID => header = Some(parse_mvhd(child.payload(input))?),
+            MVEX_ID => has_movie_extends = true,
             TRAK_ID => tracks.push(parse_trak(input, &child)?),
             _ => {}
         }
     }
 
     let header = header.ok_or_else(|| AvError::invalid_data("MOV/MP4 missing mvhd box"))?;
-    Ok(MovieData { header, tracks })
+    Ok(MovieData {
+        header,
+        tracks,
+        has_movie_extends,
+    })
 }
 
 fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
@@ -1254,6 +1272,22 @@ mod tests {
     }
 
     #[test]
+    fn rejects_fragmented_movie_boxes_explicitly() {
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_movie_extends())
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::Unsupported
+        );
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_movie_fragment())
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::Unsupported
+        );
+    }
+
+    #[test]
     fn reads_packets_from_simple_sample_table() {
         let bytes = mp4_with_samples(
             false,
@@ -1552,6 +1586,25 @@ mod tests {
         let moov_payload = [box_(*MVHD_ID, &payload), trak_v0(1, 5_000, 90_000, 450_000)].concat();
         out.extend_from_slice(&ftyp_box());
         out.extend_from_slice(&box_(*MOOV_ID, &moov_payload));
+        out
+    }
+
+    fn mp4_with_movie_extends() -> Vec<u8> {
+        let mut out = Vec::new();
+        let moov_payload = [
+            mvhd_v0(1_000, 5_000),
+            box_(*MVEX_ID, &[]),
+            trak_v0(1, 5_000, 90_000, 450_000),
+        ]
+        .concat();
+        out.extend_from_slice(&ftyp_box());
+        out.extend_from_slice(&box_(*MOOV_ID, &moov_payload));
+        out
+    }
+
+    fn mp4_with_movie_fragment() -> Vec<u8> {
+        let mut out = mp4_with_samples(false, &[b"aa".as_slice()], &[10]);
+        out.extend_from_slice(&box_(*MOOF_ID, &box_(*b"traf", &[])));
         out
     }
 

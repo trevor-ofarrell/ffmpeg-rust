@@ -789,6 +789,7 @@ unit_tests = [
   "mov::tests::accepts_size_zero_top_level_box_as_remaining_payload",
   "mov::tests::rejects_bad_box_bounds_and_required_metadata",
   "mov::tests::rejects_invalid_full_boxes_and_ftyp_payloads",
+  "mov::tests::rejects_fragmented_movie_boxes_explicitly",
   "mov::tests::reads_packets_from_simple_sample_table",
   "mov::tests::reads_packets_from_co64_offsets",
   "mov::tests::reads_packets_from_multiple_chunks_and_stsc_entries",
@@ -801,5 +802,5 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables and truncated media data. Multiple populated tracks, sample description indexes other than 1, fragments, edit lists, codec parameters, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, and mdhd version 0/1 metadata; explicitly rejects fragmented mvex/moof layouts; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables and truncated media data. Multiple populated tracks, sample description indexes other than 1, actual fragment parsing, edit lists, codec parameters, CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
