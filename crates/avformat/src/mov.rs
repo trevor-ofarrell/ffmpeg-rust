@@ -28,6 +28,9 @@ const CO64_ID: &[u8; 4] = b"co64";
 const MDAT_ID: &[u8; 4] = b"mdat";
 const AVCC_ID: &[u8; 4] = b"avcC";
 const HVCC_ID: &[u8; 4] = b"hvcC";
+const PASP_ID: &[u8; 4] = b"pasp";
+const COLR_ID: &[u8; 4] = b"colr";
+const NCLX_ID: &[u8; 4] = b"nclx";
 const MAX_MOV_SAMPLE_COUNT: usize = 1_000_000;
 const METADATA_DATA_TYPE_RESERVED: u32 = 0;
 const METADATA_DATA_TYPE_UTF8: u32 = 1;
@@ -139,6 +142,8 @@ pub struct MovVideoSampleEntry {
     frame_count: u16,
     compressor_name: String,
     depth: u16,
+    pixel_aspect_ratio: Option<MovPixelAspectRatio>,
+    color_information: Option<MovColorInformation>,
     child_boxes: Vec<MovSampleEntryChildBox>,
 }
 
@@ -163,6 +168,14 @@ impl MovVideoSampleEntry {
         self.depth
     }
 
+    pub fn pixel_aspect_ratio(&self) -> Option<&MovPixelAspectRatio> {
+        self.pixel_aspect_ratio.as_ref()
+    }
+
+    pub fn color_information(&self) -> Option<&MovColorInformation> {
+        self.color_information.as_ref()
+    }
+
     pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
         &self.child_boxes
     }
@@ -180,6 +193,53 @@ impl MovVideoSampleEntry {
             .iter()
             .find(|child| child.box_type.as_bytes() == box_type)
             .map(MovSampleEntryChildBox::payload)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MovPixelAspectRatio {
+    horizontal_spacing: u32,
+    vertical_spacing: u32,
+}
+
+impl MovPixelAspectRatio {
+    pub fn horizontal_spacing(&self) -> u32 {
+        self.horizontal_spacing
+    }
+
+    pub fn vertical_spacing(&self) -> u32 {
+        self.vertical_spacing
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovColorInformation {
+    color_type: String,
+    color_primaries: u16,
+    transfer_characteristics: u16,
+    matrix_coefficients: u16,
+    full_range: bool,
+}
+
+impl MovColorInformation {
+    pub fn color_type(&self) -> &str {
+        &self.color_type
+    }
+
+    pub fn color_primaries(&self) -> u16 {
+        self.color_primaries
+    }
+
+    pub fn transfer_characteristics(&self) -> u16 {
+        self.transfer_characteristics
+    }
+
+    pub fn matrix_coefficients(&self) -> u16 {
+        self.matrix_coefficients
+    }
+
+    pub fn full_range(&self) -> bool {
+        self.full_range
     }
 }
 
@@ -821,12 +881,16 @@ fn parse_visual_sample_entry(extra_data: &[u8]) -> AvResult<MovVideoSampleEntry>
         extra_data.len(),
         "MOV/MP4 VisualSampleEntry children",
     )?;
+    let pixel_aspect_ratio = parse_visual_sample_entry_pixel_aspect_ratio(&child_boxes)?;
+    let color_information = parse_visual_sample_entry_color_information(&child_boxes)?;
     Ok(MovVideoSampleEntry {
         width,
         height,
         frame_count,
         compressor_name,
         depth,
+        pixel_aspect_ratio,
+        color_information,
         child_boxes,
     })
 }
@@ -846,6 +910,68 @@ fn parse_sample_entry_child_boxes(
             })
         })
         .collect()
+}
+
+fn parse_visual_sample_entry_pixel_aspect_ratio(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovPixelAspectRatio>> {
+    child_boxes
+        .iter()
+        .find(|child| child.box_type.as_bytes() == PASP_ID)
+        .map(|child| parse_pasp(child.payload()))
+        .transpose()
+}
+
+fn parse_visual_sample_entry_color_information(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovColorInformation>> {
+    child_boxes
+        .iter()
+        .find(|child| child.box_type.as_bytes() == COLR_ID)
+        .map(|child| parse_colr(child.payload()))
+        .transpose()
+        .map(Option::flatten)
+}
+
+fn parse_pasp(payload: &[u8]) -> AvResult<MovPixelAspectRatio> {
+    let mut reader = ByteReader::new(payload);
+    ensure_remaining(&reader, 8, "MOV/MP4 pasp")?;
+    let horizontal_spacing = reader.read_u32_be()?;
+    let vertical_spacing = reader.read_u32_be()?;
+    ensure_box_consumed(&reader, "MOV/MP4 pasp")?;
+    if horizontal_spacing == 0 || vertical_spacing == 0 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 pasp spacing values must be non-zero",
+        ));
+    }
+    Ok(MovPixelAspectRatio {
+        horizontal_spacing,
+        vertical_spacing,
+    })
+}
+
+fn parse_colr(payload: &[u8]) -> AvResult<Option<MovColorInformation>> {
+    let mut reader = ByteReader::new(payload);
+    ensure_remaining(&reader, 4, "MOV/MP4 colr")?;
+    let color_type = read_fourcc(&mut reader)?;
+    if color_type != *NCLX_ID {
+        return Ok(None);
+    }
+
+    ensure_remaining(&reader, 7, "MOV/MP4 colr nclx")?;
+    let color_primaries = reader.read_u16_be()?;
+    let transfer_characteristics = reader.read_u16_be()?;
+    let matrix_coefficients = reader.read_u16_be()?;
+    let range_and_reserved = reader.read_u8()?;
+    ensure_box_consumed(&reader, "MOV/MP4 colr nclx")?;
+
+    Ok(Some(MovColorInformation {
+        color_type: fourcc_to_string(color_type),
+        color_primaries,
+        transfer_characteristics,
+        matrix_coefficients,
+        full_range: range_and_reserved & 0x80 != 0,
+    }))
 }
 
 fn parse_pascal_string_31(input: &[u8]) -> String {
@@ -1902,9 +2028,52 @@ mod tests {
     }
 
     #[test]
+    fn parses_visual_sample_entry_pixel_aspect_and_color_information() {
+        let child_boxes = [
+            pasp_box(4, 3),
+            colr_nclx_box(1, 13, 6, true),
+            box_(*AVCC_ID, b"\x01\x64\x00\x1f"),
+        ]
+        .concat();
+        let extra_data = visual_sample_entry_extra_data(720, 576, "PAL AVC", 24, &child_boxes);
+        let bytes = mp4_with_sample_description_entry(b"avc1", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        let MovSampleEntryDetails::Video(video) = codec_parameters.details() else {
+            panic!("expected visual sample entry details");
+        };
+        let pixel_aspect_ratio = video.pixel_aspect_ratio().unwrap();
+        assert_eq!(pixel_aspect_ratio.horizontal_spacing(), 4);
+        assert_eq!(pixel_aspect_ratio.vertical_spacing(), 3);
+
+        let color_information = video.color_information().unwrap();
+        assert_eq!(color_information.color_type(), "nclx");
+        assert_eq!(color_information.color_primaries(), 1);
+        assert_eq!(color_information.transfer_characteristics(), 13);
+        assert_eq!(color_information.matrix_coefficients(), 6);
+        assert!(color_information.full_range());
+        assert_eq!(video.child_boxes().len(), 3);
+    }
+
+    #[test]
     fn rejects_malformed_visual_sample_entry_child_box() {
         let child_box = box_with_declared_size(*AVCC_ID, 12, b"\x01");
         let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &child_box);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"avc1", 1, &extra_data))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_pasp = pasp_box(0, 1);
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &bad_pasp);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"avc1", 1, &extra_data))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_colr = box_(*COLR_ID, b"nclx\0\x01");
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &bad_colr);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"avc1", 1, &extra_data))
             .unwrap_err();
 
@@ -2930,6 +3099,28 @@ mod tests {
         out.extend_from_slice(&u16::MAX.to_be_bytes());
         out.extend_from_slice(child_boxes);
         out
+    }
+
+    fn pasp_box(horizontal_spacing: u32, vertical_spacing: u32) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&horizontal_spacing.to_be_bytes());
+        body.extend_from_slice(&vertical_spacing.to_be_bytes());
+        box_(*PASP_ID, &body)
+    }
+
+    fn colr_nclx_box(
+        color_primaries: u16,
+        transfer_characteristics: u16,
+        matrix_coefficients: u16,
+        full_range: bool,
+    ) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(NCLX_ID);
+        body.extend_from_slice(&color_primaries.to_be_bytes());
+        body.extend_from_slice(&transfer_characteristics.to_be_bytes());
+        body.extend_from_slice(&matrix_coefficients.to_be_bytes());
+        body.push(if full_range { 0x80 } else { 0 });
+        box_(*COLR_ID, &body)
     }
 
     fn stts_box(durations: &[u32]) -> Vec<u8> {
