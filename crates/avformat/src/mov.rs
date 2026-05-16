@@ -1300,6 +1300,41 @@ mod tests {
     }
 
     #[test]
+    fn reads_packets_from_multiple_chunks_and_stsc_entries() {
+        let bytes = mp4_with_chunk_layout(
+            false,
+            &[
+                b"aa".as_slice(),
+                b"bbb".as_slice(),
+                b"c".as_slice(),
+                b"dddd".as_slice(),
+                b"ee".as_slice(),
+            ],
+            &[10, 11, 12, 13, 14],
+            &[(1, 2, 1), (3, 1, 1)],
+            &[2, 2, 1],
+            &[b"gap".as_slice(), b"x".as_slice()],
+        );
+        let mut demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(demuxer.info().tracks()[0].sample_count(), 5);
+        for (data, pts, duration) in [
+            (b"aa".as_slice(), 0, 10),
+            (b"bbb".as_slice(), 10, 11),
+            (b"c".as_slice(), 21, 12),
+            (b"dddd".as_slice(), 33, 13),
+            (b"ee".as_slice(), 46, 14),
+        ] {
+            let packet = demuxer.read_packet().unwrap().unwrap();
+            assert_eq!(packet.data(), data);
+            assert_eq!(packet.pts(), Some(pts));
+            assert_eq!(packet.dts(), Some(pts));
+            assert_eq!(packet.duration(), duration);
+        }
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn reads_sync_sample_table_for_key_flags() {
         let bytes = mp4_with_samples_and_sync(
             false,
@@ -1417,6 +1452,19 @@ mod tests {
                 .kind(),
             AvErrorKind::Unsupported
         );
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_chunk_layout(
+                false,
+                &[b"aa".as_slice(), b"bb".as_slice()],
+                &[1_000, 1_000],
+                &[(1, 1, 1)],
+                &[1],
+                &[],
+            ))
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
+        );
     }
 
     fn mp4_v0_fixture() -> Vec<u8> {
@@ -1524,6 +1572,51 @@ mod tests {
             None,
             Some((ctts_version, composition_entries)),
         )
+    }
+
+    fn mp4_with_chunk_layout(
+        use_co64: bool,
+        samples: &[&[u8]],
+        durations: &[u32],
+        stsc_entries: &[(u32, u32, u32)],
+        chunk_sample_counts: &[u32],
+        chunk_gaps: &[&[u8]],
+    ) -> Vec<u8> {
+        let ftyp = ftyp_box();
+        let declared_sizes = samples
+            .iter()
+            .map(|sample| u32::try_from(sample.len()).unwrap())
+            .collect::<Vec<_>>();
+        let placeholder_offsets = vec![0; chunk_sample_counts.len()];
+        let placeholder_moov = box_(
+            *MOOV_ID,
+            &moov_v0_with_chunk_layout_payload(
+                &placeholder_offsets,
+                &declared_sizes,
+                durations,
+                use_co64,
+                stsc_entries,
+            ),
+        );
+        let mdat_start = ftyp.len() + placeholder_moov.len() + 8;
+        let (chunk_offsets, mdat_payload) =
+            chunked_mdat_payload(samples, chunk_sample_counts, chunk_gaps, mdat_start);
+        let moov = box_(
+            *MOOV_ID,
+            &moov_v0_with_chunk_layout_payload(
+                &chunk_offsets,
+                &declared_sizes,
+                durations,
+                use_co64,
+                stsc_entries,
+            ),
+        );
+
+        let mut out = Vec::new();
+        out.extend_from_slice(&ftyp);
+        out.extend_from_slice(&moov);
+        out.extend_from_slice(&box_(*MDAT_ID, &mdat_payload));
+        out
     }
 
     fn mp4_with_mismatched_sample_counts() -> Vec<u8> {
@@ -1670,6 +1763,27 @@ mod tests {
         .concat()
     }
 
+    fn moov_v0_with_chunk_layout_payload(
+        chunk_offsets: &[u64],
+        sample_sizes: &[u32],
+        durations: &[u32],
+        use_co64: bool,
+        stsc_entries: &[(u32, u32, u32)],
+    ) -> Vec<u8> {
+        let media_duration = durations.iter().copied().sum::<u32>();
+        [
+            mvhd_v0(1_000, media_duration),
+            trak_v0_with_chunk_layout(
+                chunk_offsets,
+                sample_sizes,
+                durations,
+                use_co64,
+                stsc_entries,
+            ),
+        ]
+        .concat()
+    }
+
     fn moov_v1_box_payload(
         movie_duration: u64,
         track_id: u32,
@@ -1689,6 +1803,27 @@ mod tests {
             box_(*MDIA_ID, &mdhd_v0(timescale, media_duration)),
         ]
         .concat();
+        box_(*TRAK_ID, &payload)
+    }
+
+    fn trak_v0_with_chunk_layout(
+        chunk_offsets: &[u64],
+        sample_sizes: &[u32],
+        durations: &[u32],
+        use_co64: bool,
+        stsc_entries: &[(u32, u32, u32)],
+    ) -> Vec<u8> {
+        let media_duration = durations.iter().copied().sum::<u32>();
+        let stbl = stbl_box_with_chunk_layout(
+            chunk_offsets,
+            sample_sizes,
+            durations,
+            use_co64,
+            stsc_entries,
+        );
+        let minf = box_(*MINF_ID, &stbl);
+        let mdia = box_(*MDIA_ID, &[mdhd_v0(90_000, media_duration), minf].concat());
+        let payload = [tkhd_v0(1, media_duration, 1_920, 1_080), mdia].concat();
         box_(*TRAK_ID, &payload)
     }
 
@@ -1780,6 +1915,31 @@ mod tests {
         box_(*STBL_ID, &boxes.concat())
     }
 
+    fn stbl_box_with_chunk_layout(
+        chunk_offsets: &[u64],
+        sample_sizes: &[u32],
+        durations: &[u32],
+        use_co64: bool,
+        stsc_entries: &[(u32, u32, u32)],
+    ) -> Vec<u8> {
+        let chunk_offset_box = if use_co64 {
+            co64_offsets_box(chunk_offsets)
+        } else {
+            stco_offsets_box(chunk_offsets)
+        };
+        box_(
+            *STBL_ID,
+            &[
+                stsd_box(),
+                stts_box(durations),
+                stsc_entries_box(stsc_entries),
+                stsz_box(sample_sizes),
+                chunk_offset_box,
+            ]
+            .concat(),
+        )
+    }
+
     fn stsd_box() -> Vec<u8> {
         let mut sample_entry = Vec::new();
         sample_entry.extend_from_slice(&16_u32.to_be_bytes());
@@ -1822,11 +1982,17 @@ mod tests {
     }
 
     fn stsc_box(samples_per_chunk: u32, sample_description_index: u32) -> Vec<u8> {
+        stsc_entries_box(&[(1, samples_per_chunk, sample_description_index)])
+    }
+
+    fn stsc_entries_box(entries: &[(u32, u32, u32)]) -> Vec<u8> {
         let mut body = Vec::new();
-        body.extend_from_slice(&1_u32.to_be_bytes());
-        body.extend_from_slice(&1_u32.to_be_bytes());
-        body.extend_from_slice(&samples_per_chunk.to_be_bytes());
-        body.extend_from_slice(&sample_description_index.to_be_bytes());
+        body.extend_from_slice(&(u32::try_from(entries.len()).unwrap()).to_be_bytes());
+        for (first_chunk, samples_per_chunk, sample_description_index) in entries {
+            body.extend_from_slice(&first_chunk.to_be_bytes());
+            body.extend_from_slice(&samples_per_chunk.to_be_bytes());
+            body.extend_from_slice(&sample_description_index.to_be_bytes());
+        }
         box_(*STSC_ID, &full_box(0, &body))
     }
 
@@ -1850,17 +2016,53 @@ mod tests {
     }
 
     fn stco_box(chunk_offset: u32) -> Vec<u8> {
+        stco_offsets_box(&[u64::from(chunk_offset)])
+    }
+
+    fn stco_offsets_box(chunk_offsets: &[u64]) -> Vec<u8> {
         let mut body = Vec::new();
-        body.extend_from_slice(&1_u32.to_be_bytes());
-        body.extend_from_slice(&chunk_offset.to_be_bytes());
+        body.extend_from_slice(&(u32::try_from(chunk_offsets.len()).unwrap()).to_be_bytes());
+        for chunk_offset in chunk_offsets {
+            body.extend_from_slice(&u32::try_from(*chunk_offset).unwrap().to_be_bytes());
+        }
         box_(*STCO_ID, &full_box(0, &body))
     }
 
     fn co64_box(chunk_offset: u64) -> Vec<u8> {
+        co64_offsets_box(&[chunk_offset])
+    }
+
+    fn co64_offsets_box(chunk_offsets: &[u64]) -> Vec<u8> {
         let mut body = Vec::new();
-        body.extend_from_slice(&1_u32.to_be_bytes());
-        body.extend_from_slice(&chunk_offset.to_be_bytes());
+        body.extend_from_slice(&(u32::try_from(chunk_offsets.len()).unwrap()).to_be_bytes());
+        for chunk_offset in chunk_offsets {
+            body.extend_from_slice(&chunk_offset.to_be_bytes());
+        }
         box_(*CO64_ID, &full_box(0, &body))
+    }
+
+    fn chunked_mdat_payload(
+        samples: &[&[u8]],
+        chunk_sample_counts: &[u32],
+        chunk_gaps: &[&[u8]],
+        mdat_start: usize,
+    ) -> (Vec<u64>, Vec<u8>) {
+        let mut chunk_offsets = Vec::new();
+        let mut payload = Vec::new();
+        let mut sample_index = 0;
+
+        for (chunk_index, sample_count) in chunk_sample_counts.iter().copied().enumerate() {
+            chunk_offsets.push(u64::try_from(mdat_start + payload.len()).unwrap());
+            for _ in 0..sample_count {
+                payload.extend_from_slice(samples[sample_index]);
+                sample_index += 1;
+            }
+            if let Some(gap) = chunk_gaps.get(chunk_index) {
+                payload.extend_from_slice(gap);
+            }
+        }
+
+        (chunk_offsets, payload)
     }
 
     fn mvhd_v0(timescale: u32, duration: u32) -> Vec<u8> {
