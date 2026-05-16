@@ -30,7 +30,10 @@ const AVCC_ID: &[u8; 4] = b"avcC";
 const HVCC_ID: &[u8; 4] = b"hvcC";
 const PASP_ID: &[u8; 4] = b"pasp";
 const COLR_ID: &[u8; 4] = b"colr";
+const NCLC_ID: &[u8; 4] = b"nclc";
 const NCLX_ID: &[u8; 4] = b"nclx";
+const PROF_ID: &[u8; 4] = b"prof";
+const RICC_ID: &[u8; 4] = b"rICC";
 const MAX_MOV_SAMPLE_COUNT: usize = 1_000_000;
 const METADATA_DATA_TYPE_RESERVED: u32 = 0;
 const METADATA_DATA_TYPE_UTF8: u32 = 1;
@@ -388,10 +391,8 @@ impl MovPixelAspectRatio {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MovColorInformation {
     color_type: String,
-    color_primaries: u16,
-    transfer_characteristics: u16,
-    matrix_coefficients: u16,
-    full_range: bool,
+    color_parameters: Option<MovColorParameters>,
+    icc_profile: Option<Vec<u8>>,
 }
 
 impl MovColorInformation {
@@ -399,6 +400,48 @@ impl MovColorInformation {
         &self.color_type
     }
 
+    pub fn color_parameters(&self) -> Option<&MovColorParameters> {
+        self.color_parameters.as_ref()
+    }
+
+    pub fn color_primaries(&self) -> Option<u16> {
+        self.color_parameters
+            .as_ref()
+            .map(MovColorParameters::color_primaries)
+    }
+
+    pub fn transfer_characteristics(&self) -> Option<u16> {
+        self.color_parameters
+            .as_ref()
+            .map(MovColorParameters::transfer_characteristics)
+    }
+
+    pub fn matrix_coefficients(&self) -> Option<u16> {
+        self.color_parameters
+            .as_ref()
+            .map(MovColorParameters::matrix_coefficients)
+    }
+
+    pub fn full_range(&self) -> Option<bool> {
+        self.color_parameters
+            .as_ref()
+            .map(MovColorParameters::full_range)
+    }
+
+    pub fn icc_profile(&self) -> Option<&[u8]> {
+        self.icc_profile.as_deref()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MovColorParameters {
+    color_primaries: u16,
+    transfer_characteristics: u16,
+    matrix_coefficients: u16,
+    full_range: bool,
+}
+
+impl MovColorParameters {
     pub fn color_primaries(&self) -> u16 {
         self.color_primaries
     }
@@ -1295,24 +1338,60 @@ fn parse_colr(payload: &[u8]) -> AvResult<Option<MovColorInformation>> {
     let mut reader = ByteReader::new(payload);
     ensure_remaining(&reader, 4, "MOV/MP4 colr")?;
     let color_type = read_fourcc(&mut reader)?;
-    if color_type != *NCLX_ID {
-        return Ok(None);
+    match &color_type {
+        NCLX_ID => parse_colr_color_parameters(&mut reader, color_type, true).map(Some),
+        NCLC_ID => parse_colr_color_parameters(&mut reader, color_type, false).map(Some),
+        RICC_ID | PROF_ID => parse_colr_icc_profile(&mut reader, color_type).map(Some),
+        _ => Ok(None),
     }
+}
 
-    ensure_remaining(&reader, 7, "MOV/MP4 colr nclx")?;
+fn parse_colr_color_parameters(
+    reader: &mut ByteReader<'_>,
+    color_type: [u8; 4],
+    has_full_range_flag: bool,
+) -> AvResult<MovColorInformation> {
+    let context = format!("MOV/MP4 colr {}", fourcc_to_string(color_type));
+    ensure_remaining(reader, 6, &context)?;
     let color_primaries = reader.read_u16_be()?;
     let transfer_characteristics = reader.read_u16_be()?;
     let matrix_coefficients = reader.read_u16_be()?;
-    let range_and_reserved = reader.read_u8()?;
-    ensure_box_consumed(&reader, "MOV/MP4 colr nclx")?;
+    let full_range = if has_full_range_flag {
+        ensure_remaining(reader, 1, &context)?;
+        reader.read_u8()? & 0x80 != 0
+    } else {
+        false
+    };
+    ensure_box_consumed(reader, &context)?;
 
-    Ok(Some(MovColorInformation {
+    Ok(MovColorInformation {
         color_type: fourcc_to_string(color_type),
-        color_primaries,
-        transfer_characteristics,
-        matrix_coefficients,
-        full_range: range_and_reserved & 0x80 != 0,
-    }))
+        color_parameters: Some(MovColorParameters {
+            color_primaries,
+            transfer_characteristics,
+            matrix_coefficients,
+            full_range,
+        }),
+        icc_profile: None,
+    })
+}
+
+fn parse_colr_icc_profile(
+    reader: &mut ByteReader<'_>,
+    color_type: [u8; 4],
+) -> AvResult<MovColorInformation> {
+    let context = format!("MOV/MP4 colr {}", fourcc_to_string(color_type));
+    if reader.remaining() == 0 {
+        return Err(AvError::invalid_data(format!(
+            "{context} ICC profile must not be empty"
+        )));
+    }
+    let icc_profile = reader.read_exact(reader.remaining())?.to_vec();
+    Ok(MovColorInformation {
+        color_type: fourcc_to_string(color_type),
+        color_parameters: None,
+        icc_profile: Some(icc_profile),
+    })
 }
 
 fn parse_pascal_string_31(input: &[u8]) -> String {
@@ -2463,11 +2542,73 @@ mod tests {
 
         let color_information = video.color_information().unwrap();
         assert_eq!(color_information.color_type(), "nclx");
-        assert_eq!(color_information.color_primaries(), 1);
-        assert_eq!(color_information.transfer_characteristics(), 13);
-        assert_eq!(color_information.matrix_coefficients(), 6);
-        assert!(color_information.full_range());
+        assert_eq!(color_information.color_primaries(), Some(1));
+        assert_eq!(color_information.transfer_characteristics(), Some(13));
+        assert_eq!(color_information.matrix_coefficients(), Some(6));
+        assert_eq!(color_information.full_range(), Some(true));
+        assert_eq!(color_information.icc_profile(), None);
         assert_eq!(video.child_boxes().len(), 3);
+    }
+
+    #[test]
+    fn parses_visual_sample_entry_nclc_color_information() {
+        let child_box = colr_nclc_box(9, 16, 9);
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &child_box);
+        let bytes = mp4_with_sample_description_entry(b"avc1", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        let MovSampleEntryDetails::Video(video) = codec_parameters.details() else {
+            panic!("expected visual sample entry details");
+        };
+        let color_information = video.color_information().unwrap();
+        assert_eq!(color_information.color_type(), "nclc");
+        let parameters = color_information.color_parameters().unwrap();
+        assert_eq!(parameters.color_primaries(), 9);
+        assert_eq!(parameters.transfer_characteristics(), 16);
+        assert_eq!(parameters.matrix_coefficients(), 9);
+        assert!(!parameters.full_range());
+        assert_eq!(color_information.full_range(), Some(false));
+        assert_eq!(color_information.icc_profile(), None);
+    }
+
+    #[test]
+    fn parses_visual_sample_entry_icc_color_information() {
+        let child_box = colr_icc_profile_box(*RICC_ID, b"rust-icc-profile");
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &child_box);
+        let bytes = mp4_with_sample_description_entry(b"avc1", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        let MovSampleEntryDetails::Video(video) = codec_parameters.details() else {
+            panic!("expected visual sample entry details");
+        };
+        let color_information = video.color_information().unwrap();
+        assert_eq!(color_information.color_type(), "rICC");
+        assert_eq!(color_information.color_parameters(), None);
+        assert_eq!(color_information.color_primaries(), None);
+        assert_eq!(color_information.transfer_characteristics(), None);
+        assert_eq!(color_information.matrix_coefficients(), None);
+        assert_eq!(color_information.full_range(), None);
+        assert_eq!(
+            color_information.icc_profile(),
+            Some(b"rust-icc-profile".as_slice())
+        );
+
+        let child_box = colr_icc_profile_box(*PROF_ID, b"rust-prof-profile");
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &child_box);
+        let bytes = mp4_with_sample_description_entry(b"avc1", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+        let MovSampleEntryDetails::Video(video) = codec_parameters.details() else {
+            panic!("expected visual sample entry details");
+        };
+        let color_information = video.color_information().unwrap();
+        assert_eq!(color_information.color_type(), "prof");
+        assert_eq!(
+            color_information.icc_profile(),
+            Some(b"rust-prof-profile".as_slice())
+        );
     }
 
     #[test]
@@ -2492,6 +2633,20 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_colr = box_(*COLR_ID, b"nclc\0\x01");
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &bad_colr);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"avc1", 1, &extra_data))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_colr = box_(*COLR_ID, PROF_ID);
+        let extra_data = visual_sample_entry_extra_data(640, 360, "Rust AVC", 24, &bad_colr);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"avc1", 1, &extra_data))
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
         let bad_avcc = box_(
             *AVCC_ID,
@@ -3651,6 +3806,26 @@ mod tests {
         body.extend_from_slice(&transfer_characteristics.to_be_bytes());
         body.extend_from_slice(&matrix_coefficients.to_be_bytes());
         body.push(if full_range { 0x80 } else { 0 });
+        box_(*COLR_ID, &body)
+    }
+
+    fn colr_nclc_box(
+        color_primaries: u16,
+        transfer_characteristics: u16,
+        matrix_coefficients: u16,
+    ) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(NCLC_ID);
+        body.extend_from_slice(&color_primaries.to_be_bytes());
+        body.extend_from_slice(&transfer_characteristics.to_be_bytes());
+        body.extend_from_slice(&matrix_coefficients.to_be_bytes());
+        box_(*COLR_ID, &body)
+    }
+
+    fn colr_icc_profile_box(color_type: [u8; 4], profile: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&color_type);
+        body.extend_from_slice(profile);
         box_(*COLR_ID, &body)
     }
 
