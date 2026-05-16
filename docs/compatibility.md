@@ -11,6 +11,7 @@
 
 - `ffmpeg-rs -version` and `ffmpeg-rs -hide_banner -version` print a version banner naming the pinned target and ABI versions.
 - `ffmpeg-rs` can execute one local seekable MOV/MP4, PCM s16le RIFF/WAVE, raw `pcm_s16le`, explicit `rawvideo`, yuv4mpegpipe, or explicit image2 single-file/numbered-sequence input to stdout with explicit `-f null -` or `-f framecrc -`, using Rust demuxers plus null/framecrc muxers.
+- `ffmpeg-rs` can packet-copy explicit raw `pcm_s16le` input to a local raw `-f s16le` output file through the Rust PCM demuxer and muxer.
 - `ffprobe-rs -version` and `ffprobe-rs -hide_banner -version` print a version banner naming the pinned target and ABI versions.
 - `ffprobe-rs -show_format`, `ffprobe-rs -show_streams`, and `ffprobe-rs -show_packets` can open local seekable MOV/MP4 files through the Rust MOV probe descriptor and demuxer, then render small default or JSON summaries.
 - `fftools` has an initial option parser for a small known FFmpeg option set, preserving option ordering for input/output grouping.
@@ -42,7 +43,7 @@ All media parsing, decoding, encoding, muxing, demuxing, filtering, playback, pr
 
 ## Known Behavior Deltas
 
-- CLI execution support is limited to `-version`, one local MOV/MP4, PCM s16le RIFF/WAVE, raw `pcm_s16le`, explicit `rawvideo`, yuv4mpegpipe, or explicit image2 single-file/numbered-sequence `ffmpeg-rs` input to stdout `-f null -` or `-f framecrc -`, and a small `ffprobe-rs -show_format`/`-show_streams`/`-show_packets` path for local MOV/MP4 files; most FFmpeg/ffprobe options return unsupported-command errors.
+- CLI execution support is limited to `-version`, one local MOV/MP4, PCM s16le RIFF/WAVE, raw `pcm_s16le`, explicit `rawvideo`, yuv4mpegpipe, or explicit image2 single-file/numbered-sequence `ffmpeg-rs` input to stdout `-f null -` or `-f framecrc -`, explicit raw `pcm_s16le` packet-copy to a local `-f s16le` file, and a small `ffprobe-rs -show_format`/`-show_streams`/`-show_packets` path for local MOV/MP4 files; most FFmpeg/ffprobe options return unsupported-command errors.
 - The ffprobe MOV output is a deterministic compatibility-oriented summary, not byte-identical upstream output, and it has no pinned-oracle differential coverage yet.
 - The option parser intentionally rejects unknown options and only covers a small initial compatibility set.
 - The I/O planner does not execute demuxers, muxers, protocols, or media transforms yet.
@@ -59,7 +60,7 @@ All media parsing, decoding, encoding, muxing, demuxing, filtering, playback, pr
 - yuv4mpegpipe demuxing and muxing are currently limited to progressive 4:2:0 `C420jpeg` packet extraction/writing; constrained `ffmpeg-rs -f yuv4mpegpipe -i <file> -f null/framecrc -` CLI execution and YUV4MPEG2/.y4m detection are implemented. Other chroma modes, interlaced modes, frame header overrides, broad CLI execution, differential tests, FATE, and fuzzing are pending.
 - image2 demuxing and muxing are currently limited to a single image or contiguous `%d`/`%0Nd` numbered sequence; constrained explicit `ffmpeg-rs -f image2 -framerate <rate> -i <file-or-pattern> -f null/framecrc -` CLI execution is implemented for single files and parent-directory sequence discovery. `start_number`, filesystem writes, glob patterns, timestamp modes, looping, codec probing, broad CLI execution, differential tests, FATE, and fuzzing are pending.
 - Rawvideo demuxing and muxing are currently limited to fixed-size packet slicing/writing for `gray`, `rgb24`, `rgba`, and `yuv420p`; constrained explicit `ffmpeg-rs -f rawvideo -pix_fmt <fmt> -s <WxH> -r <rate> -i <file> -f null/framecrc -` CLI execution is implemented. Probing, more pixel formats, broad CLI execution, differential tests, FATE, and fuzzing are pending.
-- Raw PCM demuxing and muxing are currently limited to packed little-endian signed 16-bit samples, with constrained raw `pcm_s16le` `ffmpeg-rs -f null -`/`-f framecrc -` input execution requiring explicit `-ar` and `-ac`. Probing, other PCM sample formats, broad CLI execution, differential tests, FATE, and fuzzing are pending.
+- Raw PCM demuxing and muxing are currently limited to packed little-endian signed 16-bit samples, with constrained raw `pcm_s16le` `ffmpeg-rs -f null -`/`-f framecrc -` stdout execution and raw `pcm_s16le` to local `-f s16le` file execution requiring explicit `-ar` and `-ac`. The raw file-output path creates new files only and does not implement overwrite confirmation flags. Probing, other PCM sample formats, broad CLI execution, differential tests, FATE, and fuzzing are pending.
 - Rawvideo decoding is internal only and supports a small initial pixel-format set; CLI demux/decode wiring is pending.
 - PCM decoding is internal only and currently limited to packed little-endian signed 16-bit samples.
 - The version banner is compatibility-oriented but not byte-identical to upstream FFmpeg.

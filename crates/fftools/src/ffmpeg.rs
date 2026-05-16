@@ -3,11 +3,11 @@ use crate::{
 };
 use avformat::{
     register_mov_probe, FrameCrcMuxer, Image2Demuxer, Image2Entry, Image2Pattern, MovDemuxer,
-    NullMuxer, PcmS16leDemuxer, ProbeRegistry, ProbeRequest, RawVideoDemuxer, RawVideoPixelFormat,
-    WavDemuxer, Yuv4MpegDemuxer,
+    NullMuxer, PcmS16leDemuxer, PcmS16leMuxer, ProbeRegistry, ProbeRequest, RawVideoDemuxer,
+    RawVideoPixelFormat, WavDemuxer, Yuv4MpegDemuxer,
 };
 use avutil::{Packet, Rational};
-use std::{fmt, fs, path::Path};
+use std::{fmt, fs, io::Write, path::Path};
 
 const MOV_FORMAT_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
 
@@ -130,6 +130,7 @@ impl std::error::Error for FfmpegError {}
 enum OutputMuxer {
     Null,
     FrameCrc,
+    PcmS16le,
 }
 
 impl OutputMuxer {
@@ -137,6 +138,7 @@ impl OutputMuxer {
         match self {
             Self::Null => "null",
             Self::FrameCrc => "framecrc",
+            Self::PcmS16le => "s16le",
         }
     }
 }
@@ -224,7 +226,7 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
     let output = &plan.outputs()[0];
     let output_muxer = parse_output_muxer(output)?;
     validate_output_options(output)?;
-    validate_stdout_output(output)?;
+    validate_output_endpoint(output_muxer, output)?;
 
     let input_path = local_input_path(input)?;
     let explicit_input = explicit_input_format(input)?;
@@ -258,11 +260,19 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 PcmS16leDemuxer::open(&bytes, sample_rate, channels, 1024).map_err(|err| {
                     FfmpegError::invalid_data(format!("failed to parse pcm_s16le input: {err}"))
                 })?;
-            run_output_muxer(output_muxer, || {
+            let read_packet = || {
                 demuxer.read_packet().map_err(|err| {
                     FfmpegError::invalid_data(format!("failed to read pcm_s16le packet: {err}"))
                 })
-            })
+            };
+            match output_muxer {
+                OutputMuxer::PcmS16le => {
+                    run_pcm_s16le_file_muxer(output, sample_rate, channels, read_packet)
+                }
+                OutputMuxer::Null | OutputMuxer::FrameCrc => {
+                    run_output_muxer(output_muxer, read_packet)
+                }
+            }
         }
         InputFormat::RawVideo {
             width,
@@ -325,6 +335,28 @@ fn validate_stdout_output(output: &PlannedFile) -> Result<(), FfmpegError> {
         ))),
         Endpoint::File(_) => Err(FfmpegError::unsupported(
             "ffmpeg-rs currently supports only stdout pipe output `-`",
+        )),
+        Endpoint::Protocol { name, .. } => Err(FfmpegError::unsupported(format!(
+            "ffmpeg-rs output protocol `{name}` is not implemented"
+        ))),
+    }
+}
+
+fn validate_output_endpoint(muxer: OutputMuxer, output: &PlannedFile) -> Result<(), FfmpegError> {
+    match muxer {
+        OutputMuxer::Null | OutputMuxer::FrameCrc => validate_stdout_output(output),
+        OutputMuxer::PcmS16le => {
+            local_output_path(output)?;
+            Ok(())
+        }
+    }
+}
+
+fn local_output_path(output: &PlannedFile) -> Result<&str, FfmpegError> {
+    match output.endpoint() {
+        Endpoint::File(path) => Ok(path),
+        Endpoint::Pipe { .. } => Err(FfmpegError::unsupported(
+            "ffmpeg-rs pcm_s16le output currently supports only local file outputs",
         )),
         Endpoint::Protocol { name, .. } => Err(FfmpegError::unsupported(format!(
             "ffmpeg-rs output protocol `{name}` is not implemented"
@@ -687,13 +719,14 @@ fn validate_output_options(output: &PlannedFile) -> Result<(), FfmpegError> {
 fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> {
     let format = last_option_value(output.options(), "f").ok_or_else(|| {
         FfmpegError::usage(
-            "ffmpeg-rs currently requires explicit output `-f null` or `-f framecrc`",
+            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, or `-f s16le`",
         )
     })?;
 
     match format.to_ascii_lowercase().as_str() {
         "null" => Ok(OutputMuxer::Null),
         "framecrc" => Ok(OutputMuxer::FrameCrc),
+        "s16le" | "pcm_s16le" => Ok(OutputMuxer::PcmS16le),
         _ => Err(FfmpegError::unsupported(format!(
             "output format `{format}` is not implemented"
         ))),
@@ -788,7 +821,55 @@ where
     match output_muxer {
         OutputMuxer::Null => run_null_muxer(read_packet),
         OutputMuxer::FrameCrc => run_framecrc_muxer(read_packet),
+        OutputMuxer::PcmS16le => Err(FfmpegError::unsupported(
+            "ffmpeg-rs s16le output is only implemented for raw pcm_s16le inputs",
+        )),
     }
+}
+
+fn run_pcm_s16le_file_muxer<F>(
+    output: &PlannedFile,
+    sample_rate: u32,
+    channels: u16,
+    mut read_packet: F,
+) -> Result<FfmpegOutput, FfmpegError>
+where
+    F: FnMut() -> Result<Option<Packet>, FfmpegError>,
+{
+    let output_path = local_output_path(output)?;
+    let mut muxer = PcmS16leMuxer::new(sample_rate, channels).map_err(|err| {
+        FfmpegError::invalid_data(format!("failed to configure pcm_s16le muxer: {err}"))
+    })?;
+
+    while let Some(packet) = read_packet()? {
+        muxer.write_packet(&packet).map_err(|err| {
+            FfmpegError::invalid_data(format!("failed to mux pcm_s16le packet: {err}"))
+        })?;
+    }
+
+    let packet_count = muxer.packets();
+    let output_bytes = muxer.finish();
+    let byte_count = u64::try_from(output_bytes.len())
+        .map_err(|_| FfmpegError::invalid_data("pcm_s16le output size does not fit u64"))?;
+    write_new_output_file(output_path, &output_bytes)?;
+
+    Ok(FfmpegOutput::media(
+        String::new(),
+        String::new(),
+        OutputMuxer::PcmS16le,
+        packet_count,
+        byte_count,
+    ))
+}
+
+fn write_new_output_file(path: &str, bytes: &[u8]) -> Result<(), FfmpegError> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|err| FfmpegError::io(format!("failed to create output `{path}`: {err}")))?;
+    file.write_all(bytes)
+        .map_err(|err| FfmpegError::io(format!("failed to write output `{path}`: {err}")))
 }
 
 fn run_null_muxer<F>(mut read_packet: F) -> Result<FfmpegOutput, FfmpegError>
@@ -1095,6 +1176,69 @@ mod tests {
         assert_eq!(output.byte_count(), 8);
         assert!(output.stdout().is_empty());
         assert!(output.stderr().is_empty());
+    }
+
+    #[test]
+    fn runs_s16le_to_s16le_file_output() {
+        let payload = [0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0];
+        let input_path = write_temp_bytes("raw-pcm-file-input", "raw", &payload);
+        let output_path = unique_temp_path("raw-pcm-file-output", "raw");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "s16le",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "s16le",
+            output_arg.as_str(),
+        ]))
+        .expect("raw PCM file output path should execute");
+        let written = fs::read(&output_path).expect("raw PCM output file should be readable");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert_eq!(output.output_format(), Some("s16le"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), u64::try_from(payload.len()).unwrap());
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+        assert_eq!(written, payload);
+    }
+
+    #[test]
+    fn rejects_s16le_file_output_overwrite() {
+        let input_path = write_temp_bytes("raw-pcm-overwrite-input", "raw", &[0, 0, 1, 0]);
+        let output_path = write_temp_bytes("raw-pcm-overwrite-output", "raw", b"existing");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "s16le",
+            "-ar",
+            "44100",
+            "-ac",
+            "1",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "s16le",
+            output_arg.as_str(),
+        ]))
+        .expect_err("raw PCM file output should not overwrite existing files");
+        let existing = fs::read(&output_path).expect("existing output file should remain readable");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert!(err.message().contains("failed to create output"));
+        assert_eq!(existing, b"existing");
     }
 
     #[test]
@@ -1613,6 +1757,12 @@ mod tests {
     }
 
     fn write_temp_bytes(label: &str, extension: &str, bytes: &[u8]) -> PathBuf {
+        let path = unique_temp_path(label, extension);
+        fs::write(&path, bytes).expect("temp media file should be writable");
+        path
+    }
+
+    fn unique_temp_path(label: &str, extension: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time should be after epoch")
@@ -1621,7 +1771,6 @@ mod tests {
             "ffmpegrust-{}-{label}-{unique}.{extension}",
             std::process::id()
         ));
-        fs::write(&path, bytes).expect("temp media file should be writable");
         path
     }
 
