@@ -481,13 +481,34 @@ id = "avcodec-rawvideo"
 kind = "decoder"
 ffmpeg_name = "rawvideo"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "not_started"
+status = "implemented"
 priority = 3
 oracle_command = "ffmpeg -f rawvideo -pix_fmt <fmt> -s <size> -i <input> -f framecrc -"
+rust_command = "cargo test -p avcodec rawvideo"
+unit_tests = [
+  "rawvideo::tests::decodes_gray8_packet_to_single_plane_frame",
+  "rawvideo::tests::decodes_yuv420p_packet_to_three_planes",
+  "rawvideo::tests::validates_dimensions_and_packet_size",
+  "rawvideo::tests::packed_rgb_and_rgba_use_single_payload_plane",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial rawvideo decoder emits avutil video frames for gray, rgb24, rgba, and yuv420p with strict dimensions and packet-size validation. Many FFmpeg raw pixel formats, demuxer wiring, differential tests, and FATE coverage are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avcodec-pcm-s16le"
+kind = "decoder"
+ffmpeg_name = "pcm_s16le"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "not_started"
+priority = 3
+oracle_command = "ffmpeg -f s16le -ar <rate> -ac <channels> -i <input> -f framecrc -"
 rust_command = ""
 unit_tests = []
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Next simple codec target after checksum muxer primitives."
+notes = "Next simple audio codec target after rawvideo."
 blocked_reason = ""

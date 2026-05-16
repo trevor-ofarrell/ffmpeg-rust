@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-framecrc-muxer` is implemented and verified as an internal per-packet CRC-32 record sink with stream index, PTS/DTS, duration, size, and checksum output. The next priority component is `avcodec-rawvideo`.
+`avcodec-rawvideo` is implemented and verified for gray, rgb24, rgba, and yuv420p packet payloads with strict frame geometry and packet-size validation. The next priority component is `avcodec-pcm-s16le`.
 
 ## Last Successful Commands
 
@@ -33,6 +33,7 @@
 - `cargo test -p avformat null_muxer`
 - `cargo test -p avformat hash_muxer`
 - `cargo test -p avformat framecrc_muxer`
+- `cargo test -p avcodec rawvideo`
 
 ## Last Failing Commands
 
@@ -43,13 +44,13 @@
 
 ## Current Focus Component
 
-`avcodec-rawvideo` is the next highest-priority incomplete component after `avformat-framecrc-muxer`.
+`avcodec-pcm-s16le` is the next highest-priority incomplete component after `avcodec-rawvideo`.
 
 ## Next 3 Concrete Actions
 
-1. Run `cargo test -p avformat framecrc_muxer`.
+1. Run `cargo test -p avcodec rawvideo`.
 2. Run formatting, workspace tests, and clippy.
-3. Add the first rawvideo frame decoder primitive.
+3. Add the first PCM s16le decoder primitive.
 
 ## Known Blockers
 
@@ -59,4 +60,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest committed slice: add `avformat-framecrc-muxer` packet checksum records.
+Latest committed slice: add `avcodec-rawvideo` fixed-size raw frame decoder.
