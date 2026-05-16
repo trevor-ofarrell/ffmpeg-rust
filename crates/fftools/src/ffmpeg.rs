@@ -4,7 +4,7 @@ use crate::{
 use avformat::{
     register_mov_probe, FrameCrcMuxer, Image2Demuxer, Image2Entry, Image2Pattern, MovDemuxer,
     NullMuxer, PcmS16leDemuxer, PcmS16leMuxer, ProbeRegistry, ProbeRequest, RawVideoDemuxer,
-    RawVideoMuxer, RawVideoPixelFormat, WavDemuxer, WavMuxer, Yuv4MpegDemuxer,
+    RawVideoMuxer, RawVideoPixelFormat, WavDemuxer, WavMuxer, Yuv4MpegDemuxer, Yuv4MpegMuxer,
 };
 use avutil::{Packet, Rational};
 use std::{fmt, fs, io::Write, path::Path};
@@ -133,6 +133,7 @@ enum OutputMuxer {
     PcmS16le,
     RawVideo,
     Wav,
+    Yuv4MpegPipe,
 }
 
 impl OutputMuxer {
@@ -143,6 +144,7 @@ impl OutputMuxer {
             Self::PcmS16le => "s16le",
             Self::RawVideo => "rawvideo",
             Self::Wav => "wav",
+            Self::Yuv4MpegPipe => "yuv4mpegpipe",
         }
     }
 }
@@ -277,7 +279,9 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 OutputMuxer::Null | OutputMuxer::FrameCrc => {
                     run_output_muxer(output_muxer, read_packet)
                 }
-                OutputMuxer::RawVideo => run_output_muxer(output_muxer, read_packet),
+                OutputMuxer::RawVideo | OutputMuxer::Yuv4MpegPipe => {
+                    run_output_muxer(output_muxer, read_packet)
+                }
             }
         }
         InputFormat::RawVideo {
@@ -311,6 +315,14 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 }
                 OutputMuxer::PcmS16le => run_output_muxer(output_muxer, read_packet),
                 OutputMuxer::Wav => run_output_muxer(output_muxer, read_packet),
+                OutputMuxer::Yuv4MpegPipe => run_yuv4mpegpipe_file_muxer(
+                    output,
+                    width,
+                    height,
+                    pixel_format,
+                    frame_rate,
+                    read_packet,
+                ),
             }
         }
         InputFormat::Wav => {
@@ -376,6 +388,10 @@ fn validate_output_endpoint(muxer: OutputMuxer, output: &PlannedFile) -> Result<
         }
         OutputMuxer::Wav => {
             local_output_path(output, "wav")?;
+            Ok(())
+        }
+        OutputMuxer::Yuv4MpegPipe => {
+            local_output_path(output, "yuv4mpegpipe")?;
             Ok(())
         }
     }
@@ -751,7 +767,7 @@ fn validate_output_options(output: &PlannedFile) -> Result<(), FfmpegError> {
 fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> {
     let format = last_option_value(output.options(), "f").ok_or_else(|| {
         FfmpegError::usage(
-            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f s16le`, `-f rawvideo`, or `-f wav`",
+            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f s16le`, `-f rawvideo`, `-f wav`, or `-f yuv4mpegpipe`",
         )
     })?;
 
@@ -761,6 +777,7 @@ fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> 
         "s16le" | "pcm_s16le" => Ok(OutputMuxer::PcmS16le),
         "rawvideo" => Ok(OutputMuxer::RawVideo),
         "wav" | "wave" => Ok(OutputMuxer::Wav),
+        "yuv4mpegpipe" => Ok(OutputMuxer::Yuv4MpegPipe),
         _ => Err(FfmpegError::unsupported(format!(
             "output format `{format}` is not implemented"
         ))),
@@ -863,6 +880,9 @@ where
         )),
         OutputMuxer::Wav => Err(FfmpegError::unsupported(
             "ffmpeg-rs WAV output is only implemented for raw pcm_s16le inputs",
+        )),
+        OutputMuxer::Yuv4MpegPipe => Err(FfmpegError::unsupported(
+            "ffmpeg-rs yuv4mpegpipe output is only implemented for raw yuv420p inputs",
         )),
     }
 }
@@ -972,6 +992,54 @@ where
         String::new(),
         String::new(),
         OutputMuxer::Wav,
+        packet_count,
+        byte_count,
+    ))
+}
+
+fn run_yuv4mpegpipe_file_muxer<F>(
+    output: &PlannedFile,
+    width: usize,
+    height: usize,
+    pixel_format: RawVideoPixelFormat,
+    frame_rate: Rational,
+    mut read_packet: F,
+) -> Result<FfmpegOutput, FfmpegError>
+where
+    F: FnMut() -> Result<Option<Packet>, FfmpegError>,
+{
+    if pixel_format != RawVideoPixelFormat::Yuv420p {
+        return Err(FfmpegError::unsupported(
+            "ffmpeg-rs yuv4mpegpipe output currently supports only yuv420p rawvideo input",
+        ));
+    }
+
+    let output_path = local_output_path(output, "yuv4mpegpipe")?;
+    let width = u32::try_from(width)
+        .map_err(|_| FfmpegError::invalid_data("yuv4mpegpipe width does not fit u32"))?;
+    let height = u32::try_from(height)
+        .map_err(|_| FfmpegError::invalid_data("yuv4mpegpipe height does not fit u32"))?;
+    let mut muxer = Yuv4MpegMuxer::new(width, height, frame_rate, None).map_err(|err| {
+        FfmpegError::invalid_data(format!("failed to configure yuv4mpegpipe muxer: {err}"))
+    })?;
+
+    while let Some(packet) = read_packet()? {
+        muxer.write_packet(&packet).map_err(|err| {
+            FfmpegError::invalid_data(format!("failed to mux yuv4mpegpipe packet: {err}"))
+        })?;
+    }
+
+    let packet_count = u64::try_from(muxer.frame_count())
+        .map_err(|_| FfmpegError::invalid_data("yuv4mpegpipe frame count does not fit u64"))?;
+    let output_bytes = muxer.finish();
+    let byte_count = u64::try_from(output_bytes.len())
+        .map_err(|_| FfmpegError::invalid_data("yuv4mpegpipe output size does not fit u64"))?;
+    write_new_output_file(output_path, &output_bytes)?;
+
+    Ok(FfmpegOutput::media(
+        String::new(),
+        String::new(),
+        OutputMuxer::Yuv4MpegPipe,
         packet_count,
         byte_count,
     ))
@@ -1626,6 +1694,119 @@ mod tests {
 
         assert!(err.message().contains("failed to create output"));
         assert_eq!(existing, b"existing");
+    }
+
+    #[test]
+    fn runs_rawvideo_yuv420p_to_yuv4mpegpipe_file_output() {
+        let first = [0, 1, 2, 3, 4, 5];
+        let second = [6, 7, 8, 9, 10, 11];
+        let payload = [first.as_slice(), second.as_slice()].concat();
+        let input_path = write_temp_bytes("rawvideo-y4m-file-input", "raw", &payload);
+        let output_path = unique_temp_path("rawvideo-y4m-file-output", "y4m");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            "-s",
+            "2x2",
+            "-r",
+            "25",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "yuv4mpegpipe",
+            output_arg.as_str(),
+        ]))
+        .expect("rawvideo yuv420p to yuv4mpegpipe file output path should execute");
+        let written = fs::read(&output_path).expect("YUV4MPEG2 output file should be readable");
+        let mut demuxer = Yuv4MpegDemuxer::open(&written).expect("YUV4MPEG2 output should parse");
+        let first_packet = demuxer
+            .read_packet()
+            .expect("first YUV4MPEG2 packet read should succeed")
+            .expect("first frame should exist");
+        let second_packet = demuxer
+            .read_packet()
+            .expect("second YUV4MPEG2 packet read should succeed")
+            .expect("second frame should exist");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert_eq!(output.output_format(), Some("yuv4mpegpipe"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), u64::try_from(written.len()).unwrap());
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+        assert_eq!(demuxer.info().width(), 2);
+        assert_eq!(demuxer.info().height(), 2);
+        assert_eq!(demuxer.info().frame_rate(), Rational::new(25, 1).unwrap());
+        assert_eq!(first_packet.data(), first);
+        assert_eq!(second_packet.data(), second);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn rejects_yuv4mpegpipe_file_output_overwrite() {
+        let input_path =
+            write_temp_bytes("rawvideo-y4m-overwrite-input", "raw", &[0, 1, 2, 3, 4, 5]);
+        let output_path = write_temp_bytes("rawvideo-y4m-overwrite-output", "y4m", b"existing");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv420p",
+            "-s",
+            "2x2",
+            "-r",
+            "25",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "yuv4mpegpipe",
+            output_arg.as_str(),
+        ]))
+        .expect_err("YUV4MPEG2 file output should not overwrite existing files");
+        let existing = fs::read(&output_path).expect("existing output file should remain readable");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert!(err.message().contains("failed to create output"));
+        assert_eq!(existing, b"existing");
+    }
+
+    #[test]
+    fn rejects_yuv4mpegpipe_file_output_for_non_yuv420p_rawvideo() {
+        let input_path = write_temp_bytes("rawvideo-y4m-rgb-input", "raw", &[0, 1, 2, 3, 4, 5]);
+        let output_path = unique_temp_path("rawvideo-y4m-rgb-output", "y4m");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            "2x1",
+            "-r",
+            "25",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "yuv4mpegpipe",
+            output_arg.as_str(),
+        ]))
+        .expect_err("YUV4MPEG2 output should reject non-yuv420p rawvideo input");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert!(err.message().contains("supports only yuv420p"));
     }
 
     #[test]

@@ -558,6 +558,26 @@ notes = "ffmpeg-rs command execution supports explicit rawvideo input packet-cop
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffmpeg-rawvideo-yuv4mpegpipe-file-output"
+kind = "cli"
+ffmpeg_name = "ffmpeg raw yuv420p to yuv4mpegpipe file"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -f rawvideo -pix_fmt yuv420p -s <WxH> -r <rate> -i <input.raw> -f yuv4mpegpipe <output.y4m>"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_rawvideo_yuv420p_to_yuv4mpegpipe_file_output",
+  "ffmpeg::tests::rejects_yuv4mpegpipe_file_output_overwrite",
+  "ffmpeg::tests::rejects_yuv4mpegpipe_file_output_for_non_yuv420p_rawvideo",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffmpeg-rs command execution supports explicit raw yuv420p input packet-copy to a local yuv4mpegpipe output file with explicit -f rawvideo, -pix_fmt yuv420p, -s, and -r input parameters and explicit -f yuv4mpegpipe output format. It uses the Rust rawvideo demuxer and Yuv4MpegMuxer, creates output files with no overwrite, validates the generated output through the Rust YUV4MPEG2 demuxer in tests, and rejects non-yuv420p rawvideo inputs instead of pretending to convert. No oracle differential/FATE coverage exists yet. Color conversion, chroma variants, overwrite confirmation flags, broad muxer selection, and non-rawvideo inputs remain pending."
+blocked_reason = ""
+
+[[component]]
 id = "fftools-ffmpeg-yuv4mpegpipe-framecrc-null"
 kind = "cli"
 ffmpeg_name = "ffmpeg yuv4mpegpipe to framecrc/null"
@@ -956,7 +976,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial YUV4MPEG2 muxer writes progressive C420jpeg stream headers and FRAME payloads for exact-size yuv420p stream-0 packets, supports optional sample aspect ratio, empty output, round-trip demuxing, and finalization checks. Other chroma modes, interlaced modes, frame header overrides, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial YUV4MPEG2 muxer writes progressive C420jpeg stream headers and FRAME payloads for exact-size yuv420p stream-0 packets, supports optional sample aspect ratio, empty output, round-trip demuxing, and finalization checks. It is wired to a constrained ffmpeg-rs raw yuv420p to yuv4mpegpipe file-output path. Other chroma modes, interlaced modes, frame header overrides, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
