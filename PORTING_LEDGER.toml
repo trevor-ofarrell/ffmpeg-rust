@@ -451,12 +451,32 @@ rust_command = "cargo test -p fftools ffmpeg"
 unit_tests = [
   "ffmpeg::tests::runs_wav_to_framecrc_stdout",
   "ffmpeg::tests::runs_explicit_wav_input_format_to_null",
-  "ffmpeg::tests::rejects_unimplemented_input_format_option",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution now supports exactly one local seekable PCM s16le RIFF/WAVE input and one stdout pipe output with explicit -f null or -f framecrc. It detects WAV by RIFF/WAVE signature or .wav extension, accepts explicit -f wav/-f wave, uses the Rust WAV demuxer and Rust null/framecrc muxers, and keeps raw s16le rejected until that demuxer is deliberately wired. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution supports exactly one local seekable PCM s16le RIFF/WAVE input and one stdout pipe output with explicit -f null or -f framecrc. It detects WAV by RIFF/WAVE signature or .wav extension, accepts explicit -f wav/-f wave, and uses the Rust WAV demuxer and Rust null/framecrc muxers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-ffmpeg-pcm-s16le-framecrc-null"
+kind = "cli"
+ffmpeg_name = "ffmpeg raw pcm_s16le to framecrc/null"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -f s16le -ar <rate> -ac <channels> -i <input.raw> -f framecrc -; ffmpeg -f s16le -ar <rate> -ac <channels> -i <input.raw> -f null -"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_s16le_to_framecrc_stdout",
+  "ffmpeg::tests::runs_s16le_to_null_stdout",
+  "ffmpeg::tests::rejects_s16le_without_required_stream_parameters",
+  "ffmpeg::tests::rejects_s16le_partial_sample_frame",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffmpeg-rs command execution now supports exactly one local seekable raw pcm_s16le input and one stdout pipe output with explicit -f s16le or -f pcm_s16le plus required -ar and -ac stream parameters. It uses the Rust raw PCM demuxer with 1024-sample packetization and the Rust null/framecrc muxers, rejects missing parameters and partial sample frames, and has no oracle differential/FATE coverage yet."
 blocked_reason = ""
 
 [[component]]

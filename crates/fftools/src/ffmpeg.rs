@@ -2,8 +2,8 @@ use crate::{
     build_io_plan, parse_ffmpeg_args, version_banner, CliOption, Endpoint, IoPlan, PlannedFile,
 };
 use avformat::{
-    register_mov_probe, FrameCrcMuxer, MovDemuxer, NullMuxer, ProbeRegistry, ProbeRequest,
-    WavDemuxer,
+    register_mov_probe, FrameCrcMuxer, MovDemuxer, NullMuxer, PcmS16leDemuxer, ProbeRegistry,
+    ProbeRequest, WavDemuxer,
 };
 use avutil::Packet;
 use std::{fmt, fs, path::Path};
@@ -143,6 +143,7 @@ impl OutputMuxer {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InputFormat {
     Mov,
+    PcmS16le { sample_rate: u32, channels: u16 },
     Wav,
 }
 
@@ -150,6 +151,7 @@ impl InputFormat {
     fn name(self) -> &'static str {
         match self {
             Self::Mov => "MOV/MP4",
+            Self::PcmS16le { .. } => "pcm_s16le",
             Self::Wav => "WAV",
         }
     }
@@ -223,6 +225,20 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                 })
             })
         }
+        InputFormat::PcmS16le {
+            sample_rate,
+            channels,
+        } => {
+            let mut demuxer =
+                PcmS16leDemuxer::open(&bytes, sample_rate, channels, 1024).map_err(|err| {
+                    FfmpegError::invalid_data(format!("failed to parse pcm_s16le input: {err}"))
+                })?;
+            run_output_muxer(output_muxer, || {
+                demuxer.read_packet().map_err(|err| {
+                    FfmpegError::invalid_data(format!("failed to read pcm_s16le packet: {err}"))
+                })
+            })
+        }
         InputFormat::Wav => {
             let mut demuxer = WavDemuxer::open(&bytes).map_err(|err| {
                 FfmpegError::invalid_data(format!("failed to parse WAV input: {err}"))
@@ -287,7 +303,7 @@ fn detect_input_format(
 
 fn explicit_input_format(input: &PlannedFile) -> Result<Option<InputFormat>, FfmpegError> {
     for option in input.options() {
-        if option.name() != "f" {
+        if !matches!(option.name(), "f" | "ar" | "ac") {
             return Err(FfmpegError::unsupported(format!(
                 "input option `-{}` is not implemented",
                 option.name()
@@ -295,15 +311,73 @@ fn explicit_input_format(input: &PlannedFile) -> Result<Option<InputFormat>, Ffm
         }
     }
 
-    last_option_value(input.options(), "f")
-        .map(|format| match format.to_ascii_lowercase().as_str() {
-            "mov" | "mp4" | "m4a" | "3gp" | "3g2" | "mj2" => Ok(InputFormat::Mov),
-            "wav" | "wave" => Ok(InputFormat::Wav),
-            _ => Err(FfmpegError::unsupported(format!(
-                "input format `{format}` is not implemented"
-            ))),
-        })
-        .transpose()
+    let Some(format) = last_option_value(input.options(), "f") else {
+        if let Some(option) = input.options().first() {
+            return Err(FfmpegError::unsupported(format!(
+                "input option `-{}` requires an explicit input format",
+                option.name()
+            )));
+        }
+        return Ok(None);
+    };
+
+    match format.to_ascii_lowercase().as_str() {
+        "mov" | "mp4" | "m4a" | "3gp" | "3g2" | "mj2" => {
+            reject_stream_parameter_options(input, "MOV/MP4")?;
+            Ok(Some(InputFormat::Mov))
+        }
+        "s16le" | "pcm_s16le" => parse_pcm_s16le_input(input).map(Some),
+        "wav" | "wave" => {
+            reject_stream_parameter_options(input, "WAV")?;
+            Ok(Some(InputFormat::Wav))
+        }
+        _ => Err(FfmpegError::unsupported(format!(
+            "input format `{format}` is not implemented"
+        ))),
+    }
+}
+
+fn reject_stream_parameter_options(
+    input: &PlannedFile,
+    format_name: &str,
+) -> Result<(), FfmpegError> {
+    for option in input.options() {
+        if option.name() != "f" {
+            return Err(FfmpegError::unsupported(format!(
+                "input option `-{}` is not implemented for {format_name}",
+                option.name()
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn parse_pcm_s16le_input(input: &PlannedFile) -> Result<InputFormat, FfmpegError> {
+    let sample_rate = parse_u32_option(input, "ar", "pcm_s16le sample rate")?;
+    let channels = parse_u16_option(input, "ac", "pcm_s16le channel count")?;
+    Ok(InputFormat::PcmS16le {
+        sample_rate,
+        channels,
+    })
+}
+
+fn parse_u32_option(file: &PlannedFile, name: &str, description: &str) -> Result<u32, FfmpegError> {
+    let value = last_option_value(file.options(), name)
+        .ok_or_else(|| FfmpegError::usage(format!("{description} requires `-{name}`")))?;
+    let parsed = value
+        .parse::<u32>()
+        .map_err(|_| FfmpegError::usage(format!("invalid {description} `{value}`")))?;
+    if parsed == 0 {
+        return Err(FfmpegError::usage(format!(
+            "{description} must be non-zero"
+        )));
+    }
+    Ok(parsed)
+}
+
+fn parse_u16_option(file: &PlannedFile, name: &str, description: &str) -> Result<u16, FfmpegError> {
+    let value = parse_u32_option(file, name, description)?;
+    u16::try_from(value).map_err(|_| FfmpegError::usage(format!("{description} is out of range")))
 }
 
 fn validate_output_options(output: &PlannedFile) -> Result<(), FfmpegError> {
@@ -349,6 +423,7 @@ fn validate_input_signature(
 ) -> Result<(), FfmpegError> {
     match format {
         InputFormat::Mov => validate_mov_probe(path, bytes),
+        InputFormat::PcmS16le { .. } => Ok(()),
         InputFormat::Wav if is_wav_like(path, bytes) => Ok(()),
         InputFormat::Wav => Err(FfmpegError::invalid_data(format!(
             "{} input signature was not found",
@@ -657,24 +732,124 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unimplemented_input_format_option() {
-        let path = write_temp_bytes("raw-pcm", "raw", &[0, 0, 1, 0]);
+    fn runs_s16le_to_framecrc_stdout() {
+        let path = write_temp_bytes("raw-pcm-framecrc", "raw", &[0, 0, 1, 0, 2, 0, 3, 0]);
         let path_arg = path.to_string_lossy().into_owned();
 
-        let err = ffmpeg_output(&strings(&[
+        let output = ffmpeg_output(&strings(&[
             "-f",
             "s16le",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
             "-i",
             path_arg.as_str(),
             "-f",
             "framecrc",
             "-",
         ]))
-        .expect_err("raw PCM input is not wired into ffmpeg-rs yet");
+        .expect("raw PCM command path should execute");
 
         let _ = fs::remove_file(&path);
 
-        assert!(err.message().contains("input format `s16le`"));
+        assert_eq!(output.output_format(), Some("framecrc"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 8);
+        assert!(output.stderr().is_empty());
+        assert!(output
+            .stdout()
+            .contains("stream=0 pts=0 dts=0 duration=2 size=8"));
+    }
+
+    #[test]
+    fn runs_s16le_to_null_stdout() {
+        let path = write_temp_bytes("raw-pcm-null", "raw", &[0, 0, 1, 0, 2, 0, 3, 0]);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "pcm_s16le",
+            "-ar",
+            "44100",
+            "-ac",
+            "1",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("raw PCM command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 8);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
+    fn rejects_s16le_without_required_stream_parameters() {
+        let path = write_temp_bytes("raw-pcm-missing-params", "raw", &[0, 0, 1, 0]);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let missing_sample_rate = ffmpeg_output(&strings(&[
+            "-f",
+            "s16le",
+            "-ac",
+            "1",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("raw PCM input requires a sample rate");
+        let missing_channels = ffmpeg_output(&strings(&[
+            "-f",
+            "s16le",
+            "-ar",
+            "48000",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("raw PCM input requires a channel count");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(missing_sample_rate.message().contains("sample rate"));
+        assert!(missing_channels.message().contains("channel count"));
+    }
+
+    #[test]
+    fn rejects_s16le_partial_sample_frame() {
+        let path = write_temp_bytes("raw-pcm-partial", "raw", &[0, 0, 1]);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-f",
+            "s16le",
+            "-ar",
+            "48000",
+            "-ac",
+            "1",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framecrc",
+            "-",
+        ]))
+        .expect_err("raw PCM input must contain whole sample frames");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("partial sample frame"));
     }
 
     fn strings(values: &[&str]) -> Vec<String> {
