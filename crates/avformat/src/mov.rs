@@ -37,6 +37,7 @@ const RICC_ID: &[u8; 4] = b"rICC";
 const MAX_MOV_SAMPLE_COUNT: usize = 1_000_000;
 const METADATA_DATA_TYPE_RESERVED: u32 = 0;
 const METADATA_DATA_TYPE_UTF8: u32 = 1;
+const METADATA_DATA_TYPE_UTF16: u32 = 2;
 const MOV_PROBE_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
 const MOV_PROBE_EXTENSIONS: &[&str] = &["mov", "mp4", "m4a", "3gp", "3g2", "mj2"];
 const MOV_PROBE_MIME_TYPES: &[&str] = &[
@@ -890,22 +891,22 @@ fn merge_metadata(target: &mut Dictionary, source: Dictionary) -> AvResult<()> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MetadataValueKind {
-    Utf8Text,
+    Text,
     NumberPair,
 }
 
 fn metadata_item_mapping(box_type: [u8; 4]) -> Option<(&'static str, MetadataValueKind)> {
     match box_type {
-        [0xa9, b'n', b'a', b'm'] => Some(("title", MetadataValueKind::Utf8Text)),
-        [0xa9, b'A', b'R', b'T'] => Some(("artist", MetadataValueKind::Utf8Text)),
-        [b'a', b'A', b'R', b'T'] => Some(("album_artist", MetadataValueKind::Utf8Text)),
-        [0xa9, b'a', b'l', b'b'] => Some(("album", MetadataValueKind::Utf8Text)),
-        [0xa9, b'd', b'a', b'y'] => Some(("date", MetadataValueKind::Utf8Text)),
-        [0xa9, b'g', b'e', b'n'] => Some(("genre", MetadataValueKind::Utf8Text)),
-        [0xa9, b'c', b'm', b't'] => Some(("comment", MetadataValueKind::Utf8Text)),
-        [b'd', b'e', b's', b'c'] => Some(("description", MetadataValueKind::Utf8Text)),
-        [b'l', b'd', b'e', b's'] => Some(("long_description", MetadataValueKind::Utf8Text)),
-        [0xa9, b't', b'o', b'o'] => Some(("encoder", MetadataValueKind::Utf8Text)),
+        [0xa9, b'n', b'a', b'm'] => Some(("title", MetadataValueKind::Text)),
+        [0xa9, b'A', b'R', b'T'] => Some(("artist", MetadataValueKind::Text)),
+        [b'a', b'A', b'R', b'T'] => Some(("album_artist", MetadataValueKind::Text)),
+        [0xa9, b'a', b'l', b'b'] => Some(("album", MetadataValueKind::Text)),
+        [0xa9, b'd', b'a', b'y'] => Some(("date", MetadataValueKind::Text)),
+        [0xa9, b'g', b'e', b'n'] => Some(("genre", MetadataValueKind::Text)),
+        [0xa9, b'c', b'm', b't'] => Some(("comment", MetadataValueKind::Text)),
+        [b'd', b'e', b's', b'c'] => Some(("description", MetadataValueKind::Text)),
+        [b'l', b'd', b'e', b's'] => Some(("long_description", MetadataValueKind::Text)),
+        [0xa9, b't', b'o', b'o'] => Some(("encoder", MetadataValueKind::Text)),
         [b't', b'r', b'k', b'n'] => Some(("track", MetadataValueKind::NumberPair)),
         [b'd', b'i', b's', b'k'] => Some(("disc", MetadataValueKind::NumberPair)),
         _ => None,
@@ -921,18 +922,42 @@ fn parse_metadata_data(payload: &[u8], value_kind: MetadataValueKind) -> AvResul
     let data_type = u32::from(flags[0]) << 16 | u32::from(flags[1]) << 8 | u32::from(flags[2]);
 
     match value_kind {
-        MetadataValueKind::Utf8Text => parse_utf8_metadata_value(data_type, value),
+        MetadataValueKind::Text => parse_text_metadata_value(data_type, value),
         MetadataValueKind::NumberPair => parse_number_pair_metadata_value(data_type, value),
     }
 }
 
-fn parse_utf8_metadata_value(data_type: u32, value: &[u8]) -> AvResult<Option<String>> {
-    if data_type != METADATA_DATA_TYPE_UTF8 {
-        return Ok(None);
+fn parse_text_metadata_value(data_type: u32, value: &[u8]) -> AvResult<Option<String>> {
+    match data_type {
+        METADATA_DATA_TYPE_UTF8 => std::str::from_utf8(value)
+            .map(|value| Some(value.to_owned()))
+            .map_err(|_| AvError::invalid_data("MOV/MP4 text metadata is not valid UTF-8")),
+        METADATA_DATA_TYPE_UTF16 => parse_utf16_metadata_value(value).map(Some),
+        _ => Ok(None),
     }
-    std::str::from_utf8(value)
-        .map(|value| Some(value.to_owned()))
-        .map_err(|_| AvError::invalid_data("MOV/MP4 text metadata is not valid UTF-8"))
+}
+
+fn parse_utf16_metadata_value(value: &[u8]) -> AvResult<String> {
+    if value.len() % 2 != 0 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 text metadata is not valid UTF-16",
+        ));
+    }
+    let (little_endian, payload) = match value {
+        [0xfe, 0xff, rest @ ..] => (false, rest),
+        [0xff, 0xfe, rest @ ..] => (true, rest),
+        _ => (false, value),
+    };
+    let units = payload.chunks_exact(2).map(|bytes| {
+        if little_endian {
+            u16::from_le_bytes([bytes[0], bytes[1]])
+        } else {
+            u16::from_be_bytes([bytes[0], bytes[1]])
+        }
+    });
+    char::decode_utf16(units)
+        .collect::<Result<String, _>>()
+        .map_err(|_| AvError::invalid_data("MOV/MP4 text metadata is not valid UTF-16"))
 }
 
 fn parse_number_pair_metadata_value(data_type: u32, value: &[u8]) -> AvResult<Option<String>> {
@@ -2235,6 +2260,21 @@ mod tests {
     }
 
     #[test]
+    fn extracts_utf16_movie_metadata_from_ilst_data_atoms() {
+        let ilst = ilst_box(&[
+            ilst_utf16_be_item([0xa9, b'n', b'a', b'm'], "Rust UTF-16"),
+            ilst_utf16_le_bom_item([0xa9, b't', b'o', b'o'], "Encoder \u{1f680}"),
+        ]);
+        let bytes = mp4_with_moov_extra_box(box_(*UDTA_ID, &meta_box(ilst)));
+
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let metadata = demuxer.info().metadata();
+
+        assert_eq!(metadata.get("title"), Some("Rust UTF-16"));
+        assert_eq!(metadata.get("encoder"), Some("Encoder \u{1f680}"));
+    }
+
+    #[test]
     fn extracts_track_metadata_from_track_udta() {
         let track_udta = box_(
             *UDTA_ID,
@@ -2276,6 +2316,19 @@ mod tests {
             &metadata_data_box_payload(METADATA_DATA_TYPE_UTF8, b"\xff"),
         );
         let item = box_([0xa9, b'n', b'a', b'm'], &bad_text);
+        let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
+            *UDTA_ID,
+            &meta_box(ilst_box(&[item])),
+        )))
+        .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_utf16 = box_(
+            *DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_UTF16, &[0xd8, 0x00]),
+        );
+        let item = box_([0xa9, b'n', b'a', b'm'], &bad_utf16);
         let err = MovDemuxer::open(&mp4_with_moov_extra_box(box_(
             *UDTA_ID,
             &meta_box(ilst_box(&[item])),
@@ -3034,6 +3087,30 @@ mod tests {
         let data = box_(
             *DATA_ID,
             &metadata_data_box_payload(METADATA_DATA_TYPE_UTF8, value.as_bytes()),
+        );
+        box_(kind, &data)
+    }
+
+    fn ilst_utf16_be_item(kind: [u8; 4], value: &str) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for unit in value.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_be_bytes());
+        }
+        let data = box_(
+            *DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_UTF16, &bytes),
+        );
+        box_(kind, &data)
+    }
+
+    fn ilst_utf16_le_bom_item(kind: [u8; 4], value: &str) -> Vec<u8> {
+        let mut bytes = vec![0xff, 0xfe];
+        for unit in value.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        let data = box_(
+            *DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_UTF16, &bytes),
         );
         box_(kind, &data)
     }
