@@ -1,9 +1,9 @@
 #![no_main]
 
 use avutil::{
-    adler32, crc32_ieee, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, Adler32, AudioFrame,
-    AvError, AvErrorKind, Channel, ChannelLayout, Crc32, Frame, FrameData, Packet, PacketFlags,
-    PixelFormat, Rational, Rounding, SampleFormat, SideData, VideoFrame,
+    adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
+    Adler32, AudioFrame, AvError, AvErrorKind, Channel, ChannelLayout, Crc32, Frame, FrameData,
+    Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -348,6 +348,16 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     crc.update(&payload[..split]);
     crc.update(&payload[split..]);
     assert_eq!(crc.finalize(), crc32_ieee(&payload));
+
+    let second_split =
+        split + (usize::from(cursor.next().unwrap_or_default()) % (payload.len() - split + 1));
+    let mut md5_state = Md5::new();
+    md5_state.update(&payload[..split]);
+    md5_state.update(&payload[split..second_split]);
+    md5_state.update(&payload[second_split..]);
+    let md5_digest = md5_state.finalize();
+    assert_eq!(md5_digest, md5(&payload));
+    assert_eq!(digest_to_hex(&md5_digest).len(), 32);
 }
 
 fn exercise_fixtures() {
@@ -359,6 +369,10 @@ fn exercise_fixtures() {
     assert_eq!(SampleFormat::S16.plane_sizes(2, 2).unwrap(), vec![8]);
     assert!(ChannelLayout::stereo().contains(Channel::FrontLeft));
     assert!(!ChannelLayout::stereo().contains(Channel::LowFrequency));
+    assert_eq!(
+        digest_to_hex(&md5(b"abc")),
+        "900150983cd24fb0d6963f7d28e17f72"
+    );
 
     let video = VideoFrame::new(1, 1, PixelFormat::Rgb24, vec![vec![1, 2, 3]]).unwrap();
     assert_eq!(video.line_sizes(), &[3]);
