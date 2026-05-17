@@ -1768,8 +1768,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial RIFF AVI muxer writes constrained one-stream RGB24 AVI files with shared VideoStreamParameters dimensions/frame-size validation, AVI-specific classic header limit checks, avih/strh/strf headers, 00db movi chunks, word padding, stream-0 payload validation, finalization checks, and demuxer round-trip tests. It is wired to a constrained ffmpeg-rs raw rgb24 to AVI file-output path. Audio streams, indexes, OpenDML, palettes, compressed video, interleaving, metadata, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_avi_muxer"]
+notes = "Initial RIFF AVI muxer writes constrained one-stream RGB24 AVI files with shared VideoStreamParameters dimensions/frame-size validation, AVI-specific classic header limit checks, avih/strh/strf headers, 00db movi chunks, word padding, stream-0 payload validation, finalization checks, and demuxer round-trip tests. It is wired to a constrained ffmpeg-rs raw rgb24 to AVI file-output path. Build-checked cargo-fuzz target avformat_avi_muxer covers constructor validation, accepted/rejected packet writes, state non-mutation on rejected packets, header/render stability, word padding behavior, post-finish rejection, and AviDemuxer round trips, but actual local fuzz execution is blocked until cargo-fuzz is installed. Audio streams, indexes, OpenDML, palettes, compressed video, interleaving, metadata, broader CLI wiring, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]

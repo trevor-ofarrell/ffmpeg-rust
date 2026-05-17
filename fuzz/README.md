@@ -14,6 +14,7 @@ Initial targets:
 - `avformat_pcm_s16le`: exercises raw PCM s16le demuxer parameter validation, packet slicing, timing, and side-data invariants.
 - `avformat_rawvideo`: exercises rawvideo demuxer geometry/format/rate validation, frame slicing, timing, and side-data invariants.
 - `avformat_avi`: exercises constrained RIFF AVI demuxer chunk parsing, stream metadata, packet timing, and side-data invariants.
+- `avformat_avi_muxer`: exercises constrained RGB24 AVI muxer constructor validation, packet validation, header/render stability, padding behavior, finish behavior, and demuxer round trips.
 - `avformat_mov`: exercises constrained MOV/MP4 box parsing, sample-table packet extraction, stream metadata, packet timing, and side-data invariants.
 - `avformat_image2`: exercises image2 pattern parsing, entry sequence validation, packet timing/path side-data invariants, muxer path generation, and mux-demux round trips.
 - `avformat_basic_muxers`: exercises WAV, raw PCM s16le, rawvideo, and yuv4mpegpipe muxer packet validation, accounting, render/finish behavior, and demuxer round trips.
@@ -33,6 +34,7 @@ cargo fuzz run avformat_yuv4mpegpipe
 cargo fuzz run avformat_pcm_s16le
 cargo fuzz run avformat_rawvideo
 cargo fuzz run avformat_avi
+cargo fuzz run avformat_avi_muxer
 cargo fuzz run avformat_mov
 cargo fuzz run avformat_image2
 cargo fuzz run avformat_basic_muxers

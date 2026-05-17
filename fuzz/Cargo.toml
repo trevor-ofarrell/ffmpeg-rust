@@ -85,6 +85,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "avformat_avi_muxer"
+path = "fuzz_targets/avformat_avi_muxer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "avformat_mov"
 path = "fuzz_targets/avformat_mov.rs"
 test = false
