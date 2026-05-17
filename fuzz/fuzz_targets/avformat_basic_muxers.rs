@@ -1,0 +1,401 @@
+#![no_main]
+
+use avformat::{
+    PcmS16leDemuxer, PcmS16leMuxer, RawVideoDemuxer, RawVideoMuxer, WavDemuxer, WavMuxer,
+    Yuv4MpegDemuxer, Yuv4MpegMuxer,
+};
+use avutil::{AvErrorKind, Packet, PixelFormat, Rational, SampleFormat};
+use libfuzzer_sys::fuzz_target;
+
+const MAX_PACKETS: usize = 6;
+const MAX_AUDIO_PAYLOAD: usize = 96;
+const MAX_VIDEO_PAYLOAD: usize = 384;
+
+fuzz_target!(|data: &[u8]| {
+    let mut cursor = Cursor::new(data);
+
+    exercise_pcm_muxer(&mut cursor);
+    exercise_wav_muxer(&mut cursor);
+    exercise_rawvideo_muxer(&mut cursor);
+    exercise_yuv4mpeg_muxer(&mut cursor);
+    exercise_fixtures();
+});
+
+fn exercise_pcm_muxer(cursor: &mut Cursor<'_>) {
+    let sample_rate = sample_rate_from(cursor.next());
+    let channels = channel_count_from(cursor.next());
+    let Ok(mut muxer) = PcmS16leMuxer::new(sample_rate, channels) else {
+        return;
+    };
+
+    let frame_size = muxer.info().bytes_per_sample_frame();
+    let packets = audio_packets_from(cursor, frame_size);
+    let mut expected = Vec::new();
+    let mut expected_packets = 0_u64;
+    let mut expected_samples = 0_usize;
+
+    for packet in &packets {
+        let before = pcm_state(&muxer);
+        let result = muxer.write_packet(packet);
+        if packet.stream_index() == 0 && packet.data().len().is_multiple_of(frame_size) {
+            result.unwrap();
+            expected.extend_from_slice(packet.data());
+            expected_packets += 1;
+            expected_samples += packet.data().len() / frame_size;
+            assert_eq!(muxer.packets(), expected_packets);
+            assert_eq!(muxer.data_len(), expected.len());
+            assert_eq!(muxer.info().samples_per_channel(), expected_samples);
+        } else {
+            assert!(result.is_err());
+            assert_eq!(pcm_state(&muxer), before);
+        }
+    }
+
+    assert_eq!(muxer.info().sample_rate(), sample_rate);
+    assert_eq!(muxer.info().channels(), channels);
+    assert_eq!(muxer.info().sample_format(), SampleFormat::S16);
+    assert_eq!(muxer.render(), expected);
+    let finished = muxer.finish();
+    assert!(muxer.is_finished());
+    assert_eq!(finished, expected);
+    let err = muxer
+        .write_packet(&Packet::new(vec![0; frame_size], 0))
+        .unwrap_err();
+    assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(muxer.render(), expected);
+
+    let mut demuxer = PcmS16leDemuxer::open(&finished, sample_rate, channels, 3).unwrap();
+    let mut roundtrip = Vec::new();
+    while let Some(packet) = demuxer.read_packet().unwrap() {
+        roundtrip.extend_from_slice(packet.data());
+    }
+    assert_eq!(roundtrip, expected);
+}
+
+fn exercise_wav_muxer(cursor: &mut Cursor<'_>) {
+    let channels = channel_count_from(cursor.next());
+    let sample_rate = sample_rate_from(cursor.next());
+    let Ok(mut muxer) = WavMuxer::new_pcm_s16le(channels, sample_rate) else {
+        return;
+    };
+
+    let block_align = usize::from(muxer.info().block_align());
+    let packets = audio_packets_from(cursor, block_align);
+    let mut expected = Vec::new();
+    let mut expected_packets = 0_u64;
+
+    for packet in &packets {
+        let before = wav_state(&muxer);
+        let result = muxer.write_packet(packet);
+        if packet.stream_index() == 0 && packet.data().len().is_multiple_of(block_align) {
+            result.unwrap();
+            expected.extend_from_slice(packet.data());
+            expected_packets += 1;
+            assert_eq!(muxer.packets(), expected_packets);
+            assert_eq!(muxer.data_len(), expected.len());
+            assert_eq!(muxer.info().data_size(), expected.len());
+        } else {
+            assert!(result.is_err());
+            assert_eq!(wav_state(&muxer), before);
+        }
+    }
+
+    let rendered = muxer.render().unwrap();
+    assert_wav_roundtrip(&rendered, channels, sample_rate, &expected);
+    let finished = muxer.finish().unwrap();
+    assert!(muxer.is_finished());
+    assert_eq!(finished, rendered);
+    let err = muxer
+        .write_packet(&Packet::new(vec![0; block_align], 0))
+        .unwrap_err();
+    assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(muxer.render().unwrap(), rendered);
+}
+
+fn exercise_rawvideo_muxer(cursor: &mut Cursor<'_>) {
+    let pixel_format = pixel_format_from(cursor.next());
+    let width = video_dimension_from(cursor.next(), pixel_format);
+    let height = video_dimension_from(cursor.next(), pixel_format);
+    let frame_rate = positive_rate_from(cursor.next());
+    let Ok(mut muxer) = RawVideoMuxer::new(width, height, pixel_format, frame_rate) else {
+        return;
+    };
+
+    let frame_size = muxer.info().frame_size();
+    let packets = video_packets_from(cursor, frame_size);
+    let mut expected = Vec::new();
+    let mut expected_frames = 0_usize;
+
+    for packet in &packets {
+        let before = rawvideo_state(&muxer);
+        let result = muxer.write_packet(packet);
+        if packet.stream_index() == 0 && packet.data().len() == frame_size {
+            result.unwrap();
+            expected.extend_from_slice(packet.data());
+            expected_frames += 1;
+            assert_eq!(muxer.info().frame_count(), expected_frames);
+            assert_eq!(muxer.data_len(), expected.len());
+        } else {
+            assert!(result.is_err());
+            assert_eq!(rawvideo_state(&muxer), before);
+        }
+    }
+
+    assert_eq!(muxer.info().width(), width);
+    assert_eq!(muxer.info().height(), height);
+    assert_eq!(muxer.info().pixel_format(), pixel_format);
+    assert_eq!(muxer.info().frame_rate(), frame_rate);
+    assert_eq!(muxer.render(), expected);
+    let finished = muxer.finish();
+    assert!(muxer.is_finished());
+    assert_eq!(finished, expected);
+    let err = muxer
+        .write_packet(&Packet::new(vec![0; frame_size], 0))
+        .unwrap_err();
+    assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(muxer.render(), expected);
+
+    let mut demuxer =
+        RawVideoDemuxer::open(&finished, width, height, pixel_format, frame_rate).unwrap();
+    let mut roundtrip = Vec::new();
+    while let Some(packet) = demuxer.read_packet().unwrap() {
+        roundtrip.extend_from_slice(packet.data());
+    }
+    assert_eq!(roundtrip, expected);
+}
+
+fn exercise_yuv4mpeg_muxer(cursor: &mut Cursor<'_>) {
+    let width = even_u32_from(cursor.next());
+    let height = even_u32_from(cursor.next());
+    let frame_rate = positive_rate_from(cursor.next());
+    let sample_aspect_ratio = sample_aspect_ratio_from(cursor.next());
+    let Ok(mut muxer) = Yuv4MpegMuxer::new(width, height, frame_rate, sample_aspect_ratio) else {
+        return;
+    };
+
+    let frame_size = muxer.info().frame_size();
+    let packets = video_packets_from(cursor, frame_size);
+    let mut expected = Vec::new();
+    let mut expected_frames = 0_usize;
+
+    for packet in &packets {
+        let before = y4m_state(&muxer);
+        let result = muxer.write_packet(packet);
+        if packet.stream_index() == 0 && packet.data().len() == frame_size {
+            result.unwrap();
+            expected.extend_from_slice(packet.data());
+            expected_frames += 1;
+            assert_eq!(muxer.frame_count(), expected_frames);
+            assert_eq!(muxer.payload_len(), expected.len());
+        } else {
+            assert!(result.is_err());
+            assert_eq!(y4m_state(&muxer), before);
+        }
+    }
+
+    assert_eq!(muxer.info().width(), width);
+    assert_eq!(muxer.info().height(), height);
+    assert_eq!(muxer.info().pixel_format(), PixelFormat::Yuv420p);
+    assert_eq!(muxer.info().frame_rate(), frame_rate);
+    assert_eq!(muxer.info().sample_aspect_ratio(), sample_aspect_ratio);
+    let rendered = muxer.render();
+    assert_y4m_roundtrip(&rendered, &expected, sample_aspect_ratio);
+    let finished = muxer.finish();
+    assert!(muxer.is_finished());
+    assert_eq!(finished, rendered);
+    let err = muxer
+        .write_packet(&Packet::new(vec![0; frame_size], 0))
+        .unwrap_err();
+    assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(muxer.render(), rendered);
+}
+
+fn exercise_fixtures() {
+    let mut pcm = PcmS16leMuxer::new(48_000, 2).unwrap();
+    pcm.write_packet(&Packet::new(vec![0, 0, 1, 0], 0)).unwrap();
+    assert_eq!(pcm.finish(), vec![0, 0, 1, 0]);
+
+    let mut wav = WavMuxer::new_pcm_s16le(1, 44_100).unwrap();
+    wav.write_packet(&Packet::new(vec![1, 0, 2, 0], 0)).unwrap();
+    assert_wav_roundtrip(&wav.finish().unwrap(), 1, 44_100, &[1, 0, 2, 0]);
+
+    let mut raw =
+        RawVideoMuxer::new(2, 2, PixelFormat::Gray8, Rational::new(24, 1).unwrap()).unwrap();
+    raw.write_packet(&Packet::new(vec![0, 1, 2, 3], 0)).unwrap();
+    assert_eq!(raw.finish(), vec![0, 1, 2, 3]);
+
+    let mut y4m = Yuv4MpegMuxer::new(2, 2, Rational::new(25, 1).unwrap(), None).unwrap();
+    y4m.write_packet(&Packet::new(vec![0, 1, 2, 3, 4, 5], 0))
+        .unwrap();
+    assert_y4m_roundtrip(&y4m.finish(), &[0, 1, 2, 3, 4, 5], None);
+}
+
+fn assert_wav_roundtrip(bytes: &[u8], channels: u16, sample_rate: u32, expected: &[u8]) {
+    let mut demuxer = WavDemuxer::open(bytes).unwrap();
+    assert_eq!(demuxer.info().channels(), channels);
+    assert_eq!(demuxer.info().sample_rate(), sample_rate);
+    assert_eq!(demuxer.info().sample_format(), SampleFormat::S16);
+    assert_eq!(demuxer.info().bits_per_sample(), 16);
+    assert_eq!(demuxer.info().data_size(), expected.len());
+    let packet = demuxer.read_packet().unwrap().unwrap();
+    assert_eq!(packet.data(), expected);
+    assert_eq!(
+        packet.duration() as usize,
+        expected.len() / usize::from(demuxer.info().block_align())
+    );
+    assert!(demuxer.read_packet().unwrap().is_none());
+}
+
+fn assert_y4m_roundtrip(bytes: &[u8], expected: &[u8], sample_aspect_ratio: Option<Rational>) {
+    let mut demuxer = Yuv4MpegDemuxer::open(bytes).unwrap();
+    assert_eq!(demuxer.info().sample_aspect_ratio(), sample_aspect_ratio);
+    let mut roundtrip = Vec::new();
+    while let Some(packet) = demuxer.read_packet().unwrap() {
+        roundtrip.extend_from_slice(packet.data());
+    }
+    assert_eq!(roundtrip, expected);
+}
+
+fn audio_packets_from(cursor: &mut Cursor<'_>, frame_size: usize) -> Vec<Packet> {
+    let count = usize::from(cursor.next().unwrap_or_default()) % (MAX_PACKETS + 1);
+    let mut packets = Vec::with_capacity(count);
+    for _ in 0..count {
+        let stream_index = stream_index_from(cursor.next());
+        let len = payload_len_for_mode(cursor, frame_size, MAX_AUDIO_PAYLOAD);
+        packets.push(Packet::new(payload_from(cursor, len), stream_index));
+    }
+    packets
+}
+
+fn video_packets_from(cursor: &mut Cursor<'_>, frame_size: usize) -> Vec<Packet> {
+    let count = usize::from(cursor.next().unwrap_or_default()) % (MAX_PACKETS + 1);
+    let mut packets = Vec::with_capacity(count);
+    for _ in 0..count {
+        let stream_index = stream_index_from(cursor.next());
+        let len = payload_len_for_mode(cursor, frame_size, MAX_VIDEO_PAYLOAD);
+        packets.push(Packet::new(payload_from(cursor, len), stream_index));
+    }
+    packets
+}
+
+fn payload_len_for_mode(cursor: &mut Cursor<'_>, valid_len: usize, max_len: usize) -> usize {
+    match cursor.next().unwrap_or_default() % 5 {
+        0 => valid_len.min(max_len),
+        1 => valid_len.saturating_sub(1).min(max_len),
+        2 => valid_len.saturating_add(1).min(max_len),
+        3 => usize::from(cursor.next().unwrap_or_default()) % (max_len + 1),
+        _ => 0,
+    }
+}
+
+fn payload_from(cursor: &mut Cursor<'_>, len: usize) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(len);
+    for _ in 0..len {
+        payload.push(cursor.next().unwrap_or_default());
+    }
+    payload
+}
+
+fn stream_index_from(byte: Option<u8>) -> usize {
+    usize::from(byte.unwrap_or_default().is_multiple_of(5))
+}
+
+fn sample_rate_from(byte: Option<u8>) -> u32 {
+    match byte.unwrap_or_default() % 6 {
+        0 => 0,
+        1 => 8_000,
+        2 => 44_100,
+        3 => 48_000,
+        4 => 96_000,
+        _ => u32::from(byte.unwrap_or_default()) + 1,
+    }
+}
+
+fn channel_count_from(byte: Option<u8>) -> u16 {
+    match byte.unwrap_or_default() % 7 {
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        3 => 6,
+        4 => 8,
+        _ => u16::from(byte.unwrap_or_default() % 12),
+    }
+}
+
+fn pixel_format_from(byte: Option<u8>) -> PixelFormat {
+    match byte.unwrap_or_default() % 4 {
+        0 => PixelFormat::Gray8,
+        1 => PixelFormat::Rgb24,
+        2 => PixelFormat::Rgba,
+        _ => PixelFormat::Yuv420p,
+    }
+}
+
+fn video_dimension_from(byte: Option<u8>, pixel_format: PixelFormat) -> usize {
+    let mut value = usize::from(byte.unwrap_or_default() % 8) + 1;
+    if pixel_format == PixelFormat::Yuv420p && value % 2 != 0 {
+        value += 1;
+    }
+    value
+}
+
+fn even_u32_from(byte: Option<u8>) -> u32 {
+    let value = u32::from(byte.unwrap_or_default() % 4) + 1;
+    value * 2
+}
+
+fn positive_rate_from(byte: Option<u8>) -> Rational {
+    match byte.unwrap_or_default() % 4 {
+        0 => Rational::ONE,
+        1 => Rational::new(24, 1).unwrap(),
+        2 => Rational::new(30000, 1001).unwrap(),
+        _ => Rational::new(60, 1).unwrap(),
+    }
+}
+
+fn sample_aspect_ratio_from(byte: Option<u8>) -> Option<Rational> {
+    match byte.unwrap_or_default() % 4 {
+        0 => None,
+        1 => Some(Rational::ONE),
+        2 => Some(Rational::new(4, 3).unwrap()),
+        _ => Some(Rational::new(16, 15).unwrap()),
+    }
+}
+
+fn pcm_state(muxer: &PcmS16leMuxer) -> (u64, usize, usize, Vec<u8>) {
+    (
+        muxer.packets(),
+        muxer.data_len(),
+        muxer.info().samples_per_channel(),
+        muxer.render(),
+    )
+}
+
+fn wav_state(muxer: &WavMuxer) -> (u64, usize, usize) {
+    (muxer.packets(), muxer.data_len(), muxer.info().data_size())
+}
+
+fn rawvideo_state(muxer: &RawVideoMuxer) -> (usize, usize, Vec<u8>) {
+    (muxer.info().frame_count(), muxer.data_len(), muxer.render())
+}
+
+fn y4m_state(muxer: &Yuv4MpegMuxer) -> (usize, usize, Vec<u8>) {
+    (muxer.frame_count(), muxer.payload_len(), muxer.render())
+}
+
+struct Cursor<'a> {
+    data: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> Cursor<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, offset: 0 }
+    }
+
+    fn next(&mut self) -> Option<u8> {
+        let byte = self.data.get(self.offset).copied();
+        self.offset = self.offset.saturating_add(usize::from(byte.is_some()));
+        byte
+    }
+}

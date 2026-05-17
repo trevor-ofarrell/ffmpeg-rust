@@ -1555,8 +1555,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial RIFF/WAVE muxer writes canonical PCM s16le headers and stream-0 packet payloads with block-align, bit-depth, and sample-frame validation derived from the shared avformat AudioStreamParameters helper and SampleFormat::S16 model, plus mono/stereo ChannelLayout metadata where safe. It is wired to a constrained ffmpeg-rs raw pcm_s16le to WAV file-output path. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, metadata chunks, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_basic_muxers"]
+notes = "Initial RIFF/WAVE muxer writes canonical PCM s16le headers and stream-0 packet payloads with block-align, bit-depth, and sample-frame validation derived from the shared avformat AudioStreamParameters helper and SampleFormat::S16 model, plus mono/stereo ChannelLayout metadata where safe. It is wired to a constrained ffmpeg-rs raw pcm_s16le to WAV file-output path. Build-checked cargo-fuzz target avformat_basic_muxers covers accepted/rejected packet writes, state accounting, render/finish stability, post-finish rejection, and WavDemuxer round trips, but actual local fuzz execution is blocked until cargo-fuzz is installed. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, metadata chunks, broader CLI wiring, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1660,8 +1660,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial raw pcm_s16le muxer concatenates stream-0 packet payloads validated with the shared avformat AudioStreamParameters helper and SampleFormat::S16-derived sample-frame sizing, tracks packet/byte/sample counts, exposes mono/stereo ChannelLayout metadata where safe, accepts empty packets, and prevents writes after finish. It is wired to a constrained ffmpeg-rs raw pcm_s16le file-output path. Probe integration, other PCM formats, broader CLI execution, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_basic_muxers"]
+notes = "Initial raw pcm_s16le muxer concatenates stream-0 packet payloads validated with the shared avformat AudioStreamParameters helper and SampleFormat::S16-derived sample-frame sizing, tracks packet/byte/sample counts, exposes mono/stereo ChannelLayout metadata where safe, accepts empty packets, and prevents writes after finish. It is wired to a constrained ffmpeg-rs raw pcm_s16le file-output path. Build-checked cargo-fuzz target avformat_basic_muxers covers accepted/rejected packet writes, state accounting, render/finish stability, post-finish rejection, and PcmS16leDemuxer round trips, but actual local fuzz execution is blocked until cargo-fuzz is installed. Probe integration, other PCM formats, broader CLI execution, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1682,8 +1682,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial rawvideo muxer concatenates stream-0 fixed-size frame packet payloads validated with shared VideoStreamParameters dimensions/frame-size checks for gray, rgb24, rgba, and yuv420p, tracks frame/byte counts, supports empty output, and prevents writes after finish. It is wired to a constrained ffmpeg-rs rawvideo file-output path. Probe integration, more pixel formats, broader CLI execution, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_basic_muxers"]
+notes = "Initial rawvideo muxer concatenates stream-0 fixed-size frame packet payloads validated with shared VideoStreamParameters dimensions/frame-size checks for gray, rgb24, rgba, and yuv420p, tracks frame/byte counts, supports empty output, and prevents writes after finish. It is wired to a constrained ffmpeg-rs rawvideo file-output path. Build-checked cargo-fuzz target avformat_basic_muxers covers accepted/rejected packet writes, state accounting, render/finish stability, post-finish rejection, and RawVideoDemuxer round trips, but actual local fuzz execution is blocked until cargo-fuzz is installed. Probe integration, more pixel formats, broader CLI execution, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1703,8 +1703,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial YUV4MPEG2 muxer writes progressive C420jpeg stream headers and FRAME payloads for exact-size yuv420p stream-0 packets validated through shared VideoStreamParameters plus PixelFormat::Yuv420p, supports optional sample aspect ratio, empty output, round-trip demuxing, and finalization checks. It is wired to a constrained ffmpeg-rs raw yuv420p to yuv4mpegpipe file-output path. Other chroma modes, interlaced modes, frame header overrides, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_basic_muxers"]
+notes = "Initial YUV4MPEG2 muxer writes progressive C420jpeg stream headers and FRAME payloads for exact-size yuv420p stream-0 packets validated through shared VideoStreamParameters plus PixelFormat::Yuv420p, supports optional sample aspect ratio, empty output, round-trip demuxing, and finalization checks. It is wired to a constrained ffmpeg-rs raw yuv420p to yuv4mpegpipe file-output path. Build-checked cargo-fuzz target avformat_basic_muxers covers accepted/rejected packet writes, state accounting, render/finish stability, post-finish rejection, and Yuv4MpegDemuxer round trips, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other chroma modes, interlaced modes, frame header overrides, broader CLI wiring, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
