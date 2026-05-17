@@ -1626,10 +1626,15 @@ mod tests {
     const STSS_ID: [u8; 4] = *b"stss";
     const STCO_ID: [u8; 4] = *b"stco";
     const MDAT_ID: [u8; 4] = *b"mdat";
+    const UDTA_ID: [u8; 4] = *b"udta";
+    const META_ID: [u8; 4] = *b"meta";
+    const ILST_ID: [u8; 4] = *b"ilst";
+    const DATA_ID: [u8; 4] = *b"data";
     const AVCC_ID: [u8; 4] = *b"avcC";
     const PASP_ID: [u8; 4] = *b"pasp";
     const COLR_ID: [u8; 4] = *b"colr";
     const NCLX_ID: [u8; 4] = *b"nclx";
+    const METADATA_DATA_TYPE_UTF8: u32 = 1;
 
     #[test]
     fn parses_ffprobe_show_options_and_input() {
@@ -1809,6 +1814,56 @@ mod tests {
         assert!(stdout.contains("duration_ts=5000\n"));
         assert!(stdout.contains("duration=5.000000\n"));
         assert!(stdout.contains("probe_score=100\n"));
+    }
+
+    #[test]
+    fn outputs_mov_format_tags_default() {
+        let path = write_temp_mov(
+            "show-format-tags-default",
+            &mov_file_with_movie_metadata(&[ilst_utf8_item(
+                [0xa9, b'n', b'a', b'm'],
+                "Rust Movie",
+            )]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&["-show_format", path_arg.as_str()]))
+            .expect("ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("[FORMAT]\n"));
+        assert!(stdout.contains("format_name=mov,mp4,m4a,3gp,3g2,mj2\n"));
+        assert!(stdout.contains("TAG:title=Rust Movie\n"));
+        assert!(!stdout.contains("[STREAM]\n"));
+        assert!(!stdout.contains("[PACKET]\n"));
+    }
+
+    #[test]
+    fn outputs_mov_format_tags_json() {
+        let path = write_temp_mov(
+            "show-format-tags-json",
+            &mov_file_with_movie_metadata(&[ilst_utf8_item(
+                [0xa9, b'n', b'a', b'm'],
+                "Rust Movie",
+            )]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-show_format",
+            "-of",
+            "json",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("\"format\""));
+        assert!(stdout.contains("\"tags\": {\"title\": \"Rust Movie\"}"));
+        assert!(!stdout.contains("\"streams\""));
+        assert!(!stdout.contains("\"packets\""));
     }
 
     #[test]
@@ -2457,6 +2512,23 @@ mod tests {
         out
     }
 
+    fn mov_file_with_movie_metadata(items: &[Vec<u8>]) -> Vec<u8> {
+        let udta = box_(UDTA_ID, &meta_box(ilst_box(items)));
+        let mut out = Vec::new();
+        out.extend_from_slice(&ftyp_box());
+        out.extend_from_slice(&box_(
+            MOOV_ID,
+            &[
+                mvhd_v0(1_000, 5_000),
+                trak_v0(1, 5_000, 90_000, 450_000),
+                udta,
+            ]
+            .concat(),
+        ));
+        out.extend_from_slice(&box_(MDAT_ID, &[]));
+        out
+    }
+
     fn sampled_mov_file(samples: &[&[u8]], durations: &[u32]) -> Vec<u8> {
         let stsd = stsd_box();
         sampled_mov_file_with_stsd(samples, durations, 1_920, 1_080, &stsd)
@@ -2825,6 +2897,32 @@ mod tests {
         body.extend_from_slice(&[0; 12]);
         body.extend_from_slice(handler_name);
         box_(HDLR_ID, &full_box(0, &body))
+    }
+
+    fn meta_box(ilst: Vec<u8>) -> Vec<u8> {
+        box_(META_ID, &full_box(0, &ilst))
+    }
+
+    fn ilst_box(items: &[Vec<u8>]) -> Vec<u8> {
+        box_(ILST_ID, &items.concat())
+    }
+
+    fn ilst_utf8_item(kind: [u8; 4], value: &str) -> Vec<u8> {
+        let data = box_(
+            DATA_ID,
+            &metadata_data_box_payload(METADATA_DATA_TYPE_UTF8, value.as_bytes()),
+        );
+        box_(kind, &data)
+    }
+
+    fn metadata_data_box_payload(data_type: u32, value: &[u8]) -> Vec<u8> {
+        let flags = data_type.to_be_bytes();
+        let mut out = Vec::new();
+        out.push(0);
+        out.extend_from_slice(&flags[1..]);
+        out.extend_from_slice(&0_u32.to_be_bytes());
+        out.extend_from_slice(value);
+        out
     }
 
     fn full_box(version: u8, body: &[u8]) -> Vec<u8> {
