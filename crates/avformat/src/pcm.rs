@@ -1,32 +1,29 @@
+use crate::AudioStreamParameters;
 use avutil::{AvError, AvErrorKind, AvResult, ChannelLayout, Packet, SampleFormat, SideData};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcmS16leInfo {
-    sample_rate: u32,
-    channels: u16,
-    channel_layout: Option<ChannelLayout>,
-    sample_format: SampleFormat,
+    audio: AudioStreamParameters,
     packet_samples: usize,
-    bytes_per_sample_frame: usize,
     packet_size: usize,
     total_samples_per_channel: usize,
 }
 
 impl PcmS16leInfo {
     pub fn sample_rate(&self) -> u32 {
-        self.sample_rate
+        self.audio.sample_rate()
     }
 
     pub fn channels(&self) -> u16 {
-        self.channels
+        self.audio.channels()
     }
 
     pub fn channel_layout(&self) -> Option<ChannelLayout> {
-        self.channel_layout
+        self.audio.channel_layout()
     }
 
     pub fn sample_format(&self) -> SampleFormat {
-        self.sample_format
+        self.audio.sample_format()
     }
 
     pub fn packet_samples(&self) -> usize {
@@ -34,7 +31,7 @@ impl PcmS16leInfo {
     }
 
     pub fn bytes_per_sample_frame(&self) -> usize {
-        self.bytes_per_sample_frame
+        self.audio.bytes_per_sample_frame()
     }
 
     pub fn packet_size(&self) -> usize {
@@ -48,33 +45,29 @@ impl PcmS16leInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcmS16leMuxerInfo {
-    sample_rate: u32,
-    channels: u16,
-    channel_layout: Option<ChannelLayout>,
-    sample_format: SampleFormat,
-    bytes_per_sample_frame: usize,
+    audio: AudioStreamParameters,
     samples_per_channel: usize,
 }
 
 impl PcmS16leMuxerInfo {
     pub fn sample_rate(&self) -> u32 {
-        self.sample_rate
+        self.audio.sample_rate()
     }
 
     pub fn channels(&self) -> u16 {
-        self.channels
+        self.audio.channels()
     }
 
     pub fn channel_layout(&self) -> Option<ChannelLayout> {
-        self.channel_layout
+        self.audio.channel_layout()
     }
 
     pub fn sample_format(&self) -> SampleFormat {
-        self.sample_format
+        self.audio.sample_format()
     }
 
     pub fn bytes_per_sample_frame(&self) -> usize {
-        self.bytes_per_sample_frame
+        self.audio.bytes_per_sample_frame()
     }
 
     pub fn samples_per_channel(&self) -> usize {
@@ -97,45 +90,33 @@ impl<'a> PcmS16leDemuxer<'a> {
         channels: u16,
         packet_samples: usize,
     ) -> AvResult<Self> {
-        if sample_rate == 0 {
-            return Err(AvError::invalid_argument(
-                "pcm_s16le sample rate must be non-zero",
-            ));
-        }
-        if channels == 0 {
-            return Err(AvError::invalid_argument(
-                "pcm_s16le channel count must be non-zero",
-            ));
-        }
+        let audio = AudioStreamParameters::with_context(
+            sample_rate,
+            channels,
+            SampleFormat::S16,
+            "pcm_s16le",
+        )?;
         if packet_samples == 0 {
             return Err(AvError::invalid_argument(
                 "pcm_s16le packet samples must be non-zero",
             ));
         }
 
-        let sample_format = SampleFormat::S16;
-        let channel_layout = ChannelLayout::default_for_count(channels);
-        let bytes_per_sample_frame = sample_format.bytes_per_sample_frame(channels)?;
-        let packet_size = bytes_per_sample_frame
+        let packet_size = audio
+            .bytes_per_sample_frame()
             .checked_mul(packet_samples)
             .ok_or_else(|| AvError::invalid_argument("pcm_s16le packet size overflow"))?;
 
-        if input.len() % bytes_per_sample_frame != 0 {
-            return Err(AvError::new(
-                AvErrorKind::EndOfFile,
-                "pcm_s16le input ends with a partial sample frame",
-            ));
-        }
-        let total_samples_per_channel = input.len() / bytes_per_sample_frame;
+        let total_samples_per_channel = audio.sample_frames_in_bytes(
+            input.len(),
+            AvErrorKind::EndOfFile,
+            "pcm_s16le input ends with a partial sample frame",
+        )?;
 
         Ok(Self {
             info: PcmS16leInfo {
-                sample_rate,
-                channels,
-                channel_layout,
-                sample_format,
+                audio,
                 packet_samples,
-                bytes_per_sample_frame,
                 packet_size,
                 total_samples_per_channel,
             },
@@ -156,7 +137,7 @@ impl<'a> PcmS16leDemuxer<'a> {
 
         let remaining = self.input.len() - self.position;
         let packet_len = remaining.min(self.info.packet_size);
-        let samples = packet_len / self.info.bytes_per_sample_frame;
+        let samples = packet_len / self.info.bytes_per_sample_frame();
         let duration = i64::try_from(samples)
             .map_err(|_| AvError::invalid_data("pcm_s16le packet duration does not fit i64"))?;
         let end = self
@@ -171,7 +152,7 @@ impl<'a> PcmS16leDemuxer<'a> {
         packet.push_side_data(SideData::new("pcm_sample_fmt", b"s16".to_vec())?);
         packet.push_side_data(SideData::new(
             "pcm_channels",
-            self.info.channels.to_string().into_bytes(),
+            self.info.channels().to_string().into_bytes(),
         )?);
         self.position = end;
         self.next_pts = self
@@ -192,28 +173,16 @@ pub struct PcmS16leMuxer {
 
 impl PcmS16leMuxer {
     pub fn new(sample_rate: u32, channels: u16) -> AvResult<Self> {
-        if sample_rate == 0 {
-            return Err(AvError::invalid_argument(
-                "pcm_s16le sample rate must be non-zero",
-            ));
-        }
-        if channels == 0 {
-            return Err(AvError::invalid_argument(
-                "pcm_s16le channel count must be non-zero",
-            ));
-        }
-
-        let sample_format = SampleFormat::S16;
-        let channel_layout = ChannelLayout::default_for_count(channels);
-        let bytes_per_sample_frame = sample_format.bytes_per_sample_frame(channels)?;
+        let audio = AudioStreamParameters::with_context(
+            sample_rate,
+            channels,
+            SampleFormat::S16,
+            "pcm_s16le",
+        )?;
 
         Ok(Self {
             info: PcmS16leMuxerInfo {
-                sample_rate,
-                channels,
-                channel_layout,
-                sample_format,
-                bytes_per_sample_frame,
+                audio,
                 samples_per_channel: 0,
             },
             data: Vec::new(),
@@ -250,13 +219,12 @@ impl PcmS16leMuxer {
                 packet.stream_index()
             )));
         }
-        if packet.data().len() % self.info.bytes_per_sample_frame != 0 {
-            return Err(AvError::invalid_data(
-                "pcm_s16le packet does not contain whole sample frames",
-            ));
-        }
+        let packet_samples = self.info.audio.sample_frames_in_bytes(
+            packet.data().len(),
+            AvErrorKind::InvalidData,
+            "pcm_s16le packet does not contain whole sample frames",
+        )?;
 
-        let packet_samples = packet.data().len() / self.info.bytes_per_sample_frame;
         let new_len = self
             .data
             .len()

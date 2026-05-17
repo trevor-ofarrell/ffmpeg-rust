@@ -2,6 +2,8 @@
 
 ## Current Status
 
+`avformat-audio-parameters` now provides a shared audio stream-parameter helper for the current PCM/WAV subset. It validates sample rate, channel count, sample format, derived mono/stereo `ChannelLayout`, packed sample-frame byte sizing, bits-per-sample reporting, and whole-sample-frame byte lengths while preserving distinct error kinds for user-supplied parameters versus untrusted container fields. Raw `pcm_s16le` demuxer/muxer and RIFF/WAVE s16le demuxer/muxer now store and validate their audio metadata through this helper. The ledger records this helper as implemented but not complete because richer audio codec-parameter parity, oracle differential tests, FATE, and fuzz coverage are still pending.
+
 Raw PCM and WAV format paths now use the shared audio format primitives instead of duplicating local s16 byte math. `PcmS16leDemuxer`, `PcmS16leMuxer`, `WavDemuxer`, and `WavMuxer` expose `SampleFormat::S16`, derive mono/stereo `ChannelLayout` metadata where channel-count-only inputs are unambiguous, and compute sample-frame sizes, WAV block alignment, and WAV bit depth through `avutil::SampleFormat`. Focused PCM/WAV tests and the full workspace validation suite pass. The related ledger entries remain `implemented`, not `complete`, because pinned-oracle differential tests, FATE, and fuzz coverage are still absent.
 
 `avutil-channel-layout` now provides an initial shared channel layout model. It covers common native channel positions plus `mono`, `stereo`, `quad`, `5.1`, `5.1(side)`, and `7.1` named layouts, and `AudioFrame` now carries an optional validated channel layout. Existing channel-count-only PCM decode paths derive mono/stereo layouts where safe and leave other counts unspecified rather than inventing a default. The ledger records the component as implemented but not complete because full `ffmpeg -layouts` coverage, custom/native order semantics, oracle differential tests, FATE, and fuzz coverage are still pending.
@@ -12,6 +14,16 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo test -p avformat audio`
+- `cargo test -p avformat pcm::tests`
+- `cargo test -p avformat wav`
+- `cargo fmt --all`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
 - `cargo fmt --all`
 - `cargo test -p avformat pcm::tests`
 - `cargo test -p avformat wav`
@@ -616,11 +628,11 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Current Focus Component
 
-`avformat-pcm-s16le-demuxer`, `avformat-pcm-s16le-muxer`, `avformat-wav-demuxer`, and `avformat-wav-muxer` were the latest focus. They now share `SampleFormat::S16` sample-frame/block-align sizing and derived mono/stereo `ChannelLayout` metadata, but remain incomplete until oracle differential tests, FATE mappings, fuzz coverage, additional PCM/WAV formats, and broader probe/CLI coverage exist.
+`avformat-audio-parameters` was the latest focus. It is wired into the existing raw PCM and WAV paths, with focused and workspace tests passing, but remains incomplete until broader audio codec-parameter semantics, more sample formats/layouts, oracle differential tests, FATE mappings, and fuzz coverage exist.
 
 ## Next 3 Concrete Actions
 
-1. Add a small audio stream-parameter helper in `avformat` so future WAV, raw PCM, AVI audio, and MOV audio paths share sample-rate/channel/sample-format validation instead of each demuxer carrying local checks.
+1. Add a small shared video stream-parameter helper in `avformat` so rawvideo, AVI video, and MOV visual sample-entry paths can share width/height/pixel-format/frame-size validation without duplicating local checks.
 2. Expand pixel/sample/channel layout coverage from pinned `ffmpeg -pix_fmts`, `-sample_fmts`, and `-layouts` inventories once the FFmpeg 8.1.1 oracle binary exists.
 3. Add pinned-oracle differential coverage for rawvideo/PCM frame sizing and ffprobe stream fields once the oracle is available.
 
@@ -633,4 +645,4 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: raw PCM and WAV demuxer/muxer metadata and sizing now use shared `SampleFormat::S16` and derived mono/stereo `ChannelLayout` metadata. `PORTING_LEDGER.toml`, `docs/architecture.md`, and `docs/compatibility.md` were updated to record that this is still implemented-only coverage, with oracle differential tests, FATE, and fuzzing still blocked by missing external setup.
+Latest slice: added `AudioStreamParameters` in `avformat`, exported it, wired raw PCM and WAV demuxer/muxer paths through it, added helper tests, and updated `PORTING_LEDGER.toml`, `docs/architecture.md`, and `docs/compatibility.md`. This still lacks broader audio codec-parameter parity, pinned-oracle differential tests, FATE, and fuzzing.

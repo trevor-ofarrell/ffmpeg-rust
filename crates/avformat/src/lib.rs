@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod audio;
 pub mod avi;
 pub mod avio;
 pub mod framecrc_muxer;
@@ -15,6 +16,7 @@ pub mod rawvideo;
 pub mod wav;
 pub mod yuv4mpegpipe;
 
+pub use audio::AudioStreamParameters;
 pub use avi::{
     avi_probe_descriptor, register_avi_probe, AviDemuxer, AviInfo, AviMediaType, AviMuxer,
     AviStreamInfo,

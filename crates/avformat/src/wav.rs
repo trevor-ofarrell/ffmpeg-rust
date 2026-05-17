@@ -1,3 +1,4 @@
+use crate::AudioStreamParameters;
 use avutil::{
     AvError, AvErrorKind, AvResult, ByteReader, ByteWriter, ChannelLayout, Packet, SampleFormat,
 };
@@ -9,10 +10,7 @@ const MAX_RIFF_DATA_SIZE: usize = u32::MAX as usize - 36;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WavInfo {
-    channels: u16,
-    channel_layout: Option<ChannelLayout>,
-    sample_format: SampleFormat,
-    sample_rate: u32,
+    audio: AudioStreamParameters,
     byte_rate: u32,
     block_align: u16,
     bits_per_sample: u16,
@@ -21,19 +19,19 @@ pub struct WavInfo {
 
 impl WavInfo {
     pub fn channels(&self) -> u16 {
-        self.channels
+        self.audio.channels()
     }
 
     pub fn channel_layout(&self) -> Option<ChannelLayout> {
-        self.channel_layout
+        self.audio.channel_layout()
     }
 
     pub fn sample_format(&self) -> SampleFormat {
-        self.sample_format
+        self.audio.sample_format()
     }
 
     pub fn sample_rate(&self) -> u32 {
-        self.sample_rate
+        self.audio.sample_rate()
     }
 
     pub fn byte_rate(&self) -> u32 {
@@ -53,7 +51,7 @@ impl WavInfo {
     }
 
     pub fn samples_per_channel(&self) -> usize {
-        self.data_size / usize::from(self.block_align)
+        self.data_size / self.audio.bytes_per_sample_frame()
     }
 }
 
@@ -157,20 +155,15 @@ pub struct WavMuxer {
 
 impl WavMuxer {
     pub fn new_pcm_s16le(channels: u16, sample_rate: u32) -> AvResult<Self> {
-        let sample_format = SampleFormat::S16;
-        let channel_layout = ChannelLayout::default_for_count(channels);
-        let block_align = block_align_for_format(sample_format, channels)?;
-        let byte_rate = sample_rate
-            .checked_mul(u32::from(block_align))
-            .ok_or_else(|| AvError::invalid_argument("WAV byte rate overflow"))?;
+        let audio =
+            AudioStreamParameters::with_context(sample_rate, channels, SampleFormat::S16, "WAV")?;
+        let block_align = block_align_for_audio(audio, AvErrorKind::InvalidArgument)?;
+        let byte_rate = byte_rate_for_audio(audio, block_align, AvErrorKind::InvalidArgument)?;
         let info = WavInfo {
-            channels,
-            channel_layout,
-            sample_format,
-            sample_rate,
+            audio,
             byte_rate,
             block_align,
-            bits_per_sample: bits_per_sample(sample_format)?,
+            bits_per_sample: audio.bits_per_sample()?,
             data_size: 0,
         };
         validate_pcm_s16le(&info)?;
@@ -247,8 +240,8 @@ impl WavMuxer {
         writer.write_all(b"fmt ");
         writer.write_u32_le(WAV_FMT_CHUNK_SIZE);
         writer.write_u16_le(PCM_S16LE_FORMAT_TAG);
-        writer.write_u16_le(self.info.channels);
-        writer.write_u32_le(self.info.sample_rate);
+        writer.write_u16_le(self.info.channels());
+        writer.write_u32_le(self.info.sample_rate());
         writer.write_u32_le(self.info.byte_rate);
         writer.write_u16_le(self.info.block_align);
         writer.write_u16_le(self.info.bits_per_sample);
@@ -281,11 +274,11 @@ fn parse_fmt(data: &[u8]) -> AvResult<WavInfo> {
     }
 
     let channels = reader.read_u16_le()?;
+    let sample_rate = reader.read_u32_le()?;
+    let audio =
+        AudioStreamParameters::from_container(sample_rate, channels, SampleFormat::S16, "WAV")?;
     Ok(WavInfo {
-        channels,
-        channel_layout: ChannelLayout::default_for_count(channels),
-        sample_format: SampleFormat::S16,
-        sample_rate: reader.read_u32_le()?,
+        audio,
         byte_rate: reader.read_u32_le()?,
         block_align: reader.read_u16_le()?,
         bits_per_sample: reader.read_u16_le()?,
@@ -294,17 +287,11 @@ fn parse_fmt(data: &[u8]) -> AvResult<WavInfo> {
 }
 
 fn validate_pcm_s16le(info: &WavInfo) -> AvResult<()> {
-    if info.channels == 0 {
-        return Err(AvError::invalid_data("WAV channel count must be non-zero"));
-    }
-    if info.sample_rate == 0 {
-        return Err(AvError::invalid_data("WAV sample rate must be non-zero"));
-    }
-    if info.sample_format != SampleFormat::S16 {
+    if info.sample_format() != SampleFormat::S16 {
         return Err(AvError::unsupported("unsupported WAV sample format"));
     }
 
-    let expected_bits_per_sample = bits_per_sample(info.sample_format)?;
+    let expected_bits_per_sample = info.audio.bits_per_sample()?;
     if info.bits_per_sample != expected_bits_per_sample {
         return Err(AvError::unsupported(format!(
             "unsupported WAV bits per sample {}",
@@ -312,7 +299,7 @@ fn validate_pcm_s16le(info: &WavInfo) -> AvResult<()> {
         )));
     }
 
-    let expected_block_align = block_align_for_format(info.sample_format, info.channels)?;
+    let expected_block_align = block_align_for_audio(info.audio, AvErrorKind::InvalidData)?;
     if info.block_align != expected_block_align {
         return Err(AvError::invalid_data(format!(
             "WAV block align {} does not match expected {expected_block_align}",
@@ -320,10 +307,8 @@ fn validate_pcm_s16le(info: &WavInfo) -> AvResult<()> {
         )));
     }
 
-    let expected_byte_rate = info
-        .sample_rate
-        .checked_mul(u32::from(info.block_align))
-        .ok_or_else(|| AvError::invalid_data("WAV byte rate overflow"))?;
+    let expected_byte_rate =
+        byte_rate_for_audio(info.audio, info.block_align, AvErrorKind::InvalidData)?;
     if info.byte_rate != expected_byte_rate {
         return Err(AvError::invalid_data(format!(
             "WAV byte rate {} does not match expected {expected_byte_rate}",
@@ -331,26 +316,29 @@ fn validate_pcm_s16le(info: &WavInfo) -> AvResult<()> {
         )));
     }
 
-    if info.data_size % usize::from(info.block_align) != 0 {
-        return Err(AvError::invalid_data(
-            "WAV data chunk does not contain whole sample frames",
-        ));
-    }
+    info.audio.sample_frames_in_bytes(
+        info.data_size,
+        AvErrorKind::InvalidData,
+        "WAV data chunk does not contain whole sample frames",
+    )?;
 
     Ok(())
 }
 
-fn block_align_for_format(sample_format: SampleFormat, channels: u16) -> AvResult<u16> {
-    u16::try_from(sample_format.bytes_per_sample_frame(channels)?)
-        .map_err(|_| AvError::invalid_argument("WAV block align does not fit u16"))
+fn block_align_for_audio(audio: AudioStreamParameters, error_kind: AvErrorKind) -> AvResult<u16> {
+    u16::try_from(audio.bytes_per_sample_frame())
+        .map_err(|_| AvError::new(error_kind, "WAV block align does not fit u16"))
 }
 
-fn bits_per_sample(sample_format: SampleFormat) -> AvResult<u16> {
-    let bits = sample_format
-        .bytes_per_sample()
-        .checked_mul(8)
-        .ok_or_else(|| AvError::invalid_argument("WAV bits per sample overflow"))?;
-    u16::try_from(bits).map_err(|_| AvError::invalid_argument("WAV bits per sample overflow"))
+fn byte_rate_for_audio(
+    audio: AudioStreamParameters,
+    block_align: u16,
+    error_kind: AvErrorKind,
+) -> AvResult<u32> {
+    audio
+        .sample_rate()
+        .checked_mul(u32::from(block_align))
+        .ok_or_else(|| AvError::new(error_kind, "WAV byte rate overflow"))
 }
 
 fn validate_data_len(data_len: usize) -> AvResult<()> {
