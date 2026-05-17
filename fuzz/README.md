@@ -10,6 +10,7 @@ Initial targets:
 - `avformat_yuv4mpegpipe`: exercises YUV4MPEG2 demuxer opening, frame packet emission, and parsed stream invariants.
 - `avformat_pcm_s16le`: exercises raw PCM s16le demuxer parameter validation, packet slicing, timing, and side-data invariants.
 - `avformat_rawvideo`: exercises rawvideo demuxer geometry/format/rate validation, frame slicing, timing, and side-data invariants.
+- `avformat_avi`: exercises constrained RIFF AVI demuxer chunk parsing, stream metadata, packet timing, and side-data invariants.
 
 Run with cargo-fuzz when the tool is installed:
 
@@ -20,6 +21,7 @@ cargo fuzz run avformat_wav
 cargo fuzz run avformat_yuv4mpegpipe
 cargo fuzz run avformat_pcm_s16le
 cargo fuzz run avformat_rawvideo
+cargo fuzz run avformat_avi
 ```
 
 The harness package lives under `fuzz/` and is intentionally separate from the main workspace.

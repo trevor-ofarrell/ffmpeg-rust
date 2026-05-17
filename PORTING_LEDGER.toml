@@ -1747,8 +1747,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, and packet timing side data. It has a hand-written ProbeRegistry descriptor for RIFF/AVI signature, .avi extension, and common AVI MIME types, and is wired to constrained ffmpeg-rs AVI input to stdout null/framecrc output paths and ffprobe-rs AVI format/stream/packet summaries. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_avi"]
+notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, and packet timing side data. It has a hand-written ProbeRegistry descriptor for RIFF/AVI signature, .avi extension, and common AVI MIME types, and is wired to constrained ffmpeg-rs AVI input to stdout null/framecrc output paths and ffprobe-rs AVI format/stream/packet summaries. Build-checked cargo-fuzz target avformat_avi exercises chunk parsing, stream metadata, packet timing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, broader CLI wiring, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
