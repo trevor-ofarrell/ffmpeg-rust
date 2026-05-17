@@ -1851,6 +1851,29 @@ mod tests {
     }
 
     #[test]
+    fn outputs_mov_stream_packet_count_default() {
+        let path = write_temp_mov(
+            "show-stream-count-packets-default",
+            &sampled_mov_file(&[b"abc".as_slice(), b"defg".as_slice()], &[1_000, 2_000]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-count_packets",
+            "-show_streams",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("[STREAM]\n"));
+        assert!(stdout.contains("nb_read_packets=2\n"));
+        assert!(!stdout.contains("[PACKET]\n"));
+        assert!(!stdout.contains("[FORMAT]\n"));
+    }
+
+    #[test]
     fn outputs_mov_visual_stream_aspect_and_color_json() {
         let child_boxes = [
             box_(
@@ -2104,6 +2127,31 @@ mod tests {
         assert!(stdout.contains("\"nb_read_packets\": \"2\""));
         assert!(!stdout.contains("\"packets\""));
         assert!(!stdout.contains("\"format\""));
+    }
+
+    #[test]
+    fn outputs_avi_stream_packet_count_default() {
+        let first = [0, 1, 2, 3, 4, 5];
+        let second = [6, 7, 8, 9, 10, 11];
+        let path = write_temp_avi(
+            "avi-count-packets-default",
+            &avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[&first, &second]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-count_packets",
+            "-show_streams",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe AVI command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("[STREAM]\n"));
+        assert!(stdout.contains("nb_read_packets=2\n"));
+        assert!(!stdout.contains("[PACKET]\n"));
+        assert!(!stdout.contains("[FORMAT]\n"));
     }
 
     #[test]

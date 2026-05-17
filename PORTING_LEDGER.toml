@@ -610,17 +610,19 @@ ffmpeg_name = "ffprobe -count_packets stream nb_read_packets"
 upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "implemented"
 priority = 2
-oracle_command = "ffprobe -count_packets -show_streams -of json <input.mp4>; ffprobe -count_packets -show_streams -of json <input.avi>"
+oracle_command = "ffprobe -count_packets -show_streams <input.mp4>; ffprobe -count_packets -show_streams -of json <input.mp4>; ffprobe -count_packets -show_streams <input.avi>; ffprobe -count_packets -show_streams -of json <input.avi>"
 rust_command = "cargo test -p fftools ffprobe"
 unit_tests = [
   "ffprobe::tests::parses_ffprobe_show_options_and_input",
   "ffprobe::tests::outputs_mov_stream_packet_count_json",
+  "ffprobe::tests::outputs_mov_stream_packet_count_default",
   "ffprobe::tests::outputs_avi_stream_packet_count_json",
+  "ffprobe::tests::outputs_avi_stream_packet_count_default",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffprobe-rs now accepts -count_packets for constrained MOV/MP4 and AVI local inputs, collects packets through the Rust demuxers, and renders nb_read_packets on stream reports without emitting a packets section unless -show_packets is also requested. The current tests prove JSON output for one-stream MOV and AVI fixtures. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now accepts -count_packets for constrained MOV/MP4 and AVI local inputs, collects packets through the Rust demuxers, and renders nb_read_packets on stream reports without emitting a packets section unless -show_packets is also requested. The current tests prove JSON and default output for one-stream MOV and AVI fixtures. No pinned-oracle differential/FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
