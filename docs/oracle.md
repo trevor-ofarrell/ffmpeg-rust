@@ -49,7 +49,7 @@ Each command is written as a text snapshot under `compat/ffmpeg-8.1.1/`, with `i
 
 FATE samples are expected to be obtained using upstream FFmpeg's documented `make fate-rsync` flow against a local samples directory. This repository does not yet contain samples or an upstream media FATE target mapping.
 
-`cargo run -p fate-runner -- list` reads `PORTING_LEDGER.toml` and lists known components. `cargo run -p fate-runner -- run --changed` inspects git changed paths, maps currently covered Rust modules to ledger component IDs, and runs explicit command mappings from `tests/fate/mappings.txt` for selected components. The mapping format is documented in `tests/fate/README.md` as `component_id|target|workdir|program|arg1|arg2|...`.
+`cargo run -p fate-runner -- list` reads `PORTING_LEDGER.toml` and lists known components. `cargo run -p fate-runner -- run --changed` inspects git changed paths, maps currently covered Rust modules to ledger component IDs, and runs explicit command mappings from `tests/fate/mappings.txt` for selected components. Add `--dry-run` to resolve and print selected mappings, including prerequisite validation, without executing them. The mapping format is documented in `tests/fate/README.md` as `component_id|target|workdir|program|arg1|arg2|...`.
 
 Mappings may reference `{samples}` and `{oracle_ffmpeg}` in the workdir, program, or args fields. When a selected mapping uses those placeholders, pass `--samples <path>` and/or `--oracle-ffmpeg <path>` to `fate-runner`; the runner validates that the samples path is an existing directory and the oracle path is an existing file before executing the mapped command.
 

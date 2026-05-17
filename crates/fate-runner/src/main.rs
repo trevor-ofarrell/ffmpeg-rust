@@ -25,12 +25,19 @@ struct RunOptions {
     mode: RunMode,
     mappings_path: String,
     context: FateContext,
+    execution_mode: ExecutionMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RunMode {
     Component(String),
     Changed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExecutionMode {
+    Execute,
+    DryRun,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -303,15 +310,22 @@ fn list_components() -> Result<(), String> {
 
 fn run_component(args: Vec<String>) -> Result<(), String> {
     let options = parse_run_options(&args)?;
-    match options.mode {
+    let RunOptions {
+        mode,
+        mappings_path,
+        context,
+        execution_mode,
+    } = options;
+
+    match mode {
         RunMode::Component(component) => {
             let ids = load_component_ids()?;
             if !ids.iter().any(|id| id == &component) {
                 return Err(format!("unknown ledger component `{component}`"));
             }
-            run_mapped_components(&ids, &[component], &options.mappings_path, &options.context)
+            run_mapped_components(&ids, &[component], &mappings_path, &context, execution_mode)
         }
-        RunMode::Changed => run_changed_components(&options.mappings_path, &options.context),
+        RunMode::Changed => run_changed_components(&mappings_path, &context, execution_mode),
     }
 }
 
@@ -319,10 +333,12 @@ fn parse_run_options(args: &[String]) -> Result<RunOptions, String> {
     let mut mode = None;
     let mut mappings_path = DEFAULT_FATE_MAPPINGS_PATH.to_string();
     let mut context = FateContext::default();
+    let mut execution_mode = ExecutionMode::Execute;
     let mut iter = args.iter();
 
     while let Some(arg) = iter.next() {
         match arg.as_str() {
+            "--dry-run" => execution_mode = ExecutionMode::DryRun,
             "--changed" => set_run_mode(&mut mode, RunMode::Changed)?,
             "--component" => {
                 let component = iter
@@ -358,6 +374,7 @@ fn parse_run_options(args: &[String]) -> Result<RunOptions, String> {
         mode: mode.ok_or_else(|| "missing --component <id> or --changed".to_string())?,
         mappings_path,
         context,
+        execution_mode,
     })
 }
 
@@ -369,7 +386,11 @@ fn set_run_mode(mode: &mut Option<RunMode>, new_mode: RunMode) -> Result<(), Str
     Ok(())
 }
 
-fn run_changed_components(mappings_path: &str, context: &FateContext) -> Result<(), String> {
+fn run_changed_components(
+    mappings_path: &str,
+    context: &FateContext,
+    execution_mode: ExecutionMode,
+) -> Result<(), String> {
     let component_ids = load_component_ids()?;
     let changed_paths = git_changed_paths()?;
     let unmapped = unmapped_relevant_paths(&changed_paths);
@@ -392,7 +413,13 @@ fn run_changed_components(mappings_path: &str, context: &FateContext) -> Result<
         println!("{component}");
     }
 
-    run_mapped_components(&component_ids, &components, mappings_path, context)
+    run_mapped_components(
+        &component_ids,
+        &components,
+        mappings_path,
+        context,
+        execution_mode,
+    )
 }
 
 fn run_mapped_components(
@@ -400,6 +427,7 @@ fn run_mapped_components(
     selected_components: &[String],
     mappings_path: &str,
     context: &FateContext,
+    execution_mode: ExecutionMode,
 ) -> Result<(), String> {
     let mappings = load_fate_mappings(mappings_path, component_ids)?;
     let missing_components = components_without_mappings(selected_components, &mappings);
@@ -416,7 +444,7 @@ fn run_mapped_components(
             .iter()
             .filter(|mapping| &mapping.component_id == component)
         {
-            run_fate_mapping(mapping, context)?;
+            run_fate_mapping(mapping, context, execution_mode)?;
         }
     }
 
@@ -512,14 +540,32 @@ fn parse_fate_mappings(
     Ok(mappings)
 }
 
-fn run_fate_mapping(mapping: &FateMapping, context: &FateContext) -> Result<(), String> {
+fn run_fate_mapping(
+    mapping: &FateMapping,
+    context: &FateContext,
+    execution_mode: ExecutionMode,
+) -> Result<(), String> {
     let mapping = resolve_fate_mapping(mapping, context)?;
-    println!(
-        "running {}:{} -> {}",
-        mapping.component_id,
-        mapping.target,
-        format_mapping_command(&mapping)
-    );
+
+    match execution_mode {
+        ExecutionMode::DryRun => {
+            println!(
+                "dry-run {}:{} -> {}",
+                mapping.component_id,
+                mapping.target,
+                format_mapping_command(&mapping)
+            );
+            return Ok(());
+        }
+        ExecutionMode::Execute => {
+            println!(
+                "running {}:{} -> {}",
+                mapping.component_id,
+                mapping.target,
+                format_mapping_command(&mapping)
+            );
+        }
+    }
 
     let status = Command::new(&mapping.program)
         .args(&mapping.args)
@@ -749,7 +795,7 @@ fn normalize_path(path: &str) -> String {
 
 fn print_help() {
     eprintln!(
-        "usage: fate-runner list | run [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --component <id> | run [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --changed"
+        "usage: fate-runner list | run [--dry-run] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --component <id> | run [--dry-run] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --changed"
     );
 }
 
@@ -846,6 +892,7 @@ mod tests {
                 mode: RunMode::Component("fate-runner".to_string()),
                 mappings_path: "custom.map".to_string(),
                 context: FateContext::default(),
+                execution_mode: ExecutionMode::Execute,
             }
         );
 
@@ -855,6 +902,7 @@ mod tests {
                 mode: RunMode::Changed,
                 mappings_path: DEFAULT_FATE_MAPPINGS_PATH.to_string(),
                 context: FateContext::default(),
+                execution_mode: ExecutionMode::Execute,
             }
         );
 
@@ -874,6 +922,17 @@ mod tests {
                     samples_root: Some("tests/fate".to_string()),
                     oracle_ffmpeg: Some("Cargo.toml".to_string()),
                 },
+                execution_mode: ExecutionMode::Execute,
+            }
+        );
+
+        assert_eq!(
+            parse_run_options(&["--dry-run".to_string(), "--changed".to_string()]).unwrap(),
+            RunOptions {
+                mode: RunMode::Changed,
+                mappings_path: DEFAULT_FATE_MAPPINGS_PATH.to_string(),
+                context: FateContext::default(),
+                execution_mode: ExecutionMode::DryRun,
             }
         );
     }
@@ -1089,6 +1148,39 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
                 &mappings,
             ),
             vec!["avutil-error".to_string()]
+        );
+    }
+
+    #[test]
+    fn dry_run_resolves_mapping_without_executing_command() {
+        let mapping = FateMapping {
+            component_id: "fate-runner".to_string(),
+            target: "nonexistent-program".to_string(),
+            workdir: ".".to_string(),
+            program: "definitely-not-a-real-fate-command".to_string(),
+            args: vec!["--would-fail-if-executed".to_string()],
+        };
+
+        assert_eq!(
+            run_fate_mapping(&mapping, &FateContext::default(), ExecutionMode::DryRun),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn dry_run_still_validates_mapping_prerequisites() {
+        let mapping = FateMapping {
+            component_id: "avformat-wav-demuxer".to_string(),
+            target: "sample-framecrc".to_string(),
+            workdir: ".".to_string(),
+            program: "cargo".to_string(),
+            args: vec!["{samples}/audio/test.wav".to_string()],
+        };
+
+        assert!(
+            run_fate_mapping(&mapping, &FateContext::default(), ExecutionMode::DryRun)
+                .unwrap_err()
+                .contains("references {samples} but --samples <path> was not provided")
         );
     }
 }
