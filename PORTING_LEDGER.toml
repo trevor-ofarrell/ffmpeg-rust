@@ -277,8 +277,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Order-preserving metadata dictionary implemented with ASCII case-insensitive default matching, case-sensitive lookup, prefix lookup, keep-existing, append, removal, and invalid string checks. Differential vectors and fuzzing are pending, so this is not marked complete."
+fuzz_targets = ["avutil_metadata_options"]
+notes = "Order-preserving metadata dictionary implemented with ASCII case-insensitive default matching, case-sensitive lookup, prefix lookup, keep-existing, append, removal, and invalid string checks. Build-checked cargo-fuzz target avutil_metadata_options covers key/value validation, case-sensitive and case-insensitive mutation, lookup, removal, clear, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. Differential vectors are pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]
@@ -300,8 +300,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. CLI option ordering, flags, child classes, ranges with units, and oracle differential vectors are pending, so this is not marked complete."
+fuzz_targets = ["avutil_metadata_options"]
+notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. Build-checked cargo-fuzz target avutil_metadata_options covers option definition validation, duplicate rejection, parsed values, direct typed values, range/type checks, string NUL/empty validation, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. CLI option ordering, flags, child classes, ranges with units, and oracle differential vectors are pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]

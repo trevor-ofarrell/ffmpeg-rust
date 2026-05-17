@@ -28,6 +28,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "avutil_metadata_options"
+path = "fuzz_targets/avutil_metadata_options.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "avformat_wav"
 path = "fuzz_targets/avformat_wav.rs"
 test = false

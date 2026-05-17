@@ -6,6 +6,7 @@ Initial targets:
 
 - `avutil_byteio`: exercises bounded byte reads, EOF cursor invariants, and byte writer helper paths.
 - `avutil_bitreader`: exercises bit reads, peeks, skips, alignment, bit writer width validation, and cursor invariants.
+- `avutil_metadata_options`: exercises metadata dictionary mutation, key/value validation, AVOption-like definition validation, string parsing, type/range checks, and failed-mutation invariants.
 - `avformat_wav`: exercises RIFF/WAVE PCM s16le demuxer opening, packet emission, and parsed stream invariants.
 - `avformat_yuv4mpegpipe`: exercises YUV4MPEG2 demuxer opening, frame packet emission, and parsed stream invariants.
 - `avformat_pcm_s16le`: exercises raw PCM s16le demuxer parameter validation, packet slicing, timing, and side-data invariants.
@@ -20,6 +21,7 @@ Run with cargo-fuzz when the tool is installed:
 ```sh
 cargo fuzz run avutil_byteio
 cargo fuzz run avutil_bitreader
+cargo fuzz run avutil_metadata_options
 cargo fuzz run avformat_wav
 cargo fuzz run avformat_yuv4mpegpipe
 cargo fuzz run avformat_pcm_s16le
