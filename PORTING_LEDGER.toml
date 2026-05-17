@@ -396,7 +396,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Format reports include local input byte length as size and MOV movie-level metadata tags parsed from udta/meta/ilst atoms. Stream reports include initial codec_name, codec_long_name, profile, level, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, MOV raw VisualSampleEntry depth as bits_per_raw_sample, MOV non-empty sample-entry extradata_size, MOV avcC-derived is_avc and nal_length_size, start_pts/start_time for non-empty zero-origin streams, r_frame_rate and avg_frame_rate for constrained parsed timing, MOV mdhd language and hdlr handler_name as stream tags when present, constrained nb_read_frames when -count_frames is requested, nb_read_packets when -count_packets is requested, and MOV visual sample-entry side fields for sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
+notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Format reports include local input byte length as size, zero nb_programs/nb_stream_groups counters for the current no-program/no-stream-group demuxer model, and MOV movie-level metadata tags parsed from udta/meta/ilst atoms. Stream reports include initial codec_name, codec_long_name, profile, level, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, MOV raw VisualSampleEntry depth as bits_per_raw_sample, MOV non-empty sample-entry extradata_size, MOV avcC-derived is_avc and nal_length_size, start_pts/start_time for non-empty zero-origin streams, r_frame_rate and avg_frame_rate for constrained parsed timing, MOV mdhd language and hdlr handler_name as stream tags when present, constrained nb_read_frames when -count_frames is requested, nb_read_packets when -count_packets is requested, and MOV visual sample-entry side fields for sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
 blocked_reason = ""
 
 [[component]]
@@ -423,6 +423,29 @@ notes = "ffprobe-rs now carries local input byte length into format reports and 
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffprobe-format-program-counts"
+kind = "cli"
+ffmpeg_name = "ffprobe format nb_programs/nb_stream_groups fields"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_format <input.mp4>; ffprobe -show_format -of json <input.mp4>; ffprobe -show_format <input.avi>; ffprobe -show_format -of json <input.avi>"
+rust_command = "cargo test -p fftools ffprobe"
+unit_tests = [
+  "ffprobe::tests::renders_default_report_sections",
+  "ffprobe::tests::renders_json_report_sections",
+  "ffprobe::tests::opens_local_mov_file_for_show_format",
+  "ffprobe::tests::outputs_mov_format_tags_json",
+  "ffprobe::tests::opens_local_avi_file_for_show_format",
+  "ffprobe::tests::outputs_avi_format_size_json",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffprobe-rs now reports nb_programs=0 and nb_stream_groups=0 in -show_format default and JSON output for constrained MOV/MP4 and AVI inputs, matching the current demuxer model where no programs or stream groups are parsed. No pinned-oracle differential/FATE coverage exists yet."
+blocked_reason = ""
+
+[[component]]
 id = "fftools-ffprobe-mov-format-tags"
 kind = "cli"
 ffmpeg_name = "ffprobe MOV/MP4 format tags"
@@ -438,7 +461,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffprobe-rs now renders MOV/MP4 movie-level metadata tags in -show_format default and JSON output through the Rust MovDemuxer. Current command-path tests cover a UTF-8 title atom in udta/meta/ilst and verify that stream and packet sections remain absent unless requested. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now renders MOV/MP4 movie-level metadata tags in -show_format default and JSON output through the Rust MovDemuxer alongside the shared format size and zero program/stream-group counters. Current command-path tests cover a UTF-8 title atom in udta/meta/ilst and verify that stream and packet sections remain absent unless requested. No pinned-oracle differential/FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -481,7 +504,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Format reports include local input byte length as size. Stream reports include initial codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, bits_per_raw_sample from BITMAPINFOHEADER bit count, start_pts/start_time for non-empty zero-origin streams, r_frame_rate/avg_frame_rate fields for the constrained video stream, constrained nb_read_frames when -count_frames is requested, and nb_read_packets when -count_packets is requested. Output is deterministic but not byte-identical to upstream and has no oracle differential/FATE coverage yet."
+notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Format reports include local input byte length as size plus zero nb_programs/nb_stream_groups counters for the current no-program/no-stream-group demuxer model. Stream reports include initial codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, bits_per_raw_sample from BITMAPINFOHEADER bit count, start_pts/start_time for non-empty zero-origin streams, r_frame_rate/avg_frame_rate fields for the constrained video stream, constrained nb_read_frames when -count_frames is requested, and nb_read_packets when -count_packets is requested. Output is deterministic but not byte-identical to upstream and has no oracle differential/FATE coverage yet."
 blocked_reason = ""
 
 [[component]]

@@ -42,6 +42,8 @@ pub struct FfprobeReport {
     format_long_name: String,
     probe_score: u8,
     nb_streams: usize,
+    nb_programs: usize,
+    nb_stream_groups: usize,
     duration_ts: Option<u64>,
     duration: Option<String>,
     size: Option<u64>,
@@ -70,6 +72,14 @@ impl FfprobeReport {
 
     pub fn nb_streams(&self) -> usize {
         self.nb_streams
+    }
+
+    pub fn nb_programs(&self) -> usize {
+        self.nb_programs
+    }
+
+    pub fn nb_stream_groups(&self) -> usize {
+        self.nb_stream_groups
     }
 
     pub fn duration_ts(&self) -> Option<u64> {
@@ -736,6 +746,8 @@ fn report_from_mov(path: &str, probe_score: u8, input_size: u64, info: &MovInfo)
         format_long_name: MOV_FORMAT_LONG_NAME.to_owned(),
         probe_score,
         nb_streams: streams.len(),
+        nb_programs: 0,
+        nb_stream_groups: 0,
         duration_ts: info.duration(),
         duration: info
             .duration()
@@ -816,6 +828,8 @@ fn report_from_avi(path: &str, input_size: u64, info: &AviInfo) -> FfprobeReport
         format_long_name: AVI_FORMAT_LONG_NAME.to_owned(),
         probe_score: AVI_PROBE_SCORE,
         nb_streams: streams.len(),
+        nb_programs: 0,
+        nb_stream_groups: 0,
         duration_ts: Some(u64::from(info.total_frames())),
         duration: duration_stream.map(|stream| {
             format_rational_duration(
@@ -1330,6 +1344,8 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         out.push_str("[FORMAT]\n");
         out.push_str(&format!("filename={}\n", report.filename));
         out.push_str(&format!("nb_streams={}\n", report.nb_streams));
+        out.push_str(&format!("nb_programs={}\n", report.nb_programs));
+        out.push_str(&format!("nb_stream_groups={}\n", report.nb_stream_groups));
         out.push_str(&format!("format_name={}\n", report.format_name));
         out.push_str(&format!("format_long_name={}\n", report.format_long_name));
         out.push_str(&format!("time_base={}\n", report.time_base));
@@ -1494,6 +1510,8 @@ fn render_format_json(report: &FfprobeReport) -> String {
     let mut fields = vec![
         json_string("filename", &report.filename),
         json_number("nb_streams", report.nb_streams),
+        json_number("nb_programs", report.nb_programs),
+        json_number("nb_stream_groups", report.nb_stream_groups),
         json_string("format_name", &report.format_name),
         json_string("format_long_name", &report.format_long_name),
         json_string("time_base", &report.time_base),
@@ -1748,6 +1766,8 @@ mod tests {
         assert!(!rendered.contains("nb_read_frames="));
         assert!(!rendered.contains("nb_read_packets="));
         assert!(rendered.contains("[FORMAT]\n"));
+        assert!(rendered.contains("nb_programs=0\n"));
+        assert!(rendered.contains("nb_stream_groups=0\n"));
         assert!(rendered.contains("format_name=mov,mp4,m4a,3gp,3g2,mj2\n"));
         assert!(rendered.contains("duration=5.000000\n"));
         assert!(rendered.contains("size=2048\n"));
@@ -1781,6 +1801,8 @@ mod tests {
 
         assert!(rendered.contains("\"format\""));
         assert!(rendered.contains("\"filename\": \"clip.mp4\""));
+        assert!(rendered.contains("\"nb_programs\": 0"));
+        assert!(rendered.contains("\"nb_stream_groups\": 0"));
         assert!(rendered.contains("\"size\": \"2048\""));
         assert!(rendered.contains("\"title\": \"Rust \\\"MOV\\\"\""));
         assert!(!rendered.contains("\"streams\""));
@@ -1828,6 +1850,8 @@ mod tests {
         assert!(stdout.contains("[FORMAT]\n"));
         assert!(stdout.contains("format_name=mov,mp4,m4a,3gp,3g2,mj2\n"));
         assert!(stdout.contains("nb_streams=1\n"));
+        assert!(stdout.contains("nb_programs=0\n"));
+        assert!(stdout.contains("nb_stream_groups=0\n"));
         assert!(stdout.contains("duration_ts=5000\n"));
         assert!(stdout.contains("duration=5.000000\n"));
         assert!(stdout.contains(&format!("size={expected_size}\n")));
@@ -1876,6 +1900,8 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("\"format\""));
+        assert!(stdout.contains("\"nb_programs\": 0"));
+        assert!(stdout.contains("\"nb_stream_groups\": 0"));
         assert!(stdout.contains(&format!("\"size\": \"{expected_size}\"")));
         assert!(stdout.contains("\"tags\": {\"title\": \"Rust Movie\"}"));
         assert!(!stdout.contains("\"streams\""));
@@ -2160,6 +2186,8 @@ mod tests {
         assert!(stdout.contains("format_name=avi\n"));
         assert!(stdout.contains("format_long_name=AVI (Audio Video Interleaved)\n"));
         assert!(stdout.contains("nb_streams=1\n"));
+        assert!(stdout.contains("nb_programs=0\n"));
+        assert!(stdout.contains("nb_stream_groups=0\n"));
         assert!(stdout.contains("time_base=1/25\n"));
         assert!(stdout.contains("duration_ts=2\n"));
         assert!(stdout.contains("duration=0.080000\n"));
@@ -2187,6 +2215,8 @@ mod tests {
 
         assert!(stdout.contains("\"format\""));
         assert!(stdout.contains("\"format_name\": \"avi\""));
+        assert!(stdout.contains("\"nb_programs\": 0"));
+        assert!(stdout.contains("\"nb_stream_groups\": 0"));
         assert!(stdout.contains(&format!("\"size\": \"{expected_size}\"")));
         assert!(!stdout.contains("\"streams\""));
         assert!(!stdout.contains("\"packets\""));
@@ -2451,6 +2481,8 @@ mod tests {
             format_long_name: MOV_FORMAT_LONG_NAME.to_string(),
             probe_score: 100,
             nb_streams: 1,
+            nb_programs: 0,
+            nb_stream_groups: 0,
             duration_ts: Some(5_000),
             duration: Some("5.000000".to_string()),
             size: Some(2_048),
