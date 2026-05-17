@@ -243,13 +243,14 @@ unit_tests = [
   "bitreader::tests::peek_does_not_advance_cursor",
   "bitreader::tests::skip_and_align_update_cursor",
   "bitreader::tests::zero_bit_reads_are_valid_noops",
+  "bitreader::tests::signed_reads_sign_extend_and_peek_without_advancing",
   "bitreader::tests::eof_errors_do_not_advance_cursor",
   "bitreader::tests::rejects_reads_wider_than_u64",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_bitreader"]
-notes = "Bounded MSB-first bit reader implemented. Initial cargo-fuzz target avutil_bitreader exercises reads, peeks, skips, alignment, and cursor invariants. Deeper GetBitContext compatibility vectors are pending, so this is not marked complete."
+notes = "Bounded MSB-first bit reader implemented with unsigned and signed read/peek helpers, including sign extension and no-advance failure invariants. Build-checked cargo-fuzz target avutil_bitreader exercises unsigned reads/peeks, signed reads/peeks, skips, alignment, and cursor invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper GetBitContext compatibility vectors are pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]
@@ -267,13 +268,15 @@ unit_tests = [
   "bitwriter::tests::byte_align_zero_pads_partial_byte",
   "bitwriter::tests::zero_bit_zero_value_write_is_noop",
   "bitwriter::tests::rejects_values_that_do_not_fit_width_without_advancing",
+  "bitwriter::tests::signed_bits_round_trip_with_sign_extension",
+  "bitwriter::tests::rejects_signed_values_that_do_not_fit_width_without_advancing",
   "bitwriter::tests::rejects_nonzero_zero_width_write",
   "bitwriter::tests::rejects_widths_wider_than_u64",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_bitreader"]
-notes = "Bounded MSB-first bit writer implemented. Initial cargo-fuzz target avutil_bitreader also exercises write width validation, cursor invariants, and byte alignment. Deeper PutBitContext compatibility vectors are pending, so this is not marked complete."
+notes = "Bounded MSB-first bit writer implemented with unsigned writes, signed writes, signed fit validation, and no-mutation failure invariants. Build-checked cargo-fuzz target avutil_bitreader also exercises unsigned write validation, signed write validation, cursor invariants, and byte alignment, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper PutBitContext compatibility vectors are pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]

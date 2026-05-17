@@ -66,6 +66,11 @@ impl BitWriter {
         Ok(())
     }
 
+    pub fn write_signed_bits(&mut self, value: i64, count: u8) -> AvResult<()> {
+        let encoded = validate_signed_width(value, count)?;
+        self.write_bits(encoded, count)
+    }
+
     pub fn byte_align_zero(&mut self) {
         while !self.is_aligned() {
             self.write_bit(false);
@@ -96,6 +101,38 @@ fn validate_width(value: u64, count: u8) -> AvResult<()> {
     }
 
     Ok(())
+}
+
+fn validate_signed_width(value: i64, count: u8) -> AvResult<u64> {
+    if count > 64 {
+        return Err(AvError::invalid_argument(
+            "cannot write more than 64 signed bits at once",
+        ));
+    }
+
+    if count == 0 {
+        if value == 0 {
+            return Ok(0);
+        }
+        return Err(AvError::invalid_argument(
+            "non-zero signed value does not fit in zero bits",
+        ));
+    }
+
+    if count == 64 {
+        return Ok(value as u64);
+    }
+
+    let shift = count - 1;
+    let min = -(1_i64 << shift);
+    let max = (1_i64 << shift) - 1;
+    if value < min || value > max {
+        return Err(AvError::invalid_argument(
+            "signed bit value does not fit requested width",
+        ));
+    }
+
+    Ok((value as u64) & ((1_u64 << count) - 1))
 }
 
 #[cfg(test)]
@@ -134,6 +171,26 @@ mod tests {
     }
 
     #[test]
+    fn signed_bits_round_trip_with_sign_extension() {
+        let mut writer = BitWriter::new();
+        writer.write_signed_bits(-2, 4).unwrap();
+        writer.write_signed_bits(5, 4).unwrap();
+        writer.write_signed_bits(-1, 1).unwrap();
+        writer.write_signed_bits(i64::MIN, 64).unwrap();
+        writer.byte_align_zero();
+
+        let bytes = writer.into_inner();
+        let mut reader = BitReader::new(&bytes);
+
+        assert_eq!(reader.read_signed_bits(4).unwrap(), -2);
+        assert_eq!(reader.read_signed_bits(4).unwrap(), 5);
+        assert_eq!(reader.read_signed_bits(1).unwrap(), -1);
+        assert_eq!(reader.read_signed_bits(64).unwrap(), i64::MIN);
+        assert_eq!(reader.read_bits(7).unwrap(), 0);
+        assert!(reader.is_eof());
+    }
+
+    #[test]
     fn byte_align_zero_pads_partial_byte() {
         let mut writer = BitWriter::new();
 
@@ -150,6 +207,7 @@ mod tests {
         let mut writer = BitWriter::new();
 
         writer.write_bits(0, 0).unwrap();
+        writer.write_signed_bits(0, 0).unwrap();
 
         assert!(writer.is_empty());
         assert!(writer.as_slice().is_empty());
@@ -171,8 +229,10 @@ mod tests {
         let mut writer = BitWriter::new();
 
         let err = writer.write_bits(1, 0).unwrap_err();
+        let signed_err = writer.write_signed_bits(1, 0).unwrap_err();
 
         assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(signed_err.kind(), AvErrorKind::InvalidArgument);
         assert!(writer.is_empty());
     }
 
@@ -181,8 +241,23 @@ mod tests {
         let mut writer = BitWriter::new();
 
         let err = writer.write_bits(0, 65).unwrap_err();
+        let signed_err = writer.write_signed_bits(0, 65).unwrap_err();
 
         assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(signed_err.kind(), AvErrorKind::InvalidArgument);
         assert!(writer.is_empty());
+    }
+
+    #[test]
+    fn rejects_signed_values_that_do_not_fit_width_without_advancing() {
+        let mut writer = BitWriter::new();
+
+        let positive_err = writer.write_signed_bits(2, 2).unwrap_err();
+        let negative_err = writer.write_signed_bits(-3, 2).unwrap_err();
+
+        assert_eq!(positive_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(negative_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(writer.bit_position(), 0);
+        assert!(writer.as_slice().is_empty());
     }
 }

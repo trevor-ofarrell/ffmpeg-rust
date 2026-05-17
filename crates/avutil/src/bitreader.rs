@@ -49,6 +49,10 @@ impl<'a> BitReader<'a> {
         Ok(value)
     }
 
+    pub fn read_signed_bits(&mut self, count: u8) -> AvResult<i64> {
+        self.read_bits(count).map(|value| sign_extend(value, count))
+    }
+
     pub fn peek_bits(&self, count: u8) -> AvResult<u64> {
         self.validate_read(count)?;
 
@@ -58,6 +62,10 @@ impl<'a> BitReader<'a> {
             value = (value << 1) | u64::from(self.bit_at(position));
         }
         Ok(value)
+    }
+
+    pub fn peek_signed_bits(&self, count: u8) -> AvResult<i64> {
+        self.peek_bits(count).map(|value| sign_extend(value, count))
     }
 
     pub fn skip_bits(&mut self, count: usize) -> AvResult<()> {
@@ -113,6 +121,22 @@ impl<'a> BitReader<'a> {
     }
 }
 
+fn sign_extend(value: u64, count: u8) -> i64 {
+    if count == 0 {
+        0
+    } else if count == 64 {
+        value as i64
+    } else {
+        let sign_bit = 1_u64 << (count - 1);
+        if value & sign_bit == 0 {
+            value as i64
+        } else {
+            let sign_mask = !0_u64 << count;
+            (value | sign_mask) as i64
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,7 +180,23 @@ mod tests {
 
         assert_eq!(reader.read_bits(0).unwrap(), 0);
         assert_eq!(reader.peek_bits(0).unwrap(), 0);
+        assert_eq!(reader.read_signed_bits(0).unwrap(), 0);
+        assert_eq!(reader.peek_signed_bits(0).unwrap(), 0);
         assert_eq!(reader.bit_position(), 0);
+    }
+
+    #[test]
+    fn signed_reads_sign_extend_and_peek_without_advancing() {
+        let mut reader =
+            BitReader::new(&[0b1110_0101, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+        assert_eq!(reader.peek_signed_bits(4).unwrap(), -2);
+        assert_eq!(reader.bit_position(), 0);
+        assert_eq!(reader.read_signed_bits(4).unwrap(), -2);
+        assert_eq!(reader.read_signed_bits(4).unwrap(), 5);
+        assert_eq!(reader.read_signed_bits(1).unwrap(), -1);
+        assert_eq!(reader.read_signed_bits(63).unwrap(), 0);
+        assert!(reader.is_eof());
     }
 
     #[test]
@@ -165,8 +205,10 @@ mod tests {
 
         reader.skip_bits(7).unwrap();
         let err = reader.read_bits(2).unwrap_err();
+        let signed_err = reader.read_signed_bits(2).unwrap_err();
 
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(signed_err.kind(), AvErrorKind::EndOfFile);
         assert_eq!(reader.bit_position(), 7);
         assert_eq!(reader.bits_remaining(), 1);
     }
@@ -176,8 +218,10 @@ mod tests {
         let mut reader = BitReader::new(&[0xff; 9]);
 
         let err = reader.read_bits(65).unwrap_err();
+        let signed_err = reader.read_signed_bits(65).unwrap_err();
 
         assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(signed_err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(reader.bit_position(), 0);
     }
 }

@@ -9,10 +9,12 @@ fuzz_target!(|data: &[u8]| {
     for &op in data {
         let before = reader.bit_position();
         let requested = op & 0x7f;
-        let result = match op & 0x03 {
+        let result = match op % 6 {
             0 => reader.read_bits(requested),
             1 => reader.peek_bits(requested),
-            2 => reader.skip_bits(usize::from(requested)).map(|_| 0),
+            2 => reader.read_signed_bits(requested).map(|value| value as u64),
+            3 => reader.peek_signed_bits(requested).map(|value| value as u64),
+            4 => reader.skip_bits(usize::from(requested)).map(|_| 0),
             _ => reader.byte_align().map(|_| 0),
         };
 
@@ -20,7 +22,7 @@ fuzz_target!(|data: &[u8]| {
         if result.is_err() {
             assert_eq!(reader.bit_position(), before);
         }
-        if op & 0x03 == 1 {
+        if op % 6 == 1 || op % 6 == 3 {
             assert_eq!(reader.bit_position(), before);
         }
     }
@@ -41,6 +43,19 @@ fuzz_target!(|data: &[u8]| {
         assert!(writer.bit_position() >= before);
         if result.is_err() {
             assert_eq!(writer.bit_position(), before);
+        } else {
+            assert_eq!(writer.bit_position(), before + usize::from(width));
+        }
+
+        let signed_value = i64::from_le_bytes(bytes);
+        let signed_before = writer.bit_position();
+        let signed_result = writer.write_signed_bits(signed_value, width);
+
+        assert!(writer.bit_position() >= signed_before);
+        if signed_result.is_err() {
+            assert_eq!(writer.bit_position(), signed_before);
+        } else {
+            assert_eq!(writer.bit_position(), signed_before + usize::from(width));
         }
         assert_eq!(writer.is_empty(), writer.bit_position() == 0);
     }
