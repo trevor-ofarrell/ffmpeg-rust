@@ -64,7 +64,7 @@ CLI compatibility is treated as a first-class surface. The current implementatio
 
 ## Test Architecture
 
-The current `ffprobe-rs` stream report includes `r_frame_rate` for constrained MOV/AVI inputs using already parsed timing metadata. MOV currently derives it from sample count, media duration, and timescale for the simple constant-duration fixtures covered by tests; broader FFmpeg rate-guessing parity remains incomplete.
+The current `ffprobe-rs` stream report includes `start_pts`/`start_time` for non-empty constrained MOV/AVI inputs whose parsers model zero-origin timestamps, plus `r_frame_rate` using already parsed timing metadata. MOV currently derives rate from sample count, media duration, and timescale for the simple constant-duration fixtures covered by tests; broader FFmpeg timeline and rate-guessing parity remains incomplete.
 
 The test hierarchy is unit tests first, followed by golden parser tests, differential tests against the pinned oracle, FATE-derived tests, fuzz harnesses, integration tests, and performance benchmarks. Current coverage is limited to unit and in-process command tests for the first primitives and the initial ffprobe MOV path; separate cargo-built integration test executables are currently blocked by Windows Application Control in this environment.
 

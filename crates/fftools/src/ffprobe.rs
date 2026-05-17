@@ -120,6 +120,8 @@ pub struct FfprobeStreamReport {
     time_base_num: u32,
     time_base_den: u32,
     time_base: String,
+    start_pts: Option<i64>,
+    start_time: Option<String>,
     r_frame_rate: Option<String>,
     avg_frame_rate: Option<String>,
     duration_ts: Option<u64>,
@@ -215,6 +217,14 @@ impl FfprobeStreamReport {
 
     pub fn time_base(&self) -> &str {
         &self.time_base
+    }
+
+    pub fn start_pts(&self) -> Option<i64> {
+        self.start_pts
+    }
+
+    pub fn start_time(&self) -> Option<&str> {
+        self.start_time.as_deref()
     }
 
     pub fn r_frame_rate(&self) -> Option<&str> {
@@ -606,6 +616,8 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                 track.media_duration(),
                 track.media_timescale(),
             );
+            let (start_pts, start_time) =
+                stream_start_for_sample_count(track.sample_count(), 1, track.media_timescale());
             FfprobeStreamReport {
                 index,
                 id: track.id(),
@@ -649,6 +661,8 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                 time_base_num: 1,
                 time_base_den: track.media_timescale(),
                 time_base: format!("1/{}", track.media_timescale()),
+                start_pts,
+                start_time,
                 r_frame_rate: frame_rate.clone(),
                 avg_frame_rate: frame_rate,
                 duration_ts: track.media_duration(),
@@ -694,6 +708,11 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
         .iter()
         .map(|stream| {
             let (time_base_num, time_base_den) = rational_parts(stream.time_base());
+            let (start_pts, start_time) = stream_start_for_sample_count(
+                stream.length() as usize,
+                time_base_num,
+                time_base_den,
+            );
             FfprobeStreamReport {
                 index: stream.index(),
                 id: u32::try_from(stream.index()).unwrap_or(u32::MAX),
@@ -719,6 +738,8 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
                 time_base_num,
                 time_base_den,
                 time_base: stream.time_base().to_string(),
+                start_pts,
+                start_time,
                 r_frame_rate: Some(stream.frame_rate().to_string()),
                 avg_frame_rate: Some(stream.frame_rate().to_string()),
                 duration_ts: Some(u64::from(stream.length())),
@@ -1066,6 +1087,20 @@ fn average_frame_rate(
     ))
 }
 
+fn stream_start_for_sample_count(
+    sample_count: usize,
+    time_base_num: u32,
+    time_base_den: u32,
+) -> (Option<i64>, Option<String>) {
+    if sample_count == 0 {
+        return (None, None);
+    }
+    (
+        Some(0),
+        Some(format_rational_signed_time(0, time_base_num, time_base_den)),
+    )
+}
+
 fn format_reduced_u128_ratio(numerator: u128, denominator: u128) -> String {
     let divisor = gcd_u128(numerator, denominator);
     format!("{}/{}", numerator / divisor, denominator / divisor)
@@ -1179,6 +1214,12 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
                 out.push_str(&format!("level={level}\n"));
             }
             out.push_str(&format!("time_base={}\n", stream.time_base));
+            if let Some(start_pts) = stream.start_pts {
+                out.push_str(&format!("start_pts={start_pts}\n"));
+            }
+            if let Some(start_time) = &stream.start_time {
+                out.push_str(&format!("start_time={start_time}\n"));
+            }
             if let Some(r_frame_rate) = &stream.r_frame_rate {
                 out.push_str(&format!("r_frame_rate={r_frame_rate}\n"));
             }
@@ -1323,6 +1364,12 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     }
     if let Some(level) = stream.level {
         fields.push(json_number("level", level));
+    }
+    if let Some(start_pts) = stream.start_pts {
+        fields.push(json_number("start_pts", start_pts));
+    }
+    if let Some(start_time) = &stream.start_time {
+        fields.push(json_string("start_time", start_time));
     }
     if let Some(r_frame_rate) = &stream.r_frame_rate {
         fields.push(json_string("r_frame_rate", r_frame_rate));
@@ -1578,6 +1625,8 @@ mod tests {
         assert!(rendered.contains("color_space=bt709\n"));
         assert!(rendered.contains("color_transfer=bt709\n"));
         assert!(rendered.contains("color_primaries=bt709\n"));
+        assert!(rendered.contains("start_pts=0\n"));
+        assert!(rendered.contains("start_time=0.000000\n"));
         assert!(rendered.contains("r_frame_rate=30/1\n"));
         assert!(rendered.contains("avg_frame_rate=30/1\n"));
         assert!(rendered.contains("[FORMAT]\n"));
@@ -1695,6 +1744,8 @@ mod tests {
         assert!(stdout.contains("\"height\": 1080"));
         assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
         assert!(stdout.contains(&format!("\"extradata_size\": {expected_extradata_size}")));
+        assert!(stdout.contains("\"start_pts\": 0"));
+        assert!(stdout.contains("\"start_time\": \"0.000000\""));
         assert!(stdout.contains("\"r_frame_rate\": \"30/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
         assert!(!stdout.contains("\"format\""));
@@ -1749,6 +1800,8 @@ mod tests {
         assert!(stdout.contains("\"color_transfer\": \"iec61966-2-1\""));
         assert!(stdout.contains("\"color_primaries\": \"bt709\""));
         assert!(stdout.contains("\"level\": 31"));
+        assert!(stdout.contains("\"start_pts\": 0"));
+        assert!(stdout.contains("\"start_time\": \"0.000000\""));
         assert!(stdout.contains("\"r_frame_rate\": \"30/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
     }
@@ -1911,6 +1964,8 @@ mod tests {
         assert!(stdout.contains("\"height\": 1"));
         assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
         assert!(stdout.contains("\"time_base\": \"1/25\""));
+        assert!(stdout.contains("\"start_pts\": 0"));
+        assert!(stdout.contains("\"start_time\": \"0.000000\""));
         assert!(stdout.contains("\"r_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"duration_ts\": 1"));
@@ -2009,6 +2064,8 @@ mod tests {
                 time_base_num: 1,
                 time_base_den: 90_000,
                 time_base: "1/90000".to_string(),
+                start_pts: Some(0),
+                start_time: Some("0.000000".to_string()),
                 r_frame_rate: Some("30/1".to_string()),
                 avg_frame_rate: Some("30/1".to_string()),
                 duration_ts: Some(450_000),
