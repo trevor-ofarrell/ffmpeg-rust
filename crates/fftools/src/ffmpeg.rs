@@ -3070,6 +3070,8 @@ mod tests {
         body.extend_from_slice(&0_u32.to_be_bytes());
         body.extend_from_slice(&timescale.to_be_bytes());
         body.extend_from_slice(&duration.to_be_bytes());
+        body.extend_from_slice(&0_u16.to_be_bytes());
+        body.extend_from_slice(&0_u16.to_be_bytes());
         box_(MDHD_ID, &full_box(0, &body))
     }
 

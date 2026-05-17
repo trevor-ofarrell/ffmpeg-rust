@@ -394,7 +394,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Stream reports include initial codec_name, codec_long_name, profile, level, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, MOV raw VisualSampleEntry depth as bits_per_raw_sample, MOV non-empty sample-entry extradata_size, MOV avcC-derived is_avc and nal_length_size, start_pts/start_time for non-empty zero-origin streams, r_frame_rate and avg_frame_rate for constrained parsed timing, MOV hdlr handler_name as a stream tag when present, and MOV visual sample-entry side fields for sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
+notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Stream reports include initial codec_name, codec_long_name, profile, level, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, MOV raw VisualSampleEntry depth as bits_per_raw_sample, MOV non-empty sample-entry extradata_size, MOV avcC-derived is_avc and nal_length_size, start_pts/start_time for non-empty zero-origin streams, r_frame_rate and avg_frame_rate for constrained parsed timing, MOV mdhd language and hdlr handler_name as stream tags when present, and MOV visual sample-entry side fields for sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
 blocked_reason = ""
 
 [[component]]
@@ -581,6 +581,26 @@ differential_tests = []
 fate_tests = []
 fuzz_targets = []
 notes = "MOV/MP4 mdia/hdlr boxes are now parsed for a UTF-8 handler name and exposed through existing stream metadata as handler_name, which ffprobe-rs renders as TAG:handler_name in default output and tags.handler_name in JSON. The parser rejects invalid UTF-8 handler names with a typed invalid-data error. No pinned-oracle differential/FATE/fuzz coverage exists yet."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-ffprobe-mov-language-tag"
+kind = "cli"
+ffmpeg_name = "ffprobe MOV stream language tag"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_streams -of json <input.mp4>"
+rust_command = "cargo test -p avformat mov::tests; cargo test -p fftools ffprobe"
+unit_tests = [
+  "mov::tests::extracts_media_language_as_track_metadata",
+  "ffprobe::tests::outputs_mov_stream_json",
+  "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "MOV/MP4 mdhd language codes are now parsed for the constrained ISO-639 packed lowercase form and exposed through existing stream metadata as language, which ffprobe-rs renders as TAG:language in default output and tags.language in JSON. Zero or unknown language encodings are treated as absent metadata rather than panicking. No pinned-oracle differential/FATE/fuzz coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -1453,6 +1473,7 @@ unit_tests = [
   "mov::tests::extracts_cover_art_metadata_from_ilst_atoms",
   "mov::tests::extracts_track_metadata_from_track_udta",
   "mov::tests::extracts_media_handler_name_as_track_metadata",
+  "mov::tests::extracts_media_language_as_track_metadata",
   "mov::tests::rejects_invalid_media_handler_name",
   "mov::tests::rejects_malformed_movie_metadata_atom_boundaries",
   "mov::tests::registers_mov_probe_descriptor_for_signature_extension_and_mime",
@@ -1481,5 +1502,5 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, mdhd, and mdia/hdlr handler-name metadata; extracts common movie-level and track-level udta/meta/ilst data values for UTF-8 and UTF-16 text fields, classic gnre genre indexes, one-byte integer/boolean atoms, iTunes-style freeform ---- atoms, covr cover-art payloads, and track/disc number pairs while rejecting malformed metadata atoms, invalid text encodings, malformed hdlr names, malformed genre indexes, short integer/boolean payloads, malformed freeform payloads, and short cover-art data payloads; registers a hand-written ftyp/extension/MIME probe descriptor; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; parses VisualSampleEntry width, height, frame count, compressor name, depth, child boxes, structured avcC version/profile/level/NAL-length-size/SPS/PPS data, structured hvcC profile/timing/NAL-length-size/NAL-array data, pasp pixel aspect ratio, and nclx/nclc/rICC/prof colr color information for known video sample entries and raw entries with full visual payloads; explicitly rejects fragmented mvex/moof layouts, edit-list edts boxes, multiple populated tracks, multiple stsd sample entries, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables, malformed VisualSampleEntry child boxes, malformed avcC/hvcC/pasp/colr payloads, and truncated media data. Packet extraction for multiple populated tracks, actual fragment parsing, edit-list timeline application, deeper VPS/SPS/PPS bitstream validation, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, mdhd language metadata, and mdia/hdlr handler-name metadata; extracts common movie-level and track-level udta/meta/ilst data values for UTF-8 and UTF-16 text fields, classic gnre genre indexes, one-byte integer/boolean atoms, iTunes-style freeform ---- atoms, covr cover-art payloads, and track/disc number pairs while rejecting malformed metadata atoms, invalid text encodings, malformed hdlr names, malformed genre indexes, short integer/boolean payloads, malformed freeform payloads, and short cover-art data payloads; registers a hand-written ftyp/extension/MIME probe descriptor; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; parses VisualSampleEntry width, height, frame count, compressor name, depth, child boxes, structured avcC version/profile/level/NAL-length-size/SPS/PPS data, structured hvcC profile/timing/NAL-length-size/NAL-array data, pasp pixel aspect ratio, and nclx/nclc/rICC/prof colr color information for known video sample entries and raw entries with full visual payloads; explicitly rejects fragmented mvex/moof layouts, edit-list edts boxes, multiple populated tracks, multiple stsd sample entries, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables, malformed VisualSampleEntry child boxes, malformed avcC/hvcC/pasp/colr payloads, and truncated media data. Packet extraction for multiple populated tracks, actual fragment parsing, edit-list timeline application, deeper VPS/SPS/PPS bitstream validation, CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""

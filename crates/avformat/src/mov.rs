@@ -702,10 +702,11 @@ struct TrackHeader {
     height: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct MediaHeader {
     timescale: u32,
     duration: Option<u64>,
+    language: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -858,7 +859,13 @@ fn parse_mdia(input: &[u8], mdia: &BoxHeader) -> AvResult<MediaData> {
     let mut sample_table = None;
     for child in read_box_headers(input, mdia.payload_start, mdia.payload_end, "MOV/MP4 mdia")? {
         match &child.box_type {
-            MDHD_ID => media_header = Some(parse_mdhd(child.payload(input))?),
+            MDHD_ID => {
+                let header = parse_mdhd(child.payload(input))?;
+                if let Some(language) = &header.language {
+                    set_metadata_value(&mut metadata, "language", language.clone())?;
+                }
+                media_header = Some(header);
+            }
             HDLR_ID => {
                 if let Some(handler_name) = parse_hdlr(child.payload(input))? {
                     set_metadata_value(&mut metadata, "handler_name", handler_name)?;
@@ -2025,14 +2032,14 @@ fn parse_mdhd(payload: &[u8]) -> AvResult<MediaHeader> {
     let (version, _) = read_full_box_header(&mut reader, "MOV/MP4 mdhd")?;
     let (timescale, duration) = match version {
         0 => {
-            ensure_remaining(&reader, 16, "MOV/MP4 mdhd version 0")?;
+            ensure_remaining(&reader, 20, "MOV/MP4 mdhd version 0")?;
             reader.skip(8)?;
             let timescale = reader.read_u32_be()?;
             let duration = unknown_u32_duration(reader.read_u32_be()?);
             (timescale, duration)
         }
         1 => {
-            ensure_remaining(&reader, 28, "MOV/MP4 mdhd version 1")?;
+            ensure_remaining(&reader, 32, "MOV/MP4 mdhd version 1")?;
             reader.skip(16)?;
             let timescale = reader.read_u32_be()?;
             let duration = unknown_u64_duration(reader.read_u64_be()?);
@@ -2044,11 +2051,30 @@ fn parse_mdhd(payload: &[u8]) -> AvResult<MediaHeader> {
             )));
         }
     };
+    let language = decode_mdhd_language(reader.read_u16_be()?);
+    reader.skip(2)?;
     validate_timescale(timescale, "MOV/MP4 media timescale")?;
     Ok(MediaHeader {
         timescale,
         duration,
+        language,
     })
+}
+
+fn decode_mdhd_language(language: u16) -> Option<String> {
+    if language == 0 {
+        return None;
+    }
+
+    let mut out = String::with_capacity(3);
+    for shift in [10, 5, 0] {
+        let value = u8::try_from((language >> shift) & 0x1f).ok()?;
+        if !(1..=26).contains(&value) {
+            return None;
+        }
+        out.push(char::from(b'a' + value - 1));
+    }
+    Some(out)
 }
 
 fn parse_hdlr(payload: &[u8]) -> AvResult<Option<String>> {
@@ -2513,6 +2539,17 @@ mod tests {
     }
 
     #[test]
+    fn extracts_media_language_as_track_metadata() {
+        let bytes = mp4_with_media_language("eng");
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(
+            demuxer.info().tracks()[0].metadata().get("language"),
+            Some("eng")
+        );
+    }
+
+    #[test]
     fn rejects_invalid_media_handler_name() {
         let bytes = mp4_with_media_handler_name(b"\xff\0");
 
@@ -2599,6 +2636,12 @@ mod tests {
                 .unwrap_err()
                 .kind(),
             AvErrorKind::Unsupported
+        );
+        assert_eq!(
+            MovDemuxer::open(&mp4_with_truncated_mdhd())
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::EndOfFile
         );
     }
 
@@ -4332,6 +4375,37 @@ mod tests {
         )
     }
 
+    fn mp4_with_media_language(language: &str) -> Vec<u8> {
+        let mdia = box_(*MDIA_ID, &mdhd_v0_with_language(90_000, 450_000, language));
+        let moov = box_(
+            *MOOV_ID,
+            &[
+                mvhd_v0(1_000, 5_000),
+                box_(*TRAK_ID, &[tkhd_v0(1, 5_000, 1_920, 1_080), mdia].concat()),
+            ]
+            .concat(),
+        );
+        [ftyp_box(), moov].concat()
+    }
+
+    fn mp4_with_truncated_mdhd() -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&0_u32.to_be_bytes());
+        body.extend_from_slice(&0_u32.to_be_bytes());
+        body.extend_from_slice(&90_000_u32.to_be_bytes());
+        body.extend_from_slice(&450_000_u32.to_be_bytes());
+        let mdia = box_(*MDIA_ID, &box_(*MDHD_ID, &full_box(0, &body)));
+        let moov = box_(
+            *MOOV_ID,
+            &[
+                mvhd_v0(1_000, 5_000),
+                box_(*TRAK_ID, &[tkhd_v0(1, 5_000, 1_920, 1_080), mdia].concat()),
+            ]
+            .concat(),
+        );
+        [ftyp_box(), moov].concat()
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn stbl_box_with_stsd(
         sample_description_box: Vec<u8>,
@@ -4724,11 +4798,17 @@ mod tests {
     }
 
     fn mdhd_v0(timescale: u32, duration: u32) -> Vec<u8> {
+        mdhd_v0_with_language(timescale, duration, "")
+    }
+
+    fn mdhd_v0_with_language(timescale: u32, duration: u32, language: &str) -> Vec<u8> {
         let mut body = Vec::new();
         body.extend_from_slice(&0_u32.to_be_bytes());
         body.extend_from_slice(&0_u32.to_be_bytes());
         body.extend_from_slice(&timescale.to_be_bytes());
         body.extend_from_slice(&duration.to_be_bytes());
+        body.extend_from_slice(&packed_mdhd_language(language).to_be_bytes());
+        body.extend_from_slice(&0_u16.to_be_bytes());
         box_(*MDHD_ID, &full_box(0, &body))
     }
 
@@ -4738,7 +4818,21 @@ mod tests {
         body.extend_from_slice(&0_u64.to_be_bytes());
         body.extend_from_slice(&timescale.to_be_bytes());
         body.extend_from_slice(&duration.to_be_bytes());
+        body.extend_from_slice(&0_u16.to_be_bytes());
+        body.extend_from_slice(&0_u16.to_be_bytes());
         box_(*MDHD_ID, &full_box(1, &body))
+    }
+
+    fn packed_mdhd_language(language: &str) -> u16 {
+        if language.is_empty() {
+            return 0;
+        }
+        let bytes = language.as_bytes();
+        assert_eq!(bytes.len(), 3);
+        bytes.iter().fold(0_u16, |packed, byte| {
+            assert!(byte.is_ascii_lowercase());
+            (packed << 5) | u16::from(*byte - b'a' + 1)
+        })
     }
 
     fn hdlr_box(handler_type: [u8; 4], handler_name: &[u8]) -> Vec<u8> {
