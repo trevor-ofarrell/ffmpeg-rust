@@ -1534,8 +1534,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial RIFF/WAVE demuxer parses PCM s16le fmt/data chunks, skips padded unknown chunks, validates stream parameters through the shared avformat AudioStreamParameters helper and SampleFormat::S16 sizing model, derives mono/stereo ChannelLayout metadata where safe, and emits one data packet. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, packet chunking, probing, CLI wiring, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_wav"]
+notes = "Initial RIFF/WAVE demuxer parses PCM s16le fmt/data chunks, skips padded unknown chunks, validates stream parameters through the shared avformat AudioStreamParameters helper and SampleFormat::S16 sizing model, derives mono/stereo ChannelLayout metadata where safe, and emits one data packet. Build-checked cargo-fuzz target avformat_wav exercises demuxer opening, packet emission, and parsed stream invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, packet chunking, probing, CLI wiring, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1576,8 +1576,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial YUV4MPEG2 demuxer parses progressive 4:2:0 C420jpeg headers, validates dimensions and frame size through shared VideoStreamParameters plus PixelFormat::Yuv420p while keeping frame rate/interlace/chroma field checks local, and emits one stream-0 packet per frame with incrementing PTS. Other chroma modes, interlaced modes, frame header overrides, CLI wiring, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_yuv4mpegpipe"]
+notes = "Initial YUV4MPEG2 demuxer parses progressive 4:2:0 C420jpeg headers, validates dimensions and frame size through shared VideoStreamParameters plus PixelFormat::Yuv420p while keeping frame rate/interlace/chroma field checks local, and emits one stream-0 packet per frame with incrementing PTS. Build-checked cargo-fuzz target avformat_yuv4mpegpipe exercises demuxer opening, frame packet emission, and parsed stream invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other chroma modes, interlaced modes, frame header overrides, CLI wiring, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
