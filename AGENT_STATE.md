@@ -14,7 +14,7 @@
 
 `fftools` now resolves `-loglevel`/`-v` through the shared `avutil::LogLevel` model instead of treating those values as opaque strings. The ffmpeg-style option parser validates exact level names and FFmpeg numeric severities, including `-8` for quiet, while preserving global option ordering and last-option-wins resolution in `CliLogConfig`. `IoPlan` now carries the resolved global log configuration, and the ffprobe parser validates the same loglevel surface. Compound FFmpeg logging flags and real stderr emission parity remain incomplete.
 
-`avutil-logging` now has a stronger implemented primitive. `LogLevel` exposes FFmpeg-style numeric severity values and level names, `LogRecord` has deterministic no-newline formatting, and `Logger` now reports enablement, returns acceptance from `log`, suppresses quiet records, supports clear/take buffer control, and can dispatch accepted records through a per-call callback. The ledger still keeps `avutil-logging` at `implemented`, not `complete`, because byte-identical `av_log` formatting, global callback installation, repeated-line suppression, flags, color handling, CLI stderr integration, oracle differential tests, and FATE coverage remain incomplete.
+`avutil-logging` now has a stronger flag-aware primitive. `LogLevel` exposes FFmpeg-style numeric severity values and level names; `LogFlags` stores and truncates the known public `av_log` flag bits; `LogRecord` has deterministic no-newline formatting with configurable print-level prefixes; and `Logger` now carries configured flags in addition to enablement checks, acceptance returns, quiet suppression, clear/take buffer control, formatted record rendering, and per-call callback dispatch. The ledger still keeps `avutil-logging` at `implemented`, not `complete`, because byte-identical `av_log` formatting, global callback installation, repeated-line compression, time/datetime rendering, color handling, compound CLI log flag parsing, real CLI stderr integration, oracle differential tests, and FATE coverage remain incomplete.
 
 `fate-runner` now has a tested explicit mapping format, prerequisite model, loader, mapping report command, and dry-run path. It parses component IDs from `PORTING_LEDGER.toml`, lists all configured mappings from `tests/fate/mappings.txt` independently of component selection, can audit all mapping prerequisites with `--check-prereqs`, maps git changed paths for the currently covered Rust modules to ledger component IDs, preserves ledger order, reports unmapped implementation paths instead of silently ignoring them, includes untracked files in changed-path discovery, parses pipe-separated mappings from `tests/fate/mappings.txt`, expands `{samples}` and `{oracle_ffmpeg}` placeholders only for mappings that require them, validates the samples path as an existing directory and the oracle path as an existing file, can dry-run selected mappings without spawning commands, and executes only explicitly mapped commands when not in dry-run mode. The default mapping file contains `fate-runner|local-self-test`, which runs `cargo test -p fate-runner` and proves runner wiring without claiming upstream FFmpeg FATE media parity. Upstream FATE samples and media component mappings remain absent.
 
@@ -34,6 +34,14 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo test -p avutil logging`
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test -p avutil --lib`
+- `cargo test --workspace --all-features --exclude fftools`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
 - `cargo fmt --all`
 - `cargo fmt --all --manifest-path fuzz/Cargo.toml`
 - `cargo test -p avutil frame`
@@ -979,11 +987,11 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Current Focus Component
 
-`avutil-frame` is the latest completed slice. Tightly packed video/audio line-size metadata, unit coverage, and build-checked `avutil_core_models` fuzz coverage have been added, but pinned FFmpeg differential vectors, FATE coverage, full AVFrame fields, custom alignment/stride behavior, side data, and actual local fuzz execution are still absent.
+`avutil-logging` is the latest coherent slice. Known public log flag bits, configurable print-level formatting, formatted record rendering, unit coverage, and documentation/ledger updates have been added, but byte-identical `av_log` formatting, global callbacks, repeated-line compression, time/datetime rendering, color handling, compound CLI flag parsing, stderr integration, pinned FFmpeg differential vectors, and FATE coverage are still absent.
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 avutil completeness with the next implemented primitive whose ledger records missing behavior.
+1. Continue priority-1 avutil completeness with the next implemented primitive whose ledger records missing behavior, likely byte I/O or bit I/O edge parity.
 2. Recheck `fftools` test execution when Windows Application Control allows the unchanged test binary to run.
 3. Add the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
 
@@ -997,4 +1005,4 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: strengthened `avutil::frame` with tightly packed line-size metadata for the current video/audio frame subset, unit tests, and `avutil_core_models` fuzz invariants while keeping `avutil-frame` below `complete`.
+Latest slice: strengthened `avutil::logging` with a `LogFlags` bitset for known public `av_log` flags, configurable print-level record formatting, logger-level formatted record rendering, unit tests, and docs/ledger updates while keeping `avutil-logging` below `complete`.

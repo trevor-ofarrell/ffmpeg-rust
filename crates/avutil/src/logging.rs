@@ -80,6 +80,68 @@ impl LogLevel {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LogFlags {
+    bits: u32,
+}
+
+impl LogFlags {
+    pub const SKIP_REPEATED: Self = Self { bits: 0x0001 };
+    pub const PRINT_LEVEL: Self = Self { bits: 0x0002 };
+    pub const PRINT_TIME: Self = Self { bits: 0x0004 };
+    pub const PRINT_DATETIME: Self = Self { bits: 0x0008 };
+
+    const KNOWN_BITS: u32 = Self::SKIP_REPEATED.bits
+        | Self::PRINT_LEVEL.bits
+        | Self::PRINT_TIME.bits
+        | Self::PRINT_DATETIME.bits;
+
+    pub const fn empty() -> Self {
+        Self { bits: 0 }
+    }
+
+    pub const fn all() -> Self {
+        Self {
+            bits: Self::KNOWN_BITS,
+        }
+    }
+
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        Self {
+            bits: bits & Self::KNOWN_BITS,
+        }
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.bits
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.bits == 0
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        (self.bits & other.bits) == other.bits
+    }
+
+    pub fn insert(&mut self, other: Self) {
+        self.bits |= other.bits;
+        self.bits &= Self::KNOWN_BITS;
+    }
+
+    pub fn remove(&mut self, other: Self) {
+        self.bits &= !other.bits;
+    }
+
+    pub fn set(&mut self, other: Self, enabled: bool) {
+        if enabled {
+            self.insert(other);
+        } else {
+            self.remove(other);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogRecord {
     level: LogLevel,
@@ -109,10 +171,20 @@ impl LogRecord {
     }
 
     pub fn format_line(&self) -> String {
-        if self.target.is_empty() {
-            format!("[{}] {}", self.level.name(), self.message)
+        self.format_line_with_flags(LogFlags::PRINT_LEVEL)
+    }
+
+    pub fn format_line_with_flags(&self, flags: LogFlags) -> String {
+        let prefix = if flags.contains(LogFlags::PRINT_LEVEL) {
+            format!("[{}] ", self.level.name())
         } else {
-            format!("[{}] {}: {}", self.level.name(), self.target, self.message)
+            String::new()
+        };
+
+        if self.target.is_empty() {
+            format!("{}{}", prefix, self.message)
+        } else {
+            format!("{}{}: {}", prefix, self.target, self.message)
         }
     }
 }
@@ -120,6 +192,7 @@ impl LogRecord {
 #[derive(Debug, Clone)]
 pub struct Logger {
     level: LogLevel,
+    flags: LogFlags,
     records: Vec<LogRecord>,
 }
 
@@ -131,8 +204,13 @@ impl Default for Logger {
 
 impl Logger {
     pub fn new(level: LogLevel) -> Self {
+        Self::new_with_flags(level, LogFlags::PRINT_LEVEL)
+    }
+
+    pub fn new_with_flags(level: LogLevel, flags: LogFlags) -> Self {
         Self {
             level,
+            flags,
             records: Vec::new(),
         }
     }
@@ -143,6 +221,18 @@ impl Logger {
 
     pub fn set_level(&mut self, level: LogLevel) {
         self.level = level;
+    }
+
+    pub fn flags(&self) -> LogFlags {
+        self.flags
+    }
+
+    pub fn set_flags(&mut self, flags: LogFlags) {
+        self.flags = LogFlags::from_bits_truncate(flags.bits());
+    }
+
+    pub fn set_flag(&mut self, flag: LogFlags, enabled: bool) {
+        self.flags.set(flag, enabled);
     }
 
     pub fn enabled(&self, level: LogLevel) -> bool {
@@ -174,6 +264,13 @@ impl Logger {
 
     pub fn records(&self) -> &[LogRecord] {
         &self.records
+    }
+
+    pub fn formatted_records(&self) -> Vec<String> {
+        self.records
+            .iter()
+            .map(|record| record.format_line_with_flags(self.flags))
+            .collect()
     }
 
     pub fn clear(&mut self) {
@@ -237,6 +334,23 @@ mod tests {
     }
 
     #[test]
+    fn log_flags_track_known_ffmpeg_bits() {
+        assert_eq!(LogFlags::SKIP_REPEATED.bits(), 1);
+        assert_eq!(LogFlags::PRINT_LEVEL.bits(), 2);
+        assert_eq!(LogFlags::PRINT_TIME.bits(), 4);
+        assert_eq!(LogFlags::PRINT_DATETIME.bits(), 8);
+        assert_eq!(LogFlags::all().bits(), 15);
+        assert!(LogFlags::empty().is_empty());
+
+        let truncated = LogFlags::from_bits_truncate(0xffff);
+        assert_eq!(truncated, LogFlags::all());
+        assert!(truncated.contains(LogFlags::SKIP_REPEATED));
+        assert!(truncated.contains(LogFlags::PRINT_LEVEL));
+        assert!(truncated.contains(LogFlags::PRINT_TIME));
+        assert!(truncated.contains(LogFlags::PRINT_DATETIME));
+    }
+
+    #[test]
     fn record_formats_level_target_and_message() {
         assert_eq!(
             LogRecord::new(LogLevel::Warning, "decoder", "damaged packet").format_line(),
@@ -246,6 +360,44 @@ mod tests {
             LogRecord::new(LogLevel::Info, "", "ready").format_line(),
             "[info] ready"
         );
+    }
+
+    #[test]
+    fn record_formatting_respects_print_level_flag() {
+        let record = LogRecord::new(LogLevel::Error, "demuxer", "bad header");
+
+        assert_eq!(
+            record.format_line_with_flags(LogFlags::PRINT_LEVEL),
+            "[error] demuxer: bad header"
+        );
+        assert_eq!(
+            record.format_line_with_flags(LogFlags::empty()),
+            "demuxer: bad header"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Info, "", "ready").format_line_with_flags(LogFlags::empty()),
+            "ready"
+        );
+    }
+
+    #[test]
+    fn logger_formats_records_with_configured_flags() {
+        let mut logger = Logger::new_with_flags(LogLevel::Info, LogFlags::empty());
+
+        assert_eq!(logger.flags(), LogFlags::empty());
+        assert!(logger.log(LogRecord::new(LogLevel::Info, "ffmpeg", "ready")));
+        assert_eq!(logger.formatted_records(), ["ffmpeg: ready"]);
+
+        logger.set_flag(LogFlags::PRINT_LEVEL, true);
+        assert_eq!(logger.flags(), LogFlags::PRINT_LEVEL);
+        assert_eq!(logger.formatted_records(), ["[info] ffmpeg: ready"]);
+
+        logger.set_flags(LogFlags::from_bits_truncate(0xffff));
+        assert_eq!(logger.flags(), LogFlags::all());
+
+        logger.set_flag(LogFlags::PRINT_LEVEL, false);
+        assert!(!logger.flags().contains(LogFlags::PRINT_LEVEL));
+        assert_eq!(logger.formatted_records(), ["ffmpeg: ready"]);
     }
 
     #[test]

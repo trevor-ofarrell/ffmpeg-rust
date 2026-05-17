@@ -121,14 +121,17 @@ unit_tests = [
   "logging::tests::logger_filters_by_level",
   "logging::tests::quiet_suppresses_all_records",
   "logging::tests::log_levels_match_ffmpeg_values_and_names",
+  "logging::tests::log_flags_track_known_ffmpeg_bits",
   "logging::tests::record_formats_level_target_and_message",
+  "logging::tests::record_formatting_respects_print_level_flag",
+  "logging::tests::logger_formats_records_with_configured_flags",
   "logging::tests::callback_runs_only_for_accepted_records",
   "logging::tests::set_level_clear_and_take_records_control_buffer",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "In-memory log filtering abstraction implemented with FFmpeg-style numeric/name level mapping, deterministic record formatting, buffer control, and per-record callback dispatch. fftools now resolves -loglevel/-v through this shared LogLevel model for exact names and numeric levels. Full av_log global callback, repeated-line, flag, color, byte-identical formatting, and CLI stderr emission parity are incomplete."
+notes = "In-memory log filtering abstraction implemented with FFmpeg-style numeric/name level mapping, known av_log flag bits, configurable print-level formatting, buffer control, and per-record callback dispatch. fftools now resolves -loglevel/-v through this shared LogLevel model for exact names and numeric levels. Full av_log global callback, repeated-line compression, time/datetime rendering, color handling, byte-identical formatting, compound CLI log flags, and CLI stderr emission parity are incomplete."
 blocked_reason = ""
 
 [[component]]
