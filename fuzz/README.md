@@ -15,6 +15,7 @@ Initial targets:
 - `avformat_avi`: exercises constrained RIFF AVI demuxer chunk parsing, stream metadata, packet timing, and side-data invariants.
 - `avformat_mov`: exercises constrained MOV/MP4 box parsing, sample-table packet extraction, stream metadata, packet timing, and side-data invariants.
 - `avformat_image2`: exercises image2 pattern parsing, entry sequence validation, packet timing/path side-data invariants, muxer path generation, and mux-demux round trips.
+- `avformat_packet_muxers`: exercises null/hash/framecrc packet muxer accounting, hash digest stability, CRC record fields, timestamp propagation, and finish behavior.
 - `fftools_option_parser`: exercises FFmpeg-style option grouping, value handling, stream-specifier option names, and parse/render/parse stability.
 
 Run with cargo-fuzz when the tool is installed:
@@ -31,6 +32,7 @@ cargo fuzz run avformat_rawvideo
 cargo fuzz run avformat_avi
 cargo fuzz run avformat_mov
 cargo fuzz run avformat_image2
+cargo fuzz run avformat_packet_muxers
 cargo fuzz run fftools_option_parser
 ```
 

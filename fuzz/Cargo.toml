@@ -91,6 +91,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "avformat_packet_muxers"
+path = "fuzz_targets/avformat_packet_muxers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "fftools_option_parser"
 path = "fuzz_targets/fftools_option_parser.rs"
 test = false

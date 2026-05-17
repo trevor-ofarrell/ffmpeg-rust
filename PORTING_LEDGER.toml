@@ -1428,8 +1428,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial internal null muxer sink discards packet payloads and reports packet, byte, duration, stream, and timestamp statistics. It is not wired into CLI execution or differential/FATE tests yet."
+fuzz_targets = ["avformat_packet_muxers"]
+notes = "Initial internal null muxer sink discards packet payloads and reports packet, byte, duration, stream, and timestamp statistics. Build-checked cargo-fuzz target avformat_packet_muxers covers packet accounting, sparse stream stats, timestamp propagation, duration aggregation, and finish behavior, but actual local fuzz execution is blocked until cargo-fuzz is installed. Broad CLI, differential, and FATE coverage are still pending."
 blocked_reason = ""
 
 [[component]]
@@ -1449,8 +1449,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial internal packet-data hash muxer supports Adler-32 and IEEE CRC-32 with packet/byte accounting. MD5/SHA variants, exact FFmpeg hash muxer output semantics, CLI wiring, and differential/FATE tests are pending."
+fuzz_targets = ["avformat_packet_muxers"]
+notes = "Initial internal packet-data hash muxer supports Adler-32 and IEEE CRC-32 with packet/byte accounting. Build-checked cargo-fuzz target avformat_packet_muxers covers packet/byte accounting, Adler-32 and CRC-32 digest stability, formatted digest lines, and finish behavior, but actual local fuzz execution is blocked until cargo-fuzz is installed. MD5/SHA variants, exact FFmpeg hash muxer output semantics, CLI wiring, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1470,8 +1470,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial internal framecrc-style muxer records one CRC-32 line per packet with stream index, PTS/DTS, duration, size, and checksum. Exact FFmpeg framecrc formatting, CLI wiring, and differential/FATE tests are pending."
+fuzz_targets = ["avformat_packet_muxers"]
+notes = "Initial internal framecrc-style muxer records one CRC-32 line per packet with stream index, PTS/DTS, duration, size, and checksum. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet record fields, CRC stability, render/finish stability, and post-finish rejection, but actual local fuzz execution is blocked until cargo-fuzz is installed. Exact FFmpeg framecrc formatting, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
