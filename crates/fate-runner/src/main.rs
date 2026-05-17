@@ -29,6 +29,13 @@ struct RunOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct MappingOptions {
+    mappings_path: String,
+    context: FateContext,
+    check_prerequisites: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum RunMode {
     Component(String),
     Changed,
@@ -282,6 +289,7 @@ fn real_main() -> Result<(), String> {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
         Some("list") => list_components(),
+        Some("mappings") => list_mappings(args.collect()),
         Some("run") => run_component(args.collect()),
         Some("help") | Some("--help") | Some("-h") => {
             print_help();
@@ -306,6 +314,64 @@ fn list_components() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn list_mappings(args: Vec<String>) -> Result<(), String> {
+    let options = parse_mapping_options(&args)?;
+    let component_ids = load_component_ids()?;
+    let mappings = load_fate_mappings(&options.mappings_path, &component_ids)?;
+    let lines =
+        fate_mapping_report_lines(&mappings, &options.context, options.check_prerequisites)?;
+
+    if lines.is_empty() {
+        println!("no FATE mappings found");
+    } else {
+        for line in lines {
+            println!("{line}");
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_mapping_options(args: &[String]) -> Result<MappingOptions, String> {
+    let mut mappings_path = DEFAULT_FATE_MAPPINGS_PATH.to_string();
+    let mut context = FateContext::default();
+    let mut check_prerequisites = false;
+    let mut iter = args.iter();
+
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--check-prereqs" => check_prerequisites = true,
+            "--mappings" => {
+                mappings_path = iter
+                    .next()
+                    .ok_or_else(|| "missing value for --mappings".to_string())?
+                    .clone();
+            }
+            "--samples" => {
+                context.samples_root = Some(
+                    iter.next()
+                        .ok_or_else(|| "missing value for --samples".to_string())?
+                        .clone(),
+                );
+            }
+            "--oracle-ffmpeg" => {
+                context.oracle_ffmpeg = Some(
+                    iter.next()
+                        .ok_or_else(|| "missing value for --oracle-ffmpeg".to_string())?
+                        .clone(),
+                );
+            }
+            other => return Err(format!("unsupported mappings argument `{other}`")),
+        }
+    }
+
+    Ok(MappingOptions {
+        mappings_path,
+        context,
+        check_prerequisites,
+    })
 }
 
 fn run_component(args: Vec<String>) -> Result<(), String> {
@@ -463,6 +529,29 @@ fn components_without_mappings(
                 .any(|mapping| &mapping.component_id == *component)
         })
         .cloned()
+        .collect()
+}
+
+fn fate_mapping_report_lines(
+    mappings: &[FateMapping],
+    context: &FateContext,
+    check_prerequisites: bool,
+) -> Result<Vec<String>, String> {
+    mappings
+        .iter()
+        .map(|mapping| {
+            let mapping = if check_prerequisites {
+                resolve_fate_mapping(mapping, context)?
+            } else {
+                mapping.clone()
+            };
+            Ok(format!(
+                "{}:{} -> {}",
+                mapping.component_id,
+                mapping.target,
+                format_mapping_command(&mapping)
+            ))
+        })
         .collect()
 }
 
@@ -795,7 +884,7 @@ fn normalize_path(path: &str) -> String {
 
 fn print_help() {
     eprintln!(
-        "usage: fate-runner list | run [--dry-run] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --component <id> | run [--dry-run] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --changed"
+        "usage: fate-runner list | mappings [--check-prereqs] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] | run [--dry-run] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --component <id> | run [--dry-run] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --changed"
     );
 }
 
@@ -963,6 +1052,59 @@ mod tests {
         assert_eq!(
             parse_run_options(&["--oracle-ffmpeg".to_string()]).unwrap_err(),
             "missing value for --oracle-ffmpeg"
+        );
+    }
+
+    #[test]
+    fn parses_mapping_options_for_listing_and_prerequisite_checking() {
+        assert_eq!(
+            parse_mapping_options(&[]).unwrap(),
+            MappingOptions {
+                mappings_path: DEFAULT_FATE_MAPPINGS_PATH.to_string(),
+                context: FateContext::default(),
+                check_prerequisites: false,
+            }
+        );
+
+        assert_eq!(
+            parse_mapping_options(&[
+                "--check-prereqs".to_string(),
+                "--mappings".to_string(),
+                "custom.map".to_string(),
+                "--samples".to_string(),
+                "tests/fate".to_string(),
+                "--oracle-ffmpeg".to_string(),
+                "Cargo.toml".to_string(),
+            ])
+            .unwrap(),
+            MappingOptions {
+                mappings_path: "custom.map".to_string(),
+                context: FateContext {
+                    samples_root: Some("tests/fate".to_string()),
+                    oracle_ffmpeg: Some("Cargo.toml".to_string()),
+                },
+                check_prerequisites: true,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_mapping_options() {
+        assert_eq!(
+            parse_mapping_options(&["--mappings".to_string()]).unwrap_err(),
+            "missing value for --mappings"
+        );
+        assert_eq!(
+            parse_mapping_options(&["--samples".to_string()]).unwrap_err(),
+            "missing value for --samples"
+        );
+        assert_eq!(
+            parse_mapping_options(&["--oracle-ffmpeg".to_string()]).unwrap_err(),
+            "missing value for --oracle-ffmpeg"
+        );
+        assert_eq!(
+            parse_mapping_options(&["--changed".to_string()]).unwrap_err(),
+            "unsupported mappings argument `--changed`"
         );
     }
 
@@ -1148,6 +1290,58 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
                 &mappings,
             ),
             vec!["avutil-error".to_string()]
+        );
+    }
+
+    #[test]
+    fn mapping_report_lists_unresolved_commands_by_default() {
+        let mappings = vec![FateMapping {
+            component_id: "avformat-wav-demuxer".to_string(),
+            target: "sample-framecrc".to_string(),
+            workdir: "{samples}/audio".to_string(),
+            program: "{oracle_ffmpeg}".to_string(),
+            args: vec![
+                "-i".to_string(),
+                "{samples}/audio/test.wav".to_string(),
+                "-f".to_string(),
+                "framecrc".to_string(),
+                "-".to_string(),
+            ],
+        }];
+
+        assert_eq!(
+            fate_mapping_report_lines(&mappings, &FateContext::default(), false).unwrap(),
+            vec![
+                "avformat-wav-demuxer:sample-framecrc -> (cd {samples}/audio && {oracle_ffmpeg} -i {samples}/audio/test.wav -f framecrc -)".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn mapping_report_can_check_all_prerequisites() {
+        let mappings = vec![FateMapping {
+            component_id: "avformat-wav-demuxer".to_string(),
+            target: "sample-framecrc".to_string(),
+            workdir: "{samples}".to_string(),
+            program: "{oracle_ffmpeg}".to_string(),
+            args: vec!["-version".to_string()],
+        }];
+
+        assert!(
+            fate_mapping_report_lines(&mappings, &FateContext::default(), true)
+                .unwrap_err()
+                .contains("references {samples} but --samples <path> was not provided")
+        );
+
+        let context = FateContext {
+            samples_root: Some(".".to_string()),
+            oracle_ffmpeg: Some("Cargo.toml".to_string()),
+        };
+        assert_eq!(
+            fate_mapping_report_lines(&mappings, &context, true).unwrap(),
+            vec![
+                "avformat-wav-demuxer:sample-framecrc -> (cd . && Cargo.toml -version)".to_string()
+            ]
         );
     }
 

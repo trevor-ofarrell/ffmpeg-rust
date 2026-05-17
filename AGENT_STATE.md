@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`fate-runner` now has a tested explicit mapping format, prerequisite model, loader, and dry-run path. It parses component IDs from `PORTING_LEDGER.toml`, maps git changed paths for the currently covered Rust modules to ledger component IDs, preserves ledger order, reports unmapped implementation paths instead of silently ignoring them, includes untracked files in changed-path discovery, parses pipe-separated mappings from `tests/fate/mappings.txt`, expands `{samples}` and `{oracle_ffmpeg}` placeholders only for selected mappings that require them, validates the samples path as an existing directory and the oracle path as an existing file, can dry-run selected mappings without spawning commands, and executes only explicitly mapped commands when not in dry-run mode. The default mapping file contains `fate-runner|local-self-test`, which runs `cargo test -p fate-runner` and proves runner wiring without claiming upstream FFmpeg FATE media parity. Upstream FATE samples and media component mappings remain absent.
+`fate-runner` now has a tested explicit mapping format, prerequisite model, loader, mapping report command, and dry-run path. It parses component IDs from `PORTING_LEDGER.toml`, lists all configured mappings from `tests/fate/mappings.txt` independently of component selection, can audit all mapping prerequisites with `--check-prereqs`, maps git changed paths for the currently covered Rust modules to ledger component IDs, preserves ledger order, reports unmapped implementation paths instead of silently ignoring them, includes untracked files in changed-path discovery, parses pipe-separated mappings from `tests/fate/mappings.txt`, expands `{samples}` and `{oracle_ffmpeg}` placeholders only for mappings that require them, validates the samples path as an existing directory and the oracle path as an existing file, can dry-run selected mappings without spawning commands, and executes only explicitly mapped commands when not in dry-run mode. The default mapping file contains `fate-runner|local-self-test`, which runs `cargo test -p fate-runner` and proves runner wiring without claiming upstream FFmpeg FATE media parity. Upstream FATE samples and media component mappings remain absent.
 
 `avformat-video-parameters` now provides a shared video stream-parameter helper for the current rawvideo/yuv4mpegpipe/AVI subset. It validates dimensions, u32 container dimensions, pixel format, derived frame byte size, whole-frame input byte counts, and exact packet payload lengths while preserving distinct error kinds for user-supplied parameters versus untrusted container fields. Rawvideo demuxer/muxer, yuv4mpegpipe demuxer/muxer, and the AVI RGB24 muxer now store or validate their video shape through this helper, while format-specific constraints such as AVI classic header limits and YUV4MPEG2 4:2:0 even dimensions remain local. MOV visual sample-entry integration is intentionally pending until a tested sample-entry FourCC/depth to `PixelFormat` mapping exists. The ledger records this helper as implemented but not complete because oracle differential tests, FATE, fuzz coverage, and generated pixel-format coverage are still pending.
 
@@ -33,6 +33,16 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 - `cargo run -p fate-runner -- run --dry-run --samples . --oracle-ffmpeg Cargo.toml --component fate-runner`
 - `cargo run -p fate-runner -- run --dry-run --changed`
 - `cargo run -p fate-runner -- run --samples . --oracle-ffmpeg Cargo.toml --component fate-runner`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
+- `cargo fmt --all`
+- `cargo test -p fate-runner`
+- `cargo run -p fate-runner -- mappings`
+- `cargo run -p fate-runner -- mappings --check-prereqs --samples . --oracle-ffmpeg Cargo.toml`
+- `cargo run -p fate-runner -- run --dry-run --changed`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test --workspace --all-features`
 - `cargo fmt --all -- --check`
@@ -687,21 +697,21 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Current Focus Component
 
-`fate-runner` mapping auditability is the latest focus. It can now select changed ledger components, load explicit mappings, validate required `{samples}` and `{oracle_ffmpeg}` paths, dry-run selected mappings without executing commands, and run a local self-test mapping, but upstream FATE sample roots and media component mappings are still absent.
+`fate-runner` mapping discovery is the latest focus. It can now list all configured mappings independently of component selection and can validate all mapping prerequisites with `mappings --check-prereqs`, but upstream FATE sample roots and media component mappings are still absent.
 
 ## Next 3 Concrete Actions
 
 1. Add the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
-2. Add a mapping discovery/report command if auditing all mappings without component selection becomes useful.
+2. Add the first cargo-fuzz targets for untrusted byte-oriented parsers such as bitreader/byteio or simple demuxer headers.
 3. Expand pixel/sample/channel layout coverage from pinned `ffmpeg -pix_fmts`, `-sample_fmts`, and `-layouts` inventories once the FFmpeg 8.1.1 oracle binary exists.
 
 ## Known Blockers
 
 - No pinned FFmpeg 8.1.1 oracle binary exists at `third_party/ffmpeg-oracle/build/bin/ffmpeg`, so oracle snapshots and differential tests have not been generated.
-- Upstream FATE samples and media target mappings are not configured. `tests/fate/mappings.txt` currently contains only a local `fate-runner` self-test mapping, though the runner now has `--samples`, `--oracle-ffmpeg`, and `--dry-run` support for future mappings.
+- Upstream FATE samples and media target mappings are not configured. `tests/fate/mappings.txt` currently contains only a local `fate-runner` self-test mapping, though the runner now has `mappings`, `--check-prereqs`, `--samples`, `--oracle-ffmpeg`, and `--dry-run` support for future mappings.
 - `./xtask quick` cannot be a file command while `xtask/` is a crate directory on this filesystem; use `cargo run -p xtask -- quick`.
 - Windows Application Control blocks some freshly built child executables and separate integration-test executables. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added tested `--dry-run` support to `fate-runner` so selected mappings are resolved and prerequisite-checked without executing commands, updated `PORTING_LEDGER.toml`, `docs/architecture.md`, `docs/compatibility.md`, `docs/oracle.md`, and `tests/fate/README.md`, and preserved the distinction between local runner smoke coverage and upstream FFmpeg FATE media parity.
+Latest slice: added a tested `fate-runner mappings` command that lists every configured mapping without component selection and supports `--check-prereqs` to resolve placeholders and validate all mapping prerequisites without executing commands. Updated `PORTING_LEDGER.toml`, `docs/architecture.md`, `docs/compatibility.md`, `docs/oracle.md`, and `tests/fate/README.md`, while preserving the distinction between local runner smoke coverage and upstream FFmpeg FATE media parity.

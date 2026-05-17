@@ -10,6 +10,15 @@ component_id|target|workdir|program|arg1|arg2|...
 
 Mappings may use `{samples}` and `{oracle_ffmpeg}` placeholders in the workdir, program, or args fields. Selected mappings that reference those placeholders require `--samples <path>` and/or `--oracle-ffmpeg <path>`, and the runner validates that the samples path is a directory and the oracle path is a file before executing the command.
 
+List configured mappings without selecting a component:
+
+```sh
+cargo run -p fate-runner -- mappings
+cargo run -p fate-runner -- mappings --check-prereqs --samples <path> --oracle-ffmpeg <path>
+```
+
+The first command reports configured commands without resolving placeholders. The second command resolves placeholders and validates prerequisites for every configured mapping, but does not execute the mapped commands.
+
 Use `--dry-run` to audit selected mappings without executing them:
 
 ```sh
