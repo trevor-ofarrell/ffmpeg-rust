@@ -1474,7 +1474,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial RIFF/WAVE demuxer parses PCM s16le fmt/data chunks, skips padded unknown chunks, validates stream parameters, and emits one data packet. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, packet chunking, probing, CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial RIFF/WAVE demuxer parses PCM s16le fmt/data chunks, skips padded unknown chunks, validates stream parameters with the shared SampleFormat::S16 sizing model, derives mono/stereo ChannelLayout metadata where safe, and emits one data packet. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, packet chunking, probing, CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1495,7 +1495,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial RIFF/WAVE muxer writes canonical PCM s16le headers and stream-0 packet payloads with size and sample-frame validation. It is wired to a constrained ffmpeg-rs raw pcm_s16le to WAV file-output path. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, metadata chunks, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial RIFF/WAVE muxer writes canonical PCM s16le headers and stream-0 packet payloads with block-align, bit-depth, and sample-frame validation derived from the shared SampleFormat::S16 model, plus mono/stereo ChannelLayout metadata where safe. It is wired to a constrained ffmpeg-rs raw pcm_s16le to WAV file-output path. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, metadata chunks, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1579,7 +1579,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial raw pcm_s16le demuxer slices whole interleaved sample-frame packets with configurable packet sample counts, sample-rate/channel validation, PTS measured in samples, and partial-frame rejection. CLI wiring, probe integration, other PCM formats, differential tests, FATE, and fuzzing are pending."
+notes = "Initial raw pcm_s16le demuxer slices whole interleaved sample-frame packets with configurable packet sample counts, sample-rate/channel validation, SampleFormat::S16-derived frame sizing, mono/stereo ChannelLayout metadata where safe, PTS measured in samples, and partial-frame rejection. CLI wiring, probe integration, other PCM formats, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1600,7 +1600,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial raw pcm_s16le muxer concatenates validated stream-0 packet payloads, tracks packet/byte/sample counts, accepts empty packets, and prevents writes after finish. It is wired to a constrained ffmpeg-rs raw pcm_s16le file-output path. Probe integration, other PCM formats, broader CLI execution, differential tests, FATE, and fuzzing are pending."
+notes = "Initial raw pcm_s16le muxer concatenates stream-0 packet payloads validated with SampleFormat::S16-derived sample-frame sizing, tracks packet/byte/sample counts, exposes mono/stereo ChannelLayout metadata where safe, accepts empty packets, and prevents writes after finish. It is wired to a constrained ffmpeg-rs raw pcm_s16le file-output path. Probe integration, other PCM formats, broader CLI execution, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]

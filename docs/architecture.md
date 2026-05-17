@@ -32,9 +32,9 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `PcmS16leDecoder` decodes packed little-endian signed 16-bit PCM packets into `avutil::AudioFrame` values using the shared packed `s16` sample format model, carrying derived mono/stereo layouts where channel count permits, and requiring packets to contain whole interleaved sample frames.
 
-`WavDemuxer` implements the first demuxer-shaped parser path for RIFF/WAVE PCM s16le data. It validates the RIFF/WAVE container, `fmt ` and `data` chunks, PCM stream fields, RIFF word padding, and whole sample-frame payloads before emitting the data chunk as a stream-0 packet.
+`WavDemuxer` implements the first demuxer-shaped parser path for RIFF/WAVE PCM s16le data. It validates the RIFF/WAVE container, `fmt ` and `data` chunks, PCM stream fields, RIFF word padding, and whole sample-frame payloads through the shared `SampleFormat::S16` model before emitting the data chunk as a stream-0 packet, with derived mono/stereo channel layout metadata where safe.
 
-`WavMuxer` implements the matching initial muxer path for canonical RIFF/WAVE PCM s16le output. It validates stream parameters, stream-0 packet ownership, whole sample-frame packet payloads, and classic RIFF size limits before rendering a WAV byte stream.
+`WavMuxer` implements the matching initial muxer path for canonical RIFF/WAVE PCM s16le output. It derives block alignment and bit depth from `SampleFormat::S16`, records derived mono/stereo layout metadata where safe, and validates stream parameters, stream-0 packet ownership, whole sample-frame packet payloads, and classic RIFF size limits before rendering a WAV byte stream.
 
 `AviDemuxer` implements an initial constrained RIFF AVI parser for video-only files. It parses `avih`, `strh`, and `strf` metadata, walks simple `movi` chunks including `rec ` lists, emits packet payloads with per-stream PTS/DTS counters, and provides an AVI probe descriptor for the offset-8 `AVI ` form tag plus common extensions and MIME types.
 
@@ -54,9 +54,9 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `RawVideoMuxer` implements the matching initial rawvideo muxer path. It uses the shared `PixelFormat` model to validate stream-0 packet ownership and exact fixed-size frame payloads before concatenating raw frame bytes and updating frame accounting.
 
-`PcmS16leDemuxer` implements an initial raw PCM audio packet slicer for packed little-endian signed 16-bit samples. It validates sample rate, channel count, packet sample count, and whole interleaved sample-frame input before emitting packets with sample-count durations.
+`PcmS16leDemuxer` implements an initial raw PCM audio packet slicer for packed little-endian signed 16-bit samples. It uses the shared `SampleFormat::S16` model for sample-frame sizing, derives mono/stereo layout metadata where safe, and validates sample rate, channel count, packet sample count, and whole interleaved sample-frame input before emitting packets with sample-count durations.
 
-`PcmS16leMuxer` implements the matching initial raw PCM audio muxer path. It validates stream-0 packet ownership and whole interleaved sample-frame payloads before concatenating payload bytes and updating packet/sample accounting.
+`PcmS16leMuxer` implements the matching initial raw PCM audio muxer path. It uses the shared `SampleFormat::S16` model for sample-frame sizing, records derived mono/stereo layout metadata where safe, and validates stream-0 packet ownership and whole interleaved sample-frame payloads before concatenating payload bytes and updating packet/sample accounting.
 
 ## CLI Compatibility Model
 

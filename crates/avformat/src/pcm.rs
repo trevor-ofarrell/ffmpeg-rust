@@ -1,11 +1,11 @@
-use avutil::{AvError, AvErrorKind, AvResult, Packet, SideData};
-
-const BYTES_PER_S16_SAMPLE: usize = 2;
+use avutil::{AvError, AvErrorKind, AvResult, ChannelLayout, Packet, SampleFormat, SideData};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcmS16leInfo {
     sample_rate: u32,
     channels: u16,
+    channel_layout: Option<ChannelLayout>,
+    sample_format: SampleFormat,
     packet_samples: usize,
     bytes_per_sample_frame: usize,
     packet_size: usize,
@@ -19,6 +19,14 @@ impl PcmS16leInfo {
 
     pub fn channels(&self) -> u16 {
         self.channels
+    }
+
+    pub fn channel_layout(&self) -> Option<ChannelLayout> {
+        self.channel_layout
+    }
+
+    pub fn sample_format(&self) -> SampleFormat {
+        self.sample_format
     }
 
     pub fn packet_samples(&self) -> usize {
@@ -42,6 +50,8 @@ impl PcmS16leInfo {
 pub struct PcmS16leMuxerInfo {
     sample_rate: u32,
     channels: u16,
+    channel_layout: Option<ChannelLayout>,
+    sample_format: SampleFormat,
     bytes_per_sample_frame: usize,
     samples_per_channel: usize,
 }
@@ -53,6 +63,14 @@ impl PcmS16leMuxerInfo {
 
     pub fn channels(&self) -> u16 {
         self.channels
+    }
+
+    pub fn channel_layout(&self) -> Option<ChannelLayout> {
+        self.channel_layout
+    }
+
+    pub fn sample_format(&self) -> SampleFormat {
+        self.sample_format
     }
 
     pub fn bytes_per_sample_frame(&self) -> usize {
@@ -95,9 +113,9 @@ impl<'a> PcmS16leDemuxer<'a> {
             ));
         }
 
-        let bytes_per_sample_frame = usize::from(channels)
-            .checked_mul(BYTES_PER_S16_SAMPLE)
-            .ok_or_else(|| AvError::invalid_argument("pcm_s16le sample frame size overflow"))?;
+        let sample_format = SampleFormat::S16;
+        let channel_layout = ChannelLayout::default_for_count(channels);
+        let bytes_per_sample_frame = sample_format.bytes_per_sample_frame(channels)?;
         let packet_size = bytes_per_sample_frame
             .checked_mul(packet_samples)
             .ok_or_else(|| AvError::invalid_argument("pcm_s16le packet size overflow"))?;
@@ -114,6 +132,8 @@ impl<'a> PcmS16leDemuxer<'a> {
             info: PcmS16leInfo {
                 sample_rate,
                 channels,
+                channel_layout,
+                sample_format,
                 packet_samples,
                 bytes_per_sample_frame,
                 packet_size,
@@ -183,14 +203,16 @@ impl PcmS16leMuxer {
             ));
         }
 
-        let bytes_per_sample_frame = usize::from(channels)
-            .checked_mul(BYTES_PER_S16_SAMPLE)
-            .ok_or_else(|| AvError::invalid_argument("pcm_s16le sample frame size overflow"))?;
+        let sample_format = SampleFormat::S16;
+        let channel_layout = ChannelLayout::default_for_count(channels);
+        let bytes_per_sample_frame = sample_format.bytes_per_sample_frame(channels)?;
 
         Ok(Self {
             info: PcmS16leMuxerInfo {
                 sample_rate,
                 channels,
+                channel_layout,
+                sample_format,
                 bytes_per_sample_frame,
                 samples_per_channel: 0,
             },
@@ -281,6 +303,11 @@ mod tests {
 
         assert_eq!(demuxer.info().sample_rate(), 48_000);
         assert_eq!(demuxer.info().channels(), 2);
+        assert_eq!(
+            demuxer.info().channel_layout(),
+            Some(ChannelLayout::stereo())
+        );
+        assert_eq!(demuxer.info().sample_format(), SampleFormat::S16);
         assert_eq!(demuxer.info().packet_samples(), 2);
         assert_eq!(demuxer.info().bytes_per_sample_frame(), 4);
         assert_eq!(demuxer.info().packet_size(), 8);
@@ -308,6 +335,7 @@ mod tests {
         let input = vec![0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0];
         let mut demuxer = PcmS16leDemuxer::open(&input, 44_100, 1, 4).unwrap();
 
+        assert_eq!(demuxer.info().channel_layout(), Some(ChannelLayout::mono()));
         let first = demuxer.read_packet().unwrap().unwrap();
         assert_eq!(first.data().len(), 8);
         assert_eq!(first.duration(), 4);
@@ -349,6 +377,8 @@ mod tests {
 
         assert_eq!(muxer.info().sample_rate(), 48_000);
         assert_eq!(muxer.info().channels(), 2);
+        assert_eq!(muxer.info().channel_layout(), Some(ChannelLayout::stereo()));
+        assert_eq!(muxer.info().sample_format(), SampleFormat::S16);
         assert_eq!(muxer.info().bytes_per_sample_frame(), 4);
         assert_eq!(muxer.info().samples_per_channel(), 3);
         assert_eq!(muxer.packets(), 2);
@@ -362,6 +392,7 @@ mod tests {
 
         muxer.write_packet(&Packet::new(Vec::new(), 0)).unwrap();
 
+        assert_eq!(muxer.info().channel_layout(), Some(ChannelLayout::mono()));
         assert_eq!(muxer.packets(), 1);
         assert_eq!(muxer.data_len(), 0);
         assert_eq!(muxer.info().samples_per_channel(), 0);
