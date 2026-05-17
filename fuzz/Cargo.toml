@@ -42,6 +42,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "avformat_probe"
+path = "fuzz_targets/avformat_probe.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "avformat_yuv4mpegpipe"
 path = "fuzz_targets/avformat_yuv4mpegpipe.rs"
 test = false

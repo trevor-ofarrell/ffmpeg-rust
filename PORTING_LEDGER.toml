@@ -1388,8 +1388,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial registry/scoring primitive implemented for prefix and offset signature, MIME type, and extension matches with deterministic tie handling. AVI and MOV/MP4 have hand-written descriptors, but the probe table is not generated from FFmpeg inventories yet."
+fuzz_targets = ["avformat_probe"]
+notes = "Initial registry/scoring primitive implemented for prefix and offset signature, MIME type, and extension matches with deterministic tie handling. AVI and MOV/MP4 have hand-written descriptors. Build-checked cargo-fuzz target avformat_probe covers descriptor validation, generated registry mutation, AVI/MOV descriptors, extension/MIME/signature scoring, deterministic tie behavior, and explainable matches; actual local fuzz execution is blocked until cargo-fuzz is installed. The full probe table is not generated from FFmpeg inventories yet."
 blocked_reason = ""
 
 [[component]]
@@ -1408,8 +1408,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Hand-written AVI probe descriptor matches the RIFF AVI form tag at offset 8, .avi extension, and common AVI MIME types. ffprobe-rs auto-detection now registers AVI and MOV/MP4 descriptors in the shared ProbeRegistry before routing to the Rust demuxer. No pinned-oracle differential, FATE, or fuzz coverage exists yet."
+fuzz_targets = ["avformat_probe"]
+notes = "Hand-written AVI probe descriptor matches the RIFF AVI form tag at offset 8, .avi extension, and common AVI MIME types. ffprobe-rs auto-detection now registers AVI and MOV/MP4 descriptors in the shared ProbeRegistry before routing to the Rust demuxer. Build-checked cargo-fuzz target avformat_probe covers the AVI descriptor's offset signature, extension, MIME matching, and non-match behavior; actual local fuzz execution is blocked until cargo-fuzz is installed. No pinned-oracle differential or FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
