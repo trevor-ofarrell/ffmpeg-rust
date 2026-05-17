@@ -61,4 +61,11 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "avformat_mov"
+path = "fuzz_targets/avformat_mov.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
