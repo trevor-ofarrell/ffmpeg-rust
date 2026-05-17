@@ -40,4 +40,18 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "avformat_pcm_s16le"
+path = "fuzz_targets/avformat_pcm_s16le.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "avformat_rawvideo"
+path = "fuzz_targets/avformat_rawvideo.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]

@@ -4,7 +4,7 @@
 
 `fate-runner` now has a tested explicit mapping format, prerequisite model, loader, mapping report command, and dry-run path. It parses component IDs from `PORTING_LEDGER.toml`, lists all configured mappings from `tests/fate/mappings.txt` independently of component selection, can audit all mapping prerequisites with `--check-prereqs`, maps git changed paths for the currently covered Rust modules to ledger component IDs, preserves ledger order, reports unmapped implementation paths instead of silently ignoring them, includes untracked files in changed-path discovery, parses pipe-separated mappings from `tests/fate/mappings.txt`, expands `{samples}` and `{oracle_ffmpeg}` placeholders only for mappings that require them, validates the samples path as an existing directory and the oracle path as an existing file, can dry-run selected mappings without spawning commands, and executes only explicitly mapped commands when not in dry-run mode. The default mapping file contains `fate-runner|local-self-test`, which runs `cargo test -p fate-runner` and proves runner wiring without claiming upstream FFmpeg FATE media parity. Upstream FATE samples and media component mappings remain absent.
 
-`fuzz` now contains the first cargo-fuzz harness package, kept outside the main workspace. `avutil_byteio` fuzzes bounded byte reads, EOF cursor invariants, and byte writer helper paths. `avutil_bitreader` fuzzes bit reads, peeks, skips, byte alignment, bit writer width validation, and cursor invariants. `avformat_wav` fuzzes RIFF/WAVE PCM s16le demuxer opening, packet emission, and parsed stream invariants. `avformat_yuv4mpegpipe` fuzzes YUV4MPEG2 demuxer opening, frame packet emission, and parsed stream invariants. The harness package builds and passes clippy when Cargo can resolve cached/downloaded `libfuzzer-sys`, but the `cargo fuzz` subcommand is not installed in this environment, so actual fuzz execution remains blocked locally.
+`fuzz` now contains the first cargo-fuzz harness package, kept outside the main workspace. `avutil_byteio` fuzzes bounded byte reads, EOF cursor invariants, and byte writer helper paths. `avutil_bitreader` fuzzes bit reads, peeks, skips, byte alignment, bit writer width validation, and cursor invariants. `avformat_wav` fuzzes RIFF/WAVE PCM s16le demuxer opening, packet emission, and parsed stream invariants. `avformat_yuv4mpegpipe` fuzzes YUV4MPEG2 demuxer opening, frame packet emission, and parsed stream invariants. `avformat_pcm_s16le` fuzzes raw PCM s16le demuxer parameter validation, packet slicing, packet timing, and side-data invariants. `avformat_rawvideo` fuzzes rawvideo demuxer geometry/format/rate validation, frame slicing, packet timing, and side-data invariants. The harness package builds and passes clippy when Cargo can resolve cached/downloaded `libfuzzer-sys`, but the `cargo fuzz` subcommand is not installed in this environment, so actual fuzz execution remains blocked locally.
 
 `avformat-video-parameters` now provides a shared video stream-parameter helper for the current rawvideo/yuv4mpegpipe/AVI subset. It validates dimensions, u32 container dimensions, pixel format, derived frame byte size, whole-frame input byte counts, and exact packet payload lengths while preserving distinct error kinds for user-supplied parameters versus untrusted container fields. Rawvideo demuxer/muxer, yuv4mpegpipe demuxer/muxer, and the AVI RGB24 muxer now store or validate their video shape through this helper, while format-specific constraints such as AVI classic header limits and YUV4MPEG2 4:2:0 even dimensions remain local. MOV visual sample-entry integration is intentionally pending until a tested sample-entry FourCC/depth to `PixelFormat` mapping exists. The ledger records this helper as implemented but not complete because oracle differential tests, FATE, fuzz coverage, and generated pixel-format coverage are still pending.
 
@@ -20,6 +20,17 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo fmt --all --manifest-path fuzz/Cargo.toml`
+- `cargo check --manifest-path fuzz/Cargo.toml --bins`
+- `cargo clippy --manifest-path fuzz/Cargo.toml --bins -- -D warnings`
+- `cargo test -p avformat pcm::tests`
+- `cargo test -p avformat rawvideo`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
 - `cargo fmt --all`
 - `cargo fmt --all --manifest-path fuzz/Cargo.toml`
 - `cargo check --manifest-path fuzz/Cargo.toml --bins`
@@ -722,12 +733,12 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Current Focus Component
 
-Parser fuzz harness coverage is the latest focus. Initial cargo-fuzz targets now cover avutil byteio/bitreader/bitwriter invariants plus WAV and yuv4mpegpipe demuxer invariants, but actual local `cargo fuzz run` execution is blocked because the `cargo-fuzz` subcommand is not installed.
+Parser fuzz harness coverage is the latest focus. Initial cargo-fuzz targets now cover avutil byteio/bitreader/bitwriter invariants plus WAV, yuv4mpegpipe, raw PCM s16le, and rawvideo demuxer invariants, but actual local `cargo fuzz run` execution is blocked because the `cargo-fuzz` subcommand is not installed.
 
 ## Next 3 Concrete Actions
 
 1. Add the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
-2. Add fuzz targets for the next untrusted parser surfaces, starting with raw PCM/rawvideo packet slicing and then AVI or MOV chunk/box parsing.
+2. Add fuzz targets for the next untrusted parser surfaces, starting with AVI chunk parsing or MOV box/sample-table parsing.
 3. Expand pixel/sample/channel layout coverage from pinned `ffmpeg -pix_fmts`, `-sample_fmts`, and `-layouts` inventories once the FFmpeg 8.1.1 oracle binary exists.
 
 ## Known Blockers
@@ -740,4 +751,4 @@ Parser fuzz harness coverage is the latest focus. Initial cargo-fuzz targets now
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added build-checked cargo-fuzz targets `avformat_wav` and `avformat_yuv4mpegpipe` plus seed corpora, updated the WAV and yuv4mpegpipe demuxer ledger fuzz target fields, and documented that actual local fuzz execution remains blocked until `cargo-fuzz` is installed.
+Latest slice: added build-checked cargo-fuzz targets `avformat_pcm_s16le` and `avformat_rawvideo` plus seed corpora, updated the raw PCM and rawvideo demuxer ledger fuzz target fields, and documented that actual local fuzz execution remains blocked until `cargo-fuzz` is installed.

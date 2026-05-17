@@ -1618,8 +1618,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial rawvideo demuxer slices fixed-size frame packets for gray, rgb24, rgba, and yuv420p with shared VideoStreamParameters dimensions/frame-size validation, frame-rate validation, monotonic PTS, and truncated-frame rejection. CLI wiring, probe integration, more pixel formats, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_rawvideo"]
+notes = "Initial rawvideo demuxer slices fixed-size frame packets for gray, rgb24, rgba, and yuv420p with shared VideoStreamParameters dimensions/frame-size validation, frame-rate validation, monotonic PTS, and truncated-frame rejection. Build-checked cargo-fuzz target avformat_rawvideo exercises geometry/format/rate validation, frame slicing, packet timing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. CLI wiring, probe integration, more pixel formats, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1639,8 +1639,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial raw pcm_s16le demuxer slices whole interleaved sample-frame packets with configurable packet sample counts, sample-rate/channel validation through the shared avformat AudioStreamParameters helper, SampleFormat::S16-derived frame sizing, mono/stereo ChannelLayout metadata where safe, PTS measured in samples, and partial-frame rejection. CLI wiring, probe integration, other PCM formats, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_pcm_s16le"]
+notes = "Initial raw pcm_s16le demuxer slices whole interleaved sample-frame packets with configurable packet sample counts, sample-rate/channel validation through the shared avformat AudioStreamParameters helper, SampleFormat::S16-derived frame sizing, mono/stereo ChannelLayout metadata where safe, PTS measured in samples, and partial-frame rejection. Build-checked cargo-fuzz target avformat_pcm_s16le exercises parameter validation, packet slicing, packet timing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. CLI wiring, probe integration, other PCM formats, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
