@@ -44,6 +44,7 @@ pub struct FfprobeReport {
     nb_streams: usize,
     duration_ts: Option<u64>,
     duration: Option<String>,
+    size: Option<u64>,
     time_base: String,
     tags: Vec<(String, String)>,
     streams: Vec<FfprobeStreamReport>,
@@ -77,6 +78,10 @@ impl FfprobeReport {
 
     pub fn duration(&self) -> Option<&str> {
         self.duration.as_deref()
+    }
+
+    pub fn size(&self) -> Option<u64> {
+        self.size
     }
 
     pub fn time_base(&self) -> &str {
@@ -477,7 +482,7 @@ fn probe_avi_bytes(
 ) -> Result<FfprobeReport, FfprobeError> {
     let mut demuxer = AviDemuxer::open(bytes)
         .map_err(|err| FfprobeError::invalid_data(format!("failed to parse AVI input: {err}")))?;
-    let mut report = report_from_avi(path, demuxer.info());
+    let mut report = report_from_avi(path, bytes.len() as u64, demuxer.info());
     if collect_packets {
         report.packets = collect_avi_packets(&mut demuxer, &report.streams)?;
     }
@@ -493,7 +498,7 @@ fn probe_mov_bytes(
     let mut demuxer = MovDemuxer::open(bytes).map_err(|err| {
         FfprobeError::invalid_data(format!("failed to parse MOV/MP4 input: {err}"))
     })?;
-    let mut report = report_from_mov(path, probe_score, demuxer.info());
+    let mut report = report_from_mov(path, probe_score, bytes.len() as u64, demuxer.info());
     if collect_packets {
         report.packets = collect_mov_packets(&mut demuxer, &report.streams)?;
     }
@@ -642,7 +647,7 @@ fn set_input_url(input_url: &mut Option<String>, value: &str) -> Result<(), Ffpr
     Ok(())
 }
 
-fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport {
+fn report_from_mov(path: &str, probe_score: u8, input_size: u64, info: &MovInfo) -> FfprobeReport {
     let streams = info
         .tracks()
         .iter()
@@ -735,6 +740,7 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
         duration: info
             .duration()
             .map(|duration| format_duration(duration, info.timescale())),
+        size: Some(input_size),
         time_base: format!("1/{}", info.timescale()),
         tags: info
             .metadata()
@@ -747,7 +753,7 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
     }
 }
 
-fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
+fn report_from_avi(path: &str, input_size: u64, info: &AviInfo) -> FfprobeReport {
     let streams = info
         .streams()
         .iter()
@@ -818,6 +824,7 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
                 stream.time_base_den,
             )
         }),
+        size: Some(input_size),
         time_base: duration_stream.map_or_else(
             || "1/1000000".to_string(),
             |stream| stream.time_base.clone(),
@@ -1332,6 +1339,9 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
         if let Some(duration) = &report.duration {
             out.push_str(&format!("duration={duration}\n"));
         }
+        if let Some(size) = report.size {
+            out.push_str(&format!("size={size}\n"));
+        }
         out.push_str(&format!("probe_score={}\n", report.probe_score));
         for (key, value) in &report.tags {
             out.push_str(&format!("TAG:{key}={value}\n"));
@@ -1494,6 +1504,9 @@ fn render_format_json(report: &FfprobeReport) -> String {
     }
     if let Some(duration) = &report.duration {
         fields.push(json_string("duration", duration));
+    }
+    if let Some(size) = report.size {
+        fields.push(json_string("size", &size.to_string()));
     }
     if !report.tags.is_empty() {
         fields.push(json_object("tags", &report.tags));
@@ -1737,6 +1750,7 @@ mod tests {
         assert!(rendered.contains("[FORMAT]\n"));
         assert!(rendered.contains("format_name=mov,mp4,m4a,3gp,3g2,mj2\n"));
         assert!(rendered.contains("duration=5.000000\n"));
+        assert!(rendered.contains("size=2048\n"));
     }
 
     #[test]
@@ -1767,6 +1781,7 @@ mod tests {
 
         assert!(rendered.contains("\"format\""));
         assert!(rendered.contains("\"filename\": \"clip.mp4\""));
+        assert!(rendered.contains("\"size\": \"2048\""));
         assert!(rendered.contains("\"title\": \"Rust \\\"MOV\\\"\""));
         assert!(!rendered.contains("\"streams\""));
         assert!(!rendered.contains("\"packets\""));
@@ -1796,7 +1811,9 @@ mod tests {
 
     #[test]
     fn opens_local_mov_file_for_show_format() {
-        let path = write_temp_mov("show-format", &minimal_mov_file());
+        let bytes = minimal_mov_file();
+        let expected_size = bytes.len();
+        let path = write_temp_mov("show-format", &bytes);
         let path_arg = path.to_string_lossy().into_owned();
 
         let stdout = ffprobe_output(&strings(&[
@@ -1813,6 +1830,7 @@ mod tests {
         assert!(stdout.contains("nb_streams=1\n"));
         assert!(stdout.contains("duration_ts=5000\n"));
         assert!(stdout.contains("duration=5.000000\n"));
+        assert!(stdout.contains(&format!("size={expected_size}\n")));
         assert!(stdout.contains("probe_score=100\n"));
     }
 
@@ -1841,13 +1859,10 @@ mod tests {
 
     #[test]
     fn outputs_mov_format_tags_json() {
-        let path = write_temp_mov(
-            "show-format-tags-json",
-            &mov_file_with_movie_metadata(&[ilst_utf8_item(
-                [0xa9, b'n', b'a', b'm'],
-                "Rust Movie",
-            )]),
-        );
+        let bytes =
+            mov_file_with_movie_metadata(&[ilst_utf8_item([0xa9, b'n', b'a', b'm'], "Rust Movie")]);
+        let expected_size = bytes.len();
+        let path = write_temp_mov("show-format-tags-json", &bytes);
         let path_arg = path.to_string_lossy().into_owned();
 
         let stdout = ffprobe_output(&strings(&[
@@ -1861,6 +1876,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("\"format\""));
+        assert!(stdout.contains(&format!("\"size\": \"{expected_size}\"")));
         assert!(stdout.contains("\"tags\": {\"title\": \"Rust Movie\"}"));
         assert!(!stdout.contains("\"streams\""));
         assert!(!stdout.contains("\"packets\""));
@@ -2130,10 +2146,9 @@ mod tests {
     fn opens_local_avi_file_for_show_format() {
         let first = [0, 1, 2, 3, 4, 5];
         let second = [6, 7, 8, 9, 10, 11];
-        let path = write_temp_avi(
-            "avi-show-format",
-            &avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[&first, &second]),
-        );
+        let bytes = avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[&first, &second]);
+        let expected_size = bytes.len();
+        let path = write_temp_avi("avi-show-format", &bytes);
         let path_arg = path.to_string_lossy().into_owned();
 
         let stdout = ffprobe_output(&strings(&["-show_format", path_arg.as_str()]))
@@ -2148,7 +2163,33 @@ mod tests {
         assert!(stdout.contains("time_base=1/25\n"));
         assert!(stdout.contains("duration_ts=2\n"));
         assert!(stdout.contains("duration=0.080000\n"));
+        assert!(stdout.contains(&format!("size={expected_size}\n")));
         assert!(stdout.contains("probe_score=100\n"));
+    }
+
+    #[test]
+    fn outputs_avi_format_size_json() {
+        let frame = [0, 1, 2, 3, 4, 5];
+        let bytes = avi_file_bytes(2, 1, Rational::new(30, 1).unwrap(), &[&frame]);
+        let expected_size = bytes.len();
+        let path = write_temp_avi("avi-show-format-size-json", &bytes);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-show_format",
+            "-of",
+            "json",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe AVI command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("\"format\""));
+        assert!(stdout.contains("\"format_name\": \"avi\""));
+        assert!(stdout.contains(&format!("\"size\": \"{expected_size}\"")));
+        assert!(!stdout.contains("\"streams\""));
+        assert!(!stdout.contains("\"packets\""));
     }
 
     #[test]
@@ -2412,6 +2453,7 @@ mod tests {
             nb_streams: 1,
             duration_ts: Some(5_000),
             duration: Some("5.000000".to_string()),
+            size: Some(2_048),
             time_base: "1/1000".to_string(),
             tags: vec![("title".to_string(), "Rust \"MOV\"".to_string())],
             streams: vec![FfprobeStreamReport {
