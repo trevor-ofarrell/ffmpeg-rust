@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avutil-options` now records known public AVOption flag bits, rejects mutation of read-only options, supports unit-scoped named constants, and exposes numeric range queries. `OptionFlags` truncates unknown bits, `OptionDefinition` stores flags and optional units alongside type/default/help metadata, `OptionSet` resolves constants case-insensitively for matching units during parsed string mutation, failed constant resolution or type mismatch leaves state unchanged, and `OptionRange` reports validated numeric bounds for int/float options. The `avutil_metadata_options` fuzz target now build-checks generated option flags, unknown-bit truncation, unit constant scoping, numeric range invariants, and read-only mutation rejection. The ledger still keeps `avutil-options` at `implemented`, not `complete`, because CLI option ordering, child classes, richer AVOption query/export behavior, pinned-oracle differential vectors, FATE coverage, and actual local fuzz execution are still absent.
+`avutil-options` now records known public AVOption flag bits, rejects mutation of read-only options, supports unit-scoped named constants, exposes numeric range queries, and registers child option sets with independent option namespaces. `OptionFlags` truncates unknown bits, `OptionDefinition` stores flags and optional units alongside type/default/help metadata, `OptionSet` resolves constants case-insensitively for matching units during parsed string mutation, failed constant resolution or type mismatch leaves state unchanged, `OptionRange` reports validated numeric bounds for int/float options, and `OptionChild` stores named child option sets with validated metadata and case-insensitive duplicate rejection. The `avutil_metadata_options` fuzz target now build-checks generated option flags, unknown-bit truncation, unit constant scoping, numeric range invariants, read-only mutation rejection, child option-set registration, and child invariants. The ledger still keeps `avutil-options` at `implemented`, not `complete`, because CLI option ordering, richer AVOption query/export behavior, pinned-oracle differential vectors, FATE coverage, and actual local fuzz execution are still absent.
 
 `avutil-dict` now supports explicit duplicate-key insertion for AV_DICT_MULTIKEY-like metadata cases. Duplicate entries preserve insertion order, ordinary lookup still returns the first matching entry, case-sensitive lookup can target the duplicate spelling, and removal deletes the first requested match. The `avutil_metadata_options` fuzz target now build-checks duplicate-key insertion alongside the existing mutation and failed-mutation invariants. The ledger still keeps `avutil-dict` at `implemented`, not `complete`, because pinned-oracle differential vectors, FATE coverage, full AVDictionary flag parity, and actual local fuzz execution are still absent.
 
@@ -1031,11 +1031,11 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Current Focus Component
 
-`avutil-options` is the latest coherent slice. Known public AVOption flag bits, flag truncation, unit-scoped constants, numeric range queries, read-only mutation rejection, unit coverage, and build-checked fuzz coverage have been added, but CLI option ordering, child classes, richer AVOption query/export behavior, pinned FFmpeg differential tests, FATE coverage, and actual local fuzz execution are still absent.
+`avutil-options` is the latest coherent slice. Known public AVOption flag bits, flag truncation, unit-scoped constants, numeric range queries, read-only mutation rejection, child option sets, unit coverage, and build-checked fuzz coverage have been added, but CLI option ordering, richer AVOption query/export behavior, pinned FFmpeg differential tests, FATE coverage, and actual local fuzz execution are still absent.
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 avutil completeness with the next implemented primitive whose ledger records missing behavior, likely AVOption child classes/query export behavior or checksum helper gaps.
+1. Continue priority-1 avutil completeness with the next implemented primitive whose ledger records missing behavior, likely AVOption query/export behavior or checksum helper gaps.
 2. Recheck `fftools` test execution when Windows Application Control allows the unchanged test binary to run.
 3. Add the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
 
@@ -1049,4 +1049,4 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: strengthened `avutil::OptionSet` with public AVOption-style flags, unit-scoped named constants, numeric range queries, read-only mutation rejection, fuzz-target coverage, and docs/ledger updates while keeping `avutil-options` below `complete`.
+Latest slice: strengthened `avutil::OptionSet` with public AVOption-style flags, unit-scoped named constants, numeric range queries, read-only mutation rejection, child option-set registration, fuzz-target coverage, and docs/ledger updates while keeping `avutil-options` below `complete`.

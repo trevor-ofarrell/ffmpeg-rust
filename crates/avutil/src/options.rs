@@ -294,11 +294,48 @@ impl OptionDefinition {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct OptionChild {
+    name: String,
+    help: String,
+    options: OptionSet,
+}
+
+impl OptionChild {
+    pub fn new(
+        name: impl Into<String>,
+        options: OptionSet,
+        help: impl Into<String>,
+    ) -> AvResult<Self> {
+        let name = validate_name(&name.into())?;
+        let help = validate_help(&help.into())?;
+
+        Ok(Self {
+            name,
+            help,
+            options,
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn help(&self) -> &str {
+        &self.help
+    }
+
+    pub fn options(&self) -> &OptionSet {
+        &self.options
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct OptionSet {
     definitions: Vec<OptionDefinition>,
     values: Vec<OptionValue>,
     constants: Vec<OptionConstant>,
+    children: Vec<OptionChild>,
 }
 
 impl OptionSet {
@@ -320,6 +357,10 @@ impl OptionSet {
 
     pub fn constants(&self) -> &[OptionConstant] {
         &self.constants
+    }
+
+    pub fn children(&self) -> &[OptionChild] {
+        &self.children
     }
 
     pub fn constants_for_unit<'a>(
@@ -360,8 +401,25 @@ impl OptionSet {
         Ok(())
     }
 
+    pub fn define_child(&mut self, child: OptionChild) -> AvResult<()> {
+        if self.find_child_index(child.name()).is_some() {
+            return Err(AvError::invalid_argument(format!(
+                "duplicate option child `{}`",
+                child.name()
+            )));
+        }
+
+        self.children.push(child);
+        Ok(())
+    }
+
     pub fn definition(&self, name: &str) -> Option<&OptionDefinition> {
         self.find_index(name).map(|index| &self.definitions[index])
+    }
+
+    pub fn child(&self, name: &str) -> Option<&OptionChild> {
+        self.find_child_index(name)
+            .map(|index| &self.children[index])
     }
 
     pub fn get(&self, name: &str) -> Option<&OptionValue> {
@@ -421,6 +479,12 @@ impl OptionSet {
             ascii_eq_ignore_case(constant.unit(), unit)
                 && ascii_eq_ignore_case(constant.name(), name)
         })
+    }
+
+    fn find_child_index(&self, name: &str) -> Option<usize> {
+        self.children
+            .iter()
+            .position(|child| ascii_eq_ignore_case(child.name(), name))
     }
 
     fn ensure_writable(&self, index: usize) -> AvResult<()> {
@@ -921,6 +985,64 @@ mod tests {
             .unwrap()
             .flags()
             .contains(OptionFlags::READONLY));
+    }
+
+    #[test]
+    fn child_option_sets_register_independent_option_namespaces() {
+        let mut parent = sample_options();
+        let mut child_options = OptionSet::new();
+        child_options
+            .define(
+                OptionDefinition::new(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 16 },
+                    OptionValue::Int(2),
+                    "child worker count",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        parent
+            .define_child(
+                OptionChild::new("encoder", child_options, "encoder private options").unwrap(),
+            )
+            .unwrap();
+
+        let child = parent.child("ENCODER").unwrap();
+
+        assert_eq!(parent.children().len(), 1);
+        assert_eq!(child.name(), "encoder");
+        assert_eq!(child.help(), "encoder private options");
+        assert_eq!(parent.get("threads"), Some(&OptionValue::Int(1)));
+        assert_eq!(child.options().get("threads"), Some(&OptionValue::Int(2)));
+        assert_eq!(
+            child.options().definition("THREADS").unwrap().help(),
+            "child worker count"
+        );
+    }
+
+    #[test]
+    fn duplicate_child_option_sets_are_rejected_case_insensitively() {
+        let mut options = sample_options();
+        options
+            .define_child(OptionChild::new("decoder", OptionSet::new(), "").unwrap())
+            .unwrap();
+
+        let before = options.clone();
+        let err = options
+            .define_child(OptionChild::new("DECODER", OptionSet::new(), "duplicate").unwrap())
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(options, before);
+    }
+
+    #[test]
+    fn invalid_child_option_set_metadata_is_rejected() {
+        assert!(OptionChild::new("", OptionSet::new(), "").is_err());
+        assert!(OptionChild::new("bad\0child", OptionSet::new(), "").is_err());
+        assert!(OptionChild::new("child", OptionSet::new(), "bad\0help").is_err());
     }
 
     fn sample_options() -> OptionSet {

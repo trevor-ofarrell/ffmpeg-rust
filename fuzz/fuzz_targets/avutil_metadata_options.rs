@@ -1,8 +1,8 @@
 #![no_main]
 
 use avutil::{
-    Dictionary, DictionarySet, MatchMode, OptionConstant, OptionDefinition, OptionFlags,
-    OptionKind, OptionSet, OptionValue, SetMode,
+    Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant, OptionDefinition,
+    OptionFlags, OptionKind, OptionSet, OptionValue, SetMode,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -79,7 +79,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 6 {
+        match cursor.next().unwrap_or_default() % 7 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -131,6 +131,20 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
             }
             4 => {
+                let before = options.clone();
+                let child = generated_child(cursor);
+                let result = child.and_then(|child| options.define_child(child));
+                match result {
+                    Ok(()) => {
+                        assert_eq!(options.children().len(), before.children().len() + 1);
+                        assert_option_set_invariants(&options);
+                    }
+                    Err(_) => {
+                        assert_eq!(options, before);
+                    }
+                }
+            }
+            5 => {
                 let _ = options.get(&option_name_from(cursor));
             }
             _ => {
@@ -194,6 +208,29 @@ fn exercise_fixtures() {
         .unwrap()
         .flags()
         .contains(OptionFlags::READONLY));
+
+    let mut child_options = OptionSet::new();
+    child_options
+        .define(
+            OptionDefinition::new(
+                "threads",
+                OptionKind::Int { min: 1, max: 16 },
+                OptionValue::Int(2),
+                "child worker count",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define_child(OptionChild::new("encoder", child_options, "encoder options").unwrap())
+        .unwrap();
+    assert_eq!(
+        options.child("ENCODER").unwrap().options().get("THREADS"),
+        Some(&OptionValue::Int(2))
+    );
+    assert!(options
+        .define_child(OptionChild::new("ENCODER", OptionSet::new(), "").unwrap())
+        .is_err());
 }
 
 fn assert_valid_dictionary(dict: &Dictionary) {
@@ -207,6 +244,10 @@ fn assert_valid_dictionary(dict: &Dictionary) {
 }
 
 fn assert_option_set_invariants(options: &OptionSet) {
+    assert_option_set_invariants_at_depth(options, 0);
+}
+
+fn assert_option_set_invariants_at_depth(options: &OptionSet, depth: usize) {
     assert_eq!(options.is_empty(), options.definitions().is_empty());
     assert_eq!(options.len(), options.definitions().len());
     for definition in options.definitions() {
@@ -237,6 +278,17 @@ fn assert_option_set_invariants(options: &OptionSet) {
         assert!(!constant.unit().is_empty());
         assert!(!constant.unit().as_bytes().contains(&0));
         assert!(!constant.help().as_bytes().contains(&0));
+    }
+    for (index, child) in options.children().iter().enumerate() {
+        assert!(!child.name().is_empty());
+        assert!(!child.name().as_bytes().contains(&0));
+        assert!(!child.help().as_bytes().contains(&0));
+        for previous in &options.children()[..index] {
+            assert!(!ascii_eq_ignore_case(previous.name(), child.name()));
+        }
+        if depth < 2 {
+            assert_option_set_invariants_at_depth(child.options(), depth + 1);
+        }
     }
 }
 
@@ -275,6 +327,47 @@ fn generated_constant(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionConstan
     let value = option_value_from(cursor);
     let help = literal_from(cursor);
     OptionConstant::new(unit, name, value, help)
+}
+
+fn generated_child(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionChild> {
+    let name = option_child_name_from(cursor);
+    let options = generated_child_options(cursor);
+    let help = literal_from(cursor);
+    OptionChild::new(name, options, help)
+}
+
+fn generated_child_options(cursor: &mut Cursor<'_>) -> OptionSet {
+    let mut options = OptionSet::new();
+    match cursor.next().unwrap_or_default() % 3 {
+        0 => {
+            options
+                .define(
+                    OptionDefinition::new(
+                        "threads",
+                        OptionKind::Int { min: 1, max: 16 },
+                        OptionValue::Int(2),
+                        "child worker count",
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        1 => {
+            options
+                .define(
+                    OptionDefinition::new(
+                        "enabled",
+                        OptionKind::Bool,
+                        OptionValue::Bool(false),
+                        "child enable flag",
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        _ => {}
+    }
+    options
 }
 
 fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue {
@@ -521,6 +614,18 @@ fn option_constant_name_from(cursor: &mut Cursor<'_>) -> String {
     }
 }
 
+fn option_child_name_from(cursor: &mut Cursor<'_>) -> String {
+    match cursor.next().unwrap_or_default() % 8 {
+        0 => "encoder".to_owned(),
+        1 => "ENCODER".to_owned(),
+        2 => "decoder".to_owned(),
+        3 => "filter".to_owned(),
+        4 => String::new(),
+        5 => "bad\0child".to_owned(),
+        _ => literal_from(cursor),
+    }
+}
+
 fn match_mode_from(byte: Option<u8>) -> MatchMode {
     if byte.unwrap_or_default().is_multiple_of(2) {
         MatchMode::CaseInsensitive
@@ -564,6 +669,15 @@ fn literal_from(cursor: &mut Cursor<'_>) -> String {
         });
     }
     output
+}
+
+fn ascii_eq_ignore_case(left: &str, right: &str) -> bool {
+    left.len() == right.len()
+        && left
+            .as_bytes()
+            .iter()
+            .zip(right.as_bytes())
+            .all(|(left, right)| left.eq_ignore_ascii_case(right))
 }
 
 struct Cursor<'a> {
