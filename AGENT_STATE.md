@@ -2,6 +2,8 @@
 
 ## Current Status
 
+`avutil-packet` now models more AVPacket-shaped metadata and mutation invariants. Packets expose payload length/emptiness, preserve unknown byte position separately from valid nonnegative positions, reject negative byte positions without mutating existing state, support clearable FFmpeg-style key/corrupt/discard/trusted/disposable flags with known-bit truncation, and reject side-data kind names that are empty or contain NUL. The `avutil_core_models` fuzz target now build-checks packet byte-position, duration, flag, side-data, payload, and non-mutation invariants. The ledger still keeps `avutil-packet` at `implemented`, not `complete`, because full AVPacket field parity, pinned-oracle differential tests, FATE, and actual local fuzz execution are still absent.
+
 `avutil-timebase` now covers FFmpeg-style timestamp rescaling edge modes more explicitly. It adds an away-from-zero rounding mode, a pass-min/max helper for timestamp sentinels, tests invalid time bases and out-of-range rescale results, and extends `avutil_core_models` to fuzz-check all current rounding modes plus sentinel preservation against an independent i128 model. The ledger still keeps `avutil-timebase` at `implemented`, not `complete`, because pinned-oracle edge-case differential vectors are still absent.
 
 `avutil-rational` now exposes checked add, subtract, negate, multiply, divide, reciprocal, and comparison helpers over normalized rationals. The new arithmetic paths reduce results and reject invalid or out-of-range results with typed errors, and `avutil_core_models` now fuzz-checks rational arithmetic and division round trips in addition to the existing timebase invariants. The ledger still keeps `avutil-rational` at `implemented`, not `complete`, because pinned-oracle differential vectors for the broader FFmpeg rational surface are still absent.
@@ -30,6 +32,18 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo fmt --all --manifest-path fuzz/Cargo.toml`
+- `cargo test -p avutil packet`
+- `cargo check --manifest-path fuzz/Cargo.toml --bins`
+- `cargo clippy --manifest-path fuzz/Cargo.toml --bins -- -D warnings`
+- `cargo fmt --all -- --check`
+- `cargo fmt --all --manifest-path fuzz/Cargo.toml -- --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test -p avutil --lib`
+- `cargo test --workspace --all-features --exclude fftools`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
 - `cargo fmt --all`
 - `cargo fmt --all --manifest-path fuzz/Cargo.toml`
 - `cargo test -p avutil timebase`
@@ -952,11 +966,11 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Current Focus Component
 
-`avutil-timebase` is the latest completed slice. Away-from-zero rounding, pass-min/max sentinel preservation, invalid time-base checks, out-of-range checks, unit coverage, and build-checked `avutil_core_models` fuzz coverage have been added, but pinned FFmpeg differential vectors are still absent.
+`avutil-packet` is the latest completed slice. Payload length helpers, optional byte position, clearable known packet flags, stricter side-data kind validation, unit coverage, and build-checked `avutil_core_models` fuzz coverage have been added, but pinned FFmpeg differential vectors, FATE coverage, full AVPacket fields, and actual local fuzz execution are still absent.
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 avutil completeness with the next implemented primitive whose ledger records missing behavior.
+1. Continue priority-1 avutil completeness with the next implemented primitive whose ledger records missing behavior, likely `avutil-frame`.
 2. Recheck `fftools` test execution when Windows Application Control allows the unchanged test binary to run.
 3. Add the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
 
@@ -970,4 +984,4 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: strengthened `avutil::timebase` with away-from-zero rounding, pass-min/max sentinel preservation, invalid time-base checks, out-of-range tests, and `avutil_core_models` fuzz invariants while keeping `avutil-timebase` below `complete`.
+Latest slice: strengthened `avutil::packet` with byte-position metadata, payload length helpers, clearable FFmpeg-style packet flags, stricter side-data kind validation, unit tests, and `avutil_core_models` fuzz invariants while keeping `avutil-packet` below `complete`.

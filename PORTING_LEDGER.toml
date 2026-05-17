@@ -77,13 +77,14 @@ oracle_command = ""
 rust_command = "cargo test -p avutil packet"
 unit_tests = [
   "packet::tests::packet_defaults_to_no_timestamps",
-  "packet::tests::packet_tracks_timestamps_flags_and_side_data",
-  "packet::tests::packet_rejects_negative_duration_and_empty_side_data_kind",
+  "packet::tests::packet_tracks_timestamps_position_flags_and_side_data",
+  "packet::tests::packet_flags_can_be_cleared",
+  "packet::tests::packet_rejects_negative_duration_position_and_invalid_side_data_kind",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_core_models"]
-notes = "Packet skeleton validates timestamps, duration, flags, and side-data shape. Build-checked cargo-fuzz target avutil_core_models covers packet timestamp setters, duration rejection/non-mutation, key flags, side-data validation, and payload preservation, but actual local fuzz execution is blocked until cargo-fuzz is installed. Not ABI complete."
+notes = "Packet skeleton validates timestamps, nonnegative duration, optional byte position, clearable FFmpeg-style packet flags, side-data kind shape, payload length, and stream index. Build-checked cargo-fuzz target avutil_core_models covers packet timestamp setters, duration and byte-position rejection/non-mutation, key/corrupt/discard/trusted/disposable flag mutation, side-data validation, and payload preservation, but actual local fuzz execution is blocked until cargo-fuzz is installed. Not ABI complete."
 blocked_reason = ""
 
 [[component]]

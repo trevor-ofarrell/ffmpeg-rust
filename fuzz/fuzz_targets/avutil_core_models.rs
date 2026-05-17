@@ -259,10 +259,13 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let stream_index = usize::from(cursor.next().unwrap_or_default() % 4);
     let mut packet = Packet::new(payload.clone(), stream_index);
     assert_eq!(packet.data(), payload.as_slice());
+    assert_eq!(packet.len(), payload.len());
+    assert_eq!(packet.is_empty(), payload.is_empty());
     assert_eq!(packet.stream_index(), stream_index);
     assert_eq!(packet.pts(), None);
     assert_eq!(packet.dts(), None);
     assert_eq!(packet.duration(), 0);
+    assert_eq!(packet.pos(), None);
 
     let pts = timestamp_from(cursor.next());
     let dts = timestamp_from(cursor.next());
@@ -280,10 +283,39 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(packet.duration(), duration);
 
+    let pos = if cursor.next().unwrap_or_default().is_multiple_of(3) {
+        None
+    } else {
+        Some(i64::from(cursor.next().unwrap_or_default()))
+    };
+    packet.set_pos(pos).unwrap();
+    assert_eq!(packet.pos(), pos);
+    assert_eq!(
+        packet.set_pos(Some(-1)).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(packet.pos(), pos);
+
     packet.set_key(cursor.next().unwrap_or_default().is_multiple_of(2));
     if packet.flags().contains(PacketFlags::KEY) {
         assert_ne!(packet.flags().bits() & PacketFlags::KEY.bits(), 0);
     }
+    packet.set_flag(PacketFlags::KEY, false);
+    assert!(!packet.flags().contains(PacketFlags::KEY));
+    for flag in [
+        PacketFlags::CORRUPT,
+        PacketFlags::DISCARD,
+        PacketFlags::TRUSTED,
+        PacketFlags::DISPOSABLE,
+    ] {
+        packet.set_flag(flag, true);
+        assert!(packet.flags().contains(flag));
+        packet.set_flag(flag, false);
+        assert!(!packet.flags().contains(flag));
+    }
+    let raw_flags = u32::from(cursor.next().unwrap_or_default()) | 0xffff_ff00;
+    let truncated = PacketFlags::from_bits_truncate(raw_flags);
+    assert_eq!(truncated.bits() & !PacketFlags::all().bits(), 0);
 
     let side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let side_data_payload = payload_from(cursor, side_data_len);
@@ -293,6 +325,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet.side_data()[0].data(), side_data_payload.as_slice());
     assert_eq!(
         SideData::new(" \t", Vec::new()).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        SideData::new("bad\0kind", Vec::new()).unwrap_err().kind(),
         AvErrorKind::InvalidArgument
     );
 
