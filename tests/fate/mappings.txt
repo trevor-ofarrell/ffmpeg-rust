@@ -1,0 +1,8 @@
+# Local FATE-runner mappings.
+#
+# Format:
+# component_id|target|workdir|program|arg1|arg2|...
+#
+# These local smoke mappings validate this repository's runner wiring only.
+# They do not count as upstream FFmpeg FATE parity for media components.
+fate-runner|local-self-test|.|cargo|test|-p|fate-runner

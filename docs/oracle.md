@@ -47,9 +47,11 @@ Each command is written as a text snapshot under `compat/ffmpeg-8.1.1/`, with `i
 
 ## FATE Samples
 
-FATE samples are expected to be obtained using upstream FFmpeg's documented `make fate-rsync` flow against a local samples directory. This repository does not yet contain samples or a FATE target mapping.
+FATE samples are expected to be obtained using upstream FFmpeg's documented `make fate-rsync` flow against a local samples directory. This repository does not yet contain samples or an upstream media FATE target mapping.
 
-`cargo run -p fate-runner -- list` reads `PORTING_LEDGER.toml` and lists known components. `cargo run -p fate-runner -- run --changed` inspects git changed paths, maps currently covered Rust modules to ledger component IDs, and reports those components, but it still exits with an explicit unmapped-FATE error until real FATE commands and sample roots are configured.
+`cargo run -p fate-runner -- list` reads `PORTING_LEDGER.toml` and lists known components. `cargo run -p fate-runner -- run --changed` inspects git changed paths, maps currently covered Rust modules to ledger component IDs, and runs explicit command mappings from `tests/fate/mappings.txt` for selected components. The mapping format is documented in `tests/fate/README.md` as `component_id|target|workdir|program|arg1|arg2|...`.
+
+The current default mapping file contains only `fate-runner|local-self-test`, which validates local runner wiring by invoking `cargo test -p fate-runner`. It does not count as upstream FFmpeg FATE media parity.
 
 ## Differential Tests
 

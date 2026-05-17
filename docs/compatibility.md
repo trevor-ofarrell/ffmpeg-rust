@@ -47,7 +47,7 @@
 - `avcodec` has an initial packed `pcm_s16le` decoder for mono and multichannel packet payloads.
 - `avutil` has initial typed errors, rational normalization/comparison, timestamp rescaling, bounded byte I/O helpers, MSB-first bit reader/writer helpers, metadata dictionary helpers, AVOption-like descriptor/value validation, Adler-32 and IEEE CRC-32 checksum helpers, shared initial pixel/sample/channel layout models for `gray`/`gray8`, `rgb24`, `rgba`, `yuv420p`, packed `s16`, common channel positions, and named mono/stereo/quad/5.1/5.1(side)/7.1 layouts, packet timestamp/flag/side-data skeletons, frame shape and plane-size validation, and an in-memory logging abstraction.
 - `oracle inventory` can execute a pinned FFmpeg binary and capture the required inventory command outputs.
-- `fate-runner` can list ledger components and select changed ledger components from git paths for currently mapped Rust modules.
+- `fate-runner` can list ledger components, select changed ledger components from git paths for currently mapped Rust modules, parse `tests/fate/mappings.txt`, and run the local `fate-runner|local-self-test` smoke mapping.
 
 ## Incomplete
 
@@ -81,4 +81,4 @@ All media parsing, decoding, encoding, muxing, demuxing, filtering, playback, pr
 - The shared avutil pixel/sample/channel layout models are intentionally narrow. Most FFmpeg pixel formats, sample formats, descriptor flags, chroma subsampling metadata, hardware formats, planar audio variants, channel-order variants, custom layouts, ambisonic layouts, and full `ffmpeg -layouts` coverage are not implemented yet.
 - The version banner is compatibility-oriented but not byte-identical to upstream FFmpeg.
 - No inventory snapshot has been generated because no pinned FFmpeg oracle binary exists in this workspace yet.
-- FATE components are listed from the ledger, and `run --changed` can select changed ledger components from git paths for mapped Rust modules, but runnable FATE mappings have not been implemented.
+- FATE components are listed from the ledger, `run --changed` can select changed ledger components from git paths for mapped Rust modules, and explicit local smoke mappings can run from `tests/fate/mappings.txt`. Upstream FATE sample-based media mappings have not been implemented.

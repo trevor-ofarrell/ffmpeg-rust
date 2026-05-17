@@ -160,18 +160,24 @@ upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "scaffolded"
 priority = 2
 oracle_command = "make fate"
-rust_command = "cargo run -p fate-runner -- list"
+rust_command = "cargo run -p fate-runner -- list; cargo run -p fate-runner -- run --component fate-runner"
 unit_tests = [
   "tests::parses_component_ids_from_ledger",
   "tests::changed_selection_maps_paths_and_preserves_ledger_order",
   "tests::changed_selection_expands_prefix_rules_against_existing_ledger_ids",
   "tests::unmapped_relevant_paths_report_crate_files_but_ignore_docs",
+  "tests::parses_run_options_for_component_changed_and_mapping_path",
+  "tests::rejects_ambiguous_or_incomplete_run_options",
+  "tests::parses_fate_mapping_rows",
+  "tests::rejects_invalid_fate_mapping_rows",
+  "tests::formats_mapping_commands_for_diagnostics",
+  "tests::reports_selected_components_without_mappings",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fate-runner|local-self-test"]
 fuzz_targets = []
-notes = "Can list ledger component IDs and select changed ledger components from git paths for the currently mapped Rust modules. Runnable FATE mapping intentionally returns an error until real mappings exist."
-blocked_reason = "No FATE samples path or component mapping has been configured."
+notes = "Can list ledger component IDs, select changed ledger components from git paths for the currently mapped Rust modules, parse the explicit tests/fate/mappings.txt format, and run the local fate-runner smoke mapping. The local mapping proves runner wiring only; upstream FFmpeg FATE media mappings are still absent."
+blocked_reason = "No upstream FATE samples path or media component mapping has been configured."
 
 [[component]]
 id = "avutil-byteio"

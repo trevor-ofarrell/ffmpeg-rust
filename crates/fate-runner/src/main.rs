@@ -2,10 +2,33 @@ use std::env;
 use std::fs;
 use std::process::Command;
 
+const DEFAULT_FATE_MAPPINGS_PATH: &str = "tests/fate/mappings.txt";
+
 struct PathRule {
     path: &'static str,
     exact_ids: &'static [&'static str],
     id_prefixes: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FateMapping {
+    component_id: String,
+    target: String,
+    workdir: String,
+    program: String,
+    args: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RunOptions {
+    mode: RunMode,
+    mappings_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RunMode {
+    Component(String),
+    Changed,
 }
 
 const PATH_RULES: &[PathRule] = &[
@@ -271,31 +294,58 @@ fn list_components() -> Result<(), String> {
 }
 
 fn run_component(args: Vec<String>) -> Result<(), String> {
-    if args.first().map(String::as_str) == Some("--changed") {
-        return run_changed_components();
+    let options = parse_run_options(&args)?;
+    match options.mode {
+        RunMode::Component(component) => {
+            let ids = load_component_ids()?;
+            if !ids.iter().any(|id| id == &component) {
+                return Err(format!("unknown ledger component `{component}`"));
+            }
+            run_mapped_components(&ids, &[component], &options.mappings_path)
+        }
+        RunMode::Changed => run_changed_components(&options.mappings_path),
     }
+}
 
-    let mut component = None;
+fn parse_run_options(args: &[String]) -> Result<RunOptions, String> {
+    let mut mode = None;
+    let mut mappings_path = DEFAULT_FATE_MAPPINGS_PATH.to_string();
     let mut iter = args.iter();
+
     while let Some(arg) = iter.next() {
         match arg.as_str() {
-            "--component" => component = iter.next().cloned(),
+            "--changed" => set_run_mode(&mut mode, RunMode::Changed)?,
+            "--component" => {
+                let component = iter
+                    .next()
+                    .ok_or_else(|| "missing value for --component".to_string())?;
+                set_run_mode(&mut mode, RunMode::Component(component.clone()))?;
+            }
+            "--mappings" => {
+                mappings_path = iter
+                    .next()
+                    .ok_or_else(|| "missing value for --mappings".to_string())?
+                    .clone();
+            }
             other => return Err(format!("unsupported run argument `{other}`")),
         }
     }
 
-    let component = component.ok_or_else(|| "missing --component <id>".to_string())?;
-    let ids = load_component_ids()?;
-    if !ids.iter().any(|id| id == &component) {
-        return Err(format!("unknown ledger component `{component}`"));
-    }
-
-    Err(format!(
-        "component `{component}` has no runnable FATE mapping in the current slice"
-    ))
+    Ok(RunOptions {
+        mode: mode.ok_or_else(|| "missing --component <id> or --changed".to_string())?,
+        mappings_path,
+    })
 }
 
-fn run_changed_components() -> Result<(), String> {
+fn set_run_mode(mode: &mut Option<RunMode>, new_mode: RunMode) -> Result<(), String> {
+    if mode.is_some() {
+        return Err("choose either --component <id> or --changed, not both".to_string());
+    }
+    *mode = Some(new_mode);
+    Ok(())
+}
+
+fn run_changed_components(mappings_path: &str) -> Result<(), String> {
     let component_ids = load_component_ids()?;
     let changed_paths = git_changed_paths()?;
     let unmapped = unmapped_relevant_paths(&changed_paths);
@@ -318,10 +368,159 @@ fn run_changed_components() -> Result<(), String> {
         println!("{component}");
     }
 
-    Err(format!(
-        "no runnable FATE mappings exist yet for changed components: {}",
-        components.join(", ")
-    ))
+    run_mapped_components(&component_ids, &components, mappings_path)
+}
+
+fn run_mapped_components(
+    component_ids: &[String],
+    selected_components: &[String],
+    mappings_path: &str,
+) -> Result<(), String> {
+    let mappings = load_fate_mappings(mappings_path, component_ids)?;
+    let missing_components = components_without_mappings(selected_components, &mappings);
+
+    if !missing_components.is_empty() {
+        return Err(format!(
+            "no runnable FATE mappings exist for components: {}",
+            missing_components.join(", ")
+        ));
+    }
+
+    for component in selected_components {
+        for mapping in mappings
+            .iter()
+            .filter(|mapping| &mapping.component_id == component)
+        {
+            run_fate_mapping(mapping)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn components_without_mappings(
+    selected_components: &[String],
+    mappings: &[FateMapping],
+) -> Vec<String> {
+    selected_components
+        .iter()
+        .filter(|component| {
+            !mappings
+                .iter()
+                .any(|mapping| &mapping.component_id == *component)
+        })
+        .cloned()
+        .collect()
+}
+
+fn load_fate_mappings(path: &str, component_ids: &[String]) -> Result<Vec<FateMapping>, String> {
+    let contents = fs::read_to_string(path).map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            format!("FATE mapping file `{path}` does not exist")
+        } else {
+            format!("failed to read FATE mapping file `{path}`: {err}")
+        }
+    })?;
+    parse_fate_mappings(&contents, component_ids)
+}
+
+fn parse_fate_mappings(
+    contents: &str,
+    component_ids: &[String],
+) -> Result<Vec<FateMapping>, String> {
+    let mut mappings = Vec::new();
+    let mut seen_targets: Vec<(String, String)> = Vec::new();
+
+    for (line_index, line) in contents.lines().enumerate() {
+        let line_number = line_index + 1;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let fields: Vec<&str> = trimmed.split('|').map(str::trim).collect();
+        if fields.len() < 4 {
+            return Err(format!(
+                "invalid FATE mapping at line {line_number}: expected component|target|workdir|program|args..."
+            ));
+        }
+
+        let component_id = fields[0];
+        let target = fields[1];
+        let workdir = fields[2];
+        let program = fields[3];
+        if component_id.is_empty() || target.is_empty() || workdir.is_empty() || program.is_empty()
+        {
+            return Err(format!(
+                "invalid FATE mapping at line {line_number}: component, target, workdir, and program are required"
+            ));
+        }
+
+        if !component_ids.iter().any(|id| id == component_id) {
+            return Err(format!(
+                "invalid FATE mapping at line {line_number}: unknown ledger component `{component_id}`"
+            ));
+        }
+
+        let key = (component_id.to_string(), target.to_string());
+        if seen_targets.iter().any(|seen| seen == &key) {
+            return Err(format!(
+                "invalid FATE mapping at line {line_number}: duplicate target `{target}` for component `{component_id}`"
+            ));
+        }
+        seen_targets.push(key);
+
+        let args = fields[4..]
+            .iter()
+            .map(|arg| (*arg).to_string())
+            .collect::<Vec<_>>();
+
+        mappings.push(FateMapping {
+            component_id: component_id.to_string(),
+            target: target.to_string(),
+            workdir: normalize_path(workdir),
+            program: program.to_string(),
+            args,
+        });
+    }
+
+    Ok(mappings)
+}
+
+fn run_fate_mapping(mapping: &FateMapping) -> Result<(), String> {
+    println!(
+        "running {}:{} -> {}",
+        mapping.component_id,
+        mapping.target,
+        format_mapping_command(mapping)
+    );
+
+    let status = Command::new(&mapping.program)
+        .args(&mapping.args)
+        .current_dir(&mapping.workdir)
+        .status()
+        .map_err(|err| {
+            format!(
+                "failed to run FATE mapping {}:{}: {err}",
+                mapping.component_id, mapping.target
+            )
+        })?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "FATE mapping {}:{} exited with status {status}",
+            mapping.component_id, mapping.target
+        ))
+    }
+}
+
+fn format_mapping_command(mapping: &FateMapping) -> String {
+    let mut parts = Vec::with_capacity(mapping.args.len() + 1);
+    parts.push(mapping.program.as_str());
+    parts.extend(mapping.args.iter().map(String::as_str));
+    format!("(cd {} && {})", mapping.workdir, parts.join(" "))
 }
 
 fn load_component_ids() -> Result<Vec<String>, String> {
@@ -444,7 +643,9 @@ fn normalize_path(path: &str) -> String {
 }
 
 fn print_help() {
-    eprintln!("usage: fate-runner list | run --component <id> | run --changed");
+    eprintln!(
+        "usage: fate-runner list | run [--mappings <path>] --component <id> | run [--mappings <path>] --changed"
+    );
 }
 
 #[cfg(test)]
@@ -523,6 +724,161 @@ mod tests {
         assert_eq!(
             unmapped_relevant_paths(&paths),
             vec!["crates/swscale/src/lib.rs".to_string()]
+        );
+    }
+
+    #[test]
+    fn parses_run_options_for_component_changed_and_mapping_path() {
+        assert_eq!(
+            parse_run_options(&[
+                "--mappings".to_string(),
+                "custom.map".to_string(),
+                "--component".to_string(),
+                "fate-runner".to_string(),
+            ])
+            .unwrap(),
+            RunOptions {
+                mode: RunMode::Component("fate-runner".to_string()),
+                mappings_path: "custom.map".to_string(),
+            }
+        );
+
+        assert_eq!(
+            parse_run_options(&["--changed".to_string()]).unwrap(),
+            RunOptions {
+                mode: RunMode::Changed,
+                mappings_path: DEFAULT_FATE_MAPPINGS_PATH.to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_ambiguous_or_incomplete_run_options() {
+        assert_eq!(
+            parse_run_options(&[]).unwrap_err(),
+            "missing --component <id> or --changed"
+        );
+        assert_eq!(
+            parse_run_options(&[
+                "--changed".to_string(),
+                "--component".to_string(),
+                "fate-runner".to_string(),
+            ])
+            .unwrap_err(),
+            "choose either --component <id> or --changed, not both"
+        );
+        assert_eq!(
+            parse_run_options(&["--mappings".to_string()]).unwrap_err(),
+            "missing value for --mappings"
+        );
+    }
+
+    #[test]
+    fn parses_fate_mapping_rows() {
+        let component_ids = component_ids_from_ledger(&ledger(&["fate-runner", "avutil-error"]));
+        let mappings = parse_fate_mappings(
+            "\
+# comments and blank lines are ignored
+
+fate-runner | local-self-test | . | cargo | test | -p | fate-runner
+avutil-error|error-unit|.|cargo|test|-p|avutil|error
+",
+            &component_ids,
+        )
+        .unwrap();
+
+        assert_eq!(
+            mappings,
+            vec![
+                FateMapping {
+                    component_id: "fate-runner".to_string(),
+                    target: "local-self-test".to_string(),
+                    workdir: ".".to_string(),
+                    program: "cargo".to_string(),
+                    args: vec![
+                        "test".to_string(),
+                        "-p".to_string(),
+                        "fate-runner".to_string(),
+                    ],
+                },
+                FateMapping {
+                    component_id: "avutil-error".to_string(),
+                    target: "error-unit".to_string(),
+                    workdir: ".".to_string(),
+                    program: "cargo".to_string(),
+                    args: vec![
+                        "test".to_string(),
+                        "-p".to_string(),
+                        "avutil".to_string(),
+                        "error".to_string(),
+                    ],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_fate_mapping_rows() {
+        let component_ids = component_ids_from_ledger(&ledger(&["fate-runner"]));
+
+        assert!(
+            parse_fate_mappings("fate-runner|missing-fields", &component_ids)
+                .unwrap_err()
+                .contains("expected component|target|workdir|program|args...")
+        );
+        assert!(
+            parse_fate_mappings("unknown|target|.|cargo|test", &component_ids)
+                .unwrap_err()
+                .contains("unknown ledger component `unknown`")
+        );
+        assert!(parse_fate_mappings(
+            "fate-runner|target|.|cargo|test\nfate-runner|target|.|cargo|test",
+            &component_ids,
+        )
+        .unwrap_err()
+        .contains("duplicate target `target`"));
+    }
+
+    #[test]
+    fn formats_mapping_commands_for_diagnostics() {
+        let mapping = FateMapping {
+            component_id: "fate-runner".to_string(),
+            target: "local-self-test".to_string(),
+            workdir: ".".to_string(),
+            program: "cargo".to_string(),
+            args: vec![
+                "test".to_string(),
+                "-p".to_string(),
+                "fate-runner".to_string(),
+            ],
+        };
+
+        assert_eq!(
+            format_mapping_command(&mapping),
+            "(cd . && cargo test -p fate-runner)"
+        );
+    }
+
+    #[test]
+    fn reports_selected_components_without_mappings() {
+        let mappings = vec![FateMapping {
+            component_id: "fate-runner".to_string(),
+            target: "local-self-test".to_string(),
+            workdir: ".".to_string(),
+            program: "cargo".to_string(),
+            args: vec![
+                "test".to_string(),
+                "-p".to_string(),
+                "fate-runner".to_string(),
+            ],
+        }];
+
+        assert_eq!(
+            components_without_mappings(
+                &["fate-runner".to_string(), "avutil-error".to_string()],
+                &mappings,
+            ),
+            vec!["avutil-error".to_string()]
         );
     }
 }
