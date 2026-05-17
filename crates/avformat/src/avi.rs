@@ -1,5 +1,10 @@
-use crate::probe::{ProbeDescriptor, ProbeRegistry};
-use avutil::{AvError, AvErrorKind, AvResult, ByteReader, ByteWriter, Packet, Rational, SideData};
+use crate::{
+    probe::{ProbeDescriptor, ProbeRegistry},
+    VideoStreamParameters,
+};
+use avutil::{
+    AvError, AvErrorKind, AvResult, ByteReader, ByteWriter, Packet, PixelFormat, Rational, SideData,
+};
 
 const RIFF_ID: &[u8; 4] = b"RIFF";
 const LIST_ID: &[u8; 4] = b"LIST";
@@ -228,36 +233,37 @@ impl AviDemuxer {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AviMuxer {
-    width: u32,
-    height: u32,
+    video: VideoStreamParameters,
     frame_rate: Rational,
-    frame_size: usize,
     packets: Vec<Vec<u8>>,
     finished: bool,
 }
 
 impl AviMuxer {
     pub fn new_rgb24(width: u32, height: u32, frame_rate: Rational) -> AvResult<Self> {
-        validate_video_geometry(width, height)?;
-        validate_positive_frame_rate(frame_rate)?;
-        let frame_size = rgb24_frame_size(width, height)?;
-
-        Ok(Self {
+        let video = VideoStreamParameters::from_u32_with_context(
             width,
             height,
+            PixelFormat::Rgb24,
+            "AVI video",
+        )?;
+        validate_video_geometry(video)?;
+        validate_positive_frame_rate(frame_rate)?;
+
+        Ok(Self {
+            video,
             frame_rate,
-            frame_size,
             packets: Vec::new(),
             finished: false,
         })
     }
 
     pub fn width(&self) -> u32 {
-        self.width
+        video_width_u32(self.video).expect("AVI muxer stores u32 width")
     }
 
     pub fn height(&self) -> u32 {
-        self.height
+        video_height_u32(self.video).expect("AVI muxer stores u32 height")
     }
 
     pub fn frame_rate(&self) -> Rational {
@@ -265,7 +271,7 @@ impl AviMuxer {
     }
 
     pub fn frame_size(&self) -> usize {
-        self.frame_size
+        self.video.frame_size()
     }
 
     pub fn packet_count(&self) -> usize {
@@ -288,13 +294,11 @@ impl AviMuxer {
                 packet.stream_index()
             )));
         }
-        if packet.data().len() != self.frame_size {
-            return Err(AvError::invalid_data(format!(
-                "AVI packet has {} bytes, expected {}",
-                packet.data().len(),
-                self.frame_size
-            )));
-        }
+        self.video.validate_frame_payload_len(
+            packet.data().len(),
+            AvErrorKind::InvalidData,
+            "AVI packet",
+        )?;
         if self.packets.len() == usize::try_from(u32::MAX).unwrap_or(usize::MAX) {
             return Err(AvError::invalid_argument(
                 "AVI frame count exceeds classic RIFF header range",
@@ -309,11 +313,14 @@ impl AviMuxer {
         let frame_count = u32::try_from(self.packets.len()).map_err(|_| {
             AvError::invalid_argument("AVI frame count does not fit classic RIFF headers")
         })?;
-        let frame_size_u32 = u32_len(self.frame_size, "AVI frame size")?;
+        let width = video_width_u32(self.video)?;
+        let height = video_height_u32(self.video)?;
+        let frame_size = self.video.frame_size();
+        let frame_size_u32 = u32_len(frame_size, "AVI frame size")?;
         let frame_rate_num = positive_u32_from_i32(self.frame_rate.num(), "AVI frame rate")?;
         let frame_rate_den = positive_u32_from_i32(self.frame_rate.den(), "AVI frame rate")?;
         let microseconds_per_frame = microseconds_per_frame(self.frame_rate)?;
-        let max_bytes_per_second = max_bytes_per_second(self.frame_size, self.frame_rate)?;
+        let max_bytes_per_second = max_bytes_per_second(frame_size, self.frame_rate)?;
 
         let hdrl = write_list(
             *HDRL_LIST,
@@ -324,8 +331,8 @@ impl AviMuxer {
                         microseconds_per_frame,
                         max_bytes_per_second,
                         frame_count,
-                        self.width,
-                        self.height,
+                        width,
+                        height,
                         frame_size_u32,
                     ),
                 )?,
@@ -340,13 +347,13 @@ impl AviMuxer {
                                 frame_rate_num,
                                 frame_count,
                                 frame_size_u32,
-                                self.width,
-                                self.height,
+                                width,
+                                height,
                             )?,
                         )?,
                         write_chunk(
                             *STRF_ID,
-                            &bitmap_info_payload(self.width, self.height, 24, frame_size_u32)?,
+                            &bitmap_info_payload(width, height, 24, frame_size_u32)?,
                         )?,
                     ],
                 )?,
@@ -542,14 +549,10 @@ fn bitmap_info_payload(
     Ok(out.into_inner())
 }
 
-fn validate_video_geometry(width: u32, height: u32) -> AvResult<()> {
-    if width == 0 || height == 0 {
-        return Err(AvError::invalid_argument(
-            "AVI video dimensions must be non-zero",
-        ));
-    }
-    i32_from_u32(width, "AVI video width")?;
-    i32_from_u32(height, "AVI video height")?;
+fn validate_video_geometry(video: VideoStreamParameters) -> AvResult<()> {
+    i32_from_u32(video_width_u32(video)?, "AVI video width")?;
+    i32_from_u32(video_height_u32(video)?, "AVI video height")?;
+    u32_len(video.frame_size(), "AVI RGB24 frame size")?;
     Ok(())
 }
 
@@ -557,19 +560,6 @@ fn validate_positive_frame_rate(frame_rate: Rational) -> AvResult<()> {
     positive_u32_from_i32(frame_rate.num(), "AVI frame rate numerator")?;
     positive_u32_from_i32(frame_rate.den(), "AVI frame rate denominator")?;
     Ok(())
-}
-
-fn rgb24_frame_size(width: u32, height: u32) -> AvResult<usize> {
-    let pixels = u64::from(width)
-        .checked_mul(u64::from(height))
-        .ok_or_else(|| AvError::invalid_argument("AVI frame dimensions overflow"))?;
-    let bytes = pixels
-        .checked_mul(3)
-        .ok_or_else(|| AvError::invalid_argument("AVI RGB24 frame size overflow"))?;
-    let frame_size = usize::try_from(bytes)
-        .map_err(|_| AvError::invalid_argument("AVI RGB24 frame size is out of range"))?;
-    u32_len(frame_size, "AVI RGB24 frame size")?;
-    Ok(frame_size)
 }
 
 fn microseconds_per_frame(frame_rate: Rational) -> AvResult<u32> {
@@ -629,6 +619,16 @@ fn i32_from_u32(value: u32, name: &str) -> AvResult<i32> {
 
 fn u32_len(len: usize, context: &str) -> AvResult<u32> {
     u32::try_from(len).map_err(|_| AvError::invalid_argument(format!("{context} exceeds 32 bits")))
+}
+
+fn video_width_u32(video: VideoStreamParameters) -> AvResult<u32> {
+    u32::try_from(video.width())
+        .map_err(|_| AvError::invalid_argument("AVI video width exceeds 32 bits"))
+}
+
+fn video_height_u32(video: VideoStreamParameters) -> AvResult<u32> {
+    u32::try_from(video.height())
+        .map_err(|_| AvError::invalid_argument("AVI video height exceeds 32 bits"))
 }
 
 fn parse_main_header(data: &[u8]) -> AvResult<AviMainHeader> {

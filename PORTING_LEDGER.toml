@@ -1326,6 +1326,26 @@ notes = "Initial shared avformat audio stream-parameter helper validates sample 
 blocked_reason = ""
 
 [[component]]
+id = "avformat-video-parameters"
+kind = "api"
+ffmpeg_name = "video stream parameters"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 3
+oracle_command = ""
+rust_command = "cargo test -p avformat video"
+unit_tests = [
+  "video::tests::validates_user_parameters_and_derives_frame_size",
+  "video::tests::container_parameters_return_invalid_data_for_untrusted_fields",
+  "video::tests::counts_complete_frames_and_validates_exact_payloads",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial shared avformat video stream-parameter helper validates dimensions, pixel format, derived frame byte size, whole-frame input byte counts, and exact packet payload sizes. It is wired into rawvideo demuxer/muxer and the AVI RGB24 muxer for shared dimensions/frame-size validation while AVI-specific header limits remain local. MOV visual sample-entry integration, generated pixel format coverage, oracle differential tests, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
 id = "avformat-probe"
 kind = "api"
 ffmpeg_name = "probe logic"
@@ -1578,7 +1598,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial rawvideo demuxer slices fixed-size frame packets for gray, rgb24, rgba, and yuv420p with frame-rate validation, monotonic PTS, and truncated-frame rejection. CLI wiring, probe integration, more pixel formats, differential tests, FATE, and fuzzing are pending."
+notes = "Initial rawvideo demuxer slices fixed-size frame packets for gray, rgb24, rgba, and yuv420p with shared VideoStreamParameters dimensions/frame-size validation, frame-rate validation, monotonic PTS, and truncated-frame rejection. CLI wiring, probe integration, more pixel formats, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1642,7 +1662,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial rawvideo muxer concatenates validated stream-0 fixed-size frame packet payloads for gray, rgb24, rgba, and yuv420p, tracks frame/byte counts, supports empty output, and prevents writes after finish. It is wired to a constrained ffmpeg-rs rawvideo file-output path. Probe integration, more pixel formats, broader CLI execution, differential tests, FATE, and fuzzing are pending."
+notes = "Initial rawvideo muxer concatenates stream-0 fixed-size frame packet payloads validated with shared VideoStreamParameters dimensions/frame-size checks for gray, rgb24, rgba, and yuv420p, tracks frame/byte counts, supports empty output, and prevents writes after finish. It is wired to a constrained ffmpeg-rs rawvideo file-output path. Probe integration, more pixel formats, broader CLI execution, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1728,7 +1748,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial RIFF AVI muxer writes constrained one-stream RGB24 AVI files with avih/strh/strf headers, 00db movi chunks, word padding, stream-0 payload validation, finalization checks, and demuxer round-trip tests. It is wired to a constrained ffmpeg-rs raw rgb24 to AVI file-output path. Audio streams, indexes, OpenDML, palettes, compressed video, interleaving, metadata, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
+notes = "Initial RIFF AVI muxer writes constrained one-stream RGB24 AVI files with shared VideoStreamParameters dimensions/frame-size validation, AVI-specific classic header limit checks, avih/strh/strf headers, 00db movi chunks, word padding, stream-0 payload validation, finalization checks, and demuxer round-trip tests. It is wired to a constrained ffmpeg-rs raw rgb24 to AVI file-output path. Audio streams, indexes, OpenDML, palettes, compressed video, interleaving, metadata, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]

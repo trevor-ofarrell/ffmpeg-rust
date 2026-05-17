@@ -1,28 +1,26 @@
+use crate::VideoStreamParameters;
 use avutil::{AvError, AvErrorKind, AvResult, Packet, PixelFormat, Rational, SideData};
 
 pub type RawVideoPixelFormat = PixelFormat;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawVideoInfo {
-    width: usize,
-    height: usize,
-    pixel_format: RawVideoPixelFormat,
+    video: VideoStreamParameters,
     frame_rate: Rational,
-    frame_size: usize,
     frame_count: usize,
 }
 
 impl RawVideoInfo {
     pub fn width(&self) -> usize {
-        self.width
+        self.video.width()
     }
 
     pub fn height(&self) -> usize {
-        self.height
+        self.video.height()
     }
 
     pub fn pixel_format(&self) -> RawVideoPixelFormat {
-        self.pixel_format
+        self.video.pixel_format()
     }
 
     pub fn frame_rate(&self) -> Rational {
@@ -30,7 +28,7 @@ impl RawVideoInfo {
     }
 
     pub fn frame_size(&self) -> usize {
-        self.frame_size
+        self.video.frame_size()
     }
 
     pub fn frame_count(&self) -> usize {
@@ -53,29 +51,19 @@ impl<'a> RawVideoDemuxer<'a> {
         pixel_format: RawVideoPixelFormat,
         frame_rate: Rational,
     ) -> AvResult<Self> {
-        validate_dimensions(width, height)?;
+        let video = VideoStreamParameters::with_context(width, height, pixel_format, "rawvideo")?;
         validate_frame_rate(frame_rate)?;
-        let frame_size = pixel_format.frame_size(width, height)?;
-        if frame_size == 0 {
-            return Err(AvError::invalid_argument(
-                "rawvideo frame size must be non-zero",
-            ));
-        }
-        if input.len() % frame_size != 0 {
-            return Err(AvError::new(
-                AvErrorKind::EndOfFile,
-                "rawvideo input ends with a partial frame",
-            ));
-        }
+        let frame_count = video.frame_count_in_bytes(
+            input.len(),
+            AvErrorKind::EndOfFile,
+            "rawvideo input ends with a partial frame",
+        )?;
 
         Ok(Self {
             info: RawVideoInfo {
-                width,
-                height,
-                pixel_format,
+                video,
                 frame_rate,
-                frame_size,
-                frame_count: input.len() / frame_size,
+                frame_count,
             },
             input,
             next_frame: 0,
@@ -93,10 +81,10 @@ impl<'a> RawVideoDemuxer<'a> {
 
         let start = self
             .next_frame
-            .checked_mul(self.info.frame_size)
+            .checked_mul(self.info.frame_size())
             .ok_or_else(|| AvError::invalid_data("rawvideo packet offset overflow"))?;
         let end = start
-            .checked_add(self.info.frame_size)
+            .checked_add(self.info.frame_size())
             .ok_or_else(|| AvError::invalid_data("rawvideo packet end overflow"))?;
         let pts = i64::try_from(self.next_frame)
             .map_err(|_| AvError::invalid_data("rawvideo packet PTS does not fit i64"))?;
@@ -107,7 +95,7 @@ impl<'a> RawVideoDemuxer<'a> {
         packet.set_duration(1)?;
         packet.push_side_data(SideData::new(
             "rawvideo_pix_fmt",
-            self.info.pixel_format.name().as_bytes().to_vec(),
+            self.info.pixel_format().name().as_bytes().to_vec(),
         )?);
         self.next_frame += 1;
         Ok(Some(packet))
@@ -128,22 +116,13 @@ impl RawVideoMuxer {
         pixel_format: RawVideoPixelFormat,
         frame_rate: Rational,
     ) -> AvResult<Self> {
-        validate_dimensions(width, height)?;
+        let video = VideoStreamParameters::with_context(width, height, pixel_format, "rawvideo")?;
         validate_frame_rate(frame_rate)?;
-        let frame_size = pixel_format.frame_size(width, height)?;
-        if frame_size == 0 {
-            return Err(AvError::invalid_argument(
-                "rawvideo frame size must be non-zero",
-            ));
-        }
 
         Ok(Self {
             info: RawVideoInfo {
-                width,
-                height,
-                pixel_format,
+                video,
                 frame_rate,
-                frame_size,
                 frame_count: 0,
             },
             data: Vec::new(),
@@ -175,13 +154,11 @@ impl RawVideoMuxer {
                 packet.stream_index()
             )));
         }
-        if packet.data().len() != self.info.frame_size {
-            return Err(AvError::invalid_data(format!(
-                "rawvideo packet has {} bytes, expected {}",
-                packet.data().len(),
-                self.info.frame_size
-            )));
-        }
+        self.info.video.validate_frame_payload_len(
+            packet.data().len(),
+            AvErrorKind::InvalidData,
+            "rawvideo packet",
+        )?;
 
         let new_len = self
             .data
@@ -208,15 +185,6 @@ impl RawVideoMuxer {
         self.finished = true;
         self.render()
     }
-}
-
-fn validate_dimensions(width: usize, height: usize) -> AvResult<()> {
-    if width == 0 || height == 0 {
-        return Err(AvError::invalid_argument(
-            "rawvideo dimensions must be non-zero",
-        ));
-    }
-    Ok(())
 }
 
 fn validate_frame_rate(frame_rate: Rational) -> AvResult<()> {
