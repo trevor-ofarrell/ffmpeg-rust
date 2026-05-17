@@ -73,6 +73,36 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
         assert_eq!(rational.checked_mul(reciprocal).unwrap(), Rational::ONE);
     }
 
+    let other = positive_rational_from(cursor.next(), cursor.next());
+    assert_eq!(
+        rational
+            .checked_add(other)
+            .unwrap()
+            .checked_sub(other)
+            .unwrap(),
+        rational
+    );
+    assert_eq!(
+        rational
+            .checked_sub(other)
+            .unwrap()
+            .checked_add(other)
+            .unwrap(),
+        rational
+    );
+    assert_eq!(
+        rational.checked_neg().unwrap().checked_neg().unwrap(),
+        rational
+    );
+    assert_eq!(
+        rational
+            .checked_div(other)
+            .unwrap()
+            .checked_mul(other)
+            .unwrap(),
+        rational
+    );
+
     let src = positive_rational_from(cursor.next(), cursor.next());
     let dst = positive_rational_from(cursor.next(), cursor.next());
     let value = small_i64_from(cursor.next(), cursor.next());

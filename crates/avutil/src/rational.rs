@@ -61,10 +61,28 @@ impl Rational {
         Self::new(self.den, self.num)
     }
 
+    pub fn checked_neg(self) -> AvResult<Self> {
+        rational_from_i128(-i128::from(self.num), i128::from(self.den))
+    }
+
+    pub fn checked_add(self, other: Self) -> AvResult<Self> {
+        let num = i128::from(self.num) * i128::from(other.den)
+            + i128::from(other.num) * i128::from(self.den);
+        let den = i128::from(self.den) * i128::from(other.den);
+        rational_from_i128(num, den)
+    }
+
+    pub fn checked_sub(self, other: Self) -> AvResult<Self> {
+        let num = i128::from(self.num) * i128::from(other.den)
+            - i128::from(other.num) * i128::from(self.den);
+        let den = i128::from(self.den) * i128::from(other.den);
+        rational_from_i128(num, den)
+    }
+
     pub fn checked_mul(self, other: Self) -> AvResult<Self> {
-        let num = i64::from(self.num) * i64::from(other.num);
-        let den = i64::from(self.den) * i64::from(other.den);
-        rational_from_i64(num, den)
+        let num = i128::from(self.num) * i128::from(other.num);
+        let den = i128::from(self.den) * i128::from(other.den);
+        rational_from_i128(num, den)
     }
 
     pub fn checked_div(self, other: Self) -> AvResult<Self> {
@@ -86,14 +104,14 @@ impl fmt::Display for Rational {
     }
 }
 
-fn rational_from_i64(num: i64, den: i64) -> AvResult<Rational> {
+fn rational_from_i128(num: i128, den: i128) -> AvResult<Rational> {
     if den == 0 {
         return Err(AvError::invalid_argument(
             "rational denominator must not be zero",
         ));
     }
 
-    let divisor = gcd_i64(num, den);
+    let divisor = gcd_i128(num, den);
     let num = num / divisor;
     let den = den / divisor;
 
@@ -119,6 +137,19 @@ fn gcd_i64(a: i64, b: i64) -> i64 {
     }
 
     i64::try_from(a).unwrap_or(i64::MAX).max(1)
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+    let mut a = a.unsigned_abs();
+    let mut b = b.unsigned_abs();
+
+    while b != 0 {
+        let rem = a % b;
+        a = b;
+        b = rem;
+    }
+
+    i128::try_from(a).unwrap_or(i128::MAX).max(1)
 }
 
 #[cfg(test)]
@@ -148,6 +179,74 @@ mod tests {
         assert_eq!(
             Rational::new(1001, 30000).unwrap(),
             Rational::new(2002, 60000).unwrap()
+        );
+    }
+
+    #[test]
+    fn rational_arithmetic_reduces_results() {
+        let half = Rational::new(1, 2).unwrap();
+        let third = Rational::new(1, 3).unwrap();
+
+        assert_eq!(
+            half.checked_add(third).unwrap(),
+            Rational::new(5, 6).unwrap()
+        );
+        assert_eq!(
+            half.checked_sub(third).unwrap(),
+            Rational::new(1, 6).unwrap()
+        );
+        assert_eq!(
+            third.checked_sub(half).unwrap(),
+            Rational::new(-1, 6).unwrap()
+        );
+        assert_eq!(
+            Rational::new(2, 3)
+                .unwrap()
+                .checked_mul(Rational::new(9, 4).unwrap())
+                .unwrap(),
+            Rational::new(3, 2).unwrap()
+        );
+        assert_eq!(
+            Rational::new(3, 2)
+                .unwrap()
+                .checked_div(Rational::new(9, 4).unwrap())
+                .unwrap(),
+            Rational::new(2, 3).unwrap()
+        );
+        assert_eq!(
+            Rational::new(-7, 11).unwrap().checked_neg().unwrap(),
+            Rational::new(7, 11).unwrap()
+        );
+        assert_eq!(
+            Rational::from_raw(i32::MIN, i32::MIN)
+                .checked_add(Rational::from_raw(i32::MIN, i32::MIN))
+                .unwrap(),
+            Rational::new(2, 1).unwrap()
+        );
+    }
+
+    #[test]
+    fn rational_arithmetic_rejects_invalid_or_out_of_range_results() {
+        assert_eq!(
+            Rational::from_raw(1, 0)
+                .checked_add(Rational::ONE)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            Rational::from_raw(i32::MAX, 1)
+                .checked_add(Rational::ONE)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            Rational::from_raw(i32::MIN, 1)
+                .checked_neg()
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
         );
     }
 }

@@ -36,11 +36,13 @@ unit_tests = [
   "rational::tests::rational_normalizes_sign_and_gcd",
   "rational::tests::rational_rejects_zero_denominator",
   "rational::tests::rational_compares_without_float_rounding",
+  "rational::tests::rational_arithmetic_reduces_results",
+  "rational::tests::rational_arithmetic_rejects_invalid_or_out_of_range_results",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_core_models"]
-notes = "Basic normalized rational behavior implemented. Build-checked cargo-fuzz target avutil_core_models covers normalization, denominator validation, reciprocal/multiplication invariants, and timebase use, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs deeper parity tests for FFmpeg rounding edge cases."
+notes = "Basic normalized rational behavior implemented with checked add, subtract, negate, multiply, divide, reciprocal, and comparison helpers. Build-checked cargo-fuzz target avutil_core_models covers normalization, denominator validation, reciprocal/multiplication invariants, arithmetic round trips, negation round trips, and timebase use, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs deeper parity tests for FFmpeg rounding edge cases and broader av_reduce/av_d2q-style behavior."
 blocked_reason = ""
 
 [[component]]
