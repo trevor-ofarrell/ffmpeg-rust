@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 const DEFAULT_FATE_MAPPINGS_PATH: &str = "tests/fate/mappings.txt";
@@ -23,12 +24,19 @@ struct FateMapping {
 struct RunOptions {
     mode: RunMode,
     mappings_path: String,
+    context: FateContext,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RunMode {
     Component(String),
     Changed,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct FateContext {
+    samples_root: Option<String>,
+    oracle_ffmpeg: Option<String>,
 }
 
 const PATH_RULES: &[PathRule] = &[
@@ -301,15 +309,16 @@ fn run_component(args: Vec<String>) -> Result<(), String> {
             if !ids.iter().any(|id| id == &component) {
                 return Err(format!("unknown ledger component `{component}`"));
             }
-            run_mapped_components(&ids, &[component], &options.mappings_path)
+            run_mapped_components(&ids, &[component], &options.mappings_path, &options.context)
         }
-        RunMode::Changed => run_changed_components(&options.mappings_path),
+        RunMode::Changed => run_changed_components(&options.mappings_path, &options.context),
     }
 }
 
 fn parse_run_options(args: &[String]) -> Result<RunOptions, String> {
     let mut mode = None;
     let mut mappings_path = DEFAULT_FATE_MAPPINGS_PATH.to_string();
+    let mut context = FateContext::default();
     let mut iter = args.iter();
 
     while let Some(arg) = iter.next() {
@@ -327,6 +336,20 @@ fn parse_run_options(args: &[String]) -> Result<RunOptions, String> {
                     .ok_or_else(|| "missing value for --mappings".to_string())?
                     .clone();
             }
+            "--samples" => {
+                context.samples_root = Some(
+                    iter.next()
+                        .ok_or_else(|| "missing value for --samples".to_string())?
+                        .clone(),
+                );
+            }
+            "--oracle-ffmpeg" => {
+                context.oracle_ffmpeg = Some(
+                    iter.next()
+                        .ok_or_else(|| "missing value for --oracle-ffmpeg".to_string())?
+                        .clone(),
+                );
+            }
             other => return Err(format!("unsupported run argument `{other}`")),
         }
     }
@@ -334,6 +357,7 @@ fn parse_run_options(args: &[String]) -> Result<RunOptions, String> {
     Ok(RunOptions {
         mode: mode.ok_or_else(|| "missing --component <id> or --changed".to_string())?,
         mappings_path,
+        context,
     })
 }
 
@@ -345,7 +369,7 @@ fn set_run_mode(mode: &mut Option<RunMode>, new_mode: RunMode) -> Result<(), Str
     Ok(())
 }
 
-fn run_changed_components(mappings_path: &str) -> Result<(), String> {
+fn run_changed_components(mappings_path: &str, context: &FateContext) -> Result<(), String> {
     let component_ids = load_component_ids()?;
     let changed_paths = git_changed_paths()?;
     let unmapped = unmapped_relevant_paths(&changed_paths);
@@ -368,13 +392,14 @@ fn run_changed_components(mappings_path: &str) -> Result<(), String> {
         println!("{component}");
     }
 
-    run_mapped_components(&component_ids, &components, mappings_path)
+    run_mapped_components(&component_ids, &components, mappings_path, context)
 }
 
 fn run_mapped_components(
     component_ids: &[String],
     selected_components: &[String],
     mappings_path: &str,
+    context: &FateContext,
 ) -> Result<(), String> {
     let mappings = load_fate_mappings(mappings_path, component_ids)?;
     let missing_components = components_without_mappings(selected_components, &mappings);
@@ -391,7 +416,7 @@ fn run_mapped_components(
             .iter()
             .filter(|mapping| &mapping.component_id == component)
         {
-            run_fate_mapping(mapping)?;
+            run_fate_mapping(mapping, context)?;
         }
     }
 
@@ -487,12 +512,13 @@ fn parse_fate_mappings(
     Ok(mappings)
 }
 
-fn run_fate_mapping(mapping: &FateMapping) -> Result<(), String> {
+fn run_fate_mapping(mapping: &FateMapping, context: &FateContext) -> Result<(), String> {
+    let mapping = resolve_fate_mapping(mapping, context)?;
     println!(
         "running {}:{} -> {}",
         mapping.component_id,
         mapping.target,
-        format_mapping_command(mapping)
+        format_mapping_command(&mapping)
     );
 
     let status = Command::new(&mapping.program)
@@ -514,6 +540,85 @@ fn run_fate_mapping(mapping: &FateMapping) -> Result<(), String> {
             mapping.component_id, mapping.target
         ))
     }
+}
+
+fn resolve_fate_mapping(
+    mapping: &FateMapping,
+    context: &FateContext,
+) -> Result<FateMapping, String> {
+    Ok(FateMapping {
+        component_id: mapping.component_id.clone(),
+        target: mapping.target.clone(),
+        workdir: replace_mapping_placeholders(mapping, &mapping.workdir, context)?,
+        program: replace_mapping_placeholders(mapping, &mapping.program, context)?,
+        args: mapping
+            .args
+            .iter()
+            .map(|arg| replace_mapping_placeholders(mapping, arg, context))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
+fn replace_mapping_placeholders(
+    mapping: &FateMapping,
+    value: &str,
+    context: &FateContext,
+) -> Result<String, String> {
+    let mut value = value.to_string();
+
+    if value.contains("{samples}") {
+        let samples_root = required_samples_root(mapping, context)?;
+        value = value.replace("{samples}", samples_root);
+    }
+
+    if value.contains("{oracle_ffmpeg}") {
+        let oracle_ffmpeg = required_oracle_ffmpeg(mapping, context)?;
+        value = value.replace("{oracle_ffmpeg}", oracle_ffmpeg);
+    }
+
+    Ok(value)
+}
+
+fn required_samples_root<'a>(
+    mapping: &FateMapping,
+    context: &'a FateContext,
+) -> Result<&'a str, String> {
+    let samples_root = context.samples_root.as_deref().ok_or_else(|| {
+        format!(
+            "FATE mapping {}:{} references {{samples}} but --samples <path> was not provided",
+            mapping.component_id, mapping.target
+        )
+    })?;
+
+    if !Path::new(samples_root).is_dir() {
+        return Err(format!(
+            "FATE mapping {}:{} requires --samples `{samples_root}` to be an existing directory",
+            mapping.component_id, mapping.target
+        ));
+    }
+
+    Ok(samples_root)
+}
+
+fn required_oracle_ffmpeg<'a>(
+    mapping: &FateMapping,
+    context: &'a FateContext,
+) -> Result<&'a str, String> {
+    let oracle_ffmpeg = context.oracle_ffmpeg.as_deref().ok_or_else(|| {
+        format!(
+            "FATE mapping {}:{} references {{oracle_ffmpeg}} but --oracle-ffmpeg <path> was not provided",
+            mapping.component_id, mapping.target
+        )
+    })?;
+
+    if !Path::new(oracle_ffmpeg).is_file() {
+        return Err(format!(
+            "FATE mapping {}:{} requires --oracle-ffmpeg `{oracle_ffmpeg}` to be an existing file",
+            mapping.component_id, mapping.target
+        ));
+    }
+
+    Ok(oracle_ffmpeg)
 }
 
 fn format_mapping_command(mapping: &FateMapping) -> String {
@@ -644,7 +749,7 @@ fn normalize_path(path: &str) -> String {
 
 fn print_help() {
     eprintln!(
-        "usage: fate-runner list | run [--mappings <path>] --component <id> | run [--mappings <path>] --changed"
+        "usage: fate-runner list | run [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --component <id> | run [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --changed"
     );
 }
 
@@ -740,6 +845,7 @@ mod tests {
             RunOptions {
                 mode: RunMode::Component("fate-runner".to_string()),
                 mappings_path: "custom.map".to_string(),
+                context: FateContext::default(),
             }
         );
 
@@ -748,6 +854,26 @@ mod tests {
             RunOptions {
                 mode: RunMode::Changed,
                 mappings_path: DEFAULT_FATE_MAPPINGS_PATH.to_string(),
+                context: FateContext::default(),
+            }
+        );
+
+        assert_eq!(
+            parse_run_options(&[
+                "--samples".to_string(),
+                "tests/fate".to_string(),
+                "--oracle-ffmpeg".to_string(),
+                "Cargo.toml".to_string(),
+                "--changed".to_string(),
+            ])
+            .unwrap(),
+            RunOptions {
+                mode: RunMode::Changed,
+                mappings_path: DEFAULT_FATE_MAPPINGS_PATH.to_string(),
+                context: FateContext {
+                    samples_root: Some("tests/fate".to_string()),
+                    oracle_ffmpeg: Some("Cargo.toml".to_string()),
+                },
             }
         );
     }
@@ -770,6 +896,14 @@ mod tests {
         assert_eq!(
             parse_run_options(&["--mappings".to_string()]).unwrap_err(),
             "missing value for --mappings"
+        );
+        assert_eq!(
+            parse_run_options(&["--samples".to_string()]).unwrap_err(),
+            "missing value for --samples"
+        );
+        assert_eq!(
+            parse_run_options(&["--oracle-ffmpeg".to_string()]).unwrap_err(),
+            "missing value for --oracle-ffmpeg"
         );
     }
 
@@ -857,6 +991,82 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             format_mapping_command(&mapping),
             "(cd . && cargo test -p fate-runner)"
         );
+    }
+
+    #[test]
+    fn resolves_mapping_prerequisite_placeholders() {
+        let mapping = FateMapping {
+            component_id: "avformat-wav-demuxer".to_string(),
+            target: "sample-framecrc".to_string(),
+            workdir: "{samples}/audio".to_string(),
+            program: "{oracle_ffmpeg}".to_string(),
+            args: vec![
+                "-i".to_string(),
+                "{samples}/audio/test.wav".to_string(),
+                "-f".to_string(),
+                "framecrc".to_string(),
+                "-".to_string(),
+            ],
+        };
+        let context = FateContext {
+            samples_root: Some(".".to_string()),
+            oracle_ffmpeg: Some("Cargo.toml".to_string()),
+        };
+
+        assert_eq!(
+            resolve_fate_mapping(&mapping, &context).unwrap(),
+            FateMapping {
+                component_id: "avformat-wav-demuxer".to_string(),
+                target: "sample-framecrc".to_string(),
+                workdir: "./audio".to_string(),
+                program: "Cargo.toml".to_string(),
+                args: vec![
+                    "-i".to_string(),
+                    "./audio/test.wav".to_string(),
+                    "-f".to_string(),
+                    "framecrc".to_string(),
+                    "-".to_string(),
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn reports_missing_or_invalid_mapping_prerequisites() {
+        let mapping = FateMapping {
+            component_id: "avformat-wav-demuxer".to_string(),
+            target: "sample-framecrc".to_string(),
+            workdir: ".".to_string(),
+            program: "cargo".to_string(),
+            args: vec!["{samples}/audio/test.wav".to_string()],
+        };
+
+        assert!(resolve_fate_mapping(&mapping, &FateContext::default())
+            .unwrap_err()
+            .contains("references {samples} but --samples <path> was not provided"));
+
+        let context = FateContext {
+            samples_root: Some("Cargo.toml".to_string()),
+            oracle_ffmpeg: Some("Cargo.toml".to_string()),
+        };
+        assert!(resolve_fate_mapping(&mapping, &context)
+            .unwrap_err()
+            .contains("requires --samples `Cargo.toml` to be an existing directory"));
+
+        let mapping = FateMapping {
+            component_id: "avformat-wav-demuxer".to_string(),
+            target: "sample-framecrc".to_string(),
+            workdir: ".".to_string(),
+            program: "{oracle_ffmpeg}".to_string(),
+            args: vec!["-version".to_string()],
+        };
+        let context = FateContext {
+            samples_root: Some("tests/fate".to_string()),
+            oracle_ffmpeg: Some("tests/fate".to_string()),
+        };
+        assert!(resolve_fate_mapping(&mapping, &context)
+            .unwrap_err()
+            .contains("requires --oracle-ffmpeg `tests/fate` to be an existing file"));
     }
 
     #[test]

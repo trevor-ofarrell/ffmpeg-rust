@@ -172,11 +172,13 @@ unit_tests = [
   "tests::rejects_invalid_fate_mapping_rows",
   "tests::formats_mapping_commands_for_diagnostics",
   "tests::reports_selected_components_without_mappings",
+  "tests::resolves_mapping_prerequisite_placeholders",
+  "tests::reports_missing_or_invalid_mapping_prerequisites",
 ]
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:fate-runner|local-self-test"]
 fuzz_targets = []
-notes = "Can list ledger component IDs, select changed ledger components from git paths for the currently mapped Rust modules, parse the explicit tests/fate/mappings.txt format, and run the local fate-runner smoke mapping. The local mapping proves runner wiring only; upstream FFmpeg FATE media mappings are still absent."
+notes = "Can list ledger component IDs, select changed ledger components from git paths for the currently mapped Rust modules, parse the explicit tests/fate/mappings.txt format, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, and run the local fate-runner smoke mapping. The local mapping proves runner wiring only; upstream FFmpeg FATE media mappings are still absent."
 blocked_reason = "No upstream FATE samples path or media component mapping has been configured."
 
 [[component]]

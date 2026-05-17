@@ -51,6 +51,8 @@ FATE samples are expected to be obtained using upstream FFmpeg's documented `mak
 
 `cargo run -p fate-runner -- list` reads `PORTING_LEDGER.toml` and lists known components. `cargo run -p fate-runner -- run --changed` inspects git changed paths, maps currently covered Rust modules to ledger component IDs, and runs explicit command mappings from `tests/fate/mappings.txt` for selected components. The mapping format is documented in `tests/fate/README.md` as `component_id|target|workdir|program|arg1|arg2|...`.
 
+Mappings may reference `{samples}` and `{oracle_ffmpeg}` in the workdir, program, or args fields. When a selected mapping uses those placeholders, pass `--samples <path>` and/or `--oracle-ffmpeg <path>` to `fate-runner`; the runner validates that the samples path is an existing directory and the oracle path is an existing file before executing the mapped command.
+
 The current default mapping file contains only `fate-runner|local-self-test`, which validates local runner wiring by invoking `cargo test -p fate-runner`. It does not count as upstream FFmpeg FATE media parity.
 
 ## Differential Tests
