@@ -8,6 +8,7 @@ Initial targets:
 - `avutil_byteio`: exercises bounded byte reads, EOF cursor invariants, and byte writer helper paths.
 - `avutil_bitreader`: exercises bit reads, peeks, skips, alignment, bit writer width validation, and cursor invariants.
 - `avutil_metadata_options`: exercises metadata dictionary mutation, key/value validation, AVOption-like definition validation, string parsing, type/range checks, and failed-mutation invariants.
+- `avutil_core_models`: exercises rational/timebase math, pixel/sample/channel layout validation, packet timestamp/side-data invariants, frame shape validation, and streaming checksum equivalence.
 - `avformat_probe`: exercises probe descriptor validation, generated registry mutation, AVI/MOV descriptors, extension/MIME/signature scoring, deterministic tie behavior, and explainable matches.
 - `avformat_wav`: exercises RIFF/WAVE PCM s16le demuxer opening, packet emission, and parsed stream invariants.
 - `avformat_yuv4mpegpipe`: exercises YUV4MPEG2 demuxer opening, frame packet emission, and parsed stream invariants.
@@ -28,6 +29,7 @@ cargo fuzz run avcodec_basic_decoders
 cargo fuzz run avutil_byteio
 cargo fuzz run avutil_bitreader
 cargo fuzz run avutil_metadata_options
+cargo fuzz run avutil_core_models
 cargo fuzz run avformat_probe
 cargo fuzz run avformat_wav
 cargo fuzz run avformat_yuv4mpegpipe

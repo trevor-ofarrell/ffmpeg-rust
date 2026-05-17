@@ -34,8 +34,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Basic normalized rational behavior implemented. Needs deeper parity tests for FFmpeg rounding edge cases."
+fuzz_targets = ["avutil_core_models"]
+notes = "Basic normalized rational behavior implemented. Build-checked cargo-fuzz target avutil_core_models covers normalization, denominator validation, reciprocal/multiplication invariants, and timebase use, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs deeper parity tests for FFmpeg rounding edge cases."
 blocked_reason = ""
 
 [[component]]
@@ -53,8 +53,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial timestamp rescaling implemented with explicit rounding modes. Needs FFmpeg edge-case differential vectors."
+fuzz_targets = ["avutil_core_models"]
+notes = "Initial timestamp rescaling implemented with explicit rounding modes. Build-checked cargo-fuzz target avutil_core_models compares rescale_q and rescale_q_rnd against an independent small-range i128 rounding model, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs FFmpeg edge-case differential vectors."
 blocked_reason = ""
 
 [[component]]
@@ -73,8 +73,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Packet skeleton validates timestamps, duration, flags, and side-data shape. Not ABI complete."
+fuzz_targets = ["avutil_core_models"]
+notes = "Packet skeleton validates timestamps, duration, flags, and side-data shape. Build-checked cargo-fuzz target avutil_core_models covers packet timestamp setters, duration rejection/non-mutation, key flags, side-data validation, and payload preservation, but actual local fuzz execution is blocked until cargo-fuzz is installed. Not ABI complete."
 blocked_reason = ""
 
 [[component]]
@@ -93,8 +93,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Frame skeleton validates required audio/video shape and exact plane sizes through the shared initial PixelFormat and SampleFormat models, and AudioFrame now carries an optional initial ChannelLayout derived for mono/stereo or supplied explicitly. Full AVFrame fields, buffer ownership, line sizes, alignment, side data, and complete FFmpeg pixel/sample/channel layout coverage are pending."
+fuzz_targets = ["avutil_core_models"]
+notes = "Frame skeleton validates required audio/video shape and exact plane sizes through the shared initial PixelFormat and SampleFormat models, and AudioFrame now carries an optional initial ChannelLayout derived for mono/stereo or supplied explicitly. Build-checked cargo-fuzz target avutil_core_models covers valid and invalid video/audio frame construction, plane sizes, PTS mutation, and frame data variants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVFrame fields, buffer ownership, line sizes, alignment, side data, and complete FFmpeg pixel/sample/channel layout coverage are pending."
 blocked_reason = ""
 
 [[component]]
@@ -321,8 +321,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial shared pixel format model covers only gray/gray8, rgb24, rgba, and yuv420p with FFmpeg-style names, plane counts, frame-size math, yuv420p even-dimension validation, and plane splitting. It is wired into avutil::VideoFrame plus the rawvideo decoder and demuxer/muxer type alias. Full AVPixFmtDescriptor coverage, bit depths, endian/alpha flags, chroma subsampling descriptors, hardware formats, oracle inventory comparison, FATE, and fuzzing are pending."
+fuzz_targets = ["avutil_core_models"]
+notes = "Initial shared pixel format model covers only gray/gray8, rgb24, rgba, and yuv420p with FFmpeg-style names, plane counts, frame-size math, yuv420p even-dimension validation, and plane splitting. It is wired into avutil::VideoFrame plus the rawvideo decoder and demuxer/muxer type alias. Build-checked cargo-fuzz target avutil_core_models covers pixel format lookup, plane/frame-size invariants, payload splitting, invalid dimensions, and invalid payload lengths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVPixFmtDescriptor coverage, bit depths, endian/alpha flags, chroma subsampling descriptors, hardware formats, oracle inventory comparison, FATE, and broader fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
@@ -341,8 +341,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial shared sample format model covers only packed s16 with FFmpeg-style naming, sample-byte sizing, packed plane counts, and per-plane payload-size validation. It is wired into avutil::AudioFrame and the pcm_s16le decoder. Full AVSampleFormat coverage, planar variants, packed/planar conversion helpers, oracle inventory comparison, FATE, and fuzzing are pending."
+fuzz_targets = ["avutil_core_models"]
+notes = "Initial shared sample format model covers only packed s16 with FFmpeg-style naming, sample-byte sizing, packed plane counts, and per-plane payload-size validation. It is wired into avutil::AudioFrame and the pcm_s16le decoder. Build-checked cargo-fuzz target avutil_core_models covers sample format lookup, channel-count validation, packed frame sizing, plane sizing, and AudioFrame integration, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVSampleFormat coverage, planar variants, packed/planar conversion helpers, oracle inventory comparison, FATE, and broader fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
@@ -362,8 +362,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial shared channel layout model covers common native channel names and a narrow set of named layouts: mono, stereo, quad, 5.1, 5.1(side), and 7.1. AudioFrame derives mono/stereo from channel count for existing PCM paths and validates explicit layouts by channel count. Full AVChannelLayout order/native/custom/ambisonic semantics, all layouts from ffmpeg -layouts, layout parsing syntax, downmix layouts, oracle inventory comparison, FATE, and fuzzing are pending."
+fuzz_targets = ["avutil_core_models"]
+notes = "Initial shared channel layout model covers common native channel names and a narrow set of named layouts: mono, stereo, quad, 5.1, 5.1(side), and 7.1. AudioFrame derives mono/stereo from channel count for existing PCM paths and validates explicit layouts by channel count. Build-checked cargo-fuzz target avutil_core_models covers default layout lookup, explicit layout validation, channel containment, and AudioFrame layout integration, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVChannelLayout order/native/custom/ambisonic semantics, all layouts from ffmpeg -layouts, layout parsing syntax, downmix layouts, oracle inventory comparison, FATE, and broader fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
@@ -383,8 +383,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Adler-32 and IEEE CRC-32 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests. FFmpeg-specific hash muxer and framehash behavior are pending."
+fuzz_targets = ["avutil_core_models"]
+notes = "Adler-32 and IEEE CRC-32 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests. Build-checked cargo-fuzz target avutil_core_models covers streaming update equivalence against one-shot hashes across fuzz-selected split points, but actual local fuzz execution is blocked until cargo-fuzz is installed. FFmpeg-specific hash muxer and framehash behavior are pending."
 blocked_reason = ""
 
 [[component]]
