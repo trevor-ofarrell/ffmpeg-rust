@@ -11,11 +11,16 @@ status = "implemented"
 priority = 1
 oracle_command = ""
 rust_command = "cargo test -p avutil error"
-unit_tests = ["error::tests::error_exposes_kind_and_message"]
+unit_tests = [
+  "error::tests::error_exposes_kind_and_message",
+  "error::tests::constructors_cover_common_error_kinds",
+  "error::tests::io_errors_map_to_stable_av_error_kinds",
+  "error::tests::eof_predicate_tracks_error_kind",
+]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Typed Rust error model implemented. No differential or FATE oracle applies yet."
+fuzz_targets = ["avutil_core_models"]
+notes = "Typed Rust error model implemented with stable kind/message accessors, common constructors, IO ErrorKind classification, optional preserved io::ErrorKind metadata, and an EOF predicate. Build-checked cargo-fuzz target avutil_core_models covers constructor invariants, IO mapping, preserved IO kind metadata, and EOF classification, but actual local fuzz execution is blocked until cargo-fuzz is installed. No differential or FATE oracle applies yet."
 blocked_reason = ""
 
 [[component]]
@@ -1329,7 +1334,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial seekable AVIO-like reader/writer implemented with typed avutil errors, exact-read EOF rewind, skip/seek, read-to-end, write, overwrite, and flush coverage. Protocols and non-seekable streams are pending."
+notes = "Initial seekable AVIO-like reader/writer implemented with shared avutil IO error conversion, exact-read EOF rewind, skip/seek, read-to-end, write, overwrite, and flush coverage. Protocols and non-seekable streams are pending."
 blocked_reason = ""
 
 [[component]]

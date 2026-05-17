@@ -1,11 +1,12 @@
 #![no_main]
 
 use avutil::{
-    adler32, crc32_ieee, rescale_q, rescale_q_rnd, Adler32, AudioFrame, AvErrorKind, Channel,
-    ChannelLayout, Crc32, Frame, FrameData, Packet, PacketFlags, PixelFormat, Rational, Rounding,
-    SampleFormat, SideData, VideoFrame,
+    adler32, crc32_ieee, rescale_q, rescale_q_rnd, Adler32, AudioFrame, AvError, AvErrorKind,
+    Channel, ChannelLayout, Crc32, Frame, FrameData, Packet, PacketFlags, PixelFormat, Rational,
+    Rounding, SampleFormat, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
+use std::io;
 
 const MAX_PAYLOAD: usize = 128;
 const MAX_SAMPLES: usize = 64;
@@ -13,12 +14,47 @@ const MAX_SAMPLES: usize = 64;
 fuzz_target!(|data: &[u8]| {
     let mut cursor = Cursor::new(data);
 
+    exercise_errors(&mut cursor);
     exercise_rational_and_timebase(&mut cursor);
     exercise_pixel_and_video_frame(&mut cursor);
     exercise_sample_channel_and_audio_frame(&mut cursor);
     exercise_packet_and_hashes(&mut cursor);
     exercise_fixtures();
 });
+
+fn exercise_errors(cursor: &mut Cursor<'_>) {
+    let io_kind = io_error_kind_from(cursor.next());
+    let err = AvError::from_io_error("fuzz io", io::Error::new(io_kind, "source failure"));
+    assert_eq!(err.kind(), expected_av_error_kind_for_io(io_kind));
+    assert_eq!(err.io_kind(), Some(io_kind));
+    assert_eq!(err.is_eof(), err.kind() == AvErrorKind::EndOfFile);
+    assert!(err.message().contains("fuzz io"));
+    assert!(err.message().contains("source failure"));
+
+    for (err, kind) in [
+        (
+            AvError::invalid_argument("invalid argument"),
+            AvErrorKind::InvalidArgument,
+        ),
+        (
+            AvError::invalid_data("invalid data"),
+            AvErrorKind::InvalidData,
+        ),
+        (AvError::not_found("not found"), AvErrorKind::NotFound),
+        (AvError::end_of_file("end of file"), AvErrorKind::EndOfFile),
+        (
+            AvError::unsupported("unsupported"),
+            AvErrorKind::Unsupported,
+        ),
+        (AvError::external("external"), AvErrorKind::External),
+        (AvError::bug("bug"), AvErrorKind::Bug),
+    ] {
+        assert_eq!(err.kind(), kind);
+        assert_eq!(err.io_kind(), None);
+        assert_eq!(err.is_eof(), kind == AvErrorKind::EndOfFile);
+        assert!(!err.message().is_empty());
+    }
+}
 
 fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
     let numerator = small_i32_from(cursor.next());
@@ -375,6 +411,28 @@ fn small_i64_from(first: Option<u8>, second: Option<u8>) -> i64 {
     let high = i64::from(first.unwrap_or_default()) - 128;
     let low = i64::from(second.unwrap_or_default());
     high * 256 + low
+}
+
+fn io_error_kind_from(byte: Option<u8>) -> io::ErrorKind {
+    match byte.unwrap_or_default() % 6 {
+        0 => io::ErrorKind::NotFound,
+        1 => io::ErrorKind::UnexpectedEof,
+        2 => io::ErrorKind::InvalidData,
+        3 => io::ErrorKind::InvalidInput,
+        4 => io::ErrorKind::Unsupported,
+        _ => io::ErrorKind::PermissionDenied,
+    }
+}
+
+fn expected_av_error_kind_for_io(kind: io::ErrorKind) -> AvErrorKind {
+    match kind {
+        io::ErrorKind::NotFound => AvErrorKind::NotFound,
+        io::ErrorKind::UnexpectedEof => AvErrorKind::EndOfFile,
+        io::ErrorKind::InvalidData => AvErrorKind::InvalidData,
+        io::ErrorKind::InvalidInput => AvErrorKind::InvalidArgument,
+        io::ErrorKind::Unsupported => AvErrorKind::Unsupported,
+        _ => AvErrorKind::External,
+    }
 }
 
 fn payload_from(cursor: &mut Cursor<'_>, len: usize) -> Vec<u8> {

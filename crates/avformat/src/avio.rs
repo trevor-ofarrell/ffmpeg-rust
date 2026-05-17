@@ -1,4 +1,4 @@
-use avutil::{AvError, AvErrorKind, AvResult};
+use avutil::{AvError, AvResult};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
 #[derive(Debug, Clone)]
@@ -104,18 +104,13 @@ where
 }
 
 fn map_io_error(err: io::Error) -> AvError {
-    match err.kind() {
-        io::ErrorKind::UnexpectedEof => {
-            AvError::new(AvErrorKind::EndOfFile, "unexpected end of AVIO stream")
-        }
-        io::ErrorKind::InvalidInput => AvError::invalid_argument(err.to_string()),
-        _ => AvError::new(AvErrorKind::External, err.to_string()),
-    }
+    AvError::from_io_error("AVIO", err)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use avutil::AvErrorKind;
     use std::io::Cursor;
 
     #[test]
