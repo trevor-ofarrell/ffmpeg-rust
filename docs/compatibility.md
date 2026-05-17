@@ -46,12 +46,13 @@
 - `avcodec` has an initial rawvideo decoder for `gray`, `rgb24`, `rgba`, and `yuv420p` packet payloads.
 - `avcodec` has an initial packed `pcm_s16le` decoder for mono and multichannel packet payloads.
 - `avutil` has initial typed errors, rational normalization/comparison, timestamp rescaling, bounded byte I/O helpers, MSB-first bit reader/writer helpers, metadata dictionary helpers, AVOption-like descriptor/value validation, Adler-32 and IEEE CRC-32 checksum helpers, shared initial pixel/sample/channel layout models for `gray`/`gray8`, `rgb24`, `rgba`, `yuv420p`, packed `s16`, common channel positions, and named mono/stereo/quad/5.1/5.1(side)/7.1 layouts, packet timestamp/flag/side-data skeletons, frame shape and plane-size validation, and an in-memory logging abstraction.
+- `fuzz` has initial cargo-fuzz targets and seed corpora for `avutil_byteio` and `avutil_bitreader`, covering byte reader/writer and bit reader/writer cursor and bounds invariants.
 - `oracle inventory` can execute a pinned FFmpeg binary and capture the required inventory command outputs.
 - `fate-runner` can list ledger components, list all configured mappings, select changed ledger components from git paths for currently mapped Rust modules, parse `tests/fate/mappings.txt`, validate `{samples}` and `{oracle_ffmpeg}` prerequisites for selected mappings or all mappings with `--check-prereqs`, dry-run selected mappings without executing commands, and run the local `fate-runner|local-self-test` smoke mapping.
 
 ## Incomplete
 
-All media parsing, decoding, encoding, muxing, demuxing, filtering, playback, probing, stream mapping, option ordering, metadata semantics, hardware acceleration, devices, FATE execution, fuzzing, and differential media parity remain incomplete unless a later ledger entry proves otherwise.
+All media parsing, decoding, encoding, muxing, demuxing, filtering, playback, probing, stream mapping, option ordering, metadata semantics, hardware acceleration, devices, FATE execution, broad fuzzing, and differential media parity remain incomplete unless a later ledger entry proves otherwise.
 
 ## Known Behavior Deltas
 

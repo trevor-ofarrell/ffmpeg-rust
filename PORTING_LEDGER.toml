@@ -206,8 +206,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Endian-aware byte reader/writer implemented for common 8/16/24/32/64-bit integer operations. Fuzz coverage is still pending, so this is not marked complete."
+fuzz_targets = ["avutil_byteio"]
+notes = "Endian-aware byte reader/writer implemented for common 8/16/24/32/64-bit integer operations. Initial cargo-fuzz target avutil_byteio exercises bounded read operations, EOF cursor invariants, and byte writer helper paths. Deeper FFmpeg compatibility vectors are still pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]
@@ -229,8 +229,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Bounded MSB-first bit reader implemented. Deeper GetBitContext compatibility vectors and fuzzing are pending, so this is not marked complete."
+fuzz_targets = ["avutil_bitreader"]
+notes = "Bounded MSB-first bit reader implemented. Initial cargo-fuzz target avutil_bitreader exercises reads, peeks, skips, alignment, and cursor invariants. Deeper GetBitContext compatibility vectors are pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]
@@ -253,8 +253,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Bounded MSB-first bit writer implemented. Deeper PutBitContext compatibility vectors and fuzzing are pending, so this is not marked complete."
+fuzz_targets = ["avutil_bitreader"]
+notes = "Bounded MSB-first bit writer implemented. Initial cargo-fuzz target avutil_bitreader also exercises write width validation, cursor invariants, and byte alignment. Deeper PutBitContext compatibility vectors are pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]

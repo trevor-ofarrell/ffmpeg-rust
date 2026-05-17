@@ -1,0 +1,28 @@
+[package]
+name = "ffmpegrust-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+avutil = { path = "../crates/avutil" }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "avutil_byteio"
+path = "fuzz_targets/avutil_byteio.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "avutil_bitreader"
+path = "fuzz_targets/avutil_bitreader.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
