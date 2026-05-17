@@ -22,6 +22,7 @@ struct FfprobeCommand {
     show_format: bool,
     show_streams: bool,
     show_packets: bool,
+    count_packets: bool,
     writer_format: WriterFormat,
     input_format: Option<ForcedInputFormat>,
     input_url: String,
@@ -129,6 +130,7 @@ pub struct FfprobeStreamReport {
     duration_ts: Option<u64>,
     duration: Option<String>,
     nb_frames: usize,
+    nb_read_packets: Option<usize>,
     tags: Vec<(String, String)>,
 }
 
@@ -255,6 +257,10 @@ impl FfprobeStreamReport {
 
     pub fn nb_frames(&self) -> usize {
         self.nb_frames
+    }
+
+    pub fn nb_read_packets(&self) -> Option<usize> {
+        self.nb_read_packets
     }
 
     pub fn tags(&self) -> &[(String, String)] {
@@ -399,11 +405,15 @@ pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
     }
 
     let command = parse_ffprobe_args(args)?;
-    let report = probe_local_file_inner(
+    let collect_packets = command.show_packets || command.count_packets;
+    let mut report = probe_local_file_inner(
         command.input_url.as_str(),
-        command.show_packets,
+        collect_packets,
         command.input_format,
     )?;
+    if command.count_packets {
+        attach_packet_counts(&mut report);
+    }
     Ok(render_report(&command, &report))
 }
 
@@ -485,6 +495,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
     let mut show_format = false;
     let mut show_streams = false;
     let mut show_packets = false;
+    let mut count_packets = false;
     let mut writer_format = WriterFormat::Default;
     let mut input_format = None;
     let mut input_url = None;
@@ -504,6 +515,10 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
             }
             "-show_packets" => {
                 show_packets = true;
+                index += 1;
+            }
+            "-count_packets" => {
+                count_packets = true;
                 index += 1;
             }
             "-of" | "-print_format" => {
@@ -544,6 +559,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
         show_format,
         show_streams,
         show_packets,
+        count_packets,
         writer_format,
         input_format,
         input_url,
@@ -682,6 +698,7 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                     .media_duration()
                     .map(|duration| format_duration(duration, track.media_timescale())),
                 nb_frames: track.sample_count(),
+                nb_read_packets: None,
                 tags: track
                     .metadata()
                     .entries()
@@ -763,6 +780,7 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
                     time_base_den,
                 )),
                 nb_frames: stream.length() as usize,
+                nb_read_packets: None,
                 tags: Vec::new(),
             }
         })
@@ -790,6 +808,18 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
         tags: Vec::new(),
         streams,
         packets: Vec::new(),
+    }
+}
+
+fn attach_packet_counts(report: &mut FfprobeReport) {
+    let mut counts = vec![0_usize; report.streams.len()];
+    for packet in &report.packets {
+        if let Some(count) = counts.get_mut(packet.stream_index) {
+            *count += 1;
+        }
+    }
+    for (stream, count) in report.streams.iter_mut().zip(counts) {
+        stream.nb_read_packets = Some(count);
     }
 }
 
@@ -1253,6 +1283,9 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
                 out.push_str(&format!("duration={duration}\n"));
             }
             out.push_str(&format!("nb_frames={}\n", stream.nb_frames));
+            if let Some(nb_read_packets) = stream.nb_read_packets {
+                out.push_str(&format!("nb_read_packets={nb_read_packets}\n"));
+            }
             for (key, value) in &stream.tags {
                 out.push_str(&format!("TAG:{key}={value}\n"));
             }
@@ -1408,6 +1441,9 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     }
     if let Some(duration) = &stream.duration {
         fields.push(json_string("duration", duration));
+    }
+    if let Some(nb_read_packets) = stream.nb_read_packets {
+        fields.push(json_string("nb_read_packets", &nb_read_packets.to_string()));
     }
     if !stream.tags.is_empty() {
         fields.push(json_object("tags", &stream.tags));
@@ -1574,6 +1610,7 @@ mod tests {
             "error",
             "-show_streams",
             "-show_packets",
+            "-count_packets",
             "-show_format",
             "-of",
             "json",
@@ -1586,6 +1623,7 @@ mod tests {
         assert!(command.show_streams);
         assert!(command.show_format);
         assert!(command.show_packets);
+        assert!(command.count_packets);
         assert_eq!(command.writer_format, WriterFormat::Json);
         assert_eq!(command.input_format, Some(ForcedInputFormat::Avi));
         assert_eq!(command.input_url, "clip.mp4");
@@ -1658,6 +1696,7 @@ mod tests {
         assert!(rendered.contains("start_time=0.000000\n"));
         assert!(rendered.contains("r_frame_rate=30/1\n"));
         assert!(rendered.contains("avg_frame_rate=30/1\n"));
+        assert!(!rendered.contains("nb_read_packets="));
         assert!(rendered.contains("[FORMAT]\n"));
         assert!(rendered.contains("format_name=mov,mp4,m4a,3gp,3g2,mj2\n"));
         assert!(rendered.contains("duration=5.000000\n"));
@@ -1782,6 +1821,32 @@ mod tests {
         assert!(stdout.contains(
             "\"tags\": {\"language\": \"eng\", \"handler_name\": \"Rust Video Handler\"}"
         ));
+        assert!(!stdout.contains("\"nb_read_packets\""));
+        assert!(!stdout.contains("\"format\""));
+    }
+
+    #[test]
+    fn outputs_mov_stream_packet_count_json() {
+        let path = write_temp_mov(
+            "show-stream-count-packets",
+            &sampled_mov_file(&[b"abc".as_slice(), b"defg".as_slice()], &[1_000, 2_000]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-count_packets",
+            "-show_streams",
+            "-of",
+            "json",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("\"streams\""));
+        assert!(stdout.contains("\"nb_read_packets\": \"2\""));
+        assert!(!stdout.contains("\"packets\""));
         assert!(!stdout.contains("\"format\""));
     }
 
@@ -2010,6 +2075,34 @@ mod tests {
         assert!(stdout.contains("\"r_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"duration_ts\": 1"));
+        assert!(!stdout.contains("\"nb_read_packets\""));
+        assert!(!stdout.contains("\"format\""));
+    }
+
+    #[test]
+    fn outputs_avi_stream_packet_count_json() {
+        let first = [0, 1, 2, 3, 4, 5];
+        let second = [6, 7, 8, 9, 10, 11];
+        let path = write_temp_avi(
+            "avi-count-packets",
+            &avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[&first, &second]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-count_packets",
+            "-show_streams",
+            "-of",
+            "json",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe AVI command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("\"streams\""));
+        assert!(stdout.contains("\"nb_read_packets\": \"2\""));
+        assert!(!stdout.contains("\"packets\""));
         assert!(!stdout.contains("\"format\""));
     }
 
@@ -2114,6 +2207,7 @@ mod tests {
                 duration_ts: Some(450_000),
                 duration: Some("5.000000".to_string()),
                 nb_frames: 0,
+                nb_read_packets: None,
                 tags: Vec::new(),
             }],
             packets: vec![FfprobePacketReport {
