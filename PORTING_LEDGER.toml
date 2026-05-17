@@ -318,6 +318,7 @@ unit_tests = [
   "options::tests::option_flags_match_ffmpeg_bits_and_truncate_unknown_bits",
   "options::tests::definitions_store_flags_with_option_metadata",
   "options::tests::definitions_store_units_for_named_constants",
+  "options::tests::option_ranges_validate_and_expose_numeric_bounds",
   "options::tests::option_set_stores_defaults_and_preserves_order",
   "options::tests::set_from_str_resolves_unit_constants_case_insensitively",
   "options::tests::unit_constants_are_scoped_and_preserve_state_on_errors",
@@ -331,7 +332,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_metadata_options"]
-notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. OptionFlags stores and truncates the currently known public AVOption flag bits, READONLY options reject parsed and typed mutation without changing the current value, and option definitions can carry unit names with unit-scoped named constants resolved case-insensitively by set_from_str. Build-checked cargo-fuzz target avutil_metadata_options covers option definition validation, duplicate rejection, parsed values, direct typed values, range/type checks, string NUL/empty validation, flag truncation, unit constant scoping, read-only mutation rejection, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. CLI option ordering, child classes, richer range/query APIs, and oracle differential vectors are pending, so this is not marked complete."
+notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. OptionFlags stores and truncates the currently known public AVOption flag bits, READONLY options reject parsed and typed mutation without changing the current value, option definitions can carry unit names with unit-scoped named constants resolved case-insensitively by set_from_str, and numeric option ranges can be queried through OptionRange. Build-checked cargo-fuzz target avutil_metadata_options covers option definition validation, duplicate rejection, parsed values, direct typed values, range query invariants, string NUL/empty validation, flag truncation, unit constant scoping, read-only mutation rejection, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. CLI option ordering, child classes, richer AVOption query/export behavior, and oracle differential vectors are pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]

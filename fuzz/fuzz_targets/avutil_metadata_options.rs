@@ -217,6 +217,19 @@ fn assert_option_set_invariants(options: &OptionSet) {
             assert!(!unit.is_empty());
             assert!(!unit.as_bytes().contains(&0));
         }
+        if let Some(range) = definition.range() {
+            definition.validate_value(range.min()).unwrap();
+            definition.validate_value(range.max()).unwrap();
+            match (range.min(), range.max()) {
+                (OptionValue::Int(min), OptionValue::Int(max)) => assert!(min <= max),
+                (OptionValue::Float(min), OptionValue::Float(max)) => {
+                    assert!(min.is_finite());
+                    assert!(max.is_finite());
+                    assert!(min <= max);
+                }
+                _ => unreachable!("option ranges are numeric"),
+            }
+        }
     }
     for constant in options.constants() {
         assert!(!constant.name().is_empty());

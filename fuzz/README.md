@@ -7,7 +7,7 @@ Initial targets:
 - `avcodec_basic_decoders`: exercises rawvideo and pcm_s16le decoder constructor validation, packet-size rejection, frame shape, payload preservation, and PTS propagation.
 - `avutil_byteio`: exercises bounded byte reads, EOF cursor invariants, 48/64-bit integer paths, and byte writer helper paths.
 - `avutil_bitreader`: exercises unsigned and signed bit reads/peeks, skips, alignment, unsigned and signed bit writer validation, and cursor invariants.
-- `avutil_metadata_options`: exercises metadata dictionary mutation, duplicate-key insertion, key/value validation, AVOption-like definition validation, option flag truncation, unit constant scoping, read-only mutation rejection, string parsing, type/range checks, and failed-mutation invariants.
+- `avutil_metadata_options`: exercises metadata dictionary mutation, duplicate-key insertion, key/value validation, AVOption-like definition validation, option flag truncation, unit constant scoping, numeric range query invariants, read-only mutation rejection, string parsing, type/range checks, and failed-mutation invariants.
 - `avutil_core_models`: exercises typed error constructor and IO classification invariants, rational arithmetic/timebase rounding and sentinel handling, pixel/sample/channel layout validation, packet timestamp/position/duration/flag/side-data invariants, frame shape and tightly packed line-size validation, and streaming checksum equivalence.
 - `avformat_probe`: exercises probe descriptor validation, generated registry mutation, AVI/MOV descriptors, extension/MIME/signature scoring, deterministic tie behavior, and explainable matches.
 - `avformat_wav`: exercises RIFF/WAVE PCM s16le demuxer opening, packet emission, and parsed stream invariants.

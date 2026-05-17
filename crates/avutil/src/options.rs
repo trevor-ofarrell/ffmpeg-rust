@@ -17,6 +17,53 @@ pub enum OptionKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct OptionRange {
+    min: OptionValue,
+    max: OptionValue,
+}
+
+impl OptionRange {
+    pub fn new(min: OptionValue, max: OptionValue) -> AvResult<Self> {
+        match (&min, &max) {
+            (OptionValue::Int(min), OptionValue::Int(max)) => {
+                if min > max {
+                    return Err(AvError::invalid_argument(
+                        "integer option range min must be <= max",
+                    ));
+                }
+            }
+            (OptionValue::Float(min), OptionValue::Float(max)) => {
+                if !min.is_finite() || !max.is_finite() {
+                    return Err(AvError::invalid_argument(
+                        "float option range bounds must be finite",
+                    ));
+                }
+                if min > max {
+                    return Err(AvError::invalid_argument(
+                        "float option range min must be <= max",
+                    ));
+                }
+            }
+            _ => {
+                return Err(AvError::invalid_argument(
+                    "option range bounds must be matching numeric values",
+                ));
+            }
+        }
+
+        Ok(Self { min, max })
+    }
+
+    pub fn min(&self) -> &OptionValue {
+        &self.min
+    }
+
+    pub fn max(&self) -> &OptionValue {
+        &self.max
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct OptionConstant {
     name: String,
     unit: String,
@@ -226,6 +273,10 @@ impl OptionDefinition {
         self.unit.as_deref()
     }
 
+    pub fn range(&self) -> Option<OptionRange> {
+        range_for_kind(&self.kind)
+    }
+
     pub fn parse_value(&self, raw: &str) -> AvResult<OptionValue> {
         let parsed = match self.kind {
             OptionKind::Bool => OptionValue::Bool(parse_bool(raw)?),
@@ -315,6 +366,11 @@ impl OptionSet {
 
     pub fn get(&self, name: &str) -> Option<&OptionValue> {
         self.find_index(name).map(|index| &self.values[index])
+    }
+
+    pub fn range(&self, name: &str) -> AvResult<Option<OptionRange>> {
+        let index = self.option_index(name)?;
+        Ok(self.definitions[index].range())
     }
 
     pub fn set(&mut self, name: &str, value: OptionValue) -> AvResult<()> {
@@ -442,6 +498,20 @@ fn validate_kind(kind: &OptionKind) -> AvResult<()> {
             }
             Ok(())
         }
+    }
+}
+
+fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
+    match *kind {
+        OptionKind::Int { min, max } => Some(OptionRange {
+            min: OptionValue::Int(min),
+            max: OptionValue::Int(max),
+        }),
+        OptionKind::Float { min, max } => Some(OptionRange {
+            min: OptionValue::Float(min),
+            max: OptionValue::Float(max),
+        }),
+        OptionKind::Bool | OptionKind::String { .. } => None,
     }
 }
 
@@ -628,6 +698,28 @@ mod tests {
             "bad\0unit",
         )
         .is_err());
+    }
+
+    #[test]
+    fn option_ranges_validate_and_expose_numeric_bounds() {
+        assert!(OptionRange::new(OptionValue::Int(8), OptionValue::Int(1)).is_err());
+        assert!(OptionRange::new(OptionValue::Float(f64::NAN), OptionValue::Float(1.0)).is_err());
+        assert!(OptionRange::new(OptionValue::Bool(false), OptionValue::Bool(true)).is_err());
+
+        let options = sample_options();
+        let threads = options.range("threads").unwrap().unwrap();
+        let quality = options.range("quality").unwrap().unwrap();
+
+        assert_eq!(threads.min(), &OptionValue::Int(1));
+        assert_eq!(threads.max(), &OptionValue::Int(64));
+        assert_eq!(quality.min(), &OptionValue::Float(0.0));
+        assert_eq!(quality.max(), &OptionValue::Float(1.0));
+        assert_eq!(options.range("bitexact").unwrap(), None);
+        assert_eq!(options.range("metadata").unwrap(), None);
+        assert_eq!(
+            options.range("missing").unwrap_err().kind(),
+            AvErrorKind::NotFound
+        );
     }
 
     #[test]
