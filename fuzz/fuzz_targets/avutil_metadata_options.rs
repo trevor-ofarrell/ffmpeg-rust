@@ -1,8 +1,8 @@
 #![no_main]
 
 use avutil::{
-    Dictionary, DictionarySet, MatchMode, OptionDefinition, OptionFlags, OptionKind, OptionSet,
-    OptionValue, SetMode,
+    Dictionary, DictionarySet, MatchMode, OptionConstant, OptionDefinition, OptionFlags,
+    OptionKind, OptionSet, OptionValue, SetMode,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -79,7 +79,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 5 {
+        match cursor.next().unwrap_or_default() % 6 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -95,6 +95,20 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
             }
             1 => {
+                let before = options.clone();
+                let constant = generated_constant(cursor);
+                let result = constant.and_then(|constant| options.define_constant(constant));
+                match result {
+                    Ok(()) => {
+                        assert_eq!(options.constants().len(), before.constants().len() + 1);
+                        assert_option_set_invariants(&options);
+                    }
+                    Err(_) => {
+                        assert_eq!(options, before);
+                    }
+                }
+            }
+            2 => {
                 let name = option_name_from(cursor);
                 let raw = option_value_string_from(cursor);
                 let before = options.clone();
@@ -105,7 +119,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     assert_eq!(options, before);
                 }
             }
-            2 => {
+            3 => {
                 let name = option_name_from(cursor);
                 let value = option_value_from(cursor);
                 let before = options.clone();
@@ -116,7 +130,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     assert_eq!(options, before);
                 }
             }
-            3 => {
+            4 => {
                 let _ = options.get(&option_name_from(cursor));
             }
             _ => {
@@ -161,8 +175,15 @@ fn exercise_fixtures() {
     options.set_from_str("bitexact", "yes").unwrap();
     options.set_from_str("quality", "0.75").unwrap();
     options.set_from_str("metadata", "title=clip").unwrap();
+    options.set_from_str("preset_level", "FAST").unwrap();
     assert_eq!(options.get("threads"), Some(&OptionValue::Int(8)));
     assert_eq!(options.get("BITEXACT"), Some(&OptionValue::Bool(true)));
+    assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
+    options.set_from_str("preset_level", "slow").unwrap();
+    assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(8)));
+    assert!(options
+        .define_constant(OptionConstant::new("PRESET", "FAST", OptionValue::Int(4), "").unwrap())
+        .is_err());
     assert!(options.set_from_str("threads", "0").is_err());
     assert!(options.set_from_str("bitexact", "maybe").is_err());
     assert!(options.set_from_str("metadata", "bad\0value").is_err());
@@ -192,6 +213,17 @@ fn assert_option_set_invariants(options: &OptionSet) {
         let value = options.get(definition.name()).unwrap();
         definition.validate_value(value).unwrap();
         assert_eq!(definition.flags().bits() & !OptionFlags::all().bits(), 0);
+        if let Some(unit) = definition.unit() {
+            assert!(!unit.is_empty());
+            assert!(!unit.as_bytes().contains(&0));
+        }
+    }
+    for constant in options.constants() {
+        assert!(!constant.name().is_empty());
+        assert!(!constant.name().as_bytes().contains(&0));
+        assert!(!constant.unit().is_empty());
+        assert!(!constant.unit().as_bytes().contains(&0));
+        assert!(!constant.help().as_bytes().contains(&0));
     }
 }
 
@@ -220,7 +252,16 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
     };
     let default = default_value_for(&kind, cursor);
     let flags = option_flags_from(cursor.next());
-    OptionDefinition::new_with_flags(name, kind, default, help, flags)
+    let unit = option_definition_unit_from(cursor);
+    OptionDefinition::new_with_flags_and_unit(name, kind, default, help, flags, unit)
+}
+
+fn generated_constant(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionConstant> {
+    let unit = option_unit_from(cursor);
+    let name = option_constant_name_from(cursor);
+    let value = option_value_from(cursor);
+    let help = literal_from(cursor);
+    OptionConstant::new(unit, name, value, help)
 }
 
 fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue {
@@ -314,10 +355,32 @@ fn sample_options() -> OptionSet {
         )
         .unwrap();
     options
+        .define(
+            OptionDefinition::new_with_unit(
+                "preset_level",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(0),
+                "preset level",
+                "preset",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define_constant(
+            OptionConstant::new("preset", "fast", OptionValue::Int(2), "fast preset").unwrap(),
+        )
+        .unwrap();
+    options
+        .define_constant(
+            OptionConstant::new("preset", "slow", OptionValue::Int(8), "slow preset").unwrap(),
+        )
+        .unwrap();
+    options
 }
 
 fn option_name_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 13 {
+    match cursor.next().unwrap_or_default() % 14 {
         0 => "threads".to_owned(),
         1 => "THREADS".to_owned(),
         2 => "bitexact".to_owned(),
@@ -330,12 +393,13 @@ fn option_name_from(cursor: &mut Cursor<'_>) -> String {
         9 => literal_from(cursor),
         10 => "new-option".to_owned(),
         11 => "new_option".to_owned(),
-        _ => "readonly".to_owned(),
+        12 => "readonly".to_owned(),
+        _ => "preset_level".to_owned(),
     }
 }
 
 fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 18 {
+    match cursor.next().unwrap_or_default() % 21 {
         0 => "1".to_owned(),
         1 => "0".to_owned(),
         2 => "yes".to_owned(),
@@ -352,6 +416,10 @@ fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
         13 => "title=clip".to_owned(),
         14 => String::new(),
         15 => "bad\0value".to_owned(),
+        16 => "fast".to_owned(),
+        17 => "FAST".to_owned(),
+        18 => "slow".to_owned(),
+        19 => "not_an_int".to_owned(),
         _ => literal_from(cursor),
     }
 }
@@ -405,6 +473,39 @@ fn option_flags_from(byte: Option<u8>) -> OptionFlags {
     }
 
     OptionFlags::from_bits_truncate(bits | 0x8000_0000)
+}
+
+fn option_definition_unit_from(cursor: &mut Cursor<'_>) -> Option<String> {
+    match cursor.next().unwrap_or_default() % 5 {
+        0 => None,
+        1 => Some("preset".to_owned()),
+        2 => Some("mode".to_owned()),
+        3 => Some("bad\0unit".to_owned()),
+        _ => Some(literal_from(cursor)),
+    }
+}
+
+fn option_unit_from(cursor: &mut Cursor<'_>) -> String {
+    match cursor.next().unwrap_or_default() % 6 {
+        0 => "preset".to_owned(),
+        1 => "PRESET".to_owned(),
+        2 => "mode".to_owned(),
+        3 => String::new(),
+        4 => "bad\0unit".to_owned(),
+        _ => literal_from(cursor),
+    }
+}
+
+fn option_constant_name_from(cursor: &mut Cursor<'_>) -> String {
+    match cursor.next().unwrap_or_default() % 8 {
+        0 => "fast".to_owned(),
+        1 => "FAST".to_owned(),
+        2 => "slow".to_owned(),
+        3 => "not_an_int".to_owned(),
+        4 => String::new(),
+        5 => "bad\0name".to_owned(),
+        _ => literal_from(cursor),
+    }
 }
 
 fn match_mode_from(byte: Option<u8>) -> MatchMode {

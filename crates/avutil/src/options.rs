@@ -16,6 +16,50 @@ pub enum OptionKind {
     String { allow_empty: bool },
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct OptionConstant {
+    name: String,
+    unit: String,
+    value: OptionValue,
+    help: String,
+}
+
+impl OptionConstant {
+    pub fn new(
+        unit: impl Into<String>,
+        name: impl Into<String>,
+        value: OptionValue,
+        help: impl Into<String>,
+    ) -> AvResult<Self> {
+        let unit = validate_unit(&unit.into())?;
+        let name = validate_name(&name.into())?;
+        let help = validate_help(&help.into())?;
+
+        Ok(Self {
+            name,
+            unit,
+            value,
+            help,
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn unit(&self) -> &str {
+        &self.unit
+    }
+
+    pub fn value(&self) -> &OptionValue {
+        &self.value
+    }
+
+    pub fn help(&self) -> &str {
+        &self.help
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct OptionFlags {
     bits: u32,
@@ -101,6 +145,7 @@ pub struct OptionDefinition {
     kind: OptionKind,
     default: OptionValue,
     flags: OptionFlags,
+    unit: Option<String>,
 }
 
 impl OptionDefinition {
@@ -120,18 +165,40 @@ impl OptionDefinition {
         help: impl Into<String>,
         flags: OptionFlags,
     ) -> AvResult<Self> {
-        validate_name(&name.into()).and_then(|name| {
-            validate_help(&help.into()).and_then(|help| {
-                validate_kind(&kind)?;
-                validate_value_for_kind(&kind, &default)?;
-                Ok(Self {
-                    name,
-                    help,
-                    kind,
-                    default,
-                    flags: OptionFlags::from_bits_truncate(flags.bits()),
-                })
-            })
+        Self::new_with_flags_and_unit(name, kind, default, help, flags, None::<String>)
+    }
+
+    pub fn new_with_unit(
+        name: impl Into<String>,
+        kind: OptionKind,
+        default: OptionValue,
+        help: impl Into<String>,
+        unit: impl Into<String>,
+    ) -> AvResult<Self> {
+        Self::new_with_flags_and_unit(name, kind, default, help, OptionFlags::empty(), Some(unit))
+    }
+
+    pub fn new_with_flags_and_unit(
+        name: impl Into<String>,
+        kind: OptionKind,
+        default: OptionValue,
+        help: impl Into<String>,
+        flags: OptionFlags,
+        unit: Option<impl Into<String>>,
+    ) -> AvResult<Self> {
+        let name = validate_name(&name.into())?;
+        let help = validate_help(&help.into())?;
+        let unit = unit.map(|unit| validate_unit(&unit.into())).transpose()?;
+        validate_kind(&kind)?;
+        validate_value_for_kind(&kind, &default)?;
+
+        Ok(Self {
+            name,
+            help,
+            kind,
+            default,
+            flags: OptionFlags::from_bits_truncate(flags.bits()),
+            unit,
         })
     }
 
@@ -155,6 +222,10 @@ impl OptionDefinition {
         self.flags
     }
 
+    pub fn unit(&self) -> Option<&str> {
+        self.unit.as_deref()
+    }
+
     pub fn parse_value(&self, raw: &str) -> AvResult<OptionValue> {
         let parsed = match self.kind {
             OptionKind::Bool => OptionValue::Bool(parse_bool(raw)?),
@@ -176,6 +247,7 @@ impl OptionDefinition {
 pub struct OptionSet {
     definitions: Vec<OptionDefinition>,
     values: Vec<OptionValue>,
+    constants: Vec<OptionConstant>,
 }
 
 impl OptionSet {
@@ -195,6 +267,19 @@ impl OptionSet {
         &self.definitions
     }
 
+    pub fn constants(&self) -> &[OptionConstant] {
+        &self.constants
+    }
+
+    pub fn constants_for_unit<'a>(
+        &'a self,
+        unit: &'a str,
+    ) -> impl Iterator<Item = &'a OptionConstant> + 'a {
+        self.constants
+            .iter()
+            .filter(move |constant| ascii_eq_ignore_case(constant.unit(), unit))
+    }
+
     pub fn define(&mut self, definition: OptionDefinition) -> AvResult<()> {
         if self.find_index(definition.name()).is_some() {
             return Err(AvError::invalid_argument(format!(
@@ -205,6 +290,22 @@ impl OptionSet {
 
         self.values.push(definition.default().clone());
         self.definitions.push(definition);
+        Ok(())
+    }
+
+    pub fn define_constant(&mut self, constant: OptionConstant) -> AvResult<()> {
+        if self
+            .find_constant_index(constant.unit(), constant.name())
+            .is_some()
+        {
+            return Err(AvError::invalid_argument(format!(
+                "duplicate option constant `{}` for unit `{}`",
+                constant.name(),
+                constant.unit()
+            )));
+        }
+
+        self.constants.push(constant);
         Ok(())
     }
 
@@ -227,9 +328,20 @@ impl OptionSet {
     pub fn set_from_str(&mut self, name: &str, raw: &str) -> AvResult<()> {
         let index = self.option_index(name)?;
         self.ensure_writable(index)?;
-        let value = self.definitions[index].parse_value(raw)?;
+        let value = self.parse_value(index, raw)?;
         self.values[index] = value;
         Ok(())
+    }
+
+    fn parse_value(&self, index: usize, raw: &str) -> AvResult<OptionValue> {
+        if let Some(unit) = self.definitions[index].unit() {
+            if let Some(constant) = self.find_constant(unit, raw) {
+                self.definitions[index].validate_value(constant.value())?;
+                return Ok(constant.value().clone());
+            }
+        }
+
+        self.definitions[index].parse_value(raw)
     }
 
     fn option_index(&self, name: &str) -> AvResult<usize> {
@@ -241,6 +353,18 @@ impl OptionSet {
         self.definitions
             .iter()
             .position(|definition| ascii_eq_ignore_case(definition.name(), name))
+    }
+
+    fn find_constant(&self, unit: &str, name: &str) -> Option<&OptionConstant> {
+        self.find_constant_index(unit, name)
+            .map(|index| &self.constants[index])
+    }
+
+    fn find_constant_index(&self, unit: &str, name: &str) -> Option<usize> {
+        self.constants.iter().position(|constant| {
+            ascii_eq_ignore_case(constant.unit(), unit)
+                && ascii_eq_ignore_case(constant.name(), name)
+        })
     }
 
     fn ensure_writable(&self, index: usize) -> AvResult<()> {
@@ -270,6 +394,20 @@ fn validate_name(name: &str) -> AvResult<String> {
     }
 
     Ok(name.to_owned())
+}
+
+fn validate_unit(unit: &str) -> AvResult<String> {
+    if unit.is_empty() {
+        return Err(AvError::invalid_argument("option unit must not be empty"));
+    }
+
+    if unit.as_bytes().contains(&0) {
+        return Err(AvError::invalid_argument(
+            "option unit must not contain NUL",
+        ));
+    }
+
+    Ok(unit.to_owned())
 }
 
 fn validate_help(help: &str) -> AvResult<String> {
@@ -461,6 +599,38 @@ mod tests {
     }
 
     #[test]
+    fn definitions_store_units_for_named_constants() {
+        let definition = OptionDefinition::new_with_flags_and_unit(
+            "preset_level",
+            OptionKind::Int { min: 0, max: 10 },
+            OptionValue::Int(0),
+            "preset level",
+            OptionFlags::ENCODING_PARAM,
+            Some("preset"),
+        )
+        .unwrap();
+
+        assert_eq!(definition.unit(), Some("preset"));
+        assert!(definition.flags().contains(OptionFlags::ENCODING_PARAM));
+        assert!(OptionDefinition::new_with_unit(
+            "bad",
+            OptionKind::Int { min: 0, max: 1 },
+            OptionValue::Int(0),
+            "",
+            "",
+        )
+        .is_err());
+        assert!(OptionDefinition::new_with_unit(
+            "bad",
+            OptionKind::Int { min: 0, max: 1 },
+            OptionValue::Int(0),
+            "",
+            "bad\0unit",
+        )
+        .is_err());
+    }
+
+    #[test]
     fn option_set_stores_defaults_and_preserves_order() {
         let mut options = OptionSet::new();
         options
@@ -490,6 +660,59 @@ mod tests {
         assert_eq!(options.definitions()[0].name(), "threads");
         assert_eq!(options.get("THREADS"), Some(&OptionValue::Int(1)));
         assert_eq!(options.get("bitexact"), Some(&OptionValue::Bool(false)));
+    }
+
+    #[test]
+    fn set_from_str_resolves_unit_constants_case_insensitively() {
+        let mut options = sample_options();
+
+        options.set_from_str("preset_level", "FAST").unwrap();
+        assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
+
+        options.set_from_str("preset_level", "slow").unwrap();
+        assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(8)));
+        assert_eq!(options.constants_for_unit("PRESET").count(), 2);
+    }
+
+    #[test]
+    fn unit_constants_are_scoped_and_preserve_state_on_errors() {
+        let mut options = sample_options();
+
+        options
+            .define_constant(
+                OptionConstant::new("mode", "fast", OptionValue::Int(1), "mode fast").unwrap(),
+            )
+            .unwrap();
+        options
+            .define_constant(
+                OptionConstant::new(
+                    "preset",
+                    "not_an_int",
+                    OptionValue::String("bad".to_owned()),
+                    "wrong type",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        assert!(options.set_from_str("threads", "fast").is_err());
+        assert_eq!(options.get("threads"), Some(&OptionValue::Int(1)));
+        assert!(options.set_from_str("preset_level", "not_an_int").is_err());
+        assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(0)));
+        assert_eq!(options.constants_for_unit("mode").count(), 1);
+    }
+
+    #[test]
+    fn duplicate_unit_constants_are_rejected_case_insensitively() {
+        let mut options = sample_options();
+
+        let err = options
+            .define_constant(
+                OptionConstant::new("PRESET", "FAST", OptionValue::Int(4), "duplicate").unwrap(),
+            )
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
     }
 
     #[test]
@@ -647,6 +870,28 @@ mod tests {
                     "",
                 )
                 .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new_with_unit(
+                    "preset_level",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(0),
+                    "preset level",
+                    "preset",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define_constant(
+                OptionConstant::new("preset", "fast", OptionValue::Int(2), "fast preset").unwrap(),
+            )
+            .unwrap();
+        options
+            .define_constant(
+                OptionConstant::new("preset", "slow", OptionValue::Int(8), "slow preset").unwrap(),
             )
             .unwrap();
         options
