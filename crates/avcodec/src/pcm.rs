@@ -1,4 +1,4 @@
-use avutil::{AudioFrame, AvError, AvResult, Frame, Packet};
+use avutil::{AudioFrame, AvError, AvResult, Frame, Packet, SampleFormat};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcmS16leDecoder {
@@ -56,7 +56,7 @@ impl PcmS16leDecoder {
         let audio = AudioFrame::new(
             self.sample_rate,
             self.channels,
-            "s16",
+            SampleFormat::S16,
             samples_per_channel,
             vec![packet.data().to_vec()],
         )?;
@@ -84,7 +84,8 @@ mod tests {
             FrameData::Audio(audio) => {
                 assert_eq!(audio.sample_rate(), 48_000);
                 assert_eq!(audio.channels(), 2);
-                assert_eq!(audio.sample_format(), "s16");
+                assert_eq!(audio.sample_format(), SampleFormat::S16);
+                assert_eq!(audio.sample_format_name(), "s16");
                 assert_eq!(audio.samples_per_channel(), 2);
                 assert_eq!(audio.planes(), &[vec![0, 0, 1, 0, 2, 0, 3, 0]]);
             }

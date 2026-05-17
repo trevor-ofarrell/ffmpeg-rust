@@ -1,49 +1,6 @@
-use avutil::{AvError, AvErrorKind, AvResult, Packet, Rational, SideData};
+use avutil::{AvError, AvErrorKind, AvResult, Packet, PixelFormat, Rational, SideData};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RawVideoPixelFormat {
-    Gray8,
-    Rgb24,
-    Rgba,
-    Yuv420p,
-}
-
-impl RawVideoPixelFormat {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Gray8 => "gray",
-            Self::Rgb24 => "rgb24",
-            Self::Rgba => "rgba",
-            Self::Yuv420p => "yuv420p",
-        }
-    }
-
-    fn frame_size(self, width: usize, height: usize) -> AvResult<usize> {
-        let pixels = checked_area(width, height)?;
-        match self {
-            Self::Gray8 => Ok(pixels),
-            Self::Rgb24 => pixels
-                .checked_mul(3)
-                .ok_or_else(|| AvError::invalid_argument("rawvideo frame size overflow")),
-            Self::Rgba => pixels
-                .checked_mul(4)
-                .ok_or_else(|| AvError::invalid_argument("rawvideo frame size overflow")),
-            Self::Yuv420p => {
-                if width % 2 != 0 || height % 2 != 0 {
-                    return Err(AvError::invalid_argument(
-                        "yuv420p rawvideo dimensions must be even",
-                    ));
-                }
-
-                let chroma = checked_area(width / 2, height / 2)?;
-                pixels
-                    .checked_add(chroma)
-                    .and_then(|size| size.checked_add(chroma))
-                    .ok_or_else(|| AvError::invalid_argument("rawvideo frame size overflow"))
-            }
-        }
-    }
-}
+pub type RawVideoPixelFormat = PixelFormat;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawVideoInfo {
@@ -269,12 +226,6 @@ fn validate_frame_rate(frame_rate: Rational) -> AvResult<()> {
         ));
     }
     Ok(())
-}
-
-fn checked_area(width: usize, height: usize) -> AvResult<usize> {
-    width
-        .checked_mul(height)
-        .ok_or_else(|| AvError::invalid_argument("rawvideo frame area overflow"))
 }
 
 #[cfg(test)]

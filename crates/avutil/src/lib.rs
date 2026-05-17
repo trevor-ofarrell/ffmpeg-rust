@@ -10,7 +10,9 @@ pub mod hash;
 pub mod logging;
 pub mod options;
 pub mod packet;
+pub mod pixel;
 pub mod rational;
+pub mod samplefmt;
 pub mod timebase;
 
 pub use bitreader::BitReader;
@@ -23,5 +25,7 @@ pub use hash::{adler32, crc32_ieee, Adler32, Crc32};
 pub use logging::{LogLevel, LogRecord, Logger};
 pub use options::{OptionDefinition, OptionKind, OptionSet, OptionValue};
 pub use packet::{Packet, PacketFlags, SideData};
+pub use pixel::PixelFormat;
 pub use rational::Rational;
+pub use samplefmt::SampleFormat;
 pub use timebase::{rescale_q, rescale_q_rnd, Rounding};

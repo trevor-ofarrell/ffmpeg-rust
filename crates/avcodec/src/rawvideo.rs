@@ -1,67 +1,5 @@
+pub use avutil::PixelFormat;
 use avutil::{AvError, AvResult, Frame, Packet, VideoFrame};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PixelFormat {
-    Gray8,
-    Rgb24,
-    Rgba,
-    Yuv420p,
-}
-
-impl PixelFormat {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Gray8 => "gray",
-            Self::Rgb24 => "rgb24",
-            Self::Rgba => "rgba",
-            Self::Yuv420p => "yuv420p",
-        }
-    }
-
-    fn frame_size(self, width: usize, height: usize) -> AvResult<usize> {
-        let pixels = checked_area(width, height)?;
-        match self {
-            Self::Gray8 => Ok(pixels),
-            Self::Rgb24 => pixels
-                .checked_mul(3)
-                .ok_or_else(|| AvError::invalid_argument("rawvideo frame size overflow")),
-            Self::Rgba => pixels
-                .checked_mul(4)
-                .ok_or_else(|| AvError::invalid_argument("rawvideo frame size overflow")),
-            Self::Yuv420p => {
-                if width % 2 != 0 || height % 2 != 0 {
-                    return Err(AvError::invalid_argument(
-                        "yuv420p rawvideo dimensions must be even",
-                    ));
-                }
-
-                let chroma = checked_area(width / 2, height / 2)?;
-                pixels
-                    .checked_add(chroma)
-                    .and_then(|size| size.checked_add(chroma))
-                    .ok_or_else(|| AvError::invalid_argument("rawvideo frame size overflow"))
-            }
-        }
-    }
-
-    fn split_planes(self, data: &[u8], width: usize, height: usize) -> AvResult<Vec<Vec<u8>>> {
-        match self {
-            Self::Gray8 | Self::Rgb24 | Self::Rgba => Ok(vec![data.to_vec()]),
-            Self::Yuv420p => {
-                let y_size = checked_area(width, height)?;
-                let uv_size = checked_area(width / 2, height / 2)?;
-                let y_end = y_size;
-                let u_end = y_end + uv_size;
-                let v_end = u_end + uv_size;
-                Ok(vec![
-                    data[..y_end].to_vec(),
-                    data[y_end..u_end].to_vec(),
-                    data[u_end..v_end].to_vec(),
-                ])
-            }
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawVideoDecoder {
@@ -116,17 +54,11 @@ impl RawVideoDecoder {
         let planes = self
             .pixel_format
             .split_planes(packet.data(), self.width, self.height)?;
-        let video = VideoFrame::new(self.width, self.height, self.pixel_format.name(), planes)?;
+        let video = VideoFrame::new(self.width, self.height, self.pixel_format, planes)?;
         let mut frame = Frame::video(video);
         frame.set_pts(packet.pts());
         Ok(frame)
     }
-}
-
-fn checked_area(width: usize, height: usize) -> AvResult<usize> {
-    width
-        .checked_mul(height)
-        .ok_or_else(|| AvError::invalid_argument("rawvideo frame area overflow"))
 }
 
 #[cfg(test)]
@@ -147,7 +79,8 @@ mod tests {
             FrameData::Video(video) => {
                 assert_eq!(video.width(), 2);
                 assert_eq!(video.height(), 2);
-                assert_eq!(video.pixel_format(), "gray");
+                assert_eq!(video.pixel_format(), PixelFormat::Gray8);
+                assert_eq!(video.pixel_format_name(), "gray");
                 assert_eq!(video.planes(), &[vec![0, 1, 2, 3]]);
             }
             FrameData::Audio(_) => panic!("expected video frame"),
@@ -163,7 +96,8 @@ mod tests {
 
         match frame.data() {
             FrameData::Video(video) => {
-                assert_eq!(video.pixel_format(), "yuv420p");
+                assert_eq!(video.pixel_format(), PixelFormat::Yuv420p);
+                assert_eq!(video.pixel_format_name(), "yuv420p");
                 assert_eq!(video.planes()[0], vec![0, 1, 2, 3, 4, 5, 6, 7]);
                 assert_eq!(video.planes()[1], vec![8, 9]);
                 assert_eq!(video.planes()[2], vec![10, 11]);

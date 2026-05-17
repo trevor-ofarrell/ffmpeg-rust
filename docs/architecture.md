@@ -18,7 +18,7 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 ## Type Model
 
-Early shared types intentionally encode invariants at construction boundaries. `Rational` rejects zero denominators and normalizes signs. `ByteReader` bounds-checks every read and returns typed EOF errors without advancing past failed reads. `ByteWriter` validates constrained widths such as 24-bit integer fields. `BitReader` performs bounded MSB-first bit reads, peeks, skips, and byte alignment without advancing on failed reads. `BitWriter` writes MSB-first fields, validates requested widths, and zero-pads byte alignment explicitly. `Dictionary` preserves metadata insertion order, uses ASCII case-insensitive matching by default, and rejects empty/NUL-containing keys. `OptionSet` stores AVOption-like descriptors and current values with type/range validation before mutation. `Adler32` and `Crc32` provide streaming checksum state plus one-shot helpers. `Packet` represents missing PTS/DTS with `Option<i64>` over an internal `AV_NOPTS_VALUE`. `Frame` currently models typed audio/video payload shells with explicit shape validation.
+Early shared types intentionally encode invariants at construction boundaries. `Rational` rejects zero denominators and normalizes signs. `ByteReader` bounds-checks every read and returns typed EOF errors without advancing past failed reads. `ByteWriter` validates constrained widths such as 24-bit integer fields. `BitReader` performs bounded MSB-first bit reads, peeks, skips, and byte alignment without advancing on failed reads. `BitWriter` writes MSB-first fields, validates requested widths, and zero-pads byte alignment explicitly. `Dictionary` preserves metadata insertion order, uses ASCII case-insensitive matching by default, and rejects empty/NUL-containing keys. `OptionSet` stores AVOption-like descriptors and current values with type/range validation before mutation. `Adler32` and `Crc32` provide streaming checksum state plus one-shot helpers. `PixelFormat` currently centralizes the supported `gray`/`gray8`, `rgb24`, `rgba`, and `yuv420p` names, plane counts, frame-size math, yuv420p geometry validation, and plane splitting. `SampleFormat` currently centralizes packed `s16` naming, sample-byte sizing, and packed audio plane sizing. `Packet` represents missing PTS/DTS with `Option<i64>` over an internal `AV_NOPTS_VALUE`. `Frame` models typed audio/video payload shells with explicit shape and exact plane-size validation through those shared format models.
 
 `AvioReader` and `AvioWriter` wrap seekable byte streams with typed `avutil` errors. Exact reads rewind to the starting offset on EOF so parsers can fail without losing their previous probe position. `ProbeRegistry` records format probe descriptors and deterministically scores prefix or offset signature, MIME type, and extension matches. The current hand-written descriptors cover AVI and MOV/MP4.
 
@@ -28,9 +28,9 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `FrameCrcMuxer` records one CRC-32 line per packet with stream index, timestamps, duration, payload size, and checksum in write order.
 
-`RawVideoDecoder` implements the first codec-shaped decoder path for fixed-size raw video packets and emits `avutil::Frame` values with validated pixel format geometry.
+`RawVideoDecoder` implements the first codec-shaped decoder path for fixed-size raw video packets and emits `avutil::Frame` values with validated shared pixel format geometry.
 
-`PcmS16leDecoder` decodes packed little-endian signed 16-bit PCM packets into `avutil::AudioFrame` values, requiring packets to contain whole interleaved sample frames.
+`PcmS16leDecoder` decodes packed little-endian signed 16-bit PCM packets into `avutil::AudioFrame` values using the shared packed `s16` sample format model and requiring packets to contain whole interleaved sample frames.
 
 `WavDemuxer` implements the first demuxer-shaped parser path for RIFF/WAVE PCM s16le data. It validates the RIFF/WAVE container, `fmt ` and `data` chunks, PCM stream fields, RIFF word padding, and whole sample-frame payloads before emitting the data chunk as a stream-0 packet.
 
@@ -50,9 +50,9 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `Image2Muxer` implements the matching initial image2 muxer path. It maps stream-0 packet payloads to single-image or numbered output entries without touching the filesystem, validating path generation and non-empty image payloads before recording entries.
 
-`RawVideoDemuxer` implements an initial rawvideo packet slicer for fixed-size `gray`, `rgb24`, `rgba`, and `yuv420p` frame payloads. It validates dimensions, frame rate, yuv420p parity, and whole-frame byte counts before emitting monotonically timed packets.
+`RawVideoDemuxer` implements an initial rawvideo packet slicer for fixed-size `gray`, `rgb24`, `rgba`, and `yuv420p` frame payloads. It uses the shared `PixelFormat` model to validate dimensions, frame rate, yuv420p parity, and whole-frame byte counts before emitting monotonically timed packets.
 
-`RawVideoMuxer` implements the matching initial rawvideo muxer path. It validates stream-0 packet ownership and exact fixed-size frame payloads before concatenating raw frame bytes and updating frame accounting.
+`RawVideoMuxer` implements the matching initial rawvideo muxer path. It uses the shared `PixelFormat` model to validate stream-0 packet ownership and exact fixed-size frame payloads before concatenating raw frame bytes and updating frame accounting.
 
 `PcmS16leDemuxer` implements an initial raw PCM audio packet slicer for packed little-endian signed 16-bit samples. It validates sample rate, channel count, packet sample count, and whole interleaved sample-frame input before emitting packets with sample-count durations.
 

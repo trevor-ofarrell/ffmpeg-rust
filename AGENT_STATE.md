@@ -2,10 +2,24 @@
 
 ## Current Status
 
+`avutil-pixel-format` and `avutil-sample-format` now provide shared initial FFmpeg-style format models for the already-supported raw media subset. `PixelFormat` covers `gray`/`gray8`, `rgb24`, `rgba`, and `yuv420p` naming, plane counts, frame-size math, yuv420p even-dimension validation, and plane splitting. `SampleFormat` covers packed `s16` naming, packed plane counts, sample-byte sizing, and payload-size calculation. `VideoFrame` and `AudioFrame` now validate exact plane counts and plane lengths against those shared models, the rawvideo decoder reuses the shared pixel-plane splitter, the pcm_s16le decoder emits shared `SampleFormat::S16` frames, and the rawvideo demuxer/muxer uses the shared pixel format type alias instead of its own duplicate enum. The ledger records both components as implemented but not complete because full FFmpeg descriptor coverage, oracle differential tests, FATE, and fuzz coverage are still pending.
+
 `avformat-mov-demuxer` now has an initial packet extraction path. It validates ISOBMFF/MOV/MP4 box bounds, parses `ftyp`, `moov/mvhd`, `trak/tkhd`, `mdia/mdhd` language metadata, and `mdia/hdlr` handler-name metadata, extracts common movie-level and track-level `udta/meta/ilst` metadata values from `data` atoms for UTF-8 and UTF-16 text fields, classic `gnre` genre indexes, one-byte integer/boolean metadata atoms, iTunes-style freeform `----` atoms, `covr` cover-art payloads, and track/disc number pairs, registers a hand-written MOV/MP4 `ftyp`/extension/MIME probe descriptor, records generic `stsd` codec parameters, parses VisualSampleEntry fields and child boxes for known video sample entries and raw entries with full visual payloads including structured `avcC` version/profile/level/NAL-length-size/SPS/PPS data, structured `hvcC` profile/timing/NAL-length-size/NAL-array data, `pasp` pixel aspect ratio, and `nclx`/`nclc`/`rICC`/`prof` `colr` color information, explicitly rejects fragmented `mvex`/`moof` layouts, edit-list `edts` boxes, multiple populated tracks, multiple `stsd` sample entries, sample description indexes other than 1, malformed VisualSampleEntry child boxes, malformed metadata atoms, malformed text encodings, malformed handler names, malformed integer/boolean metadata payloads, malformed freeform metadata payloads, malformed cover-art payloads, malformed `avcC`/`hvcC`/`pasp`/`colr` payloads, parses simple `stsd`, `stts`, `ctts`, `stsc`, `stsz`, `stss`, and `stco`/`co64` sample tables for one populated track, handles multi-chunk `stsc` entry transitions and multiple `mdat` ranges, and emits packets with PTS/DTS/duration, composition-offset PTS, sync-sample key flags, and MOV side data. `avformat-avi-probe` now has a hand-written descriptor for the offset-8 RIFF `AVI ` form tag, `.avi` extension, and common AVI MIME types. `ffprobe-rs` now has initial local MOV/MP4 and constrained AVI `-show_format`/`-show_streams`/`-show_packets` execution paths that register AVI and MOV descriptors in the shared Rust `ProbeRegistry`, can force those Rust demuxer paths with `-f avi`/`-f mov`/`-f mp4`, open `AviDemuxer` or `MovDemuxer`, and render default or JSON summaries with local input byte length as format `size`, zero `nb_programs` and `nb_stream_groups` counters for the current constrained demuxer model, MOV movie-level format tags, plus initial stream `codec_name`, `codec_long_name`, MOV `profile` and `level` from parsed `avcC`/`hvcC`, MOV `avcC` `is_avc` and `nal_length_size`, `codec_type`, `codec_tag_string`, numeric `codec_tag`, parsed display dimensions plus constrained `coded_width`/`coded_height`, `field_order=unknown` for video streams because field-order metadata is not parsed yet, MOV `mdhd` `language` and `hdlr` `handler_name` stream tags, AVI `bits_per_raw_sample` from parsed BITMAPINFOHEADER bit counts, MOV raw VisualSampleEntry depth as `bits_per_raw_sample`, MOV non-empty sample-entry `extradata_size`, `time_base` from parsed MOV media timescale or AVI stream scale/rate, zero-origin `start_pts`/`start_time` for non-empty constrained streams, `r_frame_rate`, `avg_frame_rate`, `duration_ts`/`duration` from parsed MOV media duration or AVI stream length/time base, `nb_frames` from parsed MOV sample counts or AVI stream lengths, constrained `nb_read_frames` in default and JSON output when `-count_frames` is requested, `nb_read_packets` in default and JSON output when `-count_packets` is requested, and MOV visual sample-entry `sample_aspect_ratio`, `display_aspect_ratio`, `color_range`, `color_space`, `color_transfer`, and `color_primaries` fields where the Rust demuxer has enough metadata. `ffmpeg-rs` now has constrained local MOV/MP4, AVI, PCM s16le RIFF/WAVE, raw `pcm_s16le`, explicit `rawvideo`, `yuv4mpegpipe`, and explicit image2 single-file/numbered-sequence command execution paths for stdout `-f null -` and `-f framecrc -`, plus raw `pcm_s16le` packet-copy to local `-f s16le` and `-f wav` files, rawvideo packet-copy to local `-f rawvideo` files, raw yuv420p packet-copy to local `-f yuv4mpegpipe` files, raw rgb24 packet-copy to local `-f avi` files, and image2 packet-copy to local `-f image2` file or numbered-pattern outputs with image2 `-start_number` on input and output groups, using Rust demuxers and Rust muxers while rejecting unsupported inputs, outputs, muxers, missing raw/image stream parameters, malformed AVI headers, malformed raw PCM packet boundaries, malformed rawvideo frame boundaries, non-yuv420p yuv4mpegpipe file outputs, non-rgb24 AVI file outputs, malformed YUV4MPEG2 stream/frame boundaries, empty image2 payloads, non-contiguous image2 sequences, and file-output overwrites.
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo test -p avutil pixel`
+- `cargo test -p avutil samplefmt`
+- `cargo test -p avutil frame`
+- `cargo test -p avcodec rawvideo`
+- `cargo test -p avcodec pcm`
+- `cargo test -p avformat rawvideo`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
 - `cargo fmt --all`
 - `cargo test -p fftools ffprobe`
 - `cargo fmt --all -- --check`
@@ -579,13 +593,13 @@
 
 ## Current Focus Component
 
-`fftools-ffprobe-stream-time-base` is the current focus; the latest slice strengthens `time_base` assertions for `ffprobe-rs -show_streams` default and JSON output on constrained MOV/MP4 and AVI files.
+`avutil-pixel-format` and `avutil-sample-format` were the latest focus. They are implemented for the narrow raw media subset already used by the workspace, but remain incomplete until descriptor coverage is generated from the pinned oracle and differential/FATE/fuzz coverage exists.
 
 ## Next 3 Concrete Actions
 
-1. Extend ffprobe stream metadata further where already parsed, such as MOV sample-entry compressor name/details or additional AVI stream header fields.
-2. Add more format-level ffprobe fields with careful oracle-backed semantics, such as bit_rate, once exact rounding and unknown-value behavior is pinned.
-3. Add pinned-oracle differential coverage once an FFmpeg 8.1.1 oracle binary exists.
+1. Add an initial `avutil` channel layout model for mono/stereo and the common named native layouts used by the existing PCM paths.
+2. Expand pixel/sample format coverage from a pinned `ffmpeg -pix_fmts`/`-sample_fmts` inventory once the FFmpeg 8.1.1 oracle binary exists.
+3. Add pinned-oracle differential coverage for rawvideo/PCM frame sizing and ffprobe stream fields once the oracle is available.
 
 ## Known Blockers
 
@@ -596,4 +610,4 @@
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: strengthen `ffprobe-rs` stream time-base coverage. Existing MOV media-timescale and AVI stream scale/rate values are now asserted in default and JSON `-show_streams` paths, and a ledger component records the constrained container-derived semantics. This still lacks pinned-oracle differential/FATE/fuzz coverage.
+Latest slice: add shared initial `PixelFormat` and `SampleFormat` primitives in `avutil`, wire them through `VideoFrame`, `AudioFrame`, the rawvideo decoder, the pcm_s16le decoder, and rawvideo demuxer/muxer format typing, and record the new ledger entries. This still lacks full FFmpeg descriptor coverage, pinned-oracle differential tests, FATE, and fuzz coverage.

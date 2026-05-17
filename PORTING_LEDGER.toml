@@ -94,7 +94,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Frame skeleton validates required audio/video shape. Pixel/sample format models are not complete."
+notes = "Frame skeleton validates required audio/video shape and exact plane sizes through the shared initial PixelFormat and SampleFormat models. Full AVFrame fields, buffer ownership, line sizes, alignment, side data, and complete FFmpeg pixel/sample format coverage are pending."
 blocked_reason = ""
 
 [[component]]
@@ -283,6 +283,47 @@ differential_tests = []
 fate_tests = []
 fuzz_targets = []
 notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. CLI option ordering, flags, child classes, ranges with units, and oracle differential vectors are pending, so this is not marked complete."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-pixel-format"
+kind = "pixfmt"
+ffmpeg_name = "AVPixelFormat"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = "ffmpeg -pix_fmts"
+rust_command = "cargo test -p avutil pixel"
+unit_tests = [
+  "pixel::tests::pixel_formats_report_ffmpeg_names_and_layout",
+  "pixel::tests::pixel_formats_compute_plane_and_frame_sizes",
+  "pixel::tests::pixel_formats_split_frame_payloads_by_plane",
+  "pixel::tests::pixel_formats_reject_invalid_dimensions_and_payload_sizes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial shared pixel format model covers only gray/gray8, rgb24, rgba, and yuv420p with FFmpeg-style names, plane counts, frame-size math, yuv420p even-dimension validation, and plane splitting. It is wired into avutil::VideoFrame plus the rawvideo decoder and demuxer/muxer type alias. Full AVPixFmtDescriptor coverage, bit depths, endian/alpha flags, chroma subsampling descriptors, hardware formats, oracle inventory comparison, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-sample-format"
+kind = "samplefmt"
+ffmpeg_name = "AVSampleFormat"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = "ffmpeg -sample_fmts"
+rust_command = "cargo test -p avutil samplefmt"
+unit_tests = [
+  "samplefmt::tests::sample_formats_report_ffmpeg_names_and_layout",
+  "samplefmt::tests::sample_formats_compute_packed_payload_sizes",
+  "samplefmt::tests::sample_formats_reject_invalid_channel_counts",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial shared sample format model covers only packed s16 with FFmpeg-style naming, sample-byte sizing, packed plane counts, and per-plane payload-size validation. It is wired into avutil::AudioFrame and the pcm_s16le decoder. Full AVSampleFormat coverage, planar variants, packed/planar conversion helpers, oracle inventory comparison, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]
