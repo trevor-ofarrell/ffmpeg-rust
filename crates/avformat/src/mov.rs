@@ -1613,7 +1613,7 @@ fn parse_hvcc(payload: &[u8]) -> AvResult<MovHevcDecoderConfiguration> {
     let general_tier_flag = profile & 0x20 != 0;
     let general_profile_idc = profile & 0x1f;
     let general_profile_compatibility_flags = reader.read_u32_be()?;
-    let general_constraint_indicator_flags = read_u48_be(&mut reader)?;
+    let general_constraint_indicator_flags = reader.read_u48_be()?;
     let general_level_idc = reader.read_u8()?;
     let min_spatial_segmentation_idc = reader.read_u16_be()? & 0x0fff;
     let parallelism_type = reader.read_u8()? & 0x03;
@@ -2460,13 +2460,6 @@ fn fixed_16_16_to_dimension(value: u32) -> Option<u32> {
 fn read_fourcc(reader: &mut ByteReader<'_>) -> AvResult<[u8; 4]> {
     let bytes = reader.read_exact(4)?;
     Ok([bytes[0], bytes[1], bytes[2], bytes[3]])
-}
-
-fn read_u48_be(reader: &mut ByteReader<'_>) -> AvResult<u64> {
-    let bytes = reader.read_exact(6)?;
-    Ok(bytes
-        .iter()
-        .fold(0_u64, |value, byte| (value << 8) | u64::from(*byte)))
 }
 
 fn fourcc_to_string(fourcc: [u8; 4]) -> String {

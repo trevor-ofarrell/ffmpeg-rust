@@ -87,6 +87,26 @@ impl<'a> ByteReader<'a> {
         Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
+    pub fn read_u48_le(&mut self) -> AvResult<u64> {
+        let bytes = self.take(6)?;
+        Ok(u64::from(bytes[0])
+            | (u64::from(bytes[1]) << 8)
+            | (u64::from(bytes[2]) << 16)
+            | (u64::from(bytes[3]) << 24)
+            | (u64::from(bytes[4]) << 32)
+            | (u64::from(bytes[5]) << 40))
+    }
+
+    pub fn read_u48_be(&mut self) -> AvResult<u64> {
+        let bytes = self.take(6)?;
+        Ok((u64::from(bytes[0]) << 40)
+            | (u64::from(bytes[1]) << 32)
+            | (u64::from(bytes[2]) << 24)
+            | (u64::from(bytes[3]) << 16)
+            | (u64::from(bytes[4]) << 8)
+            | u64::from(bytes[5]))
+    }
+
     pub fn read_i32_le(&mut self) -> AvResult<i32> {
         let bytes = self.take(4)?;
         Ok(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
@@ -227,6 +247,32 @@ impl ByteWriter {
         self.write_all(&value.to_be_bytes());
     }
 
+    pub fn write_u48_le(&mut self, value: u64) -> AvResult<()> {
+        validate_u48(value)?;
+        self.write_all(&[
+            value as u8,
+            (value >> 8) as u8,
+            (value >> 16) as u8,
+            (value >> 24) as u8,
+            (value >> 32) as u8,
+            (value >> 40) as u8,
+        ]);
+        Ok(())
+    }
+
+    pub fn write_u48_be(&mut self, value: u64) -> AvResult<()> {
+        validate_u48(value)?;
+        self.write_all(&[
+            (value >> 40) as u8,
+            (value >> 32) as u8,
+            (value >> 24) as u8,
+            (value >> 16) as u8,
+            (value >> 8) as u8,
+            value as u8,
+        ]);
+        Ok(())
+    }
+
     pub fn write_i32_le(&mut self, value: i32) {
         self.write_all(&value.to_le_bytes());
     }
@@ -255,6 +301,13 @@ impl ByteWriter {
 fn validate_u24(value: u32) -> AvResult<()> {
     if value > 0x00ff_ffff {
         return Err(AvError::invalid_argument("24-bit value out of range"));
+    }
+    Ok(())
+}
+
+fn validate_u48(value: u64) -> AvResult<()> {
+    if value > 0x0000_ffff_ffff_ffff {
+        return Err(AvError::invalid_argument("48-bit value out of range"));
     }
     Ok(())
 }
@@ -292,6 +345,17 @@ mod tests {
     }
 
     #[test]
+    fn reads_u48_in_both_endiannesses() {
+        let mut reader = ByteReader::new(&[
+            0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+        ]);
+
+        assert_eq!(reader.read_u48_le().unwrap(), 0x0102_0304_0506);
+        assert_eq!(reader.read_u48_be().unwrap(), 0x0102_0304_0506);
+        assert!(reader.is_eof());
+    }
+
+    #[test]
     fn reports_typed_eof_without_advancing_past_end() {
         let mut reader = ByteReader::new(&[0x12, 0x34]);
 
@@ -322,23 +386,27 @@ mod tests {
         writer.write_u24_le(0x00ab_cdef).unwrap();
         writer.write_u24_be(0x0001_2345).unwrap();
         writer.write_u32_be(0x89ab_cdef);
+        writer.write_u48_le(0x0102_0304_0506).unwrap();
+        writer.write_u48_be(0x0a0b_0c0d_0e0f).unwrap();
 
         assert_eq!(
             writer.as_slice(),
             &[
                 0x7f, 0x34, 0x12, 0x56, 0x78, 0xef, 0xcd, 0xab, 0x01, 0x23, 0x45, 0x89, 0xab, 0xcd,
-                0xef,
+                0xef, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
             ]
         );
     }
 
     #[test]
-    fn writer_rejects_values_too_wide_for_u24() {
+    fn writer_rejects_values_too_wide_for_u24_and_u48() {
         let mut writer = ByteWriter::new();
 
-        let err = writer.write_u24_be(0x0100_0000).unwrap_err();
+        let u24_err = writer.write_u24_be(0x0100_0000).unwrap_err();
+        let u48_err = writer.write_u48_be(0x0001_0000_0000_0000).unwrap_err();
 
-        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(u24_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(u48_err.kind(), AvErrorKind::InvalidArgument);
         assert!(writer.is_empty());
     }
 }

@@ -5,7 +5,7 @@ Fuzzing is required for parsers, demuxers, decoders, filters, option parsing, an
 Initial targets:
 
 - `avcodec_basic_decoders`: exercises rawvideo and pcm_s16le decoder constructor validation, packet-size rejection, frame shape, payload preservation, and PTS propagation.
-- `avutil_byteio`: exercises bounded byte reads, EOF cursor invariants, and byte writer helper paths.
+- `avutil_byteio`: exercises bounded byte reads, EOF cursor invariants, 48/64-bit integer paths, and byte writer helper paths.
 - `avutil_bitreader`: exercises bit reads, peeks, skips, alignment, bit writer width validation, and cursor invariants.
 - `avutil_metadata_options`: exercises metadata dictionary mutation, key/value validation, AVOption-like definition validation, string parsing, type/range checks, and failed-mutation invariants.
 - `avutil_core_models`: exercises typed error constructor and IO classification invariants, rational arithmetic/timebase rounding and sentinel handling, pixel/sample/channel layout validation, packet timestamp/position/duration/flag/side-data invariants, frame shape and tightly packed line-size validation, and streaming checksum equivalence.

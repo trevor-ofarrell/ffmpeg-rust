@@ -28,7 +28,7 @@ fuzz_target!(|data: &[u8]| {
 });
 
 fn run_read_operation(reader: &mut ByteReader<'_>, op: u8) -> AvResult<()> {
-    match op & 0x0f {
+    match op % 20 {
         0 => reader.read_u8().map(|_| ()),
         1 => reader.read_i8().map(|_| ()),
         2 => reader.read_u16_le().map(|_| ()),
@@ -41,9 +41,13 @@ fn run_read_operation(reader: &mut ByteReader<'_>, op: u8) -> AvResult<()> {
         9 => reader.read_u32_be().map(|_| ()),
         10 => reader.read_i32_le().map(|_| ()),
         11 => reader.read_i32_be().map(|_| ()),
-        12 => reader.read_u64_le().map(|_| ()),
-        13 => reader.read_u64_be().map(|_| ()),
-        14 => reader.skip(usize::from(op >> 4)),
+        12 => reader.read_u48_le().map(|_| ()),
+        13 => reader.read_u48_be().map(|_| ()),
+        14 => reader.read_u64_le().map(|_| ()),
+        15 => reader.read_u64_be().map(|_| ()),
+        16 => reader.read_i64_le().map(|_| ()),
+        17 => reader.read_i64_be().map(|_| ()),
+        18 => reader.skip(usize::from(op >> 4)),
         _ => reader.read_exact(usize::from(op >> 4)).map(|_| ()),
     }
 }
@@ -67,4 +71,16 @@ fn run_write_operation(writer: &mut ByteWriter, data: &[u8], op: u8) {
     writer.write_u32_be(value);
     writer.write_i32_le(value as i32);
     writer.write_i32_be(value as i32);
+
+    let mut wide_bytes = [0_u8; 8];
+    for (index, byte) in data.iter().take(8).enumerate() {
+        wide_bytes[index] = *byte;
+    }
+    let wide_value = u64::from_le_bytes(wide_bytes);
+    let _ = writer.write_u48_le(wide_value);
+    let _ = writer.write_u48_be(wide_value);
+    writer.write_u64_le(wide_value);
+    writer.write_u64_be(wide_value);
+    writer.write_i64_le(wide_value as i64);
+    writer.write_i64_be(wide_value as i64);
 }

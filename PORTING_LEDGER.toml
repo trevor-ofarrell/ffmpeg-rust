@@ -217,15 +217,16 @@ rust_command = "cargo test -p avutil byteio"
 unit_tests = [
   "byteio::tests::reads_unsigned_integers_in_both_endiannesses",
   "byteio::tests::reads_signed_integers_in_both_endiannesses",
+  "byteio::tests::reads_u48_in_both_endiannesses",
   "byteio::tests::reports_typed_eof_without_advancing_past_end",
   "byteio::tests::skip_and_exact_reads_advance_position",
   "byteio::tests::writes_unsigned_integers_in_both_endiannesses",
-  "byteio::tests::writer_rejects_values_too_wide_for_u24",
+  "byteio::tests::writer_rejects_values_too_wide_for_u24_and_u48",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_byteio"]
-notes = "Endian-aware byte reader/writer implemented for common 8/16/24/32/64-bit integer operations. Initial cargo-fuzz target avutil_byteio exercises bounded read operations, EOF cursor invariants, and byte writer helper paths. Deeper FFmpeg compatibility vectors are still pending, so this is not marked complete."
+notes = "Endian-aware byte reader/writer implemented for common 8/16/24/32/48/64-bit integer operations, with constrained u24/u48 writer validation. MOV hvcC parsing now uses the shared u48 big-endian reader instead of a local helper. Build-checked cargo-fuzz target avutil_byteio exercises bounded read operations, EOF cursor invariants, 48/64-bit paths, and byte writer helper paths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper FFmpeg compatibility vectors are still pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]
