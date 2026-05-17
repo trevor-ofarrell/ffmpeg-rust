@@ -19,6 +19,7 @@ const MEAN_ID: &[u8; 4] = b"mean";
 const NAME_ID: &[u8; 4] = b"name";
 const MDIA_ID: &[u8; 4] = b"mdia";
 const MDHD_ID: &[u8; 4] = b"mdhd";
+const HDLR_ID: &[u8; 4] = b"hdlr";
 const MINF_ID: &[u8; 4] = b"minf";
 const STBL_ID: &[u8; 4] = b"stbl";
 const STSD_ID: &[u8; 4] = b"stsd";
@@ -710,6 +711,7 @@ struct MediaHeader {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MediaData {
     header: MediaHeader,
+    metadata: Dictionary,
     sample_table: Option<SampleTable>,
 }
 
@@ -829,6 +831,9 @@ fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
         .sample_table
         .as_ref()
         .map_or(0, |table| table.sample_sizes.len());
+    for entry in media_data.metadata.entries() {
+        set_metadata_value(&mut metadata.tags, entry.key(), entry.value().to_owned())?;
+    }
 
     Ok(TrackData {
         info: MovTrackInfo {
@@ -849,10 +854,16 @@ fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
 
 fn parse_mdia(input: &[u8], mdia: &BoxHeader) -> AvResult<MediaData> {
     let mut media_header = None;
+    let mut metadata = Dictionary::new();
     let mut sample_table = None;
     for child in read_box_headers(input, mdia.payload_start, mdia.payload_end, "MOV/MP4 mdia")? {
         match &child.box_type {
             MDHD_ID => media_header = Some(parse_mdhd(child.payload(input))?),
+            HDLR_ID => {
+                if let Some(handler_name) = parse_hdlr(child.payload(input))? {
+                    set_metadata_value(&mut metadata, "handler_name", handler_name)?;
+                }
+            }
             MINF_ID => sample_table = parse_minf(input, &child)?,
             _ => {}
         }
@@ -861,6 +872,7 @@ fn parse_mdia(input: &[u8], mdia: &BoxHeader) -> AvResult<MediaData> {
         media_header.ok_or_else(|| AvError::invalid_data("MOV/MP4 mdia missing mdhd box"))?;
     Ok(MediaData {
         header,
+        metadata,
         sample_table,
     })
 }
@@ -2039,6 +2051,32 @@ fn parse_mdhd(payload: &[u8]) -> AvResult<MediaHeader> {
     })
 }
 
+fn parse_hdlr(payload: &[u8]) -> AvResult<Option<String>> {
+    let mut reader = ByteReader::new(payload);
+    let (version, _) = read_full_box_header(&mut reader, "MOV/MP4 hdlr")?;
+    if version != 0 {
+        return Err(AvError::unsupported(format!(
+            "unsupported MOV/MP4 hdlr version {version}"
+        )));
+    }
+    ensure_remaining(&reader, 20, "MOV/MP4 hdlr")?;
+    reader.skip(4)?;
+    let _handler_type = read_fourcc(&mut reader)?;
+    reader.skip(12)?;
+
+    let name = reader.read_exact(reader.remaining())?;
+    let name = name
+        .iter()
+        .position(|byte| *byte == 0)
+        .map_or(name, |nul| &name[..nul]);
+    if name.is_empty() {
+        return Ok(None);
+    }
+    std::str::from_utf8(name)
+        .map(|value| Some(value.to_owned()))
+        .map_err(|_| AvError::invalid_data("MOV/MP4 hdlr name is not valid UTF-8"))
+}
+
 fn build_packets(
     input: &[u8],
     tracks: &[TrackData],
@@ -2461,6 +2499,27 @@ mod tests {
         assert_eq!(track.height(), Some(2160));
         assert_eq!(track.media_timescale(), 48_000);
         assert_eq!(track.media_duration(), Some(96_000));
+    }
+
+    #[test]
+    fn extracts_media_handler_name_as_track_metadata() {
+        let bytes = mp4_with_media_handler_name(b"Rust Video Handler\0");
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        assert_eq!(
+            demuxer.info().tracks()[0].metadata().get("handler_name"),
+            Some("Rust Video Handler")
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_media_handler_name() {
+        let bytes = mp4_with_media_handler_name(b"\xff\0");
+
+        assert_eq!(
+            MovDemuxer::open(&bytes).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
     }
 
     #[test]
@@ -4222,6 +4281,22 @@ mod tests {
         box_(*TRAK_ID, &payload)
     }
 
+    fn mp4_with_media_handler_name(handler_name: &[u8]) -> Vec<u8> {
+        let mdia = box_(
+            *MDIA_ID,
+            &[mdhd_v0(90_000, 450_000), hdlr_box(*b"vide", handler_name)].concat(),
+        );
+        let moov = box_(
+            *MOOV_ID,
+            &[
+                mvhd_v0(1_000, 5_000),
+                box_(*TRAK_ID, &[tkhd_v0(1, 5_000, 1_920, 1_080), mdia].concat()),
+            ]
+            .concat(),
+        );
+        [ftyp_box(), moov, box_(*MDAT_ID, &[])].concat()
+    }
+
     fn ftyp_box() -> Vec<u8> {
         box_(*FTYP_ID, &ftyp_payload())
     }
@@ -4664,6 +4739,15 @@ mod tests {
         body.extend_from_slice(&timescale.to_be_bytes());
         body.extend_from_slice(&duration.to_be_bytes());
         box_(*MDHD_ID, &full_box(1, &body))
+    }
+
+    fn hdlr_box(handler_type: [u8; 4], handler_name: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&0_u32.to_be_bytes());
+        body.extend_from_slice(&handler_type);
+        body.extend_from_slice(&[0; 12]);
+        body.extend_from_slice(handler_name);
+        box_(*HDLR_ID, &full_box(0, &body))
     }
 
     fn full_box(version: u8, body: &[u8]) -> Vec<u8> {

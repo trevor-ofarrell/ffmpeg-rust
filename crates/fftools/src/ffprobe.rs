@@ -1551,6 +1551,7 @@ mod tests {
     const TKHD_ID: [u8; 4] = *b"tkhd";
     const MDIA_ID: [u8; 4] = *b"mdia";
     const MDHD_ID: [u8; 4] = *b"mdhd";
+    const HDLR_ID: [u8; 4] = *b"hdlr";
     const MINF_ID: [u8; 4] = *b"minf";
     const STBL_ID: [u8; 4] = *b"stbl";
     const STSD_ID: [u8; 4] = *b"stsd";
@@ -1778,6 +1779,7 @@ mod tests {
         assert!(stdout.contains("\"start_time\": \"0.000000\""));
         assert!(stdout.contains("\"r_frame_rate\": \"30/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
+        assert!(stdout.contains("\"tags\": {\"handler_name\": \"Rust Video Handler\"}"));
         assert!(!stdout.contains("\"format\""));
     }
 
@@ -1836,6 +1838,7 @@ mod tests {
         assert!(stdout.contains("\"start_time\": \"0.000000\""));
         assert!(stdout.contains("\"r_frame_rate\": \"30/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
+        assert!(stdout.contains("\"tags\": {\"handler_name\": \"Rust Video Handler\"}"));
     }
 
     #[test]
@@ -2271,7 +2274,12 @@ mod tests {
         let minf = box_(MINF_ID, &stbl);
         let mdia = box_(
             MDIA_ID,
-            &[mdhd_v0(timescale, media_duration), minf].concat(),
+            &[
+                mdhd_v0(timescale, media_duration),
+                hdlr_box(*b"vide", b"Rust Video Handler\0"),
+                minf,
+            ]
+            .concat(),
         );
         box_(
             TRAK_ID,
@@ -2505,6 +2513,15 @@ mod tests {
         body.extend_from_slice(&timescale.to_be_bytes());
         body.extend_from_slice(&duration.to_be_bytes());
         box_(MDHD_ID, &full_box(0, &body))
+    }
+
+    fn hdlr_box(handler_type: [u8; 4], handler_name: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&0_u32.to_be_bytes());
+        body.extend_from_slice(&handler_type);
+        body.extend_from_slice(&[0; 12]);
+        body.extend_from_slice(handler_name);
+        box_(HDLR_ID, &full_box(0, &body))
     }
 
     fn full_box(version: u8, body: &[u8]) -> Vec<u8> {
