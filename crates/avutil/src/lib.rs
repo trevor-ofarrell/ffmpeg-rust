@@ -30,4 +30,4 @@ pub use packet::{Packet, PacketFlags, SideData};
 pub use pixel::PixelFormat;
 pub use rational::Rational;
 pub use samplefmt::SampleFormat;
-pub use timebase::{rescale_q, rescale_q_rnd, Rounding};
+pub use timebase::{rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, Rounding};

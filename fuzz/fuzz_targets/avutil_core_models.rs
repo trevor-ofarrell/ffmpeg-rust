@@ -1,9 +1,9 @@
 #![no_main]
 
 use avutil::{
-    adler32, crc32_ieee, rescale_q, rescale_q_rnd, Adler32, AudioFrame, AvError, AvErrorKind,
-    Channel, ChannelLayout, Crc32, Frame, FrameData, Packet, PacketFlags, PixelFormat, Rational,
-    Rounding, SampleFormat, SideData, VideoFrame,
+    adler32, crc32_ieee, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, Adler32, AudioFrame,
+    AvError, AvErrorKind, Channel, ChannelLayout, Crc32, Frame, FrameData, Packet, PacketFlags,
+    PixelFormat, Rational, Rounding, SampleFormat, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -112,6 +112,7 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
     );
     for rounding in [
         Rounding::Zero,
+        Rounding::Inf,
         Rounding::Down,
         Rounding::Up,
         Rounding::NearInf,
@@ -121,6 +122,16 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
             expected_rescale(value, src, dst, rounding).unwrap()
         );
     }
+    for sentinel in [i64::MIN, i64::MAX] {
+        assert_eq!(
+            rescale_q_rnd_pass_minmax(sentinel, src, dst, Rounding::NearInf).unwrap(),
+            sentinel
+        );
+    }
+    assert_eq!(
+        rescale_q_rnd_pass_minmax(value, src, dst, Rounding::NearInf).unwrap(),
+        expected_rescale(value, src, dst, Rounding::NearInf).unwrap()
+    );
 }
 
 fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
@@ -342,6 +353,13 @@ fn div_round(numerator: i128, denominator: i128, rounding: Rounding) -> i128 {
     let same_sign = (numerator >= 0) == (denominator >= 0);
     match rounding {
         Rounding::Zero => quotient,
+        Rounding::Inf => {
+            if same_sign {
+                quotient + 1
+            } else {
+                quotient - 1
+            }
+        }
         Rounding::Down => {
             if same_sign {
                 quotient
