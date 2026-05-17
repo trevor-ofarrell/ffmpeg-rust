@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-video-parameters` now provides a shared video stream-parameter helper for the current rawvideo/AVI subset. It validates dimensions, pixel format, derived frame byte size, whole-frame input byte counts, and exact packet payload lengths while preserving distinct error kinds for user-supplied parameters versus untrusted container fields. Rawvideo demuxer/muxer and the AVI RGB24 muxer now store or validate their video shape through this helper, while AVI-specific classic header limits remain local. MOV visual sample-entry integration is intentionally pending until a tested sample-entry FourCC/depth to `PixelFormat` mapping exists. The ledger records this helper as implemented but not complete because oracle differential tests, FATE, fuzz coverage, and generated pixel-format coverage are still pending.
+`avformat-video-parameters` now provides a shared video stream-parameter helper for the current rawvideo/yuv4mpegpipe/AVI subset. It validates dimensions, u32 container dimensions, pixel format, derived frame byte size, whole-frame input byte counts, and exact packet payload lengths while preserving distinct error kinds for user-supplied parameters versus untrusted container fields. Rawvideo demuxer/muxer, yuv4mpegpipe demuxer/muxer, and the AVI RGB24 muxer now store or validate their video shape through this helper, while format-specific constraints such as AVI classic header limits and YUV4MPEG2 4:2:0 even dimensions remain local. MOV visual sample-entry integration is intentionally pending until a tested sample-entry FourCC/depth to `PixelFormat` mapping exists. The ledger records this helper as implemented but not complete because oracle differential tests, FATE, fuzz coverage, and generated pixel-format coverage are still pending.
 
 `avformat-audio-parameters` now provides a shared audio stream-parameter helper for the current PCM/WAV subset. It validates sample rate, channel count, sample format, derived mono/stereo `ChannelLayout`, packed sample-frame byte sizing, bits-per-sample reporting, and whole-sample-frame byte lengths while preserving distinct error kinds for user-supplied parameters versus untrusted container fields. Raw `pcm_s16le` demuxer/muxer and RIFF/WAVE s16le demuxer/muxer now store and validate their audio metadata through this helper. The ledger records this helper as implemented but not complete because richer audio codec-parameter parity, oracle differential tests, FATE, and fuzz coverage are still pending.
 
@@ -16,6 +16,15 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo test -p avformat yuv4mpegpipe`
+- `cargo test -p avformat video`
+- `cargo fmt --all`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
 - `cargo fmt --all`
 - `cargo test -p avformat video`
 - `cargo test -p avformat rawvideo`
@@ -640,7 +649,7 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Current Focus Component
 
-`avformat-video-parameters` was the latest focus. It is wired into the rawvideo demuxer/muxer and AVI RGB24 muxer with focused and workspace tests passing, but remains incomplete until MOV visual sample-entry integration, broader pixel-format coverage, pinned-oracle differential tests, FATE mappings, and fuzz coverage exist.
+`avformat-video-parameters` was the latest focus. It is wired into the rawvideo demuxer/muxer, yuv4mpegpipe demuxer/muxer, and AVI RGB24 muxer with focused and workspace tests passing, but remains incomplete until MOV visual sample-entry integration, broader pixel-format coverage, pinned-oracle differential tests, FATE mappings, and fuzz coverage exist.
 
 ## Next 3 Concrete Actions
 
@@ -657,4 +666,4 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added `VideoStreamParameters` in `avformat`, exported it, wired rawvideo demuxer/muxer paths and the AVI RGB24 muxer through it for shared dimensions/frame-size/payload validation, and updated `PORTING_LEDGER.toml`, `docs/architecture.md`, and `docs/compatibility.md`. This still lacks MOV visual sample-entry wiring, broader generated pixel-format coverage, pinned-oracle differential tests, FATE, and fuzzing.
+Latest slice: extended `VideoStreamParameters` with u32 container dimensions, wired yuv4mpegpipe demuxer/muxer through it for yuv420p frame sizing and exact packet payload validation, preserved YUV4MPEG2-specific chroma constraints locally, and updated `PORTING_LEDGER.toml`, `docs/architecture.md`, and `docs/compatibility.md`. This still lacks MOV visual sample-entry wiring, broader generated pixel-format coverage, pinned-oracle differential tests, FATE, and fuzzing.

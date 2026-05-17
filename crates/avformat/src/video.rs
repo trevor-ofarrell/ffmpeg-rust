@@ -56,20 +56,25 @@ impl VideoStreamParameters {
         context: &'static str,
     ) -> AvResult<Self> {
         Self::validate(
-            usize::try_from(width).map_err(|_| {
-                video_error(
-                    AvErrorKind::InvalidArgument,
-                    format!("{context} width is out of range"),
-                )
-            })?,
-            usize::try_from(height).map_err(|_| {
-                video_error(
-                    AvErrorKind::InvalidArgument,
-                    format!("{context} height is out of range"),
-                )
-            })?,
+            u32_dimension(width, AvErrorKind::InvalidArgument, context, "width")?,
+            u32_dimension(height, AvErrorKind::InvalidArgument, context, "height")?,
             pixel_format,
             AvErrorKind::InvalidArgument,
+            context,
+        )
+    }
+
+    pub fn from_u32_container(
+        width: u32,
+        height: u32,
+        pixel_format: PixelFormat,
+        context: &'static str,
+    ) -> AvResult<Self> {
+        Self::validate(
+            u32_dimension(width, AvErrorKind::InvalidData, context, "width")?,
+            u32_dimension(height, AvErrorKind::InvalidData, context, "height")?,
+            pixel_format,
+            AvErrorKind::InvalidData,
             context,
         )
     }
@@ -157,6 +162,16 @@ fn video_error(kind: AvErrorKind, message: impl Into<String>) -> AvError {
     AvError::new(kind, message)
 }
 
+fn u32_dimension(
+    value: u32,
+    kind: AvErrorKind,
+    context: &'static str,
+    field: &'static str,
+) -> AvResult<usize> {
+    usize::try_from(value)
+        .map_err(|_| video_error(kind, format!("{context} {field} is out of range")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,6 +194,10 @@ mod tests {
         assert_eq!(err.message(), "rawvideo dimensions must be non-zero");
 
         let err = VideoStreamParameters::from_container(3, 2, PixelFormat::Yuv420p, "rawvideo")
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let err = VideoStreamParameters::from_u32_container(3, 2, PixelFormat::Yuv420p, "rawvideo")
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
     }

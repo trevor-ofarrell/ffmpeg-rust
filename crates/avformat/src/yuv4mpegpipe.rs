@@ -1,4 +1,5 @@
-use avutil::{AvError, AvErrorKind, AvResult, Packet, Rational};
+use crate::VideoStreamParameters;
+use avutil::{AvError, AvErrorKind, AvResult, Packet, PixelFormat, Rational};
 
 const Y4M_MAGIC: &str = "YUV4MPEG2";
 const FRAME_MAGIC: &str = "FRAME";
@@ -31,22 +32,24 @@ impl Yuv4MpegInterlace {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Yuv4MpegInfo {
-    width: u32,
-    height: u32,
+    video: VideoStreamParameters,
     frame_rate: Rational,
     sample_aspect_ratio: Option<Rational>,
     interlace: Yuv4MpegInterlace,
     chroma: Yuv4MpegChroma,
-    frame_size: usize,
 }
 
 impl Yuv4MpegInfo {
     pub fn width(&self) -> u32 {
-        self.width
+        video_width_u32(self.video).expect("YUV4MPEG2 stores u32 width")
     }
 
     pub fn height(&self) -> u32 {
-        self.height
+        video_height_u32(self.video).expect("YUV4MPEG2 stores u32 height")
+    }
+
+    pub fn pixel_format(&self) -> PixelFormat {
+        self.video.pixel_format()
     }
 
     pub fn frame_rate(&self) -> Rational {
@@ -66,7 +69,7 @@ impl Yuv4MpegInfo {
     }
 
     pub fn frame_size(&self) -> usize {
-        self.frame_size
+        self.video.frame_size()
     }
 }
 
@@ -107,7 +110,7 @@ impl<'a> Yuv4MpegDemuxer<'a> {
 
         let frame_end = self
             .position
-            .checked_add(self.info.frame_size)
+            .checked_add(self.info.frame_size())
             .ok_or_else(|| AvError::invalid_data("YUV4MPEG2 frame size overflow"))?;
         if frame_end > self.input.len() {
             return Err(AvError::new(
@@ -144,29 +147,19 @@ impl Yuv4MpegMuxer {
         frame_rate: Rational,
         sample_aspect_ratio: Option<Rational>,
     ) -> AvResult<Self> {
-        validate_positive_dimension(width, "YUV4MPEG2 width")?;
-        validate_positive_dimension(height, "YUV4MPEG2 height")?;
+        let video = yuv420_user_video_parameters(width, height)?;
         validate_positive_rational(frame_rate, "YUV4MPEG2 frame rate")?;
         if let Some(sample_aspect_ratio) = sample_aspect_ratio {
             validate_positive_rational(sample_aspect_ratio, "YUV4MPEG2 sample aspect ratio")?;
         }
 
-        let frame_size = yuv420_frame_size(width, height)?;
-        if frame_size == 0 {
-            return Err(AvError::invalid_argument(
-                "YUV4MPEG2 frame size must be non-zero",
-            ));
-        }
-
         Ok(Self {
             info: Yuv4MpegInfo {
-                width,
-                height,
+                video,
                 frame_rate,
                 sample_aspect_ratio,
                 interlace: Yuv4MpegInterlace::Progressive,
                 chroma: Yuv4MpegChroma::C420Jpeg,
-                frame_size,
             },
             payload: Vec::new(),
             frame_count: 0,
@@ -193,8 +186,8 @@ impl Yuv4MpegMuxer {
     pub fn header(&self) -> String {
         let mut header = format!(
             "{Y4M_MAGIC} W{} H{} F{}:{} I{}",
-            self.info.width,
-            self.info.height,
+            self.info.width(),
+            self.info.height(),
             self.info.frame_rate.num(),
             self.info.frame_rate.den(),
             self.info.interlace.tag()
@@ -222,13 +215,11 @@ impl Yuv4MpegMuxer {
                 packet.stream_index()
             )));
         }
-        if packet.data().len() != self.info.frame_size {
-            return Err(AvError::invalid_data(format!(
-                "YUV4MPEG2 packet has {} bytes, expected {}",
-                packet.data().len(),
-                self.info.frame_size
-            )));
-        }
+        self.info.video.validate_frame_payload_len(
+            packet.data().len(),
+            AvErrorKind::InvalidData,
+            "YUV4MPEG2 packet",
+        )?;
 
         let new_payload_len = self
             .payload
@@ -248,7 +239,7 @@ impl Yuv4MpegMuxer {
 
     pub fn render(&self) -> Vec<u8> {
         let mut output = self.header().into_bytes();
-        for frame in self.payload.chunks_exact(self.info.frame_size) {
+        for frame in self.payload.chunks_exact(self.info.frame_size()) {
             output.extend_from_slice(b"FRAME\n");
             output.extend_from_slice(frame);
         }
@@ -320,16 +311,14 @@ fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
     let height = height.ok_or_else(|| AvError::invalid_data("YUV4MPEG2 missing height"))?;
     let frame_rate =
         frame_rate.ok_or_else(|| AvError::invalid_data("YUV4MPEG2 missing frame rate"))?;
-    let frame_size = yuv420_frame_size(width, height)?;
+    let video = yuv420_container_video_parameters(width, height)?;
 
     Ok(Yuv4MpegInfo {
-        width,
-        height,
+        video,
         frame_rate,
         sample_aspect_ratio,
         interlace,
         chroma,
-        frame_size,
     })
 }
 
@@ -398,23 +387,33 @@ fn parse_i32_component(value: &str, name: &str) -> AvResult<i32> {
         .map_err(|_| AvError::invalid_data(format!("{name} component is out of range")))
 }
 
-fn yuv420_frame_size(width: u32, height: u32) -> AvResult<usize> {
-    if width % 2 != 0 || height % 2 != 0 {
+fn yuv420_user_video_parameters(width: u32, height: u32) -> AvResult<VideoStreamParameters> {
+    validate_yuv420_dimensions(width, height)?;
+    VideoStreamParameters::from_u32_with_context(width, height, PixelFormat::Yuv420p, "YUV4MPEG2")
+}
+
+fn yuv420_container_video_parameters(width: u32, height: u32) -> AvResult<VideoStreamParameters> {
+    validate_yuv420_dimensions(width, height)?;
+    VideoStreamParameters::from_u32_container(width, height, PixelFormat::Yuv420p, "YUV4MPEG2")
+}
+
+fn validate_yuv420_dimensions(width: u32, height: u32) -> AvResult<()> {
+    if width != 0 && height != 0 && (width % 2 != 0 || height % 2 != 0) {
         return Err(AvError::unsupported(
             "YUV4MPEG2 4:2:0 requires even width and height",
         ));
     }
+    Ok(())
+}
 
-    let luma = usize::try_from(width)
-        .ok()
-        .and_then(|width| {
-            usize::try_from(height)
-                .ok()
-                .and_then(|height| width.checked_mul(height))
-        })
-        .ok_or_else(|| AvError::invalid_data("YUV4MPEG2 frame dimensions overflow"))?;
-    luma.checked_add(luma / 2)
-        .ok_or_else(|| AvError::invalid_data("YUV4MPEG2 frame size overflow"))
+fn video_width_u32(video: VideoStreamParameters) -> AvResult<u32> {
+    u32::try_from(video.width())
+        .map_err(|_| AvError::invalid_data("YUV4MPEG2 width exceeds 32 bits"))
+}
+
+fn video_height_u32(video: VideoStreamParameters) -> AvResult<u32> {
+    u32::try_from(video.height())
+        .map_err(|_| AvError::invalid_data("YUV4MPEG2 height exceeds 32 bits"))
 }
 
 fn read_required_line<'a>(
@@ -451,6 +450,7 @@ mod tests {
 
         assert_eq!(demuxer.info().width(), 4);
         assert_eq!(demuxer.info().height(), 2);
+        assert_eq!(demuxer.info().pixel_format(), PixelFormat::Yuv420p);
         assert_eq!(
             demuxer.info().frame_rate(),
             Rational::new(30000, 1001).unwrap()
@@ -491,7 +491,12 @@ mod tests {
         );
         assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 H2 F25:1 Ip C420jpeg\n").is_err());
         assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W0 H2 F25:1 Ip C420jpeg\n").is_err());
-        assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W3 H2 F25:1 Ip C420jpeg\n").is_err());
+        assert_eq!(
+            Yuv4MpegDemuxer::open(b"YUV4MPEG2 W3 H2 F25:1 Ip C420jpeg\n")
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::Unsupported
+        );
         assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W2 H2 F0:1 Ip C420jpeg\n").is_err());
         assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W2 H2 F25:0 Ip C420jpeg\n").is_err());
         assert!(Yuv4MpegDemuxer::open(b"YUV4MPEG2 W2 H2 Fabc Ip C420jpeg\n").is_err());
@@ -537,6 +542,7 @@ mod tests {
         assert!(muxer.is_finished());
         assert_eq!(muxer.info().width(), 2);
         assert_eq!(muxer.info().height(), 2);
+        assert_eq!(muxer.info().pixel_format(), PixelFormat::Yuv420p);
         assert_eq!(muxer.info().frame_size(), 6);
         assert_eq!(muxer.frame_count(), 2);
         assert_eq!(muxer.payload_len(), 12);
@@ -567,7 +573,12 @@ mod tests {
     #[test]
     fn muxer_rejects_invalid_parameters_streams_and_packet_sizes() {
         assert!(Yuv4MpegMuxer::new(0, 2, Rational::new(25, 1).unwrap(), None).is_err());
-        assert!(Yuv4MpegMuxer::new(3, 2, Rational::new(25, 1).unwrap(), None).is_err());
+        assert_eq!(
+            Yuv4MpegMuxer::new(3, 2, Rational::new(25, 1).unwrap(), None)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::Unsupported
+        );
         assert!(Yuv4MpegMuxer::new(2, 2, Rational::new(0, 1).unwrap(), None).is_err());
         assert!(
             Yuv4MpegMuxer::new(2, 2, Rational::new(25, 1).unwrap(), Some(Rational::ZERO)).is_err()
