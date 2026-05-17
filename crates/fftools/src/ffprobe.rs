@@ -1779,6 +1779,7 @@ mod tests {
         assert!(rendered.contains("color_transfer=bt709\n"));
         assert!(rendered.contains("color_primaries=bt709\n"));
         assert!(rendered.contains("field_order=unknown\n"));
+        assert!(rendered.contains("time_base=1/90000\n"));
         assert!(rendered.contains("start_pts=0\n"));
         assert!(rendered.contains("start_time=0.000000\n"));
         assert!(rendered.contains("r_frame_rate=30/1\n"));
@@ -1966,6 +1967,7 @@ mod tests {
         assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
         assert!(stdout.contains(&format!("\"extradata_size\": {expected_extradata_size}")));
         assert!(stdout.contains("\"field_order\": \"unknown\""));
+        assert!(stdout.contains("\"time_base\": \"1/90000\""));
         assert!(stdout.contains("\"nb_frames\": 1"));
         assert!(stdout.contains("\"start_pts\": 0"));
         assert!(stdout.contains("\"start_time\": \"0.000000\""));

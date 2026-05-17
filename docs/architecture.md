@@ -66,7 +66,7 @@ For the current constrained MOV/MP4 and AVI ffprobe paths, `nb_programs` and `nb
 
 ## Test Architecture
 
-The current `ffprobe-rs` stream report includes `start_pts`/`start_time` for non-empty constrained MOV/AVI inputs whose parsers model zero-origin timestamps, plus `r_frame_rate` using already parsed timing metadata. It reports `duration_ts`/`duration` from MOV `mdhd` media duration/timescale or AVI stream length/time base, and `coded_width`/`coded_height` for video streams currently mirror parsed display dimensions because the constrained demuxer model has no separate cropping or codec-parser dimension layer yet. MOV currently derives rate from sample count, media duration, and timescale for the simple constant-duration fixtures covered by tests; broader FFmpeg timeline and rate-guessing parity remains incomplete.
+The current `ffprobe-rs` stream report includes `time_base` from MOV `mdhd` media timescale or AVI stream scale/rate, `start_pts`/`start_time` for non-empty constrained MOV/AVI inputs whose parsers model zero-origin timestamps, plus `r_frame_rate` using already parsed timing metadata. It reports `duration_ts`/`duration` from MOV `mdhd` media duration/timescale or AVI stream length/time base, and `coded_width`/`coded_height` for video streams currently mirror parsed display dimensions because the constrained demuxer model has no separate cropping or codec-parser dimension layer yet. MOV currently derives rate from sample count, media duration, and timescale for the simple constant-duration fixtures covered by tests; broader FFmpeg timeline and rate-guessing parity remains incomplete.
 
 Video stream `field_order` is currently reported as `unknown` because the constrained MOV/AVI demuxers do not yet parse field-order metadata.
 
