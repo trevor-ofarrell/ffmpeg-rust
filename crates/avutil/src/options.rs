@@ -167,6 +167,10 @@ impl OptionFlags {
         (self.bits & other.bits) == other.bits
     }
 
+    pub const fn intersects(self, other: Self) -> bool {
+        (self.bits & other.bits) != 0
+    }
+
     pub fn insert(&mut self, other: Self) {
         self.bits |= other.bits;
         self.bits &= Self::KNOWN_BITS;
@@ -182,6 +186,99 @@ impl OptionFlags {
         } else {
             self.remove(other);
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct OptionQuery {
+    name: Option<String>,
+    unit: Option<String>,
+    required_flags: OptionFlags,
+    rejected_flags: OptionFlags,
+    search_children: bool,
+}
+
+impl OptionQuery {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn exported() -> Self {
+        Self::new().require_flags(OptionFlags::EXPORT)
+    }
+
+    pub fn writable() -> Self {
+        Self::new().reject_flags(OptionFlags::READONLY)
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> AvResult<Self> {
+        self.name = Some(validate_name(&name.into())?);
+        Ok(self)
+    }
+
+    pub fn with_unit(mut self, unit: impl Into<String>) -> AvResult<Self> {
+        self.unit = Some(validate_unit(&unit.into())?);
+        Ok(self)
+    }
+
+    pub fn require_flags(mut self, flags: OptionFlags) -> Self {
+        self.required_flags = OptionFlags::from_bits_truncate(flags.bits());
+        self
+    }
+
+    pub fn reject_flags(mut self, flags: OptionFlags) -> Self {
+        self.rejected_flags = OptionFlags::from_bits_truncate(flags.bits());
+        self
+    }
+
+    pub fn include_children(mut self, include: bool) -> Self {
+        self.search_children = include;
+        self
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub fn unit(&self) -> Option<&str> {
+        self.unit.as_deref()
+    }
+
+    pub fn required_flags(&self) -> OptionFlags {
+        self.required_flags
+    }
+
+    pub fn rejected_flags(&self) -> OptionFlags {
+        self.rejected_flags
+    }
+
+    pub fn searches_children(&self) -> bool {
+        self.search_children
+    }
+
+    fn matches(&self, definition: &OptionDefinition) -> bool {
+        if let Some(name) = &self.name {
+            if !ascii_eq_ignore_case(definition.name(), name) {
+                return false;
+            }
+        }
+
+        if let Some(unit) = &self.unit {
+            match definition.unit() {
+                Some(definition_unit) if ascii_eq_ignore_case(definition_unit, unit) => {}
+                _ => return false,
+            }
+        }
+
+        if !definition.flags().contains(self.required_flags) {
+            return false;
+        }
+
+        if !self.rejected_flags.is_empty() && definition.flags().intersects(self.rejected_flags) {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -291,6 +388,36 @@ impl OptionDefinition {
 
     pub fn validate_value(&self, value: &OptionValue) -> AvResult<()> {
         validate_value_for_kind(&self.kind, value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OptionMatch<'a> {
+    child_name: Option<&'a str>,
+    definition: &'a OptionDefinition,
+}
+
+impl<'a> OptionMatch<'a> {
+    fn root(definition: &'a OptionDefinition) -> Self {
+        Self {
+            child_name: None,
+            definition,
+        }
+    }
+
+    fn child(child_name: &'a str, definition: &'a OptionDefinition) -> Self {
+        Self {
+            child_name: Some(child_name),
+            definition,
+        }
+    }
+
+    pub fn child_name(&self) -> Option<&'a str> {
+        self.child_name
+    }
+
+    pub fn definition(&self) -> &'a OptionDefinition {
+        self.definition
     }
 }
 
@@ -415,6 +542,32 @@ impl OptionSet {
 
     pub fn definition(&self, name: &str) -> Option<&OptionDefinition> {
         self.find_index(name).map(|index| &self.definitions[index])
+    }
+
+    pub fn definitions_matching<'a>(&'a self, query: &OptionQuery) -> Vec<OptionMatch<'a>> {
+        let mut matches = Vec::new();
+
+        for definition in &self.definitions {
+            if query.matches(definition) {
+                matches.push(OptionMatch::root(definition));
+            }
+        }
+
+        if query.searches_children() {
+            for child in &self.children {
+                for definition in child.options().definitions() {
+                    if query.matches(definition) {
+                        matches.push(OptionMatch::child(child.name(), definition));
+                    }
+                }
+            }
+        }
+
+        matches
+    }
+
+    pub fn first_definition_matching<'a>(&'a self, query: &OptionQuery) -> Option<OptionMatch<'a>> {
+        self.definitions_matching(query).into_iter().next()
     }
 
     pub fn child(&self, name: &str) -> Option<&OptionChild> {
@@ -710,6 +863,8 @@ mod tests {
         assert_eq!(truncated.bits() & !OptionFlags::all().bits(), 0);
         assert!(truncated.contains(OptionFlags::ENCODING_PARAM));
         assert!(truncated.contains(OptionFlags::CHILD_CONSTS));
+        assert!(truncated.intersects(OptionFlags::EXPORT));
+        assert!(!OptionFlags::VIDEO_PARAM.intersects(OptionFlags::AUDIO_PARAM));
     }
 
     #[test]
@@ -1043,6 +1198,164 @@ mod tests {
         assert!(OptionChild::new("", OptionSet::new(), "").is_err());
         assert!(OptionChild::new("bad\0child", OptionSet::new(), "").is_err());
         assert!(OptionChild::new("child", OptionSet::new(), "bad\0help").is_err());
+    }
+
+    #[test]
+    fn option_queries_filter_by_name_unit_flags_and_order() {
+        let mut options = sample_options();
+        options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "exported",
+                    OptionKind::Int { min: 0, max: 8 },
+                    OptionValue::Int(4),
+                    "exported value",
+                    OptionFlags::from_bits_truncate(
+                        OptionFlags::EXPORT.bits() | OptionFlags::READONLY.bits(),
+                    ),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "video_only",
+                    OptionKind::Bool,
+                    OptionValue::Bool(false),
+                    "video option",
+                    OptionFlags::VIDEO_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let named = options
+            .first_definition_matching(&OptionQuery::new().with_name("THREADS").unwrap())
+            .unwrap();
+        let unit_names: Vec<_> = options
+            .definitions_matching(&OptionQuery::new().with_unit("PRESET").unwrap())
+            .into_iter()
+            .map(|found| found.definition().name())
+            .collect();
+        let exported_names: Vec<_> = options
+            .definitions_matching(&OptionQuery::exported())
+            .into_iter()
+            .map(|found| found.definition().name())
+            .collect();
+        let writable_names: Vec<_> = options
+            .definitions_matching(&OptionQuery::writable())
+            .into_iter()
+            .map(|found| found.definition().name())
+            .collect();
+        let video_names: Vec<_> = options
+            .definitions_matching(&OptionQuery::new().require_flags(OptionFlags::VIDEO_PARAM))
+            .into_iter()
+            .map(|found| found.definition().name())
+            .collect();
+
+        assert_eq!(named.child_name(), None);
+        assert_eq!(named.definition().name(), "threads");
+        assert_eq!(unit_names, vec!["preset_level"]);
+        assert_eq!(exported_names, vec!["exported"]);
+        assert!(!writable_names.contains(&"exported"));
+        assert!(writable_names.contains(&"threads"));
+        assert_eq!(video_names, vec!["video_only"]);
+    }
+
+    #[test]
+    fn option_queries_can_search_child_option_sets() {
+        let mut parent = sample_options();
+        let mut child_options = OptionSet::new();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 16 },
+                    OptionValue::Int(2),
+                    "child worker count",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "secret",
+                    OptionKind::String { allow_empty: false },
+                    OptionValue::String("hidden".to_owned()),
+                    "child private value",
+                    OptionFlags::READONLY,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        parent
+            .define_child(OptionChild::new("decoder", child_options, "").unwrap())
+            .unwrap();
+
+        let root_only: Vec<_> = parent
+            .definitions_matching(&OptionQuery::new().with_name("threads").unwrap())
+            .into_iter()
+            .map(|found| (found.child_name(), found.definition().name()))
+            .collect();
+        let with_children: Vec<_> = parent
+            .definitions_matching(
+                &OptionQuery::new()
+                    .with_name("threads")
+                    .unwrap()
+                    .include_children(true),
+            )
+            .into_iter()
+            .map(|found| (found.child_name(), found.definition().name()))
+            .collect();
+        let decoding: Vec<_> = parent
+            .definitions_matching(
+                &OptionQuery::new()
+                    .require_flags(OptionFlags::DECODING_PARAM)
+                    .include_children(true),
+            )
+            .into_iter()
+            .map(|found| (found.child_name(), found.definition().name()))
+            .collect();
+        let writable_child: Vec<_> = parent
+            .definitions_matching(
+                &OptionQuery::writable()
+                    .with_name("secret")
+                    .unwrap()
+                    .include_children(true),
+            )
+            .into_iter()
+            .map(|found| (found.child_name(), found.definition().name()))
+            .collect();
+
+        assert_eq!(root_only, vec![(None, "threads")]);
+        assert_eq!(
+            with_children,
+            vec![(None, "threads"), (Some("decoder"), "threads")]
+        );
+        assert_eq!(decoding, vec![(Some("decoder"), "threads")]);
+        assert!(writable_child.is_empty());
+    }
+
+    #[test]
+    fn option_queries_validate_name_and_unit_metadata() {
+        assert!(OptionQuery::new().with_name("").is_err());
+        assert!(OptionQuery::new().with_name("bad\0name").is_err());
+        assert!(OptionQuery::new().with_unit("").is_err());
+        assert!(OptionQuery::new().with_unit("bad\0unit").is_err());
+
+        let query = OptionQuery::new()
+            .require_flags(OptionFlags::from_bits_truncate(u32::MAX))
+            .reject_flags(OptionFlags::from_bits_truncate(u32::MAX))
+            .include_children(true);
+
+        assert_eq!(query.required_flags(), OptionFlags::all());
+        assert_eq!(query.rejected_flags(), OptionFlags::all());
+        assert!(query.searches_children());
+        assert_eq!(query.name(), None);
+        assert_eq!(query.unit(), None);
     }
 
     fn sample_options() -> OptionSet {

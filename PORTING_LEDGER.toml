@@ -331,11 +331,14 @@ unit_tests = [
   "options::tests::child_option_sets_register_independent_option_namespaces",
   "options::tests::duplicate_child_option_sets_are_rejected_case_insensitively",
   "options::tests::invalid_child_option_set_metadata_is_rejected",
+  "options::tests::option_queries_filter_by_name_unit_flags_and_order",
+  "options::tests::option_queries_can_search_child_option_sets",
+  "options::tests::option_queries_validate_name_and_unit_metadata",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_metadata_options"]
-notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. OptionFlags stores and truncates the currently known public AVOption flag bits, READONLY options reject parsed and typed mutation without changing the current value, option definitions can carry unit names with unit-scoped named constants resolved case-insensitively by set_from_str, numeric option ranges can be queried through OptionRange, and child option sets can be registered and queried with independent option namespaces. Build-checked cargo-fuzz target avutil_metadata_options covers option definition validation, duplicate rejection, parsed values, direct typed values, range query invariants, string NUL/empty validation, flag truncation, unit constant scoping, read-only mutation rejection, child option-set registration, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. CLI option ordering, richer AVOption query/export behavior, and oracle differential vectors are pending, so this is not marked complete."
+notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. OptionFlags stores and truncates the currently known public AVOption flag bits and reports flag intersections, READONLY options reject parsed and typed mutation without changing the current value, option definitions can carry unit names with unit-scoped named constants resolved case-insensitively by set_from_str, numeric option ranges can be queried through OptionRange, child option sets can be registered and queried with independent option namespaces, and OptionQuery filters root or direct-child definitions by case-insensitive name, unit, required flags, rejected flags, and exported/writable presets. Build-checked cargo-fuzz target avutil_metadata_options covers option definition validation, duplicate rejection, parsed values, direct typed values, range query invariants, string NUL/empty validation, flag truncation/intersection, unit constant scoping, read-only mutation rejection, child option-set registration, query filtering, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. CLI option ordering, full AVOption API parity, and oracle differential vectors are pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]

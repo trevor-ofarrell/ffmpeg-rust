@@ -2,7 +2,7 @@
 
 use avutil::{
     Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant, OptionDefinition,
-    OptionFlags, OptionKind, OptionSet, OptionValue, SetMode,
+    OptionFlags, OptionKind, OptionQuery, OptionSet, OptionValue, SetMode,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -79,7 +79,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 7 {
+        match cursor.next().unwrap_or_default() % 8 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -145,6 +145,17 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
             }
             5 => {
+                let before = options.clone();
+                let query = generated_query(cursor);
+                if let Ok(query) = query {
+                    let matches = options.definitions_matching(&query);
+                    for found in matches {
+                        assert_option_match_satisfies_query(&query, found);
+                    }
+                }
+                assert_eq!(options, before);
+            }
+            6 => {
                 let _ = options.get(&option_name_from(cursor));
             }
             _ => {
@@ -231,6 +242,30 @@ fn exercise_fixtures() {
     assert!(options
         .define_child(OptionChild::new("ENCODER", OptionSet::new(), "").unwrap())
         .is_err());
+
+    let exported = options.definitions_matching(&OptionQuery::exported());
+    assert_eq!(exported.len(), 1);
+    assert_eq!(exported[0].definition().name(), "readonly");
+    assert_eq!(exported[0].child_name(), None);
+    assert!(options
+        .definitions_matching(
+            &OptionQuery::writable()
+                .with_name("readonly")
+                .unwrap()
+                .include_children(true),
+        )
+        .is_empty());
+    assert_eq!(
+        options
+            .definitions_matching(
+                &OptionQuery::new()
+                    .with_name("THREADS")
+                    .unwrap()
+                    .include_children(true),
+            )
+            .len(),
+        2
+    );
 }
 
 fn assert_valid_dictionary(dict: &Dictionary) {
@@ -298,6 +333,25 @@ fn assert_option_value_is_valid(options: &OptionSet, name: &str) {
     definition.validate_value(value).unwrap();
 }
 
+fn assert_option_match_satisfies_query(query: &OptionQuery, found: avutil::OptionMatch<'_>) {
+    let definition = found.definition();
+    if let Some(name) = query.name() {
+        assert!(ascii_eq_ignore_case(definition.name(), name));
+    }
+    if let Some(unit) = query.unit() {
+        assert!(definition
+            .unit()
+            .is_some_and(|definition_unit| ascii_eq_ignore_case(definition_unit, unit)));
+    }
+    assert!(definition.flags().contains(query.required_flags()));
+    if !query.rejected_flags().is_empty() {
+        assert!(!definition.flags().intersects(query.rejected_flags()));
+    }
+    if found.child_name().is_some() {
+        assert!(query.searches_children());
+    }
+}
+
 fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefinition> {
     let name = option_name_from(cursor);
     let help = literal_from(cursor);
@@ -334,6 +388,29 @@ fn generated_child(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionChild> {
     let options = generated_child_options(cursor);
     let help = literal_from(cursor);
     OptionChild::new(name, options, help)
+}
+
+fn generated_query(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionQuery> {
+    let mut query = match cursor.next().unwrap_or_default() % 3 {
+        0 => OptionQuery::new(),
+        1 => OptionQuery::exported(),
+        _ => OptionQuery::writable(),
+    };
+
+    if cursor.next().unwrap_or_default().is_multiple_of(2) {
+        query = query.with_name(option_name_from(cursor))?;
+    }
+    if cursor.next().unwrap_or_default().is_multiple_of(3) {
+        query = query.with_unit(option_unit_from(cursor))?;
+    }
+    if cursor.next().unwrap_or_default().is_multiple_of(2) {
+        query = query.require_flags(option_flags_from(cursor.next()));
+    }
+    if cursor.next().unwrap_or_default().is_multiple_of(2) {
+        query = query.reject_flags(option_flags_from(cursor.next()));
+    }
+
+    Ok(query.include_children(cursor.next().unwrap_or_default().is_multiple_of(2)))
 }
 
 fn generated_child_options(cursor: &mut Cursor<'_>) -> OptionSet {
