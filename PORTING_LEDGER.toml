@@ -109,11 +109,15 @@ rust_command = "cargo test -p avutil logging"
 unit_tests = [
   "logging::tests::logger_filters_by_level",
   "logging::tests::quiet_suppresses_all_records",
+  "logging::tests::log_levels_match_ffmpeg_values_and_names",
+  "logging::tests::record_formats_level_target_and_message",
+  "logging::tests::callback_runs_only_for_accepted_records",
+  "logging::tests::set_level_clear_and_take_records_control_buffer",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "In-memory log filtering abstraction implemented. Formatting and callback parity are incomplete."
+notes = "In-memory log filtering abstraction implemented with FFmpeg-style numeric/name level mapping, deterministic record formatting, buffer control, and per-record callback dispatch. Full av_log global callback, repeated-line, flag, color, and byte-identical formatting parity are incomplete."
 blocked_reason = ""
 
 [[component]]

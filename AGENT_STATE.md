@@ -2,6 +2,8 @@
 
 ## Current Status
 
+`avutil-logging` now has a stronger implemented primitive. `LogLevel` exposes FFmpeg-style numeric severity values and level names, `LogRecord` has deterministic no-newline formatting, and `Logger` now reports enablement, returns acceptance from `log`, suppresses quiet records, supports clear/take buffer control, and can dispatch accepted records through a per-call callback. The ledger still keeps `avutil-logging` at `implemented`, not `complete`, because byte-identical `av_log` formatting, global callback installation, repeated-line suppression, flags, color handling, CLI stderr integration, oracle differential tests, and FATE coverage remain incomplete.
+
 `fate-runner` now has a tested explicit mapping format, prerequisite model, loader, mapping report command, and dry-run path. It parses component IDs from `PORTING_LEDGER.toml`, lists all configured mappings from `tests/fate/mappings.txt` independently of component selection, can audit all mapping prerequisites with `--check-prereqs`, maps git changed paths for the currently covered Rust modules to ledger component IDs, preserves ledger order, reports unmapped implementation paths instead of silently ignoring them, includes untracked files in changed-path discovery, parses pipe-separated mappings from `tests/fate/mappings.txt`, expands `{samples}` and `{oracle_ffmpeg}` placeholders only for mappings that require them, validates the samples path as an existing directory and the oracle path as an existing file, can dry-run selected mappings without spawning commands, and executes only explicitly mapped commands when not in dry-run mode. The default mapping file contains `fate-runner|local-self-test`, which runs `cargo test -p fate-runner` and proves runner wiring without claiming upstream FFmpeg FATE media parity. Upstream FATE samples and media component mappings remain absent.
 
 `fuzz` now contains the first cargo-fuzz harness package, kept outside the main workspace. `avcodec_basic_decoders` fuzzes rawvideo and pcm_s16le decoder constructor validation, packet-size rejection, decoded frame shape, payload preservation, and PTS propagation. `avutil_byteio` fuzzes bounded byte reads, EOF cursor invariants, and byte writer helper paths. `avutil_bitreader` fuzzes bit reads, peeks, skips, byte alignment, bit writer width validation, and cursor invariants. `avutil_metadata_options` fuzzes metadata dictionary key/value validation, case-sensitive and case-insensitive mutation, lookup/removal/clear operations, AVOption-like definition validation, parsed values, direct typed values, range/type/string checks, and failed-mutation invariants. `avutil_core_models` fuzzes rational/timebase math, packet timestamp/side-data invariants, pixel/sample/channel-layout validation, frame shape validation, and streaming checksum equivalence. `avformat_probe` fuzzes probe descriptor validation, generated registry mutation, AVI/MOV descriptors, extension/MIME/signature scoring, deterministic tie behavior, and explainable matches. `avformat_wav` fuzzes RIFF/WAVE PCM s16le demuxer opening, packet emission, and parsed stream invariants. `avformat_yuv4mpegpipe` fuzzes YUV4MPEG2 demuxer opening, frame packet emission, and parsed stream invariants. `avformat_pcm_s16le` fuzzes raw PCM s16le demuxer parameter validation, packet slicing, packet timing, and side-data invariants. `avformat_rawvideo` fuzzes rawvideo demuxer geometry/format/rate validation, frame slicing, packet timing, and side-data invariants. `avformat_avi` fuzzes constrained RIFF AVI demuxer chunk parsing, stream metadata, packet timing, and side-data invariants. `avformat_avi_muxer` fuzzes constrained RGB24 AVI muxer constructor validation, packet validation, header/render stability, word padding behavior, finish behavior, and demuxer round trips. `avformat_mov` fuzzes constrained MOV/MP4 box parsing, sample-table packet extraction, stream metadata, packet timing, and side-data invariants. `avformat_image2` fuzzes image2 pattern parsing, entry sequence validation, packet timing/path side data, muxer path generation, invalid packet handling, finish behavior, and mux-demux round trips. `avformat_basic_muxers` fuzzes WAV, raw PCM s16le, rawvideo, and yuv4mpegpipe muxer packet validation, state non-mutation on rejected packets, accounting, render/finish behavior, post-finish rejection, and matching-demuxer round trips. `avformat_packet_muxers` fuzzes null/hash/framecrc packet accounting, sparse stream stats, timestamp propagation, Adler-32/CRC-32 digest stability, per-packet CRC record fields, render/finish stability, and post-finish rejection. `fftools_option_parser` fuzzes bounded argv parsing, option arity invariants, stream-specifier option names, file/global grouping, and parse/render/parse stability. The harness package builds and passes clippy when Cargo can resolve cached/downloaded `libfuzzer-sys`, but the `cargo fuzz` subcommand is not installed in this environment, so actual fuzz execution remains blocked locally.
@@ -20,6 +22,13 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo test -p avutil logging`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
 - `cargo fmt --all --manifest-path fuzz/Cargo.toml`
 - `cargo check --manifest-path fuzz/Cargo.toml --bins`
 - `cargo clippy --manifest-path fuzz/Cargo.toml --bins -- -D warnings`
@@ -883,13 +892,13 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Current Focus Component
 
-Fuzz harness coverage is the latest focus. Initial cargo-fuzz targets now cover avcodec rawvideo and pcm_s16le decoder invariants, avutil byteio/bitreader/bitwriter invariants, metadata dictionary and AVOption-like value handling, avutil rational/timebase, packet/frame, pixel/sample/channel-layout, and checksum invariants, probe registry scoring, WAV, yuv4mpegpipe, raw PCM s16le, rawvideo, constrained AVI demuxer, constrained RGB24 AVI muxer, constrained MOV/MP4, image2 path/sequence handling, WAV/raw PCM/rawvideo/yuv4mpegpipe muxer invariants, null/hash/framecrc packet muxer invariants, and FFmpeg-style option parser invariants, but actual local `cargo fuzz run` execution is blocked because the `cargo-fuzz` subcommand is not installed.
+`avutil-logging` is the latest focus. Its in-memory logger now has FFmpeg-style level values/names, deterministic formatting, buffer control, and per-call callback dispatch, but it remains incomplete until full `av_log` formatting/callback behavior, CLI integration, differential tests, and FATE coverage exist.
 
 ## Next 3 Concrete Actions
 
-1. Add the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
-2. Add fuzz targets for the next untrusted or packet-processing surfaces, starting with the next implemented muxer/parser/decoder without fuzz coverage.
-3. Expand pixel/sample/channel layout coverage from pinned `ffmpeg -pix_fmts`, `-sample_fmts`, and `-layouts` inventories once the FFmpeg 8.1.1 oracle binary exists.
+1. Continue priority-1 avutil completeness, starting with the next implemented primitive whose ledger still records missing parity coverage or narrow behavior.
+2. Wire the shared logging model into CLI stderr/loglevel handling once doing so can be tested without overclaiming byte-identical `av_log` output.
+3. Add the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
 
 ## Known Blockers
 
@@ -901,4 +910,4 @@ Fuzz harness coverage is the latest focus. Initial cargo-fuzz targets now cover 
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added build-checked cargo-fuzz target `avutil_core_models` plus seed corpora, updated priority-1 avutil rational, timebase, packet, frame, pixel-format, sample-format, channel-layout, and hash ledger fuzz target fields, and documented that actual local fuzz execution remains blocked until `cargo-fuzz` is installed.
+Latest slice: improved `avutil-logging` with FFmpeg-style level value/name mapping, deterministic record formatting, accepted-record callback dispatch, buffer clear/take controls, and focused unit coverage; updated the ledger and docs while keeping the component below `complete`.
