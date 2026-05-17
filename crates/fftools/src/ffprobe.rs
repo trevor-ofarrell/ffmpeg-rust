@@ -107,6 +107,8 @@ pub struct FfprobeStreamReport {
     codec_tag: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
+    coded_width: Option<u32>,
+    coded_height: Option<u32>,
     bits_per_raw_sample: Option<u16>,
     extradata_size: Option<usize>,
     is_avc: Option<bool>,
@@ -173,6 +175,14 @@ impl FfprobeStreamReport {
 
     pub fn height(&self) -> Option<u32> {
         self.height
+    }
+
+    pub fn coded_width(&self) -> Option<u32> {
+        self.coded_width
+    }
+
+    pub fn coded_height(&self) -> Option<u32> {
+        self.coded_height
     }
 
     pub fn bits_per_raw_sample(&self) -> Option<u16> {
@@ -636,6 +646,8 @@ fn report_from_mov(path: &str, probe_score: u8, info: &MovInfo) -> FfprobeReport
                 codec_tag_string,
                 width: track.width(),
                 height: track.height(),
+                coded_width: track.width(),
+                coded_height: track.height(),
                 bits_per_raw_sample: mov_bits_per_raw_sample(track.codec_tag(), video_sample_entry),
                 extradata_size: mov_extradata_size(track),
                 is_avc: mov_is_avc(video_sample_entry),
@@ -725,6 +737,8 @@ fn report_from_avi(path: &str, info: &AviInfo) -> FfprobeReport {
                 codec_tag_string: Some(stream.handler().to_owned()),
                 width: Some(stream.width()),
                 height: Some(stream.height()),
+                coded_width: Some(stream.width()),
+                coded_height: Some(stream.height()),
                 bits_per_raw_sample: Some(stream.bit_count()),
                 extradata_size: None,
                 is_avc: None,
@@ -1180,6 +1194,12 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             if let Some(height) = stream.height {
                 out.push_str(&format!("height={height}\n"));
             }
+            if let Some(coded_width) = stream.coded_width {
+                out.push_str(&format!("coded_width={coded_width}\n"));
+            }
+            if let Some(coded_height) = stream.coded_height {
+                out.push_str(&format!("coded_height={coded_height}\n"));
+            }
             if let Some(bits_per_raw_sample) = stream.bits_per_raw_sample {
                 out.push_str(&format!("bits_per_raw_sample={bits_per_raw_sample}\n"));
             }
@@ -1331,6 +1351,12 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     }
     if let Some(height) = stream.height {
         fields.push(json_number("height", height));
+    }
+    if let Some(coded_width) = stream.coded_width {
+        fields.push(json_number("coded_width", coded_width));
+    }
+    if let Some(coded_height) = stream.coded_height {
+        fields.push(json_number("coded_height", coded_height));
     }
     if let Some(bits_per_raw_sample) = stream.bits_per_raw_sample {
         fields.push(json_number("bits_per_raw_sample", bits_per_raw_sample));
@@ -1617,6 +1643,8 @@ mod tests {
         assert!(rendered.contains("codec_type=video\n"));
         assert!(rendered.contains("codec_tag_string=raw \n"));
         assert!(rendered.contains("codec_tag=0x20776172\n"));
+        assert!(rendered.contains("coded_width=1920\n"));
+        assert!(rendered.contains("coded_height=1080\n"));
         assert!(rendered.contains("bits_per_raw_sample=24\n"));
         assert!(rendered.contains("extradata_size=70\n"));
         assert!(rendered.contains("sample_aspect_ratio=1:1\n"));
@@ -1742,6 +1770,8 @@ mod tests {
         assert!(stdout.contains("\"codec_tag\": \"0x20776172\""));
         assert!(stdout.contains("\"width\": 1920"));
         assert!(stdout.contains("\"height\": 1080"));
+        assert!(stdout.contains("\"coded_width\": 1920"));
+        assert!(stdout.contains("\"coded_height\": 1080"));
         assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
         assert!(stdout.contains(&format!("\"extradata_size\": {expected_extradata_size}")));
         assert!(stdout.contains("\"start_pts\": 0"));
@@ -1790,6 +1820,8 @@ mod tests {
         assert!(stdout.contains("\"codec_tag\": \"0x31637661\""));
         assert!(stdout.contains("\"width\": 720"));
         assert!(stdout.contains("\"height\": 576"));
+        assert!(stdout.contains("\"coded_width\": 720"));
+        assert!(stdout.contains("\"coded_height\": 576"));
         assert!(stdout.contains(&format!("\"extradata_size\": {expected_extradata_size}")));
         assert!(stdout.contains("\"is_avc\": \"true\""));
         assert!(stdout.contains("\"nal_length_size\": \"4\""));
@@ -1962,6 +1994,8 @@ mod tests {
         assert!(stdout.contains("\"codec_tag\": \"0x20424944\""));
         assert!(stdout.contains("\"width\": 2"));
         assert!(stdout.contains("\"height\": 1"));
+        assert!(stdout.contains("\"coded_width\": 2"));
+        assert!(stdout.contains("\"coded_height\": 1"));
         assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
         assert!(stdout.contains("\"time_base\": \"1/25\""));
         assert!(stdout.contains("\"start_pts\": 0"));
@@ -2051,6 +2085,8 @@ mod tests {
                 codec_tag: Some("0x20776172".to_string()),
                 width: Some(1920),
                 height: Some(1080),
+                coded_width: Some(1920),
+                coded_height: Some(1080),
                 bits_per_raw_sample: Some(24),
                 extradata_size: Some(70),
                 is_avc: None,
