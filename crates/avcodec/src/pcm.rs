@@ -69,7 +69,7 @@ impl PcmS16leDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use avutil::{AvErrorKind, FrameData};
+    use avutil::{AvErrorKind, ChannelLayout, FrameData};
 
     #[test]
     fn decodes_stereo_s16le_packet_to_packed_audio_frame() {
@@ -84,6 +84,7 @@ mod tests {
             FrameData::Audio(audio) => {
                 assert_eq!(audio.sample_rate(), 48_000);
                 assert_eq!(audio.channels(), 2);
+                assert_eq!(audio.channel_layout(), Some(ChannelLayout::stereo()));
                 assert_eq!(audio.sample_format(), SampleFormat::S16);
                 assert_eq!(audio.sample_format_name(), "s16");
                 assert_eq!(audio.samples_per_channel(), 2);
@@ -100,6 +101,7 @@ mod tests {
 
         match frame.data() {
             FrameData::Audio(audio) => {
+                assert_eq!(audio.channel_layout(), Some(ChannelLayout::mono()));
                 assert_eq!(audio.samples_per_channel(), 0);
                 assert_eq!(audio.planes(), &[Vec::<u8>::new()]);
             }

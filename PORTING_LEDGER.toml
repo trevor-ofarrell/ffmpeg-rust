@@ -94,7 +94,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Frame skeleton validates required audio/video shape and exact plane sizes through the shared initial PixelFormat and SampleFormat models. Full AVFrame fields, buffer ownership, line sizes, alignment, side data, and complete FFmpeg pixel/sample format coverage are pending."
+notes = "Frame skeleton validates required audio/video shape and exact plane sizes through the shared initial PixelFormat and SampleFormat models, and AudioFrame now carries an optional initial ChannelLayout derived for mono/stereo or supplied explicitly. Full AVFrame fields, buffer ownership, line sizes, alignment, side data, and complete FFmpeg pixel/sample/channel layout coverage are pending."
 blocked_reason = ""
 
 [[component]]
@@ -324,6 +324,27 @@ differential_tests = []
 fate_tests = []
 fuzz_targets = []
 notes = "Initial shared sample format model covers only packed s16 with FFmpeg-style naming, sample-byte sizing, packed plane counts, and per-plane payload-size validation. It is wired into avutil::AudioFrame and the pcm_s16le decoder. Full AVSampleFormat coverage, planar variants, packed/planar conversion helpers, oracle inventory comparison, FATE, and fuzzing are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-channel-layout"
+kind = "channel_layout"
+ffmpeg_name = "AVChannelLayout"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = "ffmpeg -layouts"
+rust_command = "cargo test -p avutil channel_layout"
+unit_tests = [
+  "channel_layout::tests::channels_report_ffmpeg_short_names",
+  "channel_layout::tests::named_layouts_expose_ordered_channels_and_counts",
+  "channel_layout::tests::layout_name_and_default_count_lookup_are_narrow_and_explicit",
+  "channel_layout::tests::layouts_validate_channel_counts",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "Initial shared channel layout model covers common native channel names and a narrow set of named layouts: mono, stereo, quad, 5.1, 5.1(side), and 7.1. AudioFrame derives mono/stereo from channel count for existing PCM paths and validates explicit layouts by channel count. Full AVChannelLayout order/native/custom/ambisonic semantics, all layouts from ffmpeg -layouts, layout parsing syntax, downmix layouts, oracle inventory comparison, FATE, and fuzzing are pending."
 blocked_reason = ""
 
 [[component]]

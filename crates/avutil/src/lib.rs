@@ -3,6 +3,7 @@
 pub mod bitreader;
 pub mod bitwriter;
 pub mod byteio;
+pub mod channel_layout;
 pub mod dict;
 pub mod error;
 pub mod frame;
@@ -18,6 +19,7 @@ pub mod timebase;
 pub use bitreader::BitReader;
 pub use bitwriter::BitWriter;
 pub use byteio::{ByteReader, ByteWriter};
+pub use channel_layout::{Channel, ChannelLayout};
 pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};
 pub use error::{AvError, AvErrorKind, AvResult};
 pub use frame::{AudioFrame, Frame, FrameData, VideoFrame};

@@ -1,4 +1,4 @@
-use crate::{AvError, AvResult, PixelFormat, SampleFormat};
+use crate::{AvError, AvResult, ChannelLayout, PixelFormat, SampleFormat};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameData {
@@ -113,6 +113,7 @@ impl VideoFrame {
 pub struct AudioFrame {
     sample_rate: u32,
     channels: u16,
+    channel_layout: Option<ChannelLayout>,
     sample_format: SampleFormat,
     samples_per_channel: usize,
     planes: Vec<Vec<u8>>,
@@ -122,6 +123,42 @@ impl AudioFrame {
     pub fn new(
         sample_rate: u32,
         channels: u16,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        planes: Vec<Vec<u8>>,
+    ) -> AvResult<Self> {
+        Self::new_inner(
+            sample_rate,
+            channels,
+            ChannelLayout::default_for_count(channels),
+            sample_format,
+            samples_per_channel,
+            planes,
+        )
+    }
+
+    pub fn new_with_channel_layout(
+        sample_rate: u32,
+        channel_layout: ChannelLayout,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        planes: Vec<Vec<u8>>,
+    ) -> AvResult<Self> {
+        let channels = channel_layout.channel_count();
+        Self::new_inner(
+            sample_rate,
+            channels,
+            Some(channel_layout),
+            sample_format,
+            samples_per_channel,
+            planes,
+        )
+    }
+
+    fn new_inner(
+        sample_rate: u32,
+        channels: u16,
+        channel_layout: Option<ChannelLayout>,
         sample_format: SampleFormat,
         samples_per_channel: usize,
         planes: Vec<Vec<u8>>,
@@ -136,6 +173,10 @@ impl AudioFrame {
             return Err(AvError::invalid_argument(
                 "audio channel count must be non-zero",
             ));
+        }
+
+        if let Some(layout) = channel_layout {
+            layout.validate_channel_count(channels)?;
         }
 
         let expected_plane_sizes = sample_format.plane_sizes(samples_per_channel, channels)?;
@@ -160,6 +201,7 @@ impl AudioFrame {
         Ok(Self {
             sample_rate,
             channels,
+            channel_layout,
             sample_format,
             samples_per_channel,
             planes,
@@ -172,6 +214,10 @@ impl AudioFrame {
 
     pub fn channels(&self) -> u16 {
         self.channels
+    }
+
+    pub fn channel_layout(&self) -> Option<ChannelLayout> {
+        self.channel_layout
     }
 
     pub fn sample_format(&self) -> SampleFormat {
@@ -218,9 +264,21 @@ mod tests {
             AudioFrame::new(48_000, 2, SampleFormat::S16, 1024, vec![vec![0; 4096]]).unwrap();
         assert_eq!(frame.sample_rate(), 48_000);
         assert_eq!(frame.channels(), 2);
+        assert_eq!(frame.channel_layout(), Some(ChannelLayout::stereo()));
         assert_eq!(frame.sample_format(), SampleFormat::S16);
         assert_eq!(frame.sample_format_name(), "s16");
         assert_eq!(frame.samples_per_channel(), 1024);
+
+        let mono = AudioFrame::new_with_channel_layout(
+            44_100,
+            ChannelLayout::mono(),
+            SampleFormat::S16,
+            1,
+            vec![vec![0; 2]],
+        )
+        .unwrap();
+        assert_eq!(mono.channels(), 1);
+        assert_eq!(mono.channel_layout(), Some(ChannelLayout::mono()));
     }
 
     #[test]
