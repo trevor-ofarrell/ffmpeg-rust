@@ -2,6 +2,8 @@
 
 ## Current Status
 
+`fftools` now resolves `-loglevel`/`-v` through the shared `avutil::LogLevel` model instead of treating those values as opaque strings. The ffmpeg-style option parser validates exact level names and FFmpeg numeric severities, including `-8` for quiet, while preserving global option ordering and last-option-wins resolution in `CliLogConfig`. `IoPlan` now carries the resolved global log configuration, and the ffprobe parser validates the same loglevel surface. Compound FFmpeg logging flags and real stderr emission parity remain incomplete.
+
 `avutil-logging` now has a stronger implemented primitive. `LogLevel` exposes FFmpeg-style numeric severity values and level names, `LogRecord` has deterministic no-newline formatting, and `Logger` now reports enablement, returns acceptance from `log`, suppresses quiet records, supports clear/take buffer control, and can dispatch accepted records through a per-call callback. The ledger still keeps `avutil-logging` at `implemented`, not `complete`, because byte-identical `av_log` formatting, global callback installation, repeated-line suppression, flags, color handling, CLI stderr integration, oracle differential tests, and FATE coverage remain incomplete.
 
 `fate-runner` now has a tested explicit mapping format, prerequisite model, loader, mapping report command, and dry-run path. It parses component IDs from `PORTING_LEDGER.toml`, lists all configured mappings from `tests/fate/mappings.txt` independently of component selection, can audit all mapping prerequisites with `--check-prereqs`, maps git changed paths for the currently covered Rust modules to ledger component IDs, preserves ledger order, reports unmapped implementation paths instead of silently ignoring them, includes untracked files in changed-path discovery, parses pipe-separated mappings from `tests/fate/mappings.txt`, expands `{samples}` and `{oracle_ffmpeg}` placeholders only for mappings that require them, validates the samples path as an existing directory and the oracle path as an existing file, can dry-run selected mappings without spawning commands, and executes only explicitly mapped commands when not in dry-run mode. The default mapping file contains `fate-runner|local-self-test`, which runs `cargo test -p fate-runner` and proves runner wiring without claiming upstream FFmpeg FATE media parity. Upstream FATE samples and media component mappings remain absent.
@@ -22,6 +24,21 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo test -p fftools loglevel`
+- `cargo test -p fftools log_level`
+- `cargo test -p fftools`
+- `cargo fmt --all`
+- `cargo fmt --all --manifest-path fuzz/Cargo.toml`
+- `cargo test -p fftools`
+- `cargo check --manifest-path fuzz/Cargo.toml --bins`
+- `cargo clippy --manifest-path fuzz/Cargo.toml --bins -- -D warnings`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
+- `cargo fmt --all --manifest-path fuzz/Cargo.toml -- --check`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
 - `cargo fmt --all`
 - `cargo test -p avutil logging`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
@@ -892,12 +909,12 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Current Focus Component
 
-`avutil-logging` is the latest focus. Its in-memory logger now has FFmpeg-style level values/names, deterministic formatting, buffer control, and per-call callback dispatch, but it remains incomplete until full `av_log` formatting/callback behavior, CLI integration, differential tests, and FATE coverage exist.
+`avutil-logging` and CLI loglevel wiring are the latest focus. `fftools` now validates `-loglevel`/`-v` through the shared `LogLevel` model and carries the resolved setting into `IoPlan`, but full `av_log` formatting/callback behavior, compound log flags, real CLI stderr emission parity, differential tests, and FATE coverage are still incomplete.
 
 ## Next 3 Concrete Actions
 
 1. Continue priority-1 avutil completeness, starting with the next implemented primitive whose ledger still records missing parity coverage or narrow behavior.
-2. Wire the shared logging model into CLI stderr/loglevel handling once doing so can be tested without overclaiming byte-identical `av_log` output.
+2. Extend loglevel handling toward real stderr emission only when the output shape can be tested without overclaiming byte-identical `av_log` output.
 3. Add the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
 
 ## Known Blockers
@@ -910,4 +927,4 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: improved `avutil-logging` with FFmpeg-style level value/name mapping, deterministic record formatting, accepted-record callback dispatch, buffer clear/take controls, and focused unit coverage; updated the ledger and docs while keeping the component below `complete`.
+Latest slice: wired `fftools` `-loglevel`/`-v` parsing to the shared `avutil::LogLevel` model, added exact name/numeric validation including quiet `-8`, carried resolved log config into `IoPlan`, added ffprobe loglevel validation, strengthened the option-parser fuzz harness invariant, and updated the ledger/docs while keeping logging below `complete`.

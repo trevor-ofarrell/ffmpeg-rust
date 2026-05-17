@@ -1,4 +1,4 @@
-use crate::{CliFile, CliOption, ParsedCommand};
+use crate::{log_config_from_options, CliFile, CliLogConfig, CliOption, ParsedCommand};
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,6 +58,7 @@ impl PlannedFile {
 pub struct IoPlan {
     inputs: Vec<PlannedFile>,
     outputs: Vec<PlannedFile>,
+    log_config: CliLogConfig,
 }
 
 impl IoPlan {
@@ -67,6 +68,10 @@ impl IoPlan {
 
     pub fn outputs(&self) -> &[PlannedFile] {
         &self.outputs
+    }
+
+    pub fn log_config(&self) -> CliLogConfig {
+        self.log_config
     }
 }
 
@@ -96,6 +101,9 @@ impl fmt::Display for IoPlanError {
 impl std::error::Error for IoPlanError {}
 
 pub fn build_io_plan(command: &ParsedCommand) -> Result<IoPlan, IoPlanError> {
+    let log_config = log_config_from_options(command.global_options())
+        .map_err(|err| IoPlanError::new(format!("invalid log options: {err}")))?;
+
     if command.inputs().is_empty() {
         return Err(IoPlanError::new("at least one input is required"));
     }
@@ -115,7 +123,11 @@ pub fn build_io_plan(command: &ParsedCommand) -> Result<IoPlan, IoPlanError> {
         .map(|file| PlannedFile::new(FileRole::Output, file))
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(IoPlan { inputs, outputs })
+    Ok(IoPlan {
+        inputs,
+        outputs,
+        log_config,
+    })
 }
 
 fn classify_endpoint(role: FileRole, url: &str) -> Result<Endpoint, IoPlanError> {
@@ -168,6 +180,7 @@ fn split_protocol(url: &str) -> Option<(&str, &str)> {
 mod tests {
     use super::*;
     use crate::parse_ffmpeg_args;
+    use avutil::LogLevel;
 
     #[test]
     fn builds_file_input_and_output_plan_with_options() {
@@ -262,6 +275,23 @@ mod tests {
             .unwrap_err()
             .message()
             .contains("output"));
+    }
+
+    #[test]
+    fn resolves_global_log_level_for_execution_plan() {
+        let command = parse(&[
+            "-loglevel",
+            "warning",
+            "-v",
+            "16",
+            "-i",
+            "in.wav",
+            "out.wav",
+        ]);
+
+        let plan = build_io_plan(&command).unwrap();
+
+        assert_eq!(plan.log_config().level(), LogLevel::Error);
     }
 
     #[test]

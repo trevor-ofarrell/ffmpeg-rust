@@ -3,6 +3,7 @@ use avformat::{
     register_avi_probe, register_mov_probe, AviDemuxer, AviInfo, AviMediaType, MovDemuxer, MovInfo,
     MovTrackInfo, ProbeRegistry, ProbeRequest,
 };
+use avutil::LogLevel;
 use std::{fmt, fs};
 
 const MOV_FORMAT_NAME: &str = "mov,mp4,m4a,3gp,3g2,mj2";
@@ -26,6 +27,7 @@ struct FfprobeCommand {
     count_packets: bool,
     writer_format: WriterFormat,
     input_format: Option<ForcedInputFormat>,
+    log_level: LogLevel,
     input_url: String,
 }
 
@@ -431,6 +433,7 @@ pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
     }
 
     let command = parse_ffprobe_args(args)?;
+    let _log_level = command.log_level;
     let collect_packets = command.show_packets || command.count_packets;
     let mut report = probe_local_file_inner(
         command.input_url.as_str(),
@@ -528,6 +531,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
     let mut count_packets = false;
     let mut writer_format = WriterFormat::Default;
     let mut input_format = None;
+    let mut log_level = LogLevel::Info;
     let mut input_url = None;
     let mut index = 0;
 
@@ -566,7 +570,10 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
                 index += 2;
             }
             "-v" | "-loglevel" => {
-                take_value(args, index, arg)?;
+                let value = take_log_level_value(args, index, arg)?;
+                log_level = crate::parse_log_level_value(value).ok_or_else(|| {
+                    FfprobeError::usage(format!("invalid loglevel `{value}` for `{arg}`"))
+                })?;
                 index += 2;
             }
             "-i" => {
@@ -597,6 +604,7 @@ fn parse_ffprobe_args(args: &[String]) -> Result<FfprobeCommand, FfprobeError> {
         count_packets,
         writer_format,
         input_format,
+        log_level,
         input_url,
     })
 }
@@ -611,6 +619,23 @@ fn take_value<'a>(
         .get(value_index)
         .ok_or_else(|| FfprobeError::usage(format!("missing value for option `{option}`")))?;
     if value.starts_with('-') && value != "-" {
+        return Err(FfprobeError::usage(format!(
+            "missing value for option `{option}` before `{value}`"
+        )));
+    }
+    Ok(value)
+}
+
+fn take_log_level_value<'a>(
+    args: &'a [String],
+    option_index: usize,
+    option: &str,
+) -> Result<&'a str, FfprobeError> {
+    let value_index = option_index + 1;
+    let value = args
+        .get(value_index)
+        .ok_or_else(|| FfprobeError::usage(format!("missing value for option `{option}`")))?;
+    if value.starts_with('-') && value != "-" && value.parse::<i32>().is_err() {
         return Err(FfprobeError::usage(format!(
             "missing value for option `{option}` before `{value}`"
         )));
@@ -1712,7 +1737,32 @@ mod tests {
         assert!(command.count_packets);
         assert_eq!(command.writer_format, WriterFormat::Json);
         assert_eq!(command.input_format, Some(ForcedInputFormat::Avi));
+        assert_eq!(command.log_level, LogLevel::Error);
         assert_eq!(command.input_url, "clip.mp4");
+    }
+
+    #[test]
+    fn parses_and_rejects_ffprobe_loglevel_values() {
+        let command =
+            parse_ffprobe_args(&strings(&["-v", "-8", "-show_format", "clip.mp4"])).unwrap();
+
+        assert_eq!(command.log_level, LogLevel::Quiet);
+
+        assert!(parse_ffprobe_args(&strings(
+            &["-loglevel", "warn", "-show_format", "clip.mp4",]
+        ))
+        .unwrap_err()
+        .message()
+        .contains("invalid loglevel"));
+        assert!(parse_ffprobe_args(&strings(&[
+            "-v",
+            "-not-a-level",
+            "-show_format",
+            "clip.mp4",
+        ]))
+        .unwrap_err()
+        .message()
+        .contains("missing value"));
     }
 
     #[test]

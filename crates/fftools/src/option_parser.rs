@@ -1,3 +1,4 @@
+use avutil::LogLevel;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,9 +113,35 @@ enum OptionArity {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OptionValueKind {
+    Generic,
+    LogLevel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OptionSpec {
     scope: OptionScope,
     arity: OptionArity,
+    value_kind: OptionValueKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CliLogConfig {
+    level: LogLevel,
+}
+
+impl Default for CliLogConfig {
+    fn default() -> Self {
+        Self {
+            level: LogLevel::Info,
+        }
+    }
+}
+
+impl CliLogConfig {
+    pub fn level(&self) -> LogLevel {
+        self.level
+    }
 }
 
 pub fn parse_ffmpeg_args(args: &[String]) -> Result<ParsedCommand, CliParseError> {
@@ -126,7 +153,7 @@ pub fn parse_ffmpeg_args(args: &[String]) -> Result<ParsedCommand, CliParseError
         let arg = &args[index];
 
         if arg == "-i" {
-            let url = take_value(args, index, "-i")?;
+            let url = take_value(args, index, "-i", OptionValueKind::Generic)?;
             parsed.inputs.push(CliFile::new(
                 url.clone(),
                 take_pending(&mut pending_file_options),
@@ -146,7 +173,8 @@ pub fn parse_ffmpeg_args(args: &[String]) -> Result<ParsedCommand, CliParseError
                     CliOption::flag(option_name)
                 }
                 OptionArity::Value => {
-                    let value = take_value(args, index, arg)?;
+                    let value = take_value(args, index, arg, spec.value_kind)?;
+                    validate_option_value(option_name, &value, spec.value_kind)?;
                     index += 2;
                     CliOption::value(option_name, value.clone())
                 }
@@ -186,31 +214,50 @@ fn option_name(arg: &str) -> Result<&str, CliParseError> {
 
 fn option_spec(name: &str) -> Option<OptionSpec> {
     let base_name = name.split_once(':').map_or(name, |(base, _)| base);
-    let (scope, arity) = match base_name {
-        "hide_banner" | "y" | "n" | "nostdin" | "version" => {
-            (OptionScope::Global, OptionArity::Flag)
-        }
-        "loglevel" | "v" => (OptionScope::Global, OptionArity::Value),
-        "an" | "vn" | "sn" | "dn" | "shortest" | "bitexact" => {
-            (OptionScope::File, OptionArity::Flag)
-        }
+    let (scope, arity, value_kind) = match base_name {
+        "hide_banner" | "y" | "n" | "nostdin" | "version" => (
+            OptionScope::Global,
+            OptionArity::Flag,
+            OptionValueKind::Generic,
+        ),
+        "loglevel" | "v" => (
+            OptionScope::Global,
+            OptionArity::Value,
+            OptionValueKind::LogLevel,
+        ),
+        "an" | "vn" | "sn" | "dn" | "shortest" | "bitexact" => (
+            OptionScope::File,
+            OptionArity::Flag,
+            OptionValueKind::Generic,
+        ),
         "f" | "c" | "codec" | "map" | "ar" | "ac" | "s" | "r" | "framerate" | "pix_fmt"
-        | "start_number" | "vf" | "af" | "filter" | "metadata" => {
-            (OptionScope::File, OptionArity::Value)
-        }
+        | "start_number" | "vf" | "af" | "filter" | "metadata" => (
+            OptionScope::File,
+            OptionArity::Value,
+            OptionValueKind::Generic,
+        ),
         _ => return None,
     };
 
-    Some(OptionSpec { scope, arity })
+    Some(OptionSpec {
+        scope,
+        arity,
+        value_kind,
+    })
 }
 
-fn take_value(args: &[String], option_index: usize, option: &str) -> Result<String, CliParseError> {
+fn take_value(
+    args: &[String],
+    option_index: usize,
+    option: &str,
+    value_kind: OptionValueKind,
+) -> Result<String, CliParseError> {
     let value_index = option_index + 1;
     let value = args
         .get(value_index)
         .ok_or_else(|| CliParseError::new(format!("missing value for option `{option}`")))?;
 
-    if is_option_token(value) {
+    if is_option_token(value) && !allows_option_like_value(value_kind, value) {
         return Err(CliParseError::new(format!(
             "missing value for option `{option}` before `{value}`"
         )));
@@ -219,12 +266,57 @@ fn take_value(args: &[String], option_index: usize, option: &str) -> Result<Stri
     Ok(value.clone())
 }
 
+fn validate_option_value(
+    option: &str,
+    value: &str,
+    value_kind: OptionValueKind,
+) -> Result<(), CliParseError> {
+    match value_kind {
+        OptionValueKind::Generic => Ok(()),
+        OptionValueKind::LogLevel => parse_log_level_value(value).map(|_| ()).ok_or_else(|| {
+            CliParseError::new(format!("invalid loglevel `{value}` for `-{option}`"))
+        }),
+    }
+}
+
+fn allows_option_like_value(value_kind: OptionValueKind, value: &str) -> bool {
+    matches!(value_kind, OptionValueKind::LogLevel) && value.parse::<i32>().is_ok()
+}
+
 fn is_option_token(value: &str) -> bool {
     value.starts_with('-') && value != "-"
 }
 
 fn take_pending(options: &mut Vec<CliOption>) -> Vec<CliOption> {
     std::mem::take(options)
+}
+
+pub fn parse_log_level_value(value: &str) -> Option<LogLevel> {
+    LogLevel::from_name(value).or_else(|| {
+        value
+            .parse::<i32>()
+            .ok()
+            .and_then(LogLevel::from_ffmpeg_value)
+    })
+}
+
+pub fn log_config_from_options(options: &[CliOption]) -> Result<CliLogConfig, CliParseError> {
+    let mut config = CliLogConfig::default();
+    for option in options {
+        if matches!(option.name(), "loglevel" | "v") {
+            let value = option.value_ref().ok_or_else(|| {
+                CliParseError::new(format!("missing value for option `-{}`", option.name()))
+            })?;
+            let level = parse_log_level_value(value).ok_or_else(|| {
+                CliParseError::new(format!(
+                    "invalid loglevel `{value}` for `-{}`",
+                    option.name()
+                ))
+            })?;
+            config.level = level;
+        }
+    }
+    Ok(config)
 }
 
 #[cfg(test)]
@@ -320,6 +412,42 @@ mod tests {
         assert_eq!(parsed.global_options()[0].value_ref(), Some("error"));
         assert_eq!(parsed.inputs()[0].options()[0].name(), "f");
         assert_eq!(parsed.outputs()[0].url(), "out.mkv");
+    }
+
+    #[test]
+    fn validates_loglevel_values_with_shared_avutil_levels() {
+        let args = strings(&[
+            "-loglevel",
+            "warning",
+            "-v",
+            "-8",
+            "-i",
+            "in.wav",
+            "out.wav",
+        ]);
+
+        let parsed = parse_ffmpeg_args(&args).unwrap();
+        let config = log_config_from_options(parsed.global_options()).unwrap();
+
+        assert_eq!(parsed.global_options()[0].value_ref(), Some("warning"));
+        assert_eq!(parsed.global_options()[1].value_ref(), Some("-8"));
+        assert_eq!(config.level(), LogLevel::Quiet);
+        assert_eq!(parse_log_level_value("48"), Some(LogLevel::Debug));
+        assert_eq!(parse_log_level_value("ERROR"), Some(LogLevel::Error));
+    }
+
+    #[test]
+    fn rejects_invalid_loglevel_values() {
+        let err = parse_ffmpeg_args(&strings(&["-loglevel", "warn", "-i", "in.wav", "out.wav"]))
+            .unwrap_err();
+
+        assert!(err.message().contains("invalid loglevel"));
+        assert!(
+            parse_ffmpeg_args(&strings(&["-v", "-not-a-level", "-i", "in.wav", "out.wav"]))
+                .unwrap_err()
+                .message()
+                .contains("missing value")
+        );
     }
 
     #[test]

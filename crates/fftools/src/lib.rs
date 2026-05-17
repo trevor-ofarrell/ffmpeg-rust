@@ -12,7 +12,10 @@ pub use ffprobe::{
     ffprobe_output, probe_local_file, run_ffprobe_tool, FfprobeError, FfprobeReport,
 };
 pub use io_plan::{build_io_plan, Endpoint, FileRole, IoPlan, IoPlanError, PlannedFile};
-pub use option_parser::{parse_ffmpeg_args, CliFile, CliOption, CliParseError, ParsedCommand};
+pub use option_parser::{
+    log_config_from_options, parse_ffmpeg_args, parse_log_level_value, CliFile, CliLogConfig,
+    CliOption, CliParseError, ParsedCommand,
+};
 
 pub const TARGET_FFMPEG_VERSION: &str = "8.1.1";
 pub const TARGET_RELEASE_NAME: &str = "Hoare";

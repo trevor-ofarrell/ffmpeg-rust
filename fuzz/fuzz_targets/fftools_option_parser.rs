@@ -1,6 +1,6 @@
 #![no_main]
 
-use fftools::{parse_ffmpeg_args, CliOption, ParsedCommand};
+use fftools::{parse_ffmpeg_args, parse_log_level_value, CliOption, ParsedCommand};
 use libfuzzer_sys::fuzz_target;
 
 const MAX_ARGS: usize = 48;
@@ -23,6 +23,9 @@ fn exercise_args(args: &[String]) {
             "hide_banner" | "y" | "n" | "nostdin" | "version" | "loglevel" | "v"
         ));
         assert_option_arity(option);
+        if matches!(option.name(), "loglevel" | "v") {
+            assert!(option.value_ref().and_then(parse_log_level_value).is_some());
+        }
     }
     for file in parsed.inputs().iter().chain(parsed.outputs()) {
         for option in file.options() {
@@ -207,6 +210,8 @@ fn render_option(out: &mut Vec<String>, option: &CliOption) {
 fn fixture_args() -> Vec<String> {
     [
         "-hide_banner",
+        "-loglevel",
+        "warning",
         "-f",
         "image2",
         "-start_number",
