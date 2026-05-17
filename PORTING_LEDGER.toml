@@ -419,12 +419,14 @@ unit_tests = [
   "hash::tests::crc32_streaming_matches_single_shot",
   "hash::tests::md5_matches_standard_vectors",
   "hash::tests::md5_streaming_matches_single_shot_across_block_boundaries",
+  "hash::tests::sha256_matches_standard_vectors",
+  "hash::tests::sha256_streaming_matches_single_shot_across_block_boundaries",
   "hash::tests::digest_to_hex_formats_lowercase_bytes",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_core_models"]
-notes = "Adler-32, IEEE CRC-32, and MD5 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests, plus lowercase digest hex formatting. Build-checked cargo-fuzz target avutil_core_models covers streaming update equivalence against one-shot Adler-32/CRC-32/MD5 hashes across fuzz-selected split points and MD5 hex length/known-vector invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. FFmpeg-specific hash muxer/framehash behavior, SHA variants, differential tests, and FATE are pending."
+notes = "Adler-32, IEEE CRC-32, MD5, and SHA-256 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests, plus lowercase digest hex formatting. Build-checked cargo-fuzz target avutil_core_models covers streaming update equivalence against one-shot Adler-32/CRC-32/MD5/SHA-256 hashes across fuzz-selected split points and digest hex length/known-vector invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. FFmpeg-specific hash muxer/framehash behavior, additional SHA variants, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]

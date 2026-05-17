@@ -2,8 +2,9 @@
 
 use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
-    Adler32, AudioFrame, AvError, AvErrorKind, Channel, ChannelLayout, Crc32, Frame, FrameData,
-    Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SideData, VideoFrame,
+    sha256, Adler32, AudioFrame, AvError, AvErrorKind, Channel, ChannelLayout, Crc32, Frame,
+    FrameData, Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, Sha256,
+    SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -358,6 +359,17 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let md5_digest = md5_state.finalize();
     assert_eq!(md5_digest, md5(&payload));
     assert_eq!(digest_to_hex(&md5_digest).len(), 32);
+
+    let third_split = second_split
+        + (usize::from(cursor.next().unwrap_or_default()) % (payload.len() - second_split + 1));
+    let mut sha256_state = Sha256::new();
+    sha256_state.update(&payload[..split]);
+    sha256_state.update(&payload[split..second_split]);
+    sha256_state.update(&payload[second_split..third_split]);
+    sha256_state.update(&payload[third_split..]);
+    let sha256_digest = sha256_state.finalize();
+    assert_eq!(sha256_digest, sha256(&payload));
+    assert_eq!(digest_to_hex(&sha256_digest).len(), 64);
 }
 
 fn exercise_fixtures() {
@@ -372,6 +384,10 @@ fn exercise_fixtures() {
     assert_eq!(
         digest_to_hex(&md5(b"abc")),
         "900150983cd24fb0d6963f7d28e17f72"
+    );
+    assert_eq!(
+        digest_to_hex(&sha256(b"abc")),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
 
     let video = VideoFrame::new(1, 1, PixelFormat::Rgb24, vec![vec![1, 2, 3]]).unwrap();
