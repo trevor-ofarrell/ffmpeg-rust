@@ -25,7 +25,7 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `NullMuxer` implements the first muxer-shaped sink: it discards packet payload bytes while preserving observable accounting for packets, bytes, stream indexes, durations, and last timestamps.
 
-`HashMuxer` implements an initial packet-data hash sink over write order, using `avutil` checksum state for Adler-32 and IEEE CRC-32 while tracking packet and byte counts.
+`HashMuxer` implements an initial packet-data hash sink over write order, using `avutil` checksum/digest state for Adler-32, IEEE CRC-32, and MD5 while tracking packet and byte counts.
 
 `FrameCrcMuxer` records one CRC-32 line per packet with stream index, timestamps, duration, payload size, and checksum in write order.
 

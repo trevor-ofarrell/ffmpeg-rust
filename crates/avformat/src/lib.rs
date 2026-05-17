@@ -24,7 +24,7 @@ pub use avi::{
 };
 pub use avio::{AvioReader, AvioWriter};
 pub use framecrc_muxer::{FrameCrcMuxer, FrameCrcRecord};
-pub use hash_muxer::{HashAlgorithm, HashMuxer, HashMuxerReport};
+pub use hash_muxer::{HashAlgorithm, HashDigest, HashMuxer, HashMuxerReport};
 pub use image2::{Image2Demuxer, Image2Entry, Image2Frame, Image2Info, Image2Muxer, Image2Pattern};
 pub use mov::{
     mov_probe_descriptor, register_mov_probe, MovAvcDecoderConfiguration, MovColorInformation,

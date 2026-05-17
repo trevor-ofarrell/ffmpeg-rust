@@ -1,9 +1,10 @@
-use avutil::{Adler32, AvError, AvResult, Crc32, Packet};
+use avutil::{digest_to_hex, Adler32, AvError, AvResult, Crc32, Md5, Packet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HashAlgorithm {
     Adler32,
     Crc32,
+    Md5,
 }
 
 impl HashAlgorithm {
@@ -11,6 +12,36 @@ impl HashAlgorithm {
         match self {
             Self::Adler32 => "ADLER32",
             Self::Crc32 => "CRC32",
+            Self::Md5 => "MD5",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HashDigest {
+    U32(u32),
+    Bytes(Vec<u8>),
+}
+
+impl HashDigest {
+    pub fn as_u32(&self) -> Option<u32> {
+        match self {
+            Self::U32(value) => Some(*value),
+            Self::Bytes(_) => None,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::U32(_) => None,
+            Self::Bytes(bytes) => Some(bytes),
+        }
+    }
+
+    pub fn hex(&self) -> String {
+        match self {
+            Self::U32(value) => format!("{value:08x}"),
+            Self::Bytes(bytes) => digest_to_hex(bytes),
         }
     }
 }
@@ -18,7 +49,7 @@ impl HashAlgorithm {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HashMuxerReport {
     algorithm: HashAlgorithm,
-    digest: u32,
+    digest: HashDigest,
     packets: u64,
     bytes: u64,
 }
@@ -28,8 +59,12 @@ impl HashMuxerReport {
         self.algorithm
     }
 
-    pub fn digest(&self) -> u32 {
-        self.digest
+    pub fn digest(&self) -> &HashDigest {
+        &self.digest
+    }
+
+    pub fn digest_hex(&self) -> String {
+        self.digest.hex()
     }
 
     pub fn packets(&self) -> u64 {
@@ -41,7 +76,7 @@ impl HashMuxerReport {
     }
 
     pub fn line(&self) -> String {
-        format!("{}={:08x}\n", self.algorithm.name(), self.digest)
+        format!("{}={}\n", self.algorithm.name(), self.digest_hex())
     }
 }
 
@@ -111,6 +146,7 @@ impl HashMuxer {
 enum HashState {
     Adler32(Adler32),
     Crc32(Crc32),
+    Md5(Md5),
 }
 
 impl HashState {
@@ -118,6 +154,7 @@ impl HashState {
         match algorithm {
             HashAlgorithm::Adler32 => Self::Adler32(Adler32::new()),
             HashAlgorithm::Crc32 => Self::Crc32(Crc32::new()),
+            HashAlgorithm::Md5 => Self::Md5(Md5::new()),
         }
     }
 
@@ -125,6 +162,7 @@ impl HashState {
         match self {
             Self::Adler32(_) => HashAlgorithm::Adler32,
             Self::Crc32(_) => HashAlgorithm::Crc32,
+            Self::Md5(_) => HashAlgorithm::Md5,
         }
     }
 
@@ -132,13 +170,15 @@ impl HashState {
         match self {
             Self::Adler32(state) => state.update(data),
             Self::Crc32(state) => state.update(data),
+            Self::Md5(state) => state.update(data),
         }
     }
 
-    fn digest(&self) -> u32 {
+    fn digest(&self) -> HashDigest {
         match self {
-            Self::Adler32(state) => state.finalize(),
-            Self::Crc32(state) => state.finalize(),
+            Self::Adler32(state) => HashDigest::U32(state.finalize()),
+            Self::Crc32(state) => HashDigest::U32(state.finalize()),
+            Self::Md5(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
         }
     }
 }
@@ -146,7 +186,7 @@ impl HashState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use avutil::{adler32, crc32_ieee, AvErrorKind};
+    use avutil::{adler32, crc32_ieee, md5, AvErrorKind};
 
     #[test]
     fn crc32_hashes_packet_data_in_write_order() {
@@ -161,7 +201,15 @@ mod tests {
         let report = muxer.finish();
 
         assert_eq!(report.algorithm(), HashAlgorithm::Crc32);
-        assert_eq!(report.digest(), crc32_ieee(b"The quick brown fox"));
+        assert_eq!(
+            report.digest(),
+            &HashDigest::U32(crc32_ieee(b"The quick brown fox"))
+        );
+        assert_eq!(
+            report.digest().as_u32(),
+            Some(crc32_ieee(b"The quick brown fox"))
+        );
+        assert_eq!(report.digest_hex(), "b74574de");
         assert_eq!(report.packets(), 2);
         assert_eq!(report.bytes(), 19);
         assert_eq!(report.line(), "CRC32=b74574de\n");
@@ -179,8 +227,27 @@ mod tests {
             .unwrap();
         let report = muxer.finish();
 
-        assert_eq!(report.digest(), adler32(b"123456789"));
+        assert_eq!(report.digest(), &HashDigest::U32(adler32(b"123456789")));
+        assert_eq!(report.digest_hex(), "091e01de");
         assert_eq!(report.line(), "ADLER32=091e01de\n");
+    }
+
+    #[test]
+    fn md5_hashes_packet_data_in_write_order() {
+        let mut muxer = HashMuxer::new(HashAlgorithm::Md5);
+
+        muxer.write_packet(&Packet::new(b"ab".to_vec(), 0)).unwrap();
+        muxer.write_packet(&Packet::new(b"c".to_vec(), 0)).unwrap();
+        let report = muxer.finish();
+        let expected = md5(b"abc");
+
+        assert_eq!(report.algorithm(), HashAlgorithm::Md5);
+        assert_eq!(report.digest(), &HashDigest::Bytes(expected.to_vec()));
+        assert_eq!(report.digest().as_bytes(), Some(expected.as_slice()));
+        assert_eq!(report.digest_hex(), "900150983cd24fb0d6963f7d28e17f72");
+        assert_eq!(report.packets(), 2);
+        assert_eq!(report.bytes(), 3);
+        assert_eq!(report.line(), "MD5=900150983cd24fb0d6963f7d28e17f72\n");
     }
 
     #[test]
@@ -190,7 +257,7 @@ mod tests {
         muxer.write_packet(&Packet::new(Vec::new(), 0)).unwrap();
         let report = muxer.finish();
 
-        assert_eq!(report.digest(), crc32_ieee(b""));
+        assert_eq!(report.digest(), &HashDigest::U32(crc32_ieee(b"")));
         assert_eq!(report.packets(), 1);
         assert_eq!(report.bytes(), 0);
     }

@@ -1,7 +1,7 @@
 #![no_main]
 
-use avformat::{FrameCrcMuxer, HashAlgorithm, HashMuxer, NullMuxer};
-use avutil::{adler32, crc32_ieee, AvErrorKind, Packet, SideData};
+use avformat::{FrameCrcMuxer, HashAlgorithm, HashDigest, HashMuxer, NullMuxer};
+use avutil::{adler32, crc32_ieee, md5, AvErrorKind, Packet, SideData};
 use libfuzzer_sys::fuzz_target;
 
 const MAX_PACKETS: usize = 16;
@@ -74,7 +74,11 @@ fn exercise_null_muxer(packets: &[Packet]) {
 }
 
 fn exercise_hash_muxers(packets: &[Packet]) {
-    for algorithm in [HashAlgorithm::Adler32, HashAlgorithm::Crc32] {
+    for algorithm in [
+        HashAlgorithm::Adler32,
+        HashAlgorithm::Crc32,
+        HashAlgorithm::Md5,
+    ] {
         let mut muxer = HashMuxer::new(algorithm);
         let mut payload = Vec::new();
         let mut packet_count = 0_u64;
@@ -88,7 +92,7 @@ fn exercise_hash_muxers(packets: &[Packet]) {
             assert_eq!(report.algorithm(), algorithm);
             assert_eq!(report.packets(), packet_count);
             assert_eq!(report.bytes(), payload.len() as u64);
-            assert_eq!(report.digest(), digest_for(algorithm, &payload));
+            assert_eq!(report.digest(), &digest_for(algorithm, &payload));
         }
 
         let before_finish = muxer.report();
@@ -98,9 +102,9 @@ fn exercise_hash_muxers(packets: &[Packet]) {
         assert_eq!(
             finished.line(),
             format!(
-                "{}={:08x}\n",
+                "{}={}\n",
                 algorithm.name(),
-                digest_for(algorithm, &payload)
+                digest_for(algorithm, &payload).hex()
             )
         );
         let err = muxer
@@ -163,10 +167,11 @@ fn exercise_fixtures() {
     exercise_framecrc_muxer(&packets);
 }
 
-fn digest_for(algorithm: HashAlgorithm, data: &[u8]) -> u32 {
+fn digest_for(algorithm: HashAlgorithm, data: &[u8]) -> HashDigest {
     match algorithm {
-        HashAlgorithm::Adler32 => adler32(data),
-        HashAlgorithm::Crc32 => crc32_ieee(data),
+        HashAlgorithm::Adler32 => HashDigest::U32(adler32(data)),
+        HashAlgorithm::Crc32 => HashDigest::U32(crc32_ieee(data)),
+        HashAlgorithm::Md5 => HashDigest::Bytes(md5(data).to_vec()),
     }
 }
 
