@@ -25,7 +25,7 @@ pub use error::{AvError, AvErrorKind, AvResult};
 pub use frame::{AudioFrame, Frame, FrameData, VideoFrame};
 pub use hash::{adler32, crc32_ieee, Adler32, Crc32};
 pub use logging::{LogFlags, LogLevel, LogRecord, Logger};
-pub use options::{OptionDefinition, OptionKind, OptionSet, OptionValue};
+pub use options::{OptionDefinition, OptionFlags, OptionKind, OptionSet, OptionValue};
 pub use packet::{Packet, PacketFlags, SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN};
 pub use pixel::PixelFormat;
 pub use rational::Rational;

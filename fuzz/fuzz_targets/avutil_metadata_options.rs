@@ -1,8 +1,8 @@
 #![no_main]
 
 use avutil::{
-    Dictionary, DictionarySet, MatchMode, OptionDefinition, OptionKind, OptionSet, OptionValue,
-    SetMode,
+    Dictionary, DictionarySet, MatchMode, OptionDefinition, OptionFlags, OptionKind, OptionSet,
+    OptionValue, SetMode,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -166,6 +166,13 @@ fn exercise_fixtures() {
     assert!(options.set_from_str("threads", "0").is_err());
     assert!(options.set_from_str("bitexact", "maybe").is_err());
     assert!(options.set_from_str("metadata", "bad\0value").is_err());
+    assert!(options.set_from_str("readonly", "yes").is_err());
+    assert_eq!(options.get("readonly"), Some(&OptionValue::Bool(false)));
+    assert!(options
+        .definition("readonly")
+        .unwrap()
+        .flags()
+        .contains(OptionFlags::READONLY));
 }
 
 fn assert_valid_dictionary(dict: &Dictionary) {
@@ -184,6 +191,7 @@ fn assert_option_set_invariants(options: &OptionSet) {
     for definition in options.definitions() {
         let value = options.get(definition.name()).unwrap();
         definition.validate_value(value).unwrap();
+        assert_eq!(definition.flags().bits() & !OptionFlags::all().bits(), 0);
     }
 }
 
@@ -211,7 +219,8 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
         _ => OptionKind::String { allow_empty: false },
     };
     let default = default_value_for(&kind, cursor);
-    OptionDefinition::new(name, kind, default, help)
+    let flags = option_flags_from(cursor.next());
+    OptionDefinition::new_with_flags(name, kind, default, help, flags)
 }
 
 fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue {
@@ -291,10 +300,24 @@ fn sample_options() -> OptionSet {
         )
         .unwrap();
     options
+        .define(
+            OptionDefinition::new_with_flags(
+                "readonly",
+                OptionKind::Bool,
+                OptionValue::Bool(false),
+                "exported read-only value",
+                OptionFlags::from_bits_truncate(
+                    OptionFlags::EXPORT.bits() | OptionFlags::READONLY.bits(),
+                ),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
 }
 
 fn option_name_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 12 {
+    match cursor.next().unwrap_or_default() % 13 {
         0 => "threads".to_owned(),
         1 => "THREADS".to_owned(),
         2 => "bitexact".to_owned(),
@@ -306,7 +329,8 @@ fn option_name_from(cursor: &mut Cursor<'_>) -> String {
         8 => "bad\0name".to_owned(),
         9 => literal_from(cursor),
         10 => "new-option".to_owned(),
-        _ => "new_option".to_owned(),
+        11 => "new_option".to_owned(),
+        _ => "readonly".to_owned(),
     }
 }
 
@@ -349,6 +373,38 @@ fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
         }
         _ => OptionValue::String(option_value_string_from(cursor)),
     }
+}
+
+fn option_flags_from(byte: Option<u8>) -> OptionFlags {
+    let raw = u32::from(byte.unwrap_or_default());
+    let mut bits = 0;
+
+    if raw & 0x01 != 0 {
+        bits |= OptionFlags::ENCODING_PARAM.bits();
+    }
+    if raw & 0x02 != 0 {
+        bits |= OptionFlags::DECODING_PARAM.bits();
+    }
+    if raw & 0x04 != 0 {
+        bits |= OptionFlags::READONLY.bits();
+    }
+    if raw & 0x08 != 0 {
+        bits |= OptionFlags::VIDEO_PARAM.bits();
+    }
+    if raw & 0x10 != 0 {
+        bits |= OptionFlags::AUDIO_PARAM.bits();
+    }
+    if raw & 0x20 != 0 {
+        bits |= OptionFlags::FILTERING_PARAM.bits();
+    }
+    if raw & 0x40 != 0 {
+        bits |= OptionFlags::EXPORT.bits();
+    }
+    if raw & 0x80 != 0 {
+        bits |= OptionFlags::RUNTIME_PARAM.bits();
+    }
+
+    OptionFlags::from_bits_truncate(bits | 0x8000_0000)
 }
 
 fn match_mode_from(byte: Option<u8>) -> MatchMode {

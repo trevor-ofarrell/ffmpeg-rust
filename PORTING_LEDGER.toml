@@ -315,16 +315,19 @@ oracle_command = ""
 rust_command = "cargo test -p avutil options"
 unit_tests = [
   "options::tests::definitions_validate_ranges_names_and_defaults",
+  "options::tests::option_flags_match_ffmpeg_bits_and_truncate_unknown_bits",
+  "options::tests::definitions_store_flags_with_option_metadata",
   "options::tests::option_set_stores_defaults_and_preserves_order",
   "options::tests::set_from_str_parses_supported_value_types",
   "options::tests::rejects_unknown_options_type_mismatches_and_out_of_range_values",
   "options::tests::duplicate_definitions_are_rejected_case_insensitively",
   "options::tests::string_options_enforce_empty_and_nul_rules",
+  "options::tests::readonly_options_reject_mutation_without_changing_value",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_metadata_options"]
-notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. Build-checked cargo-fuzz target avutil_metadata_options covers option definition validation, duplicate rejection, parsed values, direct typed values, range/type checks, string NUL/empty validation, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. CLI option ordering, flags, child classes, ranges with units, and oracle differential vectors are pending, so this is not marked complete."
+notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. OptionFlags stores and truncates the currently known public AVOption flag bits, and READONLY options reject parsed and typed mutation without changing the current value. Build-checked cargo-fuzz target avutil_metadata_options covers option definition validation, duplicate rejection, parsed values, direct typed values, range/type checks, string NUL/empty validation, flag truncation, read-only mutation rejection, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. CLI option ordering, child classes, ranges with units, and oracle differential vectors are pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]

@@ -16,12 +16,91 @@ pub enum OptionKind {
     String { allow_empty: bool },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct OptionFlags {
+    bits: u32,
+}
+
+impl OptionFlags {
+    pub const ENCODING_PARAM: Self = Self { bits: 1 << 0 };
+    pub const DECODING_PARAM: Self = Self { bits: 1 << 1 };
+    pub const AUDIO_PARAM: Self = Self { bits: 1 << 3 };
+    pub const VIDEO_PARAM: Self = Self { bits: 1 << 4 };
+    pub const SUBTITLE_PARAM: Self = Self { bits: 1 << 5 };
+    pub const EXPORT: Self = Self { bits: 1 << 6 };
+    pub const READONLY: Self = Self { bits: 1 << 7 };
+    pub const BSF_PARAM: Self = Self { bits: 1 << 8 };
+    pub const RUNTIME_PARAM: Self = Self { bits: 1 << 15 };
+    pub const FILTERING_PARAM: Self = Self { bits: 1 << 16 };
+    pub const DEPRECATED: Self = Self { bits: 1 << 17 };
+    pub const CHILD_CONSTS: Self = Self { bits: 1 << 18 };
+
+    const KNOWN_BITS: u32 = Self::ENCODING_PARAM.bits
+        | Self::DECODING_PARAM.bits
+        | Self::AUDIO_PARAM.bits
+        | Self::VIDEO_PARAM.bits
+        | Self::SUBTITLE_PARAM.bits
+        | Self::EXPORT.bits
+        | Self::READONLY.bits
+        | Self::BSF_PARAM.bits
+        | Self::RUNTIME_PARAM.bits
+        | Self::FILTERING_PARAM.bits
+        | Self::DEPRECATED.bits
+        | Self::CHILD_CONSTS.bits;
+
+    pub const fn empty() -> Self {
+        Self { bits: 0 }
+    }
+
+    pub const fn all() -> Self {
+        Self {
+            bits: Self::KNOWN_BITS,
+        }
+    }
+
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        Self {
+            bits: bits & Self::KNOWN_BITS,
+        }
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.bits
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.bits == 0
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        (self.bits & other.bits) == other.bits
+    }
+
+    pub fn insert(&mut self, other: Self) {
+        self.bits |= other.bits;
+        self.bits &= Self::KNOWN_BITS;
+    }
+
+    pub fn remove(&mut self, other: Self) {
+        self.bits &= !other.bits;
+    }
+
+    pub fn set(&mut self, other: Self, enabled: bool) {
+        if enabled {
+            self.insert(other);
+        } else {
+            self.remove(other);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct OptionDefinition {
     name: String,
     help: String,
     kind: OptionKind,
     default: OptionValue,
+    flags: OptionFlags,
 }
 
 impl OptionDefinition {
@@ -30,6 +109,16 @@ impl OptionDefinition {
         kind: OptionKind,
         default: OptionValue,
         help: impl Into<String>,
+    ) -> AvResult<Self> {
+        Self::new_with_flags(name, kind, default, help, OptionFlags::empty())
+    }
+
+    pub fn new_with_flags(
+        name: impl Into<String>,
+        kind: OptionKind,
+        default: OptionValue,
+        help: impl Into<String>,
+        flags: OptionFlags,
     ) -> AvResult<Self> {
         validate_name(&name.into()).and_then(|name| {
             validate_help(&help.into()).and_then(|help| {
@@ -40,6 +129,7 @@ impl OptionDefinition {
                     help,
                     kind,
                     default,
+                    flags: OptionFlags::from_bits_truncate(flags.bits()),
                 })
             })
         })
@@ -59,6 +149,10 @@ impl OptionDefinition {
 
     pub fn default(&self) -> &OptionValue {
         &self.default
+    }
+
+    pub fn flags(&self) -> OptionFlags {
+        self.flags
     }
 
     pub fn parse_value(&self, raw: &str) -> AvResult<OptionValue> {
@@ -124,6 +218,7 @@ impl OptionSet {
 
     pub fn set(&mut self, name: &str, value: OptionValue) -> AvResult<()> {
         let index = self.option_index(name)?;
+        self.ensure_writable(index)?;
         self.definitions[index].validate_value(&value)?;
         self.values[index] = value;
         Ok(())
@@ -131,6 +226,7 @@ impl OptionSet {
 
     pub fn set_from_str(&mut self, name: &str, raw: &str) -> AvResult<()> {
         let index = self.option_index(name)?;
+        self.ensure_writable(index)?;
         let value = self.definitions[index].parse_value(raw)?;
         self.values[index] = value;
         Ok(())
@@ -145,6 +241,20 @@ impl OptionSet {
         self.definitions
             .iter()
             .position(|definition| ascii_eq_ignore_case(definition.name(), name))
+    }
+
+    fn ensure_writable(&self, index: usize) -> AvResult<()> {
+        if self.definitions[index]
+            .flags()
+            .contains(OptionFlags::READONLY)
+        {
+            return Err(AvError::invalid_argument(format!(
+                "option `{}` is read-only",
+                self.definitions[index].name()
+            )));
+        }
+
+        Ok(())
     }
 }
 
@@ -307,6 +417,50 @@ mod tests {
     }
 
     #[test]
+    fn option_flags_match_ffmpeg_bits_and_truncate_unknown_bits() {
+        assert_eq!(OptionFlags::ENCODING_PARAM.bits(), 1 << 0);
+        assert_eq!(OptionFlags::DECODING_PARAM.bits(), 1 << 1);
+        assert_eq!(OptionFlags::AUDIO_PARAM.bits(), 1 << 3);
+        assert_eq!(OptionFlags::VIDEO_PARAM.bits(), 1 << 4);
+        assert_eq!(OptionFlags::SUBTITLE_PARAM.bits(), 1 << 5);
+        assert_eq!(OptionFlags::EXPORT.bits(), 1 << 6);
+        assert_eq!(OptionFlags::READONLY.bits(), 1 << 7);
+        assert_eq!(OptionFlags::BSF_PARAM.bits(), 1 << 8);
+        assert_eq!(OptionFlags::RUNTIME_PARAM.bits(), 1 << 15);
+        assert_eq!(OptionFlags::FILTERING_PARAM.bits(), 1 << 16);
+        assert_eq!(OptionFlags::DEPRECATED.bits(), 1 << 17);
+        assert_eq!(OptionFlags::CHILD_CONSTS.bits(), 1 << 18);
+        assert!(OptionFlags::empty().is_empty());
+
+        let truncated = OptionFlags::from_bits_truncate(u32::MAX);
+
+        assert_eq!(truncated, OptionFlags::all());
+        assert_eq!(truncated.bits() & !OptionFlags::all().bits(), 0);
+        assert!(truncated.contains(OptionFlags::ENCODING_PARAM));
+        assert!(truncated.contains(OptionFlags::CHILD_CONSTS));
+    }
+
+    #[test]
+    fn definitions_store_flags_with_option_metadata() {
+        let flags = OptionFlags::from_bits_truncate(
+            OptionFlags::ENCODING_PARAM.bits() | OptionFlags::VIDEO_PARAM.bits(),
+        );
+        let definition = OptionDefinition::new_with_flags(
+            "profile",
+            OptionKind::String { allow_empty: false },
+            OptionValue::String("main".to_owned()),
+            "encoding profile",
+            flags,
+        )
+        .unwrap();
+
+        assert_eq!(definition.flags(), flags);
+        assert!(definition.flags().contains(OptionFlags::ENCODING_PARAM));
+        assert!(definition.flags().contains(OptionFlags::VIDEO_PARAM));
+        assert!(!definition.flags().contains(OptionFlags::DECODING_PARAM));
+    }
+
+    #[test]
     fn option_set_stores_defaults_and_preserves_order() {
         let mut options = OptionSet::new();
         options
@@ -421,6 +575,37 @@ mod tests {
             definition.parse_value("ok").unwrap(),
             OptionValue::String("ok".to_string())
         );
+    }
+
+    #[test]
+    fn readonly_options_reject_mutation_without_changing_value() {
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "exported",
+                    OptionKind::Int { min: 0, max: 8 },
+                    OptionValue::Int(4),
+                    "read-only exported value",
+                    OptionFlags::from_bits_truncate(
+                        OptionFlags::EXPORT.bits() | OptionFlags::READONLY.bits(),
+                    ),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let typed_err = options.set("exported", OptionValue::Int(5)).unwrap_err();
+        let parsed_err = options.set_from_str("exported", "6").unwrap_err();
+
+        assert_eq!(typed_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(parsed_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(options.get("exported"), Some(&OptionValue::Int(4)));
+        assert!(options
+            .definition("exported")
+            .unwrap()
+            .flags()
+            .contains(OptionFlags::READONLY));
     }
 
     fn sample_options() -> OptionSet {
