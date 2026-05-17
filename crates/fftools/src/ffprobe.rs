@@ -1783,6 +1783,7 @@ mod tests {
         assert!(rendered.contains("start_time=0.000000\n"));
         assert!(rendered.contains("r_frame_rate=30/1\n"));
         assert!(rendered.contains("avg_frame_rate=30/1\n"));
+        assert!(rendered.contains("duration_ts=450000\n"));
         assert!(rendered.contains("nb_frames=0\n"));
         assert!(!rendered.contains("nb_read_frames="));
         assert!(!rendered.contains("nb_read_packets="));
@@ -1970,6 +1971,8 @@ mod tests {
         assert!(stdout.contains("\"start_time\": \"0.000000\""));
         assert!(stdout.contains("\"r_frame_rate\": \"30/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"30/1\""));
+        assert!(stdout.contains("\"duration_ts\": 3000"));
+        assert!(stdout.contains("\"duration\": \"0.033333\""));
         assert!(stdout.contains(
             "\"tags\": {\"language\": \"eng\", \"handler_name\": \"Rust Video Handler\"}"
         ));
@@ -2334,6 +2337,7 @@ mod tests {
         assert!(stdout.contains("\"r_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"duration_ts\": 1"));
+        assert!(stdout.contains("\"duration\": \"0.040000\""));
         assert!(stdout.contains("\"field_order\": \"unknown\""));
         assert!(stdout.contains("\"nb_frames\": 1"));
         assert!(!stdout.contains("\"nb_read_frames\""));
