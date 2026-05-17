@@ -99,12 +99,13 @@ rust_command = "cargo test -p avutil frame"
 unit_tests = [
   "frame::tests::video_frame_validates_required_shape",
   "frame::tests::audio_frame_validates_required_shape",
+  "frame::tests::frames_report_tightly_packed_line_sizes",
   "frame::tests::frame_wraps_audio_or_video_with_optional_pts",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_core_models"]
-notes = "Frame skeleton validates required audio/video shape and exact plane sizes through the shared initial PixelFormat and SampleFormat models, and AudioFrame now carries an optional initial ChannelLayout derived for mono/stereo or supplied explicitly. Build-checked cargo-fuzz target avutil_core_models covers valid and invalid video/audio frame construction, plane sizes, PTS mutation, and frame data variants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVFrame fields, buffer ownership, line sizes, alignment, side data, and complete FFmpeg pixel/sample/channel layout coverage are pending."
+notes = "Frame skeleton validates required audio/video shape and exact plane sizes through the shared initial PixelFormat and SampleFormat models, reports tightly packed per-plane line sizes for the current audio/video format subset, and AudioFrame now carries an optional initial ChannelLayout derived for mono/stereo or supplied explicitly. Build-checked cargo-fuzz target avutil_core_models covers valid and invalid video/audio frame construction, plane sizes, line sizes, PTS mutation, and frame data variants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVFrame fields, buffer ownership, custom alignment/stride, side data, and complete FFmpeg pixel/sample/channel layout coverage are pending."
 blocked_reason = ""
 
 [[component]]

@@ -45,6 +45,7 @@ pub struct VideoFrame {
     width: usize,
     height: usize,
     pixel_format: PixelFormat,
+    line_sizes: Vec<usize>,
     planes: Vec<Vec<u8>>,
 }
 
@@ -70,8 +71,9 @@ impl VideoFrame {
                 planes.len()
             )));
         }
-        for (index, (plane, expected_size)) in planes.iter().zip(expected_plane_sizes).enumerate() {
-            if plane.len() != expected_size {
+        for (index, (plane, expected_size)) in planes.iter().zip(&expected_plane_sizes).enumerate()
+        {
+            if plane.len() != *expected_size {
                 return Err(AvError::invalid_data(format!(
                     "{} video frame plane {index} has {} bytes, expected {expected_size}",
                     pixel_format.name(),
@@ -79,11 +81,13 @@ impl VideoFrame {
                 )));
             }
         }
+        let line_sizes = video_line_sizes(pixel_format, width, height)?;
 
         Ok(Self {
             width,
             height,
             pixel_format,
+            line_sizes,
             planes,
         })
     }
@@ -104,6 +108,10 @@ impl VideoFrame {
         self.pixel_format.name()
     }
 
+    pub fn line_sizes(&self) -> &[usize] {
+        &self.line_sizes
+    }
+
     pub fn planes(&self) -> &[Vec<u8>] {
         &self.planes
     }
@@ -116,6 +124,7 @@ pub struct AudioFrame {
     channel_layout: Option<ChannelLayout>,
     sample_format: SampleFormat,
     samples_per_channel: usize,
+    line_sizes: Vec<usize>,
     planes: Vec<Vec<u8>>,
 }
 
@@ -188,8 +197,9 @@ impl AudioFrame {
                 planes.len()
             )));
         }
-        for (index, (plane, expected_size)) in planes.iter().zip(expected_plane_sizes).enumerate() {
-            if plane.len() != expected_size {
+        for (index, (plane, expected_size)) in planes.iter().zip(&expected_plane_sizes).enumerate()
+        {
+            if plane.len() != *expected_size {
                 return Err(AvError::invalid_data(format!(
                     "{} audio frame plane {index} has {} bytes, expected {expected_size}",
                     sample_format.name(),
@@ -204,6 +214,7 @@ impl AudioFrame {
             channel_layout,
             sample_format,
             samples_per_channel,
+            line_sizes: expected_plane_sizes,
             planes,
         })
     }
@@ -232,9 +243,34 @@ impl AudioFrame {
         self.samples_per_channel
     }
 
+    pub fn line_sizes(&self) -> &[usize] {
+        &self.line_sizes
+    }
+
     pub fn planes(&self) -> &[Vec<u8>] {
         &self.planes
     }
+}
+
+fn video_line_sizes(
+    pixel_format: PixelFormat,
+    width: usize,
+    height: usize,
+) -> AvResult<Vec<usize>> {
+    pixel_format.plane_sizes(width, height)?;
+
+    match pixel_format {
+        PixelFormat::Gray8 => Ok(vec![width]),
+        PixelFormat::Rgb24 => Ok(vec![checked_mul(width, 3, "rgb24 video frame line size")?]),
+        PixelFormat::Rgba => Ok(vec![checked_mul(width, 4, "rgba video frame line size")?]),
+        PixelFormat::Yuv420p => Ok(vec![width, width / 2, width / 2]),
+    }
+}
+
+fn checked_mul(value: usize, factor: usize, context: &'static str) -> AvResult<usize> {
+    value
+        .checked_mul(factor)
+        .ok_or_else(|| AvError::invalid_argument(format!("{context} overflow")))
 }
 
 #[cfg(test)]
@@ -252,6 +288,7 @@ mod tests {
         assert_eq!(frame.height(), 2);
         assert_eq!(frame.pixel_format(), PixelFormat::Gray8);
         assert_eq!(frame.pixel_format_name(), "gray");
+        assert_eq!(frame.line_sizes(), &[2]);
     }
 
     #[test]
@@ -268,6 +305,7 @@ mod tests {
         assert_eq!(frame.sample_format(), SampleFormat::S16);
         assert_eq!(frame.sample_format_name(), "s16");
         assert_eq!(frame.samples_per_channel(), 1024);
+        assert_eq!(frame.line_sizes(), &[4096]);
 
         let mono = AudioFrame::new_with_channel_layout(
             44_100,
@@ -279,6 +317,28 @@ mod tests {
         .unwrap();
         assert_eq!(mono.channels(), 1);
         assert_eq!(mono.channel_layout(), Some(ChannelLayout::mono()));
+        assert_eq!(mono.line_sizes(), &[2]);
+    }
+
+    #[test]
+    fn frames_report_tightly_packed_line_sizes() {
+        let rgb = VideoFrame::new(3, 2, PixelFormat::Rgb24, vec![vec![0; 18]]).unwrap();
+        assert_eq!(rgb.line_sizes(), &[9]);
+
+        let rgba = VideoFrame::new(3, 2, PixelFormat::Rgba, vec![vec![0; 24]]).unwrap();
+        assert_eq!(rgba.line_sizes(), &[12]);
+
+        let yuv = VideoFrame::new(
+            4,
+            2,
+            PixelFormat::Yuv420p,
+            vec![vec![0; 8], vec![1; 2], vec![2; 2]],
+        )
+        .unwrap();
+        assert_eq!(yuv.line_sizes(), &[4, 2, 2]);
+
+        let audio = AudioFrame::new(48_000, 2, SampleFormat::S16, 3, vec![vec![0; 12]]).unwrap();
+        assert_eq!(audio.line_sizes(), &[12]);
     }
 
     #[test]

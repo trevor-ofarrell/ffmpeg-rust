@@ -159,6 +159,10 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(video.height(), height);
     assert_eq!(video.pixel_format(), pixel_format);
     assert_eq!(video.pixel_format_name(), pixel_format.name());
+    assert_eq!(
+        video.line_sizes(),
+        expected_video_line_sizes(pixel_format, width).as_slice()
+    );
     assert_eq!(video.planes(), planes.as_slice());
 
     let mut frame = Frame::video(video);
@@ -224,6 +228,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(audio.sample_format(), sample_format);
     assert_eq!(audio.sample_format_name(), sample_format.name());
     assert_eq!(audio.samples_per_channel(), samples_per_channel);
+    assert_eq!(audio.line_sizes(), plane_sizes.as_slice());
     assert_eq!(audio.planes(), planes.as_slice());
     assert_eq!(
         audio.channel_layout(),
@@ -245,6 +250,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         )
         .unwrap();
         assert_eq!(frame.channel_layout(), Some(layout));
+        assert_eq!(frame.line_sizes(), plane_sizes.as_slice());
     } else {
         assert_eq!(
             layout.validate_channel_count(channels).unwrap_err().kind(),
@@ -355,6 +361,7 @@ fn exercise_fixtures() {
     assert!(!ChannelLayout::stereo().contains(Channel::LowFrequency));
 
     let video = VideoFrame::new(1, 1, PixelFormat::Rgb24, vec![vec![1, 2, 3]]).unwrap();
+    assert_eq!(video.line_sizes(), &[3]);
     assert_eq!(Frame::video(video).pts(), None);
 
     let audio = AudioFrame::new_with_channel_layout(
@@ -366,6 +373,7 @@ fn exercise_fixtures() {
     )
     .unwrap();
     assert_eq!(audio.channel_layout(), Some(ChannelLayout::stereo()));
+    assert_eq!(audio.line_sizes(), &[4]);
 }
 
 fn expected_rescale(
@@ -441,6 +449,15 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
         3 => ChannelLayout::five_one(),
         4 => ChannelLayout::five_one_side(),
         _ => ChannelLayout::seven_one(),
+    }
+}
+
+fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usize> {
+    match pixel_format {
+        PixelFormat::Gray8 => vec![width],
+        PixelFormat::Rgb24 => vec![width * 3],
+        PixelFormat::Rgba => vec![width * 4],
+        PixelFormat::Yuv420p => vec![width, width / 2, width / 2],
     }
 }
 
