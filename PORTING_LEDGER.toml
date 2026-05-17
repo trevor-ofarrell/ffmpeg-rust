@@ -419,6 +419,8 @@ unit_tests = [
   "hash::tests::crc32_streaming_matches_single_shot",
   "hash::tests::md5_matches_standard_vectors",
   "hash::tests::md5_streaming_matches_single_shot_across_block_boundaries",
+  "hash::tests::sha224_matches_standard_vectors",
+  "hash::tests::sha224_streaming_matches_single_shot_across_block_boundaries",
   "hash::tests::sha256_matches_standard_vectors",
   "hash::tests::sha256_streaming_matches_single_shot_across_block_boundaries",
   "hash::tests::digest_to_hex_formats_lowercase_bytes",
@@ -426,7 +428,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_core_models"]
-notes = "Adler-32, IEEE CRC-32, MD5, and SHA-256 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests, plus lowercase digest hex formatting. Build-checked cargo-fuzz target avutil_core_models covers streaming update equivalence against one-shot Adler-32/CRC-32/MD5/SHA-256 hashes across fuzz-selected split points and digest hex length/known-vector invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. FFmpeg-specific hash muxer/framehash behavior, additional SHA variants, differential tests, and FATE are pending."
+notes = "Adler-32, IEEE CRC-32, MD5, SHA-224, and SHA-256 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests, plus lowercase digest hex formatting. Build-checked cargo-fuzz target avutil_core_models covers streaming update equivalence against one-shot Adler-32/CRC-32/MD5/SHA-224/SHA-256 hashes across fuzz-selected split points and digest hex length/known-vector invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. FFmpeg-specific hash muxer/framehash behavior, remaining SHA variants, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1481,7 +1483,7 @@ blocked_reason = ""
 [[component]]
 id = "avformat-hash-muxer"
 kind = "muxer"
-ffmpeg_name = "hash/md5/sha256"
+ffmpeg_name = "hash/md5/sha224/sha256"
 upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "implemented"
 priority = 3
@@ -1491,6 +1493,7 @@ unit_tests = [
   "hash_muxer::tests::crc32_hashes_packet_data_in_write_order",
   "hash_muxer::tests::adler32_hashes_packet_data_in_write_order",
   "hash_muxer::tests::md5_hashes_packet_data_in_write_order",
+  "hash_muxer::tests::sha224_hashes_packet_data_in_write_order",
   "hash_muxer::tests::sha256_hashes_packet_data_in_write_order",
   "hash_muxer::tests::empty_packets_count_but_do_not_change_empty_digest",
   "hash_muxer::tests::finish_prevents_more_writes",
@@ -1498,7 +1501,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "Initial internal packet-data hash muxer supports Adler-32, IEEE CRC-32, MD5, and SHA-256 with packet/byte accounting and variable-width digest reporting. Build-checked cargo-fuzz target avformat_packet_muxers covers packet/byte accounting, Adler-32/CRC-32/MD5/SHA-256 digest stability, formatted digest lines, and finish behavior, but actual local fuzz execution is blocked until cargo-fuzz is installed. Remaining SHA variants, exact FFmpeg hash muxer output semantics, CLI wiring, differential tests, and FATE are pending."
+notes = "Initial internal packet-data hash muxer supports Adler-32, IEEE CRC-32, MD5, SHA-224, and SHA-256 with packet/byte accounting and variable-width digest reporting. Build-checked cargo-fuzz target avformat_packet_muxers covers packet/byte accounting, Adler-32/CRC-32/MD5/SHA-224/SHA-256 digest stability, formatted digest lines, and finish behavior, but actual local fuzz execution is blocked until cargo-fuzz is installed. Remaining SHA variants, exact FFmpeg hash muxer output semantics, CLI wiring, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]

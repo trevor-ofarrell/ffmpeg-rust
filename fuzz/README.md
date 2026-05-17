@@ -8,7 +8,7 @@ Initial targets:
 - `avutil_byteio`: exercises bounded byte reads, EOF cursor invariants, 48/64-bit integer paths, and byte writer helper paths.
 - `avutil_bitreader`: exercises unsigned and signed bit reads/peeks, skips, alignment, unsigned and signed bit writer validation, and cursor invariants.
 - `avutil_metadata_options`: exercises metadata dictionary mutation, duplicate-key insertion, key/value validation, AVOption-like definition validation, option flag truncation, unit constant scoping, numeric range query invariants, read-only mutation rejection, string parsing, type/range checks, and failed-mutation invariants.
-- `avutil_core_models`: exercises typed error constructor and IO classification invariants, rational arithmetic/timebase rounding and sentinel handling, pixel/sample/channel layout validation, packet timestamp/position/duration/flag/side-data invariants, frame shape and tightly packed line-size validation, Adler-32/CRC-32/MD5/SHA-256 streaming equivalence, and digest hex invariants.
+- `avutil_core_models`: exercises typed error constructor and IO classification invariants, rational arithmetic/timebase rounding and sentinel handling, pixel/sample/channel layout validation, packet timestamp/position/duration/flag/side-data invariants, frame shape and tightly packed line-size validation, Adler-32/CRC-32/MD5/SHA-224/SHA-256 streaming equivalence, and digest hex invariants.
 - `avformat_probe`: exercises probe descriptor validation, generated registry mutation, AVI/MOV descriptors, extension/MIME/signature scoring, deterministic tie behavior, and explainable matches.
 - `avformat_wav`: exercises RIFF/WAVE PCM s16le demuxer opening, packet emission, and parsed stream invariants.
 - `avformat_yuv4mpegpipe`: exercises YUV4MPEG2 demuxer opening, frame packet emission, and parsed stream invariants.
@@ -19,7 +19,7 @@ Initial targets:
 - `avformat_mov`: exercises constrained MOV/MP4 box parsing, sample-table packet extraction, stream metadata, packet timing, and side-data invariants.
 - `avformat_image2`: exercises image2 pattern parsing, entry sequence validation, packet timing/path side-data invariants, muxer path generation, and mux-demux round trips.
 - `avformat_basic_muxers`: exercises WAV, raw PCM s16le, rawvideo, and yuv4mpegpipe muxer packet validation, accounting, render/finish behavior, and demuxer round trips.
-- `avformat_packet_muxers`: exercises null/hash/framecrc packet muxer accounting, Adler-32/CRC-32/MD5/SHA-256 hash digest stability, CRC record fields, timestamp propagation, and finish behavior.
+- `avformat_packet_muxers`: exercises null/hash/framecrc packet muxer accounting, Adler-32/CRC-32/MD5/SHA-224/SHA-256 hash digest stability, CRC record fields, timestamp propagation, and finish behavior.
 - `fftools_option_parser`: exercises FFmpeg-style option grouping, value handling, valid loglevel values, stream-specifier option names, and parse/render/parse stability.
 
 Run with cargo-fuzz when the tool is installed:

@@ -355,8 +355,12 @@ impl Sha256 {
     ];
 
     pub fn new() -> Self {
+        Self::with_init(Self::INIT)
+    }
+
+    fn with_init(init: [u32; 8]) -> Self {
         Self {
-            state: Self::INIT,
+            state: init,
             len_bytes: 0,
             buffer: [0; 64],
             buffer_len: 0,
@@ -393,7 +397,16 @@ impl Sha256 {
         }
     }
 
-    pub fn finalize(mut self) -> [u8; 32] {
+    pub fn finalize(self) -> [u8; 32] {
+        let words = self.finalize_words();
+        let mut digest = [0_u8; 32];
+        for (chunk, word) in digest.chunks_exact_mut(4).zip(words) {
+            chunk.copy_from_slice(&word.to_be_bytes());
+        }
+        digest
+    }
+
+    fn finalize_words(mut self) -> [u32; 8] {
         let bit_len = self.len_bytes.wrapping_mul(8);
         let mut padding = [0_u8; 72];
         padding[0] = 0x80;
@@ -405,11 +418,7 @@ impl Sha256 {
         self.update(&padding[..pad_len]);
         self.update(&bit_len.to_be_bytes());
 
-        let mut digest = [0_u8; 32];
-        for (chunk, word) in digest.chunks_exact_mut(4).zip(self.state) {
-            chunk.copy_from_slice(&word.to_be_bytes());
-        }
-        digest
+        self.state
     }
 
     fn compress(&mut self, block: &[u8; 64]) {
@@ -467,6 +476,55 @@ impl Sha256 {
 
 pub fn sha256(data: &[u8]) -> [u8; 32] {
     let mut state = Sha256::new();
+    state.update(data);
+    state.finalize()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sha224 {
+    state: Sha256,
+}
+
+impl Default for Sha224 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Sha224 {
+    const INIT: [u32; 8] = [
+        0xc105_9ed8,
+        0x367c_d507,
+        0x3070_dd17,
+        0xf70e_5939,
+        0xffc0_0b31,
+        0x6858_1511,
+        0x64f9_8fa7,
+        0xbefa_4fa4,
+    ];
+
+    pub fn new() -> Self {
+        Self {
+            state: Sha256::with_init(Self::INIT),
+        }
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        self.state.update(data);
+    }
+
+    pub fn finalize(self) -> [u8; 28] {
+        let words = self.state.finalize_words();
+        let mut digest = [0_u8; 28];
+        for (chunk, word) in digest.chunks_exact_mut(4).zip(words) {
+            chunk.copy_from_slice(&word.to_be_bytes());
+        }
+        digest
+    }
+}
+
+pub fn sha224(data: &[u8]) -> [u8; 28] {
+    let mut state = Sha224::new();
     state.update(data);
     state.finalize()
 }
@@ -599,6 +657,38 @@ mod tests {
         state.update(&payload[64..]);
 
         assert_eq!(state.finalize(), sha256(payload));
+    }
+
+    #[test]
+    fn sha224_matches_standard_vectors() {
+        assert_eq!(
+            digest_to_hex(&sha224(b"")),
+            "d14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f"
+        );
+        assert_eq!(
+            digest_to_hex(&sha224(b"abc")),
+            "23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7"
+        );
+        assert_eq!(
+            digest_to_hex(&sha224(
+                b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+            )),
+            "75388b16512776cc5dba5da1fd890150b0c6455cb4f58b1952522525"
+        );
+    }
+
+    #[test]
+    fn sha224_streaming_matches_single_shot_across_block_boundaries() {
+        let payload =
+            b"abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789tail";
+        let mut state = Sha224::new();
+
+        state.update(&payload[..1]);
+        state.update(&payload[1..55]);
+        state.update(&payload[55..64]);
+        state.update(&payload[64..]);
+
+        assert_eq!(state.finalize(), sha224(payload));
     }
 
     #[test]

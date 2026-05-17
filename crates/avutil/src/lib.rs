@@ -23,7 +23,9 @@ pub use channel_layout::{Channel, ChannelLayout};
 pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};
 pub use error::{AvError, AvErrorKind, AvResult};
 pub use frame::{AudioFrame, Frame, FrameData, VideoFrame};
-pub use hash::{adler32, crc32_ieee, digest_to_hex, md5, sha256, Adler32, Crc32, Md5, Sha256};
+pub use hash::{
+    adler32, crc32_ieee, digest_to_hex, md5, sha224, sha256, Adler32, Crc32, Md5, Sha224, Sha256,
+};
 pub use logging::{LogFlags, LogLevel, LogRecord, Logger};
 pub use options::{
     OptionChild, OptionConstant, OptionDefinition, OptionFlags, OptionKind, OptionMatch,

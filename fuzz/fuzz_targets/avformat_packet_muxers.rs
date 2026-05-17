@@ -1,7 +1,7 @@
 #![no_main]
 
 use avformat::{FrameCrcMuxer, HashAlgorithm, HashDigest, HashMuxer, NullMuxer};
-use avutil::{adler32, crc32_ieee, md5, sha256, AvErrorKind, Packet, SideData};
+use avutil::{adler32, crc32_ieee, md5, sha224, sha256, AvErrorKind, Packet, SideData};
 use libfuzzer_sys::fuzz_target;
 
 const MAX_PACKETS: usize = 16;
@@ -78,6 +78,7 @@ fn exercise_hash_muxers(packets: &[Packet]) {
         HashAlgorithm::Adler32,
         HashAlgorithm::Crc32,
         HashAlgorithm::Md5,
+        HashAlgorithm::Sha224,
         HashAlgorithm::Sha256,
     ] {
         let mut muxer = HashMuxer::new(algorithm);
@@ -173,6 +174,7 @@ fn digest_for(algorithm: HashAlgorithm, data: &[u8]) -> HashDigest {
         HashAlgorithm::Adler32 => HashDigest::U32(adler32(data)),
         HashAlgorithm::Crc32 => HashDigest::U32(crc32_ieee(data)),
         HashAlgorithm::Md5 => HashDigest::Bytes(md5(data).to_vec()),
+        HashAlgorithm::Sha224 => HashDigest::Bytes(sha224(data).to_vec()),
         HashAlgorithm::Sha256 => HashDigest::Bytes(sha256(data).to_vec()),
     }
 }
