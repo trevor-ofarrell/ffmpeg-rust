@@ -716,6 +716,34 @@ notes = "ffprobe-rs now accepts -count_frames for constrained MOV/MP4 and AVI lo
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffprobe-stream-nb-frames"
+kind = "cli"
+ffmpeg_name = "ffprobe stream nb_frames field"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_streams <input.mp4>; ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams <input.avi>; ffprobe -show_streams -of json <input.avi>"
+rust_command = "cargo test -p fftools ffprobe"
+unit_tests = [
+  "ffprobe::tests::renders_default_report_sections",
+  "ffprobe::tests::outputs_mov_stream_json",
+  "ffprobe::tests::outputs_mov_stream_frame_count_json",
+  "ffprobe::tests::outputs_mov_stream_frame_count_default",
+  "ffprobe::tests::outputs_mov_stream_packet_count_json",
+  "ffprobe::tests::outputs_mov_stream_packet_count_default",
+  "ffprobe::tests::outputs_avi_stream_json",
+  "ffprobe::tests::outputs_avi_stream_frame_count_json",
+  "ffprobe::tests::outputs_avi_stream_frame_count_default",
+  "ffprobe::tests::outputs_avi_stream_packet_count_json",
+  "ffprobe::tests::outputs_avi_stream_packet_count_default",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffprobe-rs stream reports now have explicit tests for nb_frames in default and JSON output. The constrained MOV path uses parsed sample_count and the constrained AVI path uses stream length; these are one-packet/one-frame fixture counts, not decoder-derived frame counts. No pinned-oracle differential/FATE coverage exists yet."
+blocked_reason = ""
+
+[[component]]
 id = "fftools-ffprobe-mov-codec-profile-level"
 kind = "cli"
 ffmpeg_name = "ffprobe MOV codec profile/level fields"

@@ -1763,6 +1763,7 @@ mod tests {
         assert!(rendered.contains("start_time=0.000000\n"));
         assert!(rendered.contains("r_frame_rate=30/1\n"));
         assert!(rendered.contains("avg_frame_rate=30/1\n"));
+        assert!(rendered.contains("nb_frames=0\n"));
         assert!(!rendered.contains("nb_read_frames="));
         assert!(!rendered.contains("nb_read_packets="));
         assert!(rendered.contains("[FORMAT]\n"));
@@ -1943,6 +1944,7 @@ mod tests {
         assert!(stdout.contains("\"coded_height\": 1080"));
         assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
         assert!(stdout.contains(&format!("\"extradata_size\": {expected_extradata_size}")));
+        assert!(stdout.contains("\"nb_frames\": 1"));
         assert!(stdout.contains("\"start_pts\": 0"));
         assert!(stdout.contains("\"start_time\": \"0.000000\""));
         assert!(stdout.contains("\"r_frame_rate\": \"30/1\""));
@@ -1975,6 +1977,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("\"streams\""));
+        assert!(stdout.contains("\"nb_frames\": 2"));
         assert!(stdout.contains("\"nb_read_frames\": \"2\""));
         assert!(!stdout.contains("\"nb_read_packets\""));
         assert!(!stdout.contains("\"packets\""));
@@ -1999,6 +2002,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("[STREAM]\n"));
+        assert!(stdout.contains("nb_frames=2\n"));
         assert!(stdout.contains("nb_read_frames=2\n"));
         assert!(!stdout.contains("nb_read_packets="));
         assert!(!stdout.contains("[PACKET]\n"));
@@ -2025,6 +2029,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("\"streams\""));
+        assert!(stdout.contains("\"nb_frames\": 2"));
         assert!(stdout.contains("\"nb_read_packets\": \"2\""));
         assert!(!stdout.contains("\"packets\""));
         assert!(!stdout.contains("\"format\""));
@@ -2048,6 +2053,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("[STREAM]\n"));
+        assert!(stdout.contains("nb_frames=2\n"));
         assert!(stdout.contains("nb_read_packets=2\n"));
         assert!(!stdout.contains("[PACKET]\n"));
         assert!(!stdout.contains("[FORMAT]\n"));
@@ -2307,6 +2313,7 @@ mod tests {
         assert!(stdout.contains("\"r_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"duration_ts\": 1"));
+        assert!(stdout.contains("\"nb_frames\": 1"));
         assert!(!stdout.contains("\"nb_read_frames\""));
         assert!(!stdout.contains("\"nb_read_packets\""));
         assert!(!stdout.contains("\"format\""));
@@ -2334,6 +2341,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("\"streams\""));
+        assert!(stdout.contains("\"nb_frames\": 2"));
         assert!(stdout.contains("\"nb_read_frames\": \"2\""));
         assert!(!stdout.contains("\"nb_read_packets\""));
         assert!(!stdout.contains("\"packets\""));
@@ -2360,6 +2368,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("[STREAM]\n"));
+        assert!(stdout.contains("nb_frames=2\n"));
         assert!(stdout.contains("nb_read_frames=2\n"));
         assert!(!stdout.contains("nb_read_packets="));
         assert!(!stdout.contains("[PACKET]\n"));
@@ -2388,6 +2397,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("\"streams\""));
+        assert!(stdout.contains("\"nb_frames\": 2"));
         assert!(stdout.contains("\"nb_read_packets\": \"2\""));
         assert!(!stdout.contains("\"packets\""));
         assert!(!stdout.contains("\"format\""));
@@ -2413,6 +2423,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("[STREAM]\n"));
+        assert!(stdout.contains("nb_frames=2\n"));
         assert!(stdout.contains("nb_read_packets=2\n"));
         assert!(!stdout.contains("[PACKET]\n"));
         assert!(!stdout.contains("[FORMAT]\n"));
