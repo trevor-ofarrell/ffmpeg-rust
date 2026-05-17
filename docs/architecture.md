@@ -68,6 +68,8 @@ For the current constrained MOV/MP4 and AVI ffprobe paths, `nb_programs` and `nb
 
 The current `ffprobe-rs` stream report includes `start_pts`/`start_time` for non-empty constrained MOV/AVI inputs whose parsers model zero-origin timestamps, plus `r_frame_rate` using already parsed timing metadata. It also reports `coded_width`/`coded_height` for video streams, currently mirroring parsed display dimensions because the constrained demuxer model has no separate cropping or codec-parser dimension layer yet. MOV currently derives rate from sample count, media duration, and timescale for the simple constant-duration fixtures covered by tests; broader FFmpeg timeline and rate-guessing parity remains incomplete.
 
+Video stream `field_order` is currently reported as `unknown` because the constrained MOV/AVI demuxers do not yet parse field-order metadata.
+
 `nb_frames` is currently reported from parsed container counts: MOV sample count and AVI stream length. This is verified for the one-frame-per-sample fixtures used by the current demuxer tests, but it is not a decoder-derived frame count.
 
 The test hierarchy is unit tests first, followed by golden parser tests, differential tests against the pinned oracle, FATE-derived tests, fuzz harnesses, integration tests, and performance benchmarks. Current coverage is limited to unit and in-process command tests for the first primitives and the initial ffprobe MOV path; separate cargo-built integration test executables are currently blocked by Windows Application Control in this environment.

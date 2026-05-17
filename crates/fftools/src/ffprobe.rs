@@ -120,6 +120,7 @@ pub struct FfprobeStreamReport {
     profile: Option<String>,
     level: Option<u32>,
     codec_type: String,
+    field_order: Option<String>,
     codec_tag_string: Option<String>,
     codec_tag: Option<String>,
     width: Option<u32>,
@@ -178,6 +179,10 @@ impl FfprobeStreamReport {
 
     pub fn codec_type(&self) -> &str {
         &self.codec_type
+    }
+
+    pub fn field_order(&self) -> Option<&str> {
+        self.field_order.as_deref()
     }
 
     pub fn codec_tag_string(&self) -> Option<&str> {
@@ -674,6 +679,7 @@ fn report_from_mov(path: &str, probe_score: u8, input_size: u64, info: &MovInfo)
             );
             let (start_pts, start_time) =
                 stream_start_for_sample_count(track.sample_count(), 1, track.media_timescale());
+            let codec_type = mov_codec_type(track).to_owned();
             FfprobeStreamReport {
                 index,
                 id: track.id(),
@@ -687,7 +693,8 @@ fn report_from_mov(path: &str, probe_score: u8, input_size: u64, info: &MovInfo)
                     .map(str::to_owned),
                 profile: video_sample_entry.and_then(mov_codec_profile),
                 level: video_sample_entry.and_then(mov_codec_level),
-                codec_type: mov_codec_type(track).to_owned(),
+                field_order: field_order_for_codec_type(&codec_type),
+                codec_type,
                 codec_tag: codec_tag_string.as_deref().and_then(fourcc_codec_tag),
                 codec_tag_string,
                 width: track.width(),
@@ -776,6 +783,7 @@ fn report_from_avi(path: &str, input_size: u64, info: &AviInfo) -> FfprobeReport
                 time_base_num,
                 time_base_den,
             );
+            let codec_type = avi_codec_type(stream.media_type()).to_owned();
             FfprobeStreamReport {
                 index: stream.index(),
                 id: u32::try_from(stream.index()).unwrap_or(u32::MAX),
@@ -783,7 +791,8 @@ fn report_from_avi(path: &str, input_size: u64, info: &AviInfo) -> FfprobeReport
                 codec_long_name: codec_long_name_for_tag(stream.handler()).map(str::to_owned),
                 profile: None,
                 level: None,
-                codec_type: avi_codec_type(stream.media_type()).to_owned(),
+                field_order: field_order_for_codec_type(&codec_type),
+                codec_type,
                 codec_tag: fourcc_codec_tag(stream.handler()),
                 codec_tag_string: Some(stream.handler().to_owned()),
                 width: Some(stream.width()),
@@ -1134,6 +1143,10 @@ fn avi_codec_type(media_type: AviMediaType) -> &'static str {
     }
 }
 
+fn field_order_for_codec_type(codec_type: &str) -> Option<String> {
+    (codec_type == "video").then(|| "unknown".to_string())
+}
+
 fn codec_name_for_tag(tag: &str) -> Option<&'static str> {
     match tag {
         "DIB " | "raw " => Some("rawvideo"),
@@ -1304,6 +1317,9 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             if let Some(color_primaries) = &stream.color_primaries {
                 out.push_str(&format!("color_primaries={color_primaries}\n"));
             }
+            if let Some(field_order) = &stream.field_order {
+                out.push_str(&format!("field_order={field_order}\n"));
+            }
             if let Some(level) = stream.level {
                 out.push_str(&format!("level={level}\n"));
             }
@@ -1472,6 +1488,9 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     }
     if let Some(color_primaries) = &stream.color_primaries {
         fields.push(json_string("color_primaries", color_primaries));
+    }
+    if let Some(field_order) = &stream.field_order {
+        fields.push(json_string("field_order", field_order));
     }
     if let Some(level) = stream.level {
         fields.push(json_number("level", level));
@@ -1759,6 +1778,7 @@ mod tests {
         assert!(rendered.contains("color_space=bt709\n"));
         assert!(rendered.contains("color_transfer=bt709\n"));
         assert!(rendered.contains("color_primaries=bt709\n"));
+        assert!(rendered.contains("field_order=unknown\n"));
         assert!(rendered.contains("start_pts=0\n"));
         assert!(rendered.contains("start_time=0.000000\n"));
         assert!(rendered.contains("r_frame_rate=30/1\n"));
@@ -1944,6 +1964,7 @@ mod tests {
         assert!(stdout.contains("\"coded_height\": 1080"));
         assert!(stdout.contains("\"bits_per_raw_sample\": 24"));
         assert!(stdout.contains(&format!("\"extradata_size\": {expected_extradata_size}")));
+        assert!(stdout.contains("\"field_order\": \"unknown\""));
         assert!(stdout.contains("\"nb_frames\": 1"));
         assert!(stdout.contains("\"start_pts\": 0"));
         assert!(stdout.contains("\"start_time\": \"0.000000\""));
@@ -2313,6 +2334,7 @@ mod tests {
         assert!(stdout.contains("\"r_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"avg_frame_rate\": \"25/1\""));
         assert!(stdout.contains("\"duration_ts\": 1"));
+        assert!(stdout.contains("\"field_order\": \"unknown\""));
         assert!(stdout.contains("\"nb_frames\": 1"));
         assert!(!stdout.contains("\"nb_read_frames\""));
         assert!(!stdout.contains("\"nb_read_packets\""));
@@ -2507,6 +2529,7 @@ mod tests {
                 profile: None,
                 level: None,
                 codec_type: "video".to_string(),
+                field_order: Some("unknown".to_string()),
                 codec_tag_string: Some("raw ".to_string()),
                 codec_tag: Some("0x20776172".to_string()),
                 width: Some(1920),
