@@ -4,6 +4,7 @@ Fuzzing is required for parsers, demuxers, decoders, filters, option parsing, an
 
 Initial targets:
 
+- `avcodec_basic_decoders`: exercises rawvideo and pcm_s16le decoder constructor validation, packet-size rejection, frame shape, payload preservation, and PTS propagation.
 - `avutil_byteio`: exercises bounded byte reads, EOF cursor invariants, and byte writer helper paths.
 - `avutil_bitreader`: exercises bit reads, peeks, skips, alignment, bit writer width validation, and cursor invariants.
 - `avutil_metadata_options`: exercises metadata dictionary mutation, key/value validation, AVOption-like definition validation, string parsing, type/range checks, and failed-mutation invariants.
@@ -21,6 +22,7 @@ Initial targets:
 Run with cargo-fuzz when the tool is installed:
 
 ```sh
+cargo fuzz run avcodec_basic_decoders
 cargo fuzz run avutil_byteio
 cargo fuzz run avutil_bitreader
 cargo fuzz run avutil_metadata_options

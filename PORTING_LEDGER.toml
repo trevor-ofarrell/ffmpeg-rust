@@ -1491,8 +1491,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial rawvideo decoder emits avutil video frames for gray, rgb24, rgba, and yuv420p with strict dimensions and packet-size validation. Many FFmpeg raw pixel formats, demuxer wiring, differential tests, and FATE coverage are pending."
+fuzz_targets = ["avcodec_basic_decoders"]
+notes = "Initial rawvideo decoder emits avutil video frames for gray, rgb24, rgba, and yuv420p with strict dimensions and packet-size validation. Build-checked cargo-fuzz target avcodec_basic_decoders covers constructor validation, packet-size rejection, decoded frame geometry, plane splitting, payload preservation, and PTS propagation, but actual local fuzz execution is blocked until cargo-fuzz is installed. Many FFmpeg raw pixel formats, demuxer wiring, differential tests, and FATE coverage are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1513,8 +1513,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial packed pcm_s16le decoder emits avutil audio frames with strict sample-rate/channel validation and whole sample-frame packet validation. Other PCM variants, demuxer wiring, differential tests, and FATE coverage are pending."
+fuzz_targets = ["avcodec_basic_decoders"]
+notes = "Initial packed pcm_s16le decoder emits avutil audio frames with strict sample-rate/channel validation and whole sample-frame packet validation. Build-checked cargo-fuzz target avcodec_basic_decoders covers constructor validation, sample-frame alignment rejection, decoded audio frame metadata, payload preservation, and PTS propagation, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other PCM variants, demuxer wiring, differential tests, and FATE coverage are pending."
 blocked_reason = ""
 
 [[component]]

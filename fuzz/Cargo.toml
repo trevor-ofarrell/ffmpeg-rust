@@ -8,10 +8,18 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
+avcodec = { path = "../crates/avcodec" }
 avformat = { path = "../crates/avformat" }
 avutil = { path = "../crates/avutil" }
 fftools = { path = "../crates/fftools" }
 libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "avcodec_basic_decoders"
+path = "fuzz_targets/avcodec_basic_decoders.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "avutil_byteio"
