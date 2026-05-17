@@ -1597,8 +1597,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial image2 demuxer packetizes one single-image entry or contiguous %d/%0Nd numbered entries in deterministic frame order with PTS/duration assignment and path side data. Filesystem discovery, glob patterns, timestamps, looping, codec probing, CLI wiring, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_image2"]
+notes = "Initial image2 demuxer packetizes one single-image entry or contiguous %d/%0Nd numbered entries in deterministic frame order with PTS/duration assignment and path side data. A build-checked avformat_image2 cargo-fuzz target covers pattern parsing, entry sequence validation, packet timing/path side data, and mux-demux round trips; actual local fuzz execution is blocked until cargo-fuzz is installed. Filesystem discovery, glob patterns, timestamps, looping, codec probing, CLI wiring, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
@@ -1725,8 +1725,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial image2 muxer maps stream-0 packets to single-image or contiguous %d/%0Nd output entries, validates non-empty packet payloads, formats output paths from a configurable start number, rejects duplicate single-image writes, round-trips through the demuxer, and prevents writes after finish. It is wired to a constrained ffmpeg-rs image2 input to image2 filesystem-output path. Glob patterns, timestamp modes, looping, codec-specific image validation, broader CLI wiring, differential tests, FATE, and fuzzing are pending."
+fuzz_targets = ["avformat_image2"]
+notes = "Initial image2 muxer maps stream-0 packets to single-image or contiguous %d/%0Nd output entries, validates non-empty packet payloads, formats output paths from a configurable start number, rejects duplicate single-image writes, round-trips through the demuxer, and prevents writes after finish. It is wired to a constrained ffmpeg-rs image2 input to image2 filesystem-output path. A build-checked avformat_image2 cargo-fuzz target covers muxer path generation, invalid packet handling, finish behavior, and mux-demux round trips; actual local fuzz execution is blocked until cargo-fuzz is installed. Glob patterns, timestamp modes, looping, codec-specific image validation, broader CLI wiring, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]

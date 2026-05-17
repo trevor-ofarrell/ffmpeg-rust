@@ -70,6 +70,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "avformat_image2"
+path = "fuzz_targets/avformat_image2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "fftools_option_parser"
 path = "fuzz_targets/fftools_option_parser.rs"
 test = false
