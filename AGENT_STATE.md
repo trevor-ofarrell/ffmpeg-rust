@@ -2,6 +2,8 @@
 
 ## Current Status
 
+`fate-runner` now has a tested changed-component selector. It parses component IDs from `PORTING_LEDGER.toml`, maps git changed paths for the currently covered Rust modules to ledger component IDs, preserves ledger order, reports unmapped implementation paths instead of silently ignoring them, and includes untracked files in changed-path discovery. `cargo run -p fate-runner -- run --changed` now reaches real selection; it still exits with an explicit no-runnable-FATE-mapping error for selected components because samples and FATE command mappings are not configured.
+
 `avformat-video-parameters` now provides a shared video stream-parameter helper for the current rawvideo/yuv4mpegpipe/AVI subset. It validates dimensions, u32 container dimensions, pixel format, derived frame byte size, whole-frame input byte counts, and exact packet payload lengths while preserving distinct error kinds for user-supplied parameters versus untrusted container fields. Rawvideo demuxer/muxer, yuv4mpegpipe demuxer/muxer, and the AVI RGB24 muxer now store or validate their video shape through this helper, while format-specific constraints such as AVI classic header limits and YUV4MPEG2 4:2:0 even dimensions remain local. MOV visual sample-entry integration is intentionally pending until a tested sample-entry FourCC/depth to `PixelFormat` mapping exists. The ledger records this helper as implemented but not complete because oracle differential tests, FATE, fuzz coverage, and generated pixel-format coverage are still pending.
 
 `avformat-audio-parameters` now provides a shared audio stream-parameter helper for the current PCM/WAV subset. It validates sample rate, channel count, sample format, derived mono/stereo `ChannelLayout`, packed sample-frame byte sizing, bits-per-sample reporting, and whole-sample-frame byte lengths while preserving distinct error kinds for user-supplied parameters versus untrusted container fields. Raw `pcm_s16le` demuxer/muxer and RIFF/WAVE s16le demuxer/muxer now store and validate their audio metadata through this helper. The ledger records this helper as implemented but not complete because richer audio codec-parameter parity, oracle differential tests, FATE, and fuzz coverage are still pending.
@@ -623,6 +625,12 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 - `cargo test --workspace --all-features`
 - `cargo run -p fate-runner -- list`
 - `git diff --check`
+- `cargo test -p fate-runner`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- list`
+- `git diff --check`
 
 ## Last Failing Commands
 
@@ -646,24 +654,25 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 - `cargo test -p fftools ffmpeg` initially failed after adding the rawvideo output muxer variant because the raw PCM input branch did not explicitly handle `OutputMuxer::RawVideo`; the unsupported arm was added and the focused test passed on rerun.
 - `cargo test --workspace --all-features` initially failed after tightening MOV `mdhd` parsing because two `ffmpeg` MOV fixtures still omitted the language/predefined trailer fields; the fixtures were updated and the focused MOV ffmpeg tests plus full workspace suite passed on rerun.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed after adding channel-layout assertions because `ChannelLayout` was imported at `avcodec::pcm` module scope but only used by tests; the import was moved into the test module and clippy passed on rerun.
+- `cargo run -p fate-runner -- run --changed` selected `fate-runner` from the current git diff and exited with the intended no-runnable-FATE-mapping error because FATE samples and component command mappings are not configured yet.
 
 ## Current Focus Component
 
-`avformat-video-parameters` was the latest focus. It is wired into the rawvideo demuxer/muxer, yuv4mpegpipe demuxer/muxer, and AVI RGB24 muxer with focused and workspace tests passing, but remains incomplete until MOV visual sample-entry integration, broader pixel-format coverage, pinned-oracle differential tests, FATE mappings, and fuzz coverage exist.
+`fate-runner` changed-component selection is the latest focus. It can now select changed ledger components from mapped Rust paths and has unit coverage, but the broader FATE runner remains scaffolded because actual FATE sample roots and runnable component mappings are absent.
 
 ## Next 3 Concrete Actions
 
-1. Wire MOV visual sample-entry parsing through `VideoStreamParameters` once a tested codec-tag/depth to `PixelFormat` mapping is defined for the supported raw subset.
-2. Expand pixel/sample/channel layout coverage from pinned `ffmpeg -pix_fmts`, `-sample_fmts`, and `-layouts` inventories once the FFmpeg 8.1.1 oracle binary exists.
-3. Add pinned-oracle differential coverage for rawvideo/PCM frame sizing and ffprobe stream fields once the oracle is available.
+1. Add a minimal explicit FATE mapping file format and loader so selected components can fail or run based on concrete mapped commands instead of the current global unmapped error.
+2. Wire one non-oracle local smoke mapping for an already implemented component only if it does not pretend to replace upstream FATE coverage.
+3. Expand pixel/sample/channel layout coverage from pinned `ffmpeg -pix_fmts`, `-sample_fmts`, and `-layouts` inventories once the FFmpeg 8.1.1 oracle binary exists.
 
 ## Known Blockers
 
 - No pinned FFmpeg 8.1.1 oracle binary exists at `third_party/ffmpeg-oracle/build/bin/ffmpeg`, so oracle snapshots and differential tests have not been generated.
-- FATE samples and target mappings are not configured.
+- FATE samples and target mappings are not configured. `run --changed` can now select ledger components from changed paths, but actual selected execution intentionally remains blocked until mappings exist.
 - `./xtask quick` cannot be a file command while `xtask/` is a crate directory on this filesystem; use `cargo run -p xtask -- quick`.
 - Windows Application Control blocks some freshly built child executables and separate integration-test executables. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: extended `VideoStreamParameters` with u32 container dimensions, wired yuv4mpegpipe demuxer/muxer through it for yuv420p frame sizing and exact packet payload validation, preserved YUV4MPEG2-specific chroma constraints locally, and updated `PORTING_LEDGER.toml`, `docs/architecture.md`, and `docs/compatibility.md`. This still lacks MOV visual sample-entry wiring, broader generated pixel-format coverage, pinned-oracle differential tests, FATE, and fuzzing.
+Latest slice: added tested `fate-runner` changed-component selection from git paths, updated `PORTING_LEDGER.toml`, `docs/architecture.md`, `docs/compatibility.md`, and `docs/oracle.md`, and preserved the explicit failure for selected components without runnable FATE mappings.

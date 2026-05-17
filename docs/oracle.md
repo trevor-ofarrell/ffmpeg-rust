@@ -49,7 +49,8 @@ Each command is written as a text snapshot under `compat/ffmpeg-8.1.1/`, with `i
 
 FATE samples are expected to be obtained using upstream FFmpeg's documented `make fate-rsync` flow against a local samples directory. This repository does not yet contain samples or a FATE target mapping.
 
+`cargo run -p fate-runner -- list` reads `PORTING_LEDGER.toml` and lists known components. `cargo run -p fate-runner -- run --changed` inspects git changed paths, maps currently covered Rust modules to ledger component IDs, and reports those components, but it still exits with an explicit unmapped-FATE error until real FATE commands and sample roots are configured.
+
 ## Differential Tests
 
 Differential tests must compare Rust outputs to the pinned FFmpeg oracle. FFmpeg may be invoked from tests and oracle tooling only, never as runtime implementation.
-

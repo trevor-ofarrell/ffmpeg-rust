@@ -161,11 +161,16 @@ status = "scaffolded"
 priority = 2
 oracle_command = "make fate"
 rust_command = "cargo run -p fate-runner -- list"
-unit_tests = []
+unit_tests = [
+  "tests::parses_component_ids_from_ledger",
+  "tests::changed_selection_maps_paths_and_preserves_ledger_order",
+  "tests::changed_selection_expands_prefix_rules_against_existing_ledger_ids",
+  "tests::unmapped_relevant_paths_report_crate_files_but_ignore_docs",
+]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Can list ledger component IDs. Runnable FATE mapping intentionally returns an error until real mappings exist."
+notes = "Can list ledger component IDs and select changed ledger components from git paths for the currently mapped Rust modules. Runnable FATE mapping intentionally returns an error until real mappings exist."
 blocked_reason = "No FATE samples path or component mapping has been configured."
 
 [[component]]
