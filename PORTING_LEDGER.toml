@@ -293,6 +293,7 @@ unit_tests = [
   "dict::tests::case_sensitive_mode_allows_distinct_keys",
   "dict::tests::keep_existing_preserves_original_entry",
   "dict::tests::append_mode_concatenates_existing_value",
+  "dict::tests::multikey_mode_preserves_duplicate_entries_in_order",
   "dict::tests::prefix_lookup_returns_first_matching_entry",
   "dict::tests::remove_defaults_to_requested_match_mode",
   "dict::tests::rejects_empty_or_nul_keys_and_nul_values",
@@ -300,7 +301,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avutil_metadata_options"]
-notes = "Order-preserving metadata dictionary implemented with ASCII case-insensitive default matching, case-sensitive lookup, prefix lookup, keep-existing, append, removal, and invalid string checks. Build-checked cargo-fuzz target avutil_metadata_options covers key/value validation, case-sensitive and case-insensitive mutation, lookup, removal, clear, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. Differential vectors are pending, so this is not marked complete."
+notes = "Order-preserving metadata dictionary implemented with ASCII case-insensitive default matching, case-sensitive lookup, prefix lookup, keep-existing, append, AV_DICT_MULTIKEY-like duplicate-key insertion, removal, and invalid string checks. Build-checked cargo-fuzz target avutil_metadata_options covers key/value validation, case-sensitive and case-insensitive mutation, duplicate-key insertion, lookup, removal, clear, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. Differential vectors are pending, so this is not marked complete."
 blocked_reason = ""
 
 [[component]]

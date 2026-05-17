@@ -140,6 +140,18 @@ fn exercise_fixtures() {
         DictionarySet::Replaced
     );
     assert_eq!(dict.get("TITLE"), Some("Second"));
+    assert_eq!(
+        dict.set_with_mode(
+            "TITLE",
+            "Third",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap(),
+        DictionarySet::Inserted
+    );
+    assert_eq!(dict.len(), 2);
+    assert_eq!(dict.get("title"), Some("Second"));
     assert!(dict.set("", "value").is_err());
     assert!(dict.set("bad\0key", "value").is_err());
     assert!(dict.set("key", "bad\0value").is_err());
@@ -348,10 +360,11 @@ fn match_mode_from(byte: Option<u8>) -> MatchMode {
 }
 
 fn set_mode_from(byte: Option<u8>) -> SetMode {
-    match byte.unwrap_or_default() % 3 {
+    match byte.unwrap_or_default() % 4 {
         0 => SetMode::Overwrite,
         1 => SetMode::KeepExisting,
-        _ => SetMode::Append,
+        2 => SetMode::Append,
+        _ => SetMode::AllowMultiple,
     }
 }
 

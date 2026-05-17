@@ -11,6 +11,7 @@ pub enum SetMode {
     Overwrite,
     KeepExisting,
     Append,
+    AllowMultiple,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +78,11 @@ impl Dictionary {
         let key = validate_key(key.into())?;
         let value = validate_value(value.into())?;
 
+        if set_mode == SetMode::AllowMultiple {
+            self.entries.push(DictionaryEntry { key, value });
+            return Ok(DictionarySet::Inserted);
+        }
+
         if let Some(index) = self.find_index(&key, match_mode) {
             let entry = &mut self.entries[index];
             return match set_mode {
@@ -90,6 +96,7 @@ impl Dictionary {
                     entry.value.push_str(&value);
                     Ok(DictionarySet::Appended)
                 }
+                SetMode::AllowMultiple => unreachable!(),
             };
         }
 
@@ -273,6 +280,39 @@ mod tests {
 
         assert_eq!(result, DictionarySet::Appended);
         assert_eq!(dict.get("comment"), Some("part1+part2"));
+    }
+
+    #[test]
+    fn multikey_mode_preserves_duplicate_entries_in_order() {
+        let mut dict = Dictionary::new();
+
+        dict.set("artist", "first").unwrap();
+        let result = dict
+            .set_with_mode(
+                "ARTIST",
+                "second",
+                MatchMode::CaseInsensitive,
+                SetMode::AllowMultiple,
+            )
+            .unwrap();
+
+        assert_eq!(result, DictionarySet::Inserted);
+        assert_eq!(dict.len(), 2);
+        assert_eq!(dict.entries()[0].key(), "artist");
+        assert_eq!(dict.entries()[0].value(), "first");
+        assert_eq!(dict.entries()[1].key(), "ARTIST");
+        assert_eq!(dict.entries()[1].value(), "second");
+        assert_eq!(dict.get("artist"), Some("first"));
+        assert_eq!(
+            dict.get_entry("ARTIST", MatchMode::CaseSensitive)
+                .map(DictionaryEntry::value),
+            Some("second")
+        );
+
+        let removed = dict.remove("artist", MatchMode::CaseInsensitive).unwrap();
+        assert_eq!(removed.value(), "first");
+        assert_eq!(dict.len(), 1);
+        assert_eq!(dict.get("artist"), Some("second"));
     }
 
     #[test]
