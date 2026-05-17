@@ -1,0 +1,1 @@
+-hide_banner -f image2 -start_number 5 -framerate 24 -i in-%03d.png -map 0:v -c:v rawvideo -f null -

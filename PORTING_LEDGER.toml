@@ -407,8 +407,8 @@ unit_tests = [
 ]
 differential_tests = []
 fate_tests = []
-fuzz_targets = []
-notes = "Initial parser groups a small known option set, including file-scoped -start_number, into global options, next input, or next output according to FFmpeg option ordering. It deliberately rejects unknown options and is only partially wired into command execution."
+fuzz_targets = ["fftools_option_parser"]
+notes = "Initial parser groups a small known option set, including file-scoped -start_number, into global options, next input, or next output according to FFmpeg option ordering. It deliberately rejects unknown options and is only partially wired into command execution. Build-checked cargo-fuzz target fftools_option_parser exercises bounded argv parsing, option arity invariants, stream-specifier option names, file/global grouping, and parse/render/parse stability, but actual local fuzz execution is blocked until cargo-fuzz is installed."
 blocked_reason = ""
 
 [[component]]

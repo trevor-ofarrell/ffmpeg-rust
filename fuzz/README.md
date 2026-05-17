@@ -12,6 +12,7 @@ Initial targets:
 - `avformat_rawvideo`: exercises rawvideo demuxer geometry/format/rate validation, frame slicing, timing, and side-data invariants.
 - `avformat_avi`: exercises constrained RIFF AVI demuxer chunk parsing, stream metadata, packet timing, and side-data invariants.
 - `avformat_mov`: exercises constrained MOV/MP4 box parsing, sample-table packet extraction, stream metadata, packet timing, and side-data invariants.
+- `fftools_option_parser`: exercises FFmpeg-style option grouping, value handling, stream-specifier option names, and parse/render/parse stability.
 
 Run with cargo-fuzz when the tool is installed:
 
@@ -24,6 +25,7 @@ cargo fuzz run avformat_pcm_s16le
 cargo fuzz run avformat_rawvideo
 cargo fuzz run avformat_avi
 cargo fuzz run avformat_mov
+cargo fuzz run fftools_option_parser
 ```
 
 The harness package lives under `fuzz/` and is intentionally separate from the main workspace.

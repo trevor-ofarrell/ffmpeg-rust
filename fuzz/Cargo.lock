@@ -43,7 +43,16 @@ version = "0.0.0"
 dependencies = [
  "avformat",
  "avutil",
+ "fftools",
  "libfuzzer-sys",
+]
+
+[[package]]
+name = "fftools"
+version = "0.1.0"
+dependencies = [
+ "avformat",
+ "avutil",
 ]
 
 [[package]]
