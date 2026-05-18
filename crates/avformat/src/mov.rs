@@ -46,6 +46,8 @@ const ALAC_ID: &[u8; 4] = b"alac";
 const VTTC_ID: &[u8; 4] = b"vttC";
 const VLAB_ID: &[u8; 4] = b"vlab";
 const TXTC_ID: &[u8; 4] = b"txtC";
+const STYL_ID: &[u8; 4] = b"styl";
+const TBOX_ID: &[u8; 4] = b"tbox";
 const VTTC_CUE_ID: &[u8; 4] = b"vttc";
 const VTTE_ID: &[u8; 4] = b"vtte";
 const VTTA_ID: &[u8; 4] = b"vtta";
@@ -281,6 +283,54 @@ impl MovTimedTextSampleEntry {
 
     pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
         &self.child_boxes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovTimedTextSample {
+    text: String,
+    text_encoding: MovTimedTextEncoding,
+    modifier_boxes: Vec<MovSampleEntryChildBox>,
+    style_records: Vec<MovTextStyleRecord>,
+    text_box: Option<MovTextBoxRecord>,
+}
+
+impl MovTimedTextSample {
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn text_encoding(&self) -> MovTimedTextEncoding {
+        self.text_encoding
+    }
+
+    pub fn modifier_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.modifier_boxes
+    }
+
+    pub fn style_records(&self) -> &[MovTextStyleRecord] {
+        &self.style_records
+    }
+
+    pub fn text_box(&self) -> Option<&MovTextBoxRecord> {
+        self.text_box.as_ref()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MovTimedTextEncoding {
+    Utf8,
+    Utf16Be,
+    Utf16Le,
+}
+
+impl MovTimedTextEncoding {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Utf8 => "utf8",
+            Self::Utf16Be => "utf16be",
+            Self::Utf16Le => "utf16le",
+        }
     }
 }
 
@@ -1879,6 +1929,7 @@ impl<'a> MovDemuxer<'a> {
             .tracks
             .get(packet.stream_index())
             .ok_or_else(|| AvError::invalid_data("MOV/MP4 packet stream index has no track"))?;
+        decorate_timed_text_packet(&mut packet, track)?;
         decorate_webvtt_packet(&mut packet, track)?;
         self.next_packet += 1;
         Ok(Some(packet))
@@ -2755,6 +2806,156 @@ fn parse_timed_text_sample_entry(extra_data: &[u8]) -> AvResult<MovTimedTextSamp
     })
 }
 
+fn read_text_box_record(reader: &mut ByteReader<'_>, context: &str) -> AvResult<MovTextBoxRecord> {
+    ensure_remaining(reader, 8, context)?;
+    Ok(MovTextBoxRecord {
+        top: reader.read_i16_be()?,
+        left: reader.read_i16_be()?,
+        bottom: reader.read_i16_be()?,
+        right: reader.read_i16_be()?,
+    })
+}
+
+fn read_text_style_record(
+    reader: &mut ByteReader<'_>,
+    context: &str,
+) -> AvResult<MovTextStyleRecord> {
+    ensure_remaining(reader, 12, context)?;
+    Ok(MovTextStyleRecord {
+        start_char: reader.read_u16_be()?,
+        end_char: reader.read_u16_be()?,
+        font_id: reader.read_u16_be()?,
+        face_style_flags: reader.read_u8()?,
+        font_size: reader.read_u8()?,
+        text_color_rgba: read_fixed_array_4(reader)?,
+    })
+}
+
+pub fn parse_timed_text_sample(payload: &[u8]) -> AvResult<MovTimedTextSample> {
+    let mut reader = ByteReader::new(payload);
+    ensure_remaining(&reader, 2, "MOV/MP4 tx3g text sample")?;
+    let text_length = usize::from(reader.read_u16_be()?);
+    ensure_remaining(&reader, text_length, "MOV/MP4 tx3g text string")?;
+    let text_bytes = reader.read_exact(text_length)?;
+    let (text, text_encoding) = parse_timed_text_string(text_bytes)?;
+    let modifier_boxes = parse_sample_entry_child_boxes(
+        payload,
+        reader.position(),
+        payload.len(),
+        "MOV/MP4 tx3g text sample modifiers",
+    )?;
+    let text_char_count = text.chars().count();
+    let style_records = parse_timed_text_style_modifiers(&modifier_boxes, text_char_count)?;
+    let text_box = parse_timed_text_box_modifier(&modifier_boxes)?;
+    Ok(MovTimedTextSample {
+        text,
+        text_encoding,
+        modifier_boxes,
+        style_records,
+        text_box,
+    })
+}
+
+fn parse_timed_text_string(payload: &[u8]) -> AvResult<(String, MovTimedTextEncoding)> {
+    if let Some(payload) = payload.strip_prefix(&[0xfe, 0xff]) {
+        return parse_utf16_boxstring(payload, true, "MOV/MP4 tx3g UTF-16BE text")
+            .map(|text| (text, MovTimedTextEncoding::Utf16Be));
+    }
+    if let Some(payload) = payload.strip_prefix(&[0xff, 0xfe]) {
+        return parse_utf16_boxstring(payload, false, "MOV/MP4 tx3g UTF-16LE text")
+            .map(|text| (text, MovTimedTextEncoding::Utf16Le));
+    }
+    parse_utf8_boxstring(payload, "MOV/MP4 tx3g UTF-8 text")
+        .map(|text| (text, MovTimedTextEncoding::Utf8))
+}
+
+fn parse_utf16_boxstring(payload: &[u8], big_endian: bool, context: &str) -> AvResult<String> {
+    if payload.len() % 2 != 0 {
+        return Err(AvError::invalid_data(format!(
+            "{context} has an odd byte length"
+        )));
+    }
+    let code_units = payload.chunks_exact(2).map(|chunk| {
+        if big_endian {
+            u16::from_be_bytes([chunk[0], chunk[1]])
+        } else {
+            u16::from_le_bytes([chunk[0], chunk[1]])
+        }
+    });
+    std::char::decode_utf16(code_units)
+        .collect::<Result<String, _>>()
+        .map_err(|_| AvError::invalid_data(format!("{context} contains invalid UTF-16")))
+}
+
+fn parse_timed_text_style_modifiers(
+    modifier_boxes: &[MovSampleEntryChildBox],
+    text_char_count: usize,
+) -> AvResult<Vec<MovTextStyleRecord>> {
+    let mut records = Vec::new();
+    for modifier in modifier_boxes {
+        if modifier.box_type.as_bytes() == STYL_ID {
+            records.extend(parse_timed_text_style_box(
+                modifier.payload(),
+                text_char_count,
+            )?);
+        }
+    }
+    Ok(records)
+}
+
+fn parse_timed_text_style_box(
+    payload: &[u8],
+    text_char_count: usize,
+) -> AvResult<Vec<MovTextStyleRecord>> {
+    let mut reader = ByteReader::new(payload);
+    ensure_remaining(&reader, 2, "MOV/MP4 tx3g styl modifier")?;
+    let entry_count = usize::from(reader.read_u16_be()?);
+    let mut records = Vec::with_capacity(entry_count);
+    let mut previous_end = 0_u16;
+    for _ in 0..entry_count {
+        let record = read_text_style_record(&mut reader, "MOV/MP4 tx3g styl modifier")?;
+        if record.end_char < record.start_char {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 tx3g styl record endChar precedes startChar",
+            ));
+        }
+        if record.start_char < previous_end {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 tx3g styl records must be ordered and non-overlapping",
+            ));
+        }
+        if usize::from(record.end_char) > text_char_count {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 tx3g styl record extends past the text string",
+            ));
+        }
+        previous_end = record.end_char;
+        records.push(record);
+    }
+    ensure_box_consumed(&reader, "MOV/MP4 tx3g styl modifier")?;
+    Ok(records)
+}
+
+fn parse_timed_text_box_modifier(
+    modifier_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovTextBoxRecord>> {
+    let mut matches = modifier_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == TBOX_ID);
+    let Some(child) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 tx3g text sample contains duplicate tbox modifiers",
+        ));
+    }
+    let mut reader = ByteReader::new(child.payload());
+    let text_box = read_text_box_record(&mut reader, "MOV/MP4 tx3g tbox modifier")?;
+    ensure_box_consumed(&reader, "MOV/MP4 tx3g tbox modifier")?;
+    Ok(Some(text_box))
+}
+
 fn parse_xml_subtitle_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlSubtitleSampleEntry> {
     let mut reader = ByteReader::new(extra_data);
     let namespace = read_null_terminated_utf8(&mut reader, "MOV/MP4 stpp namespace")?;
@@ -3111,6 +3312,49 @@ fn find_unique_webvtt_child_box<'a>(
         )));
     }
     Ok(Some(child))
+}
+
+fn decorate_timed_text_packet(packet: &mut Packet, track: &MovTrackInfo) -> AvResult<()> {
+    let Some(codec_parameters) = track.codec_parameters() else {
+        return Ok(());
+    };
+    if codec_parameters.codec_tag() != "tx3g" {
+        return Ok(());
+    }
+
+    let sample = parse_timed_text_sample(packet.data())?;
+    let text_char_count = u32::try_from(sample.text().chars().count())
+        .map_err(|_| AvError::unsupported("MOV/MP4 tx3g text character count exceeds u32 range"))?;
+    let modifier_count = u32::try_from(sample.modifier_boxes().len())
+        .map_err(|_| AvError::unsupported("MOV/MP4 tx3g modifier count exceeds u32 range"))?;
+    let style_record_count = u32::try_from(sample.style_records().len())
+        .map_err(|_| AvError::unsupported("MOV/MP4 tx3g style record count exceeds u32 range"))?;
+
+    packet.push_side_data(SideData::new(
+        "mov_tx3g_text_encoding",
+        sample.text_encoding().name().as_bytes().to_vec(),
+    )?);
+    packet.push_side_data(SideData::new(
+        "mov_tx3g_text_char_count",
+        text_char_count.to_be_bytes().to_vec(),
+    )?);
+    packet.push_side_data(SideData::new(
+        "mov_tx3g_modifier_count",
+        modifier_count.to_be_bytes().to_vec(),
+    )?);
+    packet.push_side_data(SideData::new(
+        "mov_tx3g_style_record_count",
+        style_record_count.to_be_bytes().to_vec(),
+    )?);
+    packet.push_side_data(SideData::new(
+        "mov_tx3g_has_text_box",
+        if sample.text_box().is_some() {
+            b"1".to_vec()
+        } else {
+            b"0".to_vec()
+        },
+    )?);
+    Ok(())
 }
 
 fn decorate_webvtt_packet(packet: &mut Packet, track: &MovTrackInfo) -> AvResult<()> {
@@ -6438,6 +6682,86 @@ mod tests {
     }
 
     #[test]
+    fn parses_timed_text_sample_payload_modifiers() {
+        let style_record = text_style_record_payload(0, 5, 2, 1, 18, [10, 20, 30, 255]);
+        let styl = box_(
+            *STYL_ID,
+            &[1_u16.to_be_bytes().as_slice(), style_record.as_slice()].concat(),
+        );
+        let tbox = box_(*TBOX_ID, &text_box_record_payload(-10, -20, 30, 40));
+        let unknown = box_(*b"abcd", b"ignored");
+        let modifiers = [styl.as_slice(), tbox.as_slice(), unknown.as_slice()].concat();
+        let sample = tx3g_text_sample(b"Hello", &modifiers);
+        let parsed = parse_timed_text_sample(&sample).unwrap();
+
+        assert_eq!(parsed.text(), "Hello");
+        assert_eq!(parsed.text_encoding(), MovTimedTextEncoding::Utf8);
+        assert_eq!(parsed.modifier_boxes().len(), 3);
+        assert_eq!(parsed.modifier_boxes()[2].box_type(), "abcd");
+        assert_eq!(parsed.style_records().len(), 1);
+        let style = &parsed.style_records()[0];
+        assert_eq!(style.start_char(), 0);
+        assert_eq!(style.end_char(), 5);
+        assert_eq!(style.font_id(), 2);
+        assert_eq!(style.face_style_flags(), 1);
+        assert_eq!(style.font_size(), 18);
+        assert_eq!(style.text_color_rgba(), [10, 20, 30, 255]);
+        let text_box = parsed.text_box().unwrap();
+        assert_eq!(text_box.top(), -10);
+        assert_eq!(text_box.left(), -20);
+        assert_eq!(text_box.bottom(), 30);
+        assert_eq!(text_box.right(), 40);
+
+        let utf16_be = tx3g_text_sample(b"\xfe\xff\0H\0i", &[]);
+        let parsed = parse_timed_text_sample(&utf16_be).unwrap();
+        assert_eq!(parsed.text(), "Hi");
+        assert_eq!(parsed.text_encoding(), MovTimedTextEncoding::Utf16Be);
+
+        let utf16_le = tx3g_text_sample(b"\xff\xfeO\0k\0", &[]);
+        let parsed = parse_timed_text_sample(&utf16_le).unwrap();
+        assert_eq!(parsed.text(), "Ok");
+        assert_eq!(parsed.text_encoding(), MovTimedTextEncoding::Utf16Le);
+    }
+
+    #[test]
+    fn reads_timed_text_packets_with_sample_payload_side_data() {
+        let ftab = box_(*b"ftab", &full_box(0, b"\0\x01\0\x01\0\x04Rust"));
+        let sample_entry = tx3g_sample_entry_extra_data(&ftab);
+        let style_record = text_style_record_payload(0, 7, 1, 2, 16, [255, 255, 255, 255]);
+        let styl = box_(
+            *STYL_ID,
+            &[1_u16.to_be_bytes().as_slice(), style_record.as_slice()].concat(),
+        );
+        let sample = tx3g_text_sample(b"Caption", &styl);
+        let bytes = mp4_with_sample_description_and_samples(
+            b"tx3g",
+            1,
+            &sample_entry,
+            &[sample.as_slice()],
+            &[1_000],
+        );
+        let mut demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), sample.as_slice());
+        assert_eq!(packet_side_data(&packet, "mov_tx3g_text_encoding"), b"utf8");
+        assert_eq!(
+            packet_side_data(&packet, "mov_tx3g_text_char_count"),
+            &7_u32.to_be_bytes()
+        );
+        assert_eq!(
+            packet_side_data(&packet, "mov_tx3g_modifier_count"),
+            &1_u32.to_be_bytes()
+        );
+        assert_eq!(
+            packet_side_data(&packet, "mov_tx3g_style_record_count"),
+            &1_u32.to_be_bytes()
+        );
+        assert_eq!(packet_side_data(&packet, "mov_tx3g_has_text_box"), b"0");
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn parses_xml_subtitle_sample_entry_codec_parameters() {
         let btrt = box_(*b"btrt", &[0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0]);
         let extra_data = stpp_sample_entry_extra_data(
@@ -7904,6 +8228,111 @@ mod tests {
     }
 
     #[test]
+    fn rejects_malformed_timed_text_sample_payloads() {
+        assert_eq!(
+            parse_timed_text_sample(&[]).unwrap_err().kind(),
+            AvErrorKind::EndOfFile
+        );
+        assert_eq!(
+            parse_timed_text_sample(&[0, 4, b'a']).unwrap_err().kind(),
+            AvErrorKind::EndOfFile
+        );
+
+        let invalid_utf8 = tx3g_text_sample(b"\xff", &[]);
+        assert_eq!(
+            parse_timed_text_sample(&invalid_utf8).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let odd_utf16 = tx3g_text_sample(b"\xfe\xff\0", &[]);
+        assert_eq!(
+            parse_timed_text_sample(&odd_utf16).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let short_styl = tx3g_text_sample(b"x", &box_(*STYL_ID, &1_u16.to_be_bytes()));
+        assert_eq!(
+            parse_timed_text_sample(&short_styl).unwrap_err().kind(),
+            AvErrorKind::EndOfFile
+        );
+
+        let reversed_style = box_(
+            *STYL_ID,
+            &[
+                1_u16.to_be_bytes().as_slice(),
+                text_style_record_payload(2, 1, 1, 0, 12, [0, 0, 0, 255]).as_slice(),
+            ]
+            .concat(),
+        );
+        let sample = tx3g_text_sample(b"abc", &reversed_style);
+        assert_eq!(
+            parse_timed_text_sample(&sample).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let overlapping_styles = box_(
+            *STYL_ID,
+            &[
+                2_u16.to_be_bytes().as_slice(),
+                text_style_record_payload(0, 2, 1, 0, 12, [0, 0, 0, 255]).as_slice(),
+                text_style_record_payload(1, 3, 1, 0, 12, [0, 0, 0, 255]).as_slice(),
+            ]
+            .concat(),
+        );
+        let sample = tx3g_text_sample(b"abc", &overlapping_styles);
+        assert_eq!(
+            parse_timed_text_sample(&sample).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let out_of_range_style = box_(
+            *STYL_ID,
+            &[
+                1_u16.to_be_bytes().as_slice(),
+                text_style_record_payload(0, 4, 1, 0, 12, [0, 0, 0, 255]).as_slice(),
+            ]
+            .concat(),
+        );
+        let sample = tx3g_text_sample(b"abc", &out_of_range_style);
+        assert_eq!(
+            parse_timed_text_sample(&sample).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let tbox = box_(*TBOX_ID, &text_box_record_payload(0, 0, 10, 20));
+        let duplicate_tbox = [tbox.as_slice(), tbox.as_slice()].concat();
+        let sample = tx3g_text_sample(b"x", &duplicate_tbox);
+        assert_eq!(
+            parse_timed_text_sample(&sample).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let malformed_modifier =
+            tx3g_text_sample(b"x", &box_with_declared_size(*b"free", 12, b"\0"));
+        assert_eq!(
+            parse_timed_text_sample(&malformed_modifier)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::EndOfFile
+        );
+
+        let ftab = box_(*b"ftab", &full_box(0, b"\0\x01\0\x01\0\x04Rust"));
+        let sample_entry = tx3g_sample_entry_extra_data(&ftab);
+        let bytes = mp4_with_sample_description_and_samples(
+            b"tx3g",
+            1,
+            &sample_entry,
+            &[invalid_utf8.as_slice()],
+            &[1_000],
+        );
+        let mut demuxer = MovDemuxer::open(&bytes).unwrap();
+        assert_eq!(
+            demuxer.read_packet().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn rejects_sample_description_indexes_other_than_one() {
         assert_eq!(
             MovDemuxer::open(&mp4_with_sample_description_index(2))
@@ -9078,6 +9507,49 @@ mod tests {
         out.extend_from_slice(&[10, 20, 30, 255]);
         out.extend_from_slice(child_boxes);
         out
+    }
+
+    fn tx3g_text_sample(text: &[u8], modifiers: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&u16::try_from(text.len()).unwrap().to_be_bytes());
+        out.extend_from_slice(text);
+        out.extend_from_slice(modifiers);
+        out
+    }
+
+    fn text_style_record_payload(
+        start_char: u16,
+        end_char: u16,
+        font_id: u16,
+        face_style_flags: u8,
+        font_size: u8,
+        color: [u8; 4],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&start_char.to_be_bytes());
+        out.extend_from_slice(&end_char.to_be_bytes());
+        out.extend_from_slice(&font_id.to_be_bytes());
+        out.push(face_style_flags);
+        out.push(font_size);
+        out.extend_from_slice(&color);
+        out
+    }
+
+    fn text_box_record_payload(top: i16, left: i16, bottom: i16, right: i16) -> Vec<u8> {
+        let mut out = Vec::new();
+        for value in [top, left, bottom, right] {
+            out.extend_from_slice(&value.to_be_bytes());
+        }
+        out
+    }
+
+    fn packet_side_data<'a>(packet: &'a Packet, kind: &str) -> &'a [u8] {
+        packet
+            .side_data()
+            .iter()
+            .find(|side_data| side_data.kind() == kind)
+            .unwrap_or_else(|| panic!("missing packet side data `{kind}`"))
+            .data()
     }
 
     fn stpp_sample_entry_extra_data(

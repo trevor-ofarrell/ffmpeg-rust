@@ -1,12 +1,17 @@
 #![no_main]
 
-use avformat::{mov::parse_webvtt_sample, MovDemuxer, MovInfo};
+use avformat::{
+    mov::{parse_timed_text_sample, parse_webvtt_sample},
+    MovDemuxer, MovInfo,
+};
 use avutil::{AvErrorKind, Packet};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     exercise_mov(data);
     exercise_mov(&valid_mov());
+    exercise_timed_text_sample(data);
+    exercise_timed_text_sample(&valid_timed_text_sample());
     exercise_webvtt_sample(data);
     exercise_webvtt_sample(&valid_webvtt_sample());
 });
@@ -92,10 +97,44 @@ fn exercise_webvtt_sample(input: &[u8]) {
     assert!(sample.is_empty_cue() || sample.cue_count() > 0);
 }
 
+fn exercise_timed_text_sample(input: &[u8]) {
+    let Ok(sample) = parse_timed_text_sample(input) else {
+        return;
+    };
+    let char_count = sample.text().chars().count();
+    for style in sample.style_records() {
+        assert!(style.end_char() >= style.start_char());
+        assert!(usize::from(style.end_char()) <= char_count);
+    }
+    if sample.text_box().is_some() {
+        assert!(sample
+            .modifier_boxes()
+            .iter()
+            .any(|modifier| modifier.box_type() == "tbox"));
+    }
+}
+
 fn valid_mov() -> Vec<u8> {
     let samples = [b"aa".as_slice(), b"bbb".as_slice()];
     let durations = [1_000_u32, 2_000_u32];
     mov_with_samples(&samples, &durations)
+}
+
+fn valid_timed_text_sample() -> Vec<u8> {
+    let style = [
+        1_u16.to_be_bytes().as_slice(),
+        0_u16.to_be_bytes().as_slice(),
+        5_u16.to_be_bytes().as_slice(),
+        1_u16.to_be_bytes().as_slice(),
+        &[1, 16, 255, 255, 255, 255],
+    ]
+    .concat();
+    let modifiers = box4(*b"styl", &style);
+    let mut out = Vec::new();
+    out.extend_from_slice(&5_u16.to_be_bytes());
+    out.extend_from_slice(b"hello");
+    out.extend_from_slice(&modifiers);
+    out
 }
 
 fn valid_webvtt_sample() -> Vec<u8> {

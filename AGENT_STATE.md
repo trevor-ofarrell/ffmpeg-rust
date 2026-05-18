@@ -2,6 +2,8 @@
 
 ## Current Status
 
+`avformat-mov-demuxer` now parses boxed `tx3g` Timed Text media samples through `parse_timed_text_sample` and validates them lazily when `tx3g` packets are read. It decodes the 16-bit text byte count, UTF-8 text, UTF-16 text with big-endian or little-endian BOMs, `styl` style records, `tbox` text-box overrides, and preserves unknown modifier boxes while rejecting malformed text lengths, invalid text encodings, malformed style records, duplicate `tbox` modifiers, malformed modifier boxes, and lazy packet-read failures as typed errors. The ledger keeps MOV below `complete` because pinned-oracle differential tests, upstream FATE media parity, actual local fuzz execution, Timed Text rendering/timing parity, and broader subtitle/data coverage remain absent.
+
 `avformat-mov-demuxer` now parses boxed `wvtt` WebVTT media samples through `parse_webvtt_sample` and validates them lazily when `wvtt` packets are read. It models `vttc` cue boxes, `vtte` empty-cue samples, `vtta` additional text boxes, `vsid`/`iden`/`ctim`/`sttg`/`payl` cue child boxes, rejects malformed payloads as typed errors, requires `vsid` samples to have a sample-entry `vlab` source label, and adds Rust packet side data for WebVTT sample kind, cue count, and additional-text count. The ledger keeps MOV below `complete` because pinned-oracle differential tests, upstream FATE media parity, actual local fuzz execution, and broader subtitle/data coverage remain absent.
 
 `avformat-mov-demuxer` now parses `sbtt` text subtitle sample entries into a structured `MovTextSubtitleSampleEntry` model. It captures the ISO Base Media File Format null-terminated UTF-8 `content_encoding` and `mime_format` strings, validates optional `btrt` bitrate boxes, validates optional `txtC` text configuration full boxes, preserves child boxes, and rejects missing terminators, invalid UTF-8, malformed child boxes, unsupported `txtC` versions, nonzero `txtC` flags, duplicate optional boxes, and truncated bitrate data as typed errors. The ledger keeps MOV below `complete` because pinned-oracle differential tests, upstream FATE media parity, actual local fuzz execution, and broader subtitle/data sample-entry coverage remain absent.
@@ -70,6 +72,15 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo test -p avformat mov::tests`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avformat_mov`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- run --component avformat-mov-demuxer`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo run -p fate-runner -- run --changed`
+- `git diff --check`
 - `cargo fmt --all -- --check`
 - `cargo test -p avformat mov::tests`
 - `cargo check --manifest-path fuzz\Cargo.toml --bin avformat_mov`
@@ -1205,6 +1216,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed after the `tx3g` sample payload slice because `.is_multiple_of(2)` exceeded the workspace MSRV; the UTF-16 odd-byte check now uses a Rust 1.75-compatible modulo expression and clippy passes.
 - `cargo test --workspace --all-features --exclude fftools`, `cargo test -p avformat --lib`, `cargo test -p avformat mov::tests`, and `cargo run -p fate-runner -- run --changed` failed after the `dec3` slice because Windows Application Control blocked the rebuilt `target\debug\deps\avformat-a0c2eebe89aa5944.exe` with `os error 4551`; focused MOV tests and the local MOV fate-runner mapping passed before the later rebuild, and `cargo test -p avformat --lib --no-run`, `cargo test --workspace --all-features --exclude fftools --no-run`, `cargo check -p fftools`, and clippy pass.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on too many arguments in the new `dec3` test helper; the helper now has a local test-only allow and clippy passes.
 - `cargo test -p fftools --lib` previously failed because Windows Application Control blocked the rebuilt `target\debug\deps\fftools-649f05dff8861706.exe` with `os error 4551`; `cargo check -p fftools` continues to pass, while executable-launching workspace tests remain subject to the same Windows policy.
@@ -1247,12 +1259,12 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current component. It now structures direct audio `esds`, `btrt`, `damr`, required `ac-3` `dac3`, required `ec-3` `dec3`, required `Opus` `dOps`, required `fLaC` `dfLa`, required `alac` Apple Lossless specific boxes in both direct and `wave/alac` compatibility forms, `tx3g` timed text entries, `stpp` XML subtitle entries, `sbtt` text subtitle entries, `wvtt` WebVTT sample entries, and boxed `wvtt` WebVTT media sample payloads. It still has a local FATE-runner smoke mapping that executes the focused MOV unit suite through `cargo run -p fate-runner -- run --component avformat-mov-demuxer`. Exact FFmpeg ffprobe output semantics, pinned FFmpeg differential tests, upstream FATE media parity, actual local fuzz execution, additional codec-specific audio extension parsing beyond direct `esds`/`btrt`/`damr`/`dac3`/`dec3`/`dOps`/`dfLa`/`alac`/`wave`/`chan`, additional WebVTT rendering/timing parity, and broader MOV subtitle/data sample-entry coverage remain absent.
+`avformat-mov-demuxer` remains the current component. It now structures direct audio `esds`, `btrt`, `damr`, required `ac-3` `dac3`, required `ec-3` `dec3`, required `Opus` `dOps`, required `fLaC` `dfLa`, required `alac` Apple Lossless specific boxes in both direct and `wave/alac` compatibility forms, `tx3g` timed text entries, boxed `tx3g` Timed Text media sample payloads, `stpp` XML subtitle entries, `sbtt` text subtitle entries, `wvtt` WebVTT sample entries, and boxed `wvtt` WebVTT media sample payloads. It still has a local FATE-runner smoke mapping that executes the focused MOV unit suite through `cargo run -p fate-runner -- run --component avformat-mov-demuxer`. Exact FFmpeg ffprobe output semantics, pinned FFmpeg differential tests, upstream FATE media parity, actual local fuzz execution, additional codec-specific audio extension parsing beyond direct `esds`/`btrt`/`damr`/`dac3`/`dec3`/`dOps`/`dfLa`/`alac`/`wave`/`chan`, Timed Text/WebVTT rendering and timing parity, and broader MOV subtitle/data sample-entry coverage remain absent.
 
 ## Next 3 Concrete Actions
 
 1. Add pinned-oracle differential coverage for constrained `ffmpeg-rs -f hash [-hash <algorithm>] -`, `-f md5 -`, `-f framehash [-hash <algorithm>] -`, `-f framemd5 -`, and `-f streamhash [-hash <algorithm>] -` once the FFmpeg 8.1.1 oracle binary is available.
-2. Extend MOV subtitle/data parsing into remaining timed text/data variants such as `stxt`/`urim`, or add the first `tx3g` sample payload parser once the next small oracle/spec-backed slice is clear.
+2. Extend MOV subtitle/data parsing into remaining timed text/data variants such as `stxt`/`urim`, or add typed parsing for additional `tx3g` modifiers such as `hlit`, `hclr`, `krok`, `dlay`, `href`, `blnk`, `twrp`, and `disp`.
 3. Replace the local MOV smoke mapping with the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
 
 ## Known Blockers
@@ -1265,4 +1277,4 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: parsed boxed MOV `wvtt` WebVTT media sample payloads, including `vttc` cues, `vtte` empty cues, `vtta` additional text, `vsid`/`iden`/`ctim`/`sttg`/`payl` cue child boxes, lazy packet-read validation, packet side-data counts, malformed payload tests, and `avformat_mov` fuzz-target coverage. MOV stays below `complete` because pinned oracle, upstream FATE, and actual fuzz parity remain missing.
+Latest slice: parsed boxed MOV `tx3g` Timed Text media sample payloads, including text byte-count validation, UTF-8/UTF-16 BOM decoding, `styl` style records, `tbox` overrides, unknown modifier preservation, lazy packet-read validation, packet side-data counts, malformed payload tests, and `avformat_mov` fuzz-target coverage. MOV stays below `complete` because pinned oracle, upstream FATE, and actual fuzz parity remain missing.
