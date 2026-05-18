@@ -46,6 +46,8 @@ const ALAC_ID: &[u8; 4] = b"alac";
 const VTTC_ID: &[u8; 4] = b"vttC";
 const VLAB_ID: &[u8; 4] = b"vlab";
 const TXTC_ID: &[u8; 4] = b"txtC";
+const URI_ID: &[u8; 4] = b"uri ";
+const URII_ID: &[u8; 4] = b"uriI";
 const STYL_ID: &[u8; 4] = b"styl";
 const HLIT_ID: &[u8; 4] = b"hlit";
 const HCLR_ID: &[u8; 4] = b"hclr";
@@ -220,6 +222,7 @@ pub enum MovSubtitleSampleEntry {
     TimedText(MovTimedTextSampleEntry),
     XmlSubtitle(MovXmlSubtitleSampleEntry),
     TextSubtitle(MovTextSubtitleSampleEntry),
+    SimpleText(MovTextSubtitleSampleEntry),
     WebVtt(MovWebVttSampleEntry),
 }
 
@@ -227,28 +230,47 @@ impl MovSubtitleSampleEntry {
     pub fn timed_text(&self) -> Option<&MovTimedTextSampleEntry> {
         match self {
             Self::TimedText(entry) => Some(entry),
-            Self::XmlSubtitle(_) | Self::TextSubtitle(_) | Self::WebVtt(_) => None,
+            Self::XmlSubtitle(_)
+            | Self::TextSubtitle(_)
+            | Self::SimpleText(_)
+            | Self::WebVtt(_) => None,
         }
     }
 
     pub fn xml_subtitle(&self) -> Option<&MovXmlSubtitleSampleEntry> {
         match self {
             Self::XmlSubtitle(entry) => Some(entry),
-            Self::TimedText(_) | Self::TextSubtitle(_) | Self::WebVtt(_) => None,
+            Self::TimedText(_) | Self::TextSubtitle(_) | Self::SimpleText(_) | Self::WebVtt(_) => {
+                None
+            }
         }
     }
 
     pub fn text_subtitle(&self) -> Option<&MovTextSubtitleSampleEntry> {
         match self {
             Self::TextSubtitle(entry) => Some(entry),
-            Self::TimedText(_) | Self::XmlSubtitle(_) | Self::WebVtt(_) => None,
+            Self::TimedText(_) | Self::XmlSubtitle(_) | Self::SimpleText(_) | Self::WebVtt(_) => {
+                None
+            }
+        }
+    }
+
+    pub fn simple_text(&self) -> Option<&MovTextSubtitleSampleEntry> {
+        match self {
+            Self::SimpleText(entry) => Some(entry),
+            Self::TimedText(_) | Self::XmlSubtitle(_) | Self::TextSubtitle(_) | Self::WebVtt(_) => {
+                None
+            }
         }
     }
 
     pub fn webvtt(&self) -> Option<&MovWebVttSampleEntry> {
         match self {
             Self::WebVtt(entry) => Some(entry),
-            Self::TimedText(_) | Self::XmlSubtitle(_) | Self::TextSubtitle(_) => None,
+            Self::TimedText(_)
+            | Self::XmlSubtitle(_)
+            | Self::TextSubtitle(_)
+            | Self::SimpleText(_) => None,
         }
     }
 }
@@ -730,20 +752,28 @@ impl MovTextStyleRecord {
 pub enum MovDataSampleEntry {
     XmlMetadata(MovXmlMetadataSampleEntry),
     TextMetadata(MovTextMetadataSampleEntry),
+    UriMetadata(MovUriMetadataSampleEntry),
 }
 
 impl MovDataSampleEntry {
     pub fn xml_metadata(&self) -> Option<&MovXmlMetadataSampleEntry> {
         match self {
             Self::XmlMetadata(entry) => Some(entry),
-            Self::TextMetadata(_) => None,
+            Self::TextMetadata(_) | Self::UriMetadata(_) => None,
         }
     }
 
     pub fn text_metadata(&self) -> Option<&MovTextMetadataSampleEntry> {
         match self {
             Self::TextMetadata(entry) => Some(entry),
-            Self::XmlMetadata(_) => None,
+            Self::XmlMetadata(_) | Self::UriMetadata(_) => None,
+        }
+    }
+
+    pub fn uri_metadata(&self) -> Option<&MovUriMetadataSampleEntry> {
+        match self {
+            Self::UriMetadata(entry) => Some(entry),
+            Self::XmlMetadata(_) | Self::TextMetadata(_) => None,
         }
     }
 }
@@ -773,6 +803,9 @@ impl MovXmlMetadataSampleEntry {
 pub struct MovTextMetadataSampleEntry {
     content_encoding: String,
     mime_format: String,
+    bit_rate: Option<MovBitRateBox>,
+    text_config: Option<MovTextConfigBox>,
+    child_boxes: Vec<MovSampleEntryChildBox>,
 }
 
 impl MovTextMetadataSampleEntry {
@@ -782,6 +815,44 @@ impl MovTextMetadataSampleEntry {
 
     pub fn mime_format(&self) -> &str {
         &self.mime_format
+    }
+
+    pub fn bit_rate(&self) -> Option<&MovBitRateBox> {
+        self.bit_rate.as_ref()
+    }
+
+    pub fn text_config(&self) -> Option<&MovTextConfigBox> {
+        self.text_config.as_ref()
+    }
+
+    pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.child_boxes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovUriMetadataSampleEntry {
+    uri: String,
+    uri_initialization_data: Option<Vec<u8>>,
+    bit_rate: Option<MovBitRateBox>,
+    child_boxes: Vec<MovSampleEntryChildBox>,
+}
+
+impl MovUriMetadataSampleEntry {
+    pub fn uri(&self) -> &str {
+        &self.uri
+    }
+
+    pub fn uri_initialization_data(&self) -> Option<&[u8]> {
+        self.uri_initialization_data.as_deref()
+    }
+
+    pub fn bit_rate(&self) -> Option<&MovBitRateBox> {
+        self.bit_rate.as_ref()
+    }
+
+    pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.child_boxes
     }
 }
 
@@ -2848,14 +2919,20 @@ fn parse_sample_entry_details(
         b"sbtt" => parse_text_subtitle_sample_entry(extra_data)
             .map(MovSubtitleSampleEntry::TextSubtitle)
             .map(MovSampleEntryDetails::Subtitle),
+        b"stxt" => parse_simple_text_sample_entry(extra_data)
+            .map(MovSubtitleSampleEntry::SimpleText)
+            .map(MovSampleEntryDetails::Subtitle),
         b"wvtt" => parse_webvtt_sample_entry(extra_data)
             .map(MovSubtitleSampleEntry::WebVtt)
             .map(MovSampleEntryDetails::Subtitle),
         b"metx" => parse_xml_metadata_sample_entry(extra_data)
             .map(MovDataSampleEntry::XmlMetadata)
             .map(MovSampleEntryDetails::Data),
-        b"mett" => parse_text_metadata_sample_entry(extra_data)
+        b"mett" => parse_text_metadata_sample_entry(extra_data, "MOV/MP4 mett")
             .map(MovDataSampleEntry::TextMetadata)
+            .map(MovSampleEntryDetails::Data),
+        b"urim" => parse_uri_metadata_sample_entry(extra_data)
+            .map(MovDataSampleEntry::UriMetadata)
             .map(MovSampleEntryDetails::Data),
         _ => Ok(MovSampleEntryDetails::Generic),
     }
@@ -3334,17 +3411,8 @@ fn parse_xml_subtitle_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlSubtitle
 }
 
 fn parse_text_subtitle_sample_entry(extra_data: &[u8]) -> AvResult<MovTextSubtitleSampleEntry> {
-    let mut reader = ByteReader::new(extra_data);
-    let content_encoding = read_null_terminated_utf8(&mut reader, "MOV/MP4 sbtt content encoding")?;
-    let mime_format = read_null_terminated_utf8(&mut reader, "MOV/MP4 sbtt MIME format")?;
-    let child_boxes = parse_sample_entry_child_boxes(
-        extra_data,
-        reader.position(),
-        extra_data.len(),
-        "MOV/MP4 sbtt sample entry children",
-    )?;
-    let bit_rate = parse_textual_sample_entry_bit_rate(&child_boxes, "MOV/MP4 sbtt")?;
-    let text_config = parse_textual_sample_entry_text_config(&child_boxes, "MOV/MP4 sbtt")?;
+    let (content_encoding, mime_format, bit_rate, text_config, child_boxes) =
+        parse_textual_sample_entry_fields(extra_data, "MOV/MP4 sbtt")?;
     Ok(MovTextSubtitleSampleEntry {
         content_encoding,
         mime_format,
@@ -3352,6 +3420,53 @@ fn parse_text_subtitle_sample_entry(extra_data: &[u8]) -> AvResult<MovTextSubtit
         text_config,
         child_boxes,
     })
+}
+
+fn parse_simple_text_sample_entry(extra_data: &[u8]) -> AvResult<MovTextSubtitleSampleEntry> {
+    let (content_encoding, mime_format, bit_rate, text_config, child_boxes) =
+        parse_textual_sample_entry_fields(extra_data, "MOV/MP4 stxt")?;
+    Ok(MovTextSubtitleSampleEntry {
+        content_encoding,
+        mime_format,
+        bit_rate,
+        text_config,
+        child_boxes,
+    })
+}
+
+type TextualSampleEntryFields = (
+    String,
+    String,
+    Option<MovBitRateBox>,
+    Option<MovTextConfigBox>,
+    Vec<MovSampleEntryChildBox>,
+);
+
+fn parse_textual_sample_entry_fields(
+    extra_data: &[u8],
+    context: &str,
+) -> AvResult<TextualSampleEntryFields> {
+    let mut reader = ByteReader::new(extra_data);
+    let content_encoding_context = format!("{context} content encoding");
+    let mime_format_context = format!("{context} MIME format");
+    let content_encoding = read_null_terminated_utf8(&mut reader, &content_encoding_context)?;
+    let mime_format = read_null_terminated_utf8(&mut reader, &mime_format_context)?;
+    let children_context = format!("{context} sample entry children");
+    let child_boxes = parse_sample_entry_child_boxes(
+        extra_data,
+        reader.position(),
+        extra_data.len(),
+        &children_context,
+    )?;
+    let bit_rate = parse_textual_sample_entry_bit_rate(&child_boxes, context)?;
+    let text_config = parse_textual_sample_entry_text_config(&child_boxes, context)?;
+    Ok((
+        content_encoding,
+        mime_format,
+        bit_rate,
+        text_config,
+        child_boxes,
+    ))
 }
 
 fn parse_webvtt_sample_entry(extra_data: &[u8]) -> AvResult<MovWebVttSampleEntry> {
@@ -3771,15 +3886,85 @@ fn parse_xml_metadata_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlMetadata
     })
 }
 
-fn parse_text_metadata_sample_entry(extra_data: &[u8]) -> AvResult<MovTextMetadataSampleEntry> {
-    let mut reader = ByteReader::new(extra_data);
-    let content_encoding = read_null_terminated_utf8(&mut reader, "MOV/MP4 mett content encoding")?;
-    let mime_format = read_null_terminated_utf8(&mut reader, "MOV/MP4 mett MIME format")?;
-    ensure_box_consumed(&reader, "MOV/MP4 mett sample entry")?;
+fn parse_text_metadata_sample_entry(
+    extra_data: &[u8],
+    context: &str,
+) -> AvResult<MovTextMetadataSampleEntry> {
+    let (content_encoding, mime_format, bit_rate, text_config, child_boxes) =
+        parse_textual_sample_entry_fields(extra_data, context)?;
     Ok(MovTextMetadataSampleEntry {
         content_encoding,
         mime_format,
+        bit_rate,
+        text_config,
+        child_boxes,
     })
+}
+
+fn parse_uri_metadata_sample_entry(extra_data: &[u8]) -> AvResult<MovUriMetadataSampleEntry> {
+    let child_boxes = parse_sample_entry_child_boxes(
+        extra_data,
+        0,
+        extra_data.len(),
+        "MOV/MP4 urim sample entry children",
+    )?;
+    let Some(uri_child) = find_unique_child_box(&child_boxes, URI_ID, "MOV/MP4 urim")? else {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 urim sample entry is missing required uri box",
+        ));
+    };
+    let uri = parse_uri_box(uri_child.payload())?;
+    let uri_initialization_data = parse_uri_initialization_data(&child_boxes, "MOV/MP4 urim")?;
+    let bit_rate = parse_textual_sample_entry_bit_rate(&child_boxes, "MOV/MP4 urim")?;
+    Ok(MovUriMetadataSampleEntry {
+        uri,
+        uri_initialization_data,
+        bit_rate,
+        child_boxes,
+    })
+}
+
+fn parse_uri_box(payload: &[u8]) -> AvResult<String> {
+    let mut reader = ByteReader::new(payload);
+    let (version, flags) = read_full_box_header(&mut reader, "MOV/MP4 uri")?;
+    if version != 0 {
+        return Err(AvError::unsupported(format!(
+            "MOV/MP4 uri version {version} is not implemented"
+        )));
+    }
+    if flags != [0, 0, 0] {
+        return Err(AvError::invalid_data("MOV/MP4 uri flags must be zero"));
+    }
+    let uri = read_null_terminated_utf8(&mut reader, "MOV/MP4 uri URI")?;
+    ensure_box_consumed(&reader, "MOV/MP4 uri")?;
+    Ok(uri)
+}
+
+fn parse_uri_initialization_data(
+    child_boxes: &[MovSampleEntryChildBox],
+    context: &str,
+) -> AvResult<Option<Vec<u8>>> {
+    let Some(child) = find_unique_child_box(child_boxes, URII_ID, context)? else {
+        return Ok(None);
+    };
+    parse_uri_initialization_box(child.payload()).map(Some)
+}
+
+fn parse_uri_initialization_box(payload: &[u8]) -> AvResult<Vec<u8>> {
+    let mut reader = ByteReader::new(payload);
+    let (version, flags) = read_full_box_header(&mut reader, "MOV/MP4 uriI")?;
+    if version != 0 {
+        return Err(AvError::unsupported(format!(
+            "MOV/MP4 uriI version {version} is not implemented"
+        )));
+    }
+    if flags != [0, 0, 0] {
+        return Err(AvError::invalid_data("MOV/MP4 uriI flags must be zero"));
+    }
+    let remaining = reader.remaining();
+    let data = reader.read_exact(remaining)?.to_vec();
+    ensure_box_consumed(&reader, "MOV/MP4 uriI")?;
+    Ok(data)
 }
 
 fn read_fixed_array_4(reader: &mut ByteReader<'_>) -> AvResult<[u8; 4]> {
@@ -7255,6 +7440,37 @@ mod tests {
         assert_eq!(text.child_boxes().len(), 2);
         assert_eq!(text.child_boxes()[0].box_type(), "btrt");
         assert_eq!(text.child_boxes()[1].box_type(), "txtC");
+
+        let stxt_btrt = box_(*BTRT_ID, &bit_rate_box_payload(512, 4_000, 1_000));
+        let stxt_txtc = box_(*TXTC_ID, &full_box(0, b"Header\0"));
+        let stxt_children = [stxt_btrt.as_slice(), stxt_txtc.as_slice()].concat();
+        let stxt_extra =
+            text_subtitle_sample_entry_extra_data("utf-8", "text/plain", &stxt_children);
+        let bytes = mp4_with_sample_description_entry(b"stxt", 8, &stxt_extra);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "stxt");
+        assert_eq!(codec_parameters.data_reference_index(), 8);
+        assert_eq!(codec_parameters.extra_data(), stxt_extra.as_slice());
+        let MovSampleEntryDetails::Subtitle(subtitle) = codec_parameters.details() else {
+            panic!("expected simple text sample entry details");
+        };
+        assert!(subtitle.timed_text().is_none());
+        assert!(subtitle.xml_subtitle().is_none());
+        assert!(subtitle.text_subtitle().is_none());
+        assert!(subtitle.webvtt().is_none());
+        let text = subtitle.simple_text().unwrap();
+        assert_eq!(text.content_encoding(), "utf-8");
+        assert_eq!(text.mime_format(), "text/plain");
+        let bit_rate = text.bit_rate().unwrap();
+        assert_eq!(bit_rate.buffer_size_db(), 512);
+        assert_eq!(bit_rate.max_bitrate(), 4_000);
+        assert_eq!(bit_rate.avg_bitrate(), 1_000);
+        assert_eq!(text.text_config().unwrap().text_config(), "Header");
+        assert_eq!(text.child_boxes().len(), 2);
+        assert_eq!(text.child_boxes()[0].box_type(), "btrt");
+        assert_eq!(text.child_boxes()[1].box_type(), "txtC");
     }
 
     #[test]
@@ -7389,8 +7605,13 @@ mod tests {
         assert_eq!(xml.namespace(), "urn:rust");
         assert_eq!(xml.schema_location(), "rust.xsd");
         assert!(data.text_metadata().is_none());
+        assert!(data.uri_metadata().is_none());
 
-        let mett_extra = text_metadata_sample_entry_extra_data("utf-8", "application/json");
+        let btrt = box_(*BTRT_ID, &bit_rate_box_payload(2_048, 16_000, 4_000));
+        let txtc = box_(*TXTC_ID, &full_box(0, b"{\"seed\":true}\0"));
+        let child_boxes = [btrt.as_slice(), txtc.as_slice()].concat();
+        let mett_extra =
+            text_metadata_sample_entry_extra_data("utf-8", "application/json", &child_boxes);
         let bytes = mp4_with_sample_description_entry(b"mett", 2, &mett_extra);
         let demuxer = MovDemuxer::open(&bytes).unwrap();
         let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
@@ -7401,7 +7622,44 @@ mod tests {
         let text = data.text_metadata().unwrap();
         assert_eq!(text.content_encoding(), "utf-8");
         assert_eq!(text.mime_format(), "application/json");
+        let bit_rate = text.bit_rate().unwrap();
+        assert_eq!(bit_rate.buffer_size_db(), 2_048);
+        assert_eq!(bit_rate.max_bitrate(), 16_000);
+        assert_eq!(bit_rate.avg_bitrate(), 4_000);
+        assert_eq!(text.text_config().unwrap().text_config(), "{\"seed\":true}");
+        assert_eq!(text.child_boxes().len(), 2);
+        assert_eq!(text.child_boxes()[0].box_type(), "btrt");
+        assert_eq!(text.child_boxes()[1].box_type(), "txtC");
         assert!(data.xml_metadata().is_none());
+        assert!(data.uri_metadata().is_none());
+
+        let uri = box_(*URI_ID, &full_box(0, b"https://example.test/meta\0"));
+        let uri_init = box_(*URII_ID, &full_box(0, &[1, 2, 3, 5, 8]));
+        let btrt = box_(*BTRT_ID, &bit_rate_box_payload(4_096, 32_000, 8_000));
+        let urim_extra = [uri.as_slice(), uri_init.as_slice(), btrt.as_slice()].concat();
+        let bytes = mp4_with_sample_description_entry(b"urim", 3, &urim_extra);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+        assert_eq!(codec_parameters.data_reference_index(), 3);
+        let MovSampleEntryDetails::Data(data) = codec_parameters.details() else {
+            panic!("expected URI metadata sample entry details");
+        };
+        let uri = data.uri_metadata().unwrap();
+        assert_eq!(uri.uri(), "https://example.test/meta");
+        assert_eq!(
+            uri.uri_initialization_data(),
+            Some([1, 2, 3, 5, 8].as_slice())
+        );
+        let bit_rate = uri.bit_rate().unwrap();
+        assert_eq!(bit_rate.buffer_size_db(), 4_096);
+        assert_eq!(bit_rate.max_bitrate(), 32_000);
+        assert_eq!(bit_rate.avg_bitrate(), 8_000);
+        assert_eq!(uri.child_boxes().len(), 3);
+        assert_eq!(uri.child_boxes()[0].box_type(), "uri ");
+        assert_eq!(uri.child_boxes()[1].box_type(), "uriI");
+        assert_eq!(uri.child_boxes()[2].box_type(), "btrt");
+        assert!(data.xml_metadata().is_none());
+        assert!(data.text_metadata().is_none());
     }
 
     #[test]
@@ -8485,6 +8743,25 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"stxt",
+            1,
+            b"utf-8\0text/plain",
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let duplicate_btrt = [
+            box_(*BTRT_ID, &bit_rate_box_payload(1, 2, 3)),
+            box_(*BTRT_ID, &bit_rate_box_payload(4, 5, 6)),
+        ]
+        .concat();
+        let extra_data =
+            text_subtitle_sample_entry_extra_data("utf-8", "text/plain", &duplicate_btrt);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"stxt", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
         let err =
             MovDemuxer::open(&mp4_with_sample_description_entry(b"wvtt", 1, &[])).unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
@@ -8549,6 +8826,77 @@ mod tests {
             b"mett",
             1,
             b"utf-8\0\xff\0",
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_mett_btrt = box_with_declared_size(*BTRT_ID, 12, b"\0");
+        let extra_data =
+            text_metadata_sample_entry_extra_data("utf-8", "application/json", &bad_mett_btrt);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mett", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let err =
+            MovDemuxer::open(&mp4_with_sample_description_entry(b"urim", 1, &[])).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let duplicate_uri = [
+            box_(*URI_ID, &full_box(0, b"https://a.example\0")),
+            box_(*URI_ID, &full_box(0, b"https://b.example\0")),
+        ]
+        .concat();
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"urim",
+            1,
+            &duplicate_uri,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_uri_version = box_(*URI_ID, &full_box(1, b"https://example.test\0"));
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"urim",
+            1,
+            &bad_uri_version,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+
+        let mut bad_uri_flags_payload = Vec::from([0, 0, 0, 1]);
+        bad_uri_flags_payload.extend_from_slice(b"https://example.test\0");
+        let bad_uri_flags = box_(*URI_ID, &bad_uri_flags_payload);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"urim",
+            1,
+            &bad_uri_flags,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_uri_utf8 = box_(*URI_ID, &full_box(0, b"\xff\0"));
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"urim",
+            1,
+            &bad_uri_utf8,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let uri = box_(*URI_ID, &full_box(0, b"https://example.test\0"));
+        let bad_urii_flags = box_(*URII_ID, &[0, 0, 0, 1, 1, 2]);
+        let extra_data = [uri.as_slice(), bad_urii_flags.as_slice()].concat();
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"urim", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let urii_one = box_(*URII_ID, &full_box(0, &[1]));
+        let urii_two = box_(*URII_ID, &full_box(0, &[2]));
+        let duplicate_urii = [uri.as_slice(), urii_one.as_slice(), urii_two.as_slice()].concat();
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"urim",
+            1,
+            &duplicate_urii,
         ))
         .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
@@ -10112,12 +10460,17 @@ mod tests {
         .concat()
     }
 
-    fn text_metadata_sample_entry_extra_data(content_encoding: &str, mime_format: &str) -> Vec<u8> {
+    fn text_metadata_sample_entry_extra_data(
+        content_encoding: &str,
+        mime_format: &str,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
         [
             content_encoding.as_bytes(),
             b"\0",
             mime_format.as_bytes(),
             b"\0",
+            child_boxes,
         ]
         .concat()
     }
