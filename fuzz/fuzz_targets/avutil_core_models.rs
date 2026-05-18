@@ -4,13 +4,13 @@ use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
-    FrameActiveFormatDescription, FrameAudioServiceType, FrameData, FrameDisplayMatrix,
-    FrameDownmixInfo, FrameDownmixType, FrameGopTimecode, FrameMasteringDisplayMetadata,
-    FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors, FrameReplayGain, FrameS12mTimecode,
-    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
-    FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection, Md5,
-    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    FrameActiveFormatDescription, FrameAudioServiceType, FrameContentLightMetadata, FrameData,
+    FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameGopTimecode,
+    FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
+    FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
+    FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
+    FrameSphericalProjection, Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding,
+    SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1326,6 +1326,37 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             );
         }
     }
+    match frame.side_data()[0].content_light_metadata() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::ContentLightLevel);
+            assert_eq!(
+                frame_side_data_payload.len(),
+                FrameContentLightMetadata::DATA_LEN
+            );
+            assert_eq!(value.to_bytes().as_slice(), frame_side_data_payload);
+            let mut max_content_light_level = [0; 4];
+            max_content_light_level.copy_from_slice(&frame_side_data_payload[0..4]);
+            let mut max_average_light_level = [0; 4];
+            max_average_light_level.copy_from_slice(&frame_side_data_payload[4..8]);
+            assert_eq!(
+                value.max_content_light_level(),
+                u32::from_ne_bytes(max_content_light_level)
+            );
+            assert_eq!(
+                value.max_average_light_level(),
+                u32::from_ne_bytes(max_average_light_level)
+            );
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::ContentLightLevel),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::ContentLightLevel);
+            assert_ne!(
+                frame_side_data_payload.len(),
+                FrameContentLightMetadata::DATA_LEN
+            );
+        }
+    }
     match frame.side_data()[0].s12m_timecode() {
         Ok(Some(payload)) => {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::S12mTimecode);
@@ -2625,6 +2656,38 @@ fn exercise_fixtures() {
     let non_spherical =
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 36]).unwrap();
     assert_eq!(non_spherical.spherical_mapping().unwrap(), None);
+
+    let content_light = FrameContentLightMetadata::new(1000, 400);
+    let content_light_side_data = FrameSideData::new_content_light_metadata(content_light).unwrap();
+    assert_eq!(
+        content_light_side_data.kind_id(),
+        &FrameSideDataKind::ContentLightLevel
+    );
+    assert_eq!(
+        content_light_side_data.content_light_metadata().unwrap(),
+        Some(content_light)
+    );
+    assert_eq!(
+        content_light_side_data.data(),
+        &content_light.to_bytes()[..]
+    );
+    assert_eq!(content_light.max_content_light_level(), 1000);
+    assert_eq!(content_light.max_average_light_level(), 400);
+    assert_eq!(
+        FrameContentLightMetadata::parse(&FrameContentLightMetadata::new(u32::MAX, 0).to_bytes())
+            .unwrap()
+            .max_content_light_level(),
+        u32::MAX
+    );
+    assert_eq!(
+        FrameContentLightMetadata::parse(&[0; FrameContentLightMetadata::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_content_light =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 8]).unwrap();
+    assert_eq!(non_content_light.content_light_metadata().unwrap(), None);
 
     let s12m_timecode = FrameS12mTimecode::new(&[0x0102_0304, 0xA0B0_C0D0]).unwrap();
     let s12m_side_data = FrameSideData::new_s12m_timecode(s12m_timecode).unwrap();

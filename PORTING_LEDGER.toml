@@ -215,6 +215,8 @@ unit_tests = [
   "frame::tests::frame_side_data_rejects_malformed_gop_timecode_payload",
   "frame::tests::frame_side_data_parses_spherical_mapping_payload",
   "frame::tests::frame_side_data_rejects_malformed_spherical_mapping_payload",
+  "frame::tests::frame_side_data_parses_content_light_metadata_payload",
+  "frame::tests::frame_side_data_rejects_malformed_content_light_metadata_payload",
   "frame::tests::frame_side_data_parses_s12m_timecode_payload",
   "frame::tests::frame_side_data_rejects_malformed_s12m_timecode_payload",
   "frame::tests::frame_side_data_parses_sei_unregistered_payload",
@@ -262,6 +264,10 @@ fuzz_targets = ["avutil_core_models"]
 # AVSphericalProjection enum values, preserves 16.16 orientation fields, 0.32
 # tile bounds, and cubemap padding, rejects malformed lengths and invalid enum
 # values, and is build-checked by avutil_core_models.
+# Current content light metadata coverage parses the FFmpeg 8.1.1 8-byte native
+# AVContentLightMetadata payload for AV_FRAME_DATA_CONTENT_LIGHT_LEVEL,
+# preserves MaxCLL and MaxFALL unsigned fields, rejects malformed lengths, and
+# is build-checked by avutil_core_models.
 # Current S12M coverage parses the FFmpeg 8.1.1 four-native-uint32
 # AV_FRAME_DATA_S12M_TIMECODE payload, preserves unused slots, rejects malformed
 # lengths and invalid counts, and is build-checked by avutil_core_models.

@@ -25,10 +25,10 @@ pub use channel_layout::{Channel, ChannelLayout};
 pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};
 pub use error::{AvError, AvErrorKind, AvResult};
 pub use frame::{
-    AudioFrame, Frame, FrameActiveFormatDescription, FrameAudioServiceType, FrameData,
-    FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameGopTimecode,
-    FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
-    FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData,
+    AudioFrame, Frame, FrameActiveFormatDescription, FrameAudioServiceType,
+    FrameContentLightMetadata, FrameData, FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType,
+    FrameGopTimecode, FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector,
+    FrameMotionVectors, FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData,
     FrameSideDataDescriptor, FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples,
     FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection, VideoFrame,
 };

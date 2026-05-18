@@ -1613,6 +1613,57 @@ impl FrameSphericalMapping {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameContentLightMetadata {
+    max_content_light_level: u32,
+    max_average_light_level: u32,
+}
+
+impl FrameContentLightMetadata {
+    pub const DATA_LEN: usize = 8;
+
+    pub const fn new(max_content_light_level: u32, max_average_light_level: u32) -> Self {
+        Self {
+            max_content_light_level,
+            max_average_light_level,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "content light metadata frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut max_content_light_level = [0; 4];
+        max_content_light_level.copy_from_slice(&data[0..4]);
+        let mut max_average_light_level = [0; 4];
+        max_average_light_level.copy_from_slice(&data[4..8]);
+        Ok(Self {
+            max_content_light_level: u32::from_ne_bytes(max_content_light_level),
+            max_average_light_level: u32::from_ne_bytes(max_average_light_level),
+        })
+    }
+
+    pub const fn max_content_light_level(self) -> u32 {
+        self.max_content_light_level
+    }
+
+    pub const fn max_average_light_level(self) -> u32 {
+        self.max_average_light_level
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[0..4].copy_from_slice(&self.max_content_light_level.to_ne_bytes());
+        bytes[4..8].copy_from_slice(&self.max_average_light_level.to_ne_bytes());
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameS12mTimecode {
     words: [u32; Self::WORDS],
 }
@@ -2124,6 +2175,13 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::Spherical, value.to_bytes().to_vec())
     }
 
+    pub fn new_content_light_metadata(value: FrameContentLightMetadata) -> AvResult<Self> {
+        Self::new_with_kind(
+            FrameSideDataKind::ContentLightLevel,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_s12m_timecode(value: FrameS12mTimecode) -> AvResult<Self> {
         Self::new_with_kind(FrameSideDataKind::S12mTimecode, value.to_bytes().to_vec())
     }
@@ -2272,6 +2330,14 @@ impl FrameSideData {
         }
 
         FrameSphericalMapping::parse(self.data()).map(Some)
+    }
+
+    pub fn content_light_metadata(&self) -> AvResult<Option<FrameContentLightMetadata>> {
+        if self.kind != FrameSideDataKind::ContentLightLevel {
+            return Ok(None);
+        }
+
+        FrameContentLightMetadata::parse(self.data()).map(Some)
     }
 
     pub fn s12m_timecode(&self) -> AvResult<Option<FrameS12mTimecode>> {
@@ -5678,6 +5744,61 @@ mod tests {
         let non_spherical =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 36]).unwrap();
         assert_eq!(non_spherical.spherical_mapping().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_content_light_metadata_payload() {
+        let expected = FrameContentLightMetadata::new(1000, 400);
+        let mut expected_bytes = [0; FrameContentLightMetadata::DATA_LEN];
+        expected_bytes[0..4].copy_from_slice(&1000u32.to_ne_bytes());
+        expected_bytes[4..8].copy_from_slice(&400u32.to_ne_bytes());
+
+        assert_eq!(FrameContentLightMetadata::DATA_LEN, 8);
+        assert_eq!(expected.max_content_light_level(), 1000);
+        assert_eq!(expected.max_average_light_level(), 400);
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            FrameContentLightMetadata::parse(&expected_bytes).unwrap(),
+            expected
+        );
+
+        let side_data = FrameSideData::new_content_light_metadata(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::ContentLightLevel);
+        assert_eq!(side_data.data(), &expected_bytes[..]);
+        assert_eq!(side_data.content_light_metadata().unwrap(), Some(expected));
+
+        let raw_values = FrameContentLightMetadata::new(u32::MAX, 0);
+        assert_eq!(
+            FrameContentLightMetadata::parse(&raw_values.to_bytes()).unwrap(),
+            raw_values
+        );
+
+        let display_matrix = FrameSideData::new_with_kind(
+            FrameSideDataKind::DisplayMatrix,
+            expected.to_bytes().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(display_matrix.content_light_metadata().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_content_light_metadata_payload() {
+        for data in [Vec::new(), vec![0; 7], vec![0; 9]] {
+            assert_eq!(
+                FrameContentLightMetadata::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::ContentLightLevel, data).unwrap();
+            assert_eq!(
+                side_data.content_light_metadata().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_content_light =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 8]).unwrap();
+        assert_eq!(non_content_light.content_light_metadata().unwrap(), None);
     }
 
     #[test]
