@@ -19,7 +19,7 @@ pub mod timebase;
 
 pub use bitreader::BitReader;
 pub use bitwriter::BitWriter;
-pub use buffer::{BufferRef, BufferSlice};
+pub use buffer::{BufferPool, BufferRef, BufferSlice};
 pub use byteio::{ByteReader, ByteWriter};
 pub use channel_layout::{Channel, ChannelLayout};
 pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};

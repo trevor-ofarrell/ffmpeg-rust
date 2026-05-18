@@ -3,8 +3,9 @@
 use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferRef,
-    Channel, ChannelLayout, Crc32, Frame, FrameData, Md5, Packet, PacketFlags, PixelFormat,
-    Rational, Rounding, SampleFormat, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    BufferPool, Channel, ChannelLayout, Crc32, Frame, FrameData, Md5, Packet, PacketFlags,
+    PixelFormat, Rational, Rounding, SampleFormat, Sha224, Sha256, Sha384, Sha512, SideData,
+    VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -122,6 +123,50 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         BufferRef::zeroed_with_padding(1, usize::MAX)
             .unwrap_err()
             .kind(),
+        AvErrorKind::InvalidArgument
+    );
+
+    let pool = BufferPool::new(payload_len, padding_len).unwrap();
+    assert_eq!(pool.len(), payload_len);
+    assert_eq!(pool.allocated_len(), payload_len + padding_len);
+    assert_eq!(pool.padding_len(), padding_len);
+    assert_eq!(pool.available_count().unwrap(), 0);
+
+    let mut pooled = pool.get().unwrap();
+    assert_eq!(pooled.len(), payload_len);
+    assert_eq!(pooled.allocated_len(), payload_len + padding_len);
+    assert!(pooled.as_padded_slice().iter().all(|byte| *byte == 0));
+    if !pooled.is_empty() {
+        pooled.make_mut()[0] = cursor.next().unwrap_or_default();
+    }
+    let shared = pooled.clone();
+    assert_eq!(
+        pool.recycle(pooled).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(pool.available_count().unwrap(), 0);
+    drop(shared);
+
+    let wrong_shape = BufferRef::zeroed_with_padding(payload_len.saturating_add(1), padding_len)
+        .unwrap();
+    assert_eq!(
+        pool.recycle(wrong_shape).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    let mut recyclable = pool.get().unwrap();
+    if !recyclable.is_empty() {
+        let last = recyclable.len() - 1;
+        recyclable.make_mut()[last] = cursor.next().unwrap_or_default();
+    }
+    pool.recycle(recyclable).unwrap();
+    assert_eq!(pool.available_count().unwrap(), 1);
+    let reused = pool.get().unwrap();
+    assert_eq!(pool.available_count().unwrap(), 0);
+    assert_eq!(reused.len(), payload_len);
+    assert_eq!(reused.allocated_len(), payload_len + padding_len);
+    assert!(reused.as_padded_slice().iter().all(|byte| *byte == 0));
+    assert_eq!(
+        BufferPool::new(1, usize::MAX).unwrap_err().kind(),
         AvErrorKind::InvalidArgument
     );
 }
