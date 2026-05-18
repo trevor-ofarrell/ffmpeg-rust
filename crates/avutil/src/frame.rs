@@ -537,6 +537,157 @@ impl FrameMatrixEncoding {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum FrameDownmixType {
+    Unknown = 0,
+    LoRo = 1,
+    LtRt = 2,
+    DolbyProLogicIi = 3,
+}
+
+impl FrameDownmixType {
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::LoRo),
+            2 => Ok(Self::LtRt),
+            3 => Ok(Self::DolbyProLogicIi),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid downmix type value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Unknown => "AV_DOWNMIX_TYPE_UNKNOWN",
+            Self::LoRo => "AV_DOWNMIX_TYPE_LORO",
+            Self::LtRt => "AV_DOWNMIX_TYPE_LTRT",
+            Self::DolbyProLogicIi => "AV_DOWNMIX_TYPE_DPLII",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDownmixInfo {
+    preferred_downmix_type: FrameDownmixType,
+    level_bits: [u64; Self::LEVELS],
+}
+
+impl FrameDownmixInfo {
+    pub const LEVELS: usize = 5;
+    pub const DATA_LEN: usize = 8 + Self::LEVELS * 8;
+
+    pub fn new(
+        preferred_downmix_type: FrameDownmixType,
+        center_mix_level: f64,
+        center_mix_level_ltrt: f64,
+        surround_mix_level: f64,
+        surround_mix_level_ltrt: f64,
+        lfe_mix_level: f64,
+    ) -> Self {
+        Self::from_level_bits(
+            preferred_downmix_type,
+            [
+                center_mix_level.to_bits(),
+                center_mix_level_ltrt.to_bits(),
+                surround_mix_level.to_bits(),
+                surround_mix_level_ltrt.to_bits(),
+                lfe_mix_level.to_bits(),
+            ],
+        )
+    }
+
+    pub const fn from_level_bits(
+        preferred_downmix_type: FrameDownmixType,
+        level_bits: [u64; Self::LEVELS],
+    ) -> Self {
+        Self {
+            preferred_downmix_type,
+            level_bits,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "downmix info frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut raw_type = [0; 4];
+        raw_type.copy_from_slice(&data[..4]);
+        let preferred_downmix_type = FrameDownmixType::from_raw(i32::from_ne_bytes(raw_type))?;
+
+        let mut level_bits = [0; Self::LEVELS];
+        for (bits, chunk) in level_bits
+            .iter_mut()
+            .zip(data[8..].chunks_exact(std::mem::size_of::<f64>()))
+        {
+            let mut raw = [0; 8];
+            raw.copy_from_slice(chunk);
+            *bits = u64::from_ne_bytes(raw);
+        }
+
+        Ok(Self {
+            preferred_downmix_type,
+            level_bits,
+        })
+    }
+
+    pub const fn preferred_downmix_type(self) -> FrameDownmixType {
+        self.preferred_downmix_type
+    }
+
+    pub const fn level_bits(self) -> [u64; Self::LEVELS] {
+        self.level_bits
+    }
+
+    pub fn levels(self) -> [f64; Self::LEVELS] {
+        self.level_bits.map(f64::from_bits)
+    }
+
+    pub fn center_mix_level(self) -> f64 {
+        f64::from_bits(self.level_bits[0])
+    }
+
+    pub fn center_mix_level_ltrt(self) -> f64 {
+        f64::from_bits(self.level_bits[1])
+    }
+
+    pub fn surround_mix_level(self) -> f64 {
+        f64::from_bits(self.level_bits[2])
+    }
+
+    pub fn surround_mix_level_ltrt(self) -> f64 {
+        f64::from_bits(self.level_bits[3])
+    }
+
+    pub fn lfe_mix_level(self) -> f64 {
+        f64::from_bits(self.level_bits[4])
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[..4].copy_from_slice(&self.preferred_downmix_type.as_raw().to_ne_bytes());
+        for (bits, chunk) in self
+            .level_bits
+            .iter()
+            .zip(bytes[8..].chunks_exact_mut(std::mem::size_of::<f64>()))
+        {
+            chunk.copy_from_slice(&bits.to_ne_bytes());
+        }
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FrameActiveFormatDescription {
     Same = 8,
@@ -1290,6 +1441,10 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::MatrixEncoding, value.to_bytes().to_vec())
     }
 
+    pub fn new_downmix_info(value: FrameDownmixInfo) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::DownmixInfo, value.to_bytes().to_vec())
+    }
+
     pub fn new_skip_samples(value: FrameSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(FrameSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -1381,6 +1536,14 @@ impl FrameSideData {
         }
 
         FrameMatrixEncoding::parse(self.data()).map(Some)
+    }
+
+    pub fn downmix_info(&self) -> AvResult<Option<FrameDownmixInfo>> {
+        if self.kind != FrameSideDataKind::DownmixInfo {
+            return Ok(None);
+        }
+
+        FrameDownmixInfo::parse(self.data()).map(Some)
     }
 
     pub fn active_format_description(&self) -> AvResult<Option<FrameActiveFormatDescription>> {
@@ -3891,6 +4054,120 @@ mod tests {
         let non_matrix =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 4]).unwrap();
         assert_eq!(non_matrix.matrix_encoding().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_downmix_info_payload() {
+        let expected = [
+            (FrameDownmixType::Unknown, 0, "AV_DOWNMIX_TYPE_UNKNOWN"),
+            (FrameDownmixType::LoRo, 1, "AV_DOWNMIX_TYPE_LORO"),
+            (FrameDownmixType::LtRt, 2, "AV_DOWNMIX_TYPE_LTRT"),
+            (
+                FrameDownmixType::DolbyProLogicIi,
+                3,
+                "AV_DOWNMIX_TYPE_DPLII",
+            ),
+        ];
+        for (value, raw, ffmpeg_constant) in expected {
+            assert_eq!(value.as_raw(), raw);
+            assert_eq!(value.ffmpeg_constant(), ffmpeg_constant);
+            assert_eq!(FrameDownmixType::from_raw(raw).unwrap(), value);
+        }
+
+        let downmix = FrameDownmixInfo::new(
+            FrameDownmixType::LtRt,
+            std::f64::consts::FRAC_1_SQRT_2,
+            0.5,
+            0.25,
+            0.125,
+            0.0,
+        );
+        assert_eq!(FrameDownmixInfo::DATA_LEN, 48);
+        assert_eq!(downmix.preferred_downmix_type(), FrameDownmixType::LtRt);
+        assert_eq!(downmix.center_mix_level(), std::f64::consts::FRAC_1_SQRT_2);
+        assert_eq!(downmix.center_mix_level_ltrt(), 0.5);
+        assert_eq!(downmix.surround_mix_level(), 0.25);
+        assert_eq!(downmix.surround_mix_level_ltrt(), 0.125);
+        assert_eq!(downmix.lfe_mix_level(), 0.0);
+        assert_eq!(
+            downmix.levels(),
+            [std::f64::consts::FRAC_1_SQRT_2, 0.5, 0.25, 0.125, 0.0]
+        );
+        assert_eq!(&downmix.to_bytes()[4..8], &[0, 0, 0, 0]);
+        assert_eq!(
+            FrameDownmixInfo::parse(&downmix.to_bytes()).unwrap(),
+            downmix
+        );
+
+        let mut nonzero_padding = downmix.to_bytes();
+        nonzero_padding[4..8].copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
+        assert_eq!(FrameDownmixInfo::parse(&nonzero_padding).unwrap(), downmix);
+
+        let nan_bits = f64::NAN.to_bits();
+        let raw_bits = FrameDownmixInfo::from_level_bits(
+            FrameDownmixType::DolbyProLogicIi,
+            [
+                nan_bits,
+                1.0f64.to_bits(),
+                2.0f64.to_bits(),
+                3.0f64.to_bits(),
+                4.0f64.to_bits(),
+            ],
+        );
+        assert_eq!(
+            FrameDownmixInfo::parse(&raw_bits.to_bytes()).unwrap(),
+            raw_bits
+        );
+        assert_eq!(raw_bits.level_bits()[0], nan_bits);
+        assert!(raw_bits.center_mix_level().is_nan());
+
+        let side_data = FrameSideData::new_downmix_info(downmix).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::DownmixInfo);
+        assert_eq!(side_data.data(), &downmix.to_bytes()[..]);
+        assert_eq!(side_data.downmix_info().unwrap(), Some(downmix));
+
+        let replay_gain = FrameSideData::new_with_kind(
+            FrameSideDataKind::ReplayGain,
+            vec![0; FrameDownmixInfo::DATA_LEN],
+        )
+        .unwrap();
+        assert_eq!(replay_gain.downmix_info().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_downmix_info_payload() {
+        for data in [Vec::new(), vec![0; 47], vec![0; 49]] {
+            assert_eq!(
+                FrameDownmixInfo::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::DownmixInfo, data).unwrap();
+            assert_eq!(
+                side_data.downmix_info().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for raw in [4, 5, -1] {
+            assert_eq!(
+                FrameDownmixType::from_raw(raw).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let mut data = [0; FrameDownmixInfo::DATA_LEN];
+            data[..4].copy_from_slice(&raw.to_ne_bytes());
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::DownmixInfo, data.to_vec())
+                    .unwrap();
+            assert_eq!(
+                side_data.downmix_info().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_downmix =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 48]).unwrap();
+        assert_eq!(non_downmix.downmix_info().unwrap(), None);
     }
 
     #[test]
