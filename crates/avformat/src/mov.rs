@@ -33,6 +33,10 @@ const CO64_ID: &[u8; 4] = b"co64";
 const MDAT_ID: &[u8; 4] = b"mdat";
 const AVCC_ID: &[u8; 4] = b"avcC";
 const HVCC_ID: &[u8; 4] = b"hvcC";
+const ESDS_ID: &[u8; 4] = b"esds";
+const WAVE_ID: &[u8; 4] = b"wave";
+const FRMA_ID: &[u8; 4] = b"frma";
+const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
 const PASP_ID: &[u8; 4] = b"pasp";
 const COLR_ID: &[u8; 4] = b"colr";
 const NCLC_ID: &[u8; 4] = b"nclc";
@@ -192,6 +196,7 @@ pub struct MovAudioSampleEntry {
     sample_rate: u32,
     sample_rate_fixed_16_16: u32,
     version_fields: MovAudioSampleEntryVersionFields,
+    wave_extension: Option<MovAudioWaveExtension>,
     child_boxes: Vec<MovSampleEntryChildBox>,
 }
 
@@ -273,6 +278,10 @@ impl MovAudioSampleEntry {
             MovAudioSampleEntryVersionFields::Version0
             | MovAudioSampleEntryVersionFields::Version1(_) => None,
         }
+    }
+
+    pub fn wave_extension(&self) -> Option<&MovAudioWaveExtension> {
+        self.wave_extension.as_ref()
     }
 
     pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
@@ -360,6 +369,53 @@ impl MovAudioSampleEntryVersion2Fields {
 
     pub fn const_lpcm_frames_per_audio_packet(&self) -> u32 {
         self.const_lpcm_frames_per_audio_packet
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAudioWaveExtension {
+    original_format: Option<String>,
+    elementary_stream_descriptor: Option<MovElementaryStreamDescriptor>,
+    has_terminator: bool,
+    child_boxes: Vec<MovSampleEntryChildBox>,
+}
+
+impl MovAudioWaveExtension {
+    pub fn original_format(&self) -> Option<&str> {
+        self.original_format.as_deref()
+    }
+
+    pub fn elementary_stream_descriptor(&self) -> Option<&MovElementaryStreamDescriptor> {
+        self.elementary_stream_descriptor.as_ref()
+    }
+
+    pub fn has_terminator(&self) -> bool {
+        self.has_terminator
+    }
+
+    pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.child_boxes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovElementaryStreamDescriptor {
+    version: u8,
+    flags: [u8; 3],
+    descriptor: Vec<u8>,
+}
+
+impl MovElementaryStreamDescriptor {
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
+    pub fn flags(&self) -> [u8; 3] {
+        self.flags
+    }
+
+    pub fn descriptor(&self) -> &[u8] {
+        &self.descriptor
     }
 }
 
@@ -1754,6 +1810,7 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
         extra_data.len(),
         "MOV/MP4 AudioSampleEntry children",
     )?;
+    let wave_extension = parse_audio_sample_entry_wave_extension(&child_boxes)?;
     Ok(MovAudioSampleEntry {
         version,
         revision_level,
@@ -1765,6 +1822,7 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
         sample_rate,
         sample_rate_fixed_16_16,
         version_fields,
+        wave_extension,
         child_boxes,
     })
 }
@@ -1786,6 +1844,101 @@ fn audio_sample_entry_sample_rate(
         MovAudioSampleEntryVersionFields::Version0
         | MovAudioSampleEntryVersionFields::Version1(_) => Ok(sample_rate_fixed_16_16 >> 16),
     }
+}
+
+fn parse_audio_sample_entry_wave_extension(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovAudioWaveExtension>> {
+    child_boxes
+        .iter()
+        .find(|child| child.box_type.as_bytes() == WAVE_ID)
+        .map(|child| parse_wave_extension(child.payload()))
+        .transpose()
+}
+
+fn parse_wave_extension(payload: &[u8]) -> AvResult<MovAudioWaveExtension> {
+    let child_boxes = parse_sample_entry_child_boxes(payload, 0, payload.len(), "MOV/MP4 wave")?;
+    let original_format = parse_wave_original_format(&child_boxes)?;
+    let elementary_stream_descriptor = parse_wave_esds(&child_boxes)?;
+    let has_terminator = child_boxes
+        .iter()
+        .any(|child| child.box_type.as_bytes() == TERMINATOR_ID);
+    validate_wave_terminator(&child_boxes)?;
+    Ok(MovAudioWaveExtension {
+        original_format,
+        elementary_stream_descriptor,
+        has_terminator,
+        child_boxes,
+    })
+}
+
+fn parse_wave_original_format(child_boxes: &[MovSampleEntryChildBox]) -> AvResult<Option<String>> {
+    child_boxes
+        .iter()
+        .find(|child| child.box_type.as_bytes() == FRMA_ID)
+        .map(|child| {
+            if child.payload().len() != 4 {
+                return Err(AvError::invalid_data(
+                    "MOV/MP4 wave frma atom must contain exactly one FourCC",
+                ));
+            }
+            let mut format = [0_u8; 4];
+            format.copy_from_slice(child.payload());
+            Ok(fourcc_to_string(format))
+        })
+        .transpose()
+}
+
+fn parse_wave_esds(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovElementaryStreamDescriptor>> {
+    child_boxes
+        .iter()
+        .find(|child| child.box_type.as_bytes() == ESDS_ID)
+        .map(|child| parse_esds(child.payload()))
+        .transpose()
+}
+
+fn parse_esds(payload: &[u8]) -> AvResult<MovElementaryStreamDescriptor> {
+    let mut reader = ByteReader::new(payload);
+    let (version, flags) = read_full_box_header(&mut reader, "MOV/MP4 esds")?;
+    if version != 0 {
+        return Err(AvError::unsupported(format!(
+            "MOV/MP4 esds version {version} is not implemented"
+        )));
+    }
+    if flags != [0, 0, 0] {
+        return Err(AvError::invalid_data("MOV/MP4 esds flags must be zero"));
+    }
+    let descriptor = reader.read_exact(reader.remaining())?.to_vec();
+    if descriptor.is_empty() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 esds descriptor payload must not be empty",
+        ));
+    }
+    Ok(MovElementaryStreamDescriptor {
+        version,
+        flags,
+        descriptor,
+    })
+}
+
+fn validate_wave_terminator(child_boxes: &[MovSampleEntryChildBox]) -> AvResult<()> {
+    for (index, child) in child_boxes.iter().enumerate() {
+        if child.box_type.as_bytes() == TERMINATOR_ID {
+            if !child.payload().is_empty() {
+                return Err(AvError::invalid_data(
+                    "MOV/MP4 wave terminator atom must not contain payload",
+                ));
+            }
+            if index + 1 != child_boxes.len() {
+                return Err(AvError::invalid_data(
+                    "MOV/MP4 wave terminator atom must be the final child atom",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn parse_visual_sample_entry(extra_data: &[u8]) -> AvResult<MovVideoSampleEntry> {
@@ -3453,6 +3606,7 @@ mod tests {
         ));
         assert!(audio.version1_fields().is_none());
         assert!(audio.version2_fields().is_none());
+        assert!(audio.wave_extension().is_none());
         assert_eq!(audio.child_boxes().len(), 1);
         assert_eq!(audio.child_boxes()[0].box_type(), "esds");
         let expected_esds_payload = full_box(0, b"\x03\x01\x00");
@@ -3464,7 +3618,8 @@ mod tests {
 
     #[test]
     fn parses_audio_sample_entry_version_one_fields() {
-        let wave = box_(*b"wave", &[0, 1, 2, 3]);
+        let wave_payload = wave_extension_payload(*b"mp4a", b"\x03\x01\x00");
+        let wave = box_(*WAVE_ID, &wave_payload);
         let extra_data = audio_sample_entry_v1_extra_data(2, 16, 44_100, 1_024, 0, 4, 2, &wave);
         let bytes = mp4_with_sample_description_entry(b"mp4a", 1, &extra_data);
         let demuxer = MovDemuxer::open(&bytes).unwrap();
@@ -3487,7 +3642,21 @@ mod tests {
         assert!(audio.version2_fields().is_none());
         assert_eq!(audio.child_boxes().len(), 1);
         assert_eq!(audio.child_boxes()[0].box_type(), "wave");
-        assert_eq!(audio.child_boxes()[0].payload(), &[0, 1, 2, 3]);
+        assert_eq!(audio.child_boxes()[0].payload(), wave_payload.as_slice());
+        let wave_extension = audio.wave_extension().unwrap();
+        assert_eq!(wave_extension.original_format(), Some("mp4a"));
+        assert!(wave_extension.has_terminator());
+        assert_eq!(wave_extension.child_boxes().len(), 3);
+        assert_eq!(wave_extension.child_boxes()[0].box_type(), "frma");
+        assert_eq!(wave_extension.child_boxes()[1].box_type(), "esds");
+        assert_eq!(
+            wave_extension.child_boxes()[2].box_type().as_bytes(),
+            TERMINATOR_ID
+        );
+        let esds = wave_extension.elementary_stream_descriptor().unwrap();
+        assert_eq!(esds.version(), 0);
+        assert_eq!(esds.flags(), [0, 0, 0]);
+        assert_eq!(esds.descriptor(), b"\x03\x01\x00");
     }
 
     #[test]
@@ -3885,6 +4054,33 @@ mod tests {
 
         let bad_v2_rate = audio_sample_entry_v2_extra_data(f64::NAN, 2, 16, 0, 4, 1, &[]);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"lpcm", 1, &bad_v2_rate))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let truncated_wave = box_(*WAVE_ID, b"\0\0");
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &truncated_wave);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_wave_frma = box_(*WAVE_ID, &box_(*FRMA_ID, b"mp4"));
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &bad_wave_frma);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_wave_esds = box_(*WAVE_ID, &box_(*ESDS_ID, &full_box(1, b"\x03")));
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &bad_wave_esds);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+
+        let bad_wave_terminator = box_(
+            *WAVE_ID,
+            &[box_(*TERMINATOR_ID, &[]), box_(*FRMA_ID, b"mp4a")].concat(),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &bad_wave_terminator);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
@@ -5019,6 +5215,15 @@ mod tests {
         sample_entry.extend_from_slice(&data_reference_index.to_be_bytes());
         sample_entry.extend_from_slice(extra_data);
         sample_entry
+    }
+
+    fn wave_extension_payload(original_format: [u8; 4], esds_descriptor: &[u8]) -> Vec<u8> {
+        [
+            box_(*FRMA_ID, &original_format),
+            box_(*ESDS_ID, &full_box(0, esds_descriptor)),
+            box_(*TERMINATOR_ID, &[]),
+        ]
+        .concat()
     }
 
     fn audio_sample_entry_extra_data(
