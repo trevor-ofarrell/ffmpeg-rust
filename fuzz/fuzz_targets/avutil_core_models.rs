@@ -2,10 +2,10 @@
 
 use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
-    sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferRef,
-    BufferPool, Channel, ChannelLayout, Crc32, Frame, FrameData, Md5, Packet, PacketFlags,
-    PixelFormat, Rational, Rounding, SampleFormat, Sha224, Sha256, Sha384, Sha512, SideData,
-    VideoFrame,
+    sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
+    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameData, Md5, Packet,
+    PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, Sha224, Sha256, Sha384, Sha512,
+    SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -245,6 +245,63 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(cow_released.lock().unwrap().is_empty());
     drop(callback_cow_shared);
     assert_eq!(*cow_released.lock().unwrap(), vec![payload.clone()]);
+
+    let custom_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let custom_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let allocate_capture = Arc::clone(&custom_allocations);
+    let release_capture = Arc::clone(&custom_releases);
+    let custom_pool = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::new(
+            move |allocated_len| {
+                allocate_capture.lock().unwrap().push(allocated_len);
+                Ok(vec![0xaa; allocated_len])
+            },
+            move |storage| {
+                release_capture.lock().unwrap().push(storage);
+            },
+        ),
+    )
+    .unwrap();
+    let custom_buffer = custom_pool.get().unwrap();
+    assert_eq!(
+        *custom_allocations.lock().unwrap(),
+        vec![payload_len + padding_len]
+    );
+    assert!(custom_buffer
+        .as_padded_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    drop(custom_pool);
+    assert!(custom_releases.lock().unwrap().is_empty());
+    drop(custom_buffer);
+    assert_eq!(
+        *custom_releases.lock().unwrap(),
+        vec![vec![0; payload_len + padding_len]]
+    );
+
+    let bad_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let bad_release_capture = Arc::clone(&bad_releases);
+    let bad_pool = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::new(
+            |allocated_len| Ok(vec![1; allocated_len + 1]),
+            move |storage| {
+                bad_release_capture.lock().unwrap().push(storage);
+            },
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        bad_pool.get().unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        *bad_releases.lock().unwrap(),
+        vec![vec![1; payload_len + padding_len + 1]]
+    );
     assert_eq!(
         BufferPool::new(1, usize::MAX).unwrap_err().kind(),
         AvErrorKind::InvalidArgument
