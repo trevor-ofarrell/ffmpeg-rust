@@ -3,9 +3,9 @@
 use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
-    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameData, Md5, Packet,
-    PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, Sha224, Sha256, Sha384, Sha512,
-    SideData, VideoFrame,
+    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameData, FrameSideData,
+    Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, Sha224, Sha256,
+    Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -101,7 +101,10 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(padded.allocated_len(), payload.len() + padding_len);
     assert_eq!(padded.padding_len(), padding_len);
     assert_eq!(padded.as_slice(), payload.as_slice());
-    assert_eq!(&padded.as_padded_slice()[..payload.len()], payload.as_slice());
+    assert_eq!(
+        &padded.as_padded_slice()[..payload.len()],
+        payload.as_slice()
+    );
     assert!(padded.padding_slice().iter().all(|byte| *byte == 0));
     assert_eq!(padded.slice(padded.len(), 0).unwrap().as_slice(), &[]);
     assert_eq!(
@@ -293,10 +296,7 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(external_readonly.opaque_ref::<usize>(), Some(&payload_len));
     assert!(external_readonly.opaque_ref::<u8>().is_none());
     let external_original = external_readonly.clone();
-    assert_eq!(
-        external_original.opaque_ref::<usize>(),
-        Some(&payload_len)
-    );
+    assert_eq!(external_original.opaque_ref::<usize>(), Some(&payload_len));
     external_readonly
         .resize_with_padding(resize_len, resize_padding)
         .unwrap();
@@ -318,10 +318,7 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         .all(|byte| *byte == 0));
     assert_eq!(external_original.as_slice(), payload.as_slice());
     assert!(external_original.is_readonly());
-    assert_eq!(
-        external_original.opaque_ref::<usize>(),
-        Some(&payload_len)
-    );
+    assert_eq!(external_original.opaque_ref::<usize>(), Some(&payload_len));
     assert!(std::ptr::eq(
         external_original.as_padded_slice().as_ptr(),
         external_storage.as_ptr()
@@ -370,8 +367,8 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(pool.available_count().unwrap(), 0);
     drop(shared);
 
-    let wrong_shape = BufferRef::zeroed_with_padding(payload_len.saturating_add(1), padding_len)
-        .unwrap();
+    let wrong_shape =
+        BufferRef::zeroed_with_padding(payload_len.saturating_add(1), padding_len).unwrap();
     assert_eq!(
         pool.recycle(wrong_shape).unwrap_err().kind(),
         AvErrorKind::InvalidArgument
@@ -393,10 +390,7 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
 
     let auto_reused = pool.get().unwrap();
     assert_eq!(pool.available_count().unwrap(), 0);
-    assert!(auto_reused
-        .as_padded_slice()
-        .iter()
-        .all(|byte| *byte == 0));
+    assert!(auto_reused.as_padded_slice().iter().all(|byte| *byte == 0));
     let auto_shared = auto_reused.clone();
     drop(auto_reused);
     assert_eq!(pool.available_count().unwrap(), 0);
@@ -468,8 +462,8 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     drop(callback_cow_shared);
     assert_eq!(*cow_released.lock().unwrap(), vec![payload.clone()]);
 
-    let mut readonly = BufferRef::from_vec_with_len_readonly(release_storage.clone(), payload.len())
-        .unwrap();
+    let mut readonly =
+        BufferRef::from_vec_with_len_readonly(release_storage.clone(), payload.len()).unwrap();
     let readonly_shared = readonly.clone();
     assert!(readonly.is_readonly());
     assert!(!readonly.is_writable());
@@ -483,7 +477,10 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     }
     assert!(!readonly.is_readonly());
     assert!(readonly.is_writable());
-    assert_eq!(readonly_shared.as_padded_slice(), release_storage.as_slice());
+    assert_eq!(
+        readonly_shared.as_padded_slice(),
+        release_storage.as_slice()
+    );
     assert!(readonly_shared.is_readonly());
     drop(readonly);
     drop(readonly_shared);
@@ -736,6 +733,48 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(frame.pts(), pts);
     assert!(matches!(frame.data(), FrameData::Video(_)));
     assert!(frame.hw_frames_context().is_none());
+    assert!(frame.side_data().is_empty());
+
+    let frame_side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);
+    let frame_side_data_payload = payload_from(cursor, frame_side_data_len);
+    let frame_side_data_buffer =
+        BufferRef::copy_from_slice_with_padding(&frame_side_data_payload, 1).unwrap();
+    let mut frame_side_data =
+        FrameSideData::new_with_buffer_ref("fuzz_frame_side_data", frame_side_data_buffer.clone())
+            .unwrap();
+    frame_side_data
+        .metadata_mut()
+        .set("origin", "fuzz")
+        .unwrap();
+    frame.push_side_data(frame_side_data);
+    assert_eq!(frame.side_data().len(), 1);
+    assert_eq!(frame.side_data()[0].kind(), "fuzz_frame_side_data");
+    assert_eq!(
+        frame.side_data()[0].data(),
+        frame_side_data_payload.as_slice()
+    );
+    assert_eq!(frame.side_data()[0].metadata().get("origin"), Some("fuzz"));
+    assert!(frame.side_data()[0]
+        .buffer()
+        .shares_storage(&frame_side_data_buffer));
+    assert_eq!(frame.side_data()[0].buffer().padding_slice(), &[0]);
+    let removed_side_data = frame.remove_side_data("fuzz_frame_side_data").unwrap();
+    assert!(frame.side_data().is_empty());
+    assert!(removed_side_data
+        .buffer()
+        .shares_storage(&frame_side_data_buffer));
+    frame.push_side_data(removed_side_data);
+    assert!(frame.remove_side_data("missing").is_none());
+    assert_eq!(
+        FrameSideData::new(" \t", Vec::new()).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        FrameSideData::new("bad\0kind", Vec::new())
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
 
     let context_payload = vec![cursor.next().unwrap_or_default()];
     let released_contexts = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));

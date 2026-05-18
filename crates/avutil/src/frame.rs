@@ -1,4 +1,4 @@
-use crate::{AvError, AvResult, BufferRef, ChannelLayout, PixelFormat, SampleFormat};
+use crate::{AvError, AvResult, BufferRef, ChannelLayout, Dictionary, PixelFormat, SampleFormat};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameData {
@@ -11,6 +11,7 @@ pub struct Frame {
     pts: Option<i64>,
     data: FrameData,
     hw_frames_context: Option<BufferRef>,
+    side_data: Vec<FrameSideData>,
 }
 
 impl Frame {
@@ -19,6 +20,7 @@ impl Frame {
             pts: None,
             data: FrameData::Video(frame),
             hw_frames_context: None,
+            side_data: Vec::new(),
         }
     }
 
@@ -27,6 +29,7 @@ impl Frame {
             pts: None,
             data: FrameData::Audio(frame),
             hw_frames_context: None,
+            side_data: Vec::new(),
         }
     }
 
@@ -58,6 +61,107 @@ impl Frame {
     pub fn take_hw_frames_context(&mut self) -> Option<BufferRef> {
         self.hw_frames_context.take()
     }
+
+    pub fn side_data(&self) -> &[FrameSideData] {
+        &self.side_data
+    }
+
+    pub fn push_side_data(&mut self, side_data: FrameSideData) {
+        self.side_data.push(side_data);
+    }
+
+    pub fn add_side_data(
+        &mut self,
+        kind: impl Into<String>,
+        data: Vec<u8>,
+    ) -> AvResult<&mut FrameSideData> {
+        let side_data = FrameSideData::new(kind, data)?;
+        self.side_data.push(side_data);
+        Ok(self
+            .side_data
+            .last_mut()
+            .expect("side data was just inserted"))
+    }
+
+    pub fn add_side_data_buffer(
+        &mut self,
+        kind: impl Into<String>,
+        buffer: BufferRef,
+    ) -> AvResult<&mut FrameSideData> {
+        let side_data = FrameSideData::new_with_buffer_ref(kind, buffer)?;
+        self.side_data.push(side_data);
+        Ok(self
+            .side_data
+            .last_mut()
+            .expect("side data was just inserted"))
+    }
+
+    pub fn remove_side_data(&mut self, kind: &str) -> Option<FrameSideData> {
+        self.side_data
+            .iter()
+            .position(|side_data| side_data.kind() == kind)
+            .map(|index| self.side_data.remove(index))
+    }
+
+    pub fn take_side_data(&mut self) -> Vec<FrameSideData> {
+        std::mem::take(&mut self.side_data)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameSideData {
+    kind: String,
+    buffer: BufferRef,
+    metadata: Dictionary,
+}
+
+impl FrameSideData {
+    pub fn new(kind: impl Into<String>, data: Vec<u8>) -> AvResult<Self> {
+        Self::new_with_buffer_ref(kind, BufferRef::from_vec(data))
+    }
+
+    pub fn new_with_buffer_ref(kind: impl Into<String>, buffer: BufferRef) -> AvResult<Self> {
+        Ok(Self {
+            kind: validate_frame_side_data_kind(kind.into())?,
+            buffer,
+            metadata: Dictionary::new(),
+        })
+    }
+
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    pub fn data(&self) -> &[u8] {
+        self.buffer.as_slice()
+    }
+
+    pub fn buffer(&self) -> &BufferRef {
+        &self.buffer
+    }
+
+    pub fn metadata(&self) -> &Dictionary {
+        &self.metadata
+    }
+
+    pub fn metadata_mut(&mut self) -> &mut Dictionary {
+        &mut self.metadata
+    }
+}
+
+fn validate_frame_side_data_kind(kind: String) -> AvResult<String> {
+    if kind.trim().is_empty() {
+        return Err(AvError::invalid_argument(
+            "frame side data kind must not be empty",
+        ));
+    }
+    if kind.contains('\0') {
+        return Err(AvError::invalid_argument(
+            "frame side data kind must not contain NUL",
+        ));
+    }
+
+    Ok(kind)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -548,9 +652,90 @@ mod tests {
 
         assert_eq!(frame.pts(), None);
         assert!(frame.hw_frames_context().is_none());
+        assert!(frame.side_data().is_empty());
         frame.set_pts(Some(42));
         assert_eq!(frame.pts(), Some(42));
         assert!(matches!(frame.data(), FrameData::Video(_)));
+    }
+
+    #[test]
+    fn frame_side_data_retains_buffer_ref_payload_and_metadata() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let release_capture = std::sync::Arc::clone(&released);
+        let payload = BufferRef::from_external_slice_with_len_and_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![1, 2, 3, 77]),
+            3,
+            String::from("displaymatrix"),
+            move |opaque| {
+                release_capture.lock().unwrap().push(opaque);
+            },
+        )
+        .unwrap();
+        let mut side_data =
+            FrameSideData::new_with_buffer_ref("displaymatrix", payload.clone()).unwrap();
+        side_data.metadata_mut().set("rotation", "90").unwrap();
+
+        let video = VideoFrame::new(1, 1, PixelFormat::Gray8, vec![vec![7]]).unwrap();
+        let mut frame = Frame::video(video);
+        frame.push_side_data(side_data);
+        let cloned = frame.clone();
+
+        assert_eq!(frame.side_data()[0].kind(), "displaymatrix");
+        assert_eq!(frame.side_data()[0].data(), &[1, 2, 3]);
+        assert_eq!(frame.side_data()[0].buffer().padding_slice(), &[77]);
+        assert_eq!(frame.side_data()[0].metadata().get("rotation"), Some("90"));
+        assert!(frame.side_data()[0].buffer().shares_storage(&payload));
+        assert!(cloned.side_data()[0]
+            .buffer()
+            .shares_storage(frame.side_data()[0].buffer()));
+
+        drop(payload);
+        assert!(released.lock().unwrap().is_empty());
+        drop(frame);
+        assert!(released.lock().unwrap().is_empty());
+        drop(cloned);
+        assert_eq!(
+            *released.lock().unwrap(),
+            vec![String::from("displaymatrix")]
+        );
+    }
+
+    #[test]
+    fn frame_side_data_validates_kind_and_supports_remove_and_take() {
+        assert_eq!(
+            FrameSideData::new(" ", Vec::new()).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            FrameSideData::new("bad\0kind", Vec::new())
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let audio = AudioFrame::new(48_000, 1, SampleFormat::S16, 1, vec![vec![0; 2]]).unwrap();
+        let mut frame = Frame::audio(audio);
+
+        frame.add_side_data("alpha_info", vec![1, 2]).unwrap();
+        let side_data = frame
+            .add_side_data_buffer("replaygain", BufferRef::copy_from_slice(&[9, 8, 7]))
+            .unwrap();
+        side_data.metadata_mut().set("gain", "-3.0 dB").unwrap();
+
+        assert_eq!(frame.side_data().len(), 2);
+        assert_eq!(frame.side_data()[0].data(), &[1, 2]);
+        assert_eq!(frame.side_data()[1].metadata().get("gain"), Some("-3.0 dB"));
+
+        let removed = frame.remove_side_data("alpha_info").unwrap();
+        assert_eq!(removed.kind(), "alpha_info");
+        assert_eq!(removed.data(), &[1, 2]);
+        assert!(frame.remove_side_data("missing").is_none());
+        assert_eq!(frame.side_data().len(), 1);
+
+        let taken = frame.take_side_data();
+        assert!(frame.side_data().is_empty());
+        assert_eq!(taken.len(), 1);
+        assert_eq!(taken[0].kind(), "replaygain");
     }
 
     #[test]
