@@ -651,6 +651,52 @@ impl FrameAudioServiceType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameGopTimecode {
+    value: i64,
+}
+
+impl FrameGopTimecode {
+    pub const DATA_LEN: usize = 8;
+    pub const MAX_VALUE: i64 = (1 << 25) - 1;
+
+    pub fn new(value: u32) -> AvResult<Self> {
+        Self::from_raw_i64(i64::from(value))
+    }
+
+    pub fn from_raw_i64(value: i64) -> AvResult<Self> {
+        if !(0..=Self::MAX_VALUE).contains(&value) {
+            return Err(AvError::invalid_data(format!(
+                "invalid GOP timecode 25-bit value {value}"
+            )));
+        }
+
+        Ok(Self { value })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "GOP timecode frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut raw = [0; Self::DATA_LEN];
+        raw.copy_from_slice(data);
+        Self::from_raw_i64(i64::from_ne_bytes(raw))
+    }
+
+    pub const fn as_raw_i64(self) -> i64 {
+        self.value
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        self.value.to_ne_bytes()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameS12mTimecode {
     words: [u32; Self::WORDS],
 }
@@ -1127,6 +1173,10 @@ impl FrameSideData {
         )
     }
 
+    pub fn new_gop_timecode(value: FrameGopTimecode) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::GopTimecode, value.to_bytes().to_vec())
+    }
+
     pub fn new_s12m_timecode(value: FrameS12mTimecode) -> AvResult<Self> {
         Self::new_with_kind(FrameSideDataKind::S12mTimecode, value.to_bytes().to_vec())
     }
@@ -1211,6 +1261,14 @@ impl FrameSideData {
         }
 
         FrameAudioServiceType::parse(self.data()).map(Some)
+    }
+
+    pub fn gop_timecode(&self) -> AvResult<Option<FrameGopTimecode>> {
+        if self.kind != FrameSideDataKind::GopTimecode {
+            return Ok(None);
+        }
+
+        FrameGopTimecode::parse(self.data()).map(Some)
     }
 
     pub fn s12m_timecode(&self) -> AvResult<Option<FrameS12mTimecode>> {
@@ -3828,6 +3886,73 @@ mod tests {
         let non_audio =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 4]).unwrap();
         assert_eq!(non_audio.audio_service_type().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_gop_timecode_payload() {
+        let expected = FrameGopTimecode::new(0x01FE_DCBA).unwrap();
+        assert_eq!(expected.as_raw_i64(), 0x01FE_DCBA);
+        assert_eq!(
+            FrameGopTimecode::from_raw_i64(expected.as_raw_i64()).unwrap(),
+            expected
+        );
+        assert_eq!(
+            FrameGopTimecode::parse(&expected.to_bytes()).unwrap(),
+            expected
+        );
+
+        let side_data = FrameSideData::new_gop_timecode(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::GopTimecode);
+        assert_eq!(side_data.data(), &expected.to_bytes()[..]);
+        assert_eq!(side_data.gop_timecode().unwrap(), Some(expected));
+
+        let zero = FrameGopTimecode::from_raw_i64(0).unwrap();
+        assert_eq!(zero.as_raw_i64(), 0);
+        let max = FrameGopTimecode::from_raw_i64(FrameGopTimecode::MAX_VALUE).unwrap();
+        assert_eq!(max.as_raw_i64(), FrameGopTimecode::MAX_VALUE);
+
+        let display_matrix = FrameSideData::new_with_kind(
+            FrameSideDataKind::DisplayMatrix,
+            expected.to_bytes().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(display_matrix.gop_timecode().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_gop_timecode_payload() {
+        for data in [Vec::new(), vec![0; 7], vec![0; 9]] {
+            assert_eq!(
+                FrameGopTimecode::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::GopTimecode, data).unwrap();
+            assert_eq!(
+                side_data.gop_timecode().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for raw in [-1, FrameGopTimecode::MAX_VALUE + 1, i64::MAX] {
+            assert_eq!(
+                FrameGopTimecode::from_raw_i64(raw).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data = FrameSideData::new_with_kind(
+                FrameSideDataKind::GopTimecode,
+                raw.to_ne_bytes().to_vec(),
+            )
+            .unwrap();
+            assert_eq!(
+                side_data.gop_timecode().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_gop =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 8]).unwrap();
+        assert_eq!(non_gop.gop_timecode().unwrap(), None);
     }
 
     #[test]
