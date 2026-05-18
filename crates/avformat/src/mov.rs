@@ -374,6 +374,7 @@ pub struct MovAudioSampleEntry {
     sample_rate: u32,
     sample_rate_fixed_16_16: u32,
     version_fields: MovAudioSampleEntryVersionFields,
+    elementary_stream_descriptor: Option<MovElementaryStreamDescriptor>,
     wave_extension: Option<MovAudioWaveExtension>,
     channel_layout: Option<MovAudioChannelLayout>,
     child_boxes: Vec<MovSampleEntryChildBox>,
@@ -457,6 +458,10 @@ impl MovAudioSampleEntry {
             MovAudioSampleEntryVersionFields::Version0
             | MovAudioSampleEntryVersionFields::Version1(_) => None,
         }
+    }
+
+    pub fn elementary_stream_descriptor(&self) -> Option<&MovElementaryStreamDescriptor> {
+        self.elementary_stream_descriptor.as_ref()
     }
 
     pub fn wave_extension(&self) -> Option<&MovAudioWaveExtension> {
@@ -2141,6 +2146,8 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
         extra_data.len(),
         "MOV/MP4 AudioSampleEntry children",
     )?;
+    let elementary_stream_descriptor =
+        parse_audio_sample_entry_elementary_stream_descriptor(&child_boxes)?;
     let wave_extension = parse_audio_sample_entry_wave_extension(&child_boxes)?;
     let channel_layout = parse_audio_sample_entry_channel_layout(&child_boxes)?;
     Ok(MovAudioSampleEntry {
@@ -2154,6 +2161,7 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
         sample_rate,
         sample_rate_fixed_16_16,
         version_fields,
+        elementary_stream_descriptor,
         wave_extension,
         channel_layout,
         child_boxes,
@@ -2186,6 +2194,16 @@ fn parse_audio_sample_entry_wave_extension(
         .iter()
         .find(|child| child.box_type.as_bytes() == WAVE_ID)
         .map(|child| parse_wave_extension(child.payload()))
+        .transpose()
+}
+
+fn parse_audio_sample_entry_elementary_stream_descriptor(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovElementaryStreamDescriptor>> {
+    child_boxes
+        .iter()
+        .find(|child| child.box_type.as_bytes() == ESDS_ID)
+        .map(|child| parse_esds(child.payload()))
         .transpose()
 }
 
@@ -3999,6 +4017,10 @@ mod tests {
         assert!(audio.version2_fields().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
+        let direct_esds = audio.elementary_stream_descriptor().unwrap();
+        assert_eq!(direct_esds.version(), 0);
+        assert_eq!(direct_esds.flags(), [0, 0, 0]);
+        assert_eq!(direct_esds.descriptor(), b"\x03\x01\x00");
         assert_eq!(audio.child_boxes().len(), 1);
         assert_eq!(audio.child_boxes()[0].box_type(), "esds");
         let expected_esds_payload = full_box(0, b"\x03\x01\x00");
@@ -4563,6 +4585,18 @@ mod tests {
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_direct_esds = box_(*ESDS_ID, &full_box(1, b"\x03"));
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &bad_direct_esds);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+
+        let empty_direct_esds = box_(*ESDS_ID, &full_box(0, &[]));
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &empty_direct_esds);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
         let truncated_wave = box_(*WAVE_ID, b"\0\0");
         let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &truncated_wave);
