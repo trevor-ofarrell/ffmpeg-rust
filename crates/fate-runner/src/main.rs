@@ -273,6 +273,112 @@ const PATH_RULES: &[PathRule] = &[
         exact_ids: &["fftools-basic-io"],
         id_prefixes: &["fftools-ffprobe-"],
     },
+    PathRule {
+        path: "fuzz/fuzz_targets/avcodec_basic_decoders.rs",
+        exact_ids: &["avcodec-rawvideo", "avcodec-pcm-s16le"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avutil_byteio.rs",
+        exact_ids: &["avutil-byteio"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avutil_bitreader.rs",
+        exact_ids: &["avutil-bitreader", "avutil-bitwriter"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avutil_metadata_options.rs",
+        exact_ids: &["avutil-dict", "avutil-options"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avutil_core_models.rs",
+        exact_ids: &[
+            "avutil-error",
+            "avutil-rational",
+            "avutil-timebase",
+            "avutil-packet",
+            "avutil-frame",
+            "avutil-pixel-format",
+            "avutil-sample-format",
+            "avutil-channel-layout",
+            "avutil-hash",
+        ],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avformat_probe.rs",
+        exact_ids: &["avformat-probe"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avformat_wav.rs",
+        exact_ids: &["avformat-wav-demuxer"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avformat_yuv4mpegpipe.rs",
+        exact_ids: &["avformat-yuv4mpegpipe-demuxer"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avformat_pcm_s16le.rs",
+        exact_ids: &["avformat-pcm-s16le-demuxer"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avformat_rawvideo.rs",
+        exact_ids: &["avformat-rawvideo-demuxer"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avformat_avi.rs",
+        exact_ids: &["avformat-avi-demuxer"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avformat_avi_muxer.rs",
+        exact_ids: &["avformat-avi-muxer"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avformat_mov.rs",
+        exact_ids: &["avformat-mov-demuxer"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avformat_image2.rs",
+        exact_ids: &["avformat-image2-demuxer", "avformat-image2-muxer"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avformat_basic_muxers.rs",
+        exact_ids: &[
+            "avformat-wav-muxer",
+            "avformat-pcm-s16le-muxer",
+            "avformat-rawvideo-muxer",
+            "avformat-yuv4mpegpipe-muxer",
+        ],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/avformat_packet_muxers.rs",
+        exact_ids: &[
+            "avformat-null-muxer",
+            "avformat-hash-muxer",
+            "avformat-framecrc-muxer",
+            "avformat-framehash-muxer",
+            "avformat-streamhash-muxer",
+        ],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "fuzz/fuzz_targets/fftools_option_parser.rs",
+        exact_ids: &["fftools-option-parser"],
+        id_prefixes: &[],
+    },
 ];
 
 fn main() {
@@ -864,7 +970,9 @@ fn unmapped_relevant_paths(changed_paths: &[String]) -> Vec<String> {
 }
 
 fn is_relevant_implementation_path(path: &str) -> bool {
-    path.starts_with("crates/") || path.starts_with("tests/fate/")
+    path.starts_with("crates/")
+        || path.starts_with("tests/fate/")
+        || path.starts_with("fuzz/fuzz_targets/")
 }
 
 fn path_matches_rule(path: &str, rule: &PathRule) -> bool {
@@ -954,16 +1062,51 @@ mod tests {
     }
 
     #[test]
+    fn changed_selection_maps_fuzz_targets_to_covered_components() {
+        let component_ids = component_ids_from_ledger(&ledger(&[
+            "avformat-null-muxer",
+            "avformat-framecrc-muxer",
+            "avformat-image2-demuxer",
+            "avformat-image2-muxer",
+            "avformat-mov-demuxer",
+            "fftools-option-parser",
+        ]));
+        let paths = vec![
+            "fuzz\\fuzz_targets\\avformat_mov.rs".to_string(),
+            "fuzz/fuzz_targets/avformat_image2.rs".to_string(),
+            "fuzz/fuzz_targets/avformat_packet_muxers.rs".to_string(),
+            "fuzz/fuzz_targets/fftools_option_parser.rs".to_string(),
+        ];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec![
+                "avformat-null-muxer".to_string(),
+                "avformat-framecrc-muxer".to_string(),
+                "avformat-image2-demuxer".to_string(),
+                "avformat-image2-muxer".to_string(),
+                "avformat-mov-demuxer".to_string(),
+                "fftools-option-parser".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn unmapped_relevant_paths_report_crate_files_but_ignore_docs() {
         let paths = vec![
             "docs/architecture.md".to_string(),
             "crates/swscale/src/lib.rs".to_string(),
             "tests/fate/README.md".to_string(),
+            "fuzz/Cargo.toml".to_string(),
+            "fuzz/fuzz_targets/new_target.rs".to_string(),
         ];
 
         assert_eq!(
             unmapped_relevant_paths(&paths),
-            vec!["crates/swscale/src/lib.rs".to_string()]
+            vec![
+                "crates/swscale/src/lib.rs".to_string(),
+                "fuzz/fuzz_targets/new_target.rs".to_string(),
+            ]
         );
     }
 

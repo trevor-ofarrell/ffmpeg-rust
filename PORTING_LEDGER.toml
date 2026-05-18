@@ -183,6 +183,7 @@ unit_tests = [
   "tests::parses_component_ids_from_ledger",
   "tests::changed_selection_maps_paths_and_preserves_ledger_order",
   "tests::changed_selection_expands_prefix_rules_against_existing_ledger_ids",
+  "tests::changed_selection_maps_fuzz_targets_to_covered_components",
   "tests::unmapped_relevant_paths_report_crate_files_but_ignore_docs",
   "tests::parses_run_options_for_component_changed_and_mapping_path",
   "tests::rejects_ambiguous_or_incomplete_run_options",
@@ -202,7 +203,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:fate-runner|local-self-test"]
 fuzz_targets = []
-notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules, parse the explicit tests/fate/mappings.txt format, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus the local MOV demuxer unit-test smoke mapping. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
+notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules and cargo-fuzz target files, parse the explicit tests/fate/mappings.txt format, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus the local MOV demuxer unit-test smoke mapping. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
 blocked_reason = "No upstream FATE samples path or media component mapping has been configured."
 
 [[component]]
