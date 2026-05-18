@@ -131,7 +131,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "In-memory log filtering abstraction implemented with FFmpeg-style numeric/name level mapping, known av_log flag bits, configurable print-level formatting, buffer control, and per-record callback dispatch. fftools now resolves -loglevel/-v through this shared LogLevel model for exact names and numeric levels. Full av_log global callback, repeated-line compression, time/datetime rendering, color handling, byte-identical formatting, compound CLI log flags, and CLI stderr emission parity are incomplete."
+notes = "In-memory log filtering abstraction implemented with FFmpeg-style numeric/name level mapping, known av_log flag bits, configurable print-level formatting, buffer control, and per-record callback dispatch. fftools now resolves -loglevel/-v through this shared LogLevel/LogFlags model for exact names, numeric levels, and the current repeat/level/time/datetime CLI flag syntax. Full av_log global callback, repeated-line compression behavior, time/datetime rendering, color handling, byte-identical formatting, and CLI stderr emission parity are incomplete."
 blocked_reason = ""
 
 [[component]]
@@ -450,6 +450,7 @@ unit_tests = [
   "option_parser::tests::handles_multiple_inputs_and_outputs",
   "option_parser::tests::global_options_do_not_consume_pending_file_options",
   "option_parser::tests::validates_loglevel_values_with_shared_avutil_levels",
+  "option_parser::tests::parses_loglevel_flag_directives_and_preserves_last_level",
   "option_parser::tests::rejects_invalid_loglevel_values",
   "ffprobe::tests::parses_and_rejects_ffprobe_loglevel_values",
   "option_parser::tests::treats_single_dash_as_output_url",
@@ -461,7 +462,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["fftools_option_parser"]
-notes = "Initial parser groups a small known option set, including file-scoped -start_number and output-scoped -hash, into global options, next input, or next output according to FFmpeg option ordering. It deliberately rejects unknown options and now validates -loglevel/-v values through the shared avutil LogLevel model for exact level names and FFmpeg numeric severities, including -8 quiet. It is only partially wired into command execution. Build-checked cargo-fuzz target fftools_option_parser exercises bounded argv parsing, option arity invariants, valid loglevel values, stream-specifier option names, file/global grouping, hash output option handling, and parse/render/parse stability, but actual local fuzz execution is blocked until cargo-fuzz is installed."
+notes = "Initial parser groups a small known option set, including file-scoped -start_number and output-scoped -hash, into global options, next input, or next output according to FFmpeg option ordering. It deliberately rejects unknown options and now validates -loglevel/-v values through the shared avutil LogLevel/LogFlags model for exact level names, FFmpeg numeric severities including -8 quiet, compound repeat/level/time/datetime flag+level values, and +/- flag-only directives that update CliLogConfig without changing the current level. The ffprobe parser accepts the same constrained loglevel directive surface. It is only partially wired into command execution. Build-checked cargo-fuzz target fftools_option_parser exercises bounded argv parsing, option arity invariants, valid loglevel directives, stream-specifier option names, file/global grouping, hash output option handling, and parse/render/parse stability, but actual local fuzz execution is blocked until cargo-fuzz is installed."
 blocked_reason = ""
 
 [[component]]
@@ -504,7 +505,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial I/O planning validates at least one input and output, preserves grouped options, resolves global loglevel settings through CliLogConfig, and classifies file, pipe, and protocol endpoints. It is not fully wired to demuxers, muxers, protocol implementations, or command execution."
+notes = "Initial I/O planning validates at least one input and output, preserves grouped options, resolves global loglevel and log flag settings through CliLogConfig, and classifies file, pipe, and protocol endpoints. It is not fully wired to demuxers, muxers, protocol implementations, or command execution."
 blocked_reason = ""
 
 [[component]]

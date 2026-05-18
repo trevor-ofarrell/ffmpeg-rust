@@ -1,4 +1,4 @@
-use avutil::LogLevel;
+use avutil::{LogFlags, LogLevel};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,12 +128,14 @@ struct OptionSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CliLogConfig {
     level: LogLevel,
+    flags: LogFlags,
 }
 
 impl Default for CliLogConfig {
     fn default() -> Self {
         Self {
             level: LogLevel::Info,
+            flags: LogFlags::empty(),
         }
     }
 }
@@ -141,6 +143,31 @@ impl Default for CliLogConfig {
 impl CliLogConfig {
     pub fn level(&self) -> LogLevel {
         self.level
+    }
+
+    pub fn flags(&self) -> LogFlags {
+        self.flags
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LogLevelDirective {
+    level: Option<LogLevel>,
+    enable_flags: LogFlags,
+    disable_flags: LogFlags,
+}
+
+impl LogLevelDirective {
+    pub fn level(&self) -> Option<LogLevel> {
+        self.level
+    }
+
+    pub fn enable_flags(&self) -> LogFlags {
+        self.enable_flags
+    }
+
+    pub fn disable_flags(&self) -> LogFlags {
+        self.disable_flags
     }
 }
 
@@ -273,14 +300,16 @@ fn validate_option_value(
 ) -> Result<(), CliParseError> {
     match value_kind {
         OptionValueKind::Generic => Ok(()),
-        OptionValueKind::LogLevel => parse_log_level_value(value).map(|_| ()).ok_or_else(|| {
-            CliParseError::new(format!("invalid loglevel `{value}` for `-{option}`"))
-        }),
+        OptionValueKind::LogLevel => {
+            parse_log_level_directive(value).map(|_| ()).ok_or_else(|| {
+                CliParseError::new(format!("invalid loglevel `{value}` for `-{option}`"))
+            })
+        }
     }
 }
 
 fn allows_option_like_value(value_kind: OptionValueKind, value: &str) -> bool {
-    matches!(value_kind, OptionValueKind::LogLevel) && value.parse::<i32>().is_ok()
+    matches!(value_kind, OptionValueKind::LogLevel) && parse_log_level_directive(value).is_some()
 }
 
 fn is_option_token(value: &str) -> bool {
@@ -292,12 +321,102 @@ fn take_pending(options: &mut Vec<CliOption>) -> Vec<CliOption> {
 }
 
 pub fn parse_log_level_value(value: &str) -> Option<LogLevel> {
+    parse_log_level_directive(value)?.level()
+}
+
+pub fn parse_log_level_directive(value: &str) -> Option<LogLevelDirective> {
+    if value.is_empty() {
+        return None;
+    }
+
+    if let Some(level) = parse_plain_log_level(value) {
+        return Some(LogLevelDirective {
+            level: Some(level),
+            enable_flags: LogFlags::empty(),
+            disable_flags: LogFlags::empty(),
+        });
+    }
+
+    if let Some(rest) = value.strip_prefix('+') {
+        return parse_prefixed_log_flags(rest, true);
+    }
+
+    if let Some(rest) = value.strip_prefix('-') {
+        return parse_prefixed_log_flags(rest, false);
+    }
+
+    parse_log_flags_and_level(value)
+}
+
+pub fn apply_log_level_value(config: &mut CliLogConfig, value: &str) -> Option<()> {
+    let directive = parse_log_level_directive(value)?;
+
+    if let Some(level) = directive.level() {
+        config.level = level;
+    }
+    config.flags.insert(directive.enable_flags());
+    config.flags.remove(directive.disable_flags());
+
+    Some(())
+}
+
+fn parse_plain_log_level(value: &str) -> Option<LogLevel> {
     LogLevel::from_name(value).or_else(|| {
         value
             .parse::<i32>()
             .ok()
             .and_then(LogLevel::from_ffmpeg_value)
     })
+}
+
+fn parse_prefixed_log_flags(rest: &str, enable: bool) -> Option<LogLevelDirective> {
+    let flags = parse_log_flag_list(rest)?;
+    Some(if enable {
+        LogLevelDirective {
+            level: None,
+            enable_flags: flags,
+            disable_flags: LogFlags::empty(),
+        }
+    } else {
+        LogLevelDirective {
+            level: None,
+            enable_flags: LogFlags::empty(),
+            disable_flags: flags,
+        }
+    })
+}
+
+fn parse_log_flags_and_level(value: &str) -> Option<LogLevelDirective> {
+    let (flags, level) = value.rsplit_once('+')?;
+    let level = parse_plain_log_level(level)?;
+    Some(LogLevelDirective {
+        level: Some(level),
+        enable_flags: parse_log_flag_list(flags)?,
+        disable_flags: LogFlags::empty(),
+    })
+}
+
+fn parse_log_flag_list(value: &str) -> Option<LogFlags> {
+    let mut flags = LogFlags::empty();
+    for flag_name in value.split('+') {
+        let flag = parse_log_flag_name(flag_name)?;
+        flags.insert(flag);
+    }
+    Some(flags)
+}
+
+fn parse_log_flag_name(value: &str) -> Option<LogFlags> {
+    if value.eq_ignore_ascii_case("repeat") {
+        Some(LogFlags::SKIP_REPEATED)
+    } else if value.eq_ignore_ascii_case("level") {
+        Some(LogFlags::PRINT_LEVEL)
+    } else if value.eq_ignore_ascii_case("time") {
+        Some(LogFlags::PRINT_TIME)
+    } else if value.eq_ignore_ascii_case("datetime") {
+        Some(LogFlags::PRINT_DATETIME)
+    } else {
+        None
+    }
 }
 
 pub fn log_config_from_options(options: &[CliOption]) -> Result<CliLogConfig, CliParseError> {
@@ -307,13 +426,12 @@ pub fn log_config_from_options(options: &[CliOption]) -> Result<CliLogConfig, Cl
             let value = option.value_ref().ok_or_else(|| {
                 CliParseError::new(format!("missing value for option `-{}`", option.name()))
             })?;
-            let level = parse_log_level_value(value).ok_or_else(|| {
+            apply_log_level_value(&mut config, value).ok_or_else(|| {
                 CliParseError::new(format!(
                     "invalid loglevel `{value}` for `-{}`",
                     option.name()
                 ))
             })?;
-            config.level = level;
         }
     }
     Ok(config)
@@ -432,8 +550,39 @@ mod tests {
         assert_eq!(parsed.global_options()[0].value_ref(), Some("warning"));
         assert_eq!(parsed.global_options()[1].value_ref(), Some("-8"));
         assert_eq!(config.level(), LogLevel::Quiet);
+        assert_eq!(config.flags(), LogFlags::empty());
         assert_eq!(parse_log_level_value("48"), Some(LogLevel::Debug));
         assert_eq!(parse_log_level_value("ERROR"), Some(LogLevel::Error));
+    }
+
+    #[test]
+    fn parses_loglevel_flag_directives_and_preserves_last_level() {
+        let args = strings(&[
+            "-loglevel",
+            "repeat+level+debug",
+            "-v",
+            "+time",
+            "-loglevel",
+            "-level",
+            "-i",
+            "in.wav",
+            "out.wav",
+        ]);
+
+        let parsed = parse_ffmpeg_args(&args).unwrap();
+        let config = log_config_from_options(parsed.global_options()).unwrap();
+
+        assert_eq!(config.level(), LogLevel::Debug);
+        assert!(config.flags().contains(LogFlags::SKIP_REPEATED));
+        assert!(config.flags().contains(LogFlags::PRINT_TIME));
+        assert!(!config.flags().contains(LogFlags::PRINT_LEVEL));
+        assert_eq!(
+            parse_log_level_value("REPEAT+datetime+trace"),
+            Some(LogLevel::Trace)
+        );
+        assert_eq!(parse_log_level_value("+repeat"), None);
+        assert!(parse_log_level_directive("+repeat").is_some());
+        assert!(parse_log_level_directive("repeat").is_none());
     }
 
     #[test]

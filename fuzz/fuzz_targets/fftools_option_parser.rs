@@ -1,6 +1,8 @@
 #![no_main]
 
-use fftools::{parse_ffmpeg_args, parse_log_level_value, CliOption, ParsedCommand};
+use fftools::{
+    option_parser::parse_log_level_directive, parse_ffmpeg_args, CliOption, ParsedCommand,
+};
 use libfuzzer_sys::fuzz_target;
 
 const MAX_ARGS: usize = 48;
@@ -24,7 +26,10 @@ fn exercise_args(args: &[String]) {
         ));
         assert_option_arity(option);
         if matches!(option.name(), "loglevel" | "v") {
-            assert!(option.value_ref().and_then(parse_log_level_value).is_some());
+            assert!(option
+                .value_ref()
+                .and_then(parse_log_level_directive)
+                .is_some());
         }
     }
     for file in parsed.inputs().iter().chain(parsed.outputs()) {
@@ -213,7 +218,9 @@ fn fixture_args() -> Vec<String> {
     [
         "-hide_banner",
         "-loglevel",
-        "warning",
+        "repeat+level+warning",
+        "-v",
+        "-level",
         "-f",
         "image2",
         "-start_number",

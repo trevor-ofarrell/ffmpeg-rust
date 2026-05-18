@@ -180,7 +180,7 @@ fn split_protocol(url: &str) -> Option<(&str, &str)> {
 mod tests {
     use super::*;
     use crate::parse_ffmpeg_args;
-    use avutil::LogLevel;
+    use avutil::{LogFlags, LogLevel};
 
     #[test]
     fn builds_file_input_and_output_plan_with_options() {
@@ -281,9 +281,11 @@ mod tests {
     fn resolves_global_log_level_for_execution_plan() {
         let command = parse(&[
             "-loglevel",
-            "warning",
+            "repeat+level+warning",
             "-v",
-            "16",
+            "+time",
+            "-loglevel",
+            "-level",
             "-i",
             "in.wav",
             "out.wav",
@@ -291,7 +293,10 @@ mod tests {
 
         let plan = build_io_plan(&command).unwrap();
 
-        assert_eq!(plan.log_config().level(), LogLevel::Error);
+        assert_eq!(plan.log_config().level(), LogLevel::Warning);
+        assert!(plan.log_config().flags().contains(LogFlags::SKIP_REPEATED));
+        assert!(plan.log_config().flags().contains(LogFlags::PRINT_TIME));
+        assert!(!plan.log_config().flags().contains(LogFlags::PRINT_LEVEL));
     }
 
     #[test]
