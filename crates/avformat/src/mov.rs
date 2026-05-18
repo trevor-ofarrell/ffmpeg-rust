@@ -41,6 +41,7 @@ const DAMR_ID: &[u8; 4] = b"damr";
 const DAC3_ID: &[u8; 4] = b"dac3";
 const DEC3_ID: &[u8; 4] = b"dec3";
 const DOPS_ID: &[u8; 4] = b"dOps";
+const DFLA_ID: &[u8; 4] = b"dfLa";
 const FRMA_ID: &[u8; 4] = b"frma";
 const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
 const PASP_ID: &[u8; 4] = b"pasp";
@@ -385,6 +386,7 @@ pub struct MovAudioSampleEntry {
     ac3_specific: Option<MovAc3SpecificBox>,
     ec3_specific: Option<MovEc3SpecificBox>,
     opus_specific: Option<MovOpusSpecificBox>,
+    flac_specific: Option<MovFlacSpecificBox>,
     wave_extension: Option<MovAudioWaveExtension>,
     channel_layout: Option<MovAudioChannelLayout>,
     child_boxes: Vec<MovSampleEntryChildBox>,
@@ -408,6 +410,9 @@ impl MovAudioSampleEntry {
     }
 
     pub fn effective_channel_count(&self) -> u32 {
+        if let Some(flac_specific) = &self.flac_specific {
+            return u32::from(flac_specific.streaminfo().channels());
+        }
         match &self.version_fields {
             MovAudioSampleEntryVersionFields::Version2(fields) => fields.num_audio_channels(),
             MovAudioSampleEntryVersionFields::Version0
@@ -420,6 +425,9 @@ impl MovAudioSampleEntry {
     }
 
     pub fn effective_bits_per_sample(&self) -> u32 {
+        if let Some(flac_specific) = &self.flac_specific {
+            return u32::from(flac_specific.streaminfo().bits_per_sample());
+        }
         match &self.version_fields {
             MovAudioSampleEntryVersionFields::Version2(fields) => {
                 let const_bits_per_channel = fields.const_bits_per_channel();
@@ -492,6 +500,10 @@ impl MovAudioSampleEntry {
 
     pub fn opus_specific(&self) -> Option<&MovOpusSpecificBox> {
         self.opus_specific.as_ref()
+    }
+
+    pub fn flac_specific(&self) -> Option<&MovFlacSpecificBox> {
+        self.flac_specific.as_ref()
     }
 
     pub fn wave_extension(&self) -> Option<&MovAudioWaveExtension> {
@@ -845,6 +857,104 @@ impl MovOpusSpecificBox {
 
     pub fn channel_mapping(&self) -> &[u8] {
         &self.channel_mapping
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovFlacSpecificBox {
+    version: u8,
+    flags: [u8; 3],
+    metadata_blocks: Vec<MovFlacMetadataBlock>,
+    streaminfo: MovFlacStreamInfo,
+}
+
+impl MovFlacSpecificBox {
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
+    pub fn flags(&self) -> [u8; 3] {
+        self.flags
+    }
+
+    pub fn metadata_blocks(&self) -> &[MovFlacMetadataBlock] {
+        &self.metadata_blocks
+    }
+
+    pub fn streaminfo(&self) -> &MovFlacStreamInfo {
+        &self.streaminfo
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovFlacMetadataBlock {
+    last: bool,
+    block_type: u8,
+    data: Vec<u8>,
+}
+
+impl MovFlacMetadataBlock {
+    pub fn last(&self) -> bool {
+        self.last
+    }
+
+    pub fn block_type(&self) -> u8 {
+        self.block_type
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovFlacStreamInfo {
+    min_block_size: u16,
+    max_block_size: u16,
+    min_frame_size: u32,
+    max_frame_size: u32,
+    sample_rate: u32,
+    channels: u8,
+    bits_per_sample: u8,
+    total_samples: u64,
+    md5: [u8; 16],
+}
+
+impl MovFlacStreamInfo {
+    pub fn min_block_size(&self) -> u16 {
+        self.min_block_size
+    }
+
+    pub fn max_block_size(&self) -> u16 {
+        self.max_block_size
+    }
+
+    pub fn min_frame_size(&self) -> u32 {
+        self.min_frame_size
+    }
+
+    pub fn max_frame_size(&self) -> u32 {
+        self.max_frame_size
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub fn channels(&self) -> u8 {
+        self.channels
+    }
+
+    pub fn bits_per_sample(&self) -> u8 {
+        self.bits_per_sample
+    }
+
+    pub fn total_samples(&self) -> u64 {
+        self.total_samples
+    }
+
+    pub fn md5(&self) -> &[u8; 16] {
+        &self.md5
     }
 }
 
@@ -2201,6 +2311,7 @@ fn is_audio_sample_entry(codec_tag: &[u8]) -> bool {
         b"mp4a"
             | b"alac"
             | b"Opus"
+            | b"fLaC"
             | b"enca"
             | b"ac-3"
             | b"ec-3"
@@ -2396,6 +2507,11 @@ fn parse_audio_sample_entry(codec_tag: &[u8], extra_data: &[u8]) -> AvResult<Mov
     let ac3_specific = parse_audio_sample_entry_ac3_specific(&child_boxes, codec_tag == b"ac-3")?;
     let ec3_specific = parse_audio_sample_entry_ec3_specific(&child_boxes, codec_tag == b"ec-3")?;
     let opus_specific = parse_audio_sample_entry_opus_specific(&child_boxes, codec_tag == b"Opus")?;
+    let flac_specific = parse_audio_sample_entry_flac_specific(&child_boxes, codec_tag == b"fLaC")?;
+    let sample_rate = flac_specific
+        .as_ref()
+        .map_or(sample_rate, |specific| specific.streaminfo().sample_rate());
+    validate_audio_sample_entry_flac_fields(channel_count, sample_size, &flac_specific)?;
     let wave_extension = parse_audio_sample_entry_wave_extension(&child_boxes)?;
     let channel_layout = parse_audio_sample_entry_channel_layout(&child_boxes)?;
     Ok(MovAudioSampleEntry {
@@ -2415,6 +2531,7 @@ fn parse_audio_sample_entry(codec_tag: &[u8], extra_data: &[u8]) -> AvResult<Mov
         ac3_specific,
         ec3_specific,
         opus_specific,
+        flac_specific,
         wave_extension,
         channel_layout,
         child_boxes,
@@ -2547,6 +2664,51 @@ fn parse_audio_sample_entry_opus_specific(
         ));
     }
     parse_dops(child.payload()).map(Some)
+}
+
+fn parse_audio_sample_entry_flac_specific(
+    child_boxes: &[MovSampleEntryChildBox],
+    required: bool,
+) -> AvResult<Option<MovFlacSpecificBox>> {
+    let mut matches = child_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == DFLA_ID);
+    let Some(child) = matches.next() else {
+        if required {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 FLAC sample entry is missing required dfLa box",
+            ));
+        }
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 FLAC sample entry must not contain multiple dfLa boxes",
+        ));
+    }
+    parse_dfla(child.payload()).map(Some)
+}
+
+fn validate_audio_sample_entry_flac_fields(
+    channel_count: u16,
+    sample_size: u16,
+    flac_specific: &Option<MovFlacSpecificBox>,
+) -> AvResult<()> {
+    let Some(flac_specific) = flac_specific else {
+        return Ok(());
+    };
+    let streaminfo = flac_specific.streaminfo();
+    if u32::from(channel_count) != u32::from(streaminfo.channels()) {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 fLaC channelcount must match dfLa STREAMINFO",
+        ));
+    }
+    if u32::from(sample_size) != u32::from(streaminfo.bits_per_sample()) {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 fLaC samplesize must match dfLa STREAMINFO",
+        ));
+    }
+    Ok(())
 }
 
 fn parse_audio_sample_entry_channel_layout(
@@ -2852,6 +3014,142 @@ fn parse_dops(payload: &[u8]) -> AvResult<MovOpusSpecificBox> {
         stream_count,
         coupled_count,
         channel_mapping,
+    })
+}
+
+fn parse_dfla(payload: &[u8]) -> AvResult<MovFlacSpecificBox> {
+    const FLAC_METADATA_BLOCK_FORBIDDEN: u8 = 127;
+    const FLAC_METADATA_BLOCK_STREAMINFO: u8 = 0;
+
+    let mut reader = ByteReader::new(payload);
+    let (version, flags) = read_full_box_header(&mut reader, "MOV/MP4 dfLa")?;
+    if version != 0 {
+        return Err(AvError::unsupported(format!(
+            "MOV/MP4 dfLa version {version} is not implemented"
+        )));
+    }
+    if flags != [0, 0, 0] {
+        return Err(AvError::invalid_data("MOV/MP4 dfLa flags must be zero"));
+    }
+
+    let mut metadata_blocks = Vec::new();
+    while !reader.is_eof() {
+        ensure_remaining(&reader, 4, "MOV/MP4 dfLa metadata block header")?;
+        let header = reader.read_u8()?;
+        let last = (header & 0x80) != 0;
+        let block_type = header & 0x7f;
+        if block_type == FLAC_METADATA_BLOCK_FORBIDDEN {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 dfLa metadata block type 127 is forbidden",
+            ));
+        }
+        let length = usize::try_from(reader.read_u24_be()?).map_err(|_| {
+            AvError::invalid_data("MOV/MP4 dfLa metadata block length is out of range")
+        })?;
+        let data = reader.read_exact(length)?.to_vec();
+        if last && !reader.is_eof() {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 dfLa last metadata block flag appears before the end of the box",
+            ));
+        }
+        metadata_blocks.push(MovFlacMetadataBlock {
+            last,
+            block_type,
+            data,
+        });
+    }
+
+    if metadata_blocks.is_empty() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dfLa must contain at least one FLAC metadata block",
+        ));
+    }
+    if !metadata_blocks.last().is_some_and(|block| block.last()) {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dfLa final metadata block must set the last flag",
+        ));
+    }
+    if metadata_blocks[0].block_type() != FLAC_METADATA_BLOCK_STREAMINFO {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dfLa first metadata block must be STREAMINFO",
+        ));
+    }
+    if metadata_blocks[1..]
+        .iter()
+        .any(|block| block.block_type() == FLAC_METADATA_BLOCK_STREAMINFO)
+    {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dfLa must not contain more than one STREAMINFO metadata block",
+        ));
+    }
+
+    let streaminfo = parse_flac_streaminfo(metadata_blocks[0].data())?;
+    Ok(MovFlacSpecificBox {
+        version,
+        flags,
+        metadata_blocks,
+        streaminfo,
+    })
+}
+
+fn parse_flac_streaminfo(data: &[u8]) -> AvResult<MovFlacStreamInfo> {
+    if data.len() != 34 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dfLa STREAMINFO metadata block must contain exactly 34 bytes",
+        ));
+    }
+
+    let mut reader = ByteReader::new(data);
+    let min_block_size = reader.read_u16_be()?;
+    let max_block_size = reader.read_u16_be()?;
+    let min_frame_size = reader.read_u24_be()?;
+    let max_frame_size = reader.read_u24_be()?;
+    let stream_fields = reader.read_exact(8)?;
+    let mut bits = BitReader::new(stream_fields);
+    let sample_rate = u32::try_from(bits.read_bits(20)?).map_err(|_| {
+        AvError::invalid_data("MOV/MP4 dfLa STREAMINFO sample rate is out of range")
+    })?;
+    let channels = u8::try_from(bits.read_bits(3)? + 1).map_err(|_| {
+        AvError::invalid_data("MOV/MP4 dfLa STREAMINFO channel count is out of range")
+    })?;
+    let bits_per_sample = u8::try_from(bits.read_bits(5)? + 1)
+        .map_err(|_| AvError::invalid_data("MOV/MP4 dfLa STREAMINFO bit depth is out of range"))?;
+    let total_samples = bits.read_bits(36)?;
+    let mut md5 = [0_u8; 16];
+    md5.copy_from_slice(reader.read_exact(16)?);
+    ensure_box_consumed(&reader, "MOV/MP4 dfLa STREAMINFO")?;
+
+    if min_block_size < 16 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dfLa STREAMINFO minimum block size is too small",
+        ));
+    }
+    if max_block_size < min_block_size {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dfLa STREAMINFO maximum block size is smaller than minimum block size",
+        ));
+    }
+    if sample_rate == 0 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dfLa STREAMINFO sample rate must be nonzero for audio",
+        ));
+    }
+    if bits_per_sample < 4 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dfLa STREAMINFO bit depth must be at least 4",
+        ));
+    }
+
+    Ok(MovFlacStreamInfo {
+        min_block_size,
+        max_block_size,
+        min_frame_size,
+        max_frame_size,
+        sample_rate,
+        channels,
+        bits_per_sample,
+        total_samples,
+        md5,
     })
 }
 
@@ -4591,6 +4889,7 @@ mod tests {
         assert!(audio.ac3_specific().is_none());
         assert!(audio.ec3_specific().is_none());
         assert!(audio.opus_specific().is_none());
+        assert!(audio.flac_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let direct_esds = audio.elementary_stream_descriptor().unwrap();
@@ -4637,6 +4936,7 @@ mod tests {
         assert!(audio.ac3_specific().is_none());
         assert!(audio.ec3_specific().is_none());
         assert!(audio.opus_specific().is_none());
+        assert!(audio.flac_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let amr = audio.amr_specific().unwrap();
@@ -4674,6 +4974,7 @@ mod tests {
         assert!(audio.amr_specific().is_none());
         assert!(audio.ec3_specific().is_none());
         assert!(audio.opus_specific().is_none());
+        assert!(audio.flac_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let ac3 = audio.ac3_specific().unwrap();
@@ -4711,6 +5012,7 @@ mod tests {
         assert!(audio.amr_specific().is_none());
         assert!(audio.ac3_specific().is_none());
         assert!(audio.opus_specific().is_none());
+        assert!(audio.flac_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let ec3 = audio.ec3_specific().unwrap();
@@ -4760,6 +5062,7 @@ mod tests {
         assert!(audio.amr_specific().is_none());
         assert!(audio.ac3_specific().is_none());
         assert!(audio.ec3_specific().is_none());
+        assert!(audio.flac_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let opus = audio.opus_specific().unwrap();
@@ -4790,6 +5093,66 @@ mod tests {
         assert_eq!(opus.stream_count(), Some(1));
         assert_eq!(opus.coupled_count(), Some(1));
         assert_eq!(opus.channel_mapping(), &[0, 1]);
+    }
+
+    #[test]
+    fn parses_flac_audio_sample_entry_specific_box() {
+        let streaminfo = flac_streaminfo_block_data(96_000, 2, 24, 12_345);
+        let streaminfo_block = flac_metadata_block(false, 0, &streaminfo);
+        let padding_block = flac_metadata_block(true, 1, &[0xaa, 0xbb]);
+        let dfla_payload =
+            flac_specific_box_payload(&[streaminfo_block.as_slice(), padding_block.as_slice()]);
+        let dfla = box_(*DFLA_ID, &dfla_payload);
+        let extra_data = audio_sample_entry_extra_data(2, 24, 48_000, &dfla);
+        let bytes = mp4_with_sample_description_entry(b"fLaC", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "fLaC");
+        let MovSampleEntryDetails::Audio(audio) = codec_parameters.details() else {
+            panic!("expected audio sample entry details");
+        };
+        assert_eq!(audio.channel_count(), 2);
+        assert_eq!(audio.effective_channel_count(), 2);
+        assert_eq!(audio.sample_size(), 24);
+        assert_eq!(audio.effective_bits_per_sample(), 24);
+        assert_eq!(audio.sample_rate_fixed_16_16(), 48_000 << 16);
+        assert_eq!(audio.sample_rate(), 96_000);
+        assert!(audio.elementary_stream_descriptor().is_none());
+        assert!(audio.bit_rate().is_none());
+        assert!(audio.amr_specific().is_none());
+        assert!(audio.ac3_specific().is_none());
+        assert!(audio.ec3_specific().is_none());
+        assert!(audio.opus_specific().is_none());
+        assert!(audio.wave_extension().is_none());
+        assert!(audio.channel_layout().is_none());
+
+        let flac = audio.flac_specific().unwrap();
+        assert_eq!(flac.version(), 0);
+        assert_eq!(flac.flags(), [0, 0, 0]);
+        assert_eq!(flac.metadata_blocks().len(), 2);
+        assert!(!flac.metadata_blocks()[0].last());
+        assert_eq!(flac.metadata_blocks()[0].block_type(), 0);
+        assert_eq!(flac.metadata_blocks()[0].data(), streaminfo.as_slice());
+        assert!(flac.metadata_blocks()[1].last());
+        assert_eq!(flac.metadata_blocks()[1].block_type(), 1);
+        assert_eq!(flac.metadata_blocks()[1].data(), &[0xaa, 0xbb]);
+        let streaminfo = flac.streaminfo();
+        assert_eq!(streaminfo.min_block_size(), 16);
+        assert_eq!(streaminfo.max_block_size(), 4_096);
+        assert_eq!(streaminfo.min_frame_size(), 0);
+        assert_eq!(streaminfo.max_frame_size(), 0);
+        assert_eq!(streaminfo.sample_rate(), 96_000);
+        assert_eq!(streaminfo.channels(), 2);
+        assert_eq!(streaminfo.bits_per_sample(), 24);
+        assert_eq!(streaminfo.total_samples(), 12_345);
+        assert_eq!(
+            streaminfo.md5(),
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        );
+        assert_eq!(audio.child_boxes().len(), 1);
+        assert_eq!(audio.child_boxes()[0].box_type(), "dfLa");
+        assert_eq!(audio.child_boxes()[0].payload(), dfla_payload.as_slice());
     }
 
     #[test]
@@ -5657,6 +6020,131 @@ mod tests {
         .concat();
         let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &duplicate_dops);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"Opus", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let flac_streaminfo = flac_streaminfo_block_data(44_100, 2, 16, 1_000);
+        let flac_streaminfo_block = flac_metadata_block(true, 0, &flac_streaminfo);
+        let missing_dfla = audio_sample_entry_extra_data(2, 16, 44_100, &[]);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"fLaC",
+            1,
+            &missing_dfla,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let truncated_dfla = box_(*DFLA_ID, b"\0\0");
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &truncated_dfla);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"fLaC", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let unsupported_dfla = box_(*DFLA_ID, &full_box(1, &[]));
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &unsupported_dfla);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"fLaC", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+
+        let mut flagged_dfla_payload =
+            flac_specific_box_payload(&[flac_streaminfo_block.as_slice()]);
+        flagged_dfla_payload[3] = 1;
+        let flagged_dfla = box_(*DFLA_ID, &flagged_dfla_payload);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &flagged_dfla);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"fLaC", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_first_dfla = box_(
+            *DFLA_ID,
+            &flac_specific_box_payload(&[flac_metadata_block(true, 1, &[]).as_slice()]),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &bad_first_dfla);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"fLaC", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_streaminfo_len = box_(
+            *DFLA_ID,
+            &flac_specific_box_payload(&[flac_metadata_block(true, 0, &[0; 33]).as_slice()]),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &bad_streaminfo_len);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"fLaC", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let duplicate_streaminfo = box_(
+            *DFLA_ID,
+            &flac_specific_box_payload(&[
+                flac_metadata_block(false, 0, &flac_streaminfo).as_slice(),
+                flac_metadata_block(true, 0, &flac_streaminfo).as_slice(),
+            ]),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &duplicate_streaminfo);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"fLaC", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let missing_final_flac_flag = box_(
+            *DFLA_ID,
+            &flac_specific_box_payload(&[
+                flac_metadata_block(false, 0, &flac_streaminfo).as_slice()
+            ]),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &missing_final_flac_flag);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"fLaC", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let early_final_flac_flag = box_(
+            *DFLA_ID,
+            &flac_specific_box_payload(&[
+                flac_metadata_block(true, 0, &flac_streaminfo).as_slice(),
+                flac_metadata_block(true, 1, &[]).as_slice(),
+            ]),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &early_final_flac_flag);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"fLaC", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let forbidden_flac_block = box_(
+            *DFLA_ID,
+            &flac_specific_box_payload(&[
+                flac_metadata_block(false, 0, &flac_streaminfo).as_slice(),
+                flac_metadata_block(true, 127, &[]).as_slice(),
+            ]),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &forbidden_flac_block);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"fLaC", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let mismatched_flac_channels = box_(
+            *DFLA_ID,
+            &flac_specific_box_payload(&[flac_metadata_block(
+                true,
+                0,
+                &flac_streaminfo_block_data(44_100, 1, 16, 1_000),
+            )
+            .as_slice()]),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &mismatched_flac_channels);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"fLaC", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let zero_rate_flac = box_(
+            *DFLA_ID,
+            &flac_specific_box_payload(&[flac_metadata_block(
+                true,
+                0,
+                &flac_streaminfo_block_data(0, 2, 16, 1_000),
+            )
+            .as_slice()]),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &zero_rate_flac);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"fLaC", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
@@ -7126,6 +7614,71 @@ mod tests {
             payload.push(coupled_count);
             payload.extend_from_slice(channel_mapping);
         }
+        payload
+    }
+
+    fn flac_specific_box_payload(blocks: &[&[u8]]) -> Vec<u8> {
+        let mut payload = full_box(0, &[]);
+        for block in blocks {
+            payload.extend_from_slice(block);
+        }
+        payload
+    }
+
+    fn flac_metadata_block(last: bool, block_type: u8, data: &[u8]) -> Vec<u8> {
+        let length = u32::try_from(data.len()).unwrap();
+        assert!(length <= 0x00ff_ffff);
+        let mut payload = Vec::with_capacity(4 + data.len());
+        payload.push(if last { 0x80 } else { 0 } | (block_type & 0x7f));
+        payload.push(((length >> 16) & 0xff) as u8);
+        payload.push(((length >> 8) & 0xff) as u8);
+        payload.push((length & 0xff) as u8);
+        payload.extend_from_slice(data);
+        payload
+    }
+
+    fn flac_streaminfo_block_data(
+        sample_rate: u32,
+        channels: u8,
+        bits_per_sample: u8,
+        total_samples: u64,
+    ) -> Vec<u8> {
+        assert!((1..=8).contains(&channels));
+        assert!((1..=32).contains(&bits_per_sample));
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&16_u16.to_be_bytes());
+        payload.extend_from_slice(&4_096_u16.to_be_bytes());
+        payload.extend_from_slice(&[0, 0, 0]);
+        payload.extend_from_slice(&[0, 0, 0]);
+        let mut packed = Vec::new();
+        let mut bit_len = 0_usize;
+        append_bits(
+            &mut packed,
+            &mut bit_len,
+            u64::from(sample_rate & 0x000f_ffff),
+            20,
+        );
+        append_bits(
+            &mut packed,
+            &mut bit_len,
+            u64::from((channels - 1) & 0x07),
+            3,
+        );
+        append_bits(
+            &mut packed,
+            &mut bit_len,
+            u64::from((bits_per_sample - 1) & 0x1f),
+            5,
+        );
+        append_bits(
+            &mut packed,
+            &mut bit_len,
+            total_samples & ((1_u64 << 36) - 1),
+            36,
+        );
+        assert_eq!(packed.len(), 8);
+        payload.extend_from_slice(&packed);
+        payload.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
         payload
     }
 
