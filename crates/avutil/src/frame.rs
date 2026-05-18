@@ -417,6 +417,61 @@ impl FrameSideDataDescriptor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDisplayMatrix {
+    elements: [i32; Self::ELEMENTS],
+}
+
+impl FrameDisplayMatrix {
+    pub const ELEMENTS: usize = 9;
+    pub const DATA_LEN: usize = Self::ELEMENTS * 4;
+
+    pub const fn new(elements: [i32; Self::ELEMENTS]) -> Self {
+        Self { elements }
+    }
+
+    pub const fn identity() -> Self {
+        Self {
+            elements: [1 << 16, 0, 0, 0, 1 << 16, 0, 0, 0, 1 << 30],
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "display matrix frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut elements = [0; Self::ELEMENTS];
+        for (element, chunk) in elements.iter_mut().zip(data.chunks_exact(4)) {
+            let mut bytes = [0; 4];
+            bytes.copy_from_slice(chunk);
+            *element = i32::from_ne_bytes(bytes);
+        }
+
+        Ok(Self { elements })
+    }
+
+    pub const fn elements(self) -> [i32; Self::ELEMENTS] {
+        self.elements
+    }
+
+    pub fn as_elements(&self) -> &[i32; Self::ELEMENTS] {
+        &self.elements
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        for (element, chunk) in self.elements.iter().zip(bytes.chunks_exact_mut(4)) {
+            chunk.copy_from_slice(&element.to_ne_bytes());
+        }
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FrameActiveFormatDescription {
     Same = 8,
@@ -1162,6 +1217,10 @@ impl FrameSideData {
         )
     }
 
+    pub fn new_display_matrix(value: FrameDisplayMatrix) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::DisplayMatrix, value.to_bytes().to_vec())
+    }
+
     pub fn new_skip_samples(value: FrameSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(FrameSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -1237,6 +1296,14 @@ impl FrameSideData {
 
     pub fn supports_multiple_instances(&self) -> bool {
         self.kind.supports_multiple_instances()
+    }
+
+    pub fn display_matrix(&self) -> AvResult<Option<FrameDisplayMatrix>> {
+        if self.kind != FrameSideDataKind::DisplayMatrix {
+            return Ok(None);
+        }
+
+        FrameDisplayMatrix::parse(self.data()).map(Some)
     }
 
     pub fn active_format_description(&self) -> AvResult<Option<FrameActiveFormatDescription>> {
@@ -3591,6 +3658,72 @@ mod tests {
             .union(Props::COLOR_DEPENDENT)
             .intersects(Props::COLOR_DEPENDENT));
         assert!(!Props::GLOBAL.intersects(Props::SIZE_DEPENDENT));
+    }
+
+    #[test]
+    fn frame_side_data_parses_display_matrix_payload() {
+        let expected =
+            FrameDisplayMatrix::new([1 << 16, 0, 0, 0, 1 << 16, 0, 12 << 16, -34 << 16, 1 << 30]);
+        assert_eq!(expected.as_elements()[0], 1 << 16);
+        assert_eq!(expected.elements()[8], 1 << 30);
+        assert_eq!(
+            FrameDisplayMatrix::parse(&expected.to_bytes()).unwrap(),
+            expected
+        );
+
+        let identity = FrameDisplayMatrix::identity();
+        assert_eq!(
+            identity.elements(),
+            [1 << 16, 0, 0, 0, 1 << 16, 0, 0, 0, 1 << 30]
+        );
+
+        let side_data = FrameSideData::new_display_matrix(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::DisplayMatrix);
+        assert_eq!(side_data.data(), &expected.to_bytes()[..]);
+        assert_eq!(side_data.display_matrix().unwrap(), Some(expected));
+
+        let all_i32_values = FrameDisplayMatrix::new([
+            i32::MIN,
+            -1,
+            0,
+            1,
+            i32::MAX,
+            1 << 30,
+            -(1 << 30),
+            1 << 16,
+            -(1 << 16),
+        ]);
+        assert_eq!(
+            FrameDisplayMatrix::parse(&all_i32_values.to_bytes()).unwrap(),
+            all_i32_values
+        );
+
+        let motion_vectors = FrameSideData::new_with_kind(
+            FrameSideDataKind::MotionVectors,
+            expected.to_bytes().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(motion_vectors.display_matrix().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_display_matrix_payload() {
+        for data in [Vec::new(), vec![0; 35], vec![0; 37]] {
+            assert_eq!(
+                FrameDisplayMatrix::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, data).unwrap();
+            assert_eq!(
+                side_data.display_matrix().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_display =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 35]).unwrap();
+        assert_eq!(non_display.display_matrix().unwrap(), None);
     }
 
     #[test]

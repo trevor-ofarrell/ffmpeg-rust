@@ -4,8 +4,8 @@ use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
-    FrameActiveFormatDescription, FrameAudioServiceType, FrameData, FrameGopTimecode,
-    FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
+    FrameActiveFormatDescription, FrameAudioServiceType, FrameData, FrameDisplayMatrix,
+    FrameGopTimecode, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
     FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, Md5, Packet, PacketFlags,
     PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384,
     Sha512, SideData, VideoFrame,
@@ -939,7 +939,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(frame_video.planes()[0], frame_replacement);
     assert_eq!(shared_video.planes(), planes.as_slice());
 
-    let frame_side_data_len = usize::from(cursor.next().unwrap_or_default() % 20);
+    let frame_side_data_len = usize::from(cursor.next().unwrap_or_default() % 48);
     let frame_side_data_payload = payload_from(cursor, frame_side_data_len);
     let frame_side_data_buffer =
         BufferRef::copy_from_slice_with_padding(&frame_side_data_payload, 1).unwrap();
@@ -973,6 +973,24 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         frame.side_data()[0].supports_multiple_instances(),
         frame_side_data_kind.supports_multiple_instances()
     );
+    match frame.side_data()[0].display_matrix() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DisplayMatrix);
+            assert_eq!(frame_side_data_payload.len(), FrameDisplayMatrix::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), frame_side_data_payload);
+            assert_eq!(FrameDisplayMatrix::new(value.elements()), value);
+            assert_eq!(
+                FrameDisplayMatrix::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::DisplayMatrix),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DisplayMatrix);
+            assert_ne!(frame_side_data_payload.len(), FrameDisplayMatrix::DATA_LEN);
+        }
+    }
     match frame.side_data()[0].active_format_description() {
         Ok(Some(value)) => {
             assert_eq!(
@@ -2044,6 +2062,35 @@ fn exercise_fixtures() {
     let non_skip =
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 10]).unwrap();
     assert_eq!(non_skip.skip_samples().unwrap(), None);
+
+    let display_matrix =
+        FrameDisplayMatrix::new([1 << 16, 0, 0, 0, 1 << 16, 0, 12 << 16, -34 << 16, 1 << 30]);
+    let display_matrix_side_data = FrameSideData::new_display_matrix(display_matrix).unwrap();
+    assert_eq!(
+        display_matrix_side_data.kind_id(),
+        &FrameSideDataKind::DisplayMatrix
+    );
+    assert_eq!(
+        display_matrix_side_data.display_matrix().unwrap(),
+        Some(display_matrix)
+    );
+    assert_eq!(
+        FrameDisplayMatrix::parse(&display_matrix.to_bytes()).unwrap(),
+        display_matrix
+    );
+    assert_eq!(
+        FrameDisplayMatrix::identity().elements(),
+        [1 << 16, 0, 0, 0, 1 << 16, 0, 0, 0, 1 << 30]
+    );
+    assert_eq!(
+        FrameDisplayMatrix::parse(&[0; FrameDisplayMatrix::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_display =
+        FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 36]).unwrap();
+    assert_eq!(non_display.display_matrix().unwrap(), None);
 
     let audio_service =
         FrameSideData::new_audio_service_type(FrameAudioServiceType::VoiceOver).unwrap();

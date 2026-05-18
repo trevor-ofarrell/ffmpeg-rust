@@ -26,7 +26,7 @@ pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};
 pub use error::{AvError, AvErrorKind, AvResult};
 pub use frame::{
     AudioFrame, Frame, FrameActiveFormatDescription, FrameAudioServiceType, FrameData,
-    FrameGopTimecode, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData,
+    FrameDisplayMatrix, FrameGopTimecode, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData,
     FrameSideDataDescriptor, FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples,
     FrameSkipSamplesReason, VideoFrame,
 };
