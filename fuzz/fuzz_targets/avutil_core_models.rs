@@ -1094,6 +1094,107 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         assert!(stored.shares_storage(source));
         assert_eq!(stored.padding_slice(), &[0]);
     }
+
+    let strided_audio_line_sizes = plane_sizes
+        .iter()
+        .map(|size| size.saturating_add(1))
+        .collect::<Vec<_>>();
+    let strided_audio_planes = planes
+        .iter()
+        .zip(&strided_audio_line_sizes)
+        .map(|(plane, &line_size)| {
+            let mut storage = plane.clone();
+            storage.resize(line_size, 0xEE);
+            storage
+        })
+        .collect::<Vec<_>>();
+    let strided_audio = AudioFrame::new_with_line_sizes(
+        sample_rate,
+        channels,
+        sample_format,
+        samples_per_channel,
+        strided_audio_planes.clone(),
+        strided_audio_line_sizes.clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        strided_audio.line_sizes(),
+        strided_audio_line_sizes.as_slice()
+    );
+    assert_eq!(strided_audio.planes(), planes.as_slice());
+    for (stored, strided) in strided_audio
+        .plane_buffers()
+        .iter()
+        .zip(&strided_audio_planes)
+    {
+        assert_eq!(stored.as_slice(), strided.as_slice());
+    }
+    assert_eq!(
+        AudioFrame::new_with_line_sizes(
+            sample_rate,
+            channels,
+            sample_format,
+            samples_per_channel,
+            strided_audio_planes.clone(),
+            Vec::new(),
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    if plane_sizes[0] > 0 {
+        let mut undersized_audio_line_sizes = strided_audio_line_sizes.clone();
+        undersized_audio_line_sizes[0] = plane_sizes[0] - 1;
+        assert_eq!(
+            AudioFrame::new_with_line_sizes(
+                sample_rate,
+                channels,
+                sample_format,
+                samples_per_channel,
+                strided_audio_planes.clone(),
+                undersized_audio_line_sizes,
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
+
+    let mut mutable_strided_audio = strided_audio.clone();
+    let shared_strided_audio = mutable_strided_audio.clone();
+    assert!(!mutable_strided_audio.is_writable());
+    let replacement_strided_audio_planes = planes
+        .iter()
+        .map(|plane| {
+            plane
+                .iter()
+                .map(|byte| byte.wrapping_add(3))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    for (index, replacement) in replacement_strided_audio_planes.iter().enumerate() {
+        mutable_strided_audio
+            .set_plane_visible_data(index, replacement)
+            .unwrap();
+    }
+    assert!(mutable_strided_audio.is_writable());
+    assert_eq!(
+        mutable_strided_audio.planes(),
+        replacement_strided_audio_planes.as_slice()
+    );
+    for (((stored, shared), original_strided), replacement) in mutable_strided_audio
+        .plane_buffers()
+        .iter()
+        .zip(shared_strided_audio.plane_buffers())
+        .zip(&strided_audio_planes)
+        .zip(&replacement_strided_audio_planes)
+    {
+        assert!(!stored.shares_storage(shared));
+        let mut expected_storage = original_strided.clone();
+        expected_storage[..replacement.len()].copy_from_slice(replacement);
+        assert_eq!(stored.as_slice(), expected_storage.as_slice());
+    }
+
     let mut mutable_audio = audio_from_buffers.clone();
     let shared_audio = mutable_audio.clone();
     assert!(!mutable_audio.is_writable());
@@ -1175,11 +1276,22 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             layout,
             sample_format,
             samples_per_channel,
-            planes,
+            planes.clone(),
         )
         .unwrap();
         assert_eq!(frame.channel_layout(), Some(layout));
         assert_eq!(frame.line_sizes(), plane_sizes.as_slice());
+        let padded_frame = AudioFrame::new_with_channel_layout_and_line_sizes(
+            sample_rate,
+            layout,
+            sample_format,
+            samples_per_channel,
+            strided_audio_planes,
+            strided_audio_line_sizes,
+        )
+        .unwrap();
+        assert_eq!(padded_frame.channel_layout(), Some(layout));
+        assert_eq!(padded_frame.planes(), planes.as_slice());
     } else {
         assert_eq!(
             layout.validate_channel_count(channels).unwrap_err().kind(),

@@ -797,6 +797,44 @@ impl AudioFrame {
         samples_per_channel: usize,
         plane_buffers: Vec<BufferRef>,
     ) -> AvResult<Self> {
+        let line_sizes = sample_format.plane_sizes(samples_per_channel, channels)?;
+        Self::new_with_buffer_refs_and_line_sizes(
+            sample_rate,
+            channels,
+            sample_format,
+            samples_per_channel,
+            plane_buffers,
+            line_sizes,
+        )
+    }
+
+    pub fn new_with_line_sizes(
+        sample_rate: u32,
+        channels: u16,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        planes: Vec<Vec<u8>>,
+        line_sizes: Vec<usize>,
+    ) -> AvResult<Self> {
+        let plane_buffers = planes.into_iter().map(BufferRef::from_vec).collect();
+        Self::new_with_buffer_refs_and_line_sizes(
+            sample_rate,
+            channels,
+            sample_format,
+            samples_per_channel,
+            plane_buffers,
+            line_sizes,
+        )
+    }
+
+    pub fn new_with_buffer_refs_and_line_sizes(
+        sample_rate: u32,
+        channels: u16,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        plane_buffers: Vec<BufferRef>,
+        line_sizes: Vec<usize>,
+    ) -> AvResult<Self> {
         Self::new_inner(
             sample_rate,
             channels,
@@ -804,6 +842,7 @@ impl AudioFrame {
             sample_format,
             samples_per_channel,
             plane_buffers,
+            line_sizes,
         )
     }
 
@@ -832,6 +871,45 @@ impl AudioFrame {
         plane_buffers: Vec<BufferRef>,
     ) -> AvResult<Self> {
         let channels = channel_layout.channel_count();
+        let line_sizes = sample_format.plane_sizes(samples_per_channel, channels)?;
+        Self::new_with_channel_layout_and_buffer_refs_and_line_sizes(
+            sample_rate,
+            channel_layout,
+            sample_format,
+            samples_per_channel,
+            plane_buffers,
+            line_sizes,
+        )
+    }
+
+    pub fn new_with_channel_layout_and_line_sizes(
+        sample_rate: u32,
+        channel_layout: ChannelLayout,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        planes: Vec<Vec<u8>>,
+        line_sizes: Vec<usize>,
+    ) -> AvResult<Self> {
+        let plane_buffers = planes.into_iter().map(BufferRef::from_vec).collect();
+        Self::new_with_channel_layout_and_buffer_refs_and_line_sizes(
+            sample_rate,
+            channel_layout,
+            sample_format,
+            samples_per_channel,
+            plane_buffers,
+            line_sizes,
+        )
+    }
+
+    pub fn new_with_channel_layout_and_buffer_refs_and_line_sizes(
+        sample_rate: u32,
+        channel_layout: ChannelLayout,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        plane_buffers: Vec<BufferRef>,
+        line_sizes: Vec<usize>,
+    ) -> AvResult<Self> {
+        let channels = channel_layout.channel_count();
         Self::new_inner(
             sample_rate,
             channels,
@@ -839,6 +917,7 @@ impl AudioFrame {
             sample_format,
             samples_per_channel,
             plane_buffers,
+            line_sizes,
         )
     }
 
@@ -849,6 +928,7 @@ impl AudioFrame {
         sample_format: SampleFormat,
         samples_per_channel: usize,
         plane_buffers: Vec<BufferRef>,
+        line_sizes: Vec<usize>,
     ) -> AvResult<Self> {
         if sample_rate == 0 {
             return Err(AvError::invalid_argument(
@@ -866,12 +946,12 @@ impl AudioFrame {
             layout.validate_channel_count(channels)?;
         }
 
-        let expected_plane_sizes = sample_format.plane_sizes(samples_per_channel, channels)?;
-        let planes = snapshot_plane_buffers(
+        let visible_plane_sizes = sample_format.plane_sizes(samples_per_channel, channels)?;
+        let planes = snapshot_audio_plane_buffers(
             &plane_buffers,
-            &expected_plane_sizes,
+            &visible_plane_sizes,
+            &line_sizes,
             sample_format.name(),
-            "audio",
         )?;
 
         Ok(Self {
@@ -880,7 +960,7 @@ impl AudioFrame {
             channel_layout,
             sample_format,
             samples_per_channel,
-            line_sizes: expected_plane_sizes,
+            line_sizes,
             planes,
             plane_buffers,
         })
@@ -933,7 +1013,10 @@ impl AudioFrame {
     }
 
     pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
-        let Some(expected_visible) = self.line_sizes.get(index).copied() else {
+        let visible_plane_sizes = self
+            .sample_format
+            .plane_sizes(self.samples_per_channel, self.channels)?;
+        let Some(expected_visible) = visible_plane_sizes.get(index).copied() else {
             return Err(AvError::invalid_argument(format!(
                 "{} audio frame plane index {index} is out of range",
                 self.sample_format.name()
@@ -947,38 +1030,53 @@ impl AudioFrame {
             )));
         }
 
-        self.plane_buffers[index].make_mut().copy_from_slice(data);
+        self.plane_buffers[index].make_mut()[..expected_visible].copy_from_slice(data);
         self.planes[index].clear();
         self.planes[index].extend_from_slice(data);
         Ok(())
     }
 }
 
-fn snapshot_plane_buffers(
+fn snapshot_audio_plane_buffers(
     plane_buffers: &[BufferRef],
-    expected_plane_sizes: &[usize],
+    visible_plane_sizes: &[usize],
+    line_sizes: &[usize],
     format_name: &str,
-    media_kind: &str,
 ) -> AvResult<Vec<Vec<u8>>> {
-    if plane_buffers.len() != expected_plane_sizes.len() {
+    if plane_buffers.len() != visible_plane_sizes.len() {
         return Err(AvError::invalid_argument(format!(
-            "{format_name} {media_kind} frame expects {} planes, got {}",
-            expected_plane_sizes.len(),
+            "{format_name} audio frame expects {} planes, got {}",
+            visible_plane_sizes.len(),
             plane_buffers.len()
+        )));
+    }
+    if line_sizes.len() != visible_plane_sizes.len() {
+        return Err(AvError::invalid_argument(format!(
+            "{format_name} audio frame expects {} line sizes, got {}",
+            visible_plane_sizes.len(),
+            line_sizes.len()
         )));
     }
 
     let mut planes = Vec::with_capacity(plane_buffers.len());
-    for (index, (plane, expected_size)) in
-        plane_buffers.iter().zip(expected_plane_sizes).enumerate()
+    for (index, ((plane, visible_size), line_size)) in plane_buffers
+        .iter()
+        .zip(visible_plane_sizes)
+        .zip(line_sizes)
+        .enumerate()
     {
-        if plane.len() != *expected_size {
+        if *line_size < *visible_size {
+            return Err(AvError::invalid_argument(format!(
+                "{format_name} audio frame plane {index} line size {line_size} is smaller than visible bytes {visible_size}"
+            )));
+        }
+        if plane.len() != *line_size {
             return Err(AvError::invalid_data(format!(
-                "{format_name} {media_kind} frame plane {index} has {} bytes, expected {expected_size}",
+                "{format_name} audio frame plane {index} has {} bytes, expected {line_size}",
                 plane.len()
             )));
         }
-        planes.push(plane.as_slice().to_vec());
+        planes.push(plane.as_slice()[..*visible_size].to_vec());
     }
     Ok(planes)
 }
@@ -1397,6 +1495,126 @@ mod tests {
                 SampleFormat::S16,
                 1,
                 vec![BufferRef::copy_from_slice(&[0; 2])],
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn audio_frame_accepts_custom_line_sizes_and_excludes_padding() {
+        let mut frame = AudioFrame::new_with_line_sizes(
+            48_000,
+            2,
+            SampleFormat::S16,
+            2,
+            vec![vec![0, 0, 1, 0, 2, 0, 3, 0, 0xaa, 0xbb]],
+            vec![10],
+        )
+        .unwrap();
+        assert_eq!(frame.channel_layout(), Some(ChannelLayout::stereo()));
+        assert_eq!(frame.line_sizes(), &[10]);
+        assert_eq!(frame.planes(), &[vec![0, 0, 1, 0, 2, 0, 3, 0]]);
+        assert_eq!(
+            frame.plane_buffers()[0].as_slice(),
+            &[0, 0, 1, 0, 2, 0, 3, 0, 0xaa, 0xbb]
+        );
+
+        let cloned = frame.clone();
+        assert!(!frame.is_writable());
+        frame
+            .set_plane_visible_data(0, &[9, 0, 8, 0, 7, 0, 6, 0])
+            .unwrap();
+        assert!(frame.is_writable());
+        assert!(!frame.plane_buffers()[0].shares_storage(&cloned.plane_buffers()[0]));
+        assert_eq!(frame.planes(), &[vec![9, 0, 8, 0, 7, 0, 6, 0]]);
+        assert_eq!(
+            frame.plane_buffers()[0].as_slice(),
+            &[9, 0, 8, 0, 7, 0, 6, 0, 0xaa, 0xbb]
+        );
+        assert_eq!(cloned.planes(), &[vec![0, 0, 1, 0, 2, 0, 3, 0]]);
+        assert_eq!(
+            cloned.plane_buffers()[0].as_slice(),
+            &[0, 0, 1, 0, 2, 0, 3, 0, 0xaa, 0xbb]
+        );
+
+        let source = BufferRef::copy_from_slice(&[4, 0, 5, 0, 0xcc]);
+        let buffered = AudioFrame::new_with_buffer_refs_and_line_sizes(
+            44_100,
+            1,
+            SampleFormat::S16,
+            2,
+            vec![source.clone()],
+            vec![5],
+        )
+        .unwrap();
+        assert_eq!(buffered.channel_layout(), Some(ChannelLayout::mono()));
+        assert_eq!(buffered.line_sizes(), &[5]);
+        assert_eq!(buffered.planes(), &[vec![4, 0, 5, 0]]);
+        assert!(buffered.plane_buffers()[0].shares_storage(&source));
+
+        let layout_frame = AudioFrame::new_with_channel_layout_and_line_sizes(
+            48_000,
+            ChannelLayout::stereo(),
+            SampleFormat::S16,
+            1,
+            vec![vec![1, 0, 2, 0, 0xdd]],
+            vec![5],
+        )
+        .unwrap();
+        assert_eq!(layout_frame.channel_layout(), Some(ChannelLayout::stereo()));
+        assert_eq!(layout_frame.planes(), &[vec![1, 0, 2, 0]]);
+    }
+
+    #[test]
+    fn audio_frame_rejects_invalid_custom_line_sizes() {
+        assert_eq!(
+            AudioFrame::new_with_line_sizes(
+                48_000,
+                2,
+                SampleFormat::S16,
+                2,
+                vec![vec![0; 8]],
+                Vec::new(),
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            AudioFrame::new_with_line_sizes(
+                48_000,
+                2,
+                SampleFormat::S16,
+                2,
+                vec![vec![0; 7]],
+                vec![7],
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            AudioFrame::new_with_line_sizes(
+                48_000,
+                2,
+                SampleFormat::S16,
+                2,
+                vec![vec![0; 9]],
+                vec![10],
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            AudioFrame::new_with_buffer_refs(
+                48_000,
+                2,
+                SampleFormat::S16,
+                2,
+                vec![BufferRef::copy_from_slice(&[0; 10])],
             )
             .unwrap_err()
             .kind(),
