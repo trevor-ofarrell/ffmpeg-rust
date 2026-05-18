@@ -37,6 +37,7 @@ const ESDS_ID: &[u8; 4] = b"esds";
 const WAVE_ID: &[u8; 4] = b"wave";
 const CHAN_ID: &[u8; 4] = b"chan";
 const BTRT_ID: &[u8; 4] = b"btrt";
+const DAMR_ID: &[u8; 4] = b"damr";
 const FRMA_ID: &[u8; 4] = b"frma";
 const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
 const PASP_ID: &[u8; 4] = b"pasp";
@@ -182,7 +183,7 @@ impl MovCodecParameters {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MovSampleEntryDetails {
     Generic,
-    Audio(MovAudioSampleEntry),
+    Audio(Box<MovAudioSampleEntry>),
     Video(Box<MovVideoSampleEntry>),
     Subtitle(MovSubtitleSampleEntry),
     Data(MovDataSampleEntry),
@@ -377,6 +378,7 @@ pub struct MovAudioSampleEntry {
     version_fields: MovAudioSampleEntryVersionFields,
     elementary_stream_descriptor: Option<MovElementaryStreamDescriptor>,
     bit_rate: Option<MovBitRateBox>,
+    amr_specific: Option<MovAmrSpecificBox>,
     wave_extension: Option<MovAudioWaveExtension>,
     channel_layout: Option<MovAudioChannelLayout>,
     child_boxes: Vec<MovSampleEntryChildBox>,
@@ -468,6 +470,10 @@ impl MovAudioSampleEntry {
 
     pub fn bit_rate(&self) -> Option<&MovBitRateBox> {
         self.bit_rate.as_ref()
+    }
+
+    pub fn amr_specific(&self) -> Option<&MovAmrSpecificBox> {
+        self.amr_specific.as_ref()
     }
 
     pub fn wave_extension(&self) -> Option<&MovAudioWaveExtension> {
@@ -631,6 +637,37 @@ impl MovBitRateBox {
 
     pub fn avg_bitrate(&self) -> u32 {
         self.avg_bitrate
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAmrSpecificBox {
+    vendor: String,
+    decoder_version: u8,
+    mode_set: u16,
+    mode_change_period: u8,
+    frames_per_sample: u8,
+}
+
+impl MovAmrSpecificBox {
+    pub fn vendor(&self) -> &str {
+        &self.vendor
+    }
+
+    pub fn decoder_version(&self) -> u8 {
+        self.decoder_version
+    }
+
+    pub fn mode_set(&self) -> u16 {
+        self.mode_set
+    }
+
+    pub fn mode_change_period(&self) -> u8 {
+        self.mode_change_period
+    }
+
+    pub fn frames_per_sample(&self) -> u8 {
+        self.frames_per_sample
     }
 }
 
@@ -1965,9 +2002,9 @@ fn parse_sample_entry_details(
         b"raw " if extra_data.len() >= 70 => parse_visual_sample_entry(extra_data)
             .map(Box::new)
             .map(MovSampleEntryDetails::Video),
-        tag if is_audio_sample_entry(tag) => {
-            parse_audio_sample_entry(extra_data).map(MovSampleEntryDetails::Audio)
-        }
+        tag if is_audio_sample_entry(tag) => parse_audio_sample_entry(extra_data)
+            .map(Box::new)
+            .map(MovSampleEntryDetails::Audio),
         b"tx3g" => parse_timed_text_sample_entry(extra_data)
             .map(MovSubtitleSampleEntry::TimedText)
             .map(MovSampleEntryDetails::Subtitle),
@@ -1999,6 +2036,8 @@ fn is_audio_sample_entry(codec_tag: &[u8]) -> bool {
             | b"fl64"
             | b"ulaw"
             | b"alaw"
+            | b"samr"
+            | b"sawb"
     )
 }
 
@@ -2176,6 +2215,7 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
     let elementary_stream_descriptor =
         parse_audio_sample_entry_elementary_stream_descriptor(&child_boxes)?;
     let bit_rate = parse_audio_sample_entry_bit_rate(&child_boxes)?;
+    let amr_specific = parse_audio_sample_entry_amr_specific(&child_boxes)?;
     let wave_extension = parse_audio_sample_entry_wave_extension(&child_boxes)?;
     let channel_layout = parse_audio_sample_entry_channel_layout(&child_boxes)?;
     Ok(MovAudioSampleEntry {
@@ -2191,6 +2231,7 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
         version_fields,
         elementary_stream_descriptor,
         bit_rate,
+        amr_specific,
         wave_extension,
         channel_layout,
         child_boxes,
@@ -2243,6 +2284,16 @@ fn parse_audio_sample_entry_bit_rate(
         .iter()
         .find(|child| child.box_type.as_bytes() == BTRT_ID)
         .map(|child| parse_btrt(child.payload()))
+        .transpose()
+}
+
+fn parse_audio_sample_entry_amr_specific(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovAmrSpecificBox>> {
+    child_boxes
+        .iter()
+        .find(|child| child.box_type.as_bytes() == DAMR_ID)
+        .map(|child| parse_damr(child.payload()))
         .transpose()
 }
 
@@ -2334,6 +2385,29 @@ fn parse_btrt(payload: &[u8]) -> AvResult<MovBitRateBox> {
         buffer_size_db,
         max_bitrate,
         avg_bitrate,
+    })
+}
+
+fn parse_damr(payload: &[u8]) -> AvResult<MovAmrSpecificBox> {
+    let mut reader = ByteReader::new(payload);
+    ensure_remaining(&reader, 9, "MOV/MP4 damr")?;
+    let vendor = fourcc_to_string(read_fourcc(&mut reader)?);
+    let decoder_version = reader.read_u8()?;
+    let mode_set = reader.read_u16_be()?;
+    let mode_change_period = reader.read_u8()?;
+    let frames_per_sample = reader.read_u8()?;
+    ensure_box_consumed(&reader, "MOV/MP4 damr")?;
+    if frames_per_sample == 0 || frames_per_sample >= 16 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 damr frames_per_sample must be in 1..16",
+        ));
+    }
+    Ok(MovAmrSpecificBox {
+        vendor,
+        decoder_version,
+        mode_set,
+        mode_change_period,
+        frames_per_sample,
     })
 }
 
@@ -4095,6 +4169,41 @@ mod tests {
     }
 
     #[test]
+    fn parses_amr_audio_sample_entry_specific_box() {
+        let damr = box_(
+            *DAMR_ID,
+            &amr_specific_box_payload(*b"rust", 1, 0x0085, 2, 2),
+        );
+        let extra_data = audio_sample_entry_extra_data(1, 16, 8_000, &damr);
+        let bytes = mp4_with_sample_description_entry(b"samr", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "samr");
+        let MovSampleEntryDetails::Audio(audio) = codec_parameters.details() else {
+            panic!("expected audio sample entry details");
+        };
+        assert_eq!(audio.channel_count(), 1);
+        assert_eq!(audio.sample_rate(), 8_000);
+        assert!(audio.elementary_stream_descriptor().is_none());
+        assert!(audio.bit_rate().is_none());
+        assert!(audio.wave_extension().is_none());
+        assert!(audio.channel_layout().is_none());
+        let amr = audio.amr_specific().unwrap();
+        assert_eq!(amr.vendor(), "rust");
+        assert_eq!(amr.decoder_version(), 1);
+        assert_eq!(amr.mode_set(), 0x0085);
+        assert_eq!(amr.mode_change_period(), 2);
+        assert_eq!(amr.frames_per_sample(), 2);
+        assert_eq!(audio.child_boxes().len(), 1);
+        assert_eq!(audio.child_boxes()[0].box_type(), "damr");
+        assert_eq!(
+            audio.child_boxes()[0].payload(),
+            amr_specific_box_payload(*b"rust", 1, 0x0085, 2, 2).as_slice()
+        );
+    }
+
+    #[test]
     fn parses_audio_sample_entry_version_one_fields() {
         let wave_payload = wave_extension_payload(*b"mp4a", b"\x03\x01\x00");
         let wave = box_(*WAVE_ID, &wave_payload);
@@ -4673,6 +4782,38 @@ mod tests {
         let oversized_btrt = box_(*BTRT_ID, &oversized_btrt);
         let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &oversized_btrt);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let truncated_damr = box_(*DAMR_ID, b"\0\0");
+        let extra_data = audio_sample_entry_extra_data(1, 16, 8_000, &truncated_damr);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"samr", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let mut oversized_damr = amr_specific_box_payload(*b"rust", 1, 0x0085, 2, 2);
+        oversized_damr.push(0);
+        let oversized_damr = box_(*DAMR_ID, &oversized_damr);
+        let extra_data = audio_sample_entry_extra_data(1, 16, 8_000, &oversized_damr);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"samr", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let invalid_zero_frames = box_(
+            *DAMR_ID,
+            &amr_specific_box_payload(*b"rust", 1, 0x0085, 0, 0),
+        );
+        let extra_data = audio_sample_entry_extra_data(1, 16, 8_000, &invalid_zero_frames);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"samr", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let invalid_many_frames = box_(
+            *DAMR_ID,
+            &amr_specific_box_payload(*b"rust", 1, 0x0085, 0, 16),
+        );
+        let extra_data = audio_sample_entry_extra_data(1, 16, 8_000, &invalid_many_frames);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"samr", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
@@ -5936,6 +6077,22 @@ mod tests {
             avg_bitrate.to_be_bytes(),
         ]
         .concat()
+    }
+
+    fn amr_specific_box_payload(
+        vendor: [u8; 4],
+        decoder_version: u8,
+        mode_set: u16,
+        mode_change_period: u8,
+        frames_per_sample: u8,
+    ) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&vendor);
+        payload.push(decoder_version);
+        payload.extend_from_slice(&mode_set.to_be_bytes());
+        payload.push(mode_change_period);
+        payload.push(frames_per_sample);
+        payload
     }
 
     fn wave_extension_payload(original_format: [u8; 4], esds_descriptor: &[u8]) -> Vec<u8> {
