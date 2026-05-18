@@ -45,6 +45,7 @@ const DFLA_ID: &[u8; 4] = b"dfLa";
 const ALAC_ID: &[u8; 4] = b"alac";
 const VTTC_ID: &[u8; 4] = b"vttC";
 const VLAB_ID: &[u8; 4] = b"vlab";
+const TXTC_ID: &[u8; 4] = b"txtC";
 const FRMA_ID: &[u8; 4] = b"frma";
 const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
 const PASP_ID: &[u8; 4] = b"pasp";
@@ -200,6 +201,7 @@ pub enum MovSampleEntryDetails {
 pub enum MovSubtitleSampleEntry {
     TimedText(MovTimedTextSampleEntry),
     XmlSubtitle(MovXmlSubtitleSampleEntry),
+    TextSubtitle(MovTextSubtitleSampleEntry),
     WebVtt(MovWebVttSampleEntry),
 }
 
@@ -207,21 +209,28 @@ impl MovSubtitleSampleEntry {
     pub fn timed_text(&self) -> Option<&MovTimedTextSampleEntry> {
         match self {
             Self::TimedText(entry) => Some(entry),
-            Self::XmlSubtitle(_) | Self::WebVtt(_) => None,
+            Self::XmlSubtitle(_) | Self::TextSubtitle(_) | Self::WebVtt(_) => None,
         }
     }
 
     pub fn xml_subtitle(&self) -> Option<&MovXmlSubtitleSampleEntry> {
         match self {
             Self::XmlSubtitle(entry) => Some(entry),
-            Self::TimedText(_) | Self::WebVtt(_) => None,
+            Self::TimedText(_) | Self::TextSubtitle(_) | Self::WebVtt(_) => None,
+        }
+    }
+
+    pub fn text_subtitle(&self) -> Option<&MovTextSubtitleSampleEntry> {
+        match self {
+            Self::TextSubtitle(entry) => Some(entry),
+            Self::TimedText(_) | Self::XmlSubtitle(_) | Self::WebVtt(_) => None,
         }
     }
 
     pub fn webvtt(&self) -> Option<&MovWebVttSampleEntry> {
         match self {
             Self::WebVtt(entry) => Some(entry),
-            Self::TimedText(_) | Self::XmlSubtitle(_) => None,
+            Self::TimedText(_) | Self::XmlSubtitle(_) | Self::TextSubtitle(_) => None,
         }
     }
 }
@@ -290,6 +299,58 @@ impl MovXmlSubtitleSampleEntry {
 
     pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
         &self.child_boxes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovTextSubtitleSampleEntry {
+    content_encoding: String,
+    mime_format: String,
+    bit_rate: Option<MovBitRateBox>,
+    text_config: Option<MovTextConfigBox>,
+    child_boxes: Vec<MovSampleEntryChildBox>,
+}
+
+impl MovTextSubtitleSampleEntry {
+    pub fn content_encoding(&self) -> &str {
+        &self.content_encoding
+    }
+
+    pub fn mime_format(&self) -> &str {
+        &self.mime_format
+    }
+
+    pub fn bit_rate(&self) -> Option<&MovBitRateBox> {
+        self.bit_rate.as_ref()
+    }
+
+    pub fn text_config(&self) -> Option<&MovTextConfigBox> {
+        self.text_config.as_ref()
+    }
+
+    pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.child_boxes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovTextConfigBox {
+    version: u8,
+    flags: [u8; 3],
+    text_config: String,
+}
+
+impl MovTextConfigBox {
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
+    pub fn flags(&self) -> [u8; 3] {
+        self.flags
+    }
+
+    pub fn text_config(&self) -> &str {
+        &self.text_config
     }
 }
 
@@ -2510,6 +2571,9 @@ fn parse_sample_entry_details(
         b"stpp" => parse_xml_subtitle_sample_entry(extra_data)
             .map(MovSubtitleSampleEntry::XmlSubtitle)
             .map(MovSampleEntryDetails::Subtitle),
+        b"sbtt" => parse_text_subtitle_sample_entry(extra_data)
+            .map(MovSubtitleSampleEntry::TextSubtitle)
+            .map(MovSampleEntryDetails::Subtitle),
         b"wvtt" => parse_webvtt_sample_entry(extra_data)
             .map(MovSubtitleSampleEntry::WebVtt)
             .map(MovSampleEntryDetails::Subtitle),
@@ -2605,6 +2669,27 @@ fn parse_xml_subtitle_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlSubtitle
     })
 }
 
+fn parse_text_subtitle_sample_entry(extra_data: &[u8]) -> AvResult<MovTextSubtitleSampleEntry> {
+    let mut reader = ByteReader::new(extra_data);
+    let content_encoding = read_null_terminated_utf8(&mut reader, "MOV/MP4 sbtt content encoding")?;
+    let mime_format = read_null_terminated_utf8(&mut reader, "MOV/MP4 sbtt MIME format")?;
+    let child_boxes = parse_sample_entry_child_boxes(
+        extra_data,
+        reader.position(),
+        extra_data.len(),
+        "MOV/MP4 sbtt sample entry children",
+    )?;
+    let bit_rate = parse_textual_sample_entry_bit_rate(&child_boxes, "MOV/MP4 sbtt")?;
+    let text_config = parse_textual_sample_entry_text_config(&child_boxes, "MOV/MP4 sbtt")?;
+    Ok(MovTextSubtitleSampleEntry {
+        content_encoding,
+        mime_format,
+        bit_rate,
+        text_config,
+        child_boxes,
+    })
+}
+
 fn parse_webvtt_sample_entry(extra_data: &[u8]) -> AvResult<MovWebVttSampleEntry> {
     let child_boxes = parse_sample_entry_child_boxes(
         extra_data,
@@ -2658,6 +2743,66 @@ fn parse_webvtt_source_label(
     }
     let source_label = parse_utf8_boxstring(child.payload(), "MOV/MP4 vlab source label")?;
     Ok(Some(MovWebVttSourceLabelBox { source_label }))
+}
+
+fn parse_textual_sample_entry_bit_rate(
+    child_boxes: &[MovSampleEntryChildBox],
+    context: &str,
+) -> AvResult<Option<MovBitRateBox>> {
+    let Some(child) = find_unique_child_box(child_boxes, BTRT_ID, context)? else {
+        return Ok(None);
+    };
+    parse_btrt(child.payload()).map(Some)
+}
+
+fn parse_textual_sample_entry_text_config(
+    child_boxes: &[MovSampleEntryChildBox],
+    context: &str,
+) -> AvResult<Option<MovTextConfigBox>> {
+    let Some(child) = find_unique_child_box(child_boxes, TXTC_ID, context)? else {
+        return Ok(None);
+    };
+    parse_text_config(child.payload()).map(Some)
+}
+
+fn find_unique_child_box<'a>(
+    child_boxes: &'a [MovSampleEntryChildBox],
+    box_type: &[u8; 4],
+    context: &str,
+) -> AvResult<Option<&'a MovSampleEntryChildBox>> {
+    let mut matches = child_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == box_type);
+    let Some(child) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(format!(
+            "{context} sample entry contains duplicate {} boxes",
+            fourcc_to_string(*box_type)
+        )));
+    }
+    Ok(Some(child))
+}
+
+fn parse_text_config(payload: &[u8]) -> AvResult<MovTextConfigBox> {
+    let mut reader = ByteReader::new(payload);
+    let (version, flags) = read_full_box_header(&mut reader, "MOV/MP4 txtC")?;
+    if version != 0 {
+        return Err(AvError::unsupported(format!(
+            "MOV/MP4 txtC version {version} is not implemented"
+        )));
+    }
+    if flags != [0, 0, 0] {
+        return Err(AvError::invalid_data("MOV/MP4 txtC flags must be zero"));
+    }
+    let text_config = read_null_terminated_utf8(&mut reader, "MOV/MP4 txtC text config")?;
+    ensure_box_consumed(&reader, "MOV/MP4 txtC")?;
+    Ok(MovTextConfigBox {
+        version,
+        flags,
+        text_config,
+    })
 }
 
 fn parse_utf8_boxstring(payload: &[u8], context: &str) -> AvResult<String> {
@@ -5998,6 +6143,41 @@ mod tests {
     }
 
     #[test]
+    fn parses_text_subtitle_sample_entry_codec_parameters() {
+        let btrt = box_(*BTRT_ID, &bit_rate_box_payload(1_024, 8_000, 2_000));
+        let txtc = box_(*TXTC_ID, &full_box(0, b"WEBVTT\n\n\0"));
+        let child_boxes = [btrt.as_slice(), txtc.as_slice()].concat();
+        let extra_data = text_subtitle_sample_entry_extra_data("utf-8", "text/vtt", &child_boxes);
+        let bytes = mp4_with_sample_description_entry(b"sbtt", 6, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "sbtt");
+        assert_eq!(codec_parameters.data_reference_index(), 6);
+        assert_eq!(codec_parameters.extra_data(), extra_data.as_slice());
+        let MovSampleEntryDetails::Subtitle(subtitle) = codec_parameters.details() else {
+            panic!("expected subtitle sample entry details");
+        };
+        assert!(subtitle.timed_text().is_none());
+        assert!(subtitle.xml_subtitle().is_none());
+        assert!(subtitle.webvtt().is_none());
+        let text = subtitle.text_subtitle().unwrap();
+        assert_eq!(text.content_encoding(), "utf-8");
+        assert_eq!(text.mime_format(), "text/vtt");
+        let bit_rate = text.bit_rate().unwrap();
+        assert_eq!(bit_rate.buffer_size_db(), 1_024);
+        assert_eq!(bit_rate.max_bitrate(), 8_000);
+        assert_eq!(bit_rate.avg_bitrate(), 2_000);
+        let config = text.text_config().unwrap();
+        assert_eq!(config.version(), 0);
+        assert_eq!(config.flags(), [0, 0, 0]);
+        assert_eq!(config.text_config(), "WEBVTT\n\n");
+        assert_eq!(text.child_boxes().len(), 2);
+        assert_eq!(text.child_boxes()[0].box_type(), "btrt");
+        assert_eq!(text.child_boxes()[1].box_type(), "txtC");
+    }
+
+    #[test]
     fn parses_webvtt_sample_entry_codec_parameters() {
         let vttc = box_(*VTTC_ID, b"WEBVTT\r\nKind: captions\r\n");
         let vlab = box_(*VLAB_ID, b"episode-main");
@@ -7104,6 +7284,45 @@ mod tests {
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"stpp", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"sbtt",
+            1,
+            b"utf-8\0text/vtt",
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"sbtt",
+            1,
+            b"utf-8\0\xff\0",
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_btrt = box_with_declared_size(*BTRT_ID, 12, b"\0");
+        let extra_data = text_subtitle_sample_entry_extra_data("utf-8", "text/vtt", &bad_btrt);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"sbtt", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_txtc = box_(*TXTC_ID, &full_box(1, b"\0"));
+        let extra_data = text_subtitle_sample_entry_extra_data("utf-8", "text/vtt", &bad_txtc);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"sbtt", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+
+        let duplicate_txtc = [
+            box_(*TXTC_ID, &full_box(0, b"a\0")),
+            box_(*TXTC_ID, &full_box(0, b"b\0")),
+        ]
+        .concat();
+        let extra_data =
+            text_subtitle_sample_entry_extra_data("utf-8", "text/vtt", &duplicate_txtc);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"sbtt", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
         let err =
             MovDemuxer::open(&mp4_with_sample_description_entry(b"wvtt", 1, &[])).unwrap_err();
@@ -8331,6 +8550,21 @@ mod tests {
             schema_location.as_bytes(),
             b"\0",
             auxiliary_mime_types.as_bytes(),
+            b"\0",
+            child_boxes,
+        ]
+        .concat()
+    }
+
+    fn text_subtitle_sample_entry_extra_data(
+        content_encoding: &str,
+        mime_format: &str,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
+        [
+            content_encoding.as_bytes(),
+            b"\0",
+            mime_format.as_bytes(),
             b"\0",
             child_boxes,
         ]

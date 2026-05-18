@@ -2,6 +2,8 @@
 
 ## Current Status
 
+`avformat-mov-demuxer` now parses `sbtt` text subtitle sample entries into a structured `MovTextSubtitleSampleEntry` model. It captures the ISO Base Media File Format null-terminated UTF-8 `content_encoding` and `mime_format` strings, validates optional `btrt` bitrate boxes, validates optional `txtC` text configuration full boxes, preserves child boxes, and rejects missing terminators, invalid UTF-8, malformed child boxes, unsupported `txtC` versions, nonzero `txtC` flags, duplicate optional boxes, and truncated bitrate data as typed errors. The ledger keeps MOV below `complete` because pinned-oracle differential tests, upstream FATE media parity, actual local fuzz execution, WebVTT sample payload parsing, and broader subtitle/data sample-entry coverage remain absent.
+
 `avformat-mov-demuxer` now parses `wvtt` WebVTT sample entries into a structured `MovWebVttSampleEntry` model. It validates the required `vttC` WebVTT configuration box, captures its UTF-8 WebVTT header text, enforces a WebVTT signature boundary, captures an optional `vlab` source-label box, preserves validated child boxes, and rejects missing or duplicate `vttC`, duplicate `vlab`, invalid UTF-8, invalid WebVTT signatures, and malformed child-box tails as typed errors. The ledger keeps MOV below `complete` because pinned-oracle differential tests, upstream FATE media parity, actual local fuzz execution, WebVTT sample payload parsing, and broader subtitle/data sample-entry coverage remain absent.
 
 `avformat-mov-demuxer` now parses `stpp` XML subtitle sample entries into a structured `MovXmlSubtitleSampleEntry` model. It captures the ISO Base Media File Format null-terminated UTF-8 `namespace`, optional `schema_location`, and `auxiliary_mime_types` fields, preserves validated optional child boxes after those strings, and rejects missing terminators, invalid UTF-8, and malformed child-box tails as typed errors. The ledger keeps MOV below `complete` because pinned-oracle differential tests, upstream FATE media parity, actual local fuzz execution, deeper optional subtitle box semantics, and broader subtitle/data sample-entry coverage remain absent.
@@ -1235,12 +1237,12 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current component. It now structures direct audio `esds`, `btrt`, `damr`, required `ac-3` `dac3`, required `ec-3` `dec3`, required `Opus` `dOps`, required `fLaC` `dfLa`, required `alac` Apple Lossless specific boxes in both direct and `wave/alac` compatibility forms, `tx3g` timed text entries, `stpp` XML subtitle entries, and `wvtt` WebVTT entries. It still has a local FATE-runner smoke mapping that executes the focused MOV unit suite through `cargo run -p fate-runner -- run --component avformat-mov-demuxer`. Exact FFmpeg ffprobe output semantics, pinned FFmpeg differential tests, upstream FATE media parity, actual local fuzz execution, additional codec-specific audio extension parsing beyond direct `esds`/`btrt`/`damr`/`dac3`/`dec3`/`dOps`/`dfLa`/`alac`/`wave`/`chan`, WebVTT sample payload parsing, and broader MOV subtitle/data sample-entry coverage remain absent.
+`avformat-mov-demuxer` remains the current component. It now structures direct audio `esds`, `btrt`, `damr`, required `ac-3` `dac3`, required `ec-3` `dec3`, required `Opus` `dOps`, required `fLaC` `dfLa`, required `alac` Apple Lossless specific boxes in both direct and `wave/alac` compatibility forms, `tx3g` timed text entries, `stpp` XML subtitle entries, `sbtt` text subtitle entries, and `wvtt` WebVTT entries. It still has a local FATE-runner smoke mapping that executes the focused MOV unit suite through `cargo run -p fate-runner -- run --component avformat-mov-demuxer`. Exact FFmpeg ffprobe output semantics, pinned FFmpeg differential tests, upstream FATE media parity, actual local fuzz execution, additional codec-specific audio extension parsing beyond direct `esds`/`btrt`/`damr`/`dac3`/`dec3`/`dOps`/`dfLa`/`alac`/`wave`/`chan`, WebVTT sample payload parsing, and broader MOV subtitle/data sample-entry coverage remain absent.
 
 ## Next 3 Concrete Actions
 
 1. Add pinned-oracle differential coverage for constrained `ffmpeg-rs -f hash [-hash <algorithm>] -`, `-f md5 -`, `-f framehash [-hash <algorithm>] -`, `-f framemd5 -`, and `-f streamhash [-hash <algorithm>] -` once the FFmpeg 8.1.1 oracle binary is available.
-2. Extend MOV sample-entry parsing into remaining subtitle/data sample-entry variants such as `sbtt` text subtitle details or into WebVTT sample payload box parsing.
+2. Extend MOV subtitle/data parsing into WebVTT sample payload boxes or remaining timed text/data variants such as `stxt`/`urim` once the next small oracle/spec-backed slice is clear.
 3. Replace the local MOV smoke mapping with the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
 
 ## Known Blockers
@@ -1253,4 +1255,4 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: parsed MOV `wvtt` WebVTT sample entries into `MovWebVttSampleEntry`, preserving required `vttC` WebVTT configuration, optional `vlab` source labels, and child boxes; added malformed `wvtt` rejection coverage; updated MOV compatibility notes; and kept the component below `complete` because pinned oracle, upstream FATE, and actual fuzz parity remain missing.
+Latest slice: parsed MOV `sbtt` text subtitle sample entries into `MovTextSubtitleSampleEntry`, preserving content encoding, MIME format, optional `btrt`, optional `txtC`, and child boxes; added malformed `sbtt` rejection coverage; updated MOV compatibility notes; and kept the component below `complete` because pinned oracle, upstream FATE, and actual fuzz parity remain missing.
