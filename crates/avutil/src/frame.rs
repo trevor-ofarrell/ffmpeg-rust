@@ -416,6 +416,41 @@ impl FrameSideDataDescriptor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameSeiUnregistered<'a> {
+    uuid: [u8; 16],
+    user_data: &'a [u8],
+}
+
+impl<'a> FrameSeiUnregistered<'a> {
+    pub const UUID_LEN: usize = 16;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() < Self::UUID_LEN {
+            return Err(AvError::invalid_data(format!(
+                "SEI unregistered frame side data requires at least {} UUID bytes, got {}",
+                Self::UUID_LEN,
+                data.len()
+            )));
+        }
+
+        let mut uuid = [0; Self::UUID_LEN];
+        uuid.copy_from_slice(&data[..Self::UUID_LEN]);
+        Ok(Self {
+            uuid,
+            user_data: &data[Self::UUID_LEN..],
+        })
+    }
+
+    pub const fn uuid(&self) -> [u8; 16] {
+        self.uuid
+    }
+
+    pub fn user_data(&self) -> &'a [u8] {
+        self.user_data
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameSideDataKind {
     PanScan,
@@ -764,6 +799,16 @@ impl FrameSideData {
         Self::new_with_buffer_ref(kind, BufferRef::from_vec(data))
     }
 
+    pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
+        let total_len = FrameSeiUnregistered::UUID_LEN
+            .checked_add(user_data.len())
+            .ok_or_else(|| AvError::invalid_argument("SEI unregistered payload length overflow"))?;
+        let mut data = Vec::with_capacity(total_len);
+        data.extend_from_slice(&uuid);
+        data.extend_from_slice(&user_data);
+        Self::new_with_kind(FrameSideDataKind::SeiUnregistered, data)
+    }
+
     pub fn new_with_buffer_ref(kind: impl Into<String>, buffer: BufferRef) -> AvResult<Self> {
         Self::new_with_kind_and_buffer_ref(FrameSideDataKind::from_name(kind)?, buffer)
     }
@@ -810,6 +855,14 @@ impl FrameSideData {
 
     pub fn supports_multiple_instances(&self) -> bool {
         self.kind.supports_multiple_instances()
+    }
+
+    pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
+        if self.kind != FrameSideDataKind::SeiUnregistered {
+            return Ok(None);
+        }
+
+        FrameSeiUnregistered::parse(self.data()).map(Some)
     }
 
     pub fn data(&self) -> &[u8] {
@@ -3116,6 +3169,55 @@ mod tests {
             .union(Props::COLOR_DEPENDENT)
             .intersects(Props::COLOR_DEPENDENT));
         assert!(!Props::GLOBAL.intersects(Props::SIZE_DEPENDENT));
+    }
+
+    #[test]
+    fn frame_side_data_parses_sei_unregistered_payload() {
+        let uuid = [
+            0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB,
+            0xCD, 0xEF,
+        ];
+        let side_data = FrameSideData::new_sei_unregistered(uuid, vec![0xAA, 0xBB]).unwrap();
+
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::SeiUnregistered);
+        assert_eq!(
+            &side_data.data()[..FrameSeiUnregistered::UUID_LEN],
+            uuid.as_slice()
+        );
+        let parsed = side_data.sei_unregistered().unwrap().unwrap();
+        assert_eq!(parsed.uuid(), uuid);
+        assert_eq!(parsed.user_data(), &[0xAA, 0xBB]);
+
+        let empty_payload =
+            FrameSideData::new_with_kind(FrameSideDataKind::SeiUnregistered, uuid.to_vec())
+                .unwrap();
+        let parsed = empty_payload.sei_unregistered().unwrap().unwrap();
+        assert_eq!(parsed.uuid(), uuid);
+        assert!(parsed.user_data().is_empty());
+
+        let display_matrix =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 15]).unwrap();
+        assert_eq!(display_matrix.sei_unregistered().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_sei_unregistered_payload() {
+        let short = vec![0; FrameSeiUnregistered::UUID_LEN - 1];
+
+        assert_eq!(
+            FrameSeiUnregistered::parse(&short).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        let side_data =
+            FrameSideData::new_with_kind(FrameSideDataKind::SeiUnregistered, short).unwrap();
+        assert_eq!(
+            side_data.sei_unregistered().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let non_sei =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
+        assert_eq!(non_sei.sei_unregistered().unwrap(), None);
     }
 
     #[test]

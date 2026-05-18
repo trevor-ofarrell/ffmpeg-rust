@@ -3,10 +3,10 @@
 use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
-    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameData, FrameSideData,
-    FrameSideDataKind, FrameSideDataProperties, Md5, Packet, PacketFlags, PixelFormat, Rational,
-    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
-    VideoFrame,
+    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameData,
+    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties, Md5, Packet,
+    PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224,
+    Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -971,6 +971,25 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         frame.side_data()[0].supports_multiple_instances(),
         frame_side_data_kind.supports_multiple_instances()
     );
+    match frame.side_data()[0].sei_unregistered() {
+        Ok(Some(payload)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::SeiUnregistered);
+            assert_eq!(
+                payload.uuid().as_slice(),
+                &frame_side_data_payload[..FrameSeiUnregistered::UUID_LEN]
+            );
+            assert_eq!(
+                payload.user_data(),
+                &frame_side_data_payload[FrameSeiUnregistered::UUID_LEN..]
+            );
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::SeiUnregistered),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::SeiUnregistered);
+            assert!(frame_side_data_payload.len() < FrameSeiUnregistered::UUID_LEN);
+        }
+    }
     assert_eq!(
         frame.side_data()[0].data(),
         frame_side_data_payload.as_slice()
@@ -1836,6 +1855,21 @@ fn exercise_fixtures() {
         "vendor.private.side-data"
     );
 
+    let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
+    let sei_payload =
+        FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
+    let parsed_sei = sei_payload.sei_unregistered().unwrap().unwrap();
+    assert_eq!(parsed_sei.uuid(), sei_uuid);
+    assert_eq!(parsed_sei.user_data(), &[0x01, 0x02, 0x03]);
+    assert_eq!(
+        FrameSeiUnregistered::parse(&[0; FrameSeiUnregistered::UUID_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_sei = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_sei.sei_unregistered().unwrap(), None);
+
     let audio = AudioFrame::new_with_channel_layout(
         48_000,
         ChannelLayout::stereo(),
@@ -1963,7 +1997,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 14 {
+    match byte.unwrap_or_default() % 15 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::ReplayGain,
         2 => FrameSideDataKind::MasteringDisplayMetadata,
@@ -1977,6 +2011,7 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         10 => FrameSideDataKind::ViewId,
         11 => FrameSideDataKind::ThreeDReferenceDisplays,
         12 => FrameSideDataKind::Exif,
+        13 => FrameSideDataKind::SeiUnregistered,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
