@@ -24,6 +24,37 @@ impl BufferRef {
         }
     }
 
+    pub fn from_vec_with_release_callback<F>(data: Vec<u8>, on_release: F) -> Self
+    where
+        F: Fn(Vec<u8>) + Send + Sync + 'static,
+    {
+        let len = data.len();
+        Self {
+            data: Arc::new(BufferStorage::with_release_callback(data, on_release)),
+            len,
+        }
+    }
+
+    pub fn from_vec_with_len_and_release_callback<F>(
+        data: Vec<u8>,
+        len: usize,
+        on_release: F,
+    ) -> AvResult<Self>
+    where
+        F: Fn(Vec<u8>) + Send + Sync + 'static,
+    {
+        if len > data.len() {
+            return Err(AvError::invalid_argument(format!(
+                "visible buffer length {len} exceeds {} allocated bytes",
+                data.len()
+            )));
+        }
+        Ok(Self {
+            data: Arc::new(BufferStorage::with_release_callback(data, on_release)),
+            len,
+        })
+    }
+
     pub fn copy_from_slice(data: &[u8]) -> Self {
         Self::from_vec(data.to_vec())
     }
@@ -119,24 +150,37 @@ impl BufferRef {
     }
 }
 
-#[derive(Debug)]
 struct BufferStorage {
     bytes: Vec<u8>,
-    recycler: Option<Weak<BufferPoolInner>>,
+    owner: Option<BufferOwner>,
+}
+
+type BufferReleaseCallback = Arc<dyn Fn(Vec<u8>) + Send + Sync + 'static>;
+
+enum BufferOwner {
+    Pool(Weak<BufferPoolInner>),
+    Callback(BufferReleaseCallback),
 }
 
 impl BufferStorage {
     fn new(bytes: Vec<u8>) -> Self {
-        Self {
-            bytes,
-            recycler: None,
-        }
+        Self { bytes, owner: None }
     }
 
     fn with_pool(bytes: Vec<u8>, pool: &Arc<BufferPoolInner>) -> Self {
         Self {
             bytes,
-            recycler: Some(Arc::downgrade(pool)),
+            owner: Some(BufferOwner::Pool(Arc::downgrade(pool))),
+        }
+    }
+
+    fn with_release_callback<F>(bytes: Vec<u8>, on_release: F) -> Self
+    where
+        F: Fn(Vec<u8>) + Send + Sync + 'static,
+    {
+        Self {
+            bytes,
+            owner: Some(BufferOwner::Callback(Arc::new(on_release))),
         }
     }
 
@@ -145,8 +189,22 @@ impl BufferStorage {
     }
 
     fn into_vec(mut self) -> Vec<u8> {
-        self.recycler = None;
+        self.owner = None;
         std::mem::take(&mut self.bytes)
+    }
+}
+
+impl std::fmt::Debug for BufferStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let owner = match self.owner {
+            Some(BufferOwner::Pool(_)) => "pool",
+            Some(BufferOwner::Callback(_)) => "callback",
+            None => "none",
+        };
+        f.debug_struct("BufferStorage")
+            .field("bytes", &self.bytes)
+            .field("owner", &owner)
+            .finish()
     }
 }
 
@@ -166,17 +224,26 @@ impl Eq for BufferStorage {}
 
 impl Drop for BufferStorage {
     fn drop(&mut self) {
-        let Some(pool) = self.recycler.as_ref().and_then(Weak::upgrade) else {
-            return;
-        };
-        if self.bytes.len() != pool.allocated_len {
-            return;
+        match self.owner.take() {
+            Some(BufferOwner::Pool(pool)) => {
+                let Some(pool) = pool.upgrade() else {
+                    return;
+                };
+                if self.bytes.len() != pool.allocated_len {
+                    return;
+                }
+                self.bytes.fill(0);
+                let storage = std::mem::take(&mut self.bytes);
+                if let Ok(mut spare) = pool.spare.lock() {
+                    spare.push(storage);
+                };
+            }
+            Some(BufferOwner::Callback(on_release)) => {
+                let storage = std::mem::take(&mut self.bytes);
+                on_release(storage);
+            }
+            None => {}
         }
-        self.bytes.fill(0);
-        let storage = std::mem::take(&mut self.bytes);
-        if let Ok(mut spare) = pool.spare.lock() {
-            spare.push(storage);
-        };
     }
 }
 
@@ -337,6 +404,79 @@ mod tests {
         let copied = BufferRef::copy_from_slice(&source);
         assert_eq!(copied.as_slice(), &source);
         assert!(copied.is_writable());
+    }
+
+    #[test]
+    fn callback_owned_buffer_releases_storage_after_last_reference() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let buffer = BufferRef::from_vec_with_release_callback(vec![1, 2, 3], move |storage| {
+            capture.lock().unwrap().push(storage);
+        });
+        let slice = buffer.slice(1, 2).unwrap();
+        let shared = buffer.clone();
+
+        drop(buffer);
+        assert!(released.lock().unwrap().is_empty());
+        drop(slice);
+        assert!(released.lock().unwrap().is_empty());
+        drop(shared);
+
+        assert_eq!(*released.lock().unwrap(), vec![vec![1, 2, 3]]);
+    }
+
+    #[test]
+    fn callback_owned_buffer_supports_visible_len_and_padding() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let buffer = BufferRef::from_vec_with_len_and_release_callback(
+            vec![1, 2, 3, 0, 0],
+            3,
+            move |storage| {
+                capture.lock().unwrap().push(storage);
+            },
+        )
+        .unwrap();
+
+        assert_eq!(buffer.as_slice(), &[1, 2, 3]);
+        assert_eq!(buffer.padding_slice(), &[0, 0]);
+        drop(buffer);
+
+        assert_eq!(*released.lock().unwrap(), vec![vec![1, 2, 3, 0, 0]]);
+    }
+
+    #[test]
+    fn callback_owned_buffer_rejects_invalid_visible_len_without_release() {
+        let release_count = std::sync::Arc::new(std::sync::Mutex::new(0usize));
+        let capture = std::sync::Arc::clone(&release_count);
+        assert_eq!(
+            BufferRef::from_vec_with_len_and_release_callback(vec![1], 2, move |_| {
+                *capture.lock().unwrap() += 1;
+            })
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(*release_count.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn callback_owned_copy_on_write_releases_only_original_storage() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_vec_with_release_callback(vec![1, 2, 3], move |storage| {
+            capture.lock().unwrap().push(storage);
+        });
+        let shared = buffer.clone();
+
+        buffer.make_mut()[0] = 9;
+        assert_eq!(buffer.as_slice(), &[9, 2, 3]);
+        assert_eq!(shared.as_slice(), &[1, 2, 3]);
+        drop(buffer);
+        assert!(released.lock().unwrap().is_empty());
+        drop(shared);
+
+        assert_eq!(*released.lock().unwrap(), vec![vec![1, 2, 3]]);
     }
 
     #[test]

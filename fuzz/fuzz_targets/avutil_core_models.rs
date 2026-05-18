@@ -9,6 +9,7 @@ use avutil::{
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
+use std::sync::{Arc, Mutex};
 
 const MAX_PAYLOAD: usize = 128;
 const MAX_SAMPLES: usize = 64;
@@ -192,6 +193,58 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(cow_pool.available_count().unwrap(), 0);
     drop(cow_shared);
     assert_eq!(cow_pool.available_count().unwrap(), 1);
+
+    let release_storage = {
+        let mut storage = payload.clone();
+        storage.resize(payload.len() + padding_len, 0);
+        storage
+    };
+    let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let capture = Arc::clone(&released);
+    let callback_buffer = BufferRef::from_vec_with_len_and_release_callback(
+        release_storage.clone(),
+        payload.len(),
+        move |storage| {
+            capture.lock().unwrap().push(storage);
+        },
+    )
+    .unwrap();
+    assert_eq!(callback_buffer.as_slice(), payload.as_slice());
+    assert_eq!(callback_buffer.padding_len(), padding_len);
+    let callback_slice = callback_buffer.slice(0, callback_buffer.len()).unwrap();
+    drop(callback_buffer);
+    assert!(released.lock().unwrap().is_empty());
+    drop(callback_slice);
+    assert_eq!(*released.lock().unwrap(), vec![release_storage]);
+
+    let rejected_release_count = Arc::new(Mutex::new(0usize));
+    let rejected_capture = Arc::clone(&rejected_release_count);
+    assert_eq!(
+        BufferRef::from_vec_with_len_and_release_callback(Vec::new(), 1, move |_| {
+            *rejected_capture.lock().unwrap() += 1;
+        })
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(*rejected_release_count.lock().unwrap(), 0);
+
+    let cow_released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let cow_capture = Arc::clone(&cow_released);
+    let mut callback_cow =
+        BufferRef::from_vec_with_release_callback(payload.clone(), move |storage| {
+            cow_capture.lock().unwrap().push(storage);
+        });
+    let callback_cow_shared = callback_cow.clone();
+    if !callback_cow.is_empty() {
+        callback_cow.make_mut()[0] = cursor.next().unwrap_or_default();
+    } else {
+        assert_eq!(callback_cow.make_mut(), &mut []);
+    }
+    drop(callback_cow);
+    assert!(cow_released.lock().unwrap().is_empty());
+    drop(callback_cow_shared);
+    assert_eq!(*cow_released.lock().unwrap(), vec![payload.clone()]);
     assert_eq!(
         BufferPool::new(1, usize::MAX).unwrap_err().kind(),
         AvErrorKind::InvalidArgument
