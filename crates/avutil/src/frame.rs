@@ -120,6 +120,40 @@ impl Frame {
         self.data.make_writable();
     }
 
+    pub fn side_data_is_writable(&self) -> bool {
+        self.side_data.iter().all(FrameSideData::is_writable)
+    }
+
+    pub fn make_side_data_writable(&mut self) {
+        for side_data in &mut self.side_data {
+            side_data.make_writable();
+        }
+    }
+
+    pub fn hw_frames_context_is_writable(&self) -> Option<bool> {
+        self.hw_frames_context.as_ref().map(BufferRef::is_writable)
+    }
+
+    pub fn make_hw_frames_context_writable(&mut self) -> bool {
+        let Some(context) = self.hw_frames_context.as_mut() else {
+            return false;
+        };
+        context.make_mut();
+        true
+    }
+
+    pub fn all_references_are_writable(&self) -> bool {
+        self.is_writable()
+            && self.side_data_is_writable()
+            && self.hw_frames_context_is_writable().unwrap_or(true)
+    }
+
+    pub fn make_all_references_writable(&mut self) {
+        self.make_writable();
+        self.make_side_data_writable();
+        self.make_hw_frames_context_writable();
+    }
+
     pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
         self.data.set_plane_visible_data(index, data)
     }
@@ -513,8 +547,20 @@ impl FrameSideData {
         self.buffer.as_slice()
     }
 
+    pub fn data_mut(&mut self) -> &mut [u8] {
+        self.buffer.make_mut()
+    }
+
     pub fn buffer(&self) -> &BufferRef {
         &self.buffer
+    }
+
+    pub fn is_writable(&self) -> bool {
+        self.buffer.is_writable()
+    }
+
+    pub fn make_writable(&mut self) {
+        self.buffer.make_mut();
     }
 
     pub fn metadata(&self) -> &Dictionary {
@@ -1655,6 +1701,88 @@ mod tests {
         assert_eq!(frame_video.plane_buffers()[0].as_slice(), &[4, 3, 2, 1]);
         assert_eq!(cloned_video.planes(), &[vec![1, 2, 3, 4]]);
         assert_eq!(source.as_slice(), &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn frame_make_all_references_writable_detaches_side_data_and_hw_context() {
+        let source = BufferRef::from_vec_readonly(vec![1]);
+        let video =
+            VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![source.clone()])
+                .unwrap();
+        let side_data = BufferRef::from_vec_readonly(vec![0x10, 0x11]);
+        let hw_context = BufferRef::from_vec_readonly(vec![0x20, 0x21]);
+        let mut frame = Frame::video(video).with_hw_frames_context(hw_context.clone());
+        frame
+            .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side_data.clone())
+            .unwrap();
+        let cloned = frame.clone();
+
+        assert!(!frame.is_writable());
+        assert!(!frame.side_data_is_writable());
+        assert_eq!(frame.hw_frames_context_is_writable(), Some(false));
+        assert!(!frame.all_references_are_writable());
+
+        frame.make_all_references_writable();
+
+        assert!(frame.is_writable());
+        assert!(frame.side_data_is_writable());
+        assert_eq!(frame.hw_frames_context_is_writable(), Some(true));
+        assert!(frame.all_references_are_writable());
+
+        let (frame_video, cloned_video) = match (frame.data(), cloned.data()) {
+            (FrameData::Video(frame_video), FrameData::Video(cloned_video)) => {
+                (frame_video, cloned_video)
+            }
+            _ => panic!("expected video frames"),
+        };
+        assert!(!frame_video.plane_buffers()[0].shares_storage(&source));
+        assert!(cloned_video.plane_buffers()[0].shares_storage(&source));
+        assert!(!frame.side_data()[0].buffer().shares_storage(&side_data));
+        assert!(cloned.side_data()[0].buffer().shares_storage(&side_data));
+        assert!(!frame.side_data()[0]
+            .buffer()
+            .shares_storage(cloned.side_data()[0].buffer()));
+        assert!(!frame
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(&hw_context));
+        assert!(cloned
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(&hw_context));
+        assert!(!frame
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(cloned.hw_frames_context().unwrap()));
+
+        frame.set_plane_visible_data(0, &[9]).unwrap();
+        frame
+            .side_data_by_kind_mut(&FrameSideDataKind::DisplayMatrix)
+            .unwrap()
+            .data_mut()[0] = 0x99;
+
+        let (frame_video, cloned_video) = match (frame.data(), cloned.data()) {
+            (FrameData::Video(frame_video), FrameData::Video(cloned_video)) => {
+                (frame_video, cloned_video)
+            }
+            _ => panic!("expected video frames"),
+        };
+        assert_eq!(frame_video.planes(), &[vec![9]]);
+        assert_eq!(cloned_video.planes(), &[vec![1]]);
+        assert_eq!(source.as_slice(), &[1]);
+        assert_eq!(frame.side_data()[0].data(), &[0x99, 0x11]);
+        assert_eq!(cloned.side_data()[0].data(), &[0x10, 0x11]);
+        assert_eq!(side_data.as_slice(), &[0x10, 0x11]);
+        assert_eq!(frame.hw_frames_context().unwrap().as_slice(), &[0x20, 0x21]);
+        assert_eq!(hw_context.as_slice(), &[0x20, 0x21]);
+
+        let mut empty = Frame::empty();
+        assert!(empty.side_data_is_writable());
+        assert_eq!(empty.hw_frames_context_is_writable(), None);
+        assert!(!empty.make_hw_frames_context_writable());
+        assert!(!empty.all_references_are_writable());
+        empty.make_all_references_writable();
+        assert!(empty.is_empty());
     }
 
     #[test]

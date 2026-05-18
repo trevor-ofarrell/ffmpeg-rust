@@ -1401,6 +1401,48 @@ fn exercise_fixtures() {
     moved_frame.unref();
     assert!(moved_frame.is_empty());
 
+    let mut permission_frame = Frame::video(
+        VideoFrame::new_with_buffer_refs(
+            1,
+            1,
+            PixelFormat::Gray8,
+            vec![BufferRef::from_vec_readonly(vec![1])],
+        )
+        .unwrap(),
+    )
+    .with_hw_frames_context(BufferRef::from_vec_readonly(vec![0x20]));
+    permission_frame
+        .set_side_data_kind_buffer(
+            FrameSideDataKind::IccProfile,
+            BufferRef::from_vec_readonly(vec![0x10]),
+        )
+        .unwrap();
+    let permission_clone = permission_frame.clone();
+    assert!(!permission_frame.is_writable());
+    assert!(!permission_frame.side_data_is_writable());
+    assert_eq!(
+        permission_frame.hw_frames_context_is_writable(),
+        Some(false)
+    );
+    assert!(!permission_frame.all_references_are_writable());
+    permission_frame.make_all_references_writable();
+    assert!(permission_frame.all_references_are_writable());
+    assert!(!permission_frame.side_data()[0]
+        .buffer()
+        .shares_storage(permission_clone.side_data()[0].buffer()));
+    assert!(!permission_frame
+        .hw_frames_context()
+        .unwrap()
+        .shares_storage(permission_clone.hw_frames_context().unwrap()));
+    permission_frame
+        .side_data_by_kind_mut(&FrameSideDataKind::IccProfile)
+        .unwrap()
+        .data_mut()[0] ^= 0xFF;
+    assert_ne!(
+        permission_frame.side_data()[0].data(),
+        permission_clone.side_data()[0].data()
+    );
+
     let audio = AudioFrame::new_with_channel_layout(
         48_000,
         ChannelLayout::stereo(),
