@@ -714,6 +714,33 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     frame.set_pts(pts);
     assert_eq!(frame.pts(), pts);
     assert!(matches!(frame.data(), FrameData::Video(_)));
+    assert!(frame.hw_frames_context().is_none());
+
+    let context_payload = vec![cursor.next().unwrap_or_default()];
+    let released_contexts = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let release_capture = Arc::clone(&released_contexts);
+    let context = BufferRef::from_external_slice_with_opaque_readonly(
+        Arc::<[u8]>::from(context_payload.clone()),
+        context_payload.clone(),
+        move |opaque| {
+            release_capture.lock().unwrap().push(opaque);
+        },
+    );
+    frame.set_hw_frames_context(Some(context.clone()));
+    assert!(frame.hw_frames_context().unwrap().shares_storage(&context));
+    assert_eq!(
+        frame.hw_frames_context().unwrap().opaque_ref::<Vec<u8>>(),
+        Some(&context_payload)
+    );
+    let cloned_frame = frame.clone();
+    drop(context);
+    assert!(released_contexts.lock().unwrap().is_empty());
+    let taken_context = frame.take_hw_frames_context().unwrap();
+    assert!(frame.hw_frames_context().is_none());
+    drop(taken_context);
+    assert!(released_contexts.lock().unwrap().is_empty());
+    drop(cloned_frame);
+    assert_eq!(*released_contexts.lock().unwrap(), vec![context_payload]);
 
     if frame_size > 0 {
         let err = pixel_format

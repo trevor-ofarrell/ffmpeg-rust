@@ -1,4 +1,4 @@
-use crate::{AvError, AvResult, ChannelLayout, PixelFormat, SampleFormat};
+use crate::{AvError, AvResult, BufferRef, ChannelLayout, PixelFormat, SampleFormat};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrameData {
@@ -10,6 +10,7 @@ pub enum FrameData {
 pub struct Frame {
     pts: Option<i64>,
     data: FrameData,
+    hw_frames_context: Option<BufferRef>,
 }
 
 impl Frame {
@@ -17,6 +18,7 @@ impl Frame {
         Self {
             pts: None,
             data: FrameData::Video(frame),
+            hw_frames_context: None,
         }
     }
 
@@ -24,6 +26,7 @@ impl Frame {
         Self {
             pts: None,
             data: FrameData::Audio(frame),
+            hw_frames_context: None,
         }
     }
 
@@ -37,6 +40,23 @@ impl Frame {
 
     pub fn data(&self) -> &FrameData {
         &self.data
+    }
+
+    pub fn hw_frames_context(&self) -> Option<&BufferRef> {
+        self.hw_frames_context.as_ref()
+    }
+
+    pub fn with_hw_frames_context(mut self, context: BufferRef) -> Self {
+        self.hw_frames_context = Some(context);
+        self
+    }
+
+    pub fn set_hw_frames_context(&mut self, context: Option<BufferRef>) {
+        self.hw_frames_context = context;
+    }
+
+    pub fn take_hw_frames_context(&mut self) -> Option<BufferRef> {
+        self.hw_frames_context.take()
     }
 }
 
@@ -347,8 +367,87 @@ mod tests {
         let mut frame = Frame::video(video);
 
         assert_eq!(frame.pts(), None);
+        assert!(frame.hw_frames_context().is_none());
         frame.set_pts(Some(42));
         assert_eq!(frame.pts(), Some(42));
         assert!(matches!(frame.data(), FrameData::Video(_)));
+    }
+
+    #[test]
+    fn frame_hw_context_tracks_buffer_lifetime_and_clone_sharing() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let release_capture = std::sync::Arc::clone(&released);
+        let context = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![0]),
+            String::from("frames"),
+            move |opaque| {
+                release_capture.lock().unwrap().push(opaque);
+            },
+        );
+        let video = VideoFrame::new(1, 1, PixelFormat::Gray8, vec![vec![7]]).unwrap();
+        let mut frame = Frame::video(video).with_hw_frames_context(context.clone());
+        let cloned = frame.clone();
+
+        assert!(frame.hw_frames_context().unwrap().shares_storage(&context));
+        assert!(cloned
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(frame.hw_frames_context().unwrap()));
+        assert_eq!(
+            context.opaque_ref::<String>().map(String::as_str),
+            Some("frames")
+        );
+        assert_eq!(
+            frame
+                .hw_frames_context()
+                .unwrap()
+                .opaque_ref::<String>()
+                .map(String::as_str),
+            Some("frames")
+        );
+
+        drop(context);
+        assert!(released.lock().unwrap().is_empty());
+        let taken = frame.take_hw_frames_context().unwrap();
+        assert!(frame.hw_frames_context().is_none());
+        drop(frame);
+        assert!(released.lock().unwrap().is_empty());
+        drop(taken);
+        assert!(released.lock().unwrap().is_empty());
+        drop(cloned);
+        assert_eq!(*released.lock().unwrap(), vec![String::from("frames")]);
+    }
+
+    #[test]
+    fn frame_hw_context_replacement_releases_unshared_context() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let first_release = std::sync::Arc::clone(&released);
+        let second_release = std::sync::Arc::clone(&released);
+        let first = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![1]),
+            String::from("first"),
+            move |opaque| {
+                first_release.lock().unwrap().push(opaque);
+            },
+        );
+        let second = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![2]),
+            String::from("second"),
+            move |opaque| {
+                second_release.lock().unwrap().push(opaque);
+            },
+        );
+        let audio = AudioFrame::new(48_000, 1, SampleFormat::S16, 1, vec![vec![0; 2]]).unwrap();
+        let mut frame = Frame::audio(audio);
+
+        frame.set_hw_frames_context(Some(first));
+        assert!(released.lock().unwrap().is_empty());
+        frame.set_hw_frames_context(Some(second));
+        assert_eq!(*released.lock().unwrap(), vec![String::from("first")]);
+        frame.set_hw_frames_context(None);
+        assert_eq!(
+            *released.lock().unwrap(),
+            vec![String::from("first"), String::from("second")]
+        );
     }
 }
