@@ -708,6 +708,27 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         expected_video_line_sizes(pixel_format, width).as_slice()
     );
     assert_eq!(video.planes(), planes.as_slice());
+    assert_eq!(video.plane_buffers().len(), planes.len());
+    for (plane_buffer, plane) in video.plane_buffers().iter().zip(&planes) {
+        assert_eq!(plane_buffer.as_slice(), plane.as_slice());
+    }
+
+    let video_plane_buffers = planes
+        .iter()
+        .map(|plane| BufferRef::copy_from_slice_with_padding(plane, 1).unwrap())
+        .collect::<Vec<_>>();
+    let video_from_buffers =
+        VideoFrame::new_with_buffer_refs(width, height, pixel_format, video_plane_buffers.clone())
+            .unwrap();
+    assert_eq!(video_from_buffers.planes(), planes.as_slice());
+    for (stored, source) in video_from_buffers
+        .plane_buffers()
+        .iter()
+        .zip(&video_plane_buffers)
+    {
+        assert!(stored.shares_storage(source));
+        assert_eq!(stored.padding_slice(), &[0]);
+    }
 
     let mut frame = Frame::video(video);
     let pts = timestamp_from(cursor.next());
@@ -801,6 +822,31 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(audio.samples_per_channel(), samples_per_channel);
     assert_eq!(audio.line_sizes(), plane_sizes.as_slice());
     assert_eq!(audio.planes(), planes.as_slice());
+    assert_eq!(audio.plane_buffers().len(), planes.len());
+    for (plane_buffer, plane) in audio.plane_buffers().iter().zip(&planes) {
+        assert_eq!(plane_buffer.as_slice(), plane.as_slice());
+    }
+    let audio_plane_buffers = planes
+        .iter()
+        .map(|plane| BufferRef::copy_from_slice_with_padding(plane, 1).unwrap())
+        .collect::<Vec<_>>();
+    let audio_from_buffers = AudioFrame::new_with_buffer_refs(
+        sample_rate,
+        channels,
+        sample_format,
+        samples_per_channel,
+        audio_plane_buffers.clone(),
+    )
+    .unwrap();
+    assert_eq!(audio_from_buffers.planes(), planes.as_slice());
+    for (stored, source) in audio_from_buffers
+        .plane_buffers()
+        .iter()
+        .zip(&audio_plane_buffers)
+    {
+        assert!(stored.shares_storage(source));
+        assert_eq!(stored.padding_slice(), &[0]);
+    }
     assert_eq!(
         audio.channel_layout(),
         ChannelLayout::default_for_count(channels)

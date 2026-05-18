@@ -67,6 +67,7 @@ pub struct VideoFrame {
     pixel_format: PixelFormat,
     line_sizes: Vec<usize>,
     planes: Vec<Vec<u8>>,
+    plane_buffers: Vec<BufferRef>,
 }
 
 impl VideoFrame {
@@ -76,6 +77,16 @@ impl VideoFrame {
         pixel_format: PixelFormat,
         planes: Vec<Vec<u8>>,
     ) -> AvResult<Self> {
+        let plane_buffers = planes.into_iter().map(BufferRef::from_vec).collect();
+        Self::new_with_buffer_refs(width, height, pixel_format, plane_buffers)
+    }
+
+    pub fn new_with_buffer_refs(
+        width: usize,
+        height: usize,
+        pixel_format: PixelFormat,
+        plane_buffers: Vec<BufferRef>,
+    ) -> AvResult<Self> {
         if width == 0 || height == 0 {
             return Err(AvError::invalid_argument(
                 "video frame dimensions must be non-zero",
@@ -83,24 +94,12 @@ impl VideoFrame {
         }
 
         let expected_plane_sizes = pixel_format.plane_sizes(width, height)?;
-        if planes.len() != expected_plane_sizes.len() {
-            return Err(AvError::invalid_argument(format!(
-                "{} video frame expects {} planes, got {}",
-                pixel_format.name(),
-                expected_plane_sizes.len(),
-                planes.len()
-            )));
-        }
-        for (index, (plane, expected_size)) in planes.iter().zip(&expected_plane_sizes).enumerate()
-        {
-            if plane.len() != *expected_size {
-                return Err(AvError::invalid_data(format!(
-                    "{} video frame plane {index} has {} bytes, expected {expected_size}",
-                    pixel_format.name(),
-                    plane.len()
-                )));
-            }
-        }
+        let planes = snapshot_plane_buffers(
+            &plane_buffers,
+            &expected_plane_sizes,
+            pixel_format.name(),
+            "video",
+        )?;
         let line_sizes = video_line_sizes(pixel_format, width, height)?;
 
         Ok(Self {
@@ -109,6 +108,7 @@ impl VideoFrame {
             pixel_format,
             line_sizes,
             planes,
+            plane_buffers,
         })
     }
 
@@ -135,6 +135,10 @@ impl VideoFrame {
     pub fn planes(&self) -> &[Vec<u8>] {
         &self.planes
     }
+
+    pub fn plane_buffers(&self) -> &[BufferRef] {
+        &self.plane_buffers
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +150,7 @@ pub struct AudioFrame {
     samples_per_channel: usize,
     line_sizes: Vec<usize>,
     planes: Vec<Vec<u8>>,
+    plane_buffers: Vec<BufferRef>,
 }
 
 impl AudioFrame {
@@ -156,13 +161,30 @@ impl AudioFrame {
         samples_per_channel: usize,
         planes: Vec<Vec<u8>>,
     ) -> AvResult<Self> {
+        let plane_buffers = planes.into_iter().map(BufferRef::from_vec).collect();
+        Self::new_with_buffer_refs(
+            sample_rate,
+            channels,
+            sample_format,
+            samples_per_channel,
+            plane_buffers,
+        )
+    }
+
+    pub fn new_with_buffer_refs(
+        sample_rate: u32,
+        channels: u16,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        plane_buffers: Vec<BufferRef>,
+    ) -> AvResult<Self> {
         Self::new_inner(
             sample_rate,
             channels,
             ChannelLayout::default_for_count(channels),
             sample_format,
             samples_per_channel,
-            planes,
+            plane_buffers,
         )
     }
 
@@ -173,6 +195,23 @@ impl AudioFrame {
         samples_per_channel: usize,
         planes: Vec<Vec<u8>>,
     ) -> AvResult<Self> {
+        let plane_buffers = planes.into_iter().map(BufferRef::from_vec).collect();
+        Self::new_with_channel_layout_and_buffer_refs(
+            sample_rate,
+            channel_layout,
+            sample_format,
+            samples_per_channel,
+            plane_buffers,
+        )
+    }
+
+    pub fn new_with_channel_layout_and_buffer_refs(
+        sample_rate: u32,
+        channel_layout: ChannelLayout,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        plane_buffers: Vec<BufferRef>,
+    ) -> AvResult<Self> {
         let channels = channel_layout.channel_count();
         Self::new_inner(
             sample_rate,
@@ -180,7 +219,7 @@ impl AudioFrame {
             Some(channel_layout),
             sample_format,
             samples_per_channel,
-            planes,
+            plane_buffers,
         )
     }
 
@@ -190,7 +229,7 @@ impl AudioFrame {
         channel_layout: Option<ChannelLayout>,
         sample_format: SampleFormat,
         samples_per_channel: usize,
-        planes: Vec<Vec<u8>>,
+        plane_buffers: Vec<BufferRef>,
     ) -> AvResult<Self> {
         if sample_rate == 0 {
             return Err(AvError::invalid_argument(
@@ -209,24 +248,12 @@ impl AudioFrame {
         }
 
         let expected_plane_sizes = sample_format.plane_sizes(samples_per_channel, channels)?;
-        if planes.len() != expected_plane_sizes.len() {
-            return Err(AvError::invalid_argument(format!(
-                "{} audio frame expects {} planes, got {}",
-                sample_format.name(),
-                expected_plane_sizes.len(),
-                planes.len()
-            )));
-        }
-        for (index, (plane, expected_size)) in planes.iter().zip(&expected_plane_sizes).enumerate()
-        {
-            if plane.len() != *expected_size {
-                return Err(AvError::invalid_data(format!(
-                    "{} audio frame plane {index} has {} bytes, expected {expected_size}",
-                    sample_format.name(),
-                    plane.len()
-                )));
-            }
-        }
+        let planes = snapshot_plane_buffers(
+            &plane_buffers,
+            &expected_plane_sizes,
+            sample_format.name(),
+            "audio",
+        )?;
 
         Ok(Self {
             sample_rate,
@@ -236,6 +263,7 @@ impl AudioFrame {
             samples_per_channel,
             line_sizes: expected_plane_sizes,
             planes,
+            plane_buffers,
         })
     }
 
@@ -270,6 +298,39 @@ impl AudioFrame {
     pub fn planes(&self) -> &[Vec<u8>] {
         &self.planes
     }
+
+    pub fn plane_buffers(&self) -> &[BufferRef] {
+        &self.plane_buffers
+    }
+}
+
+fn snapshot_plane_buffers(
+    plane_buffers: &[BufferRef],
+    expected_plane_sizes: &[usize],
+    format_name: &str,
+    media_kind: &str,
+) -> AvResult<Vec<Vec<u8>>> {
+    if plane_buffers.len() != expected_plane_sizes.len() {
+        return Err(AvError::invalid_argument(format!(
+            "{format_name} {media_kind} frame expects {} planes, got {}",
+            expected_plane_sizes.len(),
+            plane_buffers.len()
+        )));
+    }
+
+    let mut planes = Vec::with_capacity(plane_buffers.len());
+    for (index, (plane, expected_size)) in
+        plane_buffers.iter().zip(expected_plane_sizes).enumerate()
+    {
+        if plane.len() != *expected_size {
+            return Err(AvError::invalid_data(format!(
+                "{format_name} {media_kind} frame plane {index} has {} bytes, expected {expected_size}",
+                plane.len()
+            )));
+        }
+        planes.push(plane.as_slice().to_vec());
+    }
+    Ok(planes)
 }
 
 fn video_line_sizes(
@@ -296,6 +357,7 @@ fn checked_mul(value: usize, factor: usize, context: &'static str) -> AvResult<u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AvErrorKind;
 
     #[test]
     fn video_frame_validates_required_shape() {
@@ -338,6 +400,124 @@ mod tests {
         assert_eq!(mono.channels(), 1);
         assert_eq!(mono.channel_layout(), Some(ChannelLayout::mono()));
         assert_eq!(mono.line_sizes(), &[2]);
+    }
+
+    #[test]
+    fn video_frame_retains_buffer_ref_planes_and_visible_bytes() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let release_capture = std::sync::Arc::clone(&released);
+        let plane = BufferRef::from_external_slice_with_len_and_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![1, 2, 3, 99]),
+            3,
+            String::from("video-plane"),
+            move |opaque| {
+                release_capture.lock().unwrap().push(opaque);
+            },
+        )
+        .unwrap();
+        let frame = VideoFrame::new_with_buffer_refs(3, 1, PixelFormat::Gray8, vec![plane.clone()])
+            .unwrap();
+        let cloned = frame.clone();
+
+        assert_eq!(frame.planes(), &[vec![1, 2, 3]]);
+        assert_eq!(frame.plane_buffers()[0].as_slice(), &[1, 2, 3]);
+        assert_eq!(frame.plane_buffers()[0].padding_slice(), &[99]);
+        assert!(frame.plane_buffers()[0].shares_storage(&plane));
+        assert!(cloned.plane_buffers()[0].shares_storage(&frame.plane_buffers()[0]));
+
+        drop(plane);
+        assert!(released.lock().unwrap().is_empty());
+        drop(frame);
+        assert!(released.lock().unwrap().is_empty());
+        drop(cloned);
+        assert_eq!(*released.lock().unwrap(), vec![String::from("video-plane")]);
+    }
+
+    #[test]
+    fn video_frame_buffer_refs_validate_plane_count_and_size() {
+        assert_eq!(
+            VideoFrame::new_with_buffer_refs(2, 2, PixelFormat::Gray8, Vec::new())
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            VideoFrame::new_with_buffer_refs(
+                2,
+                2,
+                PixelFormat::Gray8,
+                vec![BufferRef::copy_from_slice(&[0; 3])],
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn audio_frame_retains_buffer_ref_planes_and_visible_bytes() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let release_capture = std::sync::Arc::clone(&released);
+        let plane = BufferRef::from_external_slice_with_len_and_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![0, 0, 1, 0, 55]),
+            4,
+            String::from("audio-plane"),
+            move |opaque| {
+                release_capture.lock().unwrap().push(opaque);
+            },
+        )
+        .unwrap();
+        let frame =
+            AudioFrame::new_with_buffer_refs(48_000, 2, SampleFormat::S16, 1, vec![plane.clone()])
+                .unwrap();
+        let cloned = frame.clone();
+
+        assert_eq!(frame.channel_layout(), Some(ChannelLayout::stereo()));
+        assert_eq!(frame.planes(), &[vec![0, 0, 1, 0]]);
+        assert_eq!(frame.plane_buffers()[0].padding_slice(), &[55]);
+        assert!(frame.plane_buffers()[0].shares_storage(&plane));
+        assert!(cloned.plane_buffers()[0].shares_storage(&frame.plane_buffers()[0]));
+
+        drop(plane);
+        assert!(released.lock().unwrap().is_empty());
+        drop(frame);
+        assert!(released.lock().unwrap().is_empty());
+        drop(cloned);
+        assert_eq!(*released.lock().unwrap(), vec![String::from("audio-plane")]);
+    }
+
+    #[test]
+    fn audio_frame_buffer_refs_validate_plane_count_size_and_layout() {
+        assert_eq!(
+            AudioFrame::new_with_buffer_refs(48_000, 2, SampleFormat::S16, 1, Vec::new())
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            AudioFrame::new_with_buffer_refs(
+                48_000,
+                2,
+                SampleFormat::S16,
+                1,
+                vec![BufferRef::copy_from_slice(&[0; 3])],
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            AudioFrame::new_with_channel_layout_and_buffer_refs(
+                48_000,
+                ChannelLayout::stereo(),
+                SampleFormat::S16,
+                1,
+                vec![BufferRef::copy_from_slice(&[0; 2])],
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
+        );
     }
 
     #[test]
