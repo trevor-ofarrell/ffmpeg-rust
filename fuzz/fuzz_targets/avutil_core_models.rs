@@ -5,7 +5,7 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameData, FrameSideData,
     FrameSideDataKind, Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1053,6 +1053,44 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(
         sample_format.bytes_per_sample(),
         expected_sample_bytes(sample_format)
+    );
+    assert_eq!(
+        sample_format.sample_bits(),
+        sample_format.bytes_per_sample() * 8
+    );
+    assert_eq!(
+        sample_format.family().bytes_per_sample(),
+        sample_format.bytes_per_sample()
+    );
+    assert_eq!(
+        sample_format.family().sample_bits(),
+        sample_format.sample_bits()
+    );
+    assert_eq!(
+        sample_format.family().numeric_kind(),
+        sample_format.numeric_kind()
+    );
+    assert_eq!(sample_format.packed(), sample_format.with_planar(false));
+    assert_eq!(sample_format.planar(), sample_format.with_planar(true));
+    assert_eq!(sample_format.packed().planar(), sample_format.planar());
+    assert_eq!(sample_format.planar().packed(), sample_format.packed());
+    assert!(!sample_format.packed().is_planar());
+    assert!(sample_format.planar().is_planar());
+    assert_eq!(
+        sample_format.is_float(),
+        sample_format.numeric_kind() == SampleFormatNumericKind::Float
+    );
+    assert_eq!(
+        sample_format.is_integer(),
+        sample_format.numeric_kind() != SampleFormatNumericKind::Float
+    );
+    assert_eq!(
+        sample_format.is_signed_integer(),
+        sample_format.numeric_kind() == SampleFormatNumericKind::SignedInteger
+    );
+    assert_eq!(
+        sample_format.is_unsigned_integer(),
+        sample_format.numeric_kind() == SampleFormatNumericKind::UnsignedInteger
     );
     assert_eq!(
         sample_format.bytes_per_sample_frame(channels).unwrap(),

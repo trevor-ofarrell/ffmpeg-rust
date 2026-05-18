@@ -16,6 +16,63 @@ pub enum SampleFormat {
     S64P,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SampleFormatFamily {
+    U8,
+    S16,
+    S32,
+    Flt,
+    Dbl,
+    S64,
+}
+
+impl SampleFormatFamily {
+    pub fn packed(self) -> SampleFormat {
+        match self {
+            Self::U8 => SampleFormat::U8,
+            Self::S16 => SampleFormat::S16,
+            Self::S32 => SampleFormat::S32,
+            Self::Flt => SampleFormat::Flt,
+            Self::Dbl => SampleFormat::Dbl,
+            Self::S64 => SampleFormat::S64,
+        }
+    }
+
+    pub fn planar(self) -> SampleFormat {
+        match self {
+            Self::U8 => SampleFormat::U8P,
+            Self::S16 => SampleFormat::S16P,
+            Self::S32 => SampleFormat::S32P,
+            Self::Flt => SampleFormat::FltP,
+            Self::Dbl => SampleFormat::DblP,
+            Self::S64 => SampleFormat::S64P,
+        }
+    }
+
+    pub fn numeric_kind(self) -> SampleFormatNumericKind {
+        match self {
+            Self::U8 => SampleFormatNumericKind::UnsignedInteger,
+            Self::S16 | Self::S32 | Self::S64 => SampleFormatNumericKind::SignedInteger,
+            Self::Flt | Self::Dbl => SampleFormatNumericKind::Float,
+        }
+    }
+
+    pub fn bytes_per_sample(self) -> usize {
+        self.packed().bytes_per_sample()
+    }
+
+    pub fn sample_bits(self) -> usize {
+        self.bytes_per_sample() * 8
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SampleFormatNumericKind {
+    UnsignedInteger,
+    SignedInteger,
+    Float,
+}
+
 impl SampleFormat {
     pub const ALL: [Self; 12] = [
         Self::U8,
@@ -76,11 +133,62 @@ impl SampleFormat {
         }
     }
 
+    pub fn sample_bits(self) -> usize {
+        self.bytes_per_sample() * 8
+    }
+
     pub fn is_planar(self) -> bool {
         matches!(
             self,
             Self::U8P | Self::S16P | Self::S32P | Self::FltP | Self::DblP | Self::S64P
         )
+    }
+
+    pub fn family(self) -> SampleFormatFamily {
+        match self {
+            Self::U8 | Self::U8P => SampleFormatFamily::U8,
+            Self::S16 | Self::S16P => SampleFormatFamily::S16,
+            Self::S32 | Self::S32P => SampleFormatFamily::S32,
+            Self::Flt | Self::FltP => SampleFormatFamily::Flt,
+            Self::Dbl | Self::DblP => SampleFormatFamily::Dbl,
+            Self::S64 | Self::S64P => SampleFormatFamily::S64,
+        }
+    }
+
+    pub fn numeric_kind(self) -> SampleFormatNumericKind {
+        self.family().numeric_kind()
+    }
+
+    pub fn is_integer(self) -> bool {
+        !self.is_float()
+    }
+
+    pub fn is_float(self) -> bool {
+        self.numeric_kind() == SampleFormatNumericKind::Float
+    }
+
+    pub fn is_signed_integer(self) -> bool {
+        self.numeric_kind() == SampleFormatNumericKind::SignedInteger
+    }
+
+    pub fn is_unsigned_integer(self) -> bool {
+        self.numeric_kind() == SampleFormatNumericKind::UnsignedInteger
+    }
+
+    pub fn packed(self) -> Self {
+        self.family().packed()
+    }
+
+    pub fn planar(self) -> Self {
+        self.family().planar()
+    }
+
+    pub fn with_planar(self, planar: bool) -> Self {
+        if planar {
+            self.planar()
+        } else {
+            self.packed()
+        }
     }
 
     pub fn plane_count(self, channels: u16) -> AvResult<usize> {
@@ -208,6 +316,129 @@ mod tests {
                 vec![1024 * bytes_per_sample, 1024 * bytes_per_sample]
             );
             assert_eq!(format.plane_sizes(0, 3).unwrap(), vec![0, 0, 0]);
+        }
+    }
+
+    #[test]
+    fn sample_formats_report_descriptor_metadata_and_counterparts() {
+        let cases = [
+            (
+                SampleFormat::U8,
+                SampleFormatFamily::U8,
+                SampleFormatNumericKind::UnsignedInteger,
+                SampleFormat::U8,
+                SampleFormat::U8P,
+            ),
+            (
+                SampleFormat::S16,
+                SampleFormatFamily::S16,
+                SampleFormatNumericKind::SignedInteger,
+                SampleFormat::S16,
+                SampleFormat::S16P,
+            ),
+            (
+                SampleFormat::S32,
+                SampleFormatFamily::S32,
+                SampleFormatNumericKind::SignedInteger,
+                SampleFormat::S32,
+                SampleFormat::S32P,
+            ),
+            (
+                SampleFormat::Flt,
+                SampleFormatFamily::Flt,
+                SampleFormatNumericKind::Float,
+                SampleFormat::Flt,
+                SampleFormat::FltP,
+            ),
+            (
+                SampleFormat::Dbl,
+                SampleFormatFamily::Dbl,
+                SampleFormatNumericKind::Float,
+                SampleFormat::Dbl,
+                SampleFormat::DblP,
+            ),
+            (
+                SampleFormat::U8P,
+                SampleFormatFamily::U8,
+                SampleFormatNumericKind::UnsignedInteger,
+                SampleFormat::U8,
+                SampleFormat::U8P,
+            ),
+            (
+                SampleFormat::S16P,
+                SampleFormatFamily::S16,
+                SampleFormatNumericKind::SignedInteger,
+                SampleFormat::S16,
+                SampleFormat::S16P,
+            ),
+            (
+                SampleFormat::S32P,
+                SampleFormatFamily::S32,
+                SampleFormatNumericKind::SignedInteger,
+                SampleFormat::S32,
+                SampleFormat::S32P,
+            ),
+            (
+                SampleFormat::FltP,
+                SampleFormatFamily::Flt,
+                SampleFormatNumericKind::Float,
+                SampleFormat::Flt,
+                SampleFormat::FltP,
+            ),
+            (
+                SampleFormat::DblP,
+                SampleFormatFamily::Dbl,
+                SampleFormatNumericKind::Float,
+                SampleFormat::Dbl,
+                SampleFormat::DblP,
+            ),
+            (
+                SampleFormat::S64,
+                SampleFormatFamily::S64,
+                SampleFormatNumericKind::SignedInteger,
+                SampleFormat::S64,
+                SampleFormat::S64P,
+            ),
+            (
+                SampleFormat::S64P,
+                SampleFormatFamily::S64,
+                SampleFormatNumericKind::SignedInteger,
+                SampleFormat::S64,
+                SampleFormat::S64P,
+            ),
+        ];
+
+        for (format, family, numeric_kind, packed, planar) in cases {
+            assert_eq!(format.family(), family);
+            assert_eq!(format.numeric_kind(), numeric_kind);
+            assert_eq!(format.sample_bits(), format.bytes_per_sample() * 8);
+            assert_eq!(family.bytes_per_sample(), format.bytes_per_sample());
+            assert_eq!(family.sample_bits(), format.sample_bits());
+            assert_eq!(family.numeric_kind(), numeric_kind);
+            assert_eq!(format.packed(), packed);
+            assert_eq!(format.planar(), planar);
+            assert_eq!(format.with_planar(false), packed);
+            assert_eq!(format.with_planar(true), planar);
+            assert_eq!(family.packed(), packed);
+            assert_eq!(family.planar(), planar);
+            assert!(!packed.is_planar());
+            assert!(planar.is_planar());
+            assert_eq!(
+                format.is_float(),
+                numeric_kind == SampleFormatNumericKind::Float
+            );
+            assert_eq!(
+                format.is_integer(),
+                numeric_kind != SampleFormatNumericKind::Float
+            );
+            assert_eq!(
+                format.is_signed_integer(),
+                numeric_kind == SampleFormatNumericKind::SignedInteger
+            );
+            assert_eq!(
+                format.is_unsigned_integer(),
+                numeric_kind == SampleFormatNumericKind::UnsignedInteger
+            );
         }
     }
 

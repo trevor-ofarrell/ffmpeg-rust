@@ -37,5 +37,5 @@ pub use options::{
 pub use packet::{Packet, PacketFlags, SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN};
 pub use pixel::PixelFormat;
 pub use rational::Rational;
-pub use samplefmt::SampleFormat;
+pub use samplefmt::{SampleFormat, SampleFormatFamily, SampleFormatNumericKind};
 pub use timebase::{rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, Rounding};
