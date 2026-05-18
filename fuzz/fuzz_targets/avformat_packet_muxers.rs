@@ -1,6 +1,9 @@
 #![no_main]
 
-use avformat::{FrameCrcMuxer, FrameHashMuxer, HashAlgorithm, HashDigest, HashMuxer, NullMuxer};
+use avformat::{
+    FrameCrcMuxer, FrameHashMuxer, HashAlgorithm, HashDigest, HashMuxer, NullMuxer,
+    StreamHashMuxer, StreamHashStreamType,
+};
 use avutil::{
     adler32, crc32_ieee, md5, sha224, sha256, sha384, sha512, AvErrorKind, Packet, SideData,
 };
@@ -27,6 +30,7 @@ fuzz_target!(|data: &[u8]| {
     exercise_hash_muxers(&packets);
     exercise_framecrc_muxer(&packets);
     exercise_framehash_muxers(&packets);
+    exercise_streamhash_muxers(&packets);
     exercise_fixtures();
 });
 
@@ -206,6 +210,97 @@ fn exercise_framehash_muxers(packets: &[Packet]) {
     }
 }
 
+fn exercise_streamhash_muxers(packets: &[Packet]) {
+    for algorithm in [
+        HashAlgorithm::Adler32,
+        HashAlgorithm::Crc32,
+        HashAlgorithm::Md5,
+        HashAlgorithm::Sha224,
+        HashAlgorithm::Sha256,
+        HashAlgorithm::Sha384,
+        HashAlgorithm::Sha512,
+    ] {
+        let mut muxer = StreamHashMuxer::new(algorithm);
+        let mut streams = Vec::<ExpectedStreamHash>::new();
+
+        for packet in packets {
+            let stream_type = stream_type_for(packet.stream_index());
+            muxer.write_packet(packet, stream_type).unwrap();
+            while streams.len() <= packet.stream_index() {
+                let stream_index = streams.len();
+                streams.push(ExpectedStreamHash {
+                    stream_type: stream_type_for(stream_index),
+                    payload: Vec::new(),
+                    packets: 0,
+                    bytes: 0,
+                });
+            }
+            let expected = &mut streams[packet.stream_index()];
+            expected.payload.extend_from_slice(packet.data());
+            expected.packets += 1;
+            expected.bytes += packet.data().len() as u64;
+
+            let records = muxer.records();
+            let record = records
+                .iter()
+                .find(|record| record.stream_index() == packet.stream_index())
+                .unwrap();
+            assert_eq!(record.stream_type(), stream_type);
+            assert_eq!(record.algorithm(), algorithm);
+            assert_eq!(record.digest(), &digest_for(algorithm, &expected.payload));
+            assert_eq!(record.packets(), expected.packets);
+            assert_eq!(record.bytes(), expected.bytes);
+            assert_eq!(
+                record.line(),
+                format!(
+                    "{},{},{}={}\n",
+                    packet.stream_index(),
+                    stream_type.code(),
+                    algorithm.name(),
+                    digest_for(algorithm, &expected.payload).hex()
+                )
+            );
+        }
+
+        let records = muxer.records();
+        assert_eq!(
+            records.len(),
+            streams
+                .iter()
+                .enumerate()
+                .filter(|(_, stream)| !stream.payload.is_empty() || stream.packets != 0)
+                .count()
+        );
+        for record in &records {
+            let expected = &streams[record.stream_index()];
+            assert_eq!(record.stream_type(), expected.stream_type);
+            assert_eq!(record.digest(), &digest_for(algorithm, &expected.payload));
+        }
+
+        let before_finish = muxer.render();
+        let finished = muxer.finish();
+        assert!(muxer.is_finished());
+        assert_eq!(finished, before_finish);
+        let err = muxer
+            .write_packet(&Packet::new(b"x".to_vec(), 0), stream_type_for(0))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(muxer.render(), before_finish);
+    }
+
+    let mut conflicting = StreamHashMuxer::new(HashAlgorithm::Sha256);
+    let packet = Packet::new(b"abc".to_vec(), 0);
+    conflicting
+        .write_packet(&packet, StreamHashStreamType::Audio)
+        .unwrap();
+    let before = conflicting.records();
+    let err = conflicting
+        .write_packet(&packet, StreamHashStreamType::Video)
+        .unwrap_err();
+    assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(conflicting.records(), before);
+}
+
 fn exercise_fixtures() {
     let mut first = Packet::new(b"abc".to_vec(), 2);
     first.set_pts(Some(10));
@@ -222,6 +317,23 @@ fn exercise_fixtures() {
     exercise_hash_muxers(&packets);
     exercise_framecrc_muxer(&packets);
     exercise_framehash_muxers(&packets);
+    exercise_streamhash_muxers(&packets);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ExpectedStreamHash {
+    stream_type: StreamHashStreamType,
+    payload: Vec<u8>,
+    packets: u64,
+    bytes: u64,
+}
+
+fn stream_type_for(stream_index: usize) -> StreamHashStreamType {
+    if stream_index.is_multiple_of(2) {
+        StreamHashStreamType::Video
+    } else {
+        StreamHashStreamType::Audio
+    }
 }
 
 fn digest_for(algorithm: HashAlgorithm, data: &[u8]) -> HashDigest {

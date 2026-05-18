@@ -19,7 +19,7 @@ Initial targets:
 - `avformat_mov`: exercises constrained MOV/MP4 box parsing, sample-table packet extraction, stream metadata, packet timing, and side-data invariants.
 - `avformat_image2`: exercises image2 pattern parsing, entry sequence validation, packet timing/path side-data invariants, muxer path generation, and mux-demux round trips.
 - `avformat_basic_muxers`: exercises WAV, raw PCM s16le, rawvideo, and yuv4mpegpipe muxer packet validation, accounting, render/finish behavior, and demuxer round trips.
-- `avformat_packet_muxers`: exercises null/hash/framecrc/framehash/framemd5 packet muxer accounting, Adler-32/CRC-32/MD5/SHA-224/SHA-256/SHA-384/SHA-512 hash digest stability, CRC and per-packet hash record fields, timestamp propagation, and finish behavior.
+- `avformat_packet_muxers`: exercises null/hash/framecrc/framehash/framemd5/streamhash packet muxer accounting, Adler-32/CRC-32/MD5/SHA-224/SHA-256/SHA-384/SHA-512 hash digest stability, CRC, per-packet hash, and per-stream hash record fields, timestamp propagation, and finish behavior.
 - `fftools_option_parser`: exercises FFmpeg-style option grouping, value handling, valid loglevel values, stream-specifier option names, hash output option handling, and parse/render/parse stability.
 
 Run with cargo-fuzz when the tool is installed:

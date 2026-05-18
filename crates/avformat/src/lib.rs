@@ -14,6 +14,7 @@ pub mod null_muxer;
 pub mod pcm;
 pub mod probe;
 pub mod rawvideo;
+pub mod streamhash_muxer;
 pub mod video;
 pub mod wav;
 pub mod yuv4mpegpipe;
@@ -39,6 +40,7 @@ pub use probe::{
     ProbeDescriptor, ProbeMatch, ProbeRegistry, ProbeRequest, ProbeScore, ProbeSignature,
 };
 pub use rawvideo::{RawVideoDemuxer, RawVideoInfo, RawVideoMuxer, RawVideoPixelFormat};
+pub use streamhash_muxer::{StreamHashMuxer, StreamHashRecord, StreamHashStreamType};
 pub use video::VideoStreamParameters;
 pub use wav::{WavDemuxer, WavInfo, WavMuxer};
 pub use yuv4mpegpipe::{
