@@ -8,9 +8,9 @@ use avutil::{
     FrameDownmixInfo, FrameDownmixType, FrameGopTimecode, FrameMasteringDisplayMetadata,
     FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors, FrameReplayGain, FrameS12mTimecode,
     FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
-    FrameSkipSamples, FrameSkipSamplesReason, Md5, Packet, PacketFlags, PixelFormat, Rational,
-    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
-    VideoFrame,
+    FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection, Md5,
+    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1284,6 +1284,48 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert!(frame_side_data_payload.len() != FrameGopTimecode::DATA_LEN || raw_invalid);
         }
     }
+    match frame.side_data()[0].spherical_mapping() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::Spherical);
+            assert_eq!(
+                frame_side_data_payload.len(),
+                FrameSphericalMapping::DATA_LEN
+            );
+            assert_eq!(value.to_bytes().as_slice(), frame_side_data_payload);
+            assert_eq!(
+                FrameSphericalProjection::from_raw(value.projection().as_raw()).unwrap(),
+                value.projection()
+            );
+            assert_eq!(
+                FrameSphericalMapping::parse(&value.to_bytes()).unwrap(),
+                value
+            );
+            assert_eq!(
+                value.bounds(),
+                [
+                    value.bound_left(),
+                    value.bound_top(),
+                    value.bound_right(),
+                    value.bound_bottom(),
+                ]
+            );
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::Spherical),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::Spherical);
+            let raw_invalid = if frame_side_data_payload.len() == FrameSphericalMapping::DATA_LEN {
+                let mut raw = [0; 4];
+                raw.copy_from_slice(&frame_side_data_payload[..4]);
+                FrameSphericalProjection::from_raw(i32::from_ne_bytes(raw)).is_err()
+            } else {
+                false
+            };
+            assert!(
+                frame_side_data_payload.len() != FrameSphericalMapping::DATA_LEN || raw_invalid
+            );
+        }
+    }
     match frame.side_data()[0].s12m_timecode() {
         Ok(Some(payload)) => {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::S12mTimecode);
@@ -2539,6 +2581,51 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 8]).unwrap();
     assert_eq!(non_gop.gop_timecode().unwrap(), None);
 
+    let spherical = FrameSphericalMapping::new(
+        FrameSphericalProjection::EquirectangularTile,
+        45 << 16,
+        -10 << 16,
+        5 << 16,
+        [10, 20, 30, 40],
+        7,
+    );
+    let spherical_side_data = FrameSideData::new_spherical_mapping(spherical).unwrap();
+    assert_eq!(spherical_side_data.kind_id(), &FrameSideDataKind::Spherical);
+    assert_eq!(
+        spherical_side_data.spherical_mapping().unwrap(),
+        Some(spherical)
+    );
+    assert_eq!(spherical_side_data.data(), &spherical.to_bytes()[..]);
+    assert_eq!(
+        FrameSphericalProjection::from_raw(6).unwrap(),
+        FrameSphericalProjection::ParametricImmersive
+    );
+    assert_eq!(
+        FrameSphericalProjection::ParametricImmersive.ffmpeg_constant(),
+        "AV_SPHERICAL_PARAMETRIC_IMMERSIVE"
+    );
+    assert_eq!(
+        FrameSphericalProjection::from_raw(7).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSphericalMapping::parse(&[0; FrameSphericalMapping::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut invalid_spherical = [0; FrameSphericalMapping::DATA_LEN];
+    invalid_spherical[0..4].copy_from_slice(&7i32.to_ne_bytes());
+    assert_eq!(
+        FrameSphericalMapping::parse(&invalid_spherical)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_spherical =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 36]).unwrap();
+    assert_eq!(non_spherical.spherical_mapping().unwrap(), None);
+
     let s12m_timecode = FrameS12mTimecode::new(&[0x0102_0304, 0xA0B0_C0D0]).unwrap();
     let s12m_side_data = FrameSideData::new_s12m_timecode(s12m_timecode).unwrap();
     assert_eq!(s12m_side_data.kind_id(), &FrameSideDataKind::S12mTimecode);
@@ -2715,27 +2802,28 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 21 {
+    match byte.unwrap_or_default() % 22 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::MatrixEncoding,
         2 => FrameSideDataKind::DownmixInfo,
         3 => FrameSideDataKind::ReplayGain,
         4 => FrameSideDataKind::MotionVectors,
         5 => FrameSideDataKind::MasteringDisplayMetadata,
-        6 => FrameSideDataKind::ContentLightLevel,
-        7 => FrameSideDataKind::IccProfile,
-        8 => FrameSideDataKind::DolbyVisionRpuBuffer,
-        9 => FrameSideDataKind::Lcevc,
-        10 => FrameSideDataKind::GopTimecode,
-        11 => FrameSideDataKind::S12mTimecode,
-        12 => FrameSideDataKind::VideoHint,
-        13 => FrameSideDataKind::ViewId,
-        14 => FrameSideDataKind::ThreeDReferenceDisplays,
-        15 => FrameSideDataKind::Exif,
-        16 => FrameSideDataKind::SeiUnregistered,
-        17 => FrameSideDataKind::ActiveFormatDescription,
-        18 => FrameSideDataKind::SkipSamples,
-        19 => FrameSideDataKind::AudioServiceType,
+        6 => FrameSideDataKind::Spherical,
+        7 => FrameSideDataKind::ContentLightLevel,
+        8 => FrameSideDataKind::IccProfile,
+        9 => FrameSideDataKind::DolbyVisionRpuBuffer,
+        10 => FrameSideDataKind::Lcevc,
+        11 => FrameSideDataKind::GopTimecode,
+        12 => FrameSideDataKind::S12mTimecode,
+        13 => FrameSideDataKind::VideoHint,
+        14 => FrameSideDataKind::ViewId,
+        15 => FrameSideDataKind::ThreeDReferenceDisplays,
+        16 => FrameSideDataKind::Exif,
+        17 => FrameSideDataKind::SeiUnregistered,
+        18 => FrameSideDataKind::ActiveFormatDescription,
+        19 => FrameSideDataKind::SkipSamples,
+        20 => FrameSideDataKind::AudioServiceType,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
