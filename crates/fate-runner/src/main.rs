@@ -1062,6 +1062,33 @@ mod tests {
     }
 
     #[test]
+    fn default_mappings_cover_current_fftools_smoke_selections() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let ledger_contents = fs::read_to_string(repo_root.join("PORTING_LEDGER.toml")).unwrap();
+        let component_ids = component_ids_from_ledger(&ledger_contents);
+        let mapping_contents =
+            fs::read_to_string(repo_root.join(DEFAULT_FATE_MAPPINGS_PATH)).unwrap();
+        let mappings = parse_fate_mappings(&mapping_contents, &component_ids).unwrap();
+        let selected_components = changed_components(
+            &component_ids,
+            &[
+                "crates/fftools/src/option_parser.rs".to_string(),
+                "crates/fftools/src/io_plan.rs".to_string(),
+                "crates/fftools/src/ffprobe.rs".to_string(),
+                "fuzz/fuzz_targets/fftools_option_parser.rs".to_string(),
+            ],
+        );
+
+        let missing_components = components_without_mappings(&selected_components, &mappings);
+
+        assert!(
+            missing_components.is_empty(),
+            "missing local FATE smoke mappings for {:?}",
+            missing_components
+        );
+    }
+
+    #[test]
     fn changed_selection_maps_fuzz_targets_to_covered_components() {
         let component_ids = component_ids_from_ledger(&ledger(&[
             "avformat-null-muxer",

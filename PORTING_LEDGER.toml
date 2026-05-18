@@ -183,6 +183,7 @@ unit_tests = [
   "tests::parses_component_ids_from_ledger",
   "tests::changed_selection_maps_paths_and_preserves_ledger_order",
   "tests::changed_selection_expands_prefix_rules_against_existing_ledger_ids",
+  "tests::default_mappings_cover_current_fftools_smoke_selections",
   "tests::changed_selection_maps_fuzz_targets_to_covered_components",
   "tests::unmapped_relevant_paths_report_crate_files_but_ignore_docs",
   "tests::parses_run_options_for_component_changed_and_mapping_path",
@@ -203,7 +204,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:fate-runner|local-self-test"]
 fuzz_targets = []
-notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules and cargo-fuzz target files, parse the explicit tests/fate/mappings.txt format, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus the local MOV demuxer unit-test smoke mapping. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
+notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules and cargo-fuzz target files, parse the explicit tests/fate/mappings.txt format, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus local MOV demuxer, fftools option-parser, fftools I/O-plan, and shared ffprobe unit-test smoke mappings. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
 blocked_reason = "No upstream FATE samples path or media component mapping has been configured."
 
 [[component]]
@@ -460,9 +461,9 @@ unit_tests = [
   "option_parser::tests::rejects_unknown_options",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-option-parser|local-option-parser-unit"]
 fuzz_targets = ["fftools_option_parser"]
-notes = "Initial parser groups a small known option set, including file-scoped -start_number and output-scoped -hash, into global options, next input, or next output according to FFmpeg option ordering. It deliberately rejects unknown options and now validates -loglevel/-v values through the shared avutil LogLevel/LogFlags model for exact level names, FFmpeg numeric severities including -8 quiet, compound repeat/level/time/datetime flag+level values, and +/- flag-only directives that update CliLogConfig without changing the current level. The ffprobe parser accepts the same constrained loglevel directive surface. It is only partially wired into command execution. Build-checked cargo-fuzz target fftools_option_parser exercises bounded argv parsing, option arity invariants, valid loglevel directives, stream-specifier option names, file/global grouping, hash output option handling, and parse/render/parse stability, but actual local fuzz execution is blocked until cargo-fuzz is installed."
+notes = "Initial parser groups a small known option set, including file-scoped -start_number and output-scoped -hash, into global options, next input, or next output according to FFmpeg option ordering. It deliberately rejects unknown options and now validates -loglevel/-v values through the shared avutil LogLevel/LogFlags model for exact level names, FFmpeg numeric severities including -8 quiet, compound repeat/level/time/datetime flag+level values, and +/- flag-only directives that update CliLogConfig without changing the current level. The ffprobe parser accepts the same constrained loglevel directive surface. It is only partially wired into command execution. The local FATE-runner smoke mapping executes the option_parser unit filter only and does not count as upstream FATE parity. Build-checked cargo-fuzz target fftools_option_parser exercises bounded argv parsing, option arity invariants, valid loglevel directives, stream-specifier option names, file/global grouping, hash output option handling, and parse/render/parse stability, but actual local fuzz execution is blocked until cargo-fuzz is installed."
 blocked_reason = ""
 
 [[component]]
@@ -503,9 +504,9 @@ unit_tests = [
   "io_plan::tests::rejects_invalid_pipe_descriptors",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-basic-io|local-io-plan-unit"]
 fuzz_targets = []
-notes = "Initial I/O planning validates at least one input and output, preserves grouped options, resolves global loglevel and log flag settings through CliLogConfig, and classifies file, pipe, and protocol endpoints. It is not fully wired to demuxers, muxers, protocol implementations, or command execution."
+notes = "Initial I/O planning validates at least one input and output, preserves grouped options, resolves global loglevel and log flag settings through CliLogConfig, and classifies file, pipe, and protocol endpoints. The local FATE-runner smoke mapping executes the io_plan unit filter only and does not count as upstream FATE parity. It is not fully wired to demuxers, muxers, protocol implementations, or command execution."
 blocked_reason = ""
 
 [[component]]
@@ -530,7 +531,7 @@ unit_tests = [
   "ffprobe::tests::rejects_unmatched_local_input_format",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-show-format|local-ffprobe-unit"]
 fuzz_targets = []
 notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Format reports include local input byte length as size, zero nb_programs/nb_stream_groups counters for the current no-program/no-stream-group demuxer model, and MOV movie-level metadata tags parsed from udta/meta/ilst atoms. Stream reports include initial codec_name, codec_long_name, profile, level, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, field_order=unknown because MOV field-order metadata is not parsed yet, MOV raw VisualSampleEntry depth as bits_per_raw_sample, MOV non-empty sample-entry extradata_size, MOV avcC-derived is_avc and nal_length_size, time_base from parsed mdhd media timescale, start_pts/start_time for non-empty zero-origin streams, r_frame_rate and avg_frame_rate for constrained parsed timing, duration_ts/duration from parsed mdhd media duration and timescale, MOV mdhd language and hdlr handler_name as stream tags when present, constrained nb_read_frames when -count_frames is requested, nb_read_packets when -count_packets is requested, and MOV visual sample-entry side fields for sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
 blocked_reason = ""
@@ -553,9 +554,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_format_size_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-format-size|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now carries local input byte length into format reports and renders it as size in default and JSON -show_format output for constrained MOV/MP4 and AVI inputs. Current tests prove exact byte length for generated MOV and AVI fixtures. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now carries local input byte length into format reports and renders it as size in default and JSON -show_format output for constrained MOV/MP4 and AVI inputs. Current tests prove exact byte length for generated MOV and AVI fixtures. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -576,9 +577,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_format_size_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-format-program-counts|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now reports nb_programs=0 and nb_stream_groups=0 in -show_format default and JSON output for constrained MOV/MP4 and AVI inputs, matching the current demuxer model where no programs or stream groups are parsed. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now reports nb_programs=0 and nb_stream_groups=0 in -show_format default and JSON output for constrained MOV/MP4 and AVI inputs, matching the current demuxer model where no programs or stream groups are parsed. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -595,9 +596,9 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_format_tags_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-format-tags|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now renders MOV/MP4 movie-level metadata tags in -show_format default and JSON output through the Rust MovDemuxer alongside the shared format size and zero program/stream-group counters. Current command-path tests cover a UTF-8 title atom in udta/meta/ilst and verify that stream and packet sections remain absent unless requested. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now renders MOV/MP4 movie-level metadata tags in -show_format default and JSON output through the Rust MovDemuxer alongside the shared format size and zero program/stream-group counters. Current command-path tests cover a UTF-8 title atom in udta/meta/ilst and verify that stream and packet sections remain absent unless requested. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -616,7 +617,7 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_packet_json_without_stream_or_format_sections",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-show-packets|local-ffprobe-unit"]
 fuzz_targets = []
 notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet stream index, PTS/DTS, time fields, duration, size, and key flags in default and json writers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential coverage yet."
 blocked_reason = ""
@@ -638,9 +639,9 @@ unit_tests = [
   "ffprobe::tests::rejects_bad_avi_input",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-avi-show-format-streams-packets|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Format reports include local input byte length as size plus zero nb_programs/nb_stream_groups counters for the current no-program/no-stream-group demuxer model. Stream reports include initial codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, field_order=unknown because AVI interlace metadata is not parsed yet, bits_per_raw_sample from BITMAPINFOHEADER bit count, time_base from parsed stream scale/rate, start_pts/start_time for non-empty zero-origin streams, r_frame_rate/avg_frame_rate fields for the constrained video stream, duration_ts/duration from parsed stream length and time base, constrained nb_read_frames when -count_frames is requested, and nb_read_packets when -count_packets is requested. Output is deterministic but not byte-identical to upstream and has no oracle differential/FATE coverage yet."
+notes = "Initial ffprobe-rs AVI reporting uses the shared ProbeRegistry with the hand-written AVI descriptor for RIFF/AVI signature or .avi extension detection, opens the Rust AviDemuxer, and renders constrained video-only format, stream, and packet summaries through the existing default and json writers. Format reports include local input byte length as size plus zero nb_programs/nb_stream_groups counters for the current no-program/no-stream-group demuxer model. Stream reports include initial codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, field_order=unknown because AVI interlace metadata is not parsed yet, bits_per_raw_sample from BITMAPINFOHEADER bit count, time_base from parsed stream scale/rate, start_pts/start_time for non-empty zero-origin streams, r_frame_rate/avg_frame_rate fields for the constrained video stream, duration_ts/duration from parsed stream length and time base, constrained nb_read_frames when -count_frames is requested, and nb_read_packets when -count_packets is requested. Output is deterministic but not byte-identical to upstream and has no oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -657,9 +658,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-avi-bits-per-raw-sample|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry bits_per_raw_sample for constrained AVI video streams by rendering the parsed BITMAPINFOHEADER bit_count from the Rust AviDemuxer. The current AVI fixture proves a 24-bit DIB stream as bits_per_raw_sample 24 in JSON output. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs stream reports now carry bits_per_raw_sample for constrained AVI video streams by rendering the parsed BITMAPINFOHEADER bit_count from the Rust AviDemuxer. The current AVI fixture proves a 24-bit DIB stream as bits_per_raw_sample 24 in JSON output. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -678,9 +679,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-codec-fields|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, coded_width/coded_height, MOV audio sample_rate/channels/bits_per_sample when parsed from AudioSampleEntry, start_pts/start_time, r_frame_rate, and avg_frame_rate for constrained MOV/MP4 and AVI streams using Rust demuxer metadata. MOV codec_type is derived from known hdlr handler types when available, with tests covering video and an audio-handler fixture; AVI codec_type comes from the parsed stream media type. The codec-name map is deliberately limited to known tags currently represented by the Rust parsers, including mp4a AAC in the audio fixture, and there is no pinned-oracle differential/FATE coverage yet."
+notes = "ffprobe-rs stream reports now carry codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, coded_width/coded_height, MOV audio sample_rate/channels/bits_per_sample when parsed from AudioSampleEntry, start_pts/start_time, r_frame_rate, and avg_frame_rate for constrained MOV/MP4 and AVI streams using Rust demuxer metadata. MOV codec_type is derived from known hdlr handler types when available, with tests covering video and an audio-handler fixture; AVI codec_type comes from the parsed stream media type. The codec-name map is deliberately limited to known tags currently represented by the Rust parsers, including mp4a AAC in the audio fixture, and there is no pinned-oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -697,7 +698,7 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_audio_sample_entry_v2_fields_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-audio-stream-fields|local-ffprobe-unit"]
 fuzz_targets = []
 notes = "ffprobe-rs reports sample_rate, channels, and bits_per_sample for the constrained MOV/MP4 audio stream path when the Rust MOV demuxer parses AudioSampleEntry metadata. Current coverage includes synthetic mp4a/soun version-0 and lpcm/soun version-2 fixtures, with version-2 output using effective numAudioChannels and constBitsPerChannel rather than the compatibility constants. sample_fmt, channel_layout, decoder-derived fields, pinned-oracle differential tests, and FATE coverage are pending."
 blocked_reason = ""
@@ -717,9 +718,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-field-order|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now renders field_order=unknown for constrained MOV/MP4 and AVI video streams. The Rust demuxers currently do not parse interlace/progressive field-order metadata, so this is explicitly limited to an unknown field-order report for video streams. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now renders field_order=unknown for constrained MOV/MP4 and AVI video streams. The Rust demuxers currently do not parse interlace/progressive field-order metadata, so this is explicitly limited to an unknown field-order report for video streams. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -737,9 +738,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-duration|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry duration_ts and duration for constrained MOV/MP4 and AVI streams. MOV uses parsed mdhd media duration and timescale; AVI uses parsed stream length and time base. The current assertions cover default output plus MOV/AVI JSON fixtures, but there is no pinned-oracle differential/FATE coverage yet."
+notes = "ffprobe-rs stream reports now carry duration_ts and duration for constrained MOV/MP4 and AVI streams. MOV uses parsed mdhd media duration and timescale; AVI uses parsed stream length and time base. The current assertions cover default output plus MOV/AVI JSON fixtures, but there is no pinned-oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -757,9 +758,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-time-base|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry time_base for constrained MOV/MP4 and AVI streams. MOV uses the parsed mdhd media timescale as 1/<timescale>; AVI uses parsed stream scale/rate. The current assertions cover default output plus MOV/AVI JSON fixtures, but there is no pinned-oracle differential/FATE coverage yet."
+notes = "ffprobe-rs stream reports now carry time_base for constrained MOV/MP4 and AVI streams. MOV uses the parsed mdhd media timescale as 1/<timescale>; AVI uses parsed stream scale/rate. The current assertions cover default output plus MOV/AVI JSON fixtures, but there is no pinned-oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -779,9 +780,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-codec-long-name|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry codec_long_name for the constrained FourCC-to-codec map already used by codec_name: raw video, H.264/AVC, HEVC, MPEG-4 part 2, mp4a/AAC, and initial MOV PCM tags. Fixture coverage proves raw MOV, H.264 MOV, mp4a audio MOV, and raw AVI JSON/default output. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs stream reports now carry codec_long_name for the constrained FourCC-to-codec map already used by codec_name: raw video, H.264/AVC, HEVC, MPEG-4 part 2, mp4a/AAC, and initial MOV PCM tags. Fixture coverage proves raw MOV, H.264 MOV, mp4a audio MOV, and raw AVI JSON/default output. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -800,7 +801,7 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-r-frame-rate|local-ffprobe-unit"]
 fuzz_targets = []
 notes = "ffprobe-rs stream reports now carry r_frame_rate alongside avg_frame_rate for constrained MOV/MP4 and AVI video streams. AVI uses the parsed stream frame_rate; MOV currently derives from sample count, media duration, and media timescale for the simple sample-table fixtures. Broader upstream rate-guessing parity, differential tests, and FATE coverage are still pending."
 blocked_reason = ""
@@ -821,9 +822,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-start-time|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry start_pts=0 and start_time=0.000000 for non-empty constrained MOV/MP4 and AVI streams. This is limited to the current zero-origin demuxer model: MOV edit lists are explicitly rejected, fragments are unsupported, and AVI packet PTS starts at zero. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs stream reports now carry start_pts=0 and start_time=0.000000 for non-empty constrained MOV/MP4 and AVI streams. This is limited to the current zero-origin demuxer model: MOV edit lists are explicitly rejected, fragments are unsupported, and AVI packet PTS starts at zero. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -842,9 +843,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-coded-dimensions|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry coded_width/coded_height for constrained MOV/MP4 and AVI video streams. The current demuxer model has no separate coded/display dimensions, cropping, or codec parser dimensions, so coded dimensions mirror parsed stream dimensions where present. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs stream reports now carry coded_width/coded_height for constrained MOV/MP4 and AVI video streams. The current demuxer model has no separate coded/display dimensions, cropping, or codec parser dimensions, so coded dimensions mirror parsed stream dimensions where present. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -863,9 +864,9 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-handler-name-tag|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "MOV/MP4 mdia/hdlr boxes are now parsed for a UTF-8 handler name and exposed through existing stream metadata as handler_name, which ffprobe-rs renders as TAG:handler_name in default output and tags.handler_name in JSON. The parser rejects invalid UTF-8 handler names with a typed invalid-data error. No pinned-oracle differential/FATE/fuzz coverage exists yet."
+notes = "MOV/MP4 mdia/hdlr boxes are now parsed for a UTF-8 handler name and exposed through existing stream metadata as handler_name, which ffprobe-rs renders as TAG:handler_name in default output and tags.handler_name in JSON. The parser rejects invalid UTF-8 handler names with a typed invalid-data error. No pinned-oracle differential, upstream-FATE, or fuzz coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -883,9 +884,9 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-language-tag|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "MOV/MP4 mdhd language codes are now parsed for the constrained ISO-639 packed lowercase form and exposed through existing stream metadata as language, which ffprobe-rs renders as TAG:language in default output and tags.language in JSON. Zero or unknown language encodings are treated as absent metadata rather than panicking. No pinned-oracle differential/FATE/fuzz coverage exists yet."
+notes = "MOV/MP4 mdhd language codes are now parsed for the constrained ISO-639 packed lowercase form and exposed through existing stream metadata as language, which ffprobe-rs renders as TAG:language in default output and tags.language in JSON. Zero or unknown language encodings are treated as absent metadata rather than panicking. No pinned-oracle differential, upstream-FATE, or fuzz coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -905,9 +906,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_packet_count_default",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-count-packets|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now accepts -count_packets for constrained MOV/MP4 and AVI local inputs, collects packets through the Rust demuxers, and renders nb_read_packets on stream reports without emitting a packets section unless -show_packets is also requested. The current tests prove JSON and default output for one-stream MOV and AVI fixtures. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now accepts -count_packets for constrained MOV/MP4 and AVI local inputs, collects packets through the Rust demuxers, and renders nb_read_packets on stream reports without emitting a packets section unless -show_packets is also requested. The current tests prove JSON and default output for one-stream MOV and AVI fixtures. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -927,9 +928,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_frame_count_default",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-count-frames|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now accepts -count_frames for constrained MOV/MP4 and AVI local inputs and renders nb_read_frames on stream reports without emitting a packets section. The current implementation uses already parsed MOV sample counts and AVI stream lengths, so it is useful for the current one-frame-per-sample fixtures but is not a general decoder-backed frame counter. The current tests prove JSON and default output for one-stream MOV and AVI fixtures. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now accepts -count_frames for constrained MOV/MP4 and AVI local inputs and renders nb_read_frames on stream reports without emitting a packets section. The current implementation uses already parsed MOV sample counts and AVI stream lengths, so it is useful for the current one-frame-per-sample fixtures but is not a general decoder-backed frame counter. The current tests prove JSON and default output for one-stream MOV and AVI fixtures. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -955,9 +956,9 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_packet_count_default",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-nb-frames|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now have explicit tests for nb_frames in default and JSON output. The constrained MOV path uses parsed sample_count and the constrained AVI path uses stream length; these are one-packet/one-frame fixture counts, not decoder-derived frame counts. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs stream reports now have explicit tests for nb_frames in default and JSON output. The constrained MOV path uses parsed sample_count and the constrained AVI path uses stream length; these are one-packet/one-frame fixture counts, not decoder-derived frame counts. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -973,9 +974,9 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-codec-profile-level|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now surfaces profile and level for constrained MOV/MP4 video streams when the Rust MovDemuxer parsed avcC or hvcC decoder configuration. The current fixture coverage proves an avc1/avcC profile_idc 100 as profile High and level_idc 31 as level 31. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now surfaces profile and level for constrained MOV/MP4 video streams when the Rust MovDemuxer parsed avcC or hvcC decoder configuration. The current fixture coverage proves an avc1/avcC profile_idc 100 as profile High and level_idc 31 as level 31. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -991,9 +992,9 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-avcc-stream-fields|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now reports is_avc and nal_length_size for constrained MOV/MP4 video streams when the Rust MovDemuxer parsed an avcC decoder configuration record. The current avc1 fixture proves is_avc true and nal_length_size 4 in JSON stream output. hvcC nal_length_size is represented internally but still lacks direct ffprobe fixture coverage. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now reports is_avc and nal_length_size for constrained MOV/MP4 video streams when the Rust MovDemuxer parsed an avcC decoder configuration record. The current avc1 fixture proves is_avc true and nal_length_size 4 in JSON stream output. hvcC nal_length_size is represented internally but still lacks direct ffprobe fixture coverage. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -1010,9 +1011,9 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-visual-side-fields|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now surfaces MOV visual sample-entry pasp/colr metadata as sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries for constrained MOV/MP4 video streams parsed by the Rust MovDemuxer. Coverage uses an avc1 fixture with avcC, pasp, and nclx colr child boxes. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now surfaces MOV visual sample-entry pasp/colr metadata as sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries for constrained MOV/MP4 video streams parsed by the Rust MovDemuxer. Coverage uses an avc1 fixture with avcC, pasp, and nclx colr child boxes. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -1029,9 +1030,9 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_stream_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-raw-bits-per-raw-sample|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "MOV raw video sample entries now preserve full VisualSampleEntry metadata when a raw sample entry carries the complete visual payload, and ffprobe-rs reports that depth as bits_per_raw_sample for raw video streams. The current fixture proves a raw VisualSampleEntry depth of 24 as bits_per_raw_sample 24 in JSON output. No pinned-oracle differential/FATE coverage exists yet."
+notes = "MOV raw video sample entries now preserve full VisualSampleEntry metadata when a raw sample entry carries the complete visual payload, and ffprobe-rs reports that depth as bits_per_raw_sample for raw video streams. The current fixture proves a raw VisualSampleEntry depth of 24 as bits_per_raw_sample 24 in JSON output. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -1049,9 +1050,9 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-extradata-size|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now reports extradata_size for constrained MOV/MP4 streams when the Rust MovDemuxer parsed non-empty stsd sample-entry extra data. The current fixtures prove raw VisualSampleEntry and avc1 VisualSampleEntry sizes in default and JSON stream output. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs now reports extradata_size for constrained MOV/MP4 streams when the Rust MovDemuxer parsed non-empty stsd sample-entry extra data. The current fixtures prove raw VisualSampleEntry and avc1 VisualSampleEntry sizes in default and JSON stream output. No pinned-oracle differential or upstream FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -1070,7 +1071,7 @@ unit_tests = [
   "ffprobe::tests::forced_avi_format_rejects_mismatched_input",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-input-format-forcing|local-ffprobe-unit"]
 fuzz_targets = []
 notes = "Initial ffprobe-rs -f input format forcing accepts avi, mov, mp4, and the MOV alias string for the constrained Rust AVI and MOV/MP4 demuxer paths. Forced formats bypass extension/signature selection and route bytes to the selected Rust demuxer so mismatches fail as parser errors. Broader format names, aliases, option ordering parity, oracle differential tests, and FATE coverage are pending."
 blocked_reason = ""
@@ -1095,7 +1096,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "Initial ffmpeg-rs command execution path supports exactly one local seekable MOV/MP4 input and one stdout pipe output with explicit -f null or -f framecrc. It uses the Rust MOV probe/demuxer and Rust null/framecrc muxers, rejects unsupported inputs, output endpoints, muxers, and options, and has in-process unit coverage because process-spawn integration tests are blocked by Windows Application Control. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential/FATE coverage yet."
+notes = "Initial ffmpeg-rs command execution path supports exactly one local seekable MOV/MP4 input and one stdout pipe output with explicit -f null or -f framecrc. It uses the Rust MOV probe/demuxer and Rust null/framecrc muxers, rejects unsupported inputs, output endpoints, muxers, and options, and has in-process unit coverage because process-spawn integration tests are blocked by Windows Application Control. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1115,7 +1116,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["fftools_option_parser"]
-notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f hash -`, defaults the hash muxer to SHA-256, accepts output-scoped `-hash` for Adler-32, CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512, and rejects unknown hash algorithm names without invoking FFmpeg at runtime. The current tests cover MOV packet concatenation and raw pcm_s16le MD5 output through in-process helpers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f hash -`, defaults the hash muxer to SHA-256, accepts output-scoped `-hash` for Adler-32, CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512, and rejects unknown hash algorithm names without invoking FFmpeg at runtime. The current tests cover MOV packet concatenation and raw pcm_s16le MD5 output through in-process helpers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1134,7 +1135,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports the dedicated stdout `-f md5 -` muxer for one local seekable constrained input by routing packet payloads through the Rust HashMuxer with MD5 while preserving the observable output format name as `md5`. The dedicated md5 muxer rejects output-scoped `-hash` because algorithm selection belongs to the generic hash muxer path. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution supports the dedicated stdout `-f md5 -` muxer for one local seekable constrained input by routing packet payloads through the Rust HashMuxer with MD5 while preserving the observable output format name as `md5`. The dedicated md5 muxer rejects output-scoped `-hash` because algorithm selection belongs to the generic hash muxer path. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1153,7 +1154,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f framehash -`, defaults to SHA-256, and accepts output-scoped `-hash` for the same algorithms as the generic hash muxer. The current tests cover MOV packet-level SHA-256 and MD5 output through in-process helpers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f framehash -`, defaults to SHA-256, and accepts output-scoped `-hash` for the same algorithms as the generic hash muxer. The current tests cover MOV packet-level SHA-256 and MD5 output through in-process helpers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1172,7 +1173,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "ffmpeg-rs command execution supports the dedicated stdout `-f framemd5 -` muxer for one local seekable constrained input by routing each packet payload through the Rust FrameHashMuxer with MD5 while preserving the observable output format name as `framemd5`. The dedicated framemd5 muxer rejects output-scoped `-hash` because algorithm selection belongs to the generic framehash muxer path. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution supports the dedicated stdout `-f framemd5 -` muxer for one local seekable constrained input by routing each packet payload through the Rust FrameHashMuxer with MD5 while preserving the observable output format name as `framemd5`. The dedicated framemd5 muxer rejects output-scoped `-hash` because algorithm selection belongs to the generic framehash muxer path. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1195,7 +1196,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f streamhash -`, defaults to SHA-256, accepts output-scoped `-hash`, and emits one digest line per observed stream through the Rust StreamHashMuxer. Stream type labels now come from a local streamhash type map: AVI uses demuxer stream media types, MOV uses known hdlr handler types with parsed video sample-entry/dimension fallback, and current raw/WAV/YUV4MPEG2/image2 paths use their explicit single-stream audio/video metadata. Streamhash rejects packet stream indexes with no metadata instead of silently reusing a branch-wide label. The current tests cover MOV video SHA-256 streamhash output, MOV audio-handler SHA-256 streamhash output, raw pcm_s16le MD5 streamhash output, AVI SHA-256 streamhash output through container metadata, direct AVI/MOV metadata mapping checks, and missing stream-metadata rejection. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f streamhash -`, defaults to SHA-256, accepts output-scoped `-hash`, and emits one digest line per observed stream through the Rust StreamHashMuxer. Stream type labels now come from a local streamhash type map: AVI uses demuxer stream media types, MOV uses known hdlr handler types with parsed video sample-entry/dimension fallback, and current raw/WAV/YUV4MPEG2/image2 paths use their explicit single-stream audio/video metadata. Streamhash rejects packet stream indexes with no metadata instead of silently reusing a branch-wide label. The current tests cover MOV video SHA-256 streamhash output, MOV audio-handler SHA-256 streamhash output, raw pcm_s16le MD5 streamhash output, AVI SHA-256 streamhash output through container metadata, direct AVI/MOV metadata mapping checks, and missing stream-metadata rejection. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1215,7 +1216,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports exactly one local seekable constrained video-only AVI input and one stdout pipe output with explicit -f null or -f framecrc. It detects AVI by RIFF/AVI signature or .avi extension, accepts explicit -f avi, uses the Rust AVI demuxer and Rust null/framecrc muxers, and rejects malformed AVI headers with typed errors. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution supports exactly one local seekable constrained video-only AVI input and one stdout pipe output with explicit -f null or -f framecrc. It detects AVI by RIFF/AVI signature or .avi extension, accepts explicit -f avi, uses the Rust AVI demuxer and Rust null/framecrc muxers, and rejects malformed AVI headers with typed errors. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1234,7 +1235,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports exactly one local seekable PCM s16le RIFF/WAVE input and one stdout pipe output with explicit -f null or -f framecrc. It detects WAV by RIFF/WAVE signature or .wav extension, accepts explicit -f wav/-f wave, and uses the Rust WAV demuxer and Rust null/framecrc muxers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution supports exactly one local seekable PCM s16le RIFF/WAVE input and one stdout pipe output with explicit -f null or -f framecrc. It detects WAV by RIFF/WAVE signature or .wav extension, accepts explicit -f wav/-f wave, and uses the Rust WAV demuxer and Rust null/framecrc muxers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1255,7 +1256,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution now supports exactly one local seekable raw pcm_s16le input and one stdout pipe output with explicit -f s16le or -f pcm_s16le plus required -ar and -ac stream parameters. It uses the Rust raw PCM demuxer with 1024-sample packetization and the Rust null/framecrc muxers, rejects missing parameters and partial sample frames, and has no oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution now supports exactly one local seekable raw pcm_s16le input and one stdout pipe output with explicit -f s16le or -f pcm_s16le plus required -ar and -ac stream parameters. It uses the Rust raw PCM demuxer with 1024-sample packetization and the Rust null/framecrc muxers, rejects missing parameters and partial sample frames, and has no oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1274,7 +1275,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports raw pcm_s16le input packet-copy to a local raw s16le output file with explicit -f s16le/pcm_s16le input parameters and explicit -f s16le/pcm_s16le output format. It uses the Rust raw PCM demuxer and PcmS16leMuxer, creates output files with no overwrite, and has no oracle differential/FATE coverage yet. Transcoding, stdout raw PCM output, overwrite confirmation flags, broad muxer selection, and non-PCM inputs remain pending."
+notes = "ffmpeg-rs command execution supports raw pcm_s16le input packet-copy to a local raw s16le output file with explicit -f s16le/pcm_s16le input parameters and explicit -f s16le/pcm_s16le output format. It uses the Rust raw PCM demuxer and PcmS16leMuxer, creates output files with no overwrite, and has no oracle differential or upstream FATE coverage yet. Transcoding, stdout raw PCM output, overwrite confirmation flags, broad muxer selection, and non-PCM inputs remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -1293,7 +1294,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports raw pcm_s16le input packet-copy to a local WAV output file with explicit -f s16le/pcm_s16le input parameters and explicit -f wav/wave output format. It uses the Rust raw PCM demuxer and WavMuxer, creates output files with no overwrite, validates the generated output through the Rust WAV demuxer in tests, and has no oracle differential/FATE coverage yet. Transcoding, WAV output from non-raw-PCM inputs, overwrite confirmation flags, RF64/WAVE64, metadata chunks, and broader muxer selection remain pending."
+notes = "ffmpeg-rs command execution supports raw pcm_s16le input packet-copy to a local WAV output file with explicit -f s16le/pcm_s16le input parameters and explicit -f wav/wave output format. It uses the Rust raw PCM demuxer and WavMuxer, creates output files with no overwrite, validates the generated output through the Rust WAV demuxer in tests, and has no oracle differential or upstream FATE coverage yet. Transcoding, WAV output from non-raw-PCM inputs, overwrite confirmation flags, RF64/WAVE64, metadata chunks, and broader muxer selection remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -1314,7 +1315,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution now supports exactly one local seekable rawvideo input and one stdout pipe output with explicit -f rawvideo plus required -pix_fmt, -s, and -r stream parameters. It uses the Rust rawvideo demuxer and Rust null/framecrc muxers, supports gray/gray8, rgb24, rgba, and yuv420p input packetization, rejects missing parameters and partial frames, and has no oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution now supports exactly one local seekable rawvideo input and one stdout pipe output with explicit -f rawvideo plus required -pix_fmt, -s, and -r stream parameters. It uses the Rust rawvideo demuxer and Rust null/framecrc muxers, supports gray/gray8, rgb24, rgba, and yuv420p input packetization, rejects missing parameters and partial frames, and has no oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1333,7 +1334,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports explicit rawvideo input packet-copy to a local rawvideo output file with explicit -f rawvideo, -pix_fmt, -s, and -r input parameters and explicit -f rawvideo output format. It uses the Rust rawvideo demuxer and RawVideoMuxer, creates output files with no overwrite, and has no oracle differential/FATE coverage yet. Transcoding, stdout rawvideo output, overwrite confirmation flags, broad muxer selection, and non-rawvideo inputs remain pending."
+notes = "ffmpeg-rs command execution supports explicit rawvideo input packet-copy to a local rawvideo output file with explicit -f rawvideo, -pix_fmt, -s, and -r input parameters and explicit -f rawvideo output format. It uses the Rust rawvideo demuxer and RawVideoMuxer, creates output files with no overwrite, and has no oracle differential or upstream FATE coverage yet. Transcoding, stdout rawvideo output, overwrite confirmation flags, broad muxer selection, and non-rawvideo inputs remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -1353,7 +1354,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports explicit raw rgb24 input packet-copy to a local AVI output file with explicit -f rawvideo, -pix_fmt rgb24, -s, and -r input parameters and explicit -f avi output format. It uses the Rust rawvideo demuxer and constrained AviMuxer, creates output files with no overwrite, validates the generated output through the Rust AVI demuxer in tests, and rejects non-rgb24 rawvideo inputs instead of pretending to convert. No oracle differential/FATE coverage exists yet. Audio streams, indexes, OpenDML, palettes, compressed video, color conversion, overwrite confirmation flags, broad muxer selection, and non-rawvideo inputs remain pending."
+notes = "ffmpeg-rs command execution supports explicit raw rgb24 input packet-copy to a local AVI output file with explicit -f rawvideo, -pix_fmt rgb24, -s, and -r input parameters and explicit -f avi output format. It uses the Rust rawvideo demuxer and constrained AviMuxer, creates output files with no overwrite, validates the generated output through the Rust AVI demuxer in tests, and rejects non-rgb24 rawvideo inputs instead of pretending to convert. No oracle differential or upstream FATE coverage exists yet. Audio streams, indexes, OpenDML, palettes, compressed video, color conversion, overwrite confirmation flags, broad muxer selection, and non-rawvideo inputs remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -1373,7 +1374,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports explicit raw yuv420p input packet-copy to a local yuv4mpegpipe output file with explicit -f rawvideo, -pix_fmt yuv420p, -s, and -r input parameters and explicit -f yuv4mpegpipe output format. It uses the Rust rawvideo demuxer and Yuv4MpegMuxer, creates output files with no overwrite, validates the generated output through the Rust YUV4MPEG2 demuxer in tests, and rejects non-yuv420p rawvideo inputs instead of pretending to convert. No oracle differential/FATE coverage exists yet. Color conversion, chroma variants, overwrite confirmation flags, broad muxer selection, and non-rawvideo inputs remain pending."
+notes = "ffmpeg-rs command execution supports explicit raw yuv420p input packet-copy to a local yuv4mpegpipe output file with explicit -f rawvideo, -pix_fmt yuv420p, -s, and -r input parameters and explicit -f yuv4mpegpipe output format. It uses the Rust rawvideo demuxer and Yuv4MpegMuxer, creates output files with no overwrite, validates the generated output through the Rust YUV4MPEG2 demuxer in tests, and rejects non-yuv420p rawvideo inputs instead of pretending to convert. No oracle differential or upstream FATE coverage exists yet. Color conversion, chroma variants, overwrite confirmation flags, broad muxer selection, and non-rawvideo inputs remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -1394,7 +1395,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution now supports exactly one local seekable yuv4mpegpipe input and one stdout pipe output with explicit -f yuv4mpegpipe or YUV4MPEG2/.y4m detection. It uses the Rust YUV4MPEG2 demuxer and Rust null/framecrc muxers, accepts the current progressive C420jpeg demuxer subset, rejects malformed stream headers and truncated frame payloads, and has no oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution now supports exactly one local seekable yuv4mpegpipe input and one stdout pipe output with explicit -f yuv4mpegpipe or YUV4MPEG2/.y4m detection. It uses the Rust YUV4MPEG2 demuxer and Rust null/framecrc muxers, accepts the current progressive C420jpeg demuxer subset, rejects malformed stream headers and truncated frame payloads, and has no oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1415,7 +1416,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports exactly one local seekable single-image image2 input and one stdout pipe output with explicit -f image2 plus required -framerate or -r. It uses the Rust image2 demuxer with one caller-provided entry and Rust null/framecrc muxers, rejects missing frame rate and empty image payloads, and has no oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution supports exactly one local seekable single-image image2 input and one stdout pipe output with explicit -f image2 plus required -framerate or -r. It uses the Rust image2 demuxer with one caller-provided entry and Rust null/framecrc muxers, rejects missing frame rate and empty image payloads, and has no oracle differential or upstream FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1435,7 +1436,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports explicit image2 %d/%0Nd numbered sequence inputs discovered from the pattern parent directory, using the Rust image2 demuxer and Rust null/framecrc muxers. The current path supports explicit input -start_number, requires contiguous frame numbers from the selected start number, rejects gaps, and has no oracle differential/FATE coverage yet. Glob patterns, timestamp modes, looping, codec probing, and broad CLI execution remain pending."
+notes = "ffmpeg-rs command execution supports explicit image2 %d/%0Nd numbered sequence inputs discovered from the pattern parent directory, using the Rust image2 demuxer and Rust null/framecrc muxers. The current path supports explicit input -start_number, requires contiguous frame numbers from the selected start number, rejects gaps, and has no oracle differential or upstream FATE coverage yet. Glob patterns, timestamp modes, looping, codec probing, and broad CLI execution remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -1455,7 +1456,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports packet-copy from explicit image2 single-file or contiguous %d/%0Nd sequence inputs to local image2 output files/patterns. It uses the Rust image2 demuxer and Image2Muxer, preflights generated output paths for create-new/no-overwrite behavior, writes generated entries to the filesystem, and rejects multi-frame input to a single-image output through the muxer instead of dropping frames. No oracle differential/FATE coverage exists yet. Output -start_number is covered separately; glob patterns, timestamp modes, image codec validation, overwrite confirmation flags, and non-image2 inputs remain pending."
+notes = "ffmpeg-rs command execution supports packet-copy from explicit image2 single-file or contiguous %d/%0Nd sequence inputs to local image2 output files/patterns. It uses the Rust image2 demuxer and Image2Muxer, preflights generated output paths for create-new/no-overwrite behavior, writes generated entries to the filesystem, and rejects multi-frame input to a single-image output through the muxer instead of dropping frames. No oracle differential or upstream FATE coverage exists yet. Output -start_number is covered separately; glob patterns, timestamp modes, image codec validation, overwrite confirmation flags, and non-image2 inputs remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -1476,7 +1477,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "The constrained ffmpeg-rs image2 command path accepts file-scoped -start_number on image2 inputs and image2 outputs. Input start_number controls sequence discovery and the first accepted frame number; output start_number controls generated numbered output filenames. Values are parsed as non-negative i64s and still have no oracle differential/FATE coverage."
+notes = "The constrained ffmpeg-rs image2 command path accepts file-scoped -start_number on image2 inputs and image2 outputs. Input start_number controls sequence discovery and the first accepted frame number; output start_number controls generated numbered output filenames. Values are parsed as non-negative i64s and still have no oracle differential or upstream FATE coverage."
 blocked_reason = ""
 
 [[component]]
