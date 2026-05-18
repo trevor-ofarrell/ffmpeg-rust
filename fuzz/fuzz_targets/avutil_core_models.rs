@@ -4,10 +4,11 @@ use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
-    FrameActiveFormatDescription, FrameAudioServiceType, FrameData, FrameSeiUnregistered,
-    FrameSideData, FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples,
-    FrameSkipSamplesReason, Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding,
-    SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    FrameActiveFormatDescription, FrameAudioServiceType, FrameData, FrameS12mTimecode,
+    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
+    FrameSkipSamples, FrameSkipSamplesReason, Md5, Packet, PacketFlags, PixelFormat, Rational,
+    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
+    VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -938,7 +939,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(frame_video.planes()[0], frame_replacement);
     assert_eq!(shared_video.planes(), planes.as_slice());
 
-    let frame_side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);
+    let frame_side_data_len = usize::from(cursor.next().unwrap_or_default() % 20);
     let frame_side_data_payload = payload_from(cursor, frame_side_data_len);
     let frame_side_data_buffer =
         BufferRef::copy_from_slice_with_padding(&frame_side_data_payload, 1).unwrap();
@@ -1046,6 +1047,38 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 false
             };
             assert!(frame_side_data_payload.len() < FrameAudioServiceType::DATA_LEN || raw_invalid);
+        }
+    }
+    match frame.side_data()[0].s12m_timecode() {
+        Ok(Some(payload)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::S12mTimecode);
+            assert_eq!(frame_side_data_payload.len(), FrameS12mTimecode::DATA_LEN);
+            assert_eq!(payload.to_bytes().as_slice(), frame_side_data_payload);
+            assert!(
+                (FrameS12mTimecode::MIN_TIMECODES..=FrameS12mTimecode::MAX_TIMECODES)
+                    .contains(&payload.count())
+            );
+            assert_eq!(payload.timecodes().len(), payload.count());
+            assert_eq!(
+                FrameS12mTimecode::from_raw_words(payload.raw_words()).unwrap(),
+                payload
+            );
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::S12mTimecode),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::S12mTimecode);
+            let raw_count_invalid = if frame_side_data_payload.len() == FrameS12mTimecode::DATA_LEN
+            {
+                let mut raw = [0; 4];
+                raw.copy_from_slice(&frame_side_data_payload[..4]);
+                !matches!(u32::from_ne_bytes(raw), 1..=3)
+            } else {
+                false
+            };
+            assert!(
+                frame_side_data_payload.len() != FrameS12mTimecode::DATA_LEN || raw_count_invalid
+            );
         }
     }
     match frame.side_data()[0].sei_unregistered() {
@@ -2016,6 +2049,40 @@ fn exercise_fixtures() {
     let non_audio_service =
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 4]).unwrap();
     assert_eq!(non_audio_service.audio_service_type().unwrap(), None);
+
+    let s12m_timecode = FrameS12mTimecode::new(&[0x0102_0304, 0xA0B0_C0D0]).unwrap();
+    let s12m_side_data = FrameSideData::new_s12m_timecode(s12m_timecode).unwrap();
+    assert_eq!(s12m_side_data.kind_id(), &FrameSideDataKind::S12mTimecode);
+    assert_eq!(s12m_side_data.s12m_timecode().unwrap(), Some(s12m_timecode));
+    assert_eq!(s12m_timecode.count(), 2);
+    assert_eq!(s12m_timecode.timecodes(), &[0x0102_0304, 0xA0B0_C0D0]);
+    assert_eq!(s12m_timecode.raw_words(), [2, 0x0102_0304, 0xA0B0_C0D0, 0]);
+    let s12m_with_unused =
+        FrameS12mTimecode::from_raw_words([1, 0x0A0B_0C0D, 0xFEED_C0DE, 0x1234_5678]).unwrap();
+    assert_eq!(s12m_with_unused.timecodes(), &[0x0A0B_0C0D]);
+    assert_eq!(
+        FrameS12mTimecode::parse(&s12m_with_unused.to_bytes()).unwrap(),
+        s12m_with_unused
+    );
+    assert_eq!(
+        FrameS12mTimecode::new(&[1, 2, 3, 4]).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        FrameS12mTimecode::parse(&[0; FrameS12mTimecode::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameS12mTimecode::from_raw_words([0, 1, 2, 3])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_s12m =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 16]).unwrap();
+    assert_eq!(non_s12m.s12m_timecode().unwrap(), None);
 
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
