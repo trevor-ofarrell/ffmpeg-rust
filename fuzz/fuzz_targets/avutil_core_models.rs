@@ -3,10 +3,11 @@
 use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
-    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameData,
-    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties, Md5, Packet,
-    PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224,
-    Sha256, Sha384, Sha512, SideData, VideoFrame,
+    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
+    FrameActiveFormatDescription, FrameData, FrameSeiUnregistered, FrameSideData,
+    FrameSideDataKind, FrameSideDataProperties, Md5, Packet, PacketFlags, PixelFormat, Rational,
+    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
+    VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -971,6 +972,31 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         frame.side_data()[0].supports_multiple_instances(),
         frame_side_data_kind.supports_multiple_instances()
     );
+    match frame.side_data()[0].active_format_description() {
+        Ok(Some(value)) => {
+            assert_eq!(
+                frame_side_data_kind,
+                FrameSideDataKind::ActiveFormatDescription
+            );
+            assert_eq!(frame_side_data_payload, vec![value.as_byte()]);
+            assert!(FrameActiveFormatDescription::from_byte(value.as_byte()).is_ok());
+        }
+        Ok(None) => assert_ne!(
+            frame_side_data_kind,
+            FrameSideDataKind::ActiveFormatDescription
+        ),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(
+                frame_side_data_kind,
+                FrameSideDataKind::ActiveFormatDescription
+            );
+            assert!(
+                frame_side_data_payload.len() != FrameActiveFormatDescription::DATA_LEN
+                    || FrameActiveFormatDescription::from_byte(frame_side_data_payload[0]).is_err()
+            );
+        }
+    }
     match frame.side_data()[0].sei_unregistered() {
         Ok(Some(payload)) => {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::SeiUnregistered);
@@ -1855,6 +1881,36 @@ fn exercise_fixtures() {
         "vendor.private.side-data"
     );
 
+    let afd = FrameSideData::new_active_format_description(
+        FrameActiveFormatDescription::SixteenNineProtectedFourteenNine,
+    )
+    .unwrap();
+    assert_eq!(afd.data(), &[14]);
+    assert_eq!(
+        afd.active_format_description().unwrap(),
+        Some(FrameActiveFormatDescription::SixteenNineProtectedFourteenNine)
+    );
+    assert_eq!(
+        FrameActiveFormatDescription::Same.ffmpeg_constant(),
+        "AV_AFD_SAME"
+    );
+    assert_eq!(
+        FrameActiveFormatDescription::from_byte(12)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::ActiveFormatDescription, vec![8, 9])
+            .unwrap()
+            .active_format_description()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_afd = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![8]).unwrap();
+    assert_eq!(non_afd.active_format_description().unwrap(), None);
+
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
@@ -1997,7 +2053,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 15 {
+    match byte.unwrap_or_default() % 16 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::ReplayGain,
         2 => FrameSideDataKind::MasteringDisplayMetadata,
@@ -2012,6 +2068,7 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         11 => FrameSideDataKind::ThreeDReferenceDisplays,
         12 => FrameSideDataKind::Exif,
         13 => FrameSideDataKind::SeiUnregistered,
+        14 => FrameSideDataKind::ActiveFormatDescription,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }

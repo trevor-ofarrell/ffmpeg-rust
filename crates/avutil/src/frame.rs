@@ -417,6 +417,65 @@ impl FrameSideDataDescriptor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum FrameActiveFormatDescription {
+    Same = 8,
+    FourThree = 9,
+    SixteenNine = 10,
+    FourteenNine = 11,
+    FourThreeProtectedFourteenNine = 13,
+    SixteenNineProtectedFourteenNine = 14,
+    ProtectedFourThree = 15,
+}
+
+impl FrameActiveFormatDescription {
+    pub const DATA_LEN: usize = 1;
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "active format description frame side data requires exactly {} byte, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Self::from_byte(data[0])
+    }
+
+    pub fn from_byte(value: u8) -> AvResult<Self> {
+        match value {
+            8 => Ok(Self::Same),
+            9 => Ok(Self::FourThree),
+            10 => Ok(Self::SixteenNine),
+            11 => Ok(Self::FourteenNine),
+            13 => Ok(Self::FourThreeProtectedFourteenNine),
+            14 => Ok(Self::SixteenNineProtectedFourteenNine),
+            15 => Ok(Self::ProtectedFourThree),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid active format description value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_byte(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Same => "AV_AFD_SAME",
+            Self::FourThree => "AV_AFD_4_3",
+            Self::SixteenNine => "AV_AFD_16_9",
+            Self::FourteenNine => "AV_AFD_14_9",
+            Self::FourThreeProtectedFourteenNine => "AV_AFD_4_3_SP_14_9",
+            Self::SixteenNineProtectedFourteenNine => "AV_AFD_16_9_SP_14_9",
+            Self::ProtectedFourThree => "AV_AFD_SP_4_3",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameSeiUnregistered<'a> {
     uuid: [u8; 16],
     user_data: &'a [u8],
@@ -799,6 +858,13 @@ impl FrameSideData {
         Self::new_with_buffer_ref(kind, BufferRef::from_vec(data))
     }
 
+    pub fn new_active_format_description(value: FrameActiveFormatDescription) -> AvResult<Self> {
+        Self::new_with_kind(
+            FrameSideDataKind::ActiveFormatDescription,
+            vec![value.as_byte()],
+        )
+    }
+
     pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
         let total_len = FrameSeiUnregistered::UUID_LEN
             .checked_add(user_data.len())
@@ -855,6 +921,14 @@ impl FrameSideData {
 
     pub fn supports_multiple_instances(&self) -> bool {
         self.kind.supports_multiple_instances()
+    }
+
+    pub fn active_format_description(&self) -> AvResult<Option<FrameActiveFormatDescription>> {
+        if self.kind != FrameSideDataKind::ActiveFormatDescription {
+            return Ok(None);
+        }
+
+        FrameActiveFormatDescription::parse(self.data()).map(Some)
     }
 
     pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
@@ -3169,6 +3243,91 @@ mod tests {
             .union(Props::COLOR_DEPENDENT)
             .intersects(Props::COLOR_DEPENDENT));
         assert!(!Props::GLOBAL.intersects(Props::SIZE_DEPENDENT));
+    }
+
+    #[test]
+    fn frame_side_data_parses_active_format_description_payload() {
+        let expected = [
+            (FrameActiveFormatDescription::Same, 8, "AV_AFD_SAME"),
+            (FrameActiveFormatDescription::FourThree, 9, "AV_AFD_4_3"),
+            (FrameActiveFormatDescription::SixteenNine, 10, "AV_AFD_16_9"),
+            (
+                FrameActiveFormatDescription::FourteenNine,
+                11,
+                "AV_AFD_14_9",
+            ),
+            (
+                FrameActiveFormatDescription::FourThreeProtectedFourteenNine,
+                13,
+                "AV_AFD_4_3_SP_14_9",
+            ),
+            (
+                FrameActiveFormatDescription::SixteenNineProtectedFourteenNine,
+                14,
+                "AV_AFD_16_9_SP_14_9",
+            ),
+            (
+                FrameActiveFormatDescription::ProtectedFourThree,
+                15,
+                "AV_AFD_SP_4_3",
+            ),
+        ];
+
+        for (value, byte, ffmpeg_constant) in expected {
+            assert_eq!(value.as_byte(), byte);
+            assert_eq!(value.ffmpeg_constant(), ffmpeg_constant);
+            assert_eq!(
+                FrameActiveFormatDescription::from_byte(byte).unwrap(),
+                value
+            );
+            let side_data = FrameSideData::new_active_format_description(value).unwrap();
+            assert_eq!(
+                side_data.kind_id(),
+                &FrameSideDataKind::ActiveFormatDescription
+            );
+            assert_eq!(side_data.data(), &[byte]);
+            assert_eq!(side_data.active_format_description().unwrap(), Some(value));
+        }
+
+        let replay_gain =
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![8]).unwrap();
+        assert_eq!(replay_gain.active_format_description().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_active_format_description_payload() {
+        let bad_lengths: [&[u8]; 2] = [&[], &[8, 9]];
+        for data in bad_lengths {
+            assert_eq!(
+                FrameActiveFormatDescription::parse(data)
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data = FrameSideData::new_with_kind(
+                FrameSideDataKind::ActiveFormatDescription,
+                data.to_vec(),
+            )
+            .unwrap();
+            assert_eq!(
+                side_data.active_format_description().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            FrameActiveFormatDescription::from_byte(12)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        let side_data =
+            FrameSideData::new_with_kind(FrameSideDataKind::ActiveFormatDescription, vec![12])
+                .unwrap();
+        assert_eq!(
+            side_data.active_format_description().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
     }
 
     #[test]
