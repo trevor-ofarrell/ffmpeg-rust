@@ -1162,7 +1162,12 @@ fn streamhash_types_from_mov_info(info: &MovInfo) -> StreamHashStreamTypeMap {
 }
 
 fn streamhash_type_from_mov_track(track: &MovTrackInfo) -> StreamHashStreamType {
-    if track
+    if let Some(stream_type) = track
+        .handler_type()
+        .and_then(streamhash_type_from_mov_handler)
+    {
+        stream_type
+    } else if track
         .codec_parameters()
         .is_some_and(|parameters| matches!(parameters.details(), MovSampleEntryDetails::Video(_)))
         || (track.width().is_some() && track.height().is_some())
@@ -1170,6 +1175,16 @@ fn streamhash_type_from_mov_track(track: &MovTrackInfo) -> StreamHashStreamType 
         StreamHashStreamType::Video
     } else {
         StreamHashStreamType::Unknown
+    }
+}
+
+fn streamhash_type_from_mov_handler(handler_type: &str) -> Option<StreamHashStreamType> {
+    match handler_type {
+        "vide" => Some(StreamHashStreamType::Video),
+        "soun" => Some(StreamHashStreamType::Audio),
+        "subt" | "sbtl" | "text" | "clcp" => Some(StreamHashStreamType::Subtitle),
+        "meta" | "hint" => Some(StreamHashStreamType::Data),
+        _ => None,
     }
 }
 
@@ -1643,6 +1658,7 @@ mod tests {
     const TKHD_ID: [u8; 4] = *b"tkhd";
     const MDIA_ID: [u8; 4] = *b"mdia";
     const MDHD_ID: [u8; 4] = *b"mdhd";
+    const HDLR_ID: [u8; 4] = *b"hdlr";
     const MINF_ID: [u8; 4] = *b"minf";
     const STBL_ID: [u8; 4] = *b"stbl";
     const STSD_ID: [u8; 4] = *b"stsd";
@@ -1911,6 +1927,45 @@ mod tests {
     }
 
     #[test]
+    fn runs_mov_audio_handler_to_streamhash_stdout_with_audio_type() {
+        let path = write_temp_mov(
+            "streamhash-audio-handler",
+            &sampled_mov_file_with_handler(
+                &[b"abc".as_slice(), b"defg".as_slice()],
+                &[1_000, 2_000],
+                *b"soun",
+                0,
+                0,
+            ),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-hide_banner",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "streamhash",
+            "-",
+        ]))
+        .expect("ffmpeg streamhash command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("streamhash"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 7);
+        assert!(output.stderr().is_empty());
+        assert_eq!(
+            output.stdout(),
+            format!(
+                "0,a,SHA256={}\n",
+                avutil::digest_to_hex(&avutil::sha256(b"abcdefg"))
+            )
+        );
+    }
+
+    #[test]
     fn streamhash_type_maps_derive_from_container_metadata() {
         let avi_bytes = avi_file_bytes(2, 1, Rational::new(25, 1).unwrap(), &[b"abcdef"]);
         let avi = AviDemuxer::open(&avi_bytes).unwrap();
@@ -1920,6 +1975,10 @@ mod tests {
         let mov = MovDemuxer::open(&mov_bytes).unwrap();
         let mov_types = streamhash_types_from_mov_info(mov.info());
 
+        let mov_audio_bytes = sampled_mov_file_with_handler(&[b"abc"], &[1_000], *b"soun", 0, 0);
+        let mov_audio = MovDemuxer::open(&mov_audio_bytes).unwrap();
+        let mov_audio_types = streamhash_types_from_mov_info(mov_audio.info());
+
         assert_eq!(
             avi_types.stream_type_for_index(0).unwrap(),
             StreamHashStreamType::Video
@@ -1928,8 +1987,13 @@ mod tests {
             mov_types.stream_type_for_index(0).unwrap(),
             StreamHashStreamType::Video
         );
+        assert_eq!(
+            mov_audio_types.stream_type_for_index(0).unwrap(),
+            StreamHashStreamType::Audio
+        );
         assert!(avi_types.stream_type_for_index(1).is_err());
         assert!(mov_types.stream_type_for_index(1).is_err());
+        assert!(mov_audio_types.stream_type_for_index(1).is_err());
     }
 
     #[test]
@@ -3623,16 +3687,41 @@ mod tests {
     }
 
     fn sampled_mov_file(samples: &[&[u8]], durations: &[u32]) -> Vec<u8> {
+        sampled_mov_file_with_handler(samples, durations, *b"vide", 1_920, 1_080)
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct MovTrackFixture {
+        handler_type: [u8; 4],
+        width: u32,
+        height: u32,
+    }
+
+    fn sampled_mov_file_with_handler(
+        samples: &[&[u8]],
+        durations: &[u32],
+        handler_type: [u8; 4],
+        track_width: u32,
+        track_height: u32,
+    ) -> Vec<u8> {
         let ftyp = ftyp_box();
         let sample_sizes = samples
             .iter()
             .map(|sample| u32::try_from(sample.len()).unwrap())
             .collect::<Vec<_>>();
-        let placeholder_moov = box_(MOOV_ID, &moov_with_samples(0, &sample_sizes, durations));
+        let track = MovTrackFixture {
+            handler_type,
+            width: track_width,
+            height: track_height,
+        };
+        let placeholder_moov = box_(
+            MOOV_ID,
+            &moov_with_samples(0, &sample_sizes, durations, track),
+        );
         let chunk_offset = u32::try_from(ftyp.len() + placeholder_moov.len() + 8).unwrap();
         let moov = box_(
             MOOV_ID,
-            &moov_with_samples(chunk_offset, &sample_sizes, durations),
+            &moov_with_samples(chunk_offset, &sample_sizes, durations, track),
         );
         let mut out = Vec::new();
         out.extend_from_slice(&ftyp);
@@ -3641,7 +3730,12 @@ mod tests {
         out
     }
 
-    fn moov_with_samples(chunk_offset: u32, sample_sizes: &[u32], durations: &[u32]) -> Vec<u8> {
+    fn moov_with_samples(
+        chunk_offset: u32,
+        sample_sizes: &[u32],
+        durations: &[u32],
+        track: MovTrackFixture,
+    ) -> Vec<u8> {
         let media_duration = durations.iter().copied().sum::<u32>();
         [
             mvhd_v0(1_000, media_duration),
@@ -3652,6 +3746,7 @@ mod tests {
                 sample_sizes,
                 durations,
                 chunk_offset,
+                track,
             ),
         ]
         .concat()
@@ -3664,6 +3759,7 @@ mod tests {
         sample_sizes: &[u32],
         durations: &[u32],
         chunk_offset: u32,
+        track: MovTrackFixture,
     ) -> Vec<u8> {
         let stbl = box_(
             STBL_ID,
@@ -3680,11 +3776,20 @@ mod tests {
         let minf = box_(MINF_ID, &stbl);
         let mdia = box_(
             MDIA_ID,
-            &[mdhd_v0(timescale, media_duration), minf].concat(),
+            &[
+                mdhd_v0(timescale, media_duration),
+                hdlr_box(track.handler_type, b"Rust Handler\0"),
+                minf,
+            ]
+            .concat(),
         );
         box_(
             TRAK_ID,
-            &[tkhd_v0(track_id, media_duration, 1_920, 1_080), mdia].concat(),
+            &[
+                tkhd_v0(track_id, media_duration, track.width, track.height),
+                mdia,
+            ]
+            .concat(),
         )
     }
 
@@ -3802,6 +3907,15 @@ mod tests {
         body.extend_from_slice(&0_u16.to_be_bytes());
         body.extend_from_slice(&0_u16.to_be_bytes());
         box_(MDHD_ID, &full_box(0, &body))
+    }
+
+    fn hdlr_box(handler_type: [u8; 4], handler_name: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&0_u32.to_be_bytes());
+        body.extend_from_slice(&handler_type);
+        body.extend_from_slice(&[0; 12]);
+        body.extend_from_slice(handler_name);
+        box_(HDLR_ID, &full_box(0, &body))
     }
 
     fn full_box(version: u8, body: &[u8]) -> Vec<u8> {

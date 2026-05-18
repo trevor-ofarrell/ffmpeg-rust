@@ -1155,10 +1155,22 @@ fn color_primaries_name(value: u16) -> String {
 }
 
 fn mov_codec_type(track: &MovTrackInfo) -> &'static str {
-    if track.width().is_some() || track.height().is_some() {
+    if let Some(codec_type) = track.handler_type().and_then(codec_type_from_mov_handler) {
+        codec_type
+    } else if track.width().is_some() || track.height().is_some() {
         "video"
     } else {
         "unknown"
+    }
+}
+
+fn codec_type_from_mov_handler(handler_type: &str) -> Option<&'static str> {
+    match handler_type {
+        "vide" => Some("video"),
+        "soun" => Some("audio"),
+        "subt" | "sbtl" | "text" | "clcp" => Some("subtitle"),
+        "meta" | "hint" => Some("data"),
+        _ => None,
     }
 }
 
@@ -2034,6 +2046,46 @@ mod tests {
     }
 
     #[test]
+    fn outputs_mov_audio_handler_codec_type_json() {
+        let stsd = generic_stsd_box(*b"mp4a");
+        let path = write_temp_mov(
+            "show-streams-audio-handler",
+            &sampled_mov_file_with_handler_and_stsd(
+                &[b"abc".as_slice()],
+                &[1_024],
+                0,
+                0,
+                *b"soun",
+                b"Rust Audio Handler\0",
+                &stsd,
+            ),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-show_streams",
+            "-of",
+            "json",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("\"codec_type\": \"audio\""));
+        assert!(stdout.contains("\"codec_tag_string\": \"mp4a\""));
+        assert!(stdout.contains("\"codec_tag\": \"0x6134706d\""));
+        assert!(stdout.contains("\"time_base\": \"1/90000\""));
+        assert!(stdout.contains("\"duration_ts\": 1024"));
+        assert!(stdout.contains(
+            "\"tags\": {\"language\": \"eng\", \"handler_name\": \"Rust Audio Handler\"}"
+        ));
+        assert!(!stdout.contains("\"field_order\""));
+        assert!(!stdout.contains("\"width\""));
+        assert!(!stdout.contains("\"height\""));
+    }
+
+    #[test]
     fn outputs_mov_stream_frame_count_json() {
         let path = write_temp_mov(
             "show-stream-count-frames",
@@ -2662,6 +2714,8 @@ mod tests {
         chunk_offset: u32,
         track_width: u32,
         track_height: u32,
+        handler_type: [u8; 4],
+        handler_name: &'a [u8],
         stsd: &'a [u8],
     }
 
@@ -2705,34 +2759,54 @@ mod tests {
         track_height: u32,
         stsd: &[u8],
     ) -> Vec<u8> {
+        sampled_mov_file_with_handler_and_stsd(
+            samples,
+            durations,
+            track_width,
+            track_height,
+            *b"vide",
+            b"Rust Video Handler\0",
+            stsd,
+        )
+    }
+
+    fn sampled_mov_file_with_handler_and_stsd(
+        samples: &[&[u8]],
+        durations: &[u32],
+        track_width: u32,
+        track_height: u32,
+        handler_type: [u8; 4],
+        handler_name: &[u8],
+        stsd: &[u8],
+    ) -> Vec<u8> {
         let ftyp = ftyp_box();
         let sample_sizes = samples
             .iter()
             .map(|sample| u32::try_from(sample.len()).unwrap())
             .collect::<Vec<_>>();
-        let placeholder_moov = box_(
-            MOOV_ID,
-            &moov_with_samples_and_stsd(
-                0,
-                &sample_sizes,
-                durations,
-                track_width,
-                track_height,
-                stsd,
-            ),
-        );
+        let placeholder_fixture = MovSampleTableFixture {
+            sample_sizes: &sample_sizes,
+            durations,
+            chunk_offset: 0,
+            track_width,
+            track_height,
+            handler_type,
+            handler_name,
+            stsd,
+        };
+        let placeholder_moov = box_(MOOV_ID, &moov_with_samples_and_stsd(&placeholder_fixture));
         let chunk_offset = u32::try_from(ftyp.len() + placeholder_moov.len() + 8).unwrap();
-        let moov = box_(
-            MOOV_ID,
-            &moov_with_samples_and_stsd(
-                chunk_offset,
-                &sample_sizes,
-                durations,
-                track_width,
-                track_height,
-                stsd,
-            ),
-        );
+        let fixture = MovSampleTableFixture {
+            sample_sizes: &sample_sizes,
+            durations,
+            chunk_offset,
+            track_width,
+            track_height,
+            handler_type,
+            handler_name,
+            stsd,
+        };
+        let moov = box_(MOOV_ID, &moov_with_samples_and_stsd(&fixture));
         let mut out = Vec::new();
         out.extend_from_slice(&ftyp);
         out.extend_from_slice(&moov);
@@ -2750,26 +2824,11 @@ mod tests {
         muxer.finish().unwrap()
     }
 
-    fn moov_with_samples_and_stsd(
-        chunk_offset: u32,
-        sample_sizes: &[u32],
-        durations: &[u32],
-        track_width: u32,
-        track_height: u32,
-        stsd: &[u8],
-    ) -> Vec<u8> {
-        let media_duration = durations.iter().copied().sum::<u32>();
-        let fixture = MovSampleTableFixture {
-            sample_sizes,
-            durations,
-            chunk_offset,
-            track_width,
-            track_height,
-            stsd,
-        };
+    fn moov_with_samples_and_stsd(fixture: &MovSampleTableFixture<'_>) -> Vec<u8> {
+        let media_duration = fixture.durations.iter().copied().sum::<u32>();
         [
             mvhd_v0(1_000, media_duration),
-            trak_with_sample_table_and_stsd(1, media_duration, 90_000, &fixture),
+            trak_with_sample_table_and_stsd(1, media_duration, 90_000, fixture),
         ]
         .concat()
     }
@@ -2797,7 +2856,7 @@ mod tests {
             MDIA_ID,
             &[
                 mdhd_v0_with_language(timescale, media_duration, "eng"),
-                hdlr_box(*b"vide", b"Rust Video Handler\0"),
+                hdlr_box(fixture.handler_type, fixture.handler_name),
                 minf,
             ]
             .concat(),
@@ -2818,9 +2877,13 @@ mod tests {
     }
 
     fn stsd_box() -> Vec<u8> {
+        generic_stsd_box(*b"raw ")
+    }
+
+    fn generic_stsd_box(codec_tag: [u8; 4]) -> Vec<u8> {
         let mut sample_entry = Vec::new();
         sample_entry.extend_from_slice(&16_u32.to_be_bytes());
-        sample_entry.extend_from_slice(b"raw ");
+        sample_entry.extend_from_slice(&codec_tag);
         sample_entry.extend_from_slice(&[0; 6]);
         sample_entry.extend_from_slice(&1_u16.to_be_bytes());
 

@@ -522,6 +522,7 @@ pub struct MovTrackInfo {
     duration: Option<u64>,
     width: Option<u32>,
     height: Option<u32>,
+    handler_type: Option<String>,
     media_timescale: u32,
     media_duration: Option<u64>,
     metadata: Dictionary,
@@ -545,6 +546,10 @@ impl MovTrackInfo {
 
     pub fn height(&self) -> Option<u32> {
         self.height
+    }
+
+    pub fn handler_type(&self) -> Option<&str> {
+        self.handler_type.as_deref()
     }
 
     pub fn media_timescale(&self) -> u32 {
@@ -712,6 +717,7 @@ struct MediaHeader {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MediaData {
     header: MediaHeader,
+    handler_type: Option<String>,
     metadata: Dictionary,
     sample_table: Option<SampleTable>,
 }
@@ -842,6 +848,7 @@ fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
             duration: track_header.duration,
             width: track_header.width,
             height: track_header.height,
+            handler_type: media_data.handler_type,
             media_timescale: media_data.header.timescale,
             media_duration: media_data.header.duration,
             metadata: metadata.tags,
@@ -855,6 +862,7 @@ fn parse_trak(input: &[u8], trak: &BoxHeader) -> AvResult<TrackData> {
 
 fn parse_mdia(input: &[u8], mdia: &BoxHeader) -> AvResult<MediaData> {
     let mut media_header = None;
+    let mut handler_type = None;
     let mut metadata = Dictionary::new();
     let mut sample_table = None;
     for child in read_box_headers(input, mdia.payload_start, mdia.payload_end, "MOV/MP4 mdia")? {
@@ -867,7 +875,9 @@ fn parse_mdia(input: &[u8], mdia: &BoxHeader) -> AvResult<MediaData> {
                 media_header = Some(header);
             }
             HDLR_ID => {
-                if let Some(handler_name) = parse_hdlr(child.payload(input))? {
+                let handler = parse_hdlr(child.payload(input))?;
+                handler_type = Some(handler.handler_type);
+                if let Some(handler_name) = handler.name {
                     set_metadata_value(&mut metadata, "handler_name", handler_name)?;
                 }
             }
@@ -879,6 +889,7 @@ fn parse_mdia(input: &[u8], mdia: &BoxHeader) -> AvResult<MediaData> {
         media_header.ok_or_else(|| AvError::invalid_data("MOV/MP4 mdia missing mdhd box"))?;
     Ok(MediaData {
         header,
+        handler_type,
         metadata,
         sample_table,
     })
@@ -2077,7 +2088,13 @@ fn decode_mdhd_language(language: u16) -> Option<String> {
     Some(out)
 }
 
-fn parse_hdlr(payload: &[u8]) -> AvResult<Option<String>> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HandlerInfo {
+    handler_type: String,
+    name: Option<String>,
+}
+
+fn parse_hdlr(payload: &[u8]) -> AvResult<HandlerInfo> {
     let mut reader = ByteReader::new(payload);
     let (version, _) = read_full_box_header(&mut reader, "MOV/MP4 hdlr")?;
     if version != 0 {
@@ -2087,7 +2104,7 @@ fn parse_hdlr(payload: &[u8]) -> AvResult<Option<String>> {
     }
     ensure_remaining(&reader, 20, "MOV/MP4 hdlr")?;
     reader.skip(4)?;
-    let _handler_type = read_fourcc(&mut reader)?;
+    let handler_type = fourcc_to_string(read_fourcc(&mut reader)?);
     reader.skip(12)?;
 
     let name = reader.read_exact(reader.remaining())?;
@@ -2096,11 +2113,18 @@ fn parse_hdlr(payload: &[u8]) -> AvResult<Option<String>> {
         .position(|byte| *byte == 0)
         .map_or(name, |nul| &name[..nul]);
     if name.is_empty() {
-        return Ok(None);
+        return Ok(HandlerInfo {
+            handler_type,
+            name: None,
+        });
     }
-    std::str::from_utf8(name)
-        .map(|value| Some(value.to_owned()))
-        .map_err(|_| AvError::invalid_data("MOV/MP4 hdlr name is not valid UTF-8"))
+    let name = std::str::from_utf8(name)
+        .map_err(|_| AvError::invalid_data("MOV/MP4 hdlr name is not valid UTF-8"))?
+        .to_owned();
+    Ok(HandlerInfo {
+        handler_type,
+        name: Some(name),
+    })
 }
 
 fn build_packets(
@@ -2525,10 +2549,21 @@ mod tests {
         let bytes = mp4_with_media_handler_name(b"Rust Video Handler\0");
         let demuxer = MovDemuxer::open(&bytes).unwrap();
 
+        assert_eq!(demuxer.info().tracks()[0].handler_type(), Some("vide"));
         assert_eq!(
             demuxer.info().tracks()[0].metadata().get("handler_name"),
             Some("Rust Video Handler")
         );
+    }
+
+    #[test]
+    fn extracts_media_handler_type_without_handler_name() {
+        let bytes = mp4_with_media_handler(*b"soun", b"");
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let track = &demuxer.info().tracks()[0];
+
+        assert_eq!(track.handler_type(), Some("soun"));
+        assert_eq!(track.metadata().get("handler_name"), None);
     }
 
     #[test]
@@ -4318,9 +4353,17 @@ mod tests {
     }
 
     fn mp4_with_media_handler_name(handler_name: &[u8]) -> Vec<u8> {
+        mp4_with_media_handler(*b"vide", handler_name)
+    }
+
+    fn mp4_with_media_handler(handler_type: [u8; 4], handler_name: &[u8]) -> Vec<u8> {
         let mdia = box_(
             *MDIA_ID,
-            &[mdhd_v0(90_000, 450_000), hdlr_box(*b"vide", handler_name)].concat(),
+            &[
+                mdhd_v0(90_000, 450_000),
+                hdlr_box(handler_type, handler_name),
+            ]
+            .concat(),
         );
         let moov = box_(
             *MOOV_ID,
