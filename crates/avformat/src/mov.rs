@@ -182,6 +182,183 @@ pub enum MovSampleEntryDetails {
     Generic,
     Audio(MovAudioSampleEntry),
     Video(Box<MovVideoSampleEntry>),
+    Subtitle(MovSubtitleSampleEntry),
+    Data(MovDataSampleEntry),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MovSubtitleSampleEntry {
+    TimedText(MovTimedTextSampleEntry),
+}
+
+impl MovSubtitleSampleEntry {
+    pub fn timed_text(&self) -> Option<&MovTimedTextSampleEntry> {
+        match self {
+            Self::TimedText(entry) => Some(entry),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovTimedTextSampleEntry {
+    display_flags: u32,
+    horizontal_justification: i8,
+    vertical_justification: i8,
+    background_color_rgba: [u8; 4],
+    default_text_box: MovTextBoxRecord,
+    default_style: MovTextStyleRecord,
+    child_boxes: Vec<MovSampleEntryChildBox>,
+}
+
+impl MovTimedTextSampleEntry {
+    pub fn display_flags(&self) -> u32 {
+        self.display_flags
+    }
+
+    pub fn horizontal_justification(&self) -> i8 {
+        self.horizontal_justification
+    }
+
+    pub fn vertical_justification(&self) -> i8 {
+        self.vertical_justification
+    }
+
+    pub fn background_color_rgba(&self) -> [u8; 4] {
+        self.background_color_rgba
+    }
+
+    pub fn default_text_box(&self) -> &MovTextBoxRecord {
+        &self.default_text_box
+    }
+
+    pub fn default_style(&self) -> &MovTextStyleRecord {
+        &self.default_style
+    }
+
+    pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.child_boxes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovTextBoxRecord {
+    top: i16,
+    left: i16,
+    bottom: i16,
+    right: i16,
+}
+
+impl MovTextBoxRecord {
+    pub fn top(&self) -> i16 {
+        self.top
+    }
+
+    pub fn left(&self) -> i16 {
+        self.left
+    }
+
+    pub fn bottom(&self) -> i16 {
+        self.bottom
+    }
+
+    pub fn right(&self) -> i16 {
+        self.right
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovTextStyleRecord {
+    start_char: u16,
+    end_char: u16,
+    font_id: u16,
+    face_style_flags: u8,
+    font_size: u8,
+    text_color_rgba: [u8; 4],
+}
+
+impl MovTextStyleRecord {
+    pub fn start_char(&self) -> u16 {
+        self.start_char
+    }
+
+    pub fn end_char(&self) -> u16 {
+        self.end_char
+    }
+
+    pub fn font_id(&self) -> u16 {
+        self.font_id
+    }
+
+    pub fn face_style_flags(&self) -> u8 {
+        self.face_style_flags
+    }
+
+    pub fn font_size(&self) -> u8 {
+        self.font_size
+    }
+
+    pub fn text_color_rgba(&self) -> [u8; 4] {
+        self.text_color_rgba
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MovDataSampleEntry {
+    XmlMetadata(MovXmlMetadataSampleEntry),
+    TextMetadata(MovTextMetadataSampleEntry),
+}
+
+impl MovDataSampleEntry {
+    pub fn xml_metadata(&self) -> Option<&MovXmlMetadataSampleEntry> {
+        match self {
+            Self::XmlMetadata(entry) => Some(entry),
+            Self::TextMetadata(_) => None,
+        }
+    }
+
+    pub fn text_metadata(&self) -> Option<&MovTextMetadataSampleEntry> {
+        match self {
+            Self::TextMetadata(entry) => Some(entry),
+            Self::XmlMetadata(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovXmlMetadataSampleEntry {
+    content_encoding: String,
+    namespace: String,
+    schema_location: String,
+}
+
+impl MovXmlMetadataSampleEntry {
+    pub fn content_encoding(&self) -> &str {
+        &self.content_encoding
+    }
+
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+
+    pub fn schema_location(&self) -> &str {
+        &self.schema_location
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovTextMetadataSampleEntry {
+    content_encoding: String,
+    mime_format: String,
+}
+
+impl MovTextMetadataSampleEntry {
+    pub fn content_encoding(&self) -> &str {
+        &self.content_encoding
+    }
+
+    pub fn mime_format(&self) -> &str {
+        &self.mime_format
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1697,6 +1874,15 @@ fn parse_sample_entry_details(
         tag if is_audio_sample_entry(tag) => {
             parse_audio_sample_entry(extra_data).map(MovSampleEntryDetails::Audio)
         }
+        b"tx3g" => parse_timed_text_sample_entry(extra_data)
+            .map(MovSubtitleSampleEntry::TimedText)
+            .map(MovSampleEntryDetails::Subtitle),
+        b"metx" => parse_xml_metadata_sample_entry(extra_data)
+            .map(MovDataSampleEntry::XmlMetadata)
+            .map(MovSampleEntryDetails::Data),
+        b"mett" => parse_text_metadata_sample_entry(extra_data)
+            .map(MovDataSampleEntry::TextMetadata)
+            .map(MovSampleEntryDetails::Data),
         _ => Ok(MovSampleEntryDetails::Generic),
     }
 }
@@ -1720,6 +1906,89 @@ fn is_audio_sample_entry(codec_tag: &[u8]) -> bool {
             | b"ulaw"
             | b"alaw"
     )
+}
+
+fn parse_timed_text_sample_entry(extra_data: &[u8]) -> AvResult<MovTimedTextSampleEntry> {
+    let mut reader = ByteReader::new(extra_data);
+    ensure_remaining(&reader, 30, "MOV/MP4 tx3g sample entry")?;
+    let display_flags = reader.read_u32_be()?;
+    let horizontal_justification = reader.read_i8()?;
+    let vertical_justification = reader.read_i8()?;
+    let background_color_rgba = read_fixed_array_4(&mut reader)?;
+    let default_text_box = MovTextBoxRecord {
+        top: reader.read_i16_be()?,
+        left: reader.read_i16_be()?,
+        bottom: reader.read_i16_be()?,
+        right: reader.read_i16_be()?,
+    };
+    let default_style = MovTextStyleRecord {
+        start_char: reader.read_u16_be()?,
+        end_char: reader.read_u16_be()?,
+        font_id: reader.read_u16_be()?,
+        face_style_flags: reader.read_u8()?,
+        font_size: reader.read_u8()?,
+        text_color_rgba: read_fixed_array_4(&mut reader)?,
+    };
+    let child_boxes = parse_sample_entry_child_boxes(
+        extra_data,
+        reader.position(),
+        extra_data.len(),
+        "MOV/MP4 tx3g sample entry children",
+    )?;
+    Ok(MovTimedTextSampleEntry {
+        display_flags,
+        horizontal_justification,
+        vertical_justification,
+        background_color_rgba,
+        default_text_box,
+        default_style,
+        child_boxes,
+    })
+}
+
+fn parse_xml_metadata_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlMetadataSampleEntry> {
+    let mut reader = ByteReader::new(extra_data);
+    let content_encoding = read_null_terminated_utf8(&mut reader, "MOV/MP4 metx content encoding")?;
+    let namespace = read_null_terminated_utf8(&mut reader, "MOV/MP4 metx namespace")?;
+    let schema_location = read_null_terminated_utf8(&mut reader, "MOV/MP4 metx schema location")?;
+    ensure_box_consumed(&reader, "MOV/MP4 metx sample entry")?;
+    Ok(MovXmlMetadataSampleEntry {
+        content_encoding,
+        namespace,
+        schema_location,
+    })
+}
+
+fn parse_text_metadata_sample_entry(extra_data: &[u8]) -> AvResult<MovTextMetadataSampleEntry> {
+    let mut reader = ByteReader::new(extra_data);
+    let content_encoding = read_null_terminated_utf8(&mut reader, "MOV/MP4 mett content encoding")?;
+    let mime_format = read_null_terminated_utf8(&mut reader, "MOV/MP4 mett MIME format")?;
+    ensure_box_consumed(&reader, "MOV/MP4 mett sample entry")?;
+    Ok(MovTextMetadataSampleEntry {
+        content_encoding,
+        mime_format,
+    })
+}
+
+fn read_fixed_array_4(reader: &mut ByteReader<'_>) -> AvResult<[u8; 4]> {
+    let bytes = reader.read_exact(4)?;
+    Ok([bytes[0], bytes[1], bytes[2], bytes[3]])
+}
+
+fn read_null_terminated_utf8(reader: &mut ByteReader<'_>, context: &str) -> AvResult<String> {
+    let mut bytes = Vec::new();
+    while !reader.is_eof() {
+        let byte = reader.read_u8()?;
+        if byte == 0 {
+            return std::str::from_utf8(&bytes)
+                .map(str::to_owned)
+                .map_err(|_| AvError::invalid_data(format!("{context} is not valid UTF-8")));
+        }
+        bytes.push(byte);
+    }
+    Err(AvError::invalid_data(format!(
+        "{context} is missing a null terminator"
+    )))
 }
 
 fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> {
@@ -3699,6 +3968,75 @@ mod tests {
     }
 
     #[test]
+    fn parses_timed_text_sample_entry_codec_parameters() {
+        let ftab = box_(*b"ftab", &full_box(0, b"\0\x01\0\x01\0\x04Rust"));
+        let extra_data = tx3g_sample_entry_extra_data(&ftab);
+        let bytes = mp4_with_sample_description_entry(b"tx3g", 5, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "tx3g");
+        assert_eq!(codec_parameters.data_reference_index(), 5);
+        assert_eq!(codec_parameters.extra_data(), extra_data.as_slice());
+        let MovSampleEntryDetails::Subtitle(subtitle) = codec_parameters.details() else {
+            panic!("expected subtitle sample entry details");
+        };
+        let timed_text = subtitle.timed_text().unwrap();
+        assert_eq!(timed_text.display_flags(), 0x0000_0200);
+        assert_eq!(timed_text.horizontal_justification(), -1);
+        assert_eq!(timed_text.vertical_justification(), 1);
+        assert_eq!(timed_text.background_color_rgba(), [1, 2, 3, 4]);
+        assert_eq!(timed_text.default_text_box().top(), -10);
+        assert_eq!(timed_text.default_text_box().left(), -20);
+        assert_eq!(timed_text.default_text_box().bottom(), 30);
+        assert_eq!(timed_text.default_text_box().right(), 40);
+        assert_eq!(timed_text.default_style().start_char(), 0);
+        assert_eq!(timed_text.default_style().end_char(), 5);
+        assert_eq!(timed_text.default_style().font_id(), 2);
+        assert_eq!(timed_text.default_style().face_style_flags(), 1);
+        assert_eq!(timed_text.default_style().font_size(), 18);
+        assert_eq!(
+            timed_text.default_style().text_color_rgba(),
+            [10, 20, 30, 255]
+        );
+        assert_eq!(timed_text.child_boxes().len(), 1);
+        assert_eq!(timed_text.child_boxes()[0].box_type(), "ftab");
+        assert_eq!(
+            timed_text.child_boxes()[0].payload(),
+            full_box(0, b"\0\x01\0\x01\0\x04Rust").as_slice()
+        );
+    }
+
+    #[test]
+    fn parses_metadata_sample_entry_codec_parameters() {
+        let metx_extra = xml_metadata_sample_entry_extra_data("utf-8", "urn:rust", "rust.xsd");
+        let bytes = mp4_with_sample_description_entry(b"metx", 1, &metx_extra);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+        let MovSampleEntryDetails::Data(data) = codec_parameters.details() else {
+            panic!("expected data sample entry details");
+        };
+        let xml = data.xml_metadata().unwrap();
+        assert_eq!(xml.content_encoding(), "utf-8");
+        assert_eq!(xml.namespace(), "urn:rust");
+        assert_eq!(xml.schema_location(), "rust.xsd");
+        assert!(data.text_metadata().is_none());
+
+        let mett_extra = text_metadata_sample_entry_extra_data("utf-8", "application/json");
+        let bytes = mp4_with_sample_description_entry(b"mett", 2, &mett_extra);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+        assert_eq!(codec_parameters.data_reference_index(), 2);
+        let MovSampleEntryDetails::Data(data) = codec_parameters.details() else {
+            panic!("expected data sample entry details");
+        };
+        let text = data.text_metadata().unwrap();
+        assert_eq!(text.content_encoding(), "utf-8");
+        assert_eq!(text.mime_format(), "application/json");
+        assert!(data.xml_metadata().is_none());
+    }
+
+    #[test]
     fn parses_visual_sample_entry_codec_parameters() {
         let avcc = avcc_payload(
             100,
@@ -4089,6 +4427,35 @@ mod tests {
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+    }
+
+    #[test]
+    fn rejects_malformed_subtitle_and_data_sample_entries() {
+        let err =
+            MovDemuxer::open(&mp4_with_sample_description_entry(b"tx3g", 1, b"\0")).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_child = box_with_declared_size(*b"ftab", 12, b"\0");
+        let extra_data = tx3g_sample_entry_extra_data(&bad_child);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"tx3g", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"metx",
+            1,
+            b"utf-8\0urn",
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"mett",
+            1,
+            b"utf-8\0\xff\0",
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
     }
 
     #[test]
@@ -5215,6 +5582,51 @@ mod tests {
         sample_entry.extend_from_slice(&data_reference_index.to_be_bytes());
         sample_entry.extend_from_slice(extra_data);
         sample_entry
+    }
+
+    fn tx3g_sample_entry_extra_data(child_boxes: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&0x0000_0200_u32.to_be_bytes());
+        out.push((-1_i8) as u8);
+        out.push(1);
+        out.extend_from_slice(&[1, 2, 3, 4]);
+        for value in [-10_i16, -20, 30, 40] {
+            out.extend_from_slice(&value.to_be_bytes());
+        }
+        out.extend_from_slice(&0_u16.to_be_bytes());
+        out.extend_from_slice(&5_u16.to_be_bytes());
+        out.extend_from_slice(&2_u16.to_be_bytes());
+        out.push(1);
+        out.push(18);
+        out.extend_from_slice(&[10, 20, 30, 255]);
+        out.extend_from_slice(child_boxes);
+        out
+    }
+
+    fn xml_metadata_sample_entry_extra_data(
+        content_encoding: &str,
+        namespace: &str,
+        schema_location: &str,
+    ) -> Vec<u8> {
+        [
+            content_encoding.as_bytes(),
+            b"\0",
+            namespace.as_bytes(),
+            b"\0",
+            schema_location.as_bytes(),
+            b"\0",
+        ]
+        .concat()
+    }
+
+    fn text_metadata_sample_entry_extra_data(content_encoding: &str, mime_format: &str) -> Vec<u8> {
+        [
+            content_encoding.as_bytes(),
+            b"\0",
+            mime_format.as_bytes(),
+            b"\0",
+        ]
+        .concat()
     }
 
     fn wave_extension_payload(original_format: [u8; 4], esds_descriptor: &[u8]) -> Vec<u8> {

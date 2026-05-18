@@ -1,4 +1,6 @@
-use avformat::mov::{MovAudioSampleEntry, MovSampleEntryDetails, MovVideoSampleEntry};
+use avformat::mov::{
+    MovAudioSampleEntry, MovCodecParameters, MovSampleEntryDetails, MovVideoSampleEntry,
+};
 use avformat::{
     register_avi_probe, register_mov_probe, AviDemuxer, AviInfo, AviMediaType, MovDemuxer, MovInfo,
     MovTrackInfo, ProbeRegistry, ProbeRequest,
@@ -1006,6 +1008,8 @@ fn mov_video_sample_entry(track: &MovTrackInfo) -> Option<&MovVideoSampleEntry> 
         MovSampleEntryDetails::Generic => None,
         MovSampleEntryDetails::Audio(_) => None,
         MovSampleEntryDetails::Video(video) => Some(video.as_ref()),
+        MovSampleEntryDetails::Subtitle(_) => None,
+        MovSampleEntryDetails::Data(_) => None,
     }
 }
 
@@ -1014,6 +1018,8 @@ fn mov_audio_sample_entry(track: &MovTrackInfo) -> Option<&MovAudioSampleEntry> 
         MovSampleEntryDetails::Generic => None,
         MovSampleEntryDetails::Audio(audio) => Some(audio),
         MovSampleEntryDetails::Video(_) => None,
+        MovSampleEntryDetails::Subtitle(_) => None,
+        MovSampleEntryDetails::Data(_) => None,
     }
 }
 
@@ -1189,10 +1195,25 @@ fn color_primaries_name(value: u16) -> String {
 fn mov_codec_type(track: &MovTrackInfo) -> &'static str {
     if let Some(codec_type) = track.handler_type().and_then(codec_type_from_mov_handler) {
         codec_type
+    } else if let Some(codec_type) = track
+        .codec_parameters()
+        .and_then(codec_type_from_mov_sample_entry)
+    {
+        codec_type
     } else if track.width().is_some() || track.height().is_some() {
         "video"
     } else {
         "unknown"
+    }
+}
+
+fn codec_type_from_mov_sample_entry(parameters: &MovCodecParameters) -> Option<&'static str> {
+    match parameters.details() {
+        MovSampleEntryDetails::Generic => None,
+        MovSampleEntryDetails::Audio(_) => Some("audio"),
+        MovSampleEntryDetails::Video(_) => Some("video"),
+        MovSampleEntryDetails::Subtitle(_) => Some("subtitle"),
+        MovSampleEntryDetails::Data(_) => Some("data"),
     }
 }
 

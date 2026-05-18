@@ -1,6 +1,7 @@
 use crate::{
     build_io_plan, parse_ffmpeg_args, version_banner, CliOption, Endpoint, IoPlan, PlannedFile,
 };
+use avformat::mov::MovCodecParameters;
 use avformat::{
     register_mov_probe, AviDemuxer, AviInfo, AviMediaType, AviMuxer, FrameCrcMuxer, FrameHashMuxer,
     HashAlgorithm, HashMuxer, Image2Demuxer, Image2Entry, Image2Muxer, Image2Pattern, MovDemuxer,
@@ -1167,14 +1168,33 @@ fn streamhash_type_from_mov_track(track: &MovTrackInfo) -> StreamHashStreamType 
         .and_then(streamhash_type_from_mov_handler)
     {
         stream_type
-    } else if track
-        .codec_parameters()
-        .is_some_and(|parameters| matches!(parameters.details(), MovSampleEntryDetails::Video(_)))
-        || (track.width().is_some() && track.height().is_some())
-    {
-        StreamHashStreamType::Video
     } else {
-        StreamHashStreamType::Unknown
+        match track
+            .codec_parameters()
+            .map(mov_streamhash_type_from_sample_entry)
+        {
+            Some(StreamHashStreamType::Video) => StreamHashStreamType::Video,
+            Some(StreamHashStreamType::Subtitle) => StreamHashStreamType::Subtitle,
+            Some(StreamHashStreamType::Data) => StreamHashStreamType::Data,
+            Some(StreamHashStreamType::Audio) => StreamHashStreamType::Audio,
+            Some(StreamHashStreamType::Unknown) | None => {
+                if track.width().is_some() && track.height().is_some() {
+                    StreamHashStreamType::Video
+                } else {
+                    StreamHashStreamType::Unknown
+                }
+            }
+        }
+    }
+}
+
+fn mov_streamhash_type_from_sample_entry(parameters: &MovCodecParameters) -> StreamHashStreamType {
+    match parameters.details() {
+        MovSampleEntryDetails::Generic => StreamHashStreamType::Unknown,
+        MovSampleEntryDetails::Audio(_) => StreamHashStreamType::Audio,
+        MovSampleEntryDetails::Video(_) => StreamHashStreamType::Video,
+        MovSampleEntryDetails::Subtitle(_) => StreamHashStreamType::Subtitle,
+        MovSampleEntryDetails::Data(_) => StreamHashStreamType::Data,
     }
 }
 
