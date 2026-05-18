@@ -1648,6 +1648,41 @@ mod tests {
     }
 
     #[test]
+    fn audio_frame_supports_non_s16_sample_plane_sizes() {
+        let packed_float =
+            AudioFrame::new(48_000, 2, SampleFormat::Flt, 2, vec![vec![0; 16]]).unwrap();
+        assert_eq!(packed_float.sample_format_name(), "flt");
+        assert_eq!(packed_float.line_sizes(), &[16]);
+        assert_eq!(packed_float.planes(), &[vec![0; 16]]);
+
+        let mut planar_float = AudioFrame::new_with_line_sizes(
+            44_100,
+            2,
+            SampleFormat::FltP,
+            2,
+            vec![vec![0; 8 + 1], vec![1; 8 + 1]],
+            vec![9, 9],
+        )
+        .unwrap();
+        assert_eq!(planar_float.sample_format_name(), "fltp");
+        assert_eq!(planar_float.line_sizes(), &[9, 9]);
+        assert_eq!(planar_float.planes(), &[vec![0; 8], vec![1; 8]]);
+        assert_eq!(planar_float.plane_buffers()[0].as_slice(), &[0; 9]);
+        assert_eq!(planar_float.plane_buffers()[1].as_slice(), &[1; 9]);
+
+        let cloned = planar_float.clone();
+        planar_float.set_plane_visible_data(0, &[2; 8]).unwrap();
+        assert_eq!(planar_float.planes(), &[vec![2; 8], vec![1; 8]]);
+        assert_eq!(
+            planar_float.plane_buffers()[0].as_slice(),
+            &[2, 2, 2, 2, 2, 2, 2, 2, 0]
+        );
+        assert_eq!(cloned.planes(), &[vec![0; 8], vec![1; 8]]);
+        assert!(planar_float.plane_buffers()[1].shares_storage(&cloned.plane_buffers()[1]));
+        assert!(!planar_float.plane_buffers()[0].shares_storage(&cloned.plane_buffers()[0]));
+    }
+
+    #[test]
     fn audio_frame_rejects_invalid_custom_line_sizes() {
         assert_eq!(
             AudioFrame::new_with_line_sizes(

@@ -2,34 +2,85 @@ use crate::{AvError, AvResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SampleFormat {
+    U8,
     S16,
+    S32,
+    Flt,
+    Dbl,
+    U8P,
     S16P,
+    S32P,
+    FltP,
+    DblP,
+    S64,
+    S64P,
 }
 
 impl SampleFormat {
+    pub const ALL: [Self; 12] = [
+        Self::U8,
+        Self::S16,
+        Self::S32,
+        Self::Flt,
+        Self::Dbl,
+        Self::U8P,
+        Self::S16P,
+        Self::S32P,
+        Self::FltP,
+        Self::DblP,
+        Self::S64,
+        Self::S64P,
+    ];
+
     pub fn name(self) -> &'static str {
         match self {
+            Self::U8 => "u8",
             Self::S16 => "s16",
+            Self::S32 => "s32",
+            Self::Flt => "flt",
+            Self::Dbl => "dbl",
+            Self::U8P => "u8p",
             Self::S16P => "s16p",
+            Self::S32P => "s32p",
+            Self::FltP => "fltp",
+            Self::DblP => "dblp",
+            Self::S64 => "s64",
+            Self::S64P => "s64p",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
+            "u8" => Some(Self::U8),
             "s16" => Some(Self::S16),
+            "s32" => Some(Self::S32),
+            "flt" => Some(Self::Flt),
+            "dbl" => Some(Self::Dbl),
+            "u8p" => Some(Self::U8P),
             "s16p" => Some(Self::S16P),
+            "s32p" => Some(Self::S32P),
+            "fltp" => Some(Self::FltP),
+            "dblp" => Some(Self::DblP),
+            "s64" => Some(Self::S64),
+            "s64p" => Some(Self::S64P),
             _ => None,
         }
     }
 
     pub fn bytes_per_sample(self) -> usize {
         match self {
+            Self::U8 | Self::U8P => 1,
             Self::S16 | Self::S16P => 2,
+            Self::S32 | Self::S32P | Self::Flt | Self::FltP => 4,
+            Self::Dbl | Self::DblP | Self::S64 | Self::S64P => 8,
         }
     }
 
     pub fn is_planar(self) -> bool {
-        matches!(self, Self::S16P)
+        matches!(
+            self,
+            Self::U8P | Self::S16P | Self::S32P | Self::FltP | Self::DblP | Self::S64P
+        )
     }
 
     pub fn plane_count(self, channels: u16) -> AvResult<usize> {
@@ -81,35 +132,83 @@ mod tests {
 
     #[test]
     fn sample_formats_report_ffmpeg_names_and_layout() {
-        assert_eq!(SampleFormat::from_name("s16"), Some(SampleFormat::S16));
-        assert_eq!(SampleFormat::from_name("s16p"), Some(SampleFormat::S16P));
-        assert_eq!(SampleFormat::S16.name(), "s16");
-        assert_eq!(SampleFormat::S16P.name(), "s16p");
-        assert!(!SampleFormat::S16.is_planar());
-        assert!(SampleFormat::S16P.is_planar());
-        assert_eq!(SampleFormat::S16.plane_count(2).unwrap(), 1);
-        assert_eq!(SampleFormat::S16P.plane_count(2).unwrap(), 2);
+        let cases = [
+            (SampleFormat::U8, "u8", 1, false),
+            (SampleFormat::S16, "s16", 2, false),
+            (SampleFormat::S32, "s32", 4, false),
+            (SampleFormat::Flt, "flt", 4, false),
+            (SampleFormat::Dbl, "dbl", 8, false),
+            (SampleFormat::U8P, "u8p", 1, true),
+            (SampleFormat::S16P, "s16p", 2, true),
+            (SampleFormat::S32P, "s32p", 4, true),
+            (SampleFormat::FltP, "fltp", 4, true),
+            (SampleFormat::DblP, "dblp", 8, true),
+            (SampleFormat::S64, "s64", 8, false),
+            (SampleFormat::S64P, "s64p", 8, true),
+        ];
+
+        assert_eq!(SampleFormat::ALL.len(), cases.len());
+        for (format, name, bytes_per_sample, is_planar) in cases {
+            assert_eq!(SampleFormat::from_name(name), Some(format));
+            assert_eq!(format.name(), name);
+            assert_eq!(format.bytes_per_sample(), bytes_per_sample);
+            assert_eq!(format.is_planar(), is_planar);
+            assert_eq!(
+                format.plane_count(2).unwrap(),
+                if is_planar { 2 } else { 1 }
+            );
+            assert!(SampleFormat::ALL.contains(&format));
+        }
+
+        assert_eq!(SampleFormat::from_name("s24"), None);
     }
 
     #[test]
     fn sample_formats_compute_packed_payload_sizes() {
-        assert_eq!(SampleFormat::S16.bytes_per_sample(), 2);
-        assert_eq!(SampleFormat::S16.bytes_per_sample_frame(1).unwrap(), 2);
-        assert_eq!(SampleFormat::S16.bytes_per_sample_frame(6).unwrap(), 12);
-        assert_eq!(SampleFormat::S16.plane_sizes(1024, 2).unwrap(), vec![4096]);
-        assert_eq!(SampleFormat::S16.plane_sizes(0, 2).unwrap(), vec![0]);
+        for (format, bytes_per_sample) in [
+            (SampleFormat::U8, 1),
+            (SampleFormat::S16, 2),
+            (SampleFormat::S32, 4),
+            (SampleFormat::Flt, 4),
+            (SampleFormat::Dbl, 8),
+            (SampleFormat::S64, 8),
+        ] {
+            assert_eq!(format.bytes_per_sample(), bytes_per_sample);
+            assert_eq!(format.bytes_per_sample_frame(1).unwrap(), bytes_per_sample);
+            assert_eq!(
+                format.bytes_per_sample_frame(6).unwrap(),
+                bytes_per_sample * 6
+            );
+            assert_eq!(
+                format.plane_sizes(1024, 2).unwrap(),
+                vec![1024 * bytes_per_sample * 2]
+            );
+            assert_eq!(format.plane_sizes(0, 2).unwrap(), vec![0]);
+        }
     }
 
     #[test]
     fn sample_formats_compute_planar_payload_sizes() {
-        assert_eq!(SampleFormat::S16P.bytes_per_sample(), 2);
-        assert_eq!(SampleFormat::S16P.bytes_per_sample_frame(1).unwrap(), 2);
-        assert_eq!(SampleFormat::S16P.bytes_per_sample_frame(6).unwrap(), 12);
-        assert_eq!(
-            SampleFormat::S16P.plane_sizes(1024, 2).unwrap(),
-            vec![2048, 2048]
-        );
-        assert_eq!(SampleFormat::S16P.plane_sizes(0, 3).unwrap(), vec![0, 0, 0]);
+        for (format, bytes_per_sample) in [
+            (SampleFormat::U8P, 1),
+            (SampleFormat::S16P, 2),
+            (SampleFormat::S32P, 4),
+            (SampleFormat::FltP, 4),
+            (SampleFormat::DblP, 8),
+            (SampleFormat::S64P, 8),
+        ] {
+            assert_eq!(format.bytes_per_sample(), bytes_per_sample);
+            assert_eq!(format.bytes_per_sample_frame(1).unwrap(), bytes_per_sample);
+            assert_eq!(
+                format.bytes_per_sample_frame(6).unwrap(),
+                bytes_per_sample * 6
+            );
+            assert_eq!(
+                format.plane_sizes(1024, 2).unwrap(),
+                vec![1024 * bytes_per_sample, 1024 * bytes_per_sample]
+            );
+            assert_eq!(format.plane_sizes(0, 3).unwrap(), vec![0, 0, 0]);
+        }
     }
 
     #[test]

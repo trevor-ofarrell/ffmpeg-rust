@@ -1030,7 +1030,15 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(
         sample_format.is_planar(),
-        sample_format == SampleFormat::S16P
+        matches!(
+            sample_format,
+            SampleFormat::U8P
+                | SampleFormat::S16P
+                | SampleFormat::S32P
+                | SampleFormat::FltP
+                | SampleFormat::DblP
+                | SampleFormat::S64P
+        )
     );
 
     let Ok(plane_sizes) = sample_format.plane_sizes(samples_per_channel, channels) else {
@@ -1042,7 +1050,10 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         sample_format.plane_count(channels).unwrap(),
         plane_sizes.len()
     );
-    assert_eq!(sample_format.bytes_per_sample(), 2);
+    assert_eq!(
+        sample_format.bytes_per_sample(),
+        expected_sample_bytes(sample_format)
+    );
     assert_eq!(
         sample_format.bytes_per_sample_frame(channels).unwrap(),
         usize::from(channels) * sample_format.bytes_per_sample()
@@ -1448,8 +1459,18 @@ fn exercise_fixtures() {
         PixelFormat::Yuv420p.plane_sizes(2, 2).unwrap(),
         vec![4, 1, 1]
     );
+    assert_eq!(SampleFormat::U8.plane_sizes(2, 2).unwrap(), vec![4]);
     assert_eq!(SampleFormat::S16.plane_sizes(2, 2).unwrap(), vec![8]);
+    assert_eq!(SampleFormat::S32.plane_sizes(2, 2).unwrap(), vec![16]);
+    assert_eq!(SampleFormat::Flt.plane_sizes(2, 2).unwrap(), vec![16]);
+    assert_eq!(SampleFormat::Dbl.plane_sizes(2, 2).unwrap(), vec![32]);
+    assert_eq!(SampleFormat::U8P.plane_sizes(2, 2).unwrap(), vec![2, 2]);
     assert_eq!(SampleFormat::S16P.plane_sizes(2, 2).unwrap(), vec![4, 4]);
+    assert_eq!(SampleFormat::S32P.plane_sizes(2, 2).unwrap(), vec![8, 8]);
+    assert_eq!(SampleFormat::FltP.plane_sizes(2, 2).unwrap(), vec![8, 8]);
+    assert_eq!(SampleFormat::DblP.plane_sizes(2, 2).unwrap(), vec![16, 16]);
+    assert_eq!(SampleFormat::S64.plane_sizes(2, 2).unwrap(), vec![32]);
+    assert_eq!(SampleFormat::S64P.plane_sizes(2, 2).unwrap(), vec![16, 16]);
     assert!(ChannelLayout::stereo().contains(Channel::FrontLeft));
     assert!(!ChannelLayout::stereo().contains(Channel::LowFrequency));
     assert_eq!(
@@ -1581,6 +1602,18 @@ fn exercise_fixtures() {
     assert_eq!(planar_audio.sample_format_name(), "s16p");
     assert_eq!(planar_audio.planes(), &[vec![0, 0], vec![1, 0]]);
     assert_eq!(planar_audio.line_sizes(), &[2, 2]);
+
+    let planar_float_audio = AudioFrame::new_with_channel_layout(
+        48_000,
+        ChannelLayout::stereo(),
+        SampleFormat::FltP,
+        1,
+        vec![vec![0; 4], vec![1; 4]],
+    )
+    .unwrap();
+    assert_eq!(planar_float_audio.sample_format_name(), "fltp");
+    assert_eq!(planar_float_audio.planes(), &[vec![0; 4], vec![1; 4]]);
+    assert_eq!(planar_float_audio.line_sizes(), &[4, 4]);
 }
 
 fn expected_rescale(
@@ -1649,10 +1682,16 @@ fn pixel_format_from(byte: Option<u8>) -> PixelFormat {
 }
 
 fn sample_format_from(byte: Option<u8>) -> SampleFormat {
-    if byte.unwrap_or_default() & 1 == 0 {
-        SampleFormat::S16
-    } else {
-        SampleFormat::S16P
+    let formats = SampleFormat::ALL;
+    formats[usize::from(byte.unwrap_or_default()) % formats.len()]
+}
+
+fn expected_sample_bytes(format: SampleFormat) -> usize {
+    match format {
+        SampleFormat::U8 | SampleFormat::U8P => 1,
+        SampleFormat::S16 | SampleFormat::S16P => 2,
+        SampleFormat::S32 | SampleFormat::S32P | SampleFormat::Flt | SampleFormat::FltP => 4,
+        SampleFormat::Dbl | SampleFormat::DblP | SampleFormat::S64 | SampleFormat::S64P => 8,
     }
 }
 
