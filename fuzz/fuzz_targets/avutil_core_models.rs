@@ -5,9 +5,9 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
     FrameActiveFormatDescription, FrameData, FrameSeiUnregistered, FrameSideData,
-    FrameSideDataKind, FrameSideDataProperties, Md5, Packet, PacketFlags, PixelFormat, Rational,
-    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
-    VideoFrame,
+    FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, Md5,
+    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -997,6 +997,31 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             );
         }
     }
+    match frame.side_data()[0].skip_samples() {
+        Ok(Some(payload)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::SkipSamples);
+            let payload_bytes = payload.to_bytes();
+            assert_eq!(&payload_bytes[..], frame_side_data_payload.as_slice());
+            assert_eq!(
+                FrameSkipSamplesReason::from_byte(payload.start_reason().as_byte()).unwrap(),
+                payload.start_reason()
+            );
+            assert_eq!(
+                FrameSkipSamplesReason::from_byte(payload.end_reason().as_byte()).unwrap(),
+                payload.end_reason()
+            );
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::SkipSamples),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::SkipSamples);
+            assert!(
+                frame_side_data_payload.len() != FrameSkipSamples::DATA_LEN
+                    || FrameSkipSamplesReason::from_byte(frame_side_data_payload[8]).is_err()
+                    || FrameSkipSamplesReason::from_byte(frame_side_data_payload[9]).is_err()
+            );
+        }
+    }
     match frame.side_data()[0].sei_unregistered() {
         Ok(Some(payload)) => {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::SeiUnregistered);
@@ -1911,6 +1936,31 @@ fn exercise_fixtures() {
     let non_afd = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![8]).unwrap();
     assert_eq!(non_afd.active_format_description().unwrap(), None);
 
+    let skip_samples = FrameSkipSamples::new(
+        1024,
+        256,
+        FrameSkipSamplesReason::PaddingSilence,
+        FrameSkipSamplesReason::Convergence,
+    );
+    let skip_side_data = FrameSideData::new_skip_samples(skip_samples).unwrap();
+    assert_eq!(skip_side_data.skip_samples().unwrap(), Some(skip_samples));
+    assert_eq!(skip_side_data.data(), &[0, 4, 0, 0, 0, 1, 0, 0, 0, 1]);
+    assert_eq!(
+        FrameSkipSamplesReason::from_byte(2).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::SkipSamples, vec![0; 9])
+            .unwrap()
+            .skip_samples()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_skip =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 10]).unwrap();
+    assert_eq!(non_skip.skip_samples().unwrap(), None);
+
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
@@ -2053,7 +2103,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 16 {
+    match byte.unwrap_or_default() % 17 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::ReplayGain,
         2 => FrameSideDataKind::MasteringDisplayMetadata,
@@ -2069,6 +2119,7 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         12 => FrameSideDataKind::Exif,
         13 => FrameSideDataKind::SeiUnregistered,
         14 => FrameSideDataKind::ActiveFormatDescription,
+        15 => FrameSideDataKind::SkipSamples,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }

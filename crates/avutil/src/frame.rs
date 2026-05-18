@@ -476,6 +476,110 @@ impl FrameActiveFormatDescription {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum FrameSkipSamplesReason {
+    PaddingSilence = 0,
+    Convergence = 1,
+}
+
+impl FrameSkipSamplesReason {
+    pub fn from_byte(value: u8) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::PaddingSilence),
+            1 => Ok(Self::Convergence),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid skip samples reason value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_byte(self) -> u8 {
+        self as u8
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameSkipSamples {
+    start: u32,
+    end: u32,
+    start_reason: FrameSkipSamplesReason,
+    end_reason: FrameSkipSamplesReason,
+}
+
+impl FrameSkipSamples {
+    pub const DATA_LEN: usize = 10;
+
+    pub const fn new(
+        start: u32,
+        end: u32,
+        start_reason: FrameSkipSamplesReason,
+        end_reason: FrameSkipSamplesReason,
+    ) -> Self {
+        Self {
+            start,
+            end,
+            start_reason,
+            end_reason,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "skip samples frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut start = [0; 4];
+        start.copy_from_slice(&data[..4]);
+        let mut end = [0; 4];
+        end.copy_from_slice(&data[4..8]);
+
+        Ok(Self {
+            start: u32::from_le_bytes(start),
+            end: u32::from_le_bytes(end),
+            start_reason: FrameSkipSamplesReason::from_byte(data[8])?,
+            end_reason: FrameSkipSamplesReason::from_byte(data[9])?,
+        })
+    }
+
+    pub const fn start(self) -> u32 {
+        self.start
+    }
+
+    pub const fn end(self) -> u32 {
+        self.end
+    }
+
+    pub const fn start_reason(self) -> FrameSkipSamplesReason {
+        self.start_reason
+    }
+
+    pub const fn end_reason(self) -> FrameSkipSamplesReason {
+        self.end_reason
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let start = self.start.to_le_bytes();
+        let end = self.end.to_le_bytes();
+        [
+            start[0],
+            start[1],
+            start[2],
+            start[3],
+            end[0],
+            end[1],
+            end[2],
+            end[3],
+            self.start_reason.as_byte(),
+            self.end_reason.as_byte(),
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameSeiUnregistered<'a> {
     uuid: [u8; 16],
     user_data: &'a [u8],
@@ -865,6 +969,10 @@ impl FrameSideData {
         )
     }
 
+    pub fn new_skip_samples(value: FrameSkipSamples) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::SkipSamples, value.to_bytes().to_vec())
+    }
+
     pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
         let total_len = FrameSeiUnregistered::UUID_LEN
             .checked_add(user_data.len())
@@ -929,6 +1037,14 @@ impl FrameSideData {
         }
 
         FrameActiveFormatDescription::parse(self.data()).map(Some)
+    }
+
+    pub fn skip_samples(&self) -> AvResult<Option<FrameSkipSamples>> {
+        if self.kind != FrameSideDataKind::SkipSamples {
+            return Ok(None);
+        }
+
+        FrameSkipSamples::parse(self.data()).map(Some)
     }
 
     pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
@@ -3328,6 +3444,99 @@ mod tests {
             side_data.active_format_description().unwrap_err().kind(),
             AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn frame_side_data_parses_skip_samples_payload() {
+        let expected = FrameSkipSamples::new(
+            0x0102_0304,
+            0xA0B0_C0D0,
+            FrameSkipSamplesReason::PaddingSilence,
+            FrameSkipSamplesReason::Convergence,
+        );
+        let expected_bytes = [0x04, 0x03, 0x02, 0x01, 0xD0, 0xC0, 0xB0, 0xA0, 0, 1];
+
+        assert_eq!(expected.start(), 0x0102_0304);
+        assert_eq!(expected.end(), 0xA0B0_C0D0);
+        assert_eq!(
+            expected.start_reason(),
+            FrameSkipSamplesReason::PaddingSilence
+        );
+        assert_eq!(expected.end_reason(), FrameSkipSamplesReason::Convergence);
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            FrameSkipSamplesReason::from_byte(0).unwrap(),
+            FrameSkipSamplesReason::PaddingSilence
+        );
+        assert_eq!(
+            FrameSkipSamplesReason::from_byte(1).unwrap(),
+            FrameSkipSamplesReason::Convergence
+        );
+        assert_eq!(FrameSkipSamples::parse(&expected_bytes).unwrap(), expected);
+
+        let side_data = FrameSideData::new_skip_samples(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::SkipSamples);
+        assert_eq!(side_data.data(), &expected_bytes[..]);
+        assert_eq!(side_data.skip_samples().unwrap(), Some(expected));
+
+        let replay_gain =
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, expected_bytes.to_vec())
+                .unwrap();
+        assert_eq!(replay_gain.skip_samples().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_skip_samples_payload() {
+        for data in [Vec::new(), vec![0; 9], vec![0; 11]] {
+            assert_eq!(
+                FrameSkipSamples::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::SkipSamples, data).unwrap();
+            assert_eq!(
+                side_data.skip_samples().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            FrameSkipSamplesReason::from_byte(2).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        let mut bad_start_reason = [0; FrameSkipSamples::DATA_LEN];
+        bad_start_reason[8] = 2;
+        assert_eq!(
+            FrameSkipSamples::parse(&bad_start_reason)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        let side_data =
+            FrameSideData::new_with_kind(FrameSideDataKind::SkipSamples, bad_start_reason.to_vec())
+                .unwrap();
+        assert_eq!(
+            side_data.skip_samples().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_end_reason = [0; FrameSkipSamples::DATA_LEN];
+        bad_end_reason[9] = 2;
+        assert_eq!(
+            FrameSkipSamples::parse(&bad_end_reason).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        let side_data =
+            FrameSideData::new_with_kind(FrameSideDataKind::SkipSamples, bad_end_reason.to_vec())
+                .unwrap();
+        assert_eq!(
+            side_data.skip_samples().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let non_skip =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 10]).unwrap();
+        assert_eq!(non_skip.skip_samples().unwrap(), None);
     }
 
     #[test]
