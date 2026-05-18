@@ -7,6 +7,22 @@
 # They do not count as upstream FFmpeg FATE parity for media components.
 fate-runner|local-self-test|.|cargo|test|-p|fate-runner
 avformat-mov-demuxer|local-mov-unit|.|cargo|test|-p|avformat|mov::tests
+avutil-error|local-avutil-unit|.|cargo|test|-p|avutil|error
+avutil-rational|local-avutil-unit|.|cargo|test|-p|avutil|rational
+avutil-timebase|local-avutil-unit|.|cargo|test|-p|avutil|timebase
+avutil-packet|local-avutil-unit|.|cargo|test|-p|avutil|packet
+avutil-buffer|local-avutil-unit|.|cargo|test|-p|avutil|buffer
+avutil-frame|local-avutil-unit|.|cargo|test|-p|avutil|frame
+avutil-logging|local-avutil-unit|.|cargo|test|-p|avutil|logging
+avutil-byteio|local-avutil-unit|.|cargo|test|-p|avutil|byteio
+avutil-bitreader|local-avutil-unit|.|cargo|test|-p|avutil|bitreader
+avutil-bitwriter|local-avutil-unit|.|cargo|test|-p|avutil|bitwriter
+avutil-dict|local-avutil-unit|.|cargo|test|-p|avutil|dict
+avutil-options|local-avutil-unit|.|cargo|test|-p|avutil|options
+avutil-pixel-format|local-avutil-unit|.|cargo|test|-p|avutil|pixel
+avutil-sample-format|local-avutil-unit|.|cargo|test|-p|avutil|samplefmt
+avutil-channel-layout|local-avutil-unit|.|cargo|test|-p|avutil|channel_layout
+avutil-hash|local-avutil-unit|.|cargo|test|-p|avutil|hash
 fftools-version|local-version-unit|.|cargo|test|-p|fftools|--lib|version
 fftools-hide-banner|local-hide-banner-unit|.|cargo|test|-p|fftools|--lib|hide_banner
 fftools-option-parser|local-option-parser-unit|.|cargo|test|-p|fftools|--lib|option_parser

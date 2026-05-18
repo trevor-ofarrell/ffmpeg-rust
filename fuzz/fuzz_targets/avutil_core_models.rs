@@ -2,9 +2,9 @@
 
 use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
-    sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, Channel,
-    ChannelLayout, Crc32, Frame, FrameData, Md5, Packet, PacketFlags, PixelFormat, Rational,
-    Rounding, SampleFormat, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferRef,
+    Channel, ChannelLayout, Crc32, Frame, FrameData, Md5, Packet, PacketFlags, PixelFormat,
+    Rational, Rounding, SampleFormat, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -16,12 +16,73 @@ fuzz_target!(|data: &[u8]| {
     let mut cursor = Cursor::new(data);
 
     exercise_errors(&mut cursor);
+    exercise_buffers(&mut cursor);
     exercise_rational_and_timebase(&mut cursor);
     exercise_pixel_and_video_frame(&mut cursor);
     exercise_sample_channel_and_audio_frame(&mut cursor);
     exercise_packet_and_hashes(&mut cursor);
     exercise_fixtures();
 });
+
+fn exercise_buffers(cursor: &mut Cursor<'_>) {
+    let payload_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
+    let payload = payload_from(cursor, payload_len);
+    let mut buffer = if cursor.next().unwrap_or_default().is_multiple_of(2) {
+        BufferRef::from_vec(payload.clone())
+    } else {
+        BufferRef::copy_from_slice(&payload)
+    };
+
+    assert_eq!(buffer.as_slice(), payload.as_slice());
+    assert_eq!(buffer.len(), payload.len());
+    assert_eq!(buffer.is_empty(), payload.is_empty());
+    assert!(buffer.is_writable());
+
+    let offset = if buffer.is_empty() {
+        0
+    } else {
+        usize::from(cursor.next().unwrap_or_default()) % (buffer.len() + 1)
+    };
+    let remaining = buffer.len() - offset;
+    let slice_len = if remaining == 0 {
+        0
+    } else {
+        usize::from(cursor.next().unwrap_or_default()) % (remaining + 1)
+    };
+    let slice = buffer.slice(offset, slice_len).unwrap();
+    assert_eq!(slice.offset(), offset);
+    assert_eq!(slice.len(), slice_len);
+    assert_eq!(slice.as_slice(), &payload[offset..offset + slice_len]);
+    assert_eq!(buffer.strong_count(), 2);
+    assert_eq!(slice.strong_count(), 2);
+    assert_eq!(
+        buffer
+            .slice(buffer.len().saturating_add(1), 0)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    drop(slice);
+
+    let shared = buffer.clone();
+    assert!(!buffer.is_writable());
+    assert!(buffer.get_mut().is_none());
+    if !buffer.is_empty() {
+        let original = buffer.as_slice()[0];
+        buffer.make_mut()[0] = original.wrapping_add(1);
+        assert_eq!(buffer.as_slice()[0], original.wrapping_add(1));
+        assert_eq!(shared.as_slice(), payload.as_slice());
+    } else {
+        assert_eq!(buffer.make_mut(), &mut []);
+        assert_eq!(shared.as_slice(), payload.as_slice());
+    }
+    assert!(buffer.is_writable());
+
+    let zeroed_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
+    let zeroed = BufferRef::zeroed(zeroed_len).unwrap();
+    assert_eq!(zeroed.len(), zeroed_len);
+    assert!(zeroed.as_slice().iter().all(|byte| *byte == 0));
+}
 
 fn exercise_errors(cursor: &mut Cursor<'_>) {
     let io_kind = io_error_kind_from(cursor.next());

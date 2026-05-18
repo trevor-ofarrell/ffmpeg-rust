@@ -95,6 +95,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/src/buffer.rs",
+        exact_ids: &["avutil-buffer"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/frame.rs",
         exact_ids: &["avutil-frame"],
         id_prefixes: &[],
@@ -300,6 +305,7 @@ const PATH_RULES: &[PathRule] = &[
             "avutil-rational",
             "avutil-timebase",
             "avutil-packet",
+            "avutil-buffer",
             "avutil-frame",
             "avutil-pixel-format",
             "avutil-sample-format",
@@ -1079,6 +1085,32 @@ mod tests {
                 "crates/fftools/src/ffmpeg.rs".to_string(),
                 "crates/fftools/src/ffprobe.rs".to_string(),
                 "fuzz/fuzz_targets/fftools_option_parser.rs".to_string(),
+            ],
+        );
+
+        let missing_components = components_without_mappings(&selected_components, &mappings);
+
+        assert!(
+            missing_components.is_empty(),
+            "missing local FATE smoke mappings for {:?}",
+            missing_components
+        );
+    }
+
+    #[test]
+    fn default_mappings_cover_current_avutil_smoke_selections() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let ledger_contents = fs::read_to_string(repo_root.join("PORTING_LEDGER.toml")).unwrap();
+        let component_ids = component_ids_from_ledger(&ledger_contents);
+        let mapping_contents =
+            fs::read_to_string(repo_root.join(DEFAULT_FATE_MAPPINGS_PATH)).unwrap();
+        let mappings = parse_fate_mappings(&mapping_contents, &component_ids).unwrap();
+        let selected_components = changed_components(
+            &component_ids,
+            &[
+                "crates/avutil/src/lib.rs".to_string(),
+                "crates/avutil/src/buffer.rs".to_string(),
+                "fuzz/fuzz_targets/avutil_core_models.rs".to_string(),
             ],
         );
 

@@ -2,6 +2,7 @@
 
 pub mod bitreader;
 pub mod bitwriter;
+pub mod buffer;
 pub mod byteio;
 pub mod channel_layout;
 pub mod dict;
@@ -18,6 +19,7 @@ pub mod timebase;
 
 pub use bitreader::BitReader;
 pub use bitwriter::BitWriter;
+pub use buffer::{BufferRef, BufferSlice};
 pub use byteio::{ByteReader, ByteWriter};
 pub use channel_layout::{Channel, ChannelLayout};
 pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};

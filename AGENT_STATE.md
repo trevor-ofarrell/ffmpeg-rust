@@ -2,6 +2,8 @@
 
 ## Current Status
 
+`avutil-buffer` now has the first Rust-native AVBufferRef-shaped primitive. `BufferRef` wraps reference-counted byte storage with owned/copy constructors, fallible zeroed allocation, checked immutable slice views, writability reporting, unique mutable access, and copy-on-write mutation; `BufferSlice` preserves immutable shared views without copying. The `avutil_core_models` fuzz harness now build-checks buffer construction, slicing, sharing, copy-on-write isolation, and zeroed allocation invariants. `tests/fate/mappings.txt` also has focused local `avutil` unit-test mappings, and `fate-runner` has a regression test proving current avutil changed-path selections resolve to runnable local smoke commands. This remains local unit/fuzz-build coverage only, not upstream FFmpeg FATE or pinned-oracle parity.
+
 `fate-runner` now has local smoke mappings for current shared `fftools` changed-path selections. `tests/fate/mappings.txt` maps version and hide-banner paths to focused `fftools` unit filters, maps option parsing and basic I/O planning to focused unit filters, maps each current `fftools-ffmpeg-*` ledger component to the shared `cargo test -p fftools --lib ffmpeg` path, and maps each current `fftools-ffprobe-*` ledger component to the shared `cargo test -p fftools --lib ffprobe` path. The `default_mappings_cover_current_fftools_smoke_selections` regression test loads the real ledger and default mapping file and now covers `fftools` lib/bin, ffmpeg, ffprobe, option-parser, I/O-plan, and option-parser fuzz-target selections. These are local smoke checks only; they do not count as upstream FFmpeg FATE media parity.
 
 `fftools` now parses the current FFmpeg-style compound `-loglevel`/`-v` directive surface in both the shared ffmpeg option parser and the ffprobe parser. `CliLogConfig` carries the selected `LogLevel` plus `LogFlags`, accepts exact names, numeric severities, `repeat`/`level`/`time`/`datetime` flag+level values such as `repeat+level+debug`, and `+flag`/`-flag` directives that update flags without changing the last selected level. The `fftools_option_parser` fuzz harness now treats these directives as valid loglevel values. This is still parser/planning coverage only; byte-identical stderr formatting, repeated-line behavior, time/datetime rendering, color handling, and oracle differential coverage remain absent.
@@ -86,6 +88,20 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `git diff --check`
+- `cargo run -p fate-runner -- run --component avutil-buffer`
+- `cargo run -p fate-runner -- run --changed --dry-run`
+- `cargo run -p fate-runner -- run --changed`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all -- --check`
+- `cargo test -p avutil buffer`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo test -p fate-runner default_mappings_cover_current_avutil_smoke_selections`
+- `cargo run -p fate-runner -- run --component avutil-buffer`
+- `cargo run -p fate-runner -- run --changed --dry-run`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+- `cargo run -p fate-runner -- run --changed`
 - `cargo fmt --all`
 - `cargo fmt --all -- --check`
 - `cargo check --manifest-path fuzz\Cargo.toml --bin avformat_mov`
@@ -1290,7 +1306,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
-- No failing commands in the latest slice. The previous no-runnable-FATE-mapping gap for current `fftools-option-parser`, `fftools-basic-io`, `fftools-ffmpeg-*`, and `fftools-ffprobe-*` source selections is now covered by local smoke mappings.
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings` initially failed on a manual `% 2 == 0` branch selector in the buffer fuzz path; the harness now uses `.is_multiple_of(2)` and the focused fuzz clippy pass succeeds.
+- No remaining failing commands in the latest slice. The previous no-runnable-FATE-mapping gap for current `fftools-option-parser`, `fftools-basic-io`, `fftools-ffmpeg-*`, and `fftools-ffprobe-*` source selections is now covered by local smoke mappings.
 - `cargo clippy --manifest-path fuzz\Cargo.toml --bin avformat_mov -- -D warnings` initially failed after the MOV sample-entry seed slice because of a needless borrow in the packet assertion path and too many arguments in a local MOV fixture helper; `SampleEntrySpec` now groups the sample-entry fixture fields and the fuzz-target clippy pass succeeds.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed after the `tx3g` sample payload slice because `.is_multiple_of(2)` exceeded the workspace MSRV; the UTF-16 odd-byte check now uses a Rust 1.75-compatible modulo expression and clippy passes.
 - `cargo test --workspace --all-features --exclude fftools`, `cargo test -p avformat --lib`, `cargo test -p avformat mov::tests`, and `cargo run -p fate-runner -- run --changed` failed after the `dec3` slice because Windows Application Control blocked the rebuilt `target\debug\deps\avformat-a0c2eebe89aa5944.exe` with `os error 4551`; focused MOV tests and the local MOV fate-runner mapping passed before the later rebuild, and `cargo test -p avformat --lib --no-run`, `cargo test --workspace --all-features --exclude fftools --no-run`, `cargo check -p fftools`, and clippy pass.
@@ -1335,22 +1352,22 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`fate-runner` is the current focus for this slice. It now has local smoke mappings and a regression test for current `fftools` lib/bin, version, hide-banner, option-parser, basic-I/O, `fftools-ffmpeg-*`, and `fftools-ffprobe-*` changed-path selections. The component remains below `complete` because upstream FFmpeg FATE samples, media mappings, and broad component command mappings are still absent.
+`avutil-buffer` is the current focus for this slice. It is implemented with unit tests, build-checked fuzz invariants, and local FATE-runner smoke mapping coverage, but remains below `complete` because full AVBuffer/AVBufferRef callback/padding/pool/hardware-frame semantics, pinned-oracle differential tests, upstream FATE coverage, and actual local fuzz execution are still absent.
 
 ## Next 3 Concrete Actions
 
-1. Add pinned-oracle differential coverage for constrained `ffmpeg-rs -f hash [-hash <algorithm>] -`, `-f md5 -`, `-f framehash [-hash <algorithm>] -`, `-f framemd5 -`, and `-f streamhash [-hash <algorithm>] -` once the FFmpeg 8.1.1 oracle binary is available.
-2. Add upstream FATE sample-backed media mappings for constrained `ffmpeg-rs` null/framecrc/hash-style command paths once samples and the pinned oracle are available.
-3. Extend MOV subtitle/data parsing into remaining timed metadata/text variants or add pinned-oracle differential tests for the newly typed `tx3g`/`stpp`/`stxt`/`wvtt`/`metx`/`urim` paths when an FFmpeg 8.1.1 oracle binary is available.
+1. Extend `avutil-buffer` toward more AVBufferRef behavior, especially explicit padding/allocation helpers or callback-owned buffers, with invalid-input and sharing tests.
+2. Add pinned-oracle differential coverage for constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
+3. Add upstream FATE sample-backed media mappings for constrained `ffmpeg-rs` null/framecrc/hash-style command paths once samples and the pinned oracle are available.
 
 ## Known Blockers
 
 - No pinned FFmpeg 8.1.1 oracle binary exists at `third_party/ffmpeg-oracle/build/bin/ffmpeg`, so oracle snapshots and differential tests have not been generated.
-- Upstream FATE samples and media target mappings are not configured. `tests/fate/mappings.txt` currently contains local `fate-runner`, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings only. The runner has `mappings`, `--check-prereqs`, `--samples`, `--oracle-ffmpeg`, and `--dry-run` support for future mappings.
+- Upstream FATE samples and media target mappings are not configured. `tests/fate/mappings.txt` currently contains local `fate-runner`, avutil unit-test, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings only. The runner has `mappings`, `--check-prereqs`, `--samples`, `--oracle-ffmpeg`, and `--dry-run` support for future mappings.
 - The `cargo fuzz` subcommand is not installed in this environment. The fuzz package can be checked with `cargo check --manifest-path fuzz/Cargo.toml --bins` and `cargo clippy --manifest-path fuzz/Cargo.toml --bins -- -D warnings`, but actual fuzz execution requires installing cargo-fuzz.
 - `./xtask quick` cannot be a file command while `xtask/` is a crate directory on this filesystem; use `cargo run -p xtask -- quick`.
 - Windows Application Control blocks some freshly built child executables and separate integration-test executables. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added local FATE-runner smoke mappings for `fftools-version`, `fftools-hide-banner`, every current `fftools-ffmpeg-*` ledger component, and the existing `fftools` smoke coverage surface, then extended the runner regression test so real ledger/default mapping coverage includes `fftools` lib/bin, ffmpeg, ffprobe, option-parser, I/O-plan, and option-parser fuzz-target changed-path selections. The mappings execute local unit-test filters only and do not count as upstream FFmpeg FATE parity.
+Latest slice: added `avutil::BufferRef`/`BufferSlice` with checked slicing, sharing, writability, and copy-on-write tests; extended `avutil_core_models` to build-check buffer invariants; added local `avutil` FATE-runner smoke mappings including `avutil-buffer`; and updated the ledger/docs/state to record the measured coverage and remaining AVBufferRef gaps. The mappings execute local unit-test filters only and do not count as upstream FFmpeg FATE parity.

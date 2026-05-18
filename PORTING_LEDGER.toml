@@ -18,9 +18,9 @@ unit_tests = [
   "error::tests::eof_predicate_tracks_error_kind",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-error|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Typed Rust error model implemented with stable kind/message accessors, common constructors, IO ErrorKind classification, optional preserved io::ErrorKind metadata, and an EOF predicate. Build-checked cargo-fuzz target avutil_core_models covers constructor invariants, IO mapping, preserved IO kind metadata, and EOF classification, but actual local fuzz execution is blocked until cargo-fuzz is installed. No differential or FATE oracle applies yet."
+notes = "Typed Rust error model implemented with stable kind/message accessors, common constructors, IO ErrorKind classification, optional preserved io::ErrorKind metadata, and an EOF predicate. Build-checked cargo-fuzz target avutil_core_models covers constructor invariants, IO mapping, preserved IO kind metadata, and EOF classification, but actual local fuzz execution is blocked until cargo-fuzz is installed. No differential or FATE oracle applies yet. The local FATE-runner smoke mapping executes the error unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -40,9 +40,9 @@ unit_tests = [
   "rational::tests::rational_arithmetic_rejects_invalid_or_out_of_range_results",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-rational|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Basic normalized rational behavior implemented with checked add, subtract, negate, multiply, divide, reciprocal, and comparison helpers. Build-checked cargo-fuzz target avutil_core_models covers normalization, denominator validation, reciprocal/multiplication invariants, arithmetic round trips, negation round trips, and timebase use, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs deeper parity tests for FFmpeg rounding edge cases and broader av_reduce/av_d2q-style behavior."
+notes = "Basic normalized rational behavior implemented with checked add, subtract, negate, multiply, divide, reciprocal, and comparison helpers. Build-checked cargo-fuzz target avutil_core_models covers normalization, denominator validation, reciprocal/multiplication invariants, arithmetic round trips, negation round trips, and timebase use, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs deeper parity tests for FFmpeg rounding edge cases and broader av_reduce/av_d2q-style behavior. The local FATE-runner smoke mapping executes the rational unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -61,9 +61,9 @@ unit_tests = [
   "timebase::tests::rejects_invalid_time_bases_and_out_of_range_results",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-timebase|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Initial timestamp rescaling implemented with explicit zero, away-from-zero, down, up, and nearest-away-from-zero rounding modes plus pass-min/max sentinel preservation. Build-checked cargo-fuzz target avutil_core_models compares rescale_q, rescale_q_rnd, and pass-min/max behavior against an independent small-range i128 rounding model, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs pinned FFmpeg edge-case differential vectors for wider av_rescale_q parity."
+notes = "Initial timestamp rescaling implemented with explicit zero, away-from-zero, down, up, and nearest-away-from-zero rounding modes plus pass-min/max sentinel preservation. Build-checked cargo-fuzz target avutil_core_models compares rescale_q, rescale_q_rnd, and pass-min/max behavior against an independent small-range i128 rounding model, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs pinned FFmpeg edge-case differential vectors for wider av_rescale_q parity. The local FATE-runner smoke mapping executes the timebase unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -82,9 +82,31 @@ unit_tests = [
   "packet::tests::packet_rejects_negative_duration_position_and_invalid_side_data_kind",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-packet|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Packet skeleton validates timestamps, nonnegative duration, optional byte position, clearable FFmpeg-style packet flags, side-data kind shape, payload length, and stream index. Build-checked cargo-fuzz target avutil_core_models covers packet timestamp setters, duration and byte-position rejection/non-mutation, key/corrupt/discard/trusted/disposable flag mutation, side-data validation, and payload preservation, but actual local fuzz execution is blocked until cargo-fuzz is installed. Not ABI complete."
+notes = "Packet skeleton validates timestamps, nonnegative duration, optional byte position, clearable FFmpeg-style packet flags, side-data kind shape, payload length, and stream index. Build-checked cargo-fuzz target avutil_core_models covers packet timestamp setters, duration and byte-position rejection/non-mutation, key/corrupt/discard/trusted/disposable flag mutation, side-data validation, and payload preservation, but actual local fuzz execution is blocked until cargo-fuzz is installed. Not ABI complete. The local FATE-runner smoke mapping executes the packet unit filter only and does not count as upstream FATE parity."
+blocked_reason = ""
+
+[[component]]
+id = "avutil-buffer"
+kind = "utility"
+ffmpeg_name = "AVBufferRef"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = ""
+rust_command = "cargo test -p avutil buffer"
+unit_tests = [
+  "buffer::tests::buffer_ref_wraps_owned_and_copied_bytes",
+  "buffer::tests::zeroed_buffer_allocates_requested_zero_bytes",
+  "buffer::tests::cloned_buffers_share_until_copy_on_write_mutation",
+  "buffer::tests::buffer_slices_are_checked_views_over_shared_storage",
+  "buffer::tests::buffer_slices_reject_out_of_bounds_ranges_without_panics",
+]
+differential_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-buffer|local-avutil-unit"]
+fuzz_targets = ["avutil_core_models"]
+notes = "Initial reference-counted byte buffer model implemented with owned/copy constructors, fallible zeroed allocation, immutable checked slice views, strong-count/writability reporting, unique mutable access, and copy-on-write mutation. Build-checked cargo-fuzz target avutil_core_models covers buffer construction, checked slicing, sharing, copy-on-write isolation, and zeroed allocation invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVBuffer/AVBufferRef callback, padding, allocation, pool, hardware-frame, and lifetime semantics are pending. The local FATE-runner smoke mapping executes the buffer unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -103,9 +125,9 @@ unit_tests = [
   "frame::tests::frame_wraps_audio_or_video_with_optional_pts",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Frame skeleton validates required audio/video shape and exact plane sizes through the shared initial PixelFormat and SampleFormat models, reports tightly packed per-plane line sizes for the current audio/video format subset, and AudioFrame now carries an optional initial ChannelLayout derived for mono/stereo or supplied explicitly. Build-checked cargo-fuzz target avutil_core_models covers valid and invalid video/audio frame construction, plane sizes, line sizes, PTS mutation, and frame data variants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVFrame fields, buffer ownership, custom alignment/stride, side data, and complete FFmpeg pixel/sample/channel layout coverage are pending."
+notes = "Frame skeleton validates required audio/video shape and exact plane sizes through the shared initial PixelFormat and SampleFormat models, reports tightly packed per-plane line sizes for the current audio/video format subset, and AudioFrame now carries an optional initial ChannelLayout derived for mono/stereo or supplied explicitly. Build-checked cargo-fuzz target avutil_core_models covers valid and invalid video/audio frame construction, plane sizes, line sizes, PTS mutation, and frame data variants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVFrame fields, buffer ownership, custom alignment/stride, side data, and complete FFmpeg pixel/sample/channel layout coverage are pending. The local FATE-runner smoke mapping executes the frame unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -129,9 +151,9 @@ unit_tests = [
   "logging::tests::set_level_clear_and_take_records_control_buffer",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-logging|local-avutil-unit"]
 fuzz_targets = []
-notes = "In-memory log filtering abstraction implemented with FFmpeg-style numeric/name level mapping, known av_log flag bits, configurable print-level formatting, buffer control, and per-record callback dispatch. fftools now resolves -loglevel/-v through this shared LogLevel/LogFlags model for exact names, numeric levels, and the current repeat/level/time/datetime CLI flag syntax. Full av_log global callback, repeated-line compression behavior, time/datetime rendering, color handling, byte-identical formatting, and CLI stderr emission parity are incomplete."
+notes = "In-memory log filtering abstraction implemented with FFmpeg-style numeric/name level mapping, known av_log flag bits, configurable print-level formatting, buffer control, and per-record callback dispatch. fftools now resolves -loglevel/-v through this shared LogLevel/LogFlags model for exact names, numeric levels, and the current repeat/level/time/datetime CLI flag syntax. Full av_log global callback, repeated-line compression behavior, time/datetime rendering, color handling, byte-identical formatting, and CLI stderr emission parity are incomplete. The local FATE-runner smoke mapping executes the logging unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -184,6 +206,7 @@ unit_tests = [
   "tests::changed_selection_maps_paths_and_preserves_ledger_order",
   "tests::changed_selection_expands_prefix_rules_against_existing_ledger_ids",
   "tests::default_mappings_cover_current_fftools_smoke_selections",
+  "tests::default_mappings_cover_current_avutil_smoke_selections",
   "tests::changed_selection_maps_fuzz_targets_to_covered_components",
   "tests::unmapped_relevant_paths_report_crate_files_but_ignore_docs",
   "tests::parses_run_options_for_component_changed_and_mapping_path",
@@ -204,7 +227,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:fate-runner|local-self-test"]
 fuzz_targets = []
-notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules and cargo-fuzz target files, parse the explicit tests/fate/mappings.txt format, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus local MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
+notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules and cargo-fuzz target files, parse the explicit tests/fate/mappings.txt format, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus local avutil unit-test, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
 blocked_reason = "No upstream FATE samples path or media component mapping has been configured."
 
 [[component]]
@@ -226,9 +249,9 @@ unit_tests = [
   "byteio::tests::writer_rejects_values_too_wide_for_u24_and_u48",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-byteio|local-avutil-unit"]
 fuzz_targets = ["avutil_byteio"]
-notes = "Endian-aware byte reader/writer implemented for common 8/16/24/32/48/64-bit integer operations, with constrained u24/u48 writer validation. MOV hvcC parsing now uses the shared u48 big-endian reader instead of a local helper. Build-checked cargo-fuzz target avutil_byteio exercises bounded read operations, EOF cursor invariants, 48/64-bit paths, and byte writer helper paths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper FFmpeg compatibility vectors are still pending, so this is not marked complete."
+notes = "Endian-aware byte reader/writer implemented for common 8/16/24/32/48/64-bit integer operations, with constrained u24/u48 writer validation. MOV hvcC parsing now uses the shared u48 big-endian reader instead of a local helper. Build-checked cargo-fuzz target avutil_byteio exercises bounded read operations, EOF cursor invariants, 48/64-bit paths, and byte writer helper paths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper FFmpeg compatibility vectors are still pending, so this is not marked complete. The local FATE-runner smoke mapping executes the byteio unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -250,9 +273,9 @@ unit_tests = [
   "bitreader::tests::rejects_reads_wider_than_u64",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-bitreader|local-avutil-unit"]
 fuzz_targets = ["avutil_bitreader"]
-notes = "Bounded MSB-first bit reader implemented with unsigned and signed read/peek helpers, including sign extension and no-advance failure invariants. Build-checked cargo-fuzz target avutil_bitreader exercises unsigned reads/peeks, signed reads/peeks, skips, alignment, and cursor invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper GetBitContext compatibility vectors are pending, so this is not marked complete."
+notes = "Bounded MSB-first bit reader implemented with unsigned and signed read/peek helpers, including sign extension and no-advance failure invariants. Build-checked cargo-fuzz target avutil_bitreader exercises unsigned reads/peeks, signed reads/peeks, skips, alignment, and cursor invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper GetBitContext compatibility vectors are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the bitreader unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -276,9 +299,9 @@ unit_tests = [
   "bitwriter::tests::rejects_widths_wider_than_u64",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-bitwriter|local-avutil-unit"]
 fuzz_targets = ["avutil_bitreader"]
-notes = "Bounded MSB-first bit writer implemented with unsigned writes, signed writes, signed fit validation, and no-mutation failure invariants. Build-checked cargo-fuzz target avutil_bitreader also exercises unsigned write validation, signed write validation, cursor invariants, and byte alignment, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper PutBitContext compatibility vectors are pending, so this is not marked complete."
+notes = "Bounded MSB-first bit writer implemented with unsigned writes, signed writes, signed fit validation, and no-mutation failure invariants. Build-checked cargo-fuzz target avutil_bitreader also exercises unsigned write validation, signed write validation, cursor invariants, and byte alignment, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper PutBitContext compatibility vectors are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the bitwriter unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -301,9 +324,9 @@ unit_tests = [
   "dict::tests::rejects_empty_or_nul_keys_and_nul_values",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-dict|local-avutil-unit"]
 fuzz_targets = ["avutil_metadata_options"]
-notes = "Order-preserving metadata dictionary implemented with ASCII case-insensitive default matching, case-sensitive lookup, prefix lookup, keep-existing, append, AV_DICT_MULTIKEY-like duplicate-key insertion, removal, and invalid string checks. Build-checked cargo-fuzz target avutil_metadata_options covers key/value validation, case-sensitive and case-insensitive mutation, duplicate-key insertion, lookup, removal, clear, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. Differential vectors are pending, so this is not marked complete."
+notes = "Order-preserving metadata dictionary implemented with ASCII case-insensitive default matching, case-sensitive lookup, prefix lookup, keep-existing, append, AV_DICT_MULTIKEY-like duplicate-key insertion, removal, and invalid string checks. Build-checked cargo-fuzz target avutil_metadata_options covers key/value validation, case-sensitive and case-insensitive mutation, duplicate-key insertion, lookup, removal, clear, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. Differential vectors are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the dict unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -338,9 +361,9 @@ unit_tests = [
   "options::tests::option_queries_validate_name_and_unit_metadata",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-options|local-avutil-unit"]
 fuzz_targets = ["avutil_metadata_options"]
-notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. OptionFlags stores and truncates the currently known public AVOption flag bits and reports flag intersections, READONLY options reject parsed and typed mutation without changing the current value, option definitions can carry unit names with unit-scoped named constants resolved case-insensitively by set_from_str, numeric option ranges can be queried through OptionRange, child option sets can be registered and queried with independent option namespaces, and OptionQuery filters root or direct-child definitions by case-insensitive name, unit, required flags, rejected flags, and exported/writable presets. Build-checked cargo-fuzz target avutil_metadata_options covers option definition validation, duplicate rejection, parsed values, direct typed values, range query invariants, string NUL/empty validation, flag truncation/intersection, unit constant scoping, read-only mutation rejection, child option-set registration, query filtering, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. CLI option ordering, full AVOption API parity, and oracle differential vectors are pending, so this is not marked complete."
+notes = "Initial AVOption-like descriptors and option set value validation implemented for bool, int, float, and string values. OptionFlags stores and truncates the currently known public AVOption flag bits and reports flag intersections, READONLY options reject parsed and typed mutation without changing the current value, option definitions can carry unit names with unit-scoped named constants resolved case-insensitively by set_from_str, numeric option ranges can be queried through OptionRange, child option sets can be registered and queried with independent option namespaces, and OptionQuery filters root or direct-child definitions by case-insensitive name, unit, required flags, rejected flags, and exported/writable presets. Build-checked cargo-fuzz target avutil_metadata_options covers option definition validation, duplicate rejection, parsed values, direct typed values, range query invariants, string NUL/empty validation, flag truncation/intersection, unit constant scoping, read-only mutation rejection, child option-set registration, query filtering, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. CLI option ordering, full AVOption API parity, and oracle differential vectors are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the options unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -359,9 +382,9 @@ unit_tests = [
   "pixel::tests::pixel_formats_reject_invalid_dimensions_and_payload_sizes",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-pixel-format|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Initial shared pixel format model covers only gray/gray8, rgb24, rgba, and yuv420p with FFmpeg-style names, plane counts, frame-size math, yuv420p even-dimension validation, and plane splitting. It is wired into avutil::VideoFrame plus the rawvideo decoder and demuxer/muxer type alias. Build-checked cargo-fuzz target avutil_core_models covers pixel format lookup, plane/frame-size invariants, payload splitting, invalid dimensions, and invalid payload lengths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVPixFmtDescriptor coverage, bit depths, endian/alpha flags, chroma subsampling descriptors, hardware formats, oracle inventory comparison, FATE, and broader fuzzing are pending."
+notes = "Initial shared pixel format model covers only gray/gray8, rgb24, rgba, and yuv420p with FFmpeg-style names, plane counts, frame-size math, yuv420p even-dimension validation, and plane splitting. It is wired into avutil::VideoFrame plus the rawvideo decoder and demuxer/muxer type alias. Build-checked cargo-fuzz target avutil_core_models covers pixel format lookup, plane/frame-size invariants, payload splitting, invalid dimensions, and invalid payload lengths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVPixFmtDescriptor coverage, bit depths, endian/alpha flags, chroma subsampling descriptors, hardware formats, oracle inventory comparison, FATE, and broader fuzzing are pending. The local FATE-runner smoke mapping executes the pixel unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -379,9 +402,9 @@ unit_tests = [
   "samplefmt::tests::sample_formats_reject_invalid_channel_counts",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-sample-format|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Initial shared sample format model covers only packed s16 with FFmpeg-style naming, sample-byte sizing, packed plane counts, and per-plane payload-size validation. It is wired into avutil::AudioFrame and the pcm_s16le decoder. Build-checked cargo-fuzz target avutil_core_models covers sample format lookup, channel-count validation, packed frame sizing, plane sizing, and AudioFrame integration, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVSampleFormat coverage, planar variants, packed/planar conversion helpers, oracle inventory comparison, FATE, and broader fuzzing are pending."
+notes = "Initial shared sample format model covers only packed s16 with FFmpeg-style naming, sample-byte sizing, packed plane counts, and per-plane payload-size validation. It is wired into avutil::AudioFrame and the pcm_s16le decoder. Build-checked cargo-fuzz target avutil_core_models covers sample format lookup, channel-count validation, packed frame sizing, plane sizing, and AudioFrame integration, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVSampleFormat coverage, planar variants, packed/planar conversion helpers, oracle inventory comparison, FATE, and broader fuzzing are pending. The local FATE-runner smoke mapping executes the samplefmt unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -400,9 +423,9 @@ unit_tests = [
   "channel_layout::tests::layouts_validate_channel_counts",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-channel-layout|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Initial shared channel layout model covers common native channel names and a narrow set of named layouts: mono, stereo, quad, 5.1, 5.1(side), and 7.1. AudioFrame derives mono/stereo from channel count for existing PCM paths and validates explicit layouts by channel count. Build-checked cargo-fuzz target avutil_core_models covers default layout lookup, explicit layout validation, channel containment, and AudioFrame layout integration, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVChannelLayout order/native/custom/ambisonic semantics, all layouts from ffmpeg -layouts, layout parsing syntax, downmix layouts, oracle inventory comparison, FATE, and broader fuzzing are pending."
+notes = "Initial shared channel layout model covers common native channel names and a narrow set of named layouts: mono, stereo, quad, 5.1, 5.1(side), and 7.1. AudioFrame derives mono/stereo from channel count for existing PCM paths and validates explicit layouts by channel count. Build-checked cargo-fuzz target avutil_core_models covers default layout lookup, explicit layout validation, channel containment, and AudioFrame layout integration, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVChannelLayout order/native/custom/ambisonic semantics, all layouts from ffmpeg -layouts, layout parsing syntax, downmix layouts, oracle inventory comparison, FATE, and broader fuzzing are pending. The local FATE-runner smoke mapping executes the channel_layout unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -432,9 +455,9 @@ unit_tests = [
   "hash::tests::digest_to_hex_formats_lowercase_bytes",
 ]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:avutil-hash|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Adler-32, IEEE CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests, plus lowercase digest hex formatting. Build-checked cargo-fuzz target avutil_core_models covers streaming update equivalence against one-shot Adler-32/CRC-32/MD5/SHA-224/SHA-256/SHA-384/SHA-512 hashes across fuzz-selected split points and digest hex length/known-vector invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. FFmpeg-specific hash muxer/framehash behavior, other FFmpeg hash algorithms, differential tests, and FATE are pending."
+notes = "Adler-32, IEEE CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests, plus lowercase digest hex formatting. Build-checked cargo-fuzz target avutil_core_models covers streaming update equivalence against one-shot Adler-32/CRC-32/MD5/SHA-224/SHA-256/SHA-384/SHA-512 hashes across fuzz-selected split points and digest hex length/known-vector invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. FFmpeg-specific hash muxer/framehash behavior, other FFmpeg hash algorithms, differential tests, and FATE are pending. The local FATE-runner smoke mapping executes the hash unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
