@@ -3,30 +3,33 @@ use crate::{AvError, AvResult};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SampleFormat {
     S16,
+    S16P,
 }
 
 impl SampleFormat {
     pub fn name(self) -> &'static str {
         match self {
             Self::S16 => "s16",
+            Self::S16P => "s16p",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "s16" => Some(Self::S16),
+            "s16p" => Some(Self::S16P),
             _ => None,
         }
     }
 
     pub fn bytes_per_sample(self) -> usize {
         match self {
-            Self::S16 => 2,
+            Self::S16 | Self::S16P => 2,
         }
     }
 
     pub fn is_planar(self) -> bool {
-        false
+        matches!(self, Self::S16P)
     }
 
     pub fn plane_count(self, channels: u16) -> AvResult<usize> {
@@ -79,10 +82,13 @@ mod tests {
     #[test]
     fn sample_formats_report_ffmpeg_names_and_layout() {
         assert_eq!(SampleFormat::from_name("s16"), Some(SampleFormat::S16));
-        assert_eq!(SampleFormat::from_name("s16p"), None);
+        assert_eq!(SampleFormat::from_name("s16p"), Some(SampleFormat::S16P));
         assert_eq!(SampleFormat::S16.name(), "s16");
+        assert_eq!(SampleFormat::S16P.name(), "s16p");
         assert!(!SampleFormat::S16.is_planar());
+        assert!(SampleFormat::S16P.is_planar());
         assert_eq!(SampleFormat::S16.plane_count(2).unwrap(), 1);
+        assert_eq!(SampleFormat::S16P.plane_count(2).unwrap(), 2);
     }
 
     #[test]
@@ -95,12 +101,28 @@ mod tests {
     }
 
     #[test]
+    fn sample_formats_compute_planar_payload_sizes() {
+        assert_eq!(SampleFormat::S16P.bytes_per_sample(), 2);
+        assert_eq!(SampleFormat::S16P.bytes_per_sample_frame(1).unwrap(), 2);
+        assert_eq!(SampleFormat::S16P.bytes_per_sample_frame(6).unwrap(), 12);
+        assert_eq!(
+            SampleFormat::S16P.plane_sizes(1024, 2).unwrap(),
+            vec![2048, 2048]
+        );
+        assert_eq!(SampleFormat::S16P.plane_sizes(0, 3).unwrap(), vec![0, 0, 0]);
+    }
+
+    #[test]
     fn sample_formats_reject_invalid_channel_counts() {
         assert_eq!(
             SampleFormat::S16
                 .bytes_per_sample_frame(0)
                 .unwrap_err()
                 .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            SampleFormat::S16P.plane_count(0).unwrap_err().kind(),
             AvErrorKind::InvalidArgument
         );
     }

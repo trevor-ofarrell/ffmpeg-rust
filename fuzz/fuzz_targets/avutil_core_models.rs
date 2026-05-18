@@ -1022,13 +1022,16 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     let sample_rate = sample_rate_from(cursor.next());
     let channels = channel_count_from(cursor.next());
     let samples_per_channel = usize::from(cursor.next().unwrap_or_default()) % (MAX_SAMPLES + 1);
-    let sample_format = SampleFormat::S16;
+    let sample_format = sample_format_from(cursor.next());
 
     assert_eq!(
         SampleFormat::from_name(sample_format.name()),
         Some(sample_format)
     );
-    assert!(!sample_format.is_planar());
+    assert_eq!(
+        sample_format.is_planar(),
+        sample_format == SampleFormat::S16P
+    );
 
     let Ok(plane_sizes) = sample_format.plane_sizes(samples_per_channel, channels) else {
         assert_eq!(channels, 0);
@@ -1446,6 +1449,7 @@ fn exercise_fixtures() {
         vec![4, 1, 1]
     );
     assert_eq!(SampleFormat::S16.plane_sizes(2, 2).unwrap(), vec![8]);
+    assert_eq!(SampleFormat::S16P.plane_sizes(2, 2).unwrap(), vec![4, 4]);
     assert!(ChannelLayout::stereo().contains(Channel::FrontLeft));
     assert!(!ChannelLayout::stereo().contains(Channel::LowFrequency));
     assert_eq!(
@@ -1565,6 +1569,18 @@ fn exercise_fixtures() {
     .unwrap();
     assert_eq!(audio.channel_layout(), Some(ChannelLayout::stereo()));
     assert_eq!(audio.line_sizes(), &[4]);
+
+    let planar_audio = AudioFrame::new_with_channel_layout(
+        48_000,
+        ChannelLayout::stereo(),
+        SampleFormat::S16P,
+        1,
+        vec![vec![0, 0], vec![1, 0]],
+    )
+    .unwrap();
+    assert_eq!(planar_audio.sample_format_name(), "s16p");
+    assert_eq!(planar_audio.planes(), &[vec![0, 0], vec![1, 0]]);
+    assert_eq!(planar_audio.line_sizes(), &[2, 2]);
 }
 
 fn expected_rescale(
@@ -1629,6 +1645,14 @@ fn pixel_format_from(byte: Option<u8>) -> PixelFormat {
         1 => PixelFormat::Rgb24,
         2 => PixelFormat::Rgba,
         _ => PixelFormat::Yuv420p,
+    }
+}
+
+fn sample_format_from(byte: Option<u8>) -> SampleFormat {
+    if byte.unwrap_or_default() & 1 == 0 {
+        SampleFormat::S16
+    } else {
+        SampleFormat::S16P
     }
 }
 

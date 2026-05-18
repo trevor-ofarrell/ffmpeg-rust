@@ -1568,6 +1568,86 @@ mod tests {
     }
 
     #[test]
+    fn audio_frame_supports_planar_sample_planes_and_line_sizes() {
+        let planar = AudioFrame::new(
+            48_000,
+            2,
+            SampleFormat::S16P,
+            3,
+            vec![vec![0, 0, 1, 0, 2, 0], vec![3, 0, 4, 0, 5, 0]],
+        )
+        .unwrap();
+        assert_eq!(planar.channel_layout(), Some(ChannelLayout::stereo()));
+        assert_eq!(planar.sample_format_name(), "s16p");
+        assert_eq!(planar.line_sizes(), &[6, 6]);
+        assert_eq!(
+            planar.planes(),
+            &[vec![0, 0, 1, 0, 2, 0], vec![3, 0, 4, 0, 5, 0]]
+        );
+        assert_eq!(planar.plane_buffers().len(), 2);
+
+        let mut padded = AudioFrame::new_with_line_sizes(
+            44_100,
+            2,
+            SampleFormat::S16P,
+            2,
+            vec![vec![0, 0, 1, 0, 0xaa], vec![2, 0, 3, 0, 0xbb]],
+            vec![5, 5],
+        )
+        .unwrap();
+        assert_eq!(padded.line_sizes(), &[5, 5]);
+        assert_eq!(padded.planes(), &[vec![0, 0, 1, 0], vec![2, 0, 3, 0]]);
+        assert_eq!(padded.plane_buffers()[0].as_slice(), &[0, 0, 1, 0, 0xaa]);
+        assert_eq!(padded.plane_buffers()[1].as_slice(), &[2, 0, 3, 0, 0xbb]);
+
+        let cloned = padded.clone();
+        assert!(!padded.is_writable());
+        padded.set_plane_visible_data(1, &[4, 0, 5, 0]).unwrap();
+        assert!(!padded.is_writable());
+        assert!(padded.plane_buffers()[1].is_writable());
+        assert!(!padded.plane_buffers()[1].shares_storage(&cloned.plane_buffers()[1]));
+        assert!(padded.plane_buffers()[0].shares_storage(&cloned.plane_buffers()[0]));
+        assert_eq!(padded.planes(), &[vec![0, 0, 1, 0], vec![4, 0, 5, 0]]);
+        assert_eq!(padded.plane_buffers()[1].as_slice(), &[4, 0, 5, 0, 0xbb]);
+        assert_eq!(cloned.planes(), &[vec![0, 0, 1, 0], vec![2, 0, 3, 0]]);
+
+        padded.make_writable();
+        assert!(padded.is_writable());
+        assert!(!padded.plane_buffers()[0].shares_storage(&cloned.plane_buffers()[0]));
+
+        assert_eq!(
+            AudioFrame::new(48_000, 2, SampleFormat::S16P, 1, vec![vec![0; 2]])
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            AudioFrame::new(
+                48_000,
+                2,
+                SampleFormat::S16P,
+                1,
+                vec![vec![0; 2], vec![0; 1]]
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            AudioFrame::new_with_channel_layout(
+                48_000,
+                ChannelLayout::stereo(),
+                SampleFormat::S16P,
+                1,
+                vec![vec![0; 2], vec![0; 2]],
+            )
+            .unwrap()
+            .channel_layout(),
+            Some(ChannelLayout::stereo())
+        );
+    }
+
+    #[test]
     fn audio_frame_rejects_invalid_custom_line_sizes() {
         assert_eq!(
             AudioFrame::new_with_line_sizes(
