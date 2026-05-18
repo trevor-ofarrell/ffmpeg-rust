@@ -127,6 +127,49 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         AvErrorKind::InvalidArgument
     );
 
+    let resize_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
+    let resize_padding = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
+    let mut resizable = BufferRef::copy_from_slice_with_padding(&payload, padding_len).unwrap();
+    resizable
+        .resize_with_padding(resize_len, resize_padding)
+        .unwrap();
+    assert_eq!(resizable.len(), resize_len);
+    assert_eq!(resizable.allocated_len(), resize_len + resize_padding);
+    let copied = payload.len().min(resize_len);
+    assert_eq!(&resizable.as_slice()[..copied], &payload[..copied]);
+    assert!(resizable.as_slice()[copied..].iter().all(|byte| *byte == 0));
+    assert!(resizable.padding_slice().iter().all(|byte| *byte == 0));
+    let before_failed_resize = resizable.as_padded_slice().to_vec();
+    let before_failed_len = resizable.len();
+    assert_eq!(
+        resizable
+            .resize_with_padding(1, usize::MAX)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(resizable.as_padded_slice(), before_failed_resize.as_slice());
+    assert_eq!(resizable.len(), before_failed_len);
+
+    let mut resize_shared = BufferRef::copy_from_slice(&payload);
+    let resize_original = resize_shared.clone();
+    resize_shared
+        .resize_with_padding(resize_len, resize_padding)
+        .unwrap();
+    assert!(resize_shared.is_writable());
+    assert_eq!(resize_original.as_slice(), payload.as_slice());
+
+    let mut same_shape_storage = payload.clone();
+    same_shape_storage.resize(payload.len() + padding_len, 0x55);
+    let mut same_shape =
+        BufferRef::from_vec_with_len_and_release_callback(same_shape_storage, payload.len(), drop)
+            .unwrap();
+    same_shape
+        .resize_with_padding(payload.len(), padding_len)
+        .unwrap();
+    assert_eq!(same_shape.as_slice(), payload.as_slice());
+    assert!(same_shape.padding_slice().iter().all(|byte| *byte == 0));
+
     let pool = BufferPool::new(payload_len, padding_len).unwrap();
     assert_eq!(pool.len(), payload_len);
     assert_eq!(pool.allocated_len(), payload_len + padding_len);

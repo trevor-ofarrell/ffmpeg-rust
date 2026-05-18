@@ -235,6 +235,48 @@ impl BufferRef {
             .bytes[..self.len]
     }
 
+    pub fn resize(&mut self, len: usize) -> AvResult<()> {
+        self.resize_with_padding(len, 0)
+    }
+
+    pub fn resize_with_padding(&mut self, len: usize, padding: usize) -> AvResult<()> {
+        let total_len = checked_storage_len(len, padding)?;
+        if len == self.len
+            && total_len == self.allocated_len()
+            && self.padding_slice().iter().all(|byte| *byte == 0)
+        {
+            return Ok(());
+        }
+
+        if self.can_resize_in_place() {
+            let storage =
+                Arc::get_mut(&mut self.data).expect("in-place resize requires unique storage");
+            if total_len > storage.bytes.len() {
+                storage
+                    .bytes
+                    .try_reserve_exact(total_len - storage.bytes.len())
+                    .map_err(|_| {
+                        AvError::external(format!(
+                            "failed to allocate {total_len} resized buffer bytes"
+                        ))
+                    })?;
+            }
+            storage.bytes.resize(total_len, 0);
+            storage.bytes[len..].fill(0);
+            self.len = len;
+            return Ok(());
+        }
+
+        let bytes = resized_storage(&self.data.bytes[..self.len], len, padding)?;
+        self.data = Arc::new(BufferStorage::new(bytes));
+        self.len = len;
+        Ok(())
+    }
+
+    fn can_resize_in_place(&self) -> bool {
+        self.strong_count() == 1 && !self.is_readonly() && self.data.owner.is_none()
+    }
+
     pub fn slice(&self, offset: usize, len: usize) -> AvResult<BufferSlice> {
         let end = offset.checked_add(len).ok_or_else(|| {
             AvError::invalid_argument("buffer slice offset plus length overflows")
@@ -543,6 +585,19 @@ fn allocate_zeroed_len(total_len: usize) -> AvResult<Vec<u8>> {
     })?;
     data.resize(total_len, 0);
     Ok(data)
+}
+
+fn resized_storage(visible: &[u8], len: usize, padding: usize) -> AvResult<Vec<u8>> {
+    let total_len = checked_storage_len(len, padding)?;
+    let mut storage = Vec::new();
+    storage.try_reserve_exact(total_len).map_err(|_| {
+        AvError::external(format!(
+            "failed to allocate {total_len} resized buffer bytes"
+        ))
+    })?;
+    storage.extend_from_slice(&visible[..visible.len().min(len)]);
+    storage.resize(total_len, 0);
+    Ok(storage)
 }
 
 fn checked_storage_len(len: usize, padding: usize) -> AvResult<usize> {
@@ -893,6 +948,121 @@ mod tests {
     }
 
     #[test]
+    fn buffer_resize_shrinks_grows_and_zeroes_padding() {
+        let mut buffer = BufferRef::from_vec(vec![1, 2, 3, 4]);
+
+        buffer.resize_with_padding(2, 2).unwrap();
+        assert_eq!(buffer.as_slice(), &[1, 2]);
+        assert_eq!(buffer.padding_slice(), &[0, 0]);
+        assert_eq!(buffer.allocated_len(), 4);
+        assert!(buffer.is_writable());
+
+        buffer.resize_with_padding(5, 3).unwrap();
+        assert_eq!(buffer.as_slice(), &[1, 2, 0, 0, 0]);
+        assert_eq!(buffer.padding_slice(), &[0, 0, 0]);
+        assert_eq!(buffer.allocated_len(), 8);
+
+        buffer.resize(1).unwrap();
+        assert_eq!(buffer.as_slice(), &[1]);
+        assert_eq!(buffer.padding_slice(), &[]);
+        assert_eq!(buffer.allocated_len(), 1);
+    }
+
+    #[test]
+    fn buffer_resize_detaches_shared_storage_without_mutating_original() {
+        let mut buffer = BufferRef::from_vec(vec![1, 2, 3]);
+        let shared = buffer.clone();
+
+        buffer.resize_with_padding(5, 1).unwrap();
+
+        assert_eq!(buffer.as_slice(), &[1, 2, 3, 0, 0]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert!(buffer.is_writable());
+        assert_eq!(shared.as_slice(), &[1, 2, 3]);
+        assert_eq!(shared.allocated_len(), 3);
+    }
+
+    #[test]
+    fn buffer_resize_releases_unique_readonly_callback_storage() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_vec_with_len_and_release_callback_readonly(
+            vec![1, 2, 3, 0],
+            3,
+            move |storage| {
+                capture.lock().unwrap().push(storage);
+            },
+        )
+        .unwrap();
+
+        buffer.resize_with_padding(2, 1).unwrap();
+
+        assert_eq!(*released.lock().unwrap(), vec![vec![1, 2, 3, 0]]);
+        assert_eq!(buffer.as_slice(), &[1, 2]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+    }
+
+    #[test]
+    fn buffer_resize_keeps_shared_callback_storage_until_last_original_reference() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_vec_with_release_callback(vec![1, 2, 3], move |storage| {
+            capture.lock().unwrap().push(storage);
+        });
+        let shared = buffer.clone();
+
+        buffer.resize_with_padding(4, 1).unwrap();
+
+        assert!(released.lock().unwrap().is_empty());
+        assert_eq!(buffer.as_slice(), &[1, 2, 3, 0]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert_eq!(shared.as_slice(), &[1, 2, 3]);
+        drop(buffer);
+        assert!(released.lock().unwrap().is_empty());
+        drop(shared);
+        assert_eq!(*released.lock().unwrap(), vec![vec![1, 2, 3]]);
+    }
+
+    #[test]
+    fn buffer_resize_same_shape_zeroes_existing_padding() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_vec_with_len_and_release_callback(
+            vec![1, 2, 9, 8],
+            2,
+            move |storage| {
+                capture.lock().unwrap().push(storage);
+            },
+        )
+        .unwrap();
+
+        buffer.resize_with_padding(2, 2).unwrap();
+
+        assert_eq!(*released.lock().unwrap(), vec![vec![1, 2, 9, 8]]);
+        assert_eq!(buffer.as_slice(), &[1, 2]);
+        assert_eq!(buffer.padding_slice(), &[0, 0]);
+        assert!(buffer.is_writable());
+    }
+
+    #[test]
+    fn buffer_resize_rejects_overflow_without_mutating() {
+        let mut buffer = BufferRef::from_vec(vec![1, 2, 3]);
+
+        assert_eq!(
+            buffer
+                .resize_with_padding(1, usize::MAX)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(buffer.as_slice(), &[1, 2, 3]);
+        assert_eq!(buffer.allocated_len(), 3);
+        assert!(buffer.is_writable());
+    }
+
+    #[test]
     fn buffer_pool_allocates_recycles_and_reuses_zeroed_storage() {
         let pool = BufferPool::new(3, 2).unwrap();
 
@@ -1082,6 +1252,24 @@ mod tests {
 
         drop(shared);
         assert_eq!(pool.available_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn buffer_resize_detaches_pool_owned_storage_back_to_pool() {
+        let pool = BufferPool::new(2, 1).unwrap();
+        let mut buffer = pool.get().unwrap();
+
+        buffer.make_mut().copy_from_slice(&[8, 9]);
+        buffer.resize_with_padding(3, 0).unwrap();
+
+        assert_eq!(buffer.as_slice(), &[8, 9, 0]);
+        assert_eq!(buffer.padding_slice(), &[]);
+        assert_eq!(pool.available_count().unwrap(), 1);
+        drop(buffer);
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        let reused = pool.get().unwrap();
+        assert_eq!(reused.as_padded_slice(), &[0, 0, 0]);
     }
 
     #[test]
