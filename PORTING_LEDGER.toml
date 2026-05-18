@@ -1164,11 +1164,14 @@ rust_command = "cargo test -p fftools ffmpeg"
 unit_tests = [
   "ffmpeg::tests::runs_mov_to_streamhash_stdout_with_default_sha256",
   "ffmpeg::tests::runs_s16le_to_streamhash_stdout_with_md5_option",
+  "ffmpeg::tests::streamhash_type_maps_derive_from_container_metadata",
+  "ffmpeg::tests::streamhash_rejects_packets_without_stream_metadata",
+  "ffmpeg::tests::runs_avi_to_streamhash_stdout_with_demuxer_stream_type",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f streamhash -`, defaults to SHA-256, accepts output-scoped `-hash`, and emits one digest line per observed stream through the Rust StreamHashMuxer. The current CLI wiring passes `v` stream-type labels for constrained video/image input paths and `a` labels for constrained PCM/WAV input paths. The current tests cover MOV packet-level SHA-256 streamhash output and raw pcm_s16le MD5 streamhash output through in-process helpers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential/FATE coverage yet."
+notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f streamhash -`, defaults to SHA-256, accepts output-scoped `-hash`, and emits one digest line per observed stream through the Rust StreamHashMuxer. Stream type labels now come from a local streamhash type map: AVI uses demuxer stream media types, MOV uses parsed track/sample-entry video metadata where available, and current raw/WAV/YUV4MPEG2/image2 paths use their explicit single-stream audio/video metadata. Streamhash rejects packet stream indexes with no metadata instead of silently reusing a branch-wide label. The current tests cover MOV packet-level SHA-256 streamhash output, raw pcm_s16le MD5 streamhash output, AVI SHA-256 streamhash output through container metadata, direct AVI/MOV metadata mapping checks, and missing stream-metadata rejection. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential/FATE coverage yet."
 blocked_reason = ""
 
 [[component]]
@@ -1667,7 +1670,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "Initial internal streamhash muxer records one digest line per stream as `streamindex,streamtype,ALGO=hash`, accumulates packet payload bytes independently per stream, ignores timestamps, and supports Adler-32/CRC-32/MD5/SHA-224/SHA-256/SHA-384/SHA-512. It is wired to constrained ffmpeg-rs stdout streamhash execution with default SHA-256 and output-scoped `-hash` selection. The muxer requires a stable stream-type label per stream and rejects conflicting labels without changing that stream's digest. Build-checked cargo-fuzz target avformat_packet_muxers covers per-stream digest stability, stream-type labels, render/finish stability, and post-finish rejection, but actual local fuzz execution is blocked until cargo-fuzz is installed. Exact FFmpeg streamhash output semantics, generated stream type mapping, differential tests, and FATE are pending."
+notes = "Initial internal streamhash muxer records one digest line per stream as `streamindex,streamtype,ALGO=hash`, accumulates packet payload bytes independently per stream, ignores timestamps, and supports Adler-32/CRC-32/MD5/SHA-224/SHA-256/SHA-384/SHA-512. It is wired to constrained ffmpeg-rs stdout streamhash execution with default SHA-256 and output-scoped `-hash` selection. The muxer requires a stable stream-type label per stream and rejects conflicting labels without changing that stream's digest; fftools now derives those labels from available AVI/MOV demuxer metadata or explicit single-stream raw/WAV/YUV4MPEG2/image2 input metadata before writing packets. Build-checked cargo-fuzz target avformat_packet_muxers covers per-stream digest stability, stream-type labels, render/finish stability, and post-finish rejection, but actual local fuzz execution is blocked until cargo-fuzz is installed. Exact FFmpeg streamhash output semantics, full generated stream type mapping, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]

@@ -32,7 +32,7 @@ pub use image2::{Image2Demuxer, Image2Entry, Image2Frame, Image2Info, Image2Muxe
 pub use mov::{
     mov_probe_descriptor, register_mov_probe, MovAvcDecoderConfiguration, MovColorInformation,
     MovColorParameters, MovDemuxer, MovHevcDecoderConfiguration, MovHevcDecoderConfigurationArray,
-    MovInfo, MovPixelAspectRatio, MovTrackInfo,
+    MovInfo, MovPixelAspectRatio, MovSampleEntryDetails, MovTrackInfo,
 };
 pub use null_muxer::{NullMuxer, NullMuxerReport, NullStreamStats};
 pub use pcm::{PcmS16leDemuxer, PcmS16leInfo, PcmS16leMuxer, PcmS16leMuxerInfo};
