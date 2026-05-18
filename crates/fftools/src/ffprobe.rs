@@ -1,4 +1,4 @@
-use avformat::mov::{MovSampleEntryDetails, MovVideoSampleEntry};
+use avformat::mov::{MovAudioSampleEntry, MovSampleEntryDetails, MovVideoSampleEntry};
 use avformat::{
     register_avi_probe, register_mov_probe, AviDemuxer, AviInfo, AviMediaType, MovDemuxer, MovInfo,
     MovTrackInfo, ProbeRegistry, ProbeRequest,
@@ -129,6 +129,9 @@ pub struct FfprobeStreamReport {
     height: Option<u32>,
     coded_width: Option<u32>,
     coded_height: Option<u32>,
+    sample_rate: Option<u32>,
+    channels: Option<u16>,
+    bits_per_sample: Option<u16>,
     bits_per_raw_sample: Option<u16>,
     extradata_size: Option<usize>,
     is_avc: Option<bool>,
@@ -209,6 +212,18 @@ impl FfprobeStreamReport {
 
     pub fn coded_height(&self) -> Option<u32> {
         self.coded_height
+    }
+
+    pub fn sample_rate(&self) -> Option<u32> {
+        self.sample_rate
+    }
+
+    pub fn channels(&self) -> Option<u16> {
+        self.channels
+    }
+
+    pub fn bits_per_sample(&self) -> Option<u16> {
+        self.bits_per_sample
     }
 
     pub fn bits_per_raw_sample(&self) -> Option<u16> {
@@ -695,6 +710,7 @@ fn report_from_mov(path: &str, probe_score: u8, input_size: u64, info: &MovInfo)
         .map(|(index, track)| {
             let codec_tag_string = track.codec_tag().map(str::to_owned);
             let video_sample_entry = mov_video_sample_entry(track);
+            let audio_sample_entry = mov_audio_sample_entry(track);
             let color_information =
                 video_sample_entry.and_then(MovVideoSampleEntry::color_information);
             let frame_rate = average_frame_rate(
@@ -726,6 +742,9 @@ fn report_from_mov(path: &str, probe_score: u8, input_size: u64, info: &MovInfo)
                 height: track.height(),
                 coded_width: track.width(),
                 coded_height: track.height(),
+                sample_rate: audio_sample_entry.map(MovAudioSampleEntry::sample_rate),
+                channels: audio_sample_entry.map(MovAudioSampleEntry::channel_count),
+                bits_per_sample: audio_sample_entry.map(MovAudioSampleEntry::sample_size),
                 bits_per_raw_sample: mov_bits_per_raw_sample(track.codec_tag(), video_sample_entry),
                 extradata_size: mov_extradata_size(track),
                 is_avc: mov_is_avc(video_sample_entry),
@@ -824,6 +843,9 @@ fn report_from_avi(path: &str, input_size: u64, info: &AviInfo) -> FfprobeReport
                 height: Some(stream.height()),
                 coded_width: Some(stream.width()),
                 coded_height: Some(stream.height()),
+                sample_rate: None,
+                channels: None,
+                bits_per_sample: None,
                 bits_per_raw_sample: Some(stream.bit_count()),
                 extradata_size: None,
                 is_avc: None,
@@ -981,7 +1003,16 @@ fn collect_avi_packets(
 fn mov_video_sample_entry(track: &MovTrackInfo) -> Option<&MovVideoSampleEntry> {
     match track.codec_parameters()?.details() {
         MovSampleEntryDetails::Generic => None,
+        MovSampleEntryDetails::Audio(_) => None,
         MovSampleEntryDetails::Video(video) => Some(video.as_ref()),
+    }
+}
+
+fn mov_audio_sample_entry(track: &MovTrackInfo) -> Option<&MovAudioSampleEntry> {
+    match track.codec_parameters()?.details() {
+        MovSampleEntryDetails::Generic => None,
+        MovSampleEntryDetails::Audio(audio) => Some(audio),
+        MovSampleEntryDetails::Video(_) => None,
     }
 }
 
@@ -1190,6 +1221,9 @@ fn codec_name_for_tag(tag: &str) -> Option<&'static str> {
         "avc1" | "avc3" => Some("h264"),
         "hvc1" | "hev1" => Some("hevc"),
         "mp4v" => Some("mpeg4"),
+        "mp4a" => Some("aac"),
+        "sowt" => Some("pcm_s16le"),
+        "twos" => Some("pcm_s16be"),
         _ => None,
     }
 }
@@ -1200,6 +1234,9 @@ fn codec_long_name_for_tag(tag: &str) -> Option<&'static str> {
         "avc1" | "avc3" => Some("H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10"),
         "hvc1" | "hev1" => Some("H.265 / HEVC (High Efficiency Video Coding)"),
         "mp4v" => Some("MPEG-4 part 2"),
+        "mp4a" => Some("AAC (Advanced Audio Coding)"),
+        "sowt" => Some("PCM signed 16-bit little-endian"),
+        "twos" => Some("PCM signed 16-bit big-endian"),
         _ => None,
     }
 }
@@ -1323,6 +1360,15 @@ fn render_default(command: &FfprobeCommand, report: &FfprobeReport) -> String {
             }
             if let Some(coded_height) = stream.coded_height {
                 out.push_str(&format!("coded_height={coded_height}\n"));
+            }
+            if let Some(sample_rate) = stream.sample_rate {
+                out.push_str(&format!("sample_rate={sample_rate}\n"));
+            }
+            if let Some(channels) = stream.channels {
+                out.push_str(&format!("channels={channels}\n"));
+            }
+            if let Some(bits_per_sample) = stream.bits_per_sample {
+                out.push_str(&format!("bits_per_sample={bits_per_sample}\n"));
             }
             if let Some(bits_per_raw_sample) = stream.bits_per_raw_sample {
                 out.push_str(&format!("bits_per_raw_sample={bits_per_raw_sample}\n"));
@@ -1495,6 +1541,15 @@ fn render_stream_json(stream: &FfprobeStreamReport) -> String {
     }
     if let Some(coded_height) = stream.coded_height {
         fields.push(json_number("coded_height", coded_height));
+    }
+    if let Some(sample_rate) = stream.sample_rate {
+        fields.push(json_string("sample_rate", &sample_rate.to_string()));
+    }
+    if let Some(channels) = stream.channels {
+        fields.push(json_number("channels", channels));
+    }
+    if let Some(bits_per_sample) = stream.bits_per_sample {
+        fields.push(json_number("bits_per_sample", bits_per_sample));
     }
     if let Some(bits_per_raw_sample) = stream.bits_per_raw_sample {
         fields.push(json_number("bits_per_raw_sample", bits_per_raw_sample));
@@ -2047,7 +2102,7 @@ mod tests {
 
     #[test]
     fn outputs_mov_audio_handler_codec_type_json() {
-        let stsd = generic_stsd_box(*b"mp4a");
+        let stsd = audio_stsd_box(*b"mp4a", 2, 16, 48_000, &[]);
         let path = write_temp_mov(
             "show-streams-audio-handler",
             &sampled_mov_file_with_handler_and_stsd(
@@ -2073,8 +2128,13 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(stdout.contains("\"codec_type\": \"audio\""));
+        assert!(stdout.contains("\"codec_name\": \"aac\""));
+        assert!(stdout.contains("\"codec_long_name\": \"AAC (Advanced Audio Coding)\""));
         assert!(stdout.contains("\"codec_tag_string\": \"mp4a\""));
         assert!(stdout.contains("\"codec_tag\": \"0x6134706d\""));
+        assert!(stdout.contains("\"sample_rate\": \"48000\""));
+        assert!(stdout.contains("\"channels\": 2"));
+        assert!(stdout.contains("\"bits_per_sample\": 16"));
         assert!(stdout.contains("\"time_base\": \"1/90000\""));
         assert!(stdout.contains("\"duration_ts\": 1024"));
         assert!(stdout.contains(
@@ -2644,6 +2704,9 @@ mod tests {
                 height: Some(1080),
                 coded_width: Some(1920),
                 coded_height: Some(1080),
+                sample_rate: None,
+                channels: None,
+                bits_per_sample: None,
                 bits_per_raw_sample: Some(24),
                 extradata_size: Some(70),
                 is_avc: None,
@@ -2907,6 +2970,48 @@ mod tests {
         body.extend_from_slice(&1_u32.to_be_bytes());
         body.extend_from_slice(&sample_entry);
         box_(STSD_ID, &full_box(0, &body))
+    }
+
+    fn audio_stsd_box(
+        codec_tag: [u8; 4],
+        channel_count: u16,
+        sample_size: u16,
+        sample_rate: u32,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
+        let extra_data =
+            audio_sample_entry_extra_data(channel_count, sample_size, sample_rate, child_boxes);
+        let mut sample_entry = Vec::new();
+        sample_entry
+            .extend_from_slice(&u32::try_from(16 + extra_data.len()).unwrap().to_be_bytes());
+        sample_entry.extend_from_slice(&codec_tag);
+        sample_entry.extend_from_slice(&[0; 6]);
+        sample_entry.extend_from_slice(&1_u16.to_be_bytes());
+        sample_entry.extend_from_slice(&extra_data);
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&1_u32.to_be_bytes());
+        body.extend_from_slice(&sample_entry);
+        box_(STSD_ID, &full_box(0, &body))
+    }
+
+    fn audio_sample_entry_extra_data(
+        channel_count: u16,
+        sample_size: u16,
+        sample_rate: u32,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&0_u16.to_be_bytes());
+        out.extend_from_slice(&0_u16.to_be_bytes());
+        out.extend_from_slice(&0_u32.to_be_bytes());
+        out.extend_from_slice(&channel_count.to_be_bytes());
+        out.extend_from_slice(&sample_size.to_be_bytes());
+        out.extend_from_slice(&0_i16.to_be_bytes());
+        out.extend_from_slice(&0_u16.to_be_bytes());
+        out.extend_from_slice(&(sample_rate << 16).to_be_bytes());
+        out.extend_from_slice(child_boxes);
+        out
     }
 
     fn visual_sample_entry_extra_data(

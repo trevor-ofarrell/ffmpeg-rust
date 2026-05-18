@@ -176,7 +176,64 @@ impl MovCodecParameters {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MovSampleEntryDetails {
     Generic,
+    Audio(MovAudioSampleEntry),
     Video(Box<MovVideoSampleEntry>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAudioSampleEntry {
+    version: u16,
+    revision_level: u16,
+    vendor: u32,
+    channel_count: u16,
+    sample_size: u16,
+    compression_id: i16,
+    packet_size: u16,
+    sample_rate: u32,
+    sample_rate_fixed_16_16: u32,
+    child_boxes: Vec<MovSampleEntryChildBox>,
+}
+
+impl MovAudioSampleEntry {
+    pub fn version(&self) -> u16 {
+        self.version
+    }
+
+    pub fn revision_level(&self) -> u16 {
+        self.revision_level
+    }
+
+    pub fn vendor(&self) -> u32 {
+        self.vendor
+    }
+
+    pub fn channel_count(&self) -> u16 {
+        self.channel_count
+    }
+
+    pub fn sample_size(&self) -> u16 {
+        self.sample_size
+    }
+
+    pub fn compression_id(&self) -> i16 {
+        self.compression_id
+    }
+
+    pub fn packet_size(&self) -> u16 {
+        self.packet_size
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub fn sample_rate_fixed_16_16(&self) -> u32 {
+        self.sample_rate_fixed_16_16
+    }
+
+    pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.child_boxes
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1454,8 +1511,63 @@ fn parse_sample_entry_details(
         b"raw " if extra_data.len() >= 70 => parse_visual_sample_entry(extra_data)
             .map(Box::new)
             .map(MovSampleEntryDetails::Video),
+        tag if is_audio_sample_entry(tag) => {
+            parse_audio_sample_entry(extra_data).map(MovSampleEntryDetails::Audio)
+        }
         _ => Ok(MovSampleEntryDetails::Generic),
     }
+}
+
+fn is_audio_sample_entry(codec_tag: &[u8]) -> bool {
+    matches!(
+        codec_tag,
+        b"mp4a"
+            | b"alac"
+            | b"Opus"
+            | b"enca"
+            | b"ac-3"
+            | b"ec-3"
+            | b"lpcm"
+            | b"sowt"
+            | b"twos"
+            | b"in24"
+            | b"in32"
+            | b"fl32"
+            | b"fl64"
+            | b"ulaw"
+            | b"alaw"
+    )
+}
+
+fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> {
+    let mut reader = ByteReader::new(extra_data);
+    ensure_remaining(&reader, 20, "MOV/MP4 AudioSampleEntry")?;
+    let version = reader.read_u16_be()?;
+    let revision_level = reader.read_u16_be()?;
+    let vendor = reader.read_u32_be()?;
+    let channel_count = reader.read_u16_be()?;
+    let sample_size = reader.read_u16_be()?;
+    let compression_id = reader.read_i16_be()?;
+    let packet_size = reader.read_u16_be()?;
+    let sample_rate_fixed_16_16 = reader.read_u32_be()?;
+    let child_boxes = parse_sample_entry_child_boxes(
+        extra_data,
+        reader.position(),
+        extra_data.len(),
+        "MOV/MP4 AudioSampleEntry children",
+    )?;
+    Ok(MovAudioSampleEntry {
+        version,
+        revision_level,
+        vendor,
+        channel_count,
+        sample_size,
+        compression_id,
+        packet_size,
+        sample_rate: sample_rate_fixed_16_16 >> 16,
+        sample_rate_fixed_16_16,
+        child_boxes,
+    })
 }
 
 fn parse_visual_sample_entry(extra_data: &[u8]) -> AvResult<MovVideoSampleEntry> {
@@ -3094,6 +3206,37 @@ mod tests {
     }
 
     #[test]
+    fn parses_audio_sample_entry_codec_parameters() {
+        let esds = box_(*b"esds", &full_box(0, b"\x03\x01\x00"));
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &esds);
+        let bytes = mp4_with_sample_description_entry(b"mp4a", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "mp4a");
+        assert_eq!(codec_parameters.extra_data(), extra_data.as_slice());
+        let MovSampleEntryDetails::Audio(audio) = codec_parameters.details() else {
+            panic!("expected audio sample entry details");
+        };
+        assert_eq!(audio.version(), 0);
+        assert_eq!(audio.revision_level(), 0);
+        assert_eq!(audio.vendor(), 0);
+        assert_eq!(audio.channel_count(), 2);
+        assert_eq!(audio.sample_size(), 16);
+        assert_eq!(audio.compression_id(), 0);
+        assert_eq!(audio.packet_size(), 0);
+        assert_eq!(audio.sample_rate(), 48_000);
+        assert_eq!(audio.sample_rate_fixed_16_16(), 48_000 << 16);
+        assert_eq!(audio.child_boxes().len(), 1);
+        assert_eq!(audio.child_boxes()[0].box_type(), "esds");
+        let expected_esds_payload = full_box(0, b"\x03\x01\x00");
+        assert_eq!(
+            audio.child_boxes()[0].payload(),
+            expected_esds_payload.as_slice()
+        );
+    }
+
+    #[test]
     fn parses_visual_sample_entry_codec_parameters() {
         let avcc = avcc_payload(
             100,
@@ -3409,6 +3552,19 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.kind(), AvErrorKind::Unsupported);
+    }
+
+    #[test]
+    fn rejects_malformed_audio_sample_entry() {
+        let err =
+            MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, b"\0\0")).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_child = box_with_declared_size(*b"esds", 12, b"\x01");
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &bad_child);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
     }
 
     #[test]
@@ -4535,6 +4691,25 @@ mod tests {
         sample_entry.extend_from_slice(&data_reference_index.to_be_bytes());
         sample_entry.extend_from_slice(extra_data);
         sample_entry
+    }
+
+    fn audio_sample_entry_extra_data(
+        channel_count: u16,
+        sample_size: u16,
+        sample_rate: u32,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&0_u16.to_be_bytes());
+        out.extend_from_slice(&0_u16.to_be_bytes());
+        out.extend_from_slice(&0_u32.to_be_bytes());
+        out.extend_from_slice(&channel_count.to_be_bytes());
+        out.extend_from_slice(&sample_size.to_be_bytes());
+        out.extend_from_slice(&0_i16.to_be_bytes());
+        out.extend_from_slice(&0_u16.to_be_bytes());
+        out.extend_from_slice(&(sample_rate << 16).to_be_bytes());
+        out.extend_from_slice(child_boxes);
+        out
     }
 
     fn visual_sample_entry_extra_data(

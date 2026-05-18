@@ -668,7 +668,7 @@ upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "implemented"
 priority = 2
 oracle_command = "ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams -of json <input.avi>"
-rust_command = "cargo test -p fftools ffprobe"
+rust_command = "cargo test -p fftools --lib ffprobe"
 unit_tests = [
   "ffprobe::tests::renders_default_report_sections",
   "ffprobe::tests::outputs_mov_stream_json",
@@ -678,7 +678,25 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, coded_width/coded_height, start_pts/start_time, r_frame_rate, and avg_frame_rate for constrained MOV/MP4 and AVI streams using Rust demuxer metadata. MOV codec_type is derived from known hdlr handler types when available, with tests covering video and an audio-handler fixture; AVI codec_type comes from the parsed stream media type. The codec-name map is deliberately limited to known tags currently represented by the Rust parsers, and there is no pinned-oracle differential/FATE coverage yet."
+notes = "ffprobe-rs stream reports now carry codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, coded_width/coded_height, MOV audio sample_rate/channels/bits_per_sample when parsed from AudioSampleEntry, start_pts/start_time, r_frame_rate, and avg_frame_rate for constrained MOV/MP4 and AVI streams using Rust demuxer metadata. MOV codec_type is derived from known hdlr handler types when available, with tests covering video and an audio-handler fixture; AVI codec_type comes from the parsed stream media type. The codec-name map is deliberately limited to known tags currently represented by the Rust parsers, including mp4a AAC in the audio fixture, and there is no pinned-oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-ffprobe-audio-stream-fields"
+kind = "cli"
+ffmpeg_name = "ffprobe audio stream fields"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffprobe -show_streams -of json <input.m4a>"
+rust_command = "cargo test -p fftools --lib ffprobe"
+unit_tests = [
+  "ffprobe::tests::outputs_mov_audio_handler_codec_type_json",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffprobe-rs reports sample_rate, channels, and bits_per_sample for the constrained MOV/MP4 audio stream path when the Rust MOV demuxer parses version-0 AudioSampleEntry metadata. Current coverage uses a synthetic mp4a/soun fixture only; sample_fmt, channel_layout, decoder-derived fields, pinned-oracle differential tests, and FATE coverage are pending."
 blocked_reason = ""
 
 [[component]]
@@ -749,17 +767,18 @@ upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "implemented"
 priority = 2
 oracle_command = "ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams -of json <input.avi>"
-rust_command = "cargo test -p fftools ffprobe"
+rust_command = "cargo test -p fftools --lib ffprobe"
 unit_tests = [
   "ffprobe::tests::renders_default_report_sections",
   "ffprobe::tests::outputs_mov_stream_json",
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
+  "ffprobe::tests::outputs_mov_audio_handler_codec_type_json",
   "ffprobe::tests::outputs_avi_stream_json",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry codec_long_name for the constrained FourCC-to-codec map already used by codec_name: raw video, H.264/AVC, HEVC, and MPEG-4 part 2. Fixture coverage proves raw MOV, H.264 MOV, and raw AVI JSON/default output. No pinned-oracle differential/FATE coverage exists yet."
+notes = "ffprobe-rs stream reports now carry codec_long_name for the constrained FourCC-to-codec map already used by codec_name: raw video, H.264/AVC, HEVC, MPEG-4 part 2, mp4a/AAC, and initial MOV PCM tags. Fixture coverage proves raw MOV, H.264 MOV, mp4a audio MOV, and raw AVI JSON/default output. No pinned-oracle differential/FATE coverage exists yet."
 blocked_reason = ""
 
 [[component]]
@@ -2007,12 +2026,14 @@ unit_tests = [
   "mov::tests::rejects_multiple_populated_tracks_explicitly",
   "mov::tests::reads_packets_from_simple_sample_table",
   "mov::tests::parses_sample_description_codec_parameters",
+  "mov::tests::parses_audio_sample_entry_codec_parameters",
   "mov::tests::parses_visual_sample_entry_codec_parameters",
   "mov::tests::parses_raw_visual_sample_entry_codec_parameters",
   "mov::tests::parses_hevc_sample_entry_codec_parameters",
   "mov::tests::parses_visual_sample_entry_pixel_aspect_and_color_information",
   "mov::tests::parses_visual_sample_entry_nclc_color_information",
   "mov::tests::parses_visual_sample_entry_icc_color_information",
+  "mov::tests::rejects_malformed_audio_sample_entry",
   "mov::tests::rejects_malformed_visual_sample_entry_child_box",
   "mov::tests::rejects_sample_description_indexes_other_than_one",
   "mov::tests::rejects_multiple_sample_description_entries_explicitly",
@@ -2027,5 +2048,5 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avformat_mov"]
-notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, mdhd language metadata, and mdia/hdlr handler type plus handler-name metadata; extracts common movie-level and track-level udta/meta/ilst data values for UTF-8 and UTF-16 text fields, classic gnre genre indexes, one-byte integer/boolean atoms, iTunes-style freeform ---- atoms, covr cover-art payloads, and track/disc number pairs while rejecting malformed metadata atoms, invalid text encodings, malformed hdlr names, malformed genre indexes, short integer/boolean payloads, malformed freeform payloads, and short cover-art data payloads; registers a hand-written ftyp/extension/MIME probe descriptor; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; parses VisualSampleEntry width, height, frame count, compressor name, depth, child boxes, structured avcC version/profile/level/NAL-length-size/SPS/PPS data, structured hvcC profile/timing/NAL-length-size/NAL-array data, pasp pixel aspect ratio, and nclx/nclc/rICC/prof colr color information for known video sample entries and raw entries with full visual payloads; explicitly rejects fragmented mvex/moof layouts, edit-list edts boxes, multiple populated tracks, multiple stsd sample entries, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables, malformed VisualSampleEntry child boxes, malformed avcC/hvcC/pasp/colr payloads, and truncated media data. Build-checked cargo-fuzz target avformat_mov exercises box parsing, sample-table packet extraction, stream metadata, packet timing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Packet extraction for multiple populated tracks, actual fragment parsing, edit-list timeline application, real audio/subtitle/data sample-entry parsing, deeper VPS/SPS/PPS bitstream validation, CLI wiring, differential tests, and FATE are pending."
+notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, mdhd language metadata, and mdia/hdlr handler type plus handler-name metadata; extracts common movie-level and track-level udta/meta/ilst data values for UTF-8 and UTF-16 text fields, classic gnre genre indexes, one-byte integer/boolean atoms, iTunes-style freeform ---- atoms, covr cover-art payloads, and track/disc number pairs while rejecting malformed metadata atoms, invalid text encodings, malformed hdlr names, malformed genre indexes, short integer/boolean payloads, malformed freeform payloads, and short cover-art data payloads; registers a hand-written ftyp/extension/MIME probe descriptor; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; parses version-0 AudioSampleEntry version/revision/vendor/channel-count/sample-size/compression-id/packet-size/sample-rate/child boxes for known audio sample-entry tags; parses VisualSampleEntry width, height, frame count, compressor name, depth, child boxes, structured avcC version/profile/level/NAL-length-size/SPS/PPS data, structured hvcC profile/timing/NAL-length-size/NAL-array data, pasp pixel aspect ratio, and nclx/nclc/rICC/prof colr color information for known video sample entries and raw entries with full visual payloads; explicitly rejects fragmented mvex/moof layouts, edit-list edts boxes, multiple populated tracks, multiple stsd sample entries, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables, malformed AudioSampleEntry and VisualSampleEntry child boxes, malformed avcC/hvcC/pasp/colr payloads, and truncated media data. Build-checked cargo-fuzz target avformat_mov exercises box parsing, sample-table packet extraction, stream metadata, packet timing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Packet extraction for multiple populated tracks, actual fragment parsing, edit-list timeline application, deeper audio/subtitle/data sample-entry parsing, deeper VPS/SPS/PPS bitstream validation, CLI wiring, differential tests, and FATE are pending."
 blocked_reason = ""
