@@ -55,6 +55,11 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(slice.offset(), offset);
     assert_eq!(slice.len(), slice_len);
     assert_eq!(slice.as_slice(), &payload[offset..offset + slice_len]);
+    assert!(buffer.shares_storage_with_slice(&slice));
+    assert!(slice.shares_storage_with_buffer(&buffer));
+    assert_eq!(buffer.as_ptr(), buffer.as_slice().as_ptr());
+    assert_eq!(buffer.as_padded_ptr(), buffer.as_padded_slice().as_ptr());
+    assert_eq!(slice.as_ptr(), buffer.as_ptr().wrapping_add(offset));
     assert_eq!(buffer.strong_count(), 2);
     assert_eq!(slice.strong_count(), 2);
     assert_eq!(
@@ -67,6 +72,7 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     drop(slice);
 
     let shared = buffer.clone();
+    assert!(buffer.shares_storage(&shared));
     assert!(!buffer.is_writable());
     assert!(buffer.get_mut().is_none());
     if !buffer.is_empty() {
@@ -74,9 +80,11 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         buffer.make_mut()[0] = original.wrapping_add(1);
         assert_eq!(buffer.as_slice()[0], original.wrapping_add(1));
         assert_eq!(shared.as_slice(), payload.as_slice());
+        assert!(!buffer.shares_storage(&shared));
     } else {
         assert_eq!(buffer.make_mut(), &mut []);
         assert_eq!(shared.as_slice(), payload.as_slice());
+        assert!(!buffer.shares_storage(&shared));
     }
     assert!(buffer.is_writable());
 
@@ -153,11 +161,15 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
 
     let mut resize_shared = BufferRef::copy_from_slice(&payload);
     let resize_original = resize_shared.clone();
+    assert!(resize_shared.shares_storage(&resize_original));
     resize_shared
         .resize_with_padding(resize_len, resize_padding)
         .unwrap();
     assert!(resize_shared.is_writable());
     assert_eq!(resize_original.as_slice(), payload.as_slice());
+    if resize_len != payload.len() || resize_padding != 0 {
+        assert!(!resize_shared.shares_storage(&resize_original));
+    }
 
     let mut same_shape_storage = payload.clone();
     same_shape_storage.resize(payload.len() + padding_len, 0x55);

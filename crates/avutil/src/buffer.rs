@@ -275,8 +275,16 @@ impl BufferRef {
         &self.data.bytes.as_slice()[..self.len]
     }
 
+    pub fn as_ptr(&self) -> *const u8 {
+        self.as_slice().as_ptr()
+    }
+
     pub fn as_padded_slice(&self) -> &[u8] {
         self.data.bytes.as_slice()
+    }
+
+    pub fn as_padded_ptr(&self) -> *const u8 {
+        self.as_padded_slice().as_ptr()
     }
 
     pub fn allocated_len(&self) -> usize {
@@ -293,6 +301,14 @@ impl BufferRef {
 
     pub fn strong_count(&self) -> usize {
         Arc::strong_count(&self.data)
+    }
+
+    pub fn shares_storage(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.data, &other.data)
+    }
+
+    pub fn shares_storage_with_slice(&self, slice: &BufferSlice) -> bool {
+        Arc::ptr_eq(&self.data, &slice.data)
     }
 
     pub fn is_readonly(&self) -> bool {
@@ -866,12 +882,24 @@ impl BufferSlice {
         &self.data.bytes.as_slice()[self.offset..self.offset + self.len]
     }
 
+    pub fn as_ptr(&self) -> *const u8 {
+        self.as_slice().as_ptr()
+    }
+
     pub fn offset(&self) -> usize {
         self.offset
     }
 
     pub fn strong_count(&self) -> usize {
         Arc::strong_count(&self.data)
+    }
+
+    pub fn shares_storage(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.data, &other.data)
+    }
+
+    pub fn shares_storage_with_buffer(&self, buffer: &BufferRef) -> bool {
+        Arc::ptr_eq(&self.data, &buffer.data)
     }
 }
 
@@ -1408,6 +1436,46 @@ mod tests {
         assert!(empty_at_end.is_empty());
         assert_eq!(buffer.strong_count(), 3);
         assert_eq!(middle.strong_count(), 3);
+    }
+
+    #[test]
+    fn buffer_storage_identity_tracks_refs_slices_and_detach() {
+        let mut buffer = BufferRef::copy_from_slice_with_padding(&[1, 2, 3], 1).unwrap();
+        let shared = buffer.clone();
+        let slice = buffer.slice(1, 2).unwrap();
+
+        assert!(buffer.shares_storage(&shared));
+        assert!(buffer.shares_storage_with_slice(&slice));
+        assert!(slice.shares_storage_with_buffer(&buffer));
+        assert_eq!(buffer.as_ptr(), buffer.as_slice().as_ptr());
+        assert_eq!(buffer.as_padded_ptr(), buffer.as_padded_slice().as_ptr());
+        assert_eq!(slice.as_ptr(), buffer.as_ptr().wrapping_add(1));
+
+        buffer.make_mut()[0] = 9;
+
+        assert!(!buffer.shares_storage(&shared));
+        assert!(!buffer.shares_storage_with_slice(&slice));
+        assert!(slice.shares_storage_with_buffer(&shared));
+        assert_eq!(buffer.as_slice(), &[9, 2, 3]);
+        assert_eq!(shared.as_slice(), &[1, 2, 3]);
+        assert_eq!(slice.as_slice(), &[2, 3]);
+    }
+
+    #[test]
+    fn buffer_storage_identity_distinguishes_equal_independent_bytes() {
+        let first = BufferRef::copy_from_slice(&[1, 2, 3]);
+        let second = BufferRef::copy_from_slice(&[1, 2, 3]);
+        let first_shared = first.clone();
+        let first_slice = first.slice(0, 3).unwrap();
+        let second_slice = second.slice(0, 3).unwrap();
+
+        assert_eq!(first, second);
+        assert!(!first.shares_storage(&second));
+        assert!(first.shares_storage(&first_shared));
+        assert!(first.shares_storage_with_slice(&first_slice));
+        assert!(first_slice.shares_storage_with_buffer(&first_shared));
+        assert!(!first_slice.shares_storage_with_buffer(&second));
+        assert!(!first_slice.shares_storage(&second_slice));
     }
 
     #[test]
