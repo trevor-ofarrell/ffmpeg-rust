@@ -1,5 +1,5 @@
 use crate::probe::{ProbeDescriptor, ProbeRegistry};
-use avutil::{AvError, AvErrorKind, AvResult, ByteReader, Dictionary, Packet, SideData};
+use avutil::{AvError, AvErrorKind, AvResult, BitReader, ByteReader, Dictionary, Packet, SideData};
 
 const FTYP_ID: &[u8; 4] = b"ftyp";
 const MOOV_ID: &[u8; 4] = b"moov";
@@ -38,6 +38,7 @@ const WAVE_ID: &[u8; 4] = b"wave";
 const CHAN_ID: &[u8; 4] = b"chan";
 const BTRT_ID: &[u8; 4] = b"btrt";
 const DAMR_ID: &[u8; 4] = b"damr";
+const DAC3_ID: &[u8; 4] = b"dac3";
 const DOPS_ID: &[u8; 4] = b"dOps";
 const FRMA_ID: &[u8; 4] = b"frma";
 const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
@@ -380,6 +381,7 @@ pub struct MovAudioSampleEntry {
     elementary_stream_descriptor: Option<MovElementaryStreamDescriptor>,
     bit_rate: Option<MovBitRateBox>,
     amr_specific: Option<MovAmrSpecificBox>,
+    ac3_specific: Option<MovAc3SpecificBox>,
     opus_specific: Option<MovOpusSpecificBox>,
     wave_extension: Option<MovAudioWaveExtension>,
     channel_layout: Option<MovAudioChannelLayout>,
@@ -476,6 +478,10 @@ impl MovAudioSampleEntry {
 
     pub fn amr_specific(&self) -> Option<&MovAmrSpecificBox> {
         self.amr_specific.as_ref()
+    }
+
+    pub fn ac3_specific(&self) -> Option<&MovAc3SpecificBox> {
+        self.ac3_specific.as_ref()
     }
 
     pub fn opus_specific(&self) -> Option<&MovOpusSpecificBox> {
@@ -674,6 +680,42 @@ impl MovAmrSpecificBox {
 
     pub fn frames_per_sample(&self) -> u8 {
         self.frames_per_sample
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAc3SpecificBox {
+    fscod: u8,
+    bsid: u8,
+    bsmod: u8,
+    acmod: u8,
+    lfeon: bool,
+    bit_rate_code: u8,
+}
+
+impl MovAc3SpecificBox {
+    pub fn fscod(&self) -> u8 {
+        self.fscod
+    }
+
+    pub fn bsid(&self) -> u8 {
+        self.bsid
+    }
+
+    pub fn bsmod(&self) -> u8 {
+        self.bsmod
+    }
+
+    pub fn acmod(&self) -> u8 {
+        self.acmod
+    }
+
+    pub fn lfeon(&self) -> bool {
+        self.lfeon
+    }
+
+    pub fn bit_rate_code(&self) -> u8 {
+        self.bit_rate_code
     }
 }
 
@@ -2273,6 +2315,7 @@ fn parse_audio_sample_entry(codec_tag: &[u8], extra_data: &[u8]) -> AvResult<Mov
         parse_audio_sample_entry_elementary_stream_descriptor(&child_boxes)?;
     let bit_rate = parse_audio_sample_entry_bit_rate(&child_boxes)?;
     let amr_specific = parse_audio_sample_entry_amr_specific(&child_boxes)?;
+    let ac3_specific = parse_audio_sample_entry_ac3_specific(&child_boxes, codec_tag == b"ac-3")?;
     let opus_specific = parse_audio_sample_entry_opus_specific(&child_boxes, codec_tag == b"Opus")?;
     let wave_extension = parse_audio_sample_entry_wave_extension(&child_boxes)?;
     let channel_layout = parse_audio_sample_entry_channel_layout(&child_boxes)?;
@@ -2290,6 +2333,7 @@ fn parse_audio_sample_entry(codec_tag: &[u8], extra_data: &[u8]) -> AvResult<Mov
         elementary_stream_descriptor,
         bit_rate,
         amr_specific,
+        ac3_specific,
         opus_specific,
         wave_extension,
         channel_layout,
@@ -2354,6 +2398,29 @@ fn parse_audio_sample_entry_amr_specific(
         .find(|child| child.box_type.as_bytes() == DAMR_ID)
         .map(|child| parse_damr(child.payload()))
         .transpose()
+}
+
+fn parse_audio_sample_entry_ac3_specific(
+    child_boxes: &[MovSampleEntryChildBox],
+    required: bool,
+) -> AvResult<Option<MovAc3SpecificBox>> {
+    let mut matches = child_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == DAC3_ID);
+    let Some(child) = matches.next() else {
+        if required {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 AC-3 sample entry is missing required dac3 box",
+            ));
+        }
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 AC-3 sample entry must not contain multiple dac3 boxes",
+        ));
+    }
+    parse_dac3(child.payload()).map(Some)
 }
 
 fn parse_audio_sample_entry_opus_specific(
@@ -2490,6 +2557,61 @@ fn parse_damr(payload: &[u8]) -> AvResult<MovAmrSpecificBox> {
         mode_set,
         mode_change_period,
         frames_per_sample,
+    })
+}
+
+fn parse_dac3(payload: &[u8]) -> AvResult<MovAc3SpecificBox> {
+    if payload.len() != 3 {
+        return Err(if payload.len() < 3 {
+            AvError::new(
+                AvErrorKind::EndOfFile,
+                "MOV/MP4 dac3 payload is shorter than 24 bits",
+            )
+        } else {
+            AvError::invalid_data("MOV/MP4 dac3 payload must contain exactly 24 bits")
+        });
+    }
+
+    let mut reader = BitReader::new(payload);
+    let fscod = u8::try_from(reader.read_bits(2)?)
+        .map_err(|_| AvError::invalid_data("MOV/MP4 dac3 fscod is out of range"))?;
+    let bsid = u8::try_from(reader.read_bits(5)?)
+        .map_err(|_| AvError::invalid_data("MOV/MP4 dac3 bsid is out of range"))?;
+    let bsmod = u8::try_from(reader.read_bits(3)?)
+        .map_err(|_| AvError::invalid_data("MOV/MP4 dac3 bsmod is out of range"))?;
+    let acmod = u8::try_from(reader.read_bits(3)?)
+        .map_err(|_| AvError::invalid_data("MOV/MP4 dac3 acmod is out of range"))?;
+    let lfeon = reader.read_bit()?;
+    let bit_rate_code = u8::try_from(reader.read_bits(5)?)
+        .map_err(|_| AvError::invalid_data("MOV/MP4 dac3 bit_rate_code is out of range"))?;
+    let reserved = reader.read_bits(5)?;
+
+    if fscod == 3 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dac3 fscod value 3 is reserved",
+        ));
+    }
+    if bit_rate_code > 18 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dac3 bit_rate_code must be in 0..=18",
+        ));
+    }
+    if reserved != 0 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dac3 reserved bits must be zero",
+        ));
+    }
+    if !reader.is_eof() {
+        return Err(AvError::invalid_data("MOV/MP4 dac3 has trailing bits"));
+    }
+
+    Ok(MovAc3SpecificBox {
+        fscod,
+        bsid,
+        bsmod,
+        acmod,
+        lfeon,
+        bit_rate_code,
     })
 }
 
@@ -4284,6 +4406,7 @@ mod tests {
         ));
         assert!(audio.version1_fields().is_none());
         assert!(audio.version2_fields().is_none());
+        assert!(audio.ac3_specific().is_none());
         assert!(audio.opus_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
@@ -4328,6 +4451,7 @@ mod tests {
         assert_eq!(audio.sample_rate(), 8_000);
         assert!(audio.elementary_stream_descriptor().is_none());
         assert!(audio.bit_rate().is_none());
+        assert!(audio.ac3_specific().is_none());
         assert!(audio.opus_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
@@ -4343,6 +4467,40 @@ mod tests {
             audio.child_boxes()[0].payload(),
             amr_specific_box_payload(*b"rust", 1, 0x0085, 2, 2).as_slice()
         );
+    }
+
+    #[test]
+    fn parses_ac3_audio_sample_entry_specific_box() {
+        let dac3_payload = ac3_specific_box_payload(0, 8, 0, 7, true, 10, 0);
+        let dac3 = box_(*DAC3_ID, &dac3_payload);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &dac3);
+        let bytes = mp4_with_sample_description_entry(b"ac-3", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "ac-3");
+        let MovSampleEntryDetails::Audio(audio) = codec_parameters.details() else {
+            panic!("expected audio sample entry details");
+        };
+        assert_eq!(audio.channel_count(), 2);
+        assert_eq!(audio.sample_size(), 16);
+        assert_eq!(audio.sample_rate(), 48_000);
+        assert!(audio.elementary_stream_descriptor().is_none());
+        assert!(audio.bit_rate().is_none());
+        assert!(audio.amr_specific().is_none());
+        assert!(audio.opus_specific().is_none());
+        assert!(audio.wave_extension().is_none());
+        assert!(audio.channel_layout().is_none());
+        let ac3 = audio.ac3_specific().unwrap();
+        assert_eq!(ac3.fscod(), 0);
+        assert_eq!(ac3.bsid(), 8);
+        assert_eq!(ac3.bsmod(), 0);
+        assert_eq!(ac3.acmod(), 7);
+        assert!(ac3.lfeon());
+        assert_eq!(ac3.bit_rate_code(), 10);
+        assert_eq!(audio.child_boxes().len(), 1);
+        assert_eq!(audio.child_boxes()[0].box_type(), "dac3");
+        assert_eq!(audio.child_boxes()[0].payload(), dac3_payload.as_slice());
     }
 
     #[test]
@@ -4364,6 +4522,7 @@ mod tests {
         assert!(audio.elementary_stream_descriptor().is_none());
         assert!(audio.bit_rate().is_none());
         assert!(audio.amr_specific().is_none());
+        assert!(audio.ac3_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let opus = audio.opus_specific().unwrap();
@@ -5007,6 +5166,59 @@ mod tests {
         );
         let extra_data = audio_sample_entry_extra_data(1, 16, 8_000, &invalid_many_frames);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"samr", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let missing_dac3 = audio_sample_entry_extra_data(2, 16, 48_000, &[]);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"ac-3",
+            1,
+            &missing_dac3,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let truncated_dac3 = box_(*DAC3_ID, b"\0\0");
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &truncated_dac3);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ac-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let mut oversized_dac3 = ac3_specific_box_payload(0, 8, 0, 7, true, 10, 0);
+        oversized_dac3.push(0);
+        let oversized_dac3 = box_(*DAC3_ID, &oversized_dac3);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &oversized_dac3);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ac-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let reserved_fscod = box_(*DAC3_ID, &ac3_specific_box_payload(3, 8, 0, 7, true, 10, 0));
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &reserved_fscod);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ac-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let invalid_bit_rate_code =
+            box_(*DAC3_ID, &ac3_specific_box_payload(0, 8, 0, 7, true, 19, 0));
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &invalid_bit_rate_code);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ac-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let invalid_reserved_bits =
+            box_(*DAC3_ID, &ac3_specific_box_payload(0, 8, 0, 7, true, 10, 1));
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &invalid_reserved_bits);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ac-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let duplicate_dac3 = [
+            box_(*DAC3_ID, &ac3_specific_box_payload(0, 8, 0, 7, true, 10, 0)),
+            box_(*DAC3_ID, &ac3_specific_box_payload(0, 8, 0, 7, true, 10, 0)),
+        ]
+        .concat();
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &duplicate_dac3);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ac-3", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
@@ -6368,6 +6580,29 @@ mod tests {
         payload.push(mode_change_period);
         payload.push(frames_per_sample);
         payload
+    }
+
+    fn ac3_specific_box_payload(
+        fscod: u8,
+        bsid: u8,
+        bsmod: u8,
+        acmod: u8,
+        lfeon: bool,
+        bit_rate_code: u8,
+        reserved: u8,
+    ) -> Vec<u8> {
+        let bits = (u32::from(fscod & 0x03) << 22)
+            | (u32::from(bsid & 0x1f) << 17)
+            | (u32::from(bsmod & 0x07) << 14)
+            | (u32::from(acmod & 0x07) << 11)
+            | (u32::from(u8::from(lfeon)) << 10)
+            | (u32::from(bit_rate_code & 0x1f) << 5)
+            | u32::from(reserved & 0x1f);
+        vec![
+            ((bits >> 16) & 0xff) as u8,
+            ((bits >> 8) & 0xff) as u8,
+            (bits & 0xff) as u8,
+        ]
     }
 
     fn opus_specific_box_payload(
