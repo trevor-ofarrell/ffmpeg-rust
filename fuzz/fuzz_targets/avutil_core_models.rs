@@ -5,10 +5,11 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
     FrameActiveFormatDescription, FrameAudioServiceType, FrameData, FrameDisplayMatrix,
-    FrameGopTimecode, FrameMatrixEncoding, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData,
-    FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, Md5,
-    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    FrameDownmixInfo, FrameDownmixType, FrameGopTimecode, FrameMatrixEncoding, FrameS12mTimecode,
+    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
+    FrameSkipSamples, FrameSkipSamplesReason, Md5, Packet, PacketFlags, PixelFormat, Rational,
+    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
+    VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1020,6 +1021,46 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 false
             };
             assert!(frame_side_data_payload.len() != FrameMatrixEncoding::DATA_LEN || raw_invalid);
+        }
+    }
+    match frame.side_data()[0].downmix_info() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DownmixInfo);
+            assert_eq!(frame_side_data_payload.len(), FrameDownmixInfo::DATA_LEN);
+            let mut raw_type = [0; 4];
+            raw_type.copy_from_slice(&frame_side_data_payload[..4]);
+            assert_eq!(
+                i32::from_ne_bytes(raw_type),
+                value.preferred_downmix_type().as_raw()
+            );
+            assert_eq!(
+                FrameDownmixType::from_raw(value.preferred_downmix_type().as_raw()).unwrap(),
+                value.preferred_downmix_type()
+            );
+            for (bits, chunk) in value
+                .level_bits()
+                .iter()
+                .zip(frame_side_data_payload[8..].chunks_exact(8))
+            {
+                let mut raw = [0; 8];
+                raw.copy_from_slice(chunk);
+                assert_eq!(*bits, u64::from_ne_bytes(raw));
+            }
+            assert_eq!(FrameDownmixInfo::parse(&value.to_bytes()).unwrap(), value);
+            assert_eq!(&value.to_bytes()[4..8], &[0, 0, 0, 0]);
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::DownmixInfo),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DownmixInfo);
+            let raw_invalid = if frame_side_data_payload.len() == FrameDownmixInfo::DATA_LEN {
+                let mut raw = [0; 4];
+                raw.copy_from_slice(&frame_side_data_payload[..4]);
+                FrameDownmixType::from_raw(i32::from_ne_bytes(raw)).is_err()
+            } else {
+                false
+            };
+            assert!(frame_side_data_payload.len() != FrameDownmixInfo::DATA_LEN || raw_invalid);
         }
     }
     match frame.side_data()[0].active_format_description() {
@@ -2153,6 +2194,51 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 4]).unwrap();
     assert_eq!(non_matrix.matrix_encoding().unwrap(), None);
 
+    let downmix_info = FrameDownmixInfo::new(
+        FrameDownmixType::LtRt,
+        1.0,
+        0.7071067811865476,
+        0.5,
+        0.25,
+        0.0,
+    );
+    let downmix_side_data = FrameSideData::new_downmix_info(downmix_info).unwrap();
+    assert_eq!(downmix_side_data.kind_id(), &FrameSideDataKind::DownmixInfo);
+    assert_eq!(
+        downmix_side_data.downmix_info().unwrap(),
+        Some(downmix_info)
+    );
+    assert_eq!(&downmix_side_data.data()[4..8], &[0, 0, 0, 0]);
+    assert_eq!(
+        FrameDownmixType::DolbyProLogicIi.ffmpeg_constant(),
+        "AV_DOWNMIX_TYPE_DPLII"
+    );
+    assert_eq!(
+        FrameDownmixType::from_raw(4).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut downmix_with_padding = downmix_info.to_bytes();
+    downmix_with_padding[4..8].copy_from_slice(&[1, 2, 3, 4]);
+    assert_eq!(
+        FrameDownmixInfo::parse(&downmix_with_padding).unwrap(),
+        downmix_info
+    );
+    let downmix_with_nan =
+        FrameDownmixInfo::from_level_bits(FrameDownmixType::LoRo, [f64::NAN.to_bits(), 1, 2, 3, 4]);
+    assert_eq!(downmix_with_nan.level_bits()[0], f64::NAN.to_bits());
+    assert!(downmix_with_nan.center_mix_level().is_nan());
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::DownmixInfo, vec![0; 47])
+            .unwrap()
+            .downmix_info()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_downmix =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 48]).unwrap();
+    assert_eq!(non_downmix.downmix_info().unwrap(), None);
+
     let audio_service =
         FrameSideData::new_audio_service_type(FrameAudioServiceType::VoiceOver).unwrap();
     assert_eq!(
@@ -2394,25 +2480,26 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 19 {
+    match byte.unwrap_or_default() % 20 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::MatrixEncoding,
-        2 => FrameSideDataKind::ReplayGain,
-        3 => FrameSideDataKind::MasteringDisplayMetadata,
-        4 => FrameSideDataKind::ContentLightLevel,
-        5 => FrameSideDataKind::IccProfile,
-        6 => FrameSideDataKind::DolbyVisionRpuBuffer,
-        7 => FrameSideDataKind::Lcevc,
-        8 => FrameSideDataKind::GopTimecode,
-        9 => FrameSideDataKind::S12mTimecode,
-        10 => FrameSideDataKind::VideoHint,
-        11 => FrameSideDataKind::ViewId,
-        12 => FrameSideDataKind::ThreeDReferenceDisplays,
-        13 => FrameSideDataKind::Exif,
-        14 => FrameSideDataKind::SeiUnregistered,
-        15 => FrameSideDataKind::ActiveFormatDescription,
-        16 => FrameSideDataKind::SkipSamples,
-        17 => FrameSideDataKind::AudioServiceType,
+        2 => FrameSideDataKind::DownmixInfo,
+        3 => FrameSideDataKind::ReplayGain,
+        4 => FrameSideDataKind::MasteringDisplayMetadata,
+        5 => FrameSideDataKind::ContentLightLevel,
+        6 => FrameSideDataKind::IccProfile,
+        7 => FrameSideDataKind::DolbyVisionRpuBuffer,
+        8 => FrameSideDataKind::Lcevc,
+        9 => FrameSideDataKind::GopTimecode,
+        10 => FrameSideDataKind::S12mTimecode,
+        11 => FrameSideDataKind::VideoHint,
+        12 => FrameSideDataKind::ViewId,
+        13 => FrameSideDataKind::ThreeDReferenceDisplays,
+        14 => FrameSideDataKind::Exif,
+        15 => FrameSideDataKind::SeiUnregistered,
+        16 => FrameSideDataKind::ActiveFormatDescription,
+        17 => FrameSideDataKind::SkipSamples,
+        18 => FrameSideDataKind::AudioServiceType,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
