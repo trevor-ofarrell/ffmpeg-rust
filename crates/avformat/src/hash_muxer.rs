@@ -1,4 +1,6 @@
-use avutil::{digest_to_hex, Adler32, AvError, AvResult, Crc32, Md5, Packet, Sha224, Sha256};
+use avutil::{
+    digest_to_hex, Adler32, AvError, AvResult, Crc32, Md5, Packet, Sha224, Sha256, Sha384, Sha512,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HashAlgorithm {
@@ -7,6 +9,8 @@ pub enum HashAlgorithm {
     Md5,
     Sha224,
     Sha256,
+    Sha384,
+    Sha512,
 }
 
 impl HashAlgorithm {
@@ -17,6 +21,8 @@ impl HashAlgorithm {
             Self::Md5 => "MD5",
             Self::Sha224 => "SHA224",
             Self::Sha256 => "SHA256",
+            Self::Sha384 => "SHA384",
+            Self::Sha512 => "SHA512",
         }
     }
 }
@@ -153,6 +159,8 @@ enum HashState {
     Md5(Md5),
     Sha224(Sha224),
     Sha256(Sha256),
+    Sha384(Sha384),
+    Sha512(Sha512),
 }
 
 impl HashState {
@@ -163,6 +171,8 @@ impl HashState {
             HashAlgorithm::Md5 => Self::Md5(Md5::new()),
             HashAlgorithm::Sha224 => Self::Sha224(Sha224::new()),
             HashAlgorithm::Sha256 => Self::Sha256(Sha256::new()),
+            HashAlgorithm::Sha384 => Self::Sha384(Sha384::new()),
+            HashAlgorithm::Sha512 => Self::Sha512(Sha512::new()),
         }
     }
 
@@ -173,6 +183,8 @@ impl HashState {
             Self::Md5(_) => HashAlgorithm::Md5,
             Self::Sha224(_) => HashAlgorithm::Sha224,
             Self::Sha256(_) => HashAlgorithm::Sha256,
+            Self::Sha384(_) => HashAlgorithm::Sha384,
+            Self::Sha512(_) => HashAlgorithm::Sha512,
         }
     }
 
@@ -183,6 +195,8 @@ impl HashState {
             Self::Md5(state) => state.update(data),
             Self::Sha224(state) => state.update(data),
             Self::Sha256(state) => state.update(data),
+            Self::Sha384(state) => state.update(data),
+            Self::Sha512(state) => state.update(data),
         }
     }
 
@@ -193,6 +207,8 @@ impl HashState {
             Self::Md5(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
             Self::Sha224(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
             Self::Sha256(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
+            Self::Sha384(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
+            Self::Sha512(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
         }
     }
 }
@@ -200,7 +216,7 @@ impl HashState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use avutil::{adler32, crc32_ieee, md5, sha224, sha256, AvErrorKind};
+    use avutil::{adler32, crc32_ieee, md5, sha224, sha256, sha384, sha512, AvErrorKind};
 
     #[test]
     fn crc32_hashes_packet_data_in_write_order() {
@@ -309,6 +325,54 @@ mod tests {
         assert_eq!(
             report.line(),
             "SHA224=23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7\n"
+        );
+    }
+
+    #[test]
+    fn sha384_hashes_packet_data_in_write_order() {
+        let mut muxer = HashMuxer::new(HashAlgorithm::Sha384);
+
+        muxer.write_packet(&Packet::new(b"ab".to_vec(), 0)).unwrap();
+        muxer.write_packet(&Packet::new(b"c".to_vec(), 0)).unwrap();
+        let report = muxer.finish();
+        let expected = sha384(b"abc");
+
+        assert_eq!(report.algorithm(), HashAlgorithm::Sha384);
+        assert_eq!(report.digest(), &HashDigest::Bytes(expected.to_vec()));
+        assert_eq!(report.digest().as_bytes(), Some(expected.as_slice()));
+        assert_eq!(
+            report.digest_hex(),
+            "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"
+        );
+        assert_eq!(report.packets(), 2);
+        assert_eq!(report.bytes(), 3);
+        assert_eq!(
+            report.line(),
+            "SHA384=cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7\n"
+        );
+    }
+
+    #[test]
+    fn sha512_hashes_packet_data_in_write_order() {
+        let mut muxer = HashMuxer::new(HashAlgorithm::Sha512);
+
+        muxer.write_packet(&Packet::new(b"ab".to_vec(), 0)).unwrap();
+        muxer.write_packet(&Packet::new(b"c".to_vec(), 0)).unwrap();
+        let report = muxer.finish();
+        let expected = sha512(b"abc");
+
+        assert_eq!(report.algorithm(), HashAlgorithm::Sha512);
+        assert_eq!(report.digest(), &HashDigest::Bytes(expected.to_vec()));
+        assert_eq!(report.digest().as_bytes(), Some(expected.as_slice()));
+        assert_eq!(
+            report.digest_hex(),
+            "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
+        );
+        assert_eq!(report.packets(), 2);
+        assert_eq!(report.bytes(), 3);
+        assert_eq!(
+            report.line(),
+            "SHA512=ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f\n"
         );
     }
 

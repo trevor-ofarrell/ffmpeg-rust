@@ -2,9 +2,9 @@
 
 use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
-    sha224, sha256, Adler32, AudioFrame, AvError, AvErrorKind, Channel, ChannelLayout, Crc32,
-    Frame, FrameData, Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat,
-    Sha224, Sha256, SideData, VideoFrame,
+    sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, Channel,
+    ChannelLayout, Crc32, Frame, FrameData, Md5, Packet, PacketFlags, PixelFormat, Rational,
+    Rounding, SampleFormat, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -379,6 +379,24 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let sha224_digest = sha224_state.finalize();
     assert_eq!(sha224_digest, sha224(&payload));
     assert_eq!(digest_to_hex(&sha224_digest).len(), 56);
+
+    let mut sha384_state = Sha384::new();
+    sha384_state.update(&payload[..split]);
+    sha384_state.update(&payload[split..second_split]);
+    sha384_state.update(&payload[second_split..third_split]);
+    sha384_state.update(&payload[third_split..]);
+    let sha384_digest = sha384_state.finalize();
+    assert_eq!(sha384_digest, sha384(&payload));
+    assert_eq!(digest_to_hex(&sha384_digest).len(), 96);
+
+    let mut sha512_state = Sha512::new();
+    sha512_state.update(&payload[..split]);
+    sha512_state.update(&payload[split..second_split]);
+    sha512_state.update(&payload[second_split..third_split]);
+    sha512_state.update(&payload[third_split..]);
+    let sha512_digest = sha512_state.finalize();
+    assert_eq!(sha512_digest, sha512(&payload));
+    assert_eq!(digest_to_hex(&sha512_digest).len(), 128);
 }
 
 fn exercise_fixtures() {
@@ -401,6 +419,14 @@ fn exercise_fixtures() {
     assert_eq!(
         digest_to_hex(&sha224(b"abc")),
         "23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7"
+    );
+    assert_eq!(
+        digest_to_hex(&sha384(b"abc")),
+        "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"
+    );
+    assert_eq!(
+        digest_to_hex(&sha512(b"abc")),
+        "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
     );
 
     let video = VideoFrame::new(1, 1, PixelFormat::Rgb24, vec![vec![1, 2, 3]]).unwrap();
