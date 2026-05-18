@@ -1848,6 +1848,474 @@ impl FrameS12mTimecode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum FrameHdrPlusOverlapProcessOption {
+    WeightedAveraging = 0,
+    Layering = 1,
+}
+
+impl FrameHdrPlusOverlapProcessOption {
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::WeightedAveraging),
+            1 => Ok(Self::Layering),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid HDR10+ overlap process option {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameHdrPlusPercentile {
+    percentage: u8,
+    percentile: Rational,
+}
+
+impl FrameHdrPlusPercentile {
+    pub const fn new(percentage: u8, percentile: Rational) -> Self {
+        Self {
+            percentage,
+            percentile,
+        }
+    }
+
+    pub const fn percentage(self) -> u8 {
+        self.percentage
+    }
+
+    pub const fn percentile(self) -> Rational {
+        self.percentile
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameHdrPlusColorTransformParams<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameHdrPlusColorTransformParams<'a> {
+    pub const DATA_LEN: usize = 428;
+    pub const MAX_DISTRIBUTION_MAXRGB_PERCENTILES: usize = 15;
+    pub const MAX_BEZIER_CURVE_ANCHORS: usize = 15;
+    const WINDOW_UPPER_LEFT_CORNER_X_OFFSET: usize = 0;
+    const WINDOW_UPPER_LEFT_CORNER_Y_OFFSET: usize = 8;
+    const WINDOW_LOWER_RIGHT_CORNER_X_OFFSET: usize = 16;
+    const WINDOW_LOWER_RIGHT_CORNER_Y_OFFSET: usize = 24;
+    const CENTER_OF_ELLIPSE_X_OFFSET: usize = 32;
+    const CENTER_OF_ELLIPSE_Y_OFFSET: usize = 34;
+    const ROTATION_ANGLE_OFFSET: usize = 36;
+    const SEMIMAJOR_AXIS_INTERNAL_ELLIPSE_OFFSET: usize = 38;
+    const SEMIMAJOR_AXIS_EXTERNAL_ELLIPSE_OFFSET: usize = 40;
+    const SEMIMINOR_AXIS_EXTERNAL_ELLIPSE_OFFSET: usize = 42;
+    const OVERLAP_PROCESS_OPTION_OFFSET: usize = 44;
+    const MAXSCL_OFFSET: usize = 48;
+    const AVERAGE_MAXRGB_OFFSET: usize = 72;
+    const NUM_DISTRIBUTION_MAXRGB_PERCENTILES_OFFSET: usize = 80;
+    const DISTRIBUTION_MAXRGB_OFFSET: usize = 84;
+    const PERCENTILE_LEN: usize = 12;
+    const FRACTION_BRIGHT_PIXELS_OFFSET: usize = 264;
+    const TONE_MAPPING_FLAG_OFFSET: usize = 272;
+    const KNEE_POINT_X_OFFSET: usize = 276;
+    const KNEE_POINT_Y_OFFSET: usize = 284;
+    const NUM_BEZIER_CURVE_ANCHORS_OFFSET: usize = 292;
+    const BEZIER_CURVE_ANCHORS_OFFSET: usize = 296;
+    const COLOR_SATURATION_MAPPING_FLAG_OFFSET: usize = 416;
+    const COLOR_SATURATION_WEIGHT_OFFSET: usize = 420;
+
+    fn parse(data: &'a [u8]) -> AvResult<Self> {
+        let params = Self { data };
+        params.overlap_process_option()?;
+        if params.num_distribution_maxrgb_percentiles() > Self::MAX_DISTRIBUTION_MAXRGB_PERCENTILES
+        {
+            return Err(AvError::invalid_data(format!(
+                "HDR10+ distribution percentile count {} exceeds {}",
+                params.num_distribution_maxrgb_percentiles(),
+                Self::MAX_DISTRIBUTION_MAXRGB_PERCENTILES
+            )));
+        }
+        if params.tone_mapping_flag() > 1 {
+            return Err(AvError::invalid_data(format!(
+                "HDR10+ tone mapping flag {} is not boolean",
+                params.tone_mapping_flag()
+            )));
+        }
+        if params.num_bezier_curve_anchors() > Self::MAX_BEZIER_CURVE_ANCHORS {
+            return Err(AvError::invalid_data(format!(
+                "HDR10+ Bezier anchor count {} exceeds {}",
+                params.num_bezier_curve_anchors(),
+                Self::MAX_BEZIER_CURVE_ANCHORS
+            )));
+        }
+        if params.color_saturation_mapping_flag() > 1 {
+            return Err(AvError::invalid_data(format!(
+                "HDR10+ color saturation mapping flag {} is not boolean",
+                params.color_saturation_mapping_flag()
+            )));
+        }
+        Ok(params)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn window_upper_left_corner_x(self) -> Rational {
+        Self::read_rational(self.data, Self::WINDOW_UPPER_LEFT_CORNER_X_OFFSET)
+    }
+
+    pub fn window_upper_left_corner_y(self) -> Rational {
+        Self::read_rational(self.data, Self::WINDOW_UPPER_LEFT_CORNER_Y_OFFSET)
+    }
+
+    pub fn window_lower_right_corner_x(self) -> Rational {
+        Self::read_rational(self.data, Self::WINDOW_LOWER_RIGHT_CORNER_X_OFFSET)
+    }
+
+    pub fn window_lower_right_corner_y(self) -> Rational {
+        Self::read_rational(self.data, Self::WINDOW_LOWER_RIGHT_CORNER_Y_OFFSET)
+    }
+
+    pub fn center_of_ellipse_x(self) -> u16 {
+        Self::read_u16(self.data, Self::CENTER_OF_ELLIPSE_X_OFFSET)
+    }
+
+    pub fn center_of_ellipse_y(self) -> u16 {
+        Self::read_u16(self.data, Self::CENTER_OF_ELLIPSE_Y_OFFSET)
+    }
+
+    pub fn rotation_angle(self) -> u8 {
+        self.data[Self::ROTATION_ANGLE_OFFSET]
+    }
+
+    pub fn semimajor_axis_internal_ellipse(self) -> u16 {
+        Self::read_u16(self.data, Self::SEMIMAJOR_AXIS_INTERNAL_ELLIPSE_OFFSET)
+    }
+
+    pub fn semimajor_axis_external_ellipse(self) -> u16 {
+        Self::read_u16(self.data, Self::SEMIMAJOR_AXIS_EXTERNAL_ELLIPSE_OFFSET)
+    }
+
+    pub fn semiminor_axis_external_ellipse(self) -> u16 {
+        Self::read_u16(self.data, Self::SEMIMINOR_AXIS_EXTERNAL_ELLIPSE_OFFSET)
+    }
+
+    pub fn overlap_process_option(self) -> AvResult<FrameHdrPlusOverlapProcessOption> {
+        FrameHdrPlusOverlapProcessOption::from_raw(Self::read_i32(
+            self.data,
+            Self::OVERLAP_PROCESS_OPTION_OFFSET,
+        ))
+    }
+
+    pub fn maxscl(self, channel: usize) -> Option<Rational> {
+        (channel < 3).then(|| Self::read_rational(self.data, Self::MAXSCL_OFFSET + channel * 8))
+    }
+
+    pub fn average_maxrgb(self) -> Rational {
+        Self::read_rational(self.data, Self::AVERAGE_MAXRGB_OFFSET)
+    }
+
+    pub fn num_distribution_maxrgb_percentiles(self) -> usize {
+        usize::from(self.data[Self::NUM_DISTRIBUTION_MAXRGB_PERCENTILES_OFFSET])
+    }
+
+    pub fn distribution_maxrgb(self, index: usize) -> Option<FrameHdrPlusPercentile> {
+        (index < self.num_distribution_maxrgb_percentiles()).then(|| {
+            let offset = Self::DISTRIBUTION_MAXRGB_OFFSET + index * Self::PERCENTILE_LEN;
+            FrameHdrPlusPercentile::new(
+                self.data[offset],
+                Self::read_rational(self.data, offset + 4),
+            )
+        })
+    }
+
+    pub fn fraction_bright_pixels(self) -> Rational {
+        Self::read_rational(self.data, Self::FRACTION_BRIGHT_PIXELS_OFFSET)
+    }
+
+    pub fn tone_mapping_flag(self) -> u8 {
+        self.data[Self::TONE_MAPPING_FLAG_OFFSET]
+    }
+
+    pub fn knee_point_x(self) -> Rational {
+        Self::read_rational(self.data, Self::KNEE_POINT_X_OFFSET)
+    }
+
+    pub fn knee_point_y(self) -> Rational {
+        Self::read_rational(self.data, Self::KNEE_POINT_Y_OFFSET)
+    }
+
+    pub fn num_bezier_curve_anchors(self) -> usize {
+        usize::from(self.data[Self::NUM_BEZIER_CURVE_ANCHORS_OFFSET])
+    }
+
+    pub fn bezier_curve_anchor(self, index: usize) -> Option<Rational> {
+        (index < self.num_bezier_curve_anchors())
+            .then(|| Self::read_rational(self.data, Self::BEZIER_CURVE_ANCHORS_OFFSET + index * 8))
+    }
+
+    pub fn color_saturation_mapping_flag(self) -> u8 {
+        self.data[Self::COLOR_SATURATION_MAPPING_FLAG_OFFSET]
+    }
+
+    pub fn color_saturation_weight(self) -> Rational {
+        Self::read_rational(self.data, Self::COLOR_SATURATION_WEIGHT_OFFSET)
+    }
+
+    fn read_rational(data: &[u8], offset: usize) -> Rational {
+        Rational::from_raw(
+            Self::read_i32(data, offset),
+            Self::read_i32(data, offset + 4),
+        )
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+
+    fn read_u16(data: &[u8], offset: usize) -> u16 {
+        let mut raw = [0; 2];
+        raw.copy_from_slice(&data[offset..offset + 2]);
+        u16::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDynamicHdrPlus<'a> {
+    data: &'a [u8],
+    num_windows: usize,
+}
+
+impl<'a> FrameDynamicHdrPlus<'a> {
+    pub const ITU_T_T35_COUNTRY_CODE: u8 = 0xB5;
+    pub const APPLICATION_VERSION: u8 = 0;
+    pub const MAX_WINDOWS: usize = 3;
+    pub const MAX_PEAK_LUMINANCE_ROWS: usize = 25;
+    pub const MAX_PEAK_LUMINANCE_COLS: usize = 25;
+    const PARAMS_OFFSET: usize = 4;
+    const TARGETED_SYSTEM_DISPLAY_MAXIMUM_LUMINANCE_OFFSET: usize =
+        Self::PARAMS_OFFSET + Self::MAX_WINDOWS * FrameHdrPlusColorTransformParams::DATA_LEN;
+    const TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_FLAG_OFFSET: usize =
+        Self::TARGETED_SYSTEM_DISPLAY_MAXIMUM_LUMINANCE_OFFSET + 8;
+    const NUM_ROWS_TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET: usize =
+        Self::TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_FLAG_OFFSET + 1;
+    const NUM_COLS_TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET: usize =
+        Self::NUM_ROWS_TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET + 1;
+    const TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET: usize =
+        Self::TARGETED_SYSTEM_DISPLAY_MAXIMUM_LUMINANCE_OFFSET + 12;
+    const PEAK_LUMINANCE_TABLE_LEN: usize =
+        Self::MAX_PEAK_LUMINANCE_ROWS * Self::MAX_PEAK_LUMINANCE_COLS * 8;
+    const MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_FLAG_OFFSET: usize =
+        Self::TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET + Self::PEAK_LUMINANCE_TABLE_LEN;
+    const NUM_ROWS_MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET: usize =
+        Self::MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_FLAG_OFFSET + 1;
+    const NUM_COLS_MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET: usize =
+        Self::NUM_ROWS_MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET + 1;
+    const MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET: usize =
+        Self::MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_FLAG_OFFSET + 4;
+    pub const DATA_LEN: usize =
+        Self::MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET + Self::PEAK_LUMINANCE_TABLE_LEN;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "dynamic HDR10+ frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+        if data[0] != Self::ITU_T_T35_COUNTRY_CODE {
+            return Err(AvError::invalid_data(format!(
+                "dynamic HDR10+ country code 0x{:02X} does not match 0x{:02X}",
+                data[0],
+                Self::ITU_T_T35_COUNTRY_CODE
+            )));
+        }
+        if data[1] != Self::APPLICATION_VERSION {
+            return Err(AvError::invalid_data(format!(
+                "dynamic HDR10+ application version {} does not match {}",
+                data[1],
+                Self::APPLICATION_VERSION
+            )));
+        }
+
+        let num_windows = usize::from(data[2]);
+        if !(1..=Self::MAX_WINDOWS).contains(&num_windows) {
+            return Err(AvError::invalid_data(format!(
+                "dynamic HDR10+ window count {num_windows} is outside 1..={}",
+                Self::MAX_WINDOWS
+            )));
+        }
+
+        let parsed = Self { data, num_windows };
+        for index in 0..num_windows {
+            parsed.color_transform_params(index).unwrap().validate()?;
+        }
+        parsed.validate_peak_luminance_grid(
+            parsed.targeted_system_display_actual_peak_luminance_flag(),
+            parsed.num_rows_targeted_system_display_actual_peak_luminance(),
+            parsed.num_cols_targeted_system_display_actual_peak_luminance(),
+            "targeted system display",
+        )?;
+        parsed.validate_peak_luminance_grid(
+            parsed.mastering_display_actual_peak_luminance_flag(),
+            parsed.num_rows_mastering_display_actual_peak_luminance(),
+            parsed.num_cols_mastering_display_actual_peak_luminance(),
+            "mastering display",
+        )?;
+        Ok(parsed)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn itu_t_t35_country_code(self) -> u8 {
+        self.data[0]
+    }
+
+    pub fn application_version(self) -> u8 {
+        self.data[1]
+    }
+
+    pub const fn num_windows(self) -> usize {
+        self.num_windows
+    }
+
+    pub fn color_transform_params(
+        self,
+        index: usize,
+    ) -> Option<FrameHdrPlusColorTransformParams<'a>> {
+        (index < self.num_windows).then(|| {
+            let offset = Self::PARAMS_OFFSET + index * FrameHdrPlusColorTransformParams::DATA_LEN;
+            FrameHdrPlusColorTransformParams {
+                data: &self.data[offset..offset + FrameHdrPlusColorTransformParams::DATA_LEN],
+            }
+        })
+    }
+
+    pub fn targeted_system_display_maximum_luminance(self) -> Rational {
+        Self::read_rational(
+            self.data,
+            Self::TARGETED_SYSTEM_DISPLAY_MAXIMUM_LUMINANCE_OFFSET,
+        )
+    }
+
+    pub fn targeted_system_display_actual_peak_luminance_flag(self) -> u8 {
+        self.data[Self::TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_FLAG_OFFSET]
+    }
+
+    pub fn num_rows_targeted_system_display_actual_peak_luminance(self) -> usize {
+        usize::from(self.data[Self::NUM_ROWS_TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET])
+    }
+
+    pub fn num_cols_targeted_system_display_actual_peak_luminance(self) -> usize {
+        usize::from(self.data[Self::NUM_COLS_TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET])
+    }
+
+    pub fn targeted_system_display_actual_peak_luminance(
+        self,
+        row: usize,
+        col: usize,
+    ) -> Option<Rational> {
+        self.peak_luminance_value(
+            self.targeted_system_display_actual_peak_luminance_flag(),
+            self.num_rows_targeted_system_display_actual_peak_luminance(),
+            self.num_cols_targeted_system_display_actual_peak_luminance(),
+            Self::TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET,
+            row,
+            col,
+        )
+    }
+
+    pub fn mastering_display_actual_peak_luminance_flag(self) -> u8 {
+        self.data[Self::MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_FLAG_OFFSET]
+    }
+
+    pub fn num_rows_mastering_display_actual_peak_luminance(self) -> usize {
+        usize::from(self.data[Self::NUM_ROWS_MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET])
+    }
+
+    pub fn num_cols_mastering_display_actual_peak_luminance(self) -> usize {
+        usize::from(self.data[Self::NUM_COLS_MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET])
+    }
+
+    pub fn mastering_display_actual_peak_luminance(
+        self,
+        row: usize,
+        col: usize,
+    ) -> Option<Rational> {
+        self.peak_luminance_value(
+            self.mastering_display_actual_peak_luminance_flag(),
+            self.num_rows_mastering_display_actual_peak_luminance(),
+            self.num_cols_mastering_display_actual_peak_luminance(),
+            Self::MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET,
+            row,
+            col,
+        )
+    }
+
+    fn validate_peak_luminance_grid(
+        self,
+        flag: u8,
+        rows: usize,
+        cols: usize,
+        name: &str,
+    ) -> AvResult<()> {
+        if flag > 1 {
+            return Err(AvError::invalid_data(format!(
+                "dynamic HDR10+ {name} actual peak luminance flag {flag} is not boolean"
+            )));
+        }
+        if flag == 1
+            && (!(2..=Self::MAX_PEAK_LUMINANCE_ROWS).contains(&rows)
+                || !(2..=Self::MAX_PEAK_LUMINANCE_COLS).contains(&cols))
+        {
+            return Err(AvError::invalid_data(format!(
+                "dynamic HDR10+ {name} actual peak luminance grid {rows}x{cols} is outside 2..=25"
+            )));
+        }
+        Ok(())
+    }
+
+    fn peak_luminance_value(
+        self,
+        flag: u8,
+        rows: usize,
+        cols: usize,
+        table_offset: usize,
+        row: usize,
+        col: usize,
+    ) -> Option<Rational> {
+        (flag == 1 && row < rows && col < cols).then(|| {
+            Self::read_rational(
+                self.data,
+                table_offset + (row * Self::MAX_PEAK_LUMINANCE_COLS + col) * 8,
+            )
+        })
+    }
+
+    fn read_rational(data: &[u8], offset: usize) -> Rational {
+        Rational::from_raw(
+            FrameHdrPlusColorTransformParams::read_i32(data, offset),
+            FrameHdrPlusColorTransformParams::read_i32(data, offset + 4),
+        )
+    }
+}
+
+impl<'a> FrameHdrPlusColorTransformParams<'a> {
+    fn validate(self) -> AvResult<()> {
+        Self::parse(self.data).map(|_| ())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameSeiUnregistered<'a> {
     uuid: [u8; 16],
     user_data: &'a [u8],
@@ -2303,6 +2771,12 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::S12mTimecode, value.to_bytes().to_vec())
     }
 
+    pub fn new_dynamic_hdr_plus(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(FrameSideDataKind::DynamicHdrPlus, data)?;
+        FrameDynamicHdrPlus::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
         let total_len = FrameSeiUnregistered::UUID_LEN
             .checked_add(user_data.len())
@@ -2471,6 +2945,14 @@ impl FrameSideData {
         }
 
         FrameS12mTimecode::parse(self.data()).map(Some)
+    }
+
+    pub fn dynamic_hdr_plus(&self) -> AvResult<Option<FrameDynamicHdrPlus<'_>>> {
+        if self.kind != FrameSideDataKind::DynamicHdrPlus {
+            return Ok(None);
+        }
+
+        FrameDynamicHdrPlus::parse(self.data()).map(Some)
     }
 
     pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
@@ -3326,6 +3808,160 @@ mod tests {
         data[36..40].copy_from_slice(&FrameIccProfile::ICC_SIGNATURE);
         data[128..132].copy_from_slice(&0u32.to_be_bytes());
         data
+    }
+
+    fn minimal_dynamic_hdr_plus() -> Vec<u8> {
+        let mut data = vec![0; FrameDynamicHdrPlus::DATA_LEN];
+        data[0] = FrameDynamicHdrPlus::ITU_T_T35_COUNTRY_CODE;
+        data[1] = FrameDynamicHdrPlus::APPLICATION_VERSION;
+        data[2] = 1;
+
+        let params = FrameDynamicHdrPlus::PARAMS_OFFSET;
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::WINDOW_UPPER_LEFT_CORNER_X_OFFSET,
+            Rational::from_raw(0, 1),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::WINDOW_UPPER_LEFT_CORNER_Y_OFFSET,
+            Rational::from_raw(0, 1),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::WINDOW_LOWER_RIGHT_CORNER_X_OFFSET,
+            Rational::from_raw(1, 1),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::WINDOW_LOWER_RIGHT_CORNER_Y_OFFSET,
+            Rational::from_raw(1, 1),
+        );
+        write_ne_u16(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::CENTER_OF_ELLIPSE_X_OFFSET,
+            640,
+        );
+        write_ne_u16(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::CENTER_OF_ELLIPSE_Y_OFFSET,
+            360,
+        );
+        data[params + FrameHdrPlusColorTransformParams::ROTATION_ANGLE_OFFSET] = 45;
+        write_ne_u16(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::SEMIMAJOR_AXIS_INTERNAL_ELLIPSE_OFFSET,
+            10,
+        );
+        write_ne_u16(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::SEMIMAJOR_AXIS_EXTERNAL_ELLIPSE_OFFSET,
+            20,
+        );
+        write_ne_u16(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::SEMIMINOR_AXIS_EXTERNAL_ELLIPSE_OFFSET,
+            12,
+        );
+        write_ne_i32(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::OVERLAP_PROCESS_OPTION_OFFSET,
+            FrameHdrPlusOverlapProcessOption::Layering.as_raw(),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::MAXSCL_OFFSET,
+            Rational::from_raw(1, 100_000),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::MAXSCL_OFFSET + 8,
+            Rational::from_raw(2, 100_000),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::MAXSCL_OFFSET + 16,
+            Rational::from_raw(3, 100_000),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::AVERAGE_MAXRGB_OFFSET,
+            Rational::from_raw(4, 100_000),
+        );
+        data[params
+            + FrameHdrPlusColorTransformParams::NUM_DISTRIBUTION_MAXRGB_PERCENTILES_OFFSET] = 2;
+        let distribution = params + FrameHdrPlusColorTransformParams::DISTRIBUTION_MAXRGB_OFFSET;
+        data[distribution] = 50;
+        write_ne_rational(&mut data, distribution + 4, Rational::from_raw(5, 100_000));
+        data[distribution + FrameHdrPlusColorTransformParams::PERCENTILE_LEN] = 99;
+        write_ne_rational(
+            &mut data,
+            distribution + FrameHdrPlusColorTransformParams::PERCENTILE_LEN + 4,
+            Rational::from_raw(9, 100_000),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::FRACTION_BRIGHT_PIXELS_OFFSET,
+            Rational::from_raw(1, 1000),
+        );
+        data[params + FrameHdrPlusColorTransformParams::TONE_MAPPING_FLAG_OFFSET] = 1;
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::KNEE_POINT_X_OFFSET,
+            Rational::from_raw(1, 4095),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::KNEE_POINT_Y_OFFSET,
+            Rational::from_raw(2, 4095),
+        );
+        data[params + FrameHdrPlusColorTransformParams::NUM_BEZIER_CURVE_ANCHORS_OFFSET] = 1;
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::BEZIER_CURVE_ANCHORS_OFFSET,
+            Rational::from_raw(3, 1023),
+        );
+        data[params + FrameHdrPlusColorTransformParams::COLOR_SATURATION_MAPPING_FLAG_OFFSET] = 1;
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrPlusColorTransformParams::COLOR_SATURATION_WEIGHT_OFFSET,
+            Rational::from_raw(8, 8),
+        );
+
+        write_ne_rational(
+            &mut data,
+            FrameDynamicHdrPlus::TARGETED_SYSTEM_DISPLAY_MAXIMUM_LUMINANCE_OFFSET,
+            Rational::from_raw(1000, 1),
+        );
+        data[FrameDynamicHdrPlus::TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_FLAG_OFFSET] = 1;
+        data[FrameDynamicHdrPlus::NUM_ROWS_TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET] =
+            2;
+        data[FrameDynamicHdrPlus::NUM_COLS_TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET] =
+            2;
+        write_ne_rational(
+            &mut data,
+            FrameDynamicHdrPlus::TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET,
+            Rational::from_raw(1, 15),
+        );
+        write_ne_rational(
+            &mut data,
+            FrameDynamicHdrPlus::TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET + 26 * 8,
+            Rational::from_raw(2, 15),
+        );
+        data
+    }
+
+    fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {
+        data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_ne_u16(data: &mut [u8], offset: usize, value: u16) {
+        data[offset..offset + 2].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_ne_rational(data: &mut [u8], offset: usize, value: Rational) {
+        write_ne_i32(data, offset, value.num());
+        write_ne_i32(data, offset + 4, value.den());
     }
 
     #[test]
@@ -6107,6 +6743,208 @@ mod tests {
         let non_s12m =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 16]).unwrap();
         assert_eq!(non_s12m.s12m_timecode().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_dynamic_hdr_plus_payload() {
+        let data = minimal_dynamic_hdr_plus();
+        let side_data = FrameSideData::new_dynamic_hdr_plus(data.clone()).unwrap();
+
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::DynamicHdrPlus);
+        let parsed = side_data.dynamic_hdr_plus().unwrap().unwrap();
+        assert_eq!(parsed.data(), data.as_slice());
+        assert_eq!(parsed.itu_t_t35_country_code(), 0xB5);
+        assert_eq!(parsed.application_version(), 0);
+        assert_eq!(parsed.num_windows(), 1);
+        assert_eq!(parsed.color_transform_params(1), None);
+        assert_eq!(
+            parsed.targeted_system_display_maximum_luminance(),
+            Rational::from_raw(1000, 1)
+        );
+        assert_eq!(
+            parsed.targeted_system_display_actual_peak_luminance_flag(),
+            1
+        );
+        assert_eq!(
+            parsed.num_rows_targeted_system_display_actual_peak_luminance(),
+            2
+        );
+        assert_eq!(
+            parsed.num_cols_targeted_system_display_actual_peak_luminance(),
+            2
+        );
+        assert_eq!(
+            parsed.targeted_system_display_actual_peak_luminance(0, 0),
+            Some(Rational::from_raw(1, 15))
+        );
+        assert_eq!(
+            parsed.targeted_system_display_actual_peak_luminance(1, 1),
+            Some(Rational::from_raw(2, 15))
+        );
+        assert_eq!(
+            parsed.targeted_system_display_actual_peak_luminance(2, 0),
+            None
+        );
+        assert_eq!(parsed.mastering_display_actual_peak_luminance_flag(), 0);
+        assert_eq!(parsed.mastering_display_actual_peak_luminance(0, 0), None);
+
+        let params = parsed.color_transform_params(0).unwrap();
+        assert_eq!(
+            params.data().len(),
+            FrameHdrPlusColorTransformParams::DATA_LEN
+        );
+        assert_eq!(
+            params.window_upper_left_corner_x(),
+            Rational::from_raw(0, 1)
+        );
+        assert_eq!(
+            params.window_upper_left_corner_y(),
+            Rational::from_raw(0, 1)
+        );
+        assert_eq!(
+            params.window_lower_right_corner_x(),
+            Rational::from_raw(1, 1)
+        );
+        assert_eq!(
+            params.window_lower_right_corner_y(),
+            Rational::from_raw(1, 1)
+        );
+        assert_eq!(params.center_of_ellipse_x(), 640);
+        assert_eq!(params.center_of_ellipse_y(), 360);
+        assert_eq!(params.rotation_angle(), 45);
+        assert_eq!(params.semimajor_axis_internal_ellipse(), 10);
+        assert_eq!(params.semimajor_axis_external_ellipse(), 20);
+        assert_eq!(params.semiminor_axis_external_ellipse(), 12);
+        assert_eq!(
+            params.overlap_process_option().unwrap(),
+            FrameHdrPlusOverlapProcessOption::Layering
+        );
+        assert_eq!(params.maxscl(0), Some(Rational::from_raw(1, 100_000)));
+        assert_eq!(params.maxscl(1), Some(Rational::from_raw(2, 100_000)));
+        assert_eq!(params.maxscl(2), Some(Rational::from_raw(3, 100_000)));
+        assert_eq!(params.maxscl(3), None);
+        assert_eq!(params.average_maxrgb(), Rational::from_raw(4, 100_000));
+        assert_eq!(params.num_distribution_maxrgb_percentiles(), 2);
+        assert_eq!(
+            params.distribution_maxrgb(0),
+            Some(FrameHdrPlusPercentile::new(
+                50,
+                Rational::from_raw(5, 100_000)
+            ))
+        );
+        assert_eq!(
+            params.distribution_maxrgb(1),
+            Some(FrameHdrPlusPercentile::new(
+                99,
+                Rational::from_raw(9, 100_000)
+            ))
+        );
+        assert_eq!(params.distribution_maxrgb(2), None);
+        assert_eq!(params.fraction_bright_pixels(), Rational::from_raw(1, 1000));
+        assert_eq!(params.tone_mapping_flag(), 1);
+        assert_eq!(params.knee_point_x(), Rational::from_raw(1, 4095));
+        assert_eq!(params.knee_point_y(), Rational::from_raw(2, 4095));
+        assert_eq!(params.num_bezier_curve_anchors(), 1);
+        assert_eq!(
+            params.bezier_curve_anchor(0),
+            Some(Rational::from_raw(3, 1023))
+        );
+        assert_eq!(params.bezier_curve_anchor(1), None);
+        assert_eq!(params.color_saturation_mapping_flag(), 1);
+        assert_eq!(params.color_saturation_weight(), Rational::from_raw(8, 8));
+
+        let display_matrix =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, data).unwrap();
+        assert_eq!(display_matrix.dynamic_hdr_plus().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_dynamic_hdr_plus_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; FrameDynamicHdrPlus::DATA_LEN - 1],
+            vec![0; FrameDynamicHdrPlus::DATA_LEN + 1],
+        ] {
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::DynamicHdrPlus, data).unwrap();
+            assert_eq!(
+                side_data.dynamic_hdr_plus().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for (offset, value) in [
+            (0, 0xB4),
+            (1, 1),
+            (2, 0),
+            (2, 4),
+            (
+                FrameDynamicHdrPlus::PARAMS_OFFSET
+                    + FrameHdrPlusColorTransformParams::NUM_DISTRIBUTION_MAXRGB_PERCENTILES_OFFSET,
+                16,
+            ),
+            (
+                FrameDynamicHdrPlus::PARAMS_OFFSET
+                    + FrameHdrPlusColorTransformParams::TONE_MAPPING_FLAG_OFFSET,
+                2,
+            ),
+            (
+                FrameDynamicHdrPlus::PARAMS_OFFSET
+                    + FrameHdrPlusColorTransformParams::NUM_BEZIER_CURVE_ANCHORS_OFFSET,
+                16,
+            ),
+            (
+                FrameDynamicHdrPlus::PARAMS_OFFSET
+                    + FrameHdrPlusColorTransformParams::COLOR_SATURATION_MAPPING_FLAG_OFFSET,
+                2,
+            ),
+            (
+                FrameDynamicHdrPlus::TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_FLAG_OFFSET,
+                2,
+            ),
+            (
+                FrameDynamicHdrPlus::MASTERING_DISPLAY_ACTUAL_PEAK_LUMINANCE_FLAG_OFFSET,
+                2,
+            ),
+        ] {
+            let mut bad = minimal_dynamic_hdr_plus();
+            bad[offset] = value;
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::DynamicHdrPlus, bad).unwrap();
+            assert_eq!(
+                side_data.dynamic_hdr_plus().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let mut bad_overlap = minimal_dynamic_hdr_plus();
+        write_ne_i32(
+            &mut bad_overlap,
+            FrameDynamicHdrPlus::PARAMS_OFFSET
+                + FrameHdrPlusColorTransformParams::OVERLAP_PROCESS_OPTION_OFFSET,
+            2,
+        );
+        assert_eq!(
+            FrameSideData::new_dynamic_hdr_plus(bad_overlap)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_grid = minimal_dynamic_hdr_plus();
+        bad_grid
+            [FrameDynamicHdrPlus::NUM_ROWS_TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET] =
+            1;
+        assert_eq!(
+            FrameSideData::new_dynamic_hdr_plus(bad_grid)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let non_hdr =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
+        assert_eq!(non_hdr.dynamic_hdr_plus().unwrap(), None);
     }
 
     #[test]

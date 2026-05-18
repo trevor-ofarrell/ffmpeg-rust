@@ -5,7 +5,8 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
     FrameActiveFormatDescription, FrameAudioServiceType, FrameContentLightMetadata, FrameData,
-    FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameGopTimecode, FrameIccProfile,
+    FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus, FrameGopTimecode,
+    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameIccProfile,
     FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
     FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
     FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
@@ -1412,6 +1413,44 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             );
         }
     }
+    match frame.side_data()[0].dynamic_hdr_plus() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DynamicHdrPlus);
+            assert_eq!(frame_side_data_payload.len(), FrameDynamicHdrPlus::DATA_LEN);
+            assert_eq!(value.data(), frame_side_data_payload.as_slice());
+            assert_eq!(
+                value.itu_t_t35_country_code(),
+                FrameDynamicHdrPlus::ITU_T_T35_COUNTRY_CODE
+            );
+            assert_eq!(
+                value.application_version(),
+                FrameDynamicHdrPlus::APPLICATION_VERSION
+            );
+            assert!((1..=FrameDynamicHdrPlus::MAX_WINDOWS).contains(&value.num_windows()));
+            for window in 0..value.num_windows() {
+                let params = value.color_transform_params(window).unwrap();
+                assert!(params.overlap_process_option().is_ok());
+                assert!(
+                    params.num_distribution_maxrgb_percentiles()
+                        <= FrameHdrPlusColorTransformParams::MAX_DISTRIBUTION_MAXRGB_PERCENTILES
+                );
+                assert!(params.tone_mapping_flag() <= 1);
+                assert!(
+                    params.num_bezier_curve_anchors()
+                        <= FrameHdrPlusColorTransformParams::MAX_BEZIER_CURVE_ANCHORS
+                );
+                assert!(params.color_saturation_mapping_flag() <= 1);
+            }
+            assert!(value.targeted_system_display_actual_peak_luminance_flag() <= 1);
+            assert!(value.mastering_display_actual_peak_luminance_flag() <= 1);
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::DynamicHdrPlus),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DynamicHdrPlus);
+            assert!(dynamic_hdr_plus_payload_invalid(&frame_side_data_payload));
+        }
+    }
     match frame.side_data()[0].sei_unregistered() {
         Ok(Some(payload)) => {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::SeiUnregistered);
@@ -2782,6 +2821,56 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 16]).unwrap();
     assert_eq!(non_s12m.s12m_timecode().unwrap(), None);
 
+    let dynamic_hdr_plus = minimal_dynamic_hdr_plus_fixture();
+    let dynamic_hdr_plus_side_data =
+        FrameSideData::new_dynamic_hdr_plus(dynamic_hdr_plus.clone()).unwrap();
+    let parsed_dynamic_hdr_plus = dynamic_hdr_plus_side_data
+        .dynamic_hdr_plus()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        dynamic_hdr_plus_side_data.kind_id(),
+        &FrameSideDataKind::DynamicHdrPlus
+    );
+    assert_eq!(parsed_dynamic_hdr_plus.data(), dynamic_hdr_plus.as_slice());
+    assert_eq!(
+        parsed_dynamic_hdr_plus.itu_t_t35_country_code(),
+        FrameDynamicHdrPlus::ITU_T_T35_COUNTRY_CODE
+    );
+    assert_eq!(
+        parsed_dynamic_hdr_plus.application_version(),
+        FrameDynamicHdrPlus::APPLICATION_VERSION
+    );
+    assert_eq!(parsed_dynamic_hdr_plus.num_windows(), 1);
+    assert_eq!(parsed_dynamic_hdr_plus.color_transform_params(1), None);
+    assert_eq!(
+        parsed_dynamic_hdr_plus
+            .color_transform_params(0)
+            .unwrap()
+            .overlap_process_option()
+            .unwrap(),
+        FrameHdrPlusOverlapProcessOption::WeightedAveraging
+    );
+    assert_eq!(
+        FrameSideData::new_dynamic_hdr_plus(Vec::new())
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_hdr_plus = dynamic_hdr_plus.clone();
+    bad_hdr_plus[0] = 0;
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::DynamicHdrPlus, bad_hdr_plus)
+            .unwrap()
+            .dynamic_hdr_plus()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_dynamic_hdr_plus =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, dynamic_hdr_plus).unwrap();
+    assert_eq!(non_dynamic_hdr_plus.dynamic_hdr_plus().unwrap(), None);
+
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
@@ -2924,7 +3013,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 22 {
+    match byte.unwrap_or_default() % 23 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::MatrixEncoding,
         2 => FrameSideDataKind::DownmixInfo,
@@ -2938,16 +3027,113 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         10 => FrameSideDataKind::Lcevc,
         11 => FrameSideDataKind::GopTimecode,
         12 => FrameSideDataKind::S12mTimecode,
-        13 => FrameSideDataKind::VideoHint,
-        14 => FrameSideDataKind::ViewId,
-        15 => FrameSideDataKind::ThreeDReferenceDisplays,
-        16 => FrameSideDataKind::Exif,
-        17 => FrameSideDataKind::SeiUnregistered,
-        18 => FrameSideDataKind::ActiveFormatDescription,
-        19 => FrameSideDataKind::SkipSamples,
-        20 => FrameSideDataKind::AudioServiceType,
+        13 => FrameSideDataKind::DynamicHdrPlus,
+        14 => FrameSideDataKind::VideoHint,
+        15 => FrameSideDataKind::ViewId,
+        16 => FrameSideDataKind::ThreeDReferenceDisplays,
+        17 => FrameSideDataKind::Exif,
+        18 => FrameSideDataKind::SeiUnregistered,
+        19 => FrameSideDataKind::ActiveFormatDescription,
+        20 => FrameSideDataKind::SkipSamples,
+        21 => FrameSideDataKind::AudioServiceType,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
+}
+
+fn minimal_dynamic_hdr_plus_fixture() -> Vec<u8> {
+    let mut data = vec![0; FrameDynamicHdrPlus::DATA_LEN];
+    data[0] = FrameDynamicHdrPlus::ITU_T_T35_COUNTRY_CODE;
+    data[1] = FrameDynamicHdrPlus::APPLICATION_VERSION;
+    data[2] = 1;
+    write_ne_i32(
+        &mut data,
+        4 + 44,
+        FrameHdrPlusOverlapProcessOption::WeightedAveraging.as_raw(),
+    );
+    data
+}
+
+fn dynamic_hdr_plus_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != FrameDynamicHdrPlus::DATA_LEN {
+        return true;
+    }
+    if data[0] != FrameDynamicHdrPlus::ITU_T_T35_COUNTRY_CODE {
+        return true;
+    }
+    if data[1] != FrameDynamicHdrPlus::APPLICATION_VERSION {
+        return true;
+    }
+
+    let num_windows = usize::from(data[2]);
+    if !(1..=FrameDynamicHdrPlus::MAX_WINDOWS).contains(&num_windows) {
+        return true;
+    }
+
+    const PARAMS_OFFSET: usize = 4;
+    const OVERLAP_PROCESS_OPTION_OFFSET: usize = 44;
+    const NUM_DISTRIBUTION_MAXRGB_PERCENTILES_OFFSET: usize = 80;
+    const TONE_MAPPING_FLAG_OFFSET: usize = 272;
+    const NUM_BEZIER_CURVE_ANCHORS_OFFSET: usize = 292;
+    const COLOR_SATURATION_MAPPING_FLAG_OFFSET: usize = 416;
+    for window in 0..num_windows {
+        let offset = PARAMS_OFFSET + window * FrameHdrPlusColorTransformParams::DATA_LEN;
+        if !matches!(
+            read_ne_i32(data, offset + OVERLAP_PROCESS_OPTION_OFFSET),
+            0 | 1
+        ) {
+            return true;
+        }
+        if usize::from(data[offset + NUM_DISTRIBUTION_MAXRGB_PERCENTILES_OFFSET])
+            > FrameHdrPlusColorTransformParams::MAX_DISTRIBUTION_MAXRGB_PERCENTILES
+        {
+            return true;
+        }
+        if data[offset + TONE_MAPPING_FLAG_OFFSET] > 1 {
+            return true;
+        }
+        if usize::from(data[offset + NUM_BEZIER_CURVE_ANCHORS_OFFSET])
+            > FrameHdrPlusColorTransformParams::MAX_BEZIER_CURVE_ANCHORS
+        {
+            return true;
+        }
+        if data[offset + COLOR_SATURATION_MAPPING_FLAG_OFFSET] > 1 {
+            return true;
+        }
+    }
+
+    let peak_luminance_table_len = 25 * 25 * 8;
+    let target_max_luminance_offset = PARAMS_OFFSET
+        + FrameDynamicHdrPlus::MAX_WINDOWS * FrameHdrPlusColorTransformParams::DATA_LEN;
+    let target_flag_offset = target_max_luminance_offset + 8;
+    let target_rows_offset = target_flag_offset + 1;
+    let target_cols_offset = target_rows_offset + 1;
+    if peak_luminance_grid_invalid(
+        data[target_flag_offset],
+        data[target_rows_offset],
+        data[target_cols_offset],
+    ) {
+        return true;
+    }
+
+    let target_table_offset = target_max_luminance_offset + 12;
+    let mastering_flag_offset = target_table_offset + peak_luminance_table_len;
+    let mastering_rows_offset = mastering_flag_offset + 1;
+    let mastering_cols_offset = mastering_rows_offset + 1;
+    peak_luminance_grid_invalid(
+        data[mastering_flag_offset],
+        data[mastering_rows_offset],
+        data[mastering_cols_offset],
+    )
+}
+
+fn peak_luminance_grid_invalid(flag: u8, rows: u8, cols: u8) -> bool {
+    if flag > 1 {
+        return true;
+    }
+    if flag == 1 && (!(2..=25).contains(&rows) || !(2..=25).contains(&cols)) {
+        return true;
+    }
+    false
 }
 
 fn minimal_icc_profile_fixture() -> Vec<u8> {
@@ -2992,6 +3178,16 @@ fn read_be_u32(data: &[u8], offset: usize) -> u32 {
     let mut raw = [0; 4];
     raw.copy_from_slice(&data[offset..offset + 4]);
     u32::from_be_bytes(raw)
+}
+
+fn read_ne_i32(data: &[u8], offset: usize) -> i32 {
+    let mut raw = [0; 4];
+    raw.copy_from_slice(&data[offset..offset + 4]);
+    i32::from_ne_bytes(raw)
+}
+
+fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {
+    data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
 }
 
 fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usize> {
