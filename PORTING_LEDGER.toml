@@ -107,13 +107,16 @@ unit_tests = [
   "buffer::tests::padded_copy_on_write_keeps_padding_zeroed_and_isolated",
   "buffer::tests::padded_constructors_reject_length_overflow",
   "buffer::tests::buffer_pool_allocates_recycles_and_reuses_zeroed_storage",
+  "buffer::tests::buffer_pool_recovers_unique_buffers_when_last_reference_drops",
+  "buffer::tests::buffer_pool_waits_until_last_shared_reference_drops",
+  "buffer::tests::buffer_pool_copy_on_write_returns_only_original_storage",
   "buffer::tests::buffer_pool_rejects_shared_and_wrong_shape_buffers",
   "buffer::tests::buffer_pool_rejects_overflowing_shapes",
 ]
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-buffer|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Initial reference-counted byte buffer model implemented with owned/copy constructors, fallible zeroed allocation, explicit zeroed padding allocation, visible length versus allocated length reporting, immutable checked slice views bounded to visible bytes, strong-count/writability reporting, unique mutable access, copy-on-write mutation that preserves isolated zeroed padding, and an exact-shape BufferPool that issues zeroed buffers and manually recycles only unique buffers matching its visible/padded shape. Build-checked cargo-fuzz target avutil_core_models covers buffer construction, checked slicing, sharing, visible/padded byte boundaries, copy-on-write isolation, zeroed allocation, length-overflow rejection, pool shape validation, shared-buffer recycle rejection, and zeroing on reuse invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVBuffer/AVBufferRef callback-owned buffers, automatic pool return on unref, hardware-frame references, and lifetime semantics are pending. The local FATE-runner smoke mapping executes the buffer unit filter only and does not count as upstream FATE parity."
+notes = "Initial reference-counted byte buffer model implemented with owned/copy constructors, fallible zeroed allocation, explicit zeroed padding allocation, visible length versus allocated length reporting, immutable checked slice views bounded to visible bytes, strong-count/writability reporting, unique mutable access, copy-on-write mutation that preserves isolated zeroed padding, and an exact-shape BufferPool that issues zeroed buffers, manually recycles only unique buffers matching its visible/padded shape, and automatically returns pool-owned storage when the last shared reference drops. Pool-backed copy-on-write clones do not add cloned allocations back into the pool. Build-checked cargo-fuzz target avutil_core_models covers buffer construction, checked slicing, sharing, visible/padded byte boundaries, copy-on-write isolation, zeroed allocation, length-overflow rejection, pool shape validation, shared-buffer recycle rejection, automatic return-on-last-drop, pool-backed copy-on-write return behavior, and zeroing on reuse invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVBuffer/AVBufferRef callback-owned buffers, custom pool allocation/free callbacks, hardware-frame references, and broader lifetime semantics are pending. The local FATE-runner smoke mapping executes the buffer unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

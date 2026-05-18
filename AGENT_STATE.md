@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avutil-buffer` now has the first Rust-native AVBufferRef-shaped primitive, explicit zeroed padding support, and an initial exact-shape buffer pool. `BufferRef` wraps reference-counted byte storage with owned/copy constructors, fallible zeroed allocation, optional zeroed padding, separate visible and allocated lengths, checked immutable slice views bounded to visible bytes, writability reporting, unique mutable access, and copy-on-write mutation; `BufferPool` issues zeroed buffers and manually recycles only unique buffers matching the pool's visible/padded shape. The `avutil_core_models` fuzz harness now build-checks buffer construction, slicing, sharing, visible/padded byte boundaries, copy-on-write isolation, zeroed allocation, zeroed padding, length-overflow rejection, pool shape validation, shared-buffer recycle rejection, and zeroing on reuse invariants. `tests/fate/mappings.txt` also has focused local `avutil` unit-test mappings, and `fate-runner` has a regression test proving current avutil changed-path selections resolve to runnable local smoke commands. This remains local unit/fuzz-build coverage only, not upstream FFmpeg FATE or pinned-oracle parity.
+`avutil-buffer` now has the first Rust-native AVBufferRef-shaped primitive, explicit zeroed padding support, and an initial exact-shape buffer pool. `BufferRef` wraps reference-counted byte storage with owned/copy constructors, fallible zeroed allocation, optional zeroed padding, separate visible and allocated lengths, checked immutable slice views bounded to visible bytes, writability reporting, unique mutable access, and copy-on-write mutation; `BufferPool` issues zeroed buffers, manually recycles only unique buffers matching the pool's visible/padded shape, automatically returns pool-owned storage after the last shared reference drops, and avoids returning copy-on-write cloned allocations to the pool. The `avutil_core_models` fuzz harness now build-checks buffer construction, slicing, sharing, visible/padded byte boundaries, copy-on-write isolation, zeroed allocation, zeroed padding, length-overflow rejection, pool shape validation, shared-buffer recycle rejection, automatic return-on-last-drop, pool-backed copy-on-write return behavior, and zeroing on reuse invariants. `tests/fate/mappings.txt` also has focused local `avutil` unit-test mappings, and `fate-runner` has a regression test proving current avutil changed-path selections resolve to runnable local smoke commands. This remains local unit/fuzz-build coverage only, not upstream FFmpeg FATE or pinned-oracle parity.
 
 `fate-runner` now has local smoke mappings for current shared `fftools` changed-path selections. `tests/fate/mappings.txt` maps version and hide-banner paths to focused `fftools` unit filters, maps option parsing and basic I/O planning to focused unit filters, maps each current `fftools-ffmpeg-*` ledger component to the shared `cargo test -p fftools --lib ffmpeg` path, and maps each current `fftools-ffprobe-*` ledger component to the shared `cargo test -p fftools --lib ffprobe` path. The `default_mappings_cover_current_fftools_smoke_selections` regression test loads the real ledger and default mapping file and now covers `fftools` lib/bin, ffmpeg, ffprobe, option-parser, I/O-plan, and option-parser fuzz-target selections. These are local smoke checks only; they do not count as upstream FFmpeg FATE media parity.
 
@@ -88,6 +88,17 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo test -p avutil buffer`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+- `cargo run -p fate-runner -- run --component avutil-buffer`
+- `cargo fmt --all -- --check`
+- `cargo run -p fate-runner -- run --changed --dry-run`
+- `cargo run -p fate-runner -- run --changed`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `git diff --check`
 - `cargo fmt --all -- --check`
 - `cargo test -p avutil buffer`
 - `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
@@ -1326,6 +1337,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- `cargo test -p avutil buffer` initially failed after adding automatic buffer-pool return because one method still indexed the new `Arc<BufferStorage>` wrapper and the drop-time spare-list lock temporary outlived the upgraded pool reference; `padding_slice()` now indexes the wrapped bytes and the lock result is scoped before `Drop` exits.
 - `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models` initially failed after adding buffer-pool fuzz invariants because a mutable slice index borrowed the buffer immutably in the same expression; the index is now stored before `make_mut()` and the fuzz target builds.
 - `cargo fmt --all -- --check` initially failed after adding padded buffer helpers because `checked_storage_len` needed rustfmt wrapping; `cargo fmt --all` fixed the formatting.
 - `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings` initially failed on a manual `% 2 == 0` branch selector in the buffer fuzz path; the harness now uses `.is_multiple_of(2)` and the focused fuzz clippy pass succeeds.
@@ -1374,11 +1386,11 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-buffer` is the current focus for this slice. It is implemented with unit tests, visible versus padded byte storage, exact-shape manual buffer-pool recycling, build-checked fuzz invariants, and local FATE-runner smoke mapping coverage, but remains below `complete` because full AVBuffer/AVBufferRef callback-owned buffers, automatic return-on-unref pool behavior, hardware-frame references, pinned-oracle differential tests, upstream FATE coverage, and actual local fuzz execution are still absent.
+`avutil-buffer` is the current focus for this slice. It is implemented with unit tests, visible versus padded byte storage, exact-shape manual buffer-pool recycling, automatic pool-owned storage return when the last shared reference drops, build-checked fuzz invariants, and local FATE-runner smoke mapping coverage, but remains below `complete` because full AVBuffer/AVBufferRef callback-owned buffers, custom AVBufferPool allocation/free callbacks, hardware-frame references, pinned-oracle differential tests, upstream FATE coverage, and actual local fuzz execution are still absent.
 
 ## Next 3 Concrete Actions
 
-1. Extend `avutil-buffer` toward callback-owned buffers or automatic pool return-on-unref semantics with invalid-input and sharing tests.
+1. Extend `avutil-buffer` toward callback-owned buffers or custom pool allocation/free callbacks with invalid-input and sharing tests.
 2. Add pinned-oracle differential coverage for constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
 3. Add upstream FATE sample-backed media mappings for constrained `ffmpeg-rs` null/framecrc/hash-style command paths once samples and the pinned oracle are available.
 
@@ -1392,4 +1404,4 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added `avutil::BufferPool`, an exact-shape manual pool that issues zeroed `BufferRef` values, recycles only unique buffers with matching visible/padded shape, rejects shared and wrong-shaped buffers with typed errors, and zeros storage before reuse. `avutil_core_models` now build-checks pool shape validation, shared-buffer rejection, recycle/reuse zeroing, and overflow rejection. The mappings execute local unit-test filters only and do not count as upstream FFmpeg FATE parity.
+Latest slice: extended `avutil::BufferPool` so pool-owned `BufferRef` storage automatically returns to the pool when the final shared reference is dropped, while manual unique-buffer recycling remains supported. Unit tests now cover unique drop-time return, delayed return until the last shared reference, and copy-on-write behavior that returns only the original pool storage; `avutil_core_models` now build-checks those return paths plus zeroed reuse invariants. The mappings execute local unit-test filters only and do not count as upstream FFmpeg FATE parity.

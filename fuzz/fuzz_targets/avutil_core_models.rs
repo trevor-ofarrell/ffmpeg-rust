@@ -165,6 +165,33 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(reused.len(), payload_len);
     assert_eq!(reused.allocated_len(), payload_len + padding_len);
     assert!(reused.as_padded_slice().iter().all(|byte| *byte == 0));
+    drop(reused);
+    assert_eq!(pool.available_count().unwrap(), 1);
+
+    let auto_reused = pool.get().unwrap();
+    assert_eq!(pool.available_count().unwrap(), 0);
+    assert!(auto_reused
+        .as_padded_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    let auto_shared = auto_reused.clone();
+    drop(auto_reused);
+    assert_eq!(pool.available_count().unwrap(), 0);
+    drop(auto_shared);
+    assert_eq!(pool.available_count().unwrap(), 1);
+
+    let cow_pool = BufferPool::new(payload_len, padding_len).unwrap();
+    let mut cow_buffer = cow_pool.get().unwrap();
+    let cow_shared = cow_buffer.clone();
+    if !cow_buffer.is_empty() {
+        cow_buffer.make_mut()[0] = cursor.next().unwrap_or_default();
+    } else {
+        assert_eq!(cow_buffer.make_mut(), &mut []);
+    }
+    drop(cow_buffer);
+    assert_eq!(cow_pool.available_count().unwrap(), 0);
+    drop(cow_shared);
+    assert_eq!(cow_pool.available_count().unwrap(), 1);
     assert_eq!(
         BufferPool::new(1, usize::MAX).unwrap_err().kind(),
         AvErrorKind::InvalidArgument

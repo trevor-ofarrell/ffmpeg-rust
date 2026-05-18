@@ -1,17 +1,25 @@
 use crate::{AvError, AvResult};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct BufferRef {
-    data: Arc<Vec<u8>>,
+    data: Arc<BufferStorage>,
     len: usize,
 }
+
+impl PartialEq for BufferRef {
+    fn eq(&self, other: &Self) -> bool {
+        self.len == other.len && self.as_padded_slice() == other.as_padded_slice()
+    }
+}
+
+impl Eq for BufferRef {}
 
 impl BufferRef {
     pub fn from_vec(data: Vec<u8>) -> Self {
         let len = data.len();
         Self {
-            data: Arc::new(data),
+            data: Arc::new(BufferStorage::new(data)),
             len,
         }
     }
@@ -31,7 +39,7 @@ impl BufferRef {
         storage.extend_from_slice(data);
         storage.resize(total_len, 0);
         Ok(Self {
-            data: Arc::new(storage),
+            data: Arc::new(BufferStorage::new(storage)),
             len: data.len(),
         })
     }
@@ -41,16 +49,9 @@ impl BufferRef {
     }
 
     pub fn zeroed_with_padding(size: usize, padding: usize) -> AvResult<Self> {
-        let total_len = checked_storage_len(size, padding)?;
-        let mut data = Vec::new();
-        data.try_reserve_exact(total_len).map_err(|_| {
-            AvError::external(format!(
-                "failed to allocate {total_len} padded buffer bytes"
-            ))
-        })?;
-        data.resize(total_len, 0);
+        let data = allocate_zeroed_storage(size, padding)?;
         Ok(Self {
-            data: Arc::new(data),
+            data: Arc::new(BufferStorage::new(data)),
             len: size,
         })
     }
@@ -64,11 +65,11 @@ impl BufferRef {
     }
 
     pub fn as_slice(&self) -> &[u8] {
-        &self.data[..self.len]
+        &self.data.bytes[..self.len]
     }
 
     pub fn as_padded_slice(&self) -> &[u8] {
-        self.data.as_slice()
+        self.data.bytes.as_slice()
     }
 
     pub fn allocated_len(&self) -> usize {
@@ -80,7 +81,7 @@ impl BufferRef {
     }
 
     pub fn padding_slice(&self) -> &[u8] {
-        &self.data[self.len..]
+        &self.data.bytes[self.len..]
     }
 
     pub fn strong_count(&self) -> usize {
@@ -92,11 +93,11 @@ impl BufferRef {
     }
 
     pub fn get_mut(&mut self) -> Option<&mut [u8]> {
-        Arc::get_mut(&mut self.data).map(|data| &mut data[..self.len])
+        Arc::get_mut(&mut self.data).map(|data| &mut data.bytes[..self.len])
     }
 
     pub fn make_mut(&mut self) -> &mut [u8] {
-        &mut Arc::make_mut(&mut self.data)[..self.len]
+        &mut Arc::make_mut(&mut self.data).bytes[..self.len]
     }
 
     pub fn slice(&self, offset: usize, len: usize) -> AvResult<BufferSlice> {
@@ -115,6 +116,67 @@ impl BufferRef {
             offset,
             len,
         })
+    }
+}
+
+#[derive(Debug)]
+struct BufferStorage {
+    bytes: Vec<u8>,
+    recycler: Option<Weak<BufferPoolInner>>,
+}
+
+impl BufferStorage {
+    fn new(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes,
+            recycler: None,
+        }
+    }
+
+    fn with_pool(bytes: Vec<u8>, pool: &Arc<BufferPoolInner>) -> Self {
+        Self {
+            bytes,
+            recycler: Some(Arc::downgrade(pool)),
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    fn into_vec(mut self) -> Vec<u8> {
+        self.recycler = None;
+        std::mem::take(&mut self.bytes)
+    }
+}
+
+impl Clone for BufferStorage {
+    fn clone(&self) -> Self {
+        Self::new(self.bytes.clone())
+    }
+}
+
+impl PartialEq for BufferStorage {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl Eq for BufferStorage {}
+
+impl Drop for BufferStorage {
+    fn drop(&mut self) {
+        let Some(pool) = self.recycler.as_ref().and_then(Weak::upgrade) else {
+            return;
+        };
+        if self.bytes.len() != pool.allocated_len {
+            return;
+        }
+        self.bytes.fill(0);
+        let storage = std::mem::take(&mut self.bytes);
+        if let Ok(mut spare) = pool.spare.lock() {
+            spare.push(storage);
+        };
     }
 }
 
@@ -171,11 +233,17 @@ impl BufferPool {
                 storage.resize(self.allocated_len(), 0);
                 storage.fill(0);
                 Ok(BufferRef {
-                    data: Arc::new(storage),
+                    data: Arc::new(BufferStorage::with_pool(storage, &self.inner)),
                     len: self.len(),
                 })
             }
-            None => BufferRef::zeroed_with_padding(self.len(), self.padding_len()),
+            None => {
+                let storage = allocate_zeroed_storage(self.len(), self.padding_len())?;
+                Ok(BufferRef {
+                    data: Arc::new(BufferStorage::with_pool(storage, &self.inner)),
+                    len: self.len(),
+                })
+            }
         }
     }
 
@@ -190,8 +258,9 @@ impl BufferPool {
             )));
         }
 
-        let mut storage = Arc::try_unwrap(data)
+        let storage = Arc::try_unwrap(data)
             .map_err(|_| AvError::invalid_argument("cannot recycle a shared buffer"))?;
+        let mut storage = storage.into_vec();
         storage.fill(0);
         self.lock_spare()?.push(storage);
         Ok(())
@@ -205,6 +274,18 @@ impl BufferPool {
     }
 }
 
+fn allocate_zeroed_storage(len: usize, padding: usize) -> AvResult<Vec<u8>> {
+    let total_len = checked_storage_len(len, padding)?;
+    let mut data = Vec::new();
+    data.try_reserve_exact(total_len).map_err(|_| {
+        AvError::external(format!(
+            "failed to allocate {total_len} padded buffer bytes"
+        ))
+    })?;
+    data.resize(total_len, 0);
+    Ok(data)
+}
+
 fn checked_storage_len(len: usize, padding: usize) -> AvResult<usize> {
     len.checked_add(padding)
         .ok_or_else(|| AvError::invalid_argument("buffer length plus padding overflows"))
@@ -212,7 +293,7 @@ fn checked_storage_len(len: usize, padding: usize) -> AvResult<usize> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BufferSlice {
-    data: Arc<Vec<u8>>,
+    data: Arc<BufferStorage>,
     offset: usize,
     len: usize,
 }
@@ -227,7 +308,7 @@ impl BufferSlice {
     }
 
     pub fn as_slice(&self) -> &[u8] {
-        &self.data[self.offset..self.offset + self.len]
+        &self.data.bytes[self.offset..self.offset + self.len]
     }
 
     pub fn offset(&self) -> usize {
@@ -406,6 +487,54 @@ mod tests {
         assert_eq!(pool.available_count().unwrap(), 0);
         assert_eq!(reused.as_slice(), &[0, 0, 0]);
         assert_eq!(reused.padding_slice(), &[0, 0]);
+    }
+
+    #[test]
+    fn buffer_pool_recovers_unique_buffers_when_last_reference_drops() {
+        let pool = BufferPool::new(4, 2).unwrap();
+
+        {
+            let mut buffer = pool.get().unwrap();
+            buffer.make_mut().copy_from_slice(&[1, 2, 3, 4]);
+            assert_eq!(buffer.padding_slice(), &[0, 0]);
+            assert_eq!(pool.available_count().unwrap(), 0);
+        }
+
+        assert_eq!(pool.available_count().unwrap(), 1);
+        let reused = pool.get().unwrap();
+        assert_eq!(pool.available_count().unwrap(), 0);
+        assert_eq!(reused.as_slice(), &[0, 0, 0, 0]);
+        assert_eq!(reused.padding_slice(), &[0, 0]);
+    }
+
+    #[test]
+    fn buffer_pool_waits_until_last_shared_reference_drops() {
+        let pool = BufferPool::new(2, 1).unwrap();
+        let buffer = pool.get().unwrap();
+        let shared = buffer.clone();
+
+        drop(buffer);
+        assert_eq!(pool.available_count().unwrap(), 0);
+
+        drop(shared);
+        assert_eq!(pool.available_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn buffer_pool_copy_on_write_returns_only_original_storage() {
+        let pool = BufferPool::new(3, 1).unwrap();
+        let mut buffer = pool.get().unwrap();
+        let shared = buffer.clone();
+
+        buffer.make_mut().copy_from_slice(&[7, 8, 9]);
+        assert_eq!(buffer.as_slice(), &[7, 8, 9]);
+        assert_eq!(shared.as_slice(), &[0, 0, 0]);
+
+        drop(buffer);
+        assert_eq!(pool.available_count().unwrap(), 0);
+
+        drop(shared);
+        assert_eq!(pool.available_count().unwrap(), 1);
     }
 
     #[test]
