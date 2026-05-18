@@ -38,6 +38,7 @@ const WAVE_ID: &[u8; 4] = b"wave";
 const CHAN_ID: &[u8; 4] = b"chan";
 const BTRT_ID: &[u8; 4] = b"btrt";
 const DAMR_ID: &[u8; 4] = b"damr";
+const DOPS_ID: &[u8; 4] = b"dOps";
 const FRMA_ID: &[u8; 4] = b"frma";
 const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
 const PASP_ID: &[u8; 4] = b"pasp";
@@ -379,6 +380,7 @@ pub struct MovAudioSampleEntry {
     elementary_stream_descriptor: Option<MovElementaryStreamDescriptor>,
     bit_rate: Option<MovBitRateBox>,
     amr_specific: Option<MovAmrSpecificBox>,
+    opus_specific: Option<MovOpusSpecificBox>,
     wave_extension: Option<MovAudioWaveExtension>,
     channel_layout: Option<MovAudioChannelLayout>,
     child_boxes: Vec<MovSampleEntryChildBox>,
@@ -474,6 +476,10 @@ impl MovAudioSampleEntry {
 
     pub fn amr_specific(&self) -> Option<&MovAmrSpecificBox> {
         self.amr_specific.as_ref()
+    }
+
+    pub fn opus_specific(&self) -> Option<&MovOpusSpecificBox> {
+        self.opus_specific.as_ref()
     }
 
     pub fn wave_extension(&self) -> Option<&MovAudioWaveExtension> {
@@ -668,6 +674,57 @@ impl MovAmrSpecificBox {
 
     pub fn frames_per_sample(&self) -> u8 {
         self.frames_per_sample
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovOpusSpecificBox {
+    version: u8,
+    output_channel_count: u8,
+    pre_skip: u16,
+    input_sample_rate: u32,
+    output_gain: i16,
+    channel_mapping_family: u8,
+    stream_count: Option<u8>,
+    coupled_count: Option<u8>,
+    channel_mapping: Vec<u8>,
+}
+
+impl MovOpusSpecificBox {
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
+    pub fn output_channel_count(&self) -> u8 {
+        self.output_channel_count
+    }
+
+    pub fn pre_skip(&self) -> u16 {
+        self.pre_skip
+    }
+
+    pub fn input_sample_rate(&self) -> u32 {
+        self.input_sample_rate
+    }
+
+    pub fn output_gain(&self) -> i16 {
+        self.output_gain
+    }
+
+    pub fn channel_mapping_family(&self) -> u8 {
+        self.channel_mapping_family
+    }
+
+    pub fn stream_count(&self) -> Option<u8> {
+        self.stream_count
+    }
+
+    pub fn coupled_count(&self) -> Option<u8> {
+        self.coupled_count
+    }
+
+    pub fn channel_mapping(&self) -> &[u8] {
+        &self.channel_mapping
     }
 }
 
@@ -2002,7 +2059,7 @@ fn parse_sample_entry_details(
         b"raw " if extra_data.len() >= 70 => parse_visual_sample_entry(extra_data)
             .map(Box::new)
             .map(MovSampleEntryDetails::Video),
-        tag if is_audio_sample_entry(tag) => parse_audio_sample_entry(extra_data)
+        tag if is_audio_sample_entry(tag) => parse_audio_sample_entry(tag, extra_data)
             .map(Box::new)
             .map(MovSampleEntryDetails::Audio),
         b"tx3g" => parse_timed_text_sample_entry(extra_data)
@@ -2124,7 +2181,7 @@ fn read_null_terminated_utf8(reader: &mut ByteReader<'_>, context: &str) -> AvRe
     )))
 }
 
-fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> {
+fn parse_audio_sample_entry(codec_tag: &[u8], extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> {
     const SAMPLE_ENTRY_BASE_HEADER_SIZE: usize = 16;
     const AUDIO_SAMPLE_ENTRY_V2_STRUCT_SIZE: usize = 72;
 
@@ -2216,6 +2273,7 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
         parse_audio_sample_entry_elementary_stream_descriptor(&child_boxes)?;
     let bit_rate = parse_audio_sample_entry_bit_rate(&child_boxes)?;
     let amr_specific = parse_audio_sample_entry_amr_specific(&child_boxes)?;
+    let opus_specific = parse_audio_sample_entry_opus_specific(&child_boxes, codec_tag == b"Opus")?;
     let wave_extension = parse_audio_sample_entry_wave_extension(&child_boxes)?;
     let channel_layout = parse_audio_sample_entry_channel_layout(&child_boxes)?;
     Ok(MovAudioSampleEntry {
@@ -2232,6 +2290,7 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
         elementary_stream_descriptor,
         bit_rate,
         amr_specific,
+        opus_specific,
         wave_extension,
         channel_layout,
         child_boxes,
@@ -2295,6 +2354,29 @@ fn parse_audio_sample_entry_amr_specific(
         .find(|child| child.box_type.as_bytes() == DAMR_ID)
         .map(|child| parse_damr(child.payload()))
         .transpose()
+}
+
+fn parse_audio_sample_entry_opus_specific(
+    child_boxes: &[MovSampleEntryChildBox],
+    required: bool,
+) -> AvResult<Option<MovOpusSpecificBox>> {
+    let mut matches = child_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == DOPS_ID);
+    let Some(child) = matches.next() else {
+        if required {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 Opus sample entry is missing required dOps box",
+            ));
+        }
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 Opus sample entry must not contain multiple dOps boxes",
+        ));
+    }
+    parse_dops(child.payload()).map(Some)
 }
 
 fn parse_audio_sample_entry_channel_layout(
@@ -2408,6 +2490,64 @@ fn parse_damr(payload: &[u8]) -> AvResult<MovAmrSpecificBox> {
         mode_set,
         mode_change_period,
         frames_per_sample,
+    })
+}
+
+fn parse_dops(payload: &[u8]) -> AvResult<MovOpusSpecificBox> {
+    let mut reader = ByteReader::new(payload);
+    ensure_remaining(&reader, 1, "MOV/MP4 dOps version")?;
+    let version = reader.read_u8()?;
+    if version != 0 {
+        return Err(AvError::unsupported(format!(
+            "MOV/MP4 dOps version {version} is not implemented"
+        )));
+    }
+
+    ensure_remaining(&reader, 10, "MOV/MP4 dOps version 0 fields")?;
+    let output_channel_count = reader.read_u8()?;
+    if output_channel_count == 0 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dOps output channel count must be nonzero",
+        ));
+    }
+    let pre_skip = reader.read_u16_be()?;
+    let input_sample_rate = reader.read_u32_be()?;
+    let output_gain = reader.read_i16_be()?;
+    let channel_mapping_family = reader.read_u8()?;
+    let (stream_count, coupled_count, channel_mapping) = if channel_mapping_family == 0 {
+        ensure_box_consumed(&reader, "MOV/MP4 dOps")?;
+        (None, None, Vec::new())
+    } else {
+        ensure_remaining(&reader, 2, "MOV/MP4 dOps channel mapping table")?;
+        let stream_count = reader.read_u8()?;
+        let coupled_count = reader.read_u8()?;
+        if stream_count == 0 {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 dOps stream count must be nonzero",
+            ));
+        }
+        if coupled_count > stream_count {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 dOps coupled count must not exceed stream count",
+            ));
+        }
+        let channel_mapping = reader
+            .read_exact(usize::from(output_channel_count))?
+            .to_vec();
+        ensure_box_consumed(&reader, "MOV/MP4 dOps")?;
+        (Some(stream_count), Some(coupled_count), channel_mapping)
+    };
+
+    Ok(MovOpusSpecificBox {
+        version,
+        output_channel_count,
+        pre_skip,
+        input_sample_rate,
+        output_gain,
+        channel_mapping_family,
+        stream_count,
+        coupled_count,
+        channel_mapping,
     })
 }
 
@@ -4144,6 +4284,7 @@ mod tests {
         ));
         assert!(audio.version1_fields().is_none());
         assert!(audio.version2_fields().is_none());
+        assert!(audio.opus_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let direct_esds = audio.elementary_stream_descriptor().unwrap();
@@ -4187,6 +4328,7 @@ mod tests {
         assert_eq!(audio.sample_rate(), 8_000);
         assert!(audio.elementary_stream_descriptor().is_none());
         assert!(audio.bit_rate().is_none());
+        assert!(audio.opus_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let amr = audio.amr_specific().unwrap();
@@ -4201,6 +4343,57 @@ mod tests {
             audio.child_boxes()[0].payload(),
             amr_specific_box_payload(*b"rust", 1, 0x0085, 2, 2).as_slice()
         );
+    }
+
+    #[test]
+    fn parses_opus_audio_sample_entry_specific_box() {
+        let dops_payload = opus_specific_box_payload(2, 312, 48_000, -256, 0, None);
+        let dops = box_(*DOPS_ID, &dops_payload);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &dops);
+        let bytes = mp4_with_sample_description_entry(b"Opus", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "Opus");
+        let MovSampleEntryDetails::Audio(audio) = codec_parameters.details() else {
+            panic!("expected audio sample entry details");
+        };
+        assert_eq!(audio.channel_count(), 2);
+        assert_eq!(audio.sample_size(), 16);
+        assert_eq!(audio.sample_rate(), 48_000);
+        assert!(audio.elementary_stream_descriptor().is_none());
+        assert!(audio.bit_rate().is_none());
+        assert!(audio.amr_specific().is_none());
+        assert!(audio.wave_extension().is_none());
+        assert!(audio.channel_layout().is_none());
+        let opus = audio.opus_specific().unwrap();
+        assert_eq!(opus.version(), 0);
+        assert_eq!(opus.output_channel_count(), 2);
+        assert_eq!(opus.pre_skip(), 312);
+        assert_eq!(opus.input_sample_rate(), 48_000);
+        assert_eq!(opus.output_gain(), -256);
+        assert_eq!(opus.channel_mapping_family(), 0);
+        assert_eq!(opus.stream_count(), None);
+        assert_eq!(opus.coupled_count(), None);
+        assert!(opus.channel_mapping().is_empty());
+        assert_eq!(audio.child_boxes().len(), 1);
+        assert_eq!(audio.child_boxes()[0].box_type(), "dOps");
+        assert_eq!(audio.child_boxes()[0].payload(), dops_payload.as_slice());
+
+        let dops_payload = opus_specific_box_payload(2, 312, 48_000, -10, 1, Some((1, 1, &[0, 1])));
+        let dops = box_(*DOPS_ID, &dops_payload);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &dops);
+        let bytes = mp4_with_sample_description_entry(b"Opus", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+        let MovSampleEntryDetails::Audio(audio) = codec_parameters.details() else {
+            panic!("expected audio sample entry details");
+        };
+        let opus = audio.opus_specific().unwrap();
+        assert_eq!(opus.channel_mapping_family(), 1);
+        assert_eq!(opus.stream_count(), Some(1));
+        assert_eq!(opus.coupled_count(), Some(1));
+        assert_eq!(opus.channel_mapping(), &[0, 1]);
     }
 
     #[test]
@@ -4814,6 +5007,88 @@ mod tests {
         );
         let extra_data = audio_sample_entry_extra_data(1, 16, 8_000, &invalid_many_frames);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"samr", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let missing_dops = audio_sample_entry_extra_data(2, 16, 48_000, &[]);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"Opus",
+            1,
+            &missing_dops,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let truncated_dops = box_(*DOPS_ID, b"\0\0");
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &truncated_dops);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"Opus", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let unsupported_dops = box_(*DOPS_ID, b"\x01");
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &unsupported_dops);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"Opus", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+
+        let zero_output_channels = box_(
+            *DOPS_ID,
+            &opus_specific_box_payload(0, 312, 48_000, 0, 0, None),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &zero_output_channels);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"Opus", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let mut oversized_family_zero_dops = opus_specific_box_payload(2, 312, 48_000, 0, 0, None);
+        oversized_family_zero_dops.push(0);
+        let oversized_family_zero_dops = box_(*DOPS_ID, &oversized_family_zero_dops);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &oversized_family_zero_dops);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"Opus", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let missing_channel_mapping_table = box_(
+            *DOPS_ID,
+            &opus_specific_box_payload(2, 312, 48_000, 0, 1, None),
+        );
+        let extra_data =
+            audio_sample_entry_extra_data(2, 16, 48_000, &missing_channel_mapping_table);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"Opus", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let invalid_stream_count = box_(
+            *DOPS_ID,
+            &opus_specific_box_payload(2, 312, 48_000, 0, 1, Some((0, 0, &[0, 1]))),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &invalid_stream_count);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"Opus", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let invalid_coupled_count = box_(
+            *DOPS_ID,
+            &opus_specific_box_payload(2, 312, 48_000, 0, 1, Some((1, 2, &[0, 1]))),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &invalid_coupled_count);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"Opus", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let duplicate_dops = [
+            box_(
+                *DOPS_ID,
+                &opus_specific_box_payload(2, 312, 48_000, 0, 0, None),
+            ),
+            box_(
+                *DOPS_ID,
+                &opus_specific_box_payload(2, 312, 48_000, 0, 0, None),
+            ),
+        ]
+        .concat();
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &duplicate_dops);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"Opus", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
@@ -6092,6 +6367,29 @@ mod tests {
         payload.extend_from_slice(&mode_set.to_be_bytes());
         payload.push(mode_change_period);
         payload.push(frames_per_sample);
+        payload
+    }
+
+    fn opus_specific_box_payload(
+        output_channel_count: u8,
+        pre_skip: u16,
+        input_sample_rate: u32,
+        output_gain: i16,
+        channel_mapping_family: u8,
+        mapping_table: Option<(u8, u8, &[u8])>,
+    ) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.push(0);
+        payload.push(output_channel_count);
+        payload.extend_from_slice(&pre_skip.to_be_bytes());
+        payload.extend_from_slice(&input_sample_rate.to_be_bytes());
+        payload.extend_from_slice(&output_gain.to_be_bytes());
+        payload.push(channel_mapping_family);
+        if let Some((stream_count, coupled_count, channel_mapping)) = mapping_table {
+            payload.push(stream_count);
+            payload.push(coupled_count);
+            payload.extend_from_slice(channel_mapping);
+        }
         payload
     }
 
