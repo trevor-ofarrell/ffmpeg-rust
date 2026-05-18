@@ -212,6 +212,53 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         STATIC_BUFFER_BYTES.as_ptr()
     ));
 
+    let shared_storage: Arc<[u8]> = payload.clone().into();
+    let mut shared_readonly = BufferRef::from_shared_slice_readonly(Arc::clone(&shared_storage));
+    assert_eq!(shared_readonly.as_slice(), payload.as_slice());
+    assert!(std::ptr::eq(
+        shared_readonly.as_padded_slice().as_ptr(),
+        shared_storage.as_ptr()
+    ));
+    assert!(shared_readonly.is_readonly());
+    assert!(!shared_readonly.is_writable());
+    assert!(shared_readonly.get_mut().is_none());
+    assert_eq!(Arc::strong_count(&shared_storage), 2);
+    let shared_readonly_original = shared_readonly.clone();
+    shared_readonly
+        .resize_with_padding(resize_len, resize_padding)
+        .unwrap();
+    assert!(shared_readonly.is_writable());
+    assert!(!shared_readonly.is_readonly());
+    let shared_copied = payload.len().min(resize_len);
+    assert_eq!(
+        &shared_readonly.as_slice()[..shared_copied],
+        &payload[..shared_copied]
+    );
+    assert!(shared_readonly.as_slice()[shared_copied..]
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(shared_readonly
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert_eq!(shared_readonly_original.as_slice(), payload.as_slice());
+    assert!(std::ptr::eq(
+        shared_readonly_original.as_padded_slice().as_ptr(),
+        shared_storage.as_ptr()
+    ));
+    drop(shared_readonly_original);
+    assert_eq!(Arc::strong_count(&shared_storage), 1);
+    assert_eq!(
+        BufferRef::from_shared_slice_with_len_readonly(
+            Arc::clone(&shared_storage),
+            shared_storage.len().saturating_add(1)
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(Arc::strong_count(&shared_storage), 1);
+
     let pool = BufferPool::new(payload_len, padding_len).unwrap();
     assert_eq!(pool.len(), payload_len);
     assert_eq!(pool.allocated_len(), payload_len + padding_len);

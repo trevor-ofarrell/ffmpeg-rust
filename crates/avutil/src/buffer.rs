@@ -101,6 +101,27 @@ impl BufferRef {
         })
     }
 
+    pub fn from_shared_slice_readonly(data: Arc<[u8]>) -> Self {
+        let len = data.len();
+        Self {
+            data: Arc::new(BufferStorage::shared_readonly(data)),
+            len,
+        }
+    }
+
+    pub fn from_shared_slice_with_len_readonly(data: Arc<[u8]>, len: usize) -> AvResult<Self> {
+        if len > data.len() {
+            return Err(AvError::invalid_argument(format!(
+                "visible buffer length {len} exceeds {} allocated bytes",
+                data.len()
+            )));
+        }
+        Ok(Self {
+            data: Arc::new(BufferStorage::shared_readonly(data)),
+            len,
+        })
+    }
+
     pub fn from_vec_with_release_callback<F>(data: Vec<u8>, on_release: F) -> Self
     where
         F: Fn(Vec<u8>) + Send + Sync + 'static,
@@ -370,6 +391,14 @@ impl BufferStorage {
         }
     }
 
+    fn shared_readonly(bytes: Arc<[u8]>) -> Self {
+        Self {
+            bytes: BufferBytes::shared(bytes),
+            owner: None,
+            readonly: true,
+        }
+    }
+
     fn with_pool(bytes: Vec<u8>, pool: &Arc<BufferPoolInner>) -> Self {
         Self {
             bytes: BufferBytes::owned(bytes),
@@ -414,6 +443,7 @@ impl BufferStorage {
 enum BufferBytes {
     Owned(Vec<u8>),
     Static(&'static [u8]),
+    Shared(Arc<[u8]>),
 }
 
 impl BufferBytes {
@@ -425,17 +455,22 @@ impl BufferBytes {
         Self::Static(bytes)
     }
 
+    fn shared(bytes: Arc<[u8]>) -> Self {
+        Self::Shared(bytes)
+    }
+
     fn as_slice(&self) -> &[u8] {
         match self {
             Self::Owned(bytes) => bytes.as_slice(),
             Self::Static(bytes) => bytes,
+            Self::Shared(bytes) => bytes,
         }
     }
 
     fn as_mut_vec(&mut self) -> Option<&mut Vec<u8>> {
         match self {
             Self::Owned(bytes) => Some(bytes),
-            Self::Static(_) => None,
+            Self::Static(_) | Self::Shared(_) => None,
         }
     }
 
@@ -451,6 +486,7 @@ impl BufferBytes {
         match std::mem::replace(self, Self::Owned(Vec::new())) {
             Self::Owned(bytes) => bytes,
             Self::Static(bytes) => bytes.to_vec(),
+            Self::Shared(bytes) => bytes.to_vec(),
         }
     }
 }
@@ -466,6 +502,11 @@ impl std::fmt::Debug for BufferBytes {
             Self::Static(bytes) => f
                 .debug_struct("BufferBytes")
                 .field("kind", &"static")
+                .field("bytes", bytes)
+                .finish(),
+            Self::Shared(bytes) => f
+                .debug_struct("BufferBytes")
+                .field("kind", &"shared")
                 .field("bytes", bytes)
                 .finish(),
         }
@@ -986,6 +1027,77 @@ mod tests {
                 .kind(),
             AvErrorKind::InvalidArgument
         );
+    }
+
+    #[test]
+    fn shared_readonly_buffer_keeps_arc_storage_until_detach() {
+        let storage: Arc<[u8]> = vec![1, 2, 3, 0].into();
+        let mut buffer =
+            BufferRef::from_shared_slice_with_len_readonly(Arc::clone(&storage), 3).unwrap();
+        let shared = buffer.clone();
+
+        assert_eq!(Arc::strong_count(&storage), 2);
+        assert_eq!(buffer.as_slice(), &[1, 2, 3]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert!(std::ptr::eq(
+            buffer.as_padded_slice().as_ptr(),
+            storage.as_ptr()
+        ));
+        assert!(buffer.is_readonly());
+        assert!(!buffer.is_writable());
+        assert!(buffer.get_mut().is_none());
+
+        buffer.make_mut()[0] = 9;
+
+        assert_eq!(buffer.as_slice(), &[9, 2, 3]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert!(!std::ptr::eq(
+            buffer.as_padded_slice().as_ptr(),
+            storage.as_ptr()
+        ));
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+        assert_eq!(shared.as_slice(), &[1, 2, 3]);
+        assert!(shared.is_readonly());
+        assert!(std::ptr::eq(
+            shared.as_padded_slice().as_ptr(),
+            storage.as_ptr()
+        ));
+        assert_eq!(Arc::strong_count(&storage), 2);
+        drop(shared);
+        assert_eq!(Arc::strong_count(&storage), 1);
+    }
+
+    #[test]
+    fn shared_readonly_buffer_resize_detaches_without_mutating_source() {
+        let storage: Arc<[u8]> = vec![4, 5, 6].into();
+        let mut buffer = BufferRef::from_shared_slice_readonly(Arc::clone(&storage));
+
+        buffer.resize_with_padding(5, 1).unwrap();
+
+        assert_eq!(buffer.as_slice(), &[4, 5, 6, 0, 0]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert!(!std::ptr::eq(
+            buffer.as_padded_slice().as_ptr(),
+            storage.as_ptr()
+        ));
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+        assert_eq!(storage.as_ref(), &[4, 5, 6]);
+        assert_eq!(Arc::strong_count(&storage), 1);
+    }
+
+    #[test]
+    fn shared_readonly_buffer_rejects_invalid_visible_len_without_taking_arc() {
+        let storage: Arc<[u8]> = vec![1, 2].into();
+
+        assert_eq!(
+            BufferRef::from_shared_slice_with_len_readonly(Arc::clone(&storage), 3)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(Arc::strong_count(&storage), 1);
     }
 
     #[test]
