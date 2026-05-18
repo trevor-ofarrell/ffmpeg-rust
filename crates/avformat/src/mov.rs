@@ -43,6 +43,8 @@ const DEC3_ID: &[u8; 4] = b"dec3";
 const DOPS_ID: &[u8; 4] = b"dOps";
 const DFLA_ID: &[u8; 4] = b"dfLa";
 const ALAC_ID: &[u8; 4] = b"alac";
+const VTTC_ID: &[u8; 4] = b"vttC";
+const VLAB_ID: &[u8; 4] = b"vlab";
 const FRMA_ID: &[u8; 4] = b"frma";
 const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
 const PASP_ID: &[u8; 4] = b"pasp";
@@ -198,20 +200,28 @@ pub enum MovSampleEntryDetails {
 pub enum MovSubtitleSampleEntry {
     TimedText(MovTimedTextSampleEntry),
     XmlSubtitle(MovXmlSubtitleSampleEntry),
+    WebVtt(MovWebVttSampleEntry),
 }
 
 impl MovSubtitleSampleEntry {
     pub fn timed_text(&self) -> Option<&MovTimedTextSampleEntry> {
         match self {
             Self::TimedText(entry) => Some(entry),
-            Self::XmlSubtitle(_) => None,
+            Self::XmlSubtitle(_) | Self::WebVtt(_) => None,
         }
     }
 
     pub fn xml_subtitle(&self) -> Option<&MovXmlSubtitleSampleEntry> {
         match self {
             Self::XmlSubtitle(entry) => Some(entry),
-            Self::TimedText(_) => None,
+            Self::TimedText(_) | Self::WebVtt(_) => None,
+        }
+    }
+
+    pub fn webvtt(&self) -> Option<&MovWebVttSampleEntry> {
+        match self {
+            Self::WebVtt(entry) => Some(entry),
+            Self::TimedText(_) | Self::XmlSubtitle(_) => None,
         }
     }
 }
@@ -280,6 +290,49 @@ impl MovXmlSubtitleSampleEntry {
 
     pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
         &self.child_boxes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovWebVttSampleEntry {
+    configuration: MovWebVttConfigurationBox,
+    source_label: Option<MovWebVttSourceLabelBox>,
+    child_boxes: Vec<MovSampleEntryChildBox>,
+}
+
+impl MovWebVttSampleEntry {
+    pub fn configuration(&self) -> &MovWebVttConfigurationBox {
+        &self.configuration
+    }
+
+    pub fn source_label(&self) -> Option<&MovWebVttSourceLabelBox> {
+        self.source_label.as_ref()
+    }
+
+    pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.child_boxes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovWebVttConfigurationBox {
+    config: String,
+}
+
+impl MovWebVttConfigurationBox {
+    pub fn config(&self) -> &str {
+        &self.config
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovWebVttSourceLabelBox {
+    source_label: String,
+}
+
+impl MovWebVttSourceLabelBox {
+    pub fn source_label(&self) -> &str {
+        &self.source_label
     }
 }
 
@@ -2457,6 +2510,9 @@ fn parse_sample_entry_details(
         b"stpp" => parse_xml_subtitle_sample_entry(extra_data)
             .map(MovSubtitleSampleEntry::XmlSubtitle)
             .map(MovSampleEntryDetails::Subtitle),
+        b"wvtt" => parse_webvtt_sample_entry(extra_data)
+            .map(MovSubtitleSampleEntry::WebVtt)
+            .map(MovSampleEntryDetails::Subtitle),
         b"metx" => parse_xml_metadata_sample_entry(extra_data)
             .map(MovDataSampleEntry::XmlMetadata)
             .map(MovSampleEntryDetails::Data),
@@ -2547,6 +2603,83 @@ fn parse_xml_subtitle_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlSubtitle
         auxiliary_mime_types,
         child_boxes,
     })
+}
+
+fn parse_webvtt_sample_entry(extra_data: &[u8]) -> AvResult<MovWebVttSampleEntry> {
+    let child_boxes = parse_sample_entry_child_boxes(
+        extra_data,
+        0,
+        extra_data.len(),
+        "MOV/MP4 wvtt sample entry children",
+    )?;
+    let configuration = parse_webvtt_configuration(&child_boxes)?;
+    let source_label = parse_webvtt_source_label(&child_boxes)?;
+    Ok(MovWebVttSampleEntry {
+        configuration,
+        source_label,
+        child_boxes,
+    })
+}
+
+fn parse_webvtt_configuration(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<MovWebVttConfigurationBox> {
+    let mut matches = child_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == VTTC_ID);
+    let Some(child) = matches.next() else {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 wvtt sample entry is missing required vttC box",
+        ));
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 wvtt sample entry contains duplicate vttC boxes",
+        ));
+    }
+    let config = parse_utf8_boxstring(child.payload(), "MOV/MP4 vttC config")?;
+    validate_webvtt_config_signature(&config)?;
+    Ok(MovWebVttConfigurationBox { config })
+}
+
+fn parse_webvtt_source_label(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovWebVttSourceLabelBox>> {
+    let mut matches = child_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == VLAB_ID);
+    let Some(child) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 wvtt sample entry contains duplicate vlab boxes",
+        ));
+    }
+    let source_label = parse_utf8_boxstring(child.payload(), "MOV/MP4 vlab source label")?;
+    Ok(Some(MovWebVttSourceLabelBox { source_label }))
+}
+
+fn parse_utf8_boxstring(payload: &[u8], context: &str) -> AvResult<String> {
+    std::str::from_utf8(payload)
+        .map(str::to_owned)
+        .map_err(|_| AvError::invalid_data(format!("{context} is not valid UTF-8")))
+}
+
+fn validate_webvtt_config_signature(config: &str) -> AvResult<()> {
+    let config = config.strip_prefix('\u{feff}').unwrap_or(config);
+    let Some(rest) = config.strip_prefix("WEBVTT") else {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 vttC config must start with a WebVTT signature",
+        ));
+    };
+    if matches!(rest.chars().next(), None | Some(' ' | '\t' | '\r' | '\n')) {
+        Ok(())
+    } else {
+        Err(AvError::invalid_data(
+            "MOV/MP4 vttC config has an invalid WebVTT signature boundary",
+        ))
+    }
 }
 
 fn parse_xml_metadata_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlMetadataSampleEntry> {
@@ -5865,6 +5998,43 @@ mod tests {
     }
 
     #[test]
+    fn parses_webvtt_sample_entry_codec_parameters() {
+        let vttc = box_(*VTTC_ID, b"WEBVTT\r\nKind: captions\r\n");
+        let vlab = box_(*VLAB_ID, b"episode-main");
+        let btrt = box_(*BTRT_ID, &[0, 0, 4, 0, 0, 0, 8, 0, 0, 0, 2, 0]);
+        let extra_data = [vttc, vlab, btrt].concat();
+        let bytes = mp4_with_sample_description_entry(b"wvtt", 3, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "wvtt");
+        assert_eq!(codec_parameters.data_reference_index(), 3);
+        assert_eq!(codec_parameters.extra_data(), extra_data.as_slice());
+        let MovSampleEntryDetails::Subtitle(subtitle) = codec_parameters.details() else {
+            panic!("expected subtitle sample entry details");
+        };
+        assert!(subtitle.timed_text().is_none());
+        assert!(subtitle.xml_subtitle().is_none());
+        let webvtt = subtitle.webvtt().unwrap();
+        assert_eq!(
+            webvtt.configuration().config(),
+            "WEBVTT\r\nKind: captions\r\n"
+        );
+        assert_eq!(
+            webvtt.source_label().unwrap().source_label(),
+            "episode-main"
+        );
+        assert_eq!(webvtt.child_boxes().len(), 3);
+        assert_eq!(webvtt.child_boxes()[0].box_type(), "vttC");
+        assert_eq!(webvtt.child_boxes()[1].box_type(), "vlab");
+        assert_eq!(webvtt.child_boxes()[2].box_type(), "btrt");
+        assert_eq!(
+            webvtt.child_boxes()[2].payload(),
+            [0, 0, 4, 0, 0, 0, 8, 0, 0, 0, 2, 0]
+        );
+    }
+
+    #[test]
     fn parses_metadata_sample_entry_codec_parameters() {
         let metx_extra = xml_metadata_sample_entry_extra_data("utf-8", "urn:rust", "rust.xsd");
         let bytes = mp4_with_sample_description_entry(b"metx", 1, &metx_extra);
@@ -6932,6 +7102,58 @@ mod tests {
         let extra_data =
             stpp_sample_entry_extra_data("urn:ttml", "schema", "image/png", &bad_child);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"stpp", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let err =
+            MovDemuxer::open(&mp4_with_sample_description_entry(b"wvtt", 1, &[])).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let duplicate_vttc = [box_(*VTTC_ID, b"WEBVTT\n"), box_(*VTTC_ID, b"WEBVTT\n")].concat();
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"wvtt",
+            1,
+            &duplicate_vttc,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"wvtt",
+            1,
+            &box_(*VTTC_ID, b"\xff"),
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"wvtt",
+            1,
+            &box_(*VTTC_ID, b"WEBVTT-invalid"),
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let duplicate_vlab = [
+            box_(*VTTC_ID, b"WEBVTT\n"),
+            box_(*VLAB_ID, b"a"),
+            box_(*VLAB_ID, b"b"),
+        ]
+        .concat();
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"wvtt",
+            1,
+            &duplicate_vlab,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_child = [
+            box_(*VTTC_ID, b"WEBVTT\n"),
+            box_with_declared_size(*VLAB_ID, 12, b"\0"),
+        ]
+        .concat();
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"wvtt", 1, &bad_child))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
 
