@@ -47,7 +47,15 @@ const VTTC_ID: &[u8; 4] = b"vttC";
 const VLAB_ID: &[u8; 4] = b"vlab";
 const TXTC_ID: &[u8; 4] = b"txtC";
 const STYL_ID: &[u8; 4] = b"styl";
+const HLIT_ID: &[u8; 4] = b"hlit";
+const HCLR_ID: &[u8; 4] = b"hclr";
+const KROK_ID: &[u8; 4] = b"krok";
+const DLAY_ID: &[u8; 4] = b"dlay";
+const HREF_ID: &[u8; 4] = b"href";
 const TBOX_ID: &[u8; 4] = b"tbox";
+const BLNK_ID: &[u8; 4] = b"blnk";
+const TWRP_ID: &[u8; 4] = b"twrp";
+const DISP_ID: &[u8; 4] = b"disp";
 const VTTC_CUE_ID: &[u8; 4] = b"vttc";
 const VTTE_ID: &[u8; 4] = b"vtte";
 const VTTA_ID: &[u8; 4] = b"vtta";
@@ -292,7 +300,15 @@ pub struct MovTimedTextSample {
     text_encoding: MovTimedTextEncoding,
     modifier_boxes: Vec<MovSampleEntryChildBox>,
     style_records: Vec<MovTextStyleRecord>,
+    highlights: Vec<MovTextRange>,
+    highlight_color_rgba: Option<[u8; 4]>,
+    karaoke: Option<MovTimedTextKaraokeBox>,
+    scroll_delay: Option<u32>,
+    hyperlinks: Vec<MovTimedTextHyperlinkBox>,
     text_box: Option<MovTextBoxRecord>,
+    blinks: Vec<MovTextRange>,
+    wrap_flag: Option<u8>,
+    disparity_shift_in_16th_pel: Option<i16>,
 }
 
 impl MovTimedTextSample {
@@ -312,8 +328,40 @@ impl MovTimedTextSample {
         &self.style_records
     }
 
+    pub fn highlights(&self) -> &[MovTextRange] {
+        &self.highlights
+    }
+
+    pub fn highlight_color_rgba(&self) -> Option<[u8; 4]> {
+        self.highlight_color_rgba
+    }
+
+    pub fn karaoke(&self) -> Option<&MovTimedTextKaraokeBox> {
+        self.karaoke.as_ref()
+    }
+
+    pub fn scroll_delay(&self) -> Option<u32> {
+        self.scroll_delay
+    }
+
+    pub fn hyperlinks(&self) -> &[MovTimedTextHyperlinkBox] {
+        &self.hyperlinks
+    }
+
     pub fn text_box(&self) -> Option<&MovTextBoxRecord> {
         self.text_box.as_ref()
+    }
+
+    pub fn blinks(&self) -> &[MovTextRange] {
+        &self.blinks
+    }
+
+    pub fn wrap_flag(&self) -> Option<u8> {
+        self.wrap_flag
+    }
+
+    pub fn disparity_shift_in_16th_pel(&self) -> Option<i16> {
+        self.disparity_shift_in_16th_pel
     }
 }
 
@@ -331,6 +379,75 @@ impl MovTimedTextEncoding {
             Self::Utf16Be => "utf16be",
             Self::Utf16Le => "utf16le",
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovTextRange {
+    start_char: u16,
+    end_char: u16,
+}
+
+impl MovTextRange {
+    pub fn start_char(&self) -> u16 {
+        self.start_char
+    }
+
+    pub fn end_char(&self) -> u16 {
+        self.end_char
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovTimedTextKaraokeBox {
+    highlight_start_time: u32,
+    events: Vec<MovTimedTextKaraokeEvent>,
+}
+
+impl MovTimedTextKaraokeBox {
+    pub fn highlight_start_time(&self) -> u32 {
+        self.highlight_start_time
+    }
+
+    pub fn events(&self) -> &[MovTimedTextKaraokeEvent] {
+        &self.events
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovTimedTextKaraokeEvent {
+    highlight_end_time: u32,
+    text_range: MovTextRange,
+}
+
+impl MovTimedTextKaraokeEvent {
+    pub fn highlight_end_time(&self) -> u32 {
+        self.highlight_end_time
+    }
+
+    pub fn text_range(&self) -> &MovTextRange {
+        &self.text_range
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovTimedTextHyperlinkBox {
+    text_range: MovTextRange,
+    url: String,
+    alt_string: String,
+}
+
+impl MovTimedTextHyperlinkBox {
+    pub fn text_range(&self) -> &MovTextRange {
+        &self.text_range
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub fn alt_string(&self) -> &str {
+        &self.alt_string
     }
 }
 
@@ -2846,13 +2963,29 @@ pub fn parse_timed_text_sample(payload: &[u8]) -> AvResult<MovTimedTextSample> {
     )?;
     let text_char_count = text.chars().count();
     let style_records = parse_timed_text_style_modifiers(&modifier_boxes, text_char_count)?;
+    let highlights = parse_timed_text_range_modifiers(&modifier_boxes, HLIT_ID, text_char_count)?;
+    let highlight_color_rgba = parse_timed_text_highlight_color_modifier(&modifier_boxes)?;
+    let karaoke = parse_timed_text_karaoke_modifier(&modifier_boxes, text_char_count)?;
+    let scroll_delay = parse_timed_text_scroll_delay_modifier(&modifier_boxes)?;
+    let hyperlinks = parse_timed_text_hyperlink_modifiers(&modifier_boxes, text_char_count)?;
     let text_box = parse_timed_text_box_modifier(&modifier_boxes)?;
+    let blinks = parse_timed_text_range_modifiers(&modifier_boxes, BLNK_ID, text_char_count)?;
+    let wrap_flag = parse_timed_text_wrap_modifier(&modifier_boxes)?;
+    let disparity_shift_in_16th_pel = parse_timed_text_disparity_modifier(&modifier_boxes)?;
     Ok(MovTimedTextSample {
         text,
         text_encoding,
         modifier_boxes,
         style_records,
+        highlights,
+        highlight_color_rgba,
+        karaoke,
+        scroll_delay,
+        hyperlinks,
         text_box,
+        blinks,
+        wrap_flag,
+        disparity_shift_in_16th_pel,
     })
 }
 
@@ -2939,21 +3072,245 @@ fn parse_timed_text_style_box(
 fn parse_timed_text_box_modifier(
     modifier_boxes: &[MovSampleEntryChildBox],
 ) -> AvResult<Option<MovTextBoxRecord>> {
-    let mut matches = modifier_boxes
-        .iter()
-        .filter(|child| child.box_type.as_bytes() == TBOX_ID);
-    let Some(child) = matches.next() else {
+    let Some(child) = find_unique_timed_text_modifier_box(modifier_boxes, TBOX_ID)? else {
         return Ok(None);
     };
-    if matches.next().is_some() {
-        return Err(AvError::invalid_data(
-            "MOV/MP4 tx3g text sample contains duplicate tbox modifiers",
-        ));
-    }
     let mut reader = ByteReader::new(child.payload());
     let text_box = read_text_box_record(&mut reader, "MOV/MP4 tx3g tbox modifier")?;
     ensure_box_consumed(&reader, "MOV/MP4 tx3g tbox modifier")?;
     Ok(Some(text_box))
+}
+
+fn parse_timed_text_range_modifiers(
+    modifier_boxes: &[MovSampleEntryChildBox],
+    box_type: &[u8; 4],
+    text_char_count: usize,
+) -> AvResult<Vec<MovTextRange>> {
+    let context = format!("MOV/MP4 tx3g {} modifier", fourcc_to_string(*box_type));
+    let mut ranges = Vec::new();
+    for modifier in modifier_boxes {
+        if modifier.box_type.as_bytes() == box_type {
+            let mut reader = ByteReader::new(modifier.payload());
+            let range = read_timed_text_modifier_range(&mut reader, &context, text_char_count)?;
+            ensure_box_consumed(&reader, &context)?;
+            ranges.push(range);
+        }
+    }
+    validate_ordered_non_overlapping_ranges(&ranges, &context)?;
+    Ok(ranges)
+}
+
+fn parse_timed_text_highlight_color_modifier(
+    modifier_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<[u8; 4]>> {
+    let Some(child) = find_unique_timed_text_modifier_box(modifier_boxes, HCLR_ID)? else {
+        return Ok(None);
+    };
+    let mut reader = ByteReader::new(child.payload());
+    ensure_remaining(&reader, 4, "MOV/MP4 tx3g hclr modifier")?;
+    let color = read_fixed_array_4(&mut reader)?;
+    ensure_box_consumed(&reader, "MOV/MP4 tx3g hclr modifier")?;
+    Ok(Some(color))
+}
+
+fn parse_timed_text_scroll_delay_modifier(
+    modifier_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<u32>> {
+    let Some(child) = find_unique_timed_text_modifier_box(modifier_boxes, DLAY_ID)? else {
+        return Ok(None);
+    };
+    let mut reader = ByteReader::new(child.payload());
+    ensure_remaining(&reader, 4, "MOV/MP4 tx3g dlay modifier")?;
+    let scroll_delay = reader.read_u32_be()?;
+    ensure_box_consumed(&reader, "MOV/MP4 tx3g dlay modifier")?;
+    Ok(Some(scroll_delay))
+}
+
+fn parse_timed_text_wrap_modifier(
+    modifier_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<u8>> {
+    let Some(child) = find_unique_timed_text_modifier_box(modifier_boxes, TWRP_ID)? else {
+        return Ok(None);
+    };
+    let mut reader = ByteReader::new(child.payload());
+    ensure_remaining(&reader, 1, "MOV/MP4 tx3g twrp modifier")?;
+    let wrap_flag = reader.read_u8()?;
+    ensure_box_consumed(&reader, "MOV/MP4 tx3g twrp modifier")?;
+    if wrap_flag > 1 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 tx3g twrp modifier uses a reserved wrap flag",
+        ));
+    }
+    Ok(Some(wrap_flag))
+}
+
+fn parse_timed_text_disparity_modifier(
+    modifier_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<i16>> {
+    let Some(child) = find_unique_timed_text_modifier_box(modifier_boxes, DISP_ID)? else {
+        return Ok(None);
+    };
+    let mut reader = ByteReader::new(child.payload());
+    ensure_remaining(&reader, 2, "MOV/MP4 tx3g disp modifier")?;
+    let disparity_shift = reader.read_i16_be()?;
+    ensure_box_consumed(&reader, "MOV/MP4 tx3g disp modifier")?;
+    Ok(Some(disparity_shift))
+}
+
+fn parse_timed_text_hyperlink_modifiers(
+    modifier_boxes: &[MovSampleEntryChildBox],
+    text_char_count: usize,
+) -> AvResult<Vec<MovTimedTextHyperlinkBox>> {
+    let mut hyperlinks = Vec::new();
+    for modifier in modifier_boxes {
+        if modifier.box_type.as_bytes() == HREF_ID {
+            let mut reader = ByteReader::new(modifier.payload());
+            let text_range = read_timed_text_modifier_range(
+                &mut reader,
+                "MOV/MP4 tx3g href modifier",
+                text_char_count,
+            )?;
+            ensure_remaining(&reader, 1, "MOV/MP4 tx3g href URL length")?;
+            let url_len = usize::from(reader.read_u8()?);
+            ensure_remaining(&reader, url_len, "MOV/MP4 tx3g href URL")?;
+            let url = parse_utf8_boxstring(reader.read_exact(url_len)?, "MOV/MP4 tx3g href URL")?;
+            ensure_remaining(&reader, 1, "MOV/MP4 tx3g href alt length")?;
+            let alt_len = usize::from(reader.read_u8()?);
+            ensure_remaining(&reader, alt_len, "MOV/MP4 tx3g href alt string")?;
+            let alt_string =
+                parse_utf8_boxstring(reader.read_exact(alt_len)?, "MOV/MP4 tx3g href alt string")?;
+            ensure_box_consumed(&reader, "MOV/MP4 tx3g href modifier")?;
+            hyperlinks.push(MovTimedTextHyperlinkBox {
+                text_range,
+                url,
+                alt_string,
+            });
+        }
+    }
+    validate_ordered_non_overlapping_ranges(
+        hyperlinks.iter().map(MovTimedTextHyperlinkBox::text_range),
+        "MOV/MP4 tx3g href modifier",
+    )?;
+    Ok(hyperlinks)
+}
+
+fn parse_timed_text_karaoke_modifier(
+    modifier_boxes: &[MovSampleEntryChildBox],
+    text_char_count: usize,
+) -> AvResult<Option<MovTimedTextKaraokeBox>> {
+    let Some(child) = find_unique_timed_text_modifier_box(modifier_boxes, KROK_ID)? else {
+        return Ok(None);
+    };
+    let mut reader = ByteReader::new(child.payload());
+    ensure_remaining(&reader, 6, "MOV/MP4 tx3g krok modifier")?;
+    let highlight_start_time = reader.read_u32_be()?;
+    let entry_count = usize::from(reader.read_u16_be()?);
+    let mut events = Vec::with_capacity(entry_count);
+    let mut previous_end_time = highlight_start_time;
+    for _ in 0..entry_count {
+        ensure_remaining(&reader, 8, "MOV/MP4 tx3g krok event")?;
+        let highlight_end_time = reader.read_u32_be()?;
+        if highlight_end_time < previous_end_time {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 tx3g krok event times must be ordered",
+            ));
+        }
+        previous_end_time = highlight_end_time;
+        let text_range = read_timed_text_modifier_range(
+            &mut reader,
+            "MOV/MP4 tx3g krok event",
+            text_char_count,
+        )?;
+        events.push(MovTimedTextKaraokeEvent {
+            highlight_end_time,
+            text_range,
+        });
+    }
+    ensure_box_consumed(&reader, "MOV/MP4 tx3g krok modifier")?;
+    validate_ordered_non_overlapping_ranges(
+        events
+            .iter()
+            .map(MovTimedTextKaraokeEvent::text_range)
+            .filter(|range| range.start_char() != range.end_char()),
+        "MOV/MP4 tx3g krok modifier",
+    )?;
+    Ok(Some(MovTimedTextKaraokeBox {
+        highlight_start_time,
+        events,
+    }))
+}
+
+fn read_timed_text_modifier_range(
+    reader: &mut ByteReader<'_>,
+    context: &str,
+    text_char_count: usize,
+) -> AvResult<MovTextRange> {
+    ensure_remaining(reader, 4, context)?;
+    let range = MovTextRange {
+        start_char: reader.read_u16_be()?,
+        end_char: reader.read_u16_be()?,
+    };
+    validate_timed_text_modifier_range(&range, context, text_char_count)?;
+    Ok(range)
+}
+
+fn validate_timed_text_modifier_range(
+    range: &MovTextRange,
+    context: &str,
+    text_char_count: usize,
+) -> AvResult<()> {
+    if range.end_char < range.start_char {
+        return Err(AvError::invalid_data(format!(
+            "{context} end character precedes start character"
+        )));
+    }
+    if usize::from(range.start_char) > text_char_count {
+        return Err(AvError::invalid_data(format!(
+            "{context} starts past the text string"
+        )));
+    }
+    let max_end = text_char_count.saturating_add(1);
+    if usize::from(range.end_char) > max_end {
+        return Err(AvError::invalid_data(format!(
+            "{context} extends past the text string"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_ordered_non_overlapping_ranges<'a>(
+    ranges: impl IntoIterator<Item = &'a MovTextRange>,
+    context: &str,
+) -> AvResult<()> {
+    let mut previous_end = 0_u16;
+    for range in ranges {
+        if range.start_char < previous_end {
+            return Err(AvError::invalid_data(format!(
+                "{context} ranges must be ordered and non-overlapping"
+            )));
+        }
+        previous_end = range.end_char;
+    }
+    Ok(())
+}
+
+fn find_unique_timed_text_modifier_box<'a>(
+    modifier_boxes: &'a [MovSampleEntryChildBox],
+    box_type: &[u8; 4],
+) -> AvResult<Option<&'a MovSampleEntryChildBox>> {
+    let mut matches = modifier_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == box_type);
+    let Some(child) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(format!(
+            "MOV/MP4 tx3g text sample contains duplicate {} modifiers",
+            fourcc_to_string(*box_type)
+        )));
+    }
+    Ok(Some(child))
 }
 
 fn parse_xml_subtitle_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlSubtitleSampleEntry> {
@@ -6688,16 +7045,61 @@ mod tests {
             *STYL_ID,
             &[1_u16.to_be_bytes().as_slice(), style_record.as_slice()].concat(),
         );
+        let hlit = box_(*HLIT_ID, &[1_u16, 5_u16].map(u16::to_be_bytes).concat());
+        let hclr = box_(*HCLR_ID, &[200, 180, 20, 255]);
+        let krok = box_(
+            *KROK_ID,
+            &[
+                100_u32.to_be_bytes().as_slice(),
+                2_u16.to_be_bytes().as_slice(),
+                200_u32.to_be_bytes().as_slice(),
+                0_u16.to_be_bytes().as_slice(),
+                2_u16.to_be_bytes().as_slice(),
+                500_u32.to_be_bytes().as_slice(),
+                2_u16.to_be_bytes().as_slice(),
+                5_u16.to_be_bytes().as_slice(),
+            ]
+            .concat(),
+        );
+        let dlay = box_(*DLAY_ID, &250_u32.to_be_bytes());
+        let href = box_(
+            *HREF_ID,
+            &[
+                0_u16.to_be_bytes().as_slice(),
+                5_u16.to_be_bytes().as_slice(),
+                &[20],
+                b"https://example.test".as_slice(),
+                &[4],
+                b"hint".as_slice(),
+            ]
+            .concat(),
+        );
         let tbox = box_(*TBOX_ID, &text_box_record_payload(-10, -20, 30, 40));
+        let blnk = box_(*BLNK_ID, &[4_u16, 6_u16].map(u16::to_be_bytes).concat());
+        let twrp = box_(*TWRP_ID, &[1]);
+        let disp = box_(*DISP_ID, &(-32_i16).to_be_bytes());
         let unknown = box_(*b"abcd", b"ignored");
-        let modifiers = [styl.as_slice(), tbox.as_slice(), unknown.as_slice()].concat();
+        let modifiers = [
+            styl.as_slice(),
+            hlit.as_slice(),
+            hclr.as_slice(),
+            krok.as_slice(),
+            dlay.as_slice(),
+            href.as_slice(),
+            tbox.as_slice(),
+            blnk.as_slice(),
+            twrp.as_slice(),
+            disp.as_slice(),
+            unknown.as_slice(),
+        ]
+        .concat();
         let sample = tx3g_text_sample(b"Hello", &modifiers);
         let parsed = parse_timed_text_sample(&sample).unwrap();
 
         assert_eq!(parsed.text(), "Hello");
         assert_eq!(parsed.text_encoding(), MovTimedTextEncoding::Utf8);
-        assert_eq!(parsed.modifier_boxes().len(), 3);
-        assert_eq!(parsed.modifier_boxes()[2].box_type(), "abcd");
+        assert_eq!(parsed.modifier_boxes().len(), 11);
+        assert_eq!(parsed.modifier_boxes()[10].box_type(), "abcd");
         assert_eq!(parsed.style_records().len(), 1);
         let style = &parsed.style_records()[0];
         assert_eq!(style.start_char(), 0);
@@ -6706,11 +7108,35 @@ mod tests {
         assert_eq!(style.face_style_flags(), 1);
         assert_eq!(style.font_size(), 18);
         assert_eq!(style.text_color_rgba(), [10, 20, 30, 255]);
+        assert_eq!(parsed.highlights().len(), 1);
+        assert_eq!(parsed.highlights()[0].start_char(), 1);
+        assert_eq!(parsed.highlights()[0].end_char(), 5);
+        assert_eq!(parsed.highlight_color_rgba(), Some([200, 180, 20, 255]));
+        let karaoke = parsed.karaoke().unwrap();
+        assert_eq!(karaoke.highlight_start_time(), 100);
+        assert_eq!(karaoke.events().len(), 2);
+        assert_eq!(karaoke.events()[0].highlight_end_time(), 200);
+        assert_eq!(karaoke.events()[0].text_range().start_char(), 0);
+        assert_eq!(karaoke.events()[0].text_range().end_char(), 2);
+        assert_eq!(karaoke.events()[1].highlight_end_time(), 500);
+        assert_eq!(karaoke.events()[1].text_range().start_char(), 2);
+        assert_eq!(karaoke.events()[1].text_range().end_char(), 5);
+        assert_eq!(parsed.scroll_delay(), Some(250));
+        assert_eq!(parsed.hyperlinks().len(), 1);
+        assert_eq!(parsed.hyperlinks()[0].text_range().start_char(), 0);
+        assert_eq!(parsed.hyperlinks()[0].text_range().end_char(), 5);
+        assert_eq!(parsed.hyperlinks()[0].url(), "https://example.test");
+        assert_eq!(parsed.hyperlinks()[0].alt_string(), "hint");
         let text_box = parsed.text_box().unwrap();
         assert_eq!(text_box.top(), -10);
         assert_eq!(text_box.left(), -20);
         assert_eq!(text_box.bottom(), 30);
         assert_eq!(text_box.right(), 40);
+        assert_eq!(parsed.blinks().len(), 1);
+        assert_eq!(parsed.blinks()[0].start_char(), 4);
+        assert_eq!(parsed.blinks()[0].end_char(), 6);
+        assert_eq!(parsed.wrap_flag(), Some(1));
+        assert_eq!(parsed.disparity_shift_in_16th_pel(), Some(-32));
 
         let utf16_be = tx3g_text_sample(b"\xfe\xff\0H\0i", &[]);
         let parsed = parse_timed_text_sample(&utf16_be).unwrap();
@@ -8305,6 +8731,91 @@ mod tests {
         assert_eq!(
             parse_timed_text_sample(&sample).unwrap_err().kind(),
             AvErrorKind::InvalidData
+        );
+
+        let out_of_range_highlight = tx3g_text_sample(
+            b"abc",
+            &box_(*HLIT_ID, &[0_u16, 5_u16].map(u16::to_be_bytes).concat()),
+        );
+        assert_eq!(
+            parse_timed_text_sample(&out_of_range_highlight)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let first_hclr = box_(*HCLR_ID, &[1, 2, 3, 4]);
+        let second_hclr = box_(*HCLR_ID, &[5, 6, 7, 8]);
+        let duplicate_hclr = tx3g_text_sample(
+            b"x",
+            &[first_hclr.as_slice(), second_hclr.as_slice()].concat(),
+        );
+        assert_eq!(
+            parse_timed_text_sample(&duplicate_hclr).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let short_dlay = tx3g_text_sample(b"x", &box_(*DLAY_ID, &[0, 0, 1]));
+        assert_eq!(
+            parse_timed_text_sample(&short_dlay).unwrap_err().kind(),
+            AvErrorKind::EndOfFile
+        );
+
+        let reversed_blink = tx3g_text_sample(
+            b"abc",
+            &box_(*BLNK_ID, &[2_u16, 1_u16].map(u16::to_be_bytes).concat()),
+        );
+        assert_eq!(
+            parse_timed_text_sample(&reversed_blink).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let reserved_wrap = tx3g_text_sample(b"x", &box_(*TWRP_ID, &[2]));
+        assert_eq!(
+            parse_timed_text_sample(&reserved_wrap).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let invalid_href = box_(
+            *HREF_ID,
+            &[
+                0_u16.to_be_bytes().as_slice(),
+                1_u16.to_be_bytes().as_slice(),
+                &[1, 0xff],
+                &[0],
+            ]
+            .concat(),
+        );
+        let sample = tx3g_text_sample(b"x", &invalid_href);
+        assert_eq!(
+            parse_timed_text_sample(&sample).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let unordered_karaoke = box_(
+            *KROK_ID,
+            &[
+                100_u32.to_be_bytes().as_slice(),
+                2_u16.to_be_bytes().as_slice(),
+                200_u32.to_be_bytes().as_slice(),
+                0_u16.to_be_bytes().as_slice(),
+                1_u16.to_be_bytes().as_slice(),
+                150_u32.to_be_bytes().as_slice(),
+                1_u16.to_be_bytes().as_slice(),
+                2_u16.to_be_bytes().as_slice(),
+            ]
+            .concat(),
+        );
+        let sample = tx3g_text_sample(b"ab", &unordered_karaoke);
+        assert_eq!(
+            parse_timed_text_sample(&sample).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let short_disp = tx3g_text_sample(b"x", &box_(*DISP_ID, &[0]));
+        assert_eq!(
+            parse_timed_text_sample(&short_disp).unwrap_err().kind(),
+            AvErrorKind::EndOfFile
         );
 
         let malformed_modifier =

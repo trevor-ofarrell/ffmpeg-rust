@@ -106,6 +106,39 @@ fn exercise_timed_text_sample(input: &[u8]) {
         assert!(style.end_char() >= style.start_char());
         assert!(usize::from(style.end_char()) <= char_count);
     }
+    for range in sample.highlights() {
+        assert!(range.end_char() >= range.start_char());
+        assert!(usize::from(range.start_char()) <= char_count);
+        assert!(usize::from(range.end_char()) <= char_count.saturating_add(1));
+    }
+    if let Some(karaoke) = sample.karaoke() {
+        let mut previous_end_time = karaoke.highlight_start_time();
+        for event in karaoke.events() {
+            assert!(event.highlight_end_time() >= previous_end_time);
+            previous_end_time = event.highlight_end_time();
+            assert!(event.text_range().end_char() >= event.text_range().start_char());
+            assert!(usize::from(event.text_range().start_char()) <= char_count);
+            assert!(
+                usize::from(event.text_range().end_char()) <= char_count.saturating_add(1)
+            );
+        }
+    }
+    for hyperlink in sample.hyperlinks() {
+        assert!(hyperlink.text_range().end_char() >= hyperlink.text_range().start_char());
+        assert!(usize::from(hyperlink.text_range().start_char()) <= char_count);
+        assert!(
+            usize::from(hyperlink.text_range().end_char()) <= char_count.saturating_add(1)
+        );
+    }
+    for range in sample.blinks() {
+        assert!(range.end_char() >= range.start_char());
+        assert!(usize::from(range.start_char()) <= char_count);
+        assert!(usize::from(range.end_char()) <= char_count.saturating_add(1));
+    }
+    assert!(match sample.wrap_flag() {
+        Some(flag) => flag <= 1,
+        None => true,
+    });
     if sample.text_box().is_some() {
         assert!(sample
             .modifier_boxes()
@@ -129,7 +162,12 @@ fn valid_timed_text_sample() -> Vec<u8> {
         &[1, 16, 255, 255, 255, 255],
     ]
     .concat();
-    let modifiers = box4(*b"styl", &style);
+    let highlight = box4(
+        *b"hlit",
+        &[1_u16.to_be_bytes(), 5_u16.to_be_bytes()].concat(),
+    );
+    let wrap = box4(*b"twrp", &[1]);
+    let modifiers = [box4(*b"styl", &style), highlight, wrap].concat();
     let mut out = Vec::new();
     out.extend_from_slice(&5_u16.to_be_bytes());
     out.extend_from_slice(b"hello");
