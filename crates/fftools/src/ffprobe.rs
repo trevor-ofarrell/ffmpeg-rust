@@ -130,8 +130,8 @@ pub struct FfprobeStreamReport {
     coded_width: Option<u32>,
     coded_height: Option<u32>,
     sample_rate: Option<u32>,
-    channels: Option<u16>,
-    bits_per_sample: Option<u16>,
+    channels: Option<u32>,
+    bits_per_sample: Option<u32>,
     bits_per_raw_sample: Option<u16>,
     extradata_size: Option<usize>,
     is_avc: Option<bool>,
@@ -218,11 +218,11 @@ impl FfprobeStreamReport {
         self.sample_rate
     }
 
-    pub fn channels(&self) -> Option<u16> {
+    pub fn channels(&self) -> Option<u32> {
         self.channels
     }
 
-    pub fn bits_per_sample(&self) -> Option<u16> {
+    pub fn bits_per_sample(&self) -> Option<u32> {
         self.bits_per_sample
     }
 
@@ -743,8 +743,9 @@ fn report_from_mov(path: &str, probe_score: u8, input_size: u64, info: &MovInfo)
                 coded_width: track.width(),
                 coded_height: track.height(),
                 sample_rate: audio_sample_entry.map(MovAudioSampleEntry::sample_rate),
-                channels: audio_sample_entry.map(MovAudioSampleEntry::channel_count),
-                bits_per_sample: audio_sample_entry.map(MovAudioSampleEntry::sample_size),
+                channels: audio_sample_entry.map(MovAudioSampleEntry::effective_channel_count),
+                bits_per_sample: audio_sample_entry
+                    .map(MovAudioSampleEntry::effective_bits_per_sample),
                 bits_per_raw_sample: mov_bits_per_raw_sample(track.codec_tag(), video_sample_entry),
                 extradata_size: mov_extradata_size(track),
                 is_avc: mov_is_avc(video_sample_entry),
@@ -2146,6 +2147,40 @@ mod tests {
     }
 
     #[test]
+    fn outputs_mov_audio_sample_entry_v2_fields_json() {
+        let stsd = audio_stsd_v2_box(*b"lpcm", 96_000.0, 6, 24, 0x09, 24, 1, &[]);
+        let path = write_temp_mov(
+            "show-streams-audio-v2",
+            &sampled_mov_file_with_handler_and_stsd(
+                &[b"abcdef".as_slice()],
+                &[512],
+                0,
+                0,
+                *b"soun",
+                b"Rust Audio Handler\0",
+                &stsd,
+            ),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let stdout = ffprobe_output(&strings(&[
+            "-show_streams",
+            "-of",
+            "json",
+            path_arg.as_str(),
+        ]))
+        .expect("ffprobe command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(stdout.contains("\"codec_type\": \"audio\""));
+        assert!(stdout.contains("\"codec_tag_string\": \"lpcm\""));
+        assert!(stdout.contains("\"sample_rate\": \"96000\""));
+        assert!(stdout.contains("\"channels\": 6"));
+        assert!(stdout.contains("\"bits_per_sample\": 24"));
+    }
+
+    #[test]
     fn outputs_mov_stream_frame_count_json() {
         let path = write_temp_mov(
             "show-stream-count-frames",
@@ -2981,13 +3016,40 @@ mod tests {
     ) -> Vec<u8> {
         let extra_data =
             audio_sample_entry_extra_data(channel_count, sample_size, sample_rate, child_boxes);
+        audio_stsd_box_from_extra_data(codec_tag, &extra_data)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn audio_stsd_v2_box(
+        codec_tag: [u8; 4],
+        audio_sample_rate: f64,
+        num_audio_channels: u32,
+        const_bits_per_channel: u32,
+        format_specific_flags: u32,
+        const_bytes_per_audio_packet: u32,
+        const_lpcm_frames_per_audio_packet: u32,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
+        let extra_data = audio_sample_entry_v2_extra_data(
+            audio_sample_rate,
+            num_audio_channels,
+            const_bits_per_channel,
+            format_specific_flags,
+            const_bytes_per_audio_packet,
+            const_lpcm_frames_per_audio_packet,
+            child_boxes,
+        );
+        audio_stsd_box_from_extra_data(codec_tag, &extra_data)
+    }
+
+    fn audio_stsd_box_from_extra_data(codec_tag: [u8; 4], extra_data: &[u8]) -> Vec<u8> {
         let mut sample_entry = Vec::new();
         sample_entry
             .extend_from_slice(&u32::try_from(16 + extra_data.len()).unwrap().to_be_bytes());
         sample_entry.extend_from_slice(&codec_tag);
         sample_entry.extend_from_slice(&[0; 6]);
         sample_entry.extend_from_slice(&1_u16.to_be_bytes());
-        sample_entry.extend_from_slice(&extra_data);
+        sample_entry.extend_from_slice(extra_data);
 
         let mut body = Vec::new();
         body.extend_from_slice(&1_u32.to_be_bytes());
@@ -3001,16 +3063,57 @@ mod tests {
         sample_rate: u32,
         child_boxes: &[u8],
     ) -> Vec<u8> {
+        let mut out = audio_sample_entry_base_extra_data(
+            0,
+            channel_count,
+            sample_size,
+            0,
+            0,
+            sample_rate << 16,
+        );
+        out.extend_from_slice(child_boxes);
+        out
+    }
+
+    fn audio_sample_entry_v2_extra_data(
+        audio_sample_rate: f64,
+        num_audio_channels: u32,
+        const_bits_per_channel: u32,
+        format_specific_flags: u32,
+        const_bytes_per_audio_packet: u32,
+        const_lpcm_frames_per_audio_packet: u32,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
+        let mut out = audio_sample_entry_base_extra_data(2, 3, 16, -2, 0, 65_536);
+        out.extend_from_slice(&72_u32.to_be_bytes());
+        out.extend_from_slice(&audio_sample_rate.to_bits().to_be_bytes());
+        out.extend_from_slice(&num_audio_channels.to_be_bytes());
+        out.extend_from_slice(&0x7f00_0000_u32.to_be_bytes());
+        out.extend_from_slice(&const_bits_per_channel.to_be_bytes());
+        out.extend_from_slice(&format_specific_flags.to_be_bytes());
+        out.extend_from_slice(&const_bytes_per_audio_packet.to_be_bytes());
+        out.extend_from_slice(&const_lpcm_frames_per_audio_packet.to_be_bytes());
+        out.extend_from_slice(child_boxes);
+        out
+    }
+
+    fn audio_sample_entry_base_extra_data(
+        version: u16,
+        channel_count: u16,
+        sample_size: u16,
+        compression_id: i16,
+        packet_size: u16,
+        sample_rate_fixed_16_16: u32,
+    ) -> Vec<u8> {
         let mut out = Vec::new();
-        out.extend_from_slice(&0_u16.to_be_bytes());
+        out.extend_from_slice(&version.to_be_bytes());
         out.extend_from_slice(&0_u16.to_be_bytes());
         out.extend_from_slice(&0_u32.to_be_bytes());
         out.extend_from_slice(&channel_count.to_be_bytes());
         out.extend_from_slice(&sample_size.to_be_bytes());
-        out.extend_from_slice(&0_i16.to_be_bytes());
-        out.extend_from_slice(&0_u16.to_be_bytes());
-        out.extend_from_slice(&(sample_rate << 16).to_be_bytes());
-        out.extend_from_slice(child_boxes);
+        out.extend_from_slice(&compression_id.to_be_bytes());
+        out.extend_from_slice(&packet_size.to_be_bytes());
+        out.extend_from_slice(&sample_rate_fixed_16_16.to_be_bytes());
         out
     }
 

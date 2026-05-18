@@ -191,6 +191,7 @@ pub struct MovAudioSampleEntry {
     packet_size: u16,
     sample_rate: u32,
     sample_rate_fixed_16_16: u32,
+    version_fields: MovAudioSampleEntryVersionFields,
     child_boxes: Vec<MovSampleEntryChildBox>,
 }
 
@@ -211,8 +212,31 @@ impl MovAudioSampleEntry {
         self.channel_count
     }
 
+    pub fn effective_channel_count(&self) -> u32 {
+        match &self.version_fields {
+            MovAudioSampleEntryVersionFields::Version2(fields) => fields.num_audio_channels(),
+            MovAudioSampleEntryVersionFields::Version0
+            | MovAudioSampleEntryVersionFields::Version1(_) => u32::from(self.channel_count),
+        }
+    }
+
     pub fn sample_size(&self) -> u16 {
         self.sample_size
+    }
+
+    pub fn effective_bits_per_sample(&self) -> u32 {
+        match &self.version_fields {
+            MovAudioSampleEntryVersionFields::Version2(fields) => {
+                let const_bits_per_channel = fields.const_bits_per_channel();
+                if const_bits_per_channel == 0 {
+                    u32::from(self.sample_size)
+                } else {
+                    const_bits_per_channel
+                }
+            }
+            MovAudioSampleEntryVersionFields::Version0
+            | MovAudioSampleEntryVersionFields::Version1(_) => u32::from(self.sample_size),
+        }
     }
 
     pub fn compression_id(&self) -> i16 {
@@ -231,8 +255,111 @@ impl MovAudioSampleEntry {
         self.sample_rate_fixed_16_16
     }
 
+    pub fn version_fields(&self) -> &MovAudioSampleEntryVersionFields {
+        &self.version_fields
+    }
+
+    pub fn version1_fields(&self) -> Option<&MovAudioSampleEntryVersion1Fields> {
+        match &self.version_fields {
+            MovAudioSampleEntryVersionFields::Version1(fields) => Some(fields),
+            MovAudioSampleEntryVersionFields::Version0
+            | MovAudioSampleEntryVersionFields::Version2(_) => None,
+        }
+    }
+
+    pub fn version2_fields(&self) -> Option<&MovAudioSampleEntryVersion2Fields> {
+        match &self.version_fields {
+            MovAudioSampleEntryVersionFields::Version2(fields) => Some(fields),
+            MovAudioSampleEntryVersionFields::Version0
+            | MovAudioSampleEntryVersionFields::Version1(_) => None,
+        }
+    }
+
     pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
         &self.child_boxes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MovAudioSampleEntryVersionFields {
+    Version0,
+    Version1(MovAudioSampleEntryVersion1Fields),
+    Version2(MovAudioSampleEntryVersion2Fields),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAudioSampleEntryVersion1Fields {
+    samples_per_packet: u32,
+    bytes_per_packet: u32,
+    bytes_per_frame: u32,
+    bytes_per_sample: u32,
+}
+
+impl MovAudioSampleEntryVersion1Fields {
+    pub fn samples_per_packet(&self) -> u32 {
+        self.samples_per_packet
+    }
+
+    pub fn bytes_per_packet(&self) -> u32 {
+        self.bytes_per_packet
+    }
+
+    pub fn bytes_per_frame(&self) -> u32 {
+        self.bytes_per_frame
+    }
+
+    pub fn bytes_per_sample(&self) -> u32 {
+        self.bytes_per_sample
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAudioSampleEntryVersion2Fields {
+    size_of_struct_only: u32,
+    audio_sample_rate_bits: u64,
+    num_audio_channels: u32,
+    always_7f000000: u32,
+    const_bits_per_channel: u32,
+    format_specific_flags: u32,
+    const_bytes_per_audio_packet: u32,
+    const_lpcm_frames_per_audio_packet: u32,
+}
+
+impl MovAudioSampleEntryVersion2Fields {
+    pub fn size_of_struct_only(&self) -> u32 {
+        self.size_of_struct_only
+    }
+
+    pub fn audio_sample_rate(&self) -> f64 {
+        f64::from_bits(self.audio_sample_rate_bits)
+    }
+
+    pub fn audio_sample_rate_bits(&self) -> u64 {
+        self.audio_sample_rate_bits
+    }
+
+    pub fn num_audio_channels(&self) -> u32 {
+        self.num_audio_channels
+    }
+
+    pub fn always_7f000000(&self) -> u32 {
+        self.always_7f000000
+    }
+
+    pub fn const_bits_per_channel(&self) -> u32 {
+        self.const_bits_per_channel
+    }
+
+    pub fn format_specific_flags(&self) -> u32 {
+        self.format_specific_flags
+    }
+
+    pub fn const_bytes_per_audio_packet(&self) -> u32 {
+        self.const_bytes_per_audio_packet
+    }
+
+    pub fn const_lpcm_frames_per_audio_packet(&self) -> u32 {
+        self.const_lpcm_frames_per_audio_packet
     }
 }
 
@@ -1540,6 +1667,9 @@ fn is_audio_sample_entry(codec_tag: &[u8]) -> bool {
 }
 
 fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> {
+    const SAMPLE_ENTRY_BASE_HEADER_SIZE: usize = 16;
+    const AUDIO_SAMPLE_ENTRY_V2_STRUCT_SIZE: usize = 72;
+
     let mut reader = ByteReader::new(extra_data);
     ensure_remaining(&reader, 20, "MOV/MP4 AudioSampleEntry")?;
     let version = reader.read_u16_be()?;
@@ -1550,9 +1680,77 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
     let compression_id = reader.read_i16_be()?;
     let packet_size = reader.read_u16_be()?;
     let sample_rate_fixed_16_16 = reader.read_u32_be()?;
+    let version_fields = match version {
+        0 => MovAudioSampleEntryVersionFields::Version0,
+        1 => {
+            ensure_remaining(&reader, 16, "MOV/MP4 AudioSampleEntry version 1")?;
+            MovAudioSampleEntryVersionFields::Version1(MovAudioSampleEntryVersion1Fields {
+                samples_per_packet: reader.read_u32_be()?,
+                bytes_per_packet: reader.read_u32_be()?,
+                bytes_per_frame: reader.read_u32_be()?,
+                bytes_per_sample: reader.read_u32_be()?,
+            })
+        }
+        2 => {
+            ensure_remaining(&reader, 36, "MOV/MP4 AudioSampleEntry version 2")?;
+            MovAudioSampleEntryVersionFields::Version2(MovAudioSampleEntryVersion2Fields {
+                size_of_struct_only: reader.read_u32_be()?,
+                audio_sample_rate_bits: reader.read_u64_be()?,
+                num_audio_channels: reader.read_u32_be()?,
+                always_7f000000: reader.read_u32_be()?,
+                const_bits_per_channel: reader.read_u32_be()?,
+                format_specific_flags: reader.read_u32_be()?,
+                const_bytes_per_audio_packet: reader.read_u32_be()?,
+                const_lpcm_frames_per_audio_packet: reader.read_u32_be()?,
+            })
+        }
+        _ => {
+            return Err(AvError::unsupported(format!(
+                "MOV/MP4 AudioSampleEntry version {version} is not implemented"
+            )));
+        }
+    };
+    let sample_rate = audio_sample_entry_sample_rate(sample_rate_fixed_16_16, &version_fields)?;
+    let child_boxes_start = match &version_fields {
+        MovAudioSampleEntryVersionFields::Version0
+        | MovAudioSampleEntryVersionFields::Version1(_) => reader.position(),
+        MovAudioSampleEntryVersionFields::Version2(fields) => {
+            let size_of_struct_only =
+                usize::try_from(fields.size_of_struct_only()).map_err(|_| {
+                    AvError::invalid_data(
+                        "MOV/MP4 AudioSampleEntry version 2 struct size is out of range",
+                    )
+                })?;
+            if size_of_struct_only < AUDIO_SAMPLE_ENTRY_V2_STRUCT_SIZE {
+                return Err(AvError::invalid_data(
+                    "MOV/MP4 AudioSampleEntry version 2 struct size is too small",
+                ));
+            }
+            let child_boxes_start = size_of_struct_only
+                .checked_sub(SAMPLE_ENTRY_BASE_HEADER_SIZE)
+                .ok_or_else(|| {
+                    AvError::invalid_data(
+                        "MOV/MP4 AudioSampleEntry version 2 struct size underflow",
+                    )
+                })?;
+            if child_boxes_start < reader.position() {
+                return Err(AvError::invalid_data(
+                    "MOV/MP4 AudioSampleEntry version 2 extension offset overlaps fields",
+                ));
+            }
+            if child_boxes_start > extra_data.len() {
+                return Err(AvError::new(
+                    AvErrorKind::EndOfFile,
+                    "MOV/MP4 AudioSampleEntry version 2 extension offset exceeds sample entry",
+                ));
+            }
+            reader.skip(child_boxes_start - reader.position())?;
+            reader.position()
+        }
+    };
     let child_boxes = parse_sample_entry_child_boxes(
         extra_data,
-        reader.position(),
+        child_boxes_start,
         extra_data.len(),
         "MOV/MP4 AudioSampleEntry children",
     )?;
@@ -1564,10 +1762,30 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
         sample_size,
         compression_id,
         packet_size,
-        sample_rate: sample_rate_fixed_16_16 >> 16,
+        sample_rate,
         sample_rate_fixed_16_16,
+        version_fields,
         child_boxes,
     })
+}
+
+fn audio_sample_entry_sample_rate(
+    sample_rate_fixed_16_16: u32,
+    version_fields: &MovAudioSampleEntryVersionFields,
+) -> AvResult<u32> {
+    match version_fields {
+        MovAudioSampleEntryVersionFields::Version2(fields) => {
+            let sample_rate = fields.audio_sample_rate();
+            if !sample_rate.is_finite() || sample_rate < 0.0 || sample_rate > f64::from(u32::MAX) {
+                return Err(AvError::invalid_data(
+                    "MOV/MP4 AudioSampleEntry version 2 sample rate is invalid",
+                ));
+            }
+            Ok(sample_rate as u32)
+        }
+        MovAudioSampleEntryVersionFields::Version0
+        | MovAudioSampleEntryVersionFields::Version1(_) => Ok(sample_rate_fixed_16_16 >> 16),
+    }
 }
 
 fn parse_visual_sample_entry(extra_data: &[u8]) -> AvResult<MovVideoSampleEntry> {
@@ -3222,17 +3440,92 @@ mod tests {
         assert_eq!(audio.revision_level(), 0);
         assert_eq!(audio.vendor(), 0);
         assert_eq!(audio.channel_count(), 2);
+        assert_eq!(audio.effective_channel_count(), 2);
         assert_eq!(audio.sample_size(), 16);
+        assert_eq!(audio.effective_bits_per_sample(), 16);
         assert_eq!(audio.compression_id(), 0);
         assert_eq!(audio.packet_size(), 0);
         assert_eq!(audio.sample_rate(), 48_000);
         assert_eq!(audio.sample_rate_fixed_16_16(), 48_000 << 16);
+        assert!(matches!(
+            audio.version_fields(),
+            MovAudioSampleEntryVersionFields::Version0
+        ));
+        assert!(audio.version1_fields().is_none());
+        assert!(audio.version2_fields().is_none());
         assert_eq!(audio.child_boxes().len(), 1);
         assert_eq!(audio.child_boxes()[0].box_type(), "esds");
         let expected_esds_payload = full_box(0, b"\x03\x01\x00");
         assert_eq!(
             audio.child_boxes()[0].payload(),
             expected_esds_payload.as_slice()
+        );
+    }
+
+    #[test]
+    fn parses_audio_sample_entry_version_one_fields() {
+        let wave = box_(*b"wave", &[0, 1, 2, 3]);
+        let extra_data = audio_sample_entry_v1_extra_data(2, 16, 44_100, 1_024, 0, 4, 2, &wave);
+        let bytes = mp4_with_sample_description_entry(b"mp4a", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        let MovSampleEntryDetails::Audio(audio) = codec_parameters.details() else {
+            panic!("expected audio sample entry details");
+        };
+        assert_eq!(audio.version(), 1);
+        assert_eq!(audio.channel_count(), 2);
+        assert_eq!(audio.effective_channel_count(), 2);
+        assert_eq!(audio.sample_size(), 16);
+        assert_eq!(audio.effective_bits_per_sample(), 16);
+        assert_eq!(audio.sample_rate(), 44_100);
+        let fields = audio.version1_fields().unwrap();
+        assert_eq!(fields.samples_per_packet(), 1_024);
+        assert_eq!(fields.bytes_per_packet(), 0);
+        assert_eq!(fields.bytes_per_frame(), 4);
+        assert_eq!(fields.bytes_per_sample(), 2);
+        assert!(audio.version2_fields().is_none());
+        assert_eq!(audio.child_boxes().len(), 1);
+        assert_eq!(audio.child_boxes()[0].box_type(), "wave");
+        assert_eq!(audio.child_boxes()[0].payload(), &[0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn parses_audio_sample_entry_version_two_fields() {
+        let chan = box_(*b"chan", &full_box(0, b"\0\0\0\0"));
+        let extra_data = audio_sample_entry_v2_extra_data(96_000.0, 6, 24, 0x09, 24, 1, &chan);
+        let bytes = mp4_with_sample_description_entry(b"lpcm", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        let MovSampleEntryDetails::Audio(audio) = codec_parameters.details() else {
+            panic!("expected audio sample entry details");
+        };
+        assert_eq!(audio.version(), 2);
+        assert_eq!(audio.channel_count(), 3);
+        assert_eq!(audio.effective_channel_count(), 6);
+        assert_eq!(audio.sample_size(), 16);
+        assert_eq!(audio.effective_bits_per_sample(), 24);
+        assert_eq!(audio.compression_id(), -2);
+        assert_eq!(audio.packet_size(), 0);
+        assert_eq!(audio.sample_rate_fixed_16_16(), 65_536);
+        assert_eq!(audio.sample_rate(), 96_000);
+        let fields = audio.version2_fields().unwrap();
+        assert_eq!(fields.size_of_struct_only(), 72);
+        assert_eq!(fields.audio_sample_rate(), 96_000.0);
+        assert_eq!(fields.num_audio_channels(), 6);
+        assert_eq!(fields.always_7f000000(), 0x7f00_0000);
+        assert_eq!(fields.const_bits_per_channel(), 24);
+        assert_eq!(fields.format_specific_flags(), 0x09);
+        assert_eq!(fields.const_bytes_per_audio_packet(), 24);
+        assert_eq!(fields.const_lpcm_frames_per_audio_packet(), 1);
+        assert!(audio.version1_fields().is_none());
+        assert_eq!(audio.child_boxes().len(), 1);
+        assert_eq!(audio.child_boxes()[0].box_type(), "chan");
+        let expected_chan_payload = full_box(0, b"\0\0\0\0");
+        assert_eq!(
+            audio.child_boxes()[0].payload(),
+            expected_chan_payload.as_slice()
         );
     }
 
@@ -3559,6 +3852,41 @@ mod tests {
         let err =
             MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, b"\0\0")).unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let mut missing_v1_fields = audio_sample_entry_extra_data(2, 16, 44_100, &[]);
+        missing_v1_fields[1] = 1;
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"mp4a",
+            1,
+            &missing_v1_fields,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let mut unknown_version = audio_sample_entry_extra_data(2, 16, 44_100, &[]);
+        unknown_version[1] = 3;
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"mp4a",
+            1,
+            &unknown_version,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+
+        let mut bad_v2_offset = audio_sample_entry_v2_extra_data(48_000.0, 2, 16, 0, 4, 1, &[]);
+        bad_v2_offset[20..24].copy_from_slice(&68_u32.to_be_bytes());
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"lpcm",
+            1,
+            &bad_v2_offset,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_v2_rate = audio_sample_entry_v2_extra_data(f64::NAN, 2, 16, 0, 4, 1, &[]);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"lpcm", 1, &bad_v2_rate))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
         let bad_child = box_with_declared_size(*b"esds", 12, b"\x01");
         let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &bad_child);
@@ -4699,16 +5027,84 @@ mod tests {
         sample_rate: u32,
         child_boxes: &[u8],
     ) -> Vec<u8> {
+        let mut out = audio_sample_entry_base_extra_data(
+            0,
+            channel_count,
+            sample_size,
+            0,
+            0,
+            sample_rate << 16,
+        );
+        out.extend_from_slice(child_boxes);
+        out
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn audio_sample_entry_v1_extra_data(
+        channel_count: u16,
+        sample_size: u16,
+        sample_rate: u32,
+        samples_per_packet: u32,
+        bytes_per_packet: u32,
+        bytes_per_frame: u32,
+        bytes_per_sample: u32,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
+        let mut out = audio_sample_entry_base_extra_data(
+            1,
+            channel_count,
+            sample_size,
+            0,
+            0,
+            sample_rate << 16,
+        );
+        out.extend_from_slice(&samples_per_packet.to_be_bytes());
+        out.extend_from_slice(&bytes_per_packet.to_be_bytes());
+        out.extend_from_slice(&bytes_per_frame.to_be_bytes());
+        out.extend_from_slice(&bytes_per_sample.to_be_bytes());
+        out.extend_from_slice(child_boxes);
+        out
+    }
+
+    fn audio_sample_entry_v2_extra_data(
+        audio_sample_rate: f64,
+        num_audio_channels: u32,
+        const_bits_per_channel: u32,
+        format_specific_flags: u32,
+        const_bytes_per_audio_packet: u32,
+        const_lpcm_frames_per_audio_packet: u32,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
+        let mut out = audio_sample_entry_base_extra_data(2, 3, 16, -2, 0, 65_536);
+        out.extend_from_slice(&72_u32.to_be_bytes());
+        out.extend_from_slice(&audio_sample_rate.to_bits().to_be_bytes());
+        out.extend_from_slice(&num_audio_channels.to_be_bytes());
+        out.extend_from_slice(&0x7f00_0000_u32.to_be_bytes());
+        out.extend_from_slice(&const_bits_per_channel.to_be_bytes());
+        out.extend_from_slice(&format_specific_flags.to_be_bytes());
+        out.extend_from_slice(&const_bytes_per_audio_packet.to_be_bytes());
+        out.extend_from_slice(&const_lpcm_frames_per_audio_packet.to_be_bytes());
+        out.extend_from_slice(child_boxes);
+        out
+    }
+
+    fn audio_sample_entry_base_extra_data(
+        version: u16,
+        channel_count: u16,
+        sample_size: u16,
+        compression_id: i16,
+        packet_size: u16,
+        sample_rate_fixed_16_16: u32,
+    ) -> Vec<u8> {
         let mut out = Vec::new();
-        out.extend_from_slice(&0_u16.to_be_bytes());
+        out.extend_from_slice(&version.to_be_bytes());
         out.extend_from_slice(&0_u16.to_be_bytes());
         out.extend_from_slice(&0_u32.to_be_bytes());
         out.extend_from_slice(&channel_count.to_be_bytes());
         out.extend_from_slice(&sample_size.to_be_bytes());
-        out.extend_from_slice(&0_i16.to_be_bytes());
-        out.extend_from_slice(&0_u16.to_be_bytes());
-        out.extend_from_slice(&(sample_rate << 16).to_be_bytes());
-        out.extend_from_slice(child_boxes);
+        out.extend_from_slice(&compression_id.to_be_bytes());
+        out.extend_from_slice(&packet_size.to_be_bytes());
+        out.extend_from_slice(&sample_rate_fixed_16_16.to_be_bytes());
         out
     }
 
