@@ -39,6 +39,7 @@ const CHAN_ID: &[u8; 4] = b"chan";
 const BTRT_ID: &[u8; 4] = b"btrt";
 const DAMR_ID: &[u8; 4] = b"damr";
 const DAC3_ID: &[u8; 4] = b"dac3";
+const DEC3_ID: &[u8; 4] = b"dec3";
 const DOPS_ID: &[u8; 4] = b"dOps";
 const FRMA_ID: &[u8; 4] = b"frma";
 const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
@@ -382,6 +383,7 @@ pub struct MovAudioSampleEntry {
     bit_rate: Option<MovBitRateBox>,
     amr_specific: Option<MovAmrSpecificBox>,
     ac3_specific: Option<MovAc3SpecificBox>,
+    ec3_specific: Option<MovEc3SpecificBox>,
     opus_specific: Option<MovOpusSpecificBox>,
     wave_extension: Option<MovAudioWaveExtension>,
     channel_layout: Option<MovAudioChannelLayout>,
@@ -482,6 +484,10 @@ impl MovAudioSampleEntry {
 
     pub fn ac3_specific(&self) -> Option<&MovAc3SpecificBox> {
         self.ac3_specific.as_ref()
+    }
+
+    pub fn ec3_specific(&self) -> Option<&MovEc3SpecificBox> {
+        self.ec3_specific.as_ref()
     }
 
     pub fn opus_specific(&self) -> Option<&MovOpusSpecificBox> {
@@ -716,6 +722,78 @@ impl MovAc3SpecificBox {
 
     pub fn bit_rate_code(&self) -> u8 {
         self.bit_rate_code
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovEc3SpecificBox {
+    data_rate: u16,
+    num_ind_sub: u8,
+    substreams: Vec<MovEc3IndependentSubstream>,
+    trailing_reserved_bytes: Vec<u8>,
+}
+
+impl MovEc3SpecificBox {
+    pub fn data_rate(&self) -> u16 {
+        self.data_rate
+    }
+
+    pub fn num_ind_sub(&self) -> u8 {
+        self.num_ind_sub
+    }
+
+    pub fn substreams(&self) -> &[MovEc3IndependentSubstream] {
+        &self.substreams
+    }
+
+    pub fn trailing_reserved_bytes(&self) -> &[u8] {
+        &self.trailing_reserved_bytes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovEc3IndependentSubstream {
+    fscod: u8,
+    bsid: u8,
+    asvc: bool,
+    bsmod: u8,
+    acmod: u8,
+    lfeon: bool,
+    num_dep_sub: u8,
+    chan_loc: Option<u16>,
+}
+
+impl MovEc3IndependentSubstream {
+    pub fn fscod(&self) -> u8 {
+        self.fscod
+    }
+
+    pub fn bsid(&self) -> u8 {
+        self.bsid
+    }
+
+    pub fn asvc(&self) -> bool {
+        self.asvc
+    }
+
+    pub fn bsmod(&self) -> u8 {
+        self.bsmod
+    }
+
+    pub fn acmod(&self) -> u8 {
+        self.acmod
+    }
+
+    pub fn lfeon(&self) -> bool {
+        self.lfeon
+    }
+
+    pub fn num_dep_sub(&self) -> u8 {
+        self.num_dep_sub
+    }
+
+    pub fn chan_loc(&self) -> Option<u16> {
+        self.chan_loc
     }
 }
 
@@ -2316,6 +2394,7 @@ fn parse_audio_sample_entry(codec_tag: &[u8], extra_data: &[u8]) -> AvResult<Mov
     let bit_rate = parse_audio_sample_entry_bit_rate(&child_boxes)?;
     let amr_specific = parse_audio_sample_entry_amr_specific(&child_boxes)?;
     let ac3_specific = parse_audio_sample_entry_ac3_specific(&child_boxes, codec_tag == b"ac-3")?;
+    let ec3_specific = parse_audio_sample_entry_ec3_specific(&child_boxes, codec_tag == b"ec-3")?;
     let opus_specific = parse_audio_sample_entry_opus_specific(&child_boxes, codec_tag == b"Opus")?;
     let wave_extension = parse_audio_sample_entry_wave_extension(&child_boxes)?;
     let channel_layout = parse_audio_sample_entry_channel_layout(&child_boxes)?;
@@ -2334,6 +2413,7 @@ fn parse_audio_sample_entry(codec_tag: &[u8], extra_data: &[u8]) -> AvResult<Mov
         bit_rate,
         amr_specific,
         ac3_specific,
+        ec3_specific,
         opus_specific,
         wave_extension,
         channel_layout,
@@ -2421,6 +2501,29 @@ fn parse_audio_sample_entry_ac3_specific(
         ));
     }
     parse_dac3(child.payload()).map(Some)
+}
+
+fn parse_audio_sample_entry_ec3_specific(
+    child_boxes: &[MovSampleEntryChildBox],
+    required: bool,
+) -> AvResult<Option<MovEc3SpecificBox>> {
+    let mut matches = child_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == DEC3_ID);
+    let Some(child) = matches.next() else {
+        if required {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 E-AC-3 sample entry is missing required dec3 box",
+            ));
+        }
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 E-AC-3 sample entry must not contain multiple dec3 boxes",
+        ));
+    }
+    parse_dec3(child.payload()).map(Some)
 }
 
 fn parse_audio_sample_entry_opus_specific(
@@ -2612,6 +2715,85 @@ fn parse_dac3(payload: &[u8]) -> AvResult<MovAc3SpecificBox> {
         acmod,
         lfeon,
         bit_rate_code,
+    })
+}
+
+fn parse_dec3(payload: &[u8]) -> AvResult<MovEc3SpecificBox> {
+    let mut reader = BitReader::new(payload);
+    let data_rate = u16::try_from(reader.read_bits(13)?)
+        .map_err(|_| AvError::invalid_data("MOV/MP4 dec3 data_rate is out of range"))?;
+    let num_ind_sub = u8::try_from(reader.read_bits(3)?)
+        .map_err(|_| AvError::invalid_data("MOV/MP4 dec3 num_ind_sub is out of range"))?;
+    let substream_count = usize::from(num_ind_sub) + 1;
+    let mut substreams = Vec::with_capacity(substream_count);
+
+    for _ in 0..substream_count {
+        let fscod = u8::try_from(reader.read_bits(2)?)
+            .map_err(|_| AvError::invalid_data("MOV/MP4 dec3 fscod is out of range"))?;
+        let bsid = u8::try_from(reader.read_bits(5)?)
+            .map_err(|_| AvError::invalid_data("MOV/MP4 dec3 bsid is out of range"))?;
+        let reserved = reader.read_bit()?;
+        let asvc = reader.read_bit()?;
+        let bsmod = u8::try_from(reader.read_bits(3)?)
+            .map_err(|_| AvError::invalid_data("MOV/MP4 dec3 bsmod is out of range"))?;
+        let acmod = u8::try_from(reader.read_bits(3)?)
+            .map_err(|_| AvError::invalid_data("MOV/MP4 dec3 acmod is out of range"))?;
+        let lfeon = reader.read_bit()?;
+        let reserved3 = reader.read_bits(3)?;
+        let num_dep_sub = u8::try_from(reader.read_bits(4)?)
+            .map_err(|_| AvError::invalid_data("MOV/MP4 dec3 num_dep_sub is out of range"))?;
+
+        if reserved {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 dec3 reserved independent-substream bit must be zero",
+            ));
+        }
+        if reserved3 != 0 {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 dec3 reserved independent-substream bits must be zero",
+            ));
+        }
+
+        let chan_loc = if num_dep_sub > 0 {
+            Some(
+                u16::try_from(reader.read_bits(9)?)
+                    .map_err(|_| AvError::invalid_data("MOV/MP4 dec3 chan_loc is out of range"))?,
+            )
+        } else {
+            let reserved = reader.read_bit()?;
+            if reserved {
+                return Err(AvError::invalid_data(
+                    "MOV/MP4 dec3 no-dependent-substream reserved bit must be zero",
+                ));
+            }
+            None
+        };
+
+        substreams.push(MovEc3IndependentSubstream {
+            fscod,
+            bsid,
+            asvc,
+            bsmod,
+            acmod,
+            lfeon,
+            num_dep_sub,
+            chan_loc,
+        });
+    }
+
+    let trailing_reserved_bytes = if reader.is_aligned() {
+        payload[reader.bit_position() / 8..].to_vec()
+    } else {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 dec3 parser stopped at a non-byte-aligned reserved field",
+        ));
+    };
+
+    Ok(MovEc3SpecificBox {
+        data_rate,
+        num_ind_sub,
+        substreams,
+        trailing_reserved_bytes,
     })
 }
 
@@ -4407,6 +4589,7 @@ mod tests {
         assert!(audio.version1_fields().is_none());
         assert!(audio.version2_fields().is_none());
         assert!(audio.ac3_specific().is_none());
+        assert!(audio.ec3_specific().is_none());
         assert!(audio.opus_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
@@ -4452,6 +4635,7 @@ mod tests {
         assert!(audio.elementary_stream_descriptor().is_none());
         assert!(audio.bit_rate().is_none());
         assert!(audio.ac3_specific().is_none());
+        assert!(audio.ec3_specific().is_none());
         assert!(audio.opus_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
@@ -4488,6 +4672,7 @@ mod tests {
         assert!(audio.elementary_stream_descriptor().is_none());
         assert!(audio.bit_rate().is_none());
         assert!(audio.amr_specific().is_none());
+        assert!(audio.ec3_specific().is_none());
         assert!(audio.opus_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
@@ -4501,6 +4686,57 @@ mod tests {
         assert_eq!(audio.child_boxes().len(), 1);
         assert_eq!(audio.child_boxes()[0].box_type(), "dac3");
         assert_eq!(audio.child_boxes()[0].payload(), dac3_payload.as_slice());
+    }
+
+    #[test]
+    fn parses_ec3_audio_sample_entry_specific_box() {
+        let first = ec3_substream_payload(0, 16, false, 0, 7, true, 0, None);
+        let second = ec3_substream_payload(1, 15, true, 2, 2, false, 1, Some(0x101));
+        let dec3_payload = ec3_specific_box_payload(768, 1, &[first, second], &[0xaa, 0x55]);
+        let dec3 = box_(*DEC3_ID, &dec3_payload);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &dec3);
+        let bytes = mp4_with_sample_description_entry(b"ec-3", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "ec-3");
+        let MovSampleEntryDetails::Audio(audio) = codec_parameters.details() else {
+            panic!("expected audio sample entry details");
+        };
+        assert_eq!(audio.channel_count(), 2);
+        assert_eq!(audio.sample_size(), 16);
+        assert_eq!(audio.sample_rate(), 48_000);
+        assert!(audio.elementary_stream_descriptor().is_none());
+        assert!(audio.bit_rate().is_none());
+        assert!(audio.amr_specific().is_none());
+        assert!(audio.ac3_specific().is_none());
+        assert!(audio.opus_specific().is_none());
+        assert!(audio.wave_extension().is_none());
+        assert!(audio.channel_layout().is_none());
+        let ec3 = audio.ec3_specific().unwrap();
+        assert_eq!(ec3.data_rate(), 768);
+        assert_eq!(ec3.num_ind_sub(), 1);
+        assert_eq!(ec3.trailing_reserved_bytes(), &[0xaa, 0x55]);
+        assert_eq!(ec3.substreams().len(), 2);
+        assert_eq!(ec3.substreams()[0].fscod(), 0);
+        assert_eq!(ec3.substreams()[0].bsid(), 16);
+        assert!(!ec3.substreams()[0].asvc());
+        assert_eq!(ec3.substreams()[0].bsmod(), 0);
+        assert_eq!(ec3.substreams()[0].acmod(), 7);
+        assert!(ec3.substreams()[0].lfeon());
+        assert_eq!(ec3.substreams()[0].num_dep_sub(), 0);
+        assert_eq!(ec3.substreams()[0].chan_loc(), None);
+        assert_eq!(ec3.substreams()[1].fscod(), 1);
+        assert_eq!(ec3.substreams()[1].bsid(), 15);
+        assert!(ec3.substreams()[1].asvc());
+        assert_eq!(ec3.substreams()[1].bsmod(), 2);
+        assert_eq!(ec3.substreams()[1].acmod(), 2);
+        assert!(!ec3.substreams()[1].lfeon());
+        assert_eq!(ec3.substreams()[1].num_dep_sub(), 1);
+        assert_eq!(ec3.substreams()[1].chan_loc(), Some(0x101));
+        assert_eq!(audio.child_boxes().len(), 1);
+        assert_eq!(audio.child_boxes()[0].box_type(), "dec3");
+        assert_eq!(audio.child_boxes()[0].payload(), dec3_payload.as_slice());
     }
 
     #[test]
@@ -4523,6 +4759,7 @@ mod tests {
         assert!(audio.bit_rate().is_none());
         assert!(audio.amr_specific().is_none());
         assert!(audio.ac3_specific().is_none());
+        assert!(audio.ec3_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let opus = audio.opus_specific().unwrap();
@@ -5219,6 +5456,125 @@ mod tests {
         .concat();
         let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &duplicate_dac3);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ac-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let missing_dec3 = audio_sample_entry_extra_data(2, 16, 48_000, &[]);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"ec-3",
+            1,
+            &missing_dec3,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let truncated_dec3 = box_(*DEC3_ID, b"\0\0");
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &truncated_dec3);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ec-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let incomplete_dec3_substream = box_(
+            *DEC3_ID,
+            &ec3_specific_box_payload(
+                256,
+                1,
+                &[ec3_substream_payload(0, 16, false, 0, 7, true, 0, None)],
+                &[],
+            ),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &incomplete_dec3_substream);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ec-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let reserved_dec3_bit = box_(
+            *DEC3_ID,
+            &ec3_specific_box_payload(
+                256,
+                0,
+                &[ec3_substream_payload_with_reserved_bits(
+                    0, 16, true, false, 0, 7, true, 0, 0, None, false,
+                )],
+                &[],
+            ),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &reserved_dec3_bit);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ec-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let reserved_dec3_bits = box_(
+            *DEC3_ID,
+            &ec3_specific_box_payload(
+                256,
+                0,
+                &[ec3_substream_payload_with_reserved_bits(
+                    0, 16, false, false, 0, 7, true, 1, 0, None, false,
+                )],
+                &[],
+            ),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &reserved_dec3_bits);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ec-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let reserved_dec3_no_dep = box_(
+            *DEC3_ID,
+            &ec3_specific_box_payload(
+                256,
+                0,
+                &[ec3_substream_payload_with_reserved_bits(
+                    0, 16, false, false, 0, 7, true, 0, 0, None, true,
+                )],
+                &[],
+            ),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &reserved_dec3_no_dep);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ec-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let missing_dec3_chan_loc = box_(
+            *DEC3_ID,
+            &ec3_specific_box_payload(
+                256,
+                0,
+                &[ec3_substream_payload_with_reserved_bits(
+                    0, 16, false, false, 0, 7, true, 0, 1, None, false,
+                )],
+                &[],
+            ),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &missing_dec3_chan_loc);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ec-3", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let duplicate_dec3 = [
+            box_(
+                *DEC3_ID,
+                &ec3_specific_box_payload(
+                    256,
+                    0,
+                    &[ec3_substream_payload(0, 16, false, 0, 7, true, 0, None)],
+                    &[],
+                ),
+            ),
+            box_(
+                *DEC3_ID,
+                &ec3_specific_box_payload(
+                    256,
+                    0,
+                    &[ec3_substream_payload(0, 16, false, 0, 7, true, 0, None)],
+                    &[],
+                ),
+            ),
+        ]
+        .concat();
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &duplicate_dec3);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"ec-3", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
@@ -6603,6 +6959,151 @@ mod tests {
             ((bits >> 8) & 0xff) as u8,
             (bits & 0xff) as u8,
         ]
+    }
+
+    #[derive(Clone, Copy)]
+    struct Ec3SpecificSubstreamPayload {
+        fscod: u8,
+        bsid: u8,
+        reserved: bool,
+        asvc: bool,
+        bsmod: u8,
+        acmod: u8,
+        lfeon: bool,
+        reserved3: u8,
+        num_dep_sub: u8,
+        chan_loc: Option<u16>,
+        no_dep_reserved: bool,
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn ec3_substream_payload(
+        fscod: u8,
+        bsid: u8,
+        asvc: bool,
+        bsmod: u8,
+        acmod: u8,
+        lfeon: bool,
+        num_dep_sub: u8,
+        chan_loc: Option<u16>,
+    ) -> Ec3SpecificSubstreamPayload {
+        ec3_substream_payload_with_reserved_bits(
+            fscod,
+            bsid,
+            false,
+            asvc,
+            bsmod,
+            acmod,
+            lfeon,
+            0,
+            num_dep_sub,
+            chan_loc,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn ec3_substream_payload_with_reserved_bits(
+        fscod: u8,
+        bsid: u8,
+        reserved: bool,
+        asvc: bool,
+        bsmod: u8,
+        acmod: u8,
+        lfeon: bool,
+        reserved3: u8,
+        num_dep_sub: u8,
+        chan_loc: Option<u16>,
+        no_dep_reserved: bool,
+    ) -> Ec3SpecificSubstreamPayload {
+        Ec3SpecificSubstreamPayload {
+            fscod,
+            bsid,
+            reserved,
+            asvc,
+            bsmod,
+            acmod,
+            lfeon,
+            reserved3,
+            num_dep_sub,
+            chan_loc,
+            no_dep_reserved,
+        }
+    }
+
+    fn ec3_specific_box_payload(
+        data_rate: u16,
+        num_ind_sub: u8,
+        substreams: &[Ec3SpecificSubstreamPayload],
+        trailing_reserved_bytes: &[u8],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut bit_len = 0_usize;
+        append_bits(&mut out, &mut bit_len, u64::from(data_rate & 0x1fff), 13);
+        append_bits(&mut out, &mut bit_len, u64::from(num_ind_sub & 0x07), 3);
+        for substream in substreams {
+            append_bits(&mut out, &mut bit_len, u64::from(substream.fscod & 0x03), 2);
+            append_bits(&mut out, &mut bit_len, u64::from(substream.bsid & 0x1f), 5);
+            append_bits(
+                &mut out,
+                &mut bit_len,
+                u64::from(u8::from(substream.reserved)),
+                1,
+            );
+            append_bits(
+                &mut out,
+                &mut bit_len,
+                u64::from(u8::from(substream.asvc)),
+                1,
+            );
+            append_bits(&mut out, &mut bit_len, u64::from(substream.bsmod & 0x07), 3);
+            append_bits(&mut out, &mut bit_len, u64::from(substream.acmod & 0x07), 3);
+            append_bits(
+                &mut out,
+                &mut bit_len,
+                u64::from(u8::from(substream.lfeon)),
+                1,
+            );
+            append_bits(
+                &mut out,
+                &mut bit_len,
+                u64::from(substream.reserved3 & 0x07),
+                3,
+            );
+            append_bits(
+                &mut out,
+                &mut bit_len,
+                u64::from(substream.num_dep_sub & 0x0f),
+                4,
+            );
+            if substream.num_dep_sub > 0 {
+                if let Some(chan_loc) = substream.chan_loc {
+                    append_bits(&mut out, &mut bit_len, u64::from(chan_loc & 0x01ff), 9);
+                }
+            } else {
+                append_bits(
+                    &mut out,
+                    &mut bit_len,
+                    u64::from(u8::from(substream.no_dep_reserved)),
+                    1,
+                );
+            }
+        }
+        out.extend_from_slice(trailing_reserved_bytes);
+        out
+    }
+
+    fn append_bits(out: &mut Vec<u8>, bit_len: &mut usize, value: u64, count: u8) {
+        for shift in (0..count).rev() {
+            if *bit_len % 8 == 0 {
+                out.push(0);
+            }
+            if ((value >> shift) & 1) != 0 {
+                let bit_offset = *bit_len % 8;
+                *out.last_mut().unwrap() |= 1 << (7 - bit_offset);
+            }
+            *bit_len += 1;
+        }
     }
 
     fn opus_specific_box_payload(
