@@ -231,7 +231,7 @@ fn option_spec(name: &str) -> Option<OptionSpec> {
             OptionValueKind::Generic,
         ),
         "f" | "c" | "codec" | "map" | "ar" | "ac" | "s" | "r" | "framerate" | "pix_fmt"
-        | "start_number" | "vf" | "af" | "filter" | "metadata" => (
+        | "start_number" | "hash" | "vf" | "af" | "filter" | "metadata" => (
             OptionScope::File,
             OptionArity::Value,
             OptionValueKind::Generic,
@@ -482,6 +482,19 @@ mod tests {
         assert_eq!(parsed.inputs()[0].options()[1].value_ref(), Some("5"));
         assert_eq!(parsed.outputs()[0].options()[1].name(), "start_number");
         assert_eq!(parsed.outputs()[0].options()[1].value_ref(), Some("9"));
+    }
+
+    #[test]
+    fn treats_hash_as_file_scoped_value_option() {
+        let args = strings(&["-i", "in.wav", "-f", "hash", "-hash", "md5", "-"]);
+
+        let parsed = parse_ffmpeg_args(&args).unwrap();
+
+        assert_eq!(parsed.outputs()[0].url(), "-");
+        assert_eq!(parsed.outputs()[0].options()[0].name(), "f");
+        assert_eq!(parsed.outputs()[0].options()[0].value_ref(), Some("hash"));
+        assert_eq!(parsed.outputs()[0].options()[1].name(), "hash");
+        assert_eq!(parsed.outputs()[0].options()[1].value_ref(), Some("md5"));
     }
 
     #[test]

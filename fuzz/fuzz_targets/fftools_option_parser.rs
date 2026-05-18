@@ -44,7 +44,7 @@ fn args_from_bytes(data: &[u8]) -> Vec<String> {
     while cursor < data.len() && args.len() < MAX_ARGS {
         let tag = data[cursor];
         cursor += 1;
-        match tag % 32 {
+        match tag % 33 {
             0 => args.push("-i".to_owned()),
             1 => args.push("-hide_banner".to_owned()),
             2 => args.push("-version".to_owned()),
@@ -70,12 +70,13 @@ fn args_from_bytes(data: &[u8]) -> Vec<String> {
             22 => push_value_option(&mut args, "framerate", data, &mut cursor),
             23 => push_value_option(&mut args, "pix_fmt", data, &mut cursor),
             24 => push_value_option(&mut args, "start_number", data, &mut cursor),
-            25 => push_value_option(&mut args, "vf", data, &mut cursor),
-            26 => push_value_option(&mut args, "af", data, &mut cursor),
-            27 => push_value_option(&mut args, "metadata", data, &mut cursor),
-            28 => args.push("-definitely_not_ffmpeg".to_owned()),
-            29 => args.push("-".to_owned()),
-            30 => args.push(literal_arg(data, &mut cursor)),
+            25 => push_value_option(&mut args, "hash", data, &mut cursor),
+            26 => push_value_option(&mut args, "vf", data, &mut cursor),
+            27 => push_value_option(&mut args, "af", data, &mut cursor),
+            28 => push_value_option(&mut args, "metadata", data, &mut cursor),
+            29 => args.push("-definitely_not_ffmpeg".to_owned()),
+            30 => args.push("-".to_owned()),
+            31 => args.push(literal_arg(data, &mut cursor)),
             _ => args.push(prefixed_literal_arg(data, &mut cursor)),
         }
     }
@@ -168,6 +169,7 @@ fn is_value_option(name: &str) -> bool {
             | "framerate"
             | "pix_fmt"
             | "start_number"
+            | "hash"
             | "vf"
             | "af"
             | "filter"
@@ -225,7 +227,9 @@ fn fixture_args() -> Vec<String> {
         "-c:v",
         "rawvideo",
         "-f",
-        "null",
+        "hash",
+        "-hash",
+        "sha256",
         "-",
     ]
     .into_iter()

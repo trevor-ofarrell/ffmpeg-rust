@@ -443,7 +443,7 @@ upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "implemented"
 priority = 2
 oracle_command = "ffmpeg -h; ffprobe -h"
-rust_command = "cargo test -p fftools option_parser"
+rust_command = "cargo test -p fftools --lib option_parser"
 unit_tests = [
   "option_parser::tests::groups_input_and_output_options_by_order",
   "option_parser::tests::handles_multiple_inputs_and_outputs",
@@ -453,13 +453,14 @@ unit_tests = [
   "ffprobe::tests::parses_and_rejects_ffprobe_loglevel_values",
   "option_parser::tests::treats_single_dash_as_output_url",
   "option_parser::tests::treats_start_number_as_file_scoped_value_option",
+  "option_parser::tests::treats_hash_as_file_scoped_value_option",
   "option_parser::tests::rejects_missing_values_and_dangling_file_options",
   "option_parser::tests::rejects_unknown_options",
 ]
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["fftools_option_parser"]
-notes = "Initial parser groups a small known option set, including file-scoped -start_number, into global options, next input, or next output according to FFmpeg option ordering. It deliberately rejects unknown options and now validates -loglevel/-v values through the shared avutil LogLevel model for exact level names and FFmpeg numeric severities, including -8 quiet. It is only partially wired into command execution. Build-checked cargo-fuzz target fftools_option_parser exercises bounded argv parsing, option arity invariants, valid loglevel values, stream-specifier option names, file/global grouping, and parse/render/parse stability, but actual local fuzz execution is blocked until cargo-fuzz is installed."
+notes = "Initial parser groups a small known option set, including file-scoped -start_number and output-scoped -hash, into global options, next input, or next output according to FFmpeg option ordering. It deliberately rejects unknown options and now validates -loglevel/-v values through the shared avutil LogLevel model for exact level names and FFmpeg numeric severities, including -8 quiet. It is only partially wired into command execution. Build-checked cargo-fuzz target fftools_option_parser exercises bounded argv parsing, option arity invariants, valid loglevel values, stream-specifier option names, file/global grouping, hash output option handling, and parse/render/parse stability, but actual local fuzz execution is blocked until cargo-fuzz is installed."
 blocked_reason = ""
 
 [[component]]
@@ -1075,6 +1076,26 @@ notes = "Initial ffmpeg-rs command execution path supports exactly one local see
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffmpeg-hash-output"
+kind = "cli"
+ffmpeg_name = "ffmpeg hash muxer stdout"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -i <input> -f hash -; ffmpeg -f s16le -ar <rate> -ac <channels> -i <input.raw> -f hash -hash md5 -"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_mov_to_hash_stdout_with_default_sha256",
+  "ffmpeg::tests::runs_s16le_to_hash_stdout_with_md5_option",
+  "ffmpeg::tests::rejects_unknown_hash_algorithm",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = ["fftools_option_parser"]
+notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f hash -`, defaults the hash muxer to SHA-256, accepts output-scoped `-hash` for Adler-32, CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512, and rejects unknown hash algorithm names without invoking FFmpeg at runtime. The current tests cover MOV packet concatenation and raw pcm_s16le MD5 output through in-process helpers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
 id = "fftools-ffmpeg-avi-framecrc-null"
 kind = "cli"
 ffmpeg_name = "ffmpeg AVI to framecrc/null"
@@ -1507,7 +1528,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "Initial internal packet-data hash muxer supports Adler-32, IEEE CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512 with packet/byte accounting and variable-width digest reporting. Build-checked cargo-fuzz target avformat_packet_muxers covers packet/byte accounting, Adler-32/CRC-32/MD5/SHA-224/SHA-256/SHA-384/SHA-512 digest stability, formatted digest lines, and finish behavior, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other FFmpeg hash algorithms, exact FFmpeg hash muxer output semantics, CLI wiring, differential tests, and FATE are pending."
+notes = "Initial internal packet-data hash muxer supports Adler-32, IEEE CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512 with packet/byte accounting and variable-width digest reporting. It is now wired to constrained ffmpeg-rs stdout `-f hash -` execution with default SHA-256 and output-scoped `-hash` selection. Build-checked cargo-fuzz target avformat_packet_muxers covers packet/byte accounting, Adler-32/CRC-32/MD5/SHA-224/SHA-256/SHA-384/SHA-512 digest stability, formatted digest lines, and finish behavior, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other FFmpeg hash algorithms, exact FFmpeg hash muxer output semantics, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
