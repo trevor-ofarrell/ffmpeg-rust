@@ -59,6 +59,27 @@ impl BufferRef {
         }
     }
 
+    pub fn from_vec_readonly(data: Vec<u8>) -> Self {
+        let len = data.len();
+        Self {
+            data: Arc::new(BufferStorage::readonly(data)),
+            len,
+        }
+    }
+
+    pub fn from_vec_with_len_readonly(data: Vec<u8>, len: usize) -> AvResult<Self> {
+        if len > data.len() {
+            return Err(AvError::invalid_argument(format!(
+                "visible buffer length {len} exceeds {} allocated bytes",
+                data.len()
+            )));
+        }
+        Ok(Self {
+            data: Arc::new(BufferStorage::readonly(data)),
+            len,
+        })
+    }
+
     pub fn from_vec_with_release_callback<F>(data: Vec<u8>, on_release: F) -> Self
     where
         F: Fn(Vec<u8>) + Send + Sync + 'static,
@@ -66,6 +87,19 @@ impl BufferRef {
         let len = data.len();
         Self {
             data: Arc::new(BufferStorage::with_release_callback(data, on_release)),
+            len,
+        }
+    }
+
+    pub fn from_vec_with_release_callback_readonly<F>(data: Vec<u8>, on_release: F) -> Self
+    where
+        F: Fn(Vec<u8>) + Send + Sync + 'static,
+    {
+        let len = data.len();
+        Self {
+            data: Arc::new(BufferStorage::with_release_callback_readonly(
+                data, on_release, true,
+            )),
             len,
         }
     }
@@ -86,6 +120,28 @@ impl BufferRef {
         }
         Ok(Self {
             data: Arc::new(BufferStorage::with_release_callback(data, on_release)),
+            len,
+        })
+    }
+
+    pub fn from_vec_with_len_and_release_callback_readonly<F>(
+        data: Vec<u8>,
+        len: usize,
+        on_release: F,
+    ) -> AvResult<Self>
+    where
+        F: Fn(Vec<u8>) + Send + Sync + 'static,
+    {
+        if len > data.len() {
+            return Err(AvError::invalid_argument(format!(
+                "visible buffer length {len} exceeds {} allocated bytes",
+                data.len()
+            )));
+        }
+        Ok(Self {
+            data: Arc::new(BufferStorage::with_release_callback_readonly(
+                data, on_release, true,
+            )),
             len,
         })
     }
@@ -154,16 +210,29 @@ impl BufferRef {
         Arc::strong_count(&self.data)
     }
 
+    pub fn is_readonly(&self) -> bool {
+        self.data.readonly
+    }
+
     pub fn is_writable(&self) -> bool {
-        self.strong_count() == 1
+        self.strong_count() == 1 && !self.is_readonly()
     }
 
     pub fn get_mut(&mut self) -> Option<&mut [u8]> {
+        if self.is_readonly() {
+            return None;
+        }
         Arc::get_mut(&mut self.data).map(|data| &mut data.bytes[..self.len])
     }
 
     pub fn make_mut(&mut self) -> &mut [u8] {
-        &mut Arc::make_mut(&mut self.data).bytes[..self.len]
+        if self.strong_count() != 1 || self.is_readonly() {
+            let bytes = self.data.bytes.clone();
+            self.data = Arc::new(BufferStorage::new(bytes));
+        }
+        &mut Arc::get_mut(&mut self.data)
+            .expect("buffer storage is unique after copy-on-write")
+            .bytes[..self.len]
     }
 
     pub fn slice(&self, offset: usize, len: usize) -> AvResult<BufferSlice> {
@@ -188,6 +257,7 @@ impl BufferRef {
 struct BufferStorage {
     bytes: Vec<u8>,
     owner: Option<BufferOwner>,
+    readonly: bool,
 }
 
 type BufferReleaseCallback = Arc<dyn Fn(Vec<u8>) + Send + Sync + 'static>;
@@ -203,7 +273,19 @@ enum BufferOwner {
 
 impl BufferStorage {
     fn new(bytes: Vec<u8>) -> Self {
-        Self { bytes, owner: None }
+        Self {
+            bytes,
+            owner: None,
+            readonly: false,
+        }
+    }
+
+    fn readonly(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes,
+            owner: None,
+            readonly: true,
+        }
     }
 
     fn with_pool(bytes: Vec<u8>, pool: &Arc<BufferPoolInner>) -> Self {
@@ -214,6 +296,7 @@ impl BufferStorage {
                 allocated_len: pool.allocated_len,
                 release: Arc::clone(&pool.callbacks.release),
             }),
+            readonly: false,
         }
     }
 
@@ -221,9 +304,17 @@ impl BufferStorage {
     where
         F: Fn(Vec<u8>) + Send + Sync + 'static,
     {
+        Self::with_release_callback_readonly(bytes, on_release, false)
+    }
+
+    fn with_release_callback_readonly<F>(bytes: Vec<u8>, on_release: F, readonly: bool) -> Self
+    where
+        F: Fn(Vec<u8>) + Send + Sync + 'static,
+    {
         Self {
             bytes,
             owner: Some(BufferOwner::Callback(Arc::new(on_release))),
+            readonly,
         }
     }
 
@@ -233,6 +324,7 @@ impl BufferStorage {
 
     fn into_vec(mut self) -> Vec<u8> {
         self.owner = None;
+        self.readonly = false;
         std::mem::take(&mut self.bytes)
     }
 }
@@ -247,6 +339,7 @@ impl std::fmt::Debug for BufferStorage {
         f.debug_struct("BufferStorage")
             .field("bytes", &self.bytes)
             .field("owner", &owner)
+            .field("readonly", &self.readonly)
             .finish()
     }
 }
@@ -399,6 +492,11 @@ impl BufferPool {
                 self.len(),
                 self.allocated_len()
             )));
+        }
+        if data.readonly {
+            return Err(AvError::invalid_argument(
+                "cannot recycle a readonly buffer into a mutable pool",
+            ));
         }
 
         let storage = Arc::try_unwrap(data)
@@ -570,6 +668,103 @@ mod tests {
         assert!(released.lock().unwrap().is_empty());
         drop(shared);
 
+        assert_eq!(*released.lock().unwrap(), vec![vec![1, 2, 3]]);
+    }
+
+    #[test]
+    fn readonly_buffer_copies_before_mutation_and_preserves_padding() {
+        let mut buffer = BufferRef::from_vec_with_len_readonly(vec![1, 2, 3, 0, 0], 3).unwrap();
+        let shared = buffer.clone();
+
+        assert!(buffer.is_readonly());
+        assert!(!buffer.is_writable());
+        assert!(buffer.get_mut().is_none());
+        assert_eq!(buffer.as_slice(), &[1, 2, 3]);
+        assert_eq!(buffer.padding_slice(), &[0, 0]);
+
+        buffer.make_mut()[1] = 9;
+
+        assert_eq!(buffer.as_slice(), &[1, 9, 3]);
+        assert_eq!(buffer.padding_slice(), &[0, 0]);
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+        assert!(buffer.get_mut().is_some());
+        assert_eq!(shared.as_slice(), &[1, 2, 3]);
+        assert_eq!(shared.padding_slice(), &[0, 0]);
+        assert!(shared.is_readonly());
+        assert!(!shared.is_writable());
+    }
+
+    #[test]
+    fn readonly_buffer_rejects_invalid_visible_len() {
+        assert_eq!(
+            BufferRef::from_vec_with_len_readonly(vec![1], 2)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let release_count = std::sync::Arc::new(std::sync::Mutex::new(0usize));
+        let capture = std::sync::Arc::clone(&release_count);
+        assert_eq!(
+            BufferRef::from_vec_with_len_and_release_callback_readonly(vec![1], 2, move |_| {
+                *capture.lock().unwrap() += 1;
+            })
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(*release_count.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn readonly_callback_buffer_make_mut_releases_unique_original_storage() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_vec_with_len_and_release_callback_readonly(
+            vec![1, 2, 3, 0],
+            3,
+            move |storage| {
+                capture.lock().unwrap().push(storage);
+            },
+        )
+        .unwrap();
+
+        assert!(buffer.is_readonly());
+        assert!(!buffer.is_writable());
+        assert!(buffer.get_mut().is_none());
+
+        buffer.make_mut()[0] = 9;
+
+        assert_eq!(*released.lock().unwrap(), vec![vec![1, 2, 3, 0]]);
+        assert_eq!(buffer.as_slice(), &[9, 2, 3]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+        drop(buffer);
+        assert_eq!(*released.lock().unwrap(), vec![vec![1, 2, 3, 0]]);
+    }
+
+    #[test]
+    fn readonly_shared_callback_buffer_releases_after_last_original_reference() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer =
+            BufferRef::from_vec_with_release_callback_readonly(vec![1, 2, 3], move |storage| {
+                capture.lock().unwrap().push(storage);
+            });
+        let shared = buffer.clone();
+
+        buffer.make_mut()[2] = 7;
+
+        assert!(released.lock().unwrap().is_empty());
+        assert_eq!(buffer.as_slice(), &[1, 2, 7]);
+        assert!(!buffer.is_readonly());
+        assert_eq!(shared.as_slice(), &[1, 2, 3]);
+        assert!(shared.is_readonly());
+        drop(buffer);
+        assert!(released.lock().unwrap().is_empty());
+        drop(shared);
         assert_eq!(*released.lock().unwrap(), vec![vec![1, 2, 3]]);
     }
 
@@ -910,6 +1105,18 @@ mod tests {
         let wrong_padding = BufferRef::zeroed_with_padding(2, 2).unwrap();
         assert_eq!(
             pool.recycle(wrong_padding).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(pool.available_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn buffer_pool_rejects_readonly_buffers() {
+        let pool = BufferPool::new(2, 1).unwrap();
+        let buffer = BufferRef::from_vec_with_len_readonly(vec![1, 2, 0], 2).unwrap();
+
+        assert_eq!(
+            pool.recycle(buffer).unwrap_err().kind(),
             AvErrorKind::InvalidArgument
         );
         assert_eq!(pool.available_count().unwrap(), 0);

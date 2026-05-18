@@ -215,7 +215,7 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     drop(callback_buffer);
     assert!(released.lock().unwrap().is_empty());
     drop(callback_slice);
-    assert_eq!(*released.lock().unwrap(), vec![release_storage]);
+    assert_eq!(*released.lock().unwrap(), vec![release_storage.clone()]);
 
     let rejected_release_count = Arc::new(Mutex::new(0usize));
     let rejected_capture = Arc::clone(&rejected_release_count);
@@ -245,6 +245,42 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(cow_released.lock().unwrap().is_empty());
     drop(callback_cow_shared);
     assert_eq!(*cow_released.lock().unwrap(), vec![payload.clone()]);
+
+    let mut readonly = BufferRef::from_vec_with_len_readonly(release_storage.clone(), payload.len())
+        .unwrap();
+    let readonly_shared = readonly.clone();
+    assert!(readonly.is_readonly());
+    assert!(!readonly.is_writable());
+    assert!(readonly.get_mut().is_none());
+    assert_eq!(readonly.as_slice(), payload.as_slice());
+    assert_eq!(readonly.padding_len(), padding_len);
+    if !readonly.is_empty() {
+        readonly.make_mut()[0] = cursor.next().unwrap_or_default();
+    } else {
+        assert_eq!(readonly.make_mut(), &mut []);
+    }
+    assert!(!readonly.is_readonly());
+    assert!(readonly.is_writable());
+    assert_eq!(readonly_shared.as_padded_slice(), release_storage.as_slice());
+    assert!(readonly_shared.is_readonly());
+    drop(readonly);
+    drop(readonly_shared);
+
+    let readonly_released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let readonly_capture = Arc::clone(&readonly_released);
+    let mut readonly_callback = BufferRef::from_vec_with_len_and_release_callback_readonly(
+        release_storage.clone(),
+        payload.len(),
+        move |storage| {
+            readonly_capture.lock().unwrap().push(storage);
+        },
+    )
+    .unwrap();
+    assert!(readonly_callback.is_readonly());
+    readonly_callback.make_mut();
+    assert_eq!(*readonly_released.lock().unwrap(), vec![release_storage]);
+    assert!(!readonly_callback.is_readonly());
+    assert!(readonly_callback.is_writable());
 
     let custom_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
     let custom_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
