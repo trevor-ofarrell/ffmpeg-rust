@@ -1115,6 +1115,44 @@ notes = "ffmpeg-rs command execution supports the dedicated stdout `-f md5 -` mu
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffmpeg-framehash-output"
+kind = "cli"
+ffmpeg_name = "ffmpeg framehash muxer stdout"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -i <input> -f framehash -; ffmpeg -i <input> -f framehash -hash md5 -"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_mov_to_framehash_stdout_with_default_sha256",
+  "ffmpeg::tests::runs_mov_to_framehash_stdout_with_md5_option",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = ["avformat_packet_muxers"]
+notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f framehash -`, defaults to SHA-256, and accepts output-scoped `-hash` for the same algorithms as the generic hash muxer. The current tests cover MOV packet-level SHA-256 and MD5 output through in-process helpers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
+id = "fftools-ffmpeg-framemd5-output"
+kind = "cli"
+ffmpeg_name = "ffmpeg framemd5 muxer stdout"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -i <input> -f framemd5 -"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_mov_to_framemd5_muxer_stdout",
+  "ffmpeg::tests::rejects_hash_option_for_framemd5_muxer",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = ["avformat_packet_muxers"]
+notes = "ffmpeg-rs command execution supports the dedicated stdout `-f framemd5 -` muxer for one local seekable constrained input by routing each packet payload through the Rust FrameHashMuxer with MD5 while preserving the observable output format name as `framemd5`. The dedicated framemd5 muxer rejects output-scoped `-hash` because algorithm selection belongs to the generic framehash muxer path. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
 id = "fftools-ffmpeg-avi-framecrc-null"
 kind = "cli"
 ffmpeg_name = "ffmpeg AVI to framecrc/null"
@@ -1569,6 +1607,27 @@ differential_tests = []
 fate_tests = []
 fuzz_targets = ["avformat_packet_muxers"]
 notes = "Initial internal framecrc-style muxer records one CRC-32 line per packet with stream index, PTS/DTS, duration, size, and checksum. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet record fields, CRC stability, render/finish stability, and post-finish rejection, but actual local fuzz execution is blocked until cargo-fuzz is installed. Exact FFmpeg framecrc formatting, differential tests, and FATE are pending."
+blocked_reason = ""
+
+[[component]]
+id = "avformat-framehash-muxer"
+kind = "muxer"
+ffmpeg_name = "framehash/framemd5"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 3
+oracle_command = "ffmpeg -i <input> -f framehash -; ffmpeg -i <input> -f framemd5 -"
+rust_command = "cargo test -p avformat framehash_muxer"
+unit_tests = [
+  "framehash_muxer::tests::records_packet_hash_and_timing_fields",
+  "framehash_muxer::tests::renders_multiple_records_in_write_order",
+  "framehash_muxer::tests::empty_packets_produce_zero_size_hash_records",
+  "framehash_muxer::tests::finish_prevents_more_writes",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = ["avformat_packet_muxers"]
+notes = "Initial internal framehash muxer records one hash line per packet with stream index, timestamps, duration, payload size, and Adler-32/CRC-32/MD5/SHA-224/SHA-256/SHA-384/SHA-512 digest support. It is wired to constrained ffmpeg-rs stdout framehash execution with default SHA-256 and output-scoped `-hash` selection, plus dedicated `-f framemd5 -` stdout execution. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet stream/timestamp/duration/size/hash fields, render/finish stability, and post-finish rejection, but actual local fuzz execution is blocked until cargo-fuzz is installed. Exact FFmpeg framehash/framemd5 output semantics, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]

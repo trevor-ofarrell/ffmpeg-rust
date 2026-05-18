@@ -1,6 +1,6 @@
 #![no_main]
 
-use avformat::{FrameCrcMuxer, HashAlgorithm, HashDigest, HashMuxer, NullMuxer};
+use avformat::{FrameCrcMuxer, FrameHashMuxer, HashAlgorithm, HashDigest, HashMuxer, NullMuxer};
 use avutil::{
     adler32, crc32_ieee, md5, sha224, sha256, sha384, sha512, AvErrorKind, Packet, SideData,
 };
@@ -26,6 +26,7 @@ fuzz_target!(|data: &[u8]| {
     exercise_null_muxer(&packets);
     exercise_hash_muxers(&packets);
     exercise_framecrc_muxer(&packets);
+    exercise_framehash_muxers(&packets);
     exercise_fixtures();
 });
 
@@ -156,6 +157,55 @@ fn exercise_framecrc_muxer(packets: &[Packet]) {
     assert_eq!(muxer.render(), before_finish);
 }
 
+fn exercise_framehash_muxers(packets: &[Packet]) {
+    for algorithm in [
+        HashAlgorithm::Adler32,
+        HashAlgorithm::Crc32,
+        HashAlgorithm::Md5,
+        HashAlgorithm::Sha224,
+        HashAlgorithm::Sha256,
+        HashAlgorithm::Sha384,
+        HashAlgorithm::Sha512,
+    ] {
+        let mut muxer = FrameHashMuxer::new(algorithm);
+
+        for (index, packet) in packets.iter().enumerate() {
+            muxer.write_packet(packet).unwrap();
+            assert_eq!(muxer.records().len(), index + 1);
+
+            let record = &muxer.records()[index];
+            assert_eq!(record.algorithm(), algorithm);
+            assert_eq!(record.stream_index(), packet.stream_index());
+            assert_eq!(record.pts(), packet.pts());
+            assert_eq!(record.dts(), packet.dts());
+            assert_eq!(record.duration(), packet.duration());
+            assert_eq!(record.size(), packet.data().len());
+            assert_eq!(record.digest(), &digest_for(algorithm, packet.data()));
+            assert!(record
+                .line()
+                .contains(&format!("stream={}", packet.stream_index())));
+            assert!(record
+                .line()
+                .contains(&format!("size={}", packet.data().len())));
+            assert!(record
+                .line()
+                .contains(&format!("{}=", algorithm.name().to_ascii_lowercase())));
+        }
+
+        let before_finish = muxer.render();
+        let record_count = muxer.records().len();
+        let finished = muxer.finish();
+        assert!(muxer.is_finished());
+        assert_eq!(finished, before_finish);
+        let err = muxer
+            .write_packet(&Packet::new(b"x".to_vec(), 0))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(muxer.records().len(), record_count);
+        assert_eq!(muxer.render(), before_finish);
+    }
+}
+
 fn exercise_fixtures() {
     let mut first = Packet::new(b"abc".to_vec(), 2);
     first.set_pts(Some(10));
@@ -171,6 +221,7 @@ fn exercise_fixtures() {
     exercise_null_muxer(&packets);
     exercise_hash_muxers(&packets);
     exercise_framecrc_muxer(&packets);
+    exercise_framehash_muxers(&packets);
 }
 
 fn digest_for(algorithm: HashAlgorithm, data: &[u8]) -> HashDigest {

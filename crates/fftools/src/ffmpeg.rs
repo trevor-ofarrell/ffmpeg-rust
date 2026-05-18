@@ -2,9 +2,9 @@ use crate::{
     build_io_plan, parse_ffmpeg_args, version_banner, CliOption, Endpoint, IoPlan, PlannedFile,
 };
 use avformat::{
-    register_mov_probe, AviDemuxer, AviMuxer, FrameCrcMuxer, HashAlgorithm, HashMuxer,
-    Image2Demuxer, Image2Entry, Image2Muxer, Image2Pattern, MovDemuxer, NullMuxer, PcmS16leDemuxer,
-    PcmS16leMuxer, ProbeRegistry, ProbeRequest, RawVideoDemuxer, RawVideoMuxer,
+    register_mov_probe, AviDemuxer, AviMuxer, FrameCrcMuxer, FrameHashMuxer, HashAlgorithm,
+    HashMuxer, Image2Demuxer, Image2Entry, Image2Muxer, Image2Pattern, MovDemuxer, NullMuxer,
+    PcmS16leDemuxer, PcmS16leMuxer, ProbeRegistry, ProbeRequest, RawVideoDemuxer, RawVideoMuxer,
     RawVideoPixelFormat, WavDemuxer, WavMuxer, Yuv4MpegDemuxer, Yuv4MpegMuxer,
 };
 use avutil::{Packet, Rational};
@@ -132,6 +132,7 @@ enum OutputMuxer {
     Avi,
     Null,
     FrameCrc,
+    FrameHash(FrameHashOutputMuxer),
     Hash(HashOutputMuxer),
     Image2,
     PcmS16le,
@@ -146,6 +147,7 @@ impl OutputMuxer {
             Self::Avi => "avi",
             Self::Null => "null",
             Self::FrameCrc => "framecrc",
+            Self::FrameHash(hash) => hash.name(),
             Self::Hash(hash) => hash.name(),
             Self::Image2 => "image2",
             Self::PcmS16le => "s16le",
@@ -153,6 +155,32 @@ impl OutputMuxer {
             Self::Wav => "wav",
             Self::Yuv4MpegPipe => "yuv4mpegpipe",
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameHashOutputMuxer {
+    FrameHash(HashAlgorithm),
+    FrameMd5,
+}
+
+impl FrameHashOutputMuxer {
+    fn name(self) -> &'static str {
+        match self {
+            Self::FrameHash(_) => "framehash",
+            Self::FrameMd5 => "framemd5",
+        }
+    }
+
+    fn algorithm(self) -> HashAlgorithm {
+        match self {
+            Self::FrameHash(algorithm) => algorithm,
+            Self::FrameMd5 => HashAlgorithm::Md5,
+        }
+    }
+
+    fn allows_hash_option(self) -> bool {
+        matches!(self, Self::FrameHash(_))
     }
 }
 
@@ -327,9 +355,10 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                     run_pcm_s16le_file_muxer(output, sample_rate, channels, read_packet)
                 }
                 OutputMuxer::Wav => run_wav_file_muxer(output, sample_rate, channels, read_packet),
-                OutputMuxer::Null | OutputMuxer::FrameCrc | OutputMuxer::Hash(_) => {
-                    run_output_muxer(output_muxer, read_packet)
-                }
+                OutputMuxer::Null
+                | OutputMuxer::FrameCrc
+                | OutputMuxer::FrameHash(_)
+                | OutputMuxer::Hash(_) => run_output_muxer(output_muxer, read_packet),
                 OutputMuxer::Avi
                 | OutputMuxer::Image2
                 | OutputMuxer::RawVideo
@@ -362,9 +391,10 @@ fn execute_plan(plan: &IoPlan) -> Result<FfmpegOutput, FfmpegError> {
                     frame_rate,
                     read_packet,
                 ),
-                OutputMuxer::Null | OutputMuxer::FrameCrc | OutputMuxer::Hash(_) => {
-                    run_output_muxer(output_muxer, read_packet)
-                }
+                OutputMuxer::Null
+                | OutputMuxer::FrameCrc
+                | OutputMuxer::FrameHash(_)
+                | OutputMuxer::Hash(_) => run_output_muxer(output_muxer, read_packet),
                 OutputMuxer::PcmS16le => run_output_muxer(output_muxer, read_packet),
                 OutputMuxer::Wav => run_output_muxer(output_muxer, read_packet),
                 OutputMuxer::Image2 => run_output_muxer(output_muxer, read_packet),
@@ -433,9 +463,10 @@ fn validate_stdout_output(output: &PlannedFile) -> Result<(), FfmpegError> {
 
 fn validate_output_endpoint(muxer: OutputMuxer, output: &PlannedFile) -> Result<(), FfmpegError> {
     match muxer {
-        OutputMuxer::Null | OutputMuxer::FrameCrc | OutputMuxer::Hash(_) => {
-            validate_stdout_output(output)
-        }
+        OutputMuxer::Null
+        | OutputMuxer::FrameCrc
+        | OutputMuxer::FrameHash(_)
+        | OutputMuxer::Hash(_) => validate_stdout_output(output),
         OutputMuxer::Avi => {
             local_output_path(output, "avi")?;
             Ok(())
@@ -862,6 +893,9 @@ fn validate_output_options(muxer: OutputMuxer, output: &PlannedFile) -> Result<(
     for option in output.options() {
         let is_allowed = match muxer {
             OutputMuxer::Image2 => matches!(option.name(), "f" | "start_number"),
+            OutputMuxer::FrameHash(hash) => {
+                option.name() == "f" || (option.name() == "hash" && hash.allows_hash_option())
+            }
             OutputMuxer::Hash(hash) => {
                 option.name() == "f" || (option.name() == "hash" && hash.allows_hash_option())
             }
@@ -880,7 +914,7 @@ fn validate_output_options(muxer: OutputMuxer, output: &PlannedFile) -> Result<(
 fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> {
     let format = last_option_value(output.options(), "f").ok_or_else(|| {
         FfmpegError::usage(
-            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f hash`, `-f md5`, `-f image2`, `-f s16le`, `-f rawvideo`, `-f wav`, `-f yuv4mpegpipe`, or `-f avi`",
+            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f framehash`, `-f framemd5`, `-f hash`, `-f md5`, `-f image2`, `-f s16le`, `-f rawvideo`, `-f wav`, `-f yuv4mpegpipe`, or `-f avi`",
         )
     })?;
 
@@ -888,6 +922,10 @@ fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> 
         "avi" => Ok(OutputMuxer::Avi),
         "null" => Ok(OutputMuxer::Null),
         "framecrc" => Ok(OutputMuxer::FrameCrc),
+        "framehash" => Ok(OutputMuxer::FrameHash(FrameHashOutputMuxer::FrameHash(
+            parse_hash_algorithm(output)?,
+        ))),
+        "framemd5" => Ok(OutputMuxer::FrameHash(FrameHashOutputMuxer::FrameMd5)),
         "hash" => Ok(OutputMuxer::Hash(HashOutputMuxer::Hash(
             parse_hash_algorithm(output)?,
         ))),
@@ -1027,6 +1065,7 @@ where
     match output_muxer {
         OutputMuxer::Null => run_null_muxer(read_packet),
         OutputMuxer::FrameCrc => run_framecrc_muxer(read_packet),
+        OutputMuxer::FrameHash(hash) => run_framehash_muxer(hash, read_packet),
         OutputMuxer::Hash(hash) => run_hash_muxer(hash, read_packet),
         OutputMuxer::Avi => Err(FfmpegError::unsupported(
             "ffmpeg-rs AVI output is only implemented for rgb24 rawvideo inputs",
@@ -1373,6 +1412,40 @@ where
     ))
 }
 
+fn run_framehash_muxer<F>(
+    hash: FrameHashOutputMuxer,
+    mut read_packet: F,
+) -> Result<FfmpegOutput, FfmpegError>
+where
+    F: FnMut() -> Result<Option<Packet>, FfmpegError>,
+{
+    let mut muxer = FrameHashMuxer::new(hash.algorithm());
+    let mut packet_count = 0_u64;
+    let mut byte_count = 0_u64;
+
+    while let Some(packet) = read_packet()? {
+        packet_count = packet_count
+            .checked_add(1)
+            .ok_or_else(|| FfmpegError::invalid_data("packet count overflow"))?;
+        let packet_bytes = u64::try_from(packet.data().len())
+            .map_err(|_| FfmpegError::invalid_data("packet size does not fit u64"))?;
+        byte_count = byte_count
+            .checked_add(packet_bytes)
+            .ok_or_else(|| FfmpegError::invalid_data("byte count overflow"))?;
+        muxer.write_packet(&packet).map_err(|err| {
+            FfmpegError::invalid_data(format!("failed to mux framehash packet: {err}"))
+        })?;
+    }
+
+    Ok(FfmpegOutput::media(
+        muxer.finish(),
+        String::new(),
+        OutputMuxer::FrameHash(hash),
+        packet_count,
+        byte_count,
+    ))
+}
+
 fn run_hash_muxer<F>(hash: HashOutputMuxer, mut read_packet: F) -> Result<FfmpegOutput, FfmpegError>
 where
     F: FnMut() -> Result<Option<Packet>, FfmpegError>,
@@ -1467,6 +1540,100 @@ mod tests {
         assert!(output
             .stdout()
             .contains("stream=0 pts=1000 dts=1000 duration=2000 size=4"));
+    }
+
+    #[test]
+    fn runs_mov_to_framehash_stdout_with_default_sha256() {
+        let path = write_temp_mov(
+            "framehash",
+            &sampled_mov_file(&[b"abc".as_slice(), b"defg".as_slice()], &[1_000, 2_000]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-hide_banner",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framehash",
+            "-",
+        ]))
+        .expect("ffmpeg framehash command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("framehash"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 7);
+        assert!(output.stderr().is_empty());
+        assert!(output
+            .stdout()
+            .starts_with("# framehash-rs packet hashes algorithm=SHA256\n"));
+        assert!(output.stdout().contains(&format!(
+            "stream=0 pts=0 dts=0 duration=1000 size=3 sha256={}\n",
+            avutil::digest_to_hex(&avutil::sha256(b"abc"))
+        )));
+        assert!(output.stdout().contains(&format!(
+            "stream=0 pts=1000 dts=1000 duration=2000 size=4 sha256={}\n",
+            avutil::digest_to_hex(&avutil::sha256(b"defg"))
+        )));
+    }
+
+    #[test]
+    fn runs_mov_to_framehash_stdout_with_md5_option() {
+        let path = write_temp_mov("framehash-md5", &sampled_mov_file(&[b"abc"], &[1_000]));
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framehash",
+            "-hash",
+            "md5",
+            "-",
+        ]))
+        .expect("ffmpeg framehash hash-option path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("framehash"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 3);
+        assert!(output.stdout().contains(&format!(
+            "stream=0 pts=0 dts=0 duration=1000 size=3 md5={}\n",
+            avutil::digest_to_hex(&avutil::md5(b"abc"))
+        )));
+    }
+
+    #[test]
+    fn runs_mov_to_framemd5_muxer_stdout() {
+        let path = write_temp_mov("framemd5", &sampled_mov_file(&[b"abc"], &[1_000]));
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-hide_banner",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framemd5",
+            "-",
+        ]))
+        .expect("ffmpeg framemd5 command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("framemd5"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 3);
+        assert!(output.stderr().is_empty());
+        assert!(output
+            .stdout()
+            .starts_with("# framehash-rs packet hashes algorithm=MD5\n"));
+        assert!(output.stdout().contains(&format!(
+            "stream=0 pts=0 dts=0 duration=1000 size=3 md5={}\n",
+            avutil::digest_to_hex(&avutil::md5(b"abc"))
+        )));
     }
 
     #[test]
@@ -1862,6 +2029,30 @@ mod tests {
             "-",
         ]))
         .expect_err("md5 muxer should not accept hash option");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("output option `-hash`"));
+    }
+
+    #[test]
+    fn rejects_hash_option_for_framemd5_muxer() {
+        let path = write_temp_mov(
+            "framemd5-hash-option",
+            &sampled_mov_file(&[b"abc"], &[1_000]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "framemd5",
+            "-hash",
+            "sha256",
+            "-",
+        ]))
+        .expect_err("framemd5 muxer should not accept hash option");
 
         let _ = fs::remove_file(&path);
 

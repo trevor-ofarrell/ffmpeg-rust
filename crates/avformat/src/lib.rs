@@ -6,6 +6,7 @@ pub mod audio;
 pub mod avi;
 pub mod avio;
 pub mod framecrc_muxer;
+pub mod framehash_muxer;
 pub mod hash_muxer;
 pub mod image2;
 pub mod mov;
@@ -24,6 +25,7 @@ pub use avi::{
 };
 pub use avio::{AvioReader, AvioWriter};
 pub use framecrc_muxer::{FrameCrcMuxer, FrameCrcRecord};
+pub use framehash_muxer::{FrameHashMuxer, FrameHashRecord};
 pub use hash_muxer::{HashAlgorithm, HashDigest, HashMuxer, HashMuxerReport};
 pub use image2::{Image2Demuxer, Image2Entry, Image2Frame, Image2Info, Image2Muxer, Image2Pattern};
 pub use mov::{
