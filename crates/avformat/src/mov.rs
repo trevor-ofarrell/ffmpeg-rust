@@ -36,6 +36,7 @@ const HVCC_ID: &[u8; 4] = b"hvcC";
 const ESDS_ID: &[u8; 4] = b"esds";
 const WAVE_ID: &[u8; 4] = b"wave";
 const CHAN_ID: &[u8; 4] = b"chan";
+const BTRT_ID: &[u8; 4] = b"btrt";
 const FRMA_ID: &[u8; 4] = b"frma";
 const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
 const PASP_ID: &[u8; 4] = b"pasp";
@@ -375,6 +376,7 @@ pub struct MovAudioSampleEntry {
     sample_rate_fixed_16_16: u32,
     version_fields: MovAudioSampleEntryVersionFields,
     elementary_stream_descriptor: Option<MovElementaryStreamDescriptor>,
+    bit_rate: Option<MovBitRateBox>,
     wave_extension: Option<MovAudioWaveExtension>,
     channel_layout: Option<MovAudioChannelLayout>,
     child_boxes: Vec<MovSampleEntryChildBox>,
@@ -462,6 +464,10 @@ impl MovAudioSampleEntry {
 
     pub fn elementary_stream_descriptor(&self) -> Option<&MovElementaryStreamDescriptor> {
         self.elementary_stream_descriptor.as_ref()
+    }
+
+    pub fn bit_rate(&self) -> Option<&MovBitRateBox> {
+        self.bit_rate.as_ref()
     }
 
     pub fn wave_extension(&self) -> Option<&MovAudioWaveExtension> {
@@ -604,6 +610,27 @@ impl MovElementaryStreamDescriptor {
 
     pub fn descriptor(&self) -> &[u8] {
         &self.descriptor
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovBitRateBox {
+    buffer_size_db: u32,
+    max_bitrate: u32,
+    avg_bitrate: u32,
+}
+
+impl MovBitRateBox {
+    pub fn buffer_size_db(&self) -> u32 {
+        self.buffer_size_db
+    }
+
+    pub fn max_bitrate(&self) -> u32 {
+        self.max_bitrate
+    }
+
+    pub fn avg_bitrate(&self) -> u32 {
+        self.avg_bitrate
     }
 }
 
@@ -2148,6 +2175,7 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
     )?;
     let elementary_stream_descriptor =
         parse_audio_sample_entry_elementary_stream_descriptor(&child_boxes)?;
+    let bit_rate = parse_audio_sample_entry_bit_rate(&child_boxes)?;
     let wave_extension = parse_audio_sample_entry_wave_extension(&child_boxes)?;
     let channel_layout = parse_audio_sample_entry_channel_layout(&child_boxes)?;
     Ok(MovAudioSampleEntry {
@@ -2162,6 +2190,7 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
         sample_rate_fixed_16_16,
         version_fields,
         elementary_stream_descriptor,
+        bit_rate,
         wave_extension,
         channel_layout,
         child_boxes,
@@ -2204,6 +2233,16 @@ fn parse_audio_sample_entry_elementary_stream_descriptor(
         .iter()
         .find(|child| child.box_type.as_bytes() == ESDS_ID)
         .map(|child| parse_esds(child.payload()))
+        .transpose()
+}
+
+fn parse_audio_sample_entry_bit_rate(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovBitRateBox>> {
+    child_boxes
+        .iter()
+        .find(|child| child.box_type.as_bytes() == BTRT_ID)
+        .map(|child| parse_btrt(child.payload()))
         .transpose()
 }
 
@@ -2281,6 +2320,20 @@ fn parse_esds(payload: &[u8]) -> AvResult<MovElementaryStreamDescriptor> {
         version,
         flags,
         descriptor,
+    })
+}
+
+fn parse_btrt(payload: &[u8]) -> AvResult<MovBitRateBox> {
+    let mut reader = ByteReader::new(payload);
+    ensure_remaining(&reader, 12, "MOV/MP4 btrt")?;
+    let buffer_size_db = reader.read_u32_be()?;
+    let max_bitrate = reader.read_u32_be()?;
+    let avg_bitrate = reader.read_u32_be()?;
+    ensure_box_consumed(&reader, "MOV/MP4 btrt")?;
+    Ok(MovBitRateBox {
+        buffer_size_db,
+        max_bitrate,
+        avg_bitrate,
     })
 }
 
@@ -3988,7 +4041,9 @@ mod tests {
     #[test]
     fn parses_audio_sample_entry_codec_parameters() {
         let esds = box_(*b"esds", &full_box(0, b"\x03\x01\x00"));
-        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &esds);
+        let btrt = box_(*BTRT_ID, &bit_rate_box_payload(4_096, 192_000, 128_000));
+        let children = [esds.as_slice(), btrt.as_slice()].concat();
+        let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &children);
         let bytes = mp4_with_sample_description_entry(b"mp4a", 1, &extra_data);
         let demuxer = MovDemuxer::open(&bytes).unwrap();
         let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
@@ -4021,12 +4076,21 @@ mod tests {
         assert_eq!(direct_esds.version(), 0);
         assert_eq!(direct_esds.flags(), [0, 0, 0]);
         assert_eq!(direct_esds.descriptor(), b"\x03\x01\x00");
-        assert_eq!(audio.child_boxes().len(), 1);
+        let bit_rate = audio.bit_rate().unwrap();
+        assert_eq!(bit_rate.buffer_size_db(), 4_096);
+        assert_eq!(bit_rate.max_bitrate(), 192_000);
+        assert_eq!(bit_rate.avg_bitrate(), 128_000);
+        assert_eq!(audio.child_boxes().len(), 2);
         assert_eq!(audio.child_boxes()[0].box_type(), "esds");
         let expected_esds_payload = full_box(0, b"\x03\x01\x00");
         assert_eq!(
             audio.child_boxes()[0].payload(),
             expected_esds_payload.as_slice()
+        );
+        assert_eq!(audio.child_boxes()[1].box_type(), "btrt");
+        assert_eq!(
+            audio.child_boxes()[1].payload(),
+            bit_rate_box_payload(4_096, 192_000, 128_000).as_slice()
         );
     }
 
@@ -4594,6 +4658,20 @@ mod tests {
 
         let empty_direct_esds = box_(*ESDS_ID, &full_box(0, &[]));
         let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &empty_direct_esds);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let truncated_btrt = box_(*BTRT_ID, b"\0\0");
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &truncated_btrt);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let mut oversized_btrt = bit_rate_box_payload(4_096, 192_000, 128_000);
+        oversized_btrt.push(0);
+        let oversized_btrt = box_(*BTRT_ID, &oversized_btrt);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &oversized_btrt);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
@@ -5849,6 +5927,15 @@ mod tests {
             }
         }
         full_box(0, &body)
+    }
+
+    fn bit_rate_box_payload(buffer_size_db: u32, max_bitrate: u32, avg_bitrate: u32) -> Vec<u8> {
+        [
+            buffer_size_db.to_be_bytes(),
+            max_bitrate.to_be_bytes(),
+            avg_bitrate.to_be_bytes(),
+        ]
+        .concat()
     }
 
     fn wave_extension_payload(original_format: [u8; 4], esds_descriptor: &[u8]) -> Vec<u8> {
