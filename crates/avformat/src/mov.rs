@@ -46,6 +46,14 @@ const ALAC_ID: &[u8; 4] = b"alac";
 const VTTC_ID: &[u8; 4] = b"vttC";
 const VLAB_ID: &[u8; 4] = b"vlab";
 const TXTC_ID: &[u8; 4] = b"txtC";
+const VTTC_CUE_ID: &[u8; 4] = b"vttc";
+const VTTE_ID: &[u8; 4] = b"vtte";
+const VTTA_ID: &[u8; 4] = b"vtta";
+const VSID_ID: &[u8; 4] = b"vsid";
+const IDEN_ID: &[u8; 4] = b"iden";
+const CTIM_ID: &[u8; 4] = b"ctim";
+const STTG_ID: &[u8; 4] = b"sttg";
+const PAYL_ID: &[u8; 4] = b"payl";
 const FRMA_ID: &[u8; 4] = b"frma";
 const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
 const PASP_ID: &[u8; 4] = b"pasp";
@@ -394,6 +402,98 @@ pub struct MovWebVttSourceLabelBox {
 impl MovWebVttSourceLabelBox {
     pub fn source_label(&self) -> &str {
         &self.source_label
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovWebVttSample {
+    items: Vec<MovWebVttSampleItem>,
+}
+
+impl MovWebVttSample {
+    pub fn items(&self) -> &[MovWebVttSampleItem] {
+        &self.items
+    }
+
+    pub fn is_empty_cue(&self) -> bool {
+        matches!(self.items.as_slice(), [MovWebVttSampleItem::EmptyCue])
+    }
+
+    pub fn cue_count(&self) -> usize {
+        self.items
+            .iter()
+            .filter(|item| matches!(item, MovWebVttSampleItem::Cue(_)))
+            .count()
+    }
+
+    pub fn additional_text_count(&self) -> usize {
+        self.items
+            .iter()
+            .filter(|item| matches!(item, MovWebVttSampleItem::AdditionalText(_)))
+            .count()
+    }
+
+    pub fn contains_source_ids(&self) -> bool {
+        self.items.iter().any(|item| {
+            matches!(
+                item,
+                MovWebVttSampleItem::Cue(cue) if cue.source_id().is_some()
+            )
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MovWebVttSampleItem {
+    EmptyCue,
+    Cue(MovWebVttCueBox),
+    AdditionalText(MovWebVttAdditionalTextBox),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovWebVttCueBox {
+    source_id: Option<u32>,
+    cue_id: Option<String>,
+    cue_time: Option<String>,
+    settings: Option<String>,
+    payload: String,
+    child_boxes: Vec<MovSampleEntryChildBox>,
+}
+
+impl MovWebVttCueBox {
+    pub fn source_id(&self) -> Option<u32> {
+        self.source_id
+    }
+
+    pub fn cue_id(&self) -> Option<&str> {
+        self.cue_id.as_deref()
+    }
+
+    pub fn cue_time(&self) -> Option<&str> {
+        self.cue_time.as_deref()
+    }
+
+    pub fn settings(&self) -> Option<&str> {
+        self.settings.as_deref()
+    }
+
+    pub fn payload(&self) -> &str {
+        &self.payload
+    }
+
+    pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.child_boxes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovWebVttAdditionalTextBox {
+    text: String,
+}
+
+impl MovWebVttAdditionalTextBox {
+    pub fn text(&self) -> &str {
+        &self.text
     }
 }
 
@@ -1771,9 +1871,15 @@ impl<'a> MovDemuxer<'a> {
                 "MOV/MP4 sample table packet extraction is not implemented for this file",
             ));
         };
-        let Some(packet) = packets.get(self.next_packet).cloned() else {
+        let Some(mut packet) = packets.get(self.next_packet).cloned() else {
             return Ok(None);
         };
+        let track = self
+            .info
+            .tracks
+            .get(packet.stream_index())
+            .ok_or_else(|| AvError::invalid_data("MOV/MP4 packet stream index has no track"))?;
+        decorate_webvtt_packet(&mut packet, track)?;
         self.next_packet += 1;
         Ok(Some(packet))
     }
@@ -2825,6 +2931,230 @@ fn validate_webvtt_config_signature(config: &str) -> AvResult<()> {
             "MOV/MP4 vttC config has an invalid WebVTT signature boundary",
         ))
     }
+}
+
+pub fn parse_webvtt_sample(payload: &[u8]) -> AvResult<MovWebVttSample> {
+    if payload.is_empty() {
+        return Err(AvError::invalid_data("MOV/MP4 wvtt sample is empty"));
+    }
+
+    let child_boxes =
+        parse_sample_entry_child_boxes(payload, 0, payload.len(), "MOV/MP4 wvtt sample boxes")?;
+    let mut items = Vec::with_capacity(child_boxes.len());
+    let mut has_empty_cue = false;
+    let mut has_cue = false;
+
+    for child in &child_boxes {
+        if child.box_type.as_bytes() == VTTE_ID {
+            if !child.payload.is_empty() {
+                return Err(AvError::invalid_data(
+                    "MOV/MP4 vtte empty cue box must have an empty payload",
+                ));
+            }
+            has_empty_cue = true;
+            items.push(MovWebVttSampleItem::EmptyCue);
+        } else if child.box_type.as_bytes() == VTTC_CUE_ID {
+            has_cue = true;
+            items.push(MovWebVttSampleItem::Cue(parse_webvtt_cue_box(
+                child.payload(),
+            )?));
+        } else if child.box_type.as_bytes() == VTTA_ID {
+            items.push(MovWebVttSampleItem::AdditionalText(
+                parse_webvtt_additional_text_box(child.payload())?,
+            ));
+        } else {
+            return Err(AvError::invalid_data(format!(
+                "MOV/MP4 wvtt sample contains unsupported `{}` box",
+                child.box_type()
+            )));
+        }
+    }
+
+    if has_empty_cue {
+        if items.len() != 1 {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 wvtt empty cue sample must contain exactly one vtte box",
+            ));
+        }
+    } else if !has_cue {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 wvtt cue sample must contain at least one vttc cue box",
+        ));
+    }
+
+    Ok(MovWebVttSample { items })
+}
+
+fn parse_webvtt_cue_box(payload: &[u8]) -> AvResult<MovWebVttCueBox> {
+    let child_boxes =
+        parse_sample_entry_child_boxes(payload, 0, payload.len(), "MOV/MP4 vttc cue box children")?;
+    let source_id = parse_webvtt_cue_source_id(&child_boxes)?;
+    let cue_id = parse_optional_webvtt_text_child(&child_boxes, IDEN_ID, "MOV/MP4 iden cue ID")?;
+    let cue_time =
+        parse_optional_webvtt_text_child(&child_boxes, CTIM_ID, "MOV/MP4 ctim cue time")?;
+    let settings =
+        parse_optional_webvtt_text_child(&child_boxes, STTG_ID, "MOV/MP4 sttg cue settings")?;
+    if settings
+        .as_ref()
+        .is_some_and(|settings| settings.starts_with(' '))
+    {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 sttg cue settings must not start with a leading space",
+        ));
+    }
+    let payload = parse_required_webvtt_text_child(&child_boxes, PAYL_ID, "MOV/MP4 payl payload")?;
+    validate_webvtt_payload_text(&payload)?;
+
+    for child in &child_boxes {
+        let known_child = child.box_type.as_bytes() == VSID_ID
+            || child.box_type.as_bytes() == IDEN_ID
+            || child.box_type.as_bytes() == CTIM_ID
+            || child.box_type.as_bytes() == STTG_ID
+            || child.box_type.as_bytes() == PAYL_ID;
+        if !known_child {
+            return Err(AvError::invalid_data(format!(
+                "MOV/MP4 vttc cue box contains unsupported `{}` box",
+                child.box_type()
+            )));
+        }
+    }
+
+    Ok(MovWebVttCueBox {
+        source_id,
+        cue_id,
+        cue_time,
+        settings,
+        payload,
+        child_boxes,
+    })
+}
+
+fn parse_webvtt_cue_source_id(child_boxes: &[MovSampleEntryChildBox]) -> AvResult<Option<u32>> {
+    let Some(child) = find_unique_webvtt_child_box(child_boxes, VSID_ID, "MOV/MP4 vttc cue box")?
+    else {
+        return Ok(None);
+    };
+    let mut reader = ByteReader::new(child.payload());
+    ensure_remaining(&reader, 4, "MOV/MP4 vsid cue source ID")?;
+    let source_id = reader.read_u32_be()?;
+    ensure_box_consumed(&reader, "MOV/MP4 vsid cue source ID")?;
+    Ok(Some(source_id))
+}
+
+fn parse_optional_webvtt_text_child(
+    child_boxes: &[MovSampleEntryChildBox],
+    box_type: &[u8; 4],
+    context: &str,
+) -> AvResult<Option<String>> {
+    let Some(child) = find_unique_webvtt_child_box(child_boxes, box_type, "MOV/MP4 vttc cue box")?
+    else {
+        return Ok(None);
+    };
+    parse_webvtt_text_boxstring(child.payload(), context).map(Some)
+}
+
+fn parse_required_webvtt_text_child(
+    child_boxes: &[MovSampleEntryChildBox],
+    box_type: &[u8; 4],
+    context: &str,
+) -> AvResult<String> {
+    let Some(child) = find_unique_webvtt_child_box(child_boxes, box_type, "MOV/MP4 vttc cue box")?
+    else {
+        return Err(AvError::invalid_data(format!(
+            "{context} box is required in MOV/MP4 vttc cue box"
+        )));
+    };
+    parse_webvtt_text_boxstring(child.payload(), context)
+}
+
+fn parse_webvtt_additional_text_box(payload: &[u8]) -> AvResult<MovWebVttAdditionalTextBox> {
+    Ok(MovWebVttAdditionalTextBox {
+        text: parse_webvtt_text_boxstring(payload, "MOV/MP4 vtta additional text")?,
+    })
+}
+
+fn parse_webvtt_text_boxstring(payload: &[u8], context: &str) -> AvResult<String> {
+    let text = parse_utf8_boxstring(payload, context)?;
+    if text.ends_with('\n') || text.ends_with('\r') {
+        return Err(AvError::invalid_data(format!(
+            "{context} must not have trailing WebVTT line terminators"
+        )));
+    }
+    Ok(text)
+}
+
+fn validate_webvtt_payload_text(payload: &str) -> AvResult<()> {
+    let normalized = payload.replace("\r\n", "\n").replace('\r', "\n");
+    if normalized.contains("\n\n") {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 payl cue payload must not contain blank lines",
+        ));
+    }
+    Ok(())
+}
+
+fn find_unique_webvtt_child_box<'a>(
+    child_boxes: &'a [MovSampleEntryChildBox],
+    box_type: &[u8; 4],
+    context: &str,
+) -> AvResult<Option<&'a MovSampleEntryChildBox>> {
+    let mut matches = child_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == box_type);
+    let Some(child) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(format!(
+            "{context} contains duplicate {} boxes",
+            fourcc_to_string(*box_type)
+        )));
+    }
+    Ok(Some(child))
+}
+
+fn decorate_webvtt_packet(packet: &mut Packet, track: &MovTrackInfo) -> AvResult<()> {
+    let Some(codec_parameters) = track.codec_parameters() else {
+        return Ok(());
+    };
+    if codec_parameters.codec_tag() != "wvtt" {
+        return Ok(());
+    }
+
+    let sample = parse_webvtt_sample(packet.data())?;
+    let source_label_present = matches!(
+        codec_parameters.details(),
+        MovSampleEntryDetails::Subtitle(MovSubtitleSampleEntry::WebVtt(entry))
+            if entry.source_label().is_some()
+    );
+    if sample.contains_source_ids() && !source_label_present {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 wvtt sample contains CueSourceIDBox without a sample-entry source label",
+        ));
+    }
+
+    let cue_count = u32::try_from(sample.cue_count())
+        .map_err(|_| AvError::unsupported("MOV/MP4 wvtt cue count exceeds u32 range"))?;
+    let additional_text_count = u32::try_from(sample.additional_text_count()).map_err(|_| {
+        AvError::unsupported("MOV/MP4 wvtt additional text count exceeds u32 range")
+    })?;
+    packet.push_side_data(SideData::new(
+        "mov_webvtt_sample_kind",
+        if sample.is_empty_cue() {
+            b"empty".to_vec()
+        } else {
+            b"cues".to_vec()
+        },
+    )?);
+    packet.push_side_data(SideData::new(
+        "mov_webvtt_cue_count",
+        cue_count.to_be_bytes().to_vec(),
+    )?);
+    packet.push_side_data(SideData::new(
+        "mov_webvtt_additional_text_count",
+        additional_text_count.to_be_bytes().to_vec(),
+    )?);
+    Ok(())
 }
 
 fn parse_xml_metadata_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlMetadataSampleEntry> {
@@ -6215,6 +6545,87 @@ mod tests {
     }
 
     #[test]
+    fn parses_webvtt_sample_payload_boxes() {
+        let cue = box_(
+            *VTTC_CUE_ID,
+            &[
+                box_(*VSID_ID, &7_u32.to_be_bytes()),
+                box_(*IDEN_ID, b"cue-7"),
+                box_(*CTIM_ID, b"00:00:01.500"),
+                box_(*STTG_ID, b"align:start size:50%"),
+                box_(*PAYL_ID, b"Hello\nworld"),
+            ]
+            .concat(),
+        );
+        let note = box_(*VTTA_ID, b"NOTE imported comment");
+        let sample = parse_webvtt_sample(&[note, cue].concat()).unwrap();
+
+        assert!(!sample.is_empty_cue());
+        assert_eq!(sample.cue_count(), 1);
+        assert_eq!(sample.additional_text_count(), 1);
+        assert!(sample.contains_source_ids());
+        let MovWebVttSampleItem::AdditionalText(additional) = &sample.items()[0] else {
+            panic!("expected additional text first");
+        };
+        assert_eq!(additional.text(), "NOTE imported comment");
+        let MovWebVttSampleItem::Cue(cue) = &sample.items()[1] else {
+            panic!("expected cue second");
+        };
+        assert_eq!(cue.source_id(), Some(7));
+        assert_eq!(cue.cue_id(), Some("cue-7"));
+        assert_eq!(cue.cue_time(), Some("00:00:01.500"));
+        assert_eq!(cue.settings(), Some("align:start size:50%"));
+        assert_eq!(cue.payload(), "Hello\nworld");
+        assert_eq!(cue.child_boxes().len(), 5);
+
+        let empty = parse_webvtt_sample(&box_(*VTTE_ID, &[])).unwrap();
+        assert!(empty.is_empty_cue());
+        assert_eq!(empty.cue_count(), 0);
+        assert_eq!(empty.additional_text_count(), 0);
+    }
+
+    #[test]
+    fn reads_webvtt_packets_with_sample_payload_side_data() {
+        let sample_entry = [box_(*VTTC_ID, b"WEBVTT"), box_(*VLAB_ID, b"episode-main")].concat();
+        let cue_sample = box_(
+            *VTTC_CUE_ID,
+            &[
+                box_(*VSID_ID, &5_u32.to_be_bytes()),
+                box_(*STTG_ID, b"line:0"),
+                box_(*PAYL_ID, b"Caption"),
+            ]
+            .concat(),
+        );
+        let empty_sample = box_(*VTTE_ID, &[]);
+        let bytes = mp4_with_sample_description_and_samples(
+            b"wvtt",
+            1,
+            &sample_entry,
+            &[cue_sample.as_slice(), empty_sample.as_slice()],
+            &[1_000, 500],
+        );
+        let mut demuxer = MovDemuxer::open(&bytes).unwrap();
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), cue_sample.as_slice());
+        assert_eq!(first.side_data()[2].kind(), "mov_webvtt_sample_kind");
+        assert_eq!(first.side_data()[2].data(), b"cues");
+        assert_eq!(first.side_data()[3].kind(), "mov_webvtt_cue_count");
+        assert_eq!(first.side_data()[3].data(), &1_u32.to_be_bytes());
+        assert_eq!(
+            first.side_data()[4].kind(),
+            "mov_webvtt_additional_text_count"
+        );
+        assert_eq!(first.side_data()[4].data(), &0_u32.to_be_bytes());
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second.data(), empty_sample.as_slice());
+        assert_eq!(second.side_data()[2].data(), b"empty");
+        assert_eq!(second.side_data()[3].data(), &0_u32.to_be_bytes());
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn parses_metadata_sample_entry_codec_parameters() {
         let metx_extra = xml_metadata_sample_entry_extra_data("utf-8", "urn:rust", "rust.xsd");
         let bytes = mp4_with_sample_description_entry(b"metx", 1, &metx_extra);
@@ -7394,6 +7805,105 @@ mod tests {
     }
 
     #[test]
+    fn rejects_malformed_webvtt_sample_payloads() {
+        assert_eq!(
+            parse_webvtt_sample(&[]).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            parse_webvtt_sample(&box_(*b"junk", &[]))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mixed_empty = [
+            box_(*VTTE_ID, &[]),
+            box_(*VTTC_CUE_ID, &box_(*PAYL_ID, b"x")),
+        ]
+        .concat();
+        assert_eq!(
+            parse_webvtt_sample(&mixed_empty).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let missing_payload = box_(*VTTC_CUE_ID, &box_(*STTG_ID, b"align:start"));
+        assert_eq!(
+            parse_webvtt_sample(&missing_payload).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let duplicate_payload = box_(
+            *VTTC_CUE_ID,
+            &[box_(*PAYL_ID, b"a"), box_(*PAYL_ID, b"b")].concat(),
+        );
+        assert_eq!(
+            parse_webvtt_sample(&duplicate_payload).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let invalid_payload_utf8 = box_(*VTTC_CUE_ID, &box_(*PAYL_ID, b"\xff"));
+        assert_eq!(
+            parse_webvtt_sample(&invalid_payload_utf8)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let trailing_line_terminator = box_(*VTTC_CUE_ID, &box_(*PAYL_ID, b"text\n"));
+        assert_eq!(
+            parse_webvtt_sample(&trailing_line_terminator)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let blank_line = box_(*VTTC_CUE_ID, &box_(*PAYL_ID, b"a\n\nb"));
+        assert_eq!(
+            parse_webvtt_sample(&blank_line).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let leading_space_settings = box_(
+            *VTTC_CUE_ID,
+            &[box_(*STTG_ID, b" align:start"), box_(*PAYL_ID, b"x")].concat(),
+        );
+        assert_eq!(
+            parse_webvtt_sample(&leading_space_settings)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let short_source_id = box_(
+            *VTTC_CUE_ID,
+            &[box_(*VSID_ID, b"\0"), box_(*PAYL_ID, b"x")].concat(),
+        );
+        assert_eq!(
+            parse_webvtt_sample(&short_source_id).unwrap_err().kind(),
+            AvErrorKind::EndOfFile
+        );
+
+        let sample_entry_without_source_label = box_(*VTTC_ID, b"WEBVTT");
+        let source_id_sample = box_(
+            *VTTC_CUE_ID,
+            &[box_(*VSID_ID, &1_u32.to_be_bytes()), box_(*PAYL_ID, b"x")].concat(),
+        );
+        let bytes = mp4_with_sample_description_and_samples(
+            b"wvtt",
+            1,
+            &sample_entry_without_source_label,
+            &[source_id_sample.as_slice()],
+            &[1_000],
+        );
+        let mut demuxer = MovDemuxer::open(&bytes).unwrap();
+        assert_eq!(
+            demuxer.read_packet().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn rejects_sample_description_indexes_other_than_one() {
         assert_eq!(
             MovDemuxer::open(&mp4_with_sample_description_index(2))
@@ -8072,6 +8582,38 @@ mod tests {
         out.extend_from_slice(&box_(*MOOV_ID, &moov));
         out.extend_from_slice(&box_(*MDAT_ID, b"aa"));
         out
+    }
+
+    fn mp4_with_sample_description_and_samples(
+        codec_tag: &[u8; 4],
+        data_reference_index: u16,
+        extra_data: &[u8],
+        samples: &[&[u8]],
+        durations: &[u32],
+    ) -> Vec<u8> {
+        let ftyp = ftyp_box();
+        let sample_sizes = samples
+            .iter()
+            .map(|sample| u32::try_from(sample.len()).unwrap())
+            .collect::<Vec<_>>();
+        let mdat_payload = samples.concat();
+        let sample_description = stsd_box_with_entry(codec_tag, data_reference_index, extra_data);
+        let placeholder_moov_payload = moov_v0_with_custom_stsd_payload(
+            0,
+            &sample_sizes,
+            durations,
+            sample_description.clone(),
+        );
+        let placeholder_moov = box_(*MOOV_ID, &placeholder_moov_payload);
+        let chunk_offset = u64::try_from(ftyp.len() + placeholder_moov.len() + 8).unwrap();
+        let moov = moov_v0_with_custom_stsd_payload(
+            chunk_offset,
+            &sample_sizes,
+            durations,
+            sample_description,
+        );
+
+        [ftyp, box_(*MOOV_ID, &moov), box_(*MDAT_ID, &mdat_payload)].concat()
     }
 
     fn mp4_with_multiple_sample_description_entries() -> Vec<u8> {

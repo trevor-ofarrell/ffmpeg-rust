@@ -1,12 +1,14 @@
 #![no_main]
 
-use avformat::{MovDemuxer, MovInfo};
+use avformat::{mov::parse_webvtt_sample, MovDemuxer, MovInfo};
 use avutil::{AvErrorKind, Packet};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     exercise_mov(data);
     exercise_mov(&valid_mov());
+    exercise_webvtt_sample(data);
+    exercise_webvtt_sample(&valid_webvtt_sample());
 });
 
 fn exercise_mov(input: &[u8]) {
@@ -79,10 +81,33 @@ fn assert_packet(packet: &Packet, info: &MovInfo, next_dts: &mut [i64]) {
     next_dts[stream_index] += packet.duration();
 }
 
+fn exercise_webvtt_sample(input: &[u8]) {
+    let Ok(sample) = parse_webvtt_sample(input) else {
+        return;
+    };
+    assert_eq!(
+        sample.is_empty_cue(),
+        sample.cue_count() == 0 && sample.additional_text_count() == 0
+    );
+    assert!(sample.is_empty_cue() || sample.cue_count() > 0);
+}
+
 fn valid_mov() -> Vec<u8> {
     let samples = [b"aa".as_slice(), b"bbb".as_slice()];
     let durations = [1_000_u32, 2_000_u32];
     mov_with_samples(&samples, &durations)
+}
+
+fn valid_webvtt_sample() -> Vec<u8> {
+    box4(
+        *b"vttc",
+        &[
+            box4(*b"iden", b"cue-1"),
+            box4(*b"sttg", b"align:start"),
+            box4(*b"payl", b"hello"),
+        ]
+        .concat(),
+    )
 }
 
 fn mov_with_samples(samples: &[&[u8]], durations: &[u32]) -> Vec<u8> {
