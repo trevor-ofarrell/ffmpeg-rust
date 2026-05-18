@@ -351,20 +351,26 @@ pub enum FrameSideDataKind {
     SkipSamples,
     AudioServiceType,
     MasteringDisplayMetadata,
+    GopTimecode,
+    Spherical,
     ContentLightLevel,
     IccProfile,
-    Spherical,
+    S12mTimecode,
+    DynamicHdrPlus,
     RegionsOfInterest,
     VideoEncParams,
     SeiUnregistered,
     FilmGrainParams,
     DetectionBboxes,
-    DynamicHdrPlus,
-    DynamicHdrVivid,
-    AmbientViewingEnvironment,
     DolbyVisionRpuBuffer,
     DolbyVisionMetadata,
+    DynamicHdrVivid,
+    AmbientViewingEnvironment,
+    VideoHint,
     Lcevc,
+    ViewId,
+    ThreeDReferenceDisplays,
+    Exif,
     Unknown(String),
 }
 
@@ -382,20 +388,26 @@ impl FrameSideDataKind {
         Self::SkipSamples,
         Self::AudioServiceType,
         Self::MasteringDisplayMetadata,
+        Self::GopTimecode,
+        Self::Spherical,
         Self::ContentLightLevel,
         Self::IccProfile,
-        Self::Spherical,
+        Self::S12mTimecode,
+        Self::DynamicHdrPlus,
         Self::RegionsOfInterest,
         Self::VideoEncParams,
         Self::SeiUnregistered,
         Self::FilmGrainParams,
         Self::DetectionBboxes,
-        Self::DynamicHdrPlus,
-        Self::DynamicHdrVivid,
-        Self::AmbientViewingEnvironment,
         Self::DolbyVisionRpuBuffer,
         Self::DolbyVisionMetadata,
+        Self::DynamicHdrVivid,
+        Self::AmbientViewingEnvironment,
+        Self::VideoHint,
         Self::Lcevc,
+        Self::ViewId,
+        Self::ThreeDReferenceDisplays,
+        Self::Exif,
     ];
 
     pub fn from_name(name: impl Into<String>) -> AvResult<Self> {
@@ -417,21 +429,65 @@ impl FrameSideDataKind {
             Self::SkipSamples => "skip_samples",
             Self::AudioServiceType => "audio_service_type",
             Self::MasteringDisplayMetadata => "mastering_display_metadata",
+            Self::GopTimecode => "gop_timecode",
+            Self::Spherical => "spherical",
             Self::ContentLightLevel => "content_light_level",
             Self::IccProfile => "icc_profile",
-            Self::Spherical => "spherical",
+            Self::S12mTimecode => "s12m_timecode",
+            Self::DynamicHdrPlus => "dynamic_hdr_plus",
             Self::RegionsOfInterest => "regions_of_interest",
             Self::VideoEncParams => "video_enc_params",
             Self::SeiUnregistered => "sei_unregistered",
             Self::FilmGrainParams => "film_grain_params",
             Self::DetectionBboxes => "detection_bboxes",
-            Self::DynamicHdrPlus => "dynamic_hdr_plus",
-            Self::DynamicHdrVivid => "dynamic_hdr_vivid",
-            Self::AmbientViewingEnvironment => "ambient_viewing_environment",
             Self::DolbyVisionRpuBuffer => "dolby_vision_rpu_buffer",
             Self::DolbyVisionMetadata => "dolby_vision_metadata",
+            Self::DynamicHdrVivid => "dynamic_hdr_vivid",
+            Self::AmbientViewingEnvironment => "ambient_viewing_environment",
+            Self::VideoHint => "video_hint",
             Self::Lcevc => "lcevc",
+            Self::ViewId => "view_id",
+            Self::ThreeDReferenceDisplays => "3d_reference_displays",
+            Self::Exif => "exif",
             Self::Unknown(name) => name.as_str(),
+        }
+    }
+
+    pub fn ffmpeg_constant(&self) -> Option<&'static str> {
+        match self {
+            Self::PanScan => Some("AV_FRAME_DATA_PANSCAN"),
+            Self::A53ClosedCaptions => Some("AV_FRAME_DATA_A53_CC"),
+            Self::Stereo3d => Some("AV_FRAME_DATA_STEREO3D"),
+            Self::MatrixEncoding => Some("AV_FRAME_DATA_MATRIXENCODING"),
+            Self::DownmixInfo => Some("AV_FRAME_DATA_DOWNMIX_INFO"),
+            Self::ReplayGain => Some("AV_FRAME_DATA_REPLAYGAIN"),
+            Self::DisplayMatrix => Some("AV_FRAME_DATA_DISPLAYMATRIX"),
+            Self::ActiveFormatDescription => Some("AV_FRAME_DATA_AFD"),
+            Self::MotionVectors => Some("AV_FRAME_DATA_MOTION_VECTORS"),
+            Self::SkipSamples => Some("AV_FRAME_DATA_SKIP_SAMPLES"),
+            Self::AudioServiceType => Some("AV_FRAME_DATA_AUDIO_SERVICE_TYPE"),
+            Self::MasteringDisplayMetadata => Some("AV_FRAME_DATA_MASTERING_DISPLAY_METADATA"),
+            Self::GopTimecode => Some("AV_FRAME_DATA_GOP_TIMECODE"),
+            Self::Spherical => Some("AV_FRAME_DATA_SPHERICAL"),
+            Self::ContentLightLevel => Some("AV_FRAME_DATA_CONTENT_LIGHT_LEVEL"),
+            Self::IccProfile => Some("AV_FRAME_DATA_ICC_PROFILE"),
+            Self::S12mTimecode => Some("AV_FRAME_DATA_S12M_TIMECODE"),
+            Self::DynamicHdrPlus => Some("AV_FRAME_DATA_DYNAMIC_HDR_PLUS"),
+            Self::RegionsOfInterest => Some("AV_FRAME_DATA_REGIONS_OF_INTEREST"),
+            Self::VideoEncParams => Some("AV_FRAME_DATA_VIDEO_ENC_PARAMS"),
+            Self::SeiUnregistered => Some("AV_FRAME_DATA_SEI_UNREGISTERED"),
+            Self::FilmGrainParams => Some("AV_FRAME_DATA_FILM_GRAIN_PARAMS"),
+            Self::DetectionBboxes => Some("AV_FRAME_DATA_DETECTION_BBOXES"),
+            Self::DolbyVisionRpuBuffer => Some("AV_FRAME_DATA_DOVI_RPU_BUFFER"),
+            Self::DolbyVisionMetadata => Some("AV_FRAME_DATA_DOVI_METADATA"),
+            Self::DynamicHdrVivid => Some("AV_FRAME_DATA_DYNAMIC_HDR_VIVID"),
+            Self::AmbientViewingEnvironment => Some("AV_FRAME_DATA_AMBIENT_VIEWING_ENVIRONMENT"),
+            Self::VideoHint => Some("AV_FRAME_DATA_VIDEO_HINT"),
+            Self::Lcevc => Some("AV_FRAME_DATA_LCEVC"),
+            Self::ViewId => Some("AV_FRAME_DATA_VIEW_ID"),
+            Self::ThreeDReferenceDisplays => Some("AV_FRAME_DATA_3D_REFERENCE_DISPLAYS"),
+            Self::Exif => Some("AV_FRAME_DATA_EXIF"),
+            Self::Unknown(_) => None,
         }
     }
 
@@ -441,7 +497,10 @@ impl FrameSideDataKind {
 
     fn known_from_name(name: &str) -> Option<Self> {
         let normalized = normalize_frame_side_data_name(name);
-        match normalized.as_str() {
+        let normalized = normalized
+            .strip_prefix("av_frame_data_")
+            .unwrap_or(normalized.as_str());
+        match normalized {
             "panscan" | "pan_scan" | "avpanscan" => Some(Self::PanScan),
             "a53cc" | "a53_cc" | "a53_closed_captions" | "atsc_a53_closed_captions" => {
                 Some(Self::A53ClosedCaptions)
@@ -458,26 +517,34 @@ impl FrameSideDataKind {
             "masteringdisplaymetadata" | "mastering_display_metadata" => {
                 Some(Self::MasteringDisplayMetadata)
             }
+            "goptimecode" | "gop_timecode" => Some(Self::GopTimecode),
+            "spherical" => Some(Self::Spherical),
             "contentlightlevel" | "content_light_level" => Some(Self::ContentLightLevel),
             "iccprofile" | "icc_profile" => Some(Self::IccProfile),
-            "spherical" => Some(Self::Spherical),
+            "s12mtimecode" | "s12m_timecode" => Some(Self::S12mTimecode),
+            "dynamichdrplus" | "dynamic_hdr_plus" | "hdr_plus" => Some(Self::DynamicHdrPlus),
             "roi" | "region_of_interest" | "regions_of_interest" => Some(Self::RegionsOfInterest),
             "videoencparams" | "video_enc_params" => Some(Self::VideoEncParams),
             "seiunregistered" | "sei_unregistered" => Some(Self::SeiUnregistered),
             "filmgrainparams" | "film_grain_params" => Some(Self::FilmGrainParams),
             "detectionbboxes" | "detection_bboxes" => Some(Self::DetectionBboxes),
-            "dynamichdrplus" | "dynamic_hdr_plus" | "hdr_plus" => Some(Self::DynamicHdrPlus),
-            "dynamichdrvivid" | "dynamic_hdr_vivid" | "hdr_vivid" => Some(Self::DynamicHdrVivid),
-            "ambientviewingenvironment" | "ambient_viewing_environment" => {
-                Some(Self::AmbientViewingEnvironment)
-            }
             "dolbyvisionrpubuffer" | "dolby_vision_rpu_buffer" | "dovi_rpu_buffer" => {
                 Some(Self::DolbyVisionRpuBuffer)
             }
             "dolbyvisionmetadata" | "dolby_vision_metadata" | "dovi_metadata" => {
                 Some(Self::DolbyVisionMetadata)
             }
+            "dynamichdrvivid" | "dynamic_hdr_vivid" | "hdr_vivid" => Some(Self::DynamicHdrVivid),
+            "ambientviewingenvironment" | "ambient_viewing_environment" => {
+                Some(Self::AmbientViewingEnvironment)
+            }
+            "videohint" | "video_hint" => Some(Self::VideoHint),
             "lcevc" => Some(Self::Lcevc),
+            "viewid" | "view_id" => Some(Self::ViewId),
+            "3dreferencedisplays" | "3d_reference_displays" | "three_d_reference_displays" => {
+                Some(Self::ThreeDReferenceDisplays)
+            }
+            "exif" => Some(Self::Exif),
             _ => None,
         }
     }
@@ -2536,7 +2603,19 @@ mod tests {
             FrameSideDataKind::from_name("Dolby Vision RPU Buffer").unwrap(),
             FrameSideDataKind::DolbyVisionRpuBuffer
         );
+        assert_eq!(
+            FrameSideDataKind::from_name("AV_FRAME_DATA_EXIF").unwrap(),
+            FrameSideDataKind::Exif
+        );
+        assert_eq!(
+            FrameSideDataKind::from_name("3D Reference Displays").unwrap(),
+            FrameSideDataKind::ThreeDReferenceDisplays
+        );
         assert_eq!(FrameSideDataKind::DisplayMatrix.name(), "displaymatrix");
+        assert_eq!(
+            FrameSideDataKind::DisplayMatrix.ffmpeg_constant(),
+            Some("AV_FRAME_DATA_DISPLAYMATRIX")
+        );
         assert!(FrameSideDataKind::DisplayMatrix.is_known());
         assert!(FrameSideDataKind::KNOWN.contains(&FrameSideDataKind::DisplayMatrix));
 
@@ -2546,6 +2625,7 @@ mod tests {
             FrameSideDataKind::Unknown(String::from("vendor.private.side-data"))
         );
         assert_eq!(unknown.name(), "vendor.private.side-data");
+        assert_eq!(unknown.ffmpeg_constant(), None);
         assert!(!unknown.is_known());
 
         assert_eq!(
@@ -2558,6 +2638,112 @@ mod tests {
                 .kind(),
             AvErrorKind::InvalidArgument
         );
+    }
+
+    #[test]
+    fn frame_side_data_known_inventory_matches_ffmpeg_8_1_1_header() {
+        let expected = [
+            (FrameSideDataKind::PanScan, "AV_FRAME_DATA_PANSCAN"),
+            (FrameSideDataKind::A53ClosedCaptions, "AV_FRAME_DATA_A53_CC"),
+            (FrameSideDataKind::Stereo3d, "AV_FRAME_DATA_STEREO3D"),
+            (
+                FrameSideDataKind::MatrixEncoding,
+                "AV_FRAME_DATA_MATRIXENCODING",
+            ),
+            (FrameSideDataKind::DownmixInfo, "AV_FRAME_DATA_DOWNMIX_INFO"),
+            (FrameSideDataKind::ReplayGain, "AV_FRAME_DATA_REPLAYGAIN"),
+            (
+                FrameSideDataKind::DisplayMatrix,
+                "AV_FRAME_DATA_DISPLAYMATRIX",
+            ),
+            (
+                FrameSideDataKind::ActiveFormatDescription,
+                "AV_FRAME_DATA_AFD",
+            ),
+            (
+                FrameSideDataKind::MotionVectors,
+                "AV_FRAME_DATA_MOTION_VECTORS",
+            ),
+            (FrameSideDataKind::SkipSamples, "AV_FRAME_DATA_SKIP_SAMPLES"),
+            (
+                FrameSideDataKind::AudioServiceType,
+                "AV_FRAME_DATA_AUDIO_SERVICE_TYPE",
+            ),
+            (
+                FrameSideDataKind::MasteringDisplayMetadata,
+                "AV_FRAME_DATA_MASTERING_DISPLAY_METADATA",
+            ),
+            (FrameSideDataKind::GopTimecode, "AV_FRAME_DATA_GOP_TIMECODE"),
+            (FrameSideDataKind::Spherical, "AV_FRAME_DATA_SPHERICAL"),
+            (
+                FrameSideDataKind::ContentLightLevel,
+                "AV_FRAME_DATA_CONTENT_LIGHT_LEVEL",
+            ),
+            (FrameSideDataKind::IccProfile, "AV_FRAME_DATA_ICC_PROFILE"),
+            (
+                FrameSideDataKind::S12mTimecode,
+                "AV_FRAME_DATA_S12M_TIMECODE",
+            ),
+            (
+                FrameSideDataKind::DynamicHdrPlus,
+                "AV_FRAME_DATA_DYNAMIC_HDR_PLUS",
+            ),
+            (
+                FrameSideDataKind::RegionsOfInterest,
+                "AV_FRAME_DATA_REGIONS_OF_INTEREST",
+            ),
+            (
+                FrameSideDataKind::VideoEncParams,
+                "AV_FRAME_DATA_VIDEO_ENC_PARAMS",
+            ),
+            (
+                FrameSideDataKind::SeiUnregistered,
+                "AV_FRAME_DATA_SEI_UNREGISTERED",
+            ),
+            (
+                FrameSideDataKind::FilmGrainParams,
+                "AV_FRAME_DATA_FILM_GRAIN_PARAMS",
+            ),
+            (
+                FrameSideDataKind::DetectionBboxes,
+                "AV_FRAME_DATA_DETECTION_BBOXES",
+            ),
+            (
+                FrameSideDataKind::DolbyVisionRpuBuffer,
+                "AV_FRAME_DATA_DOVI_RPU_BUFFER",
+            ),
+            (
+                FrameSideDataKind::DolbyVisionMetadata,
+                "AV_FRAME_DATA_DOVI_METADATA",
+            ),
+            (
+                FrameSideDataKind::DynamicHdrVivid,
+                "AV_FRAME_DATA_DYNAMIC_HDR_VIVID",
+            ),
+            (
+                FrameSideDataKind::AmbientViewingEnvironment,
+                "AV_FRAME_DATA_AMBIENT_VIEWING_ENVIRONMENT",
+            ),
+            (FrameSideDataKind::VideoHint, "AV_FRAME_DATA_VIDEO_HINT"),
+            (FrameSideDataKind::Lcevc, "AV_FRAME_DATA_LCEVC"),
+            (FrameSideDataKind::ViewId, "AV_FRAME_DATA_VIEW_ID"),
+            (
+                FrameSideDataKind::ThreeDReferenceDisplays,
+                "AV_FRAME_DATA_3D_REFERENCE_DISPLAYS",
+            ),
+            (FrameSideDataKind::Exif, "AV_FRAME_DATA_EXIF"),
+        ];
+        let expected_kinds = expected
+            .iter()
+            .map(|(kind, _)| kind.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(FrameSideDataKind::KNOWN, expected_kinds.as_slice());
+
+        for (kind, ffmpeg_constant) in expected {
+            assert_eq!(kind.ffmpeg_constant(), Some(ffmpeg_constant));
+            assert_eq!(FrameSideDataKind::from_name(ffmpeg_constant).unwrap(), kind);
+            assert_eq!(FrameSideDataKind::from_name(kind.name()).unwrap(), kind);
+        }
     }
 
     #[test]

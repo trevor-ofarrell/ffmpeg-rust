@@ -1029,10 +1029,27 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         FrameSideDataKind::DisplayMatrix
     );
     assert_eq!(
+        FrameSideDataKind::from_name("AV_FRAME_DATA_GOP_TIMECODE").unwrap(),
+        FrameSideDataKind::GopTimecode
+    );
+    assert_eq!(
+        FrameSideDataKind::from_name("3D Reference Displays").unwrap(),
+        FrameSideDataKind::ThreeDReferenceDisplays
+    );
+    assert_eq!(
+        FrameSideDataKind::ThreeDReferenceDisplays.ffmpeg_constant(),
+        Some("AV_FRAME_DATA_3D_REFERENCE_DISPLAYS")
+    );
+    assert_eq!(FrameSideDataKind::KNOWN.len(), 32);
+    assert_eq!(
         FrameSideDataKind::from_name("vendor.private.side-data")
             .unwrap()
             .name(),
         "vendor.private.side-data"
+    );
+    assert_eq!(
+        FrameSideDataKind::Unknown(String::from("vendor.private.side-data")).ffmpeg_constant(),
+        None
     );
     assert_eq!(
         FrameSideData::new(" \t", Vec::new()).unwrap_err().kind(),
@@ -1883,7 +1900,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 8 {
+    match byte.unwrap_or_default() % 14 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::ReplayGain,
         2 => FrameSideDataKind::MasteringDisplayMetadata,
@@ -1891,6 +1908,12 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         4 => FrameSideDataKind::IccProfile,
         5 => FrameSideDataKind::DolbyVisionRpuBuffer,
         6 => FrameSideDataKind::Lcevc,
+        7 => FrameSideDataKind::GopTimecode,
+        8 => FrameSideDataKind::S12mTimecode,
+        9 => FrameSideDataKind::VideoHint,
+        10 => FrameSideDataKind::ViewId,
+        11 => FrameSideDataKind::ThreeDReferenceDisplays,
+        12 => FrameSideDataKind::Exif,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
