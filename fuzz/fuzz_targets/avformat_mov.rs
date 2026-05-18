@@ -12,6 +12,8 @@ fuzz_target!(|data: &[u8]| {
     exercise_seeded_mov(&valid_mov(), "raw ");
     exercise_seeded_mov(&valid_timed_text_mov(), "tx3g");
     exercise_seeded_mov(&valid_xml_subtitle_mov(), "stpp");
+    exercise_seeded_mov(&valid_text_subtitle_mov(), "sbtt");
+    exercise_seeded_mov(&valid_simple_text_mov(), "stxt");
     exercise_seeded_mov(&valid_webvtt_mov(), "wvtt");
     exercise_seeded_mov(&valid_xml_metadata_mov(), "metx");
     exercise_seeded_mov(&valid_text_metadata_mov(), "mett");
@@ -228,6 +230,14 @@ fn assert_seeded_sample_entry_details(info: &MovInfo, expected_codec_tag: &str) 
             assert_eq!(xml.auxiliary_mime_types(), "application/ttml+xml");
             assert_seeded_bitrate(xml.bit_rate());
         }
+        ("sbtt", MovSampleEntryDetails::Subtitle(subtitle)) => {
+            let text = subtitle.text_subtitle().expect("sbtt details");
+            assert_seeded_text_entry(text, "text/vtt", "seed-subtitle-config");
+        }
+        ("stxt", MovSampleEntryDetails::Subtitle(subtitle)) => {
+            let text = subtitle.simple_text().expect("stxt details");
+            assert_seeded_text_entry(text, "text/plain", "seed-simple-text-config");
+        }
         ("wvtt", MovSampleEntryDetails::Subtitle(subtitle)) => {
             let webvtt = subtitle.webvtt().expect("wvtt details");
             assert_eq!(webvtt.configuration().config(), "WEBVTT\n\n");
@@ -262,6 +272,20 @@ fn assert_seeded_sample_entry_details(info: &MovInfo, expected_codec_tag: &str) 
         }
         _ => panic!("seeded MOV fixture exposed unexpected sample-entry details"),
     }
+}
+
+fn assert_seeded_text_entry(
+    entry: &avformat::mov::MovTextSubtitleSampleEntry,
+    expected_mime_format: &str,
+    expected_text_config: &str,
+) {
+    assert_eq!(entry.content_encoding(), "utf-8");
+    assert_eq!(entry.mime_format(), expected_mime_format);
+    assert_seeded_bitrate(entry.bit_rate());
+    let text_config = entry.text_config().expect("seeded text config");
+    assert_eq!(text_config.version(), 0);
+    assert_eq!(text_config.flags(), [0, 0, 0]);
+    assert_eq!(text_config.text_config(), expected_text_config);
 }
 
 fn assert_text_entry_invariants(
@@ -428,6 +452,30 @@ fn valid_xml_subtitle_mov() -> Vec<u8> {
     mov_with_sample_entry(*b"stpp", 1, &xml_subtitle_entry_extra(), &samples, &durations)
 }
 
+fn valid_text_subtitle_mov() -> Vec<u8> {
+    let samples = [b"WEBVTT cue".as_slice()];
+    let durations = [1_000_u32];
+    mov_with_sample_entry(
+        *b"sbtt",
+        1,
+        &text_entry_extra("text/vtt", "seed-subtitle-config"),
+        &samples,
+        &durations,
+    )
+}
+
+fn valid_simple_text_mov() -> Vec<u8> {
+    let samples = [b"simple text".as_slice()];
+    let durations = [1_000_u32];
+    mov_with_sample_entry(
+        *b"stxt",
+        1,
+        &text_entry_extra("text/plain", "seed-simple-text-config"),
+        &samples,
+        &durations,
+    )
+}
+
 fn valid_webvtt_mov() -> Vec<u8> {
     let sample = valid_webvtt_sample();
     let samples = [sample.as_slice()];
@@ -499,11 +547,15 @@ fn xml_metadata_entry_extra() -> Vec<u8> {
 }
 
 fn text_metadata_entry_extra() -> Vec<u8> {
+    text_entry_extra("text/plain", "seed-config")
+}
+
+fn text_entry_extra(mime_format: &str, text_config: &str) -> Vec<u8> {
     [
         null_terminated("utf-8"),
-        null_terminated("text/plain"),
+        null_terminated(mime_format),
         seeded_bit_rate_box(),
-        box4(*b"txtC", &full_box(0, b"seed-config")),
+        box4(*b"txtC", &full_box(0, text_config.as_bytes())),
     ]
     .concat()
 }

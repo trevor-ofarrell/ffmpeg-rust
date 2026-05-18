@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat_mov` fuzz harness now deterministically seeds constrained MOV fixtures for `tx3g`, `stpp`, `wvtt`, `metx`, `mett`, and `urim` sample entries and asserts the parsed typed detail invariants for each seeded entry. The seeds also run through packet extraction, lazy `tx3g`/`wvtt` sample payload validation, side-data checks, and the existing generic MOV parser invariants. This is build-checked and clippy-clean coverage only; actual local fuzz execution remains blocked because `cargo-fuzz` is not installed.
+`avformat_mov` fuzz harness now deterministically seeds constrained MOV fixtures for `tx3g`, `stpp`, `sbtt`, `stxt`, `wvtt`, `metx`, `mett`, and `urim` sample entries and asserts the parsed typed detail invariants for each seeded entry. The seeds also run through packet extraction, lazy `tx3g`/`wvtt` sample payload validation, side-data checks, and the existing generic MOV parser invariants. This is build-checked and clippy-clean coverage only; actual local fuzz execution remains blocked because `cargo-fuzz` is not installed.
 
 `avformat-mov-demuxer` now parses optional `btrt` bitrate boxes for `wvtt` WebVTT sample entries. The `wvtt` path exposes typed bitrate metadata alongside the existing required `vttC` configuration, optional `vlab` source label, and preserved child boxes, while rejecting truncated or duplicate `btrt` boxes as typed errors. The ledger keeps MOV below `complete` because pinned-oracle differential tests, upstream FATE media parity, actual local fuzz execution, WebVTT rendering/timing parity, and broader subtitle/data coverage remain absent.
 
@@ -80,6 +80,15 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo fmt --all -- --check`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avformat_mov`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avformat_mov -- -D warnings`
+- `cargo test -p avformat mov::tests`
+- `cargo run -p fate-runner -- run --component avformat-mov-demuxer`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo run -p fate-runner -- run --changed`
 - `cargo fmt --all`
 - `cargo fmt --all -- --check`
 - `cargo check --manifest-path fuzz\Cargo.toml --bin avformat_mov`
@@ -1278,7 +1287,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` remains the current component. It now structures direct audio `esds`, `btrt`, `damr`, required `ac-3` `dac3`, required `ec-3` `dec3`, required `Opus` `dOps`, required `fLaC` `dfLa`, required `alac` Apple Lossless specific boxes in both direct and `wave/alac` compatibility forms, `tx3g` timed text entries, boxed `tx3g` Timed Text media sample payloads including the currently typed sample modifiers, `stpp` XML subtitle entries with typed optional `btrt`, `sbtt` text subtitle entries, `stxt` simple text entries, `wvtt` WebVTT sample entries with typed optional `btrt`, boxed `wvtt` WebVTT media sample payloads, and `metx`/`mett`/`urim` metadata entries with typed optional bitrate/configuration child boxes where currently modeled. The `avformat_mov` fuzz target now includes deterministic seeded MOV fixtures for the current typed `tx3g`/`stpp`/`wvtt`/`metx`/`mett`/`urim` sample-entry models. It still has a local FATE-runner smoke mapping that executes the focused MOV unit suite through `cargo run -p fate-runner -- run --component avformat-mov-demuxer`. Exact FFmpeg ffprobe output semantics, pinned FFmpeg differential tests, upstream FATE media parity, actual local fuzz execution, additional codec-specific audio extension parsing beyond direct `esds`/`btrt`/`damr`/`dac3`/`dec3`/`dOps`/`dfLa`/`alac`/`wave`/`chan`, Timed Text/WebVTT/text/metadata sample payload parity, and broader MOV subtitle/data sample-entry coverage remain absent.
+`avformat-mov-demuxer` remains the current component. It now structures direct audio `esds`, `btrt`, `damr`, required `ac-3` `dac3`, required `ec-3` `dec3`, required `Opus` `dOps`, required `fLaC` `dfLa`, required `alac` Apple Lossless specific boxes in both direct and `wave/alac` compatibility forms, `tx3g` timed text entries, boxed `tx3g` Timed Text media sample payloads including the currently typed sample modifiers, `stpp` XML subtitle entries with typed optional `btrt`, `sbtt` text subtitle entries, `stxt` simple text entries, `wvtt` WebVTT sample entries with typed optional `btrt`, boxed `wvtt` WebVTT media sample payloads, and `metx`/`mett`/`urim` metadata entries with typed optional bitrate/configuration child boxes where currently modeled. The `avformat_mov` fuzz target now includes deterministic seeded MOV fixtures for the current typed `tx3g`/`stpp`/`sbtt`/`stxt`/`wvtt`/`metx`/`mett`/`urim` sample-entry models. It still has a local FATE-runner smoke mapping that executes the focused MOV unit suite through `cargo run -p fate-runner -- run --component avformat-mov-demuxer`. Exact FFmpeg ffprobe output semantics, pinned FFmpeg differential tests, upstream FATE media parity, actual local fuzz execution, additional codec-specific audio extension parsing beyond direct `esds`/`btrt`/`damr`/`dac3`/`dec3`/`dOps`/`dfLa`/`alac`/`wave`/`chan`, Timed Text/WebVTT/text/metadata sample payload parity, and broader MOV subtitle/data sample-entry coverage remain absent.
 
 ## Next 3 Concrete Actions
 
@@ -1296,4 +1305,4 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: strengthened the build-checked `avformat_mov` fuzz harness with deterministic MOV fixtures for `tx3g`, `stpp`, `wvtt`, `metx`, `mett`, and `urim` sample entries, including parsed invariant assertions for typed bitrate, WebVTT config/source labels, text config, URI initialization, and Timed Text defaults. MOV stays below `complete` because pinned oracle, upstream FATE, and actual fuzz execution remain missing.
+Latest slice: extended the build-checked `avformat_mov` fuzz harness with deterministic `sbtt` and `stxt` MOV fixtures alongside the existing seeded subtitle/data entries, including parsed invariant assertions for typed bitrate and `txtC` text configuration fields. MOV stays below `complete` because pinned oracle, upstream FATE, and actual fuzz execution remain missing.
