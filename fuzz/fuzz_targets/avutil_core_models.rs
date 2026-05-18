@@ -8,10 +8,11 @@ use avutil::{
     FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus, FrameGopTimecode,
     FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameIccProfile,
     FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
-    FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
-    FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
-    FrameSphericalProjection, Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding,
-    SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode,
+    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
+    FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection, Md5,
+    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1451,6 +1452,29 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert!(dynamic_hdr_plus_payload_invalid(&frame_side_data_payload));
         }
     }
+    match frame.side_data()[0].regions_of_interest() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::RegionsOfInterest);
+            assert_eq!(value.to_bytes(), frame_side_data_payload);
+            assert_eq!(
+                frame_side_data_payload.len(),
+                value.len() * FrameRegionOfInterest::DATA_LEN
+            );
+            assert!(!value.is_empty());
+            for region in value.regions() {
+                assert_eq!(region.self_size(), FrameRegionOfInterest::SELF_SIZE);
+                assert!(region_qoffset_valid(region.qoffset()));
+            }
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::RegionsOfInterest),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::RegionsOfInterest);
+            assert!(regions_of_interest_payload_invalid(
+                &frame_side_data_payload
+            ));
+        }
+    }
     match frame.side_data()[0].sei_unregistered() {
         Ok(Some(payload)) => {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::SeiUnregistered);
@@ -2871,6 +2895,34 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, dynamic_hdr_plus).unwrap();
     assert_eq!(non_dynamic_hdr_plus.dynamic_hdr_plus().unwrap(), None);
 
+    let roi = FrameRegionOfInterest::new(0, 16, 4, 20, Rational::from_raw(-1, 10)).unwrap();
+    let rois = FrameRegionsOfInterest::new(vec![roi]).unwrap();
+    let roi_side_data = FrameSideData::new_regions_of_interest(rois.clone()).unwrap();
+    assert_eq!(
+        roi_side_data.kind_id(),
+        &FrameSideDataKind::RegionsOfInterest
+    );
+    assert_eq!(roi_side_data.data(), rois.to_bytes().as_slice());
+    assert_eq!(roi_side_data.regions_of_interest().unwrap(), Some(rois));
+    assert_eq!(
+        FrameRegionsOfInterest::parse(&[0; FrameRegionOfInterest::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_roi = roi.to_bytes();
+    write_ne_u32(&mut bad_roi, 0, FrameRegionOfInterest::SELF_SIZE + 4);
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::RegionsOfInterest, bad_roi.to_vec())
+            .unwrap()
+            .regions_of_interest()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_roi = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_roi.regions_of_interest().unwrap(), None);
+
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
@@ -3013,7 +3065,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 23 {
+    match byte.unwrap_or_default() % 24 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::MatrixEncoding,
         2 => FrameSideDataKind::DownmixInfo,
@@ -3028,14 +3080,15 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         11 => FrameSideDataKind::GopTimecode,
         12 => FrameSideDataKind::S12mTimecode,
         13 => FrameSideDataKind::DynamicHdrPlus,
-        14 => FrameSideDataKind::VideoHint,
-        15 => FrameSideDataKind::ViewId,
-        16 => FrameSideDataKind::ThreeDReferenceDisplays,
-        17 => FrameSideDataKind::Exif,
-        18 => FrameSideDataKind::SeiUnregistered,
-        19 => FrameSideDataKind::ActiveFormatDescription,
-        20 => FrameSideDataKind::SkipSamples,
-        21 => FrameSideDataKind::AudioServiceType,
+        14 => FrameSideDataKind::RegionsOfInterest,
+        15 => FrameSideDataKind::VideoHint,
+        16 => FrameSideDataKind::ViewId,
+        17 => FrameSideDataKind::ThreeDReferenceDisplays,
+        18 => FrameSideDataKind::Exif,
+        19 => FrameSideDataKind::SeiUnregistered,
+        20 => FrameSideDataKind::ActiveFormatDescription,
+        21 => FrameSideDataKind::SkipSamples,
+        22 => FrameSideDataKind::AudioServiceType,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
@@ -3136,6 +3189,46 @@ fn peak_luminance_grid_invalid(flag: u8, rows: u8, cols: u8) -> bool {
     false
 }
 
+fn regions_of_interest_payload_invalid(data: &[u8]) -> bool {
+    if data.is_empty()
+        || !data
+            .chunks_exact(FrameRegionOfInterest::DATA_LEN)
+            .remainder()
+            .is_empty()
+    {
+        return true;
+    }
+
+    for region in data.chunks_exact(FrameRegionOfInterest::DATA_LEN) {
+        if read_ne_u32(region, 0) != FrameRegionOfInterest::SELF_SIZE {
+            return true;
+        }
+        if !region_qoffset_valid(Rational::from_raw(
+            read_ne_i32(region, 20),
+            read_ne_i32(region, 24),
+        )) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn region_qoffset_valid(qoffset: Rational) -> bool {
+    if qoffset.den() == 0 {
+        return false;
+    }
+
+    let mut num = i128::from(qoffset.num());
+    let mut den = i128::from(qoffset.den());
+    if den < 0 {
+        num = -num;
+        den = -den;
+    }
+
+    (-den..=den).contains(&num)
+}
+
 fn minimal_icc_profile_fixture() -> Vec<u8> {
     let mut data = vec![0; FrameIccProfile::MIN_DATA_LEN];
     data[0..4].copy_from_slice(&(FrameIccProfile::MIN_DATA_LEN as u32).to_be_bytes());
@@ -3180,10 +3273,20 @@ fn read_be_u32(data: &[u8], offset: usize) -> u32 {
     u32::from_be_bytes(raw)
 }
 
+fn read_ne_u32(data: &[u8], offset: usize) -> u32 {
+    let mut raw = [0; 4];
+    raw.copy_from_slice(&data[offset..offset + 4]);
+    u32::from_ne_bytes(raw)
+}
+
 fn read_ne_i32(data: &[u8], offset: usize) -> i32 {
     let mut raw = [0; 4];
     raw.copy_from_slice(&data[offset..offset + 4]);
     i32::from_ne_bytes(raw)
+}
+
+fn write_ne_u32(data: &mut [u8], offset: usize, value: u32) {
+    data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
 }
 
 fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {

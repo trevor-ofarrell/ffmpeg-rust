@@ -2316,6 +2316,194 @@ impl<'a> FrameHdrPlusColorTransformParams<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameRegionOfInterest {
+    top: i32,
+    bottom: i32,
+    left: i32,
+    right: i32,
+    qoffset: Rational,
+}
+
+impl FrameRegionOfInterest {
+    pub const DATA_LEN: usize = 28;
+    pub const SELF_SIZE: u32 = Self::DATA_LEN as u32;
+
+    pub fn new(top: i32, bottom: i32, left: i32, right: i32, qoffset: Rational) -> AvResult<Self> {
+        if !Self::qoffset_is_valid(qoffset) {
+            return Err(AvError::invalid_argument(format!(
+                "region-of-interest qoffset {qoffset} is outside -1..=1"
+            )));
+        }
+
+        Ok(Self {
+            top,
+            bottom,
+            left,
+            right,
+            qoffset,
+        })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "region-of-interest side-data record requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let self_size = Self::read_u32(data, 0);
+        if self_size != Self::SELF_SIZE {
+            return Err(AvError::invalid_data(format!(
+                "region-of-interest self_size {self_size} does not match {}",
+                Self::SELF_SIZE
+            )));
+        }
+
+        let qoffset = Rational::from_raw(Self::read_i32(data, 20), Self::read_i32(data, 24));
+        if !Self::qoffset_is_valid(qoffset) {
+            return Err(AvError::invalid_data(format!(
+                "region-of-interest qoffset {qoffset} is outside -1..=1"
+            )));
+        }
+
+        Ok(Self {
+            top: Self::read_i32(data, 4),
+            bottom: Self::read_i32(data, 8),
+            left: Self::read_i32(data, 12),
+            right: Self::read_i32(data, 16),
+            qoffset,
+        })
+    }
+
+    pub const fn self_size(self) -> u32 {
+        Self::SELF_SIZE
+    }
+
+    pub const fn top(self) -> i32 {
+        self.top
+    }
+
+    pub const fn bottom(self) -> i32 {
+        self.bottom
+    }
+
+    pub const fn left(self) -> i32 {
+        self.left
+    }
+
+    pub const fn right(self) -> i32 {
+        self.right
+    }
+
+    pub const fn qoffset(self) -> Rational {
+        self.qoffset
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[0..4].copy_from_slice(&Self::SELF_SIZE.to_ne_bytes());
+        bytes[4..8].copy_from_slice(&self.top.to_ne_bytes());
+        bytes[8..12].copy_from_slice(&self.bottom.to_ne_bytes());
+        bytes[12..16].copy_from_slice(&self.left.to_ne_bytes());
+        bytes[16..20].copy_from_slice(&self.right.to_ne_bytes());
+        bytes[20..24].copy_from_slice(&self.qoffset.num().to_ne_bytes());
+        bytes[24..28].copy_from_slice(&self.qoffset.den().to_ne_bytes());
+        bytes
+    }
+
+    fn qoffset_is_valid(qoffset: Rational) -> bool {
+        if qoffset.den() == 0 {
+            return false;
+        }
+
+        let mut num = i128::from(qoffset.num());
+        let mut den = i128::from(qoffset.den());
+        if den < 0 {
+            num = -num;
+            den = -den;
+        }
+
+        (-den..=den).contains(&num)
+    }
+
+    fn read_u32(data: &[u8], offset: usize) -> u32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        u32::from_ne_bytes(raw)
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameRegionsOfInterest {
+    regions: Vec<FrameRegionOfInterest>,
+}
+
+impl FrameRegionsOfInterest {
+    pub fn new(regions: Vec<FrameRegionOfInterest>) -> AvResult<Self> {
+        if regions.is_empty() {
+            return Err(AvError::invalid_data(
+                "regions-of-interest frame side data requires at least one record",
+            ));
+        }
+
+        Ok(Self { regions })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.is_empty()
+            || !data
+                .chunks_exact(FrameRegionOfInterest::DATA_LEN)
+                .remainder()
+                .is_empty()
+        {
+            return Err(AvError::invalid_data(format!(
+                "regions-of-interest frame side data requires a non-empty multiple of {} bytes, got {}",
+                FrameRegionOfInterest::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let regions = data
+            .chunks_exact(FrameRegionOfInterest::DATA_LEN)
+            .map(FrameRegionOfInterest::parse)
+            .collect::<AvResult<Vec<_>>>()?;
+        Self::new(regions)
+    }
+
+    pub fn regions(&self) -> &[FrameRegionOfInterest] {
+        &self.regions
+    }
+
+    pub fn into_regions(self) -> Vec<FrameRegionOfInterest> {
+        self.regions
+    }
+
+    pub fn len(&self) -> usize {
+        self.regions.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.regions.is_empty()
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.regions.len() * FrameRegionOfInterest::DATA_LEN);
+        for region in &self.regions {
+            bytes.extend_from_slice(&region.to_bytes());
+        }
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameSeiUnregistered<'a> {
     uuid: [u8; 16],
     user_data: &'a [u8],
@@ -2777,6 +2965,10 @@ impl FrameSideData {
         Ok(side_data)
     }
 
+    pub fn new_regions_of_interest(value: FrameRegionsOfInterest) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::RegionsOfInterest, value.to_bytes())
+    }
+
     pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
         let total_len = FrameSeiUnregistered::UUID_LEN
             .checked_add(user_data.len())
@@ -2953,6 +3145,14 @@ impl FrameSideData {
         }
 
         FrameDynamicHdrPlus::parse(self.data()).map(Some)
+    }
+
+    pub fn regions_of_interest(&self) -> AvResult<Option<FrameRegionsOfInterest>> {
+        if self.kind != FrameSideDataKind::RegionsOfInterest {
+            return Ok(None);
+        }
+
+        FrameRegionsOfInterest::parse(self.data()).map(Some)
     }
 
     pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
@@ -3952,6 +4152,10 @@ mod tests {
     }
 
     fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {
+        data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_ne_u32(data: &mut [u8], offset: usize, value: u32) {
         data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
     }
 
@@ -6945,6 +7149,110 @@ mod tests {
         let non_hdr =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
         assert_eq!(non_hdr.dynamic_hdr_plus().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_regions_of_interest_payload() {
+        let high_priority =
+            FrameRegionOfInterest::new(0, 72, 8, 128, Rational::from_raw(-1, 10)).unwrap();
+        let lower_priority =
+            FrameRegionOfInterest::new(72, 144, 0, 192, Rational::from_raw(1, -2)).unwrap();
+        let regions = FrameRegionsOfInterest::new(vec![high_priority, lower_priority]).unwrap();
+        let payload = regions.to_bytes();
+
+        assert_eq!(FrameRegionOfInterest::DATA_LEN, 28);
+        assert_eq!(high_priority.self_size(), FrameRegionOfInterest::SELF_SIZE);
+        assert_eq!(high_priority.top(), 0);
+        assert_eq!(high_priority.bottom(), 72);
+        assert_eq!(high_priority.left(), 8);
+        assert_eq!(high_priority.right(), 128);
+        assert_eq!(high_priority.qoffset(), Rational::from_raw(-1, 10));
+        assert_eq!(lower_priority.qoffset(), Rational::from_raw(1, -2));
+        assert_eq!(regions.len(), 2);
+        assert!(!regions.is_empty());
+        assert_eq!(regions.regions(), &[high_priority, lower_priority]);
+        assert_eq!(
+            regions.clone().into_regions(),
+            vec![high_priority, lower_priority]
+        );
+        assert_eq!(FrameRegionsOfInterest::parse(&payload).unwrap(), regions);
+
+        let side_data = FrameSideData::new_regions_of_interest(regions.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::RegionsOfInterest);
+        assert_eq!(side_data.data(), payload.as_slice());
+        assert_eq!(side_data.regions_of_interest().unwrap(), Some(regions));
+
+        let replay_gain = FrameSideData::new_with_kind(
+            FrameSideDataKind::ReplayGain,
+            vec![0; FrameRegionOfInterest::DATA_LEN],
+        )
+        .unwrap();
+        assert_eq!(replay_gain.regions_of_interest().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_regions_of_interest_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; FrameRegionOfInterest::DATA_LEN - 1],
+            vec![0; FrameRegionOfInterest::DATA_LEN + 1],
+            vec![0; FrameRegionOfInterest::DATA_LEN * 2 - 1],
+        ] {
+            assert_eq!(
+                FrameRegionsOfInterest::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::RegionsOfInterest, data).unwrap();
+            assert_eq!(
+                side_data.regions_of_interest().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let mut bad_self_size = FrameRegionOfInterest::new(0, 1, 0, 1, Rational::from_raw(0, 1))
+            .unwrap()
+            .to_bytes();
+        write_ne_u32(&mut bad_self_size, 0, FrameRegionOfInterest::SELF_SIZE + 4);
+        assert_eq!(
+            FrameRegionsOfInterest::parse(&bad_self_size)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        for qoffset in [
+            Rational::from_raw(1, 0),
+            Rational::from_raw(2, 1),
+            Rational::from_raw(-2, 1),
+        ] {
+            assert_eq!(
+                FrameRegionOfInterest::new(0, 1, 0, 1, qoffset)
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidArgument
+            );
+
+            let mut bad_qoffset = FrameRegionOfInterest::new(0, 1, 0, 1, Rational::from_raw(0, 1))
+                .unwrap()
+                .to_bytes();
+            write_ne_rational(&mut bad_qoffset, 20, qoffset);
+            assert_eq!(
+                FrameRegionsOfInterest::parse(&bad_qoffset)
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            FrameRegionsOfInterest::new(Vec::new()).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let replay_gain =
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, Vec::new()).unwrap();
+        assert_eq!(replay_gain.regions_of_interest().unwrap(), None);
     }
 
     #[test]
