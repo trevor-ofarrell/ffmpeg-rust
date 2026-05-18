@@ -122,6 +122,48 @@ impl BufferRef {
         })
     }
 
+    pub fn from_external_slice_with_opaque_readonly<T, F>(
+        data: Arc<[u8]>,
+        opaque: T,
+        on_release: F,
+    ) -> Self
+    where
+        T: Send + Sync + 'static,
+        F: FnOnce(T) + Send + Sync + 'static,
+    {
+        let len = data.len();
+        Self {
+            data: Arc::new(BufferStorage::with_opaque_release_readonly(
+                data, opaque, on_release,
+            )),
+            len,
+        }
+    }
+
+    pub fn from_external_slice_with_len_and_opaque_readonly<T, F>(
+        data: Arc<[u8]>,
+        len: usize,
+        opaque: T,
+        on_release: F,
+    ) -> AvResult<Self>
+    where
+        T: Send + Sync + 'static,
+        F: FnOnce(T) + Send + Sync + 'static,
+    {
+        if len > data.len() {
+            return Err(AvError::invalid_argument(format!(
+                "visible buffer length {len} exceeds {} allocated bytes",
+                data.len()
+            )));
+        }
+        Ok(Self {
+            data: Arc::new(BufferStorage::with_opaque_release_readonly(
+                data, opaque, on_release,
+            )),
+            len,
+        })
+    }
+
     pub fn from_vec_with_release_callback<F>(data: Vec<u8>, on_release: F) -> Self
     where
         F: Fn(Vec<u8>) + Send + Sync + 'static,
@@ -356,6 +398,7 @@ struct BufferStorage {
 }
 
 type BufferReleaseCallback = Arc<dyn Fn(Vec<u8>) + Send + Sync + 'static>;
+type OpaqueReleaseCallback = Box<dyn FnOnce() + Send + Sync + 'static>;
 
 enum BufferOwner {
     Pool {
@@ -364,6 +407,7 @@ enum BufferOwner {
         release: PoolReleaseCallback,
     },
     Callback(BufferReleaseCallback),
+    Opaque(OpaqueReleaseCallback),
 }
 
 impl BufferStorage {
@@ -395,6 +439,18 @@ impl BufferStorage {
         Self {
             bytes: BufferBytes::shared(bytes),
             owner: None,
+            readonly: true,
+        }
+    }
+
+    fn with_opaque_release_readonly<T, F>(bytes: Arc<[u8]>, opaque: T, on_release: F) -> Self
+    where
+        T: Send + Sync + 'static,
+        F: FnOnce(T) + Send + Sync + 'static,
+    {
+        Self {
+            bytes: BufferBytes::shared(bytes),
+            owner: Some(BufferOwner::Opaque(Box::new(move || on_release(opaque)))),
             readonly: true,
         }
     }
@@ -518,6 +574,7 @@ impl std::fmt::Debug for BufferStorage {
         let owner = match self.owner {
             Some(BufferOwner::Pool { .. }) => "pool",
             Some(BufferOwner::Callback(_)) => "callback",
+            Some(BufferOwner::Opaque(_)) => "opaque",
             None => "none",
         };
         f.debug_struct("BufferStorage")
@@ -568,6 +625,9 @@ impl Drop for BufferStorage {
             Some(BufferOwner::Callback(on_release)) => {
                 let storage = self.bytes.take_vec();
                 on_release(storage);
+            }
+            Some(BufferOwner::Opaque(on_release)) => {
+                on_release();
             }
             None => {}
         }
@@ -1097,6 +1157,129 @@ mod tests {
                 .kind(),
             AvErrorKind::InvalidArgument
         );
+        assert_eq!(Arc::strong_count(&storage), 1);
+    }
+
+    #[test]
+    fn external_readonly_buffer_releases_opaque_after_last_original_reference() {
+        let storage: Arc<[u8]> = vec![7, 8, 9, 0].into();
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let buffer = BufferRef::from_external_slice_with_len_and_opaque_readonly(
+            Arc::clone(&storage),
+            3,
+            42usize,
+            move |opaque| {
+                capture.lock().unwrap().push(opaque);
+            },
+        )
+        .unwrap();
+        let slice = buffer.slice(1, 2).unwrap();
+        let shared = buffer.clone();
+
+        assert_eq!(buffer.as_slice(), &[7, 8, 9]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert!(buffer.is_readonly());
+        assert!(!buffer.is_writable());
+        assert!(std::ptr::eq(
+            buffer.as_padded_slice().as_ptr(),
+            storage.as_ptr()
+        ));
+        assert_eq!(Arc::strong_count(&storage), 2);
+
+        drop(buffer);
+        assert!(released.lock().unwrap().is_empty());
+        drop(slice);
+        assert!(released.lock().unwrap().is_empty());
+        drop(shared);
+
+        assert_eq!(*released.lock().unwrap(), vec![42]);
+        assert_eq!(Arc::strong_count(&storage), 1);
+    }
+
+    #[test]
+    fn external_readonly_buffer_detach_releases_unique_opaque() {
+        let storage: Arc<[u8]> = vec![1, 2, 3, 0].into();
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<&'static str>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_external_slice_with_len_and_opaque_readonly(
+            Arc::clone(&storage),
+            3,
+            "external-owner",
+            move |opaque| {
+                capture.lock().unwrap().push(opaque);
+            },
+        )
+        .unwrap();
+
+        buffer.make_mut()[2] = 8;
+
+        assert_eq!(*released.lock().unwrap(), vec!["external-owner"]);
+        assert_eq!(buffer.as_slice(), &[1, 2, 8]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+        assert!(!std::ptr::eq(
+            buffer.as_padded_slice().as_ptr(),
+            storage.as_ptr()
+        ));
+        assert_eq!(Arc::strong_count(&storage), 1);
+    }
+
+    #[test]
+    fn external_readonly_buffer_resize_waits_for_shared_original() {
+        let storage: Arc<[u8]> = vec![4, 5, 6].into();
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_external_slice_with_opaque_readonly(
+            Arc::clone(&storage),
+            77usize,
+            move |opaque| {
+                capture.lock().unwrap().push(opaque);
+            },
+        );
+        let shared = buffer.clone();
+
+        buffer.resize_with_padding(5, 1).unwrap();
+
+        assert!(released.lock().unwrap().is_empty());
+        assert_eq!(buffer.as_slice(), &[4, 5, 6, 0, 0]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+        assert_eq!(shared.as_slice(), &[4, 5, 6]);
+        assert!(shared.is_readonly());
+        assert!(std::ptr::eq(
+            shared.as_padded_slice().as_ptr(),
+            storage.as_ptr()
+        ));
+        drop(buffer);
+        assert!(released.lock().unwrap().is_empty());
+        drop(shared);
+        assert_eq!(*released.lock().unwrap(), vec![77]);
+        assert_eq!(Arc::strong_count(&storage), 1);
+    }
+
+    #[test]
+    fn external_readonly_buffer_rejects_invalid_visible_len_without_release() {
+        let storage: Arc<[u8]> = vec![1, 2].into();
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let capture = std::sync::Arc::clone(&released);
+
+        assert_eq!(
+            BufferRef::from_external_slice_with_len_and_opaque_readonly(
+                Arc::clone(&storage),
+                3,
+                5usize,
+                move |opaque| {
+                    capture.lock().unwrap().push(opaque);
+                },
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert!(released.lock().unwrap().is_empty());
         assert_eq!(Arc::strong_count(&storage), 1);
     }
 

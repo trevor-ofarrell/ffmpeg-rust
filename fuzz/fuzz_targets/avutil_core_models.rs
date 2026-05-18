@@ -259,6 +259,73 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(Arc::strong_count(&shared_storage), 1);
 
+    let external_storage: Arc<[u8]> = payload.clone().into();
+    let external_released = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let external_capture = Arc::clone(&external_released);
+    let mut external_readonly = BufferRef::from_external_slice_with_len_and_opaque_readonly(
+        Arc::clone(&external_storage),
+        payload.len(),
+        payload_len,
+        move |opaque| {
+            external_capture.lock().unwrap().push(opaque);
+        },
+    )
+    .unwrap();
+    assert_eq!(external_readonly.as_slice(), payload.as_slice());
+    assert!(std::ptr::eq(
+        external_readonly.as_padded_slice().as_ptr(),
+        external_storage.as_ptr()
+    ));
+    assert!(external_readonly.is_readonly());
+    assert!(!external_readonly.is_writable());
+    let external_original = external_readonly.clone();
+    external_readonly
+        .resize_with_padding(resize_len, resize_padding)
+        .unwrap();
+    assert!(external_released.lock().unwrap().is_empty());
+    assert!(external_readonly.is_writable());
+    assert!(!external_readonly.is_readonly());
+    let external_copied = payload.len().min(resize_len);
+    assert_eq!(
+        &external_readonly.as_slice()[..external_copied],
+        &payload[..external_copied]
+    );
+    assert!(external_readonly.as_slice()[external_copied..]
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(external_readonly
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert_eq!(external_original.as_slice(), payload.as_slice());
+    assert!(external_original.is_readonly());
+    assert!(std::ptr::eq(
+        external_original.as_padded_slice().as_ptr(),
+        external_storage.as_ptr()
+    ));
+    drop(external_readonly);
+    assert!(external_released.lock().unwrap().is_empty());
+    drop(external_original);
+    assert_eq!(*external_released.lock().unwrap(), vec![payload_len]);
+    assert_eq!(Arc::strong_count(&external_storage), 1);
+    let invalid_external_released = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let invalid_external_capture = Arc::clone(&invalid_external_released);
+    assert_eq!(
+        BufferRef::from_external_slice_with_len_and_opaque_readonly(
+            Arc::clone(&external_storage),
+            external_storage.len().saturating_add(1),
+            payload_len,
+            move |opaque| {
+                invalid_external_capture.lock().unwrap().push(opaque);
+            },
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert!(invalid_external_released.lock().unwrap().is_empty());
+    assert_eq!(Arc::strong_count(&external_storage), 1);
+
     let pool = BufferPool::new(payload_len, padding_len).unwrap();
     assert_eq!(pool.len(), payload_len);
     assert_eq!(pool.allocated_len(), payload_len + padding_len);
