@@ -326,6 +326,22 @@ impl Frame {
             .map(|index| self.side_data.remove(index))
     }
 
+    pub fn remove_side_data_by_properties(
+        &mut self,
+        properties: FrameSideDataProperties,
+    ) -> Vec<FrameSideData> {
+        let mut removed = Vec::new();
+        let mut index = 0;
+        while index < self.side_data.len() {
+            if self.side_data[index].properties().intersects(properties) {
+                removed.push(self.side_data.remove(index));
+            } else {
+                index += 1;
+            }
+        }
+        removed
+    }
+
     pub fn take_side_data(&mut self) -> Vec<FrameSideData> {
         std::mem::take(&mut self.side_data)
     }
@@ -334,6 +350,69 @@ impl Frame {
 impl Default for Frame {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameSideDataProperties(u32);
+
+impl FrameSideDataProperties {
+    pub const EMPTY: Self = Self(0);
+    pub const GLOBAL: Self = Self(1 << 0);
+    pub const MULTI: Self = Self(1 << 1);
+    pub const SIZE_DEPENDENT: Self = Self(1 << 2);
+    pub const COLOR_DEPENDENT: Self = Self(1 << 3);
+    pub const CHANNEL_DEPENDENT: Self = Self(1 << 4);
+    pub const ALL: Self = Self(
+        Self::GLOBAL.0
+            | Self::MULTI.0
+            | Self::SIZE_DEPENDENT.0
+            | Self::COLOR_DEPENDENT.0
+            | Self::CHANNEL_DEPENDENT.0,
+    );
+
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        Self(bits & Self::ALL.0)
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        (self.0 & other.0) == other.0
+    }
+
+    pub const fn intersects(self, other: Self) -> bool {
+        (self.0 & other.0) != 0
+    }
+
+    pub const fn union(self, other: Self) -> Self {
+        Self::from_bits_truncate(self.0 | other.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameSideDataDescriptor {
+    name: &'static str,
+    properties: FrameSideDataProperties,
+}
+
+impl FrameSideDataDescriptor {
+    pub const fn new(name: &'static str, properties: FrameSideDataProperties) -> Self {
+        Self { name, properties }
+    }
+
+    pub const fn name(self) -> &'static str {
+        self.name
+    }
+
+    pub const fn properties(self) -> FrameSideDataProperties {
+        self.properties
     }
 }
 
@@ -491,6 +570,113 @@ impl FrameSideDataKind {
         }
     }
 
+    pub fn descriptor(&self) -> Option<FrameSideDataDescriptor> {
+        use FrameSideDataProperties as Props;
+
+        Some(match self {
+            Self::PanScan => FrameSideDataDescriptor::new("AVPanScan", Props::SIZE_DEPENDENT),
+            Self::A53ClosedCaptions => {
+                FrameSideDataDescriptor::new("ATSC A53 Part 4 Closed Captions", Props::EMPTY)
+            }
+            Self::Stereo3d => FrameSideDataDescriptor::new("Stereo 3D", Props::GLOBAL),
+            Self::MatrixEncoding => {
+                FrameSideDataDescriptor::new("AVMatrixEncoding", Props::CHANNEL_DEPENDENT)
+            }
+            Self::DownmixInfo => FrameSideDataDescriptor::new(
+                "Metadata relevant to a downmix procedure",
+                Props::CHANNEL_DEPENDENT,
+            ),
+            Self::ReplayGain => FrameSideDataDescriptor::new("AVReplayGain", Props::GLOBAL),
+            Self::DisplayMatrix => FrameSideDataDescriptor::new("3x3 displaymatrix", Props::GLOBAL),
+            Self::ActiveFormatDescription => {
+                FrameSideDataDescriptor::new("Active format description", Props::EMPTY)
+            }
+            Self::MotionVectors => {
+                FrameSideDataDescriptor::new("Motion vectors", Props::SIZE_DEPENDENT)
+            }
+            Self::SkipSamples => FrameSideDataDescriptor::new("Skip samples", Props::EMPTY),
+            Self::AudioServiceType => {
+                FrameSideDataDescriptor::new("Audio service type", Props::GLOBAL)
+            }
+            Self::MasteringDisplayMetadata => FrameSideDataDescriptor::new(
+                "Mastering display metadata",
+                Props::GLOBAL.union(Props::COLOR_DEPENDENT),
+            ),
+            Self::GopTimecode => FrameSideDataDescriptor::new("GOP timecode", Props::EMPTY),
+            Self::Spherical => FrameSideDataDescriptor::new(
+                "Spherical Mapping",
+                Props::GLOBAL.union(Props::SIZE_DEPENDENT),
+            ),
+            Self::ContentLightLevel => FrameSideDataDescriptor::new(
+                "Content light level metadata",
+                Props::GLOBAL.union(Props::COLOR_DEPENDENT),
+            ),
+            Self::IccProfile => FrameSideDataDescriptor::new(
+                "ICC profile",
+                Props::GLOBAL.union(Props::COLOR_DEPENDENT),
+            ),
+            Self::S12mTimecode => FrameSideDataDescriptor::new("SMPTE 12-1 timecode", Props::EMPTY),
+            Self::DynamicHdrPlus => FrameSideDataDescriptor::new(
+                "HDR Dynamic Metadata SMPTE2094-40 (HDR10+)",
+                Props::COLOR_DEPENDENT,
+            ),
+            Self::RegionsOfInterest => {
+                FrameSideDataDescriptor::new("Regions Of Interest", Props::SIZE_DEPENDENT)
+            }
+            Self::VideoEncParams => {
+                FrameSideDataDescriptor::new("Video encoding parameters", Props::EMPTY)
+            }
+            Self::SeiUnregistered => FrameSideDataDescriptor::new(
+                "H.26[45] User Data Unregistered SEI message",
+                Props::MULTI,
+            ),
+            Self::FilmGrainParams => {
+                FrameSideDataDescriptor::new("Film grain parameters", Props::EMPTY)
+            }
+            Self::DetectionBboxes => FrameSideDataDescriptor::new(
+                "Bounding boxes for object detection and classification",
+                Props::SIZE_DEPENDENT,
+            ),
+            Self::DolbyVisionRpuBuffer => {
+                FrameSideDataDescriptor::new("Dolby Vision RPU Data", Props::COLOR_DEPENDENT)
+            }
+            Self::DolbyVisionMetadata => {
+                FrameSideDataDescriptor::new("Dolby Vision Metadata", Props::COLOR_DEPENDENT)
+            }
+            Self::DynamicHdrVivid => FrameSideDataDescriptor::new(
+                "HDR Dynamic Metadata CUVA 005.1 2021 (Vivid)",
+                Props::COLOR_DEPENDENT,
+            ),
+            Self::AmbientViewingEnvironment => {
+                FrameSideDataDescriptor::new("Ambient viewing environment", Props::GLOBAL)
+            }
+            Self::VideoHint => {
+                FrameSideDataDescriptor::new("Encoding video hint", Props::SIZE_DEPENDENT)
+            }
+            Self::Lcevc => FrameSideDataDescriptor::new("LCEVC NAL data", Props::SIZE_DEPENDENT),
+            Self::ViewId => FrameSideDataDescriptor::new("View ID", Props::EMPTY),
+            Self::ThreeDReferenceDisplays => {
+                FrameSideDataDescriptor::new("3D Reference Displays Information", Props::GLOBAL)
+            }
+            Self::Exif => FrameSideDataDescriptor::new("EXIF metadata", Props::GLOBAL),
+            Self::Unknown(_) => return None,
+        })
+    }
+
+    pub fn descriptor_name(&self) -> Option<&'static str> {
+        self.descriptor().map(FrameSideDataDescriptor::name)
+    }
+
+    pub fn properties(&self) -> FrameSideDataProperties {
+        self.descriptor()
+            .map(FrameSideDataDescriptor::properties)
+            .unwrap_or(FrameSideDataProperties::EMPTY)
+    }
+
+    pub fn supports_multiple_instances(&self) -> bool {
+        self.properties().contains(FrameSideDataProperties::MULTI)
+    }
+
     pub fn is_known(&self) -> bool {
         !matches!(self, Self::Unknown(_))
     }
@@ -608,6 +794,22 @@ impl FrameSideData {
 
     pub fn is_known_kind(&self) -> bool {
         self.kind.is_known()
+    }
+
+    pub fn descriptor(&self) -> Option<FrameSideDataDescriptor> {
+        self.kind.descriptor()
+    }
+
+    pub fn descriptor_name(&self) -> Option<&'static str> {
+        self.kind.descriptor_name()
+    }
+
+    pub fn properties(&self) -> FrameSideDataProperties {
+        self.kind.properties()
+    }
+
+    pub fn supports_multiple_instances(&self) -> bool {
+        self.kind.supports_multiple_instances()
     }
 
     pub fn data(&self) -> &[u8] {
@@ -2744,6 +2946,237 @@ mod tests {
             assert_eq!(FrameSideDataKind::from_name(ffmpeg_constant).unwrap(), kind);
             assert_eq!(FrameSideDataKind::from_name(kind.name()).unwrap(), kind);
         }
+    }
+
+    #[test]
+    fn frame_side_data_descriptors_match_ffmpeg_8_1_1_side_data_table() {
+        use FrameSideDataProperties as Props;
+
+        let expected = [
+            (
+                FrameSideDataKind::PanScan,
+                "AVPanScan",
+                Props::SIZE_DEPENDENT,
+            ),
+            (
+                FrameSideDataKind::A53ClosedCaptions,
+                "ATSC A53 Part 4 Closed Captions",
+                Props::EMPTY,
+            ),
+            (FrameSideDataKind::Stereo3d, "Stereo 3D", Props::GLOBAL),
+            (
+                FrameSideDataKind::MatrixEncoding,
+                "AVMatrixEncoding",
+                Props::CHANNEL_DEPENDENT,
+            ),
+            (
+                FrameSideDataKind::DownmixInfo,
+                "Metadata relevant to a downmix procedure",
+                Props::CHANNEL_DEPENDENT,
+            ),
+            (FrameSideDataKind::ReplayGain, "AVReplayGain", Props::GLOBAL),
+            (
+                FrameSideDataKind::DisplayMatrix,
+                "3x3 displaymatrix",
+                Props::GLOBAL,
+            ),
+            (
+                FrameSideDataKind::ActiveFormatDescription,
+                "Active format description",
+                Props::EMPTY,
+            ),
+            (
+                FrameSideDataKind::MotionVectors,
+                "Motion vectors",
+                Props::SIZE_DEPENDENT,
+            ),
+            (FrameSideDataKind::SkipSamples, "Skip samples", Props::EMPTY),
+            (
+                FrameSideDataKind::AudioServiceType,
+                "Audio service type",
+                Props::GLOBAL,
+            ),
+            (
+                FrameSideDataKind::MasteringDisplayMetadata,
+                "Mastering display metadata",
+                Props::GLOBAL.union(Props::COLOR_DEPENDENT),
+            ),
+            (FrameSideDataKind::GopTimecode, "GOP timecode", Props::EMPTY),
+            (
+                FrameSideDataKind::Spherical,
+                "Spherical Mapping",
+                Props::GLOBAL.union(Props::SIZE_DEPENDENT),
+            ),
+            (
+                FrameSideDataKind::ContentLightLevel,
+                "Content light level metadata",
+                Props::GLOBAL.union(Props::COLOR_DEPENDENT),
+            ),
+            (
+                FrameSideDataKind::IccProfile,
+                "ICC profile",
+                Props::GLOBAL.union(Props::COLOR_DEPENDENT),
+            ),
+            (
+                FrameSideDataKind::S12mTimecode,
+                "SMPTE 12-1 timecode",
+                Props::EMPTY,
+            ),
+            (
+                FrameSideDataKind::DynamicHdrPlus,
+                "HDR Dynamic Metadata SMPTE2094-40 (HDR10+)",
+                Props::COLOR_DEPENDENT,
+            ),
+            (
+                FrameSideDataKind::RegionsOfInterest,
+                "Regions Of Interest",
+                Props::SIZE_DEPENDENT,
+            ),
+            (
+                FrameSideDataKind::VideoEncParams,
+                "Video encoding parameters",
+                Props::EMPTY,
+            ),
+            (
+                FrameSideDataKind::SeiUnregistered,
+                "H.26[45] User Data Unregistered SEI message",
+                Props::MULTI,
+            ),
+            (
+                FrameSideDataKind::FilmGrainParams,
+                "Film grain parameters",
+                Props::EMPTY,
+            ),
+            (
+                FrameSideDataKind::DetectionBboxes,
+                "Bounding boxes for object detection and classification",
+                Props::SIZE_DEPENDENT,
+            ),
+            (
+                FrameSideDataKind::DolbyVisionRpuBuffer,
+                "Dolby Vision RPU Data",
+                Props::COLOR_DEPENDENT,
+            ),
+            (
+                FrameSideDataKind::DolbyVisionMetadata,
+                "Dolby Vision Metadata",
+                Props::COLOR_DEPENDENT,
+            ),
+            (
+                FrameSideDataKind::DynamicHdrVivid,
+                "HDR Dynamic Metadata CUVA 005.1 2021 (Vivid)",
+                Props::COLOR_DEPENDENT,
+            ),
+            (
+                FrameSideDataKind::AmbientViewingEnvironment,
+                "Ambient viewing environment",
+                Props::GLOBAL,
+            ),
+            (
+                FrameSideDataKind::VideoHint,
+                "Encoding video hint",
+                Props::SIZE_DEPENDENT,
+            ),
+            (
+                FrameSideDataKind::Lcevc,
+                "LCEVC NAL data",
+                Props::SIZE_DEPENDENT,
+            ),
+            (FrameSideDataKind::ViewId, "View ID", Props::EMPTY),
+            (
+                FrameSideDataKind::ThreeDReferenceDisplays,
+                "3D Reference Displays Information",
+                Props::GLOBAL,
+            ),
+            (FrameSideDataKind::Exif, "EXIF metadata", Props::GLOBAL),
+        ];
+
+        for (kind, name, properties) in expected {
+            let descriptor = kind.descriptor().unwrap();
+            assert_eq!(descriptor.name(), name);
+            assert_eq!(descriptor.properties(), properties);
+            assert_eq!(kind.descriptor_name(), Some(name));
+            assert_eq!(kind.properties(), properties);
+        }
+
+        let unknown = FrameSideDataKind::Unknown(String::from("vendor.private.side-data"));
+        assert_eq!(unknown.descriptor(), None);
+        assert_eq!(unknown.descriptor_name(), None);
+        assert_eq!(unknown.properties(), Props::EMPTY);
+        assert!(!unknown.supports_multiple_instances());
+        assert_eq!(
+            Props::from_bits_truncate(u32::MAX).bits(),
+            Props::ALL.bits()
+        );
+        assert_eq!(Props::from_bits_truncate(1 << 31), Props::EMPTY);
+        assert!(Props::GLOBAL
+            .union(Props::COLOR_DEPENDENT)
+            .contains(Props::GLOBAL));
+        assert!(Props::GLOBAL
+            .union(Props::COLOR_DEPENDENT)
+            .intersects(Props::COLOR_DEPENDENT));
+        assert!(!Props::GLOBAL.intersects(Props::SIZE_DEPENDENT));
+    }
+
+    #[test]
+    fn frame_side_data_properties_drive_multi_and_removal_helpers() {
+        let mut frame =
+            Frame::video(VideoFrame::new(1, 1, PixelFormat::Gray8, vec![vec![7]]).unwrap());
+        frame
+            .add_side_data_kind(FrameSideDataKind::DisplayMatrix, vec![1])
+            .unwrap();
+        frame
+            .add_side_data_kind(FrameSideDataKind::MotionVectors, vec![2])
+            .unwrap();
+        frame
+            .add_side_data_kind(FrameSideDataKind::SeiUnregistered, vec![3])
+            .unwrap();
+        frame
+            .add_side_data("vendor.private.side-data", vec![4])
+            .unwrap();
+
+        assert_eq!(
+            frame.side_data()[0].descriptor_name(),
+            Some("3x3 displaymatrix")
+        );
+        assert!(frame.side_data()[0]
+            .properties()
+            .contains(FrameSideDataProperties::GLOBAL));
+        assert!(FrameSideDataKind::SeiUnregistered.supports_multiple_instances());
+        assert!(frame.side_data()[2].supports_multiple_instances());
+        assert!(!frame.side_data()[3]
+            .properties()
+            .intersects(FrameSideDataProperties::ALL));
+
+        let removed_globals = frame.remove_side_data_by_properties(FrameSideDataProperties::GLOBAL);
+        assert_eq!(removed_globals.len(), 1);
+        assert_eq!(
+            removed_globals[0].kind_id(),
+            &FrameSideDataKind::DisplayMatrix
+        );
+        assert_eq!(frame.side_data().len(), 3);
+
+        let removed_size_or_multi = frame.remove_side_data_by_properties(
+            FrameSideDataProperties::SIZE_DEPENDENT.union(FrameSideDataProperties::MULTI),
+        );
+        assert_eq!(removed_size_or_multi.len(), 2);
+        assert_eq!(
+            removed_size_or_multi
+                .iter()
+                .map(FrameSideData::kind_id)
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec![
+                FrameSideDataKind::MotionVectors,
+                FrameSideDataKind::SeiUnregistered
+            ]
+        );
+        assert_eq!(frame.side_data().len(), 1);
+        assert_eq!(frame.side_data()[0].kind(), "vendor.private.side-data");
+        assert!(frame
+            .remove_side_data_by_properties(FrameSideDataProperties::EMPTY)
+            .is_empty());
+        assert_eq!(frame.side_data().len(), 1);
     }
 
     #[test]

@@ -4,8 +4,9 @@ use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameData, FrameSideData,
-    FrameSideDataKind, Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    FrameSideDataKind, FrameSideDataProperties, Md5, Packet, PacketFlags, PixelFormat, Rational,
+    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
+    VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -959,6 +960,18 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         frame_side_data_kind.is_known()
     );
     assert_eq!(
+        frame.side_data()[0].descriptor(),
+        frame_side_data_kind.descriptor()
+    );
+    assert_eq!(
+        frame.side_data()[0].properties(),
+        frame_side_data_kind.properties()
+    );
+    assert_eq!(
+        frame.side_data()[0].supports_multiple_instances(),
+        frame_side_data_kind.supports_multiple_instances()
+    );
+    assert_eq!(
         frame.side_data()[0].data(),
         frame_side_data_payload.as_slice()
     );
@@ -1040,6 +1053,21 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         FrameSideDataKind::ThreeDReferenceDisplays.ffmpeg_constant(),
         Some("AV_FRAME_DATA_3D_REFERENCE_DISPLAYS")
     );
+    assert!(FrameSideDataKind::ThreeDReferenceDisplays
+        .properties()
+        .contains(FrameSideDataProperties::GLOBAL));
+    assert_eq!(
+        FrameSideDataKind::MotionVectors.descriptor_name(),
+        Some("Motion vectors")
+    );
+    assert!(FrameSideDataKind::MotionVectors
+        .properties()
+        .contains(FrameSideDataProperties::SIZE_DEPENDENT));
+    assert!(FrameSideDataKind::SeiUnregistered.supports_multiple_instances());
+    assert_eq!(
+        FrameSideDataProperties::from_bits_truncate(u32::MAX).bits(),
+        FrameSideDataProperties::ALL.bits()
+    );
     assert_eq!(FrameSideDataKind::KNOWN.len(), 32);
     assert_eq!(
         FrameSideDataKind::from_name("vendor.private.side-data")
@@ -1049,6 +1077,10 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(
         FrameSideDataKind::Unknown(String::from("vendor.private.side-data")).ffmpeg_constant(),
+        None
+    );
+    assert_eq!(
+        FrameSideDataKind::Unknown(String::from("vendor.private.side-data")).descriptor(),
         None
     );
     assert_eq!(
@@ -1771,6 +1803,37 @@ fn exercise_fixtures() {
     assert_ne!(
         permission_frame.side_data()[0].data(),
         permission_clone.side_data()[0].data()
+    );
+
+    let mut properties_frame =
+        Frame::video(VideoFrame::new(1, 1, PixelFormat::Gray8, vec![vec![1]]).unwrap());
+    properties_frame
+        .add_side_data_kind(FrameSideDataKind::DisplayMatrix, vec![1])
+        .unwrap();
+    properties_frame
+        .add_side_data_kind(FrameSideDataKind::MotionVectors, vec![2])
+        .unwrap();
+    properties_frame
+        .add_side_data_kind(FrameSideDataKind::SeiUnregistered, vec![3])
+        .unwrap();
+    properties_frame
+        .add_side_data("vendor.private.side-data", vec![4])
+        .unwrap();
+    let removed_global =
+        properties_frame.remove_side_data_by_properties(FrameSideDataProperties::GLOBAL);
+    assert_eq!(removed_global.len(), 1);
+    assert_eq!(
+        removed_global[0].kind_id(),
+        &FrameSideDataKind::DisplayMatrix
+    );
+    let removed_size_or_multi = properties_frame.remove_side_data_by_properties(
+        FrameSideDataProperties::SIZE_DEPENDENT.union(FrameSideDataProperties::MULTI),
+    );
+    assert_eq!(removed_size_or_multi.len(), 2);
+    assert_eq!(properties_frame.side_data().len(), 1);
+    assert_eq!(
+        properties_frame.side_data()[0].kind(),
+        "vendor.private.side-data"
     );
 
     let audio = AudioFrame::new_with_channel_layout(
