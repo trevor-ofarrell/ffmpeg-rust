@@ -132,7 +132,7 @@ enum OutputMuxer {
     Avi,
     Null,
     FrameCrc,
-    Hash(HashAlgorithm),
+    Hash(HashOutputMuxer),
     Image2,
     PcmS16le,
     RawVideo,
@@ -146,13 +146,39 @@ impl OutputMuxer {
             Self::Avi => "avi",
             Self::Null => "null",
             Self::FrameCrc => "framecrc",
-            Self::Hash(_) => "hash",
+            Self::Hash(hash) => hash.name(),
             Self::Image2 => "image2",
             Self::PcmS16le => "s16le",
             Self::RawVideo => "rawvideo",
             Self::Wav => "wav",
             Self::Yuv4MpegPipe => "yuv4mpegpipe",
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HashOutputMuxer {
+    Hash(HashAlgorithm),
+    Md5,
+}
+
+impl HashOutputMuxer {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Hash(_) => "hash",
+            Self::Md5 => "md5",
+        }
+    }
+
+    fn algorithm(self) -> HashAlgorithm {
+        match self {
+            Self::Hash(algorithm) => algorithm,
+            Self::Md5 => HashAlgorithm::Md5,
+        }
+    }
+
+    fn allows_hash_option(self) -> bool {
+        matches!(self, Self::Hash(_))
     }
 }
 
@@ -836,7 +862,9 @@ fn validate_output_options(muxer: OutputMuxer, output: &PlannedFile) -> Result<(
     for option in output.options() {
         let is_allowed = match muxer {
             OutputMuxer::Image2 => matches!(option.name(), "f" | "start_number"),
-            OutputMuxer::Hash(_) => matches!(option.name(), "f" | "hash"),
+            OutputMuxer::Hash(hash) => {
+                option.name() == "f" || (option.name() == "hash" && hash.allows_hash_option())
+            }
             _ => option.name() == "f",
         };
         if !is_allowed {
@@ -852,7 +880,7 @@ fn validate_output_options(muxer: OutputMuxer, output: &PlannedFile) -> Result<(
 fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> {
     let format = last_option_value(output.options(), "f").ok_or_else(|| {
         FfmpegError::usage(
-            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f hash`, `-f image2`, `-f s16le`, `-f rawvideo`, `-f wav`, `-f yuv4mpegpipe`, or `-f avi`",
+            "ffmpeg-rs currently requires explicit output `-f null`, `-f framecrc`, `-f hash`, `-f md5`, `-f image2`, `-f s16le`, `-f rawvideo`, `-f wav`, `-f yuv4mpegpipe`, or `-f avi`",
         )
     })?;
 
@@ -860,7 +888,10 @@ fn parse_output_muxer(output: &PlannedFile) -> Result<OutputMuxer, FfmpegError> 
         "avi" => Ok(OutputMuxer::Avi),
         "null" => Ok(OutputMuxer::Null),
         "framecrc" => Ok(OutputMuxer::FrameCrc),
-        "hash" => Ok(OutputMuxer::Hash(parse_hash_algorithm(output)?)),
+        "hash" => Ok(OutputMuxer::Hash(HashOutputMuxer::Hash(
+            parse_hash_algorithm(output)?,
+        ))),
+        "md5" => Ok(OutputMuxer::Hash(HashOutputMuxer::Md5)),
         "image2" => Ok(OutputMuxer::Image2),
         "s16le" | "pcm_s16le" => Ok(OutputMuxer::PcmS16le),
         "rawvideo" => Ok(OutputMuxer::RawVideo),
@@ -996,7 +1027,7 @@ where
     match output_muxer {
         OutputMuxer::Null => run_null_muxer(read_packet),
         OutputMuxer::FrameCrc => run_framecrc_muxer(read_packet),
-        OutputMuxer::Hash(algorithm) => run_hash_muxer(algorithm, read_packet),
+        OutputMuxer::Hash(hash) => run_hash_muxer(hash, read_packet),
         OutputMuxer::Avi => Err(FfmpegError::unsupported(
             "ffmpeg-rs AVI output is only implemented for rgb24 rawvideo inputs",
         )),
@@ -1342,13 +1373,11 @@ where
     ))
 }
 
-fn run_hash_muxer<F>(
-    algorithm: HashAlgorithm,
-    mut read_packet: F,
-) -> Result<FfmpegOutput, FfmpegError>
+fn run_hash_muxer<F>(hash: HashOutputMuxer, mut read_packet: F) -> Result<FfmpegOutput, FfmpegError>
 where
     F: FnMut() -> Result<Option<Packet>, FfmpegError>,
 {
+    let algorithm = hash.algorithm();
     let mut muxer = HashMuxer::new(algorithm);
 
     while let Some(packet) = read_packet()? {
@@ -1361,7 +1390,7 @@ where
     Ok(FfmpegOutput::media(
         report.line(),
         String::new(),
-        OutputMuxer::Hash(algorithm),
+        OutputMuxer::Hash(hash),
         report.packets(),
         report.bytes(),
     ))
@@ -1490,6 +1519,36 @@ mod tests {
                 "SHA256={}\n",
                 avutil::digest_to_hex(&avutil::sha256(b"abcdefg"))
             )
+        );
+    }
+
+    #[test]
+    fn runs_mov_to_md5_muxer_stdout() {
+        let path = write_temp_mov(
+            "md5",
+            &sampled_mov_file(&[b"abc".as_slice(), b"defg".as_slice()], &[1_000, 2_000]),
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-hide_banner",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "md5",
+            "-",
+        ]))
+        .expect("ffmpeg md5 command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("md5"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 7);
+        assert!(output.stderr().is_empty());
+        assert_eq!(
+            output.stdout(),
+            format!("MD5={}\n", avutil::digest_to_hex(&avutil::md5(b"abcdefg")))
         );
     }
 
@@ -1786,6 +1845,27 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert!(err.message().contains("hash algorithm `sha999`"));
+    }
+
+    #[test]
+    fn rejects_hash_option_for_md5_muxer() {
+        let path = write_temp_mov("md5-hash-option", &sampled_mov_file(&[b"abc"], &[1_000]));
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let err = ffmpeg_output(&strings(&[
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "md5",
+            "-hash",
+            "sha256",
+            "-",
+        ]))
+        .expect_err("md5 muxer should not accept hash option");
+
+        let _ = fs::remove_file(&path);
+
+        assert!(err.message().contains("output option `-hash`"));
     }
 
     #[test]

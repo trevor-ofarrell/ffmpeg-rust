@@ -1096,6 +1096,25 @@ notes = "ffmpeg-rs command execution supports one local seekable constrained inp
 blocked_reason = ""
 
 [[component]]
+id = "fftools-ffmpeg-md5-output"
+kind = "cli"
+ffmpeg_name = "ffmpeg md5 muxer stdout"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -i <input> -f md5 -"
+rust_command = "cargo test -p fftools ffmpeg"
+unit_tests = [
+  "ffmpeg::tests::runs_mov_to_md5_muxer_stdout",
+  "ffmpeg::tests::rejects_hash_option_for_md5_muxer",
+]
+differential_tests = []
+fate_tests = []
+fuzz_targets = []
+notes = "ffmpeg-rs command execution supports the dedicated stdout `-f md5 -` muxer for one local seekable constrained input by routing packet payloads through the Rust HashMuxer with MD5 while preserving the observable output format name as `md5`. The dedicated md5 muxer rejects output-scoped `-hash` because algorithm selection belongs to the generic hash muxer path. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential/FATE coverage yet."
+blocked_reason = ""
+
+[[component]]
 id = "fftools-ffmpeg-avi-framecrc-null"
 kind = "cli"
 ffmpeg_name = "ffmpeg AVI to framecrc/null"
@@ -1528,7 +1547,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = []
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "Initial internal packet-data hash muxer supports Adler-32, IEEE CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512 with packet/byte accounting and variable-width digest reporting. It is now wired to constrained ffmpeg-rs stdout `-f hash -` execution with default SHA-256 and output-scoped `-hash` selection. Build-checked cargo-fuzz target avformat_packet_muxers covers packet/byte accounting, Adler-32/CRC-32/MD5/SHA-224/SHA-256/SHA-384/SHA-512 digest stability, formatted digest lines, and finish behavior, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other FFmpeg hash algorithms, exact FFmpeg hash muxer output semantics, differential tests, and FATE are pending."
+notes = "Initial internal packet-data hash muxer supports Adler-32, IEEE CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512 with packet/byte accounting and variable-width digest reporting. It is now wired to constrained ffmpeg-rs stdout `-f hash -` execution with default SHA-256 and output-scoped `-hash` selection, plus dedicated `-f md5 -` stdout execution. Build-checked cargo-fuzz target avformat_packet_muxers covers packet/byte accounting, Adler-32/CRC-32/MD5/SHA-224/SHA-256/SHA-384/SHA-512 digest stability, formatted digest lines, and finish behavior, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other FFmpeg hash algorithms, exact FFmpeg hash/md5 muxer output semantics, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]

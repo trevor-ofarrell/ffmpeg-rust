@@ -2,9 +2,9 @@
 
 ## Current Status
 
-`fftools-ffmpeg-hash-output` is now implemented for the constrained Rust-native `ffmpeg-rs` execution path. `ffmpeg-rs` accepts one supported local input to stdout `-f hash -`, defaults to SHA-256, accepts output-scoped `-hash` for Adler-32, CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512, feeds packet payloads through `avformat::HashMuxer`, and rejects unknown hash algorithm names without invoking FFmpeg at runtime. The tests cover MOV packet concatenation with default SHA-256, raw `pcm_s16le` MD5 output, unknown algorithm rejection, and parser grouping for output-scoped `-hash`. The ledger keeps the component at `implemented`, not `complete`, because exact FFmpeg hash muxer output semantics, pinned-oracle differential tests, FATE coverage, broader command forms, and actual local fuzz execution are still absent.
+`fftools-ffmpeg-hash-output` and `fftools-ffmpeg-md5-output` are now implemented for the constrained Rust-native `ffmpeg-rs` execution path. `ffmpeg-rs` accepts one supported local input to stdout `-f hash -`, defaults to SHA-256, accepts output-scoped `-hash` for Adler-32, CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512, feeds packet payloads through `avformat::HashMuxer`, and rejects unknown hash algorithm names without invoking FFmpeg at runtime. The dedicated `-f md5 -` muxer now routes the same packet payload stream through MD5 while preserving the observable output format name as `md5` and rejecting the generic hash muxer's `-hash` option. The tests cover MOV packet concatenation with default SHA-256, MOV packet concatenation through `-f md5`, raw `pcm_s16le` MD5 output through `-f hash -hash md5`, unknown algorithm rejection, md5 option rejection, and parser grouping for output-scoped `-hash`. The ledger keeps both CLI hash components at `implemented`, not `complete`, because exact FFmpeg hash/md5 muxer output semantics, pinned-oracle differential tests, FATE coverage, broader command forms, and actual local fuzz execution are still absent.
 
-`avformat-hash-muxer` now supports SHA-224, SHA-256, SHA-384, and SHA-512 packet-data hashing in addition to Adler-32, IEEE CRC-32, and MD5, and is wired into constrained `ffmpeg-rs -f hash [-hash <algorithm>] -` stdout execution. `HashMuxerReport` carries a variable-width `HashDigest`, formats MD5/SHA digest lines as lowercase hex, preserves packet/byte accounting, and the `avformat_packet_muxers` fuzz target now build-checks SHA-224/SHA-256/SHA-384/SHA-512 digest stability alongside Adler-32/CRC-32/MD5. The ledger still keeps `avformat-hash-muxer` at `implemented`, not `complete`, because exact FFmpeg hash muxer output semantics, pinned-oracle differential tests, FATE coverage, other FFmpeg hash algorithms, and actual local fuzz execution are still absent.
+`avformat-hash-muxer` now supports SHA-224, SHA-256, SHA-384, and SHA-512 packet-data hashing in addition to Adler-32, IEEE CRC-32, and MD5, and is wired into constrained `ffmpeg-rs -f hash [-hash <algorithm>] -` and `-f md5 -` stdout execution. `HashMuxerReport` carries a variable-width `HashDigest`, formats MD5/SHA digest lines as lowercase hex, preserves packet/byte accounting, and the `avformat_packet_muxers` fuzz target now build-checks SHA-224/SHA-256/SHA-384/SHA-512 digest stability alongside Adler-32/CRC-32/MD5. The ledger still keeps `avformat-hash-muxer` at `implemented`, not `complete`, because exact FFmpeg hash/md5 muxer output semantics, pinned-oracle differential tests, FATE coverage, other FFmpeg hash algorithms, and actual local fuzz execution are still absent.
 
 `avutil-hash` now includes Rust-native SHA-224, SHA-256, SHA-384, and SHA-512 support alongside Adler-32, IEEE CRC-32, and MD5 helpers. `Sha224`, `Sha256`, `Sha384`, and `Sha512` support one-shot and streaming updates across block boundaries, `digest_to_hex` formats lowercase digest output for byte digests, and `avutil_core_models` now build-checks SHA-224/SHA-256/SHA-384/SHA-512 streaming equivalence and hex invariants in addition to Adler-32/CRC-32/MD5 streaming equivalence. The ledger still keeps `avutil-hash` at `implemented`, not `complete`, because pinned-oracle differential vectors, FATE coverage, actual local fuzz execution, other FFmpeg hash algorithms, and full FFmpeg hash/framehash behavior are still absent.
 
@@ -50,6 +50,12 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo test -p fftools ffmpeg`
+- `cargo fmt --all -- --check`
+- `git diff --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features --exclude fftools`
+- `cargo run -p fate-runner -- list`
 - `cargo test -p fftools --lib option_parser`
 - `cargo test -p fftools ffmpeg`
 - `cargo test -p avformat hash_muxer`
@@ -1089,12 +1095,12 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`fftools-ffmpeg-hash-output` is the latest coherent slice. The constrained `ffmpeg-rs` command path now wires `-f hash [-hash <algorithm>] -` to the Rust `HashMuxer`, defaults to SHA-256, accepts Adler-32, CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512 by output option, and has focused MOV/default SHA-256, raw PCM/MD5, parser, and unknown-algorithm tests. Exact FFmpeg hash muxer output semantics, pinned FFmpeg differential tests, FATE coverage, actual local fuzz execution, additional FFmpeg hash algorithms, and full FFmpeg hash/framehash behavior are still absent.
+`fftools-ffmpeg-md5-output` is the latest coherent slice. The constrained `ffmpeg-rs` command path now wires dedicated `-f md5 -` stdout output to the Rust `HashMuxer` using MD5 while preserving the output format name `md5`, and rejects generic `-hash` algorithm selection on that dedicated muxer. Exact FFmpeg hash/md5 muxer output semantics, pinned FFmpeg differential tests, FATE coverage, actual local fuzz execution, additional FFmpeg hash algorithms, and full FFmpeg hash/framehash/framemd5 behavior are still absent.
 
 ## Next 3 Concrete Actions
 
-1. Add pinned-oracle differential coverage for constrained `ffmpeg-rs -f hash [-hash <algorithm>] -` once the FFmpeg 8.1.1 oracle binary is available.
-2. Continue hash parity by adding the next missing FFmpeg hash algorithm or a constrained `framehash`/`streamhash` path with tests.
+1. Add pinned-oracle differential coverage for constrained `ffmpeg-rs -f hash [-hash <algorithm>] -` and `-f md5 -` once the FFmpeg 8.1.1 oracle binary is available.
+2. Continue hash parity by adding a constrained `framemd5`, `framehash`, or `streamhash` path with tests.
 3. Add the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
 
 ## Known Blockers
@@ -1107,4 +1113,4 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: wired `avformat::HashMuxer` into constrained `ffmpeg-rs -f hash [-hash <algorithm>] -` stdout execution, added output-scoped `-hash` parser/fuzz handling, covered MOV default SHA-256 and raw PCM MD5 command paths, and updated docs/ledger/state while keeping the hash components below `complete`.
+Latest slice: wired the dedicated `ffmpeg-rs -f md5 -` stdout muxer to `avformat::HashMuxer`, added MOV MD5 and md5-option rejection tests, and updated docs/ledger/state while keeping the hash components below `complete`.
