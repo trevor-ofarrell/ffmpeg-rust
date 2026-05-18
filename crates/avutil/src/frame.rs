@@ -2821,6 +2821,611 @@ impl FrameVideoEncParams {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameFilmGrainParamsType {
+    None,
+    Av1,
+    H274,
+}
+
+impl FrameFilmGrainParamsType {
+    pub const fn as_raw(self) -> i32 {
+        match self {
+            Self::None => 0,
+            Self::Av1 => 1,
+            Self::H274 => 2,
+        }
+    }
+
+    pub fn from_raw(raw: i32) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::None),
+            1 => Ok(Self::Av1),
+            2 => Ok(Self::H274),
+            _ => Err(AvError::invalid_data(format!(
+                "unknown film grain parameters type {raw}"
+            ))),
+        }
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::None => "AV_FILM_GRAIN_PARAMS_NONE",
+            Self::Av1 => "AV_FILM_GRAIN_PARAMS_AV1",
+            Self::H274 => "AV_FILM_GRAIN_PARAMS_H274",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameFilmGrainAomParams<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameFilmGrainAomParams<'a> {
+    pub const Y_POINTS: usize = 14;
+    pub const UV_PLANES: usize = 2;
+    pub const UV_POINTS: usize = 10;
+    pub const AR_COEFFS_Y: usize = 24;
+    pub const AR_COEFFS_UV: usize = 25;
+    pub const DATA_LEN: usize = 208;
+    const NUM_Y_POINTS_OFFSET: usize = 0;
+    const Y_POINTS_OFFSET: usize = 4;
+    const CHROMA_SCALING_FROM_LUMA_OFFSET: usize = 32;
+    const NUM_UV_POINTS_OFFSET: usize = 36;
+    const UV_POINTS_OFFSET: usize = 44;
+    const SCALING_SHIFT_OFFSET: usize = 84;
+    const AR_COEFF_LAG_OFFSET: usize = 88;
+    const AR_COEFFS_Y_OFFSET: usize = 92;
+    const AR_COEFFS_UV_OFFSET: usize = 116;
+    const AR_COEFF_SHIFT_OFFSET: usize = 168;
+    const GRAIN_SCALE_SHIFT_OFFSET: usize = 172;
+    const UV_MULT_OFFSET: usize = 176;
+    const UV_MULT_LUMA_OFFSET: usize = 184;
+    const UV_OFFSET_OFFSET: usize = 192;
+    const OVERLAP_FLAG_OFFSET: usize = 200;
+    const LIMIT_OUTPUT_RANGE_OFFSET: usize = 204;
+
+    fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "AOM film grain parameters require exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let params = Self { data };
+        let num_y_points_raw = params.read_i32(Self::NUM_Y_POINTS_OFFSET);
+        if !(0..=Self::Y_POINTS as i32).contains(&num_y_points_raw) {
+            return Err(AvError::invalid_data(format!(
+                "AOM film grain luma point count {num_y_points_raw} is outside 0..={}",
+                Self::Y_POINTS
+            )));
+        }
+        Self::validate_bool(
+            params.read_i32(Self::CHROMA_SCALING_FROM_LUMA_OFFSET),
+            "AOM chroma scaling from luma",
+        )?;
+        for plane in 0..Self::UV_PLANES {
+            let num_uv_points_raw = params.read_i32(Self::NUM_UV_POINTS_OFFSET + plane * 4);
+            if !(0..=Self::UV_POINTS as i32).contains(&num_uv_points_raw) {
+                return Err(AvError::invalid_data(format!(
+                    "AOM film grain chroma plane {plane} point count {num_uv_points_raw} is outside 0..={}",
+                    Self::UV_POINTS
+                )));
+            }
+        }
+        if !(8..=11).contains(&params.scaling_shift()) {
+            return Err(AvError::invalid_data(format!(
+                "AOM film grain scaling shift {} is outside 8..=11",
+                params.scaling_shift()
+            )));
+        }
+        if !(0..=3).contains(&params.ar_coeff_lag()) {
+            return Err(AvError::invalid_data(format!(
+                "AOM film grain AR coefficient lag {} is outside 0..=3",
+                params.ar_coeff_lag()
+            )));
+        }
+        if !(6..=9).contains(&params.ar_coeff_shift()) {
+            return Err(AvError::invalid_data(format!(
+                "AOM film grain AR coefficient shift {} is outside 6..=9",
+                params.ar_coeff_shift()
+            )));
+        }
+        if !(0..=3).contains(&params.grain_scale_shift()) {
+            return Err(AvError::invalid_data(format!(
+                "AOM film grain scale shift {} is outside 0..=3",
+                params.grain_scale_shift()
+            )));
+        }
+        for plane in 0..Self::UV_PLANES {
+            let uv_offset = params.uv_offset(plane).unwrap();
+            if !(-256..=255).contains(&uv_offset) {
+                return Err(AvError::invalid_data(format!(
+                    "AOM film grain chroma plane {plane} offset {uv_offset} is outside -256..=255"
+                )));
+            }
+        }
+        Self::validate_bool(
+            params.read_i32(Self::OVERLAP_FLAG_OFFSET),
+            "AOM film grain overlap flag",
+        )?;
+        Self::validate_bool(
+            params.read_i32(Self::LIMIT_OUTPUT_RANGE_OFFSET),
+            "AOM film grain limit output range",
+        )?;
+
+        Ok(params)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn num_y_points(self) -> usize {
+        self.read_i32(Self::NUM_Y_POINTS_OFFSET).max(0) as usize
+    }
+
+    pub fn y_point(self, index: usize) -> Option<[u8; 2]> {
+        if index >= self.num_y_points() {
+            return None;
+        }
+        let offset = Self::Y_POINTS_OFFSET + index * 2;
+        Some([self.data[offset], self.data[offset + 1]])
+    }
+
+    pub fn chroma_scaling_from_luma(self) -> bool {
+        self.read_i32(Self::CHROMA_SCALING_FROM_LUMA_OFFSET) != 0
+    }
+
+    pub fn num_uv_points(self, plane: usize) -> Option<usize> {
+        if plane >= Self::UV_PLANES {
+            return None;
+        }
+        Some(self.read_i32(Self::NUM_UV_POINTS_OFFSET + plane * 4).max(0) as usize)
+    }
+
+    pub fn uv_point(self, plane: usize, index: usize) -> Option<[u8; 2]> {
+        if plane >= Self::UV_PLANES || index >= self.num_uv_points(plane).unwrap() {
+            return None;
+        }
+        let offset = Self::UV_POINTS_OFFSET + plane * Self::UV_POINTS * 2 + index * 2;
+        Some([self.data[offset], self.data[offset + 1]])
+    }
+
+    pub fn scaling_shift(self) -> i32 {
+        self.read_i32(Self::SCALING_SHIFT_OFFSET)
+    }
+
+    pub fn ar_coeff_lag(self) -> i32 {
+        self.read_i32(Self::AR_COEFF_LAG_OFFSET)
+    }
+
+    pub fn ar_coeff_count_y(self) -> usize {
+        let lag = self.ar_coeff_lag().max(0) as usize;
+        2 * lag * (lag + 1)
+    }
+
+    pub fn ar_coeff_count_uv(self) -> usize {
+        self.ar_coeff_count_y() + usize::from(self.num_y_points() > 0)
+    }
+
+    pub fn ar_coeff_y(self, index: usize) -> Option<i8> {
+        if index >= self.ar_coeff_count_y() {
+            return None;
+        }
+        Some(self.data[Self::AR_COEFFS_Y_OFFSET + index] as i8)
+    }
+
+    pub fn ar_coeff_uv(self, plane: usize, index: usize) -> Option<i8> {
+        if plane >= Self::UV_PLANES || index >= self.ar_coeff_count_uv() {
+            return None;
+        }
+        Some(self.data[Self::AR_COEFFS_UV_OFFSET + plane * Self::AR_COEFFS_UV + index] as i8)
+    }
+
+    pub fn ar_coeff_shift(self) -> i32 {
+        self.read_i32(Self::AR_COEFF_SHIFT_OFFSET)
+    }
+
+    pub fn grain_scale_shift(self) -> i32 {
+        self.read_i32(Self::GRAIN_SCALE_SHIFT_OFFSET)
+    }
+
+    pub fn uv_mult(self, plane: usize) -> Option<i32> {
+        if plane >= Self::UV_PLANES {
+            return None;
+        }
+        Some(self.read_i32(Self::UV_MULT_OFFSET + plane * 4))
+    }
+
+    pub fn uv_mult_luma(self, plane: usize) -> Option<i32> {
+        if plane >= Self::UV_PLANES {
+            return None;
+        }
+        Some(self.read_i32(Self::UV_MULT_LUMA_OFFSET + plane * 4))
+    }
+
+    pub fn uv_offset(self, plane: usize) -> Option<i32> {
+        if plane >= Self::UV_PLANES {
+            return None;
+        }
+        Some(self.read_i32(Self::UV_OFFSET_OFFSET + plane * 4))
+    }
+
+    pub fn overlap_flag(self) -> bool {
+        self.read_i32(Self::OVERLAP_FLAG_OFFSET) != 0
+    }
+
+    pub fn limit_output_range(self) -> bool {
+        self.read_i32(Self::LIMIT_OUTPUT_RANGE_OFFSET) != 0
+    }
+
+    fn validate_bool(value: i32, label: &str) -> AvResult<()> {
+        if matches!(value, 0 | 1) {
+            Ok(())
+        } else {
+            Err(AvError::invalid_data(format!(
+                "{label} value {value} is not boolean"
+            )))
+        }
+    }
+
+    fn read_i32(self, offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&self.data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameFilmGrainH274Params<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameFilmGrainH274Params<'a> {
+    pub const COMPONENTS: usize = 3;
+    pub const MAX_INTENSITY_INTERVALS: usize = 256;
+    pub const MAX_MODEL_VALUES: usize = 6;
+    pub const DATA_LEN: usize = 10_788;
+    const MODEL_ID_OFFSET: usize = 0;
+    const BLENDING_MODE_ID_OFFSET: usize = 4;
+    const LOG2_SCALE_FACTOR_OFFSET: usize = 8;
+    const COMPONENT_MODEL_PRESENT_OFFSET: usize = 12;
+    const NUM_INTENSITY_INTERVALS_OFFSET: usize = 24;
+    const NUM_MODEL_VALUES_OFFSET: usize = 30;
+    const INTENSITY_INTERVAL_LOWER_BOUND_OFFSET: usize = 33;
+    const INTENSITY_INTERVAL_UPPER_BOUND_OFFSET: usize = Self::INTENSITY_INTERVAL_LOWER_BOUND_OFFSET
+        + Self::COMPONENTS * Self::MAX_INTENSITY_INTERVALS;
+    const COMP_MODEL_VALUE_OFFSET: usize = 1_570;
+
+    fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "H.274 film grain parameters require exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let params = Self { data };
+        if !matches!(params.model_id(), 0 | 1) {
+            return Err(AvError::invalid_data(format!(
+                "H.274 film grain model id {} is outside 0..=1",
+                params.model_id()
+            )));
+        }
+        if !matches!(params.blending_mode_id(), 0 | 1) {
+            return Err(AvError::invalid_data(format!(
+                "H.274 film grain blending mode id {} is outside 0..=1",
+                params.blending_mode_id()
+            )));
+        }
+
+        for component in 0..Self::COMPONENTS {
+            let present_raw = params.read_i32(Self::COMPONENT_MODEL_PRESENT_OFFSET + component * 4);
+            if !matches!(present_raw, 0 | 1) {
+                return Err(AvError::invalid_data(format!(
+                    "H.274 film grain component {component} present value {present_raw} is not boolean"
+                )));
+            }
+
+            let intervals = params.num_intensity_intervals(component).unwrap();
+            let model_values = params.num_model_values(component).unwrap();
+            if present_raw == 0 {
+                if intervals != 0 || model_values != 0 {
+                    return Err(AvError::invalid_data(format!(
+                        "H.274 film grain component {component} is absent but carries interval/model counts"
+                    )));
+                }
+                continue;
+            }
+
+            if !(1..=Self::MAX_INTENSITY_INTERVALS).contains(&intervals) {
+                return Err(AvError::invalid_data(format!(
+                    "H.274 film grain component {component} interval count {intervals} is outside 1..={}",
+                    Self::MAX_INTENSITY_INTERVALS
+                )));
+            }
+            if !(1..=Self::MAX_MODEL_VALUES).contains(&model_values) {
+                return Err(AvError::invalid_data(format!(
+                    "H.274 film grain component {component} model value count {model_values} is outside 1..={}",
+                    Self::MAX_MODEL_VALUES
+                )));
+            }
+            for interval in 0..intervals {
+                let lower = params
+                    .intensity_interval_lower_bound(component, interval)
+                    .unwrap();
+                let upper = params
+                    .intensity_interval_upper_bound(component, interval)
+                    .unwrap();
+                if lower > upper {
+                    return Err(AvError::invalid_data(format!(
+                        "H.274 film grain component {component} interval {interval} lower bound {lower} exceeds upper bound {upper}"
+                    )));
+                }
+            }
+        }
+
+        Ok(params)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn model_id(self) -> i32 {
+        self.read_i32(Self::MODEL_ID_OFFSET)
+    }
+
+    pub fn blending_mode_id(self) -> i32 {
+        self.read_i32(Self::BLENDING_MODE_ID_OFFSET)
+    }
+
+    pub fn log2_scale_factor(self) -> i32 {
+        self.read_i32(Self::LOG2_SCALE_FACTOR_OFFSET)
+    }
+
+    pub fn component_model_present(self, component: usize) -> Option<bool> {
+        if component >= Self::COMPONENTS {
+            return None;
+        }
+        Some(self.read_i32(Self::COMPONENT_MODEL_PRESENT_OFFSET + component * 4) != 0)
+    }
+
+    pub fn num_intensity_intervals(self, component: usize) -> Option<usize> {
+        if component >= Self::COMPONENTS {
+            return None;
+        }
+        Some(usize::from(self.read_u16(
+            Self::NUM_INTENSITY_INTERVALS_OFFSET + component * 2,
+        )))
+    }
+
+    pub fn num_model_values(self, component: usize) -> Option<usize> {
+        if component >= Self::COMPONENTS {
+            return None;
+        }
+        Some(usize::from(
+            self.data[Self::NUM_MODEL_VALUES_OFFSET + component],
+        ))
+    }
+
+    pub fn intensity_interval_lower_bound(self, component: usize, interval: usize) -> Option<u8> {
+        if component >= Self::COMPONENTS
+            || interval >= self.num_intensity_intervals(component).unwrap()
+        {
+            return None;
+        }
+        Some(self.data[Self::INTENSITY_INTERVAL_LOWER_BOUND_OFFSET + component * 256 + interval])
+    }
+
+    pub fn intensity_interval_upper_bound(self, component: usize, interval: usize) -> Option<u8> {
+        if component >= Self::COMPONENTS
+            || interval >= self.num_intensity_intervals(component).unwrap()
+        {
+            return None;
+        }
+        Some(self.data[Self::INTENSITY_INTERVAL_UPPER_BOUND_OFFSET + component * 256 + interval])
+    }
+
+    pub fn comp_model_value(self, component: usize, interval: usize, value: usize) -> Option<i16> {
+        if component >= Self::COMPONENTS
+            || interval >= self.num_intensity_intervals(component).unwrap()
+            || value >= self.num_model_values(component).unwrap()
+        {
+            return None;
+        }
+        let offset = Self::COMP_MODEL_VALUE_OFFSET
+            + ((component * Self::MAX_INTENSITY_INTERVALS + interval) * Self::MAX_MODEL_VALUES
+                + value)
+                * 2;
+        Some(self.read_i16(offset))
+    }
+
+    fn read_i32(self, offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&self.data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+
+    fn read_u16(self, offset: usize) -> u16 {
+        let mut raw = [0; 2];
+        raw.copy_from_slice(&self.data[offset..offset + 2]);
+        u16::from_ne_bytes(raw)
+    }
+
+    fn read_i16(self, offset: usize) -> i16 {
+        let mut raw = [0; 2];
+        raw.copy_from_slice(&self.data[offset..offset + 2]);
+        i16::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameFilmGrainParams<'a> {
+    data: &'a [u8],
+    params_type: FrameFilmGrainParamsType,
+}
+
+impl<'a> FrameFilmGrainParams<'a> {
+    const TYPE_OFFSET: usize = 0;
+    const SEED_OFFSET: usize = Self::align_up(Self::TYPE_OFFSET + 4, core::mem::align_of::<u64>());
+    const WIDTH_OFFSET: usize = Self::SEED_OFFSET + 8;
+    const HEIGHT_OFFSET: usize = Self::WIDTH_OFFSET + 4;
+    const SUBSAMPLING_X_OFFSET: usize = Self::HEIGHT_OFFSET + 4;
+    const SUBSAMPLING_Y_OFFSET: usize = Self::SUBSAMPLING_X_OFFSET + 4;
+    const COLOR_RANGE_OFFSET: usize = Self::SUBSAMPLING_Y_OFFSET + 4;
+    const COLOR_PRIMARIES_OFFSET: usize = Self::COLOR_RANGE_OFFSET + 4;
+    const COLOR_TRC_OFFSET: usize = Self::COLOR_PRIMARIES_OFFSET + 4;
+    const COLOR_SPACE_OFFSET: usize = Self::COLOR_TRC_OFFSET + 4;
+    const BIT_DEPTH_LUMA_OFFSET: usize = Self::COLOR_SPACE_OFFSET + 4;
+    const BIT_DEPTH_CHROMA_OFFSET: usize = Self::BIT_DEPTH_LUMA_OFFSET + 4;
+    const CODEC_OFFSET: usize = Self::BIT_DEPTH_CHROMA_OFFSET + 4;
+    pub const DATA_LEN: usize = Self::align_up(
+        Self::CODEC_OFFSET + FrameFilmGrainH274Params::DATA_LEN,
+        core::mem::align_of::<u64>(),
+    );
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "film grain parameters frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let params_type =
+            FrameFilmGrainParamsType::from_raw(Self::read_i32(data, Self::TYPE_OFFSET))?;
+        let params = Self { data, params_type };
+        for (label, value) in [
+            ("width", params.width()),
+            ("height", params.height()),
+            ("subsampling_x", params.subsampling_x()),
+            ("subsampling_y", params.subsampling_y()),
+            ("bit_depth_luma", params.bit_depth_luma()),
+            ("bit_depth_chroma", params.bit_depth_chroma()),
+        ] {
+            if value < 0 {
+                return Err(AvError::invalid_data(format!(
+                    "film grain parameters {label} is negative: {value}"
+                )));
+            }
+        }
+
+        match params_type {
+            FrameFilmGrainParamsType::None => {}
+            FrameFilmGrainParamsType::Av1 => {
+                FrameFilmGrainAomParams::parse(
+                    &data[Self::CODEC_OFFSET
+                        ..Self::CODEC_OFFSET + FrameFilmGrainAomParams::DATA_LEN],
+                )?;
+            }
+            FrameFilmGrainParamsType::H274 => {
+                FrameFilmGrainH274Params::parse(
+                    &data[Self::CODEC_OFFSET
+                        ..Self::CODEC_OFFSET + FrameFilmGrainH274Params::DATA_LEN],
+                )?;
+            }
+        }
+
+        Ok(params)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn params_type(self) -> FrameFilmGrainParamsType {
+        self.params_type
+    }
+
+    pub fn seed(self) -> u64 {
+        let mut raw = [0; 8];
+        raw.copy_from_slice(&self.data[Self::SEED_OFFSET..Self::SEED_OFFSET + 8]);
+        u64::from_ne_bytes(raw)
+    }
+
+    pub fn width(self) -> i32 {
+        Self::read_i32(self.data, Self::WIDTH_OFFSET)
+    }
+
+    pub fn height(self) -> i32 {
+        Self::read_i32(self.data, Self::HEIGHT_OFFSET)
+    }
+
+    pub fn subsampling_x(self) -> i32 {
+        Self::read_i32(self.data, Self::SUBSAMPLING_X_OFFSET)
+    }
+
+    pub fn subsampling_y(self) -> i32 {
+        Self::read_i32(self.data, Self::SUBSAMPLING_Y_OFFSET)
+    }
+
+    pub fn color_range(self) -> i32 {
+        Self::read_i32(self.data, Self::COLOR_RANGE_OFFSET)
+    }
+
+    pub fn color_primaries(self) -> i32 {
+        Self::read_i32(self.data, Self::COLOR_PRIMARIES_OFFSET)
+    }
+
+    pub fn color_transfer(self) -> i32 {
+        Self::read_i32(self.data, Self::COLOR_TRC_OFFSET)
+    }
+
+    pub fn color_space(self) -> i32 {
+        Self::read_i32(self.data, Self::COLOR_SPACE_OFFSET)
+    }
+
+    pub fn bit_depth_luma(self) -> i32 {
+        Self::read_i32(self.data, Self::BIT_DEPTH_LUMA_OFFSET)
+    }
+
+    pub fn bit_depth_chroma(self) -> i32 {
+        Self::read_i32(self.data, Self::BIT_DEPTH_CHROMA_OFFSET)
+    }
+
+    pub fn aom_params(self) -> AvResult<Option<FrameFilmGrainAomParams<'a>>> {
+        if self.params_type != FrameFilmGrainParamsType::Av1 {
+            return Ok(None);
+        }
+        FrameFilmGrainAomParams::parse(
+            &self.data[Self::CODEC_OFFSET..Self::CODEC_OFFSET + FrameFilmGrainAomParams::DATA_LEN],
+        )
+        .map(Some)
+    }
+
+    pub fn h274_params(self) -> AvResult<Option<FrameFilmGrainH274Params<'a>>> {
+        if self.params_type != FrameFilmGrainParamsType::H274 {
+            return Ok(None);
+        }
+        FrameFilmGrainH274Params::parse(
+            &self.data[Self::CODEC_OFFSET..Self::CODEC_OFFSET + FrameFilmGrainH274Params::DATA_LEN],
+        )
+        .map(Some)
+    }
+
+    const fn align_up(value: usize, align: usize) -> usize {
+        let remainder = value % align;
+        if remainder == 0 {
+            value
+        } else {
+            value + align - remainder
+        }
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameSeiUnregistered<'a> {
     uuid: [u8; 16],
     user_data: &'a [u8],
@@ -3290,6 +3895,12 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::VideoEncParams, value.to_bytes())
     }
 
+    pub fn new_film_grain_params(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(FrameSideDataKind::FilmGrainParams, data)?;
+        FrameFilmGrainParams::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
         let total_len = FrameSeiUnregistered::UUID_LEN
             .checked_add(user_data.len())
@@ -3482,6 +4093,14 @@ impl FrameSideData {
         }
 
         FrameVideoEncParams::parse(self.data()).map(Some)
+    }
+
+    pub fn film_grain_params(&self) -> AvResult<Option<FrameFilmGrainParams<'_>>> {
+        if self.kind != FrameSideDataKind::FilmGrainParams {
+            return Ok(None);
+        }
+
+        FrameFilmGrainParams::parse(self.data()).map(Some)
     }
 
     pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
@@ -4480,6 +5099,170 @@ mod tests {
         data
     }
 
+    fn minimal_film_grain_av1() -> Vec<u8> {
+        let mut data = vec![0; FrameFilmGrainParams::DATA_LEN];
+        write_ne_i32(
+            &mut data,
+            FrameFilmGrainParams::TYPE_OFFSET,
+            FrameFilmGrainParamsType::Av1.as_raw(),
+        );
+        write_ne_u64(
+            &mut data,
+            FrameFilmGrainParams::SEED_OFFSET,
+            0x0102_0304_0506_0708,
+        );
+        write_ne_i32(&mut data, FrameFilmGrainParams::WIDTH_OFFSET, 1920);
+        write_ne_i32(&mut data, FrameFilmGrainParams::HEIGHT_OFFSET, 1080);
+        write_ne_i32(&mut data, FrameFilmGrainParams::SUBSAMPLING_X_OFFSET, 1);
+        write_ne_i32(&mut data, FrameFilmGrainParams::SUBSAMPLING_Y_OFFSET, 1);
+        write_ne_i32(&mut data, FrameFilmGrainParams::COLOR_RANGE_OFFSET, 1);
+        write_ne_i32(&mut data, FrameFilmGrainParams::COLOR_PRIMARIES_OFFSET, 9);
+        write_ne_i32(&mut data, FrameFilmGrainParams::COLOR_TRC_OFFSET, 16);
+        write_ne_i32(&mut data, FrameFilmGrainParams::COLOR_SPACE_OFFSET, 9);
+        write_ne_i32(&mut data, FrameFilmGrainParams::BIT_DEPTH_LUMA_OFFSET, 10);
+        write_ne_i32(&mut data, FrameFilmGrainParams::BIT_DEPTH_CHROMA_OFFSET, 10);
+
+        let codec = FrameFilmGrainParams::CODEC_OFFSET;
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::NUM_Y_POINTS_OFFSET,
+            2,
+        );
+        data[codec + FrameFilmGrainAomParams::Y_POINTS_OFFSET] = 16;
+        data[codec + FrameFilmGrainAomParams::Y_POINTS_OFFSET + 1] = 3;
+        data[codec + FrameFilmGrainAomParams::Y_POINTS_OFFSET + 2] = 128;
+        data[codec + FrameFilmGrainAomParams::Y_POINTS_OFFSET + 3] = 17;
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::NUM_UV_POINTS_OFFSET,
+            1,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::NUM_UV_POINTS_OFFSET + 4,
+            1,
+        );
+        data[codec + FrameFilmGrainAomParams::UV_POINTS_OFFSET] = 32;
+        data[codec + FrameFilmGrainAomParams::UV_POINTS_OFFSET + 1] = 4;
+        data[codec + FrameFilmGrainAomParams::UV_POINTS_OFFSET + 20] = 64;
+        data[codec + FrameFilmGrainAomParams::UV_POINTS_OFFSET + 21] = 5;
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::SCALING_SHIFT_OFFSET,
+            10,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::AR_COEFF_LAG_OFFSET,
+            1,
+        );
+        data[codec + FrameFilmGrainAomParams::AR_COEFFS_Y_OFFSET] = (-3i8) as u8;
+        data[codec + FrameFilmGrainAomParams::AR_COEFFS_UV_OFFSET] = 2;
+        data[codec
+            + FrameFilmGrainAomParams::AR_COEFFS_UV_OFFSET
+            + FrameFilmGrainAomParams::AR_COEFFS_UV
+            + 4] = (-7i8) as u8;
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::AR_COEFF_SHIFT_OFFSET,
+            7,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::GRAIN_SCALE_SHIFT_OFFSET,
+            2,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::UV_MULT_OFFSET,
+            128,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::UV_MULT_OFFSET + 4,
+            64,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::UV_MULT_LUMA_OFFSET,
+            32,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::UV_MULT_LUMA_OFFSET + 4,
+            48,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::UV_OFFSET_OFFSET,
+            -64,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::UV_OFFSET_OFFSET + 4,
+            96,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainAomParams::OVERLAP_FLAG_OFFSET,
+            1,
+        );
+        data
+    }
+
+    fn minimal_film_grain_h274() -> Vec<u8> {
+        let mut data = vec![0; FrameFilmGrainParams::DATA_LEN];
+        write_ne_i32(
+            &mut data,
+            FrameFilmGrainParams::TYPE_OFFSET,
+            FrameFilmGrainParamsType::H274.as_raw(),
+        );
+        write_ne_i32(&mut data, FrameFilmGrainParams::WIDTH_OFFSET, 1280);
+        write_ne_i32(&mut data, FrameFilmGrainParams::HEIGHT_OFFSET, 720);
+        write_ne_i32(&mut data, FrameFilmGrainParams::BIT_DEPTH_LUMA_OFFSET, 8);
+        write_ne_i32(&mut data, FrameFilmGrainParams::BIT_DEPTH_CHROMA_OFFSET, 8);
+
+        let codec = FrameFilmGrainParams::CODEC_OFFSET;
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainH274Params::MODEL_ID_OFFSET,
+            1,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainH274Params::BLENDING_MODE_ID_OFFSET,
+            0,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainH274Params::LOG2_SCALE_FACTOR_OFFSET,
+            3,
+        );
+        write_ne_i32(
+            &mut data,
+            codec + FrameFilmGrainH274Params::COMPONENT_MODEL_PRESENT_OFFSET,
+            1,
+        );
+        write_ne_u16(
+            &mut data,
+            codec + FrameFilmGrainH274Params::NUM_INTENSITY_INTERVALS_OFFSET,
+            2,
+        );
+        data[codec + FrameFilmGrainH274Params::NUM_MODEL_VALUES_OFFSET] = 3;
+        data[codec + FrameFilmGrainH274Params::INTENSITY_INTERVAL_LOWER_BOUND_OFFSET] = 0;
+        data[codec + FrameFilmGrainH274Params::INTENSITY_INTERVAL_UPPER_BOUND_OFFSET] = 63;
+        data[codec + FrameFilmGrainH274Params::INTENSITY_INTERVAL_LOWER_BOUND_OFFSET + 1] = 64;
+        data[codec + FrameFilmGrainH274Params::INTENSITY_INTERVAL_UPPER_BOUND_OFFSET + 1] = 127;
+        write_ne_i16(
+            &mut data,
+            codec
+                + FrameFilmGrainH274Params::COMP_MODEL_VALUE_OFFSET
+                + (FrameFilmGrainH274Params::MAX_MODEL_VALUES + 2) * 2,
+            -14,
+        );
+        data
+    }
+
     fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {
         data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
     }
@@ -4488,11 +5271,19 @@ mod tests {
         data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
     }
 
+    fn write_ne_u64(data: &mut [u8], offset: usize, value: u64) {
+        data[offset..offset + 8].copy_from_slice(&value.to_ne_bytes());
+    }
+
     fn write_ne_usize(data: &mut [u8], offset: usize, value: usize) {
         data[offset..offset + core::mem::size_of::<usize>()].copy_from_slice(&value.to_ne_bytes());
     }
 
     fn write_ne_u16(data: &mut [u8], offset: usize, value: u16) {
+        data[offset..offset + 2].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_ne_i16(data: &mut [u8], offset: usize, value: i16) {
         data[offset..offset + 2].copy_from_slice(&value.to_ne_bytes());
     }
 
@@ -7735,6 +8526,296 @@ mod tests {
         let display_matrix =
             FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, Vec::new()).unwrap();
         assert_eq!(display_matrix.video_enc_params().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_film_grain_params_payload() {
+        let aom_payload = minimal_film_grain_av1();
+        let params = FrameFilmGrainParams::parse(&aom_payload).unwrap();
+        let aom = params.aom_params().unwrap().unwrap();
+
+        assert_eq!(
+            FrameFilmGrainParamsType::from_raw(0).unwrap(),
+            FrameFilmGrainParamsType::None
+        );
+        assert_eq!(
+            FrameFilmGrainParamsType::Av1.ffmpeg_constant(),
+            "AV_FILM_GRAIN_PARAMS_AV1"
+        );
+        assert_eq!(FrameFilmGrainParamsType::H274.as_raw(), 2);
+        assert_eq!(
+            FrameFilmGrainParams::DATA_LEN,
+            if core::mem::align_of::<u64>() == 8 {
+                10_848
+            } else {
+                10_840
+            }
+        );
+        assert_eq!(FrameFilmGrainAomParams::DATA_LEN, 208);
+        assert_eq!(FrameFilmGrainH274Params::DATA_LEN, 10_788);
+        assert_eq!(params.data(), aom_payload.as_slice());
+        assert_eq!(params.params_type(), FrameFilmGrainParamsType::Av1);
+        assert_eq!(params.seed(), 0x0102_0304_0506_0708);
+        assert_eq!(params.width(), 1920);
+        assert_eq!(params.height(), 1080);
+        assert_eq!(params.subsampling_x(), 1);
+        assert_eq!(params.subsampling_y(), 1);
+        assert_eq!(params.color_range(), 1);
+        assert_eq!(params.color_primaries(), 9);
+        assert_eq!(params.color_transfer(), 16);
+        assert_eq!(params.color_space(), 9);
+        assert_eq!(params.bit_depth_luma(), 10);
+        assert_eq!(params.bit_depth_chroma(), 10);
+        assert_eq!(
+            aom.data(),
+            &aom_payload[FrameFilmGrainParams::CODEC_OFFSET..][..208]
+        );
+        assert_eq!(aom.num_y_points(), 2);
+        assert_eq!(aom.y_point(0), Some([16, 3]));
+        assert_eq!(aom.y_point(1), Some([128, 17]));
+        assert_eq!(aom.y_point(2), None);
+        assert!(!aom.chroma_scaling_from_luma());
+        assert_eq!(aom.num_uv_points(0), Some(1));
+        assert_eq!(aom.num_uv_points(1), Some(1));
+        assert_eq!(aom.num_uv_points(2), None);
+        assert_eq!(aom.uv_point(0, 0), Some([32, 4]));
+        assert_eq!(aom.uv_point(1, 0), Some([64, 5]));
+        assert_eq!(aom.uv_point(1, 1), None);
+        assert_eq!(aom.scaling_shift(), 10);
+        assert_eq!(aom.ar_coeff_lag(), 1);
+        assert_eq!(aom.ar_coeff_count_y(), 4);
+        assert_eq!(aom.ar_coeff_count_uv(), 5);
+        assert_eq!(aom.ar_coeff_y(0), Some(-3));
+        assert_eq!(aom.ar_coeff_y(4), None);
+        assert_eq!(aom.ar_coeff_uv(0, 0), Some(2));
+        assert_eq!(aom.ar_coeff_uv(1, 4), Some(-7));
+        assert_eq!(aom.ar_coeff_uv(2, 0), None);
+        assert_eq!(aom.ar_coeff_shift(), 7);
+        assert_eq!(aom.grain_scale_shift(), 2);
+        assert_eq!(aom.uv_mult(0), Some(128));
+        assert_eq!(aom.uv_mult_luma(1), Some(48));
+        assert_eq!(aom.uv_offset(0), Some(-64));
+        assert!(aom.overlap_flag());
+        assert!(!aom.limit_output_range());
+        assert!(params.h274_params().unwrap().is_none());
+
+        let h274_payload = minimal_film_grain_h274();
+        let h274_params = FrameFilmGrainParams::parse(&h274_payload).unwrap();
+        let h274 = h274_params.h274_params().unwrap().unwrap();
+        assert_eq!(h274_params.params_type(), FrameFilmGrainParamsType::H274);
+        assert!(h274_params.aom_params().unwrap().is_none());
+        assert_eq!(h274.model_id(), 1);
+        assert_eq!(h274.blending_mode_id(), 0);
+        assert_eq!(h274.log2_scale_factor(), 3);
+        assert_eq!(h274.component_model_present(0), Some(true));
+        assert_eq!(h274.component_model_present(1), Some(false));
+        assert_eq!(h274.component_model_present(3), None);
+        assert_eq!(h274.num_intensity_intervals(0), Some(2));
+        assert_eq!(h274.num_model_values(0), Some(3));
+        assert_eq!(h274.intensity_interval_lower_bound(0, 1), Some(64));
+        assert_eq!(h274.intensity_interval_upper_bound(0, 1), Some(127));
+        assert_eq!(h274.comp_model_value(0, 1, 2), Some(-14));
+        assert_eq!(h274.comp_model_value(0, 1, 3), None);
+        assert_eq!(h274.comp_model_value(3, 0, 0), None);
+
+        let side_data = FrameSideData::new_film_grain_params(aom_payload.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::FilmGrainParams);
+        assert_eq!(side_data.data(), aom_payload.as_slice());
+        assert_eq!(
+            side_data
+                .film_grain_params()
+                .unwrap()
+                .unwrap()
+                .params_type(),
+            FrameFilmGrainParamsType::Av1
+        );
+
+        let display_matrix =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, aom_payload).unwrap();
+        assert_eq!(display_matrix.film_grain_params().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_film_grain_params_payload() {
+        assert_eq!(
+            FrameFilmGrainParamsType::from_raw(99).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        for data in [
+            Vec::new(),
+            vec![0; FrameFilmGrainParams::DATA_LEN - 1],
+            vec![0; FrameFilmGrainParams::DATA_LEN + 1],
+        ] {
+            assert_eq!(
+                FrameFilmGrainParams::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::FilmGrainParams, data).unwrap();
+            assert_eq!(
+                side_data.film_grain_params().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for (offset, value) in [
+            (FrameFilmGrainParams::TYPE_OFFSET, 3),
+            (FrameFilmGrainParams::WIDTH_OFFSET, -1),
+            (FrameFilmGrainParams::HEIGHT_OFFSET, -1),
+            (FrameFilmGrainParams::SUBSAMPLING_X_OFFSET, -1),
+            (FrameFilmGrainParams::BIT_DEPTH_LUMA_OFFSET, -1),
+        ] {
+            let mut bad = minimal_film_grain_av1();
+            write_ne_i32(&mut bad, offset, value);
+            assert_eq!(
+                FrameFilmGrainParams::parse(&bad).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for (offset, value) in [
+            (
+                FrameFilmGrainParams::CODEC_OFFSET + FrameFilmGrainAomParams::NUM_Y_POINTS_OFFSET,
+                -1,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET + FrameFilmGrainAomParams::NUM_Y_POINTS_OFFSET,
+                15,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET
+                    + FrameFilmGrainAomParams::CHROMA_SCALING_FROM_LUMA_OFFSET,
+                2,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET + FrameFilmGrainAomParams::NUM_UV_POINTS_OFFSET,
+                -1,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET + FrameFilmGrainAomParams::NUM_UV_POINTS_OFFSET,
+                11,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET + FrameFilmGrainAomParams::SCALING_SHIFT_OFFSET,
+                7,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET + FrameFilmGrainAomParams::AR_COEFF_LAG_OFFSET,
+                4,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET + FrameFilmGrainAomParams::AR_COEFF_SHIFT_OFFSET,
+                10,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET
+                    + FrameFilmGrainAomParams::GRAIN_SCALE_SHIFT_OFFSET,
+                4,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET + FrameFilmGrainAomParams::UV_OFFSET_OFFSET,
+                -257,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET + FrameFilmGrainAomParams::OVERLAP_FLAG_OFFSET,
+                2,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET
+                    + FrameFilmGrainAomParams::LIMIT_OUTPUT_RANGE_OFFSET,
+                2,
+            ),
+        ] {
+            let mut bad = minimal_film_grain_av1();
+            write_ne_i32(&mut bad, offset, value);
+            assert_eq!(
+                FrameSideData::new_with_kind(FrameSideDataKind::FilmGrainParams, bad)
+                    .unwrap()
+                    .film_grain_params()
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for (offset, value) in [
+            (
+                FrameFilmGrainParams::CODEC_OFFSET + FrameFilmGrainH274Params::MODEL_ID_OFFSET,
+                2,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET
+                    + FrameFilmGrainH274Params::BLENDING_MODE_ID_OFFSET,
+                2,
+            ),
+            (
+                FrameFilmGrainParams::CODEC_OFFSET
+                    + FrameFilmGrainH274Params::COMPONENT_MODEL_PRESENT_OFFSET,
+                2,
+            ),
+        ] {
+            let mut bad = minimal_film_grain_h274();
+            write_ne_i32(&mut bad, offset, value);
+            assert_eq!(
+                FrameFilmGrainParams::parse(&bad).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let mut missing_h274_intervals = minimal_film_grain_h274();
+        write_ne_u16(
+            &mut missing_h274_intervals,
+            FrameFilmGrainParams::CODEC_OFFSET
+                + FrameFilmGrainH274Params::NUM_INTENSITY_INTERVALS_OFFSET,
+            0,
+        );
+        assert_eq!(
+            FrameFilmGrainParams::parse(&missing_h274_intervals)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut too_many_h274_values = minimal_film_grain_h274();
+        too_many_h274_values[FrameFilmGrainParams::CODEC_OFFSET
+            + FrameFilmGrainH274Params::NUM_MODEL_VALUES_OFFSET] = 7;
+        assert_eq!(
+            FrameFilmGrainParams::parse(&too_many_h274_values)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut inverted_h274_interval = minimal_film_grain_h274();
+        inverted_h274_interval[FrameFilmGrainParams::CODEC_OFFSET
+            + FrameFilmGrainH274Params::INTENSITY_INTERVAL_LOWER_BOUND_OFFSET] = 200;
+        inverted_h274_interval[FrameFilmGrainParams::CODEC_OFFSET
+            + FrameFilmGrainH274Params::INTENSITY_INTERVAL_UPPER_BOUND_OFFSET] = 100;
+        assert_eq!(
+            FrameSideData::new_film_grain_params(inverted_h274_interval)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut absent_h274_counts = minimal_film_grain_h274();
+        write_ne_i32(
+            &mut absent_h274_counts,
+            FrameFilmGrainParams::CODEC_OFFSET
+                + FrameFilmGrainH274Params::COMPONENT_MODEL_PRESENT_OFFSET,
+            0,
+        );
+        assert_eq!(
+            FrameFilmGrainParams::parse(&absent_h274_counts)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let display_matrix =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, Vec::new()).unwrap();
+        assert_eq!(display_matrix.film_grain_params().unwrap(), None);
     }
 
     #[test]

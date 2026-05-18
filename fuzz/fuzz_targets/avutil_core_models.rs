@@ -5,15 +5,17 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
     FrameActiveFormatDescription, FrameAudioServiceType, FrameContentLightMetadata, FrameData,
-    FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus, FrameGopTimecode,
-    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameIccProfile,
-    FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
-    FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode,
-    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
-    FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection,
-    FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType, Md5, Packet, PacketFlags,
-    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384,
-    Sha512, SideData, VideoFrame,
+    FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
+    FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
+    FrameHdrPlusOverlapProcessOption, FrameIccProfile, FrameMasteringDisplayMetadata,
+    FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors, FrameRegionOfInterest,
+    FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered,
+    FrameSideData, FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples,
+    FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection, FrameVideoBlockParams,
+    FrameVideoEncParams, FrameVideoEncParamsType, Md5, Packet, PacketFlags, PixelFormat, Rational,
+    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
+    VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1495,6 +1497,41 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(frame_side_data_kind, FrameSideDataKind::VideoEncParams);
             assert!(video_enc_params_payload_invalid(&frame_side_data_payload));
+        }
+    }
+    match frame.side_data()[0].film_grain_params() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::FilmGrainParams);
+            assert_eq!(value.data(), frame_side_data_payload.as_slice());
+            assert!(!film_grain_params_payload_invalid(&frame_side_data_payload));
+            match value.params_type() {
+                FrameFilmGrainParamsType::None => {}
+                FrameFilmGrainParamsType::Av1 => {
+                    let aom = value.aom_params().unwrap().unwrap();
+                    assert!(aom.num_y_points() <= FrameFilmGrainAomParams::Y_POINTS);
+                    assert!(aom.num_uv_points(0).unwrap() <= FrameFilmGrainAomParams::UV_POINTS);
+                    assert!(aom.num_uv_points(1).unwrap() <= FrameFilmGrainAomParams::UV_POINTS);
+                    assert!(aom.ar_coeff_count_y() <= FrameFilmGrainAomParams::AR_COEFFS_Y);
+                    assert!(aom.ar_coeff_count_uv() <= FrameFilmGrainAomParams::AR_COEFFS_UV);
+                }
+                FrameFilmGrainParamsType::H274 => {
+                    let h274 = value.h274_params().unwrap().unwrap();
+                    for component in 0..FrameFilmGrainH274Params::COMPONENTS {
+                        if h274.component_model_present(component).unwrap() {
+                            assert!((1..=FrameFilmGrainH274Params::MAX_INTENSITY_INTERVALS)
+                                .contains(&h274.num_intensity_intervals(component).unwrap()));
+                            assert!((1..=FrameFilmGrainH274Params::MAX_MODEL_VALUES)
+                                .contains(&h274.num_model_values(component).unwrap()));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::FilmGrainParams),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::FilmGrainParams);
+            assert!(film_grain_params_payload_invalid(&frame_side_data_payload));
         }
     }
     match frame.side_data()[0].sei_unregistered() {
@@ -2988,6 +3025,48 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_video_enc.video_enc_params().unwrap(), None);
 
+    let film_grain = minimal_film_grain_av1_fixture();
+    let film_grain_side_data = FrameSideData::new_film_grain_params(film_grain.clone()).unwrap();
+    let parsed_film_grain = film_grain_side_data.film_grain_params().unwrap().unwrap();
+    assert_eq!(
+        film_grain_side_data.kind_id(),
+        &FrameSideDataKind::FilmGrainParams
+    );
+    assert_eq!(parsed_film_grain.data(), film_grain.as_slice());
+    assert_eq!(
+        parsed_film_grain.params_type(),
+        FrameFilmGrainParamsType::Av1
+    );
+    assert_eq!(parsed_film_grain.seed(), 0xAABB_CCDD_EEFF_0011);
+    let parsed_aom = parsed_film_grain.aom_params().unwrap().unwrap();
+    assert_eq!(parsed_aom.num_y_points(), 1);
+    assert_eq!(parsed_aom.y_point(0), Some([24, 9]));
+    assert_eq!(parsed_aom.scaling_shift(), 8);
+    assert_eq!(parsed_aom.ar_coeff_lag(), 0);
+    assert_eq!(
+        FrameFilmGrainParams::parse(&[0; FrameFilmGrainParams::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_film_grain = film_grain.clone();
+    write_ne_i32(
+        &mut bad_film_grain,
+        film_grain_aom_scaling_shift_offset(),
+        7,
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::FilmGrainParams, bad_film_grain)
+            .unwrap()
+            .film_grain_params()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_film_grain =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_film_grain.film_grain_params().unwrap(), None);
+
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
@@ -3130,7 +3209,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 25 {
+    match byte.unwrap_or_default() % 26 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::MatrixEncoding,
         2 => FrameSideDataKind::DownmixInfo,
@@ -3155,6 +3234,7 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         21 => FrameSideDataKind::ActiveFormatDescription,
         22 => FrameSideDataKind::SkipSamples,
         23 => FrameSideDataKind::AudioServiceType,
+        24 => FrameSideDataKind::FilmGrainParams,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
@@ -3357,6 +3437,211 @@ fn video_enc_params_type_field_offset() -> usize {
     video_enc_params_block_size_field_offset() + core::mem::size_of::<usize>()
 }
 
+fn minimal_film_grain_av1_fixture() -> Vec<u8> {
+    let mut data = vec![0; FrameFilmGrainParams::DATA_LEN];
+    write_ne_i32(
+        &mut data,
+        film_grain_type_field_offset(),
+        FrameFilmGrainParamsType::Av1.as_raw(),
+    );
+    write_ne_u64(
+        &mut data,
+        film_grain_seed_field_offset(),
+        0xAABB_CCDD_EEFF_0011,
+    );
+    write_ne_i32(&mut data, film_grain_width_field_offset(), 64);
+    write_ne_i32(&mut data, film_grain_height_field_offset(), 64);
+    write_ne_i32(&mut data, film_grain_bit_depth_luma_field_offset(), 8);
+    write_ne_i32(&mut data, film_grain_bit_depth_chroma_field_offset(), 8);
+
+    write_ne_i32(&mut data, film_grain_aom_num_y_points_offset(), 1);
+    data[film_grain_aom_y_points_offset()] = 24;
+    data[film_grain_aom_y_points_offset() + 1] = 9;
+    write_ne_i32(&mut data, film_grain_aom_scaling_shift_offset(), 8);
+    write_ne_i32(&mut data, film_grain_aom_ar_coeff_shift_offset(), 6);
+    data
+}
+
+fn film_grain_params_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != FrameFilmGrainParams::DATA_LEN {
+        return true;
+    }
+
+    if !matches!(read_ne_i32(data, film_grain_type_field_offset()), 0..=2) {
+        return true;
+    }
+    for offset in [
+        film_grain_width_field_offset(),
+        film_grain_height_field_offset(),
+        film_grain_subsampling_x_field_offset(),
+        film_grain_subsampling_y_field_offset(),
+        film_grain_bit_depth_luma_field_offset(),
+        film_grain_bit_depth_chroma_field_offset(),
+    ] {
+        if read_ne_i32(data, offset) < 0 {
+            return true;
+        }
+    }
+
+    match read_ne_i32(data, film_grain_type_field_offset()) {
+        0 => false,
+        1 => film_grain_aom_payload_invalid(
+            &data[film_grain_codec_field_offset()
+                ..film_grain_codec_field_offset() + FrameFilmGrainAomParams::DATA_LEN],
+        ),
+        2 => film_grain_h274_payload_invalid(
+            &data[film_grain_codec_field_offset()
+                ..film_grain_codec_field_offset() + FrameFilmGrainH274Params::DATA_LEN],
+        ),
+        _ => true,
+    }
+}
+
+fn film_grain_aom_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != FrameFilmGrainAomParams::DATA_LEN {
+        return true;
+    }
+
+    let num_y_points = read_ne_i32(data, 0);
+    if !(0..=FrameFilmGrainAomParams::Y_POINTS as i32).contains(&num_y_points) {
+        return true;
+    }
+    if !matches!(read_ne_i32(data, 32), 0 | 1) {
+        return true;
+    }
+    for plane in 0..FrameFilmGrainAomParams::UV_PLANES {
+        if !(0..=FrameFilmGrainAomParams::UV_POINTS as i32)
+            .contains(&read_ne_i32(data, 36 + plane * 4))
+        {
+            return true;
+        }
+    }
+    if !(8..=11).contains(&read_ne_i32(data, 84)) {
+        return true;
+    }
+    if !(0..=3).contains(&read_ne_i32(data, 88)) {
+        return true;
+    }
+    if !(6..=9).contains(&read_ne_i32(data, 168)) {
+        return true;
+    }
+    if !(0..=3).contains(&read_ne_i32(data, 172)) {
+        return true;
+    }
+    for plane in 0..FrameFilmGrainAomParams::UV_PLANES {
+        if !(-256..=255).contains(&read_ne_i32(data, 192 + plane * 4)) {
+            return true;
+        }
+    }
+    !matches!(read_ne_i32(data, 200), 0 | 1) || !matches!(read_ne_i32(data, 204), 0 | 1)
+}
+
+fn film_grain_h274_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != FrameFilmGrainH274Params::DATA_LEN {
+        return true;
+    }
+
+    if !matches!(read_ne_i32(data, 0), 0 | 1) || !matches!(read_ne_i32(data, 4), 0 | 1) {
+        return true;
+    }
+
+    for component in 0..FrameFilmGrainH274Params::COMPONENTS {
+        let present = read_ne_i32(data, 12 + component * 4);
+        if !matches!(present, 0 | 1) {
+            return true;
+        }
+        let intervals = usize::from(read_ne_u16(data, 24 + component * 2));
+        let values = usize::from(data[30 + component]);
+        if present == 0 {
+            if intervals != 0 || values != 0 {
+                return true;
+            }
+            continue;
+        }
+        if !(1..=FrameFilmGrainH274Params::MAX_INTENSITY_INTERVALS).contains(&intervals) {
+            return true;
+        }
+        if !(1..=FrameFilmGrainH274Params::MAX_MODEL_VALUES).contains(&values) {
+            return true;
+        }
+        for interval in 0..intervals {
+            let lower =
+                data[33 + component * FrameFilmGrainH274Params::MAX_INTENSITY_INTERVALS + interval];
+            let upper = data
+                [801 + component * FrameFilmGrainH274Params::MAX_INTENSITY_INTERVALS + interval];
+            if lower > upper {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn film_grain_type_field_offset() -> usize {
+    0
+}
+
+fn film_grain_seed_field_offset() -> usize {
+    align_up_usize(
+        film_grain_type_field_offset() + 4,
+        core::mem::align_of::<u64>(),
+    )
+}
+
+fn film_grain_width_field_offset() -> usize {
+    film_grain_seed_field_offset() + 8
+}
+
+fn film_grain_height_field_offset() -> usize {
+    film_grain_width_field_offset() + 4
+}
+
+fn film_grain_subsampling_x_field_offset() -> usize {
+    film_grain_height_field_offset() + 4
+}
+
+fn film_grain_subsampling_y_field_offset() -> usize {
+    film_grain_subsampling_x_field_offset() + 4
+}
+
+fn film_grain_bit_depth_luma_field_offset() -> usize {
+    film_grain_subsampling_y_field_offset() + 24
+}
+
+fn film_grain_bit_depth_chroma_field_offset() -> usize {
+    film_grain_bit_depth_luma_field_offset() + 4
+}
+
+fn film_grain_codec_field_offset() -> usize {
+    film_grain_bit_depth_chroma_field_offset() + 4
+}
+
+fn film_grain_aom_num_y_points_offset() -> usize {
+    film_grain_codec_field_offset()
+}
+
+fn film_grain_aom_y_points_offset() -> usize {
+    film_grain_codec_field_offset() + 4
+}
+
+fn film_grain_aom_scaling_shift_offset() -> usize {
+    film_grain_codec_field_offset() + 84
+}
+
+fn film_grain_aom_ar_coeff_shift_offset() -> usize {
+    film_grain_codec_field_offset() + 168
+}
+
+fn align_up_usize(value: usize, align: usize) -> usize {
+    let remainder = value % align;
+    if remainder == 0 {
+        value
+    } else {
+        value + align - remainder
+    }
+}
+
 fn minimal_icc_profile_fixture() -> Vec<u8> {
     let mut data = vec![0; FrameIccProfile::MIN_DATA_LEN];
     data[0..4].copy_from_slice(&(FrameIccProfile::MIN_DATA_LEN as u32).to_be_bytes());
@@ -3407,6 +3692,12 @@ fn read_ne_u32(data: &[u8], offset: usize) -> u32 {
     u32::from_ne_bytes(raw)
 }
 
+fn read_ne_u16(data: &[u8], offset: usize) -> u16 {
+    let mut raw = [0; 2];
+    raw.copy_from_slice(&data[offset..offset + 2]);
+    u16::from_ne_bytes(raw)
+}
+
 fn read_ne_usize(data: &[u8], offset: usize) -> usize {
     let mut raw = [0; core::mem::size_of::<usize>()];
     raw.copy_from_slice(&data[offset..offset + core::mem::size_of::<usize>()]);
@@ -3421,6 +3712,10 @@ fn read_ne_i32(data: &[u8], offset: usize) -> i32 {
 
 fn write_ne_u32(data: &mut [u8], offset: usize, value: u32) {
     data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn write_ne_u64(data: &mut [u8], offset: usize, value: u64) {
+    data[offset..offset + 8].copy_from_slice(&value.to_ne_bytes());
 }
 
 fn write_ne_usize(data: &mut [u8], offset: usize, value: usize) {
