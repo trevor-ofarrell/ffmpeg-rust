@@ -1072,8 +1072,11 @@ mod tests {
         let selected_components = changed_components(
             &component_ids,
             &[
+                "crates/fftools/src/lib.rs".to_string(),
+                "crates/fftools/src/bin/ffmpeg-rs.rs".to_string(),
                 "crates/fftools/src/option_parser.rs".to_string(),
                 "crates/fftools/src/io_plan.rs".to_string(),
+                "crates/fftools/src/ffmpeg.rs".to_string(),
                 "crates/fftools/src/ffprobe.rs".to_string(),
                 "fuzz/fuzz_targets/fftools_option_parser.rs".to_string(),
             ],

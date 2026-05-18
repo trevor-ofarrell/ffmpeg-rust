@@ -34,7 +34,8 @@ Run local smoke mappings:
 cargo run -p fate-runner -- run --component avformat-mov-demuxer
 cargo run -p fate-runner -- run --component fftools-option-parser
 cargo run -p fate-runner -- run --component fftools-basic-io
+cargo run -p fate-runner -- run --component fftools-ffmpeg-mov-framecrc-null
 cargo run -p fate-runner -- run --component fftools-ffprobe-mov-show-format
 ```
 
-The current mapping file contains local runner smoke coverage, a local MOV demuxer unit-test smoke mapping, local `fftools` option-parser and I/O-plan mappings, and shared local `ffprobe` unit-test mappings for current `fftools-ffprobe-*` ledger components. These rows prove the FATE runner's mapping and command execution path for selected components; they are not a replacement for upstream FFmpeg FATE sample parity.
+The current mapping file contains local runner smoke coverage, a local MOV demuxer unit-test smoke mapping, local `fftools` version, hide-banner, option-parser, and I/O-plan mappings, shared local `ffmpeg` unit-test mappings for current `fftools-ffmpeg-*` ledger components, and shared local `ffprobe` unit-test mappings for current `fftools-ffprobe-*` ledger components. These rows prove the FATE runner's mapping and command execution path for selected components; they are not a replacement for upstream FFmpeg FATE sample parity.
