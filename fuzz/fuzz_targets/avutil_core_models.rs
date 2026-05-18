@@ -5,11 +5,11 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
     FrameActiveFormatDescription, FrameAudioServiceType, FrameData, FrameDisplayMatrix,
-    FrameDownmixInfo, FrameDownmixType, FrameGopTimecode, FrameMatrixEncoding, FrameS12mTimecode,
-    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
-    FrameSkipSamples, FrameSkipSamplesReason, Md5, Packet, PacketFlags, PixelFormat, Rational,
-    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
-    VideoFrame,
+    FrameDownmixInfo, FrameDownmixType, FrameGopTimecode, FrameMatrixEncoding, FrameReplayGain,
+    FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
+    FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, Md5, Packet, PacketFlags,
+    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384,
+    Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1061,6 +1061,29 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 false
             };
             assert!(frame_side_data_payload.len() != FrameDownmixInfo::DATA_LEN || raw_invalid);
+        }
+    }
+    match frame.side_data()[0].replay_gain() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::ReplayGain);
+            assert_eq!(frame_side_data_payload.len(), FrameReplayGain::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), frame_side_data_payload);
+            assert_eq!(
+                FrameReplayGain::new(
+                    value.track_gain(),
+                    value.track_peak(),
+                    value.album_gain(),
+                    value.album_peak()
+                ),
+                value
+            );
+            assert_eq!(FrameReplayGain::parse(&value.to_bytes()).unwrap(), value);
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::ReplayGain),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::ReplayGain);
+            assert_ne!(frame_side_data_payload.len(), FrameReplayGain::DATA_LEN);
         }
     }
     match frame.side_data()[0].active_format_description() {
@@ -2238,6 +2261,38 @@ fn exercise_fixtures() {
     let non_downmix =
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 48]).unwrap();
     assert_eq!(non_downmix.downmix_info().unwrap(), None);
+
+    let replay_gain = FrameReplayGain::new(
+        -650_000,
+        100_000,
+        FrameReplayGain::GAIN_UNKNOWN,
+        FrameReplayGain::PEAK_UNKNOWN,
+    );
+    let replay_gain_side_data = FrameSideData::new_replay_gain(replay_gain).unwrap();
+    assert_eq!(
+        replay_gain_side_data.kind_id(),
+        &FrameSideDataKind::ReplayGain
+    );
+    assert_eq!(
+        replay_gain_side_data.replay_gain().unwrap(),
+        Some(replay_gain)
+    );
+    assert_eq!(replay_gain_side_data.data(), &replay_gain.to_bytes()[..]);
+    assert_eq!(replay_gain.track_gain(), -650_000);
+    assert_eq!(replay_gain.track_peak(), 100_000);
+    assert!(replay_gain.album_gain_unknown());
+    assert!(replay_gain.album_peak_unknown());
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0; 15])
+            .unwrap()
+            .replay_gain()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_replay_gain =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 16]).unwrap();
+    assert_eq!(non_replay_gain.replay_gain().unwrap(), None);
 
     let audio_service =
         FrameSideData::new_audio_service_type(FrameAudioServiceType::VoiceOver).unwrap();

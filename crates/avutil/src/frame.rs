@@ -688,6 +688,96 @@ impl FrameDownmixInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameReplayGain {
+    track_gain: i32,
+    track_peak: u32,
+    album_gain: i32,
+    album_peak: u32,
+}
+
+impl FrameReplayGain {
+    pub const DATA_LEN: usize = 16;
+    pub const GAIN_UNKNOWN: i32 = i32::MIN;
+    pub const PEAK_UNKNOWN: u32 = 0;
+
+    pub const fn new(track_gain: i32, track_peak: u32, album_gain: i32, album_peak: u32) -> Self {
+        Self {
+            track_gain,
+            track_peak,
+            album_gain,
+            album_peak,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "replaygain frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut track_gain = [0; 4];
+        track_gain.copy_from_slice(&data[0..4]);
+        let mut track_peak = [0; 4];
+        track_peak.copy_from_slice(&data[4..8]);
+        let mut album_gain = [0; 4];
+        album_gain.copy_from_slice(&data[8..12]);
+        let mut album_peak = [0; 4];
+        album_peak.copy_from_slice(&data[12..16]);
+
+        Ok(Self {
+            track_gain: i32::from_ne_bytes(track_gain),
+            track_peak: u32::from_ne_bytes(track_peak),
+            album_gain: i32::from_ne_bytes(album_gain),
+            album_peak: u32::from_ne_bytes(album_peak),
+        })
+    }
+
+    pub const fn track_gain(self) -> i32 {
+        self.track_gain
+    }
+
+    pub const fn track_peak(self) -> u32 {
+        self.track_peak
+    }
+
+    pub const fn album_gain(self) -> i32 {
+        self.album_gain
+    }
+
+    pub const fn album_peak(self) -> u32 {
+        self.album_peak
+    }
+
+    pub const fn track_gain_unknown(self) -> bool {
+        self.track_gain == Self::GAIN_UNKNOWN
+    }
+
+    pub const fn album_gain_unknown(self) -> bool {
+        self.album_gain == Self::GAIN_UNKNOWN
+    }
+
+    pub const fn track_peak_unknown(self) -> bool {
+        self.track_peak == Self::PEAK_UNKNOWN
+    }
+
+    pub const fn album_peak_unknown(self) -> bool {
+        self.album_peak == Self::PEAK_UNKNOWN
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[0..4].copy_from_slice(&self.track_gain.to_ne_bytes());
+        bytes[4..8].copy_from_slice(&self.track_peak.to_ne_bytes());
+        bytes[8..12].copy_from_slice(&self.album_gain.to_ne_bytes());
+        bytes[12..16].copy_from_slice(&self.album_peak.to_ne_bytes());
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FrameActiveFormatDescription {
     Same = 8,
@@ -1445,6 +1535,10 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::DownmixInfo, value.to_bytes().to_vec())
     }
 
+    pub fn new_replay_gain(value: FrameReplayGain) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::ReplayGain, value.to_bytes().to_vec())
+    }
+
     pub fn new_skip_samples(value: FrameSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(FrameSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -1544,6 +1638,14 @@ impl FrameSideData {
         }
 
         FrameDownmixInfo::parse(self.data()).map(Some)
+    }
+
+    pub fn replay_gain(&self) -> AvResult<Option<FrameReplayGain>> {
+        if self.kind != FrameSideDataKind::ReplayGain {
+            return Ok(None);
+        }
+
+        FrameReplayGain::parse(self.data()).map(Some)
     }
 
     pub fn active_format_description(&self) -> AvResult<Option<FrameActiveFormatDescription>> {
@@ -4168,6 +4270,76 @@ mod tests {
         let non_downmix =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 48]).unwrap();
         assert_eq!(non_downmix.downmix_info().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_replay_gain_payload() {
+        let replay_gain =
+            FrameReplayGain::new(-650_000, 100_000, FrameReplayGain::GAIN_UNKNOWN, u32::MAX);
+        let mut expected_bytes = [0; FrameReplayGain::DATA_LEN];
+        expected_bytes[0..4].copy_from_slice(&(-650_000i32).to_ne_bytes());
+        expected_bytes[4..8].copy_from_slice(&100_000u32.to_ne_bytes());
+        expected_bytes[8..12].copy_from_slice(&FrameReplayGain::GAIN_UNKNOWN.to_ne_bytes());
+        expected_bytes[12..16].copy_from_slice(&u32::MAX.to_ne_bytes());
+
+        assert_eq!(FrameReplayGain::DATA_LEN, 16);
+        assert_eq!(FrameReplayGain::PEAK_UNKNOWN, 0);
+        assert_eq!(replay_gain.track_gain(), -650_000);
+        assert_eq!(replay_gain.track_peak(), 100_000);
+        assert_eq!(replay_gain.album_gain(), FrameReplayGain::GAIN_UNKNOWN);
+        assert_eq!(replay_gain.album_peak(), u32::MAX);
+        assert!(!replay_gain.track_gain_unknown());
+        assert!(!replay_gain.track_peak_unknown());
+        assert!(replay_gain.album_gain_unknown());
+        assert!(!replay_gain.album_peak_unknown());
+        assert_eq!(replay_gain.to_bytes(), expected_bytes);
+        assert_eq!(
+            FrameReplayGain::parse(&expected_bytes).unwrap(),
+            replay_gain
+        );
+
+        let unknown = FrameReplayGain::new(
+            FrameReplayGain::GAIN_UNKNOWN,
+            FrameReplayGain::PEAK_UNKNOWN,
+            FrameReplayGain::GAIN_UNKNOWN,
+            FrameReplayGain::PEAK_UNKNOWN,
+        );
+        assert!(unknown.track_gain_unknown());
+        assert!(unknown.track_peak_unknown());
+        assert!(unknown.album_gain_unknown());
+        assert!(unknown.album_peak_unknown());
+
+        let side_data = FrameSideData::new_replay_gain(replay_gain).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::ReplayGain);
+        assert_eq!(side_data.data(), &expected_bytes[..]);
+        assert_eq!(side_data.replay_gain().unwrap(), Some(replay_gain));
+
+        let display_matrix = FrameSideData::new_with_kind(
+            FrameSideDataKind::DisplayMatrix,
+            vec![0; FrameReplayGain::DATA_LEN],
+        )
+        .unwrap();
+        assert_eq!(display_matrix.replay_gain().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_replay_gain_payload() {
+        for data in [Vec::new(), vec![0; 15], vec![0; 17]] {
+            assert_eq!(
+                FrameReplayGain::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, data).unwrap();
+            assert_eq!(
+                side_data.replay_gain().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_replay_gain =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 16]).unwrap();
+        assert_eq!(non_replay_gain.replay_gain().unwrap(), None);
     }
 
     #[test]
