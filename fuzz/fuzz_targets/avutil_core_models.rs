@@ -5,10 +5,10 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
     FrameActiveFormatDescription, FrameAudioServiceType, FrameData, FrameDisplayMatrix,
-    FrameGopTimecode, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
-    FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, Md5, Packet, PacketFlags,
-    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384,
-    Sha512, SideData, VideoFrame,
+    FrameGopTimecode, FrameMatrixEncoding, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData,
+    FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, Md5,
+    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -989,6 +989,37 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(frame_side_data_kind, FrameSideDataKind::DisplayMatrix);
             assert_ne!(frame_side_data_payload.len(), FrameDisplayMatrix::DATA_LEN);
+        }
+    }
+    match frame.side_data()[0].matrix_encoding() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::MatrixEncoding);
+            assert_eq!(frame_side_data_payload.len(), FrameMatrixEncoding::DATA_LEN);
+            let mut raw = [0; FrameMatrixEncoding::DATA_LEN];
+            raw.copy_from_slice(&frame_side_data_payload);
+            assert_eq!(i32::from_ne_bytes(raw), value.as_raw());
+            assert_eq!(value.to_bytes().as_slice(), frame_side_data_payload);
+            assert_eq!(
+                FrameMatrixEncoding::from_raw(value.as_raw()).unwrap(),
+                value
+            );
+            assert_eq!(
+                FrameMatrixEncoding::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::MatrixEncoding),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::MatrixEncoding);
+            let raw_invalid = if frame_side_data_payload.len() == FrameMatrixEncoding::DATA_LEN {
+                let mut raw = [0; FrameMatrixEncoding::DATA_LEN];
+                raw.copy_from_slice(&frame_side_data_payload);
+                FrameMatrixEncoding::from_raw(i32::from_ne_bytes(raw)).is_err()
+            } else {
+                false
+            };
+            assert!(frame_side_data_payload.len() != FrameMatrixEncoding::DATA_LEN || raw_invalid);
         }
     }
     match frame.side_data()[0].active_format_description() {
@@ -2092,6 +2123,36 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 36]).unwrap();
     assert_eq!(non_display.display_matrix().unwrap(), None);
 
+    let matrix_encoding =
+        FrameSideData::new_matrix_encoding(FrameMatrixEncoding::DolbyProLogicIiX).unwrap();
+    assert_eq!(
+        matrix_encoding.matrix_encoding().unwrap(),
+        Some(FrameMatrixEncoding::DolbyProLogicIiX)
+    );
+    assert_eq!(
+        matrix_encoding.data(),
+        &FrameMatrixEncoding::DolbyProLogicIiX.as_raw().to_ne_bytes()
+    );
+    assert_eq!(
+        FrameMatrixEncoding::DolbyHeadphone.ffmpeg_constant(),
+        "AV_MATRIX_ENCODING_DOLBYHEADPHONE"
+    );
+    assert_eq!(
+        FrameMatrixEncoding::from_raw(7).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::MatrixEncoding, vec![0; 5])
+            .unwrap()
+            .matrix_encoding()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_matrix =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 4]).unwrap();
+    assert_eq!(non_matrix.matrix_encoding().unwrap(), None);
+
     let audio_service =
         FrameSideData::new_audio_service_type(FrameAudioServiceType::VoiceOver).unwrap();
     assert_eq!(
@@ -2333,24 +2394,25 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 18 {
+    match byte.unwrap_or_default() % 19 {
         0 => FrameSideDataKind::DisplayMatrix,
-        1 => FrameSideDataKind::ReplayGain,
-        2 => FrameSideDataKind::MasteringDisplayMetadata,
-        3 => FrameSideDataKind::ContentLightLevel,
-        4 => FrameSideDataKind::IccProfile,
-        5 => FrameSideDataKind::DolbyVisionRpuBuffer,
-        6 => FrameSideDataKind::Lcevc,
-        7 => FrameSideDataKind::GopTimecode,
-        8 => FrameSideDataKind::S12mTimecode,
-        9 => FrameSideDataKind::VideoHint,
-        10 => FrameSideDataKind::ViewId,
-        11 => FrameSideDataKind::ThreeDReferenceDisplays,
-        12 => FrameSideDataKind::Exif,
-        13 => FrameSideDataKind::SeiUnregistered,
-        14 => FrameSideDataKind::ActiveFormatDescription,
-        15 => FrameSideDataKind::SkipSamples,
-        16 => FrameSideDataKind::AudioServiceType,
+        1 => FrameSideDataKind::MatrixEncoding,
+        2 => FrameSideDataKind::ReplayGain,
+        3 => FrameSideDataKind::MasteringDisplayMetadata,
+        4 => FrameSideDataKind::ContentLightLevel,
+        5 => FrameSideDataKind::IccProfile,
+        6 => FrameSideDataKind::DolbyVisionRpuBuffer,
+        7 => FrameSideDataKind::Lcevc,
+        8 => FrameSideDataKind::GopTimecode,
+        9 => FrameSideDataKind::S12mTimecode,
+        10 => FrameSideDataKind::VideoHint,
+        11 => FrameSideDataKind::ViewId,
+        12 => FrameSideDataKind::ThreeDReferenceDisplays,
+        13 => FrameSideDataKind::Exif,
+        14 => FrameSideDataKind::SeiUnregistered,
+        15 => FrameSideDataKind::ActiveFormatDescription,
+        16 => FrameSideDataKind::SkipSamples,
+        17 => FrameSideDataKind::AudioServiceType,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }

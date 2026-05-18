@@ -26,9 +26,9 @@ pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};
 pub use error::{AvError, AvErrorKind, AvResult};
 pub use frame::{
     AudioFrame, Frame, FrameActiveFormatDescription, FrameAudioServiceType, FrameData,
-    FrameDisplayMatrix, FrameGopTimecode, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData,
-    FrameSideDataDescriptor, FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples,
-    FrameSkipSamplesReason, VideoFrame,
+    FrameDisplayMatrix, FrameGopTimecode, FrameMatrixEncoding, FrameS12mTimecode,
+    FrameSeiUnregistered, FrameSideData, FrameSideDataDescriptor, FrameSideDataKind,
+    FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, VideoFrame,
 };
 pub use hash::{
     adler32, crc32_ieee, digest_to_hex, md5, sha224, sha256, sha384, sha512, Adler32, Crc32, Md5,

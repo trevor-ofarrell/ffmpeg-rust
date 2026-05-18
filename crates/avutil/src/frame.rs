@@ -472,6 +472,71 @@ impl FrameDisplayMatrix {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum FrameMatrixEncoding {
+    None = 0,
+    Dolby = 1,
+    DolbyProLogicIi = 2,
+    DolbyProLogicIiX = 3,
+    DolbyProLogicIiZ = 4,
+    DolbyEx = 5,
+    DolbyHeadphone = 6,
+}
+
+impl FrameMatrixEncoding {
+    pub const DATA_LEN: usize = 4;
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "matrix encoding frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut raw = [0; Self::DATA_LEN];
+        raw.copy_from_slice(data);
+        Self::from_raw(i32::from_ne_bytes(raw))
+    }
+
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::Dolby),
+            2 => Ok(Self::DolbyProLogicIi),
+            3 => Ok(Self::DolbyProLogicIiX),
+            4 => Ok(Self::DolbyProLogicIiZ),
+            5 => Ok(Self::DolbyEx),
+            6 => Ok(Self::DolbyHeadphone),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid matrix encoding value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        self.as_raw().to_ne_bytes()
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::None => "AV_MATRIX_ENCODING_NONE",
+            Self::Dolby => "AV_MATRIX_ENCODING_DOLBY",
+            Self::DolbyProLogicIi => "AV_MATRIX_ENCODING_DPLII",
+            Self::DolbyProLogicIiX => "AV_MATRIX_ENCODING_DPLIIX",
+            Self::DolbyProLogicIiZ => "AV_MATRIX_ENCODING_DPLIIZ",
+            Self::DolbyEx => "AV_MATRIX_ENCODING_DOLBYEX",
+            Self::DolbyHeadphone => "AV_MATRIX_ENCODING_DOLBYHEADPHONE",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FrameActiveFormatDescription {
     Same = 8,
@@ -1221,6 +1286,10 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::DisplayMatrix, value.to_bytes().to_vec())
     }
 
+    pub fn new_matrix_encoding(value: FrameMatrixEncoding) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::MatrixEncoding, value.to_bytes().to_vec())
+    }
+
     pub fn new_skip_samples(value: FrameSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(FrameSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -1304,6 +1373,14 @@ impl FrameSideData {
         }
 
         FrameDisplayMatrix::parse(self.data()).map(Some)
+    }
+
+    pub fn matrix_encoding(&self) -> AvResult<Option<FrameMatrixEncoding>> {
+        if self.kind != FrameSideDataKind::MatrixEncoding {
+            return Ok(None);
+        }
+
+        FrameMatrixEncoding::parse(self.data()).map(Some)
     }
 
     pub fn active_format_description(&self) -> AvResult<Option<FrameActiveFormatDescription>> {
@@ -3724,6 +3801,96 @@ mod tests {
         let non_display =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 35]).unwrap();
         assert_eq!(non_display.display_matrix().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_matrix_encoding_payload() {
+        let expected = [
+            (FrameMatrixEncoding::None, 0, "AV_MATRIX_ENCODING_NONE"),
+            (FrameMatrixEncoding::Dolby, 1, "AV_MATRIX_ENCODING_DOLBY"),
+            (
+                FrameMatrixEncoding::DolbyProLogicIi,
+                2,
+                "AV_MATRIX_ENCODING_DPLII",
+            ),
+            (
+                FrameMatrixEncoding::DolbyProLogicIiX,
+                3,
+                "AV_MATRIX_ENCODING_DPLIIX",
+            ),
+            (
+                FrameMatrixEncoding::DolbyProLogicIiZ,
+                4,
+                "AV_MATRIX_ENCODING_DPLIIZ",
+            ),
+            (
+                FrameMatrixEncoding::DolbyEx,
+                5,
+                "AV_MATRIX_ENCODING_DOLBYEX",
+            ),
+            (
+                FrameMatrixEncoding::DolbyHeadphone,
+                6,
+                "AV_MATRIX_ENCODING_DOLBYHEADPHONE",
+            ),
+        ];
+
+        for (value, raw, ffmpeg_constant) in expected {
+            assert_eq!(value.as_raw(), raw);
+            assert_eq!(value.ffmpeg_constant(), ffmpeg_constant);
+            assert_eq!(FrameMatrixEncoding::from_raw(raw).unwrap(), value);
+            assert_eq!(
+                FrameMatrixEncoding::parse(&raw.to_ne_bytes()).unwrap(),
+                value
+            );
+            let side_data = FrameSideData::new_matrix_encoding(value).unwrap();
+            assert_eq!(side_data.kind_id(), &FrameSideDataKind::MatrixEncoding);
+            assert_eq!(side_data.data(), &raw.to_ne_bytes()[..]);
+            assert_eq!(side_data.matrix_encoding().unwrap(), Some(value));
+        }
+
+        let replay_gain = FrameSideData::new_with_kind(
+            FrameSideDataKind::ReplayGain,
+            0i32.to_ne_bytes().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(replay_gain.matrix_encoding().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_matrix_encoding_payload() {
+        for data in [Vec::new(), vec![0; 3], vec![0; 5]] {
+            assert_eq!(
+                FrameMatrixEncoding::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::MatrixEncoding, data).unwrap();
+            assert_eq!(
+                side_data.matrix_encoding().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for raw in [7, 8, -1] {
+            assert_eq!(
+                FrameMatrixEncoding::from_raw(raw).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data = FrameSideData::new_with_kind(
+                FrameSideDataKind::MatrixEncoding,
+                raw.to_ne_bytes().to_vec(),
+            )
+            .unwrap();
+            assert_eq!(
+                side_data.matrix_encoding().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_matrix =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 4]).unwrap();
+        assert_eq!(non_matrix.matrix_encoding().unwrap(), None);
     }
 
     #[test]
