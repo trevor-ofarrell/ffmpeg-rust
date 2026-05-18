@@ -581,6 +581,52 @@ impl VideoFrame {
     pub fn plane_buffers(&self) -> &[BufferRef] {
         &self.plane_buffers
     }
+
+    pub fn is_writable(&self) -> bool {
+        self.plane_buffers.iter().all(BufferRef::is_writable)
+    }
+
+    pub fn make_writable(&mut self) {
+        for plane in &mut self.plane_buffers {
+            plane.make_mut();
+        }
+    }
+
+    pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
+        let plane_shapes = video_plane_shapes(self.pixel_format, self.width, self.height)?;
+        let Some(shape) = plane_shapes.get(index).copied() else {
+            return Err(AvError::invalid_argument(format!(
+                "{} video frame plane index {index} is out of range",
+                self.pixel_format.name()
+            )));
+        };
+        let expected_visible = shape.row_bytes.checked_mul(shape.rows).ok_or_else(|| {
+            AvError::invalid_argument(format!(
+                "{} video frame plane {index} visible size overflow",
+                self.pixel_format.name()
+            ))
+        })?;
+        if data.len() != expected_visible {
+            return Err(AvError::invalid_data(format!(
+                "{} video frame plane {index} visible data has {} bytes, expected {expected_visible}",
+                self.pixel_format.name(),
+                data.len()
+            )));
+        }
+
+        let line_size = self.line_sizes[index];
+        let storage = self.plane_buffers[index].make_mut();
+        for row in 0..shape.rows {
+            let src_start = row * shape.row_bytes;
+            let src_end = src_start + shape.row_bytes;
+            let dst_start = row * line_size;
+            let dst_end = dst_start + shape.row_bytes;
+            storage[dst_start..dst_end].copy_from_slice(&data[src_start..src_end]);
+        }
+        self.planes[index].clear();
+        self.planes[index].extend_from_slice(data);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -743,6 +789,37 @@ impl AudioFrame {
 
     pub fn plane_buffers(&self) -> &[BufferRef] {
         &self.plane_buffers
+    }
+
+    pub fn is_writable(&self) -> bool {
+        self.plane_buffers.iter().all(BufferRef::is_writable)
+    }
+
+    pub fn make_writable(&mut self) {
+        for plane in &mut self.plane_buffers {
+            plane.make_mut();
+        }
+    }
+
+    pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
+        let Some(expected_visible) = self.line_sizes.get(index).copied() else {
+            return Err(AvError::invalid_argument(format!(
+                "{} audio frame plane index {index} is out of range",
+                self.sample_format.name()
+            )));
+        };
+        if data.len() != expected_visible {
+            return Err(AvError::invalid_data(format!(
+                "{} audio frame plane {index} visible data has {} bytes, expected {expected_visible}",
+                self.sample_format.name(),
+                data.len()
+            )));
+        }
+
+        self.plane_buffers[index].make_mut().copy_from_slice(data);
+        self.planes[index].clear();
+        self.planes[index].extend_from_slice(data);
+        Ok(())
     }
 }
 
@@ -1074,6 +1151,63 @@ mod tests {
     }
 
     #[test]
+    fn video_frame_mutates_visible_plane_data_with_copy_on_write() {
+        let mut frame = VideoFrame::new_with_line_sizes(
+            3,
+            2,
+            PixelFormat::Gray8,
+            vec![vec![1, 2, 3, 99, 4, 5, 6, 88]],
+            vec![4],
+        )
+        .unwrap();
+        let cloned = frame.clone();
+        assert!(!frame.is_writable());
+
+        frame
+            .set_plane_visible_data(0, &[10, 11, 12, 13, 14, 15])
+            .unwrap();
+        assert!(frame.is_writable());
+        assert!(!frame.plane_buffers()[0].shares_storage(&cloned.plane_buffers()[0]));
+        assert_eq!(frame.planes(), &[vec![10, 11, 12, 13, 14, 15]]);
+        assert_eq!(
+            frame.plane_buffers()[0].as_slice(),
+            &[10, 11, 12, 99, 13, 14, 15, 88]
+        );
+        assert_eq!(cloned.planes(), &[vec![1, 2, 3, 4, 5, 6]]);
+        assert_eq!(
+            cloned.plane_buffers()[0].as_slice(),
+            &[1, 2, 3, 99, 4, 5, 6, 88]
+        );
+
+        assert_eq!(
+            frame.set_plane_visible_data(1, &[1]).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            frame
+                .set_plane_visible_data(0, &[1, 2, 3])
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn video_frame_make_writable_detaches_readonly_plane_storage() {
+        let source = BufferRef::from_vec_readonly(vec![1, 2, 3, 4]);
+        let mut frame =
+            VideoFrame::new_with_buffer_refs(2, 2, PixelFormat::Gray8, vec![source.clone()])
+                .unwrap();
+        assert!(!frame.is_writable());
+
+        frame.make_writable();
+        assert!(frame.is_writable());
+        assert!(!frame.plane_buffers()[0].shares_storage(&source));
+        assert_eq!(frame.plane_buffers()[0].as_slice(), &[1, 2, 3, 4]);
+        assert_eq!(source.as_slice(), &[1, 2, 3, 4]);
+    }
+
+    #[test]
     fn audio_frame_retains_buffer_ref_planes_and_visible_bytes() {
         let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let release_capture = std::sync::Arc::clone(&released);
@@ -1137,6 +1271,45 @@ mod tests {
             .kind(),
             AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn audio_frame_mutates_visible_plane_data_with_copy_on_write() {
+        let mut frame =
+            AudioFrame::new(48_000, 2, SampleFormat::S16, 1, vec![vec![0, 0, 1, 0]]).unwrap();
+        let cloned = frame.clone();
+        assert!(!frame.is_writable());
+
+        frame.set_plane_visible_data(0, &[9, 0, 8, 0]).unwrap();
+        assert!(frame.is_writable());
+        assert!(!frame.plane_buffers()[0].shares_storage(&cloned.plane_buffers()[0]));
+        assert_eq!(frame.planes(), &[vec![9, 0, 8, 0]]);
+        assert_eq!(frame.plane_buffers()[0].as_slice(), &[9, 0, 8, 0]);
+        assert_eq!(cloned.planes(), &[vec![0, 0, 1, 0]]);
+
+        assert_eq!(
+            frame.set_plane_visible_data(1, &[1]).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            frame.set_plane_visible_data(0, &[1, 2]).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn audio_frame_make_writable_detaches_readonly_plane_storage() {
+        let source = BufferRef::from_vec_readonly(vec![0, 0, 1, 0]);
+        let mut frame =
+            AudioFrame::new_with_buffer_refs(48_000, 2, SampleFormat::S16, 1, vec![source.clone()])
+                .unwrap();
+        assert!(!frame.is_writable());
+
+        frame.make_writable();
+        assert!(frame.is_writable());
+        assert!(!frame.plane_buffers()[0].shares_storage(&source));
+        assert_eq!(frame.plane_buffers()[0].as_slice(), &[0, 0, 1, 0]);
+        assert_eq!(source.as_slice(), &[0, 0, 1, 0]);
     }
 
     #[test]

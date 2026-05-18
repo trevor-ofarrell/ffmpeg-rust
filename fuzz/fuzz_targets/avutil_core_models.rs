@@ -775,6 +775,66 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         AvErrorKind::InvalidArgument
     );
 
+    let mut mutable_strided_video = strided_video.clone();
+    let shared_strided_video = mutable_strided_video.clone();
+    assert!(!mutable_strided_video.is_writable());
+    let replacement_planes = planes
+        .iter()
+        .map(|plane| {
+            plane
+                .iter()
+                .map(|byte| byte.wrapping_add(1))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    for (index, replacement) in replacement_planes.iter().enumerate() {
+        mutable_strided_video
+            .set_plane_visible_data(index, replacement)
+            .unwrap();
+    }
+    assert!(mutable_strided_video.is_writable());
+    assert_eq!(
+        mutable_strided_video.planes(),
+        replacement_planes.as_slice()
+    );
+    for ((((stored, shared), original_strided), replacement), (shape, line_size)) in
+        mutable_strided_video
+            .plane_buffers()
+            .iter()
+            .zip(shared_strided_video.plane_buffers())
+            .zip(&strided_planes)
+            .zip(&replacement_planes)
+            .zip(video_plane_shapes.iter().zip(&strided_line_sizes))
+    {
+        let (row_bytes, rows) = *shape;
+        let line_size = *line_size;
+        assert!(!stored.shares_storage(shared));
+        let mut expected_strided = original_strided.clone();
+        for row in 0..rows {
+            let visible_start = row * row_bytes;
+            let visible_end = visible_start + row_bytes;
+            let storage_start = row * line_size;
+            let storage_end = storage_start + row_bytes;
+            expected_strided[storage_start..storage_end]
+                .copy_from_slice(&replacement[visible_start..visible_end]);
+        }
+        assert_eq!(stored.as_slice(), expected_strided.as_slice());
+    }
+    assert_eq!(
+        mutable_strided_video
+            .set_plane_visible_data(replacement_planes.len(), &[])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        mutable_strided_video
+            .set_plane_visible_data(0, &replacement_planes[0][..replacement_planes[0].len() - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let mut frame = Frame::video(video);
     let pts = timestamp_from(cursor.next());
     frame.set_pts(pts);
@@ -1002,6 +1062,49 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         assert!(stored.shares_storage(source));
         assert_eq!(stored.padding_slice(), &[0]);
     }
+    let mut mutable_audio = audio_from_buffers.clone();
+    let shared_audio = mutable_audio.clone();
+    assert!(!mutable_audio.is_writable());
+    let replacement_audio_planes = planes
+        .iter()
+        .map(|plane| {
+            plane
+                .iter()
+                .map(|byte| byte.wrapping_add(1))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    for (index, replacement) in replacement_audio_planes.iter().enumerate() {
+        mutable_audio
+            .set_plane_visible_data(index, replacement)
+            .unwrap();
+    }
+    assert!(mutable_audio.is_writable());
+    assert_eq!(mutable_audio.planes(), replacement_audio_planes.as_slice());
+    for ((stored, shared), replacement) in mutable_audio
+        .plane_buffers()
+        .iter()
+        .zip(shared_audio.plane_buffers())
+        .zip(&replacement_audio_planes)
+    {
+        assert!(!stored.shares_storage(shared));
+        assert_eq!(stored.as_slice(), replacement.as_slice());
+    }
+    assert_eq!(
+        mutable_audio
+            .set_plane_visible_data(replacement_audio_planes.len(), &[])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    let wrong_audio = vec![0; replacement_audio_planes[0].len().saturating_add(1)];
+    assert_eq!(
+        mutable_audio
+            .set_plane_visible_data(0, &wrong_audio)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         audio.channel_layout(),
         ChannelLayout::default_for_count(channels)
