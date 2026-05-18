@@ -6,3 +6,4 @@
 # These local smoke mappings validate this repository's runner wiring only.
 # They do not count as upstream FFmpeg FATE parity for media components.
 fate-runner|local-self-test|.|cargo|test|-p|fate-runner
+avformat-mov-demuxer|local-mov-unit|.|cargo|test|-p|avformat|mov::tests

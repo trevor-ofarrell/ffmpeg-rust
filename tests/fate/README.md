@@ -28,4 +28,10 @@ cargo run -p fate-runner -- run --dry-run --changed
 
 Dry-run mode still resolves placeholders and validates any required `--samples` or `--oracle-ffmpeg` paths for the selected mappings.
 
-The current mapping file contains only local runner smoke coverage. These rows prove the FATE runner's mapping and command execution path; they are not a replacement for upstream FFmpeg FATE sample parity.
+Run the local MOV demuxer unit-test smoke mapping:
+
+```sh
+cargo run -p fate-runner -- run --component avformat-mov-demuxer
+```
+
+The current mapping file contains local runner smoke coverage and a local MOV demuxer unit-test smoke mapping. These rows prove the FATE runner's mapping and command execution path for selected components; they are not a replacement for upstream FFmpeg FATE sample parity.

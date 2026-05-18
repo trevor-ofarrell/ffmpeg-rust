@@ -53,7 +53,7 @@ FATE samples are expected to be obtained using upstream FFmpeg's documented `mak
 
 Mappings may reference `{samples}` and `{oracle_ffmpeg}` in the workdir, program, or args fields. When a selected mapping uses those placeholders, pass `--samples <path>` and/or `--oracle-ffmpeg <path>` to `fate-runner`; the runner validates that the samples path is an existing directory and the oracle path is an existing file before executing the mapped command.
 
-The current default mapping file contains only `fate-runner|local-self-test`, which validates local runner wiring by invoking `cargo test -p fate-runner`. It does not count as upstream FFmpeg FATE media parity.
+The current default mapping file contains `fate-runner|local-self-test`, which validates local runner wiring by invoking `cargo test -p fate-runner`, and `avformat-mov-demuxer|local-mov-unit`, which validates that the selected MOV demuxer component can drive `cargo test -p avformat mov::tests` through the FATE runner. These mappings do not count as upstream FFmpeg FATE media parity.
 
 ## Differential Tests
 
