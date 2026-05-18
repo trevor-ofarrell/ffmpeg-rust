@@ -5,11 +5,11 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
     FrameActiveFormatDescription, FrameAudioServiceType, FrameData, FrameDisplayMatrix,
-    FrameDownmixInfo, FrameDownmixType, FrameGopTimecode, FrameMatrixEncoding, FrameReplayGain,
-    FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
-    FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, Md5, Packet, PacketFlags,
-    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384,
-    Sha512, SideData, VideoFrame,
+    FrameDownmixInfo, FrameDownmixType, FrameGopTimecode, FrameMatrixEncoding, FrameMotionVector,
+    FrameMotionVectors, FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData,
+    FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, Md5,
+    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1108,6 +1108,44 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert!(
                 frame_side_data_payload.len() != FrameActiveFormatDescription::DATA_LEN
                     || FrameActiveFormatDescription::from_byte(frame_side_data_payload[0]).is_err()
+            );
+        }
+    }
+    match frame.side_data()[0].motion_vectors() {
+        Ok(Some(payload)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::MotionVectors);
+            assert!(!frame_side_data_payload.is_empty());
+            assert_eq!(
+                frame_side_data_payload.len() % FrameMotionVector::DATA_LEN,
+                0
+            );
+            let payload_bytes = payload.to_bytes();
+            assert_eq!(payload_bytes.as_slice(), frame_side_data_payload);
+            assert!(!payload.is_empty());
+            assert_eq!(
+                payload.len(),
+                frame_side_data_payload.len() / FrameMotionVector::DATA_LEN
+            );
+            for vector in payload.vectors() {
+                assert_eq!(
+                    FrameMotionVector::parse(&vector.to_bytes()).unwrap(),
+                    *vector
+                );
+                assert_eq!(&vector.to_bytes()[14..16], &[0, 0]);
+                assert_eq!(&vector.to_bytes()[34..40], &[0, 0, 0, 0, 0, 0]);
+            }
+            assert_eq!(FrameMotionVectors::parse(&payload_bytes).unwrap(), payload);
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::MotionVectors),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::MotionVectors);
+            assert!(
+                frame_side_data_payload.is_empty()
+                    || !frame_side_data_payload
+                        .chunks_exact(FrameMotionVector::DATA_LEN)
+                        .remainder()
+                        .is_empty()
             );
         }
     }
@@ -2294,6 +2332,40 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 16]).unwrap();
     assert_eq!(non_replay_gain.replay_gain().unwrap(), None);
 
+    let motion_vectors = FrameMotionVectors::new(vec![
+        FrameMotionVector::new(-1, 16, 8, -20, 32, 64, -12, 0, 1200, -3400, 4),
+        FrameMotionVector::new(1, 4, 4, 320, -240, -64, 96, u64::MAX, -128, 256, 2),
+    ])
+    .unwrap();
+    let motion_side_data = FrameSideData::new_motion_vectors(motion_vectors.clone()).unwrap();
+    assert_eq!(
+        motion_side_data.kind_id(),
+        &FrameSideDataKind::MotionVectors
+    );
+    assert_eq!(
+        motion_side_data.motion_vectors().unwrap(),
+        Some(motion_vectors.clone())
+    );
+    assert_eq!(
+        motion_side_data.data(),
+        motion_vectors.to_bytes().as_slice()
+    );
+    assert_eq!(motion_vectors.vectors()[0].source(), -1);
+    assert_eq!(motion_vectors.vectors()[0].width(), 16);
+    assert_eq!(motion_vectors.vectors()[0].height(), 8);
+    assert_eq!(motion_vectors.vectors()[0].motion_scale(), 4);
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 39])
+            .unwrap()
+            .motion_vectors()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_motion_vectors =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 40]).unwrap();
+    assert_eq!(non_motion_vectors.motion_vectors().unwrap(), None);
+
     let audio_service =
         FrameSideData::new_audio_service_type(FrameAudioServiceType::VoiceOver).unwrap();
     assert_eq!(
@@ -2535,26 +2607,27 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 20 {
+    match byte.unwrap_or_default() % 21 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::MatrixEncoding,
         2 => FrameSideDataKind::DownmixInfo,
         3 => FrameSideDataKind::ReplayGain,
-        4 => FrameSideDataKind::MasteringDisplayMetadata,
-        5 => FrameSideDataKind::ContentLightLevel,
-        6 => FrameSideDataKind::IccProfile,
-        7 => FrameSideDataKind::DolbyVisionRpuBuffer,
-        8 => FrameSideDataKind::Lcevc,
-        9 => FrameSideDataKind::GopTimecode,
-        10 => FrameSideDataKind::S12mTimecode,
-        11 => FrameSideDataKind::VideoHint,
-        12 => FrameSideDataKind::ViewId,
-        13 => FrameSideDataKind::ThreeDReferenceDisplays,
-        14 => FrameSideDataKind::Exif,
-        15 => FrameSideDataKind::SeiUnregistered,
-        16 => FrameSideDataKind::ActiveFormatDescription,
-        17 => FrameSideDataKind::SkipSamples,
-        18 => FrameSideDataKind::AudioServiceType,
+        4 => FrameSideDataKind::MotionVectors,
+        5 => FrameSideDataKind::MasteringDisplayMetadata,
+        6 => FrameSideDataKind::ContentLightLevel,
+        7 => FrameSideDataKind::IccProfile,
+        8 => FrameSideDataKind::DolbyVisionRpuBuffer,
+        9 => FrameSideDataKind::Lcevc,
+        10 => FrameSideDataKind::GopTimecode,
+        11 => FrameSideDataKind::S12mTimecode,
+        12 => FrameSideDataKind::VideoHint,
+        13 => FrameSideDataKind::ViewId,
+        14 => FrameSideDataKind::ThreeDReferenceDisplays,
+        15 => FrameSideDataKind::Exif,
+        16 => FrameSideDataKind::SeiUnregistered,
+        17 => FrameSideDataKind::ActiveFormatDescription,
+        18 => FrameSideDataKind::SkipSamples,
+        19 => FrameSideDataKind::AudioServiceType,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }

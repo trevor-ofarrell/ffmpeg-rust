@@ -837,6 +837,219 @@ impl FrameActiveFormatDescription {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameMotionVector {
+    source: i32,
+    w: u8,
+    h: u8,
+    src_x: i16,
+    src_y: i16,
+    dst_x: i16,
+    dst_y: i16,
+    flags: u64,
+    motion_x: i32,
+    motion_y: i32,
+    motion_scale: u16,
+}
+
+impl FrameMotionVector {
+    pub const DATA_LEN: usize = 40;
+
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
+        source: i32,
+        w: u8,
+        h: u8,
+        src_x: i16,
+        src_y: i16,
+        dst_x: i16,
+        dst_y: i16,
+        flags: u64,
+        motion_x: i32,
+        motion_y: i32,
+        motion_scale: u16,
+    ) -> Self {
+        Self {
+            source,
+            w,
+            h,
+            src_x,
+            src_y,
+            dst_x,
+            dst_y,
+            flags,
+            motion_x,
+            motion_y,
+            motion_scale,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "motion vector frame side data record requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut source = [0; 4];
+        source.copy_from_slice(&data[0..4]);
+        let mut src_x = [0; 2];
+        src_x.copy_from_slice(&data[6..8]);
+        let mut src_y = [0; 2];
+        src_y.copy_from_slice(&data[8..10]);
+        let mut dst_x = [0; 2];
+        dst_x.copy_from_slice(&data[10..12]);
+        let mut dst_y = [0; 2];
+        dst_y.copy_from_slice(&data[12..14]);
+        let mut flags = [0; 8];
+        flags.copy_from_slice(&data[16..24]);
+        let mut motion_x = [0; 4];
+        motion_x.copy_from_slice(&data[24..28]);
+        let mut motion_y = [0; 4];
+        motion_y.copy_from_slice(&data[28..32]);
+        let mut motion_scale = [0; 2];
+        motion_scale.copy_from_slice(&data[32..34]);
+
+        Ok(Self {
+            source: i32::from_ne_bytes(source),
+            w: data[4],
+            h: data[5],
+            src_x: i16::from_ne_bytes(src_x),
+            src_y: i16::from_ne_bytes(src_y),
+            dst_x: i16::from_ne_bytes(dst_x),
+            dst_y: i16::from_ne_bytes(dst_y),
+            flags: u64::from_ne_bytes(flags),
+            motion_x: i32::from_ne_bytes(motion_x),
+            motion_y: i32::from_ne_bytes(motion_y),
+            motion_scale: u16::from_ne_bytes(motion_scale),
+        })
+    }
+
+    pub const fn source(self) -> i32 {
+        self.source
+    }
+
+    pub const fn width(self) -> u8 {
+        self.w
+    }
+
+    pub const fn height(self) -> u8 {
+        self.h
+    }
+
+    pub const fn src_x(self) -> i16 {
+        self.src_x
+    }
+
+    pub const fn src_y(self) -> i16 {
+        self.src_y
+    }
+
+    pub const fn dst_x(self) -> i16 {
+        self.dst_x
+    }
+
+    pub const fn dst_y(self) -> i16 {
+        self.dst_y
+    }
+
+    pub const fn flags(self) -> u64 {
+        self.flags
+    }
+
+    pub const fn motion_x(self) -> i32 {
+        self.motion_x
+    }
+
+    pub const fn motion_y(self) -> i32 {
+        self.motion_y
+    }
+
+    pub const fn motion_scale(self) -> u16 {
+        self.motion_scale
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[0..4].copy_from_slice(&self.source.to_ne_bytes());
+        bytes[4] = self.w;
+        bytes[5] = self.h;
+        bytes[6..8].copy_from_slice(&self.src_x.to_ne_bytes());
+        bytes[8..10].copy_from_slice(&self.src_y.to_ne_bytes());
+        bytes[10..12].copy_from_slice(&self.dst_x.to_ne_bytes());
+        bytes[12..14].copy_from_slice(&self.dst_y.to_ne_bytes());
+        bytes[16..24].copy_from_slice(&self.flags.to_ne_bytes());
+        bytes[24..28].copy_from_slice(&self.motion_x.to_ne_bytes());
+        bytes[28..32].copy_from_slice(&self.motion_y.to_ne_bytes());
+        bytes[32..34].copy_from_slice(&self.motion_scale.to_ne_bytes());
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameMotionVectors {
+    vectors: Vec<FrameMotionVector>,
+}
+
+impl FrameMotionVectors {
+    pub fn new(vectors: Vec<FrameMotionVector>) -> AvResult<Self> {
+        if vectors.is_empty() {
+            return Err(AvError::invalid_data(
+                "motion vectors frame side data requires at least one record",
+            ));
+        }
+
+        Ok(Self { vectors })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.is_empty()
+            || !data
+                .chunks_exact(FrameMotionVector::DATA_LEN)
+                .remainder()
+                .is_empty()
+        {
+            return Err(AvError::invalid_data(format!(
+                "motion vectors frame side data requires a non-empty multiple of {} bytes, got {}",
+                FrameMotionVector::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let vectors = data
+            .chunks_exact(FrameMotionVector::DATA_LEN)
+            .map(FrameMotionVector::parse)
+            .collect::<AvResult<Vec<_>>>()?;
+        Self::new(vectors)
+    }
+
+    pub fn vectors(&self) -> &[FrameMotionVector] {
+        &self.vectors
+    }
+
+    pub fn into_vectors(self) -> Vec<FrameMotionVector> {
+        self.vectors
+    }
+
+    pub fn len(&self) -> usize {
+        self.vectors.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.vectors.is_empty()
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.vectors.len() * FrameMotionVector::DATA_LEN);
+        for vector in &self.vectors {
+            bytes.extend_from_slice(&vector.to_bytes());
+        }
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FrameSkipSamplesReason {
     PaddingSilence = 0,
@@ -1523,6 +1736,10 @@ impl FrameSideData {
         )
     }
 
+    pub fn new_motion_vectors(value: FrameMotionVectors) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::MotionVectors, value.to_bytes())
+    }
+
     pub fn new_display_matrix(value: FrameDisplayMatrix) -> AvResult<Self> {
         Self::new_with_kind(FrameSideDataKind::DisplayMatrix, value.to_bytes().to_vec())
     }
@@ -1654,6 +1871,14 @@ impl FrameSideData {
         }
 
         FrameActiveFormatDescription::parse(self.data()).map(Some)
+    }
+
+    pub fn motion_vectors(&self) -> AvResult<Option<FrameMotionVectors>> {
+        if self.kind != FrameSideDataKind::MotionVectors {
+            return Ok(None);
+        }
+
+        FrameMotionVectors::parse(self.data()).map(Some)
     }
 
     pub fn skip_samples(&self) -> AvResult<Option<FrameSkipSamples>> {
@@ -4425,6 +4650,115 @@ mod tests {
             side_data.active_format_description().unwrap_err().kind(),
             AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn frame_side_data_parses_motion_vectors_payload() {
+        let past = FrameMotionVector::new(
+            -1,
+            16,
+            8,
+            -20,
+            32,
+            64,
+            -12,
+            0x0102_0304_0506_0708,
+            1200,
+            -3400,
+            4,
+        );
+        let future = FrameMotionVector::new(1, 4, 4, 320, -240, -64, 96, u64::MAX, -128, 256, 2);
+        let mut past_bytes = [0; FrameMotionVector::DATA_LEN];
+        past_bytes[0..4].copy_from_slice(&(-1i32).to_ne_bytes());
+        past_bytes[4] = 16;
+        past_bytes[5] = 8;
+        past_bytes[6..8].copy_from_slice(&(-20i16).to_ne_bytes());
+        past_bytes[8..10].copy_from_slice(&32i16.to_ne_bytes());
+        past_bytes[10..12].copy_from_slice(&64i16.to_ne_bytes());
+        past_bytes[12..14].copy_from_slice(&(-12i16).to_ne_bytes());
+        past_bytes[16..24].copy_from_slice(&0x0102_0304_0506_0708u64.to_ne_bytes());
+        past_bytes[24..28].copy_from_slice(&1200i32.to_ne_bytes());
+        past_bytes[28..32].copy_from_slice(&(-3400i32).to_ne_bytes());
+        past_bytes[32..34].copy_from_slice(&4u16.to_ne_bytes());
+
+        assert_eq!(FrameMotionVector::DATA_LEN, 40);
+        assert_eq!(past.source(), -1);
+        assert_eq!(past.width(), 16);
+        assert_eq!(past.height(), 8);
+        assert_eq!(past.src_x(), -20);
+        assert_eq!(past.src_y(), 32);
+        assert_eq!(past.dst_x(), 64);
+        assert_eq!(past.dst_y(), -12);
+        assert_eq!(past.flags(), 0x0102_0304_0506_0708);
+        assert_eq!(past.motion_x(), 1200);
+        assert_eq!(past.motion_y(), -3400);
+        assert_eq!(past.motion_scale(), 4);
+        assert_eq!(past.to_bytes(), past_bytes);
+        assert_eq!(&past_bytes[14..16], &[0, 0]);
+        assert_eq!(&past_bytes[34..40], &[0, 0, 0, 0, 0, 0]);
+        assert_eq!(FrameMotionVector::parse(&past_bytes).unwrap(), past);
+
+        let mut padded = past_bytes;
+        padded[14..16].copy_from_slice(&[0xaa, 0xbb]);
+        padded[34..40].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+        assert_eq!(FrameMotionVector::parse(&padded).unwrap(), past);
+        assert_eq!(
+            FrameMotionVector::parse(&padded).unwrap().to_bytes(),
+            past_bytes
+        );
+
+        let vectors = FrameMotionVectors::new(vec![past, future]).unwrap();
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&past_bytes);
+        payload.extend_from_slice(&future.to_bytes());
+
+        assert_eq!(vectors.len(), 2);
+        assert!(!vectors.is_empty());
+        assert_eq!(vectors.vectors(), &[past, future]);
+        assert_eq!(vectors.clone().into_vectors(), vec![past, future]);
+        assert_eq!(vectors.to_bytes(), payload);
+        assert_eq!(FrameMotionVectors::parse(&payload).unwrap(), vectors);
+
+        let side_data = FrameSideData::new_motion_vectors(vectors.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::MotionVectors);
+        assert_eq!(side_data.data(), payload.as_slice());
+        assert_eq!(side_data.motion_vectors().unwrap(), Some(vectors));
+
+        let replay_gain = FrameSideData::new_with_kind(
+            FrameSideDataKind::ReplayGain,
+            vec![0; FrameMotionVector::DATA_LEN],
+        )
+        .unwrap();
+        assert_eq!(replay_gain.motion_vectors().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_motion_vectors_payload() {
+        for data in [Vec::new(), vec![0; 39], vec![0; 41], vec![0; 79]] {
+            assert_eq!(
+                FrameMotionVectors::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, data).unwrap();
+            assert_eq!(
+                side_data.motion_vectors().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            FrameMotionVector::parse(&[0; 39]).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameMotionVectors::new(Vec::new()).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let replay_gain =
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, Vec::new()).unwrap();
+        assert_eq!(replay_gain.motion_vectors().unwrap(), None);
     }
 
     #[test]
