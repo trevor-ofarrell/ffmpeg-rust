@@ -80,6 +80,27 @@ impl BufferRef {
         })
     }
 
+    pub fn from_static_slice_readonly(data: &'static [u8]) -> Self {
+        let len = data.len();
+        Self {
+            data: Arc::new(BufferStorage::static_readonly(data)),
+            len,
+        }
+    }
+
+    pub fn from_static_slice_with_len_readonly(data: &'static [u8], len: usize) -> AvResult<Self> {
+        if len > data.len() {
+            return Err(AvError::invalid_argument(format!(
+                "visible buffer length {len} exceeds {} allocated bytes",
+                data.len()
+            )));
+        }
+        Ok(Self {
+            data: Arc::new(BufferStorage::static_readonly(data)),
+            len,
+        })
+    }
+
     pub fn from_vec_with_release_callback<F>(data: Vec<u8>, on_release: F) -> Self
     where
         F: Fn(Vec<u8>) + Send + Sync + 'static,
@@ -187,7 +208,7 @@ impl BufferRef {
     }
 
     pub fn as_slice(&self) -> &[u8] {
-        &self.data.bytes[..self.len]
+        &self.data.bytes.as_slice()[..self.len]
     }
 
     pub fn as_padded_slice(&self) -> &[u8] {
@@ -203,7 +224,7 @@ impl BufferRef {
     }
 
     pub fn padding_slice(&self) -> &[u8] {
-        &self.data.bytes[self.len..]
+        &self.data.bytes.as_slice()[self.len..]
     }
 
     pub fn strong_count(&self) -> usize {
@@ -222,17 +243,22 @@ impl BufferRef {
         if self.is_readonly() {
             return None;
         }
-        Arc::get_mut(&mut self.data).map(|data| &mut data.bytes[..self.len])
+        Arc::get_mut(&mut self.data)
+            .and_then(|data| data.bytes.as_mut_vec())
+            .map(|bytes| &mut bytes[..self.len])
     }
 
     pub fn make_mut(&mut self) -> &mut [u8] {
         if self.strong_count() != 1 || self.is_readonly() {
-            let bytes = self.data.bytes.clone();
+            let bytes = self.data.bytes.as_slice().to_vec();
             self.data = Arc::new(BufferStorage::new(bytes));
         }
-        &mut Arc::get_mut(&mut self.data)
+        let bytes = Arc::get_mut(&mut self.data)
             .expect("buffer storage is unique after copy-on-write")
-            .bytes[..self.len]
+            .bytes
+            .as_mut_vec()
+            .expect("copy-on-write storage is owned");
+        &mut bytes[..self.len]
     }
 
     pub fn resize(&mut self, len: usize) -> AvResult<()> {
@@ -251,30 +277,36 @@ impl BufferRef {
         if self.can_resize_in_place() {
             let storage =
                 Arc::get_mut(&mut self.data).expect("in-place resize requires unique storage");
-            if total_len > storage.bytes.len() {
-                storage
-                    .bytes
-                    .try_reserve_exact(total_len - storage.bytes.len())
+            let bytes = storage
+                .bytes
+                .as_mut_vec()
+                .expect("in-place resize requires owned storage");
+            if total_len > bytes.len() {
+                bytes
+                    .try_reserve_exact(total_len - bytes.len())
                     .map_err(|_| {
                         AvError::external(format!(
                             "failed to allocate {total_len} resized buffer bytes"
                         ))
                     })?;
             }
-            storage.bytes.resize(total_len, 0);
-            storage.bytes[len..].fill(0);
+            bytes.resize(total_len, 0);
+            bytes[len..].fill(0);
             self.len = len;
             return Ok(());
         }
 
-        let bytes = resized_storage(&self.data.bytes[..self.len], len, padding)?;
+        let bytes = resized_storage(&self.data.bytes.as_slice()[..self.len], len, padding)?;
         self.data = Arc::new(BufferStorage::new(bytes));
         self.len = len;
         Ok(())
     }
 
     fn can_resize_in_place(&self) -> bool {
-        self.strong_count() == 1 && !self.is_readonly() && self.data.owner.is_none()
+        self.strong_count() == 1
+            && !self.is_readonly()
+            && self.data.owner.is_none()
+            && self.data.bytes.is_owned()
     }
 
     pub fn slice(&self, offset: usize, len: usize) -> AvResult<BufferSlice> {
@@ -297,7 +329,7 @@ impl BufferRef {
 }
 
 struct BufferStorage {
-    bytes: Vec<u8>,
+    bytes: BufferBytes,
     owner: Option<BufferOwner>,
     readonly: bool,
 }
@@ -316,7 +348,7 @@ enum BufferOwner {
 impl BufferStorage {
     fn new(bytes: Vec<u8>) -> Self {
         Self {
-            bytes,
+            bytes: BufferBytes::owned(bytes),
             owner: None,
             readonly: false,
         }
@@ -324,7 +356,15 @@ impl BufferStorage {
 
     fn readonly(bytes: Vec<u8>) -> Self {
         Self {
-            bytes,
+            bytes: BufferBytes::owned(bytes),
+            owner: None,
+            readonly: true,
+        }
+    }
+
+    fn static_readonly(bytes: &'static [u8]) -> Self {
+        Self {
+            bytes: BufferBytes::static_slice(bytes),
             owner: None,
             readonly: true,
         }
@@ -332,7 +372,7 @@ impl BufferStorage {
 
     fn with_pool(bytes: Vec<u8>, pool: &Arc<BufferPoolInner>) -> Self {
         Self {
-            bytes,
+            bytes: BufferBytes::owned(bytes),
             owner: Some(BufferOwner::Pool {
                 pool: Arc::downgrade(pool),
                 allocated_len: pool.allocated_len,
@@ -354,7 +394,7 @@ impl BufferStorage {
         F: Fn(Vec<u8>) + Send + Sync + 'static,
     {
         Self {
-            bytes,
+            bytes: BufferBytes::owned(bytes),
             owner: Some(BufferOwner::Callback(Arc::new(on_release))),
             readonly,
         }
@@ -367,7 +407,68 @@ impl BufferStorage {
     fn into_vec(mut self) -> Vec<u8> {
         self.owner = None;
         self.readonly = false;
-        std::mem::take(&mut self.bytes)
+        self.bytes.take_vec()
+    }
+}
+
+enum BufferBytes {
+    Owned(Vec<u8>),
+    Static(&'static [u8]),
+}
+
+impl BufferBytes {
+    fn owned(bytes: Vec<u8>) -> Self {
+        Self::Owned(bytes)
+    }
+
+    fn static_slice(bytes: &'static [u8]) -> Self {
+        Self::Static(bytes)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Owned(bytes) => bytes.as_slice(),
+            Self::Static(bytes) => bytes,
+        }
+    }
+
+    fn as_mut_vec(&mut self) -> Option<&mut Vec<u8>> {
+        match self {
+            Self::Owned(bytes) => Some(bytes),
+            Self::Static(_) => None,
+        }
+    }
+
+    fn is_owned(&self) -> bool {
+        matches!(self, Self::Owned(_))
+    }
+
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    fn take_vec(&mut self) -> Vec<u8> {
+        match std::mem::replace(self, Self::Owned(Vec::new())) {
+            Self::Owned(bytes) => bytes,
+            Self::Static(bytes) => bytes.to_vec(),
+        }
+    }
+}
+
+impl std::fmt::Debug for BufferBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Owned(bytes) => f
+                .debug_struct("BufferBytes")
+                .field("kind", &"owned")
+                .field("bytes", bytes)
+                .finish(),
+            Self::Static(bytes) => f
+                .debug_struct("BufferBytes")
+                .field("kind", &"static")
+                .field("bytes", bytes)
+                .finish(),
+        }
     }
 }
 
@@ -388,13 +489,13 @@ impl std::fmt::Debug for BufferStorage {
 
 impl Clone for BufferStorage {
     fn clone(&self) -> Self {
-        Self::new(self.bytes.clone())
+        Self::new(self.bytes.as_slice().to_vec())
     }
 }
 
 impl PartialEq for BufferStorage {
     fn eq(&self, other: &Self) -> bool {
-        self.bytes == other.bytes
+        self.bytes.as_slice() == other.bytes.as_slice()
     }
 }
 
@@ -408,7 +509,7 @@ impl Drop for BufferStorage {
                 allocated_len,
                 release,
             }) => {
-                let mut storage = std::mem::take(&mut self.bytes);
+                let mut storage = self.bytes.take_vec();
                 if storage.len() != allocated_len {
                     release(storage);
                     return;
@@ -424,7 +525,7 @@ impl Drop for BufferStorage {
                 };
             }
             Some(BufferOwner::Callback(on_release)) => {
-                let storage = std::mem::take(&mut self.bytes);
+                let storage = self.bytes.take_vec();
                 on_release(storage);
             }
             None => {}
@@ -622,7 +723,7 @@ impl BufferSlice {
     }
 
     pub fn as_slice(&self) -> &[u8] {
-        &self.data.bytes[self.offset..self.offset + self.len]
+        &self.data.bytes.as_slice()[self.offset..self.offset + self.len]
     }
 
     pub fn offset(&self) -> usize {
@@ -821,6 +922,70 @@ mod tests {
         assert!(released.lock().unwrap().is_empty());
         drop(shared);
         assert_eq!(*released.lock().unwrap(), vec![vec![1, 2, 3]]);
+    }
+
+    #[test]
+    fn static_readonly_buffer_borrows_and_detaches_on_mutation() {
+        static STORAGE: &[u8] = &[1, 2, 3, 0];
+        let mut buffer = BufferRef::from_static_slice_with_len_readonly(STORAGE, 3).unwrap();
+        let shared = buffer.clone();
+
+        assert_eq!(buffer.as_slice(), &[1, 2, 3]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert!(std::ptr::eq(
+            buffer.as_padded_slice().as_ptr(),
+            STORAGE.as_ptr()
+        ));
+        assert!(buffer.is_readonly());
+        assert!(!buffer.is_writable());
+        assert!(buffer.get_mut().is_none());
+
+        buffer.make_mut()[1] = 9;
+
+        assert_eq!(buffer.as_slice(), &[1, 9, 3]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+        assert!(!std::ptr::eq(
+            buffer.as_padded_slice().as_ptr(),
+            STORAGE.as_ptr()
+        ));
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+        assert_eq!(shared.as_slice(), &[1, 2, 3]);
+        assert!(std::ptr::eq(
+            shared.as_padded_slice().as_ptr(),
+            STORAGE.as_ptr()
+        ));
+        assert!(shared.is_readonly());
+    }
+
+    #[test]
+    fn static_readonly_buffer_resize_detaches_and_zeroes_padding() {
+        static STORAGE: &[u8] = &[4, 5, 6, 7];
+        let mut buffer = BufferRef::from_static_slice_readonly(STORAGE);
+
+        buffer.resize_with_padding(2, 2).unwrap();
+
+        assert_eq!(buffer.as_slice(), &[4, 5]);
+        assert_eq!(buffer.padding_slice(), &[0, 0]);
+        assert!(!std::ptr::eq(
+            buffer.as_padded_slice().as_ptr(),
+            STORAGE.as_ptr()
+        ));
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+        assert_eq!(STORAGE, &[4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn static_readonly_buffer_rejects_invalid_visible_len() {
+        static STORAGE: &[u8] = &[1, 2];
+
+        assert_eq!(
+            BufferRef::from_static_slice_with_len_readonly(STORAGE, 3)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
     }
 
     #[test]

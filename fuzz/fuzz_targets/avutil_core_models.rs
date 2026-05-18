@@ -170,6 +170,48 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(same_shape.as_slice(), payload.as_slice());
     assert!(same_shape.padding_slice().iter().all(|byte| *byte == 0));
 
+    static STATIC_BUFFER_BYTES: &[u8] = b"static-buffer-fixture";
+    let static_visible_len =
+        usize::from(cursor.next().unwrap_or_default()) % (STATIC_BUFFER_BYTES.len() + 1);
+    let mut static_buffer =
+        BufferRef::from_static_slice_with_len_readonly(STATIC_BUFFER_BYTES, static_visible_len)
+            .unwrap();
+    assert_eq!(
+        static_buffer.as_slice(),
+        &STATIC_BUFFER_BYTES[..static_visible_len]
+    );
+    assert!(std::ptr::eq(
+        static_buffer.as_padded_slice().as_ptr(),
+        STATIC_BUFFER_BYTES.as_ptr()
+    ));
+    assert!(static_buffer.is_readonly());
+    assert!(!static_buffer.is_writable());
+    assert!(static_buffer.get_mut().is_none());
+    let static_shared = static_buffer.clone();
+    static_buffer
+        .resize_with_padding(resize_len, resize_padding)
+        .unwrap();
+    assert!(static_buffer.is_writable());
+    assert!(!static_buffer.is_readonly());
+    let static_copied = static_visible_len.min(resize_len);
+    assert_eq!(
+        &static_buffer.as_slice()[..static_copied],
+        &STATIC_BUFFER_BYTES[..static_copied]
+    );
+    assert!(static_buffer.as_slice()[static_copied..]
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(static_buffer.padding_slice().iter().all(|byte| *byte == 0));
+    assert_eq!(
+        static_shared.as_slice(),
+        &STATIC_BUFFER_BYTES[..static_visible_len]
+    );
+    assert!(static_shared.is_readonly());
+    assert!(std::ptr::eq(
+        static_shared.as_padded_slice().as_ptr(),
+        STATIC_BUFFER_BYTES.as_ptr()
+    ));
+
     let pool = BufferPool::new(payload_len, padding_len).unwrap();
     assert_eq!(pool.len(), payload_len);
     assert_eq!(pool.allocated_len(), payload_len + padding_len);
