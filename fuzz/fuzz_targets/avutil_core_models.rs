@@ -4,8 +4,8 @@ use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameData, FrameSideData,
-    Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, Sha224, Sha256,
-    Sha384, Sha512, SideData, VideoFrame,
+    FrameSideDataKind, Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -739,16 +739,24 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     let frame_side_data_payload = payload_from(cursor, frame_side_data_len);
     let frame_side_data_buffer =
         BufferRef::copy_from_slice_with_padding(&frame_side_data_payload, 1).unwrap();
-    let mut frame_side_data =
-        FrameSideData::new_with_buffer_ref("fuzz_frame_side_data", frame_side_data_buffer.clone())
-            .unwrap();
+    let frame_side_data_kind = frame_side_data_kind_from(cursor.next());
+    let mut frame_side_data = FrameSideData::new_with_kind_and_buffer_ref(
+        frame_side_data_kind.clone(),
+        frame_side_data_buffer.clone(),
+    )
+    .unwrap();
     frame_side_data
         .metadata_mut()
         .set("origin", "fuzz")
         .unwrap();
     frame.push_side_data(frame_side_data);
     assert_eq!(frame.side_data().len(), 1);
-    assert_eq!(frame.side_data()[0].kind(), "fuzz_frame_side_data");
+    assert_eq!(frame.side_data()[0].kind(), frame_side_data_kind.name());
+    assert_eq!(frame.side_data()[0].kind_id(), &frame_side_data_kind);
+    assert_eq!(
+        frame.side_data()[0].is_known_kind(),
+        frame_side_data_kind.is_known()
+    );
     assert_eq!(
         frame.side_data()[0].data(),
         frame_side_data_payload.as_slice()
@@ -758,13 +766,30 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         .buffer()
         .shares_storage(&frame_side_data_buffer));
     assert_eq!(frame.side_data()[0].buffer().padding_slice(), &[0]);
-    let removed_side_data = frame.remove_side_data("fuzz_frame_side_data").unwrap();
+    assert_eq!(
+        frame
+            .side_data_by_kind(&frame_side_data_kind)
+            .unwrap()
+            .data(),
+        frame_side_data_payload.as_slice()
+    );
+    let removed_side_data = frame.remove_side_data_kind(&frame_side_data_kind).unwrap();
     assert!(frame.side_data().is_empty());
     assert!(removed_side_data
         .buffer()
         .shares_storage(&frame_side_data_buffer));
     frame.push_side_data(removed_side_data);
     assert!(frame.remove_side_data("missing").is_none());
+    assert_eq!(
+        FrameSideDataKind::from_name("Display Matrix").unwrap(),
+        FrameSideDataKind::DisplayMatrix
+    );
+    assert_eq!(
+        FrameSideDataKind::from_name("vendor.private.side-data")
+            .unwrap()
+            .name(),
+        "vendor.private.side-data"
+    );
     assert_eq!(
         FrameSideData::new(" \t", Vec::new()).unwrap_err().kind(),
         AvErrorKind::InvalidArgument
@@ -1173,6 +1198,19 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
         3 => ChannelLayout::five_one(),
         4 => ChannelLayout::five_one_side(),
         _ => ChannelLayout::seven_one(),
+    }
+}
+
+fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
+    match byte.unwrap_or_default() % 8 {
+        0 => FrameSideDataKind::DisplayMatrix,
+        1 => FrameSideDataKind::ReplayGain,
+        2 => FrameSideDataKind::MasteringDisplayMetadata,
+        3 => FrameSideDataKind::ContentLightLevel,
+        4 => FrameSideDataKind::IccProfile,
+        5 => FrameSideDataKind::DolbyVisionRpuBuffer,
+        6 => FrameSideDataKind::Lcevc,
+        _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
 

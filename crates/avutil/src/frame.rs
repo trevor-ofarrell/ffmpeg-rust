@@ -96,10 +96,49 @@ impl Frame {
             .expect("side data was just inserted"))
     }
 
-    pub fn remove_side_data(&mut self, kind: &str) -> Option<FrameSideData> {
+    pub fn add_side_data_kind(
+        &mut self,
+        kind: FrameSideDataKind,
+        data: Vec<u8>,
+    ) -> AvResult<&mut FrameSideData> {
+        let side_data = FrameSideData::new_with_kind(kind, data)?;
+        self.side_data.push(side_data);
+        Ok(self
+            .side_data
+            .last_mut()
+            .expect("side data was just inserted"))
+    }
+
+    pub fn add_side_data_kind_buffer(
+        &mut self,
+        kind: FrameSideDataKind,
+        buffer: BufferRef,
+    ) -> AvResult<&mut FrameSideData> {
+        let side_data = FrameSideData::new_with_kind_and_buffer_ref(kind, buffer)?;
+        self.side_data.push(side_data);
+        Ok(self
+            .side_data
+            .last_mut()
+            .expect("side data was just inserted"))
+    }
+
+    pub fn side_data_by_kind(&self, kind: &FrameSideDataKind) -> Option<&FrameSideData> {
         self.side_data
             .iter()
-            .position(|side_data| side_data.kind() == kind)
+            .find(|side_data| side_data.kind_id() == kind)
+    }
+
+    pub fn remove_side_data(&mut self, kind: &str) -> Option<FrameSideData> {
+        let Ok(kind) = FrameSideDataKind::from_name(kind) else {
+            return None;
+        };
+        self.remove_side_data_kind(&kind)
+    }
+
+    pub fn remove_side_data_kind(&mut self, kind: &FrameSideDataKind) -> Option<FrameSideData> {
+        self.side_data
+            .iter()
+            .position(|side_data| side_data.kind_id() == kind)
             .map(|index| self.side_data.remove(index))
     }
 
@@ -109,8 +148,170 @@ impl Frame {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FrameSideDataKind {
+    PanScan,
+    A53ClosedCaptions,
+    Stereo3d,
+    MatrixEncoding,
+    DownmixInfo,
+    ReplayGain,
+    DisplayMatrix,
+    ActiveFormatDescription,
+    MotionVectors,
+    SkipSamples,
+    AudioServiceType,
+    MasteringDisplayMetadata,
+    ContentLightLevel,
+    IccProfile,
+    Spherical,
+    RegionsOfInterest,
+    VideoEncParams,
+    SeiUnregistered,
+    FilmGrainParams,
+    DetectionBboxes,
+    DynamicHdrPlus,
+    DynamicHdrVivid,
+    AmbientViewingEnvironment,
+    DolbyVisionRpuBuffer,
+    DolbyVisionMetadata,
+    Lcevc,
+    Unknown(String),
+}
+
+impl FrameSideDataKind {
+    pub const KNOWN: &'static [Self] = &[
+        Self::PanScan,
+        Self::A53ClosedCaptions,
+        Self::Stereo3d,
+        Self::MatrixEncoding,
+        Self::DownmixInfo,
+        Self::ReplayGain,
+        Self::DisplayMatrix,
+        Self::ActiveFormatDescription,
+        Self::MotionVectors,
+        Self::SkipSamples,
+        Self::AudioServiceType,
+        Self::MasteringDisplayMetadata,
+        Self::ContentLightLevel,
+        Self::IccProfile,
+        Self::Spherical,
+        Self::RegionsOfInterest,
+        Self::VideoEncParams,
+        Self::SeiUnregistered,
+        Self::FilmGrainParams,
+        Self::DetectionBboxes,
+        Self::DynamicHdrPlus,
+        Self::DynamicHdrVivid,
+        Self::AmbientViewingEnvironment,
+        Self::DolbyVisionRpuBuffer,
+        Self::DolbyVisionMetadata,
+        Self::Lcevc,
+    ];
+
+    pub fn from_name(name: impl Into<String>) -> AvResult<Self> {
+        let name = validate_frame_side_data_kind(name.into())?;
+        Ok(Self::known_from_name(&name).unwrap_or(Self::Unknown(name)))
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::PanScan => "pan_scan",
+            Self::A53ClosedCaptions => "a53_cc",
+            Self::Stereo3d => "stereo3d",
+            Self::MatrixEncoding => "matrix_encoding",
+            Self::DownmixInfo => "downmix_info",
+            Self::ReplayGain => "replaygain",
+            Self::DisplayMatrix => "displaymatrix",
+            Self::ActiveFormatDescription => "afd",
+            Self::MotionVectors => "motion_vectors",
+            Self::SkipSamples => "skip_samples",
+            Self::AudioServiceType => "audio_service_type",
+            Self::MasteringDisplayMetadata => "mastering_display_metadata",
+            Self::ContentLightLevel => "content_light_level",
+            Self::IccProfile => "icc_profile",
+            Self::Spherical => "spherical",
+            Self::RegionsOfInterest => "regions_of_interest",
+            Self::VideoEncParams => "video_enc_params",
+            Self::SeiUnregistered => "sei_unregistered",
+            Self::FilmGrainParams => "film_grain_params",
+            Self::DetectionBboxes => "detection_bboxes",
+            Self::DynamicHdrPlus => "dynamic_hdr_plus",
+            Self::DynamicHdrVivid => "dynamic_hdr_vivid",
+            Self::AmbientViewingEnvironment => "ambient_viewing_environment",
+            Self::DolbyVisionRpuBuffer => "dolby_vision_rpu_buffer",
+            Self::DolbyVisionMetadata => "dolby_vision_metadata",
+            Self::Lcevc => "lcevc",
+            Self::Unknown(name) => name.as_str(),
+        }
+    }
+
+    pub fn is_known(&self) -> bool {
+        !matches!(self, Self::Unknown(_))
+    }
+
+    fn known_from_name(name: &str) -> Option<Self> {
+        let normalized = normalize_frame_side_data_name(name);
+        match normalized.as_str() {
+            "panscan" | "pan_scan" | "avpanscan" => Some(Self::PanScan),
+            "a53cc" | "a53_cc" | "a53_closed_captions" | "atsc_a53_closed_captions" => {
+                Some(Self::A53ClosedCaptions)
+            }
+            "stereo3d" | "stereo_3d" => Some(Self::Stereo3d),
+            "matrixencoding" | "matrix_encoding" => Some(Self::MatrixEncoding),
+            "downmixinfo" | "downmix_info" => Some(Self::DownmixInfo),
+            "replaygain" | "replay_gain" => Some(Self::ReplayGain),
+            "displaymatrix" | "display_matrix" => Some(Self::DisplayMatrix),
+            "afd" | "active_format_description" => Some(Self::ActiveFormatDescription),
+            "motionvectors" | "motion_vectors" => Some(Self::MotionVectors),
+            "skipsamples" | "skip_samples" => Some(Self::SkipSamples),
+            "audioservicetype" | "audio_service_type" => Some(Self::AudioServiceType),
+            "masteringdisplaymetadata" | "mastering_display_metadata" => {
+                Some(Self::MasteringDisplayMetadata)
+            }
+            "contentlightlevel" | "content_light_level" => Some(Self::ContentLightLevel),
+            "iccprofile" | "icc_profile" => Some(Self::IccProfile),
+            "spherical" => Some(Self::Spherical),
+            "roi" | "region_of_interest" | "regions_of_interest" => Some(Self::RegionsOfInterest),
+            "videoencparams" | "video_enc_params" => Some(Self::VideoEncParams),
+            "seiunregistered" | "sei_unregistered" => Some(Self::SeiUnregistered),
+            "filmgrainparams" | "film_grain_params" => Some(Self::FilmGrainParams),
+            "detectionbboxes" | "detection_bboxes" => Some(Self::DetectionBboxes),
+            "dynamichdrplus" | "dynamic_hdr_plus" | "hdr_plus" => Some(Self::DynamicHdrPlus),
+            "dynamichdrvivid" | "dynamic_hdr_vivid" | "hdr_vivid" => Some(Self::DynamicHdrVivid),
+            "ambientviewingenvironment" | "ambient_viewing_environment" => {
+                Some(Self::AmbientViewingEnvironment)
+            }
+            "dolbyvisionrpubuffer" | "dolby_vision_rpu_buffer" | "dovi_rpu_buffer" => {
+                Some(Self::DolbyVisionRpuBuffer)
+            }
+            "dolbyvisionmetadata" | "dolby_vision_metadata" | "dovi_metadata" => {
+                Some(Self::DolbyVisionMetadata)
+            }
+            "lcevc" => Some(Self::Lcevc),
+            _ => None,
+        }
+    }
+}
+
+impl TryFrom<&str> for FrameSideDataKind {
+    type Error = AvError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::from_name(value)
+    }
+}
+
+impl TryFrom<String> for FrameSideDataKind {
+    type Error = AvError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::from_name(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrameSideData {
-    kind: String,
+    kind: FrameSideDataKind,
     buffer: BufferRef,
     metadata: Dictionary,
 }
@@ -121,15 +322,35 @@ impl FrameSideData {
     }
 
     pub fn new_with_buffer_ref(kind: impl Into<String>, buffer: BufferRef) -> AvResult<Self> {
+        Self::new_with_kind_and_buffer_ref(FrameSideDataKind::from_name(kind)?, buffer)
+    }
+
+    pub fn new_with_kind(kind: FrameSideDataKind, data: Vec<u8>) -> AvResult<Self> {
+        Self::new_with_kind_and_buffer_ref(kind, BufferRef::from_vec(data))
+    }
+
+    pub fn new_with_kind_and_buffer_ref(
+        kind: FrameSideDataKind,
+        buffer: BufferRef,
+    ) -> AvResult<Self> {
+        validate_frame_side_data_kind(kind.name().to_string())?;
         Ok(Self {
-            kind: validate_frame_side_data_kind(kind.into())?,
+            kind,
             buffer,
             metadata: Dictionary::new(),
         })
     }
 
     pub fn kind(&self) -> &str {
+        self.kind.name()
+    }
+
+    pub fn kind_id(&self) -> &FrameSideDataKind {
         &self.kind
+    }
+
+    pub fn is_known_kind(&self) -> bool {
+        self.kind.is_known()
     }
 
     pub fn data(&self) -> &[u8] {
@@ -162,6 +383,19 @@ fn validate_frame_side_data_kind(kind: String) -> AvResult<String> {
     }
 
     Ok(kind)
+}
+
+fn normalize_frame_side_data_name(name: &str) -> String {
+    name.trim()
+        .chars()
+        .filter_map(|ch| match ch {
+            'A'..='Z' => Some(ch.to_ascii_lowercase()),
+            'a'..='z' | '0'..='9' => Some(ch),
+            '_' => Some('_'),
+            '-' | ' ' | '\t' | '\r' | '\n' | '/' => Some('_'),
+            _ => None,
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -681,6 +915,11 @@ mod tests {
         let cloned = frame.clone();
 
         assert_eq!(frame.side_data()[0].kind(), "displaymatrix");
+        assert_eq!(
+            frame.side_data()[0].kind_id(),
+            &FrameSideDataKind::DisplayMatrix
+        );
+        assert!(frame.side_data()[0].is_known_kind());
         assert_eq!(frame.side_data()[0].data(), &[1, 2, 3]);
         assert_eq!(frame.side_data()[0].buffer().padding_slice(), &[77]);
         assert_eq!(frame.side_data()[0].metadata().get("rotation"), Some("90"));
@@ -697,6 +936,48 @@ mod tests {
         assert_eq!(
             *released.lock().unwrap(),
             vec![String::from("displaymatrix")]
+        );
+    }
+
+    #[test]
+    fn frame_side_data_maps_known_kinds_and_preserves_unknown_names() {
+        assert_eq!(
+            FrameSideDataKind::from_name("Display Matrix").unwrap(),
+            FrameSideDataKind::DisplayMatrix
+        );
+        assert_eq!(
+            FrameSideDataKind::from_name("display_matrix").unwrap(),
+            FrameSideDataKind::DisplayMatrix
+        );
+        assert_eq!(
+            FrameSideDataKind::from_name("ATSC A53 Closed Captions").unwrap(),
+            FrameSideDataKind::A53ClosedCaptions
+        );
+        assert_eq!(
+            FrameSideDataKind::from_name("Dolby Vision RPU Buffer").unwrap(),
+            FrameSideDataKind::DolbyVisionRpuBuffer
+        );
+        assert_eq!(FrameSideDataKind::DisplayMatrix.name(), "displaymatrix");
+        assert!(FrameSideDataKind::DisplayMatrix.is_known());
+        assert!(FrameSideDataKind::KNOWN.contains(&FrameSideDataKind::DisplayMatrix));
+
+        let unknown = FrameSideDataKind::from_name("vendor.private.side-data").unwrap();
+        assert_eq!(
+            unknown,
+            FrameSideDataKind::Unknown(String::from("vendor.private.side-data"))
+        );
+        assert_eq!(unknown.name(), "vendor.private.side-data");
+        assert!(!unknown.is_known());
+
+        assert_eq!(
+            FrameSideDataKind::from_name(" \t").unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            FrameSideDataKind::from_name("bad\0kind")
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
         );
     }
 
@@ -718,19 +999,32 @@ mod tests {
 
         frame.add_side_data("alpha_info", vec![1, 2]).unwrap();
         let side_data = frame
-            .add_side_data_buffer("replaygain", BufferRef::copy_from_slice(&[9, 8, 7]))
+            .add_side_data_kind_buffer(
+                FrameSideDataKind::ReplayGain,
+                BufferRef::copy_from_slice(&[9, 8, 7]),
+            )
             .unwrap();
         side_data.metadata_mut().set("gain", "-3.0 dB").unwrap();
 
         assert_eq!(frame.side_data().len(), 2);
         assert_eq!(frame.side_data()[0].data(), &[1, 2]);
         assert_eq!(frame.side_data()[1].metadata().get("gain"), Some("-3.0 dB"));
+        assert_eq!(
+            frame
+                .side_data_by_kind(&FrameSideDataKind::ReplayGain)
+                .unwrap()
+                .data(),
+            &[9, 8, 7]
+        );
 
         let removed = frame.remove_side_data("alpha_info").unwrap();
         assert_eq!(removed.kind(), "alpha_info");
         assert_eq!(removed.data(), &[1, 2]);
         assert!(frame.remove_side_data("missing").is_none());
         assert_eq!(frame.side_data().len(), 1);
+        let removed = frame.remove_side_data("replay_gain").unwrap();
+        assert_eq!(removed.kind_id(), &FrameSideDataKind::ReplayGain);
+        frame.push_side_data(removed);
 
         let taken = frame.take_side_data();
         assert!(frame.side_data().is_empty());
