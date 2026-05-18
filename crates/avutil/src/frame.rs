@@ -6,6 +6,29 @@ pub enum FrameData {
     Audio(AudioFrame),
 }
 
+impl FrameData {
+    pub fn is_writable(&self) -> bool {
+        match self {
+            Self::Video(frame) => frame.is_writable(),
+            Self::Audio(frame) => frame.is_writable(),
+        }
+    }
+
+    pub fn make_writable(&mut self) {
+        match self {
+            Self::Video(frame) => frame.make_writable(),
+            Self::Audio(frame) => frame.make_writable(),
+        }
+    }
+
+    pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
+        match self {
+            Self::Video(frame) => frame.set_plane_visible_data(index, data),
+            Self::Audio(frame) => frame.set_plane_visible_data(index, data),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     pts: Option<i64>,
@@ -43,6 +66,22 @@ impl Frame {
 
     pub fn data(&self) -> &FrameData {
         &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut FrameData {
+        &mut self.data
+    }
+
+    pub fn is_writable(&self) -> bool {
+        self.data.is_writable()
+    }
+
+    pub fn make_writable(&mut self) {
+        self.data.make_writable();
+    }
+
+    pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
+        self.data.set_plane_visible_data(index, data)
     }
 
     pub fn hw_frames_context(&self) -> Option<&BufferRef> {
@@ -1344,6 +1383,90 @@ mod tests {
         frame.set_pts(Some(42));
         assert_eq!(frame.pts(), Some(42));
         assert!(matches!(frame.data(), FrameData::Video(_)));
+    }
+
+    #[test]
+    fn frame_make_writable_detaches_video_payload_refs() {
+        let source = BufferRef::from_vec_readonly(vec![1, 2, 3, 4]);
+        let video =
+            VideoFrame::new_with_buffer_refs(2, 2, PixelFormat::Gray8, vec![source.clone()])
+                .unwrap();
+        let side_data = BufferRef::copy_from_slice(&[0xAA, 0xBB]);
+        let hw_context = BufferRef::copy_from_slice(&[0xCC]);
+        let mut frame = Frame::video(video).with_hw_frames_context(hw_context.clone());
+        frame
+            .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side_data.clone())
+            .unwrap();
+        let cloned = frame.clone();
+
+        assert!(!frame.is_writable());
+        frame.make_writable();
+        assert!(frame.is_writable());
+
+        let (frame_video, cloned_video) = match (frame.data(), cloned.data()) {
+            (FrameData::Video(frame_video), FrameData::Video(cloned_video)) => {
+                (frame_video, cloned_video)
+            }
+            _ => panic!("expected video frames"),
+        };
+        assert!(!frame_video.plane_buffers()[0].shares_storage(&source));
+        assert!(cloned_video.plane_buffers()[0].shares_storage(&source));
+        assert_eq!(frame_video.planes(), &[vec![1, 2, 3, 4]]);
+        assert_eq!(cloned_video.planes(), &[vec![1, 2, 3, 4]]);
+        assert!(frame.side_data()[0].buffer().shares_storage(&side_data));
+        assert!(frame.side_data()[0]
+            .buffer()
+            .shares_storage(cloned.side_data()[0].buffer()));
+        assert!(frame
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(&hw_context));
+        assert!(frame
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(cloned.hw_frames_context().unwrap()));
+
+        frame.set_plane_visible_data(0, &[4, 3, 2, 1]).unwrap();
+        let (frame_video, cloned_video) = match (frame.data(), cloned.data()) {
+            (FrameData::Video(frame_video), FrameData::Video(cloned_video)) => {
+                (frame_video, cloned_video)
+            }
+            _ => panic!("expected video frames"),
+        };
+        assert_eq!(frame_video.planes(), &[vec![4, 3, 2, 1]]);
+        assert_eq!(frame_video.plane_buffers()[0].as_slice(), &[4, 3, 2, 1]);
+        assert_eq!(cloned_video.planes(), &[vec![1, 2, 3, 4]]);
+        assert_eq!(source.as_slice(), &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn frame_data_make_writable_detaches_audio_payload_refs() {
+        let source = BufferRef::from_vec_readonly(vec![0, 0, 1, 0]);
+        let audio =
+            AudioFrame::new_with_buffer_refs(48_000, 2, SampleFormat::S16, 1, vec![source.clone()])
+                .unwrap();
+        let mut frame = Frame::audio(audio);
+        let cloned = frame.clone();
+
+        assert!(!frame.data().is_writable());
+        frame.data_mut().make_writable();
+        assert!(frame.data().is_writable());
+        frame
+            .data_mut()
+            .set_plane_visible_data(0, &[9, 0, 8, 0])
+            .unwrap();
+
+        let (frame_audio, cloned_audio) = match (frame.data(), cloned.data()) {
+            (FrameData::Audio(frame_audio), FrameData::Audio(cloned_audio)) => {
+                (frame_audio, cloned_audio)
+            }
+            _ => panic!("expected audio frames"),
+        };
+        assert!(!frame_audio.plane_buffers()[0].shares_storage(&source));
+        assert!(cloned_audio.plane_buffers()[0].shares_storage(&source));
+        assert_eq!(frame_audio.planes(), &[vec![9, 0, 8, 0]]);
+        assert_eq!(cloned_audio.planes(), &[vec![0, 0, 1, 0]]);
+        assert_eq!(source.as_slice(), &[0, 0, 1, 0]);
     }
 
     #[test]

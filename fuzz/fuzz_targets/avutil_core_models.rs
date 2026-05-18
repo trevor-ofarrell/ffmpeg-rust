@@ -842,6 +842,38 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert!(matches!(frame.data(), FrameData::Video(_)));
     assert!(frame.hw_frames_context().is_none());
     assert!(frame.side_data().is_empty());
+    assert!(frame.is_writable());
+    let shared_frame_payload = frame.clone();
+    assert!(!frame.is_writable());
+    frame.make_writable();
+    assert!(frame.is_writable());
+    let (frame_video, shared_video) = match (frame.data(), shared_frame_payload.data()) {
+        (FrameData::Video(frame_video), FrameData::Video(shared_video)) => {
+            (frame_video, shared_video)
+        }
+        _ => unreachable!("constructed video frame changed variant"),
+    };
+    assert_eq!(frame_video.planes(), planes.as_slice());
+    for (stored, shared) in frame_video
+        .plane_buffers()
+        .iter()
+        .zip(shared_video.plane_buffers())
+    {
+        assert!(!stored.shares_storage(shared));
+    }
+    let frame_replacement = planes[0]
+        .iter()
+        .map(|byte| byte.wrapping_add(2))
+        .collect::<Vec<_>>();
+    frame.set_plane_visible_data(0, &frame_replacement).unwrap();
+    let (frame_video, shared_video) = match (frame.data(), shared_frame_payload.data()) {
+        (FrameData::Video(frame_video), FrameData::Video(shared_video)) => {
+            (frame_video, shared_video)
+        }
+        _ => unreachable!("constructed video frame changed variant"),
+    };
+    assert_eq!(frame_video.planes()[0], frame_replacement);
+    assert_eq!(shared_video.planes(), planes.as_slice());
 
     let frame_side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let frame_side_data_payload = payload_from(cursor, frame_side_data_len);
@@ -1113,6 +1145,28 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     let mut frame = Frame::audio(audio);
     frame.set_pts(timestamp_from(cursor.next()));
     assert!(matches!(frame.data(), FrameData::Audio(_)));
+    assert!(frame.is_writable());
+    let shared_frame_payload = frame.clone();
+    assert!(!frame.is_writable());
+    frame.data_mut().make_writable();
+    assert!(frame.data().is_writable());
+    let frame_replacement = planes[0]
+        .iter()
+        .map(|byte| byte.wrapping_add(2))
+        .collect::<Vec<_>>();
+    frame
+        .data_mut()
+        .set_plane_visible_data(0, &frame_replacement)
+        .unwrap();
+    let (frame_audio, shared_audio) = match (frame.data(), shared_frame_payload.data()) {
+        (FrameData::Audio(frame_audio), FrameData::Audio(shared_audio)) => {
+            (frame_audio, shared_audio)
+        }
+        _ => unreachable!("constructed audio frame changed variant"),
+    };
+    assert_eq!(frame_audio.planes()[0], frame_replacement);
+    assert_eq!(shared_audio.planes(), planes.as_slice());
+    assert!(!frame_audio.plane_buffers()[0].shares_storage(&shared_audio.plane_buffers()[0]));
 
     let layout = channel_layout_from(cursor.next());
     if layout.channel_count() == channels {
