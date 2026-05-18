@@ -580,6 +580,77 @@ impl FrameSkipSamples {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum FrameAudioServiceType {
+    Main = 0,
+    Effects = 1,
+    VisuallyImpaired = 2,
+    HearingImpaired = 3,
+    Dialogue = 4,
+    Commentary = 5,
+    Emergency = 6,
+    VoiceOver = 7,
+    Karaoke = 8,
+}
+
+impl FrameAudioServiceType {
+    pub const DATA_LEN: usize = 4;
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() < Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "audio service type frame side data requires at least {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut raw = [0; Self::DATA_LEN];
+        raw.copy_from_slice(&data[..Self::DATA_LEN]);
+        Self::from_raw(i32::from_ne_bytes(raw))
+    }
+
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Main),
+            1 => Ok(Self::Effects),
+            2 => Ok(Self::VisuallyImpaired),
+            3 => Ok(Self::HearingImpaired),
+            4 => Ok(Self::Dialogue),
+            5 => Ok(Self::Commentary),
+            6 => Ok(Self::Emergency),
+            7 => Ok(Self::VoiceOver),
+            8 => Ok(Self::Karaoke),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid audio service type value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        self.as_raw().to_ne_bytes()
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Main => "AV_AUDIO_SERVICE_TYPE_MAIN",
+            Self::Effects => "AV_AUDIO_SERVICE_TYPE_EFFECTS",
+            Self::VisuallyImpaired => "AV_AUDIO_SERVICE_TYPE_VISUALLY_IMPAIRED",
+            Self::HearingImpaired => "AV_AUDIO_SERVICE_TYPE_HEARING_IMPAIRED",
+            Self::Dialogue => "AV_AUDIO_SERVICE_TYPE_DIALOGUE",
+            Self::Commentary => "AV_AUDIO_SERVICE_TYPE_COMMENTARY",
+            Self::Emergency => "AV_AUDIO_SERVICE_TYPE_EMERGENCY",
+            Self::VoiceOver => "AV_AUDIO_SERVICE_TYPE_VOICE_OVER",
+            Self::Karaoke => "AV_AUDIO_SERVICE_TYPE_KARAOKE",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameSeiUnregistered<'a> {
     uuid: [u8; 16],
     user_data: &'a [u8],
@@ -973,6 +1044,13 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
 
+    pub fn new_audio_service_type(value: FrameAudioServiceType) -> AvResult<Self> {
+        Self::new_with_kind(
+            FrameSideDataKind::AudioServiceType,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
         let total_len = FrameSeiUnregistered::UUID_LEN
             .checked_add(user_data.len())
@@ -1045,6 +1123,14 @@ impl FrameSideData {
         }
 
         FrameSkipSamples::parse(self.data()).map(Some)
+    }
+
+    pub fn audio_service_type(&self) -> AvResult<Option<FrameAudioServiceType>> {
+        if self.kind != FrameSideDataKind::AudioServiceType {
+            return Ok(None);
+        }
+
+        FrameAudioServiceType::parse(self.data()).map(Some)
     }
 
     pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
@@ -3537,6 +3623,123 @@ mod tests {
         let non_skip =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 10]).unwrap();
         assert_eq!(non_skip.skip_samples().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_audio_service_type_payload() {
+        let expected = [
+            (FrameAudioServiceType::Main, 0, "AV_AUDIO_SERVICE_TYPE_MAIN"),
+            (
+                FrameAudioServiceType::Effects,
+                1,
+                "AV_AUDIO_SERVICE_TYPE_EFFECTS",
+            ),
+            (
+                FrameAudioServiceType::VisuallyImpaired,
+                2,
+                "AV_AUDIO_SERVICE_TYPE_VISUALLY_IMPAIRED",
+            ),
+            (
+                FrameAudioServiceType::HearingImpaired,
+                3,
+                "AV_AUDIO_SERVICE_TYPE_HEARING_IMPAIRED",
+            ),
+            (
+                FrameAudioServiceType::Dialogue,
+                4,
+                "AV_AUDIO_SERVICE_TYPE_DIALOGUE",
+            ),
+            (
+                FrameAudioServiceType::Commentary,
+                5,
+                "AV_AUDIO_SERVICE_TYPE_COMMENTARY",
+            ),
+            (
+                FrameAudioServiceType::Emergency,
+                6,
+                "AV_AUDIO_SERVICE_TYPE_EMERGENCY",
+            ),
+            (
+                FrameAudioServiceType::VoiceOver,
+                7,
+                "AV_AUDIO_SERVICE_TYPE_VOICE_OVER",
+            ),
+            (
+                FrameAudioServiceType::Karaoke,
+                8,
+                "AV_AUDIO_SERVICE_TYPE_KARAOKE",
+            ),
+        ];
+
+        for (value, raw, ffmpeg_constant) in expected {
+            assert_eq!(value.as_raw(), raw);
+            assert_eq!(value.ffmpeg_constant(), ffmpeg_constant);
+            assert_eq!(FrameAudioServiceType::from_raw(raw).unwrap(), value);
+            assert_eq!(
+                FrameAudioServiceType::parse(&raw.to_ne_bytes()).unwrap(),
+                value
+            );
+            let side_data = FrameSideData::new_audio_service_type(value).unwrap();
+            assert_eq!(side_data.kind_id(), &FrameSideDataKind::AudioServiceType);
+            assert_eq!(side_data.data(), &raw.to_ne_bytes()[..]);
+            assert_eq!(side_data.audio_service_type().unwrap(), Some(value));
+        }
+
+        let mut extended = FrameAudioServiceType::Commentary.to_bytes().to_vec();
+        extended.extend_from_slice(&[0xAA, 0xBB]);
+        assert_eq!(
+            FrameAudioServiceType::parse(&extended).unwrap(),
+            FrameAudioServiceType::Commentary
+        );
+        let side_data =
+            FrameSideData::new_with_kind(FrameSideDataKind::AudioServiceType, extended).unwrap();
+        assert_eq!(
+            side_data.audio_service_type().unwrap(),
+            Some(FrameAudioServiceType::Commentary)
+        );
+
+        let replay_gain = FrameSideData::new_with_kind(
+            FrameSideDataKind::ReplayGain,
+            0i32.to_ne_bytes().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(replay_gain.audio_service_type().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_audio_service_type_payload() {
+        for data in [Vec::new(), vec![0; 3]] {
+            assert_eq!(
+                FrameAudioServiceType::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::AudioServiceType, data).unwrap();
+            assert_eq!(
+                side_data.audio_service_type().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for raw in [9, -1] {
+            assert_eq!(
+                FrameAudioServiceType::from_raw(raw).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data = FrameSideData::new_with_kind(
+                FrameSideDataKind::AudioServiceType,
+                raw.to_ne_bytes().to_vec(),
+            )
+            .unwrap();
+            assert_eq!(
+                side_data.audio_service_type().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_audio =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 4]).unwrap();
+        assert_eq!(non_audio.audio_service_type().unwrap(), None);
     }
 
     #[test]

@@ -4,10 +4,10 @@ use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
-    FrameActiveFormatDescription, FrameData, FrameSeiUnregistered, FrameSideData,
-    FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, Md5,
-    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    FrameActiveFormatDescription, FrameAudioServiceType, FrameData, FrameSeiUnregistered,
+    FrameSideData, FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples,
+    FrameSkipSamplesReason, Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding,
+    SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1022,6 +1022,32 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             );
         }
     }
+    match frame.side_data()[0].audio_service_type() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::AudioServiceType);
+            assert!(frame_side_data_payload.len() >= FrameAudioServiceType::DATA_LEN);
+            let mut raw = [0; FrameAudioServiceType::DATA_LEN];
+            raw.copy_from_slice(&frame_side_data_payload[..FrameAudioServiceType::DATA_LEN]);
+            assert_eq!(i32::from_ne_bytes(raw), value.as_raw());
+            assert_eq!(
+                FrameAudioServiceType::from_raw(value.as_raw()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::AudioServiceType),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::AudioServiceType);
+            let raw_invalid = if frame_side_data_payload.len() >= FrameAudioServiceType::DATA_LEN {
+                let mut raw = [0; FrameAudioServiceType::DATA_LEN];
+                raw.copy_from_slice(&frame_side_data_payload[..FrameAudioServiceType::DATA_LEN]);
+                FrameAudioServiceType::from_raw(i32::from_ne_bytes(raw)).is_err()
+            } else {
+                false
+            };
+            assert!(frame_side_data_payload.len() < FrameAudioServiceType::DATA_LEN || raw_invalid);
+        }
+    }
     match frame.side_data()[0].sei_unregistered() {
         Ok(Some(payload)) => {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::SeiUnregistered);
@@ -1961,6 +1987,36 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 10]).unwrap();
     assert_eq!(non_skip.skip_samples().unwrap(), None);
 
+    let audio_service =
+        FrameSideData::new_audio_service_type(FrameAudioServiceType::VoiceOver).unwrap();
+    assert_eq!(
+        audio_service.audio_service_type().unwrap(),
+        Some(FrameAudioServiceType::VoiceOver)
+    );
+    assert_eq!(
+        audio_service.data(),
+        &FrameAudioServiceType::VoiceOver.as_raw().to_ne_bytes()
+    );
+    assert_eq!(
+        FrameAudioServiceType::Karaoke.ffmpeg_constant(),
+        "AV_AUDIO_SERVICE_TYPE_KARAOKE"
+    );
+    assert_eq!(
+        FrameAudioServiceType::from_raw(9).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::AudioServiceType, vec![0; 3])
+            .unwrap()
+            .audio_service_type()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_audio_service =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 4]).unwrap();
+    assert_eq!(non_audio_service.audio_service_type().unwrap(), None);
+
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
@@ -2103,7 +2159,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 17 {
+    match byte.unwrap_or_default() % 18 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::ReplayGain,
         2 => FrameSideDataKind::MasteringDisplayMetadata,
@@ -2120,6 +2176,7 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         13 => FrameSideDataKind::SeiUnregistered,
         14 => FrameSideDataKind::ActiveFormatDescription,
         15 => FrameSideDataKind::SkipSamples,
+        16 => FrameSideDataKind::AudioServiceType,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
