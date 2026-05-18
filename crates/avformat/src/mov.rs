@@ -560,6 +560,7 @@ impl MovTextConfigBox {
 pub struct MovWebVttSampleEntry {
     configuration: MovWebVttConfigurationBox,
     source_label: Option<MovWebVttSourceLabelBox>,
+    bit_rate: Option<MovBitRateBox>,
     child_boxes: Vec<MovSampleEntryChildBox>,
 }
 
@@ -570,6 +571,10 @@ impl MovWebVttSampleEntry {
 
     pub fn source_label(&self) -> Option<&MovWebVttSourceLabelBox> {
         self.source_label.as_ref()
+    }
+
+    pub fn bit_rate(&self) -> Option<&MovBitRateBox> {
+        self.bit_rate.as_ref()
     }
 
     pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
@@ -3495,9 +3500,11 @@ fn parse_webvtt_sample_entry(extra_data: &[u8]) -> AvResult<MovWebVttSampleEntry
     )?;
     let configuration = parse_webvtt_configuration(&child_boxes)?;
     let source_label = parse_webvtt_source_label(&child_boxes)?;
+    let bit_rate = parse_textual_sample_entry_bit_rate(&child_boxes, "MOV/MP4 wvtt")?;
     Ok(MovWebVttSampleEntry {
         configuration,
         source_label,
+        bit_rate,
         child_boxes,
     })
 }
@@ -7506,7 +7513,7 @@ mod tests {
     fn parses_webvtt_sample_entry_codec_parameters() {
         let vttc = box_(*VTTC_ID, b"WEBVTT\r\nKind: captions\r\n");
         let vlab = box_(*VLAB_ID, b"episode-main");
-        let btrt = box_(*BTRT_ID, &[0, 0, 4, 0, 0, 0, 8, 0, 0, 0, 2, 0]);
+        let btrt = box_(*BTRT_ID, &bit_rate_box_payload(1_024, 2_048, 512));
         let extra_data = [vttc, vlab, btrt].concat();
         let bytes = mp4_with_sample_description_entry(b"wvtt", 3, &extra_data);
         let demuxer = MovDemuxer::open(&bytes).unwrap();
@@ -7529,13 +7536,17 @@ mod tests {
             webvtt.source_label().unwrap().source_label(),
             "episode-main"
         );
+        let bit_rate = webvtt.bit_rate().unwrap();
+        assert_eq!(bit_rate.buffer_size_db(), 1_024);
+        assert_eq!(bit_rate.max_bitrate(), 2_048);
+        assert_eq!(bit_rate.avg_bitrate(), 512);
         assert_eq!(webvtt.child_boxes().len(), 3);
         assert_eq!(webvtt.child_boxes()[0].box_type(), "vttC");
         assert_eq!(webvtt.child_boxes()[1].box_type(), "vlab");
         assert_eq!(webvtt.child_boxes()[2].box_type(), "btrt");
         assert_eq!(
             webvtt.child_boxes()[2].payload(),
-            [0, 0, 4, 0, 0, 0, 8, 0, 0, 0, 2, 0]
+            bit_rate_box_payload(1_024, 2_048, 512)
         );
     }
 
@@ -8861,6 +8872,33 @@ mod tests {
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"wvtt", 1, &bad_child))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let bad_wvtt_btrt = [
+            box_(*VTTC_ID, b"WEBVTT\n"),
+            box_with_declared_size(*BTRT_ID, 12, b"\0"),
+        ]
+        .concat();
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"wvtt",
+            1,
+            &bad_wvtt_btrt,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let duplicate_wvtt_btrt = [
+            box_(*VTTC_ID, b"WEBVTT\n"),
+            box_(*BTRT_ID, &bit_rate_box_payload(1, 2, 3)),
+            box_(*BTRT_ID, &bit_rate_box_payload(4, 5, 6)),
+        ]
+        .concat();
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"wvtt",
+            1,
+            &duplicate_wvtt_btrt,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(
             b"metx",
