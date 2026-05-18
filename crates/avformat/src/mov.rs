@@ -42,6 +42,7 @@ const DAC3_ID: &[u8; 4] = b"dac3";
 const DEC3_ID: &[u8; 4] = b"dec3";
 const DOPS_ID: &[u8; 4] = b"dOps";
 const DFLA_ID: &[u8; 4] = b"dfLa";
+const ALAC_ID: &[u8; 4] = b"alac";
 const FRMA_ID: &[u8; 4] = b"frma";
 const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
 const PASP_ID: &[u8; 4] = b"pasp";
@@ -387,6 +388,7 @@ pub struct MovAudioSampleEntry {
     ec3_specific: Option<MovEc3SpecificBox>,
     opus_specific: Option<MovOpusSpecificBox>,
     flac_specific: Option<MovFlacSpecificBox>,
+    alac_specific: Option<MovAlacSpecificBox>,
     wave_extension: Option<MovAudioWaveExtension>,
     channel_layout: Option<MovAudioChannelLayout>,
     child_boxes: Vec<MovSampleEntryChildBox>,
@@ -410,6 +412,9 @@ impl MovAudioSampleEntry {
     }
 
     pub fn effective_channel_count(&self) -> u32 {
+        if let Some(alac_specific) = self.alac_specific() {
+            return u32::from(alac_specific.config().num_channels());
+        }
         if let Some(flac_specific) = &self.flac_specific {
             return u32::from(flac_specific.streaminfo().channels());
         }
@@ -425,6 +430,9 @@ impl MovAudioSampleEntry {
     }
 
     pub fn effective_bits_per_sample(&self) -> u32 {
+        if let Some(alac_specific) = self.alac_specific() {
+            return u32::from(alac_specific.config().bit_depth());
+        }
         if let Some(flac_specific) = &self.flac_specific {
             return u32::from(flac_specific.streaminfo().bits_per_sample());
         }
@@ -504,6 +512,14 @@ impl MovAudioSampleEntry {
 
     pub fn flac_specific(&self) -> Option<&MovFlacSpecificBox> {
         self.flac_specific.as_ref()
+    }
+
+    pub fn alac_specific(&self) -> Option<&MovAlacSpecificBox> {
+        self.alac_specific.as_ref().or_else(|| {
+            self.wave_extension
+                .as_ref()
+                .and_then(MovAudioWaveExtension::alac_specific)
+        })
     }
 
     pub fn wave_extension(&self) -> Option<&MovAudioWaveExtension> {
@@ -606,6 +622,7 @@ impl MovAudioSampleEntryVersion2Fields {
 pub struct MovAudioWaveExtension {
     original_format: Option<String>,
     elementary_stream_descriptor: Option<MovElementaryStreamDescriptor>,
+    alac_specific: Option<MovAlacSpecificBox>,
     has_terminator: bool,
     child_boxes: Vec<MovSampleEntryChildBox>,
 }
@@ -617,6 +634,10 @@ impl MovAudioWaveExtension {
 
     pub fn elementary_stream_descriptor(&self) -> Option<&MovElementaryStreamDescriptor> {
         self.elementary_stream_descriptor.as_ref()
+    }
+
+    pub fn alac_specific(&self) -> Option<&MovAlacSpecificBox> {
+        self.alac_specific.as_ref()
     }
 
     pub fn has_terminator(&self) -> bool {
@@ -955,6 +976,109 @@ impl MovFlacStreamInfo {
 
     pub fn md5(&self) -> &[u8; 16] {
         &self.md5
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAlacSpecificBox {
+    version: u8,
+    flags: [u8; 3],
+    config: MovAlacSpecificConfig,
+    channel_layout: Option<MovAlacChannelLayoutInfo>,
+}
+
+impl MovAlacSpecificBox {
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
+    pub fn flags(&self) -> [u8; 3] {
+        self.flags
+    }
+
+    pub fn config(&self) -> &MovAlacSpecificConfig {
+        &self.config
+    }
+
+    pub fn channel_layout(&self) -> Option<&MovAlacChannelLayoutInfo> {
+        self.channel_layout.as_ref()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAlacSpecificConfig {
+    frame_length: u32,
+    compatible_version: u8,
+    bit_depth: u8,
+    pb: u8,
+    mb: u8,
+    kb: u8,
+    num_channels: u8,
+    max_run: u16,
+    max_frame_bytes: u32,
+    avg_bit_rate: u32,
+    sample_rate: u32,
+}
+
+impl MovAlacSpecificConfig {
+    pub fn frame_length(&self) -> u32 {
+        self.frame_length
+    }
+
+    pub fn compatible_version(&self) -> u8 {
+        self.compatible_version
+    }
+
+    pub fn bit_depth(&self) -> u8 {
+        self.bit_depth
+    }
+
+    pub fn pb(&self) -> u8 {
+        self.pb
+    }
+
+    pub fn mb(&self) -> u8 {
+        self.mb
+    }
+
+    pub fn kb(&self) -> u8 {
+        self.kb
+    }
+
+    pub fn num_channels(&self) -> u8 {
+        self.num_channels
+    }
+
+    pub fn max_run(&self) -> u16 {
+        self.max_run
+    }
+
+    pub fn max_frame_bytes(&self) -> u32 {
+        self.max_frame_bytes
+    }
+
+    pub fn avg_bit_rate(&self) -> u32 {
+        self.avg_bit_rate
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAlacChannelLayoutInfo {
+    channel_layout_tag: u32,
+    reserved: [u32; 2],
+}
+
+impl MovAlacChannelLayoutInfo {
+    pub fn channel_layout_tag(&self) -> u32 {
+        self.channel_layout_tag
+    }
+
+    pub fn reserved(&self) -> [u32; 2] {
+        self.reserved
     }
 }
 
@@ -2508,11 +2632,37 @@ fn parse_audio_sample_entry(codec_tag: &[u8], extra_data: &[u8]) -> AvResult<Mov
     let ec3_specific = parse_audio_sample_entry_ec3_specific(&child_boxes, codec_tag == b"ec-3")?;
     let opus_specific = parse_audio_sample_entry_opus_specific(&child_boxes, codec_tag == b"Opus")?;
     let flac_specific = parse_audio_sample_entry_flac_specific(&child_boxes, codec_tag == b"fLaC")?;
+    let alac_specific = parse_audio_sample_entry_alac_specific(&child_boxes)?;
+    let wave_extension = parse_audio_sample_entry_wave_extension(&child_boxes)?;
+    validate_audio_sample_entry_alac_boxes(
+        codec_tag == ALAC_ID,
+        &alac_specific,
+        wave_extension
+            .as_ref()
+            .and_then(MovAudioWaveExtension::alac_specific),
+    )?;
+    validate_audio_sample_entry_alac_fields(
+        channel_count,
+        sample_size,
+        sample_rate,
+        alac_specific.as_ref().or_else(|| {
+            wave_extension
+                .as_ref()
+                .and_then(MovAudioWaveExtension::alac_specific)
+        }),
+    )?;
     let sample_rate = flac_specific
         .as_ref()
         .map_or(sample_rate, |specific| specific.streaminfo().sample_rate());
+    let sample_rate = alac_specific
+        .as_ref()
+        .or_else(|| {
+            wave_extension
+                .as_ref()
+                .and_then(MovAudioWaveExtension::alac_specific)
+        })
+        .map_or(sample_rate, |specific| specific.config().sample_rate());
     validate_audio_sample_entry_flac_fields(channel_count, sample_size, &flac_specific)?;
-    let wave_extension = parse_audio_sample_entry_wave_extension(&child_boxes)?;
     let channel_layout = parse_audio_sample_entry_channel_layout(&child_boxes)?;
     Ok(MovAudioSampleEntry {
         version,
@@ -2532,6 +2682,7 @@ fn parse_audio_sample_entry(codec_tag: &[u8], extra_data: &[u8]) -> AvResult<Mov
         ec3_specific,
         opus_specific,
         flac_specific,
+        alac_specific,
         wave_extension,
         channel_layout,
         child_boxes,
@@ -2689,6 +2840,69 @@ fn parse_audio_sample_entry_flac_specific(
     parse_dfla(child.payload()).map(Some)
 }
 
+fn parse_audio_sample_entry_alac_specific(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovAlacSpecificBox>> {
+    let mut matches = child_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == ALAC_ID);
+    let Some(child) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 ALAC sample entry must not contain multiple alac boxes",
+        ));
+    }
+    parse_alac(child.payload()).map(Some)
+}
+
+fn validate_audio_sample_entry_alac_boxes(
+    required: bool,
+    direct_alac: &Option<MovAlacSpecificBox>,
+    wave_alac: Option<&MovAlacSpecificBox>,
+) -> AvResult<()> {
+    if direct_alac.is_some() && wave_alac.is_some() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 ALAC sample entry must not contain both direct and wave alac boxes",
+        ));
+    }
+    if required && direct_alac.is_none() && wave_alac.is_none() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 ALAC sample entry is missing required alac box",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_audio_sample_entry_alac_fields(
+    channel_count: u16,
+    sample_size: u16,
+    sample_rate: u32,
+    alac_specific: Option<&MovAlacSpecificBox>,
+) -> AvResult<()> {
+    let Some(alac_specific) = alac_specific else {
+        return Ok(());
+    };
+    let config = alac_specific.config();
+    if u32::from(channel_count) != u32::from(config.num_channels()) {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 alac channelcount must match ALAC specific config",
+        ));
+    }
+    if u32::from(sample_size) != u32::from(config.bit_depth()) {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 alac samplesize must match ALAC specific config",
+        ));
+    }
+    if sample_rate != config.sample_rate() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 alac sample rate must match ALAC specific config",
+        ));
+    }
+    Ok(())
+}
+
 fn validate_audio_sample_entry_flac_fields(
     channel_count: u16,
     sample_size: u16,
@@ -2725,6 +2939,7 @@ fn parse_wave_extension(payload: &[u8]) -> AvResult<MovAudioWaveExtension> {
     let child_boxes = parse_sample_entry_child_boxes(payload, 0, payload.len(), "MOV/MP4 wave")?;
     let original_format = parse_wave_original_format(&child_boxes)?;
     let elementary_stream_descriptor = parse_wave_esds(&child_boxes)?;
+    let alac_specific = parse_wave_alac_specific(&child_boxes)?;
     let has_terminator = child_boxes
         .iter()
         .any(|child| child.box_type.as_bytes() == TERMINATOR_ID);
@@ -2732,6 +2947,7 @@ fn parse_wave_extension(payload: &[u8]) -> AvResult<MovAudioWaveExtension> {
     Ok(MovAudioWaveExtension {
         original_format,
         elementary_stream_descriptor,
+        alac_specific,
         has_terminator,
         child_boxes,
     })
@@ -2762,6 +2978,23 @@ fn parse_wave_esds(
         .find(|child| child.box_type.as_bytes() == ESDS_ID)
         .map(|child| parse_esds(child.payload()))
         .transpose()
+}
+
+fn parse_wave_alac_specific(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovAlacSpecificBox>> {
+    let mut matches = child_boxes
+        .iter()
+        .filter(|child| child.box_type.as_bytes() == ALAC_ID);
+    let Some(child) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 wave atom must not contain multiple alac boxes",
+        ));
+    }
+    parse_alac(child.payload()).map(Some)
 }
 
 fn parse_esds(payload: &[u8]) -> AvResult<MovElementaryStreamDescriptor> {
@@ -3014,6 +3247,142 @@ fn parse_dops(payload: &[u8]) -> AvResult<MovOpusSpecificBox> {
         stream_count,
         coupled_count,
         channel_mapping,
+    })
+}
+
+fn parse_alac(payload: &[u8]) -> AvResult<MovAlacSpecificBox> {
+    let mut reader = ByteReader::new(payload);
+    let (version, flags) = read_full_box_header(&mut reader, "MOV/MP4 alac")?;
+    if version != 0 {
+        return Err(AvError::unsupported(format!(
+            "MOV/MP4 alac version {version} is not implemented"
+        )));
+    }
+    if flags != [0, 0, 0] {
+        return Err(AvError::invalid_data("MOV/MP4 alac flags must be zero"));
+    }
+
+    let config = parse_alac_specific_config(&mut reader)?;
+    let channel_layout = match reader.remaining() {
+        0 => None,
+        24 => Some(parse_alac_channel_layout_info(&mut reader)?),
+        remaining if remaining < 24 => {
+            return Err(AvError::new(
+                AvErrorKind::EndOfFile,
+                "MOV/MP4 alac channel layout info is truncated",
+            ));
+        }
+        _ => {
+            return Err(AvError::invalid_data(
+                "MOV/MP4 alac box contains unsupported trailing bytes",
+            ));
+        }
+    };
+    ensure_box_consumed(&reader, "MOV/MP4 alac")?;
+
+    Ok(MovAlacSpecificBox {
+        version,
+        flags,
+        config,
+        channel_layout,
+    })
+}
+
+fn parse_alac_specific_config(reader: &mut ByteReader<'_>) -> AvResult<MovAlacSpecificConfig> {
+    ensure_remaining(reader, 24, "MOV/MP4 alac specific config")?;
+    let frame_length = reader.read_u32_be()?;
+    let compatible_version = reader.read_u8()?;
+    let bit_depth = reader.read_u8()?;
+    let pb = reader.read_u8()?;
+    let mb = reader.read_u8()?;
+    let kb = reader.read_u8()?;
+    let num_channels = reader.read_u8()?;
+    let max_run = reader.read_u16_be()?;
+    let max_frame_bytes = reader.read_u32_be()?;
+    let avg_bit_rate = reader.read_u32_be()?;
+    let sample_rate = reader.read_u32_be()?;
+
+    if frame_length == 0 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 alac frame length must be nonzero",
+        ));
+    }
+    if compatible_version != 0 {
+        return Err(AvError::unsupported(format!(
+            "MOV/MP4 alac compatible version {compatible_version} is not implemented"
+        )));
+    }
+    if bit_depth == 0 || bit_depth > 32 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 alac bit depth must be in 1..=32",
+        ));
+    }
+    if num_channels == 0 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 alac channel count must be nonzero",
+        ));
+    }
+    if sample_rate == 0 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 alac sample rate must be nonzero",
+        ));
+    }
+
+    Ok(MovAlacSpecificConfig {
+        frame_length,
+        compatible_version,
+        bit_depth,
+        pb,
+        mb,
+        kb,
+        num_channels,
+        max_run,
+        max_frame_bytes,
+        avg_bit_rate,
+        sample_rate,
+    })
+}
+
+fn parse_alac_channel_layout_info(
+    reader: &mut ByteReader<'_>,
+) -> AvResult<MovAlacChannelLayoutInfo> {
+    ensure_remaining(reader, 24, "MOV/MP4 alac channel layout info")?;
+    let size = reader.read_u32_be()?;
+    let atom_type = read_fourcc(reader)?;
+    let (version, flags) = read_full_box_header(reader, "MOV/MP4 alac channel layout info")?;
+    let channel_layout_tag = reader.read_u32_be()?;
+    let reserved1 = reader.read_u32_be()?;
+    let reserved2 = reader.read_u32_be()?;
+
+    if size != 24 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 alac channel layout info size must be 24",
+        ));
+    }
+    if &atom_type != CHAN_ID {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 alac channel layout info atom type must be chan",
+        ));
+    }
+    if version != 0 {
+        return Err(AvError::unsupported(format!(
+            "MOV/MP4 alac channel layout info version {version} is not implemented"
+        )));
+    }
+    if flags != [0, 0, 0] {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 alac channel layout info flags must be zero",
+        ));
+    }
+    if reserved1 != 0 || reserved2 != 0 {
+        return Err(AvError::invalid_data(
+            "MOV/MP4 alac channel layout info reserved fields must be zero",
+        ));
+    }
+
+    Ok(MovAlacChannelLayoutInfo {
+        channel_layout_tag,
+        reserved: [reserved1, reserved2],
     })
 }
 
@@ -4890,6 +5259,7 @@ mod tests {
         assert!(audio.ec3_specific().is_none());
         assert!(audio.opus_specific().is_none());
         assert!(audio.flac_specific().is_none());
+        assert!(audio.alac_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let direct_esds = audio.elementary_stream_descriptor().unwrap();
@@ -4937,6 +5307,7 @@ mod tests {
         assert!(audio.ec3_specific().is_none());
         assert!(audio.opus_specific().is_none());
         assert!(audio.flac_specific().is_none());
+        assert!(audio.alac_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let amr = audio.amr_specific().unwrap();
@@ -4975,6 +5346,7 @@ mod tests {
         assert!(audio.ec3_specific().is_none());
         assert!(audio.opus_specific().is_none());
         assert!(audio.flac_specific().is_none());
+        assert!(audio.alac_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let ac3 = audio.ac3_specific().unwrap();
@@ -5013,6 +5385,7 @@ mod tests {
         assert!(audio.ac3_specific().is_none());
         assert!(audio.opus_specific().is_none());
         assert!(audio.flac_specific().is_none());
+        assert!(audio.alac_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let ec3 = audio.ec3_specific().unwrap();
@@ -5063,6 +5436,7 @@ mod tests {
         assert!(audio.ac3_specific().is_none());
         assert!(audio.ec3_specific().is_none());
         assert!(audio.flac_specific().is_none());
+        assert!(audio.alac_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
         let opus = audio.opus_specific().unwrap();
@@ -5124,6 +5498,7 @@ mod tests {
         assert!(audio.ac3_specific().is_none());
         assert!(audio.ec3_specific().is_none());
         assert!(audio.opus_specific().is_none());
+        assert!(audio.alac_specific().is_none());
         assert!(audio.wave_extension().is_none());
         assert!(audio.channel_layout().is_none());
 
@@ -5156,6 +5531,102 @@ mod tests {
     }
 
     #[test]
+    fn parses_alac_audio_sample_entry_specific_box() {
+        let alac_payload = alac_specific_box_payload(
+            4_096,
+            0,
+            24,
+            40,
+            14,
+            10,
+            2,
+            255,
+            8_192,
+            320_000,
+            44_100,
+            Some(0x0065_0002),
+        );
+        let alac = box_(*ALAC_ID, &alac_payload);
+        let extra_data = audio_sample_entry_extra_data(2, 24, 44_100, &alac);
+        let bytes = mp4_with_sample_description_entry(b"alac", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "alac");
+        let MovSampleEntryDetails::Audio(audio) = codec_parameters.details() else {
+            panic!("expected audio sample entry details");
+        };
+        assert_eq!(audio.channel_count(), 2);
+        assert_eq!(audio.effective_channel_count(), 2);
+        assert_eq!(audio.sample_size(), 24);
+        assert_eq!(audio.effective_bits_per_sample(), 24);
+        assert_eq!(audio.sample_rate(), 44_100);
+        assert_eq!(audio.sample_rate_fixed_16_16(), 44_100 << 16);
+        assert!(audio.elementary_stream_descriptor().is_none());
+        assert!(audio.bit_rate().is_none());
+        assert!(audio.amr_specific().is_none());
+        assert!(audio.ac3_specific().is_none());
+        assert!(audio.ec3_specific().is_none());
+        assert!(audio.opus_specific().is_none());
+        assert!(audio.flac_specific().is_none());
+        assert!(audio.wave_extension().is_none());
+        assert!(audio.channel_layout().is_none());
+
+        let alac = audio.alac_specific().unwrap();
+        assert_eq!(alac.version(), 0);
+        assert_eq!(alac.flags(), [0, 0, 0]);
+        let config = alac.config();
+        assert_eq!(config.frame_length(), 4_096);
+        assert_eq!(config.compatible_version(), 0);
+        assert_eq!(config.bit_depth(), 24);
+        assert_eq!(config.pb(), 40);
+        assert_eq!(config.mb(), 14);
+        assert_eq!(config.kb(), 10);
+        assert_eq!(config.num_channels(), 2);
+        assert_eq!(config.max_run(), 255);
+        assert_eq!(config.max_frame_bytes(), 8_192);
+        assert_eq!(config.avg_bit_rate(), 320_000);
+        assert_eq!(config.sample_rate(), 44_100);
+        let channel_layout = alac.channel_layout().unwrap();
+        assert_eq!(channel_layout.channel_layout_tag(), 0x0065_0002);
+        assert_eq!(channel_layout.reserved(), [0, 0]);
+        assert_eq!(audio.child_boxes().len(), 1);
+        assert_eq!(audio.child_boxes()[0].box_type(), "alac");
+        assert_eq!(audio.child_boxes()[0].payload(), alac_payload.as_slice());
+
+        let wave_alac_payload =
+            alac_specific_box_payload(4_096, 0, 16, 40, 14, 10, 1, 255, 0, 128_000, 44_100, None);
+        let wave_payload = [
+            box_(*FRMA_ID, ALAC_ID),
+            box_(*ALAC_ID, &wave_alac_payload),
+            box_(*TERMINATOR_ID, &[]),
+        ]
+        .concat();
+        let wave = box_(*WAVE_ID, &wave_payload);
+        let extra_data = audio_sample_entry_extra_data(1, 16, 44_100, &wave);
+        let bytes = mp4_with_sample_description_entry(b"alac", 1, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+        let MovSampleEntryDetails::Audio(audio) = codec_parameters.details() else {
+            panic!("expected audio sample entry details");
+        };
+
+        assert_eq!(audio.channel_count(), 1);
+        assert_eq!(audio.effective_channel_count(), 1);
+        assert_eq!(audio.effective_bits_per_sample(), 16);
+        assert!(audio.wave_extension().unwrap().has_terminator());
+        assert_eq!(
+            audio.wave_extension().unwrap().original_format(),
+            Some("alac")
+        );
+        assert!(audio.wave_extension().unwrap().alac_specific().is_some());
+        assert_eq!(
+            audio.alac_specific().unwrap().config().avg_bit_rate(),
+            128_000
+        );
+    }
+
+    #[test]
     fn parses_audio_sample_entry_version_one_fields() {
         let wave_payload = wave_extension_payload(*b"mp4a", b"\x03\x01\x00");
         let wave = box_(*WAVE_ID, &wave_payload);
@@ -5184,6 +5655,7 @@ mod tests {
         assert_eq!(audio.child_boxes()[0].payload(), wave_payload.as_slice());
         let wave_extension = audio.wave_extension().unwrap();
         assert_eq!(wave_extension.original_format(), Some("mp4a"));
+        assert!(wave_extension.alac_specific().is_none());
         assert!(wave_extension.has_terminator());
         assert_eq!(wave_extension.child_boxes().len(), 3);
         assert_eq!(wave_extension.child_boxes()[0].box_type(), "frma");
@@ -6020,6 +6492,159 @@ mod tests {
         .concat();
         let extra_data = audio_sample_entry_extra_data(2, 16, 48_000, &duplicate_dops);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"Opus", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let valid_alac_payload =
+            alac_specific_box_payload(4_096, 0, 16, 40, 14, 10, 2, 255, 0, 128_000, 44_100, None);
+        let missing_alac = audio_sample_entry_extra_data(2, 16, 44_100, &[]);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"alac",
+            1,
+            &missing_alac,
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let truncated_alac = box_(*ALAC_ID, b"\0\0");
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &truncated_alac);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let unsupported_alac = box_(*ALAC_ID, &full_box(1, &[]));
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &unsupported_alac);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+
+        let mut flagged_alac_payload = valid_alac_payload.clone();
+        flagged_alac_payload[3] = 1;
+        let flagged_alac = box_(*ALAC_ID, &flagged_alac_payload);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &flagged_alac);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let invalid_alac_frame_length = box_(
+            *ALAC_ID,
+            &alac_specific_box_payload(0, 0, 16, 40, 14, 10, 2, 255, 0, 128_000, 44_100, None),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &invalid_alac_frame_length);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let unsupported_alac_compatible_version = box_(
+            *ALAC_ID,
+            &alac_specific_box_payload(4_096, 1, 16, 40, 14, 10, 2, 255, 0, 128_000, 44_100, None),
+        );
+        let extra_data =
+            audio_sample_entry_extra_data(2, 16, 44_100, &unsupported_alac_compatible_version);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+
+        let invalid_alac_bit_depth = box_(
+            *ALAC_ID,
+            &alac_specific_box_payload(4_096, 0, 33, 40, 14, 10, 2, 255, 0, 128_000, 44_100, None),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &invalid_alac_bit_depth);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let zero_alac_channels = box_(
+            *ALAC_ID,
+            &alac_specific_box_payload(4_096, 0, 16, 40, 14, 10, 0, 255, 0, 128_000, 44_100, None),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &zero_alac_channels);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let zero_alac_rate = box_(
+            *ALAC_ID,
+            &alac_specific_box_payload(4_096, 0, 16, 40, 14, 10, 2, 255, 0, 128_000, 0, None),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &zero_alac_rate);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let mismatched_alac_channels = box_(
+            *ALAC_ID,
+            &alac_specific_box_payload(4_096, 0, 16, 40, 14, 10, 1, 255, 0, 128_000, 44_100, None),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &mismatched_alac_channels);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let mismatched_alac_size = box_(
+            *ALAC_ID,
+            &alac_specific_box_payload(4_096, 0, 24, 40, 14, 10, 2, 255, 0, 128_000, 44_100, None),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &mismatched_alac_size);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let mismatched_alac_rate = box_(
+            *ALAC_ID,
+            &alac_specific_box_payload(4_096, 0, 16, 40, 14, 10, 2, 255, 0, 128_000, 48_000, None),
+        );
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &mismatched_alac_rate);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let duplicate_alac = [
+            box_(*ALAC_ID, &valid_alac_payload),
+            box_(*ALAC_ID, &valid_alac_payload),
+        ]
+        .concat();
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &duplicate_alac);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let mut truncated_alac_chan_payload = valid_alac_payload.clone();
+        truncated_alac_chan_payload.extend_from_slice(&[0; 8]);
+        let truncated_alac_chan = box_(*ALAC_ID, &truncated_alac_chan_payload);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &truncated_alac_chan);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let mut invalid_alac_chan_payload = valid_alac_payload.clone();
+        invalid_alac_chan_payload.extend_from_slice(&alac_channel_layout_info_payload(
+            0x0065_0002,
+            [0, 1],
+            *CHAN_ID,
+            0,
+            [0, 0, 0],
+            24,
+        ));
+        let invalid_alac_chan = box_(*ALAC_ID, &invalid_alac_chan_payload);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &invalid_alac_chan);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let wave_alac_payload = [
+            box_(*FRMA_ID, ALAC_ID),
+            box_(*ALAC_ID, &valid_alac_payload),
+            box_(*TERMINATOR_ID, &[]),
+        ]
+        .concat();
+        let direct_and_wave_alac = [
+            box_(*ALAC_ID, &valid_alac_payload),
+            box_(*WAVE_ID, &wave_alac_payload),
+        ]
+        .concat();
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &direct_and_wave_alac);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"alac", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
@@ -7614,6 +8239,65 @@ mod tests {
             payload.push(coupled_count);
             payload.extend_from_slice(channel_mapping);
         }
+        payload
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn alac_specific_box_payload(
+        frame_length: u32,
+        compatible_version: u8,
+        bit_depth: u8,
+        pb: u8,
+        mb: u8,
+        kb: u8,
+        num_channels: u8,
+        max_run: u16,
+        max_frame_bytes: u32,
+        avg_bit_rate: u32,
+        sample_rate: u32,
+        channel_layout_tag: Option<u32>,
+    ) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&frame_length.to_be_bytes());
+        body.push(compatible_version);
+        body.push(bit_depth);
+        body.push(pb);
+        body.push(mb);
+        body.push(kb);
+        body.push(num_channels);
+        body.extend_from_slice(&max_run.to_be_bytes());
+        body.extend_from_slice(&max_frame_bytes.to_be_bytes());
+        body.extend_from_slice(&avg_bit_rate.to_be_bytes());
+        body.extend_from_slice(&sample_rate.to_be_bytes());
+        if let Some(channel_layout_tag) = channel_layout_tag {
+            body.extend_from_slice(&alac_channel_layout_info_payload(
+                channel_layout_tag,
+                [0, 0],
+                *CHAN_ID,
+                0,
+                [0, 0, 0],
+                24,
+            ));
+        }
+        full_box(0, &body)
+    }
+
+    fn alac_channel_layout_info_payload(
+        channel_layout_tag: u32,
+        reserved: [u32; 2],
+        atom_type: [u8; 4],
+        version: u8,
+        flags: [u8; 3],
+        declared_size: u32,
+    ) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&declared_size.to_be_bytes());
+        payload.extend_from_slice(&atom_type);
+        payload.push(version);
+        payload.extend_from_slice(&flags);
+        payload.extend_from_slice(&channel_layout_tag.to_be_bytes());
+        payload.extend_from_slice(&reserved[0].to_be_bytes());
+        payload.extend_from_slice(&reserved[1].to_be_bytes());
         payload
     }
 
