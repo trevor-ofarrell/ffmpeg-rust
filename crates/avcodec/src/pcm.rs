@@ -91,6 +91,7 @@ mod tests {
                 assert_eq!(audio.planes(), &[vec![0, 0, 1, 0, 2, 0, 3, 0]]);
             }
             FrameData::Video(_) => panic!("expected audio frame"),
+            FrameData::Empty => panic!("expected audio frame"),
         }
     }
 
@@ -106,6 +107,7 @@ mod tests {
                 assert_eq!(audio.planes(), &[Vec::<u8>::new()]);
             }
             FrameData::Video(_) => panic!("expected audio frame"),
+            FrameData::Empty => panic!("expected audio frame"),
         }
     }
 

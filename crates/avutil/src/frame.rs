@@ -1,14 +1,21 @@
 use crate::{AvError, AvResult, BufferRef, ChannelLayout, Dictionary, PixelFormat, SampleFormat};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum FrameData {
+    #[default]
+    Empty,
     Video(VideoFrame),
     Audio(AudioFrame),
 }
 
 impl FrameData {
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Self::Empty)
+    }
+
     pub fn is_writable(&self) -> bool {
         match self {
+            Self::Empty => false,
             Self::Video(frame) => frame.is_writable(),
             Self::Audio(frame) => frame.is_writable(),
         }
@@ -16,6 +23,7 @@ impl FrameData {
 
     pub fn make_writable(&mut self) {
         match self {
+            Self::Empty => {}
             Self::Video(frame) => frame.make_writable(),
             Self::Audio(frame) => frame.make_writable(),
         }
@@ -23,6 +31,10 @@ impl FrameData {
 
     pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
         match self {
+            Self::Empty => Err(AvError::invalid_argument(format!(
+                "empty frame has no plane {index} for {} visible bytes",
+                data.len()
+            ))),
             Self::Video(frame) => frame.set_plane_visible_data(index, data),
             Self::Audio(frame) => frame.set_plane_visible_data(index, data),
         }
@@ -38,6 +50,15 @@ pub struct Frame {
 }
 
 impl Frame {
+    pub fn empty() -> Self {
+        Self {
+            pts: None,
+            data: FrameData::Empty,
+            hw_frames_context: None,
+            side_data: Vec::new(),
+        }
+    }
+
     pub fn video(frame: VideoFrame) -> Self {
         Self {
             pts: None,
@@ -54,6 +75,25 @@ impl Frame {
             hw_frames_context: None,
             side_data: Vec::new(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pts.is_none()
+            && self.data.is_empty()
+            && self.hw_frames_context.is_none()
+            && self.side_data.is_empty()
+    }
+
+    pub fn unref(&mut self) {
+        *self = Self::empty();
+    }
+
+    pub fn ref_from(&mut self, source: &Self) {
+        *self = source.clone();
+    }
+
+    pub fn move_ref_from(&mut self, source: &mut Self) {
+        *self = std::mem::take(source);
     }
 
     pub fn pts(&self) -> Option<i64> {
@@ -254,6 +294,12 @@ impl Frame {
 
     pub fn take_side_data(&mut self) -> Vec<FrameSideData> {
         std::mem::take(&mut self.side_data)
+    }
+}
+
+impl Default for Frame {
+    fn default() -> Self {
+        Self::empty()
     }
 }
 
@@ -1383,6 +1429,178 @@ mod tests {
         frame.set_pts(Some(42));
         assert_eq!(frame.pts(), Some(42));
         assert!(matches!(frame.data(), FrameData::Video(_)));
+    }
+
+    #[test]
+    fn empty_frame_unref_clears_data_and_releases_references() {
+        let plane_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let plane_capture = std::sync::Arc::clone(&plane_released);
+        let plane = BufferRef::from_external_slice_with_len_and_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![1, 2, 3, 0]),
+            3,
+            String::from("plane"),
+            move |opaque| {
+                plane_capture.lock().unwrap().push(opaque);
+            },
+        )
+        .unwrap();
+        let side_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let side_capture = std::sync::Arc::clone(&side_released);
+        let side = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![0xAA]),
+            String::from("side"),
+            move |opaque| {
+                side_capture.lock().unwrap().push(opaque);
+            },
+        );
+        let hw_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let hw_capture = std::sync::Arc::clone(&hw_released);
+        let hw_context = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![0xCC]),
+            String::from("hw"),
+            move |opaque| {
+                hw_capture.lock().unwrap().push(opaque);
+            },
+        );
+
+        let video =
+            VideoFrame::new_with_buffer_refs(3, 1, PixelFormat::Gray8, vec![plane]).unwrap();
+        let mut frame = Frame::video(video).with_hw_frames_context(hw_context);
+        frame.set_pts(Some(99));
+        frame
+            .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
+            .unwrap();
+
+        assert!(!frame.is_empty());
+        frame.unref();
+
+        assert!(frame.is_empty());
+        assert_eq!(frame.pts(), None);
+        assert!(matches!(frame.data(), FrameData::Empty));
+        assert!(frame.hw_frames_context().is_none());
+        assert!(frame.side_data().is_empty());
+        assert!(!frame.is_writable());
+        assert_eq!(
+            frame.set_plane_visible_data(0, &[]).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(*plane_released.lock().unwrap(), vec![String::from("plane")]);
+        assert_eq!(*side_released.lock().unwrap(), vec![String::from("side")]);
+        assert_eq!(*hw_released.lock().unwrap(), vec![String::from("hw")]);
+
+        let mut empty = Frame::empty();
+        assert!(empty.is_empty());
+        empty.unref();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn frame_ref_from_shares_references_and_replaces_destination() {
+        let source_plane = BufferRef::copy_from_slice(&[1, 2, 3]);
+        let source_side = BufferRef::copy_from_slice(&[0x44]);
+        let source_hw = BufferRef::copy_from_slice(&[0x55]);
+        let source_video =
+            VideoFrame::new_with_buffer_refs(3, 1, PixelFormat::Gray8, vec![source_plane.clone()])
+                .unwrap();
+        let mut source = Frame::video(source_video).with_hw_frames_context(source_hw.clone());
+        source.set_pts(Some(7));
+        source
+            .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
+            .unwrap();
+
+        let old_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let old_capture = std::sync::Arc::clone(&old_released);
+        let old_plane = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![9]),
+            String::from("old-plane"),
+            move |opaque| {
+                old_capture.lock().unwrap().push(opaque);
+            },
+        );
+        let old_video =
+            VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![old_plane]).unwrap();
+        let mut destination = Frame::video(old_video);
+
+        destination.ref_from(&source);
+
+        assert_eq!(
+            *old_released.lock().unwrap(),
+            vec![String::from("old-plane")]
+        );
+        assert_eq!(destination.pts(), Some(7));
+        assert!(!source.is_empty());
+        let (destination_video, source_video) = match (destination.data(), source.data()) {
+            (FrameData::Video(destination_video), FrameData::Video(source_video)) => {
+                (destination_video, source_video)
+            }
+            _ => panic!("expected video frames"),
+        };
+        assert!(destination_video.plane_buffers()[0].shares_storage(&source_plane));
+        assert!(
+            destination_video.plane_buffers()[0].shares_storage(&source_video.plane_buffers()[0])
+        );
+        assert!(destination.side_data()[0]
+            .buffer()
+            .shares_storage(&source_side));
+        assert!(destination.side_data()[0]
+            .buffer()
+            .shares_storage(source.side_data()[0].buffer()));
+        assert!(destination
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(&source_hw));
+        assert!(destination
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(source.hw_frames_context().unwrap()));
+    }
+
+    #[test]
+    fn frame_move_ref_from_moves_references_and_unrefs_source() {
+        let source_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let source_capture = std::sync::Arc::clone(&source_released);
+        let source_plane = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![1]),
+            String::from("source-plane"),
+            move |opaque| {
+                source_capture.lock().unwrap().push(opaque);
+            },
+        );
+        let source_video =
+            VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![source_plane]).unwrap();
+        let mut source = Frame::video(source_video);
+        source.set_pts(Some(11));
+
+        let destination_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let destination_capture = std::sync::Arc::clone(&destination_released);
+        let destination_plane = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![9]),
+            String::from("destination-plane"),
+            move |opaque| {
+                destination_capture.lock().unwrap().push(opaque);
+            },
+        );
+        let destination_video =
+            VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![destination_plane])
+                .unwrap();
+        let mut destination = Frame::video(destination_video);
+
+        destination.move_ref_from(&mut source);
+
+        assert!(source.is_empty());
+        assert_eq!(destination.pts(), Some(11));
+        assert!(matches!(destination.data(), FrameData::Video(_)));
+        assert_eq!(
+            *destination_released.lock().unwrap(),
+            vec![String::from("destination-plane")]
+        );
+        assert!(source_released.lock().unwrap().is_empty());
+
+        drop(destination);
+        assert_eq!(
+            *source_released.lock().unwrap(),
+            vec![String::from("source-plane")]
+        );
     }
 
     #[test]

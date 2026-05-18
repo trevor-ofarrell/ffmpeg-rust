@@ -84,6 +84,7 @@ mod tests {
                 assert_eq!(video.planes(), &[vec![0, 1, 2, 3]]);
             }
             FrameData::Audio(_) => panic!("expected video frame"),
+            FrameData::Empty => panic!("expected video frame"),
         }
     }
 
@@ -103,6 +104,7 @@ mod tests {
                 assert_eq!(video.planes()[2], vec![10, 11]);
             }
             FrameData::Audio(_) => panic!("expected video frame"),
+            FrameData::Empty => panic!("expected video frame"),
         }
     }
 

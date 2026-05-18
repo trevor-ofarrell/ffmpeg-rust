@@ -1360,6 +1360,46 @@ fn exercise_fixtures() {
     let video = VideoFrame::new(1, 1, PixelFormat::Rgb24, vec![vec![1, 2, 3]]).unwrap();
     assert_eq!(video.line_sizes(), &[3]);
     assert_eq!(Frame::video(video).pts(), None);
+    let mut empty_frame = Frame::empty();
+    assert!(empty_frame.is_empty());
+    assert!(!empty_frame.is_writable());
+    assert!(matches!(empty_frame.data(), FrameData::Empty));
+    assert_eq!(
+        empty_frame
+            .set_plane_visible_data(0, &[])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    empty_frame.unref();
+    assert!(empty_frame.is_empty());
+
+    let ref_video = VideoFrame::new(1, 1, PixelFormat::Gray8, vec![vec![7]]).unwrap();
+    let ref_side = BufferRef::copy_from_slice(&[0x44]);
+    let ref_hw = BufferRef::copy_from_slice(&[0x55]);
+    let mut source_frame = Frame::video(ref_video).with_hw_frames_context(ref_hw.clone());
+    source_frame
+        .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, ref_side.clone())
+        .unwrap();
+    let mut referenced_frame = Frame::empty();
+    referenced_frame.ref_from(&source_frame);
+    assert!(!referenced_frame.is_empty());
+    assert!(referenced_frame.side_data()[0]
+        .buffer()
+        .shares_storage(&ref_side));
+    assert!(referenced_frame
+        .hw_frames_context()
+        .unwrap()
+        .shares_storage(&ref_hw));
+    let mut moved_frame = Frame::empty();
+    moved_frame.move_ref_from(&mut referenced_frame);
+    assert!(referenced_frame.is_empty());
+    assert!(!moved_frame.is_empty());
+    assert!(moved_frame.side_data()[0]
+        .buffer()
+        .shares_storage(&ref_side));
+    moved_frame.unref();
+    assert!(moved_frame.is_empty());
 
     let audio = AudioFrame::new_with_channel_layout(
         48_000,

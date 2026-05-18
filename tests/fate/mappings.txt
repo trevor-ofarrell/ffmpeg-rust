@@ -23,6 +23,8 @@ avutil-pixel-format|local-avutil-unit|.|cargo|test|-p|avutil|pixel
 avutil-sample-format|local-avutil-unit|.|cargo|test|-p|avutil|samplefmt
 avutil-channel-layout|local-avutil-unit|.|cargo|test|-p|avutil|channel_layout
 avutil-hash|local-avutil-unit|.|cargo|test|-p|avutil|hash
+avcodec-rawvideo|local-avcodec-unit|.|cargo|test|-p|avcodec|rawvideo
+avcodec-pcm-s16le|local-avcodec-unit|.|cargo|test|-p|avcodec|pcm
 fftools-version|local-version-unit|.|cargo|test|-p|fftools|--lib|version
 fftools-hide-banner|local-hide-banner-unit|.|cargo|test|-p|fftools|--lib|hide_banner
 fftools-option-parser|local-option-parser-unit|.|cargo|test|-p|fftools|--lib|option_parser
