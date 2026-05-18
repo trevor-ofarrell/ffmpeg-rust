@@ -2504,6 +2504,323 @@ impl FrameRegionsOfInterest {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameVideoEncParamsType {
+    None,
+    Vp9,
+    H264,
+    Mpeg2,
+}
+
+impl FrameVideoEncParamsType {
+    pub const fn as_raw(self) -> i32 {
+        match self {
+            Self::None => -1,
+            Self::Vp9 => 0,
+            Self::H264 => 1,
+            Self::Mpeg2 => 2,
+        }
+    }
+
+    pub fn from_raw(raw: i32) -> AvResult<Self> {
+        match raw {
+            -1 => Ok(Self::None),
+            0 => Ok(Self::Vp9),
+            1 => Ok(Self::H264),
+            2 => Ok(Self::Mpeg2),
+            _ => Err(AvError::invalid_data(format!(
+                "unknown video encoding parameters type {raw}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameVideoBlockParams {
+    src_x: i32,
+    src_y: i32,
+    width: i32,
+    height: i32,
+    delta_qp: i32,
+}
+
+impl FrameVideoBlockParams {
+    pub const DATA_LEN: usize = 20;
+
+    pub fn new(src_x: i32, src_y: i32, width: i32, height: i32, delta_qp: i32) -> AvResult<Self> {
+        if width <= 0 || height <= 0 {
+            return Err(AvError::invalid_argument(format!(
+                "video encoding block dimensions must be positive, got {width}x{height}"
+            )));
+        }
+
+        Ok(Self {
+            src_x,
+            src_y,
+            width,
+            height,
+            delta_qp,
+        })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "video encoding block parameters require exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let width = Self::read_i32(data, 8);
+        let height = Self::read_i32(data, 12);
+        if width <= 0 || height <= 0 {
+            return Err(AvError::invalid_data(format!(
+                "video encoding block dimensions must be positive, got {width}x{height}"
+            )));
+        }
+
+        Ok(Self {
+            src_x: Self::read_i32(data, 0),
+            src_y: Self::read_i32(data, 4),
+            width,
+            height,
+            delta_qp: Self::read_i32(data, 16),
+        })
+    }
+
+    pub const fn src_x(self) -> i32 {
+        self.src_x
+    }
+
+    pub const fn src_y(self) -> i32 {
+        self.src_y
+    }
+
+    pub const fn width(self) -> i32 {
+        self.width
+    }
+
+    pub const fn height(self) -> i32 {
+        self.height
+    }
+
+    pub const fn delta_qp(self) -> i32 {
+        self.delta_qp
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[0..4].copy_from_slice(&self.src_x.to_ne_bytes());
+        bytes[4..8].copy_from_slice(&self.src_y.to_ne_bytes());
+        bytes[8..12].copy_from_slice(&self.width.to_ne_bytes());
+        bytes[12..16].copy_from_slice(&self.height.to_ne_bytes());
+        bytes[16..20].copy_from_slice(&self.delta_qp.to_ne_bytes());
+        bytes
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameVideoEncParams {
+    params_type: FrameVideoEncParamsType,
+    qp: i32,
+    delta_qp: [[i32; 2]; 4],
+    blocks: Vec<FrameVideoBlockParams>,
+}
+
+impl FrameVideoEncParams {
+    const SIZE_T_LEN: usize = core::mem::size_of::<usize>();
+    const BLOCKS_OFFSET_OFFSET: usize = if Self::SIZE_T_LEN == 8 { 8 } else { 4 };
+    const BLOCK_SIZE_OFFSET: usize = Self::BLOCKS_OFFSET_OFFSET + Self::SIZE_T_LEN;
+    const TYPE_OFFSET: usize = Self::BLOCK_SIZE_OFFSET + Self::SIZE_T_LEN;
+    const QP_OFFSET: usize = Self::TYPE_OFFSET + 4;
+    const DELTA_QP_OFFSET: usize = Self::QP_OFFSET + 4;
+    pub const DELTA_QP_PLANES: usize = 4;
+    pub const DELTA_QP_COEFFS: usize = 2;
+    pub const HEADER_LEN: usize =
+        Self::DELTA_QP_OFFSET + Self::DELTA_QP_PLANES * Self::DELTA_QP_COEFFS * 4;
+    pub const BLOCK_SIZE: usize = FrameVideoBlockParams::DATA_LEN;
+
+    pub fn new(
+        params_type: FrameVideoEncParamsType,
+        qp: i32,
+        delta_qp: [[i32; Self::DELTA_QP_COEFFS]; Self::DELTA_QP_PLANES],
+        blocks: Vec<FrameVideoBlockParams>,
+    ) -> AvResult<Self> {
+        if blocks.len() > u32::MAX as usize {
+            return Err(AvError::invalid_argument(format!(
+                "too many video encoding parameter blocks: {}",
+                blocks.len()
+            )));
+        }
+        Self::expected_data_len(blocks.len())?;
+
+        Ok(Self {
+            params_type,
+            qp,
+            delta_qp,
+            blocks,
+        })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() < Self::HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "video encoding parameters require at least {} bytes, got {}",
+                Self::HEADER_LEN,
+                data.len()
+            )));
+        }
+
+        let nb_blocks = Self::read_u32(data, 0) as usize;
+        let blocks_offset = Self::read_usize(data, Self::BLOCKS_OFFSET_OFFSET);
+        if blocks_offset != Self::HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "video encoding parameters block offset {blocks_offset} does not match {}",
+                Self::HEADER_LEN
+            )));
+        }
+
+        let block_size = Self::read_usize(data, Self::BLOCK_SIZE_OFFSET);
+        if block_size != Self::BLOCK_SIZE {
+            return Err(AvError::invalid_data(format!(
+                "video encoding parameters block size {block_size} does not match {}",
+                Self::BLOCK_SIZE
+            )));
+        }
+
+        let expected_len = Self::expected_data_len(nb_blocks)?;
+        if data.len() != expected_len {
+            return Err(AvError::invalid_data(format!(
+                "video encoding parameters payload requires exactly {expected_len} bytes, got {}",
+                data.len()
+            )));
+        }
+
+        let params_type =
+            FrameVideoEncParamsType::from_raw(Self::read_i32(data, Self::TYPE_OFFSET))?;
+        let qp = Self::read_i32(data, Self::QP_OFFSET);
+        let mut delta_qp = [[0; Self::DELTA_QP_COEFFS]; Self::DELTA_QP_PLANES];
+        for (plane, plane_delta_qp) in delta_qp.iter_mut().enumerate() {
+            for (coeff, value) in plane_delta_qp.iter_mut().enumerate() {
+                let index = plane * Self::DELTA_QP_COEFFS + coeff;
+                *value = Self::read_i32(data, Self::DELTA_QP_OFFSET + index * 4);
+            }
+        }
+
+        let mut blocks = Vec::with_capacity(nb_blocks);
+        for index in 0..nb_blocks {
+            let offset = Self::HEADER_LEN + index * Self::BLOCK_SIZE;
+            blocks.push(FrameVideoBlockParams::parse(
+                &data[offset..offset + Self::BLOCK_SIZE],
+            )?);
+        }
+
+        Ok(Self {
+            params_type,
+            qp,
+            delta_qp,
+            blocks,
+        })
+    }
+
+    pub const fn params_type(&self) -> FrameVideoEncParamsType {
+        self.params_type
+    }
+
+    pub const fn qp(&self) -> i32 {
+        self.qp
+    }
+
+    pub const fn delta_qp(&self) -> &[[i32; Self::DELTA_QP_COEFFS]; Self::DELTA_QP_PLANES] {
+        &self.delta_qp
+    }
+
+    pub fn blocks(&self) -> &[FrameVideoBlockParams] {
+        &self.blocks
+    }
+
+    pub fn into_blocks(self) -> Vec<FrameVideoBlockParams> {
+        self.blocks
+    }
+
+    pub fn nb_blocks(&self) -> usize {
+        self.blocks.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.blocks.is_empty()
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![0; Self::HEADER_LEN];
+        Self::write_u32(&mut bytes, 0, self.blocks.len() as u32);
+        Self::write_usize(&mut bytes, Self::BLOCKS_OFFSET_OFFSET, Self::HEADER_LEN);
+        Self::write_usize(&mut bytes, Self::BLOCK_SIZE_OFFSET, Self::BLOCK_SIZE);
+        Self::write_i32(&mut bytes, Self::TYPE_OFFSET, self.params_type.as_raw());
+        Self::write_i32(&mut bytes, Self::QP_OFFSET, self.qp);
+        for plane in 0..Self::DELTA_QP_PLANES {
+            for coeff in 0..Self::DELTA_QP_COEFFS {
+                let index = plane * Self::DELTA_QP_COEFFS + coeff;
+                Self::write_i32(
+                    &mut bytes,
+                    Self::DELTA_QP_OFFSET + index * 4,
+                    self.delta_qp[plane][coeff],
+                );
+            }
+        }
+        for block in &self.blocks {
+            bytes.extend_from_slice(&block.to_bytes());
+        }
+        bytes
+    }
+
+    fn expected_data_len(nb_blocks: usize) -> AvResult<usize> {
+        let blocks_len = nb_blocks.checked_mul(Self::BLOCK_SIZE).ok_or_else(|| {
+            AvError::invalid_data("video encoding parameters block data length overflow")
+        })?;
+        Self::HEADER_LEN.checked_add(blocks_len).ok_or_else(|| {
+            AvError::invalid_data("video encoding parameters payload length overflow")
+        })
+    }
+
+    fn read_u32(data: &[u8], offset: usize) -> u32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        u32::from_ne_bytes(raw)
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+
+    fn read_usize(data: &[u8], offset: usize) -> usize {
+        let mut raw = [0; Self::SIZE_T_LEN];
+        raw.copy_from_slice(&data[offset..offset + Self::SIZE_T_LEN]);
+        usize::from_ne_bytes(raw)
+    }
+
+    fn write_u32(data: &mut [u8], offset: usize, value: u32) {
+        data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_i32(data: &mut [u8], offset: usize, value: i32) {
+        data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_usize(data: &mut [u8], offset: usize, value: usize) {
+        data[offset..offset + Self::SIZE_T_LEN].copy_from_slice(&value.to_ne_bytes());
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameSeiUnregistered<'a> {
     uuid: [u8; 16],
     user_data: &'a [u8],
@@ -2969,6 +3286,10 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::RegionsOfInterest, value.to_bytes())
     }
 
+    pub fn new_video_enc_params(value: FrameVideoEncParams) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::VideoEncParams, value.to_bytes())
+    }
+
     pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
         let total_len = FrameSeiUnregistered::UUID_LEN
             .checked_add(user_data.len())
@@ -3153,6 +3474,14 @@ impl FrameSideData {
         }
 
         FrameRegionsOfInterest::parse(self.data()).map(Some)
+    }
+
+    pub fn video_enc_params(&self) -> AvResult<Option<FrameVideoEncParams>> {
+        if self.kind != FrameSideDataKind::VideoEncParams {
+            return Ok(None);
+        }
+
+        FrameVideoEncParams::parse(self.data()).map(Some)
     }
 
     pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
@@ -4157,6 +4486,10 @@ mod tests {
 
     fn write_ne_u32(data: &mut [u8], offset: usize, value: u32) {
         data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_ne_usize(data: &mut [u8], offset: usize, value: usize) {
+        data[offset..offset + core::mem::size_of::<usize>()].copy_from_slice(&value.to_ne_bytes());
     }
 
     fn write_ne_u16(data: &mut [u8], offset: usize, value: u16) {
@@ -7253,6 +7586,155 @@ mod tests {
         let replay_gain =
             FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, Vec::new()).unwrap();
         assert_eq!(replay_gain.regions_of_interest().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_video_enc_params_payload() {
+        let first_block = FrameVideoBlockParams::new(-4, 8, 16, 16, -2).unwrap();
+        let second_block = FrameVideoBlockParams::new(12, 24, 32, 16, 3).unwrap();
+        let delta_qp = [[0, 1], [2, 3], [4, 5], [6, 7]];
+        let params = FrameVideoEncParams::new(
+            FrameVideoEncParamsType::H264,
+            26,
+            delta_qp,
+            vec![first_block, second_block],
+        )
+        .unwrap();
+        let payload = params.to_bytes();
+
+        assert_eq!(
+            FrameVideoEncParams::HEADER_LEN,
+            if core::mem::size_of::<usize>() == 8 {
+                64
+            } else {
+                52
+            }
+        );
+        assert_eq!(FrameVideoEncParams::BLOCK_SIZE, 20);
+        assert_eq!(FrameVideoBlockParams::DATA_LEN, 20);
+        assert_eq!(first_block.src_x(), -4);
+        assert_eq!(first_block.src_y(), 8);
+        assert_eq!(first_block.width(), 16);
+        assert_eq!(first_block.height(), 16);
+        assert_eq!(first_block.delta_qp(), -2);
+        assert_eq!(params.params_type(), FrameVideoEncParamsType::H264);
+        assert_eq!(params.params_type().as_raw(), 1);
+        assert_eq!(params.qp(), 26);
+        assert_eq!(params.delta_qp(), &delta_qp);
+        assert_eq!(params.nb_blocks(), 2);
+        assert!(!params.is_empty());
+        assert_eq!(params.blocks(), &[first_block, second_block]);
+        assert_eq!(
+            params.clone().into_blocks(),
+            vec![first_block, second_block]
+        );
+        assert_eq!(FrameVideoEncParams::parse(&payload).unwrap(), params);
+
+        let zero_blocks =
+            FrameVideoEncParams::new(FrameVideoEncParamsType::Vp9, 12, [[0; 2]; 4], Vec::new())
+                .unwrap();
+        assert!(zero_blocks.is_empty());
+        assert_eq!(
+            FrameVideoEncParams::parse(&zero_blocks.to_bytes()).unwrap(),
+            zero_blocks
+        );
+
+        let side_data = FrameSideData::new_video_enc_params(params.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::VideoEncParams);
+        assert_eq!(side_data.data(), payload.as_slice());
+        assert_eq!(side_data.video_enc_params().unwrap(), Some(params));
+
+        let replay_gain =
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, payload).unwrap();
+        assert_eq!(replay_gain.video_enc_params().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_video_enc_params_payload() {
+        assert_eq!(
+            FrameVideoEncParamsType::from_raw(99).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameVideoBlockParams::new(0, 0, 0, 16, 0)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let block = FrameVideoBlockParams::new(0, 0, 16, 16, 0).unwrap();
+        let params =
+            FrameVideoEncParams::new(FrameVideoEncParamsType::Mpeg2, 18, [[0; 2]; 4], vec![block])
+                .unwrap();
+        let payload = params.to_bytes();
+
+        for data in [
+            vec![0; FrameVideoEncParams::HEADER_LEN - 1],
+            {
+                let mut data = payload.clone();
+                data.push(0);
+                data
+            },
+            {
+                let mut data = payload.clone();
+                data.pop();
+                data
+            },
+        ] {
+            assert_eq!(
+                FrameVideoEncParams::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::VideoEncParams, data).unwrap();
+            assert_eq!(
+                side_data.video_enc_params().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for (offset, value) in [
+            (FrameVideoEncParams::TYPE_OFFSET, 3),
+            (FrameVideoEncParams::HEADER_LEN + 8, 0),
+            (FrameVideoEncParams::HEADER_LEN + 12, -1),
+        ] {
+            let mut bad = payload.clone();
+            write_ne_i32(&mut bad, offset, value);
+            assert_eq!(
+                FrameVideoEncParams::parse(&bad).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let mut bad_block_offset = payload.clone();
+        write_ne_usize(
+            &mut bad_block_offset,
+            FrameVideoEncParams::BLOCKS_OFFSET_OFFSET,
+            FrameVideoEncParams::HEADER_LEN - 4,
+        );
+        assert_eq!(
+            FrameVideoEncParams::parse(&bad_block_offset)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_block_size = payload.clone();
+        write_ne_usize(
+            &mut bad_block_size,
+            FrameVideoEncParams::BLOCK_SIZE_OFFSET,
+            FrameVideoEncParams::BLOCK_SIZE + 4,
+        );
+        assert_eq!(
+            FrameVideoEncParams::parse(&bad_block_size)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let display_matrix =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, Vec::new()).unwrap();
+        assert_eq!(display_matrix.video_enc_params().unwrap(), None);
     }
 
     #[test]

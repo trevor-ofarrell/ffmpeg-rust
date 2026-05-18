@@ -10,9 +10,10 @@ use avutil::{
     FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
     FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode,
     FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
-    FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection, Md5,
-    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection,
+    FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType, Md5, Packet, PacketFlags,
+    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384,
+    Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1475,6 +1476,27 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             ));
         }
     }
+    match frame.side_data()[0].video_enc_params() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::VideoEncParams);
+            assert_eq!(value.to_bytes(), frame_side_data_payload);
+            assert_eq!(
+                frame_side_data_payload.len(),
+                FrameVideoEncParams::HEADER_LEN
+                    + value.nb_blocks() * FrameVideoBlockParams::DATA_LEN
+            );
+            for block in value.blocks() {
+                assert!(block.width() > 0);
+                assert!(block.height() > 0);
+            }
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::VideoEncParams),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::VideoEncParams);
+            assert!(video_enc_params_payload_invalid(&frame_side_data_payload));
+        }
+    }
     match frame.side_data()[0].sei_unregistered() {
         Ok(Some(payload)) => {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::SeiUnregistered);
@@ -2923,6 +2945,49 @@ fn exercise_fixtures() {
     let non_roi = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_roi.regions_of_interest().unwrap(), None);
 
+    let video_block = FrameVideoBlockParams::new(-2, 4, 16, 16, -1).unwrap();
+    let video_enc_params = FrameVideoEncParams::new(
+        FrameVideoEncParamsType::H264,
+        24,
+        [[0, 1], [2, 3], [4, 5], [6, 7]],
+        vec![video_block],
+    )
+    .unwrap();
+    let video_enc_side_data =
+        FrameSideData::new_video_enc_params(video_enc_params.clone()).unwrap();
+    assert_eq!(
+        video_enc_side_data.kind_id(),
+        &FrameSideDataKind::VideoEncParams
+    );
+    assert_eq!(video_enc_side_data.data(), video_enc_params.to_bytes());
+    assert_eq!(
+        video_enc_side_data.video_enc_params().unwrap(),
+        Some(video_enc_params)
+    );
+    assert_eq!(
+        FrameVideoEncParams::parse(&[0; FrameVideoEncParams::HEADER_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_video_enc = video_enc_side_data.data().to_vec();
+    write_ne_usize(
+        &mut bad_video_enc,
+        video_enc_params_blocks_offset_field_offset(),
+        FrameVideoEncParams::HEADER_LEN - 4,
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::VideoEncParams, bad_video_enc)
+            .unwrap()
+            .video_enc_params()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_video_enc =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_video_enc.video_enc_params().unwrap(), None);
+
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
@@ -3065,7 +3130,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 24 {
+    match byte.unwrap_or_default() % 25 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::MatrixEncoding,
         2 => FrameSideDataKind::DownmixInfo,
@@ -3081,14 +3146,15 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         12 => FrameSideDataKind::S12mTimecode,
         13 => FrameSideDataKind::DynamicHdrPlus,
         14 => FrameSideDataKind::RegionsOfInterest,
-        15 => FrameSideDataKind::VideoHint,
-        16 => FrameSideDataKind::ViewId,
-        17 => FrameSideDataKind::ThreeDReferenceDisplays,
-        18 => FrameSideDataKind::Exif,
-        19 => FrameSideDataKind::SeiUnregistered,
-        20 => FrameSideDataKind::ActiveFormatDescription,
-        21 => FrameSideDataKind::SkipSamples,
-        22 => FrameSideDataKind::AudioServiceType,
+        15 => FrameSideDataKind::VideoEncParams,
+        16 => FrameSideDataKind::VideoHint,
+        17 => FrameSideDataKind::ViewId,
+        18 => FrameSideDataKind::ThreeDReferenceDisplays,
+        19 => FrameSideDataKind::Exif,
+        20 => FrameSideDataKind::SeiUnregistered,
+        21 => FrameSideDataKind::ActiveFormatDescription,
+        22 => FrameSideDataKind::SkipSamples,
+        23 => FrameSideDataKind::AudioServiceType,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
@@ -3229,6 +3295,68 @@ fn region_qoffset_valid(qoffset: Rational) -> bool {
     (-den..=den).contains(&num)
 }
 
+fn video_enc_params_payload_invalid(data: &[u8]) -> bool {
+    if data.len() < FrameVideoEncParams::HEADER_LEN {
+        return true;
+    }
+
+    if !matches!(
+        read_ne_i32(data, video_enc_params_type_field_offset()),
+        -1..=2
+    ) {
+        return true;
+    }
+
+    if read_ne_usize(data, video_enc_params_blocks_offset_field_offset())
+        != FrameVideoEncParams::HEADER_LEN
+    {
+        return true;
+    }
+
+    if read_ne_usize(data, video_enc_params_block_size_field_offset())
+        != FrameVideoBlockParams::DATA_LEN
+    {
+        return true;
+    }
+
+    let nb_blocks = read_ne_u32(data, 0) as usize;
+    let Some(blocks_len) = nb_blocks.checked_mul(FrameVideoBlockParams::DATA_LEN) else {
+        return true;
+    };
+    let Some(expected_len) = FrameVideoEncParams::HEADER_LEN.checked_add(blocks_len) else {
+        return true;
+    };
+    if data.len() != expected_len {
+        return true;
+    }
+
+    for block in
+        data[FrameVideoEncParams::HEADER_LEN..].chunks_exact(FrameVideoBlockParams::DATA_LEN)
+    {
+        if read_ne_i32(block, 8) <= 0 || read_ne_i32(block, 12) <= 0 {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn video_enc_params_blocks_offset_field_offset() -> usize {
+    if core::mem::size_of::<usize>() == 8 {
+        8
+    } else {
+        4
+    }
+}
+
+fn video_enc_params_block_size_field_offset() -> usize {
+    video_enc_params_blocks_offset_field_offset() + core::mem::size_of::<usize>()
+}
+
+fn video_enc_params_type_field_offset() -> usize {
+    video_enc_params_block_size_field_offset() + core::mem::size_of::<usize>()
+}
+
 fn minimal_icc_profile_fixture() -> Vec<u8> {
     let mut data = vec![0; FrameIccProfile::MIN_DATA_LEN];
     data[0..4].copy_from_slice(&(FrameIccProfile::MIN_DATA_LEN as u32).to_be_bytes());
@@ -3279,6 +3407,12 @@ fn read_ne_u32(data: &[u8], offset: usize) -> u32 {
     u32::from_ne_bytes(raw)
 }
 
+fn read_ne_usize(data: &[u8], offset: usize) -> usize {
+    let mut raw = [0; core::mem::size_of::<usize>()];
+    raw.copy_from_slice(&data[offset..offset + core::mem::size_of::<usize>()]);
+    usize::from_ne_bytes(raw)
+}
+
 fn read_ne_i32(data: &[u8], offset: usize) -> i32 {
     let mut raw = [0; 4];
     raw.copy_from_slice(&data[offset..offset + 4]);
@@ -3287,6 +3421,10 @@ fn read_ne_i32(data: &[u8], offset: usize) -> i32 {
 
 fn write_ne_u32(data: &mut [u8], offset: usize, value: u32) {
     data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn write_ne_usize(data: &mut [u8], offset: usize, value: usize) {
+    data[offset..offset + core::mem::size_of::<usize>()].copy_from_slice(&value.to_ne_bytes());
 }
 
 fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {

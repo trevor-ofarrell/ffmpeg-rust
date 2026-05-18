@@ -33,7 +33,8 @@ pub use frame::{
     FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode,
     FrameSeiUnregistered, FrameSideData, FrameSideDataDescriptor, FrameSideDataKind,
     FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
-    FrameSphericalProjection, VideoFrame,
+    FrameSphericalProjection, FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType,
+    VideoFrame,
 };
 pub use hash::{
     adler32, crc32_ieee, digest_to_hex, md5, sha224, sha256, sha384, sha512, Adler32, Crc32, Md5,
