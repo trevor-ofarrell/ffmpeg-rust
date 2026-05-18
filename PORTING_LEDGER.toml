@@ -102,11 +102,15 @@ unit_tests = [
   "buffer::tests::cloned_buffers_share_until_copy_on_write_mutation",
   "buffer::tests::buffer_slices_are_checked_views_over_shared_storage",
   "buffer::tests::buffer_slices_reject_out_of_bounds_ranges_without_panics",
+  "buffer::tests::padded_buffers_expose_visible_bytes_and_zeroed_tail",
+  "buffer::tests::visible_slices_do_not_expose_padding_bytes",
+  "buffer::tests::padded_copy_on_write_keeps_padding_zeroed_and_isolated",
+  "buffer::tests::padded_constructors_reject_length_overflow",
 ]
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-buffer|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Initial reference-counted byte buffer model implemented with owned/copy constructors, fallible zeroed allocation, immutable checked slice views, strong-count/writability reporting, unique mutable access, and copy-on-write mutation. Build-checked cargo-fuzz target avutil_core_models covers buffer construction, checked slicing, sharing, copy-on-write isolation, and zeroed allocation invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVBuffer/AVBufferRef callback, padding, allocation, pool, hardware-frame, and lifetime semantics are pending. The local FATE-runner smoke mapping executes the buffer unit filter only and does not count as upstream FATE parity."
+notes = "Initial reference-counted byte buffer model implemented with owned/copy constructors, fallible zeroed allocation, explicit zeroed padding allocation, visible length versus allocated length reporting, immutable checked slice views bounded to visible bytes, strong-count/writability reporting, unique mutable access, and copy-on-write mutation that preserves isolated zeroed padding. Build-checked cargo-fuzz target avutil_core_models covers buffer construction, checked slicing, sharing, visible/padded byte boundaries, copy-on-write isolation, zeroed allocation, and length-overflow rejection invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVBuffer/AVBufferRef callback-owned buffers, buffer pools, hardware-frame references, and lifetime semantics are pending. The local FATE-runner smoke mapping executes the buffer unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

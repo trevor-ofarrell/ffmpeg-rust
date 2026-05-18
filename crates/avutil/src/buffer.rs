@@ -4,12 +4,15 @@ use std::sync::Arc;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BufferRef {
     data: Arc<Vec<u8>>,
+    len: usize,
 }
 
 impl BufferRef {
     pub fn from_vec(data: Vec<u8>) -> Self {
+        let len = data.len();
         Self {
             data: Arc::new(data),
+            len,
         }
     }
 
@@ -17,24 +20,67 @@ impl BufferRef {
         Self::from_vec(data.to_vec())
     }
 
+    pub fn copy_from_slice_with_padding(data: &[u8], padding: usize) -> AvResult<Self> {
+        let total_len = checked_storage_len(data.len(), padding)?;
+        let mut storage = Vec::new();
+        storage.try_reserve_exact(total_len).map_err(|_| {
+            AvError::external(format!(
+                "failed to allocate {total_len} padded buffer bytes"
+            ))
+        })?;
+        storage.extend_from_slice(data);
+        storage.resize(total_len, 0);
+        Ok(Self {
+            data: Arc::new(storage),
+            len: data.len(),
+        })
+    }
+
     pub fn zeroed(size: usize) -> AvResult<Self> {
+        Self::zeroed_with_padding(size, 0)
+    }
+
+    pub fn zeroed_with_padding(size: usize, padding: usize) -> AvResult<Self> {
+        let total_len = checked_storage_len(size, padding)?;
         let mut data = Vec::new();
-        data.try_reserve_exact(size)
-            .map_err(|_| AvError::external(format!("failed to allocate {size} buffer bytes")))?;
-        data.resize(size, 0);
-        Ok(Self::from_vec(data))
+        data.try_reserve_exact(total_len).map_err(|_| {
+            AvError::external(format!(
+                "failed to allocate {total_len} padded buffer bytes"
+            ))
+        })?;
+        data.resize(total_len, 0);
+        Ok(Self {
+            data: Arc::new(data),
+            len: size,
+        })
     }
 
     pub fn len(&self) -> usize {
-        self.data.len()
+        self.len
     }
 
     pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+        self.len == 0
     }
 
     pub fn as_slice(&self) -> &[u8] {
+        &self.data[..self.len]
+    }
+
+    pub fn as_padded_slice(&self) -> &[u8] {
         self.data.as_slice()
+    }
+
+    pub fn allocated_len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn padding_len(&self) -> usize {
+        self.allocated_len() - self.len
+    }
+
+    pub fn padding_slice(&self) -> &[u8] {
+        &self.data[self.len..]
     }
 
     pub fn strong_count(&self) -> usize {
@@ -46,11 +92,11 @@ impl BufferRef {
     }
 
     pub fn get_mut(&mut self) -> Option<&mut [u8]> {
-        Arc::get_mut(&mut self.data).map(Vec::as_mut_slice)
+        Arc::get_mut(&mut self.data).map(|data| &mut data[..self.len])
     }
 
     pub fn make_mut(&mut self) -> &mut [u8] {
-        Arc::make_mut(&mut self.data).as_mut_slice()
+        &mut Arc::make_mut(&mut self.data)[..self.len]
     }
 
     pub fn slice(&self, offset: usize, len: usize) -> AvResult<BufferSlice> {
@@ -70,6 +116,11 @@ impl BufferRef {
             len,
         })
     }
+}
+
+fn checked_storage_len(len: usize, padding: usize) -> AvResult<usize> {
+    len.checked_add(padding)
+        .ok_or_else(|| AvError::invalid_argument("buffer length plus padding overflows"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,9 +176,12 @@ mod tests {
         let empty = BufferRef::zeroed(0).unwrap();
         assert!(empty.is_empty());
         assert_eq!(empty.as_slice(), &[]);
+        assert_eq!(empty.as_padded_slice(), &[]);
 
         let buffer = BufferRef::zeroed(4).unwrap();
         assert_eq!(buffer.as_slice(), &[0, 0, 0, 0]);
+        assert_eq!(buffer.allocated_len(), 4);
+        assert_eq!(buffer.padding_len(), 0);
     }
 
     #[test]
@@ -176,6 +230,67 @@ mod tests {
         );
         assert_eq!(
             buffer.slice(usize::MAX, 1).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
+
+    #[test]
+    fn padded_buffers_expose_visible_bytes_and_zeroed_tail() {
+        let buffer = BufferRef::copy_from_slice_with_padding(&[1, 2, 3], 4).unwrap();
+        assert_eq!(buffer.len(), 3);
+        assert_eq!(buffer.allocated_len(), 7);
+        assert_eq!(buffer.padding_len(), 4);
+        assert_eq!(buffer.as_slice(), &[1, 2, 3]);
+        assert_eq!(buffer.padding_slice(), &[0, 0, 0, 0]);
+        assert_eq!(buffer.as_padded_slice(), &[1, 2, 3, 0, 0, 0, 0]);
+
+        let zeroed = BufferRef::zeroed_with_padding(2, 3).unwrap();
+        assert_eq!(zeroed.len(), 2);
+        assert_eq!(zeroed.as_slice(), &[0, 0]);
+        assert_eq!(zeroed.padding_slice(), &[0, 0, 0]);
+        assert_eq!(zeroed.as_padded_slice(), &[0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn visible_slices_do_not_expose_padding_bytes() {
+        let buffer = BufferRef::copy_from_slice_with_padding(&[1, 2, 3], 8).unwrap();
+
+        assert_eq!(buffer.slice(3, 0).unwrap().as_slice(), &[]);
+        assert_eq!(
+            buffer.slice(4, 0).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            buffer.slice(2, 2).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
+
+    #[test]
+    fn padded_copy_on_write_keeps_padding_zeroed_and_isolated() {
+        let mut buffer = BufferRef::copy_from_slice_with_padding(&[1, 2, 3], 2).unwrap();
+        let shared = buffer.clone();
+
+        buffer.make_mut()[1] = 9;
+
+        assert_eq!(buffer.as_slice(), &[1, 9, 3]);
+        assert_eq!(buffer.padding_slice(), &[0, 0]);
+        assert_eq!(shared.as_slice(), &[1, 2, 3]);
+        assert_eq!(shared.padding_slice(), &[0, 0]);
+    }
+
+    #[test]
+    fn padded_constructors_reject_length_overflow() {
+        assert_eq!(
+            BufferRef::copy_from_slice_with_padding(&[1], usize::MAX)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            BufferRef::zeroed_with_padding(1, usize::MAX)
+                .unwrap_err()
+                .kind(),
             AvErrorKind::InvalidArgument
         );
     }

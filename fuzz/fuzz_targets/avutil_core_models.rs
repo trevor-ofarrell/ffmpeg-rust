@@ -81,7 +81,49 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     let zeroed_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
     let zeroed = BufferRef::zeroed(zeroed_len).unwrap();
     assert_eq!(zeroed.len(), zeroed_len);
+    assert_eq!(zeroed.allocated_len(), zeroed_len);
+    assert_eq!(zeroed.padding_len(), 0);
     assert!(zeroed.as_slice().iter().all(|byte| *byte == 0));
+
+    let padding_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
+    let mut padded = BufferRef::copy_from_slice_with_padding(&payload, padding_len).unwrap();
+    assert_eq!(padded.len(), payload.len());
+    assert_eq!(padded.allocated_len(), payload.len() + padding_len);
+    assert_eq!(padded.padding_len(), padding_len);
+    assert_eq!(padded.as_slice(), payload.as_slice());
+    assert_eq!(&padded.as_padded_slice()[..payload.len()], payload.as_slice());
+    assert!(padded.padding_slice().iter().all(|byte| *byte == 0));
+    assert_eq!(padded.slice(padded.len(), 0).unwrap().as_slice(), &[]);
+    assert_eq!(
+        padded
+            .slice(padded.len().saturating_add(1), 0)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    if !padded.is_empty() {
+        let shared = padded.clone();
+        let original = padded.as_slice()[0];
+        padded.make_mut()[0] = original.wrapping_sub(1);
+        assert_eq!(padded.as_slice()[0], original.wrapping_sub(1));
+        assert!(padded.padding_slice().iter().all(|byte| *byte == 0));
+        assert_eq!(shared.as_slice(), payload.as_slice());
+        assert!(shared.padding_slice().iter().all(|byte| *byte == 0));
+    }
+
+    let padded_zeroed = BufferRef::zeroed_with_padding(payload_len, padding_len).unwrap();
+    assert_eq!(padded_zeroed.len(), payload_len);
+    assert_eq!(padded_zeroed.allocated_len(), payload_len + padding_len);
+    assert!(padded_zeroed
+        .as_padded_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert_eq!(
+        BufferRef::zeroed_with_padding(1, usize::MAX)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
 }
 
 fn exercise_errors(cursor: &mut Cursor<'_>) {

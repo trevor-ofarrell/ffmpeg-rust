@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avutil-buffer` now has the first Rust-native AVBufferRef-shaped primitive. `BufferRef` wraps reference-counted byte storage with owned/copy constructors, fallible zeroed allocation, checked immutable slice views, writability reporting, unique mutable access, and copy-on-write mutation; `BufferSlice` preserves immutable shared views without copying. The `avutil_core_models` fuzz harness now build-checks buffer construction, slicing, sharing, copy-on-write isolation, and zeroed allocation invariants. `tests/fate/mappings.txt` also has focused local `avutil` unit-test mappings, and `fate-runner` has a regression test proving current avutil changed-path selections resolve to runnable local smoke commands. This remains local unit/fuzz-build coverage only, not upstream FFmpeg FATE or pinned-oracle parity.
+`avutil-buffer` now has the first Rust-native AVBufferRef-shaped primitive plus explicit zeroed padding support. `BufferRef` wraps reference-counted byte storage with owned/copy constructors, fallible zeroed allocation, optional zeroed padding, separate visible and allocated lengths, checked immutable slice views bounded to visible bytes, writability reporting, unique mutable access, and copy-on-write mutation; `BufferSlice` preserves immutable shared views without copying. The `avutil_core_models` fuzz harness now build-checks buffer construction, slicing, sharing, visible/padded byte boundaries, copy-on-write isolation, zeroed allocation, zeroed padding, and length-overflow rejection invariants. `tests/fate/mappings.txt` also has focused local `avutil` unit-test mappings, and `fate-runner` has a regression test proving current avutil changed-path selections resolve to runnable local smoke commands. This remains local unit/fuzz-build coverage only, not upstream FFmpeg FATE or pinned-oracle parity.
 
 `fate-runner` now has local smoke mappings for current shared `fftools` changed-path selections. `tests/fate/mappings.txt` maps version and hide-banner paths to focused `fftools` unit filters, maps option parsing and basic I/O planning to focused unit filters, maps each current `fftools-ffmpeg-*` ledger component to the shared `cargo test -p fftools --lib ffmpeg` path, and maps each current `fftools-ffprobe-*` ledger component to the shared `cargo test -p fftools --lib ffprobe` path. The `default_mappings_cover_current_fftools_smoke_selections` regression test loads the real ledger and default mapping file and now covers `fftools` lib/bin, ffmpeg, ffprobe, option-parser, I/O-plan, and option-parser fuzz-target selections. These are local smoke checks only; they do not count as upstream FFmpeg FATE media parity.
 
@@ -88,6 +88,21 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all -- --check`
+- `cargo test -p avutil buffer`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+- `git diff --check`
+- `cargo run -p fate-runner -- run --component avutil-buffer`
+- `cargo run -p fate-runner -- run --changed --dry-run`
+- `cargo test -p fate-runner default_mappings_cover_current_avutil_smoke_selections`
+- `cargo run -p fate-runner -- run --changed`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features`
+- `cargo fmt --all`
+- `cargo test -p avutil buffer`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
 - `git diff --check`
 - `cargo run -p fate-runner -- run --component avutil-buffer`
 - `cargo run -p fate-runner -- run --changed --dry-run`
@@ -1306,6 +1321,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- `cargo fmt --all -- --check` initially failed after adding padded buffer helpers because `checked_storage_len` needed rustfmt wrapping; `cargo fmt --all` fixed the formatting.
 - `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings` initially failed on a manual `% 2 == 0` branch selector in the buffer fuzz path; the harness now uses `.is_multiple_of(2)` and the focused fuzz clippy pass succeeds.
 - No remaining failing commands in the latest slice. The previous no-runnable-FATE-mapping gap for current `fftools-option-parser`, `fftools-basic-io`, `fftools-ffmpeg-*`, and `fftools-ffprobe-*` source selections is now covered by local smoke mappings.
 - `cargo clippy --manifest-path fuzz\Cargo.toml --bin avformat_mov -- -D warnings` initially failed after the MOV sample-entry seed slice because of a needless borrow in the packet assertion path and too many arguments in a local MOV fixture helper; `SampleEntrySpec` now groups the sample-entry fixture fields and the fuzz-target clippy pass succeeds.
@@ -1352,11 +1368,11 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-buffer` is the current focus for this slice. It is implemented with unit tests, build-checked fuzz invariants, and local FATE-runner smoke mapping coverage, but remains below `complete` because full AVBuffer/AVBufferRef callback/padding/pool/hardware-frame semantics, pinned-oracle differential tests, upstream FATE coverage, and actual local fuzz execution are still absent.
+`avutil-buffer` is the current focus for this slice. It is implemented with unit tests, visible versus padded byte storage, build-checked fuzz invariants, and local FATE-runner smoke mapping coverage, but remains below `complete` because full AVBuffer/AVBufferRef callback-owned buffers, buffer pools, hardware-frame references, pinned-oracle differential tests, upstream FATE coverage, and actual local fuzz execution are still absent.
 
 ## Next 3 Concrete Actions
 
-1. Extend `avutil-buffer` toward more AVBufferRef behavior, especially explicit padding/allocation helpers or callback-owned buffers, with invalid-input and sharing tests.
+1. Extend `avutil-buffer` toward callback-owned buffers or buffer-pool semantics with invalid-input and sharing tests.
 2. Add pinned-oracle differential coverage for constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
 3. Add upstream FATE sample-backed media mappings for constrained `ffmpeg-rs` null/framecrc/hash-style command paths once samples and the pinned oracle are available.
 
@@ -1370,4 +1386,4 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added `avutil::BufferRef`/`BufferSlice` with checked slicing, sharing, writability, and copy-on-write tests; extended `avutil_core_models` to build-check buffer invariants; added local `avutil` FATE-runner smoke mappings including `avutil-buffer`; and updated the ledger/docs/state to record the measured coverage and remaining AVBufferRef gaps. The mappings execute local unit-test filters only and do not count as upstream FFmpeg FATE parity.
+Latest slice: extended `avutil::BufferRef` with explicit zeroed padding constructors, visible versus allocated byte reporting, padded-slice access, and tests proving visible slices do not expose padding and copy-on-write preserves isolated zeroed padding. `avutil_core_models` now build-checks padded buffer boundaries and length-overflow rejection. The mappings execute local unit-test filters only and do not count as upstream FFmpeg FATE parity.
