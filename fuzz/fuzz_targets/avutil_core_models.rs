@@ -278,13 +278,20 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     ));
     assert!(external_readonly.is_readonly());
     assert!(!external_readonly.is_writable());
+    assert_eq!(external_readonly.opaque_ref::<usize>(), Some(&payload_len));
+    assert!(external_readonly.opaque_ref::<u8>().is_none());
     let external_original = external_readonly.clone();
+    assert_eq!(
+        external_original.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
     external_readonly
         .resize_with_padding(resize_len, resize_padding)
         .unwrap();
     assert!(external_released.lock().unwrap().is_empty());
     assert!(external_readonly.is_writable());
     assert!(!external_readonly.is_readonly());
+    assert!(external_readonly.opaque_ref::<usize>().is_none());
     let external_copied = payload.len().min(resize_len);
     assert_eq!(
         &external_readonly.as_slice()[..external_copied],
@@ -299,6 +306,10 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         .all(|byte| *byte == 0));
     assert_eq!(external_original.as_slice(), payload.as_slice());
     assert!(external_original.is_readonly());
+    assert_eq!(
+        external_original.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
     assert!(std::ptr::eq(
         external_original.as_padded_slice().as_ptr(),
         external_storage.as_ptr()

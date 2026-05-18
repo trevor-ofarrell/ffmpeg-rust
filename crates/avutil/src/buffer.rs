@@ -1,4 +1,5 @@
 use crate::{AvError, AvResult};
+use std::any::Any;
 use std::sync::{Arc, Mutex, Weak};
 
 #[derive(Clone)]
@@ -128,7 +129,7 @@ impl BufferRef {
         on_release: F,
     ) -> Self
     where
-        T: Send + Sync + 'static,
+        T: Any + Send + Sync + 'static,
         F: FnOnce(T) + Send + Sync + 'static,
     {
         let len = data.len();
@@ -147,7 +148,7 @@ impl BufferRef {
         on_release: F,
     ) -> AvResult<Self>
     where
-        T: Send + Sync + 'static,
+        T: Any + Send + Sync + 'static,
         F: FnOnce(T) + Send + Sync + 'static,
     {
         if len > data.len() {
@@ -302,6 +303,10 @@ impl BufferRef {
         self.strong_count() == 1 && !self.is_readonly()
     }
 
+    pub fn opaque_ref<T: 'static>(&self) -> Option<&T> {
+        self.data.opaque_ref::<T>()
+    }
+
     pub fn get_mut(&mut self) -> Option<&mut [u8]> {
         if self.is_readonly() {
             return None;
@@ -398,7 +403,6 @@ struct BufferStorage {
 }
 
 type BufferReleaseCallback = Arc<dyn Fn(Vec<u8>) + Send + Sync + 'static>;
-type OpaqueReleaseCallback = Box<dyn FnOnce() + Send + Sync + 'static>;
 
 enum BufferOwner {
     Pool {
@@ -407,7 +411,32 @@ enum BufferOwner {
         release: PoolReleaseCallback,
     },
     Callback(BufferReleaseCallback),
-    Opaque(OpaqueReleaseCallback),
+    Opaque(Box<dyn OpaqueOwner>),
+}
+
+trait OpaqueOwner: Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+    fn release(self: Box<Self>);
+}
+
+struct TypedOpaqueOwner<T, F> {
+    opaque: T,
+    on_release: F,
+}
+
+impl<T, F> OpaqueOwner for TypedOpaqueOwner<T, F>
+where
+    T: Any + Send + Sync + 'static,
+    F: FnOnce(T) + Send + Sync + 'static,
+{
+    fn as_any(&self) -> &dyn Any {
+        &self.opaque
+    }
+
+    fn release(self: Box<Self>) {
+        let Self { opaque, on_release } = *self;
+        on_release(opaque);
+    }
 }
 
 impl BufferStorage {
@@ -445,12 +474,15 @@ impl BufferStorage {
 
     fn with_opaque_release_readonly<T, F>(bytes: Arc<[u8]>, opaque: T, on_release: F) -> Self
     where
-        T: Send + Sync + 'static,
+        T: Any + Send + Sync + 'static,
         F: FnOnce(T) + Send + Sync + 'static,
     {
         Self {
             bytes: BufferBytes::shared(bytes),
-            owner: Some(BufferOwner::Opaque(Box::new(move || on_release(opaque)))),
+            owner: Some(BufferOwner::Opaque(Box::new(TypedOpaqueOwner {
+                opaque,
+                on_release,
+            }))),
             readonly: true,
         }
     }
@@ -487,6 +519,13 @@ impl BufferStorage {
 
     fn len(&self) -> usize {
         self.bytes.len()
+    }
+
+    fn opaque_ref<T: 'static>(&self) -> Option<&T> {
+        match &self.owner {
+            Some(BufferOwner::Opaque(owner)) => owner.as_any().downcast_ref::<T>(),
+            _ => None,
+        }
     }
 
     fn into_vec(mut self) -> Vec<u8> {
@@ -626,8 +665,8 @@ impl Drop for BufferStorage {
                 let storage = self.bytes.take_vec();
                 on_release(storage);
             }
-            Some(BufferOwner::Opaque(on_release)) => {
-                on_release();
+            Some(BufferOwner::Opaque(owner)) => {
+                owner.release();
             }
             None => {}
         }
@@ -1212,6 +1251,9 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(buffer.opaque_ref::<&'static str>(), Some(&"external-owner"));
+        assert!(buffer.opaque_ref::<usize>().is_none());
+
         buffer.make_mut()[2] = 8;
 
         assert_eq!(*released.lock().unwrap(), vec!["external-owner"]);
@@ -1219,10 +1261,46 @@ mod tests {
         assert_eq!(buffer.padding_slice(), &[0]);
         assert!(!buffer.is_readonly());
         assert!(buffer.is_writable());
+        assert!(buffer.opaque_ref::<&'static str>().is_none());
         assert!(!std::ptr::eq(
             buffer.as_padded_slice().as_ptr(),
             storage.as_ptr()
         ));
+        assert_eq!(Arc::strong_count(&storage), 1);
+    }
+
+    #[test]
+    fn external_readonly_buffer_exposes_typed_opaque_until_original_release() {
+        #[derive(Debug, PartialEq, Eq)]
+        struct Token {
+            id: usize,
+        }
+
+        let storage: Arc<[u8]> = vec![9, 8, 7].into();
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_external_slice_with_opaque_readonly(
+            Arc::clone(&storage),
+            Token { id: 11 },
+            move |opaque| {
+                capture.lock().unwrap().push(opaque.id);
+            },
+        );
+        let shared = buffer.clone();
+
+        assert_eq!(buffer.opaque_ref::<Token>().map(|token| token.id), Some(11));
+        assert!(buffer.opaque_ref::<usize>().is_none());
+        assert_eq!(shared.opaque_ref::<Token>().map(|token| token.id), Some(11));
+
+        buffer.make_mut()[0] = 3;
+
+        assert!(released.lock().unwrap().is_empty());
+        assert!(buffer.opaque_ref::<Token>().is_none());
+        assert_eq!(shared.opaque_ref::<Token>().map(|token| token.id), Some(11));
+        drop(buffer);
+        assert!(released.lock().unwrap().is_empty());
+        drop(shared);
+        assert_eq!(*released.lock().unwrap(), vec![11]);
         assert_eq!(Arc::strong_count(&storage), 1);
     }
 
@@ -1240,6 +1318,8 @@ mod tests {
         );
         let shared = buffer.clone();
 
+        assert_eq!(buffer.opaque_ref::<usize>(), Some(&77));
+        assert_eq!(shared.opaque_ref::<usize>(), Some(&77));
         buffer.resize_with_padding(5, 1).unwrap();
 
         assert!(released.lock().unwrap().is_empty());
@@ -1247,8 +1327,10 @@ mod tests {
         assert_eq!(buffer.padding_slice(), &[0]);
         assert!(!buffer.is_readonly());
         assert!(buffer.is_writable());
+        assert!(buffer.opaque_ref::<usize>().is_none());
         assert_eq!(shared.as_slice(), &[4, 5, 6]);
         assert!(shared.is_readonly());
+        assert_eq!(shared.opaque_ref::<usize>(), Some(&77));
         assert!(std::ptr::eq(
             shared.as_padded_slice().as_ptr(),
             storage.as_ptr()
