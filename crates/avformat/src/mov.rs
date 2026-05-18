@@ -478,6 +478,7 @@ pub struct MovXmlSubtitleSampleEntry {
     namespace: String,
     schema_location: String,
     auxiliary_mime_types: String,
+    bit_rate: Option<MovBitRateBox>,
     child_boxes: Vec<MovSampleEntryChildBox>,
 }
 
@@ -492,6 +493,10 @@ impl MovXmlSubtitleSampleEntry {
 
     pub fn auxiliary_mime_types(&self) -> &str {
         &self.auxiliary_mime_types
+    }
+
+    pub fn bit_rate(&self) -> Option<&MovBitRateBox> {
+        self.bit_rate.as_ref()
     }
 
     pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
@@ -783,6 +788,8 @@ pub struct MovXmlMetadataSampleEntry {
     content_encoding: String,
     namespace: String,
     schema_location: String,
+    bit_rate: Option<MovBitRateBox>,
+    child_boxes: Vec<MovSampleEntryChildBox>,
 }
 
 impl MovXmlMetadataSampleEntry {
@@ -796,6 +803,14 @@ impl MovXmlMetadataSampleEntry {
 
     pub fn schema_location(&self) -> &str {
         &self.schema_location
+    }
+
+    pub fn bit_rate(&self) -> Option<&MovBitRateBox> {
+        self.bit_rate.as_ref()
+    }
+
+    pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.child_boxes
     }
 }
 
@@ -3402,10 +3417,12 @@ fn parse_xml_subtitle_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlSubtitle
         extra_data.len(),
         "MOV/MP4 stpp sample entry children",
     )?;
+    let bit_rate = parse_textual_sample_entry_bit_rate(&child_boxes, "MOV/MP4 stpp")?;
     Ok(MovXmlSubtitleSampleEntry {
         namespace,
         schema_location,
         auxiliary_mime_types,
+        bit_rate,
         child_boxes,
     })
 }
@@ -3878,11 +3895,19 @@ fn parse_xml_metadata_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlMetadata
     let content_encoding = read_null_terminated_utf8(&mut reader, "MOV/MP4 metx content encoding")?;
     let namespace = read_null_terminated_utf8(&mut reader, "MOV/MP4 metx namespace")?;
     let schema_location = read_null_terminated_utf8(&mut reader, "MOV/MP4 metx schema location")?;
-    ensure_box_consumed(&reader, "MOV/MP4 metx sample entry")?;
+    let child_boxes = parse_sample_entry_child_boxes(
+        extra_data,
+        reader.position(),
+        extra_data.len(),
+        "MOV/MP4 metx sample entry children",
+    )?;
+    let bit_rate = parse_textual_sample_entry_bit_rate(&child_boxes, "MOV/MP4 metx")?;
     Ok(MovXmlMetadataSampleEntry {
         content_encoding,
         namespace,
         schema_location,
+        bit_rate,
+        child_boxes,
     })
 }
 
@@ -7374,7 +7399,7 @@ mod tests {
 
     #[test]
     fn parses_xml_subtitle_sample_entry_codec_parameters() {
-        let btrt = box_(*b"btrt", &[0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0]);
+        let btrt = box_(*BTRT_ID, &bit_rate_box_payload(65_536, 131_072, 196_608));
         let extra_data = stpp_sample_entry_extra_data(
             "http://www.w3.org/ns/ttml",
             "http://www.w3.org/ns/ttml/profile/imsc1/text",
@@ -7399,6 +7424,10 @@ mod tests {
             "http://www.w3.org/ns/ttml/profile/imsc1/text"
         );
         assert_eq!(xml.auxiliary_mime_types(), "image/png");
+        let bit_rate = xml.bit_rate().unwrap();
+        assert_eq!(bit_rate.buffer_size_db(), 65_536);
+        assert_eq!(bit_rate.max_bitrate(), 131_072);
+        assert_eq!(bit_rate.avg_bitrate(), 196_608);
         assert_eq!(xml.child_boxes().len(), 1);
         assert_eq!(xml.child_boxes()[0].box_type(), "btrt");
         assert_eq!(
@@ -7593,7 +7622,9 @@ mod tests {
 
     #[test]
     fn parses_metadata_sample_entry_codec_parameters() {
-        let metx_extra = xml_metadata_sample_entry_extra_data("utf-8", "urn:rust", "rust.xsd");
+        let metx_btrt = box_(*BTRT_ID, &bit_rate_box_payload(1_024, 8_000, 2_000));
+        let metx_extra =
+            xml_metadata_sample_entry_extra_data("utf-8", "urn:rust", "rust.xsd", &metx_btrt);
         let bytes = mp4_with_sample_description_entry(b"metx", 1, &metx_extra);
         let demuxer = MovDemuxer::open(&bytes).unwrap();
         let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
@@ -7604,6 +7635,12 @@ mod tests {
         assert_eq!(xml.content_encoding(), "utf-8");
         assert_eq!(xml.namespace(), "urn:rust");
         assert_eq!(xml.schema_location(), "rust.xsd");
+        let bit_rate = xml.bit_rate().unwrap();
+        assert_eq!(bit_rate.buffer_size_db(), 1_024);
+        assert_eq!(bit_rate.max_bitrate(), 8_000);
+        assert_eq!(bit_rate.avg_bitrate(), 2_000);
+        assert_eq!(xml.child_boxes().len(), 1);
+        assert_eq!(xml.child_boxes()[0].box_type(), "btrt");
         assert!(data.text_metadata().is_none());
         assert!(data.uri_metadata().is_none());
 
@@ -8704,6 +8741,17 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
 
+        let duplicate_btrt = [
+            box_(*BTRT_ID, &bit_rate_box_payload(1, 2, 3)),
+            box_(*BTRT_ID, &bit_rate_box_payload(4, 5, 6)),
+        ]
+        .concat();
+        let extra_data =
+            stpp_sample_entry_extra_data("urn:ttml", "schema", "image/png", &duplicate_btrt);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"stpp", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(
             b"sbtt",
             1,
@@ -8820,6 +8868,28 @@ mod tests {
             b"utf-8\0urn",
         ))
         .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_metx_btrt = box_with_declared_size(*BTRT_ID, 12, b"\0");
+        let extra_data =
+            xml_metadata_sample_entry_extra_data("utf-8", "urn:rust", "rust.xsd", &bad_metx_btrt);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"metx", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let duplicate_metx_btrt = [
+            box_(*BTRT_ID, &bit_rate_box_payload(1, 2, 3)),
+            box_(*BTRT_ID, &bit_rate_box_payload(4, 5, 6)),
+        ]
+        .concat();
+        let extra_data = xml_metadata_sample_entry_extra_data(
+            "utf-8",
+            "urn:rust",
+            "rust.xsd",
+            &duplicate_metx_btrt,
+        );
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"metx", 1, &extra_data))
+            .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
 
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(
@@ -10448,6 +10518,7 @@ mod tests {
         content_encoding: &str,
         namespace: &str,
         schema_location: &str,
+        child_boxes: &[u8],
     ) -> Vec<u8> {
         [
             content_encoding.as_bytes(),
@@ -10456,6 +10527,7 @@ mod tests {
             b"\0",
             schema_location.as_bytes(),
             b"\0",
+            child_boxes,
         ]
         .concat()
     }
