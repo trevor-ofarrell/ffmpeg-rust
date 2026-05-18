@@ -727,6 +727,54 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         assert_eq!(stored.padding_slice(), &[0]);
     }
 
+    let video_plane_shapes = expected_video_plane_shapes(pixel_format, width, height);
+    let strided_line_sizes = video_plane_shapes
+        .iter()
+        .map(|(row_bytes, _)| row_bytes + 1)
+        .collect::<Vec<_>>();
+    let strided_planes = planes
+        .iter()
+        .zip(&video_plane_shapes)
+        .zip(&strided_line_sizes)
+        .map(|((plane, &(row_bytes, rows)), &line_size)| {
+            let mut strided = Vec::with_capacity(line_size * rows);
+            for row in 0..rows {
+                let start = row * row_bytes;
+                let end = start + row_bytes;
+                strided.extend_from_slice(&plane[start..end]);
+                strided.resize(strided.len() + (line_size - row_bytes), 0xEE);
+            }
+            strided
+        })
+        .collect::<Vec<_>>();
+    let strided_video = VideoFrame::new_with_line_sizes(
+        width,
+        height,
+        pixel_format,
+        strided_planes.clone(),
+        strided_line_sizes.clone(),
+    )
+    .unwrap();
+    assert_eq!(strided_video.line_sizes(), strided_line_sizes.as_slice());
+    assert_eq!(strided_video.planes(), planes.as_slice());
+    for (stored, strided) in strided_video.plane_buffers().iter().zip(&strided_planes) {
+        assert_eq!(stored.as_slice(), strided.as_slice());
+    }
+    let mut undersized_line_sizes = strided_line_sizes.clone();
+    undersized_line_sizes[0] = video_plane_shapes[0].0.saturating_sub(1);
+    assert_eq!(
+        VideoFrame::new_with_line_sizes(
+            width,
+            height,
+            pixel_format,
+            strided_planes.clone(),
+            undersized_line_sizes
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidArgument
+    );
+
     let mut frame = Frame::video(video);
     let pts = timestamp_from(cursor.next());
     frame.set_pts(pts);
@@ -1263,6 +1311,23 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         PixelFormat::Rgb24 => vec![width * 3],
         PixelFormat::Rgba => vec![width * 4],
         PixelFormat::Yuv420p => vec![width, width / 2, width / 2],
+    }
+}
+
+fn expected_video_plane_shapes(
+    pixel_format: PixelFormat,
+    width: usize,
+    height: usize,
+) -> Vec<(usize, usize)> {
+    match pixel_format {
+        PixelFormat::Gray8 => vec![(width, height)],
+        PixelFormat::Rgb24 => vec![(width * 3, height)],
+        PixelFormat::Rgba => vec![(width * 4, height)],
+        PixelFormat::Yuv420p => vec![
+            (width, height),
+            (width / 2, height / 2),
+            (width / 2, height / 2),
+        ],
     }
 }
 

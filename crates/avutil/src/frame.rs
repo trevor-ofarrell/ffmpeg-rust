@@ -496,20 +496,53 @@ impl VideoFrame {
         pixel_format: PixelFormat,
         plane_buffers: Vec<BufferRef>,
     ) -> AvResult<Self> {
+        let line_sizes = video_line_sizes(pixel_format, width, height)?;
+        Self::new_with_buffer_refs_and_line_sizes(
+            width,
+            height,
+            pixel_format,
+            plane_buffers,
+            line_sizes,
+        )
+    }
+
+    pub fn new_with_line_sizes(
+        width: usize,
+        height: usize,
+        pixel_format: PixelFormat,
+        planes: Vec<Vec<u8>>,
+        line_sizes: Vec<usize>,
+    ) -> AvResult<Self> {
+        let plane_buffers = planes.into_iter().map(BufferRef::from_vec).collect();
+        Self::new_with_buffer_refs_and_line_sizes(
+            width,
+            height,
+            pixel_format,
+            plane_buffers,
+            line_sizes,
+        )
+    }
+
+    pub fn new_with_buffer_refs_and_line_sizes(
+        width: usize,
+        height: usize,
+        pixel_format: PixelFormat,
+        plane_buffers: Vec<BufferRef>,
+        line_sizes: Vec<usize>,
+    ) -> AvResult<Self> {
         if width == 0 || height == 0 {
             return Err(AvError::invalid_argument(
                 "video frame dimensions must be non-zero",
             ));
         }
 
-        let expected_plane_sizes = pixel_format.plane_sizes(width, height)?;
-        let planes = snapshot_plane_buffers(
+        let plane_shapes = video_plane_shapes(pixel_format, width, height)?;
+        let planes = snapshot_video_plane_buffers(
             &plane_buffers,
-            &expected_plane_sizes,
+            &plane_shapes,
+            &line_sizes,
             pixel_format.name(),
-            "video",
         )?;
-        let line_sizes = video_line_sizes(pixel_format, width, height)?;
 
         Ok(Self {
             width,
@@ -742,19 +775,120 @@ fn snapshot_plane_buffers(
     Ok(planes)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VideoPlaneShape {
+    row_bytes: usize,
+    rows: usize,
+}
+
+fn snapshot_video_plane_buffers(
+    plane_buffers: &[BufferRef],
+    plane_shapes: &[VideoPlaneShape],
+    line_sizes: &[usize],
+    format_name: &str,
+) -> AvResult<Vec<Vec<u8>>> {
+    if plane_buffers.len() != plane_shapes.len() {
+        return Err(AvError::invalid_argument(format!(
+            "{format_name} video frame expects {} planes, got {}",
+            plane_shapes.len(),
+            plane_buffers.len()
+        )));
+    }
+    if line_sizes.len() != plane_shapes.len() {
+        return Err(AvError::invalid_argument(format!(
+            "{format_name} video frame expects {} line sizes, got {}",
+            plane_shapes.len(),
+            line_sizes.len()
+        )));
+    }
+
+    let mut planes = Vec::with_capacity(plane_buffers.len());
+    for (index, ((plane, shape), line_size)) in plane_buffers
+        .iter()
+        .zip(plane_shapes)
+        .zip(line_sizes)
+        .enumerate()
+    {
+        if *line_size < shape.row_bytes {
+            return Err(AvError::invalid_argument(format!(
+                "{format_name} video frame plane {index} line size {line_size} is smaller than visible row bytes {}",
+                shape.row_bytes
+            )));
+        }
+        let expected_storage = line_size.checked_mul(shape.rows).ok_or_else(|| {
+            AvError::invalid_argument(format!(
+                "{format_name} video frame plane {index} line size overflow"
+            ))
+        })?;
+        if plane.len() != expected_storage {
+            return Err(AvError::invalid_data(format!(
+                "{format_name} video frame plane {index} has {} bytes, expected {expected_storage}",
+                plane.len()
+            )));
+        }
+
+        let mut visible =
+            Vec::with_capacity(shape.row_bytes.checked_mul(shape.rows).ok_or_else(|| {
+                AvError::invalid_argument(format!(
+                    "{format_name} video frame plane {index} visible size overflow"
+                ))
+            })?);
+        for row in 0..shape.rows {
+            let start = row * line_size;
+            let end = start + shape.row_bytes;
+            visible.extend_from_slice(&plane.as_slice()[start..end]);
+        }
+        planes.push(visible);
+    }
+    Ok(planes)
+}
+
+fn video_plane_shapes(
+    pixel_format: PixelFormat,
+    width: usize,
+    height: usize,
+) -> AvResult<Vec<VideoPlaneShape>> {
+    pixel_format.plane_sizes(width, height)?;
+
+    match pixel_format {
+        PixelFormat::Gray8 => Ok(vec![VideoPlaneShape {
+            row_bytes: width,
+            rows: height,
+        }]),
+        PixelFormat::Rgb24 => Ok(vec![VideoPlaneShape {
+            row_bytes: checked_mul(width, 3, "rgb24 video frame line size")?,
+            rows: height,
+        }]),
+        PixelFormat::Rgba => Ok(vec![VideoPlaneShape {
+            row_bytes: checked_mul(width, 4, "rgba video frame line size")?,
+            rows: height,
+        }]),
+        PixelFormat::Yuv420p => Ok(vec![
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height,
+            },
+            VideoPlaneShape {
+                row_bytes: width / 2,
+                rows: height / 2,
+            },
+            VideoPlaneShape {
+                row_bytes: width / 2,
+                rows: height / 2,
+            },
+        ]),
+    }
+}
+
 fn video_line_sizes(
     pixel_format: PixelFormat,
     width: usize,
     height: usize,
 ) -> AvResult<Vec<usize>> {
-    pixel_format.plane_sizes(width, height)?;
-
-    match pixel_format {
-        PixelFormat::Gray8 => Ok(vec![width]),
-        PixelFormat::Rgb24 => Ok(vec![checked_mul(width, 3, "rgb24 video frame line size")?]),
-        PixelFormat::Rgba => Ok(vec![checked_mul(width, 4, "rgba video frame line size")?]),
-        PixelFormat::Yuv420p => Ok(vec![width, width / 2, width / 2]),
-    }
+    Ok(video_plane_shapes(pixel_format, width, height)?
+        .into_iter()
+        .map(|shape| shape.row_bytes)
+        .collect())
 }
 
 fn checked_mul(value: usize, factor: usize, context: &'static str) -> AvResult<usize> {
@@ -860,6 +994,82 @@ mod tests {
             .unwrap_err()
             .kind(),
             AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn video_frame_accepts_strided_planes_and_packs_visible_rows() {
+        let gray = VideoFrame::new_with_line_sizes(
+            3,
+            2,
+            PixelFormat::Gray8,
+            vec![vec![1, 2, 3, 99, 99, 4, 5, 6, 88, 88]],
+            vec![5],
+        )
+        .unwrap();
+        assert_eq!(gray.line_sizes(), &[5]);
+        assert_eq!(gray.planes(), &[vec![1, 2, 3, 4, 5, 6]]);
+        assert_eq!(
+            gray.plane_buffers()[0].as_slice(),
+            &[1, 2, 3, 99, 99, 4, 5, 6, 88, 88]
+        );
+
+        let yuv = VideoFrame::new_with_line_sizes(
+            4,
+            2,
+            PixelFormat::Yuv420p,
+            vec![
+                vec![0, 1, 2, 3, 90, 91, 4, 5, 6, 7, 92, 93],
+                vec![10, 11, 94],
+                vec![20, 21, 95],
+            ],
+            vec![6, 3, 3],
+        )
+        .unwrap();
+        assert_eq!(yuv.line_sizes(), &[6, 3, 3]);
+        assert_eq!(
+            yuv.planes(),
+            &[vec![0, 1, 2, 3, 4, 5, 6, 7], vec![10, 11], vec![20, 21]]
+        );
+    }
+
+    #[test]
+    fn video_frame_rejects_invalid_custom_line_sizes() {
+        assert_eq!(
+            VideoFrame::new_with_line_sizes(
+                3,
+                2,
+                PixelFormat::Gray8,
+                vec![vec![0; 6]],
+                Vec::new(),
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            VideoFrame::new_with_line_sizes(3, 2, PixelFormat::Gray8, vec![vec![0; 4]], vec![2],)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            VideoFrame::new_with_line_sizes(3, 2, PixelFormat::Gray8, vec![vec![0; 9]], vec![5],)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            VideoFrame::new_with_line_sizes(
+                3,
+                2,
+                PixelFormat::Yuv420p,
+                vec![vec![0; 6], vec![0; 1], vec![0; 1]],
+                vec![3, 1, 1],
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
         );
     }
 
