@@ -3426,6 +3426,246 @@ impl<'a> FrameFilmGrainParams<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDetectionBbox<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameDetectionBbox<'a> {
+    pub const LABEL_LEN: usize = 64;
+    pub const MAX_CLASSIFICATIONS: usize = 4;
+    pub const DATA_LEN: usize = 380;
+    const X_OFFSET: usize = 0;
+    const Y_OFFSET: usize = 4;
+    const WIDTH_OFFSET: usize = 8;
+    const HEIGHT_OFFSET: usize = 12;
+    const DETECT_LABEL_OFFSET: usize = 16;
+    const DETECT_CONFIDENCE_OFFSET: usize = Self::DETECT_LABEL_OFFSET + Self::LABEL_LEN;
+    const CLASSIFY_COUNT_OFFSET: usize = Self::DETECT_CONFIDENCE_OFFSET + 8;
+    const CLASSIFY_LABELS_OFFSET: usize = Self::CLASSIFY_COUNT_OFFSET + 4;
+    const CLASSIFY_CONFIDENCES_OFFSET: usize =
+        Self::CLASSIFY_LABELS_OFFSET + Self::MAX_CLASSIFICATIONS * Self::LABEL_LEN;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "detection bounding box record requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let bbox = Self { data };
+        if bbox.classify_count() > Self::MAX_CLASSIFICATIONS {
+            return Err(AvError::invalid_data(format!(
+                "detection bounding box classification count {} exceeds {}",
+                bbox.classify_count(),
+                Self::MAX_CLASSIFICATIONS
+            )));
+        }
+
+        Ok(bbox)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn x(self) -> i32 {
+        self.read_i32(Self::X_OFFSET)
+    }
+
+    pub fn y(self) -> i32 {
+        self.read_i32(Self::Y_OFFSET)
+    }
+
+    pub fn width(self) -> i32 {
+        self.read_i32(Self::WIDTH_OFFSET)
+    }
+
+    pub fn height(self) -> i32 {
+        self.read_i32(Self::HEIGHT_OFFSET)
+    }
+
+    pub fn detect_label_raw(self) -> &'a [u8] {
+        &self.data[Self::DETECT_LABEL_OFFSET..Self::DETECT_LABEL_OFFSET + Self::LABEL_LEN]
+    }
+
+    pub fn detect_label(self) -> &'a [u8] {
+        fixed_c_string_bytes(self.detect_label_raw())
+    }
+
+    pub fn detect_confidence(self) -> Rational {
+        self.read_rational(Self::DETECT_CONFIDENCE_OFFSET)
+    }
+
+    pub fn classify_count(self) -> usize {
+        self.read_u32(Self::CLASSIFY_COUNT_OFFSET) as usize
+    }
+
+    pub fn classify_label_raw(self, index: usize) -> Option<&'a [u8]> {
+        if index >= Self::MAX_CLASSIFICATIONS {
+            return None;
+        }
+        let offset = Self::CLASSIFY_LABELS_OFFSET + index * Self::LABEL_LEN;
+        Some(&self.data[offset..offset + Self::LABEL_LEN])
+    }
+
+    pub fn classify_label(self, index: usize) -> Option<&'a [u8]> {
+        if index >= self.classify_count() {
+            return None;
+        }
+        self.classify_label_raw(index).map(fixed_c_string_bytes)
+    }
+
+    pub fn classify_confidence(self, index: usize) -> Option<Rational> {
+        if index >= self.classify_count() {
+            return None;
+        }
+        Some(self.read_rational(Self::CLASSIFY_CONFIDENCES_OFFSET + index * 8))
+    }
+
+    fn read_i32(self, offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&self.data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+
+    fn read_u32(self, offset: usize) -> u32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&self.data[offset..offset + 4]);
+        u32::from_ne_bytes(raw)
+    }
+
+    fn read_rational(self, offset: usize) -> Rational {
+        Rational::from_raw(self.read_i32(offset), self.read_i32(offset + 4))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDetectionBboxes<'a> {
+    data: &'a [u8],
+    nb_bboxes: usize,
+}
+
+impl<'a> FrameDetectionBboxes<'a> {
+    pub const SOURCE_LEN: usize = 256;
+    pub const SIZE_T_LEN: usize = core::mem::size_of::<usize>();
+    const NB_BBOXES_OFFSET: usize = Self::SOURCE_LEN;
+    const BBOXES_OFFSET_OFFSET: usize =
+        Self::align_up(Self::NB_BBOXES_OFFSET + 4, core::mem::align_of::<usize>());
+    const BBOX_SIZE_OFFSET: usize = Self::BBOXES_OFFSET_OFFSET + Self::SIZE_T_LEN;
+    pub const BBOXES_OFFSET: usize = Self::align_up(
+        Self::BBOX_SIZE_OFFSET + Self::SIZE_T_LEN,
+        core::mem::align_of::<usize>(),
+    );
+    pub const HEADER_LEN: usize = Self::BBOXES_OFFSET;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() < Self::HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "detection bounding boxes side data requires at least {} header bytes, got {}",
+                Self::HEADER_LEN,
+                data.len()
+            )));
+        }
+
+        let nb_bboxes = Self::read_u32(data, Self::NB_BBOXES_OFFSET) as usize;
+        let bboxes_offset = Self::read_usize(data, Self::BBOXES_OFFSET_OFFSET);
+        let bbox_size = Self::read_usize(data, Self::BBOX_SIZE_OFFSET);
+        if bboxes_offset != Self::BBOXES_OFFSET {
+            return Err(AvError::invalid_data(format!(
+                "detection bounding boxes offset {bboxes_offset} does not match native offset {}",
+                Self::BBOXES_OFFSET
+            )));
+        }
+        if bbox_size != FrameDetectionBbox::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "detection bounding box size {bbox_size} does not match native size {}",
+                FrameDetectionBbox::DATA_LEN
+            )));
+        }
+
+        let bbox_bytes = nb_bboxes
+            .checked_mul(bbox_size)
+            .ok_or_else(|| AvError::invalid_data("detection bounding box array length overflow"))?;
+        let expected_len = bboxes_offset.checked_add(bbox_bytes).ok_or_else(|| {
+            AvError::invalid_data("detection bounding boxes payload length overflow")
+        })?;
+        if data.len() != expected_len {
+            return Err(AvError::invalid_data(format!(
+                "detection bounding boxes side data expected {expected_len} bytes for {nb_bboxes} boxes, got {}",
+                data.len()
+            )));
+        }
+
+        let bboxes = Self { data, nb_bboxes };
+        for index in 0..nb_bboxes {
+            bboxes.bbox(index).expect("validated bbox index")?;
+        }
+
+        Ok(bboxes)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn source_raw(self) -> &'a [u8] {
+        &self.data[..Self::SOURCE_LEN]
+    }
+
+    pub fn source(self) -> &'a [u8] {
+        fixed_c_string_bytes(self.source_raw())
+    }
+
+    pub const fn nb_bboxes(self) -> usize {
+        self.nb_bboxes
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.nb_bboxes == 0
+    }
+
+    pub fn bbox(self, index: usize) -> Option<AvResult<FrameDetectionBbox<'a>>> {
+        if index >= self.nb_bboxes {
+            return None;
+        }
+        let offset = Self::BBOXES_OFFSET + index * FrameDetectionBbox::DATA_LEN;
+        Some(FrameDetectionBbox::parse(
+            &self.data[offset..offset + FrameDetectionBbox::DATA_LEN],
+        ))
+    }
+
+    pub fn bboxes(self) -> impl Iterator<Item = AvResult<FrameDetectionBbox<'a>>> {
+        (0..self.nb_bboxes).map(move |index| {
+            self.bbox(index)
+                .expect("iterator only visits validated bbox indexes")
+        })
+    }
+
+    const fn align_up(value: usize, align: usize) -> usize {
+        let remainder = value % align;
+        if remainder == 0 {
+            value
+        } else {
+            value + align - remainder
+        }
+    }
+
+    fn read_u32(data: &[u8], offset: usize) -> u32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        u32::from_ne_bytes(raw)
+    }
+
+    fn read_usize(data: &[u8], offset: usize) -> usize {
+        let mut raw = [0; Self::SIZE_T_LEN];
+        raw.copy_from_slice(&data[offset..offset + Self::SIZE_T_LEN]);
+        usize::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameSeiUnregistered<'a> {
     uuid: [u8; 16],
     user_data: &'a [u8],
@@ -3901,6 +4141,12 @@ impl FrameSideData {
         Ok(side_data)
     }
 
+    pub fn new_detection_bboxes(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(FrameSideDataKind::DetectionBboxes, data)?;
+        FrameDetectionBboxes::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
         let total_len = FrameSeiUnregistered::UUID_LEN
             .checked_add(user_data.len())
@@ -4103,6 +4349,14 @@ impl FrameSideData {
         FrameFilmGrainParams::parse(self.data()).map(Some)
     }
 
+    pub fn detection_bboxes(&self) -> AvResult<Option<FrameDetectionBboxes<'_>>> {
+        if self.kind != FrameSideDataKind::DetectionBboxes {
+            return Ok(None);
+        }
+
+        FrameDetectionBboxes::parse(self.data()).map(Some)
+    }
+
     pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
         if self.kind != FrameSideDataKind::SeiUnregistered {
             return Ok(None);
@@ -4166,6 +4420,13 @@ fn normalize_frame_side_data_name(name: &str) -> String {
             _ => None,
         })
         .collect()
+}
+
+fn fixed_c_string_bytes(bytes: &[u8]) -> &[u8] {
+    bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .map_or(bytes, |end| &bytes[..end])
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5261,6 +5522,95 @@ mod tests {
             -14,
         );
         data
+    }
+
+    fn minimal_detection_bboxes() -> Vec<u8> {
+        let mut data = vec![0; FrameDetectionBboxes::HEADER_LEN + 2 * FrameDetectionBbox::DATA_LEN];
+        write_fixed_bytes(
+            &mut data,
+            0,
+            FrameDetectionBboxes::SOURCE_LEN,
+            b"rust-detector",
+        );
+        write_ne_u32(&mut data, FrameDetectionBboxes::NB_BBOXES_OFFSET, 2);
+        write_ne_usize(
+            &mut data,
+            FrameDetectionBboxes::BBOXES_OFFSET_OFFSET,
+            FrameDetectionBboxes::BBOXES_OFFSET,
+        );
+        write_ne_usize(
+            &mut data,
+            FrameDetectionBboxes::BBOX_SIZE_OFFSET,
+            FrameDetectionBbox::DATA_LEN,
+        );
+
+        let first = FrameDetectionBboxes::BBOXES_OFFSET;
+        write_ne_i32(&mut data, first + FrameDetectionBbox::X_OFFSET, 10);
+        write_ne_i32(&mut data, first + FrameDetectionBbox::Y_OFFSET, 20);
+        write_ne_i32(&mut data, first + FrameDetectionBbox::WIDTH_OFFSET, 30);
+        write_ne_i32(&mut data, first + FrameDetectionBbox::HEIGHT_OFFSET, 40);
+        write_fixed_bytes(
+            &mut data,
+            first + FrameDetectionBbox::DETECT_LABEL_OFFSET,
+            FrameDetectionBbox::LABEL_LEN,
+            b"person",
+        );
+        write_ne_rational(
+            &mut data,
+            first + FrameDetectionBbox::DETECT_CONFIDENCE_OFFSET,
+            Rational::from_raw(9, 10),
+        );
+        write_ne_u32(
+            &mut data,
+            first + FrameDetectionBbox::CLASSIFY_COUNT_OFFSET,
+            2,
+        );
+        write_fixed_bytes(
+            &mut data,
+            first + FrameDetectionBbox::CLASSIFY_LABELS_OFFSET,
+            FrameDetectionBbox::LABEL_LEN,
+            b"adult",
+        );
+        write_fixed_bytes(
+            &mut data,
+            first + FrameDetectionBbox::CLASSIFY_LABELS_OFFSET + FrameDetectionBbox::LABEL_LEN,
+            FrameDetectionBbox::LABEL_LEN,
+            b"standing",
+        );
+        write_ne_rational(
+            &mut data,
+            first + FrameDetectionBbox::CLASSIFY_CONFIDENCES_OFFSET,
+            Rational::from_raw(3, 4),
+        );
+        write_ne_rational(
+            &mut data,
+            first + FrameDetectionBbox::CLASSIFY_CONFIDENCES_OFFSET + 8,
+            Rational::from_raw(5, 6),
+        );
+
+        let second = first + FrameDetectionBbox::DATA_LEN;
+        write_ne_i32(&mut data, second + FrameDetectionBbox::X_OFFSET, 64);
+        write_ne_i32(&mut data, second + FrameDetectionBbox::Y_OFFSET, 72);
+        write_ne_i32(&mut data, second + FrameDetectionBbox::WIDTH_OFFSET, 16);
+        write_ne_i32(&mut data, second + FrameDetectionBbox::HEIGHT_OFFSET, 18);
+        write_fixed_bytes(
+            &mut data,
+            second + FrameDetectionBbox::DETECT_LABEL_OFFSET,
+            FrameDetectionBbox::LABEL_LEN,
+            b"ball",
+        );
+        write_ne_rational(
+            &mut data,
+            second + FrameDetectionBbox::DETECT_CONFIDENCE_OFFSET,
+            Rational::from_raw(7, 8),
+        );
+
+        data
+    }
+
+    fn write_fixed_bytes(data: &mut [u8], offset: usize, len: usize, value: &[u8]) {
+        assert!(value.len() < len);
+        data[offset..offset + value.len()].copy_from_slice(value);
     }
 
     fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {
@@ -8816,6 +9166,167 @@ mod tests {
         let display_matrix =
             FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, Vec::new()).unwrap();
         assert_eq!(display_matrix.film_grain_params().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_detection_bboxes_payload() {
+        let payload = minimal_detection_bboxes();
+        let parsed = FrameDetectionBboxes::parse(&payload).unwrap();
+
+        assert_eq!(
+            FrameDetectionBboxes::HEADER_LEN,
+            if core::mem::size_of::<usize>() == 8 {
+                280
+            } else {
+                268
+            }
+        );
+        assert_eq!(FrameDetectionBbox::DATA_LEN, 380);
+        assert_eq!(parsed.data(), payload.as_slice());
+        assert_eq!(parsed.source(), b"rust-detector");
+        assert_eq!(parsed.source_raw().len(), FrameDetectionBboxes::SOURCE_LEN);
+        assert_eq!(parsed.nb_bboxes(), 2);
+        assert!(!parsed.is_empty());
+        assert_eq!(parsed.bboxes().count(), 2);
+
+        let first = parsed.bbox(0).unwrap().unwrap();
+        assert_eq!(
+            first.data(),
+            &payload[FrameDetectionBboxes::BBOXES_OFFSET..][..380]
+        );
+        assert_eq!(first.x(), 10);
+        assert_eq!(first.y(), 20);
+        assert_eq!(first.width(), 30);
+        assert_eq!(first.height(), 40);
+        assert_eq!(first.detect_label(), b"person");
+        assert_eq!(
+            first.detect_label_raw().len(),
+            FrameDetectionBbox::LABEL_LEN
+        );
+        assert_eq!(first.detect_confidence(), Rational::from_raw(9, 10));
+        assert_eq!(first.classify_count(), 2);
+        assert_eq!(first.classify_label(0), Some(&b"adult"[..]));
+        assert_eq!(first.classify_label(1), Some(&b"standing"[..]));
+        assert_eq!(first.classify_label(2), None);
+        assert_eq!(
+            first.classify_label_raw(FrameDetectionBbox::MAX_CLASSIFICATIONS),
+            None
+        );
+        assert_eq!(first.classify_confidence(0), Some(Rational::from_raw(3, 4)));
+        assert_eq!(first.classify_confidence(1), Some(Rational::from_raw(5, 6)));
+        assert_eq!(first.classify_confidence(2), None);
+
+        let second = parsed.bbox(1).unwrap().unwrap();
+        assert_eq!(second.x(), 64);
+        assert_eq!(second.y(), 72);
+        assert_eq!(second.width(), 16);
+        assert_eq!(second.height(), 18);
+        assert_eq!(second.detect_label(), b"ball");
+        assert_eq!(second.detect_confidence(), Rational::from_raw(7, 8));
+        assert_eq!(second.classify_count(), 0);
+        assert!(parsed.bbox(2).is_none());
+
+        let side_data = FrameSideData::new_detection_bboxes(payload.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::DetectionBboxes);
+        assert_eq!(side_data.data(), payload.as_slice());
+        assert_eq!(
+            side_data.detection_bboxes().unwrap().unwrap().source(),
+            b"rust-detector"
+        );
+
+        let zero_payload = {
+            let mut data = vec![0; FrameDetectionBboxes::HEADER_LEN];
+            write_ne_u32(&mut data, FrameDetectionBboxes::NB_BBOXES_OFFSET, 0);
+            write_ne_usize(
+                &mut data,
+                FrameDetectionBboxes::BBOXES_OFFSET_OFFSET,
+                FrameDetectionBboxes::BBOXES_OFFSET,
+            );
+            write_ne_usize(
+                &mut data,
+                FrameDetectionBboxes::BBOX_SIZE_OFFSET,
+                FrameDetectionBbox::DATA_LEN,
+            );
+            data
+        };
+        let zero = FrameDetectionBboxes::parse(&zero_payload).unwrap();
+        assert!(zero.is_empty());
+        assert_eq!(zero.nb_bboxes(), 0);
+
+        let display_matrix =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, payload).unwrap();
+        assert_eq!(display_matrix.detection_bboxes().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_detection_bboxes_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; FrameDetectionBboxes::HEADER_LEN - 1],
+            {
+                let mut data = minimal_detection_bboxes();
+                data.pop();
+                data
+            },
+            {
+                let mut data = minimal_detection_bboxes();
+                data.push(0);
+                data
+            },
+        ] {
+            assert_eq!(
+                FrameDetectionBboxes::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::DetectionBboxes, data).unwrap();
+            assert_eq!(
+                side_data.detection_bboxes().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for (offset, value) in [
+            (
+                FrameDetectionBboxes::BBOXES_OFFSET_OFFSET,
+                FrameDetectionBboxes::BBOXES_OFFSET + 4,
+            ),
+            (
+                FrameDetectionBboxes::BBOX_SIZE_OFFSET,
+                FrameDetectionBbox::DATA_LEN + 4,
+            ),
+        ] {
+            let mut bad = minimal_detection_bboxes();
+            write_ne_usize(&mut bad, offset, value);
+            assert_eq!(
+                FrameSideData::new_detection_bboxes(bad).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let mut bad_count = minimal_detection_bboxes();
+        write_ne_u32(&mut bad_count, FrameDetectionBboxes::NB_BBOXES_OFFSET, 3);
+        assert_eq!(
+            FrameDetectionBboxes::parse(&bad_count).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_classify_count = minimal_detection_bboxes();
+        write_ne_u32(
+            &mut bad_classify_count,
+            FrameDetectionBboxes::BBOXES_OFFSET + FrameDetectionBbox::CLASSIFY_COUNT_OFFSET,
+            FrameDetectionBbox::MAX_CLASSIFICATIONS as u32 + 1,
+        );
+        assert_eq!(
+            FrameDetectionBboxes::parse(&bad_classify_count)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let non_detection =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
+        assert_eq!(non_detection.detection_bboxes().unwrap(), None);
     }
 
     #[test]

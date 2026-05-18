@@ -5,17 +5,17 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
     FrameActiveFormatDescription, FrameAudioServiceType, FrameContentLightMetadata, FrameData,
-    FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
-    FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
-    FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
-    FrameHdrPlusOverlapProcessOption, FrameIccProfile, FrameMasteringDisplayMetadata,
-    FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors, FrameRegionOfInterest,
-    FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered,
-    FrameSideData, FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples,
-    FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection, FrameVideoBlockParams,
-    FrameVideoEncParams, FrameVideoEncParamsType, Md5, Packet, PacketFlags, PixelFormat, Rational,
-    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
-    VideoFrame,
+    FrameDetectionBbox, FrameDetectionBboxes, FrameDisplayMatrix, FrameDownmixInfo,
+    FrameDownmixType, FrameDynamicHdrPlus, FrameFilmGrainAomParams, FrameFilmGrainH274Params,
+    FrameFilmGrainParams, FrameFilmGrainParamsType, FrameGopTimecode,
+    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameIccProfile,
+    FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
+    FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode,
+    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
+    FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection,
+    FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType, Md5, Packet, PacketFlags,
+    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384,
+    Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1532,6 +1532,36 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(frame_side_data_kind, FrameSideDataKind::FilmGrainParams);
             assert!(film_grain_params_payload_invalid(&frame_side_data_payload));
+        }
+    }
+    match frame.side_data()[0].detection_bboxes() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DetectionBboxes);
+            assert_eq!(value.data(), frame_side_data_payload.as_slice());
+            assert!(!detection_bboxes_payload_invalid(&frame_side_data_payload));
+            assert_eq!(
+                frame_side_data_payload.len(),
+                FrameDetectionBboxes::HEADER_LEN + value.nb_bboxes() * FrameDetectionBbox::DATA_LEN
+            );
+            for bbox in value.bboxes() {
+                let bbox = bbox.unwrap();
+                assert!(bbox.classify_count() <= FrameDetectionBbox::MAX_CLASSIFICATIONS);
+                assert_eq!(bbox.detect_label_raw().len(), FrameDetectionBbox::LABEL_LEN);
+                assert!(bbox.detect_label().len() <= FrameDetectionBbox::LABEL_LEN);
+                for index in 0..bbox.classify_count() {
+                    assert!(bbox.classify_label(index).is_some());
+                    assert!(bbox.classify_confidence(index).is_some());
+                }
+                assert!(bbox
+                    .classify_label(FrameDetectionBbox::MAX_CLASSIFICATIONS)
+                    .is_none());
+            }
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::DetectionBboxes),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DetectionBboxes);
+            assert!(detection_bboxes_payload_invalid(&frame_side_data_payload));
         }
     }
     match frame.side_data()[0].sei_unregistered() {
@@ -3067,6 +3097,54 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_film_grain.film_grain_params().unwrap(), None);
 
+    let detection_bboxes = minimal_detection_bboxes_fixture();
+    let detection_side_data =
+        FrameSideData::new_detection_bboxes(detection_bboxes.clone()).unwrap();
+    let parsed_detection = detection_side_data.detection_bboxes().unwrap().unwrap();
+    assert_eq!(
+        detection_side_data.kind_id(),
+        &FrameSideDataKind::DetectionBboxes
+    );
+    assert_eq!(parsed_detection.data(), detection_bboxes.as_slice());
+    assert_eq!(parsed_detection.source(), b"fuzz-detector");
+    assert_eq!(parsed_detection.nb_bboxes(), 1);
+    let parsed_bbox = parsed_detection.bbox(0).unwrap().unwrap();
+    assert_eq!(parsed_bbox.x(), 1);
+    assert_eq!(parsed_bbox.y(), 2);
+    assert_eq!(parsed_bbox.width(), 3);
+    assert_eq!(parsed_bbox.height(), 4);
+    assert_eq!(parsed_bbox.detect_label(), b"object");
+    assert_eq!(parsed_bbox.detect_confidence(), Rational::from_raw(1, 2));
+    assert_eq!(parsed_bbox.classify_count(), 1);
+    assert_eq!(parsed_bbox.classify_label(0), Some(&b"class"[..]));
+    assert_eq!(
+        parsed_bbox.classify_confidence(0),
+        Some(Rational::from_raw(3, 4))
+    );
+    assert_eq!(
+        FrameDetectionBboxes::parse(&[0; FrameDetectionBboxes::HEADER_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_detection = detection_bboxes.clone();
+    write_ne_u32(
+        &mut bad_detection,
+        detection_bboxes_first_classify_count_offset(),
+        FrameDetectionBbox::MAX_CLASSIFICATIONS as u32 + 1,
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::DetectionBboxes, bad_detection)
+            .unwrap()
+            .detection_bboxes()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_detection =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_detection.detection_bboxes().unwrap(), None);
+
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
@@ -3209,7 +3287,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 26 {
+    match byte.unwrap_or_default() % 27 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::MatrixEncoding,
         2 => FrameSideDataKind::DownmixInfo,
@@ -3235,6 +3313,7 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         22 => FrameSideDataKind::SkipSamples,
         23 => FrameSideDataKind::AudioServiceType,
         24 => FrameSideDataKind::FilmGrainParams,
+        25 => FrameSideDataKind::DetectionBboxes,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
@@ -3633,6 +3712,157 @@ fn film_grain_aom_ar_coeff_shift_offset() -> usize {
     film_grain_codec_field_offset() + 168
 }
 
+fn minimal_detection_bboxes_fixture() -> Vec<u8> {
+    let mut data = vec![0; FrameDetectionBboxes::HEADER_LEN + FrameDetectionBbox::DATA_LEN];
+    write_fixed_bytes(
+        &mut data,
+        0,
+        FrameDetectionBboxes::SOURCE_LEN,
+        b"fuzz-detector",
+    );
+    write_ne_u32(&mut data, detection_bboxes_nb_bboxes_field_offset(), 1);
+    write_ne_usize(
+        &mut data,
+        detection_bboxes_bboxes_offset_field_offset(),
+        FrameDetectionBboxes::BBOXES_OFFSET,
+    );
+    write_ne_usize(
+        &mut data,
+        detection_bboxes_bbox_size_field_offset(),
+        FrameDetectionBbox::DATA_LEN,
+    );
+
+    let bbox = FrameDetectionBboxes::BBOXES_OFFSET;
+    write_ne_i32(&mut data, bbox + detection_bbox_x_field_offset(), 1);
+    write_ne_i32(&mut data, bbox + detection_bbox_y_field_offset(), 2);
+    write_ne_i32(&mut data, bbox + detection_bbox_width_field_offset(), 3);
+    write_ne_i32(&mut data, bbox + detection_bbox_height_field_offset(), 4);
+    write_fixed_bytes(
+        &mut data,
+        bbox + detection_bbox_detect_label_field_offset(),
+        FrameDetectionBbox::LABEL_LEN,
+        b"object",
+    );
+    write_ne_rational(
+        &mut data,
+        bbox + detection_bbox_detect_confidence_field_offset(),
+        Rational::from_raw(1, 2),
+    );
+    write_ne_u32(
+        &mut data,
+        bbox + detection_bbox_classify_count_field_offset(),
+        1,
+    );
+    write_fixed_bytes(
+        &mut data,
+        bbox + detection_bbox_classify_labels_field_offset(),
+        FrameDetectionBbox::LABEL_LEN,
+        b"class",
+    );
+    write_ne_rational(
+        &mut data,
+        bbox + detection_bbox_classify_confidences_field_offset(),
+        Rational::from_raw(3, 4),
+    );
+
+    data
+}
+
+fn detection_bboxes_payload_invalid(data: &[u8]) -> bool {
+    if data.len() < FrameDetectionBboxes::HEADER_LEN {
+        return true;
+    }
+    if read_ne_usize(data, detection_bboxes_bboxes_offset_field_offset())
+        != FrameDetectionBboxes::BBOXES_OFFSET
+    {
+        return true;
+    }
+    if read_ne_usize(data, detection_bboxes_bbox_size_field_offset())
+        != FrameDetectionBbox::DATA_LEN
+    {
+        return true;
+    }
+
+    let nb_bboxes = read_ne_u32(data, detection_bboxes_nb_bboxes_field_offset()) as usize;
+    let Some(bboxes_len) = nb_bboxes.checked_mul(FrameDetectionBbox::DATA_LEN) else {
+        return true;
+    };
+    let Some(expected_len) = FrameDetectionBboxes::BBOXES_OFFSET.checked_add(bboxes_len) else {
+        return true;
+    };
+    if data.len() != expected_len {
+        return true;
+    }
+
+    for bbox in
+        data[FrameDetectionBboxes::BBOXES_OFFSET..].chunks_exact(FrameDetectionBbox::DATA_LEN)
+    {
+        if read_ne_u32(bbox, detection_bbox_classify_count_field_offset()) as usize
+            > FrameDetectionBbox::MAX_CLASSIFICATIONS
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn detection_bboxes_nb_bboxes_field_offset() -> usize {
+    FrameDetectionBboxes::SOURCE_LEN
+}
+
+fn detection_bboxes_bboxes_offset_field_offset() -> usize {
+    align_up_usize(
+        detection_bboxes_nb_bboxes_field_offset() + 4,
+        core::mem::align_of::<usize>(),
+    )
+}
+
+fn detection_bboxes_bbox_size_field_offset() -> usize {
+    detection_bboxes_bboxes_offset_field_offset() + core::mem::size_of::<usize>()
+}
+
+fn detection_bboxes_first_classify_count_offset() -> usize {
+    FrameDetectionBboxes::BBOXES_OFFSET + detection_bbox_classify_count_field_offset()
+}
+
+fn detection_bbox_x_field_offset() -> usize {
+    0
+}
+
+fn detection_bbox_y_field_offset() -> usize {
+    4
+}
+
+fn detection_bbox_width_field_offset() -> usize {
+    8
+}
+
+fn detection_bbox_height_field_offset() -> usize {
+    12
+}
+
+fn detection_bbox_detect_label_field_offset() -> usize {
+    16
+}
+
+fn detection_bbox_detect_confidence_field_offset() -> usize {
+    detection_bbox_detect_label_field_offset() + FrameDetectionBbox::LABEL_LEN
+}
+
+fn detection_bbox_classify_count_field_offset() -> usize {
+    detection_bbox_detect_confidence_field_offset() + 8
+}
+
+fn detection_bbox_classify_labels_field_offset() -> usize {
+    detection_bbox_classify_count_field_offset() + 4
+}
+
+fn detection_bbox_classify_confidences_field_offset() -> usize {
+    detection_bbox_classify_labels_field_offset()
+        + FrameDetectionBbox::MAX_CLASSIFICATIONS * FrameDetectionBbox::LABEL_LEN
+}
+
 fn align_up_usize(value: usize, align: usize) -> usize {
     let remainder = value % align;
     if remainder == 0 {
@@ -3724,6 +3954,16 @@ fn write_ne_usize(data: &mut [u8], offset: usize, value: usize) {
 
 fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {
     data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn write_ne_rational(data: &mut [u8], offset: usize, value: Rational) {
+    write_ne_i32(data, offset, value.num());
+    write_ne_i32(data, offset + 4, value.den());
+}
+
+fn write_fixed_bytes(data: &mut [u8], offset: usize, len: usize, value: &[u8]) {
+    assert!(value.len() < len);
+    data[offset..offset + value.len()].copy_from_slice(value);
 }
 
 fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usize> {

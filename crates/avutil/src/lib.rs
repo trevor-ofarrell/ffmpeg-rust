@@ -26,8 +26,9 @@ pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};
 pub use error::{AvError, AvErrorKind, AvResult};
 pub use frame::{
     AudioFrame, Frame, FrameActiveFormatDescription, FrameAudioServiceType,
-    FrameContentLightMetadata, FrameData, FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType,
-    FrameDynamicHdrPlus, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
+    FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
+    FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrPlusPercentile, FrameIccProfile,
     FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
