@@ -197,12 +197,21 @@ pub enum MovSampleEntryDetails {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MovSubtitleSampleEntry {
     TimedText(MovTimedTextSampleEntry),
+    XmlSubtitle(MovXmlSubtitleSampleEntry),
 }
 
 impl MovSubtitleSampleEntry {
     pub fn timed_text(&self) -> Option<&MovTimedTextSampleEntry> {
         match self {
             Self::TimedText(entry) => Some(entry),
+            Self::XmlSubtitle(_) => None,
+        }
+    }
+
+    pub fn xml_subtitle(&self) -> Option<&MovXmlSubtitleSampleEntry> {
+        match self {
+            Self::XmlSubtitle(entry) => Some(entry),
+            Self::TimedText(_) => None,
         }
     }
 }
@@ -241,6 +250,32 @@ impl MovTimedTextSampleEntry {
 
     pub fn default_style(&self) -> &MovTextStyleRecord {
         &self.default_style
+    }
+
+    pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
+        &self.child_boxes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovXmlSubtitleSampleEntry {
+    namespace: String,
+    schema_location: String,
+    auxiliary_mime_types: String,
+    child_boxes: Vec<MovSampleEntryChildBox>,
+}
+
+impl MovXmlSubtitleSampleEntry {
+    pub fn namespace(&self) -> &str {
+        &self.namespace
+    }
+
+    pub fn schema_location(&self) -> &str {
+        &self.schema_location
+    }
+
+    pub fn auxiliary_mime_types(&self) -> &str {
+        &self.auxiliary_mime_types
     }
 
     pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
@@ -2419,6 +2454,9 @@ fn parse_sample_entry_details(
         b"tx3g" => parse_timed_text_sample_entry(extra_data)
             .map(MovSubtitleSampleEntry::TimedText)
             .map(MovSampleEntryDetails::Subtitle),
+        b"stpp" => parse_xml_subtitle_sample_entry(extra_data)
+            .map(MovSubtitleSampleEntry::XmlSubtitle)
+            .map(MovSampleEntryDetails::Subtitle),
         b"metx" => parse_xml_metadata_sample_entry(extra_data)
             .map(MovDataSampleEntry::XmlMetadata)
             .map(MovSampleEntryDetails::Data),
@@ -2487,6 +2525,26 @@ fn parse_timed_text_sample_entry(extra_data: &[u8]) -> AvResult<MovTimedTextSamp
         background_color_rgba,
         default_text_box,
         default_style,
+        child_boxes,
+    })
+}
+
+fn parse_xml_subtitle_sample_entry(extra_data: &[u8]) -> AvResult<MovXmlSubtitleSampleEntry> {
+    let mut reader = ByteReader::new(extra_data);
+    let namespace = read_null_terminated_utf8(&mut reader, "MOV/MP4 stpp namespace")?;
+    let schema_location = read_null_terminated_utf8(&mut reader, "MOV/MP4 stpp schema location")?;
+    let auxiliary_mime_types =
+        read_null_terminated_utf8(&mut reader, "MOV/MP4 stpp auxiliary MIME types")?;
+    let child_boxes = parse_sample_entry_child_boxes(
+        extra_data,
+        reader.position(),
+        extra_data.len(),
+        "MOV/MP4 stpp sample entry children",
+    )?;
+    Ok(MovXmlSubtitleSampleEntry {
+        namespace,
+        schema_location,
+        auxiliary_mime_types,
         child_boxes,
     })
 }
@@ -5772,6 +5830,41 @@ mod tests {
     }
 
     #[test]
+    fn parses_xml_subtitle_sample_entry_codec_parameters() {
+        let btrt = box_(*b"btrt", &[0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0]);
+        let extra_data = stpp_sample_entry_extra_data(
+            "http://www.w3.org/ns/ttml",
+            "http://www.w3.org/ns/ttml/profile/imsc1/text",
+            "image/png",
+            &btrt,
+        );
+        let bytes = mp4_with_sample_description_entry(b"stpp", 7, &extra_data);
+        let demuxer = MovDemuxer::open(&bytes).unwrap();
+        let codec_parameters = demuxer.info().tracks()[0].codec_parameters().unwrap();
+
+        assert_eq!(codec_parameters.codec_tag(), "stpp");
+        assert_eq!(codec_parameters.data_reference_index(), 7);
+        assert_eq!(codec_parameters.extra_data(), extra_data.as_slice());
+        let MovSampleEntryDetails::Subtitle(subtitle) = codec_parameters.details() else {
+            panic!("expected subtitle sample entry details");
+        };
+        assert!(subtitle.timed_text().is_none());
+        let xml = subtitle.xml_subtitle().unwrap();
+        assert_eq!(xml.namespace(), "http://www.w3.org/ns/ttml");
+        assert_eq!(
+            xml.schema_location(),
+            "http://www.w3.org/ns/ttml/profile/imsc1/text"
+        );
+        assert_eq!(xml.auxiliary_mime_types(), "image/png");
+        assert_eq!(xml.child_boxes().len(), 1);
+        assert_eq!(xml.child_boxes()[0].box_type(), "btrt");
+        assert_eq!(
+            xml.child_boxes()[0].payload(),
+            [0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0]
+        );
+    }
+
+    #[test]
     fn parses_metadata_sample_entry_codec_parameters() {
         let metx_extra = xml_metadata_sample_entry_extra_data("utf-8", "urn:rust", "rust.xsd");
         let bytes = mp4_with_sample_description_entry(b"metx", 1, &metx_extra);
@@ -6816,6 +6909,29 @@ mod tests {
         let bad_child = box_with_declared_size(*b"ftab", 12, b"\0");
         let extra_data = tx3g_sample_entry_extra_data(&bad_child);
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"tx3g", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"stpp",
+            1,
+            b"http://www.w3.org/ns/ttml\0schema",
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(
+            b"stpp",
+            1,
+            b"urn:ttml\0schema\0\xff\0",
+        ))
+        .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_child = box_with_declared_size(*b"btrt", 12, b"\0");
+        let extra_data =
+            stpp_sample_entry_extra_data("urn:ttml", "schema", "image/png", &bad_child);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"stpp", 1, &extra_data))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::EndOfFile);
 
@@ -7979,6 +8095,24 @@ mod tests {
         out.extend_from_slice(&[10, 20, 30, 255]);
         out.extend_from_slice(child_boxes);
         out
+    }
+
+    fn stpp_sample_entry_extra_data(
+        namespace: &str,
+        schema_location: &str,
+        auxiliary_mime_types: &str,
+        child_boxes: &[u8],
+    ) -> Vec<u8> {
+        [
+            namespace.as_bytes(),
+            b"\0",
+            schema_location.as_bytes(),
+            b"\0",
+            auxiliary_mime_types.as_bytes(),
+            b"\0",
+            child_boxes,
+        ]
+        .concat()
     }
 
     fn xml_metadata_sample_entry_extra_data(
