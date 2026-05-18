@@ -70,6 +70,68 @@ impl Frame {
         self.side_data.push(side_data);
     }
 
+    pub fn set_side_data(&mut self, side_data: FrameSideData) -> Vec<FrameSideData> {
+        let kind = side_data.kind_id().clone();
+        let Some(first_index) = self
+            .side_data
+            .iter()
+            .position(|existing| existing.kind_id() == &kind)
+        else {
+            self.side_data.push(side_data);
+            return Vec::new();
+        };
+
+        let mut removed = vec![std::mem::replace(
+            &mut self.side_data[first_index],
+            side_data,
+        )];
+        let mut index = first_index + 1;
+        while index < self.side_data.len() {
+            if self.side_data[index].kind_id() == &kind {
+                removed.push(self.side_data.remove(index));
+            } else {
+                index += 1;
+            }
+        }
+        removed
+    }
+
+    pub fn set_side_data_payload(
+        &mut self,
+        kind: impl Into<String>,
+        data: Vec<u8>,
+    ) -> AvResult<Vec<FrameSideData>> {
+        let side_data = FrameSideData::new(kind, data)?;
+        Ok(self.set_side_data(side_data))
+    }
+
+    pub fn set_side_data_buffer(
+        &mut self,
+        kind: impl Into<String>,
+        buffer: BufferRef,
+    ) -> AvResult<Vec<FrameSideData>> {
+        let side_data = FrameSideData::new_with_buffer_ref(kind, buffer)?;
+        Ok(self.set_side_data(side_data))
+    }
+
+    pub fn set_side_data_kind(
+        &mut self,
+        kind: FrameSideDataKind,
+        data: Vec<u8>,
+    ) -> AvResult<Vec<FrameSideData>> {
+        let side_data = FrameSideData::new_with_kind(kind, data)?;
+        Ok(self.set_side_data(side_data))
+    }
+
+    pub fn set_side_data_kind_buffer(
+        &mut self,
+        kind: FrameSideDataKind,
+        buffer: BufferRef,
+    ) -> AvResult<Vec<FrameSideData>> {
+        let side_data = FrameSideData::new_with_kind_and_buffer_ref(kind, buffer)?;
+        Ok(self.set_side_data(side_data))
+    }
+
     pub fn add_side_data(
         &mut self,
         kind: impl Into<String>,
@@ -125,6 +187,15 @@ impl Frame {
     pub fn side_data_by_kind(&self, kind: &FrameSideDataKind) -> Option<&FrameSideData> {
         self.side_data
             .iter()
+            .find(|side_data| side_data.kind_id() == kind)
+    }
+
+    pub fn side_data_by_kind_mut(
+        &mut self,
+        kind: &FrameSideDataKind,
+    ) -> Option<&mut FrameSideData> {
+        self.side_data
+            .iter_mut()
             .find(|side_data| side_data.kind_id() == kind)
     }
 
@@ -1030,6 +1101,118 @@ mod tests {
         assert!(frame.side_data().is_empty());
         assert_eq!(taken.len(), 1);
         assert_eq!(taken[0].kind(), "replaygain");
+    }
+
+    #[test]
+    fn frame_set_side_data_replaces_alias_duplicates_and_releases_removed_records() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let make_payload = |label: &'static str, bytes: Vec<u8>| {
+            let release_capture = std::sync::Arc::clone(&released);
+            BufferRef::from_external_slice_with_opaque_readonly(
+                std::sync::Arc::<[u8]>::from(bytes),
+                String::from(label),
+                move |opaque| {
+                    release_capture.lock().unwrap().push(opaque);
+                },
+            )
+        };
+        let audio = AudioFrame::new(48_000, 1, SampleFormat::S16, 1, vec![vec![0; 2]]).unwrap();
+        let mut frame = Frame::audio(audio);
+
+        let appended = frame
+            .set_side_data_kind(FrameSideDataKind::IccProfile, vec![5])
+            .unwrap();
+        assert!(appended.is_empty());
+        assert_eq!(
+            frame
+                .remove_side_data_kind(&FrameSideDataKind::IccProfile)
+                .unwrap()
+                .data(),
+            &[5]
+        );
+
+        frame
+            .add_side_data_kind_buffer(
+                FrameSideDataKind::DisplayMatrix,
+                make_payload("first-display", vec![1, 2]),
+            )
+            .unwrap();
+        frame
+            .add_side_data_kind_buffer(
+                FrameSideDataKind::ReplayGain,
+                make_payload("replaygain", vec![3]),
+            )
+            .unwrap();
+        frame
+            .add_side_data_buffer(
+                "Display Matrix",
+                make_payload("duplicate-display", vec![4, 5]),
+            )
+            .unwrap();
+        assert_eq!(frame.side_data().len(), 3);
+
+        let removed = frame
+            .set_side_data_buffer(
+                "display_matrix",
+                make_payload("replacement-display", vec![9, 8, 7]),
+            )
+            .unwrap();
+        assert_eq!(removed.len(), 2);
+        assert!(removed
+            .iter()
+            .all(|side_data| side_data.kind_id() == &FrameSideDataKind::DisplayMatrix));
+        assert_eq!(removed[0].data(), &[1, 2]);
+        assert_eq!(removed[1].data(), &[4, 5]);
+        assert_eq!(frame.side_data().len(), 2);
+        assert_eq!(
+            frame.side_data()[0].kind_id(),
+            &FrameSideDataKind::DisplayMatrix
+        );
+        assert_eq!(frame.side_data()[0].data(), &[9, 8, 7]);
+        assert_eq!(
+            frame.side_data()[1].kind_id(),
+            &FrameSideDataKind::ReplayGain
+        );
+
+        frame
+            .side_data_by_kind_mut(&FrameSideDataKind::DisplayMatrix)
+            .unwrap()
+            .metadata_mut()
+            .set("rotation", "180")
+            .unwrap();
+        assert_eq!(
+            frame
+                .side_data_by_kind(&FrameSideDataKind::DisplayMatrix)
+                .unwrap()
+                .metadata()
+                .get("rotation"),
+            Some("180")
+        );
+        assert!(released.lock().unwrap().is_empty());
+
+        drop(removed);
+        let mut released_after_removed = released.lock().unwrap().clone();
+        released_after_removed.sort();
+        assert_eq!(
+            released_after_removed,
+            vec![
+                String::from("duplicate-display"),
+                String::from("first-display")
+            ]
+        );
+
+        drop(frame);
+        let mut all_released = released.lock().unwrap().clone();
+        all_released.sort();
+        assert_eq!(
+            all_released,
+            vec![
+                String::from("duplicate-display"),
+                String::from("first-display"),
+                String::from("replacement-display"),
+                String::from("replaygain")
+            ]
+        );
     }
 
     #[test]

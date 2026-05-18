@@ -773,11 +773,54 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             .data(),
         frame_side_data_payload.as_slice()
     );
+    frame
+        .add_side_data_kind_buffer(
+            frame_side_data_kind.clone(),
+            BufferRef::copy_from_slice(&[0xAA]),
+        )
+        .unwrap();
+    assert_eq!(frame.side_data().len(), 2);
+    let replacement_side_data_buffer =
+        BufferRef::copy_from_slice_with_padding(&[0x55, 0x66], 1).unwrap();
+    let replaced_side_data = frame
+        .set_side_data_kind_buffer(
+            frame_side_data_kind.clone(),
+            replacement_side_data_buffer.clone(),
+        )
+        .unwrap();
+    assert_eq!(replaced_side_data.len(), 2);
+    assert!(replaced_side_data
+        .iter()
+        .all(|side_data| side_data.kind_id() == &frame_side_data_kind));
+    assert!(replaced_side_data[0]
+        .buffer()
+        .shares_storage(&frame_side_data_buffer));
+    assert_eq!(replaced_side_data[1].data(), &[0xAA]);
+    assert_eq!(frame.side_data().len(), 1);
+    assert_eq!(frame.side_data()[0].data(), &[0x55, 0x66]);
+    assert!(frame.side_data()[0]
+        .buffer()
+        .shares_storage(&replacement_side_data_buffer));
+    frame
+        .side_data_by_kind_mut(&frame_side_data_kind)
+        .unwrap()
+        .metadata_mut()
+        .set("origin", "replacement")
+        .unwrap();
+    assert_eq!(
+        frame
+            .side_data_by_kind(&frame_side_data_kind)
+            .unwrap()
+            .metadata()
+            .get("origin"),
+        Some("replacement")
+    );
+
     let removed_side_data = frame.remove_side_data_kind(&frame_side_data_kind).unwrap();
     assert!(frame.side_data().is_empty());
     assert!(removed_side_data
         .buffer()
-        .shares_storage(&frame_side_data_buffer));
+        .shares_storage(&replacement_side_data_buffer));
     frame.push_side_data(removed_side_data);
     assert!(frame.remove_side_data("missing").is_none());
     assert_eq!(
