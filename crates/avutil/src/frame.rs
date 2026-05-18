@@ -611,6 +611,19 @@ pub struct VideoFrame {
 }
 
 impl VideoFrame {
+    pub fn aligned_line_sizes(
+        pixel_format: PixelFormat,
+        width: usize,
+        height: usize,
+        alignment: usize,
+    ) -> AvResult<Vec<usize>> {
+        align_line_sizes(
+            video_line_sizes(pixel_format, width, height)?,
+            alignment,
+            "video frame line size",
+        )
+    }
+
     pub fn new(
         width: usize,
         height: usize,
@@ -637,6 +650,17 @@ impl VideoFrame {
         )
     }
 
+    pub fn new_with_aligned_line_sizes(
+        width: usize,
+        height: usize,
+        pixel_format: PixelFormat,
+        planes: Vec<Vec<u8>>,
+        alignment: usize,
+    ) -> AvResult<Self> {
+        let line_sizes = Self::aligned_line_sizes(pixel_format, width, height, alignment)?;
+        Self::new_with_line_sizes(width, height, pixel_format, planes, line_sizes)
+    }
+
     pub fn new_with_line_sizes(
         width: usize,
         height: usize,
@@ -645,6 +669,23 @@ impl VideoFrame {
         line_sizes: Vec<usize>,
     ) -> AvResult<Self> {
         let plane_buffers = planes.into_iter().map(BufferRef::from_vec).collect();
+        Self::new_with_buffer_refs_and_line_sizes(
+            width,
+            height,
+            pixel_format,
+            plane_buffers,
+            line_sizes,
+        )
+    }
+
+    pub fn new_with_buffer_refs_and_aligned_line_sizes(
+        width: usize,
+        height: usize,
+        pixel_format: PixelFormat,
+        plane_buffers: Vec<BufferRef>,
+        alignment: usize,
+    ) -> AvResult<Self> {
+        let line_sizes = Self::aligned_line_sizes(pixel_format, width, height, alignment)?;
         Self::new_with_buffer_refs_and_line_sizes(
             width,
             height,
@@ -773,6 +814,19 @@ pub struct AudioFrame {
 }
 
 impl AudioFrame {
+    pub fn aligned_line_sizes(
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        channels: u16,
+        alignment: usize,
+    ) -> AvResult<Vec<usize>> {
+        align_line_sizes(
+            sample_format.plane_sizes(samples_per_channel, channels)?,
+            alignment,
+            "audio frame line size",
+        )
+    }
+
     pub fn new(
         sample_rate: u32,
         channels: u16,
@@ -808,6 +862,26 @@ impl AudioFrame {
         )
     }
 
+    pub fn new_with_aligned_line_sizes(
+        sample_rate: u32,
+        channels: u16,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        planes: Vec<Vec<u8>>,
+        alignment: usize,
+    ) -> AvResult<Self> {
+        let line_sizes =
+            Self::aligned_line_sizes(sample_format, samples_per_channel, channels, alignment)?;
+        Self::new_with_line_sizes(
+            sample_rate,
+            channels,
+            sample_format,
+            samples_per_channel,
+            planes,
+            line_sizes,
+        )
+    }
+
     pub fn new_with_line_sizes(
         sample_rate: u32,
         channels: u16,
@@ -817,6 +891,26 @@ impl AudioFrame {
         line_sizes: Vec<usize>,
     ) -> AvResult<Self> {
         let plane_buffers = planes.into_iter().map(BufferRef::from_vec).collect();
+        Self::new_with_buffer_refs_and_line_sizes(
+            sample_rate,
+            channels,
+            sample_format,
+            samples_per_channel,
+            plane_buffers,
+            line_sizes,
+        )
+    }
+
+    pub fn new_with_buffer_refs_and_aligned_line_sizes(
+        sample_rate: u32,
+        channels: u16,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        plane_buffers: Vec<BufferRef>,
+        alignment: usize,
+    ) -> AvResult<Self> {
+        let line_sizes =
+            Self::aligned_line_sizes(sample_format, samples_per_channel, channels, alignment)?;
         Self::new_with_buffer_refs_and_line_sizes(
             sample_rate,
             channels,
@@ -882,6 +976,30 @@ impl AudioFrame {
         )
     }
 
+    pub fn new_with_channel_layout_and_aligned_line_sizes(
+        sample_rate: u32,
+        channel_layout: ChannelLayout,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        planes: Vec<Vec<u8>>,
+        alignment: usize,
+    ) -> AvResult<Self> {
+        let line_sizes = Self::aligned_line_sizes(
+            sample_format,
+            samples_per_channel,
+            channel_layout.channel_count(),
+            alignment,
+        )?;
+        Self::new_with_channel_layout_and_line_sizes(
+            sample_rate,
+            channel_layout,
+            sample_format,
+            samples_per_channel,
+            planes,
+            line_sizes,
+        )
+    }
+
     pub fn new_with_channel_layout_and_line_sizes(
         sample_rate: u32,
         channel_layout: ChannelLayout,
@@ -891,6 +1009,30 @@ impl AudioFrame {
         line_sizes: Vec<usize>,
     ) -> AvResult<Self> {
         let plane_buffers = planes.into_iter().map(BufferRef::from_vec).collect();
+        Self::new_with_channel_layout_and_buffer_refs_and_line_sizes(
+            sample_rate,
+            channel_layout,
+            sample_format,
+            samples_per_channel,
+            plane_buffers,
+            line_sizes,
+        )
+    }
+
+    pub fn new_with_channel_layout_and_buffer_refs_and_aligned_line_sizes(
+        sample_rate: u32,
+        channel_layout: ChannelLayout,
+        sample_format: SampleFormat,
+        samples_per_channel: usize,
+        plane_buffers: Vec<BufferRef>,
+        alignment: usize,
+    ) -> AvResult<Self> {
+        let line_sizes = Self::aligned_line_sizes(
+            sample_format,
+            samples_per_channel,
+            channel_layout.channel_count(),
+            alignment,
+        )?;
         Self::new_with_channel_layout_and_buffer_refs_and_line_sizes(
             sample_rate,
             channel_layout,
@@ -1197,6 +1339,34 @@ fn video_line_sizes(
         .collect())
 }
 
+fn align_line_sizes(
+    line_sizes: Vec<usize>,
+    alignment: usize,
+    context: &'static str,
+) -> AvResult<Vec<usize>> {
+    line_sizes
+        .into_iter()
+        .map(|line_size| align_size(line_size, alignment, context))
+        .collect()
+}
+
+fn align_size(value: usize, alignment: usize, context: &'static str) -> AvResult<usize> {
+    if alignment == 0 {
+        return Err(AvError::invalid_argument(format!(
+            "{context} alignment must be non-zero"
+        )));
+    }
+
+    let remainder = value % alignment;
+    if remainder == 0 {
+        return Ok(value);
+    }
+
+    value
+        .checked_add(alignment - remainder)
+        .ok_or_else(|| AvError::invalid_argument(format!("{context} alignment overflow")))
+}
+
 fn checked_mul(value: usize, factor: usize, context: &'static str) -> AvResult<usize> {
     value
         .checked_mul(factor)
@@ -1336,6 +1506,66 @@ mod tests {
         assert_eq!(
             yuv.planes(),
             &[vec![0, 1, 2, 3, 4, 5, 6, 7], vec![10, 11], vec![20, 21]]
+        );
+    }
+
+    #[test]
+    fn video_frame_computes_aligned_line_sizes_and_validates_storage() {
+        assert_eq!(
+            VideoFrame::aligned_line_sizes(PixelFormat::Rgb24, 3, 2, 4).unwrap(),
+            vec![12]
+        );
+        assert_eq!(
+            VideoFrame::aligned_line_sizes(PixelFormat::Yuv420p, 4, 2, 4).unwrap(),
+            vec![4, 4, 4]
+        );
+
+        let frame = VideoFrame::new_with_aligned_line_sizes(
+            3,
+            2,
+            PixelFormat::Rgb24,
+            vec![vec![
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 0xaa, 0xbb, 0xcc, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                0xdd, 0xee, 0xff,
+            ]],
+            4,
+        )
+        .unwrap();
+        assert_eq!(frame.line_sizes(), &[12]);
+        assert_eq!(
+            frame.planes(),
+            &[vec![
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18
+            ]]
+        );
+        assert_eq!(frame.plane_buffers()[0].len(), 24);
+
+        let source = BufferRef::copy_from_slice(&[
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 0xaa, 0xbb, 0xcc, 10, 11, 12, 13, 14, 15, 16, 17, 18, 0xdd,
+            0xee, 0xff,
+        ]);
+        let buffered = VideoFrame::new_with_buffer_refs_and_aligned_line_sizes(
+            3,
+            2,
+            PixelFormat::Rgb24,
+            vec![source.clone()],
+            4,
+        )
+        .unwrap();
+        assert!(buffered.plane_buffers()[0].shares_storage(&source));
+        assert_eq!(buffered.planes(), frame.planes());
+
+        assert_eq!(
+            VideoFrame::new_with_aligned_line_sizes(
+                3,
+                2,
+                PixelFormat::Rgb24,
+                vec![vec![0; 23]],
+                4,
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
         );
     }
 
@@ -1565,6 +1795,99 @@ mod tests {
         .unwrap();
         assert_eq!(layout_frame.channel_layout(), Some(ChannelLayout::stereo()));
         assert_eq!(layout_frame.planes(), &[vec![1, 0, 2, 0]]);
+    }
+
+    #[test]
+    fn audio_frame_computes_aligned_line_sizes_and_validates_storage() {
+        assert_eq!(
+            AudioFrame::aligned_line_sizes(SampleFormat::S16, 3, 2, 8).unwrap(),
+            vec![16]
+        );
+        assert_eq!(
+            AudioFrame::aligned_line_sizes(SampleFormat::FltP, 2, 2, 16).unwrap(),
+            vec![16, 16]
+        );
+
+        let packed = AudioFrame::new_with_aligned_line_sizes(
+            48_000,
+            2,
+            SampleFormat::S16,
+            3,
+            vec![vec![
+                0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 0xaa, 0xbb, 0xcc, 0xdd,
+            ]],
+            8,
+        )
+        .unwrap();
+        assert_eq!(packed.channel_layout(), Some(ChannelLayout::stereo()));
+        assert_eq!(packed.line_sizes(), &[16]);
+        assert_eq!(packed.planes(), &[vec![0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0]]);
+        assert_eq!(packed.plane_buffers()[0].len(), 16);
+
+        let planar = AudioFrame::new_with_aligned_line_sizes(
+            44_100,
+            2,
+            SampleFormat::FltP,
+            2,
+            vec![vec![1; 16], vec![2; 16]],
+            16,
+        )
+        .unwrap();
+        assert_eq!(planar.sample_format_name(), "fltp");
+        assert_eq!(planar.line_sizes(), &[16, 16]);
+        assert_eq!(planar.planes(), &[vec![1; 8], vec![2; 8]]);
+
+        let source = BufferRef::copy_from_slice(&[7; 16]);
+        let layout_frame =
+            AudioFrame::new_with_channel_layout_and_buffer_refs_and_aligned_line_sizes(
+                44_100,
+                ChannelLayout::mono(),
+                SampleFormat::Flt,
+                3,
+                vec![source.clone()],
+                16,
+            )
+            .unwrap();
+        assert_eq!(layout_frame.channel_layout(), Some(ChannelLayout::mono()));
+        assert_eq!(layout_frame.line_sizes(), &[16]);
+        assert_eq!(layout_frame.planes(), &[vec![7; 12]]);
+        assert!(layout_frame.plane_buffers()[0].shares_storage(&source));
+
+        assert_eq!(
+            AudioFrame::new_with_aligned_line_sizes(
+                48_000,
+                2,
+                SampleFormat::S16,
+                3,
+                vec![vec![0; 15]],
+                8,
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_alignment_rejects_zero_alignment_and_overflow() {
+        assert_eq!(
+            VideoFrame::aligned_line_sizes(PixelFormat::Gray8, 2, 2, 0)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            AudioFrame::aligned_line_sizes(SampleFormat::S16, 1, 1, 0)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            align_size(usize::MAX - 1, usize::MAX - 2, "test frame alignment")
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
     }
 
     #[test]

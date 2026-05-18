@@ -760,6 +760,67 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     for (stored, strided) in strided_video.plane_buffers().iter().zip(&strided_planes) {
         assert_eq!(stored.as_slice(), strided.as_slice());
     }
+    let video_alignment = usize::from(cursor.next().unwrap_or_default() % 8) + 1;
+    let aligned_video_line_sizes =
+        VideoFrame::aligned_line_sizes(pixel_format, width, height, video_alignment).unwrap();
+    for (line_size, (row_bytes, _)) in aligned_video_line_sizes.iter().zip(&video_plane_shapes) {
+        assert!(*line_size >= *row_bytes);
+        assert_eq!(line_size % video_alignment, 0);
+    }
+    let aligned_video_planes = planes
+        .iter()
+        .zip(&video_plane_shapes)
+        .zip(&aligned_video_line_sizes)
+        .map(|((plane, &(row_bytes, rows)), &line_size)| {
+            let mut aligned = Vec::with_capacity(line_size * rows);
+            for row in 0..rows {
+                let start = row * row_bytes;
+                let end = start + row_bytes;
+                aligned.extend_from_slice(&plane[start..end]);
+                aligned.resize(aligned.len() + (line_size - row_bytes), 0xDD);
+            }
+            aligned
+        })
+        .collect::<Vec<_>>();
+    let aligned_video = VideoFrame::new_with_aligned_line_sizes(
+        width,
+        height,
+        pixel_format,
+        aligned_video_planes.clone(),
+        video_alignment,
+    )
+    .unwrap();
+    assert_eq!(
+        aligned_video.line_sizes(),
+        aligned_video_line_sizes.as_slice()
+    );
+    assert_eq!(aligned_video.planes(), planes.as_slice());
+    let aligned_video_buffers = aligned_video_planes
+        .iter()
+        .map(|plane| BufferRef::copy_from_slice(plane))
+        .collect::<Vec<_>>();
+    let aligned_video_from_buffers = VideoFrame::new_with_buffer_refs_and_aligned_line_sizes(
+        width,
+        height,
+        pixel_format,
+        aligned_video_buffers.clone(),
+        video_alignment,
+    )
+    .unwrap();
+    assert_eq!(aligned_video_from_buffers.planes(), planes.as_slice());
+    for (stored, source) in aligned_video_from_buffers
+        .plane_buffers()
+        .iter()
+        .zip(&aligned_video_buffers)
+    {
+        assert!(stored.shares_storage(source));
+    }
+    assert_eq!(
+        VideoFrame::aligned_line_sizes(pixel_format, width, height, 0)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
     let mut undersized_line_sizes = strided_line_sizes.clone();
     undersized_line_sizes[0] = video_plane_shapes[0].0.saturating_sub(1);
     assert_eq!(
@@ -1181,6 +1242,68 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     {
         assert_eq!(stored.as_slice(), strided.as_slice());
     }
+    let audio_alignment = usize::from(cursor.next().unwrap_or_default() % 8) + 1;
+    let aligned_audio_line_sizes = AudioFrame::aligned_line_sizes(
+        sample_format,
+        samples_per_channel,
+        channels,
+        audio_alignment,
+    )
+    .unwrap();
+    for (line_size, visible_size) in aligned_audio_line_sizes.iter().zip(&plane_sizes) {
+        assert!(*line_size >= *visible_size);
+        assert_eq!(line_size % audio_alignment, 0);
+    }
+    let aligned_audio_planes = planes
+        .iter()
+        .zip(&aligned_audio_line_sizes)
+        .map(|(plane, &line_size)| {
+            let mut storage = plane.clone();
+            storage.resize(line_size, 0xDD);
+            storage
+        })
+        .collect::<Vec<_>>();
+    let aligned_audio = AudioFrame::new_with_aligned_line_sizes(
+        sample_rate,
+        channels,
+        sample_format,
+        samples_per_channel,
+        aligned_audio_planes.clone(),
+        audio_alignment,
+    )
+    .unwrap();
+    assert_eq!(
+        aligned_audio.line_sizes(),
+        aligned_audio_line_sizes.as_slice()
+    );
+    assert_eq!(aligned_audio.planes(), planes.as_slice());
+    let aligned_audio_buffers = aligned_audio_planes
+        .iter()
+        .map(|plane| BufferRef::copy_from_slice(plane))
+        .collect::<Vec<_>>();
+    let aligned_audio_from_buffers = AudioFrame::new_with_buffer_refs_and_aligned_line_sizes(
+        sample_rate,
+        channels,
+        sample_format,
+        samples_per_channel,
+        aligned_audio_buffers.clone(),
+        audio_alignment,
+    )
+    .unwrap();
+    assert_eq!(aligned_audio_from_buffers.planes(), planes.as_slice());
+    for (stored, source) in aligned_audio_from_buffers
+        .plane_buffers()
+        .iter()
+        .zip(&aligned_audio_buffers)
+    {
+        assert!(stored.shares_storage(source));
+    }
+    assert_eq!(
+        AudioFrame::aligned_line_sizes(sample_format, samples_per_channel, channels, 0)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
     assert_eq!(
         AudioFrame::new_with_line_sizes(
             sample_rate,
@@ -1333,6 +1456,21 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         .unwrap();
         assert_eq!(frame.channel_layout(), Some(layout));
         assert_eq!(frame.line_sizes(), plane_sizes.as_slice());
+        let aligned_layout_frame = AudioFrame::new_with_channel_layout_and_aligned_line_sizes(
+            sample_rate,
+            layout,
+            sample_format,
+            samples_per_channel,
+            aligned_audio_planes,
+            audio_alignment,
+        )
+        .unwrap();
+        assert_eq!(aligned_layout_frame.channel_layout(), Some(layout));
+        assert_eq!(
+            aligned_layout_frame.line_sizes(),
+            aligned_audio_line_sizes.as_slice()
+        );
+        assert_eq!(aligned_layout_frame.planes(), planes.as_slice());
         let padded_frame = AudioFrame::new_with_channel_layout_and_line_sizes(
             sample_rate,
             layout,
