@@ -5,7 +5,7 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
     FrameActiveFormatDescription, FrameAudioServiceType, FrameContentLightMetadata, FrameData,
-    FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameGopTimecode,
+    FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameGopTimecode, FrameIccProfile,
     FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
     FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
     FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
@@ -1357,6 +1357,29 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             );
         }
     }
+    match frame.side_data()[0].icc_profile() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::IccProfile);
+            assert_eq!(value.data(), frame_side_data_payload.as_slice());
+            assert_eq!(value.name(), None);
+            assert_eq!(
+                usize::try_from(value.declared_size()).unwrap(),
+                frame_side_data_payload.len()
+            );
+            assert_eq!(value.data()[36..40], FrameIccProfile::ICC_SIGNATURE);
+            assert!(
+                FrameIccProfile::MIN_DATA_LEN
+                    + usize::try_from(value.tag_count()).unwrap() * FrameIccProfile::TAG_RECORD_LEN
+                    <= frame_side_data_payload.len()
+            );
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::IccProfile),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::IccProfile);
+            assert!(icc_profile_payload_invalid(&frame_side_data_payload));
+        }
+    }
     match frame.side_data()[0].s12m_timecode() {
         Ok(Some(payload)) => {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::S12mTimecode);
@@ -2689,6 +2712,42 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 8]).unwrap();
     assert_eq!(non_content_light.content_light_metadata().unwrap(), None);
 
+    let icc_profile = minimal_icc_profile_fixture();
+    let icc_side_data =
+        FrameSideData::new_icc_profile(icc_profile.clone(), Some("display-p3")).unwrap();
+    let parsed_icc = icc_side_data.icc_profile().unwrap().unwrap();
+    assert_eq!(icc_side_data.kind_id(), &FrameSideDataKind::IccProfile);
+    assert_eq!(parsed_icc.data(), icc_profile.as_slice());
+    assert_eq!(parsed_icc.name(), Some("display-p3"));
+    assert_eq!(
+        parsed_icc.declared_size(),
+        FrameIccProfile::MIN_DATA_LEN as u32
+    );
+    assert_eq!(parsed_icc.profile_version_raw(), 0x0430_0000);
+    assert_eq!(parsed_icc.device_class(), *b"mntr");
+    assert_eq!(parsed_icc.color_space(), *b"RGB ");
+    assert_eq!(parsed_icc.profile_connection_space(), *b"XYZ ");
+    assert_eq!(parsed_icc.tag_count(), 0);
+    assert_eq!(
+        FrameSideData::new_icc_profile(Vec::new(), None)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_icc = icc_profile.clone();
+    bad_icc[36..40].copy_from_slice(b"bad!");
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::IccProfile, bad_icc)
+            .unwrap()
+            .icc_profile()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_icc =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, icc_profile).unwrap();
+    assert_eq!(non_icc.icc_profile().unwrap(), None);
+
     let s12m_timecode = FrameS12mTimecode::new(&[0x0102_0304, 0xA0B0_C0D0]).unwrap();
     let s12m_side_data = FrameSideData::new_s12m_timecode(s12m_timecode).unwrap();
     assert_eq!(s12m_side_data.kind_id(), &FrameSideDataKind::S12mTimecode);
@@ -2889,6 +2948,50 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         20 => FrameSideDataKind::AudioServiceType,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
+}
+
+fn minimal_icc_profile_fixture() -> Vec<u8> {
+    let mut data = vec![0; FrameIccProfile::MIN_DATA_LEN];
+    data[0..4].copy_from_slice(&(FrameIccProfile::MIN_DATA_LEN as u32).to_be_bytes());
+    data[8..12].copy_from_slice(&0x0430_0000u32.to_be_bytes());
+    data[12..16].copy_from_slice(b"mntr");
+    data[16..20].copy_from_slice(b"RGB ");
+    data[20..24].copy_from_slice(b"XYZ ");
+    data[36..40].copy_from_slice(&FrameIccProfile::ICC_SIGNATURE);
+    data[128..132].copy_from_slice(&0u32.to_be_bytes());
+    data
+}
+
+fn icc_profile_payload_invalid(data: &[u8]) -> bool {
+    if data.len() < FrameIccProfile::MIN_DATA_LEN {
+        return true;
+    }
+
+    let declared_size = read_be_u32(data, 0);
+    if usize::try_from(declared_size).ok() != Some(data.len()) {
+        return true;
+    }
+
+    if data[36..40] != FrameIccProfile::ICC_SIGNATURE {
+        return true;
+    }
+
+    let tag_count = read_be_u32(data, FrameIccProfile::TAG_COUNT_OFFSET);
+    let Some(tag_table_len) = usize::try_from(tag_count)
+        .ok()
+        .and_then(|count| count.checked_mul(FrameIccProfile::TAG_RECORD_LEN))
+        .and_then(|records_len| FrameIccProfile::MIN_DATA_LEN.checked_add(records_len))
+    else {
+        return true;
+    };
+
+    tag_table_len > data.len()
+}
+
+fn read_be_u32(data: &[u8], offset: usize) -> u32 {
+    let mut raw = [0; 4];
+    raw.copy_from_slice(&data[offset..offset + 4]);
+    u32::from_be_bytes(raw)
 }
 
 fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usize> {

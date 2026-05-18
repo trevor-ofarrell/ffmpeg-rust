@@ -217,6 +217,8 @@ unit_tests = [
   "frame::tests::frame_side_data_rejects_malformed_spherical_mapping_payload",
   "frame::tests::frame_side_data_parses_content_light_metadata_payload",
   "frame::tests::frame_side_data_rejects_malformed_content_light_metadata_payload",
+  "frame::tests::frame_side_data_parses_icc_profile_payload",
+  "frame::tests::frame_side_data_rejects_malformed_icc_profile_payload",
   "frame::tests::frame_side_data_parses_s12m_timecode_payload",
   "frame::tests::frame_side_data_rejects_malformed_s12m_timecode_payload",
   "frame::tests::frame_side_data_parses_sei_unregistered_payload",
@@ -268,6 +270,11 @@ fuzz_targets = ["avutil_core_models"]
 # AVContentLightMetadata payload for AV_FRAME_DATA_CONTENT_LIGHT_LEVEL,
 # preserves MaxCLL and MaxFALL unsigned fields, rejects malformed lengths, and
 # is build-checked by avutil_core_models.
+# Current ICC profile coverage parses AV_FRAME_DATA_ICC_PROFILE as the FFmpeg
+# 8.1.1 opaque ISO 15076-1 octet buffer with optional metadata key "name",
+# validates the declared big-endian profile size, acsp signature, and bounded
+# tag table, preserves raw profile bytes, and is build-checked by
+# avutil_core_models.
 # Current S12M coverage parses the FFmpeg 8.1.1 four-native-uint32
 # AV_FRAME_DATA_S12M_TIMECODE payload, preserves unused slots, rejects malformed
 # lengths and invalid counts, and is build-checked by avutil_core_models.

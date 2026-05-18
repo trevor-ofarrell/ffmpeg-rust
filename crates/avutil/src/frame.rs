@@ -1664,6 +1664,114 @@ impl FrameContentLightMetadata {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameIccProfile<'a> {
+    data: &'a [u8],
+    name: Option<&'a str>,
+    declared_size: u32,
+    tag_count: u32,
+}
+
+impl<'a> FrameIccProfile<'a> {
+    pub const HEADER_LEN: usize = 128;
+    pub const TAG_COUNT_LEN: usize = 4;
+    pub const TAG_RECORD_LEN: usize = 12;
+    pub const MIN_DATA_LEN: usize = Self::HEADER_LEN + Self::TAG_COUNT_LEN;
+    pub const PROFILE_SIZE_OFFSET: usize = 0;
+    pub const SIGNATURE_OFFSET: usize = 36;
+    pub const TAG_COUNT_OFFSET: usize = Self::HEADER_LEN;
+    pub const ICC_SIGNATURE: [u8; 4] = *b"acsp";
+
+    pub fn parse(data: &'a [u8], metadata: &'a Dictionary) -> AvResult<Self> {
+        if data.len() < Self::MIN_DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "ICC profile frame side data requires at least {} bytes, got {}",
+                Self::MIN_DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let declared_size = Self::read_be_u32(data, Self::PROFILE_SIZE_OFFSET);
+        if usize::try_from(declared_size).ok() != Some(data.len()) {
+            return Err(AvError::invalid_data(format!(
+                "ICC profile declared size {} does not match side data length {}",
+                declared_size,
+                data.len()
+            )));
+        }
+
+        if data[Self::SIGNATURE_OFFSET..Self::SIGNATURE_OFFSET + Self::ICC_SIGNATURE.len()]
+            != Self::ICC_SIGNATURE
+        {
+            return Err(AvError::invalid_data("ICC profile missing acsp signature"));
+        }
+
+        let tag_count = Self::read_be_u32(data, Self::TAG_COUNT_OFFSET);
+        let tag_table_len = usize::try_from(tag_count)
+            .ok()
+            .and_then(|count| count.checked_mul(Self::TAG_RECORD_LEN))
+            .and_then(|records_len| Self::MIN_DATA_LEN.checked_add(records_len))
+            .ok_or_else(|| AvError::invalid_data("ICC profile tag table length overflow"))?;
+        if tag_table_len > data.len() {
+            return Err(AvError::invalid_data(format!(
+                "ICC profile tag table for {tag_count} records exceeds side data length {}",
+                data.len()
+            )));
+        }
+
+        Ok(Self {
+            data,
+            name: metadata.get("name"),
+            declared_size,
+            tag_count,
+        })
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn name(self) -> Option<&'a str> {
+        self.name
+    }
+
+    pub const fn declared_size(self) -> u32 {
+        self.declared_size
+    }
+
+    pub const fn tag_count(self) -> u32 {
+        self.tag_count
+    }
+
+    pub fn profile_version_raw(self) -> u32 {
+        Self::read_be_u32(self.data, 8)
+    }
+
+    pub fn device_class(self) -> [u8; 4] {
+        Self::read_fourcc(self.data, 12)
+    }
+
+    pub fn color_space(self) -> [u8; 4] {
+        Self::read_fourcc(self.data, 16)
+    }
+
+    pub fn profile_connection_space(self) -> [u8; 4] {
+        Self::read_fourcc(self.data, 20)
+    }
+
+    fn read_be_u32(data: &[u8], offset: usize) -> u32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        u32::from_be_bytes(raw)
+    }
+
+    fn read_fourcc(data: &[u8], offset: usize) -> [u8; 4] {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        raw
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameS12mTimecode {
     words: [u32; Self::WORDS],
 }
@@ -2182,6 +2290,15 @@ impl FrameSideData {
         )
     }
 
+    pub fn new_icc_profile(data: Vec<u8>, name: Option<&str>) -> AvResult<Self> {
+        let mut side_data = Self::new_with_kind(FrameSideDataKind::IccProfile, data)?;
+        if let Some(name) = name {
+            side_data.metadata_mut().set("name", name)?;
+        }
+        FrameIccProfile::parse(side_data.data(), side_data.metadata())?;
+        Ok(side_data)
+    }
+
     pub fn new_s12m_timecode(value: FrameS12mTimecode) -> AvResult<Self> {
         Self::new_with_kind(FrameSideDataKind::S12mTimecode, value.to_bytes().to_vec())
     }
@@ -2338,6 +2455,14 @@ impl FrameSideData {
         }
 
         FrameContentLightMetadata::parse(self.data()).map(Some)
+    }
+
+    pub fn icc_profile(&self) -> AvResult<Option<FrameIccProfile<'_>>> {
+        if self.kind != FrameSideDataKind::IccProfile {
+            return Ok(None);
+        }
+
+        FrameIccProfile::parse(self.data(), self.metadata()).map(Some)
     }
 
     pub fn s12m_timecode(&self) -> AvResult<Option<FrameS12mTimecode>> {
@@ -3190,6 +3315,18 @@ fn checked_mul(value: usize, factor: usize, context: &'static str) -> AvResult<u
 mod tests {
     use super::*;
     use crate::AvErrorKind;
+
+    fn minimal_icc_profile() -> Vec<u8> {
+        let mut data = vec![0; FrameIccProfile::MIN_DATA_LEN];
+        data[0..4].copy_from_slice(&(FrameIccProfile::MIN_DATA_LEN as u32).to_be_bytes());
+        data[8..12].copy_from_slice(&0x0430_0000u32.to_be_bytes());
+        data[12..16].copy_from_slice(b"mntr");
+        data[16..20].copy_from_slice(b"RGB ");
+        data[20..24].copy_from_slice(b"XYZ ");
+        data[36..40].copy_from_slice(&FrameIccProfile::ICC_SIGNATURE);
+        data[128..132].copy_from_slice(&0u32.to_be_bytes());
+        data
+    }
 
     #[test]
     fn video_frame_validates_required_shape() {
@@ -5799,6 +5936,102 @@ mod tests {
         let non_content_light =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 8]).unwrap();
         assert_eq!(non_content_light.content_light_metadata().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_icc_profile_payload() {
+        let data = minimal_icc_profile();
+        let side_data = FrameSideData::new_icc_profile(data.clone(), Some("display-p3")).unwrap();
+
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::IccProfile);
+        assert_eq!(side_data.metadata().get("name"), Some("display-p3"));
+        let parsed = side_data.icc_profile().unwrap().unwrap();
+        assert_eq!(parsed.data(), data.as_slice());
+        assert_eq!(parsed.name(), Some("display-p3"));
+        assert_eq!(parsed.declared_size(), FrameIccProfile::MIN_DATA_LEN as u32);
+        assert_eq!(parsed.profile_version_raw(), 0x0430_0000);
+        assert_eq!(parsed.device_class(), *b"mntr");
+        assert_eq!(parsed.color_space(), *b"RGB ");
+        assert_eq!(parsed.profile_connection_space(), *b"XYZ ");
+        assert_eq!(parsed.tag_count(), 0);
+
+        let mut with_tag = minimal_icc_profile();
+        with_tag.resize(
+            FrameIccProfile::MIN_DATA_LEN + FrameIccProfile::TAG_RECORD_LEN,
+            0,
+        );
+        let with_tag_len = with_tag.len() as u32;
+        with_tag[0..4].copy_from_slice(&with_tag_len.to_be_bytes());
+        with_tag[128..132].copy_from_slice(&1u32.to_be_bytes());
+        with_tag[132..136].copy_from_slice(b"desc");
+        with_tag[136..140].copy_from_slice(&(FrameIccProfile::MIN_DATA_LEN as u32).to_be_bytes());
+        with_tag[140..144].copy_from_slice(&0u32.to_be_bytes());
+        let side_data = FrameSideData::new_icc_profile(with_tag.clone(), None).unwrap();
+        let parsed = side_data.icc_profile().unwrap().unwrap();
+        assert_eq!(parsed.data(), with_tag.as_slice());
+        assert_eq!(parsed.name(), None);
+        assert_eq!(parsed.tag_count(), 1);
+
+        let display_matrix =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, data).unwrap();
+        assert_eq!(display_matrix.icc_profile().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_icc_profile_payload() {
+        for data in [Vec::new(), vec![0; FrameIccProfile::MIN_DATA_LEN - 1]] {
+            assert_eq!(
+                FrameIccProfile::parse(&data, &Dictionary::new())
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::IccProfile, data).unwrap();
+            assert_eq!(
+                side_data.icc_profile().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let mut bad_size = minimal_icc_profile();
+        bad_size[0..4].copy_from_slice(&999u32.to_be_bytes());
+        assert_eq!(
+            FrameSideData::new_icc_profile(bad_size, None)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut missing_signature = minimal_icc_profile();
+        missing_signature[36..40].copy_from_slice(b"bad!");
+        let side_data =
+            FrameSideData::new_with_kind(FrameSideDataKind::IccProfile, missing_signature).unwrap();
+        assert_eq!(
+            side_data.icc_profile().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut truncated_tag_table = minimal_icc_profile();
+        truncated_tag_table[128..132].copy_from_slice(&1u32.to_be_bytes());
+        let side_data =
+            FrameSideData::new_with_kind(FrameSideDataKind::IccProfile, truncated_tag_table)
+                .unwrap();
+        assert_eq!(
+            side_data.icc_profile().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let invalid_name = minimal_icc_profile();
+        assert_eq!(
+            FrameSideData::new_icc_profile(invalid_name.clone(), Some("bad\0name"))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        let non_icc =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, invalid_name).unwrap();
+        assert_eq!(non_icc.icc_profile().unwrap(), None);
     }
 
     #[test]
