@@ -35,6 +35,7 @@ const AVCC_ID: &[u8; 4] = b"avcC";
 const HVCC_ID: &[u8; 4] = b"hvcC";
 const ESDS_ID: &[u8; 4] = b"esds";
 const WAVE_ID: &[u8; 4] = b"wave";
+const CHAN_ID: &[u8; 4] = b"chan";
 const FRMA_ID: &[u8; 4] = b"frma";
 const TERMINATOR_ID: &[u8; 4] = b"\0\0\0\0";
 const PASP_ID: &[u8; 4] = b"pasp";
@@ -374,6 +375,7 @@ pub struct MovAudioSampleEntry {
     sample_rate_fixed_16_16: u32,
     version_fields: MovAudioSampleEntryVersionFields,
     wave_extension: Option<MovAudioWaveExtension>,
+    channel_layout: Option<MovAudioChannelLayout>,
     child_boxes: Vec<MovSampleEntryChildBox>,
 }
 
@@ -459,6 +461,10 @@ impl MovAudioSampleEntry {
 
     pub fn wave_extension(&self) -> Option<&MovAudioWaveExtension> {
         self.wave_extension.as_ref()
+    }
+
+    pub fn channel_layout(&self) -> Option<&MovAudioChannelLayout> {
+        self.channel_layout.as_ref()
     }
 
     pub fn child_boxes(&self) -> &[MovSampleEntryChildBox] {
@@ -593,6 +599,62 @@ impl MovElementaryStreamDescriptor {
 
     pub fn descriptor(&self) -> &[u8] {
         &self.descriptor
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAudioChannelLayout {
+    version: u8,
+    flags: [u8; 3],
+    channel_layout_tag: u32,
+    channel_bitmap: u32,
+    channel_descriptions: Vec<MovAudioChannelDescription>,
+}
+
+impl MovAudioChannelLayout {
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
+    pub fn flags(&self) -> [u8; 3] {
+        self.flags
+    }
+
+    pub fn channel_layout_tag(&self) -> u32 {
+        self.channel_layout_tag
+    }
+
+    pub fn channel_bitmap(&self) -> u32 {
+        self.channel_bitmap
+    }
+
+    pub fn channel_descriptions(&self) -> &[MovAudioChannelDescription] {
+        &self.channel_descriptions
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovAudioChannelDescription {
+    channel_label: u32,
+    channel_flags: u32,
+    coordinate_bits: [u32; 3],
+}
+
+impl MovAudioChannelDescription {
+    pub fn channel_label(&self) -> u32 {
+        self.channel_label
+    }
+
+    pub fn channel_flags(&self) -> u32 {
+        self.channel_flags
+    }
+
+    pub fn coordinate_bits(&self) -> [u32; 3] {
+        self.coordinate_bits
+    }
+
+    pub fn coordinates(&self) -> [f32; 3] {
+        self.coordinate_bits.map(f32::from_bits)
     }
 }
 
@@ -2080,6 +2142,7 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
         "MOV/MP4 AudioSampleEntry children",
     )?;
     let wave_extension = parse_audio_sample_entry_wave_extension(&child_boxes)?;
+    let channel_layout = parse_audio_sample_entry_channel_layout(&child_boxes)?;
     Ok(MovAudioSampleEntry {
         version,
         revision_level,
@@ -2092,6 +2155,7 @@ fn parse_audio_sample_entry(extra_data: &[u8]) -> AvResult<MovAudioSampleEntry> 
         sample_rate_fixed_16_16,
         version_fields,
         wave_extension,
+        channel_layout,
         child_boxes,
     })
 }
@@ -2122,6 +2186,16 @@ fn parse_audio_sample_entry_wave_extension(
         .iter()
         .find(|child| child.box_type.as_bytes() == WAVE_ID)
         .map(|child| parse_wave_extension(child.payload()))
+        .transpose()
+}
+
+fn parse_audio_sample_entry_channel_layout(
+    child_boxes: &[MovSampleEntryChildBox],
+) -> AvResult<Option<MovAudioChannelLayout>> {
+    child_boxes
+        .iter()
+        .find(|child| child.box_type.as_bytes() == CHAN_ID)
+        .map(|child| parse_audio_channel_layout(child.payload()))
         .transpose()
 }
 
@@ -2208,6 +2282,54 @@ fn validate_wave_terminator(child_boxes: &[MovSampleEntryChildBox]) -> AvResult<
         }
     }
     Ok(())
+}
+
+fn parse_audio_channel_layout(payload: &[u8]) -> AvResult<MovAudioChannelLayout> {
+    const CHANNEL_DESCRIPTION_SIZE: usize = 20;
+
+    let mut reader = ByteReader::new(payload);
+    let (version, flags) = read_full_box_header(&mut reader, "MOV/MP4 chan")?;
+    if version != 0 {
+        return Err(AvError::unsupported(format!(
+            "MOV/MP4 chan version {version} is not implemented"
+        )));
+    }
+    if flags != [0, 0, 0] {
+        return Err(AvError::invalid_data("MOV/MP4 chan flags must be zero"));
+    }
+    ensure_remaining(&reader, 12, "MOV/MP4 chan channel layout")?;
+    let channel_layout_tag = reader.read_u32_be()?;
+    let channel_bitmap = reader.read_u32_be()?;
+    let description_count = usize::try_from(reader.read_u32_be()?)
+        .map_err(|_| AvError::invalid_data("MOV/MP4 chan description count is out of range"))?;
+    let description_bytes = description_count
+        .checked_mul(CHANNEL_DESCRIPTION_SIZE)
+        .ok_or_else(|| AvError::invalid_data("MOV/MP4 chan description byte count overflow"))?;
+    ensure_remaining(
+        &reader,
+        description_bytes,
+        "MOV/MP4 chan channel descriptions",
+    )?;
+    let mut channel_descriptions = Vec::with_capacity(description_count);
+    for _ in 0..description_count {
+        channel_descriptions.push(MovAudioChannelDescription {
+            channel_label: reader.read_u32_be()?,
+            channel_flags: reader.read_u32_be()?,
+            coordinate_bits: [
+                reader.read_u32_be()?,
+                reader.read_u32_be()?,
+                reader.read_u32_be()?,
+            ],
+        });
+    }
+    ensure_box_consumed(&reader, "MOV/MP4 chan")?;
+    Ok(MovAudioChannelLayout {
+        version,
+        flags,
+        channel_layout_tag,
+        channel_bitmap,
+        channel_descriptions,
+    })
 }
 
 fn parse_visual_sample_entry(extra_data: &[u8]) -> AvResult<MovVideoSampleEntry> {
@@ -3876,6 +3998,7 @@ mod tests {
         assert!(audio.version1_fields().is_none());
         assert!(audio.version2_fields().is_none());
         assert!(audio.wave_extension().is_none());
+        assert!(audio.channel_layout().is_none());
         assert_eq!(audio.child_boxes().len(), 1);
         assert_eq!(audio.child_boxes()[0].box_type(), "esds");
         let expected_esds_payload = full_box(0, b"\x03\x01\x00");
@@ -3930,7 +4053,12 @@ mod tests {
 
     #[test]
     fn parses_audio_sample_entry_version_two_fields() {
-        let chan = box_(*b"chan", &full_box(0, b"\0\0\0\0"));
+        let chan_payload = audio_channel_layout_payload(
+            0x0065_0006,
+            0x0000_0003,
+            &[(1, 0, [0.0, 0.5, -1.0]), (2, 0x2, [1.0, 0.0, 0.25])],
+        );
+        let chan = box_(*CHAN_ID, &chan_payload);
         let extra_data = audio_sample_entry_v2_extra_data(96_000.0, 6, 24, 0x09, 24, 1, &chan);
         let bytes = mp4_with_sample_description_entry(b"lpcm", 1, &extra_data);
         let demuxer = MovDemuxer::open(&bytes).unwrap();
@@ -3960,10 +4088,27 @@ mod tests {
         assert!(audio.version1_fields().is_none());
         assert_eq!(audio.child_boxes().len(), 1);
         assert_eq!(audio.child_boxes()[0].box_type(), "chan");
-        let expected_chan_payload = full_box(0, b"\0\0\0\0");
+        assert_eq!(audio.child_boxes()[0].payload(), chan_payload.as_slice());
+        let channel_layout = audio.channel_layout().unwrap();
+        assert_eq!(channel_layout.version(), 0);
+        assert_eq!(channel_layout.flags(), [0, 0, 0]);
+        assert_eq!(channel_layout.channel_layout_tag(), 0x0065_0006);
+        assert_eq!(channel_layout.channel_bitmap(), 0x0000_0003);
+        assert_eq!(channel_layout.channel_descriptions().len(), 2);
+        assert_eq!(channel_layout.channel_descriptions()[0].channel_label(), 1);
+        assert_eq!(channel_layout.channel_descriptions()[0].channel_flags(), 0);
         assert_eq!(
-            audio.child_boxes()[0].payload(),
-            expected_chan_payload.as_slice()
+            channel_layout.channel_descriptions()[0].coordinate_bits(),
+            [0.0_f32.to_bits(), 0.5_f32.to_bits(), (-1.0_f32).to_bits()]
+        );
+        assert_eq!(channel_layout.channel_descriptions()[1].channel_label(), 2);
+        assert_eq!(
+            channel_layout.channel_descriptions()[1].channel_flags(),
+            0x2
+        );
+        assert_eq!(
+            channel_layout.channel_descriptions()[1].coordinates(),
+            [1.0, 0.0, 0.25]
         );
     }
 
@@ -4394,6 +4539,30 @@ mod tests {
         let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"lpcm", 1, &bad_v2_rate))
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let bad_chan_version = box_(*CHAN_ID, &full_box(1, b"\0\0\0\0\0\0\0\0\0\0\0\0"));
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &bad_chan_version);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::Unsupported);
+
+        let bad_chan_flags = {
+            let mut payload = audio_channel_layout_payload(1, 0, &[]);
+            payload[3] = 1;
+            box_(*CHAN_ID, &payload)
+        };
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &bad_chan_flags);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+
+        let mut bad_chan_count = audio_channel_layout_payload(1, 0, &[]);
+        bad_chan_count[12..16].copy_from_slice(&1_u32.to_be_bytes());
+        let bad_chan_count = box_(*CHAN_ID, &bad_chan_count);
+        let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &bad_chan_count);
+        let err = MovDemuxer::open(&mp4_with_sample_description_entry(b"mp4a", 1, &extra_data))
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
 
         let truncated_wave = box_(*WAVE_ID, b"\0\0");
         let extra_data = audio_sample_entry_extra_data(2, 16, 44_100, &truncated_wave);
@@ -5627,6 +5796,25 @@ mod tests {
             b"\0",
         ]
         .concat()
+    }
+
+    fn audio_channel_layout_payload(
+        channel_layout_tag: u32,
+        channel_bitmap: u32,
+        descriptions: &[(u32, u32, [f32; 3])],
+    ) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&channel_layout_tag.to_be_bytes());
+        body.extend_from_slice(&channel_bitmap.to_be_bytes());
+        body.extend_from_slice(&(u32::try_from(descriptions.len()).unwrap()).to_be_bytes());
+        for (channel_label, channel_flags, coordinates) in descriptions {
+            body.extend_from_slice(&channel_label.to_be_bytes());
+            body.extend_from_slice(&channel_flags.to_be_bytes());
+            for coordinate in coordinates {
+                body.extend_from_slice(&coordinate.to_bits().to_be_bytes());
+            }
+        }
+        full_box(0, &body)
     }
 
     fn wave_extension_payload(original_format: [u8; 4], esds_descriptor: &[u8]) -> Vec<u8> {

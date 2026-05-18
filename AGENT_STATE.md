@@ -2,7 +2,7 @@
 
 ## Current Status
 
-`avformat-mov-demuxer` now parses known MOV/MP4 `AudioSampleEntry` version 0, 1, and 2 metadata plus structured QuickTime `wave` extension child atoms, `tx3g` timed-text sample-entry display/default-box/default-style fields and child boxes, and `metx`/`mett` metadata sample-entry null-terminated string fields. The parsed model captures base audio version/revision/vendor/channel-count/sample-size/compression-ID/packet-size/sample-rate fields, version-1 packet sizing fields, version-2 sizeOfStructOnly/audioSampleRate/numAudioChannels/constBitsPerChannel/formatSpecificFlags/constBytesPerAudioPacket/constLPCMFramesPerAudioPacket fields, ordinary child boxes, `wave/frma` original-format FourCCs, `wave/esds` full-box descriptor payloads, `wave` terminator presence, `tx3g` text box/style records, XML metadata content encoding/namespace/schema location, and timed text metadata content encoding/MIME format, with invalid truncated entries, unknown audio versions, invalid version-2 offsets/rates, malformed child boxes, malformed `wave`/`frma`/`esds`/terminator atoms, and malformed `tx3g`/`metx`/`mett` payloads rejected as typed errors. `ffprobe-rs` still surfaces constrained MOV audio stream `sample_rate`, `channels`, and `bits_per_sample` fields from that Rust parser, including version-2 effective channel and bit-depth values, and both `ffprobe-rs` and `ffmpeg-rs` can fall back from missing MOV handlers to parsed sample-entry detail kinds for audio/video/subtitle/data stream typing. The ledger keeps the affected MOV, ffprobe, and streamhash entries at `implemented`, not `complete`, because pinned-oracle differential tests, upstream FATE coverage, additional codec-specific audio extensions, broader subtitle/data sample-entry coverage, decoder-derived fields, and actual local fuzz execution are still absent.
+`avformat-mov-demuxer` now parses known MOV/MP4 `AudioSampleEntry` version 0, 1, and 2 metadata plus structured QuickTime `wave` extension child atoms, structured audio `chan` channel-layout child atoms, `tx3g` timed-text sample-entry display/default-box/default-style fields and child boxes, and `metx`/`mett` metadata sample-entry null-terminated string fields. The parsed model captures base audio version/revision/vendor/channel-count/sample-size/compression-ID/packet-size/sample-rate fields, version-1 packet sizing fields, version-2 sizeOfStructOnly/audioSampleRate/numAudioChannels/constBitsPerChannel/formatSpecificFlags/constBytesPerAudioPacket/constLPCMFramesPerAudioPacket fields, ordinary child boxes, `wave/frma` original-format FourCCs, `wave/esds` full-box descriptor payloads, `wave` terminator presence, `chan` channel layout tags/bitmaps/description labels/flags/coordinate bits, `tx3g` text box/style records, XML metadata content encoding/namespace/schema location, and timed text metadata content encoding/MIME format, with invalid truncated entries, unknown audio versions, invalid version-2 offsets/rates, malformed child boxes, malformed `wave`/`frma`/`esds`/terminator atoms, malformed `chan` payloads, and malformed `tx3g`/`metx`/`mett` payloads rejected as typed errors. `ffprobe-rs` still surfaces constrained MOV audio stream `sample_rate`, `channels`, and `bits_per_sample` fields from that Rust parser, including version-2 effective channel and bit-depth values, and both `ffprobe-rs` and `ffmpeg-rs` can fall back from missing MOV handlers to parsed sample-entry detail kinds for audio/video/subtitle/data stream typing. The ledger keeps the affected MOV, ffprobe, and streamhash entries at `implemented`, not `complete`, because pinned-oracle differential tests, upstream FATE coverage, additional codec-specific audio extensions beyond `wave`/`chan`, broader subtitle/data sample-entry coverage, decoder-derived fields, and actual local fuzz execution are still absent.
 
 `fftools-ffmpeg-hash-output`, `fftools-ffmpeg-md5-output`, `fftools-ffmpeg-framehash-output`, `fftools-ffmpeg-framemd5-output`, and `fftools-ffmpeg-streamhash-output` are now implemented for the constrained Rust-native `ffmpeg-rs` execution path. `ffmpeg-rs` accepts one supported local input to stdout `-f hash -`, defaults to SHA-256, accepts output-scoped `-hash` for Adler-32, CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512, feeds packet payloads through `avformat::HashMuxer`, and rejects unknown hash algorithm names without invoking FFmpeg at runtime. The dedicated `-f md5 -` muxer routes the same packet payload stream through MD5 while preserving the observable output format name as `md5` and rejecting the generic hash muxer's `-hash` option. `ffmpeg-rs` also accepts constrained stdout `-f framehash -`, defaults that packet-record muxer to SHA-256, accepts output-scoped `-hash` on framehash, routes `-f framemd5 -` through the same per-packet record path with fixed MD5 while rejecting generic `-hash` on framemd5, and accepts `-f streamhash [-hash <algorithm>] -` with one accumulated digest line per stream. The streamhash command path now derives labels through a local stream-type map: AVI from demuxer stream media types, MOV from parsed `hdlr` handler types when available, MOV parsed sample-entry detail kinds and video dimensions as fallback, and raw/WAV/YUV4MPEG2/image2 from explicit single-stream metadata; the tests cover MOV video SHA-256 output, MOV audio-handler SHA-256 output, raw `pcm_s16le` MD5 output, AVI SHA-256 output, direct AVI/MOV metadata-map checks, and missing stream-metadata rejection. The ledger keeps the CLI hash/framehash/streamhash components at `implemented`, not `complete`, because exact FFmpeg hash/md5/framehash/framemd5/streamhash muxer output semantics, pinned-oracle differential tests, FATE coverage, broader command forms, and actual local fuzz execution are still absent.
 
@@ -56,6 +56,16 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo fmt --all -- --check`
+- `git diff --check`
+- `cargo test -p avformat mov::tests`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avformat_mov`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --all-features --exclude fftools`
+- `cargo test -p fftools --lib`
+- `cargo run -p fate-runner -- list`
+- `cargo run -p fate-runner -- run --samples . --oracle-ffmpeg Cargo.toml --component fate-runner`
 - `cargo fmt --all -- --check`
 - `git diff --check`
 - `cargo test -p avformat mov::tests`
@@ -1145,6 +1155,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- `cargo run -p fate-runner -- run --changed` selected `avformat-mov-demuxer` but failed with the expected no-runnable-FATE-mapping error because upstream media mappings for that component are still not configured; the local `fate-runner` self-test mapping passes.
 - `cargo run -p fate-runner -- run --changed` selected the changed MOV and fftools ledger components but failed with the expected no-runnable-FATE-mapping error because upstream media mappings for those components are still not configured; the local `fate-runner` self-test mapping passes.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` initially failed on a needless borrow in the new ffprobe audio sample-entry v2 test helper; the helper now passes the slice directly and clippy passes.
 - `git status --short` before initialization failed because the directory was not a Git repository.
@@ -1183,12 +1194,12 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avformat-mov-demuxer` is the latest coherent slice. The MOV demuxer now parses `tx3g` timed-text sample entries and `metx`/`mett` metadata sample entries, preserves their structured fields, rejects malformed subtitle/data payloads with typed errors, and lets the constrained ffprobe/streamhash paths use parsed MOV sample-entry detail kinds as a stream-type fallback when handlers are absent. Exact FFmpeg ffprobe output semantics, pinned FFmpeg differential tests, FATE coverage, actual local fuzz execution, additional codec-specific audio extension parsing, and broader MOV subtitle/data sample-entry coverage remain absent.
+`avformat-mov-demuxer` is the latest coherent slice. The MOV demuxer now parses audio `chan` channel-layout atoms with layout tag, bitmap, labels, flags, and coordinate bits, preserves the parsed model on `MovAudioSampleEntry`, and rejects malformed `chan` version, flag, and descriptor-count payloads with typed errors. Exact FFmpeg ffprobe output semantics, pinned FFmpeg differential tests, FATE coverage, actual local fuzz execution, additional codec-specific audio extension parsing beyond `wave`/`chan`, and broader MOV subtitle/data sample-entry coverage remain absent.
 
 ## Next 3 Concrete Actions
 
 1. Add pinned-oracle differential coverage for constrained `ffmpeg-rs -f hash [-hash <algorithm>] -`, `-f md5 -`, `-f framehash [-hash <algorithm>] -`, `-f framemd5 -`, and `-f streamhash [-hash <algorithm>] -` once the FFmpeg 8.1.1 oracle binary is available.
-2. Extend MOV sample-entry parsing into additional codec-specific audio extension atoms and broader subtitle/data sample-entry variants.
+2. Extend MOV sample-entry parsing into additional codec-specific audio extension atoms beyond `wave`/`chan` and broader subtitle/data sample-entry variants.
 3. Add the first real upstream-FATE-compatible media mapping once a sample root and pinned oracle command are available.
 
 ## Known Blockers
@@ -1201,4 +1212,4 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: parsed MOV `tx3g` timed-text sample entries and `metx`/`mett` metadata sample entries, added malformed subtitle/data sample-entry rejection tests, wired parsed sample-entry detail fallback into constrained ffprobe/streamhash stream typing, updated MOV compatibility notes, and kept the affected components below `complete` because oracle/FATE/fuzz parity remains missing.
+Latest slice: parsed MOV audio `chan` channel-layout atoms, added malformed channel-layout rejection coverage, updated MOV compatibility notes, and kept the affected component below `complete` because oracle/FATE/fuzz parity remains missing.
