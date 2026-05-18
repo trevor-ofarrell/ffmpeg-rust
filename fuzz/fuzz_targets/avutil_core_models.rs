@@ -5,11 +5,12 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
     FrameActiveFormatDescription, FrameAudioServiceType, FrameData, FrameDisplayMatrix,
-    FrameDownmixInfo, FrameDownmixType, FrameGopTimecode, FrameMatrixEncoding, FrameMotionVector,
-    FrameMotionVectors, FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData,
-    FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, Md5,
-    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    FrameDownmixInfo, FrameDownmixType, FrameGopTimecode, FrameMasteringDisplayMetadata,
+    FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors, FrameReplayGain, FrameS12mTimecode,
+    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
+    FrameSkipSamples, FrameSkipSamplesReason, Md5, Packet, PacketFlags, PixelFormat, Rational,
+    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
+    VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1198,6 +1199,64 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 false
             };
             assert!(frame_side_data_payload.len() < FrameAudioServiceType::DATA_LEN || raw_invalid);
+        }
+    }
+    match frame.side_data()[0].mastering_display_metadata() {
+        Ok(Some(value)) => {
+            assert_eq!(
+                frame_side_data_kind,
+                FrameSideDataKind::MasteringDisplayMetadata
+            );
+            assert_eq!(
+                frame_side_data_payload.len(),
+                FrameMasteringDisplayMetadata::DATA_LEN
+            );
+            assert_eq!(value.to_bytes().as_slice(), frame_side_data_payload);
+            assert_eq!(
+                FrameMasteringDisplayMetadata::parse(&value.to_bytes()).unwrap(),
+                value
+            );
+            assert_eq!(value.has_primaries(), value.has_primaries_raw() != 0);
+            assert_eq!(value.has_luminance(), value.has_luminance_raw() != 0);
+
+            let mut offset = 0;
+            for primary in value.display_primaries() {
+                for coordinate in primary {
+                    assert_eq!(
+                        read_rational_from_payload(&frame_side_data_payload, &mut offset),
+                        coordinate
+                    );
+                }
+            }
+            for coordinate in value.white_point() {
+                assert_eq!(
+                    read_rational_from_payload(&frame_side_data_payload, &mut offset),
+                    coordinate
+                );
+            }
+            assert_eq!(
+                read_rational_from_payload(&frame_side_data_payload, &mut offset),
+                value.min_luminance()
+            );
+            assert_eq!(
+                read_rational_from_payload(&frame_side_data_payload, &mut offset),
+                value.max_luminance()
+            );
+        }
+        Ok(None) => assert_ne!(
+            frame_side_data_kind,
+            FrameSideDataKind::MasteringDisplayMetadata
+        ),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(
+                frame_side_data_kind,
+                FrameSideDataKind::MasteringDisplayMetadata
+            );
+            assert_ne!(
+                frame_side_data_payload.len(),
+                FrameMasteringDisplayMetadata::DATA_LEN
+            );
         }
     }
     match frame.side_data()[0].gop_timecode() {
@@ -2396,6 +2455,55 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 4]).unwrap();
     assert_eq!(non_audio_service.audio_service_type().unwrap(), None);
 
+    let mastering = FrameMasteringDisplayMetadata::new(
+        [
+            [
+                Rational::from_raw(34_000, 50_000),
+                Rational::from_raw(16_000, 50_000),
+            ],
+            [
+                Rational::from_raw(13_250, 50_000),
+                Rational::from_raw(34_500, 50_000),
+            ],
+            [
+                Rational::from_raw(7_500, 50_000),
+                Rational::from_raw(3_000, 50_000),
+            ],
+        ],
+        [
+            Rational::from_raw(15_635, 50_000),
+            Rational::from_raw(16_450, 50_000),
+        ],
+        Rational::from_raw(50, 10_000),
+        Rational::from_raw(1000, 1),
+        1,
+        -2,
+    );
+    let mastering_side_data = FrameSideData::new_mastering_display_metadata(mastering).unwrap();
+    assert_eq!(
+        mastering_side_data.kind_id(),
+        &FrameSideDataKind::MasteringDisplayMetadata
+    );
+    assert_eq!(
+        mastering_side_data.mastering_display_metadata().unwrap(),
+        Some(mastering)
+    );
+    assert_eq!(mastering_side_data.data(), &mastering.to_bytes()[..]);
+    assert!(mastering.has_primaries());
+    assert!(mastering.has_luminance());
+    assert_eq!(mastering.has_luminance_raw(), -2);
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::MasteringDisplayMetadata, vec![0; 87])
+            .unwrap()
+            .mastering_display_metadata()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_mastering =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 88]).unwrap();
+    assert_eq!(non_mastering.mastering_display_metadata().unwrap(), None);
+
     let gop_timecode = FrameGopTimecode::new(0x01FE_DCBA).unwrap();
     let gop_side_data = FrameSideData::new_gop_timecode(gop_timecode).unwrap();
     assert_eq!(gop_side_data.kind_id(), &FrameSideDataKind::GopTimecode);
@@ -2691,6 +2799,16 @@ fn timestamp_from(byte: Option<u8>) -> Option<i64> {
         2 => Some(i64::from(byte.unwrap_or_default())),
         _ => Some(-i64::from(byte.unwrap_or_default())),
     }
+}
+
+fn read_rational_from_payload(data: &[u8], offset: &mut usize) -> Rational {
+    let mut num = [0; 4];
+    num.copy_from_slice(&data[*offset..*offset + 4]);
+    *offset += 4;
+    let mut den = [0; 4];
+    den.copy_from_slice(&data[*offset..*offset + 4]);
+    *offset += 4;
+    Rational::from_raw(i32::from_ne_bytes(num), i32::from_ne_bytes(den))
 }
 
 fn positive_rational_from(num: Option<u8>, den: Option<u8>) -> Rational {
