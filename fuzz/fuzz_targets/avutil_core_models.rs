@@ -3284,6 +3284,30 @@ fn exercise_fixtures() {
     assert_eq!(SampleFormat::DblP.plane_sizes(2, 2).unwrap(), vec![16, 16]);
     assert_eq!(SampleFormat::S64.plane_sizes(2, 2).unwrap(), vec![32]);
     assert_eq!(SampleFormat::S64P.plane_sizes(2, 2).unwrap(), vec![16, 16]);
+    let overflow_line_size = usize::MAX - 1;
+    let overflow_alignment = usize::MAX - 2;
+    assert_eq!(
+        VideoFrame::aligned_line_sizes(
+            PixelFormat::Gray8,
+            overflow_line_size,
+            1,
+            overflow_alignment,
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        AudioFrame::aligned_line_sizes(
+            SampleFormat::U8,
+            overflow_line_size,
+            1,
+            overflow_alignment,
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidArgument
+    );
     assert!(ChannelLayout::stereo().contains(Channel::FrontLeft));
     assert!(!ChannelLayout::stereo().contains(Channel::LowFrequency));
     assert_eq!(
