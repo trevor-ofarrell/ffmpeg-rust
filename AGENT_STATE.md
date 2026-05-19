@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-packet` update: packet timestamp rescaling now mirrors the documented `av_packet_rescale_ts` shape for the current Rust packet model. `Packet::rescale_ts` converts valid PTS, DTS, and nonzero duration fields between `Rational` time bases through the shared timebase rescaler, preserves unknown PTS/DTS sentinel values, leaves packet payload, stream index, flags, byte position, and side data untouched, and precomputes all timing fields before assignment so invalid time bases or overflow do not partially mutate the packet. Focused unit tests cover valid rescaling, unknown timestamp preservation, and invalid/overflow no-mutation behavior. The `avutil_core_models` fuzz target now build-checks packet rescale invariants too. This remains below `complete` because full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still blocked.
+
 Latest `avutil-byteio` update: byte I/O now covers signed 24-bit and signed 48-bit helper paths in addition to the existing unsigned and fixed-width signed helpers. `ByteReader::read_i24_le`/`read_i24_be` and `read_i48_le`/`read_i48_be` sign-extend constrained-width values without advancing on EOF because they use the existing bounded unsigned reads; `ByteWriter::write_i24_le`/`write_i24_be` and `write_i48_le`/`write_i48_be` validate the exact signed range before mutating output. Focused unit tests cover sign extension, full signed read/write round trips, and no-mutation rejection for out-of-range signed 24/48-bit values. The `avutil_byteio` fuzz target now build-checks signed 24/48-bit read/write operations and no-mutation writer failures. This remains below `complete` because pinned-oracle/FATE parity and actual local fuzz execution are still blocked.
 
 Latest current-loop `repo-runtime-guard`/`fate-runner` update: `xtask guard-runtime` now enforces the no-FFmpeg-runtime-linkage policy across Cargo dependency sections, resolved `Cargo.lock` package names, and runtime implementation source scans for wrapper tokens or literal `ffmpeg`/`ffprobe`/`ffplay` process spawns. The guard intentionally leaves oracle/FATE/test/fuzz/xtask tooling outside the runtime-shell-out ban, remains wired into `xtask quick`, `xtask changed`, `xtask full`, and local FATE-runner smoke execution, and `fate-runner` changed-path selection now maps workspace manifests, crate manifests, fuzz/xtask manifests, and `Cargo.lock` to `repo-runtime-guard` while also selecting affected component families for crate manifests. This is a policy/infrastructure guard only; it does not add media parity, oracle snapshots, upstream FATE samples, or actual fuzz execution.
@@ -72,7 +74,7 @@ Update for the current slice: View ID coverage now has build-checked fuzz invari
 
 `avutil-frame` now reports tightly packed per-plane line sizes for the current audio/video frame subset. Video frames derive line sizes for gray/rgb24/rgba/yuv420p from the validated pixel format and dimensions, audio frames expose packed per-plane byte counts from the validated sample format, and `avutil_core_models` now build-checks these line-size invariants. The ledger still keeps `avutil-frame` at `implemented`, not `complete`, because full AVFrame fields, buffer ownership, custom alignment/stride behavior, side data, pinned-oracle differential tests, FATE, and actual local fuzz execution are still absent.
 
-`avutil-packet` now models more AVPacket-shaped metadata and mutation invariants. Packets expose payload length/emptiness, preserve unknown byte position separately from valid nonnegative positions, reject negative byte positions without mutating existing state, support clearable FFmpeg-style key/corrupt/discard/trusted/disposable flags with known-bit truncation, and reject side-data kind names that are empty or contain NUL. The `avutil_core_models` fuzz target now build-checks packet byte-position, duration, flag, side-data, payload, and non-mutation invariants. The ledger still keeps `avutil-packet` at `implemented`, not `complete`, because full AVPacket field parity, pinned-oracle differential tests, FATE, and actual local fuzz execution are still absent.
+`avutil-packet` now models more AVPacket-shaped metadata and mutation invariants. Packets expose payload length/emptiness, preserve unknown byte position separately from valid nonnegative positions, reject negative byte positions without mutating existing state, support clearable FFmpeg-style key/corrupt/discard/trusted/disposable flags with known-bit truncation, reject side-data kind names that are empty or contain NUL, and rescale valid PTS/DTS/duration fields between time bases while preserving unknown timestamps. The `avutil_core_models` fuzz target now build-checks packet byte-position, duration, timestamp rescaling, flag, side-data, payload, and non-mutation invariants. The ledger still keeps `avutil-packet` at `implemented`, not `complete`, because full AVPacket field parity, pinned-oracle differential tests, FATE, and actual local fuzz execution are still absent.
 
 `avutil-timebase` now covers FFmpeg-style timestamp rescaling edge modes more explicitly. It adds an away-from-zero rounding mode, a pass-min/max helper for timestamp sentinels, tests invalid time bases and out-of-range rescale results, and extends `avutil_core_models` to fuzz-check all current rounding modes plus sentinel preservation against an independent i128 model. The ledger still keeps `avutil-timebase` at `implemented`, not `complete`, because pinned-oracle edge-case differential vectors are still absent.
 
@@ -104,6 +106,17 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo test -p avutil packet`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+- `cargo run -p fate-runner -- run --component avutil-packet`
+- `cargo fmt --all -- --check`
+- `git diff --check`
+- `cargo run -p fate-runner -- run --changed --dry-run`
+- `cargo run -p fate-runner -- run --changed`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo run -p xtask -- quick`
 - `cargo fmt --all`
 - `cargo test -p avutil byteio`
 - `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_byteio`
@@ -2621,13 +2634,13 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-byteio` is the current focus for this slice. The concrete change is signed 24-bit and signed 48-bit byte-field parity: bounded readers now sign-extend little-endian and big-endian 24/48-bit values, writers validate exact signed ranges before appending bytes, unit tests cover boundary round trips and out-of-range no-mutation errors, and the `avutil_byteio` fuzz harness exercises the new read/write paths.
+`avutil-packet` is the current focus for this slice. The concrete change is packet timestamp rescaling: valid PTS, DTS, and nonzero duration fields are converted through shared `Rational` time bases, unknown timestamps are preserved, and invalid time bases or overflow leave all packet timing fields unchanged.
 
-This slice does not mark byte I/O complete. The broader goal remains blocked on missing pinned-oracle snapshots, upstream FATE media mappings/samples, actual local fuzz execution, and many incomplete FFmpeg surfaces.
+This slice does not mark packet handling complete. The broader goal remains blocked on missing pinned-oracle snapshots, upstream FATE media mappings/samples, actual local fuzz execution, and many incomplete FFmpeg surfaces.
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 primitive work by adding the next unblocked shared `avutil` compatibility vector, most likely another byte/bit I/O edge case or a metadata/options/logging parity gap with local tests.
+1. Continue priority-1 primitive work by adding the next unblocked shared `avutil` compatibility vector, most likely packet side-data lifecycle helpers, another frame-model invariant, or a metadata/options/logging parity gap with local tests.
 2. Add pinned-oracle differential coverage for constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
 3. Add upstream FATE sample-backed media mappings for constrained `ffmpeg-rs` null/framecrc/hash-style command paths once samples and the pinned oracle are available.
 
@@ -2641,4 +2654,4 @@ This slice does not mark byte I/O complete. The broader goal remains blocked on 
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added signed 24-bit and signed 48-bit byte I/O helpers. `ByteReader` now sign-extends constrained-width signed values for both endiannesses, `ByteWriter` validates exact signed 24/48-bit ranges before mutation, unit coverage now includes boundary round trips and no-mutation invalid-input checks, and `avutil_byteio` fuzz coverage now exercises the new paths. Validation passed with `cargo fmt --all`, `cargo test -p avutil byteio`, `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_byteio`, `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_byteio -- -D warnings`, `cargo run -p fate-runner -- run --component avutil-byteio`, `cargo fmt --all -- --check`, `git diff --check`, `cargo run -p fate-runner -- run --changed --dry-run`, `cargo run -p fate-runner -- run --changed`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo run -p xtask -- quick`.
+Latest slice: added packet timestamp rescaling. `Packet::rescale_ts` now converts valid PTS, DTS, and nonzero duration fields between `Rational` time bases, preserves unknown timestamps, and avoids partial timing mutation on invalid time bases or overflow; `avutil_core_models` fuzz coverage now exercises the same invariants. Validation passed with `cargo fmt --all`, `cargo test -p avutil packet`, `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`, `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`, `cargo run -p fate-runner -- run --component avutil-packet`, `cargo fmt --all -- --check`, `git diff --check`, `cargo run -p fate-runner -- run --changed --dry-run`, `cargo run -p fate-runner -- run --changed`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo run -p xtask -- quick`.

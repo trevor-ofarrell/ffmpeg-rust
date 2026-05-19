@@ -3170,6 +3170,40 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(packet.pos(), pos);
 
+    let rescale_src = Rational::new(1, 90_000).unwrap();
+    let rescale_dst = Rational::new(1, 1_000).unwrap();
+    let original_timing = (packet.pts(), packet.dts(), packet.duration());
+    packet.rescale_ts(rescale_src, rescale_dst).unwrap();
+    assert_eq!(
+        packet.pts(),
+        original_timing
+            .0
+            .map(|value| rescale_q(value, rescale_src, rescale_dst).unwrap())
+    );
+    assert_eq!(
+        packet.dts(),
+        original_timing
+            .1
+            .map(|value| rescale_q(value, rescale_src, rescale_dst).unwrap())
+    );
+    assert_eq!(
+        packet.duration(),
+        if original_timing.2 == 0 {
+            0
+        } else {
+            rescale_q(original_timing.2, rescale_src, rescale_dst).unwrap()
+        }
+    );
+    let rescaled_timing = (packet.pts(), packet.dts(), packet.duration());
+    assert_eq!(
+        packet
+            .rescale_ts(Rational::from_raw(1, 0), rescale_dst)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!((packet.pts(), packet.dts(), packet.duration()), rescaled_timing);
+
     packet.set_key(cursor.next().unwrap_or_default().is_multiple_of(2));
     if packet.flags().contains(PacketFlags::KEY) {
         assert_ne!(packet.flags().bits() & PacketFlags::KEY.bits(), 0);

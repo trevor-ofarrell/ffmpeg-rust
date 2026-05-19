@@ -1,4 +1,4 @@
-use crate::{AvError, AvResult};
+use crate::{rescale_q, AvError, AvResult, Rational};
 
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
 pub const AV_PACKET_POS_UNKNOWN: i64 = -1;
@@ -206,6 +206,31 @@ impl Packet {
     pub fn push_side_data(&mut self, side_data: SideData) {
         self.side_data.push(side_data);
     }
+
+    pub fn rescale_ts(&mut self, src: Rational, dst: Rational) -> AvResult<()> {
+        rescale_q(0, src, dst)?;
+
+        let pts = if self.pts == AV_NOPTS_VALUE {
+            AV_NOPTS_VALUE
+        } else {
+            rescale_q(self.pts, src, dst)?
+        };
+        let dts = if self.dts == AV_NOPTS_VALUE {
+            AV_NOPTS_VALUE
+        } else {
+            rescale_q(self.dts, src, dst)?
+        };
+        let duration = if self.duration == 0 {
+            0
+        } else {
+            rescale_q(self.duration, src, dst)?
+        };
+
+        self.pts = pts;
+        self.dts = dts;
+        self.duration = duration;
+        Ok(())
+    }
 }
 
 fn pts_option(value: i64) -> Option<i64> {
@@ -310,5 +335,71 @@ mod tests {
         assert_eq!(packet.pos(), None);
         assert!(SideData::new(" ", Vec::new()).is_err());
         assert!(SideData::new("bad\0kind", Vec::new()).is_err());
+    }
+
+    #[test]
+    fn packet_rescales_valid_timestamps_and_duration() {
+        let src = Rational::new(1, 90_000).unwrap();
+        let dst = Rational::new(1, 1_000).unwrap();
+        let mut packet = Packet::new(vec![0], 3);
+        packet.set_pts(Some(90_000));
+        packet.set_dts(Some(45_000));
+        packet.set_duration(3_003).unwrap();
+        packet.set_pos(Some(77)).unwrap();
+        packet.set_key(true);
+        packet.push_side_data(SideData::new("palette", vec![1, 2, 3]).unwrap());
+
+        packet.rescale_ts(src, dst).unwrap();
+
+        assert_eq!(packet.pts(), Some(1_000));
+        assert_eq!(packet.dts(), Some(500));
+        assert_eq!(packet.duration(), 33);
+        assert_eq!(packet.pos(), Some(77));
+        assert_eq!(packet.stream_index(), 3);
+        assert!(packet.flags().contains(PacketFlags::KEY));
+        assert_eq!(packet.side_data()[0].data(), &[1, 2, 3]);
+    }
+
+    #[test]
+    fn packet_rescale_ignores_unknown_timestamps() {
+        let src = Rational::new(1, 48_000).unwrap();
+        let dst = Rational::new(1, 1_000).unwrap();
+        let mut packet = Packet::new(Vec::new(), 0);
+        packet.set_duration(48_000).unwrap();
+
+        packet.rescale_ts(src, dst).unwrap();
+
+        assert_eq!(packet.pts(), None);
+        assert_eq!(packet.dts(), None);
+        assert_eq!(packet.duration(), 1_000);
+    }
+
+    #[test]
+    fn packet_rescale_errors_do_not_mutate_timing_fields() {
+        let mut packet = Packet::new(Vec::new(), 0);
+        packet.set_pts(Some(10));
+        packet.set_dts(Some(9));
+        packet.set_duration(8).unwrap();
+
+        let invalid_err = packet
+            .rescale_ts(Rational::from_raw(1, 0), Rational::ONE)
+            .unwrap_err();
+
+        assert_eq!(invalid_err.kind(), crate::AvErrorKind::InvalidArgument);
+        assert_eq!(packet.pts(), Some(10));
+        assert_eq!(packet.dts(), Some(9));
+        assert_eq!(packet.duration(), 8);
+
+        packet.set_pts(Some(i64::MAX));
+        packet.set_dts(Some(9));
+        packet.set_duration(8).unwrap();
+        let overflow_err = packet
+            .rescale_ts(Rational::ONE, Rational::new(1, 2).unwrap())
+            .unwrap_err();
+
+        assert_eq!(overflow_err.kind(), crate::AvErrorKind::InvalidArgument);
+        assert_eq!(packet.pts(), Some(i64::MAX));
+        assert_eq!(packet.dts(), Some(9));
+        assert_eq!(packet.duration(), 8);
     }
 }
