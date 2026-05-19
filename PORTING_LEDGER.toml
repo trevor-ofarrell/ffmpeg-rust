@@ -489,6 +489,8 @@ Latest EXIF GPS tail coverage adds GPSProcessingMethod and GPSAreaInformation as
 
 Latest EXIF GPS altitude/time/date fuzz coverage adds build-checked deterministic fuzz assertions for GPSAltitudeRef enum-value rejection, GPSTimeStamp count rejection, GPSTimeStamp composite overflow rejection, and GPSDateStamp type rejection while preserving existing GPS altitude, timestamp range, date shape, date range, and leap-day checks.
 
+Latest EXIF GPS acquisition fuzz coverage adds build-checked deterministic fuzz assertions for GPSStatus enum-value rejection, GPSMeasureMode count rejection, and GPSDOP type rejection while preserving existing GPSStatus count rejection plus valid satellites, status, measure-mode, and DOP parsing.
+
 Latest EXIF typed-entry coverage extends the value semantics fixture and fuzz invariants to SIGNED BYTE, FLOAT, and DOUBLE TIFF entry accessors, including out-of-line DOUBLE value decoding.
 
 Latest EXIF root colorimetry coverage adds WhitePoint, PrimaryChromaticities, YCbCrCoefficients, and ReferenceBlackWhite as fixed-count unsigned RATIONAL arrays with strict type/count/denominator rejection.

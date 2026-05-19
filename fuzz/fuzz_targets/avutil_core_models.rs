@@ -5331,6 +5331,16 @@ fn exercise_fixtures() {
         gps_acquisition_tags.gps_measure_mode().unwrap().as_str(),
         "3"
     );
+    let mut bad_status = exif_gps_acquisition_fixture();
+    bad_status[48] = b'X';
+    assert_eq!(
+        FrameExif::parse(&bad_status)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_status_count = exif_gps_acquisition_fixture();
     bad_status_count[44..48].copy_from_slice(&3u32.to_le_bytes());
     assert_eq!(
@@ -5341,8 +5351,28 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let mut bad_measure_mode_count = exif_gps_acquisition_fixture();
+    bad_measure_mode_count[56..60].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_measure_mode_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(gps_acquisition_tags.gps_dop().unwrap().numerator(), 7);
     assert_eq!(gps_acquisition_tags.gps_dop().unwrap().denominator(), 2);
+    let mut bad_dop_type = exif_gps_acquisition_fixture();
+    bad_dop_type[66..68].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_dop_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let gps_motion_exif_bytes = exif_gps_motion_fixture();
     let gps_motion_exif = FrameExif::parse(&gps_motion_exif_bytes).unwrap();
