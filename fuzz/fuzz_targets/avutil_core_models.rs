@@ -34,12 +34,12 @@ use avutil::{
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription, PacketContentLightMetadata,
     PacketCpbProperties, PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketIccProfile,
-    PacketJpDualMono, PacketJpDualMonoSelection, PacketMatroskaBlockAdditional,
-    PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
-    PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind,
-    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier,
-    PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    PacketJpDualMono, PacketJpDualMonoSelection, PacketMasteringDisplayMetadata,
+    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
+    PacketProducerReferenceTime, PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode,
+    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition,
+    PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat,
+    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3302,6 +3302,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         + PacketQualityStats::ERROR_ENTRY_LEN * 3
         + 1)
     .max(PacketCpbProperties::DATA_LEN + 1)
+    .max(PacketMasteringDisplayMetadata::DATA_LEN + 1)
     .max(PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN + 1);
     let typed_payload_len =
         usize::from(cursor.next().unwrap_or_default()) % typed_payload_max_len;
@@ -3413,6 +3414,36 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::RtcpSenderReport);
             assert!(packet_rtcp_sender_report_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.mastering_display_metadata() {
+        Ok(Some(value)) => {
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::MasteringDisplayMetadata
+            );
+            assert_eq!(typed_payload.len(), PacketMasteringDisplayMetadata::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketMasteringDisplayMetadata::parse(&value.to_bytes()).unwrap(),
+                value
+            );
+            assert_eq!(value.has_primaries(), value.has_primaries_raw() != 0);
+            assert_eq!(value.has_luminance(), value.has_luminance_raw() != 0);
+        }
+        Ok(None) => assert_ne!(
+            typed_payload_kind,
+            PacketSideDataKind::MasteringDisplayMetadata
+        ),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::MasteringDisplayMetadata
+            );
+            assert!(packet_mastering_display_metadata_payload_invalid(
+                &typed_payload
+            ));
         }
     }
     match typed_payload_side_data.content_light_metadata() {
@@ -4453,6 +4484,104 @@ fn exercise_fixtures() {
         .unwrap_err()
         .kind(),
         AvErrorKind::InvalidData
+    );
+    let packet_mastering_display = PacketMasteringDisplayMetadata::new(
+        [
+            [
+                Rational::from_raw(34_000, 50_000),
+                Rational::from_raw(16_000, 50_000),
+            ],
+            [
+                Rational::from_raw(13_250, 50_000),
+                Rational::from_raw(34_500, 50_000),
+            ],
+            [
+                Rational::from_raw(7_500, 50_000),
+                Rational::from_raw(3_000, 50_000),
+            ],
+        ],
+        [
+            Rational::from_raw(15_635, 50_000),
+            Rational::from_raw(16_450, 50_000),
+        ],
+        Rational::from_raw(50, 10_000),
+        Rational::from_raw(1000, 1),
+        1,
+        -2,
+    );
+    let packet_mastering_display_bytes = packet_mastering_display.to_bytes();
+    assert_eq!(
+        PacketMasteringDisplayMetadata::parse(&packet_mastering_display_bytes).unwrap(),
+        packet_mastering_display
+    );
+    assert_eq!(
+        packet_mastering_display.display_primaries()[0][0],
+        Rational::from_raw(34_000, 50_000)
+    );
+    assert_eq!(
+        packet_mastering_display.white_point()[1],
+        Rational::from_raw(16_450, 50_000)
+    );
+    assert!(packet_mastering_display.has_primaries());
+    assert!(packet_mastering_display.has_luminance());
+    assert_eq!(packet_mastering_display.has_luminance_raw(), -2);
+    assert_eq!(
+        SideData::new_mastering_display_metadata(packet_mastering_display)
+            .unwrap()
+            .mastering_display_metadata()
+            .unwrap(),
+        Some(packet_mastering_display)
+    );
+    let raw_packet_mastering_display = PacketMasteringDisplayMetadata::new(
+        [[Rational::from_raw(2, 4); PacketMasteringDisplayMetadata::COORDINATES];
+            PacketMasteringDisplayMetadata::PRIMARIES],
+        [Rational::from_raw(0, 0); PacketMasteringDisplayMetadata::COORDINATES],
+        Rational::from_raw(0, 0),
+        Rational::from_raw(9, 3),
+        0,
+        -3,
+    );
+    let parsed_raw_packet_mastering_display =
+        PacketMasteringDisplayMetadata::parse(&raw_packet_mastering_display.to_bytes()).unwrap();
+    assert_eq!(
+        parsed_raw_packet_mastering_display.white_point()[0],
+        Rational::from_raw(0, 0)
+    );
+    assert!(!parsed_raw_packet_mastering_display.has_primaries());
+    assert!(parsed_raw_packet_mastering_display.has_luminance());
+    assert_eq!(
+        parsed_raw_packet_mastering_display.has_luminance_raw(),
+        -3
+    );
+    assert_eq!(
+        PacketMasteringDisplayMetadata::parse(
+            &packet_mastering_display_bytes[..PacketMasteringDisplayMetadata::DATA_LEN - 1]
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        SideData::new_with_kind(
+            PacketSideDataKind::MasteringDisplayMetadata,
+            vec![0; PacketMasteringDisplayMetadata::DATA_LEN - 1]
+        )
+        .unwrap()
+        .mastering_display_metadata()
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_packet_mastering_display = SideData::new_with_kind(
+        PacketSideDataKind::ContentLightLevel,
+        packet_mastering_display_bytes.to_vec(),
+    )
+    .unwrap();
+    assert_eq!(
+        non_packet_mastering_display
+            .mastering_display_metadata()
+            .unwrap(),
+        None
     );
     let packet_s12m_timecode =
         PacketS12mTimecode::new(&[0x0102_0304, 0xA0B0_C0D0]).unwrap();
@@ -10401,6 +10530,10 @@ fn packet_producer_reference_time_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_rtcp_sender_report_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketRtcpSenderReport::DATA_LEN
+}
+
+fn packet_mastering_display_metadata_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketMasteringDisplayMetadata::DATA_LEN
 }
 
 fn packet_content_light_metadata_payload_invalid(data: &[u8]) -> bool {

@@ -812,6 +812,149 @@ impl PacketSkipSamplesReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketMasteringDisplayMetadata {
+    display_primaries: [[Rational; Self::COORDINATES]; Self::PRIMARIES],
+    white_point: [Rational; Self::COORDINATES],
+    min_luminance: Rational,
+    max_luminance: Rational,
+    has_primaries: i32,
+    has_luminance: i32,
+}
+
+impl PacketMasteringDisplayMetadata {
+    pub const PRIMARIES: usize = 3;
+    pub const COORDINATES: usize = 2;
+    pub const DATA_LEN: usize = 88;
+
+    pub const fn new(
+        display_primaries: [[Rational; Self::COORDINATES]; Self::PRIMARIES],
+        white_point: [Rational; Self::COORDINATES],
+        min_luminance: Rational,
+        max_luminance: Rational,
+        has_primaries: i32,
+        has_luminance: i32,
+    ) -> Self {
+        Self {
+            display_primaries,
+            white_point,
+            min_luminance,
+            max_luminance,
+            has_primaries,
+            has_luminance,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "mastering display metadata packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut offset = 0;
+        let mut display_primaries = [[Rational::ZERO; Self::COORDINATES]; Self::PRIMARIES];
+        for primary in &mut display_primaries {
+            for coordinate in primary {
+                *coordinate = Self::read_rational(data, &mut offset);
+            }
+        }
+
+        let mut white_point = [Rational::ZERO; Self::COORDINATES];
+        for coordinate in &mut white_point {
+            *coordinate = Self::read_rational(data, &mut offset);
+        }
+
+        let min_luminance = Self::read_rational(data, &mut offset);
+        let max_luminance = Self::read_rational(data, &mut offset);
+        let has_primaries = Self::read_i32(data, &mut offset);
+        let has_luminance = Self::read_i32(data, &mut offset);
+
+        Ok(Self {
+            display_primaries,
+            white_point,
+            min_luminance,
+            max_luminance,
+            has_primaries,
+            has_luminance,
+        })
+    }
+
+    pub const fn display_primaries(self) -> [[Rational; Self::COORDINATES]; Self::PRIMARIES] {
+        self.display_primaries
+    }
+
+    pub const fn white_point(self) -> [Rational; Self::COORDINATES] {
+        self.white_point
+    }
+
+    pub const fn min_luminance(self) -> Rational {
+        self.min_luminance
+    }
+
+    pub const fn max_luminance(self) -> Rational {
+        self.max_luminance
+    }
+
+    pub const fn has_primaries(self) -> bool {
+        self.has_primaries != 0
+    }
+
+    pub const fn has_luminance(self) -> bool {
+        self.has_luminance != 0
+    }
+
+    pub const fn has_primaries_raw(self) -> i32 {
+        self.has_primaries
+    }
+
+    pub const fn has_luminance_raw(self) -> i32 {
+        self.has_luminance
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        let mut offset = 0;
+        for primary in self.display_primaries {
+            for coordinate in primary {
+                Self::write_rational(&mut bytes, &mut offset, coordinate);
+            }
+        }
+        for coordinate in self.white_point {
+            Self::write_rational(&mut bytes, &mut offset, coordinate);
+        }
+        Self::write_rational(&mut bytes, &mut offset, self.min_luminance);
+        Self::write_rational(&mut bytes, &mut offset, self.max_luminance);
+        Self::write_i32(&mut bytes, &mut offset, self.has_primaries);
+        Self::write_i32(&mut bytes, &mut offset, self.has_luminance);
+        bytes
+    }
+
+    fn read_rational(data: &[u8], offset: &mut usize) -> Rational {
+        let num = Self::read_i32(data, offset);
+        let den = Self::read_i32(data, offset);
+        Rational::from_raw(num, den)
+    }
+
+    fn read_i32(data: &[u8], offset: &mut usize) -> i32 {
+        let value = read_i32_ne(data, *offset);
+        *offset += 4;
+        value
+    }
+
+    fn write_rational(bytes: &mut [u8; Self::DATA_LEN], offset: &mut usize, value: Rational) {
+        Self::write_i32(bytes, offset, value.num());
+        Self::write_i32(bytes, offset, value.den());
+    }
+
+    fn write_i32(bytes: &mut [u8; Self::DATA_LEN], offset: &mut usize, value: i32) {
+        bytes[*offset..*offset + 4].copy_from_slice(&value.to_ne_bytes());
+        *offset += 4;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketContentLightMetadata {
     max_content_light_level: u32,
     max_average_light_level: u32,
@@ -1702,6 +1845,13 @@ impl SideData {
         )
     }
 
+    pub fn new_mastering_display_metadata(value: PacketMasteringDisplayMetadata) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::MasteringDisplayMetadata,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_content_light_metadata(value: PacketContentLightMetadata) -> AvResult<Self> {
         Self::new_with_kind(
             PacketSideDataKind::ContentLightLevel,
@@ -1850,6 +2000,14 @@ impl SideData {
         }
 
         PacketRtcpSenderReport::parse(self.data()).map(Some)
+    }
+
+    pub fn mastering_display_metadata(&self) -> AvResult<Option<PacketMasteringDisplayMetadata>> {
+        if self.kind != PacketSideDataKind::MasteringDisplayMetadata {
+            return Ok(None);
+        }
+
+        PacketMasteringDisplayMetadata::parse(self.data()).map(Some)
     }
 
     pub fn content_light_metadata(&self) -> AvResult<Option<PacketContentLightMetadata>> {
@@ -3089,6 +3247,143 @@ mod tests {
             side_data.rtcp_sender_report().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn packet_side_data_parses_mastering_display_metadata_payload() {
+        fn write_rational(
+            bytes: &mut [u8; PacketMasteringDisplayMetadata::DATA_LEN],
+            offset: &mut usize,
+            value: Rational,
+        ) {
+            bytes[*offset..*offset + 4].copy_from_slice(&value.num().to_ne_bytes());
+            *offset += 4;
+            bytes[*offset..*offset + 4].copy_from_slice(&value.den().to_ne_bytes());
+            *offset += 4;
+        }
+
+        let display_primaries = [
+            [
+                Rational::from_raw(34_000, 50_000),
+                Rational::from_raw(16_000, 50_000),
+            ],
+            [
+                Rational::from_raw(13_250, 50_000),
+                Rational::from_raw(34_500, 50_000),
+            ],
+            [
+                Rational::from_raw(7_500, 50_000),
+                Rational::from_raw(3_000, 50_000),
+            ],
+        ];
+        let white_point = [
+            Rational::from_raw(15_635, 50_000),
+            Rational::from_raw(16_450, 50_000),
+        ];
+        let expected = PacketMasteringDisplayMetadata::new(
+            display_primaries,
+            white_point,
+            Rational::from_raw(50, 10_000),
+            Rational::from_raw(1000, 1),
+            1,
+            2,
+        );
+        let mut expected_bytes = [0; PacketMasteringDisplayMetadata::DATA_LEN];
+        let mut offset = 0;
+        for primary in display_primaries {
+            for coordinate in primary {
+                write_rational(&mut expected_bytes, &mut offset, coordinate);
+            }
+        }
+        for coordinate in white_point {
+            write_rational(&mut expected_bytes, &mut offset, coordinate);
+        }
+        write_rational(&mut expected_bytes, &mut offset, expected.min_luminance());
+        write_rational(&mut expected_bytes, &mut offset, expected.max_luminance());
+        expected_bytes[offset..offset + 4].copy_from_slice(&1_i32.to_ne_bytes());
+        offset += 4;
+        expected_bytes[offset..offset + 4].copy_from_slice(&2_i32.to_ne_bytes());
+
+        assert_eq!(PacketMasteringDisplayMetadata::DATA_LEN, 88);
+        assert_eq!(PacketMasteringDisplayMetadata::PRIMARIES, 3);
+        assert_eq!(PacketMasteringDisplayMetadata::COORDINATES, 2);
+        assert_eq!(expected.display_primaries(), display_primaries);
+        assert_eq!(expected.white_point(), white_point);
+        assert_eq!(expected.min_luminance(), Rational::from_raw(50, 10_000));
+        assert_eq!(expected.max_luminance(), Rational::from_raw(1000, 1));
+        assert!(expected.has_primaries());
+        assert!(expected.has_luminance());
+        assert_eq!(expected.has_primaries_raw(), 1);
+        assert_eq!(expected.has_luminance_raw(), 2);
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketMasteringDisplayMetadata::parse(&expected_bytes).unwrap(),
+            expected
+        );
+
+        let raw_values = PacketMasteringDisplayMetadata::new(
+            [[Rational::from_raw(2, 4); PacketMasteringDisplayMetadata::COORDINATES];
+                PacketMasteringDisplayMetadata::PRIMARIES],
+            [Rational::from_raw(0, 0); PacketMasteringDisplayMetadata::COORDINATES],
+            Rational::from_raw(0, 0),
+            Rational::from_raw(9, 3),
+            0,
+            -3,
+        );
+        let roundtrip = PacketMasteringDisplayMetadata::parse(&raw_values.to_bytes()).unwrap();
+        assert_eq!(
+            roundtrip.display_primaries()[0][0],
+            Rational::from_raw(2, 4)
+        );
+        assert_eq!(roundtrip.white_point()[0], Rational::from_raw(0, 0));
+        assert!(!roundtrip.has_primaries());
+        assert!(roundtrip.has_luminance());
+        assert_eq!(roundtrip.has_luminance_raw(), -3);
+
+        let side_data = SideData::new_mastering_display_metadata(expected).unwrap();
+        assert_eq!(
+            side_data.kind_id(),
+            &PacketSideDataKind::MasteringDisplayMetadata
+        );
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(
+            side_data.mastering_display_metadata().unwrap(),
+            Some(expected)
+        );
+
+        let rtcp = SideData::new_with_kind(
+            PacketSideDataKind::RtcpSenderReport,
+            expected_bytes.to_vec(),
+        )
+        .unwrap();
+        assert_eq!(rtcp.mastering_display_metadata().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_mastering_display_metadata_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; PacketMasteringDisplayMetadata::DATA_LEN - 1],
+            vec![0; PacketMasteringDisplayMetadata::DATA_LEN + 1],
+        ] {
+            assert_eq!(
+                PacketMasteringDisplayMetadata::parse(&data)
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::MasteringDisplayMetadata, data)
+                    .unwrap();
+            assert_eq!(
+                side_data.mastering_display_metadata().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let content_light =
+            SideData::new_with_kind(PacketSideDataKind::ContentLightLevel, Vec::new()).unwrap();
+        assert_eq!(content_light.mastering_display_metadata().unwrap(), None);
     }
 
     #[test]

@@ -71,11 +71,11 @@ pub use options::{
 pub use packet::{
     Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription, PacketContentLightMetadata,
     PacketCpbProperties, PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketIccProfile,
-    PacketJpDualMono, PacketJpDualMonoSelection, PacketMatroskaBlockAdditional,
-    PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
-    PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind,
-    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier,
-    PacketWebVttSettings, SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    PacketJpDualMono, PacketJpDualMonoSelection, PacketMasteringDisplayMetadata,
+    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
+    PacketProducerReferenceTime, PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode,
+    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition,
+    PacketWebVttIdentifier, PacketWebVttSettings, SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 pub use pixel::PixelFormat;
 pub use rational::Rational;
