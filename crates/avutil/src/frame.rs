@@ -5725,6 +5725,31 @@ pub enum FrameExifGpsLongitudeRef {
     West,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifGpsAltitudeRef {
+    AboveSeaLevel,
+    BelowSeaLevel,
+}
+
+impl FrameExifGpsAltitudeRef {
+    pub fn from_raw(raw: u8) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::AboveSeaLevel),
+            1 => Ok(Self::BelowSeaLevel),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF GPS altitude reference value {raw} is outside the defined 0..=1 range"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u8 {
+        match self {
+            Self::AboveSeaLevel => 0,
+            Self::BelowSeaLevel => 1,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FrameExifCommonTags<'a> {
     image_description: Option<&'a str>,
@@ -5754,6 +5779,10 @@ pub struct FrameExifCommonTags<'a> {
     gps_latitude: Option<[FrameExifRational; 3]>,
     gps_longitude_ref: Option<FrameExifGpsLongitudeRef>,
     gps_longitude: Option<[FrameExifRational; 3]>,
+    gps_altitude_ref: Option<FrameExifGpsAltitudeRef>,
+    gps_altitude: Option<FrameExifRational>,
+    gps_time_stamp: Option<[FrameExifRational; 3]>,
+    gps_date_stamp: Option<&'a str>,
     interoperability_index: Option<&'a str>,
 }
 
@@ -5864,6 +5893,22 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn gps_longitude(&self) -> Option<[FrameExifRational; 3]> {
         self.gps_longitude
+    }
+
+    pub const fn gps_altitude_ref(&self) -> Option<FrameExifGpsAltitudeRef> {
+        self.gps_altitude_ref
+    }
+
+    pub const fn gps_altitude(&self) -> Option<FrameExifRational> {
+        self.gps_altitude
+    }
+
+    pub const fn gps_time_stamp(&self) -> Option<[FrameExifRational; 3]> {
+        self.gps_time_stamp
+    }
+
+    pub const fn gps_date_stamp(&self) -> Option<&'a str> {
+        self.gps_date_stamp
     }
 
     pub const fn interoperability_index(&self) -> Option<&'a str> {
@@ -6233,6 +6278,10 @@ impl<'a> FrameExif<'a> {
     pub const TAG_GPS_LATITUDE: u16 = 0x0002;
     pub const TAG_GPS_LONGITUDE_REF: u16 = 0x0003;
     pub const TAG_GPS_LONGITUDE: u16 = 0x0004;
+    pub const TAG_GPS_ALTITUDE_REF: u16 = 0x0005;
+    pub const TAG_GPS_ALTITUDE: u16 = 0x0006;
+    pub const TAG_GPS_TIME_STAMP: u16 = 0x0007;
+    pub const TAG_GPS_DATE_STAMP: u16 = 0x001D;
     pub const TAG_INTEROPERABILITY_INDEX: u16 = 0x0001;
 
     pub fn parse(data: &'a [u8]) -> AvResult<Self> {
@@ -6367,6 +6416,13 @@ impl<'a> FrameExif<'a> {
             tags.gps_longitude_ref = Self::optional_gps_longitude_ref_tag(ifd)?;
             tags.gps_longitude =
                 Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_LONGITUDE, "GPSLongitude")?;
+            tags.gps_altitude_ref = Self::optional_gps_altitude_ref_tag(ifd)?;
+            tags.gps_altitude =
+                Self::optional_rational_tag(ifd, Self::TAG_GPS_ALTITUDE, "GPSAltitude")?;
+            tags.gps_time_stamp =
+                Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_TIME_STAMP, "GPSTimeStamp")?;
+            tags.gps_date_stamp =
+                Self::optional_ascii_tag(ifd, Self::TAG_GPS_DATE_STAMP, "GPSDateStamp")?;
         }
 
         if let Some(interop_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Interoperability) {
@@ -6636,6 +6692,17 @@ impl<'a> FrameExif<'a> {
                 format!("must be `E` or `W`, got `{value}`"),
             )),
         }
+    }
+
+    fn optional_gps_altitude_ref_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifGpsAltitudeRef>> {
+        let Some(value) =
+            Self::optional_byte_array_tag::<1>(ifd, Self::TAG_GPS_ALTITUDE_REF, "GPSAltitudeRef")?
+        else {
+            return Ok(None);
+        };
+        FrameExifGpsAltitudeRef::from_raw(value[0]).map(Some)
     }
 
     fn semantic_tag_error(label: &str, tag: u16, message: impl core::fmt::Display) -> AvError {
@@ -10334,6 +10401,66 @@ mod tests {
         }
 
         assert_eq!(data.len(), 338);
+        data
+    }
+
+    fn exif_gps_altitude_time_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::GPS_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&4u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_ALTITUDE_REF,
+            FrameExifTiffType::Byte,
+            1,
+            [1, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_ALTITUDE,
+            FrameExifTiffType::Rational,
+            1,
+            80u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_TIME_STAMP,
+            FrameExifTiffType::Rational,
+            3,
+            88u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_DATE_STAMP,
+            FrameExifTiffType::Ascii,
+            11,
+            112u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 80);
+
+        data.extend_from_slice(&15u32.to_le_bytes());
+        data.extend_from_slice(&2u32.to_le_bytes());
+        for value in [12u32, 34, 56] {
+            data.extend_from_slice(&value.to_le_bytes());
+            data.extend_from_slice(&1u32.to_le_bytes());
+        }
+        data.extend_from_slice(b"2026:05:06\0");
+
+        assert_eq!(data.len(), 123);
         data
     }
 
@@ -15736,6 +15863,77 @@ mod tests {
         bad_gps_ref[246] = b'X';
         assert_eq!(
             FrameExif::parse(&bad_gps_ref)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_gps_altitude_time_tags() {
+        let exif_bytes = exif_gps_altitude_time_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.gps_altitude_ref(),
+            Some(FrameExifGpsAltitudeRef::BelowSeaLevel)
+        );
+        assert_eq!(common.gps_altitude_ref().unwrap().raw(), 1);
+        assert_eq!(
+            common.gps_altitude(),
+            Some(FrameExifRational {
+                numerator: 15,
+                denominator: 2,
+            })
+        );
+        assert_eq!(
+            common.gps_time_stamp(),
+            Some([
+                FrameExifRational {
+                    numerator: 12,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 34,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 56,
+                    denominator: 1,
+                },
+            ])
+        );
+        assert_eq!(common.gps_date_stamp(), Some("2026:05:06"));
+
+        let mut bad_altitude_ref = exif_gps_altitude_time_fixture();
+        bad_altitude_ref[36] = 2;
+        assert_eq!(
+            FrameExif::parse(&bad_altitude_ref)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_time_stamp_count = exif_gps_altitude_time_fixture();
+        bad_time_stamp_count[56..60].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_time_stamp_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_date_stamp_type = exif_gps_altitude_time_fixture();
+        bad_date_stamp_type[66..68].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_date_stamp_type)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
