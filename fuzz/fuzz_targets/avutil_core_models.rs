@@ -1788,6 +1788,18 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.exposure_bias_value() {
                         assert_ne!(value.denominator(), 0);
                     }
+                    if let Some(value) = common.image_width() {
+                        assert_ne!(value, 0);
+                    }
+                    if let Some(value) = common.image_length() {
+                        assert_ne!(value, 0);
+                    }
+                    if let Some(value) = common.pixel_x_dimension() {
+                        assert_ne!(value, 0);
+                    }
+                    if let Some(value) = common.pixel_y_dimension() {
+                        assert_ne!(value, 0);
+                    }
                     if let Some(value) = common.temperature() {
                         assert_ne!(value.denominator(), 0);
                     }
@@ -3937,6 +3949,26 @@ fn exercise_fixtures() {
     assert_eq!(common_tags.model(), Some("Camera"));
     assert_eq!(common_tags.image_width(), Some(640));
     assert_eq!(common_tags.image_length(), Some(480));
+    let mut bad_image_width_zero = exif_common_tags_fixture();
+    bad_image_width_zero[42..46].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_image_width_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_image_length_zero = exif_common_tags_fixture();
+    bad_image_length_zero[54..58].copy_from_slice(&[0; 4]);
+    assert_eq!(
+        FrameExif::parse(&bad_image_length_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         common_tags.orientation(),
         Some(FrameExifOrientation::RightTop)
@@ -4353,6 +4385,26 @@ fn exercise_fixtures() {
     assert_eq!(exposure_tags.focal_length().unwrap().denominator(), 1);
     assert_eq!(exposure_tags.pixel_x_dimension(), Some(1920));
     assert_eq!(exposure_tags.pixel_y_dimension(), Some(1080));
+    let mut bad_pixel_x_zero = exif_exposure_tags_fixture();
+    bad_pixel_x_zero[84..88].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_pixel_x_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_pixel_y_zero = exif_exposure_tags_fixture();
+    bad_pixel_y_zero[96..100].copy_from_slice(&[0; 4]);
+    assert_eq!(
+        FrameExif::parse(&bad_pixel_y_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         exposure_tags.date_time_digitized(),
         Some("2026:05:04 12:35:00")

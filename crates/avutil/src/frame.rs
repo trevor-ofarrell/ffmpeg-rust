@@ -7664,10 +7664,16 @@ impl<'a> FrameExif<'a> {
                 Self::optional_ascii_tag(root, Self::TAG_IMAGE_DESCRIPTION, "ImageDescription")?;
             tags.make = Self::optional_ascii_tag(root, Self::TAG_MAKE, "Make")?;
             tags.model = Self::optional_ascii_tag(root, Self::TAG_MODEL, "Model")?;
-            tags.image_width =
-                Self::optional_short_or_long_tag(root, Self::TAG_IMAGE_WIDTH, "ImageWidth")?;
-            tags.image_length =
-                Self::optional_short_or_long_tag(root, Self::TAG_IMAGE_LENGTH, "ImageLength")?;
+            tags.image_width = Self::optional_positive_short_or_long_tag(
+                root,
+                Self::TAG_IMAGE_WIDTH,
+                "ImageWidth",
+            )?;
+            tags.image_length = Self::optional_positive_short_or_long_tag(
+                root,
+                Self::TAG_IMAGE_LENGTH,
+                "ImageLength",
+            )?;
             tags.orientation = Self::optional_orientation_tag(root)?;
             tags.x_resolution =
                 Self::optional_rational_tag(root, Self::TAG_X_RESOLUTION, "XResolution")?;
@@ -7838,12 +7844,12 @@ impl<'a> FrameExif<'a> {
             tags.saturation = Self::optional_saturation_tag(ifd)?;
             tags.sharpness = Self::optional_sharpness_tag(ifd)?;
             tags.subject_distance_range = Self::optional_subject_distance_range_tag(ifd)?;
-            tags.pixel_x_dimension = Self::optional_short_or_long_tag(
+            tags.pixel_x_dimension = Self::optional_positive_short_or_long_tag(
                 ifd,
                 Self::TAG_PIXEL_X_DIMENSION,
                 "PixelXDimension",
             )?;
-            tags.pixel_y_dimension = Self::optional_short_or_long_tag(
+            tags.pixel_y_dimension = Self::optional_positive_short_or_long_tag(
                 ifd,
                 Self::TAG_PIXEL_Y_DIMENSION,
                 "PixelYDimension",
@@ -8270,6 +8276,24 @@ impl<'a> FrameExif<'a> {
                 "must have SHORT or LONG TIFF type",
             )),
         }
+    }
+
+    fn optional_positive_short_or_long_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<u32>> {
+        let Some(value) = Self::optional_short_or_long_tag(ifd, tag, label)? else {
+            return Ok(None);
+        };
+        if value == 0 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "must be greater than zero",
+            ));
+        }
+        Ok(Some(value))
     }
 
     fn optional_orientation_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifOrientation>> {
@@ -19249,6 +19273,28 @@ mod tests {
         );
         assert_eq!(common.interoperability_index(), Some("R98"));
 
+        let mut bad_image_width_zero = exif_common_tags_fixture();
+        bad_image_width_zero[42..46].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_image_width_zero)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_image_length_zero = exif_common_tags_fixture();
+        bad_image_length_zero[54..58].copy_from_slice(&[0; 4]);
+        assert_eq!(
+            FrameExif::parse(&bad_image_length_zero)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_latitude_degrees = exif_common_tags_fixture();
         bad_latitude_degrees[290..294].copy_from_slice(&91u32.to_le_bytes());
         assert_eq!(
@@ -19914,6 +19960,28 @@ mod tests {
         bad_pixel_count[92..96].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_pixel_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_pixel_x_zero = exif_exposure_tags_fixture();
+        bad_pixel_x_zero[84..88].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_pixel_x_zero)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_pixel_y_zero = exif_exposure_tags_fixture();
+        bad_pixel_y_zero[96..100].copy_from_slice(&[0; 4]);
+        assert_eq!(
+            FrameExif::parse(&bad_pixel_y_zero)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
