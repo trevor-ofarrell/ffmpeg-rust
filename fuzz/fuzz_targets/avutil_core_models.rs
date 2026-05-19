@@ -32,12 +32,13 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketActiveFormatDescription, PacketFlags, PacketFrameCropping, PacketJpDualMono,
-    PacketJpDualMonoSelection, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
-    PacketParamChange, PacketPictureType, PacketQualityStats, PacketS12mTimecode,
-    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition,
-    PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    Packet, PacketActiveFormatDescription, PacketFallbackTrack, PacketFlags, PacketFrameCropping,
+    PacketJpDualMono, PacketJpDualMonoSelection, PacketMatroskaBlockAdditional,
+    PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketQualityStats,
+    PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason,
+    PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat, Rational,
+    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
+    VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3324,6 +3325,24 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_quality_stats_payload_invalid(&typed_payload));
         }
     }
+    match typed_payload_side_data.fallback_track() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::FallbackTrack);
+            assert_eq!(typed_payload.len(), PacketFallbackTrack::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert!(value.stream_index() >= 0);
+            assert_eq!(
+                PacketFallbackTrack::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::FallbackTrack),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::FallbackTrack);
+            assert!(packet_fallback_track_payload_invalid(&typed_payload));
+        }
+    }
     match typed_payload_side_data.skip_samples() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::SkipSamples);
@@ -4066,6 +4085,40 @@ fn exercise_fixtures() {
         PacketQualityStats::parse(&[1, 0, 0, 0, 1, 1, 0, 0])
             .unwrap_err()
             .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_fallback_track = PacketFallbackTrack::new(7).unwrap();
+    assert_eq!(packet_fallback_track.stream_index(), 7);
+    assert_eq!(
+        PacketFallbackTrack::parse(&packet_fallback_track.to_bytes()).unwrap(),
+        packet_fallback_track
+    );
+    assert_eq!(
+        SideData::new_fallback_track(packet_fallback_track)
+            .unwrap()
+            .fallback_track()
+            .unwrap(),
+        Some(packet_fallback_track)
+    );
+    assert_eq!(
+        PacketFallbackTrack::new(-1).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        PacketFallbackTrack::parse(&[0; PacketFallbackTrack::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        SideData::new_with_kind(
+            PacketSideDataKind::FallbackTrack,
+            (-1_i32).to_ne_bytes().to_vec()
+        )
+        .unwrap()
+        .fallback_track()
+        .unwrap_err()
+        .kind(),
         AvErrorKind::InvalidData
     );
     let packet_s12m_timecode =
@@ -9816,6 +9869,16 @@ fn packet_quality_stats_payload_invalid(data: &[u8]) -> bool {
 
     let error_count = usize::from(data[5]);
     data.len() < PacketQualityStats::HEADER_LEN + error_count * PacketQualityStats::ERROR_ENTRY_LEN
+}
+
+fn packet_fallback_track_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != PacketFallbackTrack::DATA_LEN {
+        return true;
+    }
+
+    let mut bytes = [0; PacketFallbackTrack::DATA_LEN];
+    bytes.copy_from_slice(data);
+    i32::from_ne_bytes(bytes) < 0
 }
 
 fn packet_active_format_description_payload_invalid(data: &[u8]) -> bool {

@@ -503,6 +503,42 @@ impl PacketQualityStats {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketFallbackTrack {
+    stream_index: i32,
+}
+
+impl PacketFallbackTrack {
+    pub const DATA_LEN: usize = 4;
+
+    pub fn new(stream_index: i32) -> AvResult<Self> {
+        validate_fallback_track_stream_index(stream_index, AvError::invalid_argument)?;
+        Ok(Self { stream_index })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "fallback track packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let stream_index = read_i32_ne(data, 0);
+        validate_fallback_track_stream_index(stream_index, AvError::invalid_data)?;
+        Ok(Self { stream_index })
+    }
+
+    pub const fn stream_index(self) -> i32 {
+        self.stream_index
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        self.stream_index.to_ne_bytes()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PacketSkipSamplesReason {
     PaddingSilence = 0,
@@ -1207,6 +1243,10 @@ impl SideData {
         Self::new_with_kind(PacketSideDataKind::QualityStats, value.to_bytes())
     }
 
+    pub fn new_fallback_track(value: PacketFallbackTrack) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::FallbackTrack, value.to_bytes().to_vec())
+    }
+
     pub fn new_skip_samples(value: PacketSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -1304,6 +1344,14 @@ impl SideData {
         }
 
         PacketQualityStats::parse(self.data()).map(Some)
+    }
+
+    pub fn fallback_track(&self) -> AvResult<Option<PacketFallbackTrack>> {
+        if self.kind != PacketSideDataKind::FallbackTrack {
+            return Ok(None);
+        }
+
+        PacketFallbackTrack::parse(self.data()).map(Some)
     }
 
     pub fn skip_samples(&self) -> AvResult<Option<PacketSkipSamples>> {
@@ -1741,6 +1789,12 @@ fn read_i32_le(data: &[u8], offset: usize) -> i32 {
     i32::from_le_bytes(bytes)
 }
 
+fn read_i32_ne(data: &[u8], offset: usize) -> i32 {
+    let mut bytes = [0; 4];
+    bytes.copy_from_slice(&data[offset..offset + 4]);
+    i32::from_ne_bytes(bytes)
+}
+
 fn read_u64_be(data: &[u8], offset: usize) -> u64 {
     let mut bytes = [0; 8];
     bytes.copy_from_slice(&data[offset..offset + 8]);
@@ -1759,6 +1813,19 @@ fn validate_quality_stats_quality(
             PacketQualityStats::FF_LAMBDA_MAX
         )))
     }
+}
+
+fn validate_fallback_track_stream_index(
+    stream_index: i32,
+    error: impl FnOnce(String) -> AvError,
+) -> AvResult<()> {
+    if stream_index < 0 {
+        return Err(error(format!(
+            "fallback track packet side data stream index must be nonnegative, got {stream_index}"
+        )));
+    }
+
+    Ok(())
 }
 
 fn validate_webvtt_line_payload(data: &[u8], label: &str) -> AvResult<()> {
@@ -2131,6 +2198,60 @@ mod tests {
         .unwrap();
         assert_eq!(
             side_data.quality_stats().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_fallback_track_payload() {
+        for stream_index in [0, 1, i32::MAX] {
+            let expected = PacketFallbackTrack::new(stream_index).unwrap();
+            assert_eq!(expected.stream_index(), stream_index);
+            assert_eq!(expected.to_bytes(), stream_index.to_ne_bytes());
+            assert_eq!(
+                PacketFallbackTrack::parse(&expected.to_bytes()).unwrap(),
+                expected
+            );
+
+            let side_data = SideData::new_fallback_track(expected).unwrap();
+            assert_eq!(side_data.kind_id(), &PacketSideDataKind::FallbackTrack);
+            assert_eq!(side_data.data(), &stream_index.to_ne_bytes());
+            assert_eq!(side_data.fallback_track().unwrap(), Some(expected));
+        }
+
+        let quality_stats = SideData::new_with_kind(
+            PacketSideDataKind::QualityStats,
+            PacketFallbackTrack::new(2).unwrap().to_bytes().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(quality_stats.fallback_track().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_fallback_track_payload() {
+        assert_eq!(
+            PacketFallbackTrack::new(-1).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+
+        for data in [
+            Vec::new(),
+            vec![0; PacketFallbackTrack::DATA_LEN - 1],
+            vec![0; 5],
+        ] {
+            assert_eq!(
+                PacketFallbackTrack::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let side_data = SideData::new_with_kind(
+            PacketSideDataKind::FallbackTrack,
+            (-1_i32).to_ne_bytes().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(
+            side_data.fallback_track().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
     }
