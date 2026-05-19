@@ -5751,6 +5751,36 @@ impl FrameExifGpsAltitudeRef {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifGpsStatus {
+    MeasurementInProgress,
+    MeasurementVoid,
+}
+
+impl FrameExifGpsStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MeasurementInProgress => "A",
+            Self::MeasurementVoid => "V",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifGpsMeasureMode {
+    TwoDimensional,
+    ThreeDimensional,
+}
+
+impl FrameExifGpsMeasureMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TwoDimensional => "2",
+            Self::ThreeDimensional => "3",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifGpsSpeedRef {
     KilometersPerHour,
     MilesPerHour,
@@ -5831,6 +5861,10 @@ pub struct FrameExifCommonTags<'a> {
     gps_altitude_ref: Option<FrameExifGpsAltitudeRef>,
     gps_altitude: Option<FrameExifRational>,
     gps_time_stamp: Option<[FrameExifRational; 3]>,
+    gps_satellites: Option<&'a str>,
+    gps_status: Option<FrameExifGpsStatus>,
+    gps_measure_mode: Option<FrameExifGpsMeasureMode>,
+    gps_dop: Option<FrameExifRational>,
     gps_date_stamp: Option<&'a str>,
     gps_speed_ref: Option<FrameExifGpsSpeedRef>,
     gps_speed: Option<FrameExifRational>,
@@ -5969,6 +6003,22 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn gps_time_stamp(&self) -> Option<[FrameExifRational; 3]> {
         self.gps_time_stamp
+    }
+
+    pub const fn gps_satellites(&self) -> Option<&'a str> {
+        self.gps_satellites
+    }
+
+    pub const fn gps_status(&self) -> Option<FrameExifGpsStatus> {
+        self.gps_status
+    }
+
+    pub const fn gps_measure_mode(&self) -> Option<FrameExifGpsMeasureMode> {
+        self.gps_measure_mode
+    }
+
+    pub const fn gps_dop(&self) -> Option<FrameExifRational> {
+        self.gps_dop
     }
 
     pub const fn gps_date_stamp(&self) -> Option<&'a str> {
@@ -6405,6 +6455,10 @@ impl<'a> FrameExif<'a> {
     pub const TAG_GPS_ALTITUDE_REF: u16 = 0x0005;
     pub const TAG_GPS_ALTITUDE: u16 = 0x0006;
     pub const TAG_GPS_TIME_STAMP: u16 = 0x0007;
+    pub const TAG_GPS_SATELLITES: u16 = 0x0008;
+    pub const TAG_GPS_STATUS: u16 = 0x0009;
+    pub const TAG_GPS_MEASURE_MODE: u16 = 0x000A;
+    pub const TAG_GPS_DOP: u16 = 0x000B;
     pub const TAG_GPS_SPEED_REF: u16 = 0x000C;
     pub const TAG_GPS_SPEED: u16 = 0x000D;
     pub const TAG_GPS_TRACK_REF: u16 = 0x000E;
@@ -6568,6 +6622,11 @@ impl<'a> FrameExif<'a> {
                 Self::optional_rational_tag(ifd, Self::TAG_GPS_ALTITUDE, "GPSAltitude")?;
             tags.gps_time_stamp =
                 Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_TIME_STAMP, "GPSTimeStamp")?;
+            tags.gps_satellites =
+                Self::optional_ascii_tag(ifd, Self::TAG_GPS_SATELLITES, "GPSSatellites")?;
+            tags.gps_status = Self::optional_gps_status_tag(ifd)?;
+            tags.gps_measure_mode = Self::optional_gps_measure_mode_tag(ifd)?;
+            tags.gps_dop = Self::optional_rational_tag(ifd, Self::TAG_GPS_DOP, "GPSDOP")?;
             tags.gps_speed_ref = Self::optional_gps_speed_ref_tag(ifd)?;
             tags.gps_speed = Self::optional_rational_tag(ifd, Self::TAG_GPS_SPEED, "GPSSpeed")?;
             tags.gps_track_ref =
@@ -6894,6 +6953,40 @@ impl<'a> FrameExif<'a> {
             return Ok(None);
         };
         FrameExifGpsAltitudeRef::from_raw(value[0]).map(Some)
+    }
+
+    fn optional_gps_status_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifGpsStatus>> {
+        let Some(value) = Self::optional_ascii_tag(ifd, Self::TAG_GPS_STATUS, "GPSStatus")? else {
+            return Ok(None);
+        };
+        match value {
+            "A" => Ok(Some(FrameExifGpsStatus::MeasurementInProgress)),
+            "V" => Ok(Some(FrameExifGpsStatus::MeasurementVoid)),
+            _ => Err(Self::semantic_tag_error(
+                "GPSStatus",
+                Self::TAG_GPS_STATUS,
+                format!("must be `A` or `V`, got `{value}`"),
+            )),
+        }
+    }
+
+    fn optional_gps_measure_mode_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifGpsMeasureMode>> {
+        let Some(value) =
+            Self::optional_ascii_tag(ifd, Self::TAG_GPS_MEASURE_MODE, "GPSMeasureMode")?
+        else {
+            return Ok(None);
+        };
+        match value {
+            "2" => Ok(Some(FrameExifGpsMeasureMode::TwoDimensional)),
+            "3" => Ok(Some(FrameExifGpsMeasureMode::ThreeDimensional)),
+            _ => Err(Self::semantic_tag_error(
+                "GPSMeasureMode",
+                Self::TAG_GPS_MEASURE_MODE,
+                format!("must be `2` or `3`, got `{value}`"),
+            )),
+        }
     }
 
     fn optional_gps_speed_ref_tag(
@@ -10710,6 +10803,62 @@ mod tests {
         data.extend_from_slice(b"2026:05:06\0");
 
         assert_eq!(data.len(), 123);
+        data
+    }
+
+    fn exif_gps_acquisition_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::GPS_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&4u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_SATELLITES,
+            FrameExifTiffType::Ascii,
+            8,
+            80u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_STATUS,
+            FrameExifTiffType::Ascii,
+            2,
+            [b'A', 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_MEASURE_MODE,
+            FrameExifTiffType::Ascii,
+            2,
+            [b'3', 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_DOP,
+            FrameExifTiffType::Rational,
+            1,
+            88u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 80);
+
+        data.extend_from_slice(b"12 used\0");
+        data.extend_from_slice(&7u32.to_le_bytes());
+        data.extend_from_slice(&2u32.to_le_bytes());
+
+        assert_eq!(data.len(), 96);
         data
     }
 
@@ -16357,6 +16506,65 @@ mod tests {
         bad_date_stamp_type[66..68].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_date_stamp_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_gps_acquisition_tags() {
+        let exif_bytes = exif_gps_acquisition_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.gps_satellites(), Some("12 used"));
+        assert_eq!(
+            common.gps_status(),
+            Some(FrameExifGpsStatus::MeasurementInProgress)
+        );
+        assert_eq!(common.gps_status().unwrap().as_str(), "A");
+        assert_eq!(
+            common.gps_measure_mode(),
+            Some(FrameExifGpsMeasureMode::ThreeDimensional)
+        );
+        assert_eq!(common.gps_measure_mode().unwrap().as_str(), "3");
+        assert_eq!(
+            common.gps_dop(),
+            Some(FrameExifRational {
+                numerator: 7,
+                denominator: 2,
+            })
+        );
+
+        let mut bad_status = exif_gps_acquisition_fixture();
+        bad_status[48] = b'X';
+        assert_eq!(
+            FrameExif::parse(&bad_status)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_measure_mode_count = exif_gps_acquisition_fixture();
+        bad_measure_mode_count[56..60].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_measure_mode_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_dop_type = exif_gps_acquisition_fixture();
+        bad_dop_type[66..68].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_dop_type)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

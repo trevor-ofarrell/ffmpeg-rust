@@ -11,10 +11,11 @@ use avutil::{
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
     FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifEntry, FrameExifGpsAltitudeRef,
     FrameExifGpsDirectionRef, FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef,
-    FrameExifGpsLongitudeRef, FrameExifGpsSpeedRef, FrameExifIfdPointerKind, FrameExifOrientation,
-    FrameExifResolutionUnit, FrameExifTiffType, FrameFilmGrainAomParams, FrameFilmGrainH274Params,
-    FrameFilmGrainParams, FrameFilmGrainParamsType, FrameGopTimecode,
-    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
+    FrameExifGpsLongitudeRef, FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus,
+    FrameExifIfdPointerKind, FrameExifOrientation, FrameExifResolutionUnit, FrameExifTiffType,
+    FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
+    FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
     FrameLcevc, FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector,
     FrameMotionVectors, FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest,
@@ -1758,6 +1759,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     }
                     if let Some(time_stamp) = common.gps_time_stamp() {
                         assert!(time_stamp.iter().all(|value| value.denominator() != 0));
+                    }
+                    if let Some(value) = common.gps_dop() {
+                        assert_ne!(value.denominator(), 0);
                     }
                     if let Some(value) = common.gps_speed() {
                         assert_ne!(value.denominator(), 0);
@@ -3884,6 +3888,26 @@ fn exercise_fixtures() {
     );
     assert_eq!(gps_altitude_time_tags.gps_date_stamp(), Some("2026:05:06"));
 
+    let gps_acquisition_exif_bytes = exif_gps_acquisition_fixture();
+    let gps_acquisition_exif = FrameExif::parse(&gps_acquisition_exif_bytes).unwrap();
+    let gps_acquisition_tags = gps_acquisition_exif.common_tags().unwrap();
+    assert_eq!(gps_acquisition_tags.gps_satellites(), Some("12 used"));
+    assert_eq!(
+        gps_acquisition_tags.gps_status(),
+        Some(FrameExifGpsStatus::MeasurementInProgress)
+    );
+    assert_eq!(gps_acquisition_tags.gps_status().unwrap().as_str(), "A");
+    assert_eq!(
+        gps_acquisition_tags.gps_measure_mode(),
+        Some(FrameExifGpsMeasureMode::ThreeDimensional)
+    );
+    assert_eq!(
+        gps_acquisition_tags.gps_measure_mode().unwrap().as_str(),
+        "3"
+    );
+    assert_eq!(gps_acquisition_tags.gps_dop().unwrap().numerator(), 7);
+    assert_eq!(gps_acquisition_tags.gps_dop().unwrap().denominator(), 2);
+
     let gps_motion_exif_bytes = exif_gps_motion_fixture();
     let gps_motion_exif = FrameExif::parse(&gps_motion_exif_bytes).unwrap();
     let gps_motion_tags = gps_motion_exif.common_tags().unwrap();
@@ -5281,6 +5305,57 @@ fn exif_gps_altitude_time_fixture() -> Vec<u8> {
         data.extend_from_slice(&1u32.to_le_bytes());
     }
     data.extend_from_slice(b"2026:05:06\0");
+    data
+}
+
+fn exif_gps_acquisition_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::GPS_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&4u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_SATELLITES,
+        FrameExifTiffType::Ascii,
+        8,
+        80u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_STATUS,
+        FrameExifTiffType::Ascii,
+        2,
+        [b'A', 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_MEASURE_MODE,
+        FrameExifTiffType::Ascii,
+        2,
+        [b'3', 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_DOP,
+        FrameExifTiffType::Rational,
+        1,
+        88u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(b"12 used\0");
+    data.extend_from_slice(&7u32.to_le_bytes());
+    data.extend_from_slice(&2u32.to_le_bytes());
     data
 }
 
