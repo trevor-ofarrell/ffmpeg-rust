@@ -28,7 +28,7 @@ fuzz_target!(|data: &[u8]| {
 });
 
 fn run_read_operation(reader: &mut ByteReader<'_>, op: u8) -> AvResult<()> {
-    match op % 20 {
+    match op % 24 {
         0 => reader.read_u8().map(|_| ()),
         1 => reader.read_i8().map(|_| ()),
         2 => reader.read_u16_le().map(|_| ()),
@@ -37,17 +37,21 @@ fn run_read_operation(reader: &mut ByteReader<'_>, op: u8) -> AvResult<()> {
         5 => reader.read_i16_be().map(|_| ()),
         6 => reader.read_u24_le().map(|_| ()),
         7 => reader.read_u24_be().map(|_| ()),
-        8 => reader.read_u32_le().map(|_| ()),
-        9 => reader.read_u32_be().map(|_| ()),
-        10 => reader.read_i32_le().map(|_| ()),
-        11 => reader.read_i32_be().map(|_| ()),
-        12 => reader.read_u48_le().map(|_| ()),
-        13 => reader.read_u48_be().map(|_| ()),
-        14 => reader.read_u64_le().map(|_| ()),
-        15 => reader.read_u64_be().map(|_| ()),
-        16 => reader.read_i64_le().map(|_| ()),
-        17 => reader.read_i64_be().map(|_| ()),
-        18 => reader.skip(usize::from(op >> 4)),
+        8 => reader.read_i24_le().map(|_| ()),
+        9 => reader.read_i24_be().map(|_| ()),
+        10 => reader.read_u32_le().map(|_| ()),
+        11 => reader.read_u32_be().map(|_| ()),
+        12 => reader.read_i32_le().map(|_| ()),
+        13 => reader.read_i32_be().map(|_| ()),
+        14 => reader.read_u48_le().map(|_| ()),
+        15 => reader.read_u48_be().map(|_| ()),
+        16 => reader.read_i48_le().map(|_| ()),
+        17 => reader.read_i48_be().map(|_| ()),
+        18 => reader.read_u64_le().map(|_| ()),
+        19 => reader.read_u64_be().map(|_| ()),
+        20 => reader.read_i64_le().map(|_| ()),
+        21 => reader.read_i64_be().map(|_| ()),
+        22 => reader.skip(usize::from(op >> 4)),
         _ => reader.read_exact(usize::from(op >> 4)).map(|_| ()),
     }
 }
@@ -67,6 +71,8 @@ fn run_write_operation(writer: &mut ByteWriter, data: &[u8], op: u8) {
     let value = u32::from_le_bytes(bytes);
     let _ = writer.write_u24_le(value);
     let _ = writer.write_u24_be(value);
+    write_i24_and_assert_non_mutation(writer, value as i32, true);
+    write_i24_and_assert_non_mutation(writer, value as i32, false);
     writer.write_u32_le(value);
     writer.write_u32_be(value);
     writer.write_i32_le(value as i32);
@@ -79,8 +85,36 @@ fn run_write_operation(writer: &mut ByteWriter, data: &[u8], op: u8) {
     let wide_value = u64::from_le_bytes(wide_bytes);
     let _ = writer.write_u48_le(wide_value);
     let _ = writer.write_u48_be(wide_value);
+    write_i48_and_assert_non_mutation(writer, wide_value as i64, true);
+    write_i48_and_assert_non_mutation(writer, wide_value as i64, false);
     writer.write_u64_le(wide_value);
     writer.write_u64_be(wide_value);
     writer.write_i64_le(wide_value as i64);
     writer.write_i64_be(wide_value as i64);
+}
+
+fn write_i24_and_assert_non_mutation(writer: &mut ByteWriter, value: i32, little_endian: bool) {
+    let before = writer.as_slice().to_vec();
+    let result = if little_endian {
+        writer.write_i24_le(value)
+    } else {
+        writer.write_i24_be(value)
+    };
+
+    if result.is_err() {
+        assert_eq!(writer.as_slice(), before.as_slice());
+    }
+}
+
+fn write_i48_and_assert_non_mutation(writer: &mut ByteWriter, value: i64, little_endian: bool) {
+    let before = writer.as_slice().to_vec();
+    let result = if little_endian {
+        writer.write_i48_le(value)
+    } else {
+        writer.write_i48_be(value)
+    };
+
+    if result.is_err() {
+        assert_eq!(writer.as_slice(), before.as_slice());
+    }
 }

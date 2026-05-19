@@ -77,6 +77,14 @@ impl<'a> ByteReader<'a> {
         Ok((u32::from(bytes[0]) << 16) | (u32::from(bytes[1]) << 8) | u32::from(bytes[2]))
     }
 
+    pub fn read_i24_le(&mut self) -> AvResult<i32> {
+        Ok(sign_extend_i24(self.read_u24_le()?))
+    }
+
+    pub fn read_i24_be(&mut self) -> AvResult<i32> {
+        Ok(sign_extend_i24(self.read_u24_be()?))
+    }
+
     pub fn read_u32_le(&mut self) -> AvResult<u32> {
         let bytes = self.take(4)?;
         Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
@@ -105,6 +113,14 @@ impl<'a> ByteReader<'a> {
             | (u64::from(bytes[3]) << 16)
             | (u64::from(bytes[4]) << 8)
             | u64::from(bytes[5]))
+    }
+
+    pub fn read_i48_le(&mut self) -> AvResult<i64> {
+        Ok(sign_extend_i48(self.read_u48_le()?))
+    }
+
+    pub fn read_i48_be(&mut self) -> AvResult<i64> {
+        Ok(sign_extend_i48(self.read_u48_be()?))
     }
 
     pub fn read_i32_le(&mut self) -> AvResult<i32> {
@@ -239,6 +255,14 @@ impl ByteWriter {
         Ok(())
     }
 
+    pub fn write_i24_le(&mut self, value: i32) -> AvResult<()> {
+        self.write_u24_le(encode_i24(value)?)
+    }
+
+    pub fn write_i24_be(&mut self, value: i32) -> AvResult<()> {
+        self.write_u24_be(encode_i24(value)?)
+    }
+
     pub fn write_u32_le(&mut self, value: u32) {
         self.write_all(&value.to_le_bytes());
     }
@@ -271,6 +295,14 @@ impl ByteWriter {
             value as u8,
         ]);
         Ok(())
+    }
+
+    pub fn write_i48_le(&mut self, value: i64) -> AvResult<()> {
+        self.write_u48_le(encode_i48(value)?)
+    }
+
+    pub fn write_i48_be(&mut self, value: i64) -> AvResult<()> {
+        self.write_u48_be(encode_i48(value)?)
     }
 
     pub fn write_i32_le(&mut self, value: i32) {
@@ -310,6 +342,40 @@ fn validate_u48(value: u64) -> AvResult<()> {
         return Err(AvError::invalid_argument("48-bit value out of range"));
     }
     Ok(())
+}
+
+fn sign_extend_i24(value: u32) -> i32 {
+    ((value << 8) as i32) >> 8
+}
+
+fn sign_extend_i48(value: u64) -> i64 {
+    ((value << 16) as i64) >> 16
+}
+
+fn encode_i24(value: i32) -> AvResult<u32> {
+    const I24_MIN: i32 = -(1_i32 << 23);
+    const I24_MAX: i32 = (1_i32 << 23) - 1;
+
+    if !(I24_MIN..=I24_MAX).contains(&value) {
+        return Err(AvError::invalid_argument(
+            "signed 24-bit value out of range",
+        ));
+    }
+
+    Ok((value as u32) & 0x00ff_ffff)
+}
+
+fn encode_i48(value: i64) -> AvResult<u64> {
+    const I48_MIN: i64 = -(1_i64 << 47);
+    const I48_MAX: i64 = (1_i64 << 47) - 1;
+
+    if !(I48_MIN..=I48_MAX).contains(&value) {
+        return Err(AvError::invalid_argument(
+            "signed 48-bit value out of range",
+        ));
+    }
+
+    Ok((value as u64) & 0x0000_ffff_ffff_ffff)
 }
 
 #[cfg(test)]
@@ -352,6 +418,22 @@ mod tests {
 
         assert_eq!(reader.read_u48_le().unwrap(), 0x0102_0304_0506);
         assert_eq!(reader.read_u48_be().unwrap(), 0x0102_0304_0506);
+        assert!(reader.is_eof());
+    }
+
+    #[test]
+    fn reads_signed_24_and_48_bit_values_with_sign_extension() {
+        let mut reader = ByteReader::new(&[
+            0xfe, 0xff, 0xff, 0x80, 0x00, 0x00, 0xff, 0xff, 0x7f, 0xfe, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff,
+        ]);
+
+        assert_eq!(reader.read_i24_le().unwrap(), -2);
+        assert_eq!(reader.read_i24_be().unwrap(), -8_388_608);
+        assert_eq!(reader.read_i24_le().unwrap(), 8_388_607);
+        assert_eq!(reader.read_i48_le().unwrap(), -2);
+        assert_eq!(reader.read_i48_be().unwrap(), -140_737_488_355_328);
+        assert_eq!(reader.read_i48_be().unwrap(), 140_737_488_355_327);
         assert!(reader.is_eof());
     }
 
@@ -399,6 +481,37 @@ mod tests {
     }
 
     #[test]
+    fn writes_signed_integers_in_both_endiannesses() {
+        let mut writer = ByteWriter::new();
+
+        writer.write_i8(-1);
+        writer.write_i16_le(-2);
+        writer.write_i16_be(-3);
+        writer.write_i24_le(-8_388_608).unwrap();
+        writer.write_i24_be(8_388_607).unwrap();
+        writer.write_i32_le(i32::MIN);
+        writer.write_i32_be(i32::MAX);
+        writer.write_i48_le(-140_737_488_355_328).unwrap();
+        writer.write_i48_be(140_737_488_355_327).unwrap();
+        writer.write_i64_le(i64::MIN);
+        writer.write_i64_be(i64::MAX);
+
+        let mut reader = ByteReader::new(writer.as_slice());
+        assert_eq!(reader.read_i8().unwrap(), -1);
+        assert_eq!(reader.read_i16_le().unwrap(), -2);
+        assert_eq!(reader.read_i16_be().unwrap(), -3);
+        assert_eq!(reader.read_i24_le().unwrap(), -8_388_608);
+        assert_eq!(reader.read_i24_be().unwrap(), 8_388_607);
+        assert_eq!(reader.read_i32_le().unwrap(), i32::MIN);
+        assert_eq!(reader.read_i32_be().unwrap(), i32::MAX);
+        assert_eq!(reader.read_i48_le().unwrap(), -140_737_488_355_328);
+        assert_eq!(reader.read_i48_be().unwrap(), 140_737_488_355_327);
+        assert_eq!(reader.read_i64_le().unwrap(), i64::MIN);
+        assert_eq!(reader.read_i64_be().unwrap(), i64::MAX);
+        assert!(reader.is_eof());
+    }
+
+    #[test]
     fn writer_rejects_values_too_wide_for_u24_and_u48() {
         let mut writer = ByteWriter::new();
 
@@ -408,5 +521,23 @@ mod tests {
         assert_eq!(u24_err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(u48_err.kind(), AvErrorKind::InvalidArgument);
         assert!(writer.is_empty());
+    }
+
+    #[test]
+    fn writer_rejects_signed_values_too_wide_for_i24_and_i48_without_mutation() {
+        let mut writer = ByteWriter::new();
+        writer.write_u8(0xaa);
+
+        let before = writer.as_slice().to_vec();
+        let i24_high_err = writer.write_i24_le(8_388_608).unwrap_err();
+        let i24_low_err = writer.write_i24_be(-8_388_609).unwrap_err();
+        let i48_high_err = writer.write_i48_le(140_737_488_355_328).unwrap_err();
+        let i48_low_err = writer.write_i48_be(-140_737_488_355_329).unwrap_err();
+
+        assert_eq!(i24_high_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(i24_low_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(i48_high_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(i48_low_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(writer.as_slice(), before.as_slice());
     }
 }

@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-byteio` update: byte I/O now covers signed 24-bit and signed 48-bit helper paths in addition to the existing unsigned and fixed-width signed helpers. `ByteReader::read_i24_le`/`read_i24_be` and `read_i48_le`/`read_i48_be` sign-extend constrained-width values without advancing on EOF because they use the existing bounded unsigned reads; `ByteWriter::write_i24_le`/`write_i24_be` and `write_i48_le`/`write_i48_be` validate the exact signed range before mutating output. Focused unit tests cover sign extension, full signed read/write round trips, and no-mutation rejection for out-of-range signed 24/48-bit values. The `avutil_byteio` fuzz target now build-checks signed 24/48-bit read/write operations and no-mutation writer failures. This remains below `complete` because pinned-oracle/FATE parity and actual local fuzz execution are still blocked.
+
 Latest current-loop `repo-runtime-guard`/`fate-runner` update: `xtask guard-runtime` now enforces the no-FFmpeg-runtime-linkage policy across Cargo dependency sections, resolved `Cargo.lock` package names, and runtime implementation source scans for wrapper tokens or literal `ffmpeg`/`ffprobe`/`ffplay` process spawns. The guard intentionally leaves oracle/FATE/test/fuzz/xtask tooling outside the runtime-shell-out ban, remains wired into `xtask quick`, `xtask changed`, `xtask full`, and local FATE-runner smoke execution, and `fate-runner` changed-path selection now maps workspace manifests, crate manifests, fuzz/xtask manifests, and `Cargo.lock` to `repo-runtime-guard` while also selecting affected component families for crate manifests. This is a policy/infrastructure guard only; it does not add media parity, oracle snapshots, upstream FATE samples, or actual fuzz execution.
 
 Latest `avutil-bitreader`/`avutil-bitwriter` update: bit I/O now includes unsigned and signed Exp-Golomb helpers for codec bitstreams. `BitReader::read_ue_golomb` and `read_se_golomb` preserve the cursor on EOF, over-range, and signed-overflow errors; `BitWriter::write_ue_golomb` and `write_se_golomb` cover exact small-code vectors, signed round trips, `u64::MAX` unsigned round trips, and `i64::MIN` signed rejection without mutation. The `avutil_bitreader` fuzz target now build-checks Exp-Golomb read/write invariants too. This remains below `complete` because pinned-oracle/FATE parity and actual local fuzz execution are still blocked.
@@ -102,6 +104,17 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `cargo test -p avutil byteio`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_byteio`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_byteio -- -D warnings`
+- `cargo run -p fate-runner -- run --component avutil-byteio`
+- `cargo fmt --all -- --check`
+- `git diff --check`
+- `cargo run -p fate-runner -- run --changed --dry-run`
+- `cargo run -p fate-runner -- run --changed`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo run -p xtask -- quick`
 - `cargo fmt --all`
 - `cargo test -p avutil bitreader`
 - `cargo test -p avutil bitwriter`
@@ -2608,13 +2621,13 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-bitreader` and `avutil-bitwriter` are the current focus for this slice. The concrete change is Exp-Golomb coding support for later codec bitstreams, with unit coverage for exact unsigned/signed small-code vectors, cursor preservation on malformed reads, unsigned `u64::MAX` round trips, and signed `i64::MIN` rejection without writer mutation. The `avutil_bitreader` fuzz harness now exercises the new read/write paths.
+`avutil-byteio` is the current focus for this slice. The concrete change is signed 24-bit and signed 48-bit byte-field parity: bounded readers now sign-extend little-endian and big-endian 24/48-bit values, writers validate exact signed ranges before appending bytes, unit tests cover boundary round trips and out-of-range no-mutation errors, and the `avutil_byteio` fuzz harness exercises the new read/write paths.
 
-This slice does not mark bit I/O complete. The broader goal remains blocked on missing pinned-oracle snapshots, upstream FATE media mappings/samples, actual local fuzz execution, and many incomplete FFmpeg surfaces.
+This slice does not mark byte I/O complete. The broader goal remains blocked on missing pinned-oracle snapshots, upstream FATE media mappings/samples, actual local fuzz execution, and many incomplete FFmpeg surfaces.
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 primitive work by adding the next bitstream/byte I/O compatibility vector or return to `avutil-frame` for the next unmirrored invalid-input/raw-value preservation gap.
+1. Continue priority-1 primitive work by adding the next unblocked shared `avutil` compatibility vector, most likely another byte/bit I/O edge case or a metadata/options/logging parity gap with local tests.
 2. Add pinned-oracle differential coverage for constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
 3. Add upstream FATE sample-backed media mappings for constrained `ffmpeg-rs` null/framecrc/hash-style command paths once samples and the pinned oracle are available.
 
@@ -2628,4 +2641,4 @@ This slice does not mark bit I/O complete. The broader goal remains blocked on m
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added unsigned/signed Exp-Golomb bit I/O support. `BitReader` now decodes `ue(v)` and `se(v)` while restoring the bit cursor on EOF/range/signed-overflow errors, `BitWriter` writes `ue(v)` and `se(v)` including `u64::MAX` unsigned values and rejects unrepresentable `i64::MIN` signed values before mutation, and `avutil_bitreader` fuzz coverage now exercises those paths. Validation passed with `cargo fmt --all`, `cargo test -p avutil bitreader`, `cargo test -p avutil bitwriter`, `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_bitreader`, `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_bitreader -- -D warnings`, `cargo run -p fate-runner -- run --component avutil-bitreader`, `cargo run -p fate-runner -- run --component avutil-bitwriter`, `cargo fmt --all -- --check`, `cargo run -p fate-runner -- run --changed --dry-run`, `cargo run -p fate-runner -- run --changed`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo run -p xtask -- quick`, and `git diff --check`.
+Latest slice: added signed 24-bit and signed 48-bit byte I/O helpers. `ByteReader` now sign-extends constrained-width signed values for both endiannesses, `ByteWriter` validates exact signed 24/48-bit ranges before mutation, unit coverage now includes boundary round trips and no-mutation invalid-input checks, and `avutil_byteio` fuzz coverage now exercises the new paths. Validation passed with `cargo fmt --all`, `cargo test -p avutil byteio`, `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_byteio`, `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_byteio -- -D warnings`, `cargo run -p fate-runner -- run --component avutil-byteio`, `cargo fmt --all -- --check`, `git diff --check`, `cargo run -p fate-runner -- run --changed --dry-run`, `cargo run -p fate-runner -- run --changed`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo run -p xtask -- quick`.
