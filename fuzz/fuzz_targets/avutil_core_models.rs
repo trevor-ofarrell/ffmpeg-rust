@@ -4150,6 +4150,24 @@ fn exercise_fixtures() {
     assert_eq!(timing_tags.flashpix_version(), Some(*b"0100"));
     assert_eq!(timing_tags.related_sound_file(), Some("SOUND001.WAV"));
 
+    let camera_lens_exif_bytes = exif_camera_lens_fixture();
+    let camera_lens_exif = FrameExif::parse(&camera_lens_exif_bytes).unwrap();
+    let camera_lens_tags = camera_lens_exif.common_tags().unwrap();
+    assert_eq!(
+        camera_lens_tags.image_unique_id(),
+        Some("0123456789abcdef0123456789abcdef")
+    );
+    assert_eq!(camera_lens_tags.camera_owner_name(), Some("A Camera"));
+    assert_eq!(camera_lens_tags.body_serial_number(), Some("BODY1234"));
+    let lens_spec = camera_lens_tags.lens_specification().unwrap();
+    assert_eq!(lens_spec[0].numerator(), 24);
+    assert_eq!(lens_spec[1].numerator(), 70);
+    assert_eq!(lens_spec[2].denominator(), 10);
+    assert_eq!(lens_spec[3].denominator(), 10);
+    assert_eq!(camera_lens_tags.lens_make(), Some("LensCo"));
+    assert_eq!(camera_lens_tags.lens_model(), Some("Prime50"));
+    assert_eq!(camera_lens_tags.lens_serial_number(), Some("LENS5678"));
+
     let descriptive_exif_bytes = exif_descriptive_tags_fixture();
     let descriptive_exif = FrameExif::parse(&descriptive_exif_bytes).unwrap();
     let descriptive_tags = descriptive_exif.common_tags().unwrap();
@@ -6046,6 +6064,89 @@ fn exif_version_timing_comment_fixture() -> Vec<u8> {
     data.extend_from_slice(b"ASCII\0\0\0hello\0\0\0");
     data.extend_from_slice(b"4567\0");
     data.extend_from_slice(b"SOUND001.WAV\0");
+    data
+}
+
+fn exif_camera_lens_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&7u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_IMAGE_UNIQUE_ID,
+        FrameExifTiffType::Ascii,
+        33,
+        116u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_CAMERA_OWNER_NAME,
+        FrameExifTiffType::Ascii,
+        9,
+        149u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_BODY_SERIAL_NUMBER,
+        FrameExifTiffType::Ascii,
+        9,
+        158u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_LENS_SPECIFICATION,
+        FrameExifTiffType::Rational,
+        4,
+        167u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_LENS_MAKE,
+        FrameExifTiffType::Ascii,
+        7,
+        199u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_LENS_MODEL,
+        FrameExifTiffType::Ascii,
+        8,
+        206u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_LENS_SERIAL_NUMBER,
+        FrameExifTiffType::Ascii,
+        9,
+        214u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(b"0123456789abcdef0123456789abcdef\0");
+    data.extend_from_slice(b"A Camera\0");
+    data.extend_from_slice(b"BODY1234\0");
+    data.extend_from_slice(&24u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+    data.extend_from_slice(&70u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+    data.extend_from_slice(&28u32.to_le_bytes());
+    data.extend_from_slice(&10u32.to_le_bytes());
+    data.extend_from_slice(&40u32.to_le_bytes());
+    data.extend_from_slice(&10u32.to_le_bytes());
+    data.extend_from_slice(b"LensCo\0");
+    data.extend_from_slice(b"Prime50\0");
+    data.extend_from_slice(b"LENS5678\0");
     data
 }
 

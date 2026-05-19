@@ -6497,6 +6497,13 @@ pub struct FrameExifCommonTags<'a> {
     pixel_x_dimension: Option<u32>,
     pixel_y_dimension: Option<u32>,
     related_sound_file: Option<&'a str>,
+    image_unique_id: Option<&'a str>,
+    camera_owner_name: Option<&'a str>,
+    body_serial_number: Option<&'a str>,
+    lens_specification: Option<[FrameExifRational; 4]>,
+    lens_make: Option<&'a str>,
+    lens_model: Option<&'a str>,
+    lens_serial_number: Option<&'a str>,
     gps_version_id: Option<[u8; 4]>,
     gps_latitude_ref: Option<FrameExifGpsLatitudeRef>,
     gps_latitude: Option<[FrameExifRational; 3]>,
@@ -6747,6 +6754,34 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn related_sound_file(&self) -> Option<&'a str> {
         self.related_sound_file
+    }
+
+    pub const fn image_unique_id(&self) -> Option<&'a str> {
+        self.image_unique_id
+    }
+
+    pub const fn camera_owner_name(&self) -> Option<&'a str> {
+        self.camera_owner_name
+    }
+
+    pub const fn body_serial_number(&self) -> Option<&'a str> {
+        self.body_serial_number
+    }
+
+    pub const fn lens_specification(&self) -> Option<[FrameExifRational; 4]> {
+        self.lens_specification
+    }
+
+    pub const fn lens_make(&self) -> Option<&'a str> {
+        self.lens_make
+    }
+
+    pub const fn lens_model(&self) -> Option<&'a str> {
+        self.lens_model
+    }
+
+    pub const fn lens_serial_number(&self) -> Option<&'a str> {
+        self.lens_serial_number
     }
 
     pub const fn gps_version_id(&self) -> Option<[u8; 4]> {
@@ -7256,6 +7291,13 @@ impl<'a> FrameExif<'a> {
     pub const TAG_SATURATION: u16 = 0xA409;
     pub const TAG_SHARPNESS: u16 = 0xA40A;
     pub const TAG_SUBJECT_DISTANCE_RANGE: u16 = 0xA40C;
+    pub const TAG_IMAGE_UNIQUE_ID: u16 = 0xA420;
+    pub const TAG_CAMERA_OWNER_NAME: u16 = 0xA430;
+    pub const TAG_BODY_SERIAL_NUMBER: u16 = 0xA431;
+    pub const TAG_LENS_SPECIFICATION: u16 = 0xA432;
+    pub const TAG_LENS_MAKE: u16 = 0xA433;
+    pub const TAG_LENS_MODEL: u16 = 0xA434;
+    pub const TAG_LENS_SERIAL_NUMBER: u16 = 0xA435;
     pub const TAG_GPS_VERSION_ID: u16 = 0x0000;
     pub const TAG_GPS_LATITUDE_REF: u16 = 0x0001;
     pub const TAG_GPS_LATITUDE: u16 = 0x0002;
@@ -7476,6 +7518,25 @@ impl<'a> FrameExif<'a> {
                 "RelatedSoundFile",
                 13,
             )?;
+            tags.image_unique_id = Self::optional_ascii_exact_count_tag(
+                ifd,
+                Self::TAG_IMAGE_UNIQUE_ID,
+                "ImageUniqueID",
+                33,
+            )?;
+            tags.camera_owner_name =
+                Self::optional_ascii_tag(ifd, Self::TAG_CAMERA_OWNER_NAME, "CameraOwnerName")?;
+            tags.body_serial_number =
+                Self::optional_ascii_tag(ifd, Self::TAG_BODY_SERIAL_NUMBER, "BodySerialNumber")?;
+            tags.lens_specification = Self::optional_rational_array_tag(
+                ifd,
+                Self::TAG_LENS_SPECIFICATION,
+                "LensSpecification",
+            )?;
+            tags.lens_make = Self::optional_ascii_tag(ifd, Self::TAG_LENS_MAKE, "LensMake")?;
+            tags.lens_model = Self::optional_ascii_tag(ifd, Self::TAG_LENS_MODEL, "LensModel")?;
+            tags.lens_serial_number =
+                Self::optional_ascii_tag(ifd, Self::TAG_LENS_SERIAL_NUMBER, "LensSerialNumber")?;
         }
 
         if let Some(gps_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Gps) {
@@ -7968,6 +8029,35 @@ impl<'a> FrameExif<'a> {
             .rational_values()?
             .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have RATIONAL TIFF type"))?;
         Ok(Some([values[0], values[1], values[2]]))
+    }
+
+    fn optional_rational_array_tag<const N: usize>(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<[FrameExifRational; N]>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        if entry.count() as usize != N {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!(
+                    "must contain exactly {N} unsigned rational values, got {}",
+                    entry.count()
+                ),
+            ));
+        }
+        let values = entry
+            .rational_values()?
+            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have RATIONAL TIFF type"))?;
+        let mut array = [FrameExifRational {
+            numerator: 0,
+            denominator: 1,
+        }; N];
+        array.copy_from_slice(&values);
+        Ok(Some(array))
     }
 
     fn optional_byte_array_tag<const N: usize>(
@@ -12600,6 +12690,94 @@ mod tests {
         data.extend_from_slice(b"SOUND001.WAV\0");
 
         assert_eq!(data.len(), 180);
+        data
+    }
+
+    fn exif_camera_lens_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&7u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_IMAGE_UNIQUE_ID,
+            FrameExifTiffType::Ascii,
+            33,
+            116u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_CAMERA_OWNER_NAME,
+            FrameExifTiffType::Ascii,
+            9,
+            149u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_BODY_SERIAL_NUMBER,
+            FrameExifTiffType::Ascii,
+            9,
+            158u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_LENS_SPECIFICATION,
+            FrameExifTiffType::Rational,
+            4,
+            167u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_LENS_MAKE,
+            FrameExifTiffType::Ascii,
+            7,
+            199u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_LENS_MODEL,
+            FrameExifTiffType::Ascii,
+            8,
+            206u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_LENS_SERIAL_NUMBER,
+            FrameExifTiffType::Ascii,
+            9,
+            214u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 116);
+
+        data.extend_from_slice(b"0123456789abcdef0123456789abcdef\0");
+        data.extend_from_slice(b"A Camera\0");
+        data.extend_from_slice(b"BODY1234\0");
+        data.extend_from_slice(&24u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&70u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&28u32.to_le_bytes());
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(&40u32.to_le_bytes());
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(b"LensCo\0");
+        data.extend_from_slice(b"Prime50\0");
+        data.extend_from_slice(b"LENS5678\0");
+
+        assert_eq!(data.len(), 223);
         data
     }
 
@@ -18651,6 +18829,88 @@ mod tests {
         bad_related_sound_count[116..120].copy_from_slice(&12u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_related_sound_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_camera_lens_tags() {
+        let exif_bytes = exif_camera_lens_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.image_unique_id(),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+        assert_eq!(common.camera_owner_name(), Some("A Camera"));
+        assert_eq!(common.body_serial_number(), Some("BODY1234"));
+        assert_eq!(
+            common.lens_specification(),
+            Some([
+                FrameExifRational {
+                    numerator: 24,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 70,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 28,
+                    denominator: 10,
+                },
+                FrameExifRational {
+                    numerator: 40,
+                    denominator: 10,
+                },
+            ])
+        );
+        assert_eq!(common.lens_make(), Some("LensCo"));
+        assert_eq!(common.lens_model(), Some("Prime50"));
+        assert_eq!(common.lens_serial_number(), Some("LENS5678"));
+
+        let mut bad_unique_id_count = exif_camera_lens_fixture();
+        bad_unique_id_count[32..36].copy_from_slice(&32u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_unique_id_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_lens_spec_count = exif_camera_lens_fixture();
+        bad_lens_spec_count[68..72].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_lens_spec_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_lens_spec_type = exif_camera_lens_fixture();
+        bad_lens_spec_type[66..68].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_lens_spec_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_lens_model_ascii = exif_camera_lens_fixture();
+        bad_lens_model_ascii[206] = 0xff;
+        assert_eq!(
+            FrameExif::parse(&bad_lens_model_ascii)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
