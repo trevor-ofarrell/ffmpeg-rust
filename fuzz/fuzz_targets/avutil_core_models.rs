@@ -9,11 +9,12 @@ use avutil::{
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
-    FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifEntry, FrameExifGpsAltitudeRef,
-    FrameExifGpsDirectionRef, FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef,
-    FrameExifGpsLongitudeRef, FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus,
-    FrameExifIfdPointerKind, FrameExifOrientation, FrameExifResolutionUnit, FrameExifTiffType,
-    FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifEntry, FrameExifExposureProgram,
+    FrameExifFlash, FrameExifGpsAltitudeRef, FrameExifGpsDirectionRef, FrameExifGpsDistanceRef,
+    FrameExifGpsLatitudeRef, FrameExifGpsLongitudeRef, FrameExifGpsMeasureMode,
+    FrameExifGpsSpeedRef, FrameExifGpsStatus, FrameExifIfdPointerKind, FrameExifLightSource,
+    FrameExifMeteringMode, FrameExifOrientation, FrameExifResolutionUnit, FrameExifTiffType,
+    FrameExifWhiteBalance, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
@@ -1746,6 +1747,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                         assert_ne!(value.denominator(), 0);
                     }
                     if let Some(value) = common.focal_length() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.digital_zoom_ratio() {
                         assert_ne!(value.denominator(), 0);
                     }
                     if let Some(latitude) = common.gps_latitude() {
@@ -4035,6 +4039,29 @@ fn exercise_fixtures() {
         Some("2026:05:04 12:35:00")
     );
 
+    let capture_exif_bytes = exif_capture_settings_fixture();
+    let capture_exif = FrameExif::parse(&capture_exif_bytes).unwrap();
+    let capture_tags = capture_exif.common_tags().unwrap();
+    assert_eq!(
+        capture_tags.exposure_program(),
+        Some(FrameExifExposureProgram::AperturePriority)
+    );
+    assert_eq!(
+        capture_tags.metering_mode(),
+        Some(FrameExifMeteringMode::Pattern)
+    );
+    assert_eq!(capture_tags.light_source(), Some(FrameExifLightSource::D65));
+    assert_eq!(capture_tags.flash(), Some(FrameExifFlash::from_raw(0x0041)));
+    assert!(capture_tags.flash().unwrap().fired());
+    assert!(capture_tags.flash().unwrap().red_eye_reduction_supported());
+    assert_eq!(
+        capture_tags.white_balance(),
+        Some(FrameExifWhiteBalance::Manual)
+    );
+    assert_eq!(capture_tags.digital_zoom_ratio().unwrap().numerator(), 3);
+    assert_eq!(capture_tags.digital_zoom_ratio().unwrap().denominator(), 2);
+    assert_eq!(capture_tags.focal_length_in_35mm_film(), Some(75));
+
     let descriptive_exif_bytes = exif_descriptive_tags_fixture();
     let descriptive_exif = FrameExif::parse(&descriptive_exif_bytes).unwrap();
     let descriptive_tags = descriptive_exif.common_tags().unwrap();
@@ -5597,6 +5624,76 @@ fn exif_exposure_tags_fixture() -> Vec<u8> {
     data.extend_from_slice(&50u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_le_bytes());
     data.extend_from_slice(b"2026:05:04 12:35:00\0");
+    data
+}
+
+fn exif_capture_settings_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&7u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_EXPOSURE_PROGRAM,
+        FrameExifTiffType::Short,
+        1,
+        [3, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_METERING_MODE,
+        FrameExifTiffType::Short,
+        1,
+        [5, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_LIGHT_SOURCE,
+        FrameExifTiffType::Short,
+        1,
+        [21, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_FLASH,
+        FrameExifTiffType::Short,
+        1,
+        [0x41, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_WHITE_BALANCE,
+        FrameExifTiffType::Short,
+        1,
+        [1, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_DIGITAL_ZOOM_RATIO,
+        FrameExifTiffType::Rational,
+        1,
+        116u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_FOCAL_LENGTH_IN_35MM_FILM,
+        FrameExifTiffType::Short,
+        1,
+        [75, 0, 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(&3u32.to_le_bytes());
+    data.extend_from_slice(&2u32.to_le_bytes());
     data
 }
 

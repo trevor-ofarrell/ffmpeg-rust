@@ -5714,6 +5714,237 @@ impl FrameExifResolutionUnit {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifExposureProgram {
+    NotDefined,
+    Manual,
+    NormalProgram,
+    AperturePriority,
+    ShutterPriority,
+    CreativeProgram,
+    ActionProgram,
+    PortraitMode,
+    LandscapeMode,
+}
+
+impl FrameExifExposureProgram {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::NotDefined),
+            1 => Ok(Self::Manual),
+            2 => Ok(Self::NormalProgram),
+            3 => Ok(Self::AperturePriority),
+            4 => Ok(Self::ShutterPriority),
+            5 => Ok(Self::CreativeProgram),
+            6 => Ok(Self::ActionProgram),
+            7 => Ok(Self::PortraitMode),
+            8 => Ok(Self::LandscapeMode),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF exposure program value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::NotDefined => 0,
+            Self::Manual => 1,
+            Self::NormalProgram => 2,
+            Self::AperturePriority => 3,
+            Self::ShutterPriority => 4,
+            Self::CreativeProgram => 5,
+            Self::ActionProgram => 6,
+            Self::PortraitMode => 7,
+            Self::LandscapeMode => 8,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifMeteringMode {
+    Unknown,
+    Average,
+    CenterWeightedAverage,
+    Spot,
+    MultiSpot,
+    Pattern,
+    Partial,
+    Other,
+}
+
+impl FrameExifMeteringMode {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::Average),
+            2 => Ok(Self::CenterWeightedAverage),
+            3 => Ok(Self::Spot),
+            4 => Ok(Self::MultiSpot),
+            5 => Ok(Self::Pattern),
+            6 => Ok(Self::Partial),
+            255 => Ok(Self::Other),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF metering mode value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Unknown => 0,
+            Self::Average => 1,
+            Self::CenterWeightedAverage => 2,
+            Self::Spot => 3,
+            Self::MultiSpot => 4,
+            Self::Pattern => 5,
+            Self::Partial => 6,
+            Self::Other => 255,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifLightSource {
+    Unknown,
+    Daylight,
+    Fluorescent,
+    Tungsten,
+    Flash,
+    FineWeather,
+    CloudyWeather,
+    Shade,
+    DaylightFluorescent,
+    DayWhiteFluorescent,
+    CoolWhiteFluorescent,
+    WhiteFluorescent,
+    StandardLightA,
+    StandardLightB,
+    StandardLightC,
+    D55,
+    D65,
+    D75,
+    D50,
+    IsoStudioTungsten,
+    Other,
+}
+
+impl FrameExifLightSource {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::Daylight),
+            2 => Ok(Self::Fluorescent),
+            3 => Ok(Self::Tungsten),
+            4 => Ok(Self::Flash),
+            9 => Ok(Self::FineWeather),
+            10 => Ok(Self::CloudyWeather),
+            11 => Ok(Self::Shade),
+            12 => Ok(Self::DaylightFluorescent),
+            13 => Ok(Self::DayWhiteFluorescent),
+            14 => Ok(Self::CoolWhiteFluorescent),
+            15 => Ok(Self::WhiteFluorescent),
+            17 => Ok(Self::StandardLightA),
+            18 => Ok(Self::StandardLightB),
+            19 => Ok(Self::StandardLightC),
+            20 => Ok(Self::D55),
+            21 => Ok(Self::D65),
+            22 => Ok(Self::D75),
+            23 => Ok(Self::D50),
+            24 => Ok(Self::IsoStudioTungsten),
+            255 => Ok(Self::Other),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF light source value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Unknown => 0,
+            Self::Daylight => 1,
+            Self::Fluorescent => 2,
+            Self::Tungsten => 3,
+            Self::Flash => 4,
+            Self::FineWeather => 9,
+            Self::CloudyWeather => 10,
+            Self::Shade => 11,
+            Self::DaylightFluorescent => 12,
+            Self::DayWhiteFluorescent => 13,
+            Self::CoolWhiteFluorescent => 14,
+            Self::WhiteFluorescent => 15,
+            Self::StandardLightA => 17,
+            Self::StandardLightB => 18,
+            Self::StandardLightC => 19,
+            Self::D55 => 20,
+            Self::D65 => 21,
+            Self::D75 => 22,
+            Self::D50 => 23,
+            Self::IsoStudioTungsten => 24,
+            Self::Other => 255,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameExifFlash {
+    raw: u16,
+}
+
+impl FrameExifFlash {
+    pub const fn from_raw(raw: u16) -> Self {
+        Self { raw }
+    }
+
+    pub const fn raw(self) -> u16 {
+        self.raw
+    }
+
+    pub const fn fired(self) -> bool {
+        self.raw & 0x0001 != 0
+    }
+
+    pub const fn return_status_bits(self) -> u16 {
+        (self.raw >> 1) & 0x0003
+    }
+
+    pub const fn mode_bits(self) -> u16 {
+        (self.raw >> 3) & 0x0003
+    }
+
+    pub const fn has_no_flash_function(self) -> bool {
+        self.raw & 0x0020 != 0
+    }
+
+    pub const fn red_eye_reduction_supported(self) -> bool {
+        self.raw & 0x0040 != 0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifWhiteBalance {
+    Auto,
+    Manual,
+}
+
+impl FrameExifWhiteBalance {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Auto),
+            1 => Ok(Self::Manual),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF white balance value {raw} is outside the defined 0..=1 range"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Auto => 0,
+            Self::Manual => 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifGpsLatitudeRef {
     North,
     South,
@@ -5847,10 +6078,17 @@ pub struct FrameExifCommonTags<'a> {
     exif_version: Option<[u8; 4]>,
     date_time_original: Option<&'a str>,
     date_time_digitized: Option<&'a str>,
+    exposure_program: Option<FrameExifExposureProgram>,
     exposure_time: Option<FrameExifRational>,
     f_number: Option<FrameExifRational>,
     exposure_bias_value: Option<FrameExifSignedRational>,
+    metering_mode: Option<FrameExifMeteringMode>,
+    light_source: Option<FrameExifLightSource>,
+    flash: Option<FrameExifFlash>,
     focal_length: Option<FrameExifRational>,
+    white_balance: Option<FrameExifWhiteBalance>,
+    digital_zoom_ratio: Option<FrameExifRational>,
+    focal_length_in_35mm_film: Option<u16>,
     pixel_x_dimension: Option<u32>,
     pixel_y_dimension: Option<u32>,
     gps_version_id: Option<[u8; 4]>,
@@ -5949,6 +6187,10 @@ impl<'a> FrameExifCommonTags<'a> {
         self.date_time_digitized
     }
 
+    pub const fn exposure_program(&self) -> Option<FrameExifExposureProgram> {
+        self.exposure_program
+    }
+
     pub const fn exposure_time(&self) -> Option<FrameExifRational> {
         self.exposure_time
     }
@@ -5961,8 +6203,32 @@ impl<'a> FrameExifCommonTags<'a> {
         self.exposure_bias_value
     }
 
+    pub const fn metering_mode(&self) -> Option<FrameExifMeteringMode> {
+        self.metering_mode
+    }
+
+    pub const fn light_source(&self) -> Option<FrameExifLightSource> {
+        self.light_source
+    }
+
+    pub const fn flash(&self) -> Option<FrameExifFlash> {
+        self.flash
+    }
+
     pub const fn focal_length(&self) -> Option<FrameExifRational> {
         self.focal_length
+    }
+
+    pub const fn white_balance(&self) -> Option<FrameExifWhiteBalance> {
+        self.white_balance
+    }
+
+    pub const fn digital_zoom_ratio(&self) -> Option<FrameExifRational> {
+        self.digital_zoom_ratio
+    }
+
+    pub const fn focal_length_in_35mm_film(&self) -> Option<u16> {
+        self.focal_length_in_35mm_film
     }
 
     pub const fn pixel_x_dimension(&self) -> Option<u32> {
@@ -6438,15 +6704,22 @@ impl<'a> FrameExif<'a> {
     pub const TAG_DATE_TIME: u16 = 0x0132;
     pub const TAG_ARTIST: u16 = 0x013B;
     pub const TAG_COPYRIGHT: u16 = 0x8298;
+    pub const TAG_EXPOSURE_PROGRAM: u16 = 0x8822;
     pub const TAG_EXPOSURE_TIME: u16 = 0x829A;
     pub const TAG_F_NUMBER: u16 = 0x829D;
     pub const TAG_EXIF_VERSION: u16 = 0x9000;
     pub const TAG_DATE_TIME_ORIGINAL: u16 = 0x9003;
     pub const TAG_DATE_TIME_DIGITIZED: u16 = 0x9004;
     pub const TAG_EXPOSURE_BIAS_VALUE: u16 = 0x9204;
+    pub const TAG_METERING_MODE: u16 = 0x9207;
+    pub const TAG_LIGHT_SOURCE: u16 = 0x9208;
+    pub const TAG_FLASH: u16 = 0x9209;
     pub const TAG_FOCAL_LENGTH: u16 = 0x920A;
     pub const TAG_PIXEL_X_DIMENSION: u16 = 0xA002;
     pub const TAG_PIXEL_Y_DIMENSION: u16 = 0xA003;
+    pub const TAG_WHITE_BALANCE: u16 = 0xA403;
+    pub const TAG_DIGITAL_ZOOM_RATIO: u16 = 0xA404;
+    pub const TAG_FOCAL_LENGTH_IN_35MM_FILM: u16 = 0xA405;
     pub const TAG_GPS_VERSION_ID: u16 = 0x0000;
     pub const TAG_GPS_LATITUDE_REF: u16 = 0x0001;
     pub const TAG_GPS_LATITUDE: u16 = 0x0002;
@@ -6577,6 +6850,7 @@ impl<'a> FrameExif<'a> {
                 Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_ORIGINAL, "DateTimeOriginal")?;
             tags.date_time_digitized =
                 Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_DIGITIZED, "DateTimeDigitized")?;
+            tags.exposure_program = Self::optional_exposure_program_tag(ifd)?;
             tags.exposure_time =
                 Self::optional_rational_tag(ifd, Self::TAG_EXPOSURE_TIME, "ExposureTime")?;
             tags.f_number = Self::optional_rational_tag(ifd, Self::TAG_F_NUMBER, "FNumber")?;
@@ -6585,8 +6859,19 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_EXPOSURE_BIAS_VALUE,
                 "ExposureBiasValue",
             )?;
+            tags.metering_mode = Self::optional_metering_mode_tag(ifd)?;
+            tags.light_source = Self::optional_light_source_tag(ifd)?;
+            tags.flash = Self::optional_flash_tag(ifd)?;
             tags.focal_length =
                 Self::optional_rational_tag(ifd, Self::TAG_FOCAL_LENGTH, "FocalLength")?;
+            tags.white_balance = Self::optional_white_balance_tag(ifd)?;
+            tags.digital_zoom_ratio =
+                Self::optional_rational_tag(ifd, Self::TAG_DIGITAL_ZOOM_RATIO, "DigitalZoomRatio")?;
+            tags.focal_length_in_35mm_film = Self::optional_short_tag(
+                ifd,
+                Self::TAG_FOCAL_LENGTH_IN_35MM_FILM,
+                "FocalLengthIn35mmFilm",
+            )?;
             tags.pixel_x_dimension = Self::optional_short_or_long_tag(
                 ifd,
                 Self::TAG_PIXEL_X_DIMENSION,
@@ -6760,6 +7045,52 @@ impl<'a> FrameExif<'a> {
             return Ok(None);
         };
         FrameExifResolutionUnit::from_raw(raw).map(Some)
+    }
+
+    fn optional_exposure_program_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifExposureProgram>> {
+        let Some(raw) =
+            Self::optional_short_tag(ifd, Self::TAG_EXPOSURE_PROGRAM, "ExposureProgram")?
+        else {
+            return Ok(None);
+        };
+        FrameExifExposureProgram::from_raw(raw).map(Some)
+    }
+
+    fn optional_metering_mode_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifMeteringMode>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_METERING_MODE, "MeteringMode")?
+        else {
+            return Ok(None);
+        };
+        FrameExifMeteringMode::from_raw(raw).map(Some)
+    }
+
+    fn optional_light_source_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifLightSource>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_LIGHT_SOURCE, "LightSource")?
+        else {
+            return Ok(None);
+        };
+        FrameExifLightSource::from_raw(raw).map(Some)
+    }
+
+    fn optional_flash_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifFlash>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_FLASH, "Flash")? else {
+            return Ok(None);
+        };
+        Ok(Some(FrameExifFlash::from_raw(raw)))
+    }
+
+    fn optional_white_balance_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifWhiteBalance>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_WHITE_BALANCE, "WhiteBalance")?
+        else {
+            return Ok(None);
+        };
+        FrameExifWhiteBalance::from_raw(raw).map(Some)
     }
 
     fn optional_short_tag(ifd: &FrameExifIfd<'a>, tag: u16, label: &str) -> AvResult<Option<u16>> {
@@ -11116,6 +11447,82 @@ mod tests {
         data.extend_from_slice(b"2026:05:04 12:35:00\0");
 
         assert_eq!(data.len(), 168);
+        data
+    }
+
+    fn exif_capture_settings_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&7u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_EXPOSURE_PROGRAM,
+            FrameExifTiffType::Short,
+            1,
+            [3, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_METERING_MODE,
+            FrameExifTiffType::Short,
+            1,
+            [5, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_LIGHT_SOURCE,
+            FrameExifTiffType::Short,
+            1,
+            [21, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_FLASH,
+            FrameExifTiffType::Short,
+            1,
+            [0x41, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_WHITE_BALANCE,
+            FrameExifTiffType::Short,
+            1,
+            [1, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_DIGITAL_ZOOM_RATIO,
+            FrameExifTiffType::Rational,
+            1,
+            116u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_FOCAL_LENGTH_IN_35MM_FILM,
+            FrameExifTiffType::Short,
+            1,
+            [75, 0, 0, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 116);
+
+        data.extend_from_slice(&3u32.to_le_bytes());
+        data.extend_from_slice(&2u32.to_le_bytes());
+
+        assert_eq!(data.len(), 124);
         data
     }
 
@@ -16813,6 +17220,83 @@ mod tests {
         bad_pixel_count[92..96].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_pixel_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_capture_setting_tags() {
+        let exif_bytes = exif_capture_settings_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.exposure_program(),
+            Some(FrameExifExposureProgram::AperturePriority)
+        );
+        assert_eq!(common.exposure_program().unwrap().raw(), 3);
+        assert_eq!(common.metering_mode(), Some(FrameExifMeteringMode::Pattern));
+        assert_eq!(common.metering_mode().unwrap().raw(), 5);
+        assert_eq!(common.light_source(), Some(FrameExifLightSource::D65));
+        assert_eq!(common.light_source().unwrap().raw(), 21);
+        assert_eq!(common.flash(), Some(FrameExifFlash::from_raw(0x0041)));
+        assert!(common.flash().unwrap().fired());
+        assert!(common.flash().unwrap().red_eye_reduction_supported());
+        assert_eq!(common.flash().unwrap().return_status_bits(), 0);
+        assert_eq!(common.flash().unwrap().mode_bits(), 0);
+        assert!(!common.flash().unwrap().has_no_flash_function());
+        assert_eq!(common.white_balance(), Some(FrameExifWhiteBalance::Manual));
+        assert_eq!(common.white_balance().unwrap().raw(), 1);
+        assert_eq!(
+            common.digital_zoom_ratio(),
+            Some(FrameExifRational {
+                numerator: 3,
+                denominator: 2,
+            })
+        );
+        assert_eq!(common.focal_length_in_35mm_film(), Some(75));
+
+        let mut bad_exposure_program = exif_capture_settings_fixture();
+        bad_exposure_program[36..38].copy_from_slice(&9u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_exposure_program)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_light_source = exif_capture_settings_fixture();
+        bad_light_source[60..62].copy_from_slice(&7u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_light_source)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_digital_zoom_type = exif_capture_settings_fixture();
+        bad_digital_zoom_type[90..92].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_digital_zoom_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_focal_length_count = exif_capture_settings_fixture();
+        bad_focal_length_count[104..108].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_focal_length_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
