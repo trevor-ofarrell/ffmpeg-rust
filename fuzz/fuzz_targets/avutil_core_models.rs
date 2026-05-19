@@ -8123,42 +8123,108 @@ fn exercise_fixtures() {
         detection_side_data.kind_id(),
         &FrameSideDataKind::DetectionBboxes
     );
+    assert_eq!(
+        FrameDetectionBboxes::HEADER_LEN,
+        if core::mem::size_of::<usize>() == 8 {
+            280
+        } else {
+            268
+        }
+    );
+    assert_eq!(FrameDetectionBbox::DATA_LEN, 380);
     assert_eq!(parsed_detection.data(), detection_bboxes.as_slice());
     assert_eq!(parsed_detection.source(), b"fuzz-detector");
+    assert_eq!(
+        parsed_detection.source_raw().len(),
+        FrameDetectionBboxes::SOURCE_LEN
+    );
     assert_eq!(parsed_detection.nb_bboxes(), 1);
+    assert!(!parsed_detection.is_empty());
+    assert_eq!(parsed_detection.bboxes().count(), 1);
     let parsed_bbox = parsed_detection.bbox(0).unwrap().unwrap();
+    assert_eq!(
+        parsed_bbox.data(),
+        &detection_bboxes[FrameDetectionBboxes::BBOXES_OFFSET..][..FrameDetectionBbox::DATA_LEN]
+    );
     assert_eq!(parsed_bbox.x(), 1);
     assert_eq!(parsed_bbox.y(), 2);
     assert_eq!(parsed_bbox.width(), 3);
     assert_eq!(parsed_bbox.height(), 4);
     assert_eq!(parsed_bbox.detect_label(), b"object");
+    assert_eq!(
+        parsed_bbox.detect_label_raw().len(),
+        FrameDetectionBbox::LABEL_LEN
+    );
     assert_eq!(parsed_bbox.detect_confidence(), Rational::from_raw(1, 2));
     assert_eq!(parsed_bbox.classify_count(), 1);
     assert_eq!(parsed_bbox.classify_label(0), Some(&b"class"[..]));
+    assert_eq!(parsed_bbox.classify_label(1), None);
+    assert_eq!(
+        parsed_bbox.classify_label_raw(FrameDetectionBbox::MAX_CLASSIFICATIONS),
+        None
+    );
     assert_eq!(
         parsed_bbox.classify_confidence(0),
         Some(Rational::from_raw(3, 4))
     );
+    assert_eq!(parsed_bbox.classify_confidence(1), None);
+    assert!(parsed_detection.bbox(1).is_none());
+
+    let zero_detection = minimal_detection_bboxes_zero_fixture();
+    let parsed_zero_detection = FrameDetectionBboxes::parse(&zero_detection).unwrap();
+    assert!(parsed_zero_detection.is_empty());
+    assert_eq!(parsed_zero_detection.nb_bboxes(), 0);
+    assert_eq!(parsed_zero_detection.bboxes().count(), 0);
     assert_eq!(
-        FrameDetectionBboxes::parse(&[0; FrameDetectionBboxes::HEADER_LEN - 1])
-            .unwrap_err()
-            .kind(),
-        AvErrorKind::InvalidData
+        FrameSideData::new_detection_bboxes(zero_detection)
+            .unwrap()
+            .detection_bboxes()
+            .unwrap()
+            .unwrap()
+            .nb_bboxes(),
+        0
     );
-    let mut bad_detection = detection_bboxes.clone();
+
+    for data in [
+        Vec::new(),
+        vec![0; FrameDetectionBboxes::HEADER_LEN - 1],
+        {
+            let mut data = detection_bboxes.clone();
+            data.pop();
+            data
+        },
+        {
+            let mut data = detection_bboxes.clone();
+            data.push(0);
+            data
+        },
+    ] {
+        assert_detection_bboxes_payload_rejected(data);
+    }
+    for (offset, value) in [
+        (
+            detection_bboxes_bboxes_offset_field_offset(),
+            FrameDetectionBboxes::BBOXES_OFFSET + 4,
+        ),
+        (
+            detection_bboxes_bbox_size_field_offset(),
+            FrameDetectionBbox::DATA_LEN + 4,
+        ),
+    ] {
+        let mut bad_detection = detection_bboxes.clone();
+        write_ne_usize(&mut bad_detection, offset, value);
+        assert_detection_bboxes_payload_rejected(bad_detection);
+    }
+    let mut bad_count = detection_bboxes.clone();
+    write_ne_u32(&mut bad_count, detection_bboxes_nb_bboxes_field_offset(), 2);
+    assert_detection_bboxes_payload_rejected(bad_count);
+    let mut bad_classify_count = detection_bboxes;
     write_ne_u32(
-        &mut bad_detection,
+        &mut bad_classify_count,
         detection_bboxes_first_classify_count_offset(),
         FrameDetectionBbox::MAX_CLASSIFICATIONS as u32 + 1,
     );
-    assert_eq!(
-        FrameSideData::new_with_kind(FrameSideDataKind::DetectionBboxes, bad_detection)
-            .unwrap()
-            .detection_bboxes()
-            .unwrap_err()
-            .kind(),
-        AvErrorKind::InvalidData
-    );
+    assert_detection_bboxes_payload_rejected(bad_classify_count);
     let non_detection =
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_detection.detection_bboxes().unwrap(), None);
@@ -11678,6 +11744,44 @@ fn minimal_detection_bboxes_fixture() -> Vec<u8> {
     );
 
     data
+}
+
+fn minimal_detection_bboxes_zero_fixture() -> Vec<u8> {
+    let mut data = vec![0; FrameDetectionBboxes::HEADER_LEN];
+    write_ne_u32(&mut data, detection_bboxes_nb_bboxes_field_offset(), 0);
+    write_ne_usize(
+        &mut data,
+        detection_bboxes_bboxes_offset_field_offset(),
+        FrameDetectionBboxes::BBOXES_OFFSET,
+    );
+    write_ne_usize(
+        &mut data,
+        detection_bboxes_bbox_size_field_offset(),
+        FrameDetectionBbox::DATA_LEN,
+    );
+    data
+}
+
+fn assert_detection_bboxes_payload_rejected(data: Vec<u8>) {
+    assert!(detection_bboxes_payload_invalid(&data));
+    assert_eq!(
+        FrameDetectionBboxes::parse(&data).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::DetectionBboxes, data.clone())
+            .unwrap()
+            .detection_bboxes()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_detection_bboxes(data)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 }
 
 fn detection_bboxes_payload_invalid(data: &[u8]) -> bool {
