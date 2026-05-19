@@ -13,9 +13,9 @@ use avutil::{
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
-    FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
-    FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain,
-    FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
+    FrameLcevc, FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector,
+    FrameMotionVectors, FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest,
+    FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
     FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
     FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
     FrameStereo3dType, FrameStereo3dView, FrameVideoBlockParams, FrameVideoEncParams,
@@ -1616,6 +1616,14 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::VideoHint);
             assert!(video_hint_payload_invalid(&frame_side_data_payload));
         }
+    }
+    match frame.side_data()[0].lcevc() {
+        Some(value) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::Lcevc);
+            assert_eq!(value.data(), frame_side_data_payload.as_slice());
+            assert_eq!(value.is_empty(), frame_side_data_payload.is_empty());
+        }
+        None => assert_ne!(frame_side_data_kind, FrameSideDataKind::Lcevc),
     }
     match frame.side_data()[0].film_grain_params() {
         Ok(Some(value)) => {
@@ -3454,6 +3462,21 @@ fn exercise_fixtures() {
     let non_video_hint =
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_video_hint.video_hint().unwrap(), None);
+
+    let lcevc_bytes = vec![0x00, 0x00, 0x01, 0x7E, 0xAA, 0x00, 0x00, 0x03, 0x01];
+    let lcevc_side_data = FrameSideData::new_lcevc(lcevc_bytes.clone()).unwrap();
+    assert_eq!(lcevc_side_data.kind_id(), &FrameSideDataKind::Lcevc);
+    let parsed_lcevc = lcevc_side_data.lcevc().unwrap();
+    assert_eq!(
+        FrameLcevc::parse(&lcevc_bytes).data(),
+        lcevc_bytes.as_slice()
+    );
+    assert_eq!(parsed_lcevc.data(), lcevc_bytes.as_slice());
+    assert!(!parsed_lcevc.is_empty());
+    assert!(FrameLcevc::parse(&[]).is_empty());
+    let non_lcevc =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_lcevc.lcevc(), None);
 
     let film_grain = minimal_film_grain_av1_fixture();
     let film_grain_side_data = FrameSideData::new_film_grain_params(film_grain.clone()).unwrap();

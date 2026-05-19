@@ -5065,6 +5065,25 @@ impl<'a> FrameDolbyVisionRpuBuffer<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameLcevc<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameLcevc<'a> {
+    pub const fn parse(data: &'a [u8]) -> Self {
+        Self { data }
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.data.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameDolbyVisionRpuDataHeader<'a> {
     data: &'a [u8],
 }
@@ -6171,6 +6190,10 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::VideoHint, value.to_bytes())
     }
 
+    pub fn new_lcevc(data: Vec<u8>) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::Lcevc, data)
+    }
+
     pub fn new_film_grain_params(data: Vec<u8>) -> AvResult<Self> {
         let side_data = Self::new_with_kind(FrameSideDataKind::FilmGrainParams, data)?;
         FrameFilmGrainParams::parse(side_data.data())?;
@@ -6432,6 +6455,14 @@ impl FrameSideData {
         }
 
         FrameVideoHint::parse(self.data()).map(Some)
+    }
+
+    pub fn lcevc(&self) -> Option<FrameLcevc<'_>> {
+        if self.kind != FrameSideDataKind::Lcevc {
+            return None;
+        }
+
+        Some(FrameLcevc::parse(self.data()))
     }
 
     pub fn film_grain_params(&self) -> AvResult<Option<FrameFilmGrainParams<'_>>> {
@@ -12814,6 +12845,26 @@ mod tests {
         let non_hint =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
         assert_eq!(non_hint.video_hint().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_preserves_lcevc_payload() {
+        let lcevc_bytes = vec![0x00, 0x00, 0x01, 0x7E, 0xAB, 0x00, 0x00, 0x03, 0x01];
+        let side_data = FrameSideData::new_lcevc(lcevc_bytes.clone()).unwrap();
+
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::Lcevc);
+        assert_eq!(side_data.data(), lcevc_bytes.as_slice());
+        let parsed = side_data.lcevc().unwrap();
+        assert_eq!(FrameLcevc::parse(&lcevc_bytes), parsed);
+        assert_eq!(parsed.data(), lcevc_bytes.as_slice());
+        assert!(!parsed.is_empty());
+
+        let empty = FrameSideData::new_lcevc(Vec::new()).unwrap();
+        assert!(empty.lcevc().unwrap().is_empty());
+
+        let non_lcevc =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+        assert_eq!(non_lcevc.lcevc(), None);
     }
 
     #[test]

@@ -34,7 +34,7 @@ pub use frame::{
     FrameFilmGrainParams, FrameFilmGrainParamsType, FrameGopTimecode,
     FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrPlusPercentile,
     FrameHdrVivid3SplineParams, FrameHdrVividColorToneMappingParams,
-    FrameHdrVividColorTransformParams, FrameIccProfile, FrameMasteringDisplayMetadata,
+    FrameHdrVividColorTransformParams, FrameIccProfile, FrameLcevc, FrameMasteringDisplayMetadata,
     FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors, FramePanScan,
     FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode,
     FrameSeiUnregistered, FrameSideData, FrameSideDataDescriptor, FrameSideDataKind,
