@@ -1933,6 +1933,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.page_name() {
                         assert!(value.is_ascii());
                     }
+                    if let Some(value) = common.host_computer() {
+                        assert!(value.is_ascii());
+                    }
                     if let Some(value) = common.compression() {
                         assert_ne!(value.raw(), 0);
                     }
@@ -4247,6 +4250,41 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let host_computer_exif_bytes = exif_root_host_computer_fixture();
+    let host_computer_exif = FrameExif::parse(&host_computer_exif_bytes).unwrap();
+    let host_computer_tags = host_computer_exif.common_tags().unwrap();
+    assert_eq!(host_computer_tags.host_computer(), Some("PC"));
+    let mut bad_host_type = exif_root_host_computer_fixture();
+    bad_host_type[12..14].copy_from_slice(&FrameExifTiffType::Undefined.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_host_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_host_terminator = exif_root_host_computer_fixture();
+    bad_host_terminator[20] = b'!';
+    assert_eq!(
+        FrameExif::parse(&bad_host_terminator)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_host_multiple_strings = exif_root_host_computer_fixture();
+    bad_host_multiple_strings[14..18].copy_from_slice(&4u32.to_le_bytes());
+    bad_host_multiple_strings[18..22].copy_from_slice(&[b'P', 0, b'C', 0]);
+    assert_eq!(
+        FrameExif::parse(&bad_host_multiple_strings)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let coding_exif_bytes = exif_root_coding_fixture();
     let coding_exif = FrameExif::parse(&coding_exif_bytes).unwrap();
     let coding_tags = coding_exif.common_tags().unwrap();
@@ -6500,6 +6538,22 @@ fn exif_root_document_page_fixture() -> Vec<u8> {
     );
     data.extend_from_slice(&0u32.to_le_bytes());
     data.extend_from_slice(b"Page A\0");
+    data
+}
+
+fn exif_root_host_computer_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_HOST_COMPUTER,
+        FrameExifTiffType::Ascii,
+        3,
+        [b'P', b'C', 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
     data
 }
 
