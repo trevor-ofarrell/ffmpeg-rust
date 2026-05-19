@@ -4760,6 +4760,28 @@ fn exercise_fixtures() {
             .unwrap(),
         [8, 8, 8]
     );
+    let mut bad_bits_per_sample_type = exif_root_bits_per_sample_fixture();
+    bad_bits_per_sample_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    bad_bits_per_sample_type[14..18].copy_from_slice(&1u32.to_le_bytes());
+    bad_bits_per_sample_type[30..32].copy_from_slice(&1u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_bits_per_sample_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_bits_per_sample_empty_count = exif_root_bits_per_sample_fixture();
+    bad_bits_per_sample_empty_count[14..18].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_bits_per_sample_empty_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_bits_per_sample_zero = exif_root_bits_per_sample_fixture();
     bad_bits_per_sample_zero[38..40].copy_from_slice(&0u16.to_le_bytes());
     assert_eq!(
