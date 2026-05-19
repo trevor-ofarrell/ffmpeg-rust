@@ -6287,6 +6287,37 @@ impl FrameExifSubjectDistanceRange {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifCompositeImage {
+    Unknown,
+    NonCompositeImage,
+    GeneralCompositeImage,
+    CompositeImageCapturedWhenShooting,
+}
+
+impl FrameExifCompositeImage {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::NonCompositeImage),
+            2 => Ok(Self::GeneralCompositeImage),
+            3 => Ok(Self::CompositeImageCapturedWhenShooting),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF composite image value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Unknown => 0,
+            Self::NonCompositeImage => 1,
+            Self::GeneralCompositeImage => 2,
+            Self::CompositeImageCapturedWhenShooting => 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifSubjectArea {
     Point {
         x: u16,
@@ -6504,6 +6535,10 @@ pub struct FrameExifCommonTags<'a> {
     lens_make: Option<&'a str>,
     lens_model: Option<&'a str>,
     lens_serial_number: Option<&'a str>,
+    gamma: Option<FrameExifRational>,
+    composite_image: Option<FrameExifCompositeImage>,
+    source_image_number_of_composite_image: Option<[u16; 2]>,
+    source_exposure_times_of_composite_image: Option<&'a [u8]>,
     gps_version_id: Option<[u8; 4]>,
     gps_latitude_ref: Option<FrameExifGpsLatitudeRef>,
     gps_latitude: Option<[FrameExifRational; 3]>,
@@ -6782,6 +6817,22 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn lens_serial_number(&self) -> Option<&'a str> {
         self.lens_serial_number
+    }
+
+    pub const fn gamma(&self) -> Option<FrameExifRational> {
+        self.gamma
+    }
+
+    pub const fn composite_image(&self) -> Option<FrameExifCompositeImage> {
+        self.composite_image
+    }
+
+    pub const fn source_image_number_of_composite_image(&self) -> Option<[u16; 2]> {
+        self.source_image_number_of_composite_image
+    }
+
+    pub const fn source_exposure_times_of_composite_image(&self) -> Option<&'a [u8]> {
+        self.source_exposure_times_of_composite_image
     }
 
     pub const fn gps_version_id(&self) -> Option<[u8; 4]> {
@@ -7298,6 +7349,10 @@ impl<'a> FrameExif<'a> {
     pub const TAG_LENS_MAKE: u16 = 0xA433;
     pub const TAG_LENS_MODEL: u16 = 0xA434;
     pub const TAG_LENS_SERIAL_NUMBER: u16 = 0xA435;
+    pub const TAG_COMPOSITE_IMAGE: u16 = 0xA460;
+    pub const TAG_SOURCE_IMAGE_NUMBER_OF_COMPOSITE_IMAGE: u16 = 0xA461;
+    pub const TAG_SOURCE_EXPOSURE_TIMES_OF_COMPOSITE_IMAGE: u16 = 0xA462;
+    pub const TAG_GAMMA: u16 = 0xA500;
     pub const TAG_GPS_VERSION_ID: u16 = 0x0000;
     pub const TAG_GPS_LATITUDE_REF: u16 = 0x0001;
     pub const TAG_GPS_LATITUDE: u16 = 0x0002;
@@ -7537,6 +7592,18 @@ impl<'a> FrameExif<'a> {
             tags.lens_model = Self::optional_ascii_tag(ifd, Self::TAG_LENS_MODEL, "LensModel")?;
             tags.lens_serial_number =
                 Self::optional_ascii_tag(ifd, Self::TAG_LENS_SERIAL_NUMBER, "LensSerialNumber")?;
+            tags.composite_image = Self::optional_composite_image_tag(ifd)?;
+            tags.source_image_number_of_composite_image = Self::optional_short_array_tag(
+                ifd,
+                Self::TAG_SOURCE_IMAGE_NUMBER_OF_COMPOSITE_IMAGE,
+                "SourceImageNumberOfCompositeImage",
+            )?;
+            tags.source_exposure_times_of_composite_image = Self::optional_undefined_bytes_tag(
+                ifd,
+                Self::TAG_SOURCE_EXPOSURE_TIMES_OF_COMPOSITE_IMAGE,
+                "SourceExposureTimesOfCompositeImage",
+            )?;
+            tags.gamma = Self::optional_rational_tag(ifd, Self::TAG_GAMMA, "Gamma")?;
         }
 
         if let Some(gps_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Gps) {
@@ -7911,6 +7978,16 @@ impl<'a> FrameExif<'a> {
             return Ok(None);
         };
         FrameExifSubjectDistanceRange::from_raw(raw).map(Some)
+    }
+
+    fn optional_composite_image_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifCompositeImage>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_COMPOSITE_IMAGE, "CompositeImage")?
+        else {
+            return Ok(None);
+        };
+        FrameExifCompositeImage::from_raw(raw).map(Some)
     }
 
     fn optional_short_tag(ifd: &FrameExifIfd<'a>, tag: u16, label: &str) -> AvResult<Option<u16>> {
@@ -12778,6 +12855,62 @@ mod tests {
         data.extend_from_slice(b"LENS5678\0");
 
         assert_eq!(data.len(), 223);
+        data
+    }
+
+    fn exif_gamma_composite_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&4u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GAMMA,
+            FrameExifTiffType::Rational,
+            1,
+            80u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_COMPOSITE_IMAGE,
+            FrameExifTiffType::Short,
+            1,
+            [2, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SOURCE_IMAGE_NUMBER_OF_COMPOSITE_IMAGE,
+            FrameExifTiffType::Short,
+            2,
+            [5, 0, 3, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SOURCE_EXPOSURE_TIMES_OF_COMPOSITE_IMAGE,
+            FrameExifTiffType::Undefined,
+            12,
+            88u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 80);
+
+        data.extend_from_slice(&22u32.to_le_bytes());
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(b"exp-times-01");
+
+        assert_eq!(data.len(), 100);
         data
     }
 
@@ -18911,6 +19044,78 @@ mod tests {
         bad_lens_model_ascii[206] = 0xff;
         assert_eq!(
             FrameExif::parse(&bad_lens_model_ascii)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_gamma_composite_tags() {
+        let exif_bytes = exif_gamma_composite_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.gamma(),
+            Some(FrameExifRational {
+                numerator: 22,
+                denominator: 10,
+            })
+        );
+        assert_eq!(
+            common.composite_image(),
+            Some(FrameExifCompositeImage::GeneralCompositeImage)
+        );
+        assert_eq!(
+            common.source_image_number_of_composite_image(),
+            Some([5, 3])
+        );
+        assert_eq!(
+            common.source_exposure_times_of_composite_image(),
+            Some(&b"exp-times-01"[..])
+        );
+
+        let mut bad_gamma_count = exif_gamma_composite_fixture();
+        bad_gamma_count[32..36].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_gamma_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_composite_value = exif_gamma_composite_fixture();
+        bad_composite_value[48..50].copy_from_slice(&9u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_composite_value)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_source_count = exif_gamma_composite_fixture();
+        bad_source_count[56..60].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_source_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_exposure_type = exif_gamma_composite_fixture();
+        bad_exposure_type[66..68].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        bad_exposure_type[68..72].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_exposure_type)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

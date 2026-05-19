@@ -9,16 +9,16 @@ use avutil::{
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
-    FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace, FrameExifContrast,
-    FrameExifCustomRendered, FrameExifEndian, FrameExifEntry, FrameExifExposureMode,
-    FrameExifExposureProgram, FrameExifFileSource, FrameExifFlash, FrameExifGainControl,
-    FrameExifGpsAltitudeRef, FrameExifGpsDirectionRef, FrameExifGpsDistanceRef,
-    FrameExifGpsLatitudeRef, FrameExifGpsLongitudeRef, FrameExifGpsMeasureMode,
-    FrameExifGpsSpeedRef, FrameExifGpsStatus, FrameExifIfdPointerKind, FrameExifLightSource,
-    FrameExifMeteringMode, FrameExifOrientation, FrameExifResolutionUnit, FrameExifSaturation,
-    FrameExifSceneCaptureType, FrameExifSceneType, FrameExifSensingMethod, FrameExifSharpness,
-    FrameExifSubjectArea, FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance,
-    FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace, FrameExifCompositeImage,
+    FrameExifContrast, FrameExifCustomRendered, FrameExifEndian, FrameExifEntry,
+    FrameExifExposureMode, FrameExifExposureProgram, FrameExifFileSource, FrameExifFlash,
+    FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDirectionRef,
+    FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef, FrameExifGpsLongitudeRef,
+    FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus, FrameExifIfdPointerKind,
+    FrameExifLightSource, FrameExifMeteringMode, FrameExifOrientation, FrameExifResolutionUnit,
+    FrameExifSaturation, FrameExifSceneCaptureType, FrameExifSceneType, FrameExifSensingMethod,
+    FrameExifSharpness, FrameExifSubjectArea, FrameExifSubjectDistanceRange, FrameExifTiffType,
+    FrameExifWhiteBalance, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
@@ -4168,6 +4168,24 @@ fn exercise_fixtures() {
     assert_eq!(camera_lens_tags.lens_model(), Some("Prime50"));
     assert_eq!(camera_lens_tags.lens_serial_number(), Some("LENS5678"));
 
+    let gamma_composite_exif_bytes = exif_gamma_composite_fixture();
+    let gamma_composite_exif = FrameExif::parse(&gamma_composite_exif_bytes).unwrap();
+    let gamma_composite_tags = gamma_composite_exif.common_tags().unwrap();
+    assert_eq!(gamma_composite_tags.gamma().unwrap().numerator(), 22);
+    assert_eq!(gamma_composite_tags.gamma().unwrap().denominator(), 10);
+    assert_eq!(
+        gamma_composite_tags.composite_image(),
+        Some(FrameExifCompositeImage::GeneralCompositeImage)
+    );
+    assert_eq!(
+        gamma_composite_tags.source_image_number_of_composite_image(),
+        Some([5, 3])
+    );
+    assert_eq!(
+        gamma_composite_tags.source_exposure_times_of_composite_image(),
+        Some(&b"exp-times-01"[..])
+    );
+
     let descriptive_exif_bytes = exif_descriptive_tags_fixture();
     let descriptive_exif = FrameExif::parse(&descriptive_exif_bytes).unwrap();
     let descriptive_tags = descriptive_exif.common_tags().unwrap();
@@ -6147,6 +6165,57 @@ fn exif_camera_lens_fixture() -> Vec<u8> {
     data.extend_from_slice(b"LensCo\0");
     data.extend_from_slice(b"Prime50\0");
     data.extend_from_slice(b"LENS5678\0");
+    data
+}
+
+fn exif_gamma_composite_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&4u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GAMMA,
+        FrameExifTiffType::Rational,
+        1,
+        80u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_COMPOSITE_IMAGE,
+        FrameExifTiffType::Short,
+        1,
+        [2, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SOURCE_IMAGE_NUMBER_OF_COMPOSITE_IMAGE,
+        FrameExifTiffType::Short,
+        2,
+        [5, 0, 3, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SOURCE_EXPOSURE_TIMES_OF_COMPOSITE_IMAGE,
+        FrameExifTiffType::Undefined,
+        12,
+        88u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&22u32.to_le_bytes());
+    data.extend_from_slice(&10u32.to_le_bytes());
+    data.extend_from_slice(b"exp-times-01");
     data
 }
 
