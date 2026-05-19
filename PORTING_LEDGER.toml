@@ -415,9 +415,10 @@ fuzz_targets = ["avutil_core_models"]
 # YResolution/ResolutionUnit/Software/DateTime/Artist/Copyright, linked EXIF
 # ExifVersion/DateTimeOriginal/DateTimeDigitized/OffsetTime/
 # OffsetTimeOriginal/OffsetTimeDigitized/ComponentsConfiguration plus strict
-# EXIF fixed-count and layout validation for DateTime, OffsetTime, and
-# GPSDateStamp ASCII fields, GPS coordinate DMS range validation for latitude,
-# longitude, and destination coordinates, GPSTimeStamp UTC range validation,
+# EXIF fixed-count, layout, and month/day/time range validation for DateTime,
+# OffsetTime, and GPSDateStamp ASCII fields, GPS coordinate DMS range
+# validation for latitude, longitude, and destination coordinates,
+# GPSTimeStamp UTC range validation,
 # GPS track/image-direction/destination-bearing range validation, and
 # fixed-count validation for version-byte, ComponentsConfiguration,
 # GPSVersionID, and GPS one-character reference fields.

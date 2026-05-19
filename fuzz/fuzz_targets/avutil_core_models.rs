@@ -41,6 +41,30 @@ use std::sync::{Arc, Mutex};
 const MAX_PAYLOAD: usize = 128;
 const MAX_SAMPLES: usize = 64;
 
+fn exif_two_digits(value: &str, index: usize) -> u8 {
+    let bytes = value.as_bytes();
+    (bytes[index] - b'0') * 10 + (bytes[index + 1] - b'0')
+}
+
+fn assert_exif_month_day_range(value: &str) {
+    let month = exif_two_digits(value, 5);
+    let day = exif_two_digits(value, 8);
+    assert!((1..=12).contains(&month));
+    assert!((1..=31).contains(&day));
+}
+
+fn assert_exif_datetime_range(value: &str) {
+    assert_exif_month_day_range(value);
+    assert!(exif_two_digits(value, 11) <= 23);
+    assert!(exif_two_digits(value, 14) <= 59);
+    assert!(exif_two_digits(value, 17) <= 59);
+}
+
+fn assert_exif_offset_time_range(value: &str) {
+    assert!(exif_two_digits(value, 1) <= 23);
+    assert!(exif_two_digits(value, 4) <= 59);
+}
+
 fuzz_target!(|data: &[u8]| {
     let mut cursor = Cursor::new(data);
 
@@ -1778,6 +1802,24 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.camera_elevation_angle() {
                         assert_ne!(value.denominator(), 0);
                     }
+                    if let Some(value) = common.date_time() {
+                        assert_exif_datetime_range(value);
+                    }
+                    if let Some(value) = common.date_time_original() {
+                        assert_exif_datetime_range(value);
+                    }
+                    if let Some(value) = common.date_time_digitized() {
+                        assert_exif_datetime_range(value);
+                    }
+                    if let Some(value) = common.offset_time() {
+                        assert_exif_offset_time_range(value);
+                    }
+                    if let Some(value) = common.offset_time_original() {
+                        assert_exif_offset_time_range(value);
+                    }
+                    if let Some(value) = common.offset_time_digitized() {
+                        assert_exif_offset_time_range(value);
+                    }
                     if let Some(value) = common.focal_length() {
                         assert_ne!(value.denominator(), 0);
                     }
@@ -1798,6 +1840,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     }
                     if let Some(value) = common.gps_dop() {
                         assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.gps_date_stamp() {
+                        assert_exif_month_day_range(value);
                     }
                     if let Some(value) = common.gps_speed() {
                         assert_ne!(value.denominator(), 0);
@@ -3932,6 +3977,16 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let mut bad_original_month = exif_common_tags_fixture();
+    bad_original_month[191..193].copy_from_slice(b"13");
+    assert_eq!(
+        FrameExif::parse(&bad_original_month)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(common_tags.gps_version_id(), Some([2, 3, 0, 0]));
     let mut bad_gps_version_count = exif_common_tags_fixture();
     bad_gps_version_count[230..234].copy_from_slice(&3u32.to_le_bytes());
@@ -4046,6 +4101,16 @@ fn exercise_fixtures() {
     bad_gps_date_stamp_shape[116] = b'-';
     assert_eq!(
         FrameExif::parse(&bad_gps_date_stamp_shape)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_gps_date_stamp_day = exif_gps_altitude_time_fixture();
+    bad_gps_date_stamp_day[120..122].copy_from_slice(b"32");
+    assert_eq!(
+        FrameExif::parse(&bad_gps_date_stamp_day)
             .unwrap()
             .common_tags()
             .unwrap_err()
@@ -4299,6 +4364,16 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let mut bad_digitized_minute = exif_exposure_tags_fixture();
+    bad_digitized_minute[162..164].copy_from_slice(b"60");
+    assert_eq!(
+        FrameExif::parse(&bad_digitized_minute)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let apex_exif_bytes = exif_apex_exposure_fixture();
     let apex_exif = FrameExif::parse(&apex_exif_bytes).unwrap();
@@ -4377,6 +4452,26 @@ fn exercise_fixtures() {
     bad_offset_shape[68] = b'Z';
     assert_eq!(
         FrameExif::parse(&bad_offset_shape)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_offset_hour = exif_offset_time_fixture();
+    bad_offset_hour[69..71].copy_from_slice(b"24");
+    assert_eq!(
+        FrameExif::parse(&bad_offset_hour)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_original_minute = exif_offset_time_fixture();
+    bad_original_minute[79..81].copy_from_slice(b"60");
+    assert_eq!(
+        FrameExif::parse(&bad_original_minute)
             .unwrap()
             .common_tags()
             .unwrap_err()
@@ -4607,6 +4702,16 @@ fn exercise_fixtures() {
     bad_date_time_shape[102] = b'-';
     assert_eq!(
         FrameExif::parse(&bad_date_time_shape)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_date_time_hour = exif_descriptive_tags_fixture();
+    bad_date_time_hour[109..111].copy_from_slice(b"24");
+    assert_eq!(
+        FrameExif::parse(&bad_date_time_hour)
             .unwrap()
             .common_tags()
             .unwrap_err()

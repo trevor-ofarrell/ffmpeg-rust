@@ -8101,6 +8101,13 @@ impl<'a> FrameExif<'a> {
                 "must match `YYYY:MM:DD HH:MM:SS`",
             ));
         }
+        let month = Self::ascii_two_digits(bytes, 5);
+        let day = Self::ascii_two_digits(bytes, 8);
+        let hour = Self::ascii_two_digits(bytes, 11);
+        let minute = Self::ascii_two_digits(bytes, 14);
+        let second = Self::ascii_two_digits(bytes, 17);
+        Self::validate_month_day(label, tag, month, day)?;
+        Self::validate_clock_time(label, tag, hour, minute, second)?;
         Ok(())
     }
 
@@ -8120,6 +8127,22 @@ impl<'a> FrameExif<'a> {
                 "must match `[+-]HH:MM`",
             ));
         }
+        let hour = Self::ascii_two_digits(bytes, 1);
+        let minute = Self::ascii_two_digits(bytes, 4);
+        if hour > 23 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "hour must be in 0..=23",
+            ));
+        }
+        if minute > 59 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "minute must be in 0..=59",
+            ));
+        }
         Ok(())
     }
 
@@ -8135,6 +8158,62 @@ impl<'a> FrameExif<'a> {
                 "GPSDateStamp",
                 Self::TAG_GPS_DATE_STAMP,
                 "must match `YYYY:MM:DD`",
+            ));
+        }
+        let month = Self::ascii_two_digits(bytes, 5);
+        let day = Self::ascii_two_digits(bytes, 8);
+        Self::validate_month_day("GPSDateStamp", Self::TAG_GPS_DATE_STAMP, month, day)?;
+        Ok(())
+    }
+
+    fn ascii_two_digits(bytes: &[u8], index: usize) -> u8 {
+        (bytes[index] - b'0') * 10 + (bytes[index + 1] - b'0')
+    }
+
+    fn validate_month_day(label: &str, tag: u16, month: u8, day: u8) -> AvResult<()> {
+        if !(1..=12).contains(&month) {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "month must be in 1..=12",
+            ));
+        }
+        if !(1..=31).contains(&day) {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "day must be in 1..=31",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_clock_time(
+        label: &str,
+        tag: u16,
+        hour: u8,
+        minute: u8,
+        second: u8,
+    ) -> AvResult<()> {
+        if hour > 23 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "hour must be in 0..=23",
+            ));
+        }
+        if minute > 59 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "minute must be in 0..=59",
+            ));
+        }
+        if second > 59 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "second must be in 0..=59",
             ));
         }
         Ok(())
@@ -19229,6 +19308,17 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut bad_original_month = exif_common_tags_fixture();
+        bad_original_month[191..193].copy_from_slice(b"13");
+        assert_eq!(
+            FrameExif::parse(&bad_original_month)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_gps_version_count = exif_common_tags_fixture();
         bad_gps_version_count[230..234].copy_from_slice(&3u32.to_le_bytes());
         assert_eq!(
@@ -19348,6 +19438,17 @@ mod tests {
         bad_date_stamp_type[66..68].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_date_stamp_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_date_stamp_day = exif_gps_altitude_time_fixture();
+        bad_date_stamp_day[120..122].copy_from_slice(b"32");
+        assert_eq!(
+            FrameExif::parse(&bad_date_stamp_day)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
@@ -19780,6 +19881,17 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut bad_digitized_minute = exif_exposure_tags_fixture();
+        bad_digitized_minute[162..164].copy_from_slice(b"60");
+        assert_eq!(
+            FrameExif::parse(&bad_digitized_minute)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_pixel_count = exif_exposure_tags_fixture();
         bad_pixel_count[92..96].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
@@ -20038,6 +20150,28 @@ mod tests {
         bad_offset_shape[68] = b'Z';
         assert_eq!(
             FrameExif::parse(&bad_offset_shape)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_offset_hour = exif_offset_time_fixture();
+        bad_offset_hour[69..71].copy_from_slice(b"24");
+        assert_eq!(
+            FrameExif::parse(&bad_offset_hour)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_original_minute = exif_offset_time_fixture();
+        bad_original_minute[79..81].copy_from_slice(b"60");
+        assert_eq!(
+            FrameExif::parse(&bad_original_minute)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
@@ -20730,6 +20864,17 @@ mod tests {
         bad_date_time_shape[102] = b'-';
         assert_eq!(
             FrameExif::parse(&bad_date_time_shape)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_date_time_hour = exif_descriptive_tags_fixture();
+        bad_date_time_hour[109..111].copy_from_slice(b"24");
+        assert_eq!(
+            FrameExif::parse(&bad_date_time_hour)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
