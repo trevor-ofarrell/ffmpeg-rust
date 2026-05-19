@@ -6458,6 +6458,7 @@ pub struct FrameExifCommonTags<'a> {
     exif_version: Option<[u8; 4]>,
     date_time_original: Option<&'a str>,
     date_time_digitized: Option<&'a str>,
+    components_configuration: Option<[u8; 4]>,
     compressed_bits_per_pixel: Option<FrameExifRational>,
     exposure_program: Option<FrameExifExposureProgram>,
     exposure_time: Option<FrameExifRational>,
@@ -6470,6 +6471,12 @@ pub struct FrameExifCommonTags<'a> {
     flash: Option<FrameExifFlash>,
     focal_length: Option<FrameExifRational>,
     subject_area: Option<FrameExifSubjectArea>,
+    maker_note: Option<&'a [u8]>,
+    user_comment: Option<&'a [u8]>,
+    sub_sec_time: Option<&'a str>,
+    sub_sec_time_original: Option<&'a str>,
+    sub_sec_time_digitized: Option<&'a str>,
+    flashpix_version: Option<[u8; 4]>,
     white_balance: Option<FrameExifWhiteBalance>,
     digital_zoom_ratio: Option<FrameExifRational>,
     focal_length_in_35mm_film: Option<u16>,
@@ -6489,6 +6496,7 @@ pub struct FrameExifCommonTags<'a> {
     subject_distance_range: Option<FrameExifSubjectDistanceRange>,
     pixel_x_dimension: Option<u32>,
     pixel_y_dimension: Option<u32>,
+    related_sound_file: Option<&'a str>,
     gps_version_id: Option<[u8; 4]>,
     gps_latitude_ref: Option<FrameExifGpsLatitudeRef>,
     gps_latitude: Option<[FrameExifRational; 3]>,
@@ -6585,6 +6593,10 @@ impl<'a> FrameExifCommonTags<'a> {
         self.date_time_digitized
     }
 
+    pub const fn components_configuration(&self) -> Option<[u8; 4]> {
+        self.components_configuration
+    }
+
     pub const fn compressed_bits_per_pixel(&self) -> Option<FrameExifRational> {
         self.compressed_bits_per_pixel
     }
@@ -6631,6 +6643,30 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn subject_area(&self) -> Option<FrameExifSubjectArea> {
         self.subject_area
+    }
+
+    pub const fn maker_note(&self) -> Option<&'a [u8]> {
+        self.maker_note
+    }
+
+    pub const fn user_comment(&self) -> Option<&'a [u8]> {
+        self.user_comment
+    }
+
+    pub const fn sub_sec_time(&self) -> Option<&'a str> {
+        self.sub_sec_time
+    }
+
+    pub const fn sub_sec_time_original(&self) -> Option<&'a str> {
+        self.sub_sec_time_original
+    }
+
+    pub const fn sub_sec_time_digitized(&self) -> Option<&'a str> {
+        self.sub_sec_time_digitized
+    }
+
+    pub const fn flashpix_version(&self) -> Option<[u8; 4]> {
+        self.flashpix_version
     }
 
     pub const fn white_balance(&self) -> Option<FrameExifWhiteBalance> {
@@ -6707,6 +6743,10 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn pixel_y_dimension(&self) -> Option<u32> {
         self.pixel_y_dimension
+    }
+
+    pub const fn related_sound_file(&self) -> Option<&'a str> {
+        self.related_sound_file
     }
 
     pub const fn gps_version_id(&self) -> Option<[u8; 4]> {
@@ -7180,6 +7220,7 @@ impl<'a> FrameExif<'a> {
     pub const TAG_EXIF_VERSION: u16 = 0x9000;
     pub const TAG_DATE_TIME_ORIGINAL: u16 = 0x9003;
     pub const TAG_DATE_TIME_DIGITIZED: u16 = 0x9004;
+    pub const TAG_COMPONENTS_CONFIGURATION: u16 = 0x9101;
     pub const TAG_COMPRESSED_BITS_PER_PIXEL: u16 = 0x9102;
     pub const TAG_EXPOSURE_BIAS_VALUE: u16 = 0x9204;
     pub const TAG_MAX_APERTURE_VALUE: u16 = 0x9205;
@@ -7189,9 +7230,16 @@ impl<'a> FrameExif<'a> {
     pub const TAG_FLASH: u16 = 0x9209;
     pub const TAG_FOCAL_LENGTH: u16 = 0x920A;
     pub const TAG_SUBJECT_AREA: u16 = 0x9214;
+    pub const TAG_MAKER_NOTE: u16 = 0x927C;
+    pub const TAG_USER_COMMENT: u16 = 0x9286;
+    pub const TAG_SUB_SEC_TIME: u16 = 0x9290;
+    pub const TAG_SUB_SEC_TIME_ORIGINAL: u16 = 0x9291;
+    pub const TAG_SUB_SEC_TIME_DIGITIZED: u16 = 0x9292;
+    pub const TAG_FLASHPIX_VERSION: u16 = 0xA000;
     pub const TAG_COLOR_SPACE: u16 = 0xA001;
     pub const TAG_PIXEL_X_DIMENSION: u16 = 0xA002;
     pub const TAG_PIXEL_Y_DIMENSION: u16 = 0xA003;
+    pub const TAG_RELATED_SOUND_FILE: u16 = 0xA004;
     pub const TAG_SUBJECT_LOCATION: u16 = 0xA214;
     pub const TAG_EXPOSURE_INDEX: u16 = 0xA215;
     pub const TAG_SENSING_METHOD: u16 = 0xA217;
@@ -7338,6 +7386,11 @@ impl<'a> FrameExif<'a> {
                 Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_ORIGINAL, "DateTimeOriginal")?;
             tags.date_time_digitized =
                 Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_DIGITIZED, "DateTimeDigitized")?;
+            tags.components_configuration = Self::optional_undefined_array_tag(
+                ifd,
+                Self::TAG_COMPONENTS_CONFIGURATION,
+                "ComponentsConfiguration",
+            )?;
             tags.compressed_bits_per_pixel = Self::optional_rational_tag(
                 ifd,
                 Self::TAG_COMPRESSED_BITS_PER_PIXEL,
@@ -7362,6 +7415,27 @@ impl<'a> FrameExif<'a> {
             tags.focal_length =
                 Self::optional_rational_tag(ifd, Self::TAG_FOCAL_LENGTH, "FocalLength")?;
             tags.subject_area = Self::optional_subject_area_tag(ifd)?;
+            tags.maker_note =
+                Self::optional_undefined_bytes_tag(ifd, Self::TAG_MAKER_NOTE, "MakerNote")?;
+            tags.user_comment =
+                Self::optional_undefined_bytes_tag(ifd, Self::TAG_USER_COMMENT, "UserComment")?;
+            tags.sub_sec_time =
+                Self::optional_ascii_tag(ifd, Self::TAG_SUB_SEC_TIME, "SubSecTime")?;
+            tags.sub_sec_time_original = Self::optional_ascii_tag(
+                ifd,
+                Self::TAG_SUB_SEC_TIME_ORIGINAL,
+                "SubSecTimeOriginal",
+            )?;
+            tags.sub_sec_time_digitized = Self::optional_ascii_tag(
+                ifd,
+                Self::TAG_SUB_SEC_TIME_DIGITIZED,
+                "SubSecTimeDigitized",
+            )?;
+            tags.flashpix_version = Self::optional_undefined_array_tag(
+                ifd,
+                Self::TAG_FLASHPIX_VERSION,
+                "FlashpixVersion",
+            )?;
             tags.color_space = Self::optional_color_space_tag(ifd)?;
             tags.white_balance = Self::optional_white_balance_tag(ifd)?;
             tags.digital_zoom_ratio =
@@ -7395,6 +7469,12 @@ impl<'a> FrameExif<'a> {
                 ifd,
                 Self::TAG_PIXEL_Y_DIMENSION,
                 "PixelYDimension",
+            )?;
+            tags.related_sound_file = Self::optional_ascii_exact_count_tag(
+                ifd,
+                Self::TAG_RELATED_SOUND_FILE,
+                "RelatedSoundFile",
+                13,
             )?;
         }
 
@@ -7493,20 +7573,46 @@ impl<'a> FrameExif<'a> {
         let Some(entry) = ifd.entry_by_tag(tag) else {
             return Ok(None);
         };
-        let strings = entry
-            .ascii_strings()?
-            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have ASCII TIFF type"))?;
-        if strings.len() != 1 {
+        Self::single_ascii_entry(entry, label).map(Some)
+    }
+
+    fn optional_ascii_exact_count_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+        expected_count: u32,
+    ) -> AvResult<Option<&'a str>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        if entry.count() != expected_count {
             return Err(Self::semantic_tag_error(
                 label,
                 tag,
+                format!(
+                    "must contain exactly {expected_count} ASCII bytes, got {}",
+                    entry.count()
+                ),
+            ));
+        }
+        Self::single_ascii_entry(entry, label).map(Some)
+    }
+
+    fn single_ascii_entry(entry: FrameExifEntry<'a>, label: &str) -> AvResult<&'a str> {
+        let strings = entry.ascii_strings()?.ok_or_else(|| {
+            Self::semantic_tag_error(label, entry.tag(), "must have ASCII TIFF type")
+        })?;
+        if strings.len() != 1 {
+            return Err(Self::semantic_tag_error(
+                label,
+                entry.tag(),
                 format!(
                     "must contain exactly one ASCII string, got {}",
                     strings.len()
                 ),
             ));
         }
-        Ok(strings.first().copied())
+        Ok(strings[0])
     }
 
     fn optional_short_or_long_tag(
@@ -7888,6 +7994,20 @@ impl<'a> FrameExif<'a> {
         let mut array = [0; N];
         array.copy_from_slice(values);
         Ok(Some(array))
+    }
+
+    fn optional_undefined_bytes_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<&'a [u8]>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        let values = entry
+            .undefined_values()?
+            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have UNDEFINED TIFF type"))?;
+        Ok(Some(values))
     }
 
     fn optional_undefined_array_tag<const N: usize>(
@@ -12388,6 +12508,98 @@ mod tests {
         data.extend_from_slice(&1u32.to_le_bytes());
 
         assert_eq!(data.len(), 144);
+        data
+    }
+
+    fn exif_version_timing_comment_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&9u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_COMPONENTS_CONFIGURATION,
+            FrameExifTiffType::Undefined,
+            4,
+            [1, 2, 3, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_MAKER_NOTE,
+            FrameExifTiffType::Undefined,
+            6,
+            140u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_USER_COMMENT,
+            FrameExifTiffType::Undefined,
+            16,
+            146u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SUB_SEC_TIME,
+            FrameExifTiffType::Ascii,
+            4,
+            *b"123\0",
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SUB_SEC_TIME_ORIGINAL,
+            FrameExifTiffType::Ascii,
+            5,
+            162u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SUB_SEC_TIME_DIGITIZED,
+            FrameExifTiffType::Ascii,
+            3,
+            [b'8', b'9', 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_FLASHPIX_VERSION,
+            FrameExifTiffType::Undefined,
+            4,
+            *b"0100",
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_RELATED_SOUND_FILE,
+            FrameExifTiffType::Ascii,
+            13,
+            167u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_PIXEL_X_DIMENSION,
+            FrameExifTiffType::Short,
+            1,
+            [0x80, 0x02, 0, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 140);
+
+        data.extend_from_slice(b"maker!");
+        data.extend_from_slice(b"ASCII\0\0\0hello\0\0\0");
+        data.extend_from_slice(b"4567\0");
+        data.extend_from_slice(b"SOUND001.WAV\0");
+
+        assert_eq!(data.len(), 180);
         data
     }
 
@@ -18378,6 +18590,67 @@ mod tests {
         bad_exposure_index_denominator[140..144].copy_from_slice(&0u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_exposure_index_denominator)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_version_timing_comment_tags() {
+        let exif_bytes = exif_version_timing_comment_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.components_configuration(), Some([1, 2, 3, 0]));
+        assert_eq!(common.maker_note(), Some(&b"maker!"[..]));
+        assert_eq!(common.user_comment(), Some(&b"ASCII\0\0\0hello\0\0\0"[..]));
+        assert_eq!(common.sub_sec_time(), Some("123"));
+        assert_eq!(common.sub_sec_time_original(), Some("4567"));
+        assert_eq!(common.sub_sec_time_digitized(), Some("89"));
+        assert_eq!(common.flashpix_version(), Some(*b"0100"));
+        assert_eq!(common.related_sound_file(), Some("SOUND001.WAV"));
+        assert_eq!(common.pixel_x_dimension(), Some(640));
+
+        let mut bad_components_count = exif_version_timing_comment_fixture();
+        bad_components_count[32..36].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_components_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_maker_note_type = exif_version_timing_comment_fixture();
+        bad_maker_note_type[42..44].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_maker_note_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_sub_sec_time = exif_version_timing_comment_fixture();
+        bad_sub_sec_time[75] = b'!';
+        assert_eq!(
+            FrameExif::parse(&bad_sub_sec_time)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_related_sound_count = exif_version_timing_comment_fixture();
+        bad_related_sound_count[116..120].copy_from_slice(&12u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_related_sound_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

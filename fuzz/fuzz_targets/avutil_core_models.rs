@@ -4135,6 +4135,21 @@ fn exercise_fixtures() {
     assert_eq!(optics_tags.exposure_index().unwrap().numerator(), 200);
     assert_eq!(optics_tags.exposure_index().unwrap().denominator(), 1);
 
+    let timing_exif_bytes = exif_version_timing_comment_fixture();
+    let timing_exif = FrameExif::parse(&timing_exif_bytes).unwrap();
+    let timing_tags = timing_exif.common_tags().unwrap();
+    assert_eq!(timing_tags.components_configuration(), Some([1, 2, 3, 0]));
+    assert_eq!(timing_tags.maker_note(), Some(&b"maker!"[..]));
+    assert_eq!(
+        timing_tags.user_comment(),
+        Some(&b"ASCII\0\0\0hello\0\0\0"[..])
+    );
+    assert_eq!(timing_tags.sub_sec_time(), Some("123"));
+    assert_eq!(timing_tags.sub_sec_time_original(), Some("4567"));
+    assert_eq!(timing_tags.sub_sec_time_digitized(), Some("89"));
+    assert_eq!(timing_tags.flashpix_version(), Some(*b"0100"));
+    assert_eq!(timing_tags.related_sound_file(), Some("SOUND001.WAV"));
+
     let descriptive_exif_bytes = exif_descriptive_tags_fixture();
     let descriptive_exif = FrameExif::parse(&descriptive_exif_bytes).unwrap();
     let descriptive_tags = descriptive_exif.common_tags().unwrap();
@@ -5944,6 +5959,93 @@ fn exif_optics_subject_fixture() -> Vec<u8> {
     data.extend_from_slice(&60u16.to_le_bytes());
     data.extend_from_slice(&200u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_le_bytes());
+    data
+}
+
+fn exif_version_timing_comment_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&9u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_COMPONENTS_CONFIGURATION,
+        FrameExifTiffType::Undefined,
+        4,
+        [1, 2, 3, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_MAKER_NOTE,
+        FrameExifTiffType::Undefined,
+        6,
+        140u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_USER_COMMENT,
+        FrameExifTiffType::Undefined,
+        16,
+        146u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SUB_SEC_TIME,
+        FrameExifTiffType::Ascii,
+        4,
+        *b"123\0",
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SUB_SEC_TIME_ORIGINAL,
+        FrameExifTiffType::Ascii,
+        5,
+        162u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SUB_SEC_TIME_DIGITIZED,
+        FrameExifTiffType::Ascii,
+        3,
+        [b'8', b'9', 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_FLASHPIX_VERSION,
+        FrameExifTiffType::Undefined,
+        4,
+        *b"0100",
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_RELATED_SOUND_FILE,
+        FrameExifTiffType::Ascii,
+        13,
+        167u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_PIXEL_X_DIMENSION,
+        FrameExifTiffType::Short,
+        1,
+        [0x80, 0x02, 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(b"maker!");
+    data.extend_from_slice(b"ASCII\0\0\0hello\0\0\0");
+    data.extend_from_slice(b"4567\0");
+    data.extend_from_slice(b"SOUND001.WAV\0");
     data
 }
 
