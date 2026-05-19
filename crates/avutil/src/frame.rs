@@ -8127,10 +8127,11 @@ impl<'a> FrameExif<'a> {
         }
         let month = Self::ascii_two_digits(bytes, 5);
         let day = Self::ascii_two_digits(bytes, 8);
+        let year = Self::ascii_four_digits(bytes, 0);
         let hour = Self::ascii_two_digits(bytes, 11);
         let minute = Self::ascii_two_digits(bytes, 14);
         let second = Self::ascii_two_digits(bytes, 17);
-        Self::validate_month_day(label, tag, month, day)?;
+        Self::validate_calendar_date(label, tag, year, month, day)?;
         Self::validate_clock_time(label, tag, hour, minute, second)?;
         Ok(())
     }
@@ -8184,17 +8185,31 @@ impl<'a> FrameExif<'a> {
                 "must match `YYYY:MM:DD`",
             ));
         }
+        let year = Self::ascii_four_digits(bytes, 0);
         let month = Self::ascii_two_digits(bytes, 5);
         let day = Self::ascii_two_digits(bytes, 8);
-        Self::validate_month_day("GPSDateStamp", Self::TAG_GPS_DATE_STAMP, month, day)?;
+        Self::validate_calendar_date("GPSDateStamp", Self::TAG_GPS_DATE_STAMP, year, month, day)?;
         Ok(())
+    }
+
+    fn ascii_four_digits(bytes: &[u8], index: usize) -> u16 {
+        ((bytes[index] - b'0') as u16) * 1000
+            + ((bytes[index + 1] - b'0') as u16) * 100
+            + ((bytes[index + 2] - b'0') as u16) * 10
+            + (bytes[index + 3] - b'0') as u16
     }
 
     fn ascii_two_digits(bytes: &[u8], index: usize) -> u8 {
         (bytes[index] - b'0') * 10 + (bytes[index + 1] - b'0')
     }
 
-    fn validate_month_day(label: &str, tag: u16, month: u8, day: u8) -> AvResult<()> {
+    fn validate_calendar_date(
+        label: &str,
+        tag: u16,
+        year: u16,
+        month: u8,
+        day: u8,
+    ) -> AvResult<()> {
         if !(1..=12).contains(&month) {
             return Err(Self::semantic_tag_error(
                 label,
@@ -8209,7 +8224,30 @@ impl<'a> FrameExif<'a> {
                 "day must be in 1..=31",
             ));
         }
+        let max_day = match month {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 if Self::is_leap_year(year) => 29,
+            2 => 28,
+            _ => unreachable!("month range checked above"),
+        };
+        if day > max_day {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "day is outside the valid range for month",
+            ));
+        }
         Ok(())
+    }
+
+    fn is_leap_year(year: u16) -> bool {
+        Self::divisible_by(year, 4)
+            && (!Self::divisible_by(year, 100) || Self::divisible_by(year, 400))
+    }
+
+    fn divisible_by(value: u16, divisor: u16) -> bool {
+        (value / divisor) * divisor == value
     }
 
     fn validate_clock_time(
@@ -19383,6 +19421,18 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut bad_original_calendar_day = exif_common_tags_fixture();
+        bad_original_calendar_day[191..193].copy_from_slice(b"04");
+        bad_original_calendar_day[194..196].copy_from_slice(b"31");
+        assert_eq!(
+            FrameExif::parse(&bad_original_calendar_day)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_gps_version_count = exif_common_tags_fixture();
         bad_gps_version_count[230..234].copy_from_slice(&3u32.to_le_bytes());
         assert_eq!(
@@ -19518,6 +19568,29 @@ mod tests {
                 .unwrap_err()
                 .kind(),
             AvErrorKind::InvalidData
+        );
+
+        let mut bad_date_stamp_calendar_day = exif_gps_altitude_time_fixture();
+        bad_date_stamp_calendar_day[117..119].copy_from_slice(b"02");
+        bad_date_stamp_calendar_day[120..122].copy_from_slice(b"30");
+        assert_eq!(
+            FrameExif::parse(&bad_date_stamp_calendar_day)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut leap_date_stamp = exif_gps_altitude_time_fixture();
+        leap_date_stamp[112..122].copy_from_slice(b"2024:02:29");
+        assert_eq!(
+            FrameExif::parse(&leap_date_stamp)
+                .unwrap()
+                .common_tags()
+                .unwrap()
+                .gps_date_stamp(),
+            Some("2024:02:29")
         );
 
         let mut bad_date_stamp_count = exif_gps_altitude_time_fixture();
@@ -19954,6 +20027,29 @@ mod tests {
                 .unwrap_err()
                 .kind(),
             AvErrorKind::InvalidData
+        );
+
+        let mut bad_digitized_calendar_day = exif_exposure_tags_fixture();
+        bad_digitized_calendar_day[153..155].copy_from_slice(b"02");
+        bad_digitized_calendar_day[156..158].copy_from_slice(b"30");
+        assert_eq!(
+            FrameExif::parse(&bad_digitized_calendar_day)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut leap_digitized = exif_exposure_tags_fixture();
+        leap_digitized[148..158].copy_from_slice(b"2024:02:29");
+        assert_eq!(
+            FrameExif::parse(&leap_digitized)
+                .unwrap()
+                .common_tags()
+                .unwrap()
+                .date_time_digitized(),
+            Some("2024:02:29 12:35:00")
         );
 
         let mut bad_pixel_count = exif_exposure_tags_fixture();

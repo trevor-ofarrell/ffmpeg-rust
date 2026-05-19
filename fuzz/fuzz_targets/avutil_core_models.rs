@@ -46,15 +46,40 @@ fn exif_two_digits(value: &str, index: usize) -> u8 {
     (bytes[index] - b'0') * 10 + (bytes[index + 1] - b'0')
 }
 
-fn assert_exif_month_day_range(value: &str) {
+fn exif_four_digits(value: &str, index: usize) -> u16 {
+    let bytes = value.as_bytes();
+    ((bytes[index] - b'0') as u16) * 1000
+        + ((bytes[index + 1] - b'0') as u16) * 100
+        + ((bytes[index + 2] - b'0') as u16) * 10
+        + (bytes[index + 3] - b'0') as u16
+}
+
+fn exif_leap_year(year: u16) -> bool {
+    exif_divisible_by(year, 4) && (!exif_divisible_by(year, 100) || exif_divisible_by(year, 400))
+}
+
+fn exif_divisible_by(value: u16, divisor: u16) -> bool {
+    (value / divisor) * divisor == value
+}
+
+fn assert_exif_calendar_date(value: &str) {
+    let year = exif_four_digits(value, 0);
     let month = exif_two_digits(value, 5);
     let day = exif_two_digits(value, 8);
     assert!((1..=12).contains(&month));
     assert!((1..=31).contains(&day));
+    let max_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if exif_leap_year(year) => 29,
+        2 => 28,
+        _ => unreachable!("month range checked above"),
+    };
+    assert!(day <= max_day);
 }
 
 fn assert_exif_datetime_range(value: &str) {
-    assert_exif_month_day_range(value);
+    assert_exif_calendar_date(value);
     assert!(exif_two_digits(value, 11) <= 23);
     assert!(exif_two_digits(value, 14) <= 59);
     assert!(exif_two_digits(value, 17) <= 59);
@@ -1867,7 +1892,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                         assert_ne!(value.denominator(), 0);
                     }
                     if let Some(value) = common.gps_date_stamp() {
-                        assert_exif_month_day_range(value);
+                        assert_exif_calendar_date(value);
                     }
                     if let Some(value) = common.gps_speed() {
                         assert_ne!(value.denominator(), 0);
@@ -4032,6 +4057,17 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let mut bad_original_calendar_day = exif_common_tags_fixture();
+    bad_original_calendar_day[191..193].copy_from_slice(b"04");
+    bad_original_calendar_day[194..196].copy_from_slice(b"31");
+    assert_eq!(
+        FrameExif::parse(&bad_original_calendar_day)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(common_tags.gps_version_id(), Some([2, 3, 0, 0]));
     let mut bad_gps_version_count = exif_common_tags_fixture();
     bad_gps_version_count[230..234].copy_from_slice(&3u32.to_le_bytes());
@@ -4161,6 +4197,27 @@ fn exercise_fixtures() {
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData
+    );
+    let mut bad_gps_date_stamp_calendar_day = exif_gps_altitude_time_fixture();
+    bad_gps_date_stamp_calendar_day[117..119].copy_from_slice(b"02");
+    bad_gps_date_stamp_calendar_day[120..122].copy_from_slice(b"30");
+    assert_eq!(
+        FrameExif::parse(&bad_gps_date_stamp_calendar_day)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut leap_gps_date_stamp = exif_gps_altitude_time_fixture();
+    leap_gps_date_stamp[112..122].copy_from_slice(b"2024:02:29");
+    assert_eq!(
+        FrameExif::parse(&leap_gps_date_stamp)
+            .unwrap()
+            .common_tags()
+            .unwrap()
+            .gps_date_stamp(),
+        Some("2024:02:29")
     );
 
     let gps_acquisition_exif_bytes = exif_gps_acquisition_fixture();
@@ -4438,6 +4495,27 @@ fn exercise_fixtures() {
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData
+    );
+    let mut bad_digitized_calendar_day = exif_exposure_tags_fixture();
+    bad_digitized_calendar_day[153..155].copy_from_slice(b"02");
+    bad_digitized_calendar_day[156..158].copy_from_slice(b"30");
+    assert_eq!(
+        FrameExif::parse(&bad_digitized_calendar_day)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut leap_digitized = exif_exposure_tags_fixture();
+    leap_digitized[148..158].copy_from_slice(b"2024:02:29");
+    assert_eq!(
+        FrameExif::parse(&leap_digitized)
+            .unwrap()
+            .common_tags()
+            .unwrap()
+            .date_time_digitized(),
+        Some("2024:02:29 12:35:00")
     );
 
     let apex_exif_bytes = exif_apex_exposure_fixture();
