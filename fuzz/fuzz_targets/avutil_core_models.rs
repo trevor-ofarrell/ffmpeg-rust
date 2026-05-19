@@ -1942,6 +1942,12 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.model() {
                         assert!(value.is_ascii());
                     }
+                    if let Some(value) = common.orientation() {
+                        assert!((1..=8).contains(&value.raw()));
+                    }
+                    if let Some(value) = common.resolution_unit() {
+                        assert!((1..=3).contains(&value.raw()));
+                    }
                     if let Some(value) = common.predictor() {
                         assert_ne!(value.raw(), 0);
                     }
@@ -4256,6 +4262,57 @@ fn exercise_fixtures() {
     bad_model_multiple_strings[30..34].copy_from_slice(&[b'M', 0, b'2', 0]);
     assert_eq!(
         FrameExif::parse(&bad_model_multiple_strings)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let orientation_resolution_exif_bytes = exif_root_orientation_resolution_fixture();
+    let orientation_resolution_exif = FrameExif::parse(&orientation_resolution_exif_bytes).unwrap();
+    let orientation_resolution_tags = orientation_resolution_exif.common_tags().unwrap();
+    assert_eq!(
+        orientation_resolution_tags.orientation(),
+        Some(FrameExifOrientation::RightTop)
+    );
+    assert_eq!(
+        orientation_resolution_tags.resolution_unit(),
+        Some(FrameExifResolutionUnit::Inch)
+    );
+    let mut bad_orientation_type = exif_root_orientation_resolution_fixture();
+    bad_orientation_type[12..14].copy_from_slice(&FrameExifTiffType::Undefined.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_orientation_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_orientation_value = exif_root_orientation_resolution_fixture();
+    bad_orientation_value[18..20].copy_from_slice(&9u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_orientation_value)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_resolution_count = exif_root_orientation_resolution_fixture();
+    bad_resolution_count[26..30].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_resolution_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_resolution_value = exif_root_orientation_resolution_fixture();
+    bad_resolution_value[30..32].copy_from_slice(&4u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_resolution_value)
             .unwrap()
             .common_tags()
             .unwrap_err()
@@ -6645,6 +6702,29 @@ fn exif_root_camera_identity_fixture() -> Vec<u8> {
         FrameExifTiffType::Ascii,
         3,
         [b'M', b'2', 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data
+}
+
+fn exif_root_orientation_resolution_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&2u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_ORIENTATION,
+        FrameExifTiffType::Short,
+        1,
+        [6, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_RESOLUTION_UNIT,
+        FrameExifTiffType::Short,
+        1,
+        [2, 0, 0, 0],
     );
     data.extend_from_slice(&0u32.to_le_bytes());
     data
