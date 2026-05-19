@@ -704,6 +704,55 @@ impl PacketSubtitlePosition {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketMatroskaBlockAdditional {
+    block_add_id: u64,
+    data: Vec<u8>,
+}
+
+impl PacketMatroskaBlockAdditional {
+    pub const ID_LEN: usize = 8;
+    pub const MIN_DATA_LEN: usize = Self::ID_LEN;
+
+    pub fn new(block_add_id: u64, data: Vec<u8>) -> Self {
+        Self { block_add_id, data }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() < Self::MIN_DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "Matroska BlockAdditional packet side data requires at least {} bytes, got {}",
+                Self::MIN_DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self {
+            block_add_id: read_u64_be(data, 0),
+            data: data[Self::ID_LEN..].to_vec(),
+        })
+    }
+
+    pub const fn block_add_id(&self) -> u64 {
+        self.block_add_id
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
+    pub fn into_data(self) -> Vec<u8> {
+        self.data
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(Self::ID_LEN + self.data.len());
+        bytes.extend_from_slice(&self.block_add_id.to_be_bytes());
+        bytes.extend_from_slice(&self.data);
+        bytes
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketFrameCropping {
     crop_top: u32,
@@ -806,6 +855,13 @@ impl SideData {
         )
     }
 
+    pub fn new_matroska_block_additional(value: PacketMatroskaBlockAdditional) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::MatroskaBlockAdditional,
+            value.to_bytes(),
+        )
+    }
+
     pub fn new_frame_cropping(value: PacketFrameCropping) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::FrameCropping, value.to_bytes().to_vec())
     }
@@ -883,6 +939,14 @@ impl SideData {
         }
 
         PacketSubtitlePosition::parse(self.data()).map(Some)
+    }
+
+    pub fn matroska_block_additional(&self) -> AvResult<Option<PacketMatroskaBlockAdditional>> {
+        if self.kind != PacketSideDataKind::MatroskaBlockAdditional {
+            return Ok(None);
+        }
+
+        PacketMatroskaBlockAdditional::parse(self.data()).map(Some)
     }
 
     pub fn frame_cropping(&self) -> AvResult<Option<PacketFrameCropping>> {
@@ -1232,6 +1296,12 @@ fn read_i32_le(data: &[u8], offset: usize) -> i32 {
     let mut bytes = [0; 4];
     bytes.copy_from_slice(&data[offset..offset + 4]);
     i32::from_le_bytes(bytes)
+}
+
+fn read_u64_be(data: &[u8], offset: usize) -> u64 {
+    let mut bytes = [0; 8];
+    bytes.copy_from_slice(&data[offset..offset + 8]);
+    u64::from_be_bytes(bytes)
 }
 
 #[cfg(test)]
@@ -1736,6 +1806,64 @@ mod tests {
             SideData::new_with_kind(PacketSideDataKind::SubtitlePosition, vec![0; 4]).unwrap();
         assert_eq!(
             side_data.subtitle_position().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_matroska_block_additional_payload() {
+        let expected =
+            PacketMatroskaBlockAdditional::new(0x0102_0304_0506_0708, vec![0xaa, 0xbb, 0xcc]);
+        let expected_bytes = [1, 2, 3, 4, 5, 6, 7, 8, 0xaa, 0xbb, 0xcc];
+
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketMatroskaBlockAdditional::parse(&expected_bytes).unwrap(),
+            expected
+        );
+        assert_eq!(expected.block_add_id(), 0x0102_0304_0506_0708);
+        assert_eq!(expected.data(), &[0xaa, 0xbb, 0xcc]);
+
+        let empty = PacketMatroskaBlockAdditional::new(u64::MAX, Vec::new());
+        assert_eq!(empty.to_bytes(), [0xff; 8]);
+        assert_eq!(
+            PacketMatroskaBlockAdditional::parse(&[0xff; 8]).unwrap(),
+            empty
+        );
+        assert!(empty.data().is_empty());
+
+        let side_data = SideData::new_matroska_block_additional(expected.clone()).unwrap();
+        assert_eq!(
+            side_data.kind_id(),
+            &PacketSideDataKind::MatroskaBlockAdditional
+        );
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(
+            side_data.matroska_block_additional().unwrap(),
+            Some(expected)
+        );
+
+        let palette =
+            SideData::new_with_kind(PacketSideDataKind::Palette, expected_bytes.to_vec()).unwrap();
+        assert_eq!(palette.matroska_block_additional().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_matroska_block_additional_payload() {
+        for len in 0..PacketMatroskaBlockAdditional::MIN_DATA_LEN {
+            assert_eq!(
+                PacketMatroskaBlockAdditional::parse(&vec![0; len])
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let side_data =
+            SideData::new_with_kind(PacketSideDataKind::MatroskaBlockAdditional, vec![0; 7])
+                .unwrap();
+        assert_eq!(
+            side_data.matroska_block_additional().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
     }

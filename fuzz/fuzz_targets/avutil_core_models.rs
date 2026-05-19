@@ -33,9 +33,10 @@ use avutil::{
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketFlags, PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
-    PacketMpegTsStreamId, PacketParamChange, PacketSideDataKind, PacketSkipSamples,
-    PacketSkipSamplesReason, PacketSubtitlePosition, PixelFormat, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketSideDataKind,
+    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PixelFormat, Rational,
+    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
+    VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3389,6 +3390,25 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_subtitle_position_payload_invalid(&typed_payload));
         }
     }
+    match typed_payload_side_data.matroska_block_additional() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::MatroskaBlockAdditional);
+            assert!(typed_payload.len() >= PacketMatroskaBlockAdditional::MIN_DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketMatroskaBlockAdditional::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::MatroskaBlockAdditional),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::MatroskaBlockAdditional);
+            assert!(packet_matroska_block_additional_payload_invalid(
+                &typed_payload
+            ));
+        }
+    }
     match typed_payload_side_data.frame_cropping() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::FrameCropping);
@@ -3775,6 +3795,36 @@ fn exercise_fixtures() {
     assert_eq!(
         PacketSubtitlePosition::parse(
             &packet_subtitle_position_bytes[..packet_subtitle_position_bytes.len() - 1],
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_matroska_block_additional = PacketMatroskaBlockAdditional::new(
+        0x0102_0304_0506_0708,
+        vec![0xaa, 0xbb, 0xcc],
+    );
+    let packet_matroska_block_additional_bytes = packet_matroska_block_additional.to_bytes();
+    assert_eq!(
+        PacketMatroskaBlockAdditional::parse(&packet_matroska_block_additional_bytes).unwrap(),
+        packet_matroska_block_additional
+    );
+    assert_eq!(
+        packet_matroska_block_additional.block_add_id(),
+        0x0102_0304_0506_0708
+    );
+    assert_eq!(packet_matroska_block_additional.data(), &[0xaa, 0xbb, 0xcc]);
+    assert_eq!(
+        SideData::new_matroska_block_additional(packet_matroska_block_additional.clone())
+            .unwrap()
+            .matroska_block_additional()
+            .unwrap(),
+        Some(packet_matroska_block_additional)
+    );
+    assert_eq!(
+        PacketMatroskaBlockAdditional::parse(
+            &packet_matroska_block_additional_bytes
+                [..PacketMatroskaBlockAdditional::MIN_DATA_LEN - 1],
         )
         .unwrap_err()
         .kind(),
@@ -9458,6 +9508,10 @@ fn packet_mpegts_stream_id_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_subtitle_position_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketSubtitlePosition::DATA_LEN
+}
+
+fn packet_matroska_block_additional_payload_invalid(data: &[u8]) -> bool {
+    data.len() < PacketMatroskaBlockAdditional::MIN_DATA_LEN
 }
 
 fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {

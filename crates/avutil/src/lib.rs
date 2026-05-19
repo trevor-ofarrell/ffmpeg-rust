@@ -70,8 +70,8 @@ pub use options::{
 };
 pub use packet::{
     Packet, PacketFlags, PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
-    PacketMpegTsStreamId, PacketParamChange, PacketSideDataKind, PacketSkipSamples,
-    PacketSkipSamplesReason, PacketSubtitlePosition, SideData, AV_NOPTS_VALUE,
+    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketSideDataKind,
+    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, SideData, AV_NOPTS_VALUE,
     AV_PACKET_POS_UNKNOWN,
 };
 pub use pixel::PixelFormat;
