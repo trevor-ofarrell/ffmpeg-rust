@@ -7296,13 +7296,31 @@ fn exercise_fixtures() {
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
+    let mut expected_sei_payload = sei_uuid.to_vec();
+    expected_sei_payload.extend_from_slice(&[0x01, 0x02, 0x03]);
+    assert_eq!(sei_payload.kind_id(), &FrameSideDataKind::SeiUnregistered);
+    assert_eq!(sei_payload.data(), expected_sei_payload.as_slice());
     let parsed_sei = sei_payload.sei_unregistered().unwrap().unwrap();
     assert_eq!(parsed_sei.uuid(), sei_uuid);
     assert_eq!(parsed_sei.user_data(), &[0x01, 0x02, 0x03]);
+    let empty_sei_payload =
+        FrameSideData::new_with_kind(FrameSideDataKind::SeiUnregistered, sei_uuid.to_vec())
+            .unwrap();
+    let parsed_empty_sei = empty_sei_payload.sei_unregistered().unwrap().unwrap();
+    assert_eq!(parsed_empty_sei.uuid(), sei_uuid);
+    assert!(parsed_empty_sei.user_data().is_empty());
+    let short_sei_payload = vec![0; FrameSeiUnregistered::UUID_LEN - 1];
     assert_eq!(
-        FrameSeiUnregistered::parse(&[0; FrameSeiUnregistered::UUID_LEN - 1])
+        FrameSeiUnregistered::parse(&short_sei_payload)
             .unwrap_err()
             .kind(),
+        AvErrorKind::InvalidData
+    );
+    let short_sei_side_data =
+        FrameSideData::new_with_kind(FrameSideDataKind::SeiUnregistered, short_sei_payload)
+            .unwrap();
+    assert_eq!(
+        short_sei_side_data.sei_unregistered().unwrap_err().kind(),
         AvErrorKind::InvalidData
     );
     let non_sei = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
