@@ -509,13 +509,13 @@ Latest EXIF interoperability coverage adds InteroperabilityVersion as a strict f
 
 Latest EXIF exposure/APEX coverage adds build-checked deterministic fuzz assertions for ExposureTime type rejection, PixelXDimension/PixelYDimension value rejection plus dimension count rejection, DateTimeDigitized fixed-count/layout/calendar rejection with leap-day acceptance, and ShutterSpeedValue/ApertureValue/BrightnessValue count/type/denominator rejection.
 
-Latest EXIF sensitivity coverage adds build-checked deterministic fuzz assertions for PhotographicSensitivity count rejection, SensitivityType enum-value rejection, and StandardOutputSensitivity type rejection while preserving the valid SensitivityType, ISO speed, and ISO latitude fields.
+Latest EXIF sensitivity coverage adds build-checked deterministic fuzz assertions for PhotographicSensitivity count rejection, SensitivityType enum-value rejection, and StandardOutputSensitivity type rejection while preserving the valid SensitivityType raw value, ISO speed, and ISO latitude fields.
 
 Latest EXIF camera-characterization coverage adds build-checked deterministic fuzz assertions for SpectralSensitivity type rejection, OECF type rejection, FlashEnergy count rejection, SpatialFrequencyResponse type rejection, FocalPlaneResolutionUnit enum-value rejection, and CFAPattern type rejection while preserving valid camera-characterization strings, opaque payloads, focal-plane rational numerators and denominators, raw resolution-unit values, and CFA pattern bytes.
 
 Latest EXIF offset-time coverage adds build-checked deterministic fuzz assertions for OffsetTime count rejection, OffsetTime sign/layout rejection, OffsetTime hour rejection, OffsetTimeOriginal type and minute rejection, and OffsetTimeDigitized ASCII terminator rejection while preserving valid UTC-offset strings.
 
-Latest EXIF capture-setting coverage adds build-checked deterministic fuzz assertions for ExposureProgram enum-value rejection, LightSource enum-value rejection, DigitalZoomRatio type rejection, and FocalLengthIn35mmFilm count rejection while preserving valid exposure, metering, light-source, flash, white-balance, zoom-ratio, and focal-length fields.
+Latest EXIF capture-setting coverage adds build-checked deterministic fuzz assertions for ExposureProgram enum-value rejection, LightSource enum-value rejection, DigitalZoomRatio type rejection, and FocalLengthIn35mmFilm count rejection while preserving valid exposure, metering, light-source, flash raw/bitfield, white-balance, zoom-ratio, and focal-length fields plus their raw enum values.
 
 Latest EXIF rendering/scene coverage adds build-checked deterministic fuzz assertions for ColorSpace enum-value rejection, FileSource type rejection, SceneCaptureType count rejection, and SubjectDistanceRange enum-value rejection while preserving valid color-space, sensing-method, file-source, scene-type, custom-rendered, exposure-mode, scene-capture, gain-control, contrast, saturation, sharpness, and subject-distance-range typed fields plus their raw enum values.
 

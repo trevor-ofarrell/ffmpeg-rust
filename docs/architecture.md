@@ -64,7 +64,7 @@ Interoperability common-tag coverage now includes InteroperabilityVersion as a f
 
 Exposure and APEX exposure common-tag coverage now includes ExposureTime, FNumber, ExposureBiasValue, FocalLength, PixelXDimension, PixelYDimension, DateTimeDigitized, ShutterSpeedValue, ApertureValue, and BrightnessValue with strict rational type/count/denominator, dimension type/count/value, and DateTimeDigitized fixed-shape/calendar validation.
 
-Sensitivity common-tag coverage now includes PhotographicSensitivity, SensitivityType, StandardOutputSensitivity, RecommendedExposureIndex, ISOSpeed, ISOSpeedLatitudeYYY, and ISOSpeedLatitudeZZZ with strict SHORT/LONG type/count and SensitivityType enum validation.
+Sensitivity common-tag coverage now includes PhotographicSensitivity, SensitivityType, StandardOutputSensitivity, RecommendedExposureIndex, ISOSpeed, ISOSpeedLatitudeYYY, and ISOSpeedLatitudeZZZ with strict SHORT/LONG type/count and SensitivityType enum validation. The deterministic fuzz harness now mirrors SensitivityType raw-value preservation.
 
 Camera characterization common-tag coverage now includes SpectralSensitivity, OECF, FlashEnergy, SpatialFrequencyResponse, FocalPlaneXResolution, FocalPlaneYResolution, FocalPlaneResolutionUnit, and CFAPattern with strict ASCII/UNDEFINED/RATIONAL/SHORT type, count, denominator, and enum validation. The deterministic fuzz harness now mirrors the unit assertions for focal-plane rational denominators and raw resolution-unit values.
 
@@ -76,7 +76,7 @@ Date/time common-tag range validation rejects DateTime, DateTimeOriginal, DateTi
 
 Offset-time common-tag fuzz coverage now includes OffsetTime, OffsetTimeOriginal, and OffsetTimeDigitized fixed-count, ASCII type, sign/colon layout, hour range, and minute range rejection.
 
-Capture-setting common-tag fuzz coverage now includes ExposureProgram, LightSource, DigitalZoomRatio, and FocalLengthIn35mmFilm enum, RATIONAL type, and count rejection while preserving the current MeteringMode, Flash, and WhiteBalance typed values.
+Capture-setting common-tag fuzz coverage now includes ExposureProgram, LightSource, DigitalZoomRatio, and FocalLengthIn35mmFilm enum, RATIONAL type, and count rejection while preserving the current ExposureProgram, MeteringMode, LightSource, Flash, and WhiteBalance typed values, raw enum values, and selected Flash bitfields.
 
 Rendering/scene common-tag fuzz coverage now includes ColorSpace, FileSource, SceneCaptureType, and SubjectDistanceRange enum, UNDEFINED type, and count rejection while preserving the current ColorSpace, SensingMethod, FileSource, SceneType, CustomRendered, ExposureMode, SceneCaptureType, GainControl, Contrast, Saturation, Sharpness, and SubjectDistanceRange typed values plus their raw enum values.
 

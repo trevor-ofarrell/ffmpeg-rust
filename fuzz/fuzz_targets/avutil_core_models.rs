@@ -5949,6 +5949,7 @@ fn exercise_fixtures() {
         sensitivity_tags.sensitivity_type(),
         Some(FrameExifSensitivityType::IsoSpeed)
     );
+    assert_eq!(sensitivity_tags.sensitivity_type().unwrap().raw(), 3);
     assert_eq!(sensitivity_tags.standard_output_sensitivity(), Some(160));
     assert_eq!(sensitivity_tags.recommended_exposure_index(), Some(180));
     assert_eq!(sensitivity_tags.iso_speed(), Some(200));
@@ -6184,18 +6185,26 @@ fn exercise_fixtures() {
         capture_tags.exposure_program(),
         Some(FrameExifExposureProgram::AperturePriority)
     );
+    assert_eq!(capture_tags.exposure_program().unwrap().raw(), 3);
     assert_eq!(
         capture_tags.metering_mode(),
         Some(FrameExifMeteringMode::Pattern)
     );
+    assert_eq!(capture_tags.metering_mode().unwrap().raw(), 5);
     assert_eq!(capture_tags.light_source(), Some(FrameExifLightSource::D65));
+    assert_eq!(capture_tags.light_source().unwrap().raw(), 21);
     assert_eq!(capture_tags.flash(), Some(FrameExifFlash::from_raw(0x0041)));
+    assert_eq!(capture_tags.flash().unwrap().raw(), 0x0041);
     assert!(capture_tags.flash().unwrap().fired());
     assert!(capture_tags.flash().unwrap().red_eye_reduction_supported());
+    assert_eq!(capture_tags.flash().unwrap().return_status_bits(), 0);
+    assert_eq!(capture_tags.flash().unwrap().mode_bits(), 0);
+    assert!(!capture_tags.flash().unwrap().has_no_flash_function());
     assert_eq!(
         capture_tags.white_balance(),
         Some(FrameExifWhiteBalance::Manual)
     );
+    assert_eq!(capture_tags.white_balance().unwrap().raw(), 1);
     assert_eq!(capture_tags.digital_zoom_ratio().unwrap().numerator(), 3);
     assert_eq!(capture_tags.digital_zoom_ratio().unwrap().denominator(), 2);
     assert_eq!(capture_tags.focal_length_in_35mm_film(), Some(75));
