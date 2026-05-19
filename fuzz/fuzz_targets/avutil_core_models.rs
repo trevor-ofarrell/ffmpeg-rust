@@ -12,13 +12,14 @@ use avutil::{
     FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace, FrameExifCompositeImage,
     FrameExifContrast, FrameExifCustomRendered, FrameExifEndian, FrameExifEntry,
     FrameExifExposureMode, FrameExifExposureProgram, FrameExifFileSource, FrameExifFlash,
-    FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDirectionRef,
-    FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef, FrameExifGpsLongitudeRef,
-    FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus, FrameExifIfdPointerKind,
-    FrameExifLightSource, FrameExifMeteringMode, FrameExifNewSubfileType, FrameExifOrientation,
-    FrameExifRational, FrameExifResolutionUnit, FrameExifSaturation, FrameExifSceneCaptureType,
-    FrameExifSceneType, FrameExifSensingMethod, FrameExifSensitivityType, FrameExifSharpness,
-    FrameExifSubjectArea, FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance,
+    FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDifferential,
+    FrameExifGpsDirectionRef, FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef,
+    FrameExifGpsLongitudeRef, FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus,
+    FrameExifIfdPointerKind, FrameExifLightSource, FrameExifMeteringMode, FrameExifNewSubfileType,
+    FrameExifOrientation, FrameExifRational, FrameExifResolutionUnit, FrameExifSaturation,
+    FrameExifSceneCaptureType, FrameExifSceneType, FrameExifSensingMethod,
+    FrameExifSensitivityType, FrameExifSharpness, FrameExifSubjectArea,
+    FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance,
     FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
@@ -5611,6 +5612,97 @@ fn exercise_fixtures() {
         42
     );
 
+    let gps_processing_exif_bytes = exif_gps_processing_error_fixture();
+    let gps_processing_exif = FrameExif::parse(&gps_processing_exif_bytes).unwrap();
+    let gps_processing_tags = gps_processing_exif.common_tags().unwrap();
+    assert_eq!(
+        gps_processing_tags.gps_processing_method(),
+        Some(&b"ASCII\0\0\0GPS\0"[..])
+    );
+    let mut bad_processing_type = exif_gps_processing_error_fixture();
+    bad_processing_type[30..32].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_processing_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        gps_processing_tags.gps_area_information(),
+        Some(&b"ASCII\0\0\0AREA"[..])
+    );
+    let mut bad_area_type = exif_gps_processing_error_fixture();
+    bad_area_type[42..44].copy_from_slice(&FrameExifTiffType::Ascii.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_area_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        gps_processing_tags.gps_differential(),
+        Some(FrameExifGpsDifferential::DifferentialCorrectionApplied)
+    );
+    let mut bad_differential_count = exif_gps_processing_error_fixture();
+    bad_differential_count[56..60].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_differential_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_differential_value = exif_gps_processing_error_fixture();
+    bad_differential_value[60..62].copy_from_slice(&2u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_differential_value)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        gps_processing_tags
+            .gps_h_positioning_error()
+            .unwrap()
+            .numerator(),
+        5
+    );
+    assert_eq!(
+        gps_processing_tags
+            .gps_h_positioning_error()
+            .unwrap()
+            .denominator(),
+        2
+    );
+    let mut bad_h_positioning_error_type = exif_gps_processing_error_fixture();
+    bad_h_positioning_error_type[66..68]
+        .copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_h_positioning_error_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_h_positioning_error_denominator = exif_gps_processing_error_fixture();
+    bad_h_positioning_error_denominator[108..112].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_h_positioning_error_denominator)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let exposure_exif_bytes = exif_exposure_tags_fixture();
     let exposure_exif = FrameExif::parse(&exposure_exif_bytes).unwrap();
     let exposure_tags = exposure_exif.common_tags().unwrap();
@@ -8588,6 +8680,58 @@ fn exif_gps_destination_fixture() -> Vec<u8> {
     data.extend_from_slice(&2u32.to_le_bytes());
     data.extend_from_slice(&42u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_le_bytes());
+    data
+}
+
+fn exif_gps_processing_error_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::GPS_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&4u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_PROCESSING_METHOD,
+        FrameExifTiffType::Undefined,
+        12,
+        80u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_AREA_INFORMATION,
+        FrameExifTiffType::Undefined,
+        12,
+        92u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_DIFFERENTIAL,
+        FrameExifTiffType::Short,
+        1,
+        [1, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_H_POSITIONING_ERROR,
+        FrameExifTiffType::Rational,
+        1,
+        104u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(b"ASCII\0\0\0GPS\0");
+    data.extend_from_slice(b"ASCII\0\0\0AREA");
+    data.extend_from_slice(&5u32.to_le_bytes());
+    data.extend_from_slice(&2u32.to_le_bytes());
     data
 }
 
