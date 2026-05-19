@@ -6197,6 +6197,36 @@ fn exercise_fixtures() {
             .denominator(),
         1
     );
+    let mut bad_temperature_count = exif_environment_fixture();
+    bad_temperature_count[32..36].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_temperature_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_humidity_type = exif_environment_fixture();
+    bad_humidity_type[42..44].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_humidity_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_water_depth_denominator = exif_environment_fixture();
+    bad_water_depth_denominator[132..136].copy_from_slice(&0i32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_water_depth_denominator)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let descriptive_exif_bytes = exif_descriptive_tags_fixture();
     let descriptive_exif = FrameExif::parse(&descriptive_exif_bytes).unwrap();
