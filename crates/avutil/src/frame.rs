@@ -15284,6 +15284,48 @@ mod tests {
     }
 
     #[test]
+    fn frame_side_data_data_mut_detaches_shared_readonly_payload() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let release_capture = std::sync::Arc::clone(&released);
+        let payload = BufferRef::from_external_slice_with_len_and_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![1, 2, 3, 0xEE]),
+            3,
+            String::from("side-data"),
+            move |opaque| {
+                release_capture.lock().unwrap().push(opaque);
+            },
+        )
+        .unwrap();
+        let mut side_data =
+            FrameSideData::new_with_buffer_ref("displaymatrix", payload.clone()).unwrap();
+        side_data.metadata_mut().set("rotation", "90").unwrap();
+        let cloned = side_data.clone();
+
+        assert!(!side_data.is_writable());
+        assert!(side_data.buffer().shares_storage(&payload));
+        assert!(cloned.buffer().shares_storage(side_data.buffer()));
+
+        side_data.data_mut()[1] = 0x99;
+
+        assert!(side_data.is_writable());
+        assert_eq!(side_data.data(), &[1, 0x99, 3]);
+        assert_eq!(side_data.metadata().get("rotation"), Some("90"));
+        assert!(!side_data.buffer().shares_storage(&payload));
+        assert!(!side_data.buffer().shares_storage(cloned.buffer()));
+        assert_eq!(cloned.data(), &[1, 2, 3]);
+        assert_eq!(payload.as_slice(), &[1, 2, 3]);
+        assert_eq!(payload.padding_slice(), &[0xEE]);
+        assert!(released.lock().unwrap().is_empty());
+
+        drop(payload);
+        assert!(released.lock().unwrap().is_empty());
+        drop(side_data);
+        assert!(released.lock().unwrap().is_empty());
+        drop(cloned);
+        assert_eq!(*released.lock().unwrap(), vec![String::from("side-data")]);
+    }
+
+    #[test]
     fn frame_side_data_maps_known_kinds_and_preserves_unknown_names() {
         assert_eq!(
             FrameSideDataKind::from_name("Display Matrix").unwrap(),

@@ -1050,6 +1050,41 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         frame.side_data()[0].supports_multiple_instances(),
         frame_side_data_kind.supports_multiple_instances()
     );
+
+    let mut side_data_for_mutation = frame.side_data()[0].clone();
+    let cloned_side_data = side_data_for_mutation.clone();
+    assert!(side_data_for_mutation
+        .buffer()
+        .shares_storage(&frame_side_data_buffer));
+    assert!(cloned_side_data
+        .buffer()
+        .shares_storage(side_data_for_mutation.buffer()));
+    if !frame_side_data_payload.is_empty() {
+        let replacement = frame_side_data_payload[0].wrapping_add(1);
+        side_data_for_mutation.data_mut()[0] = replacement;
+        let mut expected = frame_side_data_payload.clone();
+        expected[0] = replacement;
+        assert_eq!(side_data_for_mutation.data(), expected.as_slice());
+        assert_eq!(cloned_side_data.data(), frame_side_data_payload.as_slice());
+        assert_eq!(
+            frame_side_data_buffer.as_slice(),
+            frame_side_data_payload.as_slice()
+        );
+        assert!(!side_data_for_mutation
+            .buffer()
+            .shares_storage(&frame_side_data_buffer));
+        assert!(cloned_side_data
+            .buffer()
+            .shares_storage(&frame_side_data_buffer));
+    } else {
+        side_data_for_mutation.make_writable();
+        assert!(side_data_for_mutation.data().is_empty());
+    }
+    assert_eq!(
+        side_data_for_mutation.metadata().get("origin"),
+        Some("fuzz")
+    );
+
     match frame.side_data()[0].pan_scan() {
         Ok(Some(value)) => {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::PanScan);
