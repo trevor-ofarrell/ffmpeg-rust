@@ -27,7 +27,9 @@ pub use error::{AvError, AvErrorKind, AvResult};
 pub use frame::{
     AudioFrame, Frame, FrameActiveFormatDescription, FrameAudioServiceType,
     FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
-    FrameDisplayMatrix, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
+    FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
+    FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
+    FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
     FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrPlusPercentile, FrameIccProfile,

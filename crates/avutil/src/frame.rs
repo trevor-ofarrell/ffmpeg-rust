@@ -3666,6 +3666,644 @@ impl<'a> FrameDetectionBboxes<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDolbyVisionRpuBuffer<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameDolbyVisionRpuBuffer<'a> {
+    pub const fn parse(data: &'a [u8]) -> Self {
+        Self { data }
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.data.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDolbyVisionRpuDataHeader<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameDolbyVisionRpuDataHeader<'a> {
+    pub const DATA_LEN: usize = 20;
+    const RPU_TYPE_OFFSET: usize = 0;
+    const RPU_FORMAT_OFFSET: usize = 2;
+    const VDR_RPU_PROFILE_OFFSET: usize = 4;
+    const VDR_RPU_LEVEL_OFFSET: usize = 5;
+    const CHROMA_RESAMPLING_EXPLICIT_FILTER_FLAG_OFFSET: usize = 6;
+    const COEF_DATA_TYPE_OFFSET: usize = 7;
+    const COEF_LOG2_DENOM_OFFSET: usize = 8;
+    const VDR_RPU_NORMALIZED_IDC_OFFSET: usize = 9;
+    const BL_VIDEO_FULL_RANGE_FLAG_OFFSET: usize = 10;
+    const BL_BIT_DEPTH_OFFSET: usize = 11;
+    const EL_BIT_DEPTH_OFFSET: usize = 12;
+    const VDR_BIT_DEPTH_OFFSET: usize = 13;
+    const SPATIAL_RESAMPLING_FILTER_FLAG_OFFSET: usize = 14;
+    const EL_SPATIAL_RESAMPLING_FILTER_FLAG_OFFSET: usize = 15;
+    const DISABLE_RESIDUAL_FLAG_OFFSET: usize = 16;
+    const EXT_MAPPING_IDC_0_4_OFFSET: usize = 17;
+    const EXT_MAPPING_IDC_5_7_OFFSET: usize = 18;
+
+    fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "Dolby Vision RPU data header requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self { data })
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn rpu_type(self) -> u8 {
+        self.data[Self::RPU_TYPE_OFFSET]
+    }
+
+    pub fn rpu_format(self) -> u16 {
+        self.read_u16(Self::RPU_FORMAT_OFFSET)
+    }
+
+    pub fn vdr_rpu_profile(self) -> u8 {
+        self.data[Self::VDR_RPU_PROFILE_OFFSET]
+    }
+
+    pub fn vdr_rpu_level(self) -> u8 {
+        self.data[Self::VDR_RPU_LEVEL_OFFSET]
+    }
+
+    pub fn chroma_resampling_explicit_filter_flag(self) -> bool {
+        self.data[Self::CHROMA_RESAMPLING_EXPLICIT_FILTER_FLAG_OFFSET] != 0
+    }
+
+    pub fn coef_data_type(self) -> u8 {
+        self.data[Self::COEF_DATA_TYPE_OFFSET]
+    }
+
+    pub fn coef_log2_denom(self) -> u8 {
+        self.data[Self::COEF_LOG2_DENOM_OFFSET]
+    }
+
+    pub fn vdr_rpu_normalized_idc(self) -> u8 {
+        self.data[Self::VDR_RPU_NORMALIZED_IDC_OFFSET]
+    }
+
+    pub fn bl_video_full_range_flag(self) -> bool {
+        self.data[Self::BL_VIDEO_FULL_RANGE_FLAG_OFFSET] != 0
+    }
+
+    pub fn bl_bit_depth(self) -> u8 {
+        self.data[Self::BL_BIT_DEPTH_OFFSET]
+    }
+
+    pub fn el_bit_depth(self) -> u8 {
+        self.data[Self::EL_BIT_DEPTH_OFFSET]
+    }
+
+    pub fn vdr_bit_depth(self) -> u8 {
+        self.data[Self::VDR_BIT_DEPTH_OFFSET]
+    }
+
+    pub fn spatial_resampling_filter_flag(self) -> bool {
+        self.data[Self::SPATIAL_RESAMPLING_FILTER_FLAG_OFFSET] != 0
+    }
+
+    pub fn el_spatial_resampling_filter_flag(self) -> bool {
+        self.data[Self::EL_SPATIAL_RESAMPLING_FILTER_FLAG_OFFSET] != 0
+    }
+
+    pub fn disable_residual_flag(self) -> bool {
+        self.data[Self::DISABLE_RESIDUAL_FLAG_OFFSET] != 0
+    }
+
+    pub fn ext_mapping_idc_0_4(self) -> u8 {
+        self.data[Self::EXT_MAPPING_IDC_0_4_OFFSET]
+    }
+
+    pub fn ext_mapping_idc_5_7(self) -> u8 {
+        self.data[Self::EXT_MAPPING_IDC_5_7_OFFSET]
+    }
+
+    fn read_u16(self, offset: usize) -> u16 {
+        let mut raw = [0; 2];
+        raw.copy_from_slice(&self.data[offset..offset + 2]);
+        u16::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDolbyVisionDataMapping<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameDolbyVisionDataMapping<'a> {
+    const RESHAPING_CURVE_LEN: usize = 1_672;
+    const NLQ_PARAMS_LEN: usize = 32;
+    const VDR_RPU_ID_OFFSET: usize = 0;
+    const MAPPING_COLOR_SPACE_OFFSET: usize = 1;
+    const MAPPING_CHROMA_FORMAT_IDC_OFFSET: usize = 2;
+    const CURVES_OFFSET: usize = Self::align_up(3, core::mem::align_of::<u64>());
+    const NLQ_METHOD_IDC_OFFSET: usize = Self::CURVES_OFFSET + 3 * Self::RESHAPING_CURVE_LEN;
+    const NUM_X_PARTITIONS_OFFSET: usize = Self::NLQ_METHOD_IDC_OFFSET + 4;
+    const NUM_Y_PARTITIONS_OFFSET: usize = Self::NUM_X_PARTITIONS_OFFSET + 4;
+    const NLQ_OFFSET: usize = Self::align_up(
+        Self::NUM_Y_PARTITIONS_OFFSET + 4,
+        core::mem::align_of::<u64>(),
+    );
+    const NLQ_PIVOTS_OFFSET: usize = Self::NLQ_OFFSET + 3 * Self::NLQ_PARAMS_LEN;
+    pub const DATA_LEN: usize =
+        Self::align_up(Self::NLQ_PIVOTS_OFFSET + 4, core::mem::align_of::<u64>());
+
+    fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "Dolby Vision data mapping requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self { data })
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn vdr_rpu_id(self) -> u8 {
+        self.data[Self::VDR_RPU_ID_OFFSET]
+    }
+
+    pub fn mapping_color_space(self) -> u8 {
+        self.data[Self::MAPPING_COLOR_SPACE_OFFSET]
+    }
+
+    pub fn mapping_chroma_format_idc(self) -> u8 {
+        self.data[Self::MAPPING_CHROMA_FORMAT_IDC_OFFSET]
+    }
+
+    pub fn nlq_method_idc(self) -> i32 {
+        self.read_i32(Self::NLQ_METHOD_IDC_OFFSET)
+    }
+
+    pub fn num_x_partitions(self) -> u32 {
+        self.read_u32(Self::NUM_X_PARTITIONS_OFFSET)
+    }
+
+    pub fn num_y_partitions(self) -> u32 {
+        self.read_u32(Self::NUM_Y_PARTITIONS_OFFSET)
+    }
+
+    const fn align_up(value: usize, align: usize) -> usize {
+        let remainder = value % align;
+        if remainder == 0 {
+            value
+        } else {
+            value + align - remainder
+        }
+    }
+
+    fn read_i32(self, offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&self.data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+
+    fn read_u32(self, offset: usize) -> u32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&self.data[offset..offset + 4]);
+        u32::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDolbyVisionColorMetadata<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameDolbyVisionColorMetadata<'a> {
+    const RATIONAL_LEN: usize = 8;
+    const DM_METADATA_ID_OFFSET: usize = 0;
+    const SCENE_REFRESH_FLAG_OFFSET: usize = 1;
+    const YCC_TO_RGB_MATRIX_OFFSET: usize = 4;
+    const YCC_TO_RGB_OFFSET_OFFSET: usize = Self::YCC_TO_RGB_MATRIX_OFFSET + 9 * Self::RATIONAL_LEN;
+    const RGB_TO_LMS_MATRIX_OFFSET: usize = Self::YCC_TO_RGB_OFFSET_OFFSET + 3 * Self::RATIONAL_LEN;
+    const SIGNAL_EOTF_OFFSET: usize = Self::RGB_TO_LMS_MATRIX_OFFSET + 9 * Self::RATIONAL_LEN;
+    const SIGNAL_EOTF_PARAM0_OFFSET: usize = Self::SIGNAL_EOTF_OFFSET + 2;
+    const SIGNAL_EOTF_PARAM1_OFFSET: usize = Self::SIGNAL_EOTF_PARAM0_OFFSET + 2;
+    const SIGNAL_EOTF_PARAM2_OFFSET: usize = Self::align_up(
+        Self::SIGNAL_EOTF_PARAM1_OFFSET + 2,
+        core::mem::align_of::<u32>(),
+    );
+    const SIGNAL_BIT_DEPTH_OFFSET: usize = Self::SIGNAL_EOTF_PARAM2_OFFSET + 4;
+    const SIGNAL_COLOR_SPACE_OFFSET: usize = Self::SIGNAL_BIT_DEPTH_OFFSET + 1;
+    const SIGNAL_CHROMA_FORMAT_OFFSET: usize = Self::SIGNAL_COLOR_SPACE_OFFSET + 1;
+    const SIGNAL_FULL_RANGE_FLAG_OFFSET: usize = Self::SIGNAL_CHROMA_FORMAT_OFFSET + 1;
+    const SOURCE_MIN_PQ_OFFSET: usize = Self::SIGNAL_FULL_RANGE_FLAG_OFFSET + 1;
+    const SOURCE_MAX_PQ_OFFSET: usize = Self::SOURCE_MIN_PQ_OFFSET + 2;
+    const SOURCE_DIAGONAL_OFFSET: usize = Self::SOURCE_MAX_PQ_OFFSET + 2;
+    pub const DATA_LEN: usize = Self::align_up(
+        Self::SOURCE_DIAGONAL_OFFSET + 2,
+        core::mem::align_of::<i32>(),
+    );
+
+    fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "Dolby Vision color metadata requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let metadata = Self { data };
+        if metadata.signal_full_range_flag() > 3 {
+            return Err(AvError::invalid_data(format!(
+                "Dolby Vision signal full range flag {} is outside 0..=3",
+                metadata.signal_full_range_flag()
+            )));
+        }
+
+        Ok(metadata)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn dm_metadata_id(self) -> u8 {
+        self.data[Self::DM_METADATA_ID_OFFSET]
+    }
+
+    pub fn scene_refresh_flag(self) -> u8 {
+        self.data[Self::SCENE_REFRESH_FLAG_OFFSET]
+    }
+
+    pub fn ycc_to_rgb_matrix(self, index: usize) -> Option<Rational> {
+        if index >= 9 {
+            return None;
+        }
+        Some(self.read_rational(Self::YCC_TO_RGB_MATRIX_OFFSET + index * Self::RATIONAL_LEN))
+    }
+
+    pub fn ycc_to_rgb_offset(self, index: usize) -> Option<Rational> {
+        if index >= 3 {
+            return None;
+        }
+        Some(self.read_rational(Self::YCC_TO_RGB_OFFSET_OFFSET + index * Self::RATIONAL_LEN))
+    }
+
+    pub fn rgb_to_lms_matrix(self, index: usize) -> Option<Rational> {
+        if index >= 9 {
+            return None;
+        }
+        Some(self.read_rational(Self::RGB_TO_LMS_MATRIX_OFFSET + index * Self::RATIONAL_LEN))
+    }
+
+    pub fn signal_eotf(self) -> u16 {
+        self.read_u16(Self::SIGNAL_EOTF_OFFSET)
+    }
+
+    pub fn signal_eotf_param0(self) -> u16 {
+        self.read_u16(Self::SIGNAL_EOTF_PARAM0_OFFSET)
+    }
+
+    pub fn signal_eotf_param1(self) -> u16 {
+        self.read_u16(Self::SIGNAL_EOTF_PARAM1_OFFSET)
+    }
+
+    pub fn signal_eotf_param2(self) -> u32 {
+        self.read_u32(Self::SIGNAL_EOTF_PARAM2_OFFSET)
+    }
+
+    pub fn signal_bit_depth(self) -> u8 {
+        self.data[Self::SIGNAL_BIT_DEPTH_OFFSET]
+    }
+
+    pub fn signal_color_space(self) -> u8 {
+        self.data[Self::SIGNAL_COLOR_SPACE_OFFSET]
+    }
+
+    pub fn signal_chroma_format(self) -> u8 {
+        self.data[Self::SIGNAL_CHROMA_FORMAT_OFFSET]
+    }
+
+    pub fn signal_full_range_flag(self) -> u8 {
+        self.data[Self::SIGNAL_FULL_RANGE_FLAG_OFFSET]
+    }
+
+    pub fn source_min_pq(self) -> u16 {
+        self.read_u16(Self::SOURCE_MIN_PQ_OFFSET)
+    }
+
+    pub fn source_max_pq(self) -> u16 {
+        self.read_u16(Self::SOURCE_MAX_PQ_OFFSET)
+    }
+
+    pub fn source_diagonal(self) -> u16 {
+        self.read_u16(Self::SOURCE_DIAGONAL_OFFSET)
+    }
+
+    const fn align_up(value: usize, align: usize) -> usize {
+        let remainder = value % align;
+        if remainder == 0 {
+            value
+        } else {
+            value + align - remainder
+        }
+    }
+
+    fn read_rational(self, offset: usize) -> Rational {
+        Rational::from_raw(self.read_i32(offset), self.read_i32(offset + 4))
+    }
+
+    fn read_i32(self, offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&self.data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+
+    fn read_u16(self, offset: usize) -> u16 {
+        let mut raw = [0; 2];
+        raw.copy_from_slice(&self.data[offset..offset + 2]);
+        u16::from_ne_bytes(raw)
+    }
+
+    fn read_u32(self, offset: usize) -> u32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&self.data[offset..offset + 4]);
+        u32::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDolbyVisionDmData<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameDolbyVisionDmData<'a> {
+    pub const DATA_LEN: usize = 76;
+    const LEVEL_OFFSET: usize = 0;
+    const UNION_OFFSET: usize = 4;
+    const LEVEL1_MIN_PQ_OFFSET: usize = Self::UNION_OFFSET;
+    const LEVEL1_MAX_PQ_OFFSET: usize = Self::LEVEL1_MIN_PQ_OFFSET + 2;
+    const LEVEL1_AVG_PQ_OFFSET: usize = Self::LEVEL1_MAX_PQ_OFFSET + 2;
+    const LEVEL6_MAX_LUMINANCE_OFFSET: usize = Self::UNION_OFFSET;
+    const LEVEL6_MIN_LUMINANCE_OFFSET: usize = Self::LEVEL6_MAX_LUMINANCE_OFFSET + 2;
+    const LEVEL6_MAX_CLL_OFFSET: usize = Self::LEVEL6_MIN_LUMINANCE_OFFSET + 2;
+    const LEVEL6_MAX_FALL_OFFSET: usize = Self::LEVEL6_MAX_CLL_OFFSET + 2;
+
+    fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "Dolby Vision display-management block requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let block = Self { data };
+        if block.level() == 0 {
+            return Err(AvError::invalid_data(
+                "Dolby Vision display-management block level must be nonzero",
+            ));
+        }
+
+        Ok(block)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn level(self) -> u8 {
+        self.data[Self::LEVEL_OFFSET]
+    }
+
+    pub fn level1_min_pq(self) -> Option<u16> {
+        (self.level() == 1).then(|| self.read_u16(Self::LEVEL1_MIN_PQ_OFFSET))
+    }
+
+    pub fn level1_max_pq(self) -> Option<u16> {
+        (self.level() == 1).then(|| self.read_u16(Self::LEVEL1_MAX_PQ_OFFSET))
+    }
+
+    pub fn level1_avg_pq(self) -> Option<u16> {
+        (self.level() == 1).then(|| self.read_u16(Self::LEVEL1_AVG_PQ_OFFSET))
+    }
+
+    pub fn level6_max_luminance(self) -> Option<u16> {
+        (self.level() == 6).then(|| self.read_u16(Self::LEVEL6_MAX_LUMINANCE_OFFSET))
+    }
+
+    pub fn level6_min_luminance(self) -> Option<u16> {
+        (self.level() == 6).then(|| self.read_u16(Self::LEVEL6_MIN_LUMINANCE_OFFSET))
+    }
+
+    pub fn level6_max_content_light_level(self) -> Option<u16> {
+        (self.level() == 6).then(|| self.read_u16(Self::LEVEL6_MAX_CLL_OFFSET))
+    }
+
+    pub fn level6_max_frame_average_light_level(self) -> Option<u16> {
+        (self.level() == 6).then(|| self.read_u16(Self::LEVEL6_MAX_FALL_OFFSET))
+    }
+
+    fn read_u16(self, offset: usize) -> u16 {
+        let mut raw = [0; 2];
+        raw.copy_from_slice(&self.data[offset..offset + 2]);
+        u16::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDolbyVisionMetadata<'a> {
+    data: &'a [u8],
+    num_ext_blocks: usize,
+}
+
+impl<'a> FrameDolbyVisionMetadata<'a> {
+    pub const MAX_EXT_BLOCKS: usize = 32;
+    pub const SIZE_T_LEN: usize = core::mem::size_of::<usize>();
+    const HEADER_OFFSET_OFFSET: usize = 0;
+    const MAPPING_OFFSET_OFFSET: usize = Self::HEADER_OFFSET_OFFSET + Self::SIZE_T_LEN;
+    const COLOR_OFFSET_OFFSET: usize = Self::MAPPING_OFFSET_OFFSET + Self::SIZE_T_LEN;
+    const EXT_BLOCK_OFFSET_OFFSET: usize = Self::COLOR_OFFSET_OFFSET + Self::SIZE_T_LEN;
+    const EXT_BLOCK_SIZE_OFFSET: usize = Self::EXT_BLOCK_OFFSET_OFFSET + Self::SIZE_T_LEN;
+    const NUM_EXT_BLOCKS_OFFSET: usize = Self::EXT_BLOCK_SIZE_OFFSET + Self::SIZE_T_LEN;
+    const METADATA_LEN: usize = Self::align_up(
+        Self::NUM_EXT_BLOCKS_OFFSET + 4,
+        core::mem::align_of::<usize>(),
+    );
+    pub const HEADER_OFFSET: usize =
+        Self::align_up(Self::METADATA_LEN, core::mem::align_of::<u16>());
+    pub const MAPPING_OFFSET: usize = Self::align_up(
+        Self::HEADER_OFFSET + FrameDolbyVisionRpuDataHeader::DATA_LEN,
+        core::mem::align_of::<u64>(),
+    );
+    pub const COLOR_OFFSET: usize = Self::align_up(
+        Self::MAPPING_OFFSET + FrameDolbyVisionDataMapping::DATA_LEN,
+        core::mem::align_of::<i32>(),
+    );
+    pub const EXT_BLOCK_OFFSET: usize = Self::align_up(
+        Self::COLOR_OFFSET + FrameDolbyVisionColorMetadata::DATA_LEN,
+        core::mem::align_of::<i32>(),
+    );
+    pub const EXT_BLOCK_SIZE: usize = FrameDolbyVisionDmData::DATA_LEN;
+    pub const DATA_LEN: usize = Self::align_up(
+        Self::EXT_BLOCK_OFFSET + Self::MAX_EXT_BLOCKS * Self::EXT_BLOCK_SIZE,
+        core::mem::align_of::<u64>(),
+    );
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "Dolby Vision metadata side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let header_offset = Self::read_usize(data, Self::HEADER_OFFSET_OFFSET);
+        let mapping_offset = Self::read_usize(data, Self::MAPPING_OFFSET_OFFSET);
+        let color_offset = Self::read_usize(data, Self::COLOR_OFFSET_OFFSET);
+        let ext_block_offset = Self::read_usize(data, Self::EXT_BLOCK_OFFSET_OFFSET);
+        let ext_block_size = Self::read_usize(data, Self::EXT_BLOCK_SIZE_OFFSET);
+
+        for (label, actual, expected) in [
+            ("header", header_offset, Self::HEADER_OFFSET),
+            ("mapping", mapping_offset, Self::MAPPING_OFFSET),
+            ("color", color_offset, Self::COLOR_OFFSET),
+            ("extension block", ext_block_offset, Self::EXT_BLOCK_OFFSET),
+        ] {
+            if actual != expected {
+                return Err(AvError::invalid_data(format!(
+                    "Dolby Vision metadata {label} offset {actual} does not match native offset {expected}"
+                )));
+            }
+        }
+        if ext_block_size != Self::EXT_BLOCK_SIZE {
+            return Err(AvError::invalid_data(format!(
+                "Dolby Vision metadata extension block size {ext_block_size} does not match native size {}",
+                Self::EXT_BLOCK_SIZE
+            )));
+        }
+
+        let num_ext_blocks_raw = Self::read_i32(data, Self::NUM_EXT_BLOCKS_OFFSET);
+        if !(0..=Self::MAX_EXT_BLOCKS as i32).contains(&num_ext_blocks_raw) {
+            return Err(AvError::invalid_data(format!(
+                "Dolby Vision metadata extension block count {num_ext_blocks_raw} is outside 0..={}",
+                Self::MAX_EXT_BLOCKS
+            )));
+        }
+
+        let metadata = Self {
+            data,
+            num_ext_blocks: num_ext_blocks_raw as usize,
+        };
+        metadata.header()?;
+        metadata.mapping()?;
+        metadata.color()?;
+        for index in 0..metadata.num_ext_blocks {
+            metadata
+                .ext_block(index)
+                .expect("validated extension block index")?;
+        }
+
+        Ok(metadata)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn num_ext_blocks(self) -> usize {
+        self.num_ext_blocks
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.num_ext_blocks == 0
+    }
+
+    pub fn header(self) -> AvResult<FrameDolbyVisionRpuDataHeader<'a>> {
+        FrameDolbyVisionRpuDataHeader::parse(
+            &self.data[Self::HEADER_OFFSET
+                ..Self::HEADER_OFFSET + FrameDolbyVisionRpuDataHeader::DATA_LEN],
+        )
+    }
+
+    pub fn mapping(self) -> AvResult<FrameDolbyVisionDataMapping<'a>> {
+        FrameDolbyVisionDataMapping::parse(
+            &self.data[Self::MAPPING_OFFSET
+                ..Self::MAPPING_OFFSET + FrameDolbyVisionDataMapping::DATA_LEN],
+        )
+    }
+
+    pub fn color(self) -> AvResult<FrameDolbyVisionColorMetadata<'a>> {
+        FrameDolbyVisionColorMetadata::parse(
+            &self.data
+                [Self::COLOR_OFFSET..Self::COLOR_OFFSET + FrameDolbyVisionColorMetadata::DATA_LEN],
+        )
+    }
+
+    pub fn ext_block(self, index: usize) -> Option<AvResult<FrameDolbyVisionDmData<'a>>> {
+        if index >= self.num_ext_blocks {
+            return None;
+        }
+        let offset = Self::EXT_BLOCK_OFFSET + index * Self::EXT_BLOCK_SIZE;
+        Some(FrameDolbyVisionDmData::parse(
+            &self.data[offset..offset + Self::EXT_BLOCK_SIZE],
+        ))
+    }
+
+    pub fn ext_blocks(self) -> impl Iterator<Item = AvResult<FrameDolbyVisionDmData<'a>>> {
+        (0..self.num_ext_blocks).map(move |index| {
+            self.ext_block(index)
+                .expect("iterator only visits validated extension block indexes")
+        })
+    }
+
+    pub fn find_level(self, level: u8) -> Option<AvResult<FrameDolbyVisionDmData<'a>>> {
+        if level == 0 {
+            return None;
+        }
+        self.ext_blocks().find(|block| match block {
+            Ok(block) => block.level() == level,
+            Err(_) => true,
+        })
+    }
+
+    const fn align_up(value: usize, align: usize) -> usize {
+        let remainder = value % align;
+        if remainder == 0 {
+            value
+        } else {
+            value + align - remainder
+        }
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+
+    fn read_usize(data: &[u8], offset: usize) -> usize {
+        let mut raw = [0; Self::SIZE_T_LEN];
+        raw.copy_from_slice(&data[offset..offset + Self::SIZE_T_LEN]);
+        usize::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameSeiUnregistered<'a> {
     uuid: [u8; 16],
     user_data: &'a [u8],
@@ -4147,6 +4785,16 @@ impl FrameSideData {
         Ok(side_data)
     }
 
+    pub fn new_dolby_vision_rpu_buffer(data: Vec<u8>) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::DolbyVisionRpuBuffer, data)
+    }
+
+    pub fn new_dolby_vision_metadata(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(FrameSideDataKind::DolbyVisionMetadata, data)?;
+        FrameDolbyVisionMetadata::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
         let total_len = FrameSeiUnregistered::UUID_LEN
             .checked_add(user_data.len())
@@ -4355,6 +5003,22 @@ impl FrameSideData {
         }
 
         FrameDetectionBboxes::parse(self.data()).map(Some)
+    }
+
+    pub fn dolby_vision_rpu_buffer(&self) -> Option<FrameDolbyVisionRpuBuffer<'_>> {
+        if self.kind != FrameSideDataKind::DolbyVisionRpuBuffer {
+            return None;
+        }
+
+        Some(FrameDolbyVisionRpuBuffer::parse(self.data()))
+    }
+
+    pub fn dolby_vision_metadata(&self) -> AvResult<Option<FrameDolbyVisionMetadata<'_>>> {
+        if self.kind != FrameSideDataKind::DolbyVisionMetadata {
+            return Ok(None);
+        }
+
+        FrameDolbyVisionMetadata::parse(self.data()).map(Some)
     }
 
     pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
@@ -5603,6 +6267,178 @@ mod tests {
             &mut data,
             second + FrameDetectionBbox::DETECT_CONFIDENCE_OFFSET,
             Rational::from_raw(7, 8),
+        );
+
+        data
+    }
+
+    fn minimal_dolby_vision_metadata() -> Vec<u8> {
+        let mut data = vec![0; FrameDolbyVisionMetadata::DATA_LEN];
+        write_ne_usize(
+            &mut data,
+            FrameDolbyVisionMetadata::HEADER_OFFSET_OFFSET,
+            FrameDolbyVisionMetadata::HEADER_OFFSET,
+        );
+        write_ne_usize(
+            &mut data,
+            FrameDolbyVisionMetadata::MAPPING_OFFSET_OFFSET,
+            FrameDolbyVisionMetadata::MAPPING_OFFSET,
+        );
+        write_ne_usize(
+            &mut data,
+            FrameDolbyVisionMetadata::COLOR_OFFSET_OFFSET,
+            FrameDolbyVisionMetadata::COLOR_OFFSET,
+        );
+        write_ne_usize(
+            &mut data,
+            FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET_OFFSET,
+            FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET,
+        );
+        write_ne_usize(
+            &mut data,
+            FrameDolbyVisionMetadata::EXT_BLOCK_SIZE_OFFSET,
+            FrameDolbyVisionMetadata::EXT_BLOCK_SIZE,
+        );
+        write_ne_i32(
+            &mut data,
+            FrameDolbyVisionMetadata::NUM_EXT_BLOCKS_OFFSET,
+            2,
+        );
+
+        let header = FrameDolbyVisionMetadata::HEADER_OFFSET;
+        data[header + FrameDolbyVisionRpuDataHeader::RPU_TYPE_OFFSET] = 2;
+        write_ne_u16(
+            &mut data,
+            header + FrameDolbyVisionRpuDataHeader::RPU_FORMAT_OFFSET,
+            18,
+        );
+        data[header + FrameDolbyVisionRpuDataHeader::VDR_RPU_PROFILE_OFFSET] = 8;
+        data[header + FrameDolbyVisionRpuDataHeader::VDR_RPU_LEVEL_OFFSET] = 6;
+        data[header + FrameDolbyVisionRpuDataHeader::COEF_DATA_TYPE_OFFSET] = 1;
+        data[header + FrameDolbyVisionRpuDataHeader::COEF_LOG2_DENOM_OFFSET] = 28;
+        data[header + FrameDolbyVisionRpuDataHeader::BL_BIT_DEPTH_OFFSET] = 10;
+        data[header + FrameDolbyVisionRpuDataHeader::EL_BIT_DEPTH_OFFSET] = 10;
+        data[header + FrameDolbyVisionRpuDataHeader::VDR_BIT_DEPTH_OFFSET] = 12;
+        data[header + FrameDolbyVisionRpuDataHeader::DISABLE_RESIDUAL_FLAG_OFFSET] = 1;
+        data[header + FrameDolbyVisionRpuDataHeader::EXT_MAPPING_IDC_0_4_OFFSET] = 4;
+
+        let mapping = FrameDolbyVisionMetadata::MAPPING_OFFSET;
+        data[mapping + FrameDolbyVisionDataMapping::VDR_RPU_ID_OFFSET] = 3;
+        data[mapping + FrameDolbyVisionDataMapping::MAPPING_COLOR_SPACE_OFFSET] = 1;
+        data[mapping + FrameDolbyVisionDataMapping::MAPPING_CHROMA_FORMAT_IDC_OFFSET] = 2;
+        write_ne_i32(
+            &mut data,
+            mapping + FrameDolbyVisionDataMapping::NLQ_METHOD_IDC_OFFSET,
+            0,
+        );
+        write_ne_u32(
+            &mut data,
+            mapping + FrameDolbyVisionDataMapping::NUM_X_PARTITIONS_OFFSET,
+            1,
+        );
+        write_ne_u32(
+            &mut data,
+            mapping + FrameDolbyVisionDataMapping::NUM_Y_PARTITIONS_OFFSET,
+            1,
+        );
+
+        let color = FrameDolbyVisionMetadata::COLOR_OFFSET;
+        data[color + FrameDolbyVisionColorMetadata::DM_METADATA_ID_OFFSET] = 9;
+        data[color + FrameDolbyVisionColorMetadata::SCENE_REFRESH_FLAG_OFFSET] = 1;
+        write_ne_rational(
+            &mut data,
+            color + FrameDolbyVisionColorMetadata::YCC_TO_RGB_MATRIX_OFFSET,
+            Rational::from_raw(1, 2),
+        );
+        write_ne_rational(
+            &mut data,
+            color + FrameDolbyVisionColorMetadata::YCC_TO_RGB_OFFSET_OFFSET,
+            Rational::from_raw(3, 4),
+        );
+        write_ne_rational(
+            &mut data,
+            color + FrameDolbyVisionColorMetadata::RGB_TO_LMS_MATRIX_OFFSET,
+            Rational::from_raw(5, 6),
+        );
+        write_ne_u16(
+            &mut data,
+            color + FrameDolbyVisionColorMetadata::SIGNAL_EOTF_OFFSET,
+            2084,
+        );
+        write_ne_u16(
+            &mut data,
+            color + FrameDolbyVisionColorMetadata::SIGNAL_EOTF_PARAM0_OFFSET,
+            1,
+        );
+        write_ne_u16(
+            &mut data,
+            color + FrameDolbyVisionColorMetadata::SIGNAL_EOTF_PARAM1_OFFSET,
+            2,
+        );
+        write_ne_u32(
+            &mut data,
+            color + FrameDolbyVisionColorMetadata::SIGNAL_EOTF_PARAM2_OFFSET,
+            3,
+        );
+        data[color + FrameDolbyVisionColorMetadata::SIGNAL_BIT_DEPTH_OFFSET] = 12;
+        data[color + FrameDolbyVisionColorMetadata::SIGNAL_COLOR_SPACE_OFFSET] = 9;
+        data[color + FrameDolbyVisionColorMetadata::SIGNAL_CHROMA_FORMAT_OFFSET] = 1;
+        data[color + FrameDolbyVisionColorMetadata::SIGNAL_FULL_RANGE_FLAG_OFFSET] = 3;
+        write_ne_u16(
+            &mut data,
+            color + FrameDolbyVisionColorMetadata::SOURCE_MIN_PQ_OFFSET,
+            64,
+        );
+        write_ne_u16(
+            &mut data,
+            color + FrameDolbyVisionColorMetadata::SOURCE_MAX_PQ_OFFSET,
+            4095,
+        );
+        write_ne_u16(
+            &mut data,
+            color + FrameDolbyVisionColorMetadata::SOURCE_DIAGONAL_OFFSET,
+            42,
+        );
+
+        let level1 = FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET;
+        data[level1 + FrameDolbyVisionDmData::LEVEL_OFFSET] = 1;
+        write_ne_u16(
+            &mut data,
+            level1 + FrameDolbyVisionDmData::LEVEL1_MIN_PQ_OFFSET,
+            10,
+        );
+        write_ne_u16(
+            &mut data,
+            level1 + FrameDolbyVisionDmData::LEVEL1_MAX_PQ_OFFSET,
+            2048,
+        );
+        write_ne_u16(
+            &mut data,
+            level1 + FrameDolbyVisionDmData::LEVEL1_AVG_PQ_OFFSET,
+            512,
+        );
+
+        let level6 = level1 + FrameDolbyVisionMetadata::EXT_BLOCK_SIZE;
+        data[level6 + FrameDolbyVisionDmData::LEVEL_OFFSET] = 6;
+        write_ne_u16(
+            &mut data,
+            level6 + FrameDolbyVisionDmData::LEVEL6_MAX_LUMINANCE_OFFSET,
+            1000,
+        );
+        write_ne_u16(
+            &mut data,
+            level6 + FrameDolbyVisionDmData::LEVEL6_MIN_LUMINANCE_OFFSET,
+            1,
+        );
+        write_ne_u16(
+            &mut data,
+            level6 + FrameDolbyVisionDmData::LEVEL6_MAX_CLL_OFFSET,
+            800,
+        );
+        write_ne_u16(
+            &mut data,
+            level6 + FrameDolbyVisionDmData::LEVEL6_MAX_FALL_OFFSET,
+            400,
         );
 
         data
@@ -9327,6 +10163,214 @@ mod tests {
         let non_detection =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
         assert_eq!(non_detection.detection_bboxes().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_dolby_vision_payloads() {
+        let rpu_bytes = vec![0x7C, 0x01, 0x19, 0xAB];
+        let rpu_side_data = FrameSideData::new_dolby_vision_rpu_buffer(rpu_bytes.clone()).unwrap();
+        assert_eq!(
+            rpu_side_data.kind_id(),
+            &FrameSideDataKind::DolbyVisionRpuBuffer
+        );
+        let rpu = rpu_side_data.dolby_vision_rpu_buffer().unwrap();
+        assert_eq!(rpu.data(), rpu_bytes.as_slice());
+        assert!(!rpu.is_empty());
+
+        let empty_rpu = FrameSideData::new_dolby_vision_rpu_buffer(Vec::new()).unwrap();
+        assert!(empty_rpu.dolby_vision_rpu_buffer().unwrap().is_empty());
+
+        let payload = minimal_dolby_vision_metadata();
+        let parsed = FrameDolbyVisionMetadata::parse(&payload).unwrap();
+        assert_eq!(
+            FrameDolbyVisionMetadata::DATA_LEN,
+            if core::mem::size_of::<usize>() == 8 {
+                7_848
+            } else {
+                7_804
+            }
+        );
+        assert_eq!(FrameDolbyVisionRpuDataHeader::DATA_LEN, 20);
+        assert_eq!(FrameDolbyVisionDataMapping::DATA_LEN, 5_144);
+        assert_eq!(FrameDolbyVisionColorMetadata::DATA_LEN, 196);
+        assert_eq!(FrameDolbyVisionDmData::DATA_LEN, 76);
+        assert_eq!(parsed.data(), payload.as_slice());
+        assert_eq!(parsed.num_ext_blocks(), 2);
+        assert!(!parsed.is_empty());
+
+        let header = parsed.header().unwrap();
+        assert_eq!(
+            header.data(),
+            &payload[FrameDolbyVisionMetadata::HEADER_OFFSET..][..20]
+        );
+        assert_eq!(header.rpu_type(), 2);
+        assert_eq!(header.rpu_format(), 18);
+        assert_eq!(header.vdr_rpu_profile(), 8);
+        assert_eq!(header.vdr_rpu_level(), 6);
+        assert_eq!(header.coef_data_type(), 1);
+        assert_eq!(header.coef_log2_denom(), 28);
+        assert_eq!(header.bl_bit_depth(), 10);
+        assert_eq!(header.el_bit_depth(), 10);
+        assert_eq!(header.vdr_bit_depth(), 12);
+        assert!(header.disable_residual_flag());
+        assert_eq!(header.ext_mapping_idc_0_4(), 4);
+
+        let mapping = parsed.mapping().unwrap();
+        assert_eq!(mapping.vdr_rpu_id(), 3);
+        assert_eq!(mapping.mapping_color_space(), 1);
+        assert_eq!(mapping.mapping_chroma_format_idc(), 2);
+        assert_eq!(mapping.nlq_method_idc(), 0);
+        assert_eq!(mapping.num_x_partitions(), 1);
+        assert_eq!(mapping.num_y_partitions(), 1);
+
+        let color = parsed.color().unwrap();
+        assert_eq!(color.dm_metadata_id(), 9);
+        assert_eq!(color.scene_refresh_flag(), 1);
+        assert_eq!(color.ycc_to_rgb_matrix(0), Some(Rational::from_raw(1, 2)));
+        assert_eq!(color.ycc_to_rgb_matrix(9), None);
+        assert_eq!(color.ycc_to_rgb_offset(0), Some(Rational::from_raw(3, 4)));
+        assert_eq!(color.rgb_to_lms_matrix(0), Some(Rational::from_raw(5, 6)));
+        assert_eq!(color.signal_eotf(), 2084);
+        assert_eq!(color.signal_eotf_param0(), 1);
+        assert_eq!(color.signal_eotf_param1(), 2);
+        assert_eq!(color.signal_eotf_param2(), 3);
+        assert_eq!(color.signal_bit_depth(), 12);
+        assert_eq!(color.signal_color_space(), 9);
+        assert_eq!(color.signal_chroma_format(), 1);
+        assert_eq!(color.signal_full_range_flag(), 3);
+        assert_eq!(color.source_min_pq(), 64);
+        assert_eq!(color.source_max_pq(), 4095);
+        assert_eq!(color.source_diagonal(), 42);
+
+        let level1 = parsed.ext_block(0).unwrap().unwrap();
+        assert_eq!(level1.level(), 1);
+        assert_eq!(level1.level1_min_pq(), Some(10));
+        assert_eq!(level1.level1_max_pq(), Some(2048));
+        assert_eq!(level1.level1_avg_pq(), Some(512));
+        assert_eq!(level1.level6_max_luminance(), None);
+
+        let level6 = parsed.find_level(6).unwrap().unwrap();
+        assert_eq!(level6.level(), 6);
+        assert_eq!(level6.level6_max_luminance(), Some(1000));
+        assert_eq!(level6.level6_min_luminance(), Some(1));
+        assert_eq!(level6.level6_max_content_light_level(), Some(800));
+        assert_eq!(level6.level6_max_frame_average_light_level(), Some(400));
+        assert!(parsed.find_level(8).is_none());
+        assert!(parsed.ext_block(2).is_none());
+        assert_eq!(parsed.ext_blocks().count(), 2);
+
+        let side_data = FrameSideData::new_dolby_vision_metadata(payload.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::DolbyVisionMetadata);
+        assert_eq!(side_data.data(), payload.as_slice());
+        assert_eq!(
+            side_data
+                .dolby_vision_metadata()
+                .unwrap()
+                .unwrap()
+                .num_ext_blocks(),
+            2
+        );
+
+        let display_matrix =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, payload).unwrap();
+        assert_eq!(display_matrix.dolby_vision_rpu_buffer(), None);
+        assert_eq!(display_matrix.dolby_vision_metadata().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_dolby_vision_metadata_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; FrameDolbyVisionMetadata::DATA_LEN - 1],
+            {
+                let mut data = minimal_dolby_vision_metadata();
+                data.push(0);
+                data
+            },
+        ] {
+            assert_eq!(
+                FrameDolbyVisionMetadata::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::DolbyVisionMetadata, data).unwrap();
+            assert_eq!(
+                side_data.dolby_vision_metadata().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for (offset, value) in [
+            (
+                FrameDolbyVisionMetadata::HEADER_OFFSET_OFFSET,
+                FrameDolbyVisionMetadata::HEADER_OFFSET + 4,
+            ),
+            (
+                FrameDolbyVisionMetadata::MAPPING_OFFSET_OFFSET,
+                FrameDolbyVisionMetadata::MAPPING_OFFSET + 4,
+            ),
+            (
+                FrameDolbyVisionMetadata::COLOR_OFFSET_OFFSET,
+                FrameDolbyVisionMetadata::COLOR_OFFSET + 4,
+            ),
+            (
+                FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET_OFFSET,
+                FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET + 4,
+            ),
+            (
+                FrameDolbyVisionMetadata::EXT_BLOCK_SIZE_OFFSET,
+                FrameDolbyVisionMetadata::EXT_BLOCK_SIZE + 4,
+            ),
+        ] {
+            let mut bad = minimal_dolby_vision_metadata();
+            write_ne_usize(&mut bad, offset, value);
+            assert_eq!(
+                FrameSideData::new_dolby_vision_metadata(bad)
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for count in [-1, FrameDolbyVisionMetadata::MAX_EXT_BLOCKS as i32 + 1] {
+            let mut bad = minimal_dolby_vision_metadata();
+            write_ne_i32(
+                &mut bad,
+                FrameDolbyVisionMetadata::NUM_EXT_BLOCKS_OFFSET,
+                count,
+            );
+            assert_eq!(
+                FrameDolbyVisionMetadata::parse(&bad).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let mut bad_level = minimal_dolby_vision_metadata();
+        bad_level
+            [FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET + FrameDolbyVisionDmData::LEVEL_OFFSET] = 0;
+        assert_eq!(
+            FrameDolbyVisionMetadata::parse(&bad_level)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_color = minimal_dolby_vision_metadata();
+        bad_color[FrameDolbyVisionMetadata::COLOR_OFFSET
+            + FrameDolbyVisionColorMetadata::SIGNAL_FULL_RANGE_FLAG_OFFSET] = 4;
+        assert_eq!(
+            FrameSideData::new_with_kind(FrameSideDataKind::DolbyVisionMetadata, bad_color)
+                .unwrap()
+                .dolby_vision_metadata()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let non_dovi =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
+        assert_eq!(non_dovi.dolby_vision_rpu_buffer(), None);
+        assert_eq!(non_dovi.dolby_vision_metadata().unwrap(), None);
     }
 
     #[test]

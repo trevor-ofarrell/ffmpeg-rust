@@ -5,17 +5,19 @@ use avutil::{
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
     FrameActiveFormatDescription, FrameAudioServiceType, FrameContentLightMetadata, FrameData,
-    FrameDetectionBbox, FrameDetectionBboxes, FrameDisplayMatrix, FrameDownmixInfo,
-    FrameDownmixType, FrameDynamicHdrPlus, FrameFilmGrainAomParams, FrameFilmGrainH274Params,
-    FrameFilmGrainParams, FrameFilmGrainParamsType, FrameGopTimecode,
-    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameIccProfile,
-    FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
-    FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode,
-    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
-    FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection,
-    FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType, Md5, Packet, PacketFlags,
-    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384,
-    Sha512, SideData, VideoFrame,
+    FrameDetectionBbox, FrameDetectionBboxes, FrameDisplayMatrix, FrameDolbyVisionColorMetadata,
+    FrameDolbyVisionDataMapping, FrameDolbyVisionDmData, FrameDolbyVisionMetadata,
+    FrameDolbyVisionRpuBuffer, FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType,
+    FrameDynamicHdrPlus, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
+    FrameHdrPlusOverlapProcessOption, FrameIccProfile, FrameMasteringDisplayMetadata,
+    FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors, FrameRegionOfInterest,
+    FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered,
+    FrameSideData, FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples,
+    FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection, FrameVideoBlockParams,
+    FrameVideoEncParams, FrameVideoEncParamsType, Md5, Packet, PacketFlags, PixelFormat, Rational,
+    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
+    VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1562,6 +1564,46 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(frame_side_data_kind, FrameSideDataKind::DetectionBboxes);
             assert!(detection_bboxes_payload_invalid(&frame_side_data_payload));
+        }
+    }
+    match frame.side_data()[0].dolby_vision_rpu_buffer() {
+        Some(value) => {
+            assert_eq!(
+                frame_side_data_kind,
+                FrameSideDataKind::DolbyVisionRpuBuffer
+            );
+            assert_eq!(value.data(), frame_side_data_payload.as_slice());
+            assert_eq!(value.is_empty(), frame_side_data_payload.is_empty());
+        }
+        None => assert_ne!(
+            frame_side_data_kind,
+            FrameSideDataKind::DolbyVisionRpuBuffer
+        ),
+    }
+    match frame.side_data()[0].dolby_vision_metadata() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DolbyVisionMetadata);
+            assert_eq!(value.data(), frame_side_data_payload.as_slice());
+            assert!(!dolby_vision_metadata_payload_invalid(
+                &frame_side_data_payload
+            ));
+            assert!(value.num_ext_blocks() <= FrameDolbyVisionMetadata::MAX_EXT_BLOCKS);
+            assert_eq!(
+                frame_side_data_payload.len(),
+                FrameDolbyVisionMetadata::DATA_LEN
+            );
+            assert!(value.header().is_ok());
+            assert!(value.mapping().is_ok());
+            assert!(value.color().is_ok());
+            assert_eq!(value.ext_blocks().count(), value.num_ext_blocks());
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::DolbyVisionMetadata),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DolbyVisionMetadata);
+            assert!(dolby_vision_metadata_payload_invalid(
+                &frame_side_data_payload
+            ));
         }
     }
     match frame.side_data()[0].sei_unregistered() {
@@ -3145,6 +3187,87 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_detection.detection_bboxes().unwrap(), None);
 
+    let rpu_bytes = vec![0x7C, 0x01, 0x19, 0xAB];
+    let rpu_side_data = FrameSideData::new_dolby_vision_rpu_buffer(rpu_bytes.clone()).unwrap();
+    let parsed_rpu = rpu_side_data.dolby_vision_rpu_buffer().unwrap();
+    assert_eq!(
+        rpu_side_data.kind_id(),
+        &FrameSideDataKind::DolbyVisionRpuBuffer
+    );
+    assert_eq!(
+        FrameDolbyVisionRpuBuffer::parse(&rpu_bytes).data(),
+        rpu_bytes.as_slice()
+    );
+    assert_eq!(parsed_rpu.data(), rpu_bytes.as_slice());
+    assert!(!parsed_rpu.is_empty());
+
+    let dovi_metadata = minimal_dolby_vision_metadata_fixture();
+    let dovi_side_data = FrameSideData::new_dolby_vision_metadata(dovi_metadata.clone()).unwrap();
+    let parsed_dovi = dovi_side_data.dolby_vision_metadata().unwrap().unwrap();
+    assert_eq!(
+        dovi_side_data.kind_id(),
+        &FrameSideDataKind::DolbyVisionMetadata
+    );
+    assert_eq!(parsed_dovi.data(), dovi_metadata.as_slice());
+    assert_eq!(parsed_dovi.num_ext_blocks(), 2);
+    let dovi_header = parsed_dovi.header().unwrap();
+    assert_eq!(
+        dovi_header.data().len(),
+        FrameDolbyVisionRpuDataHeader::DATA_LEN
+    );
+    assert_eq!(dovi_header.rpu_type(), 2);
+    assert_eq!(dovi_header.rpu_format(), 18);
+    assert_eq!(dovi_header.vdr_rpu_profile(), 8);
+    assert_eq!(dovi_header.bl_bit_depth(), 10);
+    let dovi_mapping = parsed_dovi.mapping().unwrap();
+    assert_eq!(
+        dovi_mapping.data().len(),
+        FrameDolbyVisionDataMapping::DATA_LEN
+    );
+    assert_eq!(dovi_mapping.vdr_rpu_id(), 3);
+    assert_eq!(dovi_mapping.num_x_partitions(), 1);
+    let dovi_color = parsed_dovi.color().unwrap();
+    assert_eq!(
+        dovi_color.data().len(),
+        FrameDolbyVisionColorMetadata::DATA_LEN
+    );
+    assert_eq!(dovi_color.dm_metadata_id(), 9);
+    assert_eq!(
+        dovi_color.ycc_to_rgb_matrix(0),
+        Some(Rational::from_raw(1, 2))
+    );
+    assert_eq!(dovi_color.signal_eotf(), 2084);
+    assert_eq!(dovi_color.signal_full_range_flag(), 3);
+    let dovi_level1 = parsed_dovi.ext_block(0).unwrap().unwrap();
+    assert_eq!(dovi_level1.data().len(), FrameDolbyVisionDmData::DATA_LEN);
+    assert_eq!(dovi_level1.level(), 1);
+    assert_eq!(dovi_level1.level1_avg_pq(), Some(512));
+    let dovi_level6 = parsed_dovi.find_level(6).unwrap().unwrap();
+    assert_eq!(dovi_level6.level6_max_content_light_level(), Some(800));
+    assert_eq!(
+        FrameDolbyVisionMetadata::parse(&[0; FrameDolbyVisionMetadata::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_dovi = dovi_metadata.clone();
+    write_ne_i32(
+        &mut bad_dovi,
+        dovi_num_ext_blocks_field_offset(),
+        FrameDolbyVisionMetadata::MAX_EXT_BLOCKS as i32 + 1,
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::DolbyVisionMetadata, bad_dovi)
+            .unwrap()
+            .dolby_vision_metadata()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_dovi = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_dovi.dolby_vision_rpu_buffer(), None);
+    assert_eq!(non_dovi.dolby_vision_metadata().unwrap(), None);
+
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
@@ -3287,7 +3410,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 27 {
+    match byte.unwrap_or_default() % 28 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::MatrixEncoding,
         2 => FrameSideDataKind::DownmixInfo,
@@ -3314,6 +3437,7 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         23 => FrameSideDataKind::AudioServiceType,
         24 => FrameSideDataKind::FilmGrainParams,
         25 => FrameSideDataKind::DetectionBboxes,
+        26 => FrameSideDataKind::DolbyVisionMetadata,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
@@ -3807,6 +3931,178 @@ fn detection_bboxes_payload_invalid(data: &[u8]) -> bool {
     false
 }
 
+fn minimal_dolby_vision_metadata_fixture() -> Vec<u8> {
+    let mut data = vec![0; FrameDolbyVisionMetadata::DATA_LEN];
+    write_ne_usize(
+        &mut data,
+        dovi_header_offset_field_offset(),
+        FrameDolbyVisionMetadata::HEADER_OFFSET,
+    );
+    write_ne_usize(
+        &mut data,
+        dovi_mapping_offset_field_offset(),
+        FrameDolbyVisionMetadata::MAPPING_OFFSET,
+    );
+    write_ne_usize(
+        &mut data,
+        dovi_color_offset_field_offset(),
+        FrameDolbyVisionMetadata::COLOR_OFFSET,
+    );
+    write_ne_usize(
+        &mut data,
+        dovi_ext_block_offset_field_offset(),
+        FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET,
+    );
+    write_ne_usize(
+        &mut data,
+        dovi_ext_block_size_field_offset(),
+        FrameDolbyVisionMetadata::EXT_BLOCK_SIZE,
+    );
+    write_ne_i32(&mut data, dovi_num_ext_blocks_field_offset(), 2);
+
+    let header = FrameDolbyVisionMetadata::HEADER_OFFSET;
+    data[header] = 2;
+    write_ne_u16(&mut data, header + 2, 18);
+    data[header + 4] = 8;
+    data[header + 5] = 6;
+    data[header + 7] = 1;
+    data[header + 8] = 28;
+    data[header + 11] = 10;
+    data[header + 12] = 10;
+    data[header + 13] = 12;
+    data[header + 16] = 1;
+    data[header + 17] = 4;
+
+    let mapping = FrameDolbyVisionMetadata::MAPPING_OFFSET;
+    data[mapping] = 3;
+    data[mapping + 1] = 1;
+    data[mapping + 2] = 2;
+    write_ne_i32(&mut data, mapping + dovi_mapping_nlq_method_offset(), 0);
+    write_ne_u32(
+        &mut data,
+        mapping + dovi_mapping_num_x_partitions_offset(),
+        1,
+    );
+    write_ne_u32(
+        &mut data,
+        mapping + dovi_mapping_num_y_partitions_offset(),
+        1,
+    );
+
+    let color = FrameDolbyVisionMetadata::COLOR_OFFSET;
+    data[color] = 9;
+    data[color + 1] = 1;
+    write_ne_rational(&mut data, color + 4, Rational::from_raw(1, 2));
+    write_ne_u16(&mut data, color + dovi_color_signal_eotf_offset(), 2084);
+    data[color + dovi_color_signal_full_range_offset()] = 3;
+
+    let level1 = FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET;
+    data[level1] = 1;
+    write_ne_u16(&mut data, level1 + 4, 10);
+    write_ne_u16(&mut data, level1 + 6, 2048);
+    write_ne_u16(&mut data, level1 + 8, 512);
+
+    let level6 = level1 + FrameDolbyVisionMetadata::EXT_BLOCK_SIZE;
+    data[level6] = 6;
+    write_ne_u16(&mut data, level6 + 4, 1000);
+    write_ne_u16(&mut data, level6 + 6, 1);
+    write_ne_u16(&mut data, level6 + 8, 800);
+    write_ne_u16(&mut data, level6 + 10, 400);
+
+    data
+}
+
+fn dolby_vision_metadata_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != FrameDolbyVisionMetadata::DATA_LEN {
+        return true;
+    }
+    if read_ne_usize(data, dovi_header_offset_field_offset())
+        != FrameDolbyVisionMetadata::HEADER_OFFSET
+    {
+        return true;
+    }
+    if read_ne_usize(data, dovi_mapping_offset_field_offset())
+        != FrameDolbyVisionMetadata::MAPPING_OFFSET
+    {
+        return true;
+    }
+    if read_ne_usize(data, dovi_color_offset_field_offset())
+        != FrameDolbyVisionMetadata::COLOR_OFFSET
+    {
+        return true;
+    }
+    if read_ne_usize(data, dovi_ext_block_offset_field_offset())
+        != FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET
+    {
+        return true;
+    }
+    if read_ne_usize(data, dovi_ext_block_size_field_offset())
+        != FrameDolbyVisionMetadata::EXT_BLOCK_SIZE
+    {
+        return true;
+    }
+    let count = read_ne_i32(data, dovi_num_ext_blocks_field_offset());
+    if !(0..=FrameDolbyVisionMetadata::MAX_EXT_BLOCKS as i32).contains(&count) {
+        return true;
+    }
+    for index in 0..count as usize {
+        let offset = FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET
+            + index * FrameDolbyVisionMetadata::EXT_BLOCK_SIZE;
+        if data[offset] == 0 {
+            return true;
+        }
+    }
+    if data[FrameDolbyVisionMetadata::COLOR_OFFSET + dovi_color_signal_full_range_offset()] > 3 {
+        return true;
+    }
+
+    false
+}
+
+fn dovi_header_offset_field_offset() -> usize {
+    0
+}
+
+fn dovi_mapping_offset_field_offset() -> usize {
+    core::mem::size_of::<usize>()
+}
+
+fn dovi_color_offset_field_offset() -> usize {
+    2 * core::mem::size_of::<usize>()
+}
+
+fn dovi_ext_block_offset_field_offset() -> usize {
+    3 * core::mem::size_of::<usize>()
+}
+
+fn dovi_ext_block_size_field_offset() -> usize {
+    4 * core::mem::size_of::<usize>()
+}
+
+fn dovi_num_ext_blocks_field_offset() -> usize {
+    5 * core::mem::size_of::<usize>()
+}
+
+fn dovi_mapping_nlq_method_offset() -> usize {
+    5_024
+}
+
+fn dovi_mapping_num_x_partitions_offset() -> usize {
+    dovi_mapping_nlq_method_offset() + 4
+}
+
+fn dovi_mapping_num_y_partitions_offset() -> usize {
+    dovi_mapping_num_x_partitions_offset() + 4
+}
+
+fn dovi_color_signal_eotf_offset() -> usize {
+    172
+}
+
+fn dovi_color_signal_full_range_offset() -> usize {
+    187
+}
+
 fn detection_bboxes_nb_bboxes_field_offset() -> usize {
     FrameDetectionBboxes::SOURCE_LEN
 }
@@ -3942,6 +4238,10 @@ fn read_ne_i32(data: &[u8], offset: usize) -> i32 {
 
 fn write_ne_u32(data: &mut [u8], offset: usize, value: u32) {
     data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn write_ne_u16(data: &mut [u8], offset: usize, value: u16) {
+    data[offset..offset + 2].copy_from_slice(&value.to_ne_bytes());
 }
 
 fn write_ne_u64(data: &mut [u8], offset: usize, value: u64) {
