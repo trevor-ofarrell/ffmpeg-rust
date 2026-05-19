@@ -5460,6 +5460,36 @@ fn exercise_fixtures() {
     assert_eq!(sensitivity_tags.iso_speed(), Some(200));
     assert_eq!(sensitivity_tags.iso_speed_latitude_yyy(), Some(125));
     assert_eq!(sensitivity_tags.iso_speed_latitude_zzz(), Some(400));
+    let mut bad_photographic_count = exif_sensitivity_fixture();
+    bad_photographic_count[32..36].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_photographic_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_sensitivity_type_value = exif_sensitivity_fixture();
+    bad_sensitivity_type_value[48..50].copy_from_slice(&8u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_sensitivity_type_value)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_standard_output_type = exif_sensitivity_fixture();
+    bad_standard_output_type[54..56].copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_standard_output_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let characterization_exif_bytes = exif_camera_characterization_fixture();
     let characterization_exif = FrameExif::parse(&characterization_exif_bytes).unwrap();
