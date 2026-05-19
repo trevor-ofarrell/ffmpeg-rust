@@ -4326,8 +4326,35 @@ fn exercise_fixtures() {
     assert_eq!(parsed_icc.color_space(), *b"RGB ");
     assert_eq!(parsed_icc.profile_connection_space(), *b"XYZ ");
     assert_eq!(parsed_icc.tag_count(), 0);
+    let mut icc_with_tag = minimal_icc_profile_fixture();
+    icc_with_tag.resize(
+        FrameIccProfile::MIN_DATA_LEN + FrameIccProfile::TAG_RECORD_LEN,
+        0,
+    );
+    let icc_with_tag_len = icc_with_tag.len() as u32;
+    icc_with_tag[0..4].copy_from_slice(&icc_with_tag_len.to_be_bytes());
+    icc_with_tag[FrameIccProfile::TAG_COUNT_OFFSET..FrameIccProfile::TAG_COUNT_OFFSET + 4]
+        .copy_from_slice(&1u32.to_be_bytes());
+    icc_with_tag[132..136].copy_from_slice(b"desc");
+    icc_with_tag[136..140].copy_from_slice(&(FrameIccProfile::MIN_DATA_LEN as u32).to_be_bytes());
+    icc_with_tag[140..144].copy_from_slice(&0u32.to_be_bytes());
+    let icc_with_tag_side_data =
+        FrameSideData::new_icc_profile(icc_with_tag.clone(), None).unwrap();
+    let parsed_icc_with_tag = icc_with_tag_side_data.icc_profile().unwrap().unwrap();
+    assert_eq!(parsed_icc_with_tag.data(), icc_with_tag.as_slice());
+    assert_eq!(parsed_icc_with_tag.name(), None);
+    assert_eq!(parsed_icc_with_tag.declared_size(), icc_with_tag_len);
+    assert_eq!(parsed_icc_with_tag.tag_count(), 1);
     assert_eq!(
         FrameSideData::new_icc_profile(Vec::new(), None)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_icc_size = icc_profile.clone();
+    bad_icc_size[0..4].copy_from_slice(&999u32.to_be_bytes());
+    assert_eq!(
+        FrameSideData::new_icc_profile(bad_icc_size, None)
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData
@@ -4341,6 +4368,24 @@ fn exercise_fixtures() {
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData
+    );
+    let mut truncated_icc_tag_table = icc_profile.clone();
+    truncated_icc_tag_table
+        [FrameIccProfile::TAG_COUNT_OFFSET..FrameIccProfile::TAG_COUNT_OFFSET + 4]
+        .copy_from_slice(&1u32.to_be_bytes());
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::IccProfile, truncated_icc_tag_table)
+            .unwrap()
+            .icc_profile()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_icc_profile(icc_profile.clone(), Some("bad\0name"))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
     );
     let non_icc =
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, icc_profile).unwrap();
