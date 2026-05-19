@@ -1913,6 +1913,18 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.image_length() {
                         assert_ne!(value, 0);
                     }
+                    if let Some(value) = common.samples_per_pixel() {
+                        assert_ne!(value, 0);
+                    }
+                    if let Some(value) = common.planar_configuration() {
+                        assert!((1..=2).contains(&value.raw()));
+                    }
+                    if let Some(values) = common.ycbcr_sub_sampling() {
+                        assert!(values.iter().all(|value| *value != 0));
+                    }
+                    if let Some(value) = common.ycbcr_positioning() {
+                        assert!((1..=2).contains(&value.raw()));
+                    }
                     if let Some(value) = common.pixel_x_dimension() {
                         assert_ne!(value, 0);
                     }

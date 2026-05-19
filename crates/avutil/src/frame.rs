@@ -5714,6 +5714,56 @@ impl FrameExifResolutionUnit {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifPlanarConfiguration {
+    Chunky,
+    Planar,
+}
+
+impl FrameExifPlanarConfiguration {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            1 => Ok(Self::Chunky),
+            2 => Ok(Self::Planar),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF planar configuration value {raw} is outside the defined 1..=2 range"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Chunky => 1,
+            Self::Planar => 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifYcbCrPositioning {
+    Centered,
+    CoSited,
+}
+
+impl FrameExifYcbCrPositioning {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            1 => Ok(Self::Centered),
+            2 => Ok(Self::CoSited),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF YCbCr positioning value {raw} is outside the defined 1..=2 range"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Centered => 1,
+            Self::CoSited => 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifExposureProgram {
     NotDefined,
     Manual,
@@ -6546,6 +6596,10 @@ pub struct FrameExifCommonTags<'a> {
     model: Option<&'a str>,
     image_width: Option<u32>,
     image_length: Option<u32>,
+    samples_per_pixel: Option<u16>,
+    planar_configuration: Option<FrameExifPlanarConfiguration>,
+    ycbcr_sub_sampling: Option<[u16; 2]>,
+    ycbcr_positioning: Option<FrameExifYcbCrPositioning>,
     orientation: Option<FrameExifOrientation>,
     x_resolution: Option<FrameExifRational>,
     y_resolution: Option<FrameExifRational>,
@@ -6692,6 +6746,22 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn image_length(&self) -> Option<u32> {
         self.image_length
+    }
+
+    pub const fn samples_per_pixel(&self) -> Option<u16> {
+        self.samples_per_pixel
+    }
+
+    pub const fn planar_configuration(&self) -> Option<FrameExifPlanarConfiguration> {
+        self.planar_configuration
+    }
+
+    pub const fn ycbcr_sub_sampling(&self) -> Option<[u16; 2]> {
+        self.ycbcr_sub_sampling
+    }
+
+    pub const fn ycbcr_positioning(&self) -> Option<FrameExifYcbCrPositioning> {
+        self.ycbcr_positioning
     }
 
     pub const fn orientation(&self) -> Option<FrameExifOrientation> {
@@ -7536,12 +7606,16 @@ impl<'a> FrameExif<'a> {
     pub const TAG_MAKE: u16 = 0x010F;
     pub const TAG_MODEL: u16 = 0x0110;
     pub const TAG_ORIENTATION: u16 = 0x0112;
+    pub const TAG_SAMPLES_PER_PIXEL: u16 = 0x0115;
     pub const TAG_X_RESOLUTION: u16 = 0x011A;
     pub const TAG_Y_RESOLUTION: u16 = 0x011B;
+    pub const TAG_PLANAR_CONFIGURATION: u16 = 0x011C;
     pub const TAG_RESOLUTION_UNIT: u16 = 0x0128;
     pub const TAG_SOFTWARE: u16 = 0x0131;
     pub const TAG_DATE_TIME: u16 = 0x0132;
     pub const TAG_ARTIST: u16 = 0x013B;
+    pub const TAG_YCBCR_SUB_SAMPLING: u16 = 0x0212;
+    pub const TAG_YCBCR_POSITIONING: u16 = 0x0213;
     pub const TAG_COPYRIGHT: u16 = 0x8298;
     pub const TAG_EXPOSURE_PROGRAM: u16 = 0x8822;
     pub const TAG_SPECTRAL_SENSITIVITY: u16 = 0x8824;
@@ -7747,6 +7821,14 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_IMAGE_LENGTH,
                 "ImageLength",
             )?;
+            tags.samples_per_pixel = Self::optional_positive_short_tag(
+                root,
+                Self::TAG_SAMPLES_PER_PIXEL,
+                "SamplesPerPixel",
+            )?;
+            tags.planar_configuration = Self::optional_planar_configuration_tag(root)?;
+            tags.ycbcr_sub_sampling = Self::optional_ycbcr_sub_sampling_tag(root)?;
+            tags.ycbcr_positioning = Self::optional_ycbcr_positioning_tag(root)?;
             tags.orientation = Self::optional_orientation_tag(root)?;
             tags.x_resolution =
                 Self::optional_rational_tag(root, Self::TAG_X_RESOLUTION, "XResolution")?;
@@ -8442,6 +8524,62 @@ impl<'a> FrameExif<'a> {
             ));
         }
         Ok(Some(value))
+    }
+
+    fn optional_positive_short_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<u16>> {
+        let Some(value) = Self::optional_short_tag(ifd, tag, label)? else {
+            return Ok(None);
+        };
+        if value == 0 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "must be greater than zero",
+            ));
+        }
+        Ok(Some(value))
+    }
+
+    fn optional_planar_configuration_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifPlanarConfiguration>> {
+        let Some(raw) =
+            Self::optional_short_tag(ifd, Self::TAG_PLANAR_CONFIGURATION, "PlanarConfiguration")?
+        else {
+            return Ok(None);
+        };
+        FrameExifPlanarConfiguration::from_raw(raw).map(Some)
+    }
+
+    fn optional_ycbcr_sub_sampling_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<[u16; 2]>> {
+        let Some(values) =
+            Self::optional_short_array_tag(ifd, Self::TAG_YCBCR_SUB_SAMPLING, "YCbCrSubSampling")?
+        else {
+            return Ok(None);
+        };
+        if values[0] == 0 || values[1] == 0 {
+            return Err(Self::semantic_tag_error(
+                "YCbCrSubSampling",
+                Self::TAG_YCBCR_SUB_SAMPLING,
+                "horizontal and vertical sampling factors must be non-zero",
+            ));
+        }
+        Ok(Some(values))
+    }
+
+    fn optional_ycbcr_positioning_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifYcbCrPositioning>> {
+        let Some(raw) =
+            Self::optional_short_tag(ifd, Self::TAG_YCBCR_POSITIONING, "YCbCrPositioning")?
+        else {
+            return Ok(None);
+        };
+        FrameExifYcbCrPositioning::from_raw(raw).map(Some)
     }
 
     fn optional_orientation_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifOrientation>> {
@@ -12934,6 +13072,46 @@ mod tests {
         }
 
         assert_eq!(data.len(), 338);
+        data
+    }
+
+    fn exif_root_image_layout_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&4u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SAMPLES_PER_PIXEL,
+            FrameExifTiffType::Short,
+            1,
+            [3, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_PLANAR_CONFIGURATION,
+            FrameExifTiffType::Short,
+            1,
+            [1, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_YCBCR_SUB_SAMPLING,
+            FrameExifTiffType::Short,
+            2,
+            [2, 0, 2, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_YCBCR_POSITIONING,
+            FrameExifTiffType::Short,
+            1,
+            [1, 0, 0, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        assert_eq!(data.len(), 62);
         data
     }
 
@@ -20431,6 +20609,137 @@ mod tests {
         bad_h_positioning_error_denominator[108..112].copy_from_slice(&0u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_h_positioning_error_denominator)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_image_layout_tags() {
+        let exif_bytes = exif_root_image_layout_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.samples_per_pixel(), Some(3));
+        assert_eq!(
+            common.planar_configuration(),
+            Some(FrameExifPlanarConfiguration::Chunky)
+        );
+        assert_eq!(common.planar_configuration().unwrap().raw(), 1);
+        assert_eq!(common.ycbcr_sub_sampling(), Some([2, 2]));
+        assert_eq!(
+            common.ycbcr_positioning(),
+            Some(FrameExifYcbCrPositioning::Centered)
+        );
+        assert_eq!(common.ycbcr_positioning().unwrap().raw(), 1);
+
+        let mut bad_samples_type = exif_root_image_layout_fixture();
+        bad_samples_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_samples_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_samples_count = exif_root_image_layout_fixture();
+        bad_samples_count[14..18].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_samples_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_samples_zero = exif_root_image_layout_fixture();
+        bad_samples_zero[18..20].copy_from_slice(&0u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_samples_zero)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_planar_count = exif_root_image_layout_fixture();
+        bad_planar_count[26..30].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_planar_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_planar_value = exif_root_image_layout_fixture();
+        bad_planar_value[30..32].copy_from_slice(&3u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_planar_value)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_subsampling_type = exif_root_image_layout_fixture();
+        bad_subsampling_type[36..38].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_subsampling_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_subsampling_count = exif_root_image_layout_fixture();
+        bad_subsampling_count[38..42].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_subsampling_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_subsampling_zero = exif_root_image_layout_fixture();
+        bad_subsampling_zero[42..44].copy_from_slice(&0u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_subsampling_zero)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_ycbcr_positioning_type = exif_root_image_layout_fixture();
+        bad_ycbcr_positioning_type[48..50]
+            .copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_ycbcr_positioning_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_ycbcr_positioning_value = exif_root_image_layout_fixture();
+        bad_ycbcr_positioning_value[54..56].copy_from_slice(&3u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_ycbcr_positioning_value)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
