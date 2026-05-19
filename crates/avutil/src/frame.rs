@@ -419,6 +419,114 @@ impl FrameSideDataDescriptor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FramePanScan {
+    id: i32,
+    width: i32,
+    height: i32,
+    position: [[i16; Self::COORDINATES]; Self::POSITIONS],
+}
+
+impl FramePanScan {
+    pub const POSITIONS: usize = 3;
+    pub const COORDINATES: usize = 2;
+    pub const DATA_LEN: usize = 12 + Self::POSITIONS * Self::COORDINATES * 2;
+
+    pub const fn new(
+        id: i32,
+        width: i32,
+        height: i32,
+        position: [[i16; Self::COORDINATES]; Self::POSITIONS],
+    ) -> Self {
+        Self {
+            id,
+            width,
+            height,
+            position,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "pan-scan frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let id = Self::read_i32(data, 0);
+        let width = Self::read_i32(data, 4);
+        let height = Self::read_i32(data, 8);
+        let mut position = [[0; Self::COORDINATES]; Self::POSITIONS];
+        let mut offset = 12;
+        for field in &mut position {
+            for coordinate in field {
+                *coordinate = Self::read_i16(data, offset);
+                offset += 2;
+            }
+        }
+
+        Ok(Self {
+            id,
+            width,
+            height,
+            position,
+        })
+    }
+
+    pub const fn id(self) -> i32 {
+        self.id
+    }
+
+    pub const fn width(self) -> i32 {
+        self.width
+    }
+
+    pub const fn height(self) -> i32 {
+        self.height
+    }
+
+    pub const fn position(self) -> [[i16; Self::COORDINATES]; Self::POSITIONS] {
+        self.position
+    }
+
+    pub const fn field_position(self, index: usize) -> Option<[i16; Self::COORDINATES]> {
+        if index < Self::POSITIONS {
+            Some(self.position[index])
+        } else {
+            None
+        }
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[0..4].copy_from_slice(&self.id.to_ne_bytes());
+        bytes[4..8].copy_from_slice(&self.width.to_ne_bytes());
+        bytes[8..12].copy_from_slice(&self.height.to_ne_bytes());
+        let mut offset = 12;
+        for field in &self.position {
+            for coordinate in field {
+                bytes[offset..offset + 2].copy_from_slice(&coordinate.to_ne_bytes());
+                offset += 2;
+            }
+        }
+        bytes
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+
+    fn read_i16(data: &[u8], offset: usize) -> i16 {
+        let mut raw = [0; 2];
+        raw.copy_from_slice(&data[offset..offset + 2]);
+        i16::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameDisplayMatrix {
     elements: [i32; Self::ELEMENTS],
 }
@@ -5148,6 +5256,10 @@ impl FrameSideData {
         Self::new_with_buffer_ref(kind, BufferRef::from_vec(data))
     }
 
+    pub fn new_pan_scan(value: FramePanScan) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::PanScan, value.to_bytes().to_vec())
+    }
+
     pub fn new_active_format_description(value: FrameActiveFormatDescription) -> AvResult<Self> {
         Self::new_with_kind(
             FrameSideDataKind::ActiveFormatDescription,
@@ -5319,6 +5431,14 @@ impl FrameSideData {
 
     pub fn supports_multiple_instances(&self) -> bool {
         self.kind.supports_multiple_instances()
+    }
+
+    pub fn pan_scan(&self) -> AvResult<Option<FramePanScan>> {
+        if self.kind != FrameSideDataKind::PanScan {
+            return Ok(None);
+        }
+
+        FramePanScan::parse(self.data()).map(Some)
     }
 
     pub fn display_matrix(&self) -> AvResult<Option<FrameDisplayMatrix>> {
@@ -8632,6 +8752,60 @@ mod tests {
             .union(Props::COLOR_DEPENDENT)
             .intersects(Props::COLOR_DEPENDENT));
         assert!(!Props::GLOBAL.intersects(Props::SIZE_DEPENDENT));
+    }
+
+    #[test]
+    fn frame_side_data_parses_pan_scan_payload() {
+        let expected = FramePanScan::new(
+            7,
+            1920 * 16,
+            1080 * 16,
+            [[0, 0], [16, -32], [i16::MIN, i16::MAX]],
+        );
+
+        assert_eq!(FramePanScan::DATA_LEN, 24);
+        assert_eq!(expected.id(), 7);
+        assert_eq!(expected.width(), 1920 * 16);
+        assert_eq!(expected.height(), 1080 * 16);
+        assert_eq!(expected.position()[1], [16, -32]);
+        assert_eq!(expected.field_position(2), Some([i16::MIN, i16::MAX]));
+        assert_eq!(expected.field_position(3), None);
+        assert_eq!(FramePanScan::parse(&expected.to_bytes()).unwrap(), expected);
+
+        let side_data = FrameSideData::new_pan_scan(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::PanScan);
+        assert_eq!(side_data.data(), &expected.to_bytes()[..]);
+        assert_eq!(side_data.pan_scan().unwrap(), Some(expected));
+
+        let display_matrix = FrameSideData::new_with_kind(
+            FrameSideDataKind::DisplayMatrix,
+            expected.to_bytes().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(display_matrix.pan_scan().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_pan_scan_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; FramePanScan::DATA_LEN - 1],
+            vec![0; FramePanScan::DATA_LEN + 1],
+        ] {
+            assert_eq!(
+                FramePanScan::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data = FrameSideData::new_with_kind(FrameSideDataKind::PanScan, data).unwrap();
+            assert_eq!(
+                side_data.pan_scan().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_pan_scan =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 24]).unwrap();
+        assert_eq!(non_pan_scan.pan_scan().unwrap(), None);
     }
 
     #[test]

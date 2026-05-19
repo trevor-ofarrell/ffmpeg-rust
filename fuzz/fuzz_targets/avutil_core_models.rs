@@ -13,12 +13,12 @@ use avutil::{
     FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
     FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
-    FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode,
-    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
-    FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection,
-    FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType, Md5, Packet, PacketFlags,
-    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384,
-    Sha512, SideData, VideoFrame,
+    FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain,
+    FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
+    FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
+    FrameSphericalProjection, FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType,
+    Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat,
+    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -983,6 +983,24 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         frame.side_data()[0].supports_multiple_instances(),
         frame_side_data_kind.supports_multiple_instances()
     );
+    match frame.side_data()[0].pan_scan() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::PanScan);
+            assert_eq!(frame_side_data_payload.len(), FramePanScan::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), frame_side_data_payload);
+            assert_eq!(value.position().len(), FramePanScan::POSITIONS);
+            for index in 0..FramePanScan::POSITIONS {
+                assert!(value.field_position(index).is_some());
+            }
+            assert!(value.field_position(FramePanScan::POSITIONS).is_none());
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::PanScan),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::PanScan);
+            assert!(pan_scan_payload_invalid(&frame_side_data_payload));
+        }
+    }
     match frame.side_data()[0].display_matrix() {
         Ok(Some(value)) => {
             assert_eq!(frame_side_data_kind, FrameSideDataKind::DisplayMatrix);
@@ -2597,6 +2615,23 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 10]).unwrap();
     assert_eq!(non_skip.skip_samples().unwrap(), None);
 
+    let pan_scan = FramePanScan::new(7, 1920 * 16, 1080 * 16, [[0, 0], [16, -32], [-48, 64]]);
+    let pan_scan_side_data = FrameSideData::new_pan_scan(pan_scan).unwrap();
+    assert_eq!(pan_scan_side_data.kind_id(), &FrameSideDataKind::PanScan);
+    assert_eq!(pan_scan_side_data.pan_scan().unwrap(), Some(pan_scan));
+    assert_eq!(pan_scan_side_data.data(), &pan_scan.to_bytes()[..]);
+    assert_eq!(pan_scan.field_position(1), Some([16, -32]));
+    assert_eq!(pan_scan.field_position(FramePanScan::POSITIONS), None);
+    assert_eq!(
+        FramePanScan::parse(&[0; FramePanScan::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_pan_scan =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 24]).unwrap();
+    assert_eq!(non_pan_scan.pan_scan().unwrap(), None);
+
     let display_matrix =
         FrameDisplayMatrix::new([1 << 16, 0, 0, 0, 1 << 16, 0, 12 << 16, -34 << 16, 1 << 30]);
     let display_matrix_side_data = FrameSideData::new_display_matrix(display_matrix).unwrap();
@@ -3509,35 +3544,36 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 29 {
-        0 => FrameSideDataKind::DisplayMatrix,
-        1 => FrameSideDataKind::MatrixEncoding,
-        2 => FrameSideDataKind::DownmixInfo,
-        3 => FrameSideDataKind::ReplayGain,
-        4 => FrameSideDataKind::MotionVectors,
-        5 => FrameSideDataKind::MasteringDisplayMetadata,
-        6 => FrameSideDataKind::Spherical,
-        7 => FrameSideDataKind::ContentLightLevel,
-        8 => FrameSideDataKind::IccProfile,
-        9 => FrameSideDataKind::DolbyVisionRpuBuffer,
-        10 => FrameSideDataKind::Lcevc,
-        11 => FrameSideDataKind::GopTimecode,
-        12 => FrameSideDataKind::S12mTimecode,
-        13 => FrameSideDataKind::DynamicHdrPlus,
-        14 => FrameSideDataKind::RegionsOfInterest,
-        15 => FrameSideDataKind::VideoEncParams,
-        16 => FrameSideDataKind::VideoHint,
-        17 => FrameSideDataKind::ViewId,
-        18 => FrameSideDataKind::ThreeDReferenceDisplays,
-        19 => FrameSideDataKind::Exif,
-        20 => FrameSideDataKind::SeiUnregistered,
-        21 => FrameSideDataKind::ActiveFormatDescription,
-        22 => FrameSideDataKind::SkipSamples,
-        23 => FrameSideDataKind::AudioServiceType,
-        24 => FrameSideDataKind::FilmGrainParams,
-        25 => FrameSideDataKind::DetectionBboxes,
-        26 => FrameSideDataKind::DolbyVisionMetadata,
-        27 => FrameSideDataKind::DynamicHdrVivid,
+    match byte.unwrap_or_default() % 30 {
+        0 => FrameSideDataKind::PanScan,
+        1 => FrameSideDataKind::DisplayMatrix,
+        2 => FrameSideDataKind::MatrixEncoding,
+        3 => FrameSideDataKind::DownmixInfo,
+        4 => FrameSideDataKind::ReplayGain,
+        5 => FrameSideDataKind::MotionVectors,
+        6 => FrameSideDataKind::MasteringDisplayMetadata,
+        7 => FrameSideDataKind::Spherical,
+        8 => FrameSideDataKind::ContentLightLevel,
+        9 => FrameSideDataKind::IccProfile,
+        10 => FrameSideDataKind::DolbyVisionRpuBuffer,
+        11 => FrameSideDataKind::Lcevc,
+        12 => FrameSideDataKind::GopTimecode,
+        13 => FrameSideDataKind::S12mTimecode,
+        14 => FrameSideDataKind::DynamicHdrPlus,
+        15 => FrameSideDataKind::RegionsOfInterest,
+        16 => FrameSideDataKind::VideoEncParams,
+        17 => FrameSideDataKind::VideoHint,
+        18 => FrameSideDataKind::ViewId,
+        19 => FrameSideDataKind::ThreeDReferenceDisplays,
+        20 => FrameSideDataKind::Exif,
+        21 => FrameSideDataKind::SeiUnregistered,
+        22 => FrameSideDataKind::ActiveFormatDescription,
+        23 => FrameSideDataKind::SkipSamples,
+        24 => FrameSideDataKind::AudioServiceType,
+        25 => FrameSideDataKind::FilmGrainParams,
+        26 => FrameSideDataKind::DetectionBboxes,
+        27 => FrameSideDataKind::DolbyVisionMetadata,
+        28 => FrameSideDataKind::DynamicHdrVivid,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
@@ -3580,6 +3616,10 @@ fn minimal_dynamic_hdr_vivid_fixture() -> Vec<u8> {
         Rational::from_raw(1, 128),
     );
     data
+}
+
+fn pan_scan_payload_invalid(data: &[u8]) -> bool {
+    data.len() != FramePanScan::DATA_LEN
 }
 
 fn dynamic_hdr_plus_payload_invalid(data: &[u8]) -> bool {
