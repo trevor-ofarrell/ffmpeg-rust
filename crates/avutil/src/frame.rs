@@ -6494,6 +6494,9 @@ pub struct FrameExifCommonTags<'a> {
     exposure_program: Option<FrameExifExposureProgram>,
     exposure_time: Option<FrameExifRational>,
     f_number: Option<FrameExifRational>,
+    shutter_speed_value: Option<FrameExifSignedRational>,
+    aperture_value: Option<FrameExifRational>,
+    brightness_value: Option<FrameExifSignedRational>,
     exposure_bias_value: Option<FrameExifSignedRational>,
     max_aperture_value: Option<FrameExifRational>,
     subject_distance: Option<FrameExifRational>,
@@ -6659,6 +6662,18 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn f_number(&self) -> Option<FrameExifRational> {
         self.f_number
+    }
+
+    pub const fn shutter_speed_value(&self) -> Option<FrameExifSignedRational> {
+        self.shutter_speed_value
+    }
+
+    pub const fn aperture_value(&self) -> Option<FrameExifRational> {
+        self.aperture_value
+    }
+
+    pub const fn brightness_value(&self) -> Option<FrameExifSignedRational> {
+        self.brightness_value
     }
 
     pub const fn exposure_bias_value(&self) -> Option<FrameExifSignedRational> {
@@ -7338,6 +7353,9 @@ impl<'a> FrameExif<'a> {
     pub const TAG_DATE_TIME_DIGITIZED: u16 = 0x9004;
     pub const TAG_COMPONENTS_CONFIGURATION: u16 = 0x9101;
     pub const TAG_COMPRESSED_BITS_PER_PIXEL: u16 = 0x9102;
+    pub const TAG_SHUTTER_SPEED_VALUE: u16 = 0x9201;
+    pub const TAG_APERTURE_VALUE: u16 = 0x9202;
+    pub const TAG_BRIGHTNESS_VALUE: u16 = 0x9203;
     pub const TAG_EXPOSURE_BIAS_VALUE: u16 = 0x9204;
     pub const TAG_MAX_APERTURE_VALUE: u16 = 0x9205;
     pub const TAG_SUBJECT_DISTANCE: u16 = 0x9206;
@@ -7533,6 +7551,18 @@ impl<'a> FrameExif<'a> {
             tags.exposure_time =
                 Self::optional_rational_tag(ifd, Self::TAG_EXPOSURE_TIME, "ExposureTime")?;
             tags.f_number = Self::optional_rational_tag(ifd, Self::TAG_F_NUMBER, "FNumber")?;
+            tags.shutter_speed_value = Self::optional_signed_rational_tag(
+                ifd,
+                Self::TAG_SHUTTER_SPEED_VALUE,
+                "ShutterSpeedValue",
+            )?;
+            tags.aperture_value =
+                Self::optional_rational_tag(ifd, Self::TAG_APERTURE_VALUE, "ApertureValue")?;
+            tags.brightness_value = Self::optional_signed_rational_tag(
+                ifd,
+                Self::TAG_BRIGHTNESS_VALUE,
+                "BrightnessValue",
+            )?;
             tags.exposure_bias_value = Self::optional_signed_rational_tag(
                 ifd,
                 Self::TAG_EXPOSURE_BIAS_VALUE,
@@ -12462,6 +12492,58 @@ mod tests {
         data.extend_from_slice(b"2026:05:04 12:35:00\0");
 
         assert_eq!(data.len(), 168);
+        data
+    }
+
+    fn exif_apex_exposure_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&3u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SHUTTER_SPEED_VALUE,
+            FrameExifTiffType::SignedRational,
+            1,
+            68u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_APERTURE_VALUE,
+            FrameExifTiffType::Rational,
+            1,
+            76u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_BRIGHTNESS_VALUE,
+            FrameExifTiffType::SignedRational,
+            1,
+            84u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 68);
+
+        data.extend_from_slice(&(-7i32).to_le_bytes());
+        data.extend_from_slice(&1i32.to_le_bytes());
+        data.extend_from_slice(&56u32.to_le_bytes());
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(&(-3i32).to_le_bytes());
+        data.extend_from_slice(&2i32.to_le_bytes());
+
+        assert_eq!(data.len(), 92);
         data
     }
 
@@ -18736,6 +18818,68 @@ mod tests {
         bad_pixel_count[92..96].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_pixel_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_apex_exposure_tags() {
+        let exif_bytes = exif_apex_exposure_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.shutter_speed_value(),
+            Some(FrameExifSignedRational {
+                numerator: -7,
+                denominator: 1,
+            })
+        );
+        assert_eq!(
+            common.aperture_value(),
+            Some(FrameExifRational {
+                numerator: 56,
+                denominator: 10,
+            })
+        );
+        assert_eq!(
+            common.brightness_value(),
+            Some(FrameExifSignedRational {
+                numerator: -3,
+                denominator: 2,
+            })
+        );
+
+        let mut bad_shutter_count = exif_apex_exposure_fixture();
+        bad_shutter_count[32..36].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_shutter_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_aperture_type = exif_apex_exposure_fixture();
+        bad_aperture_type[42..44].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_aperture_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_brightness_denominator = exif_apex_exposure_fixture();
+        bad_brightness_denominator[88..92].copy_from_slice(&0i32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_brightness_denominator)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

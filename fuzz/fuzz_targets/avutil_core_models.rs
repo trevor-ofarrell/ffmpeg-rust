@@ -1747,6 +1747,15 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.f_number() {
                         assert_ne!(value.denominator(), 0);
                     }
+                    if let Some(value) = common.shutter_speed_value() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.aperture_value() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.brightness_value() {
+                        assert_ne!(value.denominator(), 0);
+                    }
                     if let Some(value) = common.exposure_bias_value() {
                         assert_ne!(value.denominator(), 0);
                     }
@@ -4061,6 +4070,16 @@ fn exercise_fixtures() {
         Some("2026:05:04 12:35:00")
     );
 
+    let apex_exif_bytes = exif_apex_exposure_fixture();
+    let apex_exif = FrameExif::parse(&apex_exif_bytes).unwrap();
+    let apex_tags = apex_exif.common_tags().unwrap();
+    assert_eq!(apex_tags.shutter_speed_value().unwrap().numerator(), -7);
+    assert_eq!(apex_tags.shutter_speed_value().unwrap().denominator(), 1);
+    assert_eq!(apex_tags.aperture_value().unwrap().numerator(), 56);
+    assert_eq!(apex_tags.aperture_value().unwrap().denominator(), 10);
+    assert_eq!(apex_tags.brightness_value().unwrap().numerator(), -3);
+    assert_eq!(apex_tags.brightness_value().unwrap().denominator(), 2);
+
     let capture_exif_bytes = exif_capture_settings_fixture();
     let capture_exif = FrameExif::parse(&capture_exif_bytes).unwrap();
     let capture_tags = capture_exif.common_tags().unwrap();
@@ -5794,6 +5813,53 @@ fn exif_exposure_tags_fixture() -> Vec<u8> {
     data.extend_from_slice(&50u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_le_bytes());
     data.extend_from_slice(b"2026:05:04 12:35:00\0");
+    data
+}
+
+fn exif_apex_exposure_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&3u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SHUTTER_SPEED_VALUE,
+        FrameExifTiffType::SignedRational,
+        1,
+        68u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_APERTURE_VALUE,
+        FrameExifTiffType::Rational,
+        1,
+        76u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_BRIGHTNESS_VALUE,
+        FrameExifTiffType::SignedRational,
+        1,
+        84u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&(-7i32).to_le_bytes());
+    data.extend_from_slice(&1i32.to_le_bytes());
+    data.extend_from_slice(&56u32.to_le_bytes());
+    data.extend_from_slice(&10u32.to_le_bytes());
+    data.extend_from_slice(&(-3i32).to_le_bytes());
+    data.extend_from_slice(&2i32.to_le_bytes());
     data
 }
 
