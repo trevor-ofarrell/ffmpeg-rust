@@ -7910,19 +7910,22 @@ impl<'a> FrameExif<'a> {
                 "GPSLatitudeRef",
             )?;
             tags.gps_latitude =
-                Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_LATITUDE, "GPSLatitude")?;
+                Self::optional_gps_coordinate_tag(ifd, Self::TAG_GPS_LATITUDE, "GPSLatitude", 90)?;
             tags.gps_longitude_ref = Self::optional_gps_longitude_ref_tag(
                 ifd,
                 Self::TAG_GPS_LONGITUDE_REF,
                 "GPSLongitudeRef",
             )?;
-            tags.gps_longitude =
-                Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_LONGITUDE, "GPSLongitude")?;
+            tags.gps_longitude = Self::optional_gps_coordinate_tag(
+                ifd,
+                Self::TAG_GPS_LONGITUDE,
+                "GPSLongitude",
+                180,
+            )?;
             tags.gps_altitude_ref = Self::optional_gps_altitude_ref_tag(ifd)?;
             tags.gps_altitude =
                 Self::optional_rational_tag(ifd, Self::TAG_GPS_ALTITUDE, "GPSAltitude")?;
-            tags.gps_time_stamp =
-                Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_TIME_STAMP, "GPSTimeStamp")?;
+            tags.gps_time_stamp = Self::optional_gps_time_stamp_tag(ifd)?;
             tags.gps_satellites =
                 Self::optional_ascii_tag(ifd, Self::TAG_GPS_SATELLITES, "GPSSatellites")?;
             tags.gps_status = Self::optional_gps_status_tag(ifd)?;
@@ -7947,20 +7950,22 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_GPS_DEST_LATITUDE_REF,
                 "GPSDestLatitudeRef",
             )?;
-            tags.gps_dest_latitude = Self::optional_rational_array3_tag(
+            tags.gps_dest_latitude = Self::optional_gps_coordinate_tag(
                 ifd,
                 Self::TAG_GPS_DEST_LATITUDE,
                 "GPSDestLatitude",
+                90,
             )?;
             tags.gps_dest_longitude_ref = Self::optional_gps_longitude_ref_tag(
                 ifd,
                 Self::TAG_GPS_DEST_LONGITUDE_REF,
                 "GPSDestLongitudeRef",
             )?;
-            tags.gps_dest_longitude = Self::optional_rational_array3_tag(
+            tags.gps_dest_longitude = Self::optional_gps_coordinate_tag(
                 ifd,
                 Self::TAG_GPS_DEST_LONGITUDE,
                 "GPSDestLongitude",
+                180,
             )?;
             tags.gps_dest_bearing_ref = Self::optional_gps_direction_ref_tag(
                 ifd,
@@ -8536,6 +8541,92 @@ impl<'a> FrameExif<'a> {
             .rational_values()?
             .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have RATIONAL TIFF type"))?;
         Ok(Some([values[0], values[1], values[2]]))
+    }
+
+    fn optional_gps_coordinate_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+        max_degrees: u32,
+    ) -> AvResult<Option<[FrameExifRational; 3]>> {
+        let Some(values) = Self::optional_rational_array3_tag(ifd, tag, label)? else {
+            return Ok(None);
+        };
+        if !Self::rational_less_or_equal(values[0], max_degrees)
+            || !Self::rational_less_than(values[1], 60)
+            || !Self::rational_less_than(values[2], 60)
+            || !Self::dms_less_or_equal(values, max_degrees)
+        {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!(
+                    "must be a valid DMS coordinate in 0..={max_degrees} degrees with minutes and seconds below 60"
+                ),
+            ));
+        }
+        Ok(Some(values))
+    }
+
+    fn optional_gps_time_stamp_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<[FrameExifRational; 3]>> {
+        let Some(values) =
+            Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_TIME_STAMP, "GPSTimeStamp")?
+        else {
+            return Ok(None);
+        };
+        if !Self::rational_less_than(values[0], 24)
+            || !Self::rational_less_than(values[1], 60)
+            || !Self::rational_less_than(values[2], 60)
+            || !Self::dms_less_than(values, 24)
+        {
+            return Err(Self::semantic_tag_error(
+                "GPSTimeStamp",
+                Self::TAG_GPS_TIME_STAMP,
+                "must be a valid UTC time with hours below 24 and minutes/seconds below 60",
+            ));
+        }
+        Ok(Some(values))
+    }
+
+    fn rational_less_than(value: FrameExifRational, upper: u32) -> bool {
+        (value.numerator as u128) < (upper as u128) * (value.denominator as u128)
+    }
+
+    fn rational_less_or_equal(value: FrameExifRational, upper: u32) -> bool {
+        (value.numerator as u128) <= (upper as u128) * (value.denominator as u128)
+    }
+
+    fn dms_less_than(values: [FrameExifRational; 3], upper_degrees: u32) -> bool {
+        Self::dms_scaled_numerator(values)
+            < (upper_degrees as u128) * 3600 * Self::dms_scaled_denominator(values)
+    }
+
+    fn dms_less_or_equal(values: [FrameExifRational; 3], upper_degrees: u32) -> bool {
+        Self::dms_scaled_numerator(values)
+            <= (upper_degrees as u128) * 3600 * Self::dms_scaled_denominator(values)
+    }
+
+    fn dms_scaled_numerator(values: [FrameExifRational; 3]) -> u128 {
+        let [degrees, minutes, seconds] = values;
+        (degrees.numerator as u128)
+            * 3600
+            * (minutes.denominator as u128)
+            * (seconds.denominator as u128)
+            + (minutes.numerator as u128)
+                * 60
+                * (degrees.denominator as u128)
+                * (seconds.denominator as u128)
+            + (seconds.numerator as u128)
+                * (degrees.denominator as u128)
+                * (minutes.denominator as u128)
+    }
+
+    fn dms_scaled_denominator(values: [FrameExifRational; 3]) -> u128 {
+        values.iter().fold(1u128, |product, value| {
+            product * (value.denominator as u128)
+        })
     }
 
     fn optional_rational_array_tag<const N: usize>(
@@ -19036,6 +19127,28 @@ mod tests {
         );
         assert_eq!(common.interoperability_index(), Some("R98"));
 
+        let mut bad_latitude_degrees = exif_common_tags_fixture();
+        bad_latitude_degrees[290..294].copy_from_slice(&91u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_latitude_degrees)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_longitude_seconds = exif_common_tags_fixture();
+        bad_longitude_seconds[330..334].copy_from_slice(&60u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_longitude_seconds)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_orientation_count = exif_common_tags_fixture();
         bad_orientation_count[62..66].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
@@ -19177,6 +19290,28 @@ mod tests {
         bad_time_stamp_count[56..60].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_time_stamp_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_time_stamp_hour = exif_gps_altitude_time_fixture();
+        bad_time_stamp_hour[88..92].copy_from_slice(&24u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_time_stamp_hour)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_time_stamp_seconds = exif_gps_altitude_time_fixture();
+        bad_time_stamp_seconds[104..108].copy_from_slice(&60u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_time_stamp_seconds)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
@@ -19461,10 +19596,32 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut bad_dest_latitude_degrees = exif_gps_destination_fixture();
+        bad_dest_latitude_degrees[128..132].copy_from_slice(&91u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_dest_latitude_degrees)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_dest_longitude_count = exif_gps_destination_fixture();
         bad_dest_longitude_count[68..72].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_dest_longitude_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_dest_longitude_minutes = exif_gps_destination_fixture();
+        bad_dest_longitude_minutes[160..164].copy_from_slice(&60u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_dest_longitude_minutes)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

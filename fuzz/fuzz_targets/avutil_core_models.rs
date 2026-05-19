@@ -3938,6 +3938,16 @@ fn exercise_fixtures() {
         common_tags.gps_latitude_ref(),
         Some(FrameExifGpsLatitudeRef::North)
     );
+    let mut bad_latitude_degrees = exif_common_tags_fixture();
+    bad_latitude_degrees[290..294].copy_from_slice(&91u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_latitude_degrees)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_latitude_ref_count = exif_common_tags_fixture();
     bad_latitude_ref_count[242..246].copy_from_slice(&3u32.to_le_bytes());
     assert_eq!(
@@ -3951,6 +3961,16 @@ fn exercise_fixtures() {
     assert_eq!(
         common_tags.gps_longitude_ref(),
         Some(FrameExifGpsLongitudeRef::West)
+    );
+    let mut bad_longitude_seconds = exif_common_tags_fixture();
+    bad_longitude_seconds[330..334].copy_from_slice(&60u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_longitude_seconds)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
     );
     assert_eq!(common_tags.interoperability_index(), Some("R98"));
 
@@ -3981,6 +4001,26 @@ fn exercise_fixtures() {
     assert_eq!(
         gps_altitude_time_tags.gps_time_stamp().unwrap()[2].numerator(),
         56
+    );
+    let mut bad_time_stamp_hour = exif_gps_altitude_time_fixture();
+    bad_time_stamp_hour[88..92].copy_from_slice(&24u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_time_stamp_hour)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_time_stamp_seconds = exif_gps_altitude_time_fixture();
+    bad_time_stamp_seconds[104..108].copy_from_slice(&60u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_time_stamp_seconds)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
     );
     assert_eq!(gps_altitude_time_tags.gps_date_stamp(), Some("2026:05:06"));
     let mut bad_gps_date_stamp_count = exif_gps_altitude_time_fixture();
@@ -4093,6 +4133,16 @@ fn exercise_fixtures() {
         gps_destination_tags.gps_dest_latitude().unwrap()[2].numerator(),
         7
     );
+    let mut bad_dest_latitude_degrees = exif_gps_destination_fixture();
+    bad_dest_latitude_degrees[128..132].copy_from_slice(&91u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_dest_latitude_degrees)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         gps_destination_tags.gps_dest_longitude_ref(),
         Some(FrameExifGpsLongitudeRef::East)
@@ -4108,6 +4158,16 @@ fn exercise_fixtures() {
     assert_eq!(
         gps_destination_tags.gps_dest_longitude().unwrap()[2].numerator(),
         9
+    );
+    let mut bad_dest_longitude_minutes = exif_gps_destination_fixture();
+    bad_dest_longitude_minutes[160..164].copy_from_slice(&60u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_dest_longitude_minutes)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
     );
     assert_eq!(
         gps_destination_tags.gps_dest_bearing_ref(),
