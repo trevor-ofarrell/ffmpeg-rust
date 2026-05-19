@@ -3442,6 +3442,51 @@ fn exercise_fixtures() {
     moved_frame.unref();
     assert!(moved_frame.is_empty());
 
+    let move_source_released = Arc::new(Mutex::new(Vec::<String>::new()));
+    let move_source_capture = Arc::clone(&move_source_released);
+    let move_source_plane = BufferRef::from_external_slice_with_opaque_readonly(
+        Arc::<[u8]>::from(vec![1]),
+        String::from("move-source-plane"),
+        move |opaque| {
+            move_source_capture.lock().unwrap().push(opaque);
+        },
+    );
+    let move_source_video =
+        VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![move_source_plane])
+            .unwrap();
+    let mut move_source = Frame::video(move_source_video);
+    move_source.set_pts(Some(11));
+
+    let move_destination_released = Arc::new(Mutex::new(Vec::<String>::new()));
+    let move_destination_capture = Arc::clone(&move_destination_released);
+    let move_destination_plane = BufferRef::from_external_slice_with_opaque_readonly(
+        Arc::<[u8]>::from(vec![9]),
+        String::from("move-destination-plane"),
+        move |opaque| {
+            move_destination_capture.lock().unwrap().push(opaque);
+        },
+    );
+    let move_destination_video =
+        VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![move_destination_plane])
+            .unwrap();
+    let mut move_destination = Frame::video(move_destination_video);
+
+    move_destination.move_ref_from(&mut move_source);
+
+    assert!(move_source.is_empty());
+    assert_eq!(move_destination.pts(), Some(11));
+    assert!(matches!(move_destination.data(), FrameData::Video(_)));
+    assert_eq!(
+        *move_destination_released.lock().unwrap(),
+        vec![String::from("move-destination-plane")]
+    );
+    assert!(move_source_released.lock().unwrap().is_empty());
+    drop(move_destination);
+    assert_eq!(
+        *move_source_released.lock().unwrap(),
+        vec![String::from("move-source-plane")]
+    );
+
     let mut permission_frame = Frame::video(
         VideoFrame::new_with_buffer_refs(
             1,
