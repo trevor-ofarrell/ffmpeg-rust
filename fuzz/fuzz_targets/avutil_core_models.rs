@@ -4356,10 +4356,31 @@ fn exercise_fixtures() {
         .unwrap()
         .is_reduced_resolution_image());
     assert_eq!(subfile_type_tags.subfile_type().unwrap().raw(), 2);
+    let mut bad_new_subfile_type_type = exif_root_subfile_type_fixture();
+    bad_new_subfile_type_type[12..14]
+        .copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_new_subfile_type_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_new_subfile_type_flags = exif_root_subfile_type_fixture();
     bad_new_subfile_type_flags[18..22].copy_from_slice(&0x8u32.to_le_bytes());
     assert_eq!(
         FrameExif::parse(&bad_new_subfile_type_flags)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_subfile_type_count = exif_root_subfile_type_fixture();
+    bad_subfile_type_count[26..30].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subfile_type_count)
             .unwrap()
             .common_tags()
             .unwrap_err()
