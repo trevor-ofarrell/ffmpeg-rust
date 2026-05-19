@@ -8570,7 +8570,7 @@ impl<'a> FrameExif<'a> {
         tag: u16,
         label: &str,
     ) -> AvResult<Option<FrameExifGpsLatitudeRef>> {
-        let Some(value) = Self::optional_ascii_tag(ifd, tag, label)? else {
+        let Some(value) = Self::optional_gps_ascii_ref_tag(ifd, tag, label)? else {
             return Ok(None);
         };
         match value {
@@ -8589,7 +8589,7 @@ impl<'a> FrameExif<'a> {
         tag: u16,
         label: &str,
     ) -> AvResult<Option<FrameExifGpsLongitudeRef>> {
-        let Some(value) = Self::optional_ascii_tag(ifd, tag, label)? else {
+        let Some(value) = Self::optional_gps_ascii_ref_tag(ifd, tag, label)? else {
             return Ok(None);
         };
         match value {
@@ -8615,7 +8615,8 @@ impl<'a> FrameExif<'a> {
     }
 
     fn optional_gps_status_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifGpsStatus>> {
-        let Some(value) = Self::optional_ascii_tag(ifd, Self::TAG_GPS_STATUS, "GPSStatus")? else {
+        let Some(value) = Self::optional_gps_ascii_ref_tag(ifd, Self::TAG_GPS_STATUS, "GPSStatus")?
+        else {
             return Ok(None);
         };
         match value {
@@ -8633,7 +8634,7 @@ impl<'a> FrameExif<'a> {
         ifd: &FrameExifIfd<'a>,
     ) -> AvResult<Option<FrameExifGpsMeasureMode>> {
         let Some(value) =
-            Self::optional_ascii_tag(ifd, Self::TAG_GPS_MEASURE_MODE, "GPSMeasureMode")?
+            Self::optional_gps_ascii_ref_tag(ifd, Self::TAG_GPS_MEASURE_MODE, "GPSMeasureMode")?
         else {
             return Ok(None);
         };
@@ -8651,7 +8652,8 @@ impl<'a> FrameExif<'a> {
     fn optional_gps_speed_ref_tag(
         ifd: &FrameExifIfd<'a>,
     ) -> AvResult<Option<FrameExifGpsSpeedRef>> {
-        let Some(value) = Self::optional_ascii_tag(ifd, Self::TAG_GPS_SPEED_REF, "GPSSpeedRef")?
+        let Some(value) =
+            Self::optional_gps_ascii_ref_tag(ifd, Self::TAG_GPS_SPEED_REF, "GPSSpeedRef")?
         else {
             return Ok(None);
         };
@@ -8670,8 +8672,11 @@ impl<'a> FrameExif<'a> {
     fn optional_gps_distance_ref_tag(
         ifd: &FrameExifIfd<'a>,
     ) -> AvResult<Option<FrameExifGpsDistanceRef>> {
-        let Some(value) =
-            Self::optional_ascii_tag(ifd, Self::TAG_GPS_DEST_DISTANCE_REF, "GPSDestDistanceRef")?
+        let Some(value) = Self::optional_gps_ascii_ref_tag(
+            ifd,
+            Self::TAG_GPS_DEST_DISTANCE_REF,
+            "GPSDestDistanceRef",
+        )?
         else {
             return Ok(None);
         };
@@ -8692,7 +8697,7 @@ impl<'a> FrameExif<'a> {
         tag: u16,
         label: &str,
     ) -> AvResult<Option<FrameExifGpsDirectionRef>> {
-        let Some(value) = Self::optional_ascii_tag(ifd, tag, label)? else {
+        let Some(value) = Self::optional_gps_ascii_ref_tag(ifd, tag, label)? else {
             return Ok(None);
         };
         match value {
@@ -8704,6 +8709,14 @@ impl<'a> FrameExif<'a> {
                 format!("must be `T` or `M`, got `{value}`"),
             )),
         }
+    }
+
+    fn optional_gps_ascii_ref_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<&'a str>> {
+        Self::optional_ascii_exact_count_tag(ifd, tag, label, 2)
     }
 
     fn semantic_tag_error(label: &str, tag: u16, message: impl core::fmt::Display) -> AvError {
@@ -18940,6 +18953,17 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut bad_latitude_ref_count = exif_common_tags_fixture();
+        bad_latitude_ref_count[242..246].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_latitude_ref_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_gps_ref = exif_common_tags_fixture();
         bad_gps_ref[246] = b'X';
         assert_eq!(
@@ -19070,6 +19094,17 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut bad_status_count = exif_gps_acquisition_fixture();
+        bad_status_count[44..48].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_status_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_measure_mode_count = exif_gps_acquisition_fixture();
         bad_measure_mode_count[56..60].copy_from_slice(&3u32.to_le_bytes());
         assert_eq!(
@@ -19141,6 +19176,17 @@ mod tests {
         bad_speed_ref[36] = b'X';
         assert_eq!(
             FrameExif::parse(&bad_speed_ref)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_track_ref_count = exif_gps_motion_fixture();
+        bad_track_ref_count[56..60].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_track_ref_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
@@ -19259,6 +19305,17 @@ mod tests {
         bad_dest_longitude_count[68..72].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_dest_longitude_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_dest_distance_ref_count = exif_gps_destination_fixture();
+        bad_dest_distance_ref_count[104..108].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_dest_distance_ref_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

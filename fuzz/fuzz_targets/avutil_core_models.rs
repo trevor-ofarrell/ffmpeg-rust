@@ -3898,6 +3898,16 @@ fn exercise_fixtures() {
         common_tags.gps_latitude_ref(),
         Some(FrameExifGpsLatitudeRef::North)
     );
+    let mut bad_latitude_ref_count = exif_common_tags_fixture();
+    bad_latitude_ref_count[242..246].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_latitude_ref_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         common_tags.gps_longitude_ref(),
         Some(FrameExifGpsLongitudeRef::West)
@@ -3961,6 +3971,16 @@ fn exercise_fixtures() {
         gps_acquisition_tags.gps_measure_mode().unwrap().as_str(),
         "3"
     );
+    let mut bad_status_count = exif_gps_acquisition_fixture();
+    bad_status_count[44..48].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_status_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(gps_acquisition_tags.gps_dop().unwrap().numerator(), 7);
     assert_eq!(gps_acquisition_tags.gps_dop().unwrap().denominator(), 2);
 
@@ -3979,6 +3999,16 @@ fn exercise_fixtures() {
         Some(FrameExifGpsDirectionRef::TrueDirection)
     );
     assert_eq!(gps_motion_tags.gps_track_ref().unwrap().as_str(), "T");
+    let mut bad_track_ref_count = exif_gps_motion_fixture();
+    bad_track_ref_count[56..60].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_track_ref_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(gps_motion_tags.gps_track().unwrap().numerator(), 270);
     assert_eq!(
         gps_motion_tags.gps_img_direction_ref(),
@@ -4054,6 +4084,16 @@ fn exercise_fixtures() {
     assert_eq!(
         gps_destination_tags.gps_dest_distance_ref(),
         Some(FrameExifGpsDistanceRef::NauticalMiles)
+    );
+    let mut bad_dest_distance_ref_count = exif_gps_destination_fixture();
+    bad_dest_distance_ref_count[104..108].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_dest_distance_ref_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
     );
     assert_eq!(
         gps_destination_tags
