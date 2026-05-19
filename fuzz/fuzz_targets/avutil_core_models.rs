@@ -4270,6 +4270,9 @@ fn exercise_fixtures() {
     assert_eq!(non_spherical.spherical_mapping().unwrap(), None);
 
     let content_light = FrameContentLightMetadata::new(1000, 400);
+    let mut content_light_bytes = [0; FrameContentLightMetadata::DATA_LEN];
+    content_light_bytes[0..4].copy_from_slice(&1000u32.to_ne_bytes());
+    content_light_bytes[4..8].copy_from_slice(&400u32.to_ne_bytes());
     let content_light_side_data = FrameSideData::new_content_light_metadata(content_light).unwrap();
     assert_eq!(
         content_light_side_data.kind_id(),
@@ -4283,14 +4286,20 @@ fn exercise_fixtures() {
         content_light_side_data.data(),
         &content_light.to_bytes()[..]
     );
+    assert_eq!(FrameContentLightMetadata::DATA_LEN, 8);
     assert_eq!(content_light.max_content_light_level(), 1000);
     assert_eq!(content_light.max_average_light_level(), 400);
+    assert_eq!(content_light.to_bytes(), content_light_bytes);
     assert_eq!(
-        FrameContentLightMetadata::parse(&FrameContentLightMetadata::new(u32::MAX, 0).to_bytes())
-            .unwrap()
-            .max_content_light_level(),
-        u32::MAX
+        FrameContentLightMetadata::parse(&content_light_bytes).unwrap(),
+        content_light
     );
+    let raw_content_light = FrameContentLightMetadata::new(u32::MAX, 0);
+    let parsed_raw_content_light =
+        FrameContentLightMetadata::parse(&raw_content_light.to_bytes()).unwrap();
+    assert_eq!(parsed_raw_content_light, raw_content_light);
+    assert_eq!(parsed_raw_content_light.max_content_light_level(), u32::MAX);
+    assert_eq!(parsed_raw_content_light.max_average_light_level(), 0);
     assert_eq!(
         FrameContentLightMetadata::parse(&[0; FrameContentLightMetadata::DATA_LEN - 1])
             .unwrap_err()

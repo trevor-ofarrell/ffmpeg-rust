@@ -32,7 +32,7 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `FrameStereo3d` covers the pinned FFmpeg 8.1.1 native `AVStereo3D` payload for `AV_FRAME_DATA_STEREO3D`, preserving layout, flags, view, primary eye, baseline, horizontal disparity adjustment, and horizontal field of view fields while validating known enum/flag values and documented rational unset/range constraints.
 
-`FrameContentLightMetadata` covers the pinned FFmpeg 8.1.1 native `AVContentLightMetadata` payload for `AV_FRAME_DATA_CONTENT_LIGHT_LEVEL`, preserving the two native unsigned `MaxCLL` and `MaxFALL` fields with exact-length validation.
+`FrameContentLightMetadata` covers the pinned FFmpeg 8.1.1 native `AVContentLightMetadata` payload for `AV_FRAME_DATA_CONTENT_LIGHT_LEVEL`, preserving the two native unsigned `MaxCLL` and `MaxFALL` fields, their exact 8-byte native layout, and raw boundary values with exact-length validation.
 
 `FrameIccProfile` covers `AV_FRAME_DATA_ICC_PROFILE` as a borrowed opaque ICC profile byte view with optional `name` metadata, validating the ISO 15076-1 profile size field, `acsp` signature, and bounded tag table while preserving the raw profile bytes.
 
