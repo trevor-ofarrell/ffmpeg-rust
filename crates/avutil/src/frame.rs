@@ -7675,7 +7675,7 @@ impl<'a> FrameExif<'a> {
                 Self::optional_rational_tag(root, Self::TAG_Y_RESOLUTION, "YResolution")?;
             tags.resolution_unit = Self::optional_resolution_unit_tag(root)?;
             tags.software = Self::optional_ascii_tag(root, Self::TAG_SOFTWARE, "Software")?;
-            tags.date_time = Self::optional_ascii_tag(root, Self::TAG_DATE_TIME, "DateTime")?;
+            tags.date_time = Self::optional_datetime_tag(root, Self::TAG_DATE_TIME, "DateTime")?;
             tags.artist = Self::optional_ascii_tag(root, Self::TAG_ARTIST, "Artist")?;
             tags.copyright = Self::optional_ascii_tag(root, Self::TAG_COPYRIGHT, "Copyright")?;
         }
@@ -7685,9 +7685,12 @@ impl<'a> FrameExif<'a> {
             tags.exif_version =
                 Self::optional_undefined_array_tag(ifd, Self::TAG_EXIF_VERSION, "ExifVersion")?;
             tags.date_time_original =
-                Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_ORIGINAL, "DateTimeOriginal")?;
-            tags.date_time_digitized =
-                Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_DIGITIZED, "DateTimeDigitized")?;
+                Self::optional_datetime_tag(ifd, Self::TAG_DATE_TIME_ORIGINAL, "DateTimeOriginal")?;
+            tags.date_time_digitized = Self::optional_datetime_tag(
+                ifd,
+                Self::TAG_DATE_TIME_DIGITIZED,
+                "DateTimeDigitized",
+            )?;
             tags.offset_time =
                 Self::optional_offset_time_tag(ifd, Self::TAG_OFFSET_TIME, "OffsetTime")?;
             tags.offset_time_original = Self::optional_offset_time_tag(
@@ -8044,6 +8047,14 @@ impl<'a> FrameExif<'a> {
         label: &str,
     ) -> AvResult<Option<&'a str>> {
         Self::optional_ascii_exact_count_tag(ifd, tag, label, 7)
+    }
+
+    fn optional_datetime_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<&'a str>> {
+        Self::optional_ascii_exact_count_tag(ifd, tag, label, 20)
     }
 
     fn optional_short_or_long_tag(
@@ -18915,6 +18926,17 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut bad_original_count = exif_common_tags_fixture();
+        bad_original_count[162..166].copy_from_slice(&19u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_original_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_gps_ref = exif_common_tags_fixture();
         bad_gps_ref[246] = b'X';
         assert_eq!(
@@ -19286,6 +19308,17 @@ mod tests {
             .copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_exposure_time_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_digitized_count = exif_exposure_tags_fixture();
+        bad_digitized_count[104..108].copy_from_slice(&19u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_digitized_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
@@ -20184,11 +20217,10 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
-        let mut bad_date_time_strings = exif_descriptive_tags_fixture();
-        bad_date_time_strings[38..42].copy_from_slice(&4u32.to_le_bytes());
-        bad_date_time_strings[42..46].copy_from_slice(b"A\0B\0");
+        let mut bad_date_time_count = exif_descriptive_tags_fixture();
+        bad_date_time_count[38..42].copy_from_slice(&19u32.to_le_bytes());
         assert_eq!(
-            FrameExif::parse(&bad_date_time_strings)
+            FrameExif::parse(&bad_date_time_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

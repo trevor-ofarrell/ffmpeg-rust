@@ -3883,6 +3883,16 @@ fn exercise_fixtures() {
         common_tags.date_time_original(),
         Some("2026:05:04 12:34:56")
     );
+    let mut bad_original_count = exif_common_tags_fixture();
+    bad_original_count[162..166].copy_from_slice(&19u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_original_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(common_tags.gps_version_id(), Some([2, 3, 0, 0]));
     assert_eq!(
         common_tags.gps_latitude_ref(),
@@ -4069,6 +4079,16 @@ fn exercise_fixtures() {
     assert_eq!(
         exposure_tags.date_time_digitized(),
         Some("2026:05:04 12:35:00")
+    );
+    let mut bad_digitized_count = exif_exposure_tags_fixture();
+    bad_digitized_count[104..108].copy_from_slice(&19u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_digitized_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
     );
 
     let apex_exif_bytes = exif_apex_exposure_fixture();
@@ -4324,6 +4344,16 @@ fn exercise_fixtures() {
     assert_eq!(descriptive_tags.date_time(), Some("2026:05:05 01:02:03"));
     assert_eq!(descriptive_tags.artist(), Some("OpenAI"));
     assert_eq!(descriptive_tags.copyright(), Some("2026 Example"));
+    let mut bad_date_time_count = exif_descriptive_tags_fixture();
+    bad_date_time_count[38..42].copy_from_slice(&19u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_date_time_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let linked_exif_side_data = FrameSideData::new_exif(exif_with_linked_ifds_fixture()).unwrap();
     let linked_exif = linked_exif_side_data.exif().unwrap().unwrap();
