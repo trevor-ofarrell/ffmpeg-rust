@@ -527,6 +527,56 @@ impl FramePanScan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameA53ClosedCaptions<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameA53ClosedCaptions<'a> {
+    pub const BYTES_PER_CC: usize = 3;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() % Self::BYTES_PER_CC != 0 {
+            return Err(AvError::invalid_data(format!(
+                "A53 closed-caption frame side data requires whole {}-byte CC entries, got {} bytes",
+                Self::BYTES_PER_CC,
+                data.len()
+            )));
+        }
+
+        Ok(Self { data })
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub const fn entry_count(self) -> usize {
+        self.data.len() / Self::BYTES_PER_CC
+    }
+
+    pub fn entry(self, index: usize) -> Option<[u8; 3]> {
+        let start = index.checked_mul(Self::BYTES_PER_CC)?;
+        let end = start.checked_add(Self::BYTES_PER_CC)?;
+        let entry = self.data.get(start..end)?;
+        let mut bytes = [0; 3];
+        bytes.copy_from_slice(entry);
+        Some(bytes)
+    }
+
+    pub fn entries(self) -> impl ExactSizeIterator<Item = [u8; 3]> + 'a {
+        self.data.chunks_exact(Self::BYTES_PER_CC).map(|entry| {
+            let mut bytes = [0; 3];
+            bytes.copy_from_slice(entry);
+            bytes
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameDisplayMatrix {
     elements: [i32; Self::ELEMENTS],
 }
@@ -5260,6 +5310,12 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::PanScan, value.to_bytes().to_vec())
     }
 
+    pub fn new_a53_closed_captions(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(FrameSideDataKind::A53ClosedCaptions, data)?;
+        FrameA53ClosedCaptions::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_active_format_description(value: FrameActiveFormatDescription) -> AvResult<Self> {
         Self::new_with_kind(
             FrameSideDataKind::ActiveFormatDescription,
@@ -5439,6 +5495,14 @@ impl FrameSideData {
         }
 
         FramePanScan::parse(self.data()).map(Some)
+    }
+
+    pub fn a53_closed_captions(&self) -> AvResult<Option<FrameA53ClosedCaptions<'_>>> {
+        if self.kind != FrameSideDataKind::A53ClosedCaptions {
+            return Ok(None);
+        }
+
+        FrameA53ClosedCaptions::parse(self.data()).map(Some)
     }
 
     pub fn display_matrix(&self) -> AvResult<Option<FrameDisplayMatrix>> {
@@ -8806,6 +8870,61 @@ mod tests {
         let non_pan_scan =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 24]).unwrap();
         assert_eq!(non_pan_scan.pan_scan().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_a53_closed_captions_payload() {
+        let payload = vec![0x04, 0xF8, 0x2A, 0x05, 0x43, 0x21];
+        let side_data = FrameSideData::new_a53_closed_captions(payload.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::A53ClosedCaptions);
+        assert_eq!(side_data.data(), payload.as_slice());
+
+        let captions = side_data.a53_closed_captions().unwrap().unwrap();
+        assert_eq!(captions.data(), payload.as_slice());
+        assert!(!captions.is_empty());
+        assert_eq!(captions.entry_count(), 2);
+        assert_eq!(captions.entry(0), Some([0x04, 0xF8, 0x2A]));
+        assert_eq!(captions.entry(1), Some([0x05, 0x43, 0x21]));
+        assert_eq!(captions.entry(2), None);
+        assert_eq!(
+            captions.entries().collect::<Vec<_>>(),
+            vec![[0x04, 0xF8, 0x2A], [0x05, 0x43, 0x21]]
+        );
+
+        let empty = FrameSideData::new_a53_closed_captions(Vec::new()).unwrap();
+        let empty_captions = empty.a53_closed_captions().unwrap().unwrap();
+        assert!(empty_captions.is_empty());
+        assert_eq!(empty_captions.entry_count(), 0);
+
+        let display_matrix =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, payload).unwrap();
+        assert_eq!(display_matrix.a53_closed_captions().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_a53_closed_captions_payload() {
+        for data in [vec![0; 1], vec![0; 2], vec![0; 4], vec![0; 5]] {
+            assert_eq!(
+                FrameA53ClosedCaptions::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                FrameSideData::new_a53_closed_captions(data.clone())
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::A53ClosedCaptions, data).unwrap();
+            assert_eq!(
+                side_data.a53_closed_captions().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_a53 =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 3]).unwrap();
+        assert_eq!(non_a53.a53_closed_captions().unwrap(), None);
     }
 
     #[test]

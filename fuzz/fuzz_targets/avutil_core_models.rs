@@ -3,7 +3,7 @@
 use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
-    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame,
+    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameA53ClosedCaptions,
     FrameActiveFormatDescription, FrameAudioServiceType, FrameContentLightMetadata, FrameData,
     FrameDetectionBbox, FrameDetectionBboxes, FrameDisplayMatrix, FrameDolbyVisionColorMetadata,
     FrameDolbyVisionDataMapping, FrameDolbyVisionDmData, FrameDolbyVisionMetadata,
@@ -999,6 +999,30 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(frame_side_data_kind, FrameSideDataKind::PanScan);
             assert!(pan_scan_payload_invalid(&frame_side_data_payload));
+        }
+    }
+    match frame.side_data()[0].a53_closed_captions() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::A53ClosedCaptions);
+            assert_eq!(value.data(), frame_side_data_payload.as_slice());
+            assert_eq!(
+                frame_side_data_payload.len(),
+                value.entry_count() * FrameA53ClosedCaptions::BYTES_PER_CC
+            );
+            assert_eq!(value.is_empty(), frame_side_data_payload.is_empty());
+            assert_eq!(value.entries().count(), value.entry_count());
+            for index in 0..value.entry_count() {
+                assert!(value.entry(index).is_some());
+            }
+            assert!(value.entry(value.entry_count()).is_none());
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::A53ClosedCaptions),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::A53ClosedCaptions);
+            assert!(a53_closed_captions_payload_invalid(
+                &frame_side_data_payload
+            ));
         }
     }
     match frame.side_data()[0].display_matrix() {
@@ -2632,6 +2656,38 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 24]).unwrap();
     assert_eq!(non_pan_scan.pan_scan().unwrap(), None);
 
+    let a53_payload = vec![0x04, 0xF8, 0x2A, 0x05, 0x43, 0x21];
+    let a53_side_data = FrameSideData::new_a53_closed_captions(a53_payload.clone()).unwrap();
+    assert_eq!(
+        a53_side_data.kind_id(),
+        &FrameSideDataKind::A53ClosedCaptions
+    );
+    let a53 = a53_side_data.a53_closed_captions().unwrap().unwrap();
+    assert_eq!(a53.data(), a53_payload.as_slice());
+    assert_eq!(a53.entry_count(), 2);
+    assert_eq!(a53.entry(0), Some([0x04, 0xF8, 0x2A]));
+    assert_eq!(a53.entry(1), Some([0x05, 0x43, 0x21]));
+    assert_eq!(a53.entry(2), None);
+    assert_eq!(
+        a53.entries().collect::<Vec<_>>(),
+        vec![[0x04, 0xF8, 0x2A], [0x05, 0x43, 0x21]]
+    );
+    assert!(FrameSideData::new_a53_closed_captions(Vec::new())
+        .unwrap()
+        .a53_closed_captions()
+        .unwrap()
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        FrameA53ClosedCaptions::parse(&[0; FrameA53ClosedCaptions::BYTES_PER_CC - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_a53 =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 3]).unwrap();
+    assert_eq!(non_a53.a53_closed_captions().unwrap(), None);
+
     let display_matrix =
         FrameDisplayMatrix::new([1 << 16, 0, 0, 0, 1 << 16, 0, 12 << 16, -34 << 16, 1 << 30]);
     let display_matrix_side_data = FrameSideData::new_display_matrix(display_matrix).unwrap();
@@ -3544,36 +3600,37 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 30 {
+    match byte.unwrap_or_default() % 31 {
         0 => FrameSideDataKind::PanScan,
-        1 => FrameSideDataKind::DisplayMatrix,
-        2 => FrameSideDataKind::MatrixEncoding,
-        3 => FrameSideDataKind::DownmixInfo,
-        4 => FrameSideDataKind::ReplayGain,
-        5 => FrameSideDataKind::MotionVectors,
-        6 => FrameSideDataKind::MasteringDisplayMetadata,
-        7 => FrameSideDataKind::Spherical,
-        8 => FrameSideDataKind::ContentLightLevel,
-        9 => FrameSideDataKind::IccProfile,
-        10 => FrameSideDataKind::DolbyVisionRpuBuffer,
-        11 => FrameSideDataKind::Lcevc,
-        12 => FrameSideDataKind::GopTimecode,
-        13 => FrameSideDataKind::S12mTimecode,
-        14 => FrameSideDataKind::DynamicHdrPlus,
-        15 => FrameSideDataKind::RegionsOfInterest,
-        16 => FrameSideDataKind::VideoEncParams,
-        17 => FrameSideDataKind::VideoHint,
-        18 => FrameSideDataKind::ViewId,
-        19 => FrameSideDataKind::ThreeDReferenceDisplays,
-        20 => FrameSideDataKind::Exif,
-        21 => FrameSideDataKind::SeiUnregistered,
-        22 => FrameSideDataKind::ActiveFormatDescription,
-        23 => FrameSideDataKind::SkipSamples,
-        24 => FrameSideDataKind::AudioServiceType,
-        25 => FrameSideDataKind::FilmGrainParams,
-        26 => FrameSideDataKind::DetectionBboxes,
-        27 => FrameSideDataKind::DolbyVisionMetadata,
-        28 => FrameSideDataKind::DynamicHdrVivid,
+        1 => FrameSideDataKind::A53ClosedCaptions,
+        2 => FrameSideDataKind::DisplayMatrix,
+        3 => FrameSideDataKind::MatrixEncoding,
+        4 => FrameSideDataKind::DownmixInfo,
+        5 => FrameSideDataKind::ReplayGain,
+        6 => FrameSideDataKind::MotionVectors,
+        7 => FrameSideDataKind::MasteringDisplayMetadata,
+        8 => FrameSideDataKind::Spherical,
+        9 => FrameSideDataKind::ContentLightLevel,
+        10 => FrameSideDataKind::IccProfile,
+        11 => FrameSideDataKind::DolbyVisionRpuBuffer,
+        12 => FrameSideDataKind::Lcevc,
+        13 => FrameSideDataKind::GopTimecode,
+        14 => FrameSideDataKind::S12mTimecode,
+        15 => FrameSideDataKind::DynamicHdrPlus,
+        16 => FrameSideDataKind::RegionsOfInterest,
+        17 => FrameSideDataKind::VideoEncParams,
+        18 => FrameSideDataKind::VideoHint,
+        19 => FrameSideDataKind::ViewId,
+        20 => FrameSideDataKind::ThreeDReferenceDisplays,
+        21 => FrameSideDataKind::Exif,
+        22 => FrameSideDataKind::SeiUnregistered,
+        23 => FrameSideDataKind::ActiveFormatDescription,
+        24 => FrameSideDataKind::SkipSamples,
+        25 => FrameSideDataKind::AudioServiceType,
+        26 => FrameSideDataKind::FilmGrainParams,
+        27 => FrameSideDataKind::DetectionBboxes,
+        28 => FrameSideDataKind::DolbyVisionMetadata,
+        29 => FrameSideDataKind::DynamicHdrVivid,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
@@ -3620,6 +3677,12 @@ fn minimal_dynamic_hdr_vivid_fixture() -> Vec<u8> {
 
 fn pan_scan_payload_invalid(data: &[u8]) -> bool {
     data.len() != FramePanScan::DATA_LEN
+}
+
+fn a53_closed_captions_payload_invalid(data: &[u8]) -> bool {
+    !data
+        .len()
+        .is_multiple_of(FrameA53ClosedCaptions::BYTES_PER_CC)
 }
 
 fn dynamic_hdr_plus_payload_invalid(data: &[u8]) -> bool {
