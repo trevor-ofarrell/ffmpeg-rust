@@ -5311,6 +5311,26 @@ fn exercise_fixtures() {
     assert_eq!(exposure_tags.focal_length().unwrap().denominator(), 1);
     assert_eq!(exposure_tags.pixel_x_dimension(), Some(1920));
     assert_eq!(exposure_tags.pixel_y_dimension(), Some(1080));
+    let mut bad_exposure_time_type = exif_exposure_tags_fixture();
+    bad_exposure_time_type[30..32].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_exposure_time_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_pixel_count = exif_exposure_tags_fixture();
+    bad_pixel_count[92..96].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_pixel_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_pixel_x_zero = exif_exposure_tags_fixture();
     bad_pixel_x_zero[84..88].copy_from_slice(&0u32.to_le_bytes());
     assert_eq!(
@@ -5396,6 +5416,36 @@ fn exercise_fixtures() {
     assert_eq!(apex_tags.aperture_value().unwrap().denominator(), 10);
     assert_eq!(apex_tags.brightness_value().unwrap().numerator(), -3);
     assert_eq!(apex_tags.brightness_value().unwrap().denominator(), 2);
+    let mut bad_shutter_count = exif_apex_exposure_fixture();
+    bad_shutter_count[32..36].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_shutter_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_aperture_type = exif_apex_exposure_fixture();
+    bad_aperture_type[42..44].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_aperture_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_brightness_denominator = exif_apex_exposure_fixture();
+    bad_brightness_denominator[88..92].copy_from_slice(&0i32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_brightness_denominator)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let sensitivity_exif_bytes = exif_sensitivity_fixture();
     let sensitivity_exif = FrameExif::parse(&sensitivity_exif_bytes).unwrap();
