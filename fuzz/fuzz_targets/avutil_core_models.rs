@@ -4696,10 +4696,30 @@ fn exercise_fixtures() {
     assert_eq!(strip_position_tags.x_position().unwrap().denominator(), 2);
     assert_eq!(strip_position_tags.y_position().unwrap().numerator(), 3);
     assert_eq!(strip_position_tags.y_position().unwrap().denominator(), 4);
+    let mut bad_strip_rows_type = exif_root_strip_position_fixture();
+    bad_strip_rows_type[12..14].copy_from_slice(&FrameExifTiffType::Rational.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_strip_rows_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_strip_rows_zero = exif_root_strip_position_fixture();
     bad_strip_rows_zero[18..22].copy_from_slice(&0u32.to_le_bytes());
     assert_eq!(
         FrameExif::parse(&bad_strip_rows_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_strip_x_count = exif_root_strip_position_fixture();
+    bad_strip_x_count[26..30].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_strip_x_count)
             .unwrap()
             .common_tags()
             .unwrap_err()
