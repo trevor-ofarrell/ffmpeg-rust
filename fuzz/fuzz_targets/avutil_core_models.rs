@@ -5533,6 +5533,67 @@ fn exercise_fixtures() {
         characterization_tags.cfa_pattern(),
         Some(&[2, 0, 2, 0, 1, 0, 2, 1][..])
     );
+    let mut bad_spectral_type = exif_camera_characterization_fixture();
+    bad_spectral_type[30..32].copy_from_slice(&FrameExifTiffType::Undefined.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_spectral_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_oecf_type = exif_camera_characterization_fixture();
+    bad_oecf_type[42..44].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_oecf_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_flash_energy_count = exif_camera_characterization_fixture();
+    bad_flash_energy_count[56..60].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_flash_energy_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_spatial_type = exif_camera_characterization_fixture();
+    bad_spatial_type[66..68].copy_from_slice(&FrameExifTiffType::Ascii.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_spatial_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_focal_plane_unit_value = exif_camera_characterization_fixture();
+    bad_focal_plane_unit_value[108..110].copy_from_slice(&4u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_focal_plane_unit_value)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_cfa_type = exif_camera_characterization_fixture();
+    bad_cfa_type[114..116].copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
+    bad_cfa_type[116..120].copy_from_slice(&4u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_cfa_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let offset_time_exif_bytes = exif_offset_time_fixture();
     let offset_time_exif = FrameExif::parse(&offset_time_exif_bytes).unwrap();
