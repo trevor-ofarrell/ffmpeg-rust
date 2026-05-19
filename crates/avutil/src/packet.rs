@@ -645,6 +645,66 @@ impl PacketMpegTsStreamId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketSubtitlePosition {
+    x1: u32,
+    y1: u32,
+    x2: u32,
+    y2: u32,
+}
+
+impl PacketSubtitlePosition {
+    pub const DATA_LEN: usize = 16;
+
+    pub const fn new(x1: u32, y1: u32, x2: u32, y2: u32) -> Self {
+        Self { x1, y1, x2, y2 }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "subtitle position packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self {
+            x1: read_u32_le(data, 0),
+            y1: read_u32_le(data, 4),
+            x2: read_u32_le(data, 8),
+            y2: read_u32_le(data, 12),
+        })
+    }
+
+    pub const fn x1(self) -> u32 {
+        self.x1
+    }
+
+    pub const fn y1(self) -> u32 {
+        self.y1
+    }
+
+    pub const fn x2(self) -> u32 {
+        self.x2
+    }
+
+    pub const fn y2(self) -> u32 {
+        self.y2
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let x1 = self.x1.to_le_bytes();
+        let y1 = self.y1.to_le_bytes();
+        let x2 = self.x2.to_le_bytes();
+        let y2 = self.y2.to_le_bytes();
+        [
+            x1[0], x1[1], x1[2], x1[3], y1[0], y1[1], y1[2], y1[3], x2[0], x2[1], x2[2], x2[3],
+            y2[0], y2[1], y2[2], y2[3],
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketFrameCropping {
     crop_top: u32,
     crop_bottom: u32,
@@ -739,6 +799,13 @@ impl SideData {
         )
     }
 
+    pub fn new_subtitle_position(value: PacketSubtitlePosition) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::SubtitlePosition,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_frame_cropping(value: PacketFrameCropping) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::FrameCropping, value.to_bytes().to_vec())
     }
@@ -808,6 +875,14 @@ impl SideData {
         }
 
         PacketMpegTsStreamId::parse(self.data()).map(Some)
+    }
+
+    pub fn subtitle_position(&self) -> AvResult<Option<PacketSubtitlePosition>> {
+        if self.kind != PacketSideDataKind::SubtitlePosition {
+            return Ok(None);
+        }
+
+        PacketSubtitlePosition::parse(self.data()).map(Some)
     }
 
     pub fn frame_cropping(&self) -> AvResult<Option<PacketFrameCropping>> {
@@ -1617,6 +1692,50 @@ mod tests {
             SideData::new_with_kind(PacketSideDataKind::MpegTsStreamId, Vec::new()).unwrap();
         assert_eq!(
             side_data.mpegts_stream_id().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_subtitle_position_payload() {
+        let expected = PacketSubtitlePosition::new(1, 2, u32::MAX - 1, u32::MAX);
+        let expected_bytes = [
+            1, 0, 0, 0, 2, 0, 0, 0, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        ];
+
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketSubtitlePosition::parse(&expected_bytes).unwrap(),
+            expected
+        );
+        assert_eq!(expected.x1(), 1);
+        assert_eq!(expected.y1(), 2);
+        assert_eq!(expected.x2(), u32::MAX - 1);
+        assert_eq!(expected.y2(), u32::MAX);
+
+        let side_data = SideData::new_subtitle_position(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::SubtitlePosition);
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(side_data.subtitle_position().unwrap(), Some(expected));
+
+        let palette =
+            SideData::new_with_kind(PacketSideDataKind::Palette, expected_bytes.to_vec()).unwrap();
+        assert_eq!(palette.subtitle_position().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_subtitle_position_payload() {
+        for data in [vec![0; PacketSubtitlePosition::DATA_LEN - 1], vec![0; 17]] {
+            assert_eq!(
+                PacketSubtitlePosition::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let side_data =
+            SideData::new_with_kind(PacketSideDataKind::SubtitlePosition, vec![0; 4]).unwrap();
+        assert_eq!(
+            side_data.subtitle_position().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
     }

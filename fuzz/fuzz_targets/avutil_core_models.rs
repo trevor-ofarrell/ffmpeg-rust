@@ -34,7 +34,7 @@ use avutil::{
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketFlags, PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
     PacketMpegTsStreamId, PacketParamChange, PacketSideDataKind, PacketSkipSamples,
-    PacketSkipSamplesReason, PixelFormat, Rational, Rounding, SampleFormat,
+    PacketSkipSamplesReason, PacketSubtitlePosition, PixelFormat, Rational, Rounding, SampleFormat,
     SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
@@ -3372,6 +3372,23 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_mpegts_stream_id_payload_invalid(&typed_payload));
         }
     }
+    match typed_payload_side_data.subtitle_position() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::SubtitlePosition);
+            assert_eq!(typed_payload.len(), PacketSubtitlePosition::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketSubtitlePosition::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::SubtitlePosition),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::SubtitlePosition);
+            assert!(packet_subtitle_position_payload_invalid(&typed_payload));
+        }
+    }
     match typed_payload_side_data.frame_cropping() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::FrameCropping);
@@ -3736,6 +3753,31 @@ fn exercise_fixtures() {
         PacketMpegTsStreamId::parse(&[0, 1])
             .unwrap_err()
             .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_subtitle_position = PacketSubtitlePosition::new(1, 2, u32::MAX - 1, u32::MAX);
+    let packet_subtitle_position_bytes = packet_subtitle_position.to_bytes();
+    assert_eq!(
+        PacketSubtitlePosition::parse(&packet_subtitle_position_bytes).unwrap(),
+        packet_subtitle_position
+    );
+    assert_eq!(packet_subtitle_position.x1(), 1);
+    assert_eq!(packet_subtitle_position.y1(), 2);
+    assert_eq!(packet_subtitle_position.x2(), u32::MAX - 1);
+    assert_eq!(packet_subtitle_position.y2(), u32::MAX);
+    assert_eq!(
+        SideData::new_subtitle_position(packet_subtitle_position)
+            .unwrap()
+            .subtitle_position()
+            .unwrap(),
+        Some(packet_subtitle_position)
+    );
+    assert_eq!(
+        PacketSubtitlePosition::parse(
+            &packet_subtitle_position_bytes[..packet_subtitle_position_bytes.len() - 1],
+        )
+        .unwrap_err()
+        .kind(),
         AvErrorKind::InvalidData
     );
     let packet_skip_samples = PacketSkipSamples::new(
@@ -9412,6 +9454,10 @@ fn packet_jp_dualmono_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_mpegts_stream_id_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketMpegTsStreamId::DATA_LEN
+}
+
+fn packet_subtitle_position_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketSubtitlePosition::DATA_LEN
 }
 
 fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {
