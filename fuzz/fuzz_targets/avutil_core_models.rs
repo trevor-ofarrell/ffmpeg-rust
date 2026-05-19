@@ -9,10 +9,11 @@ use avutil::{
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
-    FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifEntry, FrameExifIfdPointerKind,
-    FrameExifTiffType, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
-    FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
-    FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
+    FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifEntry, FrameExifGpsLatitudeRef,
+    FrameExifGpsLongitudeRef, FrameExifIfdPointerKind, FrameExifOrientation,
+    FrameExifResolutionUnit, FrameExifTiffType, FrameFilmGrainAomParams, FrameFilmGrainH274Params,
+    FrameFilmGrainParams, FrameFilmGrainParamsType, FrameGopTimecode,
+    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
     FrameLcevc, FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector,
     FrameMotionVectors, FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest,
@@ -1730,6 +1731,17 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 for entry in linked.ifd().entries() {
                     exercise_exif_entry_typed_values(*entry);
                 }
+            }
+            match value.common_tags() {
+                Ok(common) => {
+                    if let Some(latitude) = common.gps_latitude() {
+                        assert!(latitude.iter().all(|value| value.denominator() != 0));
+                    }
+                    if let Some(longitude) = common.gps_longitude() {
+                        assert!(longitude.iter().all(|value| value.denominator() != 0));
+                    }
+                }
+                Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
             }
         }
         Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::Exif),
@@ -3771,6 +3783,37 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    let common_exif_bytes = exif_common_tags_fixture();
+    let common_exif = FrameExif::parse(&common_exif_bytes).unwrap();
+    let common_tags = common_exif.common_tags().unwrap();
+    assert_eq!(common_tags.make(), Some("Rusty"));
+    assert_eq!(common_tags.model(), Some("Camera"));
+    assert_eq!(common_tags.image_width(), Some(640));
+    assert_eq!(common_tags.image_length(), Some(480));
+    assert_eq!(
+        common_tags.orientation(),
+        Some(FrameExifOrientation::RightTop)
+    );
+    assert_eq!(
+        common_tags.resolution_unit(),
+        Some(FrameExifResolutionUnit::Inch)
+    );
+    assert_eq!(common_tags.exif_version(), Some(*b"0231"));
+    assert_eq!(
+        common_tags.date_time_original(),
+        Some("2026:05:04 12:34:56")
+    );
+    assert_eq!(common_tags.gps_version_id(), Some([2, 3, 0, 0]));
+    assert_eq!(
+        common_tags.gps_latitude_ref(),
+        Some(FrameExifGpsLatitudeRef::North)
+    );
+    assert_eq!(
+        common_tags.gps_longitude_ref(),
+        Some(FrameExifGpsLongitudeRef::West)
+    );
+    assert_eq!(common_tags.interoperability_index(), Some("R98"));
+
     let linked_exif_side_data = FrameSideData::new_exif(exif_with_linked_ifds_fixture()).unwrap();
     let linked_exif = linked_exif_side_data.exif().unwrap().unwrap();
     assert_eq!(linked_exif.ifd_count(), 1);
@@ -4823,6 +4866,160 @@ fn exif_value_semantics_fixture() -> Vec<u8> {
     data.extend_from_slice(&1u32.to_le_bytes());
     data.extend_from_slice(&(-1i32).to_le_bytes());
     data.extend_from_slice(&2i32.to_le_bytes());
+    data
+}
+
+fn exif_common_tags_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&9u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_MAKE,
+        FrameExifTiffType::Ascii,
+        6,
+        122u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_MODEL,
+        FrameExifTiffType::Ascii,
+        7,
+        128u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_IMAGE_WIDTH,
+        FrameExifTiffType::Long,
+        1,
+        640u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_IMAGE_LENGTH,
+        FrameExifTiffType::Short,
+        1,
+        [0xE0, 0x01, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_ORIENTATION,
+        FrameExifTiffType::Short,
+        1,
+        [6, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_X_RESOLUTION,
+        FrameExifTiffType::Rational,
+        1,
+        136u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_RESOLUTION_UNIT,
+        FrameExifTiffType::Short,
+        1,
+        [2, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        144u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::GPS_TAG,
+        FrameExifTiffType::Long,
+        1,
+        224u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(b"Rusty\0");
+    data.extend_from_slice(b"Camera\0");
+    data.push(0);
+    data.extend_from_slice(&300u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+
+    data.extend_from_slice(&3u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_EXIF_VERSION,
+        FrameExifTiffType::Undefined,
+        4,
+        *b"0231",
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_DATE_TIME_ORIGINAL,
+        FrameExifTiffType::Ascii,
+        20,
+        186u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::INTEROPERABILITY_TAG,
+        FrameExifTiffType::Long,
+        1,
+        206u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(b"2026:05:04 12:34:56\0");
+
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_INTEROPERABILITY_INDEX,
+        FrameExifTiffType::Ascii,
+        4,
+        *b"R98\0",
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&5u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_VERSION_ID,
+        FrameExifTiffType::Byte,
+        4,
+        [2, 3, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_LATITUDE_REF,
+        FrameExifTiffType::Ascii,
+        2,
+        [b'N', 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_LATITUDE,
+        FrameExifTiffType::Rational,
+        3,
+        290u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_LONGITUDE_REF,
+        FrameExifTiffType::Ascii,
+        2,
+        [b'W', 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_LONGITUDE,
+        FrameExifTiffType::Rational,
+        3,
+        314u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    for value in [37u32, 48, 30, 122, 24, 15] {
+        data.extend_from_slice(&value.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+    }
     data
 }
 

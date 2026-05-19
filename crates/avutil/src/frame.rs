@@ -5643,6 +5643,175 @@ impl FrameExifSignedRational {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifOrientation {
+    TopLeft,
+    TopRight,
+    BottomRight,
+    BottomLeft,
+    LeftTop,
+    RightTop,
+    RightBottom,
+    LeftBottom,
+}
+
+impl FrameExifOrientation {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            1 => Ok(Self::TopLeft),
+            2 => Ok(Self::TopRight),
+            3 => Ok(Self::BottomRight),
+            4 => Ok(Self::BottomLeft),
+            5 => Ok(Self::LeftTop),
+            6 => Ok(Self::RightTop),
+            7 => Ok(Self::RightBottom),
+            8 => Ok(Self::LeftBottom),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF orientation value {raw} is outside the defined 1..=8 range"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::TopLeft => 1,
+            Self::TopRight => 2,
+            Self::BottomRight => 3,
+            Self::BottomLeft => 4,
+            Self::LeftTop => 5,
+            Self::RightTop => 6,
+            Self::RightBottom => 7,
+            Self::LeftBottom => 8,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifResolutionUnit {
+    Unitless,
+    Inch,
+    Centimeter,
+}
+
+impl FrameExifResolutionUnit {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            1 => Ok(Self::Unitless),
+            2 => Ok(Self::Inch),
+            3 => Ok(Self::Centimeter),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF resolution unit value {raw} is outside the defined 1..=3 range"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Unitless => 1,
+            Self::Inch => 2,
+            Self::Centimeter => 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifGpsLatitudeRef {
+    North,
+    South,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifGpsLongitudeRef {
+    East,
+    West,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FrameExifCommonTags<'a> {
+    make: Option<&'a str>,
+    model: Option<&'a str>,
+    image_width: Option<u32>,
+    image_length: Option<u32>,
+    orientation: Option<FrameExifOrientation>,
+    x_resolution: Option<FrameExifRational>,
+    y_resolution: Option<FrameExifRational>,
+    resolution_unit: Option<FrameExifResolutionUnit>,
+    exif_version: Option<[u8; 4]>,
+    date_time_original: Option<&'a str>,
+    gps_version_id: Option<[u8; 4]>,
+    gps_latitude_ref: Option<FrameExifGpsLatitudeRef>,
+    gps_latitude: Option<[FrameExifRational; 3]>,
+    gps_longitude_ref: Option<FrameExifGpsLongitudeRef>,
+    gps_longitude: Option<[FrameExifRational; 3]>,
+    interoperability_index: Option<&'a str>,
+}
+
+impl<'a> FrameExifCommonTags<'a> {
+    pub const fn make(&self) -> Option<&'a str> {
+        self.make
+    }
+
+    pub const fn model(&self) -> Option<&'a str> {
+        self.model
+    }
+
+    pub const fn image_width(&self) -> Option<u32> {
+        self.image_width
+    }
+
+    pub const fn image_length(&self) -> Option<u32> {
+        self.image_length
+    }
+
+    pub const fn orientation(&self) -> Option<FrameExifOrientation> {
+        self.orientation
+    }
+
+    pub const fn x_resolution(&self) -> Option<FrameExifRational> {
+        self.x_resolution
+    }
+
+    pub const fn y_resolution(&self) -> Option<FrameExifRational> {
+        self.y_resolution
+    }
+
+    pub const fn resolution_unit(&self) -> Option<FrameExifResolutionUnit> {
+        self.resolution_unit
+    }
+
+    pub const fn exif_version(&self) -> Option<[u8; 4]> {
+        self.exif_version
+    }
+
+    pub const fn date_time_original(&self) -> Option<&'a str> {
+        self.date_time_original
+    }
+
+    pub const fn gps_version_id(&self) -> Option<[u8; 4]> {
+        self.gps_version_id
+    }
+
+    pub const fn gps_latitude_ref(&self) -> Option<FrameExifGpsLatitudeRef> {
+        self.gps_latitude_ref
+    }
+
+    pub const fn gps_latitude(&self) -> Option<[FrameExifRational; 3]> {
+        self.gps_latitude
+    }
+
+    pub const fn gps_longitude_ref(&self) -> Option<FrameExifGpsLongitudeRef> {
+        self.gps_longitude_ref
+    }
+
+    pub const fn gps_longitude(&self) -> Option<[FrameExifRational; 3]> {
+        self.gps_longitude
+    }
+
+    pub const fn interoperability_index(&self) -> Option<&'a str> {
+        self.interoperability_index
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameExifEntry<'a> {
     tag: u16,
     tiff_type: FrameExifTiffType,
@@ -5698,6 +5867,14 @@ impl<'a> FrameExifEntry<'a> {
 
     pub fn byte_values(self) -> AvResult<Option<&'a [u8]>> {
         if self.tiff_type != FrameExifTiffType::Byte {
+            return Ok(None);
+        }
+
+        Ok(Some(self.value_data))
+    }
+
+    pub fn undefined_values(self) -> AvResult<Option<&'a [u8]>> {
+        if self.tiff_type != FrameExifTiffType::Undefined {
             return Ok(None);
         }
 
@@ -5969,6 +6146,22 @@ impl<'a> FrameExif<'a> {
     pub const MAX_IFDS: usize = 16;
     pub const MAX_LINKED_IFDS: usize = 16;
     pub const MAX_IFD_ENTRIES: usize = 4096;
+    pub const TAG_IMAGE_WIDTH: u16 = 0x0100;
+    pub const TAG_IMAGE_LENGTH: u16 = 0x0101;
+    pub const TAG_MAKE: u16 = 0x010F;
+    pub const TAG_MODEL: u16 = 0x0110;
+    pub const TAG_ORIENTATION: u16 = 0x0112;
+    pub const TAG_X_RESOLUTION: u16 = 0x011A;
+    pub const TAG_Y_RESOLUTION: u16 = 0x011B;
+    pub const TAG_RESOLUTION_UNIT: u16 = 0x0128;
+    pub const TAG_EXIF_VERSION: u16 = 0x9000;
+    pub const TAG_DATE_TIME_ORIGINAL: u16 = 0x9003;
+    pub const TAG_GPS_VERSION_ID: u16 = 0x0000;
+    pub const TAG_GPS_LATITUDE_REF: u16 = 0x0001;
+    pub const TAG_GPS_LATITUDE: u16 = 0x0002;
+    pub const TAG_GPS_LONGITUDE_REF: u16 = 0x0003;
+    pub const TAG_GPS_LONGITUDE: u16 = 0x0004;
+    pub const TAG_INTEROPERABILITY_INDEX: u16 = 0x0001;
 
     pub fn parse(data: &'a [u8]) -> AvResult<Self> {
         if data.len() < Self::TIFF_HEADER_LEN {
@@ -6036,6 +6229,293 @@ impl<'a> FrameExif<'a> {
 
     pub fn linked_ifd_count(&self) -> usize {
         self.linked_ifds.len()
+    }
+
+    pub fn common_tags(&self) -> AvResult<FrameExifCommonTags<'a>> {
+        let mut tags = FrameExifCommonTags::default();
+
+        if let Some(root) = self.ifd(0) {
+            tags.make = Self::optional_ascii_tag(root, Self::TAG_MAKE, "Make")?;
+            tags.model = Self::optional_ascii_tag(root, Self::TAG_MODEL, "Model")?;
+            tags.image_width =
+                Self::optional_short_or_long_tag(root, Self::TAG_IMAGE_WIDTH, "ImageWidth")?;
+            tags.image_length =
+                Self::optional_short_or_long_tag(root, Self::TAG_IMAGE_LENGTH, "ImageLength")?;
+            tags.orientation = Self::optional_orientation_tag(root)?;
+            tags.x_resolution =
+                Self::optional_rational_tag(root, Self::TAG_X_RESOLUTION, "XResolution")?;
+            tags.y_resolution =
+                Self::optional_rational_tag(root, Self::TAG_Y_RESOLUTION, "YResolution")?;
+            tags.resolution_unit = Self::optional_resolution_unit_tag(root)?;
+        }
+
+        if let Some(exif_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Exif) {
+            let ifd = exif_ifd.ifd();
+            tags.exif_version =
+                Self::optional_undefined_array_tag(ifd, Self::TAG_EXIF_VERSION, "ExifVersion")?;
+            tags.date_time_original =
+                Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_ORIGINAL, "DateTimeOriginal")?;
+        }
+
+        if let Some(gps_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Gps) {
+            let ifd = gps_ifd.ifd();
+            tags.gps_version_id =
+                Self::optional_byte_array_tag(ifd, Self::TAG_GPS_VERSION_ID, "GPSVersionID")?;
+            tags.gps_latitude_ref = Self::optional_gps_latitude_ref_tag(ifd)?;
+            tags.gps_latitude =
+                Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_LATITUDE, "GPSLatitude")?;
+            tags.gps_longitude_ref = Self::optional_gps_longitude_ref_tag(ifd)?;
+            tags.gps_longitude =
+                Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_LONGITUDE, "GPSLongitude")?;
+        }
+
+        if let Some(interop_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Interoperability) {
+            tags.interoperability_index = Self::optional_ascii_tag(
+                interop_ifd.ifd(),
+                Self::TAG_INTEROPERABILITY_INDEX,
+                "InteroperabilityIndex",
+            )?;
+        }
+
+        Ok(tags)
+    }
+
+    fn optional_ascii_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<&'a str>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        let strings = entry
+            .ascii_strings()?
+            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have ASCII TIFF type"))?;
+        if strings.len() != 1 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!(
+                    "must contain exactly one ASCII string, got {}",
+                    strings.len()
+                ),
+            ));
+        }
+        Ok(strings.first().copied())
+    }
+
+    fn optional_short_or_long_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<u32>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        if entry.count() != 1 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!("must contain exactly one value, got {}", entry.count()),
+            ));
+        }
+
+        match entry.tiff_type() {
+            FrameExifTiffType::Short => Ok(Some(
+                entry
+                    .short_values()?
+                    .expect("SHORT type must decode as SHORT values")[0] as u32,
+            )),
+            FrameExifTiffType::Long => Ok(Some(
+                entry
+                    .long_values()?
+                    .expect("LONG type must decode as LONG values")[0],
+            )),
+            _ => Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "must have SHORT or LONG TIFF type",
+            )),
+        }
+    }
+
+    fn optional_orientation_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifOrientation>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_ORIENTATION, "Orientation")? else {
+            return Ok(None);
+        };
+        FrameExifOrientation::from_raw(raw).map(Some)
+    }
+
+    fn optional_resolution_unit_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifResolutionUnit>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_RESOLUTION_UNIT, "ResolutionUnit")?
+        else {
+            return Ok(None);
+        };
+        FrameExifResolutionUnit::from_raw(raw).map(Some)
+    }
+
+    fn optional_short_tag(ifd: &FrameExifIfd<'a>, tag: u16, label: &str) -> AvResult<Option<u16>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        if entry.count() != 1 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!(
+                    "must contain exactly one SHORT value, got {}",
+                    entry.count()
+                ),
+            ));
+        }
+        let values = entry
+            .short_values()?
+            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have SHORT TIFF type"))?;
+        Ok(Some(values[0]))
+    }
+
+    fn optional_rational_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<FrameExifRational>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        if entry.count() != 1 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!(
+                    "must contain exactly one unsigned rational value, got {}",
+                    entry.count()
+                ),
+            ));
+        }
+        let values = entry
+            .rational_values()?
+            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have RATIONAL TIFF type"))?;
+        Ok(Some(values[0]))
+    }
+
+    fn optional_rational_array3_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<[FrameExifRational; 3]>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        if entry.count() != 3 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!(
+                    "must contain exactly three unsigned rational values, got {}",
+                    entry.count()
+                ),
+            ));
+        }
+        let values = entry
+            .rational_values()?
+            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have RATIONAL TIFF type"))?;
+        Ok(Some([values[0], values[1], values[2]]))
+    }
+
+    fn optional_byte_array_tag<const N: usize>(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<[u8; N]>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        if entry.count() as usize != N {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!(
+                    "must contain exactly {N} BYTE values, got {}",
+                    entry.count()
+                ),
+            ));
+        }
+        let values = entry
+            .byte_values()?
+            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have BYTE TIFF type"))?;
+        let mut array = [0; N];
+        array.copy_from_slice(values);
+        Ok(Some(array))
+    }
+
+    fn optional_undefined_array_tag<const N: usize>(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<[u8; N]>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        if entry.count() as usize != N {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!(
+                    "must contain exactly {N} UNDEFINED bytes, got {}",
+                    entry.count()
+                ),
+            ));
+        }
+        let values = entry
+            .undefined_values()?
+            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have UNDEFINED TIFF type"))?;
+        let mut array = [0; N];
+        array.copy_from_slice(values);
+        Ok(Some(array))
+    }
+
+    fn optional_gps_latitude_ref_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifGpsLatitudeRef>> {
+        let Some(value) =
+            Self::optional_ascii_tag(ifd, Self::TAG_GPS_LATITUDE_REF, "GPSLatitudeRef")?
+        else {
+            return Ok(None);
+        };
+        match value {
+            "N" => Ok(Some(FrameExifGpsLatitudeRef::North)),
+            "S" => Ok(Some(FrameExifGpsLatitudeRef::South)),
+            _ => Err(Self::semantic_tag_error(
+                "GPSLatitudeRef",
+                Self::TAG_GPS_LATITUDE_REF,
+                format!("must be `N` or `S`, got `{value}`"),
+            )),
+        }
+    }
+
+    fn optional_gps_longitude_ref_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifGpsLongitudeRef>> {
+        let Some(value) =
+            Self::optional_ascii_tag(ifd, Self::TAG_GPS_LONGITUDE_REF, "GPSLongitudeRef")?
+        else {
+            return Ok(None);
+        };
+        match value {
+            "E" => Ok(Some(FrameExifGpsLongitudeRef::East)),
+            "W" => Ok(Some(FrameExifGpsLongitudeRef::West)),
+            _ => Err(Self::semantic_tag_error(
+                "GPSLongitudeRef",
+                Self::TAG_GPS_LONGITUDE_REF,
+                format!("must be `E` or `W`, got `{value}`"),
+            )),
+        }
+    }
+
+    fn semantic_tag_error(label: &str, tag: u16, message: impl core::fmt::Display) -> AvError {
+        AvError::invalid_data(format!("EXIF {label} tag 0x{tag:04x} {message}"))
     }
 
     fn parse_linked_ifds(
@@ -9566,6 +10046,170 @@ mod tests {
         data.extend_from_slice(&2i32.to_le_bytes());
 
         assert_eq!(data.len(), 132);
+        data
+    }
+
+    fn exif_common_tags_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&9u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_MAKE,
+            FrameExifTiffType::Ascii,
+            6,
+            122u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_MODEL,
+            FrameExifTiffType::Ascii,
+            7,
+            128u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_IMAGE_WIDTH,
+            FrameExifTiffType::Long,
+            1,
+            640u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_IMAGE_LENGTH,
+            FrameExifTiffType::Short,
+            1,
+            [0xE0, 0x01, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_ORIENTATION,
+            FrameExifTiffType::Short,
+            1,
+            [6, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_X_RESOLUTION,
+            FrameExifTiffType::Rational,
+            1,
+            136u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_RESOLUTION_UNIT,
+            FrameExifTiffType::Short,
+            1,
+            [2, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            144u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::GPS_TAG,
+            FrameExifTiffType::Long,
+            1,
+            224u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 122);
+
+        data.extend_from_slice(b"Rusty\0");
+        data.extend_from_slice(b"Camera\0");
+        data.push(0);
+        data.extend_from_slice(&300u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        assert_eq!(data.len(), 144);
+
+        data.extend_from_slice(&3u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_EXIF_VERSION,
+            FrameExifTiffType::Undefined,
+            4,
+            *b"0231",
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_DATE_TIME_ORIGINAL,
+            FrameExifTiffType::Ascii,
+            20,
+            186u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::INTEROPERABILITY_TAG,
+            FrameExifTiffType::Long,
+            1,
+            206u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(b"2026:05:04 12:34:56\0");
+        assert_eq!(data.len(), 206);
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_INTEROPERABILITY_INDEX,
+            FrameExifTiffType::Ascii,
+            4,
+            *b"R98\0",
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 224);
+
+        data.extend_from_slice(&5u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_VERSION_ID,
+            FrameExifTiffType::Byte,
+            4,
+            [2, 3, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_LATITUDE_REF,
+            FrameExifTiffType::Ascii,
+            2,
+            [b'N', 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_LATITUDE,
+            FrameExifTiffType::Rational,
+            3,
+            290u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_LONGITUDE_REF,
+            FrameExifTiffType::Ascii,
+            2,
+            [b'W', 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_LONGITUDE,
+            FrameExifTiffType::Rational,
+            3,
+            314u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 290);
+
+        for value in [37u32, 48, 30, 122, 24, 15] {
+            data.extend_from_slice(&value.to_le_bytes());
+            data.extend_from_slice(&1u32.to_le_bytes());
+        }
+
+        assert_eq!(data.len(), 338);
         data
     }
 
@@ -14738,6 +15382,101 @@ mod tests {
                 .entry_by_tag(0x011A)
                 .unwrap()
                 .rational_values()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_common_exif_tags() {
+        let side_data = FrameSideData::new_exif(exif_common_tags_fixture()).unwrap();
+        let parsed = side_data.exif().unwrap().unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.make(), Some("Rusty"));
+        assert_eq!(common.model(), Some("Camera"));
+        assert_eq!(common.image_width(), Some(640));
+        assert_eq!(common.image_length(), Some(480));
+        assert_eq!(common.orientation(), Some(FrameExifOrientation::RightTop));
+        assert_eq!(common.orientation().unwrap().raw(), 6);
+        assert_eq!(
+            common.x_resolution(),
+            Some(FrameExifRational {
+                numerator: 300,
+                denominator: 1,
+            })
+        );
+        assert_eq!(common.y_resolution(), None);
+        assert_eq!(
+            common.resolution_unit(),
+            Some(FrameExifResolutionUnit::Inch)
+        );
+        assert_eq!(common.resolution_unit().unwrap().raw(), 2);
+        assert_eq!(common.exif_version(), Some(*b"0231"));
+        assert_eq!(common.date_time_original(), Some("2026:05:04 12:34:56"));
+        assert_eq!(common.gps_version_id(), Some([2, 3, 0, 0]));
+        assert_eq!(
+            common.gps_latitude_ref(),
+            Some(FrameExifGpsLatitudeRef::North)
+        );
+        assert_eq!(
+            common.gps_latitude(),
+            Some([
+                FrameExifRational {
+                    numerator: 37,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 48,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 30,
+                    denominator: 1,
+                },
+            ])
+        );
+        assert_eq!(
+            common.gps_longitude_ref(),
+            Some(FrameExifGpsLongitudeRef::West)
+        );
+        assert_eq!(
+            common.gps_longitude(),
+            Some([
+                FrameExifRational {
+                    numerator: 122,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 24,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 15,
+                    denominator: 1,
+                },
+            ])
+        );
+        assert_eq!(common.interoperability_index(), Some("R98"));
+
+        let mut bad_orientation_count = exif_common_tags_fixture();
+        bad_orientation_count[62..66].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_orientation_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_gps_ref = exif_common_tags_fixture();
+        bad_gps_ref[246] = b'X';
+        assert_eq!(
+            FrameExif::parse(&bad_gps_ref)
+                .unwrap()
+                .common_tags()
                 .unwrap_err()
                 .kind(),
             AvErrorKind::InvalidData
