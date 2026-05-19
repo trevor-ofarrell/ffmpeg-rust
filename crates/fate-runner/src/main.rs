@@ -55,6 +55,81 @@ struct FateContext {
 
 const PATH_RULES: &[PathRule] = &[
     PathRule {
+        path: "Cargo.toml",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "Cargo.lock",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "crates/avcodec/Cargo.toml",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &["avcodec-"],
+    },
+    PathRule {
+        path: "crates/avdevice/Cargo.toml",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &["avdevice-"],
+    },
+    PathRule {
+        path: "crates/avfilter/Cargo.toml",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &["avfilter-"],
+    },
+    PathRule {
+        path: "crates/avformat/Cargo.toml",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &["avformat-"],
+    },
+    PathRule {
+        path: "crates/avutil/Cargo.toml",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &["avutil-"],
+    },
+    PathRule {
+        path: "crates/fftools/Cargo.toml",
+        exact_ids: &[
+            "fftools-version",
+            "fftools-hide-banner",
+            "fftools-basic-io",
+            "repo-runtime-guard",
+        ],
+        id_prefixes: &["fftools-ffmpeg-", "fftools-ffprobe-"],
+    },
+    PathRule {
+        path: "crates/swresample/Cargo.toml",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &["swresample-"],
+    },
+    PathRule {
+        path: "crates/swscale/Cargo.toml",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &["swscale-"],
+    },
+    PathRule {
+        path: "fuzz/Cargo.toml",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "xtask/Cargo.toml",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "crates/fate-runner/Cargo.toml",
+        exact_ids: &["fate-runner", "repo-runtime-guard"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "crates/oracle/Cargo.toml",
+        exact_ids: &["oracle-inventory", "repo-runtime-guard"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/fate-runner/",
         exact_ids: &["fate-runner"],
         id_prefixes: &[],
@@ -981,7 +1056,11 @@ fn unmapped_relevant_paths(changed_paths: &[String]) -> Vec<String> {
 }
 
 fn is_relevant_implementation_path(path: &str) -> bool {
-    path.starts_with("crates/")
+    path == "Cargo.toml"
+        || path == "Cargo.lock"
+        || path == "fuzz/Cargo.toml"
+        || path == "xtask/Cargo.toml"
+        || path.starts_with("crates/")
         || path.starts_with("tests/fate/")
         || path.starts_with("fuzz/fuzz_targets/")
 }
@@ -1052,6 +1131,41 @@ mod tests {
                 "avformat-rawvideo-demuxer".to_string(),
                 "avformat-rawvideo-muxer".to_string(),
                 "fate-runner".to_string(),
+                "repo-runtime-guard".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_dependency_manifests_to_runtime_guard() {
+        let component_ids = component_ids_from_ledger(&ledger(&[
+            "avutil-error",
+            "avcodec-rawvideo",
+            "fftools-version",
+            "fate-runner",
+            "oracle-inventory",
+            "repo-runtime-guard",
+        ]));
+        let paths = vec![
+            "Cargo.toml".to_string(),
+            "Cargo.lock".to_string(),
+            "crates/avutil/Cargo.toml".to_string(),
+            "crates/avcodec/Cargo.toml".to_string(),
+            "crates/fftools/Cargo.toml".to_string(),
+            "crates/fate-runner/Cargo.toml".to_string(),
+            "crates/oracle/Cargo.toml".to_string(),
+            "fuzz/Cargo.toml".to_string(),
+            "xtask/Cargo.toml".to_string(),
+        ];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec![
+                "avutil-error".to_string(),
+                "avcodec-rawvideo".to_string(),
+                "fftools-version".to_string(),
+                "fate-runner".to_string(),
+                "oracle-inventory".to_string(),
                 "repo-runtime-guard".to_string(),
             ]
         );
@@ -1139,8 +1253,16 @@ mod tests {
         let mapping_contents =
             fs::read_to_string(repo_root.join(DEFAULT_FATE_MAPPINGS_PATH)).unwrap();
         let mappings = parse_fate_mappings(&mapping_contents, &component_ids).unwrap();
-        let selected_components =
-            changed_components(&component_ids, &["xtask/src/main.rs".to_string()]);
+        let selected_components = changed_components(
+            &component_ids,
+            &[
+                "xtask/src/main.rs".to_string(),
+                "Cargo.toml".to_string(),
+                "Cargo.lock".to_string(),
+                "fuzz/Cargo.toml".to_string(),
+                "xtask/Cargo.toml".to_string(),
+            ],
+        );
 
         let missing_components = components_without_mappings(&selected_components, &mappings);
 
@@ -1185,9 +1307,12 @@ mod tests {
     fn unmapped_relevant_paths_report_crate_files_but_ignore_docs() {
         let paths = vec![
             "docs/architecture.md".to_string(),
+            "Cargo.toml".to_string(),
+            "Cargo.lock".to_string(),
             "crates/swscale/src/lib.rs".to_string(),
             "tests/fate/README.md".to_string(),
             "fuzz/Cargo.toml".to_string(),
+            "xtask/Cargo.toml".to_string(),
             "fuzz/fuzz_targets/new_target.rs".to_string(),
         ];
 

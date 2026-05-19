@@ -126,6 +126,13 @@ fn guard_runtime() -> Result<(), String> {
         violations.extend(manifest_dependency_violations(&manifest, &contents));
     }
 
+    let lockfile = root.join("Cargo.lock");
+    if lockfile.is_file() {
+        let contents = fs::read_to_string(&lockfile)
+            .map_err(|err| format!("failed to read {}: {err}", lockfile.display()))?;
+        violations.extend(lockfile_dependency_violations(&lockfile, &contents));
+    }
+
     for source in runtime_source_paths(&root)? {
         let contents = fs::read_to_string(&source)
             .map_err(|err| format!("failed to read {}: {err}", source.display()))?;
@@ -134,7 +141,7 @@ fn guard_runtime() -> Result<(), String> {
 
     if violations.is_empty() {
         println!(
-            "runtime guard passed: no FFmpeg wrapper dependencies or runtime shell-outs found"
+            "runtime guard passed: no FFmpeg wrapper dependencies, lockfile packages, or runtime shell-outs found"
         );
         Ok(())
     } else {
@@ -239,6 +246,43 @@ fn manifest_dependency_violations(path: &Path, contents: &str) -> Vec<String> {
     violations
 }
 
+fn lockfile_dependency_violations(path: &Path, contents: &str) -> Vec<String> {
+    let mut violations = Vec::new();
+    let mut in_package = false;
+
+    for (index, line) in contents.lines().enumerate() {
+        let line_number = index + 1;
+        let trimmed = line.split('#').next().unwrap_or("").trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if trimmed == "[[package]]" {
+            in_package = true;
+            continue;
+        }
+
+        if trimmed.starts_with('[') {
+            in_package = false;
+            continue;
+        }
+
+        if !in_package {
+            continue;
+        }
+
+        if let Some((field, value)) = trimmed.split_once('=') {
+            if field.trim() == "name" {
+                if let Some(name) = first_quoted_value(value) {
+                    push_forbidden_dependency_violation(path, line_number, &name, &mut violations);
+                }
+            }
+        }
+    }
+
+    violations
+}
+
 fn is_dependency_section(section: &str) -> bool {
     section == "dependencies"
         || section == "dev-dependencies"
@@ -263,8 +307,12 @@ fn dependency_name_from_section(section: &str) -> Option<String> {
 fn package_rename(value: &str) -> Option<String> {
     let package_index = value.find("package")?;
     let after_package = &value[package_index..];
-    let first_quote = after_package.find('"')?;
-    let after_first_quote = &after_package[first_quote + 1..];
+    first_quoted_value(after_package)
+}
+
+fn first_quoted_value(value: &str) -> Option<String> {
+    let first_quote = value.find('"')?;
+    let after_first_quote = &value[first_quote + 1..];
     let second_quote = after_first_quote.find('"')?;
     Some(after_first_quote[..second_quote].to_string())
 }
@@ -373,6 +421,25 @@ version = "1"
         assert!(violations
             .iter()
             .any(|violation| violation.contains("ffmpeg_sys")));
+    }
+
+    #[test]
+    fn lockfile_guard_rejects_forbidden_transitive_packages() {
+        let lockfile = r#"
+[[package]]
+name = "serde"
+version = "1.0.0"
+
+[[package]]
+name = "libavformat_sys"
+version = "0.1.0"
+"#;
+
+        let violations = lockfile_dependency_violations(Path::new("Cargo.lock"), lockfile);
+        assert_eq!(violations.len(), 1);
+        assert!(violations
+            .first()
+            .is_some_and(|violation| violation.contains("libavformat_sys")));
     }
 
     #[test]
