@@ -1804,9 +1804,15 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     }
                     if let Some(value) = common.gps_track() {
                         assert_ne!(value.denominator(), 0);
+                        assert!(
+                            (value.numerator() as u128) < 360u128 * (value.denominator() as u128)
+                        );
                     }
                     if let Some(value) = common.gps_img_direction() {
                         assert_ne!(value.denominator(), 0);
+                        assert!(
+                            (value.numerator() as u128) < 360u128 * (value.denominator() as u128)
+                        );
                     }
                     if let Some(latitude) = common.gps_dest_latitude() {
                         assert!(latitude.iter().all(|value| value.denominator() != 0));
@@ -1816,6 +1822,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     }
                     if let Some(value) = common.gps_dest_bearing() {
                         assert_ne!(value.denominator(), 0);
+                        assert!(
+                            (value.numerator() as u128) < 360u128 * (value.denominator() as u128)
+                        );
                     }
                     if let Some(value) = common.gps_dest_distance() {
                         assert_ne!(value.denominator(), 0);
@@ -4089,6 +4098,16 @@ fn exercise_fixtures() {
         Some(FrameExifGpsDirectionRef::TrueDirection)
     );
     assert_eq!(gps_motion_tags.gps_track_ref().unwrap().as_str(), "T");
+    let mut bad_track_direction = exif_gps_motion_fixture();
+    bad_track_direction[124..128].copy_from_slice(&360u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_track_direction)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_track_ref_count = exif_gps_motion_fixture();
     bad_track_ref_count[56..60].copy_from_slice(&3u32.to_le_bytes());
     assert_eq!(
@@ -4111,6 +4130,16 @@ fn exercise_fixtures() {
     assert_eq!(
         gps_motion_tags.gps_img_direction().unwrap().numerator(),
         135
+    );
+    let mut bad_img_direction = exif_gps_motion_fixture();
+    bad_img_direction[132..136].copy_from_slice(&360u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_img_direction)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
     );
     assert_eq!(gps_motion_tags.gps_map_datum(), Some("WGS-84"));
 
@@ -4190,6 +4219,16 @@ fn exercise_fixtures() {
             .unwrap()
             .denominator(),
         2
+    );
+    let mut bad_dest_bearing = exif_gps_destination_fixture();
+    bad_dest_bearing[176..180].copy_from_slice(&720u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_dest_bearing)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
     );
     assert_eq!(
         gps_destination_tags.gps_dest_distance_ref(),

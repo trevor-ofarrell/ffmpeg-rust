@@ -7935,14 +7935,18 @@ impl<'a> FrameExif<'a> {
             tags.gps_speed = Self::optional_rational_tag(ifd, Self::TAG_GPS_SPEED, "GPSSpeed")?;
             tags.gps_track_ref =
                 Self::optional_gps_direction_ref_tag(ifd, Self::TAG_GPS_TRACK_REF, "GPSTrackRef")?;
-            tags.gps_track = Self::optional_rational_tag(ifd, Self::TAG_GPS_TRACK, "GPSTrack")?;
+            tags.gps_track =
+                Self::optional_gps_direction_tag(ifd, Self::TAG_GPS_TRACK, "GPSTrack")?;
             tags.gps_img_direction_ref = Self::optional_gps_direction_ref_tag(
                 ifd,
                 Self::TAG_GPS_IMG_DIRECTION_REF,
                 "GPSImgDirectionRef",
             )?;
-            tags.gps_img_direction =
-                Self::optional_rational_tag(ifd, Self::TAG_GPS_IMG_DIRECTION, "GPSImgDirection")?;
+            tags.gps_img_direction = Self::optional_gps_direction_tag(
+                ifd,
+                Self::TAG_GPS_IMG_DIRECTION,
+                "GPSImgDirection",
+            )?;
             tags.gps_map_datum =
                 Self::optional_ascii_tag(ifd, Self::TAG_GPS_MAP_DATUM, "GPSMapDatum")?;
             tags.gps_dest_latitude_ref = Self::optional_gps_latitude_ref_tag(
@@ -7972,8 +7976,11 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_GPS_DEST_BEARING_REF,
                 "GPSDestBearingRef",
             )?;
-            tags.gps_dest_bearing =
-                Self::optional_rational_tag(ifd, Self::TAG_GPS_DEST_BEARING, "GPSDestBearing")?;
+            tags.gps_dest_bearing = Self::optional_gps_direction_tag(
+                ifd,
+                Self::TAG_GPS_DEST_BEARING,
+                "GPSDestBearing",
+            )?;
             tags.gps_dest_distance_ref = Self::optional_gps_distance_ref_tag(ifd)?;
             tags.gps_dest_distance =
                 Self::optional_rational_tag(ifd, Self::TAG_GPS_DEST_DISTANCE, "GPSDestDistance")?;
@@ -8588,6 +8595,24 @@ impl<'a> FrameExif<'a> {
             ));
         }
         Ok(Some(values))
+    }
+
+    fn optional_gps_direction_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<FrameExifRational>> {
+        let Some(value) = Self::optional_rational_tag(ifd, tag, label)? else {
+            return Ok(None);
+        };
+        if !Self::rational_less_than(value, 360) {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "must be a compass direction below 360 degrees",
+            ));
+        }
+        Ok(Some(value))
     }
 
     fn rational_less_than(value: FrameExifRational, upper: u32) -> bool {
@@ -19453,6 +19478,16 @@ mod tests {
                 denominator: 1,
             })
         );
+        let mut bad_track_direction = exif_gps_motion_fixture();
+        bad_track_direction[124..128].copy_from_slice(&360u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_track_direction)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
         assert_eq!(
             common.gps_img_direction_ref(),
             Some(FrameExifGpsDirectionRef::MagneticDirection)
@@ -19464,6 +19499,16 @@ mod tests {
                 numerator: 135,
                 denominator: 1,
             })
+        );
+        let mut bad_img_direction = exif_gps_motion_fixture();
+        bad_img_direction[132..136].copy_from_slice(&360u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_img_direction)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
         );
         assert_eq!(common.gps_map_datum(), Some("WGS-84"));
 
@@ -19571,6 +19616,16 @@ mod tests {
                 numerator: 91,
                 denominator: 2,
             })
+        );
+        let mut bad_dest_bearing = exif_gps_destination_fixture();
+        bad_dest_bearing[176..180].copy_from_slice(&720u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_dest_bearing)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
         );
         assert_eq!(
             common.gps_dest_distance_ref(),
