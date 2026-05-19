@@ -3913,6 +3913,16 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let mut bad_original_shape = exif_common_tags_fixture();
+    bad_original_shape[196] = b'T';
+    assert_eq!(
+        FrameExif::parse(&bad_original_shape)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(common_tags.gps_version_id(), Some([2, 3, 0, 0]));
     let mut bad_gps_version_count = exif_common_tags_fixture();
     bad_gps_version_count[230..234].copy_from_slice(&3u32.to_le_bytes());
@@ -3977,6 +3987,16 @@ fn exercise_fixtures() {
     bad_gps_date_stamp_count[68..72].copy_from_slice(&10u32.to_le_bytes());
     assert_eq!(
         FrameExif::parse(&bad_gps_date_stamp_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_gps_date_stamp_shape = exif_gps_altitude_time_fixture();
+    bad_gps_date_stamp_shape[116] = b'-';
+    assert_eq!(
+        FrameExif::parse(&bad_gps_date_stamp_shape)
             .unwrap()
             .common_tags()
             .unwrap_err()
@@ -4170,6 +4190,16 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let mut bad_digitized_shape = exif_exposure_tags_fixture();
+    bad_digitized_shape[151] = b'X';
+    assert_eq!(
+        FrameExif::parse(&bad_digitized_shape)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let apex_exif_bytes = exif_apex_exposure_fixture();
     let apex_exif = FrameExif::parse(&apex_exif_bytes).unwrap();
@@ -4244,6 +4274,16 @@ fn exercise_fixtures() {
     assert_eq!(offset_time_tags.offset_time(), Some("+09:00"));
     assert_eq!(offset_time_tags.offset_time_original(), Some("-07:30"));
     assert_eq!(offset_time_tags.offset_time_digitized(), Some("+00:00"));
+    let mut bad_offset_shape = exif_offset_time_fixture();
+    bad_offset_shape[68] = b'Z';
+    assert_eq!(
+        FrameExif::parse(&bad_offset_shape)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let capture_exif_bytes = exif_capture_settings_fixture();
     let capture_exif = FrameExif::parse(&capture_exif_bytes).unwrap();
@@ -4458,6 +4498,16 @@ fn exercise_fixtures() {
     bad_date_time_count[38..42].copy_from_slice(&19u32.to_le_bytes());
     assert_eq!(
         FrameExif::parse(&bad_date_time_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_date_time_shape = exif_descriptive_tags_fixture();
+    bad_date_time_shape[102] = b'-';
+    assert_eq!(
+        FrameExif::parse(&bad_date_time_shape)
             .unwrap()
             .common_tags()
             .unwrap_err()

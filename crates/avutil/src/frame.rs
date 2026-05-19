@@ -8041,7 +8041,11 @@ impl<'a> FrameExif<'a> {
         tag: u16,
         label: &str,
     ) -> AvResult<Option<&'a str>> {
-        Self::optional_ascii_exact_count_tag(ifd, tag, label, 7)
+        let Some(value) = Self::optional_ascii_exact_count_tag(ifd, tag, label, 7)? else {
+            return Ok(None);
+        };
+        Self::validate_offset_time_ascii(label, tag, value)?;
+        Ok(Some(value))
     }
 
     fn optional_datetime_tag(
@@ -8049,11 +8053,79 @@ impl<'a> FrameExif<'a> {
         tag: u16,
         label: &str,
     ) -> AvResult<Option<&'a str>> {
-        Self::optional_ascii_exact_count_tag(ifd, tag, label, 20)
+        let Some(value) = Self::optional_ascii_exact_count_tag(ifd, tag, label, 20)? else {
+            return Ok(None);
+        };
+        Self::validate_datetime_ascii(label, tag, value)?;
+        Ok(Some(value))
     }
 
     fn optional_gps_date_stamp_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<&'a str>> {
-        Self::optional_ascii_exact_count_tag(ifd, Self::TAG_GPS_DATE_STAMP, "GPSDateStamp", 11)
+        let Some(value) = Self::optional_ascii_exact_count_tag(
+            ifd,
+            Self::TAG_GPS_DATE_STAMP,
+            "GPSDateStamp",
+            11,
+        )?
+        else {
+            return Ok(None);
+        };
+        Self::validate_gps_date_stamp_ascii(value)?;
+        Ok(Some(value))
+    }
+
+    fn validate_datetime_ascii(label: &str, tag: u16, value: &str) -> AvResult<()> {
+        let bytes = value.as_bytes();
+        let valid = bytes.len() == 19
+            && bytes.iter().enumerate().all(|(index, byte)| match index {
+                4 | 7 | 13 | 16 => *byte == b':',
+                10 => *byte == b' ',
+                _ => byte.is_ascii_digit(),
+            });
+        if !valid {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "must match `YYYY:MM:DD HH:MM:SS`",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_offset_time_ascii(label: &str, tag: u16, value: &str) -> AvResult<()> {
+        let bytes = value.as_bytes();
+        let valid = bytes.len() == 6
+            && matches!(bytes.first().copied(), Some(b'+' | b'-'))
+            && bytes[1].is_ascii_digit()
+            && bytes[2].is_ascii_digit()
+            && bytes[3] == b':'
+            && bytes[4].is_ascii_digit()
+            && bytes[5].is_ascii_digit();
+        if !valid {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "must match `[+-]HH:MM`",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_gps_date_stamp_ascii(value: &str) -> AvResult<()> {
+        let bytes = value.as_bytes();
+        let valid = bytes.len() == 10
+            && bytes.iter().enumerate().all(|(index, byte)| match index {
+                4 | 7 => *byte == b':',
+                _ => byte.is_ascii_digit(),
+            });
+        if !valid {
+            return Err(Self::semantic_tag_error(
+                "GPSDateStamp",
+                Self::TAG_GPS_DATE_STAMP,
+                "must match `YYYY:MM:DD`",
+            ));
+        }
+        Ok(())
     }
 
     fn optional_short_or_long_tag(
@@ -19008,6 +19080,17 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut bad_original_shape = exif_common_tags_fixture();
+        bad_original_shape[196] = b'T';
+        assert_eq!(
+            FrameExif::parse(&bad_original_shape)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_gps_version_count = exif_common_tags_fixture();
         bad_gps_version_count[230..234].copy_from_slice(&3u32.to_le_bytes());
         assert_eq!(
@@ -19116,6 +19199,17 @@ mod tests {
         bad_date_stamp_count[68..72].copy_from_slice(&10u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_date_stamp_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_date_stamp_shape = exif_gps_altitude_time_fixture();
+        bad_date_stamp_shape[116] = b'-';
+        assert_eq!(
+            FrameExif::parse(&bad_date_stamp_shape)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
@@ -19463,6 +19557,17 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut bad_digitized_shape = exif_exposure_tags_fixture();
+        bad_digitized_shape[151] = b'X';
+        assert_eq!(
+            FrameExif::parse(&bad_digitized_shape)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_pixel_count = exif_exposure_tags_fixture();
         bad_pixel_count[92..96].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
@@ -19710,6 +19815,17 @@ mod tests {
         bad_offset_count[32..36].copy_from_slice(&6u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_offset_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_offset_shape = exif_offset_time_fixture();
+        bad_offset_shape[68] = b'Z';
+        assert_eq!(
+            FrameExif::parse(&bad_offset_shape)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
@@ -20391,6 +20507,17 @@ mod tests {
         bad_date_time_count[38..42].copy_from_slice(&19u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_date_time_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_date_time_shape = exif_descriptive_tags_fixture();
+        bad_date_time_shape[102] = b'-';
+        assert_eq!(
+            FrameExif::parse(&bad_date_time_shape)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
