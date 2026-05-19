@@ -5470,6 +5470,401 @@ impl FrameThreeDReferenceDisplays {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifEndian {
+    Little,
+    Big,
+}
+
+impl FrameExifEndian {
+    fn read_u16(self, data: &[u8], offset: usize) -> u16 {
+        let mut raw = [0; 2];
+        raw.copy_from_slice(&data[offset..offset + 2]);
+        match self {
+            Self::Little => u16::from_le_bytes(raw),
+            Self::Big => u16::from_be_bytes(raw),
+        }
+    }
+
+    fn read_u32(self, data: &[u8], offset: usize) -> u32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        match self {
+            Self::Little => u32::from_le_bytes(raw),
+            Self::Big => u32::from_be_bytes(raw),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifTiffType {
+    Byte,
+    Ascii,
+    Short,
+    Long,
+    Rational,
+    SignedByte,
+    Undefined,
+    SignedShort,
+    SignedLong,
+    SignedRational,
+    Float,
+    Double,
+    Ifd,
+}
+
+impl FrameExifTiffType {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            1 => Ok(Self::Byte),
+            2 => Ok(Self::Ascii),
+            3 => Ok(Self::Short),
+            4 => Ok(Self::Long),
+            5 => Ok(Self::Rational),
+            6 => Ok(Self::SignedByte),
+            7 => Ok(Self::Undefined),
+            8 => Ok(Self::SignedShort),
+            9 => Ok(Self::SignedLong),
+            10 => Ok(Self::SignedRational),
+            11 => Ok(Self::Float),
+            12 => Ok(Self::Double),
+            13 => Ok(Self::Ifd),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF TIFF entry type {raw} is not supported"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Byte => 1,
+            Self::Ascii => 2,
+            Self::Short => 3,
+            Self::Long => 4,
+            Self::Rational => 5,
+            Self::SignedByte => 6,
+            Self::Undefined => 7,
+            Self::SignedShort => 8,
+            Self::SignedLong => 9,
+            Self::SignedRational => 10,
+            Self::Float => 11,
+            Self::Double => 12,
+            Self::Ifd => 13,
+        }
+    }
+
+    pub const fn element_size(self) -> usize {
+        match self {
+            Self::Byte | Self::Ascii | Self::SignedByte | Self::Undefined => 1,
+            Self::Short | Self::SignedShort => 2,
+            Self::Long | Self::SignedLong | Self::Float | Self::Ifd => 4,
+            Self::Rational | Self::SignedRational | Self::Double => 8,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameExifEntry<'a> {
+    tag: u16,
+    tiff_type: FrameExifTiffType,
+    count: u32,
+    value_offset: u32,
+    data_len: usize,
+    value_or_offset_bytes: &'a [u8],
+    value_data: &'a [u8],
+    data_range: Option<(usize, usize)>,
+}
+
+impl<'a> FrameExifEntry<'a> {
+    pub const fn tag(self) -> u16 {
+        self.tag
+    }
+
+    pub const fn tiff_type(self) -> FrameExifTiffType {
+        self.tiff_type
+    }
+
+    pub const fn count(self) -> u32 {
+        self.count
+    }
+
+    pub const fn value_offset(self) -> u32 {
+        self.value_offset
+    }
+
+    pub const fn data_len(self) -> usize {
+        self.data_len
+    }
+
+    pub const fn value_or_offset_bytes(self) -> &'a [u8] {
+        self.value_or_offset_bytes
+    }
+
+    pub const fn value_data(self) -> &'a [u8] {
+        self.value_data
+    }
+
+    pub const fn data_range(self) -> Option<(usize, usize)> {
+        self.data_range
+    }
+
+    pub const fn is_inline(self) -> bool {
+        self.data_range.is_none()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameExifIfd<'a> {
+    offset: usize,
+    entries: Vec<FrameExifEntry<'a>>,
+    next_ifd_offset: Option<usize>,
+}
+
+impl<'a> FrameExifIfd<'a> {
+    pub const fn offset(&self) -> usize {
+        self.offset
+    }
+
+    pub fn entries(&self) -> &[FrameExifEntry<'a>] {
+        &self.entries
+    }
+
+    pub fn entry(&self, index: usize) -> Option<FrameExifEntry<'a>> {
+        self.entries.get(index).copied()
+    }
+
+    pub fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub const fn next_ifd_offset(&self) -> Option<usize> {
+        self.next_ifd_offset
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameExif<'a> {
+    data: &'a [u8],
+    endian: FrameExifEndian,
+    first_ifd_offset: usize,
+    ifds: Vec<FrameExifIfd<'a>>,
+}
+
+impl<'a> FrameExif<'a> {
+    pub const TIFF_HEADER_LEN: usize = 8;
+    pub const IFD_ENTRY_LEN: usize = 12;
+    pub const IFD_COUNT_LEN: usize = 2;
+    pub const NEXT_IFD_OFFSET_LEN: usize = 4;
+    pub const MAX_IFDS: usize = 16;
+    pub const MAX_IFD_ENTRIES: usize = 4096;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() < Self::TIFF_HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "EXIF side data requires at least {} TIFF header bytes, got {}",
+                Self::TIFF_HEADER_LEN,
+                data.len()
+            )));
+        }
+
+        let endian = if data.starts_with(&[0x49, 0x49, 0x2A, 0x00]) {
+            FrameExifEndian::Little
+        } else if data.starts_with(&[0x4D, 0x4D, 0x00, 0x2A]) {
+            FrameExifEndian::Big
+        } else {
+            return Err(AvError::invalid_data(
+                "EXIF side data must start with a TIFF little-endian or big-endian header",
+            ));
+        };
+        let first_ifd_offset = endian.read_u32(data, 4) as usize;
+        Self::validate_ifd_offset(data, first_ifd_offset, "first")?;
+
+        let ifds = Self::parse_ifd_chain(data, endian, first_ifd_offset)?;
+        Ok(Self {
+            data,
+            endian,
+            first_ifd_offset,
+            ifds,
+        })
+    }
+
+    pub const fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn endian(&self) -> FrameExifEndian {
+        self.endian
+    }
+
+    pub const fn first_ifd_offset(&self) -> usize {
+        self.first_ifd_offset
+    }
+
+    pub fn ifds(&self) -> &[FrameExifIfd<'a>] {
+        &self.ifds
+    }
+
+    pub fn ifd(&self, index: usize) -> Option<&FrameExifIfd<'a>> {
+        self.ifds.get(index)
+    }
+
+    pub fn ifd_count(&self) -> usize {
+        self.ifds.len()
+    }
+
+    fn parse_ifd_chain(
+        data: &'a [u8],
+        endian: FrameExifEndian,
+        first_offset: usize,
+    ) -> AvResult<Vec<FrameExifIfd<'a>>> {
+        let mut ifds = Vec::new();
+        let mut seen_offsets = Vec::new();
+        let mut offset = first_offset;
+
+        for _ in 0..Self::MAX_IFDS {
+            if seen_offsets.contains(&offset) {
+                return Err(AvError::invalid_data(format!(
+                    "EXIF IFD chain loops back to offset {offset}"
+                )));
+            }
+            seen_offsets.push(offset);
+            let ifd = Self::parse_ifd(data, endian, offset)?;
+            let next_ifd_offset = ifd.next_ifd_offset;
+            ifds.push(ifd);
+            match next_ifd_offset {
+                Some(next) => {
+                    Self::validate_ifd_offset(data, next, "next")?;
+                    offset = next;
+                }
+                None => return Ok(ifds),
+            }
+        }
+
+        Err(AvError::invalid_data(format!(
+            "EXIF IFD chain exceeds {} directories",
+            Self::MAX_IFDS
+        )))
+    }
+
+    fn parse_ifd(
+        data: &'a [u8],
+        endian: FrameExifEndian,
+        offset: usize,
+    ) -> AvResult<FrameExifIfd<'a>> {
+        Self::validate_ifd_offset(data, offset, "current")?;
+        let count_end = offset
+            .checked_add(Self::IFD_COUNT_LEN)
+            .ok_or_else(|| AvError::invalid_data("EXIF IFD entry-count offset overflows usize"))?;
+        let entry_count = endian.read_u16(data, offset) as usize;
+        if entry_count > Self::MAX_IFD_ENTRIES {
+            return Err(AvError::invalid_data(format!(
+                "EXIF IFD entry count {entry_count} exceeds {}",
+                Self::MAX_IFD_ENTRIES
+            )));
+        }
+
+        let entries_len = entry_count
+            .checked_mul(Self::IFD_ENTRY_LEN)
+            .ok_or_else(|| AvError::invalid_data("EXIF IFD entry-table length overflow"))?;
+        let next_offset_position = count_end
+            .checked_add(entries_len)
+            .ok_or_else(|| AvError::invalid_data("EXIF IFD next-offset position overflow"))?;
+        let table_end = next_offset_position
+            .checked_add(Self::NEXT_IFD_OFFSET_LEN)
+            .ok_or_else(|| AvError::invalid_data("EXIF IFD table end overflow"))?;
+        if table_end > data.len() {
+            return Err(AvError::invalid_data(format!(
+                "EXIF IFD at offset {offset} requires {table_end} bytes, got {}",
+                data.len()
+            )));
+        }
+
+        let mut entries = Vec::with_capacity(entry_count);
+        for index in 0..entry_count {
+            let entry_offset = count_end + index * Self::IFD_ENTRY_LEN;
+            entries.push(Self::parse_ifd_entry(data, endian, entry_offset)?);
+        }
+
+        let next = endian.read_u32(data, next_offset_position);
+        Ok(FrameExifIfd {
+            offset,
+            entries,
+            next_ifd_offset: (next != 0).then_some(next as usize),
+        })
+    }
+
+    fn parse_ifd_entry(
+        data: &'a [u8],
+        endian: FrameExifEndian,
+        entry_offset: usize,
+    ) -> AvResult<FrameExifEntry<'a>> {
+        let tag = endian.read_u16(data, entry_offset);
+        let tiff_type = FrameExifTiffType::from_raw(endian.read_u16(data, entry_offset + 2))?;
+        let count = endian.read_u32(data, entry_offset + 4);
+        let value_offset = endian.read_u32(data, entry_offset + 8);
+        let data_len = tiff_type
+            .element_size()
+            .checked_mul(count as usize)
+            .ok_or_else(|| AvError::invalid_data("EXIF TIFF entry value length overflow"))?;
+        let value_field_offset = entry_offset + 8;
+        let value_or_offset_bytes = &data[value_field_offset..value_field_offset + 4];
+
+        let (value_data, data_range) = if data_len <= 4 {
+            (
+                &data[value_field_offset..value_field_offset + data_len],
+                None,
+            )
+        } else {
+            let start = value_offset as usize;
+            let end = start
+                .checked_add(data_len)
+                .ok_or_else(|| AvError::invalid_data("EXIF TIFF entry data range end overflow"))?;
+            if end > data.len() {
+                return Err(AvError::invalid_data(format!(
+                    "EXIF TIFF entry tag 0x{tag:04x} data range {start}..{end} exceeds payload length {}",
+                    data.len()
+                )));
+            }
+            (&data[start..end], Some((start, end)))
+        };
+
+        Ok(FrameExifEntry {
+            tag,
+            tiff_type,
+            count,
+            value_offset,
+            data_len,
+            value_or_offset_bytes,
+            value_data,
+            data_range,
+        })
+    }
+
+    fn validate_ifd_offset(data: &[u8], offset: usize, label: &str) -> AvResult<()> {
+        if offset < Self::TIFF_HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "EXIF {label} IFD offset {offset} is before the TIFF header end {}",
+                Self::TIFF_HEADER_LEN
+            )));
+        }
+        let count_end = offset.checked_add(Self::IFD_COUNT_LEN).ok_or_else(|| {
+            AvError::invalid_data(format!("EXIF {label} IFD offset overflows usize"))
+        })?;
+        if count_end > data.len() {
+            return Err(AvError::invalid_data(format!(
+                "EXIF {label} IFD offset {offset} does not leave room for an entry count in {} bytes",
+                data.len()
+            )));
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameDolbyVisionRpuDataHeader<'a> {
     data: &'a [u8],
 }
@@ -6588,6 +6983,12 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::ThreeDReferenceDisplays, value.to_bytes())
     }
 
+    pub fn new_exif(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(FrameSideDataKind::Exif, data)?;
+        FrameExif::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_film_grain_params(data: Vec<u8>) -> AvResult<Self> {
         let side_data = Self::new_with_kind(FrameSideDataKind::FilmGrainParams, data)?;
         FrameFilmGrainParams::parse(side_data.data())?;
@@ -6873,6 +7274,14 @@ impl FrameSideData {
         }
 
         FrameThreeDReferenceDisplays::parse(self.data()).map(Some)
+    }
+
+    pub fn exif(&self) -> AvResult<Option<FrameExif<'_>>> {
+        if self.kind != FrameSideDataKind::Exif {
+            return Ok(None);
+        }
+
+        FrameExif::parse(self.data()).map(Some)
     }
 
     pub fn film_grain_params(&self) -> AvResult<Option<FrameFilmGrainParams<'_>>> {
@@ -8587,6 +8996,29 @@ mod tests {
     fn write_ne_rational(data: &mut [u8], offset: usize, value: Rational) {
         write_ne_i32(data, offset, value.num());
         write_ne_i32(data, offset + 4, value.den());
+    }
+
+    fn minimal_little_exif_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend_from_slice(&0x010Fu16.to_le_bytes());
+        data.extend_from_slice(&FrameExifTiffType::Ascii.raw().to_le_bytes());
+        data.extend_from_slice(&6u32.to_le_bytes());
+        data.extend_from_slice(&26u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(b"Rusty\0");
+        data
+    }
+
+    fn minimal_big_exif_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x4D, 0x4D, 0x00, 0x2A]);
+        data.extend_from_slice(&8u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&0u32.to_be_bytes());
+        data
     }
 
     #[test]
@@ -13483,6 +13915,126 @@ mod tests {
         let non_tdrdi =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
         assert_eq!(non_tdrdi.three_d_reference_displays().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_exif_payload() {
+        let exif_bytes = minimal_little_exif_fixture();
+        let side_data = FrameSideData::new_exif(exif_bytes.clone()).unwrap();
+
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::Exif);
+        assert_eq!(side_data.data(), exif_bytes.as_slice());
+        let parsed = side_data.exif().unwrap().unwrap();
+        assert_eq!(parsed.data(), exif_bytes.as_slice());
+        assert_eq!(parsed.endian(), FrameExifEndian::Little);
+        assert_eq!(parsed.first_ifd_offset(), 8);
+        assert_eq!(parsed.ifd_count(), 1);
+
+        let ifd = parsed.ifd(0).unwrap();
+        assert_eq!(ifd.offset(), 8);
+        assert_eq!(ifd.entry_count(), 1);
+        assert_eq!(ifd.next_ifd_offset(), None);
+        let entry = ifd.entry(0).unwrap();
+        assert_eq!(entry.tag(), 0x010F);
+        assert_eq!(entry.tiff_type(), FrameExifTiffType::Ascii);
+        assert_eq!(entry.tiff_type().raw(), 2);
+        assert_eq!(entry.tiff_type().element_size(), 1);
+        assert_eq!(entry.count(), 6);
+        assert_eq!(entry.value_offset(), 26);
+        assert_eq!(entry.data_len(), 6);
+        assert!(!entry.is_inline());
+        assert_eq!(entry.value_or_offset_bytes(), &26u32.to_le_bytes());
+        assert_eq!(entry.data_range(), Some((26, 32)));
+        assert_eq!(entry.value_data(), b"Rusty\0");
+        assert_eq!(ifd.entries(), &[entry]);
+        assert_eq!(FrameExif::parse(parsed.data()).unwrap(), parsed);
+
+        let big = FrameSideData::new_exif(minimal_big_exif_fixture()).unwrap();
+        let parsed_big = big.exif().unwrap().unwrap();
+        assert_eq!(parsed_big.endian(), FrameExifEndian::Big);
+        assert_eq!(parsed_big.first_ifd_offset(), 8);
+        assert_eq!(parsed_big.ifd_count(), 1);
+        assert!(parsed_big.ifd(0).unwrap().is_empty());
+        assert_eq!(parsed_big.ifd(0).unwrap().next_ifd_offset(), None);
+
+        let non_exif =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+        assert_eq!(non_exif.exif().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_exif_payload() {
+        fn assert_invalid(data: Vec<u8>) {
+            assert_eq!(
+                FrameExif::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                FrameSideData::new_exif(data.clone()).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data = FrameSideData::new_with_kind(FrameSideDataKind::Exif, data).unwrap();
+            assert_eq!(
+                side_data.exif().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        assert_invalid(Vec::new());
+        assert_invalid(vec![0; FrameExif::TIFF_HEADER_LEN - 1]);
+        assert_invalid(vec![0x45, 0x78, 0x69, 0x66, 8, 0, 0, 0]);
+
+        let mut bad_first_offset = minimal_little_exif_fixture();
+        bad_first_offset[4..8].copy_from_slice(&6u32.to_le_bytes());
+        assert_invalid(bad_first_offset);
+
+        let mut bad_missing_count = minimal_little_exif_fixture();
+        bad_missing_count[4..8].copy_from_slice(&31u32.to_le_bytes());
+        assert_invalid(bad_missing_count);
+
+        let mut too_many_entries = Vec::new();
+        too_many_entries.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        too_many_entries.extend_from_slice(&8u32.to_le_bytes());
+        too_many_entries.extend_from_slice(&(FrameExif::MAX_IFD_ENTRIES as u16 + 1).to_le_bytes());
+        assert_invalid(too_many_entries);
+
+        let mut truncated_table = Vec::new();
+        truncated_table.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        truncated_table.extend_from_slice(&8u32.to_le_bytes());
+        truncated_table.extend_from_slice(&1u16.to_le_bytes());
+        truncated_table.extend_from_slice(&[0; 4]);
+        assert_invalid(truncated_table);
+
+        let mut bad_type = minimal_little_exif_fixture();
+        bad_type[12..14].copy_from_slice(&0u16.to_le_bytes());
+        assert_invalid(bad_type);
+
+        let mut bad_range = minimal_little_exif_fixture();
+        bad_range[18..22].copy_from_slice(&250u32.to_le_bytes());
+        assert_invalid(bad_range);
+
+        let mut looped_ifd = Vec::new();
+        looped_ifd.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        looped_ifd.extend_from_slice(&8u32.to_le_bytes());
+        looped_ifd.extend_from_slice(&0u16.to_le_bytes());
+        looped_ifd.extend_from_slice(&8u32.to_le_bytes());
+        assert_invalid(looped_ifd);
+
+        let mut bad_next_offset = Vec::new();
+        bad_next_offset.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        bad_next_offset.extend_from_slice(&8u32.to_le_bytes());
+        bad_next_offset.extend_from_slice(&0u16.to_le_bytes());
+        bad_next_offset.extend_from_slice(&7u32.to_le_bytes());
+        assert_invalid(bad_next_offset);
+
+        assert_eq!(
+            FrameExifTiffType::from_raw(14).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let non_exif =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
+        assert_eq!(non_exif.exif().unwrap(), None);
     }
 
     #[test]
