@@ -4046,9 +4046,24 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_view_id.view_id().unwrap(), None);
 
-    let tdrdi_display = FrameThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
-    let tdrdi = FrameThreeDReferenceDisplays::new(31, true, 7, vec![tdrdi_display]).unwrap();
+    let tdrdi_first = FrameThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
+    let tdrdi_second = FrameThreeDReferenceDisplay::new(2, 3, (10, 20), (4, 40), false, 0);
+    let tdrdi =
+        FrameThreeDReferenceDisplays::new(31, true, 7, vec![tdrdi_first, tdrdi_second]).unwrap();
     let tdrdi_side_data = FrameSideData::new_three_d_reference_displays(tdrdi.clone()).unwrap();
+    assert_eq!(FrameThreeDReferenceDisplay::DATA_LEN, 12);
+    assert_eq!(
+        FrameThreeDReferenceDisplays::HEADER_LEN,
+        if core::mem::size_of::<usize>() == 8 {
+            24
+        } else {
+            12
+        }
+    );
+    assert_eq!(
+        FrameThreeDReferenceDisplays::ENTRIES_OFFSET,
+        FrameThreeDReferenceDisplays::HEADER_LEN
+    );
     assert_eq!(
         tdrdi_side_data.kind_id(),
         &FrameSideDataKind::ThreeDReferenceDisplays
@@ -4058,27 +4073,114 @@ fn exercise_fixtures() {
         .unwrap()
         .unwrap();
     assert_eq!(parsed_tdrdi, tdrdi);
-    assert_eq!(parsed_tdrdi.display(0), Some(tdrdi_display));
-    assert_eq!(parsed_tdrdi.display(1), None);
-    assert!(tdrdi_display.additional_shift_present());
-    assert_eq!(tdrdi_display.num_sample_shift(), -11);
+    assert_eq!(parsed_tdrdi.prec_ref_display_width(), 31);
+    assert!(parsed_tdrdi.ref_viewing_distance_flag());
+    assert_eq!(parsed_tdrdi.prec_ref_viewing_dist(), 7);
+    assert_eq!(parsed_tdrdi.nb_displays(), 2);
+    assert_eq!(parsed_tdrdi.displays(), &[tdrdi_first, tdrdi_second]);
+    assert_eq!(parsed_tdrdi.display(0), Some(tdrdi_first));
+    assert_eq!(parsed_tdrdi.display(1), Some(tdrdi_second));
+    assert_eq!(parsed_tdrdi.display(2), None);
+    assert_eq!(tdrdi_first.left_view_id(), 0);
+    assert_eq!(tdrdi_first.right_view_id(), 1);
+    assert_eq!(tdrdi_first.exponent_ref_display_width(), 12);
+    assert_eq!(tdrdi_first.mantissa_ref_display_width(), 34);
+    assert_eq!(tdrdi_first.exponent_ref_viewing_distance(), 5);
+    assert_eq!(tdrdi_first.mantissa_ref_viewing_distance(), 67);
+    assert!(tdrdi_first.additional_shift_present());
+    assert_eq!(tdrdi_first.num_sample_shift(), -11);
     assert_eq!(tdrdi_side_data.data(), tdrdi.to_bytes());
+    assert_eq!(
+        FrameThreeDReferenceDisplay::parse(&tdrdi_first.to_bytes()).unwrap(),
+        tdrdi_first
+    );
+    assert_eq!(
+        FrameThreeDReferenceDisplays::parse(&parsed_tdrdi.to_bytes()).unwrap(),
+        parsed_tdrdi
+    );
+    assert_eq!(
+        FrameThreeDReferenceDisplay::parse(&[0; FrameThreeDReferenceDisplay::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameThreeDReferenceDisplays::new(31, true, 7, Vec::new())
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameThreeDReferenceDisplays::new(
+            31,
+            true,
+            7,
+            vec![tdrdi_first; FrameThreeDReferenceDisplays::MAX_REF_DISPLAYS + 1],
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let invalid_tdrdi = FrameThreeDReferenceDisplays::new(31, true, 7, vec![tdrdi_first]).unwrap();
     for mut data in [
         Vec::new(),
         vec![0; FrameThreeDReferenceDisplays::HEADER_LEN - 1],
         {
-            let mut data = tdrdi.to_bytes();
+            let mut data = invalid_tdrdi.to_bytes();
+            data[0] = 32;
+            data
+        },
+        {
+            let mut data = invalid_tdrdi.to_bytes();
             data[1] = 2;
             data
         },
         {
-            let mut data = tdrdi.to_bytes();
+            let mut data = invalid_tdrdi.to_bytes();
+            data[2] = 32;
+            data
+        },
+        {
+            let mut data = invalid_tdrdi.to_bytes();
             data[3] = 0;
             data
         },
         {
-            let mut data = tdrdi.to_bytes();
+            let mut data = invalid_tdrdi.to_bytes();
+            data[3] = (FrameThreeDReferenceDisplays::MAX_REF_DISPLAYS + 1) as u8;
+            data
+        },
+        {
+            let mut data = invalid_tdrdi.to_bytes();
+            write_ne_usize(
+                &mut data,
+                FrameThreeDReferenceDisplays::ENTRIES_OFFSET_OFFSET,
+                FrameThreeDReferenceDisplays::ENTRIES_OFFSET - 2,
+            );
+            data
+        },
+        {
+            let mut data = invalid_tdrdi.to_bytes();
+            write_ne_usize(
+                &mut data,
+                FrameThreeDReferenceDisplays::ENTRY_SIZE_OFFSET,
+                FrameThreeDReferenceDisplay::DATA_LEN + 2,
+            );
+            data
+        },
+        {
+            let mut data = invalid_tdrdi.to_bytes();
             data[FrameThreeDReferenceDisplays::ENTRIES_OFFSET + 8] = 2;
+            data
+        },
+        {
+            let mut data = invalid_tdrdi.to_bytes();
+            data.push(0);
+            data
+        },
+        {
+            let mut data = invalid_tdrdi.to_bytes();
+            data.pop();
             data
         },
     ] {
