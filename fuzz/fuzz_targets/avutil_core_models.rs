@@ -4880,6 +4880,113 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
     assert_eq!(common_tags.interoperability_index(), Some("R98"));
+    let interoperability_exif_bytes = exif_interoperability_related_image_fixture();
+    let interoperability_exif = FrameExif::parse(&interoperability_exif_bytes).unwrap();
+    let interoperability_tags = interoperability_exif.common_tags().unwrap();
+    assert_eq!(interoperability_tags.interoperability_index(), Some("R98"));
+    assert_eq!(
+        interoperability_tags.interoperability_version(),
+        Some(*b"0100")
+    );
+    assert_eq!(
+        interoperability_tags.related_image_file_format(),
+        Some("JPEG")
+    );
+    assert_eq!(interoperability_tags.related_image_width(), Some(64));
+    assert_eq!(interoperability_tags.related_image_length(), Some(48));
+    let mut bad_interoperability_version_type = exif_interoperability_related_image_fixture();
+    bad_interoperability_version_type[60..62]
+        .copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_interoperability_version_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_interoperability_version_count = exif_interoperability_related_image_fixture();
+    bad_interoperability_version_count[62..66].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_interoperability_version_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_interoperability_version_digit = exif_interoperability_related_image_fixture();
+    bad_interoperability_version_digit[66] = b'v';
+    assert_eq!(
+        FrameExif::parse(&bad_interoperability_version_digit)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_related_image_format_type = exif_interoperability_related_image_fixture();
+    bad_related_image_format_type[72..74]
+        .copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_related_image_format_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_related_image_format_nul = exif_interoperability_related_image_fixture();
+    bad_related_image_format_nul[114] = b'X';
+    assert_eq!(
+        FrameExif::parse(&bad_related_image_format_nul)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_related_image_width_count = exif_interoperability_related_image_fixture();
+    bad_related_image_width_count[86..90].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_related_image_width_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_related_image_width_type = exif_interoperability_related_image_fixture();
+    bad_related_image_width_type[84..86]
+        .copy_from_slice(&FrameExifTiffType::Rational.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_related_image_width_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_related_image_width_zero = exif_interoperability_related_image_fixture();
+    bad_related_image_width_zero[90..92].copy_from_slice(&0u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_related_image_width_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_related_image_length_zero = exif_interoperability_related_image_fixture();
+    bad_related_image_length_zero[102..106].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_related_image_length_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let gps_altitude_time_exif_bytes = exif_gps_altitude_time_fixture();
     let gps_altitude_time_exif = FrameExif::parse(&gps_altitude_time_exif_bytes).unwrap();
@@ -7151,6 +7258,77 @@ fn exif_root_strip_position_fixture() -> Vec<u8> {
         data.extend_from_slice(&numerator.to_le_bytes());
         data.extend_from_slice(&denominator.to_le_bytes());
     }
+    data
+}
+
+fn exif_interoperability_related_image_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    assert_eq!(data.len(), 26);
+
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::INTEROPERABILITY_TAG,
+        FrameExifTiffType::Long,
+        1,
+        44u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    assert_eq!(data.len(), 44);
+
+    data.extend_from_slice(&5u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_INTEROPERABILITY_INDEX,
+        FrameExifTiffType::Ascii,
+        4,
+        *b"R98\0",
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_INTEROPERABILITY_VERSION,
+        FrameExifTiffType::Undefined,
+        4,
+        *b"0100",
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_RELATED_IMAGE_FILE_FORMAT,
+        FrameExifTiffType::Ascii,
+        5,
+        110u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_RELATED_IMAGE_WIDTH,
+        FrameExifTiffType::Short,
+        1,
+        [64, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_RELATED_IMAGE_LENGTH,
+        FrameExifTiffType::Long,
+        1,
+        48u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    assert_eq!(data.len(), 110);
+
+    data.extend_from_slice(b"JPEG\0");
+    assert_eq!(data.len(), 115);
     data
 }
 
