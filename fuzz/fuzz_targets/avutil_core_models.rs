@@ -4624,6 +4624,26 @@ fn exercise_fixtures() {
     let thresholding_exif = FrameExif::parse(&thresholding_exif_bytes).unwrap();
     let thresholding_tags = thresholding_exif.common_tags().unwrap();
     assert_eq!(thresholding_tags.thresholding().unwrap().raw(), 3);
+    let mut bad_thresholding_type = exif_root_thresholding_fixture();
+    bad_thresholding_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_thresholding_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_thresholding_count = exif_root_thresholding_fixture();
+    bad_thresholding_count[14..18].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_thresholding_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_thresholding_value = exif_root_thresholding_fixture();
     bad_thresholding_value[18..20].copy_from_slice(&4u16.to_le_bytes());
     assert_eq!(
@@ -4638,6 +4658,26 @@ fn exercise_fixtures() {
     let fill_order_exif = FrameExif::parse(&fill_order_exif_bytes).unwrap();
     let fill_order_tags = fill_order_exif.common_tags().unwrap();
     assert_eq!(fill_order_tags.fill_order().unwrap().raw(), 2);
+    let mut bad_fill_order_type = exif_root_fill_order_fixture();
+    bad_fill_order_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_fill_order_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_fill_order_count = exif_root_fill_order_fixture();
+    bad_fill_order_count[14..18].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_fill_order_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_fill_order_value = exif_root_fill_order_fixture();
     bad_fill_order_value[18..20].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
