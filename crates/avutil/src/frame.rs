@@ -6532,6 +6532,9 @@ pub struct FrameExifCommonTags<'a> {
     exif_version: Option<[u8; 4]>,
     date_time_original: Option<&'a str>,
     date_time_digitized: Option<&'a str>,
+    offset_time: Option<&'a str>,
+    offset_time_original: Option<&'a str>,
+    offset_time_digitized: Option<&'a str>,
     components_configuration: Option<[u8; 4]>,
     compressed_bits_per_pixel: Option<FrameExifRational>,
     exposure_program: Option<FrameExifExposureProgram>,
@@ -6700,6 +6703,18 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn date_time_digitized(&self) -> Option<&'a str> {
         self.date_time_digitized
+    }
+
+    pub const fn offset_time(&self) -> Option<&'a str> {
+        self.offset_time
+    }
+
+    pub const fn offset_time_original(&self) -> Option<&'a str> {
+        self.offset_time_original
+    }
+
+    pub const fn offset_time_digitized(&self) -> Option<&'a str> {
+        self.offset_time_digitized
     }
 
     pub const fn components_configuration(&self) -> Option<[u8; 4]> {
@@ -7478,6 +7493,9 @@ impl<'a> FrameExif<'a> {
     pub const TAG_EXIF_VERSION: u16 = 0x9000;
     pub const TAG_DATE_TIME_ORIGINAL: u16 = 0x9003;
     pub const TAG_DATE_TIME_DIGITIZED: u16 = 0x9004;
+    pub const TAG_OFFSET_TIME: u16 = 0x9010;
+    pub const TAG_OFFSET_TIME_ORIGINAL: u16 = 0x9011;
+    pub const TAG_OFFSET_TIME_DIGITIZED: u16 = 0x9012;
     pub const TAG_COMPONENTS_CONFIGURATION: u16 = 0x9101;
     pub const TAG_COMPRESSED_BITS_PER_PIXEL: u16 = 0x9102;
     pub const TAG_SHUTTER_SPEED_VALUE: u16 = 0x9201;
@@ -7670,6 +7688,18 @@ impl<'a> FrameExif<'a> {
                 Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_ORIGINAL, "DateTimeOriginal")?;
             tags.date_time_digitized =
                 Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_DIGITIZED, "DateTimeDigitized")?;
+            tags.offset_time =
+                Self::optional_offset_time_tag(ifd, Self::TAG_OFFSET_TIME, "OffsetTime")?;
+            tags.offset_time_original = Self::optional_offset_time_tag(
+                ifd,
+                Self::TAG_OFFSET_TIME_ORIGINAL,
+                "OffsetTimeOriginal",
+            )?;
+            tags.offset_time_digitized = Self::optional_offset_time_tag(
+                ifd,
+                Self::TAG_OFFSET_TIME_DIGITIZED,
+                "OffsetTimeDigitized",
+            )?;
             tags.components_configuration = Self::optional_undefined_array_tag(
                 ifd,
                 Self::TAG_COMPONENTS_CONFIGURATION,
@@ -8006,6 +8036,14 @@ impl<'a> FrameExif<'a> {
             ));
         }
         Ok(strings[0])
+    }
+
+    fn optional_offset_time_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<&'a str>> {
+        Self::optional_ascii_exact_count_tag(ifd, tag, label, 7)
     }
 
     fn optional_short_or_long_tag(
@@ -12937,6 +12975,54 @@ mod tests {
         data.extend_from_slice(&1u32.to_le_bytes());
         data.extend_from_slice(&[2, 0, 2, 0, 1, 0, 2, 1]);
         assert_eq!(data.len(), 184);
+        data
+    }
+
+    fn exif_offset_time_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&3u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_OFFSET_TIME,
+            FrameExifTiffType::Ascii,
+            7,
+            68u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_OFFSET_TIME_ORIGINAL,
+            FrameExifTiffType::Ascii,
+            7,
+            75u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_OFFSET_TIME_DIGITIZED,
+            FrameExifTiffType::Ascii,
+            7,
+            82u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 68);
+
+        data.extend_from_slice(b"+09:00\0");
+        data.extend_from_slice(b"-07:30\0");
+        data.extend_from_slice(b"+00:00\0");
+        assert_eq!(data.len(), 89);
         data
     }
 
@@ -19432,6 +19518,50 @@ mod tests {
         bad_cfa_type[116..120].copy_from_slice(&4u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_cfa_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_offset_time_tags() {
+        let exif_bytes = exif_offset_time_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.offset_time(), Some("+09:00"));
+        assert_eq!(common.offset_time_original(), Some("-07:30"));
+        assert_eq!(common.offset_time_digitized(), Some("+00:00"));
+
+        let mut bad_offset_count = exif_offset_time_fixture();
+        bad_offset_count[32..36].copy_from_slice(&6u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_offset_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_original_type = exif_offset_time_fixture();
+        bad_original_type[42..44].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_original_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_digitized_ascii = exif_offset_time_fixture();
+        bad_digitized_ascii[88] = b'!';
+        assert_eq!(
+            FrameExif::parse(&bad_digitized_ascii)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

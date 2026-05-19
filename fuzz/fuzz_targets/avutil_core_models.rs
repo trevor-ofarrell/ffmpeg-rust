@@ -4138,6 +4138,13 @@ fn exercise_fixtures() {
         Some(&[2, 0, 2, 0, 1, 0, 2, 1][..])
     );
 
+    let offset_time_exif_bytes = exif_offset_time_fixture();
+    let offset_time_exif = FrameExif::parse(&offset_time_exif_bytes).unwrap();
+    let offset_time_tags = offset_time_exif.common_tags().unwrap();
+    assert_eq!(offset_time_tags.offset_time(), Some("+09:00"));
+    assert_eq!(offset_time_tags.offset_time_original(), Some("-07:30"));
+    assert_eq!(offset_time_tags.offset_time_digitized(), Some("+00:00"));
+
     let capture_exif_bytes = exif_capture_settings_fixture();
     let capture_exif = FrameExif::parse(&capture_exif_bytes).unwrap();
     let capture_tags = capture_exif.common_tags().unwrap();
@@ -6072,6 +6079,49 @@ fn exif_camera_characterization_fixture() -> Vec<u8> {
     data.extend_from_slice(&2000u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_le_bytes());
     data.extend_from_slice(&[2, 0, 2, 0, 1, 0, 2, 1]);
+    data
+}
+
+fn exif_offset_time_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&3u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_OFFSET_TIME,
+        FrameExifTiffType::Ascii,
+        7,
+        68u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_OFFSET_TIME_ORIGINAL,
+        FrameExifTiffType::Ascii,
+        7,
+        75u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_OFFSET_TIME_DIGITIZED,
+        FrameExifTiffType::Ascii,
+        7,
+        82u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(b"+09:00\0");
+    data.extend_from_slice(b"-07:30\0");
+    data.extend_from_slice(b"+00:00\0");
     data
 }
 

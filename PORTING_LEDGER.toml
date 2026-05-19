@@ -256,6 +256,7 @@ unit_tests = [
   "frame::tests::frame_side_data_interprets_exif_apex_exposure_tags",
   "frame::tests::frame_side_data_interprets_exif_sensitivity_tags",
   "frame::tests::frame_side_data_interprets_exif_camera_characterization_tags",
+  "frame::tests::frame_side_data_interprets_exif_offset_time_tags",
   "frame::tests::frame_side_data_interprets_exif_capture_setting_tags",
   "frame::tests::frame_side_data_interprets_exif_rendering_scene_tags",
   "frame::tests::frame_side_data_interprets_exif_optics_subject_tags",
@@ -412,7 +413,8 @@ fuzz_targets = ["avutil_core_models"]
 # denominators through typed errors. Common-tag interpretation now covers root
 # ImageDescription/Make/Model/ImageWidth/ImageLength/Orientation/XResolution/
 # YResolution/ResolutionUnit/Software/DateTime/Artist/Copyright, linked EXIF
-# ExifVersion/DateTimeOriginal/DateTimeDigitized/ComponentsConfiguration/
+# ExifVersion/DateTimeOriginal/DateTimeDigitized/OffsetTime/
+# OffsetTimeOriginal/OffsetTimeDigitized/ComponentsConfiguration/
 # CompressedBitsPerPixel/ExposureProgram/ExposureTime/FNumber/
 # SpectralSensitivity/OECF/PhotographicSensitivity/SensitivityType/StandardOutputSensitivity/
 # RecommendedExposureIndex/ISOSpeed/ISOSpeedLatitudeyyy/
