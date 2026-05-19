@@ -6236,6 +6236,16 @@ fn exercise_fixtures() {
     assert_eq!(descriptive_tags.date_time(), Some("2026:05:05 01:02:03"));
     assert_eq!(descriptive_tags.artist(), Some("OpenAI"));
     assert_eq!(descriptive_tags.copyright(), Some("2026 Example"));
+    let mut bad_software_type = exif_descriptive_tags_fixture();
+    bad_software_type[24..26].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_software_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_image_description_terminator = exif_descriptive_tags_fixture();
     bad_image_description_terminator[86] = b'!';
     assert_eq!(
