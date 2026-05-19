@@ -5471,6 +5471,16 @@ fn exercise_fixtures() {
         gps_destination_tags.gps_dest_latitude_ref(),
         Some(FrameExifGpsLatitudeRef::South)
     );
+    let mut bad_dest_latitude_ref = exif_gps_destination_fixture();
+    bad_dest_latitude_ref[36] = b'X';
+    assert_eq!(
+        FrameExif::parse(&bad_dest_latitude_ref)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         gps_destination_tags.gps_dest_latitude().unwrap()[0].numerator(),
         33
@@ -5508,6 +5518,16 @@ fn exercise_fixtures() {
     assert_eq!(
         gps_destination_tags.gps_dest_longitude().unwrap()[2].numerator(),
         9
+    );
+    let mut bad_dest_longitude_count = exif_gps_destination_fixture();
+    bad_dest_longitude_count[68..72].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_dest_longitude_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
     );
     let mut bad_dest_longitude_minutes = exif_gps_destination_fixture();
     bad_dest_longitude_minutes[160..164].copy_from_slice(&60u32.to_le_bytes());
@@ -5571,6 +5591,17 @@ fn exercise_fixtures() {
             .unwrap()
             .as_str(),
         "N"
+    );
+    let mut bad_dest_distance_ref_type = exif_gps_destination_fixture();
+    bad_dest_distance_ref_type[102..104]
+        .copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_dest_distance_ref_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
     );
     assert_eq!(
         gps_destination_tags

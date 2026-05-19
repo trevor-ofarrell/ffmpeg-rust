@@ -493,6 +493,8 @@ Latest EXIF GPS acquisition fuzz coverage adds build-checked deterministic fuzz 
 
 Latest EXIF GPS motion fuzz coverage adds build-checked deterministic fuzz assertions for GPSSpeedRef enum-value rejection, GPSImgDirection count rejection, and GPSMapDatum type rejection while preserving existing GPSTrackRef count rejection, GPSTrack/GPSImgDirection range rejection, and valid speed, track, image-direction, and map-datum parsing.
 
+Latest EXIF GPS destination fuzz coverage adds build-checked deterministic fuzz assertions for GPSDestLatitudeRef enum-value rejection, GPSDestLongitude count rejection, and GPSDestDistanceRef type rejection while preserving existing GPSDestLatitude degree rejection, GPSDestLongitude minute rejection, GPSDestBearing range rejection, GPSDestDistanceRef count rejection, and valid destination coordinate, bearing, and distance parsing.
+
 Latest EXIF typed-entry coverage extends the value semantics fixture and fuzz invariants to SIGNED BYTE, FLOAT, and DOUBLE TIFF entry accessors, including out-of-line DOUBLE value decoding.
 
 Latest EXIF root colorimetry coverage adds WhitePoint, PrimaryChromaticities, YCbCrCoefficients, and ReferenceBlackWhite as fixed-count unsigned RATIONAL arrays with strict type/count/denominator rejection.
