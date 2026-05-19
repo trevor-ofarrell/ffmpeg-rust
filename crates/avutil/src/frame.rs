@@ -5485,12 +5485,30 @@ impl FrameExifEndian {
         }
     }
 
+    fn read_i16(self, data: &[u8], offset: usize) -> i16 {
+        let mut raw = [0; 2];
+        raw.copy_from_slice(&data[offset..offset + 2]);
+        match self {
+            Self::Little => i16::from_le_bytes(raw),
+            Self::Big => i16::from_be_bytes(raw),
+        }
+    }
+
     fn read_u32(self, data: &[u8], offset: usize) -> u32 {
         let mut raw = [0; 4];
         raw.copy_from_slice(&data[offset..offset + 4]);
         match self {
             Self::Little => u32::from_le_bytes(raw),
             Self::Big => u32::from_be_bytes(raw),
+        }
+    }
+
+    fn read_i32(self, data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        match self {
+            Self::Little => i32::from_le_bytes(raw),
+            Self::Big => i32::from_be_bytes(raw),
         }
     }
 }
@@ -5593,9 +5611,42 @@ impl FrameExifIfdPointerKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameExifRational {
+    numerator: u32,
+    denominator: u32,
+}
+
+impl FrameExifRational {
+    pub const fn numerator(self) -> u32 {
+        self.numerator
+    }
+
+    pub const fn denominator(self) -> u32 {
+        self.denominator
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameExifSignedRational {
+    numerator: i32,
+    denominator: i32,
+}
+
+impl FrameExifSignedRational {
+    pub const fn numerator(self) -> i32 {
+        self.numerator
+    }
+
+    pub const fn denominator(self) -> i32 {
+        self.denominator
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameExifEntry<'a> {
     tag: u16,
     tiff_type: FrameExifTiffType,
+    endian: FrameExifEndian,
     count: u32,
     value_offset: u32,
     data_len: usize,
@@ -5611,6 +5662,10 @@ impl<'a> FrameExifEntry<'a> {
 
     pub const fn tiff_type(self) -> FrameExifTiffType {
         self.tiff_type
+    }
+
+    pub const fn endian(self) -> FrameExifEndian {
+        self.endian
     }
 
     pub const fn count(self) -> u32 {
@@ -5639,6 +5694,132 @@ impl<'a> FrameExifEntry<'a> {
 
     pub const fn is_inline(self) -> bool {
         self.data_range.is_none()
+    }
+
+    pub fn byte_values(self) -> AvResult<Option<&'a [u8]>> {
+        if self.tiff_type != FrameExifTiffType::Byte {
+            return Ok(None);
+        }
+
+        Ok(Some(self.value_data))
+    }
+
+    pub fn ascii_strings(self) -> AvResult<Option<Vec<&'a str>>> {
+        if self.tiff_type != FrameExifTiffType::Ascii {
+            return Ok(None);
+        }
+        if self.value_data.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+        if self.value_data.last() != Some(&0) {
+            return Err(AvError::invalid_data(format!(
+                "EXIF ASCII tag 0x{:04x} is not NUL-terminated",
+                self.tag
+            )));
+        }
+
+        let mut strings = Vec::new();
+        for segment in self.value_data[..self.value_data.len() - 1].split(|byte| *byte == 0) {
+            if !segment.is_ascii() {
+                return Err(AvError::invalid_data(format!(
+                    "EXIF ASCII tag 0x{:04x} contains non-ASCII bytes",
+                    self.tag
+                )));
+            }
+            strings.push(core::str::from_utf8(segment).map_err(|_| {
+                AvError::invalid_data(format!(
+                    "EXIF ASCII tag 0x{:04x} contains invalid UTF-8",
+                    self.tag
+                ))
+            })?);
+        }
+
+        Ok(Some(strings))
+    }
+
+    pub fn short_values(self) -> AvResult<Option<Vec<u16>>> {
+        if self.tiff_type != FrameExifTiffType::Short {
+            return Ok(None);
+        }
+        self.decode_values(2, |data, offset| self.endian.read_u16(data, offset))
+            .map(Some)
+    }
+
+    pub fn long_values(self) -> AvResult<Option<Vec<u32>>> {
+        if !matches!(
+            self.tiff_type,
+            FrameExifTiffType::Long | FrameExifTiffType::Ifd
+        ) {
+            return Ok(None);
+        }
+        self.decode_values(4, |data, offset| self.endian.read_u32(data, offset))
+            .map(Some)
+    }
+
+    pub fn signed_short_values(self) -> AvResult<Option<Vec<i16>>> {
+        if self.tiff_type != FrameExifTiffType::SignedShort {
+            return Ok(None);
+        }
+        self.decode_values(2, |data, offset| self.endian.read_i16(data, offset))
+            .map(Some)
+    }
+
+    pub fn signed_long_values(self) -> AvResult<Option<Vec<i32>>> {
+        if self.tiff_type != FrameExifTiffType::SignedLong {
+            return Ok(None);
+        }
+        self.decode_values(4, |data, offset| self.endian.read_i32(data, offset))
+            .map(Some)
+    }
+
+    pub fn rational_values(self) -> AvResult<Option<Vec<FrameExifRational>>> {
+        if self.tiff_type != FrameExifTiffType::Rational {
+            return Ok(None);
+        }
+
+        let mut values = Vec::with_capacity(self.count as usize);
+        for index in 0..self.count as usize {
+            let offset = index * 8;
+            let numerator = self.endian.read_u32(self.value_data, offset);
+            let denominator = self.endian.read_u32(self.value_data, offset + 4);
+            if denominator == 0 {
+                return Err(AvError::invalid_data(format!(
+                    "EXIF rational tag 0x{:04x} entry {index} has zero denominator",
+                    self.tag
+                )));
+            }
+            values.push(FrameExifRational {
+                numerator,
+                denominator,
+            });
+        }
+
+        Ok(Some(values))
+    }
+
+    pub fn signed_rational_values(self) -> AvResult<Option<Vec<FrameExifSignedRational>>> {
+        if self.tiff_type != FrameExifTiffType::SignedRational {
+            return Ok(None);
+        }
+
+        let mut values = Vec::with_capacity(self.count as usize);
+        for index in 0..self.count as usize {
+            let offset = index * 8;
+            let numerator = self.endian.read_i32(self.value_data, offset);
+            let denominator = self.endian.read_i32(self.value_data, offset + 4);
+            if denominator == 0 {
+                return Err(AvError::invalid_data(format!(
+                    "EXIF signed rational tag 0x{:04x} entry {index} has zero denominator",
+                    self.tag
+                )));
+            }
+            values.push(FrameExifSignedRational {
+                numerator,
+                denominator,
+            });
+        }
+
+        Ok(Some(values))
     }
 
     pub const fn ifd_pointer_kind(self) -> Option<FrameExifIfdPointerKind> {
@@ -5671,6 +5852,29 @@ impl<'a> FrameExifEntry<'a> {
         }
 
         Ok(Some(self.value_offset as usize))
+    }
+
+    fn decode_values<T>(
+        self,
+        element_len: usize,
+        read: impl Fn(&[u8], usize) -> T,
+    ) -> AvResult<Vec<T>> {
+        let expected_len = element_len
+            .checked_mul(self.count as usize)
+            .ok_or_else(|| AvError::invalid_data("EXIF typed value length overflow"))?;
+        if expected_len != self.value_data.len() {
+            return Err(AvError::invalid_data(format!(
+                "EXIF tag 0x{:04x} typed value length {} does not match expected length {expected_len}",
+                self.tag,
+                self.value_data.len()
+            )));
+        }
+
+        let mut values = Vec::with_capacity(self.count as usize);
+        for offset in (0..expected_len).step_by(element_len) {
+            values.push(read(self.value_data, offset));
+        }
+        Ok(values)
     }
 }
 
@@ -6063,6 +6267,7 @@ impl<'a> FrameExif<'a> {
         Ok(FrameExifEntry {
             tag,
             tiff_type,
+            endian,
             count,
             value_offset,
             data_len,
@@ -9302,6 +9507,103 @@ mod tests {
         data
     }
 
+    fn exif_value_semantics_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&8u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            0x010F,
+            FrameExifTiffType::Ascii,
+            6,
+            110u32.to_le_bytes(),
+        );
+        push_exif_entry(&mut data, 0x0112, FrameExifTiffType::Short, 1, [6, 0, 0, 0]);
+        push_exif_entry(
+            &mut data,
+            0x0100,
+            FrameExifTiffType::Long,
+            1,
+            640u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            0x011A,
+            FrameExifTiffType::Rational,
+            1,
+            116u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            0xC001,
+            FrameExifTiffType::SignedShort,
+            2,
+            [0xFF, 0xFF, 0x02, 0x00],
+        );
+        push_exif_entry(
+            &mut data,
+            0xC002,
+            FrameExifTiffType::SignedLong,
+            1,
+            (-42i32).to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            0xC003,
+            FrameExifTiffType::SignedRational,
+            1,
+            124u32.to_le_bytes(),
+        );
+        push_exif_entry(&mut data, 0x0000, FrameExifTiffType::Byte, 4, [2, 3, 0, 0]);
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        data.extend_from_slice(b"Rusty\0");
+        data.extend_from_slice(&300u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&(-1i32).to_le_bytes());
+        data.extend_from_slice(&2i32.to_le_bytes());
+
+        assert_eq!(data.len(), 132);
+        data
+    }
+
+    fn big_exif_value_semantics_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x4D, 0x4D, 0x00, 0x2A]);
+        data.extend_from_slice(&8u32.to_be_bytes());
+
+        data.extend_from_slice(&3u16.to_be_bytes());
+        push_exif_entry_be(
+            &mut data,
+            0x0112,
+            FrameExifTiffType::Short,
+            1,
+            [0x12, 0x34, 0, 0],
+        );
+        push_exif_entry_be(
+            &mut data,
+            0x0100,
+            FrameExifTiffType::Long,
+            1,
+            0x0102_0304u32.to_be_bytes(),
+        );
+        push_exif_entry_be(
+            &mut data,
+            0x011A,
+            FrameExifTiffType::Rational,
+            1,
+            50u32.to_be_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_be_bytes());
+        data.extend_from_slice(&3u32.to_be_bytes());
+        data.extend_from_slice(&2u32.to_be_bytes());
+
+        assert_eq!(data.len(), 58);
+        data
+    }
+
     fn push_exif_entry(
         data: &mut Vec<u8>,
         tag: u16,
@@ -9312,6 +9614,19 @@ mod tests {
         data.extend_from_slice(&tag.to_le_bytes());
         data.extend_from_slice(&tiff_type.raw().to_le_bytes());
         data.extend_from_slice(&count.to_le_bytes());
+        data.extend_from_slice(&value_or_offset);
+    }
+
+    fn push_exif_entry_be(
+        data: &mut Vec<u8>,
+        tag: u16,
+        tiff_type: FrameExifTiffType,
+        count: u32,
+        value_or_offset: [u8; 4],
+    ) {
+        data.extend_from_slice(&tag.to_be_bytes());
+        data.extend_from_slice(&tiff_type.raw().to_be_bytes());
+        data.extend_from_slice(&count.to_be_bytes());
         data.extend_from_slice(&value_or_offset);
     }
 
@@ -14231,6 +14546,7 @@ mod tests {
         let entry = ifd.entry(0).unwrap();
         assert_eq!(entry.tag(), 0x010F);
         assert_eq!(entry.tiff_type(), FrameExifTiffType::Ascii);
+        assert_eq!(entry.endian(), FrameExifEndian::Little);
         assert_eq!(entry.tiff_type().raw(), 2);
         assert_eq!(entry.tiff_type().element_size(), 1);
         assert_eq!(entry.count(), 6);
@@ -14240,6 +14556,7 @@ mod tests {
         assert_eq!(entry.value_or_offset_bytes(), &26u32.to_le_bytes());
         assert_eq!(entry.data_range(), Some((26, 32)));
         assert_eq!(entry.value_data(), b"Rusty\0");
+        assert_eq!(entry.ascii_strings().unwrap().unwrap(), ["Rusty"]);
         assert_eq!(ifd.entries(), &[entry]);
         assert_eq!(FrameExif::parse(parsed.data()).unwrap(), parsed);
 
@@ -14313,6 +14630,118 @@ mod tests {
 
         assert_eq!(parsed.ifd(0).unwrap().entry_by_tag(0xDEAD), None);
         assert_eq!(FrameExifIfdPointerKind::from_tag(0x010F), None);
+    }
+
+    #[test]
+    fn frame_side_data_decodes_exif_entry_values() {
+        let side_data = FrameSideData::new_exif(exif_value_semantics_fixture()).unwrap();
+        let parsed = side_data.exif().unwrap().unwrap();
+        let ifd = parsed.ifd(0).unwrap();
+
+        let make = ifd.entry_by_tag(0x010F).unwrap();
+        assert_eq!(make.ascii_strings().unwrap().unwrap(), ["Rusty"]);
+        assert_eq!(make.short_values().unwrap(), None);
+
+        let orientation = ifd.entry_by_tag(0x0112).unwrap();
+        assert_eq!(orientation.short_values().unwrap().unwrap(), [6]);
+        assert_eq!(orientation.long_values().unwrap(), None);
+
+        let width = ifd.entry_by_tag(0x0100).unwrap();
+        assert_eq!(width.long_values().unwrap().unwrap(), [640]);
+
+        let x_resolution = ifd.entry_by_tag(0x011A).unwrap();
+        assert_eq!(
+            x_resolution.rational_values().unwrap().unwrap(),
+            [FrameExifRational {
+                numerator: 300,
+                denominator: 1,
+            }]
+        );
+
+        let signed_short = ifd.entry_by_tag(0xC001).unwrap();
+        assert_eq!(
+            signed_short.signed_short_values().unwrap().unwrap(),
+            [-1, 2]
+        );
+
+        let signed_long = ifd.entry_by_tag(0xC002).unwrap();
+        assert_eq!(signed_long.signed_long_values().unwrap().unwrap(), [-42]);
+
+        let signed_rational = ifd.entry_by_tag(0xC003).unwrap();
+        assert_eq!(
+            signed_rational.signed_rational_values().unwrap().unwrap(),
+            [FrameExifSignedRational {
+                numerator: -1,
+                denominator: 2,
+            }]
+        );
+
+        let gps_version = ifd.entry_by_tag(0x0000).unwrap();
+        assert_eq!(gps_version.byte_values().unwrap().unwrap(), &[2, 3, 0, 0]);
+
+        let big_bytes = big_exif_value_semantics_fixture();
+        let big = FrameExif::parse(&big_bytes).unwrap();
+        let big_ifd = big.ifd(0).unwrap();
+        assert_eq!(
+            big_ifd
+                .entry_by_tag(0x0112)
+                .unwrap()
+                .short_values()
+                .unwrap()
+                .unwrap(),
+            [0x1234]
+        );
+        assert_eq!(
+            big_ifd
+                .entry_by_tag(0x0100)
+                .unwrap()
+                .long_values()
+                .unwrap()
+                .unwrap(),
+            [0x0102_0304]
+        );
+        assert_eq!(
+            big_ifd
+                .entry_by_tag(0x011A)
+                .unwrap()
+                .rational_values()
+                .unwrap()
+                .unwrap(),
+            [FrameExifRational {
+                numerator: 3,
+                denominator: 2,
+            }]
+        );
+
+        let mut bad_ascii = exif_value_semantics_fixture();
+        bad_ascii[115] = b'!';
+        let bad_ascii = FrameExif::parse(&bad_ascii).unwrap();
+        assert_eq!(
+            bad_ascii
+                .ifd(0)
+                .unwrap()
+                .entry_by_tag(0x010F)
+                .unwrap()
+                .ascii_strings()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_rational = exif_value_semantics_fixture();
+        bad_rational[120..124].copy_from_slice(&0u32.to_le_bytes());
+        let bad_rational = FrameExif::parse(&bad_rational).unwrap();
+        assert_eq!(
+            bad_rational
+                .ifd(0)
+                .unwrap()
+                .entry_by_tag(0x011A)
+                .unwrap()
+                .rational_values()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
     }
 
     #[test]

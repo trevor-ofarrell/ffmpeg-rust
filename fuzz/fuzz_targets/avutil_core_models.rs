@@ -9,8 +9,8 @@ use avutil::{
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
-    FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifIfdPointerKind, FrameExifTiffType,
-    FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifEntry, FrameExifIfdPointerKind,
+    FrameExifTiffType, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
@@ -1712,6 +1712,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                         assert!(entry.data_len() <= 4);
                         assert_eq!(entry.value_data().len(), entry.data_len());
                     }
+                    exercise_exif_entry_typed_values(*entry);
                 }
             }
             for linked in value.linked_ifds() {
@@ -1726,6 +1727,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 assert!(linked.offset() >= FrameExif::TIFF_HEADER_LEN);
                 assert!(linked.ifd().entry_count() <= FrameExif::MAX_IFD_ENTRIES);
                 assert!(value.linked_ifd(linked.kind()).is_some());
+                for entry in linked.ifd().entries() {
+                    exercise_exif_entry_typed_values(*entry);
+                }
             }
         }
         Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::Exif),
@@ -3689,6 +3693,7 @@ fn exercise_fixtures() {
     assert_eq!(exif_entry.data_len(), 6);
     assert_eq!(exif_entry.data_range(), Some((26, 32)));
     assert_eq!(exif_entry.value_data(), b"Rusty\0");
+    assert_eq!(exif_entry.ascii_strings().unwrap().unwrap(), ["Rusty"]);
     let mut bad_exif = exif_bytes.clone();
     bad_exif[12..14].copy_from_slice(&0u16.to_le_bytes());
     assert!(exif_payload_invalid(&bad_exif));
@@ -3702,6 +3707,69 @@ fn exercise_fixtures() {
     );
     let non_exif = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_exif.exif().unwrap(), None);
+
+    let typed_exif_side_data = FrameSideData::new_exif(exif_value_semantics_fixture()).unwrap();
+    let typed_exif = typed_exif_side_data.exif().unwrap().unwrap();
+    let typed_ifd = typed_exif.ifd(0).unwrap();
+    assert_eq!(
+        typed_ifd
+            .entry_by_tag(0x0112)
+            .unwrap()
+            .short_values()
+            .unwrap()
+            .unwrap(),
+        [6]
+    );
+    assert_eq!(
+        typed_ifd
+            .entry_by_tag(0x0100)
+            .unwrap()
+            .long_values()
+            .unwrap()
+            .unwrap(),
+        [640]
+    );
+    let typed_rational = typed_ifd
+        .entry_by_tag(0x011A)
+        .unwrap()
+        .rational_values()
+        .unwrap()
+        .unwrap();
+    assert_eq!(typed_rational.len(), 1);
+    assert_eq!(typed_rational[0].numerator(), 300);
+    assert_eq!(typed_rational[0].denominator(), 1);
+    assert_eq!(
+        typed_ifd
+            .entry_by_tag(0xC001)
+            .unwrap()
+            .signed_short_values()
+            .unwrap()
+            .unwrap(),
+        [-1, 2]
+    );
+    let typed_signed_rational = typed_ifd
+        .entry_by_tag(0xC003)
+        .unwrap()
+        .signed_rational_values()
+        .unwrap()
+        .unwrap();
+    assert_eq!(typed_signed_rational.len(), 1);
+    assert_eq!(typed_signed_rational[0].numerator(), -1);
+    assert_eq!(typed_signed_rational[0].denominator(), 2);
+    let mut bad_typed_exif = exif_value_semantics_fixture();
+    bad_typed_exif[115] = b'!';
+    assert_eq!(
+        FrameExif::parse(&bad_typed_exif)
+            .unwrap()
+            .ifd(0)
+            .unwrap()
+            .entry_by_tag(0x010F)
+            .unwrap()
+            .ascii_strings()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let linked_exif_side_data = FrameSideData::new_exif(exif_with_linked_ifds_fixture()).unwrap();
     let linked_exif = linked_exif_side_data.exif().unwrap().unwrap();
@@ -4700,6 +4768,64 @@ fn minimal_little_exif_fixture() -> Vec<u8> {
     data
 }
 
+fn exif_value_semantics_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&8u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        0x010F,
+        FrameExifTiffType::Ascii,
+        6,
+        110u32.to_le_bytes(),
+    );
+    push_exif_entry(&mut data, 0x0112, FrameExifTiffType::Short, 1, [6, 0, 0, 0]);
+    push_exif_entry(
+        &mut data,
+        0x0100,
+        FrameExifTiffType::Long,
+        1,
+        640u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        0x011A,
+        FrameExifTiffType::Rational,
+        1,
+        116u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        0xC001,
+        FrameExifTiffType::SignedShort,
+        2,
+        [0xFF, 0xFF, 0x02, 0x00],
+    );
+    push_exif_entry(
+        &mut data,
+        0xC002,
+        FrameExifTiffType::SignedLong,
+        1,
+        (-42i32).to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        0xC003,
+        FrameExifTiffType::SignedRational,
+        1,
+        124u32.to_le_bytes(),
+    );
+    push_exif_entry(&mut data, 0, FrameExifTiffType::Byte, 4, [2, 3, 0, 0]);
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(b"Rusty\0");
+    data.extend_from_slice(&300u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+    data.extend_from_slice(&(-1i32).to_le_bytes());
+    data.extend_from_slice(&2i32.to_le_bytes());
+    data
+}
+
 fn exif_with_linked_ifds_fixture() -> Vec<u8> {
     let mut data = Vec::new();
     data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
@@ -4757,6 +4883,103 @@ fn push_exif_entry(
     data.extend_from_slice(&tiff_type.raw().to_le_bytes());
     data.extend_from_slice(&count.to_le_bytes());
     data.extend_from_slice(&value_or_offset);
+}
+
+fn exercise_exif_entry_typed_values(entry: FrameExifEntry<'_>) {
+    match entry.byte_values() {
+        Ok(Some(values)) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::Byte);
+            assert_eq!(values.len(), entry.count() as usize);
+        }
+        Ok(None) => assert_ne!(entry.tiff_type(), FrameExifTiffType::Byte),
+        Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
+    }
+
+    match entry.ascii_strings() {
+        Ok(Some(strings)) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::Ascii);
+            for value in strings {
+                assert!(value.is_ascii());
+            }
+        }
+        Ok(None) => assert_ne!(entry.tiff_type(), FrameExifTiffType::Ascii),
+        Err(err) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::Ascii);
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+        }
+    }
+
+    match entry.short_values() {
+        Ok(Some(values)) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::Short);
+            assert_eq!(values.len(), entry.count() as usize);
+        }
+        Ok(None) => assert_ne!(entry.tiff_type(), FrameExifTiffType::Short),
+        Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
+    }
+
+    match entry.long_values() {
+        Ok(Some(values)) => {
+            assert!(matches!(
+                entry.tiff_type(),
+                FrameExifTiffType::Long | FrameExifTiffType::Ifd
+            ));
+            assert_eq!(values.len(), entry.count() as usize);
+        }
+        Ok(None) => assert!(!matches!(
+            entry.tiff_type(),
+            FrameExifTiffType::Long | FrameExifTiffType::Ifd
+        )),
+        Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
+    }
+
+    match entry.signed_short_values() {
+        Ok(Some(values)) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::SignedShort);
+            assert_eq!(values.len(), entry.count() as usize);
+        }
+        Ok(None) => assert_ne!(entry.tiff_type(), FrameExifTiffType::SignedShort),
+        Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
+    }
+
+    match entry.signed_long_values() {
+        Ok(Some(values)) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::SignedLong);
+            assert_eq!(values.len(), entry.count() as usize);
+        }
+        Ok(None) => assert_ne!(entry.tiff_type(), FrameExifTiffType::SignedLong),
+        Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
+    }
+
+    match entry.rational_values() {
+        Ok(Some(values)) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::Rational);
+            assert_eq!(values.len(), entry.count() as usize);
+            for value in values {
+                assert_ne!(value.denominator(), 0);
+            }
+        }
+        Ok(None) => assert_ne!(entry.tiff_type(), FrameExifTiffType::Rational),
+        Err(err) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::Rational);
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+        }
+    }
+
+    match entry.signed_rational_values() {
+        Ok(Some(values)) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::SignedRational);
+            assert_eq!(values.len(), entry.count() as usize);
+            for value in values {
+                assert_ne!(value.denominator(), 0);
+            }
+        }
+        Ok(None) => assert_ne!(entry.tiff_type(), FrameExifTiffType::SignedRational),
+        Err(err) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::SignedRational);
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+        }
+    }
 }
 
 fn exif_payload_invalid(data: &[u8]) -> bool {
