@@ -4567,6 +4567,16 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let mut bad_page_number_type = exif_root_document_page_fixture();
+    bad_page_number_type[36..38].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_page_number_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_page_number_count = exif_root_document_page_fixture();
     bad_page_number_count[38..42].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
