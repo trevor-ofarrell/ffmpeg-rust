@@ -69,12 +69,13 @@ pub use options::{
     OptionQuery, OptionRange, OptionSet, OptionValue,
 };
 pub use packet::{
-    Packet, PacketActiveFormatDescription, PacketCpbProperties, PacketFallbackTrack, PacketFlags,
-    PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
-    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
-    PacketProducerReferenceTime, PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode,
-    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition,
-    PacketWebVttIdentifier, PacketWebVttSettings, SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    Packet, PacketActiveFormatDescription, PacketContentLightMetadata, PacketCpbProperties,
+    PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketJpDualMono,
+    PacketJpDualMonoSelection, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
+    PacketParamChange, PacketPictureType, PacketProducerReferenceTime, PacketQualityStats,
+    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
+    PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings,
+    SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 pub use pixel::PixelFormat;
 pub use rational::Rational;

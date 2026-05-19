@@ -32,13 +32,14 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketActiveFormatDescription, PacketCpbProperties, PacketFallbackTrack, PacketFlags,
-    PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
-    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
-    PacketProducerReferenceTime, PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode,
-    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition,
-    PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    Packet, PacketActiveFormatDescription, PacketContentLightMetadata, PacketCpbProperties,
+    PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketJpDualMono,
+    PacketJpDualMonoSelection, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
+    PacketParamChange, PacketPictureType, PacketProducerReferenceTime, PacketQualityStats,
+    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
+    PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings,
+    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256,
+    Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3413,6 +3414,25 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_rtcp_sender_report_payload_invalid(&typed_payload));
         }
     }
+    match typed_payload_side_data.content_light_metadata() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::ContentLightLevel);
+            assert_eq!(typed_payload.len(), PacketContentLightMetadata::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketContentLightMetadata::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::ContentLightLevel),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::ContentLightLevel);
+            assert!(packet_content_light_metadata_payload_invalid(
+                &typed_payload
+            ));
+        }
+    }
     match typed_payload_side_data.skip_samples() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::SkipSamples);
@@ -4411,7 +4431,44 @@ fn exercise_fixtures() {
     assert_eq!(
         PacketS12mTimecode::parse(&packet_s12m_timecode_bytes[..PacketS12mTimecode::DATA_LEN - 1])
             .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_content_light = PacketContentLightMetadata::new(1000, 400);
+    let packet_content_light_bytes = packet_content_light.to_bytes();
+    assert_eq!(
+        PacketContentLightMetadata::parse(&packet_content_light_bytes).unwrap(),
+        packet_content_light
+    );
+    assert_eq!(packet_content_light.max_content_light_level(), 1000);
+    assert_eq!(packet_content_light.max_average_light_level(), 400);
+    assert_eq!(
+        SideData::new_content_light_metadata(packet_content_light)
+            .unwrap()
+            .content_light_metadata()
+            .unwrap(),
+        Some(packet_content_light)
+    );
+    let packet_content_light_boundary = PacketContentLightMetadata::new(u32::MAX, 0);
+    assert_eq!(
+        PacketContentLightMetadata::parse(&packet_content_light_boundary.to_bytes()).unwrap(),
+        packet_content_light_boundary
+    );
+    assert_eq!(
+        PacketContentLightMetadata::parse(&[0; PacketContentLightMetadata::DATA_LEN - 1])
+            .unwrap_err()
             .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        SideData::new_with_kind(
+            PacketSideDataKind::ContentLightLevel,
+            vec![0; PacketContentLightMetadata::DATA_LEN - 1]
+        )
+        .unwrap()
+        .content_light_metadata()
+        .unwrap_err()
+        .kind(),
         AvErrorKind::InvalidData
     );
     let packet_skip_samples = PacketSkipSamples::new(
@@ -10159,6 +10216,10 @@ fn packet_producer_reference_time_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_rtcp_sender_report_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketRtcpSenderReport::DATA_LEN
+}
+
+fn packet_content_light_metadata_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketContentLightMetadata::DATA_LEN
 }
 
 fn packet_active_format_description_payload_invalid(data: &[u8]) -> bool {

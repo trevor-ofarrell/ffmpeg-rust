@@ -812,6 +812,53 @@ impl PacketSkipSamplesReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketContentLightMetadata {
+    max_content_light_level: u32,
+    max_average_light_level: u32,
+}
+
+impl PacketContentLightMetadata {
+    pub const DATA_LEN: usize = 8;
+
+    pub const fn new(max_content_light_level: u32, max_average_light_level: u32) -> Self {
+        Self {
+            max_content_light_level,
+            max_average_light_level,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "content light metadata packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self {
+            max_content_light_level: read_u32_ne(data, 0),
+            max_average_light_level: read_u32_ne(data, 4),
+        })
+    }
+
+    pub const fn max_content_light_level(self) -> u32 {
+        self.max_content_light_level
+    }
+
+    pub const fn max_average_light_level(self) -> u32 {
+        self.max_average_light_level
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[0..4].copy_from_slice(&self.max_content_light_level.to_ne_bytes());
+        bytes[4..8].copy_from_slice(&self.max_average_light_level.to_ne_bytes());
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketSkipSamples {
     start: u32,
     end: u32,
@@ -1515,6 +1562,13 @@ impl SideData {
         )
     }
 
+    pub fn new_content_light_metadata(value: PacketContentLightMetadata) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::ContentLightLevel,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_skip_samples(value: PacketSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -1644,6 +1698,14 @@ impl SideData {
         }
 
         PacketRtcpSenderReport::parse(self.data()).map(Some)
+    }
+
+    pub fn content_light_metadata(&self) -> AvResult<Option<PacketContentLightMetadata>> {
+        if self.kind != PacketSideDataKind::ContentLightLevel {
+            return Ok(None);
+        }
+
+        PacketContentLightMetadata::parse(self.data()).map(Some)
     }
 
     pub fn skip_samples(&self) -> AvResult<Option<PacketSkipSamples>> {
@@ -2832,6 +2894,65 @@ mod tests {
         .unwrap();
         assert_eq!(
             side_data.rtcp_sender_report().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_content_light_metadata_payload() {
+        let expected = PacketContentLightMetadata::new(1000, 400);
+        let mut expected_bytes = [0; PacketContentLightMetadata::DATA_LEN];
+        expected_bytes[0..4].copy_from_slice(&1000u32.to_ne_bytes());
+        expected_bytes[4..8].copy_from_slice(&400u32.to_ne_bytes());
+
+        assert_eq!(PacketContentLightMetadata::DATA_LEN, 8);
+        assert_eq!(expected.max_content_light_level(), 1000);
+        assert_eq!(expected.max_average_light_level(), 400);
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketContentLightMetadata::parse(&expected_bytes).unwrap(),
+            expected
+        );
+
+        let raw_values = PacketContentLightMetadata::new(u32::MAX, 0);
+        assert_eq!(
+            PacketContentLightMetadata::parse(&raw_values.to_bytes()).unwrap(),
+            raw_values
+        );
+
+        let side_data = SideData::new_content_light_metadata(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::ContentLightLevel);
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(side_data.content_light_metadata().unwrap(), Some(expected));
+
+        let rtcp = SideData::new_with_kind(
+            PacketSideDataKind::RtcpSenderReport,
+            expected_bytes.to_vec(),
+        )
+        .unwrap();
+        assert_eq!(rtcp.content_light_metadata().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_content_light_metadata_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; PacketContentLightMetadata::DATA_LEN - 1],
+            vec![0; PacketContentLightMetadata::DATA_LEN + 1],
+        ] {
+            assert_eq!(
+                PacketContentLightMetadata::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let side_data = SideData::new_with_kind(
+            PacketSideDataKind::ContentLightLevel,
+            vec![0; PacketContentLightMetadata::DATA_LEN - 1],
+        )
+        .unwrap();
+        assert_eq!(
+            side_data.content_light_metadata().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
     }
