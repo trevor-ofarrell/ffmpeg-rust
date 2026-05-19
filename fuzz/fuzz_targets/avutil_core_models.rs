@@ -3324,6 +3324,61 @@ fn exercise_fixtures() {
     empty_frame.unref();
     assert!(empty_frame.is_empty());
 
+    let plane_released = Arc::new(Mutex::new(Vec::<String>::new()));
+    let plane_capture = Arc::clone(&plane_released);
+    let plane = BufferRef::from_external_slice_with_len_and_opaque_readonly(
+        Arc::<[u8]>::from(vec![1, 2, 3, 0]),
+        3,
+        String::from("plane"),
+        move |opaque| {
+            plane_capture.lock().unwrap().push(opaque);
+        },
+    )
+    .unwrap();
+    let side_released = Arc::new(Mutex::new(Vec::<String>::new()));
+    let side_capture = Arc::clone(&side_released);
+    let side = BufferRef::from_external_slice_with_opaque_readonly(
+        Arc::<[u8]>::from(vec![0xAA]),
+        String::from("side"),
+        move |opaque| {
+            side_capture.lock().unwrap().push(opaque);
+        },
+    );
+    let hw_released = Arc::new(Mutex::new(Vec::<String>::new()));
+    let hw_capture = Arc::clone(&hw_released);
+    let hw_context = BufferRef::from_external_slice_with_opaque_readonly(
+        Arc::<[u8]>::from(vec![0xCC]),
+        String::from("hw"),
+        move |opaque| {
+            hw_capture.lock().unwrap().push(opaque);
+        },
+    );
+    let unref_video =
+        VideoFrame::new_with_buffer_refs(3, 1, PixelFormat::Gray8, vec![plane]).unwrap();
+    let mut unref_frame = Frame::video(unref_video).with_hw_frames_context(hw_context);
+    unref_frame.set_pts(Some(99));
+    unref_frame
+        .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
+        .unwrap();
+    assert!(!unref_frame.is_empty());
+    unref_frame.unref();
+    assert!(unref_frame.is_empty());
+    assert_eq!(unref_frame.pts(), None);
+    assert!(matches!(unref_frame.data(), FrameData::Empty));
+    assert!(unref_frame.hw_frames_context().is_none());
+    assert!(unref_frame.side_data().is_empty());
+    assert!(!unref_frame.is_writable());
+    assert_eq!(
+        unref_frame
+            .set_plane_visible_data(0, &[])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(*plane_released.lock().unwrap(), vec![String::from("plane")]);
+    assert_eq!(*side_released.lock().unwrap(), vec![String::from("side")]);
+    assert_eq!(*hw_released.lock().unwrap(), vec![String::from("hw")]);
+
     let ref_video = VideoFrame::new(1, 1, PixelFormat::Gray8, vec![vec![7]]).unwrap();
     let ref_side = BufferRef::copy_from_slice(&[0x44]);
     let ref_hw = BufferRef::copy_from_slice(&[0x55]);
