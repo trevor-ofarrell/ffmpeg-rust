@@ -1930,7 +1930,16 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.document_name() {
                         assert!(value.is_ascii());
                     }
+                    if let Some(value) = common.image_description() {
+                        assert!(value.is_ascii());
+                    }
                     if let Some(value) = common.page_name() {
+                        assert!(value.is_ascii());
+                    }
+                    if let Some(value) = common.software() {
+                        assert!(value.is_ascii());
+                    }
+                    if let Some(value) = common.artist() {
                         assert!(value.is_ascii());
                     }
                     if let Some(value) = common.host_computer() {
@@ -5483,6 +5492,36 @@ fn exercise_fixtures() {
     assert_eq!(descriptive_tags.date_time(), Some("2026:05:05 01:02:03"));
     assert_eq!(descriptive_tags.artist(), Some("OpenAI"));
     assert_eq!(descriptive_tags.copyright(), Some("2026 Example"));
+    let mut bad_image_description_terminator = exif_descriptive_tags_fixture();
+    bad_image_description_terminator[86] = b'!';
+    assert_eq!(
+        FrameExif::parse(&bad_image_description_terminator)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_software_non_ascii = exif_descriptive_tags_fixture();
+    bad_software_non_ascii[87] = 0xFF;
+    assert_eq!(
+        FrameExif::parse(&bad_software_non_ascii)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_artist_multiple_strings = exif_descriptive_tags_fixture();
+    bad_artist_multiple_strings[122] = 0;
+    assert_eq!(
+        FrameExif::parse(&bad_artist_multiple_strings)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_date_time_count = exif_descriptive_tags_fixture();
     bad_date_time_count[38..42].copy_from_slice(&19u32.to_le_bytes());
     assert_eq!(

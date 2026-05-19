@@ -23748,6 +23748,32 @@ mod tests {
     }
 
     #[test]
+    fn frame_side_data_rejects_exif_descriptive_ascii_shapes() {
+        fn assert_invalid_common_tags(data: Vec<u8>) {
+            assert_eq!(
+                FrameExif::parse(&data)
+                    .unwrap()
+                    .common_tags()
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let mut bad_image_description_terminator = exif_descriptive_tags_fixture();
+        bad_image_description_terminator[86] = b'!';
+        assert_invalid_common_tags(bad_image_description_terminator);
+
+        let mut bad_software_non_ascii = exif_descriptive_tags_fixture();
+        bad_software_non_ascii[87] = 0xFF;
+        assert_invalid_common_tags(bad_software_non_ascii);
+
+        let mut bad_artist_multiple_strings = exif_descriptive_tags_fixture();
+        bad_artist_multiple_strings[122] = 0;
+        assert_invalid_common_tags(bad_artist_multiple_strings);
+    }
+
+    #[test]
     fn frame_side_data_rejects_malformed_exif_payload() {
         fn assert_invalid(data: Vec<u8>) {
             assert_eq!(
