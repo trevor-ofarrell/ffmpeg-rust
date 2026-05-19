@@ -4536,10 +4536,52 @@ fn exercise_fixtures() {
     let coding_tags = coding_exif.common_tags().unwrap();
     assert_eq!(coding_tags.compression().unwrap().raw(), 1);
     assert_eq!(coding_tags.photometric_interpretation().unwrap().raw(), 2);
+    let mut bad_coding_compression_type = exif_root_coding_fixture();
+    bad_coding_compression_type[12..14]
+        .copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_coding_compression_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_coding_compression_count = exif_root_coding_fixture();
+    bad_coding_compression_count[14..18].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_coding_compression_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_coding_compression_zero = exif_root_coding_fixture();
     bad_coding_compression_zero[18..20].copy_from_slice(&0u16.to_le_bytes());
     assert_eq!(
         FrameExif::parse(&bad_coding_compression_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_coding_photometric_type = exif_root_coding_fixture();
+    bad_coding_photometric_type[24..26]
+        .copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_coding_photometric_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_coding_photometric_count = exif_root_coding_fixture();
+    bad_coding_photometric_count[26..30].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_coding_photometric_count)
             .unwrap()
             .common_tags()
             .unwrap_err()
