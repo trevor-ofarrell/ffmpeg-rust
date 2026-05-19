@@ -3543,6 +3543,38 @@ fn exercise_fixtures() {
     assert_eq!(make_clone_video.planes(), &[vec![1, 2, 3, 4]]);
     assert_eq!(make_source.as_slice(), &[1, 2, 3, 4]);
 
+    let data_source = BufferRef::from_vec_readonly(vec![0, 0, 1, 0]);
+    let data_audio = AudioFrame::new_with_buffer_refs(
+        48_000,
+        2,
+        SampleFormat::S16,
+        1,
+        vec![data_source.clone()],
+    )
+    .unwrap();
+    let mut data_frame = Frame::audio(data_audio);
+    let data_clone = data_frame.clone();
+
+    assert!(!data_frame.data().is_writable());
+    data_frame.data_mut().make_writable();
+    assert!(data_frame.data().is_writable());
+    data_frame
+        .data_mut()
+        .set_plane_visible_data(0, &[9, 0, 8, 0])
+        .unwrap();
+
+    let (data_frame_audio, data_clone_audio) = match (data_frame.data(), data_clone.data()) {
+        (FrameData::Audio(data_frame_audio), FrameData::Audio(data_clone_audio)) => {
+            (data_frame_audio, data_clone_audio)
+        }
+        _ => unreachable!("constructed audio frames changed variant"),
+    };
+    assert!(!data_frame_audio.plane_buffers()[0].shares_storage(&data_source));
+    assert!(data_clone_audio.plane_buffers()[0].shares_storage(&data_source));
+    assert_eq!(data_frame_audio.planes(), &[vec![9, 0, 8, 0]]);
+    assert_eq!(data_clone_audio.planes(), &[vec![0, 0, 1, 0]]);
+    assert_eq!(data_source.as_slice(), &[0, 0, 1, 0]);
+
     let mut permission_frame = Frame::video(
         VideoFrame::new_with_buffer_refs(
             1,
