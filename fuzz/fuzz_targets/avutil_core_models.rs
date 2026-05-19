@@ -33,7 +33,7 @@ use avutil::{
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketActiveFormatDescription, PacketContentLightMetadata, PacketCpbProperties,
-    PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketJpDualMono,
+    PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketIccProfile, PacketJpDualMono,
     PacketJpDualMonoSelection, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
     PacketParamChange, PacketPictureType, PacketProducerReferenceTime, PacketQualityStats,
     PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
@@ -3301,7 +3301,8 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let typed_payload_max_len = (PacketQualityStats::HEADER_LEN
         + PacketQualityStats::ERROR_ENTRY_LEN * 3
         + 1)
-    .max(PacketCpbProperties::DATA_LEN + 1);
+    .max(PacketCpbProperties::DATA_LEN + 1)
+    .max(PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN + 1);
     let typed_payload_len =
         usize::from(cursor.next().unwrap_or_default()) % typed_payload_max_len;
     let typed_payload = payload_from(cursor, typed_payload_len);
@@ -3431,6 +3432,30 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_content_light_metadata_payload_invalid(
                 &typed_payload
             ));
+        }
+    }
+    match typed_payload_side_data.icc_profile() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::IccProfile);
+            assert_eq!(value.data(), typed_payload.as_slice());
+            assert_eq!(
+                usize::try_from(value.declared_size()).unwrap(),
+                typed_payload.len()
+            );
+            assert_eq!(value.data()[36..40], PacketIccProfile::ICC_SIGNATURE);
+            assert!(
+                PacketIccProfile::MIN_DATA_LEN
+                    + usize::try_from(value.tag_count()).unwrap()
+                        * PacketIccProfile::TAG_RECORD_LEN
+                    <= typed_payload.len()
+            );
+            assert_eq!(PacketIccProfile::parse(value.data()).unwrap(), value);
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::IccProfile),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::IccProfile);
+            assert!(packet_icc_profile_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.skip_samples() {
@@ -4471,6 +4496,94 @@ fn exercise_fixtures() {
         .kind(),
         AvErrorKind::InvalidData
     );
+    let packet_icc_profile = minimal_icc_profile_fixture();
+    let packet_icc_side_data = SideData::new_icc_profile(packet_icc_profile.clone()).unwrap();
+    let parsed_packet_icc = packet_icc_side_data.icc_profile().unwrap().unwrap();
+    assert_eq!(packet_icc_side_data.kind_id(), &PacketSideDataKind::IccProfile);
+    assert_eq!(parsed_packet_icc.data(), packet_icc_profile.as_slice());
+    assert_eq!(
+        parsed_packet_icc.declared_size(),
+        PacketIccProfile::MIN_DATA_LEN as u32
+    );
+    assert_eq!(parsed_packet_icc.profile_version_raw(), 0x0430_0000);
+    assert_eq!(parsed_packet_icc.device_class(), *b"mntr");
+    assert_eq!(parsed_packet_icc.color_space(), *b"RGB ");
+    assert_eq!(parsed_packet_icc.profile_connection_space(), *b"XYZ ");
+    assert_eq!(parsed_packet_icc.tag_count(), 0);
+    let mut packet_icc_with_tag = minimal_icc_profile_fixture();
+    packet_icc_with_tag.resize(
+        PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN,
+        0,
+    );
+    let packet_icc_with_tag_len = packet_icc_with_tag.len() as u32;
+    packet_icc_with_tag[0..4].copy_from_slice(&packet_icc_with_tag_len.to_be_bytes());
+    packet_icc_with_tag
+        [PacketIccProfile::TAG_COUNT_OFFSET..PacketIccProfile::TAG_COUNT_OFFSET + 4]
+        .copy_from_slice(&1u32.to_be_bytes());
+    packet_icc_with_tag[132..136].copy_from_slice(b"desc");
+    packet_icc_with_tag[136..140]
+        .copy_from_slice(&(PacketIccProfile::MIN_DATA_LEN as u32).to_be_bytes());
+    packet_icc_with_tag[140..144].copy_from_slice(&0u32.to_be_bytes());
+    let packet_icc_with_tag_side_data =
+        SideData::new_icc_profile(packet_icc_with_tag.clone()).unwrap();
+    let parsed_packet_icc_with_tag = packet_icc_with_tag_side_data
+        .icc_profile()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        parsed_packet_icc_with_tag.data(),
+        packet_icc_with_tag.as_slice()
+    );
+    assert_eq!(
+        parsed_packet_icc_with_tag.declared_size(),
+        packet_icc_with_tag_len
+    );
+    assert_eq!(parsed_packet_icc_with_tag.tag_count(), 1);
+    assert_eq!(
+        SideData::new_icc_profile(Vec::new())
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_packet_icc_size = packet_icc_profile.clone();
+    bad_packet_icc_size[0..4].copy_from_slice(&999u32.to_be_bytes());
+    assert_eq!(
+        SideData::new_icc_profile(bad_packet_icc_size)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_packet_icc = packet_icc_profile.clone();
+    bad_packet_icc[36..40].copy_from_slice(b"bad!");
+    assert_eq!(
+        SideData::new_with_kind(PacketSideDataKind::IccProfile, bad_packet_icc)
+            .unwrap()
+            .icc_profile()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut truncated_packet_icc_tag_table = packet_icc_profile.clone();
+    truncated_packet_icc_tag_table
+        [PacketIccProfile::TAG_COUNT_OFFSET..PacketIccProfile::TAG_COUNT_OFFSET + 4]
+        .copy_from_slice(&1u32.to_be_bytes());
+    assert_eq!(
+        SideData::new_with_kind(
+            PacketSideDataKind::IccProfile,
+            truncated_packet_icc_tag_table
+        )
+        .unwrap()
+        .icc_profile()
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_packet_icc = SideData::new_with_kind(
+        PacketSideDataKind::ContentLightLevel,
+        packet_icc_profile,
+    )
+    .unwrap();
+    assert_eq!(non_packet_icc.icc_profile().unwrap(), None);
     let packet_skip_samples = PacketSkipSamples::new(
         1024,
         256,
@@ -13897,6 +14010,35 @@ fn icc_profile_payload_invalid(data: &[u8]) -> bool {
         .ok()
         .and_then(|count| count.checked_mul(FrameIccProfile::TAG_RECORD_LEN))
         .and_then(|records_len| FrameIccProfile::MIN_DATA_LEN.checked_add(records_len))
+    else {
+        return true;
+    };
+
+    tag_table_len > data.len()
+}
+
+fn packet_icc_profile_payload_invalid(data: &[u8]) -> bool {
+    if data.len() < PacketIccProfile::MIN_DATA_LEN {
+        return true;
+    }
+
+    let declared_size = read_be_u32(data, 0);
+    if usize::try_from(declared_size).ok() != Some(data.len()) {
+        return true;
+    }
+
+    if data[PacketIccProfile::SIGNATURE_OFFSET
+        ..PacketIccProfile::SIGNATURE_OFFSET + PacketIccProfile::ICC_SIGNATURE.len()]
+        != PacketIccProfile::ICC_SIGNATURE
+    {
+        return true;
+    }
+
+    let tag_count = read_be_u32(data, PacketIccProfile::TAG_COUNT_OFFSET);
+    let Some(tag_table_len) = usize::try_from(tag_count)
+        .ok()
+        .and_then(|count| count.checked_mul(PacketIccProfile::TAG_RECORD_LEN))
+        .and_then(|records_len| PacketIccProfile::MIN_DATA_LEN.checked_add(records_len))
     else {
         return true;
     };

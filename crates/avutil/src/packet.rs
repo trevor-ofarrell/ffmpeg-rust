@@ -859,6 +859,96 @@ impl PacketContentLightMetadata {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketIccProfile<'a> {
+    data: &'a [u8],
+    declared_size: u32,
+    tag_count: u32,
+}
+
+impl<'a> PacketIccProfile<'a> {
+    pub const HEADER_LEN: usize = 128;
+    pub const TAG_COUNT_LEN: usize = 4;
+    pub const TAG_RECORD_LEN: usize = 12;
+    pub const MIN_DATA_LEN: usize = Self::HEADER_LEN + Self::TAG_COUNT_LEN;
+    pub const PROFILE_SIZE_OFFSET: usize = 0;
+    pub const SIGNATURE_OFFSET: usize = 36;
+    pub const TAG_COUNT_OFFSET: usize = Self::HEADER_LEN;
+    pub const ICC_SIGNATURE: [u8; 4] = *b"acsp";
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() < Self::MIN_DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "ICC profile packet side data requires at least {} bytes, got {}",
+                Self::MIN_DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let declared_size = read_u32_be(data, Self::PROFILE_SIZE_OFFSET);
+        if usize::try_from(declared_size).ok() != Some(data.len()) {
+            return Err(AvError::invalid_data(format!(
+                "ICC profile declared size {} does not match side data length {}",
+                declared_size,
+                data.len()
+            )));
+        }
+
+        if data[Self::SIGNATURE_OFFSET..Self::SIGNATURE_OFFSET + Self::ICC_SIGNATURE.len()]
+            != Self::ICC_SIGNATURE
+        {
+            return Err(AvError::invalid_data("ICC profile missing acsp signature"));
+        }
+
+        let tag_count = read_u32_be(data, Self::TAG_COUNT_OFFSET);
+        let tag_table_len = usize::try_from(tag_count)
+            .ok()
+            .and_then(|count| count.checked_mul(Self::TAG_RECORD_LEN))
+            .and_then(|records_len| Self::MIN_DATA_LEN.checked_add(records_len))
+            .ok_or_else(|| AvError::invalid_data("ICC profile tag table length overflow"))?;
+        if tag_table_len > data.len() {
+            return Err(AvError::invalid_data(format!(
+                "ICC profile tag table for {tag_count} records exceeds side data length {}",
+                data.len()
+            )));
+        }
+
+        Ok(Self {
+            data,
+            declared_size,
+            tag_count,
+        })
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn declared_size(self) -> u32 {
+        self.declared_size
+    }
+
+    pub const fn tag_count(self) -> u32 {
+        self.tag_count
+    }
+
+    pub fn profile_version_raw(self) -> u32 {
+        read_u32_be(self.data, 8)
+    }
+
+    pub fn device_class(self) -> [u8; 4] {
+        read_fourcc(self.data, 12)
+    }
+
+    pub fn color_space(self) -> [u8; 4] {
+        read_fourcc(self.data, 16)
+    }
+
+    pub fn profile_connection_space(self) -> [u8; 4] {
+        read_fourcc(self.data, 20)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketSkipSamples {
     start: u32,
     end: u32,
@@ -1569,6 +1659,12 @@ impl SideData {
         )
     }
 
+    pub fn new_icc_profile(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::IccProfile, data)?;
+        PacketIccProfile::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_skip_samples(value: PacketSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -1706,6 +1802,14 @@ impl SideData {
         }
 
         PacketContentLightMetadata::parse(self.data()).map(Some)
+    }
+
+    pub fn icc_profile(&self) -> AvResult<Option<PacketIccProfile<'_>>> {
+        if self.kind != PacketSideDataKind::IccProfile {
+            return Ok(None);
+        }
+
+        PacketIccProfile::parse(self.data()).map(Some)
     }
 
     pub fn skip_samples(&self) -> AvResult<Option<PacketSkipSamples>> {
@@ -2167,10 +2271,22 @@ fn read_i32_ne(data: &[u8], offset: usize) -> i32 {
     i32::from_ne_bytes(bytes)
 }
 
+fn read_u32_be(data: &[u8], offset: usize) -> u32 {
+    let mut bytes = [0; 4];
+    bytes.copy_from_slice(&data[offset..offset + 4]);
+    u32::from_be_bytes(bytes)
+}
+
 fn read_u64_be(data: &[u8], offset: usize) -> u64 {
     let mut bytes = [0; 8];
     bytes.copy_from_slice(&data[offset..offset + 8]);
     u64::from_be_bytes(bytes)
+}
+
+fn read_fourcc(data: &[u8], offset: usize) -> [u8; 4] {
+    let mut raw = [0; 4];
+    raw.copy_from_slice(&data[offset..offset + 4]);
+    raw
 }
 
 fn validate_quality_stats_quality(
@@ -2244,6 +2360,19 @@ fn validate_webvtt_identifier_payload(data: &[u8]) -> AvResult<()> {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+
+    fn minimal_icc_profile() -> Vec<u8> {
+        let mut data = vec![0; PacketIccProfile::MIN_DATA_LEN];
+        data[0..4].copy_from_slice(&(PacketIccProfile::MIN_DATA_LEN as u32).to_be_bytes());
+        data[8..12].copy_from_slice(&0x0430_0000u32.to_be_bytes());
+        data[12..16].copy_from_slice(b"mntr");
+        data[16..20].copy_from_slice(b"RGB ");
+        data[20..24].copy_from_slice(b"XYZ ");
+        data[36..40].copy_from_slice(&PacketIccProfile::ICC_SIGNATURE);
+        data[PacketIccProfile::TAG_COUNT_OFFSET..PacketIccProfile::TAG_COUNT_OFFSET + 4]
+            .copy_from_slice(&0u32.to_be_bytes());
+        data
+    }
 
     #[test]
     fn packet_defaults_to_no_timestamps() {
@@ -2955,6 +3084,96 @@ mod tests {
             side_data.content_light_metadata().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn packet_side_data_parses_icc_profile_payload() {
+        let data = minimal_icc_profile();
+        let side_data = SideData::new_icc_profile(data.clone()).unwrap();
+
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::IccProfile);
+        assert_eq!(side_data.data(), data.as_slice());
+        let parsed = side_data.icc_profile().unwrap().unwrap();
+        assert_eq!(parsed.data(), data.as_slice());
+        assert_eq!(
+            parsed.declared_size(),
+            PacketIccProfile::MIN_DATA_LEN as u32
+        );
+        assert_eq!(parsed.profile_version_raw(), 0x0430_0000);
+        assert_eq!(parsed.device_class(), *b"mntr");
+        assert_eq!(parsed.color_space(), *b"RGB ");
+        assert_eq!(parsed.profile_connection_space(), *b"XYZ ");
+        assert_eq!(parsed.tag_count(), 0);
+        assert_eq!(PacketIccProfile::parse(data.as_slice()).unwrap(), parsed);
+
+        let mut with_tag = minimal_icc_profile();
+        with_tag.resize(
+            PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN,
+            0,
+        );
+        let with_tag_len = with_tag.len() as u32;
+        with_tag[0..4].copy_from_slice(&with_tag_len.to_be_bytes());
+        with_tag[PacketIccProfile::TAG_COUNT_OFFSET..PacketIccProfile::TAG_COUNT_OFFSET + 4]
+            .copy_from_slice(&1u32.to_be_bytes());
+        with_tag[132..136].copy_from_slice(b"desc");
+        with_tag[136..140].copy_from_slice(&(PacketIccProfile::MIN_DATA_LEN as u32).to_be_bytes());
+        with_tag[140..144].copy_from_slice(&0u32.to_be_bytes());
+        let side_data = SideData::new_icc_profile(with_tag.clone()).unwrap();
+        let parsed = side_data.icc_profile().unwrap().unwrap();
+        assert_eq!(parsed.data(), with_tag.as_slice());
+        assert_eq!(parsed.declared_size(), with_tag_len);
+        assert_eq!(parsed.tag_count(), 1);
+
+        let prft =
+            SideData::new_with_kind(PacketSideDataKind::ProducerReferenceTime, data).unwrap();
+        assert_eq!(prft.icc_profile().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_icc_profile_payload() {
+        for data in [Vec::new(), vec![0; PacketIccProfile::MIN_DATA_LEN - 1]] {
+            assert_eq!(
+                PacketIccProfile::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data = SideData::new_with_kind(PacketSideDataKind::IccProfile, data).unwrap();
+            assert_eq!(
+                side_data.icc_profile().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let mut bad_size = minimal_icc_profile();
+        bad_size[0..4].copy_from_slice(&999u32.to_be_bytes());
+        assert_eq!(
+            SideData::new_icc_profile(bad_size).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let mut missing_signature = minimal_icc_profile();
+        missing_signature[36..40].copy_from_slice(b"bad!");
+        let side_data =
+            SideData::new_with_kind(PacketSideDataKind::IccProfile, missing_signature).unwrap();
+        assert_eq!(
+            side_data.icc_profile().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let mut truncated_tag_table = minimal_icc_profile();
+        truncated_tag_table
+            [PacketIccProfile::TAG_COUNT_OFFSET..PacketIccProfile::TAG_COUNT_OFFSET + 4]
+            .copy_from_slice(&1u32.to_be_bytes());
+        let side_data =
+            SideData::new_with_kind(PacketSideDataKind::IccProfile, truncated_tag_table).unwrap();
+        assert_eq!(
+            side_data.icc_profile().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let non_icc =
+            SideData::new_with_kind(PacketSideDataKind::RtcpSenderReport, minimal_icc_profile())
+                .unwrap();
+        assert_eq!(non_icc.icc_profile().unwrap(), None);
     }
 
     #[test]

@@ -70,7 +70,7 @@ pub use options::{
 };
 pub use packet::{
     Packet, PacketActiveFormatDescription, PacketContentLightMetadata, PacketCpbProperties,
-    PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketJpDualMono,
+    PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketIccProfile, PacketJpDualMono,
     PacketJpDualMonoSelection, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
     PacketParamChange, PacketPictureType, PacketProducerReferenceTime, PacketQualityStats,
     PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
