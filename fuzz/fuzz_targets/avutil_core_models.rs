@@ -154,6 +154,23 @@ fn assert_exif_gps_time_stamp_range(values: [FrameExifRational; 3]) {
     assert_exif_dms_less_than(values, 24);
 }
 
+fn assert_exif_payload_rejected(data: Vec<u8>) {
+    assert!(exif_payload_invalid(&data));
+    assert_eq!(
+        FrameExif::parse(&data).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_exif(data.clone()).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    let side_data = FrameSideData::new_with_kind(FrameSideDataKind::Exif, data).unwrap();
+    assert_eq!(
+        side_data.exif().unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+}
+
 fuzz_target!(|data: &[u8]| {
     let mut cursor = Cursor::new(data);
 
@@ -4104,17 +4121,32 @@ fn exercise_fixtures() {
     assert_eq!(exif_entry.data_range(), Some((26, 32)));
     assert_eq!(exif_entry.value_data(), b"Rusty\0");
     assert_eq!(exif_entry.ascii_strings().unwrap().unwrap(), ["Rusty"]);
+    assert_exif_payload_rejected(Vec::new());
+    assert_exif_payload_rejected(vec![0; FrameExif::TIFF_HEADER_LEN - 1]);
+    assert_exif_payload_rejected(vec![0x45, 0x78, 0x69, 0x66, 8, 0, 0, 0]);
+    let mut bad_first_offset = minimal_little_exif_fixture();
+    bad_first_offset[4..8].copy_from_slice(&6u32.to_le_bytes());
+    assert_exif_payload_rejected(bad_first_offset);
+    let mut bad_missing_count = minimal_little_exif_fixture();
+    bad_missing_count[4..8].copy_from_slice(&31u32.to_le_bytes());
+    assert_exif_payload_rejected(bad_missing_count);
+    let mut too_many_entries = Vec::new();
+    too_many_entries.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    too_many_entries.extend_from_slice(&8u32.to_le_bytes());
+    too_many_entries.extend_from_slice(&(FrameExif::MAX_IFD_ENTRIES as u16 + 1).to_le_bytes());
+    assert_exif_payload_rejected(too_many_entries);
+    let mut truncated_table = Vec::new();
+    truncated_table.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    truncated_table.extend_from_slice(&8u32.to_le_bytes());
+    truncated_table.extend_from_slice(&1u16.to_le_bytes());
+    truncated_table.extend_from_slice(&[0; 4]);
+    assert_exif_payload_rejected(truncated_table);
     let mut bad_exif = exif_bytes.clone();
     bad_exif[12..14].copy_from_slice(&0u16.to_le_bytes());
-    assert!(exif_payload_invalid(&bad_exif));
-    assert_eq!(
-        FrameSideData::new_with_kind(FrameSideDataKind::Exif, bad_exif)
-            .unwrap()
-            .exif()
-            .unwrap_err()
-            .kind(),
-        AvErrorKind::InvalidData
-    );
+    assert_exif_payload_rejected(bad_exif);
+    let mut bad_range = minimal_little_exif_fixture();
+    bad_range[18..22].copy_from_slice(&250u32.to_le_bytes());
+    assert_exif_payload_rejected(bad_range);
     let non_exif = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_exif.exif().unwrap(), None);
 
@@ -6981,13 +7013,30 @@ fn exercise_fixtures() {
     assert_eq!(FrameExifIfdPointerKind::from_tag(0x010F), None);
     let mut bad_linked_exif = exif_with_linked_ifds_fixture();
     bad_linked_exif[24..26].copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
-    assert!(exif_payload_invalid(&bad_linked_exif));
+    assert_exif_payload_rejected(bad_linked_exif);
+    let mut bad_linked_pointer_count = exif_with_linked_ifds_fixture();
+    bad_linked_pointer_count[26..30].copy_from_slice(&2u32.to_le_bytes());
+    assert_exif_payload_rejected(bad_linked_pointer_count);
+    let mut bad_linked_pointer_offset = exif_with_linked_ifds_fixture();
+    bad_linked_pointer_offset[30..34].copy_from_slice(&7u32.to_le_bytes());
+    assert_exif_payload_rejected(bad_linked_pointer_offset);
+    let mut linked_pointer_loop = exif_with_linked_ifds_fixture();
+    linked_pointer_loop[30..34].copy_from_slice(&8u32.to_le_bytes());
+    assert_exif_payload_rejected(linked_pointer_loop);
+    let mut looped_ifd = Vec::new();
+    looped_ifd.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    looped_ifd.extend_from_slice(&8u32.to_le_bytes());
+    looped_ifd.extend_from_slice(&0u16.to_le_bytes());
+    looped_ifd.extend_from_slice(&8u32.to_le_bytes());
+    assert_exif_payload_rejected(looped_ifd);
+    let mut bad_next_offset = Vec::new();
+    bad_next_offset.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    bad_next_offset.extend_from_slice(&8u32.to_le_bytes());
+    bad_next_offset.extend_from_slice(&0u16.to_le_bytes());
+    bad_next_offset.extend_from_slice(&7u32.to_le_bytes());
+    assert_exif_payload_rejected(bad_next_offset);
     assert_eq!(
-        FrameSideData::new_with_kind(FrameSideDataKind::Exif, bad_linked_exif)
-            .unwrap()
-            .exif()
-            .unwrap_err()
-            .kind(),
+        FrameExifTiffType::from_raw(14).unwrap_err().kind(),
         AvErrorKind::InvalidData
     );
 
