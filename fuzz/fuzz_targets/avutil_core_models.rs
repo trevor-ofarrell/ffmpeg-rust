@@ -3379,23 +3379,59 @@ fn exercise_fixtures() {
     assert_eq!(*side_released.lock().unwrap(), vec![String::from("side")]);
     assert_eq!(*hw_released.lock().unwrap(), vec![String::from("hw")]);
 
-    let ref_video = VideoFrame::new(1, 1, PixelFormat::Gray8, vec![vec![7]]).unwrap();
+    let ref_plane = BufferRef::copy_from_slice(&[7]);
+    let ref_video =
+        VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![ref_plane.clone()])
+            .unwrap();
     let ref_side = BufferRef::copy_from_slice(&[0x44]);
     let ref_hw = BufferRef::copy_from_slice(&[0x55]);
     let mut source_frame = Frame::video(ref_video).with_hw_frames_context(ref_hw.clone());
+    source_frame.set_pts(Some(7));
     source_frame
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, ref_side.clone())
         .unwrap();
-    let mut referenced_frame = Frame::empty();
+
+    let old_released = Arc::new(Mutex::new(Vec::<String>::new()));
+    let old_capture = Arc::clone(&old_released);
+    let old_plane = BufferRef::from_external_slice_with_opaque_readonly(
+        Arc::<[u8]>::from(vec![9]),
+        String::from("old-plane"),
+        move |opaque| {
+            old_capture.lock().unwrap().push(opaque);
+        },
+    );
+    let old_video =
+        VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![old_plane]).unwrap();
+    let mut referenced_frame = Frame::video(old_video);
     referenced_frame.ref_from(&source_frame);
+    assert_eq!(
+        *old_released.lock().unwrap(),
+        vec![String::from("old-plane")]
+    );
+    assert_eq!(referenced_frame.pts(), Some(7));
     assert!(!referenced_frame.is_empty());
+    let (referenced_video, source_video) = match (referenced_frame.data(), source_frame.data()) {
+        (FrameData::Video(referenced_video), FrameData::Video(source_video)) => {
+            (referenced_video, source_video)
+        }
+        _ => unreachable!("constructed video frames changed variant"),
+    };
+    assert!(referenced_video.plane_buffers()[0].shares_storage(&ref_plane));
+    assert!(referenced_video.plane_buffers()[0].shares_storage(&source_video.plane_buffers()[0]));
     assert!(referenced_frame.side_data()[0]
         .buffer()
         .shares_storage(&ref_side));
+    assert!(referenced_frame.side_data()[0]
+        .buffer()
+        .shares_storage(source_frame.side_data()[0].buffer()));
     assert!(referenced_frame
         .hw_frames_context()
         .unwrap()
         .shares_storage(&ref_hw));
+    assert!(referenced_frame
+        .hw_frames_context()
+        .unwrap()
+        .shares_storage(source_frame.hw_frames_context().unwrap()));
     let mut moved_frame = Frame::empty();
     moved_frame.move_ref_from(&mut referenced_frame);
     assert!(referenced_frame.is_empty());
