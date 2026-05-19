@@ -3933,6 +3933,16 @@ fn exercise_fixtures() {
         56
     );
     assert_eq!(gps_altitude_time_tags.gps_date_stamp(), Some("2026:05:06"));
+    let mut bad_gps_date_stamp_count = exif_gps_altitude_time_fixture();
+    bad_gps_date_stamp_count[68..72].copy_from_slice(&10u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_gps_date_stamp_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let gps_acquisition_exif_bytes = exif_gps_acquisition_fixture();
     let gps_acquisition_exif = FrameExif::parse(&gps_acquisition_exif_bytes).unwrap();

@@ -7976,8 +7976,7 @@ impl<'a> FrameExif<'a> {
             tags.gps_dest_distance_ref = Self::optional_gps_distance_ref_tag(ifd)?;
             tags.gps_dest_distance =
                 Self::optional_rational_tag(ifd, Self::TAG_GPS_DEST_DISTANCE, "GPSDestDistance")?;
-            tags.gps_date_stamp =
-                Self::optional_ascii_tag(ifd, Self::TAG_GPS_DATE_STAMP, "GPSDateStamp")?;
+            tags.gps_date_stamp = Self::optional_gps_date_stamp_tag(ifd)?;
         }
 
         if let Some(interop_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Interoperability) {
@@ -8055,6 +8054,10 @@ impl<'a> FrameExif<'a> {
         label: &str,
     ) -> AvResult<Option<&'a str>> {
         Self::optional_ascii_exact_count_tag(ifd, tag, label, 20)
+    }
+
+    fn optional_gps_date_stamp_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<&'a str>> {
+        Self::optional_ascii_exact_count_tag(ifd, Self::TAG_GPS_DATE_STAMP, "GPSDateStamp", 11)
     }
 
     fn optional_short_or_long_tag(
@@ -19012,6 +19015,17 @@ mod tests {
         bad_date_stamp_type[66..68].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_date_stamp_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_date_stamp_count = exif_gps_altitude_time_fixture();
+        bad_date_stamp_count[68..72].copy_from_slice(&10u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_date_stamp_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
