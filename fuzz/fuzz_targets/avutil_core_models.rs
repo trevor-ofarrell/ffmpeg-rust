@@ -4471,6 +4471,32 @@ fn exercise_fixtures() {
     assert_eq!(parsed_video_hint.rect(0), Some(video_rect));
     assert_eq!(parsed_video_hint.rect(1), None);
     assert_eq!(video_hint_side_data.data(), video_hint.to_bytes());
+    let empty_video_hint = FrameVideoHint::new(FrameVideoHintType::Constant, Vec::new()).unwrap();
+    let empty_video_hint_side_data =
+        FrameSideData::new_video_hint(empty_video_hint.clone()).unwrap();
+    let parsed_empty_video_hint = empty_video_hint_side_data.video_hint().unwrap().unwrap();
+    assert_eq!(
+        parsed_empty_video_hint.hint_type(),
+        FrameVideoHintType::Constant
+    );
+    assert_eq!(
+        parsed_empty_video_hint.hint_type().ffmpeg_constant(),
+        "AV_VIDEO_HINT_TYPE_CONSTANT"
+    );
+    assert_eq!(parsed_empty_video_hint.nb_rects(), 0);
+    assert!(parsed_empty_video_hint.is_empty());
+    assert_eq!(
+        parsed_empty_video_hint.to_bytes().len(),
+        FrameVideoHint::HEADER_LEN
+    );
+    assert_eq!(
+        FrameVideoHint::parse(&empty_video_hint.to_bytes()).unwrap(),
+        empty_video_hint
+    );
+    assert_eq!(
+        empty_video_hint_side_data.data(),
+        empty_video_hint.to_bytes()
+    );
     assert_eq!(
         FrameVideoHint::parse(&[0; FrameVideoHint::HEADER_LEN - 1])
             .unwrap_err()

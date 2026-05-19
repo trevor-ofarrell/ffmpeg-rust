@@ -52,7 +52,7 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `FrameAmbientViewingEnvironment` covers the pinned FFmpeg 8.1.1 native `AVAmbientViewingEnvironment` payload for `AV_FRAME_DATA_AMBIENT_VIEWING_ENVIRONMENT`, preserving ambient illuminance and CIE 1931 x/y ambient-light chromaticity as raw native `AVRational` fields while rejecting malformed lengths, zero denominators, negative illuminance, and out-of-range normalized chromaticity coordinates.
 
-`FrameVideoHint` covers the pinned FFmpeg 8.1.1 native `AVVideoHint` payload for `AV_FRAME_DATA_VIDEO_HINT`, preserving the native `size_t` rectangle count, rectangle offset/size envelope, `AVVideoHintType`, and `AVVideoRect` x/y/width/height records while rejecting malformed lengths, non-native offsets/sizes, invalid hint types, zero-sized rectangles, and coordinate overflows.
+`FrameVideoHint` covers the pinned FFmpeg 8.1.1 native `AVVideoHint` payload for `AV_FRAME_DATA_VIDEO_HINT`, preserving the native `size_t` rectangle count, rectangle offset/size envelope, `AVVideoHintType` including zero-rectangle Constant hints, and `AVVideoRect` x/y/width/height records while rejecting malformed lengths, non-native offsets/sizes, invalid hint types, zero-sized rectangles, and coordinate overflows.
 
 `FrameLcevc` covers `AV_FRAME_DATA_LCEVC` as raw LCEVC enhancement data in NAL format, preserving every byte including NAL emulation-prevention bytes. The FFmpeg frame side-data contract defines no byte-level invalid shape for this opaque payload; bitstream semantics remain decoder and encoder work.
 
