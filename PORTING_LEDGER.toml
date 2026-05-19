@@ -487,9 +487,9 @@ FrameSideData has a typed FrameSideDataKind inventory matching the 32 FFmpeg 8.1
 
 Latest EXIF GPS tail coverage adds GPSProcessingMethod and GPSAreaInformation as strict UNDEFINED byte payload views, GPSDifferential as a typed 0/1 enum, and GPSHPositioningError as a single unsigned rational with denominator validation.
 
-Latest EXIF common GPS coordinate fuzz coverage adds build-checked deterministic fuzz assertions for valid latitude/longitude tuple preservation, inclusive 90-degree latitude and 180-degree longitude boundaries, composite-coordinate overflow rejection at those boundaries, malformed GPS reference byte rejection, and root Orientation count rejection while preserving existing GPS degree/seconds/ref-count rejection.
+Latest EXIF common GPS coordinate fuzz coverage adds build-checked deterministic fuzz assertions for valid latitude/longitude tuple preservation, inclusive 90-degree latitude and 180-degree longitude boundaries, composite-coordinate overflow rejection at those boundaries, malformed GPS reference byte rejection, root Orientation count rejection, and root Orientation/ResolutionUnit raw-value preservation while preserving existing GPS degree/seconds/ref-count rejection.
 
-Latest EXIF GPS processing/error fuzz coverage adds build-checked deterministic fuzz assertions for GPSProcessingMethod type rejection, GPSAreaInformation type rejection, GPSDifferential count/value rejection, and GPSHPositioningError type/denominator rejection while preserving valid processing-method, area-information, differential, and positioning-error parsing.
+Latest EXIF GPS processing/error fuzz coverage adds build-checked deterministic fuzz assertions for GPSProcessingMethod type rejection, GPSAreaInformation type rejection, GPSDifferential count/value rejection, GPSDifferential raw-value preservation, and GPSHPositioningError type/denominator rejection while preserving valid processing-method, area-information, differential, and positioning-error parsing.
 
 Latest EXIF GPS altitude/time/date fuzz coverage adds build-checked deterministic fuzz assertions for GPSAltitudeRef enum-value rejection, GPSTimeStamp count rejection, GPSTimeStamp composite overflow rejection, and GPSDateStamp type rejection while preserving existing GPS altitude, timestamp range, date shape, date range, and leap-day checks.
 

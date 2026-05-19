@@ -4943,6 +4943,7 @@ fn exercise_fixtures() {
         common_tags.orientation(),
         Some(FrameExifOrientation::RightTop)
     );
+    assert_eq!(common_tags.orientation().unwrap().raw(), 6);
     let mut bad_orientation_count = exif_common_tags_fixture();
     bad_orientation_count[62..66].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
@@ -4957,6 +4958,7 @@ fn exercise_fixtures() {
         common_tags.resolution_unit(),
         Some(FrameExifResolutionUnit::Inch)
     );
+    assert_eq!(common_tags.resolution_unit().unwrap().raw(), 2);
     assert_eq!(common_tags.exif_version(), Some(*b"0231"));
     let mut bad_exif_version_count = exif_common_tags_fixture();
     bad_exif_version_count[150..154].copy_from_slice(&3u32.to_le_bytes());
@@ -5733,6 +5735,7 @@ fn exercise_fixtures() {
         gps_processing_tags.gps_differential(),
         Some(FrameExifGpsDifferential::DifferentialCorrectionApplied)
     );
+    assert_eq!(gps_processing_tags.gps_differential().unwrap().raw(), 1);
     let mut bad_differential_count = exif_gps_processing_error_fixture();
     bad_differential_count[56..60].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
