@@ -9,12 +9,16 @@ use avutil::{
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
-    FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifEntry, FrameExifExposureProgram,
-    FrameExifFlash, FrameExifGpsAltitudeRef, FrameExifGpsDirectionRef, FrameExifGpsDistanceRef,
+    FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace, FrameExifContrast,
+    FrameExifCustomRendered, FrameExifEndian, FrameExifEntry, FrameExifExposureMode,
+    FrameExifExposureProgram, FrameExifFileSource, FrameExifFlash, FrameExifGainControl,
+    FrameExifGpsAltitudeRef, FrameExifGpsDirectionRef, FrameExifGpsDistanceRef,
     FrameExifGpsLatitudeRef, FrameExifGpsLongitudeRef, FrameExifGpsMeasureMode,
     FrameExifGpsSpeedRef, FrameExifGpsStatus, FrameExifIfdPointerKind, FrameExifLightSource,
-    FrameExifMeteringMode, FrameExifOrientation, FrameExifResolutionUnit, FrameExifTiffType,
-    FrameExifWhiteBalance, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameExifMeteringMode, FrameExifOrientation, FrameExifResolutionUnit, FrameExifSaturation,
+    FrameExifSceneCaptureType, FrameExifSceneType, FrameExifSensingMethod, FrameExifSharpness,
+    FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance,
+    FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
@@ -4062,6 +4066,49 @@ fn exercise_fixtures() {
     assert_eq!(capture_tags.digital_zoom_ratio().unwrap().denominator(), 2);
     assert_eq!(capture_tags.focal_length_in_35mm_film(), Some(75));
 
+    let rendering_exif_bytes = exif_rendering_scene_fixture();
+    let rendering_exif = FrameExif::parse(&rendering_exif_bytes).unwrap();
+    let rendering_tags = rendering_exif.common_tags().unwrap();
+    assert_eq!(
+        rendering_tags.color_space(),
+        Some(FrameExifColorSpace::Srgb)
+    );
+    assert_eq!(
+        rendering_tags.sensing_method(),
+        Some(FrameExifSensingMethod::OneChipColorArea)
+    );
+    assert_eq!(
+        rendering_tags.file_source(),
+        Some(FrameExifFileSource::DigitalStillCamera)
+    );
+    assert_eq!(
+        rendering_tags.scene_type(),
+        Some(FrameExifSceneType::DirectlyPhotographed)
+    );
+    assert_eq!(
+        rendering_tags.custom_rendered(),
+        Some(FrameExifCustomRendered::Custom)
+    );
+    assert_eq!(
+        rendering_tags.exposure_mode(),
+        Some(FrameExifExposureMode::AutoBracket)
+    );
+    assert_eq!(
+        rendering_tags.scene_capture_type(),
+        Some(FrameExifSceneCaptureType::NightScene)
+    );
+    assert_eq!(
+        rendering_tags.gain_control(),
+        Some(FrameExifGainControl::HighGainDown)
+    );
+    assert_eq!(rendering_tags.contrast(), Some(FrameExifContrast::Hard));
+    assert_eq!(rendering_tags.saturation(), Some(FrameExifSaturation::Low));
+    assert_eq!(rendering_tags.sharpness(), Some(FrameExifSharpness::Hard));
+    assert_eq!(
+        rendering_tags.subject_distance_range(),
+        Some(FrameExifSubjectDistanceRange::DistantView)
+    );
+
     let descriptive_exif_bytes = exif_descriptive_tags_fixture();
     let descriptive_exif = FrameExif::parse(&descriptive_exif_bytes).unwrap();
     let descriptive_tags = descriptive_exif.common_tags().unwrap();
@@ -5694,6 +5741,109 @@ fn exif_capture_settings_fixture() -> Vec<u8> {
     data.extend_from_slice(&0u32.to_le_bytes());
     data.extend_from_slice(&3u32.to_le_bytes());
     data.extend_from_slice(&2u32.to_le_bytes());
+    data
+}
+
+fn exif_rendering_scene_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&12u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_COLOR_SPACE,
+        FrameExifTiffType::Short,
+        1,
+        [1, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SENSING_METHOD,
+        FrameExifTiffType::Short,
+        1,
+        [2, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_FILE_SOURCE,
+        FrameExifTiffType::Undefined,
+        1,
+        [3, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SCENE_TYPE,
+        FrameExifTiffType::Undefined,
+        1,
+        [1, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_CUSTOM_RENDERED,
+        FrameExifTiffType::Short,
+        1,
+        [1, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_EXPOSURE_MODE,
+        FrameExifTiffType::Short,
+        1,
+        [2, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SCENE_CAPTURE_TYPE,
+        FrameExifTiffType::Short,
+        1,
+        [3, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GAIN_CONTROL,
+        FrameExifTiffType::Short,
+        1,
+        [4, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_CONTRAST,
+        FrameExifTiffType::Short,
+        1,
+        [2, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SATURATION,
+        FrameExifTiffType::Short,
+        1,
+        [1, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SHARPNESS,
+        FrameExifTiffType::Short,
+        1,
+        [2, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SUBJECT_DISTANCE_RANGE,
+        FrameExifTiffType::Short,
+        1,
+        [3, 0, 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
     data
 }
 

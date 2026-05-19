@@ -5945,6 +5945,348 @@ impl FrameExifWhiteBalance {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifColorSpace {
+    Srgb,
+    Uncalibrated,
+}
+
+impl FrameExifColorSpace {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            1 => Ok(Self::Srgb),
+            0xFFFF => Ok(Self::Uncalibrated),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF color space value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Srgb => 1,
+            Self::Uncalibrated => 0xFFFF,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifSensingMethod {
+    NotDefined,
+    OneChipColorArea,
+    TwoChipColorArea,
+    ThreeChipColorArea,
+    ColorSequentialArea,
+    Trilinear,
+    ColorSequentialLinear,
+}
+
+impl FrameExifSensingMethod {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            1 => Ok(Self::NotDefined),
+            2 => Ok(Self::OneChipColorArea),
+            3 => Ok(Self::TwoChipColorArea),
+            4 => Ok(Self::ThreeChipColorArea),
+            5 => Ok(Self::ColorSequentialArea),
+            7 => Ok(Self::Trilinear),
+            8 => Ok(Self::ColorSequentialLinear),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF sensing method value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::NotDefined => 1,
+            Self::OneChipColorArea => 2,
+            Self::TwoChipColorArea => 3,
+            Self::ThreeChipColorArea => 4,
+            Self::ColorSequentialArea => 5,
+            Self::Trilinear => 7,
+            Self::ColorSequentialLinear => 8,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifFileSource {
+    DigitalStillCamera,
+}
+
+impl FrameExifFileSource {
+    pub fn from_raw(raw: u8) -> AvResult<Self> {
+        match raw {
+            3 => Ok(Self::DigitalStillCamera),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF file source value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u8 {
+        match self {
+            Self::DigitalStillCamera => 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifSceneType {
+    DirectlyPhotographed,
+}
+
+impl FrameExifSceneType {
+    pub fn from_raw(raw: u8) -> AvResult<Self> {
+        match raw {
+            1 => Ok(Self::DirectlyPhotographed),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF scene type value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u8 {
+        match self {
+            Self::DirectlyPhotographed => 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifCustomRendered {
+    Normal,
+    Custom,
+}
+
+impl FrameExifCustomRendered {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Normal),
+            1 => Ok(Self::Custom),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF custom rendered value {raw} is outside the defined 0..=1 range"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Normal => 0,
+            Self::Custom => 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifExposureMode {
+    Auto,
+    Manual,
+    AutoBracket,
+}
+
+impl FrameExifExposureMode {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Auto),
+            1 => Ok(Self::Manual),
+            2 => Ok(Self::AutoBracket),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF exposure mode value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Auto => 0,
+            Self::Manual => 1,
+            Self::AutoBracket => 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifSceneCaptureType {
+    Standard,
+    Landscape,
+    Portrait,
+    NightScene,
+}
+
+impl FrameExifSceneCaptureType {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Standard),
+            1 => Ok(Self::Landscape),
+            2 => Ok(Self::Portrait),
+            3 => Ok(Self::NightScene),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF scene capture type value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Standard => 0,
+            Self::Landscape => 1,
+            Self::Portrait => 2,
+            Self::NightScene => 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifGainControl {
+    None,
+    LowGainUp,
+    HighGainUp,
+    LowGainDown,
+    HighGainDown,
+}
+
+impl FrameExifGainControl {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::None),
+            1 => Ok(Self::LowGainUp),
+            2 => Ok(Self::HighGainUp),
+            3 => Ok(Self::LowGainDown),
+            4 => Ok(Self::HighGainDown),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF gain control value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::None => 0,
+            Self::LowGainUp => 1,
+            Self::HighGainUp => 2,
+            Self::LowGainDown => 3,
+            Self::HighGainDown => 4,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifSharpness {
+    Normal,
+    Soft,
+    Hard,
+}
+
+impl FrameExifSharpness {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Normal),
+            1 => Ok(Self::Soft),
+            2 => Ok(Self::Hard),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF sharpness value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Normal => 0,
+            Self::Soft => 1,
+            Self::Hard => 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifSaturation {
+    Normal,
+    Low,
+    High,
+}
+
+impl FrameExifSaturation {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Normal),
+            1 => Ok(Self::Low),
+            2 => Ok(Self::High),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF saturation value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Normal => 0,
+            Self::Low => 1,
+            Self::High => 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifContrast {
+    Normal,
+    Soft,
+    Hard,
+}
+
+impl FrameExifContrast {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Normal),
+            1 => Ok(Self::Soft),
+            2 => Ok(Self::Hard),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF contrast value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Normal => 0,
+            Self::Soft => 1,
+            Self::Hard => 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifSubjectDistanceRange {
+    Unknown,
+    Macro,
+    CloseView,
+    DistantView,
+}
+
+impl FrameExifSubjectDistanceRange {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::Macro),
+            2 => Ok(Self::CloseView),
+            3 => Ok(Self::DistantView),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF subject distance range value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Unknown => 0,
+            Self::Macro => 1,
+            Self::CloseView => 2,
+            Self::DistantView => 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifGpsLatitudeRef {
     North,
     South,
@@ -6089,6 +6431,18 @@ pub struct FrameExifCommonTags<'a> {
     white_balance: Option<FrameExifWhiteBalance>,
     digital_zoom_ratio: Option<FrameExifRational>,
     focal_length_in_35mm_film: Option<u16>,
+    color_space: Option<FrameExifColorSpace>,
+    sensing_method: Option<FrameExifSensingMethod>,
+    file_source: Option<FrameExifFileSource>,
+    scene_type: Option<FrameExifSceneType>,
+    custom_rendered: Option<FrameExifCustomRendered>,
+    exposure_mode: Option<FrameExifExposureMode>,
+    scene_capture_type: Option<FrameExifSceneCaptureType>,
+    gain_control: Option<FrameExifGainControl>,
+    contrast: Option<FrameExifContrast>,
+    saturation: Option<FrameExifSaturation>,
+    sharpness: Option<FrameExifSharpness>,
+    subject_distance_range: Option<FrameExifSubjectDistanceRange>,
     pixel_x_dimension: Option<u32>,
     pixel_y_dimension: Option<u32>,
     gps_version_id: Option<[u8; 4]>,
@@ -6229,6 +6583,54 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn focal_length_in_35mm_film(&self) -> Option<u16> {
         self.focal_length_in_35mm_film
+    }
+
+    pub const fn color_space(&self) -> Option<FrameExifColorSpace> {
+        self.color_space
+    }
+
+    pub const fn sensing_method(&self) -> Option<FrameExifSensingMethod> {
+        self.sensing_method
+    }
+
+    pub const fn file_source(&self) -> Option<FrameExifFileSource> {
+        self.file_source
+    }
+
+    pub const fn scene_type(&self) -> Option<FrameExifSceneType> {
+        self.scene_type
+    }
+
+    pub const fn custom_rendered(&self) -> Option<FrameExifCustomRendered> {
+        self.custom_rendered
+    }
+
+    pub const fn exposure_mode(&self) -> Option<FrameExifExposureMode> {
+        self.exposure_mode
+    }
+
+    pub const fn scene_capture_type(&self) -> Option<FrameExifSceneCaptureType> {
+        self.scene_capture_type
+    }
+
+    pub const fn gain_control(&self) -> Option<FrameExifGainControl> {
+        self.gain_control
+    }
+
+    pub const fn contrast(&self) -> Option<FrameExifContrast> {
+        self.contrast
+    }
+
+    pub const fn saturation(&self) -> Option<FrameExifSaturation> {
+        self.saturation
+    }
+
+    pub const fn sharpness(&self) -> Option<FrameExifSharpness> {
+        self.sharpness
+    }
+
+    pub const fn subject_distance_range(&self) -> Option<FrameExifSubjectDistanceRange> {
+        self.subject_distance_range
     }
 
     pub const fn pixel_x_dimension(&self) -> Option<u32> {
@@ -6715,11 +7117,23 @@ impl<'a> FrameExif<'a> {
     pub const TAG_LIGHT_SOURCE: u16 = 0x9208;
     pub const TAG_FLASH: u16 = 0x9209;
     pub const TAG_FOCAL_LENGTH: u16 = 0x920A;
+    pub const TAG_COLOR_SPACE: u16 = 0xA001;
     pub const TAG_PIXEL_X_DIMENSION: u16 = 0xA002;
     pub const TAG_PIXEL_Y_DIMENSION: u16 = 0xA003;
+    pub const TAG_SENSING_METHOD: u16 = 0xA217;
+    pub const TAG_FILE_SOURCE: u16 = 0xA300;
+    pub const TAG_SCENE_TYPE: u16 = 0xA301;
+    pub const TAG_CUSTOM_RENDERED: u16 = 0xA401;
+    pub const TAG_EXPOSURE_MODE: u16 = 0xA402;
     pub const TAG_WHITE_BALANCE: u16 = 0xA403;
     pub const TAG_DIGITAL_ZOOM_RATIO: u16 = 0xA404;
     pub const TAG_FOCAL_LENGTH_IN_35MM_FILM: u16 = 0xA405;
+    pub const TAG_SCENE_CAPTURE_TYPE: u16 = 0xA406;
+    pub const TAG_GAIN_CONTROL: u16 = 0xA407;
+    pub const TAG_CONTRAST: u16 = 0xA408;
+    pub const TAG_SATURATION: u16 = 0xA409;
+    pub const TAG_SHARPNESS: u16 = 0xA40A;
+    pub const TAG_SUBJECT_DISTANCE_RANGE: u16 = 0xA40C;
     pub const TAG_GPS_VERSION_ID: u16 = 0x0000;
     pub const TAG_GPS_LATITUDE_REF: u16 = 0x0001;
     pub const TAG_GPS_LATITUDE: u16 = 0x0002;
@@ -6864,6 +7278,7 @@ impl<'a> FrameExif<'a> {
             tags.flash = Self::optional_flash_tag(ifd)?;
             tags.focal_length =
                 Self::optional_rational_tag(ifd, Self::TAG_FOCAL_LENGTH, "FocalLength")?;
+            tags.color_space = Self::optional_color_space_tag(ifd)?;
             tags.white_balance = Self::optional_white_balance_tag(ifd)?;
             tags.digital_zoom_ratio =
                 Self::optional_rational_tag(ifd, Self::TAG_DIGITAL_ZOOM_RATIO, "DigitalZoomRatio")?;
@@ -6872,6 +7287,17 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_FOCAL_LENGTH_IN_35MM_FILM,
                 "FocalLengthIn35mmFilm",
             )?;
+            tags.sensing_method = Self::optional_sensing_method_tag(ifd)?;
+            tags.file_source = Self::optional_file_source_tag(ifd)?;
+            tags.scene_type = Self::optional_scene_type_tag(ifd)?;
+            tags.custom_rendered = Self::optional_custom_rendered_tag(ifd)?;
+            tags.exposure_mode = Self::optional_exposure_mode_tag(ifd)?;
+            tags.scene_capture_type = Self::optional_scene_capture_type_tag(ifd)?;
+            tags.gain_control = Self::optional_gain_control_tag(ifd)?;
+            tags.contrast = Self::optional_contrast_tag(ifd)?;
+            tags.saturation = Self::optional_saturation_tag(ifd)?;
+            tags.sharpness = Self::optional_sharpness_tag(ifd)?;
+            tags.subject_distance_range = Self::optional_subject_distance_range_tag(ifd)?;
             tags.pixel_x_dimension = Self::optional_short_or_long_tag(
                 ifd,
                 Self::TAG_PIXEL_X_DIMENSION,
@@ -7083,6 +7509,13 @@ impl<'a> FrameExif<'a> {
         Ok(Some(FrameExifFlash::from_raw(raw)))
     }
 
+    fn optional_color_space_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifColorSpace>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_COLOR_SPACE, "ColorSpace")? else {
+            return Ok(None);
+        };
+        FrameExifColorSpace::from_raw(raw).map(Some)
+    }
+
     fn optional_white_balance_tag(
         ifd: &FrameExifIfd<'a>,
     ) -> AvResult<Option<FrameExifWhiteBalance>> {
@@ -7091,6 +7524,108 @@ impl<'a> FrameExif<'a> {
             return Ok(None);
         };
         FrameExifWhiteBalance::from_raw(raw).map(Some)
+    }
+
+    fn optional_sensing_method_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifSensingMethod>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_SENSING_METHOD, "SensingMethod")?
+        else {
+            return Ok(None);
+        };
+        FrameExifSensingMethod::from_raw(raw).map(Some)
+    }
+
+    fn optional_file_source_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifFileSource>> {
+        let Some(raw) =
+            Self::optional_undefined_array_tag::<1>(ifd, Self::TAG_FILE_SOURCE, "FileSource")?
+        else {
+            return Ok(None);
+        };
+        FrameExifFileSource::from_raw(raw[0]).map(Some)
+    }
+
+    fn optional_scene_type_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifSceneType>> {
+        let Some(raw) =
+            Self::optional_undefined_array_tag::<1>(ifd, Self::TAG_SCENE_TYPE, "SceneType")?
+        else {
+            return Ok(None);
+        };
+        FrameExifSceneType::from_raw(raw[0]).map(Some)
+    }
+
+    fn optional_custom_rendered_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifCustomRendered>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_CUSTOM_RENDERED, "CustomRendered")?
+        else {
+            return Ok(None);
+        };
+        FrameExifCustomRendered::from_raw(raw).map(Some)
+    }
+
+    fn optional_exposure_mode_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifExposureMode>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_EXPOSURE_MODE, "ExposureMode")?
+        else {
+            return Ok(None);
+        };
+        FrameExifExposureMode::from_raw(raw).map(Some)
+    }
+
+    fn optional_scene_capture_type_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifSceneCaptureType>> {
+        let Some(raw) =
+            Self::optional_short_tag(ifd, Self::TAG_SCENE_CAPTURE_TYPE, "SceneCaptureType")?
+        else {
+            return Ok(None);
+        };
+        FrameExifSceneCaptureType::from_raw(raw).map(Some)
+    }
+
+    fn optional_gain_control_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifGainControl>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_GAIN_CONTROL, "GainControl")?
+        else {
+            return Ok(None);
+        };
+        FrameExifGainControl::from_raw(raw).map(Some)
+    }
+
+    fn optional_contrast_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifContrast>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_CONTRAST, "Contrast")? else {
+            return Ok(None);
+        };
+        FrameExifContrast::from_raw(raw).map(Some)
+    }
+
+    fn optional_saturation_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifSaturation>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_SATURATION, "Saturation")? else {
+            return Ok(None);
+        };
+        FrameExifSaturation::from_raw(raw).map(Some)
+    }
+
+    fn optional_sharpness_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifSharpness>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_SHARPNESS, "Sharpness")? else {
+            return Ok(None);
+        };
+        FrameExifSharpness::from_raw(raw).map(Some)
+    }
+
+    fn optional_subject_distance_range_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifSubjectDistanceRange>> {
+        let Some(raw) = Self::optional_short_tag(
+            ifd,
+            Self::TAG_SUBJECT_DISTANCE_RANGE,
+            "SubjectDistanceRange",
+        )?
+        else {
+            return Ok(None);
+        };
+        FrameExifSubjectDistanceRange::from_raw(raw).map(Some)
     }
 
     fn optional_short_tag(ifd: &FrameExifIfd<'a>, tag: u16, label: &str) -> AvResult<Option<u16>> {
@@ -11523,6 +12058,113 @@ mod tests {
         data.extend_from_slice(&2u32.to_le_bytes());
 
         assert_eq!(data.len(), 124);
+        data
+    }
+
+    fn exif_rendering_scene_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&12u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_COLOR_SPACE,
+            FrameExifTiffType::Short,
+            1,
+            [1, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SENSING_METHOD,
+            FrameExifTiffType::Short,
+            1,
+            [2, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_FILE_SOURCE,
+            FrameExifTiffType::Undefined,
+            1,
+            [3, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SCENE_TYPE,
+            FrameExifTiffType::Undefined,
+            1,
+            [1, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_CUSTOM_RENDERED,
+            FrameExifTiffType::Short,
+            1,
+            [1, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_EXPOSURE_MODE,
+            FrameExifTiffType::Short,
+            1,
+            [2, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SCENE_CAPTURE_TYPE,
+            FrameExifTiffType::Short,
+            1,
+            [3, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GAIN_CONTROL,
+            FrameExifTiffType::Short,
+            1,
+            [4, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_CONTRAST,
+            FrameExifTiffType::Short,
+            1,
+            [2, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SATURATION,
+            FrameExifTiffType::Short,
+            1,
+            [1, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SHARPNESS,
+            FrameExifTiffType::Short,
+            1,
+            [2, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SUBJECT_DISTANCE_RANGE,
+            FrameExifTiffType::Short,
+            1,
+            [3, 0, 0, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        assert_eq!(data.len(), 176);
         data
     }
 
@@ -17297,6 +17939,106 @@ mod tests {
         bad_focal_length_count[104..108].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_focal_length_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_rendering_scene_tags() {
+        let exif_bytes = exif_rendering_scene_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.color_space(), Some(FrameExifColorSpace::Srgb));
+        assert_eq!(common.color_space().unwrap().raw(), 1);
+        assert_eq!(
+            common.sensing_method(),
+            Some(FrameExifSensingMethod::OneChipColorArea)
+        );
+        assert_eq!(common.sensing_method().unwrap().raw(), 2);
+        assert_eq!(
+            common.file_source(),
+            Some(FrameExifFileSource::DigitalStillCamera)
+        );
+        assert_eq!(common.file_source().unwrap().raw(), 3);
+        assert_eq!(
+            common.scene_type(),
+            Some(FrameExifSceneType::DirectlyPhotographed)
+        );
+        assert_eq!(common.scene_type().unwrap().raw(), 1);
+        assert_eq!(
+            common.custom_rendered(),
+            Some(FrameExifCustomRendered::Custom)
+        );
+        assert_eq!(common.custom_rendered().unwrap().raw(), 1);
+        assert_eq!(
+            common.exposure_mode(),
+            Some(FrameExifExposureMode::AutoBracket)
+        );
+        assert_eq!(common.exposure_mode().unwrap().raw(), 2);
+        assert_eq!(
+            common.scene_capture_type(),
+            Some(FrameExifSceneCaptureType::NightScene)
+        );
+        assert_eq!(common.scene_capture_type().unwrap().raw(), 3);
+        assert_eq!(
+            common.gain_control(),
+            Some(FrameExifGainControl::HighGainDown)
+        );
+        assert_eq!(common.gain_control().unwrap().raw(), 4);
+        assert_eq!(common.contrast(), Some(FrameExifContrast::Hard));
+        assert_eq!(common.contrast().unwrap().raw(), 2);
+        assert_eq!(common.saturation(), Some(FrameExifSaturation::Low));
+        assert_eq!(common.saturation().unwrap().raw(), 1);
+        assert_eq!(common.sharpness(), Some(FrameExifSharpness::Hard));
+        assert_eq!(common.sharpness().unwrap().raw(), 2);
+        assert_eq!(
+            common.subject_distance_range(),
+            Some(FrameExifSubjectDistanceRange::DistantView)
+        );
+        assert_eq!(common.subject_distance_range().unwrap().raw(), 3);
+
+        let mut bad_color_space = exif_rendering_scene_fixture();
+        bad_color_space[36..38].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_color_space)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_file_source_type = exif_rendering_scene_fixture();
+        bad_file_source_type[54..56].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_file_source_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_scene_capture_count = exif_rendering_scene_fixture();
+        bad_scene_capture_count[104..108].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_scene_capture_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_subject_distance_raw = exif_rendering_scene_fixture();
+        bad_subject_distance_raw[168..170].copy_from_slice(&4u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_subject_distance_raw)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
