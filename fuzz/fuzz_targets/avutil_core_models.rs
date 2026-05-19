@@ -5833,6 +5833,31 @@ fn exercise_fixtures() {
     assert_eq!(optics_tags.subject_location(), Some([320, 240]));
     assert_eq!(optics_tags.exposure_index().unwrap().numerator(), 200);
     assert_eq!(optics_tags.exposure_index().unwrap().denominator(), 1);
+    let mut point_area = exif_optics_subject_fixture();
+    point_area[68..72].copy_from_slice(&2u32.to_le_bytes());
+    point_area[72..76].copy_from_slice([0x40, 0x01, 0xF0, 0x00].as_slice());
+    assert_eq!(
+        FrameExif::parse(&point_area)
+            .unwrap()
+            .common_tags()
+            .unwrap()
+            .subject_area(),
+        Some(FrameExifSubjectArea::point(320, 240))
+    );
+    let mut circle_area = exif_optics_subject_fixture();
+    circle_area[68..72].copy_from_slice(&3u32.to_le_bytes());
+    circle_area[72..76].copy_from_slice(&144u32.to_le_bytes());
+    circle_area.extend_from_slice(&320u16.to_le_bytes());
+    circle_area.extend_from_slice(&240u16.to_le_bytes());
+    circle_area.extend_from_slice(&50u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&circle_area)
+            .unwrap()
+            .common_tags()
+            .unwrap()
+            .subject_area(),
+        Some(FrameExifSubjectArea::circle(320, 240, 50))
+    );
     let mut bad_subject_area_width = exif_optics_subject_fixture();
     bad_subject_area_width[132..134].copy_from_slice(&0u16.to_le_bytes());
     assert_eq!(
@@ -5861,6 +5886,50 @@ fn exercise_fixtures() {
     bad_subject_area_diameter.extend_from_slice(&0u16.to_le_bytes());
     assert_eq!(
         FrameExif::parse(&bad_subject_area_diameter)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_subject_area_count = exif_optics_subject_fixture();
+    bad_subject_area_count[68..72].copy_from_slice(&1u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subject_area_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_subject_area_type = exif_optics_subject_fixture();
+    bad_subject_area_type[66..68].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subject_area_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_subject_location_count = exif_optics_subject_fixture();
+    bad_subject_location_count[80..84].copy_from_slice(&3u32.to_le_bytes());
+    bad_subject_location_count[84..88].copy_from_slice(&144u32.to_le_bytes());
+    bad_subject_location_count.extend_from_slice(&320u16.to_le_bytes());
+    bad_subject_location_count.extend_from_slice(&240u16.to_le_bytes());
+    bad_subject_location_count.extend_from_slice(&50u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subject_location_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_exposure_index_denominator = exif_optics_subject_fixture();
+    bad_exposure_index_denominator[140..144].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_exposure_index_denominator)
             .unwrap()
             .common_tags()
             .unwrap_err()
