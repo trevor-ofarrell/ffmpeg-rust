@@ -34,10 +34,10 @@ use avutil::{
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketActiveFormatDescription, PacketFlags, PacketFrameCropping, PacketJpDualMono,
     PacketJpDualMonoSelection, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
-    PacketParamChange, PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason,
-    PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat, Rational,
-    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
-    VideoFrame,
+    PacketParamChange, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
+    PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings,
+    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256,
+    Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3474,6 +3474,26 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             ));
         }
     }
+    match typed_payload_side_data.s12m_timecode() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::S12mTimecode);
+            assert_eq!(typed_payload.len(), PacketS12mTimecode::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert!((PacketS12mTimecode::MIN_TIMECODES..=PacketS12mTimecode::MAX_TIMECODES)
+                .contains(&value.count()));
+            assert_eq!(value.timecodes().len(), value.count());
+            assert_eq!(
+                PacketS12mTimecode::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::S12mTimecode),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::S12mTimecode);
+            assert!(packet_s12m_timecode_payload_invalid(&typed_payload));
+        }
+    }
     match typed_payload_side_data.frame_cropping() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::FrameCropping);
@@ -3972,6 +3992,37 @@ fn exercise_fixtures() {
     );
     assert_eq!(
         PacketActiveFormatDescription::parse(&[8, 9])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_s12m_timecode =
+        PacketS12mTimecode::new(&[0x0102_0304, 0xA0B0_C0D0]).unwrap();
+    let packet_s12m_timecode_bytes = packet_s12m_timecode.to_bytes();
+    assert_eq!(
+        PacketS12mTimecode::parse(&packet_s12m_timecode_bytes).unwrap(),
+        packet_s12m_timecode
+    );
+    assert_eq!(packet_s12m_timecode.count(), 2);
+    assert_eq!(
+        packet_s12m_timecode.raw_words(),
+        [2, 0x0102_0304, 0xA0B0_C0D0, 0]
+    );
+    assert_eq!(
+        SideData::new_s12m_timecode(packet_s12m_timecode)
+            .unwrap()
+            .s12m_timecode()
+            .unwrap(),
+        Some(packet_s12m_timecode)
+    );
+    assert_eq!(
+        PacketS12mTimecode::from_raw_words([0, 1, 2, 3])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        PacketS12mTimecode::parse(&packet_s12m_timecode_bytes[..PacketS12mTimecode::DATA_LEN - 1])
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData
@@ -9678,6 +9729,16 @@ fn packet_active_format_description_payload_invalid(data: &[u8]) -> bool {
     }
 
     PacketActiveFormatDescription::from_byte(data[0]).is_err()
+}
+
+fn packet_s12m_timecode_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != PacketS12mTimecode::DATA_LEN {
+        return true;
+    }
+
+    let mut bytes = [0; 4];
+    bytes.copy_from_slice(&data[..4]);
+    !matches!(u32::from_ne_bytes(bytes), 1..=3)
 }
 
 fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {

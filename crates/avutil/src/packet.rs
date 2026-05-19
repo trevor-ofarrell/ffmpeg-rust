@@ -891,6 +891,82 @@ impl PacketActiveFormatDescription {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketS12mTimecode {
+    words: [u32; Self::WORDS],
+}
+
+impl PacketS12mTimecode {
+    pub const WORDS: usize = 4;
+    pub const DATA_LEN: usize = Self::WORDS * 4;
+    pub const MIN_TIMECODES: usize = 1;
+    pub const MAX_TIMECODES: usize = 3;
+
+    pub fn new(timecodes: &[u32]) -> AvResult<Self> {
+        if !(Self::MIN_TIMECODES..=Self::MAX_TIMECODES).contains(&timecodes.len()) {
+            return Err(AvError::invalid_argument(format!(
+                "S12M timecode packet side data requires {} to {} timecodes, got {}",
+                Self::MIN_TIMECODES,
+                Self::MAX_TIMECODES,
+                timecodes.len()
+            )));
+        }
+
+        let mut words = [0; Self::WORDS];
+        words[0] = timecodes.len() as u32;
+        words[1..=timecodes.len()].copy_from_slice(timecodes);
+        Ok(Self { words })
+    }
+
+    pub fn from_raw_words(words: [u32; Self::WORDS]) -> AvResult<Self> {
+        match words[0] {
+            1..=3 => Ok(Self { words }),
+            count => Err(AvError::invalid_data(format!(
+                "invalid S12M timecode count {count}"
+            ))),
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "S12M timecode packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut words = [0; Self::WORDS];
+        for (word, chunk) in words.iter_mut().zip(data.chunks_exact(4)) {
+            let mut bytes = [0; 4];
+            bytes.copy_from_slice(chunk);
+            *word = u32::from_ne_bytes(bytes);
+        }
+
+        Self::from_raw_words(words)
+    }
+
+    pub const fn count(self) -> usize {
+        self.words[0] as usize
+    }
+
+    pub fn timecodes(&self) -> &[u32] {
+        &self.words[1..1 + self.count()]
+    }
+
+    pub const fn raw_words(self) -> [u32; Self::WORDS] {
+        self.words
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        for (word, chunk) in self.words.iter().zip(bytes.chunks_exact_mut(4)) {
+            chunk.copy_from_slice(&word.to_ne_bytes());
+        }
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketFrameCropping {
     crop_top: u32,
     crop_bottom: u32,
@@ -1014,6 +1090,10 @@ impl SideData {
         )
     }
 
+    pub fn new_s12m_timecode(value: PacketS12mTimecode) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::S12mTimecode, value.to_bytes().to_vec())
+    }
+
     pub fn new_frame_cropping(value: PacketFrameCropping) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::FrameCropping, value.to_bytes().to_vec())
     }
@@ -1123,6 +1203,14 @@ impl SideData {
         }
 
         PacketActiveFormatDescription::parse(self.data()).map(Some)
+    }
+
+    pub fn s12m_timecode(&self) -> AvResult<Option<PacketS12mTimecode>> {
+        if self.kind != PacketSideDataKind::S12mTimecode {
+            return Ok(None);
+        }
+
+        PacketS12mTimecode::parse(self.data()).map(Some)
     }
 
     pub fn frame_cropping(&self) -> AvResult<Option<PacketFrameCropping>> {
@@ -2267,6 +2355,83 @@ mod tests {
                     .unwrap();
             assert_eq!(
                 side_data.active_format_description().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+    }
+
+    #[test]
+    fn packet_side_data_parses_s12m_timecode_payload() {
+        let expected = PacketS12mTimecode::new(&[0x0102_0304, 0xA0B0_C0D0]).unwrap();
+        assert_eq!(expected.count(), 2);
+        assert_eq!(expected.timecodes(), &[0x0102_0304, 0xA0B0_C0D0]);
+        assert_eq!(expected.raw_words(), [2, 0x0102_0304, 0xA0B0_C0D0, 0]);
+
+        let side_data = SideData::new_s12m_timecode(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::S12mTimecode);
+        assert_eq!(side_data.data(), &expected.to_bytes()[..]);
+        assert_eq!(side_data.s12m_timecode().unwrap(), Some(expected));
+
+        let raw_with_unused =
+            PacketS12mTimecode::from_raw_words([1, 0x0A0B_0C0D, 0xFEED_C0DE, 0x1234_5678]).unwrap();
+        assert_eq!(raw_with_unused.count(), 1);
+        assert_eq!(raw_with_unused.timecodes(), &[0x0A0B_0C0D]);
+        assert_eq!(
+            raw_with_unused.raw_words(),
+            [1, 0x0A0B_0C0D, 0xFEED_C0DE, 0x1234_5678]
+        );
+        assert_eq!(
+            PacketS12mTimecode::parse(&raw_with_unused.to_bytes()).unwrap(),
+            raw_with_unused
+        );
+
+        let afd = SideData::new_with_kind(
+            PacketSideDataKind::ActiveFormatDescription,
+            expected.to_bytes().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(afd.s12m_timecode().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_s12m_timecode_payload() {
+        assert_eq!(
+            PacketS12mTimecode::new(&[]).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            PacketS12mTimecode::new(&[1, 2, 3, 4]).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+
+        for data in [Vec::new(), vec![0; 15], vec![0; 17]] {
+            assert_eq!(
+                PacketS12mTimecode::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::S12mTimecode, data).unwrap();
+            assert_eq!(
+                side_data.s12m_timecode().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        for count in [0, 4, u32::MAX] {
+            let words = [count, 1, 2, 3];
+            assert_eq!(
+                PacketS12mTimecode::from_raw_words(words)
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data = SideData::new_with_kind(
+                PacketSideDataKind::S12mTimecode,
+                PacketS12mTimecode { words }.to_bytes().to_vec(),
+            )
+            .unwrap();
+            assert_eq!(
+                side_data.s12m_timecode().unwrap_err().kind(),
                 crate::AvErrorKind::InvalidData
             );
         }
