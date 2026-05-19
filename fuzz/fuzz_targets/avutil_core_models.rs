@@ -5198,6 +5198,26 @@ fn exercise_fixtures() {
         gps_altitude_time_tags.gps_time_stamp().unwrap()[2].numerator(),
         56
     );
+    let mut bad_gps_altitude_ref = exif_gps_altitude_time_fixture();
+    bad_gps_altitude_ref[36] = 2;
+    assert_eq!(
+        FrameExif::parse(&bad_gps_altitude_ref)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_time_stamp_count = exif_gps_altitude_time_fixture();
+    bad_time_stamp_count[56..60].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_time_stamp_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_time_stamp_hour = exif_gps_altitude_time_fixture();
     bad_time_stamp_hour[88..92].copy_from_slice(&24u32.to_le_bytes());
     assert_eq!(
@@ -5218,7 +5238,30 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let mut bad_time_stamp_composite = exif_gps_altitude_time_fixture();
+    bad_time_stamp_composite[88..92].copy_from_slice(&47u32.to_le_bytes());
+    bad_time_stamp_composite[92..96].copy_from_slice(&2u32.to_le_bytes());
+    bad_time_stamp_composite[96..100].copy_from_slice(&30u32.to_le_bytes());
+    bad_time_stamp_composite[104..108].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_time_stamp_composite)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(gps_altitude_time_tags.gps_date_stamp(), Some("2026:05:06"));
+    let mut bad_gps_date_stamp_type = exif_gps_altitude_time_fixture();
+    bad_gps_date_stamp_type[66..68].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_gps_date_stamp_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_gps_date_stamp_count = exif_gps_altitude_time_fixture();
     bad_gps_date_stamp_count[68..72].copy_from_slice(&10u32.to_le_bytes());
     assert_eq!(
