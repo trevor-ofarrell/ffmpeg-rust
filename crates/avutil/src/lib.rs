@@ -41,7 +41,8 @@ pub use frame::{
     FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
     FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
     FrameStereo3dType, FrameStereo3dView, FrameVideoBlockParams, FrameVideoEncParams,
-    FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, VideoFrame,
+    FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId,
+    VideoFrame,
 };
 pub use hash::{
     adler32, crc32_ieee, digest_to_hex, md5, sha224, sha256, sha384, sha512, Adler32, Crc32, Md5,

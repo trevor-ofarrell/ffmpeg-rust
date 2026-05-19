@@ -5084,6 +5084,41 @@ impl<'a> FrameLcevc<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameViewId {
+    value: i32,
+}
+
+impl FrameViewId {
+    pub const DATA_LEN: usize = 4;
+
+    pub const fn new(value: i32) -> Self {
+        Self { value }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "view ID frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut raw = [0; Self::DATA_LEN];
+        raw.copy_from_slice(data);
+        Ok(Self::new(i32::from_ne_bytes(raw)))
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self.value
+    }
+
+    pub const fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        self.value.to_ne_bytes()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameDolbyVisionRpuDataHeader<'a> {
     data: &'a [u8],
 }
@@ -6194,6 +6229,10 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::Lcevc, data)
     }
 
+    pub fn new_view_id(value: FrameViewId) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::ViewId, value.to_bytes().to_vec())
+    }
+
     pub fn new_film_grain_params(data: Vec<u8>) -> AvResult<Self> {
         let side_data = Self::new_with_kind(FrameSideDataKind::FilmGrainParams, data)?;
         FrameFilmGrainParams::parse(side_data.data())?;
@@ -6463,6 +6502,14 @@ impl FrameSideData {
         }
 
         Some(FrameLcevc::parse(self.data()))
+    }
+
+    pub fn view_id(&self) -> AvResult<Option<FrameViewId>> {
+        if self.kind != FrameSideDataKind::ViewId {
+            return Ok(None);
+        }
+
+        FrameViewId::parse(self.data()).map(Some)
     }
 
     pub fn film_grain_params(&self) -> AvResult<Option<FrameFilmGrainParams<'_>>> {
@@ -12865,6 +12912,47 @@ mod tests {
         let non_lcevc =
             FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
         assert_eq!(non_lcevc.lcevc(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_view_id_payload() {
+        let value = FrameViewId::new(42);
+        let side_data = FrameSideData::new_view_id(value).unwrap();
+
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::ViewId);
+        assert_eq!(side_data.data(), &42i32.to_ne_bytes());
+        assert_eq!(FrameViewId::parse(&value.to_bytes()).unwrap(), value);
+        assert_eq!(side_data.view_id().unwrap(), Some(value));
+
+        let negative = FrameViewId::new(-1);
+        assert_eq!(
+            FrameViewId::parse(&negative.to_bytes()).unwrap().as_raw(),
+            -1
+        );
+
+        let non_view =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 4]).unwrap();
+        assert_eq!(non_view.view_id().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_view_id_payload() {
+        for data in [Vec::new(), vec![0; 3], vec![0; 5]] {
+            assert_eq!(
+                FrameViewId::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+
+            let side_data = FrameSideData::new_with_kind(FrameSideDataKind::ViewId, data).unwrap();
+            assert_eq!(
+                side_data.view_id().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_view =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
+        assert_eq!(non_view.view_id().unwrap(), None);
     }
 
     #[test]

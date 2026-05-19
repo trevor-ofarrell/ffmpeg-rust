@@ -19,9 +19,9 @@ use avutil::{
     FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
     FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
     FrameStereo3dType, FrameStereo3dView, FrameVideoBlockParams, FrameVideoEncParams,
-    FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, Md5, Packet,
-    PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224,
-    Sha256, Sha384, Sha512, SideData, VideoFrame,
+    FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
+    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1624,6 +1624,22 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert_eq!(value.is_empty(), frame_side_data_payload.is_empty());
         }
         None => assert_ne!(frame_side_data_kind, FrameSideDataKind::Lcevc),
+    }
+    match frame.side_data()[0].view_id() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::ViewId);
+            assert_eq!(frame_side_data_payload.len(), FrameViewId::DATA_LEN);
+            assert_eq!(
+                value.to_bytes().as_slice(),
+                frame_side_data_payload.as_slice()
+            );
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::ViewId),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::ViewId);
+            assert_ne!(frame_side_data_payload.len(), FrameViewId::DATA_LEN);
+        }
     }
     match frame.side_data()[0].film_grain_params() {
         Ok(Some(value)) => {
@@ -3477,6 +3493,33 @@ fn exercise_fixtures() {
     let non_lcevc =
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_lcevc.lcevc(), None);
+
+    let view_id = FrameViewId::new(-7);
+    let view_id_side_data = FrameSideData::new_view_id(view_id).unwrap();
+    assert_eq!(view_id_side_data.kind_id(), &FrameSideDataKind::ViewId);
+    assert_eq!(
+        view_id_side_data.view_id().unwrap().unwrap().as_raw(),
+        view_id.as_raw()
+    );
+    assert_eq!(
+        FrameViewId::parse(&view_id.to_bytes()).unwrap().to_bytes(),
+        view_id.to_bytes()
+    );
+    for data in [Vec::new(), vec![0; 3], vec![0; 5]] {
+        assert_eq!(
+            FrameViewId::parse(&data).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        let invalid_view_id =
+            FrameSideData::new_with_kind(FrameSideDataKind::ViewId, data).unwrap();
+        assert_eq!(
+            invalid_view_id.view_id().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    let non_view_id =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_view_id.view_id().unwrap(), None);
 
     let film_grain = minimal_film_grain_av1_fixture();
     let film_grain_side_data = FrameSideData::new_film_grain_params(film_grain.clone()).unwrap();
