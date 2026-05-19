@@ -95,6 +95,25 @@ impl SideData {
     pub fn data(&self) -> &[u8] {
         &self.data
     }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub fn shrink(&mut self, len: usize) -> AvResult<()> {
+        if len > self.data.len() {
+            return Err(AvError::invalid_argument(
+                "packet side data cannot be shrunk to a larger size",
+            ));
+        }
+
+        self.data.truncate(len);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,6 +182,18 @@ impl Packet {
         &self.side_data
     }
 
+    pub fn side_data_by_kind(&self, kind: &str) -> Option<&SideData> {
+        self.side_data
+            .iter()
+            .find(|side_data| side_data.kind() == kind)
+    }
+
+    pub fn side_data_mut_by_kind(&mut self, kind: &str) -> Option<&mut SideData> {
+        self.side_data
+            .iter_mut()
+            .find(|side_data| side_data.kind() == kind)
+    }
+
     pub fn set_pts(&mut self, pts: Option<i64>) {
         self.pts = pts.unwrap_or(AV_NOPTS_VALUE);
     }
@@ -205,6 +236,31 @@ impl Packet {
 
     pub fn push_side_data(&mut self, side_data: SideData) {
         self.side_data.push(side_data);
+    }
+
+    pub fn shrink_side_data(&mut self, kind: &str, len: usize) -> AvResult<bool> {
+        let Some(side_data) = self.side_data_mut_by_kind(kind) else {
+            return Ok(false);
+        };
+
+        side_data.shrink(len)?;
+        Ok(true)
+    }
+
+    pub fn take_side_data(&mut self, kind: &str) -> Option<SideData> {
+        let index = self
+            .side_data
+            .iter()
+            .position(|side_data| side_data.kind() == kind)?;
+        Some(self.side_data.remove(index))
+    }
+
+    pub fn remove_side_data(&mut self, kind: &str) -> bool {
+        self.take_side_data(kind).is_some()
+    }
+
+    pub fn clear_side_data(&mut self) {
+        self.side_data.clear();
     }
 
     pub fn rescale_ts(&mut self, src: Rational, dst: Rational) -> AvResult<()> {
@@ -291,6 +347,8 @@ mod tests {
         assert!(packet.flags().contains(PacketFlags::TRUSTED));
         assert!(packet.flags().contains(PacketFlags::DISPOSABLE));
         assert_eq!(packet.side_data()[0].kind(), "palette");
+        assert_eq!(packet.side_data()[0].len(), 3);
+        assert!(!packet.side_data()[0].is_empty());
     }
 
     #[test]
@@ -335,6 +393,64 @@ mod tests {
         assert_eq!(packet.pos(), None);
         assert!(SideData::new(" ", Vec::new()).is_err());
         assert!(SideData::new("bad\0kind", Vec::new()).is_err());
+    }
+
+    #[test]
+    fn packet_side_data_lookup_and_shrink_preserve_order() {
+        let mut packet = Packet::new(Vec::new(), 0);
+        packet.push_side_data(SideData::new("palette", vec![0, 1, 2, 3]).unwrap());
+        packet.push_side_data(SideData::new("skip_samples", vec![4, 5, 6]).unwrap());
+        packet.push_side_data(SideData::new("palette", vec![7, 8]).unwrap());
+
+        assert_eq!(
+            packet.side_data_by_kind("palette").unwrap().data(),
+            &[0, 1, 2, 3]
+        );
+        assert_eq!(
+            packet.side_data_by_kind("skip_samples").unwrap().data(),
+            &[4, 5, 6]
+        );
+        assert!(packet.side_data_by_kind("missing").is_none());
+
+        assert!(packet.shrink_side_data("palette", 2).unwrap());
+        assert_eq!(packet.side_data_by_kind("palette").unwrap().data(), &[0, 1]);
+        assert_eq!(packet.side_data()[1].kind(), "skip_samples");
+        assert_eq!(packet.side_data()[2].data(), &[7, 8]);
+        assert!(!packet.shrink_side_data("missing", 0).unwrap());
+    }
+
+    #[test]
+    fn packet_side_data_shrink_errors_do_not_mutate_payload() {
+        let mut packet = Packet::new(Vec::new(), 0);
+        packet.push_side_data(SideData::new("palette", vec![0, 1, 2]).unwrap());
+
+        let err = packet.shrink_side_data("palette", 4).unwrap_err();
+
+        assert_eq!(err.kind(), crate::AvErrorKind::InvalidArgument);
+        assert_eq!(
+            packet.side_data_by_kind("palette").unwrap().data(),
+            &[0, 1, 2]
+        );
+    }
+
+    #[test]
+    fn packet_side_data_take_remove_and_clear_are_scoped() {
+        let mut packet = Packet::new(Vec::new(), 0);
+        packet.push_side_data(SideData::new("palette", vec![0]).unwrap());
+        packet.push_side_data(SideData::new("skip_samples", vec![1]).unwrap());
+        packet.push_side_data(SideData::new("palette", vec![2]).unwrap());
+
+        let taken = packet.take_side_data("palette").unwrap();
+        assert_eq!(taken.data(), &[0]);
+        assert_eq!(packet.side_data().len(), 2);
+        assert_eq!(packet.side_data_by_kind("palette").unwrap().data(), &[2]);
+
+        assert!(packet.remove_side_data("skip_samples"));
+        assert!(!packet.remove_side_data("missing"));
+        assert_eq!(packet.side_data().len(), 1);
+
+        packet.clear_side_data();
+        assert!(packet.side_data().is_empty());
     }
 
     #[test]

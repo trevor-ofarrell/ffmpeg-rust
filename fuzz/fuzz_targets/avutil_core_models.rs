@@ -3231,6 +3231,46 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     packet.push_side_data(side_data);
     assert_eq!(packet.side_data()[0].kind(), "fuzz_side_data");
     assert_eq!(packet.side_data()[0].data(), side_data_payload.as_slice());
+    assert_eq!(packet.side_data()[0].len(), side_data_payload.len());
+    assert_eq!(packet.side_data()[0].is_empty(), side_data_payload.is_empty());
+    assert_eq!(
+        packet.side_data_by_kind("fuzz_side_data").unwrap().data(),
+        side_data_payload.as_slice()
+    );
+
+    let shrink_len = usize::from(cursor.next().unwrap_or_default()) % (side_data_payload.len() + 1);
+    assert!(packet
+        .shrink_side_data("fuzz_side_data", shrink_len)
+        .unwrap());
+    assert_eq!(
+        packet.side_data_by_kind("fuzz_side_data").unwrap().data(),
+        &side_data_payload[..shrink_len]
+    );
+    let shrunk_payload = packet
+        .side_data_by_kind("fuzz_side_data")
+        .unwrap()
+        .data()
+        .to_vec();
+    assert_eq!(
+        packet
+            .shrink_side_data("fuzz_side_data", shrunk_payload.len() + 1)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        packet.side_data_by_kind("fuzz_side_data").unwrap().data(),
+        shrunk_payload.as_slice()
+    );
+    assert!(!packet.shrink_side_data("missing_side_data", 0).unwrap());
+    packet.push_side_data(SideData::new("other_side_data", vec![0xaa]).unwrap());
+    let taken = packet.take_side_data("fuzz_side_data").unwrap();
+    assert_eq!(taken.data(), shrunk_payload.as_slice());
+    assert!(packet.side_data_by_kind("fuzz_side_data").is_none());
+    assert!(packet.remove_side_data("other_side_data"));
+    assert!(!packet.remove_side_data("other_side_data"));
+    packet.clear_side_data();
+    assert!(packet.side_data().is_empty());
     assert_eq!(
         SideData::new(" \t", Vec::new()).unwrap_err().kind(),
         AvErrorKind::InvalidArgument
