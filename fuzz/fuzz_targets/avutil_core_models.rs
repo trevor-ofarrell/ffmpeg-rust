@@ -32,13 +32,13 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketActiveFormatDescription, PacketFallbackTrack, PacketFlags, PacketFrameCropping,
-    PacketJpDualMono, PacketJpDualMonoSelection, PacketMatroskaBlockAdditional,
-    PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
-    PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
-    PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings,
-    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256,
-    Sha384, Sha512, SideData, VideoFrame,
+    Packet, PacketActiveFormatDescription, PacketCpbProperties, PacketFallbackTrack, PacketFlags,
+    PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
+    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
+    PacketProducerReferenceTime, PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode,
+    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition,
+    PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat,
+    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3297,8 +3297,12 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .side_data_by_kind_id(&typed_side_data_kind)
         .is_none());
 
-    let typed_payload_len = usize::from(cursor.next().unwrap_or_default())
-        % (PacketQualityStats::HEADER_LEN + PacketQualityStats::ERROR_ENTRY_LEN * 3 + 1);
+    let typed_payload_max_len = (PacketQualityStats::HEADER_LEN
+        + PacketQualityStats::ERROR_ENTRY_LEN * 3
+        + 1)
+    .max(PacketCpbProperties::DATA_LEN + 1);
+    let typed_payload_len =
+        usize::from(cursor.next().unwrap_or_default()) % typed_payload_max_len;
     let typed_payload = payload_from(cursor, typed_payload_len);
     let typed_payload_kind = packet_side_data_kind_from(cursor.next());
     let typed_payload_side_data =
@@ -3341,6 +3345,27 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::FallbackTrack);
             assert!(packet_fallback_track_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.cpb_properties() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::CpbProperties);
+            assert_eq!(typed_payload.len(), PacketCpbProperties::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert!(value.max_bitrate() >= 0);
+            assert!(value.min_bitrate() >= 0);
+            assert!(value.avg_bitrate() >= 0);
+            assert!(value.buffer_size() >= 0);
+            assert_eq!(
+                PacketCpbProperties::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::CpbProperties),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::CpbProperties);
+            assert!(packet_cpb_properties_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.producer_reference_time() {
@@ -4162,6 +4187,76 @@ fn exercise_fixtures() {
         )
         .unwrap()
         .fallback_track()
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_cpb = PacketCpbProperties::new(
+        9_000_000,
+        1_000_000,
+        4_000_000,
+        2_000_000,
+        PacketCpbProperties::VBV_DELAY_UNKNOWN,
+    )
+    .unwrap();
+    let packet_cpb_bytes = packet_cpb.to_bytes();
+    assert_eq!(
+        PacketCpbProperties::parse(&packet_cpb_bytes).unwrap(),
+        packet_cpb
+    );
+    assert_eq!(packet_cpb.max_bitrate(), 9_000_000);
+    assert_eq!(packet_cpb.min_bitrate(), 1_000_000);
+    assert_eq!(packet_cpb.avg_bitrate(), 4_000_000);
+    assert_eq!(packet_cpb.buffer_size(), 2_000_000);
+    assert_eq!(packet_cpb.vbv_delay(), u64::MAX);
+    assert_eq!(
+        SideData::new_cpb_properties(packet_cpb)
+            .unwrap()
+            .cpb_properties()
+            .unwrap(),
+        Some(packet_cpb)
+    );
+    let packet_cpb_boundary = PacketCpbProperties::new(i64::MAX, 0, i64::MAX - 1, 1, 0).unwrap();
+    assert_eq!(
+        PacketCpbProperties::parse(&packet_cpb_boundary.to_bytes()).unwrap(),
+        packet_cpb_boundary
+    );
+    for offset in [0, 8, 16, 24] {
+        let mut bad_cpb = packet_cpb_bytes;
+        write_ne_i64(&mut bad_cpb, offset, -1);
+        assert!(packet_cpb_properties_payload_invalid(&bad_cpb));
+        assert_eq!(
+            PacketCpbProperties::parse(&bad_cpb).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            SideData::new_with_kind(PacketSideDataKind::CpbProperties, bad_cpb.to_vec())
+                .unwrap()
+                .cpb_properties()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    assert_eq!(
+        PacketCpbProperties::new(-1, 0, 0, 0, PacketCpbProperties::VBV_DELAY_UNKNOWN)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        PacketCpbProperties::parse(&[0; PacketCpbProperties::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        SideData::new_with_kind(
+            PacketSideDataKind::CpbProperties,
+            vec![0; PacketCpbProperties::DATA_LEN - 1]
+        )
+        .unwrap()
+        .cpb_properties()
         .unwrap_err()
         .kind(),
         AvErrorKind::InvalidData
@@ -10048,6 +10143,16 @@ fn packet_fallback_track_payload_invalid(data: &[u8]) -> bool {
     i32::from_ne_bytes(bytes) < 0
 }
 
+fn packet_cpb_properties_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != PacketCpbProperties::DATA_LEN {
+        return true;
+    }
+
+    [0, 8, 16, 24]
+        .into_iter()
+        .any(|offset| read_ne_i64(data, offset) < 0)
+}
+
 fn packet_producer_reference_time_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketProducerReferenceTime::DATA_LEN
 }
@@ -13768,6 +13873,12 @@ fn read_ne_i32(data: &[u8], offset: usize) -> i32 {
     i32::from_ne_bytes(raw)
 }
 
+fn read_ne_i64(data: &[u8], offset: usize) -> i64 {
+    let mut raw = [0; 8];
+    raw.copy_from_slice(&data[offset..offset + 8]);
+    i64::from_ne_bytes(raw)
+}
+
 fn read_ne_rational(data: &[u8], offset: usize) -> Rational {
     Rational::from_raw(read_ne_i32(data, offset), read_ne_i32(data, offset + 4))
 }
@@ -13794,6 +13905,10 @@ fn write_ne_usize(data: &mut [u8], offset: usize, value: usize) {
 
 fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {
     data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn write_ne_i64(data: &mut [u8], offset: usize, value: i64) {
+    data[offset..offset + 8].copy_from_slice(&value.to_ne_bytes());
 }
 
 fn write_ne_rational(data: &mut [u8], offset: usize, value: Rational) {

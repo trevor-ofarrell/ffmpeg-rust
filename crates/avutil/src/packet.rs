@@ -539,6 +539,98 @@ impl PacketFallbackTrack {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketCpbProperties {
+    max_bitrate: i64,
+    min_bitrate: i64,
+    avg_bitrate: i64,
+    buffer_size: i64,
+    vbv_delay: u64,
+}
+
+impl PacketCpbProperties {
+    pub const DATA_LEN: usize = 40;
+    pub const VBV_DELAY_UNKNOWN: u64 = u64::MAX;
+
+    pub fn new(
+        max_bitrate: i64,
+        min_bitrate: i64,
+        avg_bitrate: i64,
+        buffer_size: i64,
+        vbv_delay: u64,
+    ) -> AvResult<Self> {
+        validate_cpb_properties_nonnegative(max_bitrate, "max_bitrate", AvError::invalid_argument)?;
+        validate_cpb_properties_nonnegative(min_bitrate, "min_bitrate", AvError::invalid_argument)?;
+        validate_cpb_properties_nonnegative(avg_bitrate, "avg_bitrate", AvError::invalid_argument)?;
+        validate_cpb_properties_nonnegative(buffer_size, "buffer_size", AvError::invalid_argument)?;
+
+        Ok(Self {
+            max_bitrate,
+            min_bitrate,
+            avg_bitrate,
+            buffer_size,
+            vbv_delay,
+        })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "CPB properties packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let max_bitrate = read_i64_ne(data, 0);
+        let min_bitrate = read_i64_ne(data, 8);
+        let avg_bitrate = read_i64_ne(data, 16);
+        let buffer_size = read_i64_ne(data, 24);
+        validate_cpb_properties_nonnegative(max_bitrate, "max_bitrate", AvError::invalid_data)?;
+        validate_cpb_properties_nonnegative(min_bitrate, "min_bitrate", AvError::invalid_data)?;
+        validate_cpb_properties_nonnegative(avg_bitrate, "avg_bitrate", AvError::invalid_data)?;
+        validate_cpb_properties_nonnegative(buffer_size, "buffer_size", AvError::invalid_data)?;
+
+        Ok(Self {
+            max_bitrate,
+            min_bitrate,
+            avg_bitrate,
+            buffer_size,
+            vbv_delay: read_u64_ne(data, 32),
+        })
+    }
+
+    pub const fn max_bitrate(self) -> i64 {
+        self.max_bitrate
+    }
+
+    pub const fn min_bitrate(self) -> i64 {
+        self.min_bitrate
+    }
+
+    pub const fn avg_bitrate(self) -> i64 {
+        self.avg_bitrate
+    }
+
+    pub const fn buffer_size(self) -> i64 {
+        self.buffer_size
+    }
+
+    pub const fn vbv_delay(self) -> u64 {
+        self.vbv_delay
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[..8].copy_from_slice(&self.max_bitrate.to_ne_bytes());
+        bytes[8..16].copy_from_slice(&self.min_bitrate.to_ne_bytes());
+        bytes[16..24].copy_from_slice(&self.avg_bitrate.to_ne_bytes());
+        bytes[24..32].copy_from_slice(&self.buffer_size.to_ne_bytes());
+        bytes[32..Self::DATA_LEN].copy_from_slice(&self.vbv_delay.to_ne_bytes());
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketProducerReferenceTime {
     wallclock: i64,
     flags: i32,
@@ -1405,6 +1497,10 @@ impl SideData {
         Self::new_with_kind(PacketSideDataKind::FallbackTrack, value.to_bytes().to_vec())
     }
 
+    pub fn new_cpb_properties(value: PacketCpbProperties) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::CpbProperties, value.to_bytes().to_vec())
+    }
+
     pub fn new_producer_reference_time(value: PacketProducerReferenceTime) -> AvResult<Self> {
         Self::new_with_kind(
             PacketSideDataKind::ProducerReferenceTime,
@@ -1524,6 +1620,14 @@ impl SideData {
         }
 
         PacketFallbackTrack::parse(self.data()).map(Some)
+    }
+
+    pub fn cpb_properties(&self) -> AvResult<Option<PacketCpbProperties>> {
+        if self.kind != PacketSideDataKind::CpbProperties {
+            return Ok(None);
+        }
+
+        PacketCpbProperties::parse(self.data()).map(Some)
     }
 
     pub fn producer_reference_time(&self) -> AvResult<Option<PacketProducerReferenceTime>> {
@@ -2034,6 +2138,20 @@ fn validate_fallback_track_stream_index(
     Ok(())
 }
 
+fn validate_cpb_properties_nonnegative(
+    value: i64,
+    field: &str,
+    error: impl FnOnce(String) -> AvError,
+) -> AvResult<()> {
+    if value < 0 {
+        return Err(error(format!(
+            "CPB properties packet side data {field} must be nonnegative, got {value}"
+        )));
+    }
+
+    Ok(())
+}
+
 fn validate_webvtt_line_payload(data: &[u8], label: &str) -> AvResult<()> {
     if data.is_empty() {
         return Err(AvError::invalid_data(format!(
@@ -2458,6 +2576,103 @@ mod tests {
         .unwrap();
         assert_eq!(
             side_data.fallback_track().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_cpb_properties_payload() {
+        let expected =
+            PacketCpbProperties::new(9_000_000, 1_000_000, 4_000_000, 2_000_000, u64::MAX).unwrap();
+        let mut expected_bytes = [0; PacketCpbProperties::DATA_LEN];
+        expected_bytes[..8].copy_from_slice(&9_000_000_i64.to_ne_bytes());
+        expected_bytes[8..16].copy_from_slice(&1_000_000_i64.to_ne_bytes());
+        expected_bytes[16..24].copy_from_slice(&4_000_000_i64.to_ne_bytes());
+        expected_bytes[24..32].copy_from_slice(&2_000_000_i64.to_ne_bytes());
+        expected_bytes[32..].copy_from_slice(&u64::MAX.to_ne_bytes());
+
+        assert_eq!(expected.max_bitrate(), 9_000_000);
+        assert_eq!(expected.min_bitrate(), 1_000_000);
+        assert_eq!(expected.avg_bitrate(), 4_000_000);
+        assert_eq!(expected.buffer_size(), 2_000_000);
+        assert_eq!(expected.vbv_delay(), PacketCpbProperties::VBV_DELAY_UNKNOWN);
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketCpbProperties::parse(&expected_bytes).unwrap(),
+            expected
+        );
+
+        let boundaries = PacketCpbProperties::new(i64::MAX, 0, i64::MAX - 1, 1, 0).unwrap();
+        assert_eq!(boundaries.max_bitrate(), i64::MAX);
+        assert_eq!(boundaries.min_bitrate(), 0);
+        assert_eq!(boundaries.avg_bitrate(), i64::MAX - 1);
+        assert_eq!(boundaries.buffer_size(), 1);
+        assert_eq!(boundaries.vbv_delay(), 0);
+        assert_eq!(
+            PacketCpbProperties::parse(&boundaries.to_bytes()).unwrap(),
+            boundaries
+        );
+
+        let side_data = SideData::new_cpb_properties(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::CpbProperties);
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(side_data.cpb_properties().unwrap(), Some(expected));
+
+        let quality_stats =
+            SideData::new_with_kind(PacketSideDataKind::QualityStats, expected_bytes.to_vec())
+                .unwrap();
+        assert_eq!(quality_stats.cpb_properties().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_cpb_properties_payload() {
+        for (max_bitrate, min_bitrate, avg_bitrate, buffer_size) in
+            [(-1, 0, 0, 0), (0, -1, 0, 0), (0, 0, -1, 0), (0, 0, 0, -1)]
+        {
+            assert_eq!(
+                PacketCpbProperties::new(
+                    max_bitrate,
+                    min_bitrate,
+                    avg_bitrate,
+                    buffer_size,
+                    PacketCpbProperties::VBV_DELAY_UNKNOWN,
+                )
+                .unwrap_err()
+                .kind(),
+                crate::AvErrorKind::InvalidArgument
+            );
+        }
+
+        for data in [
+            Vec::new(),
+            vec![0; PacketCpbProperties::DATA_LEN - 1],
+            vec![0; PacketCpbProperties::DATA_LEN + 1],
+        ] {
+            assert_eq!(
+                PacketCpbProperties::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        for offset in [0, 8, 16, 24] {
+            let mut data =
+                PacketCpbProperties::new(1, 2, 3, 4, PacketCpbProperties::VBV_DELAY_UNKNOWN)
+                    .unwrap()
+                    .to_bytes();
+            data[offset..offset + 8].copy_from_slice(&(-1_i64).to_ne_bytes());
+            assert_eq!(
+                PacketCpbProperties::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let side_data = SideData::new_with_kind(
+            PacketSideDataKind::CpbProperties,
+            vec![0; PacketCpbProperties::DATA_LEN - 1],
+        )
+        .unwrap();
+        assert_eq!(
+            side_data.cpb_properties().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
     }
