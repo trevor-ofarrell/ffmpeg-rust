@@ -6707,8 +6707,78 @@ impl FrameExifGpsDifferential {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameExifNewSubfileType {
+    raw: u32,
+}
+
+impl FrameExifNewSubfileType {
+    pub const REDUCED_RESOLUTION_IMAGE: u32 = 0x1;
+    pub const SINGLE_PAGE_OF_MULTI_PAGE_IMAGE: u32 = 0x2;
+    pub const TRANSPARENCY_MASK: u32 = 0x4;
+    pub const KNOWN_MASK: u32 = Self::REDUCED_RESOLUTION_IMAGE
+        | Self::SINGLE_PAGE_OF_MULTI_PAGE_IMAGE
+        | Self::TRANSPARENCY_MASK;
+
+    pub fn from_raw(raw: u32) -> AvResult<Self> {
+        let unknown = raw & !Self::KNOWN_MASK;
+        if unknown != 0 {
+            return Err(AvError::invalid_data(format!(
+                "EXIF new subfile type flags 0x{raw:08x} contain unknown bits 0x{unknown:08x}"
+            )));
+        }
+        Ok(Self { raw })
+    }
+
+    pub const fn raw(self) -> u32 {
+        self.raw
+    }
+
+    pub const fn is_reduced_resolution_image(self) -> bool {
+        self.raw & Self::REDUCED_RESOLUTION_IMAGE != 0
+    }
+
+    pub const fn is_single_page_of_multi_page_image(self) -> bool {
+        self.raw & Self::SINGLE_PAGE_OF_MULTI_PAGE_IMAGE != 0
+    }
+
+    pub const fn is_transparency_mask(self) -> bool {
+        self.raw & Self::TRANSPARENCY_MASK != 0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifSubfileType {
+    FullResolutionImage,
+    ReducedResolutionImage,
+    SinglePageOfMultiPageImage,
+}
+
+impl FrameExifSubfileType {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            1 => Ok(Self::FullResolutionImage),
+            2 => Ok(Self::ReducedResolutionImage),
+            3 => Ok(Self::SinglePageOfMultiPageImage),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF subfile type value {raw} is outside the defined 1..=3 range"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::FullResolutionImage => 1,
+            Self::ReducedResolutionImage => 2,
+            Self::SinglePageOfMultiPageImage => 3,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FrameExifCommonTags<'a> {
+    new_subfile_type: Option<FrameExifNewSubfileType>,
+    subfile_type: Option<FrameExifSubfileType>,
     image_description: Option<&'a str>,
     make: Option<&'a str>,
     model: Option<&'a str>,
@@ -6858,6 +6928,14 @@ pub struct FrameExifCommonTags<'a> {
 }
 
 impl<'a> FrameExifCommonTags<'a> {
+    pub const fn new_subfile_type(&self) -> Option<FrameExifNewSubfileType> {
+        self.new_subfile_type
+    }
+
+    pub const fn subfile_type(&self) -> Option<FrameExifSubfileType> {
+        self.subfile_type
+    }
+
     pub const fn image_description(&self) -> Option<&'a str> {
         self.image_description
     }
@@ -7810,6 +7888,8 @@ impl<'a> FrameExif<'a> {
     pub const MAX_IFDS: usize = 16;
     pub const MAX_LINKED_IFDS: usize = 16;
     pub const MAX_IFD_ENTRIES: usize = 4096;
+    pub const TAG_NEW_SUBFILE_TYPE: u16 = 0x00FE;
+    pub const TAG_SUBFILE_TYPE: u16 = 0x00FF;
     pub const TAG_IMAGE_WIDTH: u16 = 0x0100;
     pub const TAG_IMAGE_LENGTH: u16 = 0x0101;
     pub const TAG_BITS_PER_SAMPLE: u16 = 0x0102;
@@ -8029,6 +8109,8 @@ impl<'a> FrameExif<'a> {
         let mut tags = FrameExifCommonTags::default();
 
         if let Some(root) = self.ifd(0) {
+            tags.new_subfile_type = Self::optional_new_subfile_type_tag(root)?;
+            tags.subfile_type = Self::optional_subfile_type_tag(root)?;
             tags.image_description =
                 Self::optional_ascii_tag(root, Self::TAG_IMAGE_DESCRIPTION, "ImageDescription")?;
             tags.make = Self::optional_ascii_tag(root, Self::TAG_MAKE, "Make")?;
@@ -8794,6 +8876,24 @@ impl<'a> FrameExif<'a> {
             ));
         }
         Ok(Some(value))
+    }
+
+    fn optional_new_subfile_type_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifNewSubfileType>> {
+        let Some(raw) = Self::optional_long_tag(ifd, Self::TAG_NEW_SUBFILE_TYPE, "NewSubfileType")?
+        else {
+            return Ok(None);
+        };
+        FrameExifNewSubfileType::from_raw(raw).map(Some)
+    }
+
+    fn optional_subfile_type_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifSubfileType>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_SUBFILE_TYPE, "SubfileType")?
+        else {
+            return Ok(None);
+        };
+        FrameExifSubfileType::from_raw(raw).map(Some)
     }
 
     fn optional_planar_configuration_tag(
@@ -13538,6 +13638,34 @@ mod tests {
         }
 
         assert_eq!(data.len(), 198);
+        data
+    }
+
+    fn exif_root_subfile_type_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&2u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_NEW_SUBFILE_TYPE,
+            FrameExifTiffType::Long,
+            1,
+            (FrameExifNewSubfileType::REDUCED_RESOLUTION_IMAGE
+                | FrameExifNewSubfileType::SINGLE_PAGE_OF_MULTI_PAGE_IMAGE)
+                .to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SUBFILE_TYPE,
+            FrameExifTiffType::Short,
+            1,
+            [2, 0, 0, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        assert_eq!(data.len(), 38);
         data
     }
 
@@ -21456,6 +21584,72 @@ mod tests {
         bad_reference_count[50..54].copy_from_slice(&5u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_reference_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_subfile_type_tags() {
+        let exif_bytes = exif_root_subfile_type_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+        let new_subfile_type = common.new_subfile_type().unwrap();
+
+        assert_eq!(new_subfile_type.raw(), 0x3);
+        assert!(new_subfile_type.is_reduced_resolution_image());
+        assert!(new_subfile_type.is_single_page_of_multi_page_image());
+        assert!(!new_subfile_type.is_transparency_mask());
+        assert_eq!(
+            common.subfile_type(),
+            Some(FrameExifSubfileType::ReducedResolutionImage)
+        );
+        assert_eq!(
+            common.subfile_type().map(FrameExifSubfileType::raw),
+            Some(2)
+        );
+
+        let mut bad_new_subfile_type_type = exif_root_subfile_type_fixture();
+        bad_new_subfile_type_type[12..14]
+            .copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_new_subfile_type_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_new_subfile_type_flags = exif_root_subfile_type_fixture();
+        bad_new_subfile_type_flags[18..22].copy_from_slice(&0x8u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_new_subfile_type_flags)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_subfile_type_count = exif_root_subfile_type_fixture();
+        bad_subfile_type_count[26..30].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_subfile_type_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_subfile_type_value = exif_root_subfile_type_fixture();
+        bad_subfile_type_value[30..32].copy_from_slice(&4u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_subfile_type_value)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

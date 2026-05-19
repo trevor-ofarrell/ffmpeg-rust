@@ -15,10 +15,10 @@ use avutil::{
     FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDirectionRef,
     FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef, FrameExifGpsLongitudeRef,
     FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus, FrameExifIfdPointerKind,
-    FrameExifLightSource, FrameExifMeteringMode, FrameExifOrientation, FrameExifRational,
-    FrameExifResolutionUnit, FrameExifSaturation, FrameExifSceneCaptureType, FrameExifSceneType,
-    FrameExifSensingMethod, FrameExifSensitivityType, FrameExifSharpness, FrameExifSubjectArea,
-    FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance,
+    FrameExifLightSource, FrameExifMeteringMode, FrameExifNewSubfileType, FrameExifOrientation,
+    FrameExifRational, FrameExifResolutionUnit, FrameExifSaturation, FrameExifSceneCaptureType,
+    FrameExifSceneType, FrameExifSensingMethod, FrameExifSensitivityType, FrameExifSharpness,
+    FrameExifSubjectArea, FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance,
     FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
@@ -1920,6 +1920,12 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                         if let Some(samples_per_pixel) = common.samples_per_pixel() {
                             assert_eq!(values.len(), samples_per_pixel as usize);
                         }
+                    }
+                    if let Some(value) = common.new_subfile_type() {
+                        assert_eq!(value.raw() & !FrameExifNewSubfileType::KNOWN_MASK, 0);
+                    }
+                    if let Some(value) = common.subfile_type() {
+                        assert!((1..=3).contains(&value.raw()));
                     }
                     if let Some(value) = common.compression() {
                         assert_ne!(value.raw(), 0);
@@ -4170,6 +4176,35 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let subfile_type_exif_bytes = exif_root_subfile_type_fixture();
+    let subfile_type_exif = FrameExif::parse(&subfile_type_exif_bytes).unwrap();
+    let subfile_type_tags = subfile_type_exif.common_tags().unwrap();
+    assert_eq!(subfile_type_tags.new_subfile_type().unwrap().raw(), 0x3);
+    assert!(subfile_type_tags
+        .new_subfile_type()
+        .unwrap()
+        .is_reduced_resolution_image());
+    assert_eq!(subfile_type_tags.subfile_type().unwrap().raw(), 2);
+    let mut bad_new_subfile_type_flags = exif_root_subfile_type_fixture();
+    bad_new_subfile_type_flags[18..22].copy_from_slice(&0x8u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_new_subfile_type_flags)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_subfile_type_value = exif_root_subfile_type_fixture();
+    bad_subfile_type_value[30..32].copy_from_slice(&4u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subfile_type_value)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let coding_exif_bytes = exif_root_coding_fixture();
     let coding_exif = FrameExif::parse(&coding_exif_bytes).unwrap();
     let coding_tags = coding_exif.common_tags().unwrap();
@@ -6367,6 +6402,31 @@ fn exif_root_colorimetry_fixture() -> Vec<u8> {
         data.extend_from_slice(&numerator.to_le_bytes());
         data.extend_from_slice(&denominator.to_le_bytes());
     }
+    data
+}
+
+fn exif_root_subfile_type_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&2u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_NEW_SUBFILE_TYPE,
+        FrameExifTiffType::Long,
+        1,
+        (FrameExifNewSubfileType::REDUCED_RESOLUTION_IMAGE
+            | FrameExifNewSubfileType::SINGLE_PAGE_OF_MULTI_PAGE_IMAGE)
+            .to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SUBFILE_TYPE,
+        FrameExifTiffType::Short,
+        1,
+        [2, 0, 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
     data
 }
 
