@@ -4123,6 +4123,15 @@ fn exercise_fixtures() {
     let typed_ifd = typed_exif.ifd(0).unwrap();
     assert_eq!(
         typed_ifd
+            .entry_by_tag(0x010F)
+            .unwrap()
+            .ascii_strings()
+            .unwrap()
+            .unwrap(),
+        ["Rusty"]
+    );
+    assert_eq!(
+        typed_ifd
             .entry_by_tag(0x0112)
             .unwrap()
             .short_values()
@@ -4138,6 +4147,15 @@ fn exercise_fixtures() {
             .unwrap()
             .unwrap(),
         [640]
+    );
+    assert_eq!(
+        typed_ifd
+            .entry_by_tag(0)
+            .unwrap()
+            .byte_values()
+            .unwrap()
+            .unwrap(),
+        &[2, 3, 0, 0]
     );
     let typed_rational = typed_ifd
         .entry_by_tag(0x011A)
@@ -4157,6 +4175,15 @@ fn exercise_fixtures() {
             .unwrap(),
         [-1, 2]
     );
+    assert_eq!(
+        typed_ifd
+            .entry_by_tag(0xC002)
+            .unwrap()
+            .signed_long_values()
+            .unwrap()
+            .unwrap(),
+        [-42]
+    );
     let typed_signed_rational = typed_ifd
         .entry_by_tag(0xC003)
         .unwrap()
@@ -4166,16 +4193,59 @@ fn exercise_fixtures() {
     assert_eq!(typed_signed_rational.len(), 1);
     assert_eq!(typed_signed_rational[0].numerator(), -1);
     assert_eq!(typed_signed_rational[0].denominator(), 2);
-    let mut bad_typed_exif = exif_value_semantics_fixture();
-    bad_typed_exif[115] = b'!';
     assert_eq!(
-        FrameExif::parse(&bad_typed_exif)
+        typed_ifd
+            .entry_by_tag(0xC004)
+            .unwrap()
+            .signed_byte_values()
+            .unwrap()
+            .unwrap(),
+        [-1, 0, 2]
+    );
+    assert_eq!(
+        typed_ifd
+            .entry_by_tag(0xC005)
+            .unwrap()
+            .float_values()
+            .unwrap()
+            .unwrap()[0]
+            .to_bits(),
+        1.25f32.to_bits()
+    );
+    assert_eq!(
+        typed_ifd
+            .entry_by_tag(0xC006)
+            .unwrap()
+            .double_values()
+            .unwrap()
+            .unwrap()[0]
+            .to_bits(),
+        (-2.5f64).to_bits()
+    );
+    let mut bad_typed_ascii = exif_value_semantics_fixture();
+    bad_typed_ascii[151] = b'!';
+    assert_eq!(
+        FrameExif::parse(&bad_typed_ascii)
             .unwrap()
             .ifd(0)
             .unwrap()
             .entry_by_tag(0x010F)
             .unwrap()
             .ascii_strings()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_typed_rational = exif_value_semantics_fixture();
+    bad_typed_rational[156..160].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_typed_rational)
+            .unwrap()
+            .ifd(0)
+            .unwrap()
+            .entry_by_tag(0x011A)
+            .unwrap()
+            .rational_values()
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData
