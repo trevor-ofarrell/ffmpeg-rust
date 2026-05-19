@@ -3407,6 +3407,18 @@ fn exercise_fixtures() {
     properties_frame
         .add_side_data("vendor.private.side-data", vec![4])
         .unwrap();
+    assert_eq!(
+        properties_frame.side_data()[0].descriptor_name(),
+        Some("3x3 displaymatrix")
+    );
+    assert!(properties_frame.side_data()[0]
+        .properties()
+        .contains(FrameSideDataProperties::GLOBAL));
+    assert!(FrameSideDataKind::SeiUnregistered.supports_multiple_instances());
+    assert!(properties_frame.side_data()[2].supports_multiple_instances());
+    assert!(!properties_frame.side_data()[3]
+        .properties()
+        .intersects(FrameSideDataProperties::ALL));
     let removed_global =
         properties_frame.remove_side_data_by_properties(FrameSideDataProperties::GLOBAL);
     assert_eq!(removed_global.len(), 1);
@@ -3414,15 +3426,31 @@ fn exercise_fixtures() {
         removed_global[0].kind_id(),
         &FrameSideDataKind::DisplayMatrix
     );
+    assert_eq!(properties_frame.side_data().len(), 3);
     let removed_size_or_multi = properties_frame.remove_side_data_by_properties(
         FrameSideDataProperties::SIZE_DEPENDENT.union(FrameSideDataProperties::MULTI),
     );
     assert_eq!(removed_size_or_multi.len(), 2);
+    assert_eq!(
+        removed_size_or_multi
+            .iter()
+            .map(FrameSideData::kind_id)
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![
+            FrameSideDataKind::MotionVectors,
+            FrameSideDataKind::SeiUnregistered,
+        ]
+    );
     assert_eq!(properties_frame.side_data().len(), 1);
     assert_eq!(
         properties_frame.side_data()[0].kind(),
         "vendor.private.side-data"
     );
+    assert!(properties_frame
+        .remove_side_data_by_properties(FrameSideDataProperties::EMPTY)
+        .is_empty());
+    assert_eq!(properties_frame.side_data().len(), 1);
 
     let afd = FrameSideData::new_active_format_description(
         FrameActiveFormatDescription::SixteenNineProtectedFourteenNine,
