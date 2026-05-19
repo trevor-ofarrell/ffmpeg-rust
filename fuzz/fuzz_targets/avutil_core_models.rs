@@ -3487,6 +3487,37 @@ fn exercise_fixtures() {
         vec![String::from("move-source-plane")]
     );
 
+    let direct_video_source = BufferRef::from_vec_readonly(vec![1, 2, 3, 4]);
+    let mut direct_video = VideoFrame::new_with_buffer_refs(
+        2,
+        2,
+        PixelFormat::Gray8,
+        vec![direct_video_source.clone()],
+    )
+    .unwrap();
+    assert!(!direct_video.is_writable());
+    direct_video.make_writable();
+    assert!(direct_video.is_writable());
+    assert!(!direct_video.plane_buffers()[0].shares_storage(&direct_video_source));
+    assert_eq!(direct_video.plane_buffers()[0].as_slice(), &[1, 2, 3, 4]);
+    assert_eq!(direct_video_source.as_slice(), &[1, 2, 3, 4]);
+
+    let direct_audio_source = BufferRef::from_vec_readonly(vec![0, 0, 1, 0]);
+    let mut direct_audio = AudioFrame::new_with_buffer_refs(
+        48_000,
+        2,
+        SampleFormat::S16,
+        1,
+        vec![direct_audio_source.clone()],
+    )
+    .unwrap();
+    assert!(!direct_audio.is_writable());
+    direct_audio.make_writable();
+    assert!(direct_audio.is_writable());
+    assert!(!direct_audio.plane_buffers()[0].shares_storage(&direct_audio_source));
+    assert_eq!(direct_audio.plane_buffers()[0].as_slice(), &[0, 0, 1, 0]);
+    assert_eq!(direct_audio_source.as_slice(), &[0, 0, 1, 0]);
+
     let make_source = BufferRef::from_vec_readonly(vec![1, 2, 3, 4]);
     let make_video =
         VideoFrame::new_with_buffer_refs(2, 2, PixelFormat::Gray8, vec![make_source.clone()])
