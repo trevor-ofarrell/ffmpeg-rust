@@ -5737,6 +5737,13 @@ pub struct FrameExifCommonTags<'a> {
     resolution_unit: Option<FrameExifResolutionUnit>,
     exif_version: Option<[u8; 4]>,
     date_time_original: Option<&'a str>,
+    date_time_digitized: Option<&'a str>,
+    exposure_time: Option<FrameExifRational>,
+    f_number: Option<FrameExifRational>,
+    exposure_bias_value: Option<FrameExifSignedRational>,
+    focal_length: Option<FrameExifRational>,
+    pixel_x_dimension: Option<u32>,
+    pixel_y_dimension: Option<u32>,
     gps_version_id: Option<[u8; 4]>,
     gps_latitude_ref: Option<FrameExifGpsLatitudeRef>,
     gps_latitude: Option<[FrameExifRational; 3]>,
@@ -5784,6 +5791,34 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn date_time_original(&self) -> Option<&'a str> {
         self.date_time_original
+    }
+
+    pub const fn date_time_digitized(&self) -> Option<&'a str> {
+        self.date_time_digitized
+    }
+
+    pub const fn exposure_time(&self) -> Option<FrameExifRational> {
+        self.exposure_time
+    }
+
+    pub const fn f_number(&self) -> Option<FrameExifRational> {
+        self.f_number
+    }
+
+    pub const fn exposure_bias_value(&self) -> Option<FrameExifSignedRational> {
+        self.exposure_bias_value
+    }
+
+    pub const fn focal_length(&self) -> Option<FrameExifRational> {
+        self.focal_length
+    }
+
+    pub const fn pixel_x_dimension(&self) -> Option<u32> {
+        self.pixel_x_dimension
+    }
+
+    pub const fn pixel_y_dimension(&self) -> Option<u32> {
+        self.pixel_y_dimension
     }
 
     pub const fn gps_version_id(&self) -> Option<[u8; 4]> {
@@ -6154,8 +6189,15 @@ impl<'a> FrameExif<'a> {
     pub const TAG_X_RESOLUTION: u16 = 0x011A;
     pub const TAG_Y_RESOLUTION: u16 = 0x011B;
     pub const TAG_RESOLUTION_UNIT: u16 = 0x0128;
+    pub const TAG_EXPOSURE_TIME: u16 = 0x829A;
+    pub const TAG_F_NUMBER: u16 = 0x829D;
     pub const TAG_EXIF_VERSION: u16 = 0x9000;
     pub const TAG_DATE_TIME_ORIGINAL: u16 = 0x9003;
+    pub const TAG_DATE_TIME_DIGITIZED: u16 = 0x9004;
+    pub const TAG_EXPOSURE_BIAS_VALUE: u16 = 0x9204;
+    pub const TAG_FOCAL_LENGTH: u16 = 0x920A;
+    pub const TAG_PIXEL_X_DIMENSION: u16 = 0xA002;
+    pub const TAG_PIXEL_Y_DIMENSION: u16 = 0xA003;
     pub const TAG_GPS_VERSION_ID: u16 = 0x0000;
     pub const TAG_GPS_LATITUDE_REF: u16 = 0x0001;
     pub const TAG_GPS_LATITUDE: u16 = 0x0002;
@@ -6255,6 +6297,28 @@ impl<'a> FrameExif<'a> {
                 Self::optional_undefined_array_tag(ifd, Self::TAG_EXIF_VERSION, "ExifVersion")?;
             tags.date_time_original =
                 Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_ORIGINAL, "DateTimeOriginal")?;
+            tags.date_time_digitized =
+                Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_DIGITIZED, "DateTimeDigitized")?;
+            tags.exposure_time =
+                Self::optional_rational_tag(ifd, Self::TAG_EXPOSURE_TIME, "ExposureTime")?;
+            tags.f_number = Self::optional_rational_tag(ifd, Self::TAG_F_NUMBER, "FNumber")?;
+            tags.exposure_bias_value = Self::optional_signed_rational_tag(
+                ifd,
+                Self::TAG_EXPOSURE_BIAS_VALUE,
+                "ExposureBiasValue",
+            )?;
+            tags.focal_length =
+                Self::optional_rational_tag(ifd, Self::TAG_FOCAL_LENGTH, "FocalLength")?;
+            tags.pixel_x_dimension = Self::optional_short_or_long_tag(
+                ifd,
+                Self::TAG_PIXEL_X_DIMENSION,
+                "PixelXDimension",
+            )?;
+            tags.pixel_y_dimension = Self::optional_short_or_long_tag(
+                ifd,
+                Self::TAG_PIXEL_Y_DIMENSION,
+                "PixelYDimension",
+            )?;
         }
 
         if let Some(gps_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Gps) {
@@ -6397,6 +6461,30 @@ impl<'a> FrameExif<'a> {
         let values = entry
             .rational_values()?
             .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have RATIONAL TIFF type"))?;
+        Ok(Some(values[0]))
+    }
+
+    fn optional_signed_rational_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<FrameExifSignedRational>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        if entry.count() != 1 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!(
+                    "must contain exactly one signed rational value, got {}",
+                    entry.count()
+                ),
+            ));
+        }
+        let values = entry
+            .signed_rational_values()?
+            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have SRATIONAL TIFF type"))?;
         Ok(Some(values[0]))
     }
 
@@ -10210,6 +10298,89 @@ mod tests {
         }
 
         assert_eq!(data.len(), 338);
+        data
+    }
+
+    fn exif_exposure_tags_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&7u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_EXPOSURE_TIME,
+            FrameExifTiffType::Rational,
+            1,
+            116u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_F_NUMBER,
+            FrameExifTiffType::Rational,
+            1,
+            124u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_EXPOSURE_BIAS_VALUE,
+            FrameExifTiffType::SignedRational,
+            1,
+            132u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_FOCAL_LENGTH,
+            FrameExifTiffType::Rational,
+            1,
+            140u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_PIXEL_X_DIMENSION,
+            FrameExifTiffType::Long,
+            1,
+            1920u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_PIXEL_Y_DIMENSION,
+            FrameExifTiffType::Short,
+            1,
+            [0x38, 0x04, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_DATE_TIME_DIGITIZED,
+            FrameExifTiffType::Ascii,
+            20,
+            148u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 116);
+
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&125u32.to_le_bytes());
+        data.extend_from_slice(&28u32.to_le_bytes());
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(&(-1i32).to_le_bytes());
+        data.extend_from_slice(&3i32.to_le_bytes());
+        data.extend_from_slice(&50u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(b"2026:05:04 12:35:00\0");
+
+        assert_eq!(data.len(), 168);
         data
     }
 
@@ -15475,6 +15646,68 @@ mod tests {
         bad_gps_ref[246] = b'X';
         assert_eq!(
             FrameExif::parse(&bad_gps_ref)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_exposure_tags() {
+        let exif_bytes = exif_exposure_tags_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.exposure_time(),
+            Some(FrameExifRational {
+                numerator: 1,
+                denominator: 125,
+            })
+        );
+        assert_eq!(
+            common.f_number(),
+            Some(FrameExifRational {
+                numerator: 28,
+                denominator: 10,
+            })
+        );
+        assert_eq!(
+            common.exposure_bias_value(),
+            Some(FrameExifSignedRational {
+                numerator: -1,
+                denominator: 3,
+            })
+        );
+        assert_eq!(
+            common.focal_length(),
+            Some(FrameExifRational {
+                numerator: 50,
+                denominator: 1,
+            })
+        );
+        assert_eq!(common.pixel_x_dimension(), Some(1920));
+        assert_eq!(common.pixel_y_dimension(), Some(1080));
+        assert_eq!(common.date_time_digitized(), Some("2026:05:04 12:35:00"));
+
+        let mut bad_exposure_time_type = exif_exposure_tags_fixture();
+        bad_exposure_time_type[30..32]
+            .copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_exposure_time_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_pixel_count = exif_exposure_tags_fixture();
+        bad_pixel_count[92..96].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_pixel_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

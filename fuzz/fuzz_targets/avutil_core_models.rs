@@ -1734,6 +1734,18 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             }
             match value.common_tags() {
                 Ok(common) => {
+                    if let Some(value) = common.exposure_time() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.f_number() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.exposure_bias_value() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.focal_length() {
+                        assert_ne!(value.denominator(), 0);
+                    }
                     if let Some(latitude) = common.gps_latitude() {
                         assert!(latitude.iter().all(|value| value.denominator() != 0));
                     }
@@ -3814,6 +3826,27 @@ fn exercise_fixtures() {
     );
     assert_eq!(common_tags.interoperability_index(), Some("R98"));
 
+    let exposure_exif_bytes = exif_exposure_tags_fixture();
+    let exposure_exif = FrameExif::parse(&exposure_exif_bytes).unwrap();
+    let exposure_tags = exposure_exif.common_tags().unwrap();
+    assert_eq!(exposure_tags.exposure_time().unwrap().numerator(), 1);
+    assert_eq!(exposure_tags.exposure_time().unwrap().denominator(), 125);
+    assert_eq!(exposure_tags.f_number().unwrap().numerator(), 28);
+    assert_eq!(exposure_tags.f_number().unwrap().denominator(), 10);
+    assert_eq!(exposure_tags.exposure_bias_value().unwrap().numerator(), -1);
+    assert_eq!(
+        exposure_tags.exposure_bias_value().unwrap().denominator(),
+        3
+    );
+    assert_eq!(exposure_tags.focal_length().unwrap().numerator(), 50);
+    assert_eq!(exposure_tags.focal_length().unwrap().denominator(), 1);
+    assert_eq!(exposure_tags.pixel_x_dimension(), Some(1920));
+    assert_eq!(exposure_tags.pixel_y_dimension(), Some(1080));
+    assert_eq!(
+        exposure_tags.date_time_digitized(),
+        Some("2026:05:04 12:35:00")
+    );
+
     let linked_exif_side_data = FrameSideData::new_exif(exif_with_linked_ifds_fixture()).unwrap();
     let linked_exif = linked_exif_side_data.exif().unwrap().unwrap();
     assert_eq!(linked_exif.ifd_count(), 1);
@@ -5020,6 +5053,83 @@ fn exif_common_tags_fixture() -> Vec<u8> {
         data.extend_from_slice(&value.to_le_bytes());
         data.extend_from_slice(&1u32.to_le_bytes());
     }
+    data
+}
+
+fn exif_exposure_tags_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&7u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_EXPOSURE_TIME,
+        FrameExifTiffType::Rational,
+        1,
+        116u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_F_NUMBER,
+        FrameExifTiffType::Rational,
+        1,
+        124u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_EXPOSURE_BIAS_VALUE,
+        FrameExifTiffType::SignedRational,
+        1,
+        132u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_FOCAL_LENGTH,
+        FrameExifTiffType::Rational,
+        1,
+        140u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_PIXEL_X_DIMENSION,
+        FrameExifTiffType::Long,
+        1,
+        1920u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_PIXEL_Y_DIMENSION,
+        FrameExifTiffType::Short,
+        1,
+        [0x38, 0x04, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_DATE_TIME_DIGITIZED,
+        FrameExifTiffType::Ascii,
+        20,
+        148u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+    data.extend_from_slice(&125u32.to_le_bytes());
+    data.extend_from_slice(&28u32.to_le_bytes());
+    data.extend_from_slice(&10u32.to_le_bytes());
+    data.extend_from_slice(&(-1i32).to_le_bytes());
+    data.extend_from_slice(&3i32.to_le_bytes());
+    data.extend_from_slice(&50u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+    data.extend_from_slice(b"2026:05:04 12:35:00\0");
     data
 }
 
