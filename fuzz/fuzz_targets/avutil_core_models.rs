@@ -4201,6 +4201,44 @@ fn exercise_fixtures() {
         Some(spherical)
     );
     assert_eq!(spherical_side_data.data(), &spherical.to_bytes()[..]);
+    let spherical_projections = [
+        (
+            FrameSphericalProjection::Equirectangular,
+            0,
+            "AV_SPHERICAL_EQUIRECTANGULAR",
+        ),
+        (FrameSphericalProjection::Cubemap, 1, "AV_SPHERICAL_CUBEMAP"),
+        (
+            FrameSphericalProjection::EquirectangularTile,
+            2,
+            "AV_SPHERICAL_EQUIRECTANGULAR_TILE",
+        ),
+        (
+            FrameSphericalProjection::HalfEquirectangular,
+            3,
+            "AV_SPHERICAL_HALF_EQUIRECTANGULAR",
+        ),
+        (
+            FrameSphericalProjection::Rectilinear,
+            4,
+            "AV_SPHERICAL_RECTILINEAR",
+        ),
+        (FrameSphericalProjection::Fisheye, 5, "AV_SPHERICAL_FISHEYE"),
+        (
+            FrameSphericalProjection::ParametricImmersive,
+            6,
+            "AV_SPHERICAL_PARAMETRIC_IMMERSIVE",
+        ),
+    ];
+    assert_eq!(
+        FrameSphericalProjection::KNOWN,
+        spherical_projections.map(|(projection, _, _)| projection)
+    );
+    for (projection, raw, ffmpeg_constant) in spherical_projections {
+        assert_eq!(FrameSphericalProjection::from_raw(raw).unwrap(), projection);
+        assert_eq!(projection.as_raw(), raw);
+        assert_eq!(projection.ffmpeg_constant(), ffmpeg_constant);
+    }
     assert_eq!(
         FrameSphericalProjection::from_raw(6).unwrap(),
         FrameSphericalProjection::ParametricImmersive
