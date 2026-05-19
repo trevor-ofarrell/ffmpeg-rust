@@ -5715,6 +5715,27 @@ impl FrameExifThresholding {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameExifBitsPerSample<'a> {
+    entry: FrameExifEntry<'a>,
+}
+
+impl<'a> FrameExifBitsPerSample<'a> {
+    pub const fn raw_entry(self) -> FrameExifEntry<'a> {
+        self.entry
+    }
+
+    pub const fn count(self) -> u32 {
+        self.entry.count()
+    }
+
+    pub fn values(self) -> AvResult<Vec<u16>> {
+        self.entry.short_values()?.ok_or_else(|| {
+            AvError::invalid_data("validated EXIF BitsPerSample tag lost SHORT type")
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifFillOrder {
     MostSignificantBitFirst,
     LeastSignificantBitFirst,
@@ -6693,6 +6714,7 @@ pub struct FrameExifCommonTags<'a> {
     model: Option<&'a str>,
     image_width: Option<u32>,
     image_length: Option<u32>,
+    bits_per_sample: Option<FrameExifBitsPerSample<'a>>,
     compression: Option<FrameExifCompression>,
     photometric_interpretation: Option<FrameExifPhotometricInterpretation>,
     thresholding: Option<FrameExifThresholding>,
@@ -6854,6 +6876,10 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn image_length(&self) -> Option<u32> {
         self.image_length
+    }
+
+    pub const fn bits_per_sample(&self) -> Option<FrameExifBitsPerSample<'a>> {
+        self.bits_per_sample
     }
 
     pub const fn compression(&self) -> Option<FrameExifCompression> {
@@ -7786,6 +7812,7 @@ impl<'a> FrameExif<'a> {
     pub const MAX_IFD_ENTRIES: usize = 4096;
     pub const TAG_IMAGE_WIDTH: u16 = 0x0100;
     pub const TAG_IMAGE_LENGTH: u16 = 0x0101;
+    pub const TAG_BITS_PER_SAMPLE: u16 = 0x0102;
     pub const TAG_COMPRESSION: u16 = 0x0103;
     pub const TAG_PHOTOMETRIC_INTERPRETATION: u16 = 0x0106;
     pub const TAG_THRESHOLDING: u16 = 0x0107;
@@ -8025,6 +8052,8 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_SAMPLES_PER_PIXEL,
                 "SamplesPerPixel",
             )?;
+            tags.bits_per_sample =
+                Self::optional_bits_per_sample_tag(root, tags.samples_per_pixel)?;
             tags.rows_per_strip = Self::optional_positive_short_or_long_tag(
                 root,
                 Self::TAG_ROWS_PER_STRIP,
@@ -8814,6 +8843,49 @@ impl<'a> FrameExif<'a> {
             return Ok(None);
         };
         FrameExifFillOrder::from_raw(raw).map(Some)
+    }
+
+    fn optional_bits_per_sample_tag(
+        ifd: &FrameExifIfd<'a>,
+        samples_per_pixel: Option<u16>,
+    ) -> AvResult<Option<FrameExifBitsPerSample<'a>>> {
+        let Some(entry) = ifd.entry_by_tag(Self::TAG_BITS_PER_SAMPLE) else {
+            return Ok(None);
+        };
+        if entry.count() == 0 {
+            return Err(Self::semantic_tag_error(
+                "BitsPerSample",
+                Self::TAG_BITS_PER_SAMPLE,
+                "must contain at least one SHORT value",
+            ));
+        }
+        if let Some(expected) = samples_per_pixel {
+            if entry.count() != u32::from(expected) {
+                return Err(Self::semantic_tag_error(
+                    "BitsPerSample",
+                    Self::TAG_BITS_PER_SAMPLE,
+                    format!(
+                        "count {} must match SamplesPerPixel {expected}",
+                        entry.count()
+                    ),
+                ));
+            }
+        }
+        let values = entry.short_values()?.ok_or_else(|| {
+            Self::semantic_tag_error(
+                "BitsPerSample",
+                Self::TAG_BITS_PER_SAMPLE,
+                "must have SHORT TIFF type",
+            )
+        })?;
+        if values.contains(&0) {
+            return Err(Self::semantic_tag_error(
+                "BitsPerSample",
+                Self::TAG_BITS_PER_SAMPLE,
+                "bit depths must be greater than zero",
+            ));
+        }
+        Ok(Some(FrameExifBitsPerSample { entry }))
     }
 
     fn optional_ycbcr_sub_sampling_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<[u16; 2]>> {
@@ -13492,6 +13564,33 @@ mod tests {
         data.extend_from_slice(&0u32.to_le_bytes());
 
         assert_eq!(data.len(), 38);
+        data
+    }
+
+    fn exif_root_bits_per_sample_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&2u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_BITS_PER_SAMPLE,
+            FrameExifTiffType::Short,
+            3,
+            38u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SAMPLES_PER_PIXEL,
+            FrameExifTiffType::Short,
+            1,
+            [3, 0, 0, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(&[8, 0, 8, 0, 8, 0]);
+
+        assert_eq!(data.len(), 44);
         data
     }
 
@@ -21427,6 +21526,68 @@ mod tests {
         bad_photometric_count[26..30].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_photometric_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_bits_per_sample_tags() {
+        let exif_bytes = exif_root_bits_per_sample_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+        let bits_per_sample = common.bits_per_sample().unwrap();
+
+        assert_eq!(common.samples_per_pixel(), Some(3));
+        assert_eq!(bits_per_sample.count(), 3);
+        assert_eq!(
+            bits_per_sample.raw_entry().tag(),
+            FrameExif::TAG_BITS_PER_SAMPLE
+        );
+        assert_eq!(bits_per_sample.values().unwrap(), [8, 8, 8]);
+
+        let mut bad_type = exif_root_bits_per_sample_fixture();
+        bad_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        bad_type[14..18].copy_from_slice(&1u32.to_le_bytes());
+        bad_type[30..32].copy_from_slice(&1u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_count = exif_root_bits_per_sample_fixture();
+        bad_count[14..18].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_depth = exif_root_bits_per_sample_fixture();
+        bad_depth[38..40].copy_from_slice(&0u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_depth)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_samples_per_pixel_match = exif_root_bits_per_sample_fixture();
+        bad_samples_per_pixel_match[30..32].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_samples_per_pixel_match)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

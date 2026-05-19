@@ -1913,6 +1913,14 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.image_length() {
                         assert_ne!(value, 0);
                     }
+                    if let Some(value) = common.bits_per_sample() {
+                        let values = value.values().unwrap();
+                        assert!(!values.is_empty());
+                        assert!(values.iter().all(|depth| *depth != 0));
+                        if let Some(samples_per_pixel) = common.samples_per_pixel() {
+                            assert_eq!(values.len(), samples_per_pixel as usize);
+                        }
+                    }
                     if let Some(value) = common.compression() {
                         assert_ne!(value.raw(), 0);
                     }
@@ -4177,6 +4185,38 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let bits_per_sample_exif_bytes = exif_root_bits_per_sample_fixture();
+    let bits_per_sample_exif = FrameExif::parse(&bits_per_sample_exif_bytes).unwrap();
+    let bits_per_sample_tags = bits_per_sample_exif.common_tags().unwrap();
+    assert_eq!(bits_per_sample_tags.samples_per_pixel(), Some(3));
+    assert_eq!(
+        bits_per_sample_tags
+            .bits_per_sample()
+            .unwrap()
+            .values()
+            .unwrap(),
+        [8, 8, 8]
+    );
+    let mut bad_bits_per_sample_zero = exif_root_bits_per_sample_fixture();
+    bad_bits_per_sample_zero[38..40].copy_from_slice(&0u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_bits_per_sample_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_bits_per_sample_count = exif_root_bits_per_sample_fixture();
+    bad_bits_per_sample_count[30..32].copy_from_slice(&2u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_bits_per_sample_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let thresholding_exif_bytes = exif_root_thresholding_fixture();
     let thresholding_exif = FrameExif::parse(&thresholding_exif_bytes).unwrap();
     let thresholding_tags = thresholding_exif.common_tags().unwrap();
@@ -6350,6 +6390,30 @@ fn exif_root_coding_fixture() -> Vec<u8> {
         [2, 0, 0, 0],
     );
     data.extend_from_slice(&0u32.to_le_bytes());
+    data
+}
+
+fn exif_root_bits_per_sample_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&2u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_BITS_PER_SAMPLE,
+        FrameExifTiffType::Short,
+        3,
+        38u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SAMPLES_PER_PIXEL,
+        FrameExifTiffType::Short,
+        1,
+        [3, 0, 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(&[8, 0, 8, 0, 8, 0]);
     data
 }
 
