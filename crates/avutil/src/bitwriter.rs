@@ -71,6 +71,26 @@ impl BitWriter {
         self.write_bits(encoded, count)
     }
 
+    pub fn write_ue_golomb(&mut self, value: u64) -> AvResult<()> {
+        let code_num = u128::from(value) + 1;
+        let leading_zero_bits = 127 - code_num.leading_zeros() as usize;
+        let suffix = code_num - (1_u128 << leading_zero_bits);
+
+        for _ in 0..leading_zero_bits {
+            self.write_bit(false);
+        }
+        self.write_bit(true);
+        if leading_zero_bits > 0 {
+            self.write_bits(suffix as u64, leading_zero_bits as u8)?;
+        }
+        Ok(())
+    }
+
+    pub fn write_se_golomb(&mut self, value: i64) -> AvResult<()> {
+        let code_num = signed_exp_golomb_code_num(value)?;
+        self.write_ue_golomb(code_num)
+    }
+
     pub fn byte_align_zero(&mut self) {
         while !self.is_aligned() {
             self.write_bit(false);
@@ -135,10 +155,37 @@ fn validate_signed_width(value: i64, count: u8) -> AvResult<u64> {
     Ok((value as u64) & ((1_u64 << count) - 1))
 }
 
+fn signed_exp_golomb_code_num(value: i64) -> AvResult<u64> {
+    if value > 0 {
+        Ok((value as u64) * 2 - 1)
+    } else if value == 0 {
+        Ok(0)
+    } else {
+        let magnitude = value
+            .checked_neg()
+            .ok_or_else(|| AvError::invalid_argument("i64::MIN cannot be Exp-Golomb encoded"))?;
+        Ok((magnitude as u64) * 2)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{AvErrorKind, BitReader};
+
+    fn bits_from_bytes(bytes: &[u8], bit_len: usize) -> String {
+        let mut bits = String::with_capacity(bit_len);
+        for position in 0..bit_len {
+            let byte = bytes[position / 8];
+            let shift = 7 - (position % 8);
+            if (byte >> shift) & 1 == 1 {
+                bits.push('1');
+            } else {
+                bits.push('0');
+            }
+        }
+        bits
+    }
 
     #[test]
     fn writes_msb_first_bits_across_byte_boundaries() {
@@ -188,6 +235,58 @@ mod tests {
         assert_eq!(reader.read_signed_bits(64).unwrap(), i64::MIN);
         assert_eq!(reader.read_bits(7).unwrap(), 0);
         assert!(reader.is_eof());
+    }
+
+    #[test]
+    fn writes_unsigned_exp_golomb_codes() {
+        let mut writer = BitWriter::new();
+
+        for value in 0..=6 {
+            writer.write_ue_golomb(value).unwrap();
+        }
+
+        assert_eq!(
+            bits_from_bytes(writer.as_slice(), writer.bits_written()),
+            "101001100100001010011000111"
+        );
+
+        let bytes = writer.into_inner();
+        let mut reader = BitReader::new(&bytes);
+        for expected in 0..=6 {
+            assert_eq!(reader.read_ue_golomb().unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn writes_signed_exp_golomb_codes() {
+        let mut writer = BitWriter::new();
+
+        for value in [0, 1, -1, 2, -2, 3, -3] {
+            writer.write_se_golomb(value).unwrap();
+        }
+
+        assert_eq!(
+            bits_from_bytes(writer.as_slice(), writer.bits_written()),
+            "101001100100001010011000111"
+        );
+
+        let bytes = writer.into_inner();
+        let mut reader = BitReader::new(&bytes);
+        for expected in [0, 1, -1, 2, -2, 3, -3] {
+            assert_eq!(reader.read_se_golomb().unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn writes_u64_max_unsigned_exp_golomb() {
+        let mut writer = BitWriter::new();
+
+        writer.write_ue_golomb(u64::MAX).unwrap();
+
+        assert_eq!(writer.bits_written(), 129);
+        let bytes = writer.into_inner();
+        let mut reader = BitReader::new(&bytes);
+        assert_eq!(reader.read_ue_golomb().unwrap(), u64::MAX);
     }
 
     #[test]
@@ -257,6 +356,17 @@ mod tests {
 
         assert_eq!(positive_err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(negative_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(writer.bit_position(), 0);
+        assert!(writer.as_slice().is_empty());
+    }
+
+    #[test]
+    fn rejects_unrepresentable_signed_exp_golomb_without_advancing() {
+        let mut writer = BitWriter::new();
+
+        let err = writer.write_se_golomb(i64::MIN).unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(writer.bit_position(), 0);
         assert!(writer.as_slice().is_empty());
     }

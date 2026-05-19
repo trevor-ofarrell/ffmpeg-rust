@@ -53,6 +53,31 @@ impl<'a> BitReader<'a> {
         self.read_bits(count).map(|value| sign_extend(value, count))
     }
 
+    pub fn read_ue_golomb(&mut self) -> AvResult<u64> {
+        let start = self.bit_position;
+        match self.read_ue_golomb_inner() {
+            Ok(value) => Ok(value),
+            Err(err) => {
+                self.bit_position = start;
+                Err(err)
+            }
+        }
+    }
+
+    pub fn read_se_golomb(&mut self) -> AvResult<i64> {
+        let start = self.bit_position;
+        match self
+            .read_ue_golomb_inner()
+            .and_then(signed_exp_golomb_value)
+        {
+            Ok(value) => Ok(value),
+            Err(err) => {
+                self.bit_position = start;
+                Err(err)
+            }
+        }
+    }
+
     pub fn peek_bits(&self, count: u8) -> AvResult<u64> {
         self.validate_read(count)?;
 
@@ -103,6 +128,36 @@ impl<'a> BitReader<'a> {
         Ok(())
     }
 
+    fn read_ue_golomb_inner(&mut self) -> AvResult<u64> {
+        let mut leading_zero_bits = 0_usize;
+
+        loop {
+            if self.bits_remaining() == 0 {
+                return Err(self.eof_error(1));
+            }
+
+            if self.read_bit()? {
+                break;
+            }
+
+            leading_zero_bits += 1;
+            if leading_zero_bits > 64 {
+                return Err(AvError::invalid_data(
+                    "unsigned Exp-Golomb code exceeds u64 range",
+                ));
+            }
+        }
+
+        if leading_zero_bits == 0 {
+            return Ok(0);
+        }
+
+        let suffix = self.read_bits(leading_zero_bits as u8)?;
+        let value = (1_u128 << leading_zero_bits) - 1 + u128::from(suffix);
+        u64::try_from(value)
+            .map_err(|_| AvError::invalid_data("unsigned Exp-Golomb code exceeds u64 range"))
+    }
+
     fn eof_error(&self, requested: usize) -> AvError {
         AvError::new(
             AvErrorKind::EndOfFile,
@@ -118,6 +173,23 @@ impl<'a> BitReader<'a> {
         let byte = self.data[position / 8];
         let shift = 7 - (position % 8);
         (byte >> shift) & 1
+    }
+}
+
+fn signed_exp_golomb_value(code_num: u64) -> AvResult<i64> {
+    if code_num == 0 {
+        return Ok(0);
+    }
+
+    if code_num % 2 == 1 {
+        let magnitude = code_num.div_ceil(2);
+        i64::try_from(magnitude)
+            .map_err(|_| AvError::invalid_data("signed Exp-Golomb value exceeds i64 range"))
+    } else {
+        let magnitude = code_num / 2;
+        let magnitude = i64::try_from(magnitude)
+            .map_err(|_| AvError::invalid_data("signed Exp-Golomb value exceeds i64 range"))?;
+        Ok(-magnitude)
     }
 }
 
@@ -140,6 +212,27 @@ fn sign_extend(value: u64, count: u8) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn bytes_from_bits(bits: &str) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let mut current = 0_u8;
+        for (index, bit) in bits.bytes().enumerate() {
+            current <<= 1;
+            if bit == b'1' {
+                current |= 1;
+            }
+            if index % 8 == 7 {
+                bytes.push(current);
+                current = 0;
+            }
+        }
+        let remainder = bits.len() % 8;
+        if remainder != 0 {
+            current <<= 8 - remainder;
+            bytes.push(current);
+        }
+        bytes
+    }
 
     #[test]
     fn reads_msb_first_bits_across_byte_boundaries() {
@@ -200,6 +293,28 @@ mod tests {
     }
 
     #[test]
+    fn reads_unsigned_exp_golomb_codes() {
+        let bytes = bytes_from_bits("101001100100001010011000111");
+        let mut reader = BitReader::new(&bytes);
+
+        for expected in 0..=6 {
+            assert_eq!(reader.read_ue_golomb().unwrap(), expected);
+        }
+        assert_eq!(reader.bit_position(), 27);
+    }
+
+    #[test]
+    fn reads_signed_exp_golomb_codes() {
+        let bytes = bytes_from_bits("101001100100001010011000111");
+        let mut reader = BitReader::new(&bytes);
+
+        for expected in [0, 1, -1, 2, -2, 3, -3] {
+            assert_eq!(reader.read_se_golomb().unwrap(), expected);
+        }
+        assert_eq!(reader.bit_position(), 27);
+    }
+
+    #[test]
     fn eof_errors_do_not_advance_cursor() {
         let mut reader = BitReader::new(&[0b1000_0000]);
 
@@ -211,6 +326,26 @@ mod tests {
         assert_eq!(signed_err.kind(), AvErrorKind::EndOfFile);
         assert_eq!(reader.bit_position(), 7);
         assert_eq!(reader.bits_remaining(), 1);
+    }
+
+    #[test]
+    fn exp_golomb_errors_do_not_advance_cursor() {
+        let mut truncated = BitReader::new(&[0]);
+        let eof = truncated.read_ue_golomb().unwrap_err();
+        assert_eq!(eof.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(truncated.bit_position(), 0);
+
+        let oversized = bytes_from_bits(&format!("{}1", "0".repeat(65)));
+        let mut oversized_reader = BitReader::new(&oversized);
+        let err = oversized_reader.read_ue_golomb().unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+        assert_eq!(oversized_reader.bit_position(), 0);
+
+        let signed_too_large = bytes_from_bits(&format!("{}1{}", "0".repeat(64), "0".repeat(64)));
+        let mut signed_reader = BitReader::new(&signed_too_large);
+        let err = signed_reader.read_se_golomb().unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+        assert_eq!(signed_reader.bit_position(), 0);
     }
 
     #[test]
