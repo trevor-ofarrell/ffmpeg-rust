@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Latest `avutil-packet` update: packet time-base metadata now models the `AVPacket.time_base` field for the current Rust packet surface. `Packet` defaults the field to `0/1`, exposes checked normalized mutation, preserves it across timestamp rescaling, propagates it through `ref_from`, `move_ref_from`, and `copy_props_from`, and resets it through `unref`; focused unit tests and `avutil_core_models` fuzz invariants cover those default, mutation, rejection, copy, move, reset, and rescale-preservation paths. This remains below `complete` because full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still blocked.
+Latest `avutil-packet` update: packet opaque user-reference metadata now models the `AVPacket.opaque_ref` field for the current Rust packet surface. `Packet` carries optional `BufferRef` opaque storage, exposes set/take/clear helpers, shares it through `ref_from`, transfers it through `move_ref_from`, copies a new shared reference through `copy_props_from`, and releases it through clear/take/drop/unref semantics; focused unit tests and `avutil_core_models` fuzz invariants cover those copy, share, move, take, unref, source-isolation, and release-timing paths. This remains below `complete` because raw `void *opaque`, full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still open.
 
 Previous `avutil-packet` update: packet property copying now mirrors the `AVPacket` copy-props boundary for the modeled fields. `Packet::copy_props_from` copies PTS, DTS, duration, byte position, stream index, flags, and side data while preserving the destination payload `BufferRef`; focused unit tests cover destination-payload preservation, old side-data replacement, property transfer, and copied side-data isolation. The `avutil_core_models` fuzz target now build-checks the same copy-props payload preservation and side-data non-aliasing invariants. This remains below `complete` because full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still blocked.
 
@@ -118,6 +118,20 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil packet`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed --dry-run`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`
+- `$env:CARGO_TARGET_DIR='target-codex'; .\target\debug\xtask.exe quick`
+- `cargo test -p avutil packet --no-run`
+- `cargo clippy -p avutil --all-targets -- -D warnings`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+- `cargo fmt --all -- --check`
+- `git diff --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo run -p fate-runner -- run --component avutil-packet --dry-run`
 - `cargo fmt --all`
 - `cargo test -p avutil packet`
 - `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
@@ -2481,6 +2495,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- `cargo test -p avutil packet` compiled the focused test binary but Windows Application Control blocked launching `target\debug\deps\avutil-c501250f1d03cde5.exe` with `os error 4551`; rerunning with `CARGO_TARGET_DIR=target-avutil-opaque-ref-test`, with `CARGO_TARGET_DIR=target-avutil-timebase-test`, and outside the sandbox produced the same OS policy block. Rerunning with `CARGO_TARGET_DIR=target-codex` passed all 18 focused packet tests, and the local `fate-runner` mapping also passed through `target-codex`.
+- Cleanup of the generated `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` directories was requested after verifying both paths resolved under the workspace, but the recursive delete approval was rejected; the directories remain untracked.
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- quick` failed because Windows Application Control blocked the freshly built `target-codex\debug\xtask.exe`. `cargo run -p xtask -- quick` launched the default `target\debug\xtask.exe` but failed when its child `cargo test` used the default target directory and hit the blocked `avutil` test executable. Running the already-built default `.\target\debug\xtask.exe quick` with `CARGO_TARGET_DIR=target-codex` passed.
 - No remaining failing commands in the latest Exp-Golomb bit I/O slice.
 - No remaining failing commands in the latest manifest/lockfile runtime-guard slice. `git diff --check` exited successfully with CRLF line-ending warnings only.
 - `cargo test -p fate-runner default_mappings_cover_runtime_guard_selection unmapped_relevant_paths_report_crate_files_but_ignore_docs` failed because Cargo accepts only one test-name filter. It was replaced by `cargo test -p fate-runner`, which passed the full runner unit suite.
@@ -2646,7 +2663,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-packet` is the current focus for this slice. The concrete change is AVPacket-style timestamp time-base field support: `Packet` now stores a normalized time base defaulting to `0/1`, rejects invalid mutation without state changes, carries it through ref/move/copy-props paths, and resets it through unref.
+`avutil-packet` is the current focus for this slice. The concrete change is AVPacket-style `opaque_ref` support: `Packet` now stores an optional `BufferRef` user reference, carries it through ref/move/copy-props paths, exposes set/take/clear helpers, and releases it through the same owned reference lifecycle as the modeled payload buffers.
 
 This slice does not mark packet handling complete. The broader goal remains blocked on missing pinned-oracle snapshots, upstream FATE media mappings/samples, actual local fuzz execution, and many incomplete FFmpeg surfaces.
 
@@ -2662,8 +2679,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Upstream FATE samples and media target mappings are not configured. `tests/fate/mappings.txt` currently contains local `fate-runner`, repo runtime guard, avutil unit-test, avcodec decoder unit-test, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings only. The runner has `mappings`, `--check-prereqs`, `--samples`, `--oracle-ffmpeg`, and `--dry-run` support for future mappings.
 - The `cargo fuzz` subcommand is not installed in this environment. The fuzz package can be checked with `cargo check --manifest-path fuzz/Cargo.toml --bins` and `cargo clippy --manifest-path fuzz/Cargo.toml --bins -- -D warnings`, but actual fuzz execution requires installing cargo-fuzz.
 - `./xtask quick` cannot be a file command while `xtask/` is a crate directory on this filesystem; use `cargo run -p xtask -- quick`.
-- Windows Application Control blocks some freshly built child executables and separate integration-test executables. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
+- Windows Application Control blocks some freshly built child executables and separate integration-test executables. During the current packet opaque-ref slice it blocked the focused `avutil` unit-test executable in the default target directory, two alternate target directories, and the escalated sandbox path; `CARGO_TARGET_DIR=target-codex` remains the working path for the focused packet test and local FATE mapping. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added packet timestamp time-base field support. `Packet` now stores a normalized `time_base` with the FFmpeg default `0/1`, rejects invalid denominators without mutation, preserves the field across `rescale_ts`, copies it through `ref_from` and `copy_props_from`, transfers it through `move_ref_from`, and resets it through `unref`. Validation passed with `cargo fmt --all`, `cargo test -p avutil packet` using `CARGO_TARGET_DIR=target-avutil-timebase-test` after the default target test binary was blocked by Windows Application Control, `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`, `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`, `cargo run -p fate-runner -- run --component avutil-packet` with the same alternate target dir, `cargo fmt --all -- --check`, `git diff --check`, `cargo run -p fate-runner -- run --changed --dry-run` with the alternate target dir, `cargo run -p fate-runner -- run --changed` with the alternate target dir, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo run -p xtask -- quick` with the alternate target dir. The generated alternate target directory was removed after validation.
+Latest slice: added packet `opaque_ref` field support. `Packet` now stores optional BufferRef-backed user reference data, exposes `opaque_ref`, `set_opaque_ref`, `take_opaque_ref`, and `clear_opaque_ref`, shares the reference through `ref_from`, copies a new shared reference through `copy_props_from`, transfers it through `move_ref_from`, and releases it through clear/take/drop/unref semantics. Focused packet unit tests were added for copy-props sharing, source isolation, move/take/unref release timing, and default/ref behavior, and the `avutil_core_models` fuzz target now build-checks opaque-ref set/ref/move/unref/copy-props/take invariants. Validation passed with `cargo fmt --all`, `cargo test -p avutil packet --no-run`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil packet`, `cargo clippy -p avutil --all-targets -- -D warnings`, `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`, `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`, `cargo fmt --all -- --check`, `git diff --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed --dry-run`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`, `cargo run -p fate-runner -- run --component avutil-packet --dry-run`, and `$env:CARGO_TARGET_DIR='target-codex'; .\target\debug\xtask.exe quick`. The default target directory, two alternate target directories, escalated sandbox path, and freshly built `target-codex\debug\xtask.exe` still hit Windows Application Control for some executions. The generated alternate target directories remain untracked because recursive cleanup approval was rejected.

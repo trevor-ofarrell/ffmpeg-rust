@@ -126,6 +126,7 @@ pub struct Packet {
     stream_index: usize,
     flags: PacketFlags,
     side_data: Vec<SideData>,
+    opaque_ref: Option<BufferRef>,
     time_base: Rational,
 }
 
@@ -144,6 +145,7 @@ impl Packet {
             stream_index,
             flags: PacketFlags::empty(),
             side_data: Vec::new(),
+            opaque_ref: None,
             time_base: Rational::ZERO,
         }
     }
@@ -202,6 +204,10 @@ impl Packet {
 
     pub fn side_data(&self) -> &[SideData] {
         &self.side_data
+    }
+
+    pub fn opaque_ref(&self) -> Option<&BufferRef> {
+        self.opaque_ref.as_ref()
     }
 
     pub fn time_base(&self) -> Rational {
@@ -294,6 +300,18 @@ impl Packet {
         self.side_data.clear();
     }
 
+    pub fn set_opaque_ref(&mut self, opaque_ref: Option<BufferRef>) {
+        self.opaque_ref = opaque_ref;
+    }
+
+    pub fn take_opaque_ref(&mut self) -> Option<BufferRef> {
+        self.opaque_ref.take()
+    }
+
+    pub fn clear_opaque_ref(&mut self) {
+        self.opaque_ref = None;
+    }
+
     pub fn unref(&mut self) {
         *self = Self::default();
     }
@@ -314,6 +332,7 @@ impl Packet {
         self.stream_index = src.stream_index;
         self.flags = src.flags;
         self.side_data = src.side_data.clone();
+        self.opaque_ref = src.opaque_ref.clone();
         self.time_base = src.time_base;
     }
 
@@ -382,6 +401,7 @@ mod tests {
         assert_eq!(packet.pos(), None);
         assert_eq!(packet.len(), 3);
         assert!(!packet.is_empty());
+        assert!(packet.opaque_ref().is_none());
         assert_eq!(packet.time_base(), Rational::ZERO);
     }
 
@@ -541,6 +561,7 @@ mod tests {
             .unwrap();
         src.set_key(true);
         src.push_side_data(SideData::new("palette", vec![5, 6]).unwrap());
+        src.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
 
         let mut dst = Packet::new(vec![9], 99);
         dst.push_side_data(SideData::new("old", vec![8]).unwrap());
@@ -556,10 +577,18 @@ mod tests {
         assert_eq!(dst.time_base(), Rational::new(1, 90_000).unwrap());
         assert!(dst.flags().contains(PacketFlags::KEY));
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+        assert_eq!(dst.opaque_ref().unwrap().as_slice(), &[0xde, 0xad]);
+        assert!(dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
 
         dst.shrink_side_data("palette", 1).unwrap();
+        dst.clear_opaque_ref();
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5]);
         assert_eq!(src.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+        assert!(dst.opaque_ref().is_none());
+        assert!(src.opaque_ref().is_some());
     }
 
     #[test]
@@ -680,6 +709,90 @@ mod tests {
 
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5]);
         assert_eq!(src.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+    }
+
+    #[test]
+    fn packet_opaque_ref_copy_props_shares_and_clear_releases_last_reference() {
+        let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture = Arc::clone(&released);
+        let mut src = Packet::new(vec![1], 0);
+        src.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0xaa, 0xbb],
+            move |data| {
+                capture.lock().unwrap().push(data);
+            },
+        )));
+
+        let mut dst = Packet::new(vec![9], 1);
+        dst.copy_props_from(&src);
+
+        assert_eq!(dst.data(), &[9]);
+        assert_eq!(dst.opaque_ref().unwrap().as_slice(), &[0xaa, 0xbb]);
+        assert!(dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+
+        dst.clear_opaque_ref();
+
+        assert!(dst.opaque_ref().is_none());
+        assert!(src.opaque_ref().is_some());
+        assert!(released.lock().unwrap().is_empty());
+
+        src.clear_opaque_ref();
+
+        assert_eq!(*released.lock().unwrap(), vec![vec![0xaa, 0xbb]]);
+    }
+
+    #[test]
+    fn packet_opaque_ref_move_take_and_unref_release_lifecycle() {
+        let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture_old = Arc::clone(&released);
+        let mut dst = Packet::new(vec![9], 9);
+        dst.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0x10],
+            move |data| {
+                capture_old.lock().unwrap().push(data);
+            },
+        )));
+
+        let capture_src = Arc::clone(&released);
+        let mut src = Packet::new(vec![1], 1);
+        src.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0x20],
+            move |data| {
+                capture_src.lock().unwrap().push(data);
+            },
+        )));
+
+        dst.move_ref_from(&mut src);
+
+        assert_eq!(*released.lock().unwrap(), vec![vec![0x10]]);
+        assert!(src.opaque_ref().is_none());
+        assert_eq!(dst.opaque_ref().unwrap().as_slice(), &[0x20]);
+
+        let taken = dst.take_opaque_ref().unwrap();
+        assert!(dst.opaque_ref().is_none());
+        assert_eq!(taken.as_slice(), &[0x20]);
+        assert_eq!(*released.lock().unwrap(), vec![vec![0x10]]);
+        drop(taken);
+        assert_eq!(*released.lock().unwrap(), vec![vec![0x10], vec![0x20]]);
+
+        let capture_unref = Arc::clone(&released);
+        dst.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0x30],
+            move |data| {
+                capture_unref.lock().unwrap().push(data);
+            },
+        )));
+
+        dst.unref();
+
+        assert!(dst.opaque_ref().is_none());
+        assert_eq!(
+            *released.lock().unwrap(),
+            vec![vec![0x10], vec![0x20], vec![0x30]]
+        );
     }
 
     #[test]

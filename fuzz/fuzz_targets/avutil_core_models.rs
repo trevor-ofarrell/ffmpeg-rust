@@ -3140,6 +3140,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet.dts(), None);
     assert_eq!(packet.duration(), 0);
     assert_eq!(packet.pos(), None);
+    assert!(packet.opaque_ref().is_none());
     assert_eq!(packet.time_base(), Rational::ZERO);
 
     let pts = timestamp_from(cursor.next());
@@ -3215,6 +3216,14 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         AvErrorKind::InvalidArgument
     );
     assert_eq!((packet.pts(), packet.dts(), packet.duration()), rescaled_timing);
+
+    let opaque_len = usize::from(cursor.next().unwrap_or_default() % 16);
+    let opaque_payload = payload_from(cursor, opaque_len);
+    packet.set_opaque_ref(Some(BufferRef::copy_from_slice(&opaque_payload)));
+    assert_eq!(
+        packet.opaque_ref().unwrap().as_slice(),
+        opaque_payload.as_slice()
+    );
 
     packet.set_key(cursor.next().unwrap_or_default().is_multiple_of(2));
     if packet.flags().contains(PacketFlags::KEY) {
@@ -3306,6 +3315,14 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         packet_ref.side_data_by_kind("ref_side_data").unwrap().data(),
         &[0xbb, 0xcc]
     );
+    assert_eq!(
+        packet_ref.opaque_ref().unwrap().as_slice(),
+        opaque_payload.as_slice()
+    );
+    assert!(packet_ref
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(packet.opaque_ref().unwrap()));
     assert_eq!(packet_ref.time_base(), packet.time_base());
     packet_ref.shrink_side_data("ref_side_data", 1).unwrap();
     assert_eq!(
@@ -3337,12 +3354,21 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet_ref.stream_index(), 0);
     assert_eq!(packet_ref.pts(), None);
     assert_eq!(packet_ref.time_base(), Rational::ZERO);
+    assert!(packet_ref.opaque_ref().is_none());
     assert!(packet_ref.side_data().is_empty());
     assert_eq!(moved_packet.data(), expected_ref_payload.as_slice());
     assert_eq!(
         moved_packet.side_data_by_kind("ref_side_data").unwrap().data(),
         &[0xbb]
     );
+    assert_eq!(
+        moved_packet.opaque_ref().unwrap().as_slice(),
+        opaque_payload.as_slice()
+    );
+    assert!(moved_packet
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(packet.opaque_ref().unwrap()));
     moved_packet.unref();
     assert!(moved_packet.is_empty());
     assert_eq!(moved_packet.stream_index(), 0);
@@ -3351,6 +3377,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(moved_packet.duration(), 0);
     assert_eq!(moved_packet.pos(), None);
     assert_eq!(moved_packet.time_base(), Rational::ZERO);
+    assert!(moved_packet.opaque_ref().is_none());
     assert!(moved_packet.flags().is_empty());
     assert!(moved_packet.side_data().is_empty());
 
@@ -3372,6 +3399,14 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         props_packet.side_data_by_kind("ref_side_data").unwrap().data(),
         &[0xbb, 0xcc]
     );
+    assert_eq!(
+        props_packet.opaque_ref().unwrap().as_slice(),
+        opaque_payload.as_slice()
+    );
+    assert!(props_packet
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(packet.opaque_ref().unwrap()));
     props_packet
         .shrink_side_data("ref_side_data", 1)
         .unwrap();
@@ -3383,6 +3418,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         packet.side_data_by_kind("ref_side_data").unwrap().data(),
         &[0xbb, 0xcc]
     );
+    let taken_opaque = props_packet.take_opaque_ref().unwrap();
+    assert_eq!(taken_opaque.as_slice(), opaque_payload.as_slice());
+    assert!(props_packet.opaque_ref().is_none());
+    assert!(packet.opaque_ref().is_some());
 
     let split = usize::from(cursor.next().unwrap_or_default()) % (payload.len() + 1);
     let mut adler = Adler32::new();
