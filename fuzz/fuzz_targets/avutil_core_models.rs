@@ -6919,7 +6919,20 @@ fn exercise_fixtures() {
     let linked_exif_side_data = FrameSideData::new_exif(exif_with_linked_ifds_fixture()).unwrap();
     let linked_exif = linked_exif_side_data.exif().unwrap().unwrap();
     assert_eq!(linked_exif.ifd_count(), 1);
+    assert_eq!(linked_exif.ifd(0).unwrap().entry_count(), 3);
     assert_eq!(linked_exif.linked_ifd_count(), 3);
+    assert_eq!(
+        linked_exif.linked_ifds()[0].kind(),
+        FrameExifIfdPointerKind::Exif
+    );
+    assert_eq!(
+        linked_exif.linked_ifds()[1].kind(),
+        FrameExifIfdPointerKind::Gps
+    );
+    assert_eq!(
+        linked_exif.linked_ifds()[2].kind(),
+        FrameExifIfdPointerKind::Interoperability
+    );
     let linked_exif_ifd = linked_exif
         .linked_ifd(FrameExifIfdPointerKind::Exif)
         .unwrap();
@@ -6929,26 +6942,43 @@ fn exercise_fixtures() {
         FrameExifIfdPointerKind::EXIF_TAG
     );
     assert_eq!(linked_exif_ifd.offset(), 56);
+    assert_eq!(linked_exif_ifd.ifd().entry_count(), 1);
+    assert_eq!(
+        linked_exif_ifd
+            .ifd()
+            .entry_by_tag(FrameExifIfdPointerKind::INTEROPERABILITY_TAG)
+            .unwrap()
+            .ifd_pointer_offset()
+            .unwrap(),
+        Some(92)
+    );
     let linked_gps_ifd = linked_exif
         .linked_ifd(FrameExifIfdPointerKind::Gps)
         .unwrap();
-    assert_eq!(linked_gps_ifd.offset(), 74);
+    assert_eq!(linked_gps_ifd.parent_ifd_offset(), 8);
     assert_eq!(
-        linked_gps_ifd.ifd().entry_by_tag(0).unwrap().value_data(),
-        &[2, 3, 0, 0]
+        linked_gps_ifd.source_tag(),
+        FrameExifIfdPointerKind::GPS_TAG
     );
+    assert_eq!(linked_gps_ifd.offset(), 74);
+    let linked_gps_version = linked_gps_ifd.ifd().entry_by_tag(0).unwrap();
+    assert_eq!(linked_gps_version.tiff_type(), FrameExifTiffType::Byte);
+    assert_eq!(linked_gps_version.count(), 4);
+    assert_eq!(linked_gps_version.value_data(), &[2, 3, 0, 0]);
     let linked_interop_ifd = linked_exif
         .linked_ifd(FrameExifIfdPointerKind::Interoperability)
         .unwrap();
     assert_eq!(linked_interop_ifd.parent_ifd_offset(), 56);
     assert_eq!(
-        linked_interop_ifd
-            .ifd()
-            .entry_by_tag(1)
-            .unwrap()
-            .value_data(),
-        b"R98\0"
+        linked_interop_ifd.source_tag(),
+        FrameExifIfdPointerKind::INTEROPERABILITY_TAG
     );
+    assert_eq!(linked_interop_ifd.offset(), 92);
+    let linked_interop_index = linked_interop_ifd.ifd().entry_by_tag(1).unwrap();
+    assert_eq!(linked_interop_index.tiff_type(), FrameExifTiffType::Ascii);
+    assert_eq!(linked_interop_index.value_data(), b"R98\0");
+    assert_eq!(linked_exif.ifd(0).unwrap().entry_by_tag(0xDEAD), None);
+    assert_eq!(FrameExifIfdPointerKind::from_tag(0x010F), None);
     let mut bad_linked_exif = exif_with_linked_ifds_fixture();
     bad_linked_exif[24..26].copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
     assert!(exif_payload_invalid(&bad_linked_exif));
