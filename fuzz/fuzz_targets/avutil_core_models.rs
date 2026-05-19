@@ -32,8 +32,8 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    Packet, PacketFlags, PacketSideDataKind, PixelFormat, Rational, Rounding, SampleFormat,
+    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3246,6 +3246,52 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let truncated = PacketFlags::from_bits_truncate(raw_flags);
     assert_eq!(truncated.bits() & !PacketFlags::all().bits(), 0);
 
+    let typed_side_data_kind = packet_side_data_kind_from(cursor.next());
+    let typed_side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);
+    let typed_side_data_payload = payload_from(cursor, typed_side_data_len);
+    let mut typed_side_data_packet = Packet::default();
+    typed_side_data_packet.push_side_data(
+        SideData::new_with_kind(typed_side_data_kind.clone(), typed_side_data_payload.clone())
+            .unwrap(),
+    );
+    assert_eq!(
+        typed_side_data_packet.side_data()[0].kind_id(),
+        &typed_side_data_kind
+    );
+    assert_eq!(
+        typed_side_data_packet.side_data()[0].kind(),
+        typed_side_data_kind.name()
+    );
+    assert_eq!(
+        typed_side_data_packet.side_data()[0].is_known_kind(),
+        typed_side_data_kind.is_known()
+    );
+    assert_eq!(
+        typed_side_data_packet.side_data()[0].ffmpeg_constant(),
+        typed_side_data_kind.ffmpeg_constant()
+    );
+    assert_eq!(
+        typed_side_data_packet
+            .side_data_by_kind(typed_side_data_kind.name())
+            .unwrap()
+            .data(),
+        typed_side_data_payload.as_slice()
+    );
+    assert_eq!(
+        typed_side_data_packet
+            .side_data_by_kind_id(&typed_side_data_kind)
+            .unwrap()
+            .data(),
+        typed_side_data_payload.as_slice()
+    );
+    let taken_typed_side_data = typed_side_data_packet
+        .take_side_data_kind(&typed_side_data_kind)
+        .unwrap();
+    assert_eq!(taken_typed_side_data.data(), typed_side_data_payload.as_slice());
+    assert!(typed_side_data_packet
+        .side_data_by_kind_id(&typed_side_data_kind)
+        .is_none());
+
     let side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let side_data_payload = payload_from(cursor, side_data_len);
     let side_data = SideData::new("fuzz_side_data", side_data_payload.clone()).unwrap();
@@ -3501,6 +3547,19 @@ fn exercise_fixtures() {
     assert_eq!(SampleFormat::DblP.plane_sizes(2, 2).unwrap(), vec![16, 16]);
     assert_eq!(SampleFormat::S64.plane_sizes(2, 2).unwrap(), vec![32]);
     assert_eq!(SampleFormat::S64P.plane_sizes(2, 2).unwrap(), vec![16, 16]);
+    assert_eq!(PacketSideDataKind::KNOWN.len(), 41);
+    assert_eq!(
+        PacketSideDataKind::from_name("AV_PKT_DATA_A53_CC").unwrap(),
+        PacketSideDataKind::A53ClosedCaptions
+    );
+    assert_eq!(
+        PacketSideDataKind::KNOWN
+            .last()
+            .unwrap()
+            .ffmpeg_constant()
+            .unwrap(),
+        "AV_PKT_DATA_EXIF"
+    );
     let overflow_line_size = usize::MAX - 1;
     let overflow_alignment = usize::MAX - 2;
     assert_eq!(
@@ -9067,6 +9126,16 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         30 => FrameSideDataKind::DynamicHdrVivid,
         31 => FrameSideDataKind::AmbientViewingEnvironment,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
+    }
+}
+
+fn packet_side_data_kind_from(byte: Option<u8>) -> PacketSideDataKind {
+    let value = usize::from(byte.unwrap_or_default());
+    let known = PacketSideDataKind::KNOWN;
+    if value % (known.len() + 1) == known.len() {
+        PacketSideDataKind::Unknown(String::from("fuzz_packet_side_data"))
+    } else {
+        known[value % known.len()].clone()
     }
 }
 

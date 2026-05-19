@@ -66,30 +66,313 @@ impl PacketFlags {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PacketSideDataKind {
+    Palette,
+    NewExtradata,
+    ParamChange,
+    H263MbInfo,
+    ReplayGain,
+    DisplayMatrix,
+    Stereo3d,
+    AudioServiceType,
+    QualityStats,
+    FallbackTrack,
+    CpbProperties,
+    SkipSamples,
+    JpDualMono,
+    StringsMetadata,
+    SubtitlePosition,
+    MatroskaBlockAdditional,
+    WebVttIdentifier,
+    WebVttSettings,
+    MetadataUpdate,
+    MpegTsStreamId,
+    MasteringDisplayMetadata,
+    Spherical,
+    ContentLightLevel,
+    A53ClosedCaptions,
+    EncryptionInitInfo,
+    EncryptionInfo,
+    ActiveFormatDescription,
+    ProducerReferenceTime,
+    IccProfile,
+    DolbyVisionConf,
+    S12mTimecode,
+    DynamicHdr10Plus,
+    IamfMixGainParam,
+    IamfDemixingInfoParam,
+    IamfReconGainInfoParam,
+    AmbientViewingEnvironment,
+    FrameCropping,
+    Lcevc,
+    ThreeDReferenceDisplays,
+    RtcpSenderReport,
+    Exif,
+    Unknown(String),
+}
+
+impl PacketSideDataKind {
+    pub const KNOWN: &'static [Self] = &[
+        Self::Palette,
+        Self::NewExtradata,
+        Self::ParamChange,
+        Self::H263MbInfo,
+        Self::ReplayGain,
+        Self::DisplayMatrix,
+        Self::Stereo3d,
+        Self::AudioServiceType,
+        Self::QualityStats,
+        Self::FallbackTrack,
+        Self::CpbProperties,
+        Self::SkipSamples,
+        Self::JpDualMono,
+        Self::StringsMetadata,
+        Self::SubtitlePosition,
+        Self::MatroskaBlockAdditional,
+        Self::WebVttIdentifier,
+        Self::WebVttSettings,
+        Self::MetadataUpdate,
+        Self::MpegTsStreamId,
+        Self::MasteringDisplayMetadata,
+        Self::Spherical,
+        Self::ContentLightLevel,
+        Self::A53ClosedCaptions,
+        Self::EncryptionInitInfo,
+        Self::EncryptionInfo,
+        Self::ActiveFormatDescription,
+        Self::ProducerReferenceTime,
+        Self::IccProfile,
+        Self::DolbyVisionConf,
+        Self::S12mTimecode,
+        Self::DynamicHdr10Plus,
+        Self::IamfMixGainParam,
+        Self::IamfDemixingInfoParam,
+        Self::IamfReconGainInfoParam,
+        Self::AmbientViewingEnvironment,
+        Self::FrameCropping,
+        Self::Lcevc,
+        Self::ThreeDReferenceDisplays,
+        Self::RtcpSenderReport,
+        Self::Exif,
+    ];
+
+    pub fn from_name(name: impl Into<String>) -> AvResult<Self> {
+        let name = validate_packet_side_data_kind(name.into())?;
+        Ok(Self::known_from_name(&name).unwrap_or(Self::Unknown(name)))
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Palette => "palette",
+            Self::NewExtradata => "new_extradata",
+            Self::ParamChange => "param_change",
+            Self::H263MbInfo => "h263_mb_info",
+            Self::ReplayGain => "replaygain",
+            Self::DisplayMatrix => "displaymatrix",
+            Self::Stereo3d => "stereo3d",
+            Self::AudioServiceType => "audio_service_type",
+            Self::QualityStats => "quality_stats",
+            Self::FallbackTrack => "fallback_track",
+            Self::CpbProperties => "cpb_properties",
+            Self::SkipSamples => "skip_samples",
+            Self::JpDualMono => "jp_dualmono",
+            Self::StringsMetadata => "strings_metadata",
+            Self::SubtitlePosition => "subtitle_position",
+            Self::MatroskaBlockAdditional => "matroska_blockadditional",
+            Self::WebVttIdentifier => "webvtt_identifier",
+            Self::WebVttSettings => "webvtt_settings",
+            Self::MetadataUpdate => "metadata_update",
+            Self::MpegTsStreamId => "mpegts_stream_id",
+            Self::MasteringDisplayMetadata => "mastering_display_metadata",
+            Self::Spherical => "spherical",
+            Self::ContentLightLevel => "content_light_level",
+            Self::A53ClosedCaptions => "a53_cc",
+            Self::EncryptionInitInfo => "encryption_init_info",
+            Self::EncryptionInfo => "encryption_info",
+            Self::ActiveFormatDescription => "afd",
+            Self::ProducerReferenceTime => "prft",
+            Self::IccProfile => "icc_profile",
+            Self::DolbyVisionConf => "dovi_conf",
+            Self::S12mTimecode => "s12m_timecode",
+            Self::DynamicHdr10Plus => "dynamic_hdr10_plus",
+            Self::IamfMixGainParam => "iamf_mix_gain_param",
+            Self::IamfDemixingInfoParam => "iamf_demixing_info_param",
+            Self::IamfReconGainInfoParam => "iamf_recon_gain_info_param",
+            Self::AmbientViewingEnvironment => "ambient_viewing_environment",
+            Self::FrameCropping => "frame_cropping",
+            Self::Lcevc => "lcevc",
+            Self::ThreeDReferenceDisplays => "3d_reference_displays",
+            Self::RtcpSenderReport => "rtcp_sr",
+            Self::Exif => "exif",
+            Self::Unknown(name) => name.as_str(),
+        }
+    }
+
+    pub fn ffmpeg_constant(&self) -> Option<&'static str> {
+        match self {
+            Self::Palette => Some("AV_PKT_DATA_PALETTE"),
+            Self::NewExtradata => Some("AV_PKT_DATA_NEW_EXTRADATA"),
+            Self::ParamChange => Some("AV_PKT_DATA_PARAM_CHANGE"),
+            Self::H263MbInfo => Some("AV_PKT_DATA_H263_MB_INFO"),
+            Self::ReplayGain => Some("AV_PKT_DATA_REPLAYGAIN"),
+            Self::DisplayMatrix => Some("AV_PKT_DATA_DISPLAYMATRIX"),
+            Self::Stereo3d => Some("AV_PKT_DATA_STEREO3D"),
+            Self::AudioServiceType => Some("AV_PKT_DATA_AUDIO_SERVICE_TYPE"),
+            Self::QualityStats => Some("AV_PKT_DATA_QUALITY_STATS"),
+            Self::FallbackTrack => Some("AV_PKT_DATA_FALLBACK_TRACK"),
+            Self::CpbProperties => Some("AV_PKT_DATA_CPB_PROPERTIES"),
+            Self::SkipSamples => Some("AV_PKT_DATA_SKIP_SAMPLES"),
+            Self::JpDualMono => Some("AV_PKT_DATA_JP_DUALMONO"),
+            Self::StringsMetadata => Some("AV_PKT_DATA_STRINGS_METADATA"),
+            Self::SubtitlePosition => Some("AV_PKT_DATA_SUBTITLE_POSITION"),
+            Self::MatroskaBlockAdditional => Some("AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL"),
+            Self::WebVttIdentifier => Some("AV_PKT_DATA_WEBVTT_IDENTIFIER"),
+            Self::WebVttSettings => Some("AV_PKT_DATA_WEBVTT_SETTINGS"),
+            Self::MetadataUpdate => Some("AV_PKT_DATA_METADATA_UPDATE"),
+            Self::MpegTsStreamId => Some("AV_PKT_DATA_MPEGTS_STREAM_ID"),
+            Self::MasteringDisplayMetadata => Some("AV_PKT_DATA_MASTERING_DISPLAY_METADATA"),
+            Self::Spherical => Some("AV_PKT_DATA_SPHERICAL"),
+            Self::ContentLightLevel => Some("AV_PKT_DATA_CONTENT_LIGHT_LEVEL"),
+            Self::A53ClosedCaptions => Some("AV_PKT_DATA_A53_CC"),
+            Self::EncryptionInitInfo => Some("AV_PKT_DATA_ENCRYPTION_INIT_INFO"),
+            Self::EncryptionInfo => Some("AV_PKT_DATA_ENCRYPTION_INFO"),
+            Self::ActiveFormatDescription => Some("AV_PKT_DATA_AFD"),
+            Self::ProducerReferenceTime => Some("AV_PKT_DATA_PRFT"),
+            Self::IccProfile => Some("AV_PKT_DATA_ICC_PROFILE"),
+            Self::DolbyVisionConf => Some("AV_PKT_DATA_DOVI_CONF"),
+            Self::S12mTimecode => Some("AV_PKT_DATA_S12M_TIMECODE"),
+            Self::DynamicHdr10Plus => Some("AV_PKT_DATA_DYNAMIC_HDR10_PLUS"),
+            Self::IamfMixGainParam => Some("AV_PKT_DATA_IAMF_MIX_GAIN_PARAM"),
+            Self::IamfDemixingInfoParam => Some("AV_PKT_DATA_IAMF_DEMIXING_INFO_PARAM"),
+            Self::IamfReconGainInfoParam => Some("AV_PKT_DATA_IAMF_RECON_GAIN_INFO_PARAM"),
+            Self::AmbientViewingEnvironment => Some("AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT"),
+            Self::FrameCropping => Some("AV_PKT_DATA_FRAME_CROPPING"),
+            Self::Lcevc => Some("AV_PKT_DATA_LCEVC"),
+            Self::ThreeDReferenceDisplays => Some("AV_PKT_DATA_3D_REFERENCE_DISPLAYS"),
+            Self::RtcpSenderReport => Some("AV_PKT_DATA_RTCP_SR"),
+            Self::Exif => Some("AV_PKT_DATA_EXIF"),
+            Self::Unknown(_) => None,
+        }
+    }
+
+    pub fn is_known(&self) -> bool {
+        !matches!(self, Self::Unknown(_))
+    }
+
+    fn known_from_name(name: &str) -> Option<Self> {
+        let normalized = normalize_packet_side_data_name(name);
+        let normalized = normalized
+            .strip_prefix("av_pkt_data_")
+            .unwrap_or(normalized.as_str());
+        match normalized {
+            "palette" => Some(Self::Palette),
+            "new_extradata" | "newextradata" => Some(Self::NewExtradata),
+            "param_change" | "paramchange" => Some(Self::ParamChange),
+            "h263_mb_info" | "h263mbinfo" => Some(Self::H263MbInfo),
+            "replaygain" | "replay_gain" => Some(Self::ReplayGain),
+            "displaymatrix" | "display_matrix" => Some(Self::DisplayMatrix),
+            "stereo3d" | "stereo_3d" => Some(Self::Stereo3d),
+            "audio_service_type" | "audioservicetype" => Some(Self::AudioServiceType),
+            "quality_stats" | "qualitystats" => Some(Self::QualityStats),
+            "fallback_track" | "fallbacktrack" => Some(Self::FallbackTrack),
+            "cpb_properties" | "cpbproperties" => Some(Self::CpbProperties),
+            "skip_samples" | "skipsamples" => Some(Self::SkipSamples),
+            "jp_dualmono" | "jp_dual_mono" | "jpdualmono" => Some(Self::JpDualMono),
+            "strings_metadata" | "stringsmetadata" => Some(Self::StringsMetadata),
+            "subtitle_position" | "subtitleposition" => Some(Self::SubtitlePosition),
+            "matroska_blockadditional" | "matroska_block_additional" => {
+                Some(Self::MatroskaBlockAdditional)
+            }
+            "webvtt_identifier" | "webvttidentifier" => Some(Self::WebVttIdentifier),
+            "webvtt_settings" | "webvttsettings" => Some(Self::WebVttSettings),
+            "metadata_update" | "metadataupdate" => Some(Self::MetadataUpdate),
+            "mpegts_stream_id" | "mpegtsstreamid" => Some(Self::MpegTsStreamId),
+            "mastering_display_metadata" | "masteringdisplaymetadata" => {
+                Some(Self::MasteringDisplayMetadata)
+            }
+            "spherical" => Some(Self::Spherical),
+            "content_light_level" | "contentlightlevel" => Some(Self::ContentLightLevel),
+            "a53_cc" | "a53cc" | "a53_closed_captions" => Some(Self::A53ClosedCaptions),
+            "encryption_init_info" | "encryptioninitinfo" => Some(Self::EncryptionInitInfo),
+            "encryption_info" | "encryptioninfo" => Some(Self::EncryptionInfo),
+            "afd" | "active_format_description" => Some(Self::ActiveFormatDescription),
+            "prft" | "producer_reference_time" => Some(Self::ProducerReferenceTime),
+            "icc_profile" | "iccprofile" => Some(Self::IccProfile),
+            "dovi_conf" | "doviconf" | "dolby_vision_conf" => Some(Self::DolbyVisionConf),
+            "s12m_timecode" | "s12mtimecode" => Some(Self::S12mTimecode),
+            "dynamic_hdr10_plus" | "dynamichdr10plus" | "hdr10_plus" => {
+                Some(Self::DynamicHdr10Plus)
+            }
+            "iamf_mix_gain_param" | "iamfmixgainparam" => Some(Self::IamfMixGainParam),
+            "iamf_demixing_info_param" | "iamfdemixinginfoparam" => {
+                Some(Self::IamfDemixingInfoParam)
+            }
+            "iamf_recon_gain_info_param" | "iamfrecongaininfoparam" => {
+                Some(Self::IamfReconGainInfoParam)
+            }
+            "ambient_viewing_environment" | "ambientviewingenvironment" => {
+                Some(Self::AmbientViewingEnvironment)
+            }
+            "frame_cropping" | "framecropping" => Some(Self::FrameCropping),
+            "lcevc" => Some(Self::Lcevc),
+            "3d_reference_displays" | "3dreferencedisplays" | "three_d_reference_displays" => {
+                Some(Self::ThreeDReferenceDisplays)
+            }
+            "rtcp_sr" | "rtcpsr" | "rtcp_sender_report" => Some(Self::RtcpSenderReport),
+            "exif" => Some(Self::Exif),
+            _ => None,
+        }
+    }
+}
+
+impl TryFrom<&str> for PacketSideDataKind {
+    type Error = AvError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::from_name(value)
+    }
+}
+
+impl TryFrom<String> for PacketSideDataKind {
+    type Error = AvError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::from_name(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SideData {
-    kind: String,
+    kind: PacketSideDataKind,
     data: Vec<u8>,
 }
 
 impl SideData {
     pub fn new(kind: impl Into<String>, data: Vec<u8>) -> AvResult<Self> {
-        let kind = kind.into();
-        if kind.trim().is_empty() {
-            return Err(AvError::invalid_argument(
-                "packet side data kind must not be empty",
-            ));
-        }
-        if kind.contains('\0') {
-            return Err(AvError::invalid_argument(
-                "packet side data kind must not contain NUL",
-            ));
-        }
+        Self::new_with_kind(PacketSideDataKind::from_name(kind)?, data)
+    }
 
+    pub fn new_with_kind(kind: PacketSideDataKind, data: Vec<u8>) -> AvResult<Self> {
+        if let PacketSideDataKind::Unknown(name) = &kind {
+            validate_packet_side_data_kind(name.clone())?;
+        }
         Ok(Self { kind, data })
     }
 
     pub fn kind(&self) -> &str {
+        self.kind.name()
+    }
+
+    pub fn kind_id(&self) -> &PacketSideDataKind {
         &self.kind
+    }
+
+    pub fn is_known_kind(&self) -> bool {
+        self.kind.is_known()
+    }
+
+    pub fn ffmpeg_constant(&self) -> Option<&'static str> {
+        self.kind.ffmpeg_constant()
     }
 
     pub fn data(&self) -> &[u8] {
@@ -215,15 +498,29 @@ impl Packet {
     }
 
     pub fn side_data_by_kind(&self, kind: &str) -> Option<&SideData> {
+        let Ok(kind) = PacketSideDataKind::from_name(kind) else {
+            return None;
+        };
+        self.side_data_by_kind_id(&kind)
+    }
+
+    pub fn side_data_by_kind_id(&self, kind: &PacketSideDataKind) -> Option<&SideData> {
         self.side_data
             .iter()
-            .find(|side_data| side_data.kind() == kind)
+            .find(|side_data| side_data.kind_id() == kind)
     }
 
     pub fn side_data_mut_by_kind(&mut self, kind: &str) -> Option<&mut SideData> {
+        let Ok(kind) = PacketSideDataKind::from_name(kind) else {
+            return None;
+        };
+        self.side_data_mut_by_kind_id(&kind)
+    }
+
+    pub fn side_data_mut_by_kind_id(&mut self, kind: &PacketSideDataKind) -> Option<&mut SideData> {
         self.side_data
             .iter_mut()
-            .find(|side_data| side_data.kind() == kind)
+            .find(|side_data| side_data.kind_id() == kind)
     }
 
     pub fn set_pts(&mut self, pts: Option<i64>) {
@@ -285,10 +582,17 @@ impl Packet {
     }
 
     pub fn take_side_data(&mut self, kind: &str) -> Option<SideData> {
+        let Ok(kind) = PacketSideDataKind::from_name(kind) else {
+            return None;
+        };
+        self.take_side_data_kind(&kind)
+    }
+
+    pub fn take_side_data_kind(&mut self, kind: &PacketSideDataKind) -> Option<SideData> {
         let index = self
             .side_data
             .iter()
-            .position(|side_data| side_data.kind() == kind)?;
+            .position(|side_data| side_data.kind_id() == kind)?;
         Some(self.side_data.remove(index))
     }
 
@@ -366,6 +670,34 @@ impl Default for Packet {
     fn default() -> Self {
         Self::new(Vec::new(), 0)
     }
+}
+
+fn validate_packet_side_data_kind(kind: String) -> AvResult<String> {
+    if kind.trim().is_empty() {
+        return Err(AvError::invalid_argument(
+            "packet side data kind must not be empty",
+        ));
+    }
+    if kind.contains('\0') {
+        return Err(AvError::invalid_argument(
+            "packet side data kind must not contain NUL",
+        ));
+    }
+
+    Ok(kind)
+}
+
+fn normalize_packet_side_data_name(name: &str) -> String {
+    name.trim()
+        .chars()
+        .filter_map(|ch| match ch {
+            'A'..='Z' => Some(ch.to_ascii_lowercase()),
+            'a'..='z' | '0'..='9' => Some(ch),
+            '_' => Some('_'),
+            '-' | ' ' | '\t' | '\r' | '\n' | '/' => Some('_'),
+            _ => None,
+        })
+        .collect()
 }
 
 fn pts_option(value: i64) -> Option<i64> {
@@ -490,6 +822,114 @@ mod tests {
         assert_eq!(packet.pos(), None);
         assert!(SideData::new(" ", Vec::new()).is_err());
         assert!(SideData::new("bad\0kind", Vec::new()).is_err());
+    }
+
+    #[test]
+    fn packet_side_data_kind_inventory_matches_ffmpeg_8_1_1_header() {
+        let constants: Vec<_> = PacketSideDataKind::KNOWN
+            .iter()
+            .map(|kind| kind.ffmpeg_constant().unwrap())
+            .collect();
+
+        assert_eq!(
+            constants,
+            [
+                "AV_PKT_DATA_PALETTE",
+                "AV_PKT_DATA_NEW_EXTRADATA",
+                "AV_PKT_DATA_PARAM_CHANGE",
+                "AV_PKT_DATA_H263_MB_INFO",
+                "AV_PKT_DATA_REPLAYGAIN",
+                "AV_PKT_DATA_DISPLAYMATRIX",
+                "AV_PKT_DATA_STEREO3D",
+                "AV_PKT_DATA_AUDIO_SERVICE_TYPE",
+                "AV_PKT_DATA_QUALITY_STATS",
+                "AV_PKT_DATA_FALLBACK_TRACK",
+                "AV_PKT_DATA_CPB_PROPERTIES",
+                "AV_PKT_DATA_SKIP_SAMPLES",
+                "AV_PKT_DATA_JP_DUALMONO",
+                "AV_PKT_DATA_STRINGS_METADATA",
+                "AV_PKT_DATA_SUBTITLE_POSITION",
+                "AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL",
+                "AV_PKT_DATA_WEBVTT_IDENTIFIER",
+                "AV_PKT_DATA_WEBVTT_SETTINGS",
+                "AV_PKT_DATA_METADATA_UPDATE",
+                "AV_PKT_DATA_MPEGTS_STREAM_ID",
+                "AV_PKT_DATA_MASTERING_DISPLAY_METADATA",
+                "AV_PKT_DATA_SPHERICAL",
+                "AV_PKT_DATA_CONTENT_LIGHT_LEVEL",
+                "AV_PKT_DATA_A53_CC",
+                "AV_PKT_DATA_ENCRYPTION_INIT_INFO",
+                "AV_PKT_DATA_ENCRYPTION_INFO",
+                "AV_PKT_DATA_AFD",
+                "AV_PKT_DATA_PRFT",
+                "AV_PKT_DATA_ICC_PROFILE",
+                "AV_PKT_DATA_DOVI_CONF",
+                "AV_PKT_DATA_S12M_TIMECODE",
+                "AV_PKT_DATA_DYNAMIC_HDR10_PLUS",
+                "AV_PKT_DATA_IAMF_MIX_GAIN_PARAM",
+                "AV_PKT_DATA_IAMF_DEMIXING_INFO_PARAM",
+                "AV_PKT_DATA_IAMF_RECON_GAIN_INFO_PARAM",
+                "AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT",
+                "AV_PKT_DATA_FRAME_CROPPING",
+                "AV_PKT_DATA_LCEVC",
+                "AV_PKT_DATA_3D_REFERENCE_DISPLAYS",
+                "AV_PKT_DATA_RTCP_SR",
+                "AV_PKT_DATA_EXIF",
+            ]
+        );
+        assert_eq!(PacketSideDataKind::KNOWN[0].name(), "palette");
+        assert_eq!(PacketSideDataKind::KNOWN[40].name(), "exif");
+    }
+
+    #[test]
+    fn packet_side_data_kind_maps_aliases_and_preserves_unknown_names() {
+        assert_eq!(
+            PacketSideDataKind::from_name("AV_PKT_DATA_A53_CC").unwrap(),
+            PacketSideDataKind::A53ClosedCaptions
+        );
+        assert_eq!(
+            PacketSideDataKind::from_name("Dolby Vision Conf").unwrap(),
+            PacketSideDataKind::DolbyVisionConf
+        );
+        assert_eq!(
+            PacketSideDataKind::from_name("rtcp_sender_report").unwrap(),
+            PacketSideDataKind::RtcpSenderReport
+        );
+
+        let unknown = PacketSideDataKind::from_name("vendor.packet").unwrap();
+        assert_eq!(unknown.name(), "vendor.packet");
+        assert!(!unknown.is_known());
+        assert_eq!(unknown.ffmpeg_constant(), None);
+
+        let side_data = SideData::new("AV_PKT_DATA_PALETTE", vec![1, 2]).unwrap();
+        assert_eq!(side_data.kind(), "palette");
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::Palette);
+        assert!(side_data.is_known_kind());
+        assert_eq!(side_data.ffmpeg_constant(), Some("AV_PKT_DATA_PALETTE"));
+
+        let mut packet = Packet::default();
+        packet.push_side_data(side_data);
+        packet.push_side_data(SideData::new("vendor_packet", vec![3]).unwrap());
+
+        assert_eq!(
+            packet
+                .side_data_by_kind("AV_PKT_DATA_PALETTE")
+                .unwrap()
+                .data(),
+            &[1, 2]
+        );
+        assert_eq!(
+            packet
+                .side_data_by_kind_id(&PacketSideDataKind::Palette)
+                .unwrap()
+                .data(),
+            &[1, 2]
+        );
+        assert_eq!(
+            packet.take_side_data("vendor_packet").unwrap().kind(),
+            "vendor_packet"
+        );
+        assert!(packet.side_data_by_kind("vendor_packet").is_none());
     }
 
     #[test]

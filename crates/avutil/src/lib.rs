@@ -68,7 +68,9 @@ pub use options::{
     OptionChild, OptionConstant, OptionDefinition, OptionFlags, OptionKind, OptionMatch,
     OptionQuery, OptionRange, OptionSet, OptionValue,
 };
-pub use packet::{Packet, PacketFlags, SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN};
+pub use packet::{
+    Packet, PacketFlags, PacketSideDataKind, SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+};
 pub use pixel::PixelFormat;
 pub use rational::Rational;
 pub use samplefmt::{SampleFormat, SampleFormatFamily, SampleFormatNumericKind};
