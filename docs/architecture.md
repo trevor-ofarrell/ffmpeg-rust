@@ -62,7 +62,7 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 Interoperability common-tag coverage now includes InteroperabilityVersion as a fixed four-byte digit-coded UNDEFINED field, RelatedImageFileFormat as a single ASCII string, and RelatedImageWidth/RelatedImageLength as positive SHORT/LONG values alongside InteroperabilityIndex.
 
-Root image-layout common-tag coverage now includes SamplesPerPixel as a positive SHORT value, PlanarConfiguration as a typed 1/2 enum, YCbCrSubSampling as two nonzero SHORT factors, and YCbCrPositioning as a typed 1/2 enum.
+Root image-layout common-tag coverage now includes SamplesPerPixel as a positive SHORT value, RowsPerStrip as a positive SHORT/LONG value, PlanarConfiguration as a typed 1/2 enum, YCbCrSubSampling as two nonzero SHORT factors, YCbCrPositioning as a typed 1/2 enum, and XPosition/YPosition as single unsigned RATIONAL values.
 
 Root colorimetry common-tag coverage now includes WhitePoint, PrimaryChromaticities, YCbCrCoefficients, and ReferenceBlackWhite as fixed-count unsigned RATIONAL arrays with strict type/count/denominator validation.
 

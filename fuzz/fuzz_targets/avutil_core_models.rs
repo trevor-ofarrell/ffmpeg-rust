@@ -1916,6 +1916,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.samples_per_pixel() {
                         assert_ne!(value, 0);
                     }
+                    if let Some(value) = common.rows_per_strip() {
+                        assert_ne!(value, 0);
+                    }
                     if let Some(value) = common.planar_configuration() {
                         assert!((1..=2).contains(&value.raw()));
                     }
@@ -1936,6 +1939,12 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     }
                     if let Some(values) = common.reference_black_white() {
                         assert!(values.iter().all(|value| value.denominator() != 0));
+                    }
+                    if let Some(value) = common.x_position() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.y_position() {
+                        assert_ne!(value.denominator(), 0);
                     }
                     if let Some(value) = common.pixel_x_dimension() {
                         assert_ne!(value, 0);
@@ -4144,6 +4153,34 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let strip_position_exif_bytes = exif_root_strip_position_fixture();
+    let strip_position_exif = FrameExif::parse(&strip_position_exif_bytes).unwrap();
+    let strip_position_tags = strip_position_exif.common_tags().unwrap();
+    assert_eq!(strip_position_tags.rows_per_strip(), Some(8));
+    assert_eq!(strip_position_tags.x_position().unwrap().numerator(), 1);
+    assert_eq!(strip_position_tags.x_position().unwrap().denominator(), 2);
+    assert_eq!(strip_position_tags.y_position().unwrap().numerator(), 3);
+    assert_eq!(strip_position_tags.y_position().unwrap().denominator(), 4);
+    let mut bad_strip_rows_zero = exif_root_strip_position_fixture();
+    bad_strip_rows_zero[18..22].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_strip_rows_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_strip_y_denominator = exif_root_strip_position_fixture();
+    bad_strip_y_denominator[62..66].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_strip_y_denominator)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_image_width_zero = exif_common_tags_fixture();
     bad_image_width_zero[42..46].copy_from_slice(&0u32.to_le_bytes());
     assert_eq!(
@@ -6235,6 +6272,41 @@ fn exif_root_colorimetry_fixture() -> Vec<u8> {
         (128, 1),
         (255, 1),
     ] {
+        data.extend_from_slice(&numerator.to_le_bytes());
+        data.extend_from_slice(&denominator.to_le_bytes());
+    }
+    data
+}
+
+fn exif_root_strip_position_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&3u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_ROWS_PER_STRIP,
+        FrameExifTiffType::Long,
+        1,
+        8u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_X_POSITION,
+        FrameExifTiffType::Rational,
+        1,
+        50u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_Y_POSITION,
+        FrameExifTiffType::Rational,
+        1,
+        58u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    for (numerator, denominator) in [(1u32, 2u32), (3, 4)] {
         data.extend_from_slice(&numerator.to_le_bytes());
         data.extend_from_slice(&denominator.to_le_bytes());
     }

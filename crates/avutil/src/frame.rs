@@ -6606,6 +6606,7 @@ pub struct FrameExifCommonTags<'a> {
     image_width: Option<u32>,
     image_length: Option<u32>,
     samples_per_pixel: Option<u16>,
+    rows_per_strip: Option<u32>,
     planar_configuration: Option<FrameExifPlanarConfiguration>,
     white_point: Option<[FrameExifRational; 2]>,
     primary_chromaticities: Option<[FrameExifRational; 6]>,
@@ -6616,6 +6617,8 @@ pub struct FrameExifCommonTags<'a> {
     orientation: Option<FrameExifOrientation>,
     x_resolution: Option<FrameExifRational>,
     y_resolution: Option<FrameExifRational>,
+    x_position: Option<FrameExifRational>,
+    y_position: Option<FrameExifRational>,
     resolution_unit: Option<FrameExifResolutionUnit>,
     software: Option<&'a str>,
     date_time: Option<&'a str>,
@@ -6765,6 +6768,10 @@ impl<'a> FrameExifCommonTags<'a> {
         self.samples_per_pixel
     }
 
+    pub const fn rows_per_strip(&self) -> Option<u32> {
+        self.rows_per_strip
+    }
+
     pub const fn planar_configuration(&self) -> Option<FrameExifPlanarConfiguration> {
         self.planar_configuration
     }
@@ -6803,6 +6810,14 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn y_resolution(&self) -> Option<FrameExifRational> {
         self.y_resolution
+    }
+
+    pub const fn x_position(&self) -> Option<FrameExifRational> {
+        self.x_position
+    }
+
+    pub const fn y_position(&self) -> Option<FrameExifRational> {
+        self.y_position
     }
 
     pub const fn resolution_unit(&self) -> Option<FrameExifResolutionUnit> {
@@ -7668,9 +7683,12 @@ impl<'a> FrameExif<'a> {
     pub const TAG_MODEL: u16 = 0x0110;
     pub const TAG_ORIENTATION: u16 = 0x0112;
     pub const TAG_SAMPLES_PER_PIXEL: u16 = 0x0115;
+    pub const TAG_ROWS_PER_STRIP: u16 = 0x0116;
     pub const TAG_X_RESOLUTION: u16 = 0x011A;
     pub const TAG_Y_RESOLUTION: u16 = 0x011B;
     pub const TAG_PLANAR_CONFIGURATION: u16 = 0x011C;
+    pub const TAG_X_POSITION: u16 = 0x011E;
+    pub const TAG_Y_POSITION: u16 = 0x011F;
     pub const TAG_RESOLUTION_UNIT: u16 = 0x0128;
     pub const TAG_SOFTWARE: u16 = 0x0131;
     pub const TAG_DATE_TIME: u16 = 0x0132;
@@ -7891,6 +7909,11 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_SAMPLES_PER_PIXEL,
                 "SamplesPerPixel",
             )?;
+            tags.rows_per_strip = Self::optional_positive_short_or_long_tag(
+                root,
+                Self::TAG_ROWS_PER_STRIP,
+                "RowsPerStrip",
+            )?;
             tags.planar_configuration = Self::optional_planar_configuration_tag(root)?;
             tags.white_point =
                 Self::optional_rational_array_tag(root, Self::TAG_WHITE_POINT, "WhitePoint")?;
@@ -7916,6 +7939,8 @@ impl<'a> FrameExif<'a> {
                 Self::optional_rational_tag(root, Self::TAG_X_RESOLUTION, "XResolution")?;
             tags.y_resolution =
                 Self::optional_rational_tag(root, Self::TAG_Y_RESOLUTION, "YResolution")?;
+            tags.x_position = Self::optional_rational_tag(root, Self::TAG_X_POSITION, "XPosition")?;
+            tags.y_position = Self::optional_rational_tag(root, Self::TAG_Y_POSITION, "YPosition")?;
             tags.resolution_unit = Self::optional_resolution_unit_tag(root)?;
             tags.software = Self::optional_ascii_tag(root, Self::TAG_SOFTWARE, "Software")?;
             tags.date_time = Self::optional_datetime_tag(root, Self::TAG_DATE_TIME, "DateTime")?;
@@ -13287,6 +13312,44 @@ mod tests {
         }
 
         assert_eq!(data.len(), 198);
+        data
+    }
+
+    fn exif_root_strip_position_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&3u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_ROWS_PER_STRIP,
+            FrameExifTiffType::Long,
+            1,
+            8u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_X_POSITION,
+            FrameExifTiffType::Rational,
+            1,
+            50u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_Y_POSITION,
+            FrameExifTiffType::Rational,
+            1,
+            58u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        for (numerator, denominator) in [(1u32, 2u32), (3, 4)] {
+            data.extend_from_slice(&numerator.to_le_bytes());
+            data.extend_from_slice(&denominator.to_le_bytes());
+        }
+
+        assert_eq!(data.len(), 66);
         data
     }
 
@@ -21076,6 +21139,73 @@ mod tests {
         bad_reference_count[50..54].copy_from_slice(&5u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_reference_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_strip_position_tags() {
+        let exif_bytes = exif_root_strip_position_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.rows_per_strip(), Some(8));
+        assert_eq!(
+            common.x_position(),
+            Some(FrameExifRational {
+                numerator: 1,
+                denominator: 2,
+            })
+        );
+        assert_eq!(
+            common.y_position(),
+            Some(FrameExifRational {
+                numerator: 3,
+                denominator: 4,
+            })
+        );
+
+        let mut bad_rows_type = exif_root_strip_position_fixture();
+        bad_rows_type[12..14].copy_from_slice(&FrameExifTiffType::Rational.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_rows_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_rows_zero = exif_root_strip_position_fixture();
+        bad_rows_zero[18..22].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_rows_zero)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_x_count = exif_root_strip_position_fixture();
+        bad_x_count[26..30].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_x_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_y_denominator = exif_root_strip_position_fixture();
+        bad_y_denominator[62..66].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_y_denominator)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
