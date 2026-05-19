@@ -6607,8 +6607,12 @@ pub struct FrameExifCommonTags<'a> {
     image_length: Option<u32>,
     samples_per_pixel: Option<u16>,
     planar_configuration: Option<FrameExifPlanarConfiguration>,
+    white_point: Option<[FrameExifRational; 2]>,
+    primary_chromaticities: Option<[FrameExifRational; 6]>,
+    ycbcr_coefficients: Option<[FrameExifRational; 3]>,
     ycbcr_sub_sampling: Option<[u16; 2]>,
     ycbcr_positioning: Option<FrameExifYcbCrPositioning>,
+    reference_black_white: Option<[FrameExifRational; 6]>,
     orientation: Option<FrameExifOrientation>,
     x_resolution: Option<FrameExifRational>,
     y_resolution: Option<FrameExifRational>,
@@ -6765,12 +6769,28 @@ impl<'a> FrameExifCommonTags<'a> {
         self.planar_configuration
     }
 
+    pub const fn white_point(&self) -> Option<[FrameExifRational; 2]> {
+        self.white_point
+    }
+
+    pub const fn primary_chromaticities(&self) -> Option<[FrameExifRational; 6]> {
+        self.primary_chromaticities
+    }
+
+    pub const fn ycbcr_coefficients(&self) -> Option<[FrameExifRational; 3]> {
+        self.ycbcr_coefficients
+    }
+
     pub const fn ycbcr_sub_sampling(&self) -> Option<[u16; 2]> {
         self.ycbcr_sub_sampling
     }
 
     pub const fn ycbcr_positioning(&self) -> Option<FrameExifYcbCrPositioning> {
         self.ycbcr_positioning
+    }
+
+    pub const fn reference_black_white(&self) -> Option<[FrameExifRational; 6]> {
+        self.reference_black_white
     }
 
     pub const fn orientation(&self) -> Option<FrameExifOrientation> {
@@ -7655,8 +7675,12 @@ impl<'a> FrameExif<'a> {
     pub const TAG_SOFTWARE: u16 = 0x0131;
     pub const TAG_DATE_TIME: u16 = 0x0132;
     pub const TAG_ARTIST: u16 = 0x013B;
+    pub const TAG_WHITE_POINT: u16 = 0x013E;
+    pub const TAG_PRIMARY_CHROMATICITIES: u16 = 0x013F;
+    pub const TAG_YCBCR_COEFFICIENTS: u16 = 0x0211;
     pub const TAG_YCBCR_SUB_SAMPLING: u16 = 0x0212;
     pub const TAG_YCBCR_POSITIONING: u16 = 0x0213;
+    pub const TAG_REFERENCE_BLACK_WHITE: u16 = 0x0214;
     pub const TAG_COPYRIGHT: u16 = 0x8298;
     pub const TAG_EXPOSURE_PROGRAM: u16 = 0x8822;
     pub const TAG_SPECTRAL_SENSITIVITY: u16 = 0x8824;
@@ -7868,8 +7892,25 @@ impl<'a> FrameExif<'a> {
                 "SamplesPerPixel",
             )?;
             tags.planar_configuration = Self::optional_planar_configuration_tag(root)?;
+            tags.white_point =
+                Self::optional_rational_array_tag(root, Self::TAG_WHITE_POINT, "WhitePoint")?;
+            tags.primary_chromaticities = Self::optional_rational_array_tag(
+                root,
+                Self::TAG_PRIMARY_CHROMATICITIES,
+                "PrimaryChromaticities",
+            )?;
+            tags.ycbcr_coefficients = Self::optional_rational_array_tag(
+                root,
+                Self::TAG_YCBCR_COEFFICIENTS,
+                "YCbCrCoefficients",
+            )?;
             tags.ycbcr_sub_sampling = Self::optional_ycbcr_sub_sampling_tag(root)?;
             tags.ycbcr_positioning = Self::optional_ycbcr_positioning_tag(root)?;
+            tags.reference_black_white = Self::optional_rational_array_tag(
+                root,
+                Self::TAG_REFERENCE_BLACK_WHITE,
+                "ReferenceBlackWhite",
+            )?;
             tags.orientation = Self::optional_orientation_tag(root)?;
             tags.x_resolution =
                 Self::optional_rational_tag(root, Self::TAG_X_RESOLUTION, "XResolution")?;
@@ -13175,6 +13216,77 @@ mod tests {
         data.extend_from_slice(&0u32.to_le_bytes());
 
         assert_eq!(data.len(), 62);
+        data
+    }
+
+    fn exif_root_colorimetry_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&4u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_WHITE_POINT,
+            FrameExifTiffType::Rational,
+            2,
+            62u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_PRIMARY_CHROMATICITIES,
+            FrameExifTiffType::Rational,
+            6,
+            78u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_YCBCR_COEFFICIENTS,
+            FrameExifTiffType::Rational,
+            3,
+            126u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_REFERENCE_BLACK_WHITE,
+            FrameExifTiffType::Rational,
+            6,
+            150u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        for (numerator, denominator) in [(1u32, 3u32), (1, 4)] {
+            data.extend_from_slice(&numerator.to_le_bytes());
+            data.extend_from_slice(&denominator.to_le_bytes());
+        }
+        for (numerator, denominator) in [
+            (640u32, 1000u32),
+            (330, 1000),
+            (300, 1000),
+            (600, 1000),
+            (150, 1000),
+            (60, 1000),
+        ] {
+            data.extend_from_slice(&numerator.to_le_bytes());
+            data.extend_from_slice(&denominator.to_le_bytes());
+        }
+        for (numerator, denominator) in [(299u32, 1000u32), (587, 1000), (114, 1000)] {
+            data.extend_from_slice(&numerator.to_le_bytes());
+            data.extend_from_slice(&denominator.to_le_bytes());
+        }
+        for (numerator, denominator) in [
+            (0u32, 1u32),
+            (255, 1),
+            (128, 1),
+            (255, 1),
+            (128, 1),
+            (255, 1),
+        ] {
+            data.extend_from_slice(&numerator.to_le_bytes());
+            data.extend_from_slice(&denominator.to_le_bytes());
+        }
+
+        assert_eq!(data.len(), 198);
         data
     }
 
@@ -20824,6 +20936,146 @@ mod tests {
         bad_ycbcr_positioning_value[54..56].copy_from_slice(&3u16.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_ycbcr_positioning_value)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_colorimetry_tags() {
+        let exif_bytes = exif_root_colorimetry_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.white_point(),
+            Some([
+                FrameExifRational {
+                    numerator: 1,
+                    denominator: 3,
+                },
+                FrameExifRational {
+                    numerator: 1,
+                    denominator: 4,
+                },
+            ])
+        );
+        assert_eq!(
+            common.primary_chromaticities(),
+            Some([
+                FrameExifRational {
+                    numerator: 640,
+                    denominator: 1000,
+                },
+                FrameExifRational {
+                    numerator: 330,
+                    denominator: 1000,
+                },
+                FrameExifRational {
+                    numerator: 300,
+                    denominator: 1000,
+                },
+                FrameExifRational {
+                    numerator: 600,
+                    denominator: 1000,
+                },
+                FrameExifRational {
+                    numerator: 150,
+                    denominator: 1000,
+                },
+                FrameExifRational {
+                    numerator: 60,
+                    denominator: 1000,
+                },
+            ])
+        );
+        assert_eq!(
+            common.ycbcr_coefficients(),
+            Some([
+                FrameExifRational {
+                    numerator: 299,
+                    denominator: 1000,
+                },
+                FrameExifRational {
+                    numerator: 587,
+                    denominator: 1000,
+                },
+                FrameExifRational {
+                    numerator: 114,
+                    denominator: 1000,
+                },
+            ])
+        );
+        assert_eq!(
+            common.reference_black_white(),
+            Some([
+                FrameExifRational {
+                    numerator: 0,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 255,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 128,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 255,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 128,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 255,
+                    denominator: 1,
+                },
+            ])
+        );
+
+        let mut bad_white_count = exif_root_colorimetry_fixture();
+        bad_white_count[14..18].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_white_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_primary_type = exif_root_colorimetry_fixture();
+        bad_primary_type[24..26].copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_primary_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_ycbcr_denominator = exif_root_colorimetry_fixture();
+        bad_ycbcr_denominator[130..134].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_ycbcr_denominator)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_reference_count = exif_root_colorimetry_fixture();
+        bad_reference_count[50..54].copy_from_slice(&5u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_reference_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

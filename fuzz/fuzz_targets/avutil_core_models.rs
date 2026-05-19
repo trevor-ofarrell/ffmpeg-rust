@@ -1919,11 +1919,23 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.planar_configuration() {
                         assert!((1..=2).contains(&value.raw()));
                     }
+                    if let Some(values) = common.white_point() {
+                        assert!(values.iter().all(|value| value.denominator() != 0));
+                    }
+                    if let Some(values) = common.primary_chromaticities() {
+                        assert!(values.iter().all(|value| value.denominator() != 0));
+                    }
+                    if let Some(values) = common.ycbcr_coefficients() {
+                        assert!(values.iter().all(|value| value.denominator() != 0));
+                    }
                     if let Some(values) = common.ycbcr_sub_sampling() {
                         assert!(values.iter().all(|value| *value != 0));
                     }
                     if let Some(value) = common.ycbcr_positioning() {
                         assert!((1..=2).contains(&value.raw()));
+                    }
+                    if let Some(values) = common.reference_black_white() {
+                        assert!(values.iter().all(|value| value.denominator() != 0));
                     }
                     if let Some(value) = common.pixel_x_dimension() {
                         assert_ne!(value, 0);
@@ -4101,6 +4113,37 @@ fn exercise_fixtures() {
     assert_eq!(common_tags.model(), Some("Camera"));
     assert_eq!(common_tags.image_width(), Some(640));
     assert_eq!(common_tags.image_length(), Some(480));
+    let colorimetry_exif_bytes = exif_root_colorimetry_fixture();
+    let colorimetry_exif = FrameExif::parse(&colorimetry_exif_bytes).unwrap();
+    let colorimetry_tags = colorimetry_exif.common_tags().unwrap();
+    let white_point = colorimetry_tags.white_point().unwrap()[0];
+    assert_eq!(white_point.numerator(), 1);
+    assert_eq!(white_point.denominator(), 3);
+    assert_eq!(colorimetry_tags.primary_chromaticities().unwrap().len(), 6);
+    let green_luma = colorimetry_tags.ycbcr_coefficients().unwrap()[1];
+    assert_eq!(green_luma.numerator(), 587);
+    assert_eq!(green_luma.denominator(), 1000);
+    assert_eq!(colorimetry_tags.reference_black_white().unwrap().len(), 6);
+    let mut bad_colorimetry_count = exif_root_colorimetry_fixture();
+    bad_colorimetry_count[14..18].copy_from_slice(&1u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_colorimetry_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_colorimetry_denominator = exif_root_colorimetry_fixture();
+    bad_colorimetry_denominator[130..134].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_colorimetry_denominator)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_image_width_zero = exif_common_tags_fixture();
     bad_image_width_zero[42..46].copy_from_slice(&0u32.to_le_bytes());
     assert_eq!(
@@ -6127,6 +6170,74 @@ fn exif_value_semantics_fixture() -> Vec<u8> {
     data.extend_from_slice(&(-1i32).to_le_bytes());
     data.extend_from_slice(&2i32.to_le_bytes());
     data.extend_from_slice(&(-2.5f64).to_bits().to_le_bytes());
+    data
+}
+
+fn exif_root_colorimetry_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&4u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_WHITE_POINT,
+        FrameExifTiffType::Rational,
+        2,
+        62u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_PRIMARY_CHROMATICITIES,
+        FrameExifTiffType::Rational,
+        6,
+        78u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_YCBCR_COEFFICIENTS,
+        FrameExifTiffType::Rational,
+        3,
+        126u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_REFERENCE_BLACK_WHITE,
+        FrameExifTiffType::Rational,
+        6,
+        150u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    for (numerator, denominator) in [(1u32, 3u32), (1, 4)] {
+        data.extend_from_slice(&numerator.to_le_bytes());
+        data.extend_from_slice(&denominator.to_le_bytes());
+    }
+    for (numerator, denominator) in [
+        (640u32, 1000u32),
+        (330, 1000),
+        (300, 1000),
+        (600, 1000),
+        (150, 1000),
+        (60, 1000),
+    ] {
+        data.extend_from_slice(&numerator.to_le_bytes());
+        data.extend_from_slice(&denominator.to_le_bytes());
+    }
+    for (numerator, denominator) in [(299u32, 1000u32), (587, 1000), (114, 1000)] {
+        data.extend_from_slice(&numerator.to_le_bytes());
+        data.extend_from_slice(&denominator.to_le_bytes());
+    }
+    for (numerator, denominator) in [
+        (0u32, 1u32),
+        (255, 1),
+        (128, 1),
+        (255, 1),
+        (128, 1),
+        (255, 1),
+    ] {
+        data.extend_from_slice(&numerator.to_le_bytes());
+        data.extend_from_slice(&denominator.to_le_bytes());
+    }
     data
 }
 
