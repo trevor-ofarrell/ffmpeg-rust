@@ -35,7 +35,7 @@ use avutil::{
     Packet, PacketActiveFormatDescription, PacketFallbackTrack, PacketFlags, PacketFrameCropping,
     PacketJpDualMono, PacketJpDualMonoSelection, PacketMatroskaBlockAdditional,
     PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
-    PacketQualityStats, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
+    PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
     PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings,
     PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256,
     Sha384, Sha512, SideData, VideoFrame,
@@ -3371,6 +3371,23 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             ));
         }
     }
+    match typed_payload_side_data.rtcp_sender_report() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::RtcpSenderReport);
+            assert_eq!(typed_payload.len(), PacketRtcpSenderReport::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketRtcpSenderReport::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::RtcpSenderReport),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::RtcpSenderReport);
+            assert!(packet_rtcp_sender_report_payload_invalid(&typed_payload));
+        }
+    }
     match typed_payload_side_data.skip_samples() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::SkipSamples);
@@ -4191,6 +4208,82 @@ fn exercise_fixtures() {
         )
         .unwrap()
         .producer_reference_time()
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_rtcp_sr = PacketRtcpSenderReport::new(
+        0x0102_0304,
+        0x0506_0708_090a_0b0c,
+        0x0d0e_0f10,
+        0x1112_1314,
+        0x1516_1718,
+    );
+    let packet_rtcp_sr_bytes = packet_rtcp_sr.to_bytes();
+    assert_eq!(
+        PacketRtcpSenderReport::parse(&packet_rtcp_sr_bytes).unwrap(),
+        packet_rtcp_sr
+    );
+    assert_eq!(packet_rtcp_sr.ssrc(), 0x0102_0304);
+    assert_eq!(packet_rtcp_sr.ntp_timestamp(), 0x0506_0708_090a_0b0c);
+    assert_eq!(packet_rtcp_sr.rtp_timestamp(), 0x0d0e_0f10);
+    assert_eq!(packet_rtcp_sr.sender_packet_count(), 0x1112_1314);
+    assert_eq!(packet_rtcp_sr.sender_octet_count(), 0x1516_1718);
+    assert_eq!(
+        packet_rtcp_sr.alignment_padding(),
+        [0; PacketRtcpSenderReport::ALIGNMENT_PADDING_LEN]
+    );
+    assert_eq!(
+        packet_rtcp_sr.tail_padding(),
+        [0; PacketRtcpSenderReport::TAIL_PADDING_LEN]
+    );
+    assert_eq!(
+        SideData::new_rtcp_sender_report(packet_rtcp_sr)
+            .unwrap()
+            .rtcp_sender_report()
+            .unwrap(),
+        Some(packet_rtcp_sr)
+    );
+    let mut packet_rtcp_sr_with_padding = [0; PacketRtcpSenderReport::DATA_LEN];
+    packet_rtcp_sr_with_padding[..4].copy_from_slice(&u32::MAX.to_ne_bytes());
+    packet_rtcp_sr_with_padding[4..8].copy_from_slice(&[0x10, 0x11, 0x12, 0x13]);
+    packet_rtcp_sr_with_padding[8..16].copy_from_slice(&u64::MAX.to_ne_bytes());
+    packet_rtcp_sr_with_padding[16..20].copy_from_slice(&0x8000_0000_u32.to_ne_bytes());
+    packet_rtcp_sr_with_padding[20..24].copy_from_slice(&0x7fff_ffff_u32.to_ne_bytes());
+    packet_rtcp_sr_with_padding[24..28].copy_from_slice(&0x1234_5678_u32.to_ne_bytes());
+    packet_rtcp_sr_with_padding[28..].copy_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
+    let packet_rtcp_sr_parsed =
+        PacketRtcpSenderReport::parse(&packet_rtcp_sr_with_padding).unwrap();
+    assert_eq!(packet_rtcp_sr_parsed.ssrc(), u32::MAX);
+    assert_eq!(packet_rtcp_sr_parsed.ntp_timestamp(), u64::MAX);
+    assert_eq!(packet_rtcp_sr_parsed.rtp_timestamp(), 0x8000_0000);
+    assert_eq!(packet_rtcp_sr_parsed.sender_packet_count(), 0x7fff_ffff);
+    assert_eq!(packet_rtcp_sr_parsed.sender_octet_count(), 0x1234_5678);
+    assert_eq!(
+        packet_rtcp_sr_parsed.alignment_padding(),
+        [0x10, 0x11, 0x12, 0x13]
+    );
+    assert_eq!(
+        packet_rtcp_sr_parsed.tail_padding(),
+        [0xaa, 0xbb, 0xcc, 0xdd]
+    );
+    assert_eq!(
+        packet_rtcp_sr_parsed.to_bytes(),
+        packet_rtcp_sr_with_padding
+    );
+    assert_eq!(
+        PacketRtcpSenderReport::parse(&[0; PacketRtcpSenderReport::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        SideData::new_with_kind(
+            PacketSideDataKind::RtcpSenderReport,
+            vec![0; PacketRtcpSenderReport::DATA_LEN - 1]
+        )
+        .unwrap()
+        .rtcp_sender_report()
         .unwrap_err()
         .kind(),
         AvErrorKind::InvalidData
@@ -9957,6 +10050,10 @@ fn packet_fallback_track_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_producer_reference_time_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketProducerReferenceTime::DATA_LEN
+}
+
+fn packet_rtcp_sender_report_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketRtcpSenderReport::DATA_LEN
 }
 
 fn packet_active_format_description_payload_invalid(data: &[u8]) -> bool {

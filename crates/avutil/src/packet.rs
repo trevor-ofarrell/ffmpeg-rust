@@ -597,6 +597,106 @@ impl PacketProducerReferenceTime {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketRtcpSenderReport {
+    ssrc: u32,
+    ntp_timestamp: u64,
+    rtp_timestamp: u32,
+    sender_packet_count: u32,
+    sender_octet_count: u32,
+    alignment_padding: [u8; Self::ALIGNMENT_PADDING_LEN],
+    tail_padding: [u8; Self::TAIL_PADDING_LEN],
+}
+
+impl PacketRtcpSenderReport {
+    pub const DATA_LEN: usize = 32;
+    pub const ALIGNMENT_PADDING_LEN: usize = 4;
+    pub const TAIL_PADDING_LEN: usize = 4;
+
+    pub const fn new(
+        ssrc: u32,
+        ntp_timestamp: u64,
+        rtp_timestamp: u32,
+        sender_packet_count: u32,
+        sender_octet_count: u32,
+    ) -> Self {
+        Self {
+            ssrc,
+            ntp_timestamp,
+            rtp_timestamp,
+            sender_packet_count,
+            sender_octet_count,
+            alignment_padding: [0; Self::ALIGNMENT_PADDING_LEN],
+            tail_padding: [0; Self::TAIL_PADDING_LEN],
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "RTCP sender report packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut alignment_padding = [0; Self::ALIGNMENT_PADDING_LEN];
+        alignment_padding.copy_from_slice(&data[4..8]);
+        let mut tail_padding = [0; Self::TAIL_PADDING_LEN];
+        tail_padding.copy_from_slice(&data[28..Self::DATA_LEN]);
+
+        Ok(Self {
+            ssrc: read_u32_ne(data, 0),
+            ntp_timestamp: read_u64_ne(data, 8),
+            rtp_timestamp: read_u32_ne(data, 16),
+            sender_packet_count: read_u32_ne(data, 20),
+            sender_octet_count: read_u32_ne(data, 24),
+            alignment_padding,
+            tail_padding,
+        })
+    }
+
+    pub const fn ssrc(self) -> u32 {
+        self.ssrc
+    }
+
+    pub const fn ntp_timestamp(self) -> u64 {
+        self.ntp_timestamp
+    }
+
+    pub const fn rtp_timestamp(self) -> u32 {
+        self.rtp_timestamp
+    }
+
+    pub const fn sender_packet_count(self) -> u32 {
+        self.sender_packet_count
+    }
+
+    pub const fn sender_octet_count(self) -> u32 {
+        self.sender_octet_count
+    }
+
+    pub const fn alignment_padding(self) -> [u8; Self::ALIGNMENT_PADDING_LEN] {
+        self.alignment_padding
+    }
+
+    pub const fn tail_padding(self) -> [u8; Self::TAIL_PADDING_LEN] {
+        self.tail_padding
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[..4].copy_from_slice(&self.ssrc.to_ne_bytes());
+        bytes[4..8].copy_from_slice(&self.alignment_padding);
+        bytes[8..16].copy_from_slice(&self.ntp_timestamp.to_ne_bytes());
+        bytes[16..20].copy_from_slice(&self.rtp_timestamp.to_ne_bytes());
+        bytes[20..24].copy_from_slice(&self.sender_packet_count.to_ne_bytes());
+        bytes[24..28].copy_from_slice(&self.sender_octet_count.to_ne_bytes());
+        bytes[28..Self::DATA_LEN].copy_from_slice(&self.tail_padding);
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PacketSkipSamplesReason {
     PaddingSilence = 0,
@@ -1312,6 +1412,13 @@ impl SideData {
         )
     }
 
+    pub fn new_rtcp_sender_report(value: PacketRtcpSenderReport) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::RtcpSenderReport,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_skip_samples(value: PacketSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -1425,6 +1532,14 @@ impl SideData {
         }
 
         PacketProducerReferenceTime::parse(self.data()).map(Some)
+    }
+
+    pub fn rtcp_sender_report(&self) -> AvResult<Option<PacketRtcpSenderReport>> {
+        if self.kind != PacketSideDataKind::RtcpSenderReport {
+            return Ok(None);
+        }
+
+        PacketRtcpSenderReport::parse(self.data()).map(Some)
     }
 
     pub fn skip_samples(&self) -> AvResult<Option<PacketSkipSamples>> {
@@ -1860,6 +1975,18 @@ fn read_i32_le(data: &[u8], offset: usize) -> i32 {
     let mut bytes = [0; 4];
     bytes.copy_from_slice(&data[offset..offset + 4]);
     i32::from_le_bytes(bytes)
+}
+
+fn read_u32_ne(data: &[u8], offset: usize) -> u32 {
+    let mut bytes = [0; 4];
+    bytes.copy_from_slice(&data[offset..offset + 4]);
+    u32::from_ne_bytes(bytes)
+}
+
+fn read_u64_ne(data: &[u8], offset: usize) -> u64 {
+    let mut bytes = [0; 8];
+    bytes.copy_from_slice(&data[offset..offset + 8]);
+    u64::from_ne_bytes(bytes)
 }
 
 fn read_i64_ne(data: &[u8], offset: usize) -> i64 {
@@ -2400,6 +2527,96 @@ mod tests {
         .unwrap();
         assert_eq!(
             side_data.producer_reference_time().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_rtcp_sender_report_payload() {
+        let expected = PacketRtcpSenderReport::new(
+            0x0102_0304,
+            0x0506_0708_090a_0b0c,
+            0x0d0e_0f10,
+            0x1112_1314,
+            0x1516_1718,
+        );
+        let mut expected_bytes = [0; PacketRtcpSenderReport::DATA_LEN];
+        expected_bytes[..4].copy_from_slice(&0x0102_0304_u32.to_ne_bytes());
+        expected_bytes[8..16].copy_from_slice(&0x0506_0708_090a_0b0c_u64.to_ne_bytes());
+        expected_bytes[16..20].copy_from_slice(&0x0d0e_0f10_u32.to_ne_bytes());
+        expected_bytes[20..24].copy_from_slice(&0x1112_1314_u32.to_ne_bytes());
+        expected_bytes[24..28].copy_from_slice(&0x1516_1718_u32.to_ne_bytes());
+
+        assert_eq!(expected.ssrc(), 0x0102_0304);
+        assert_eq!(expected.ntp_timestamp(), 0x0506_0708_090a_0b0c);
+        assert_eq!(expected.rtp_timestamp(), 0x0d0e_0f10);
+        assert_eq!(expected.sender_packet_count(), 0x1112_1314);
+        assert_eq!(expected.sender_octet_count(), 0x1516_1718);
+        assert_eq!(
+            expected.alignment_padding(),
+            [0; PacketRtcpSenderReport::ALIGNMENT_PADDING_LEN]
+        );
+        assert_eq!(
+            expected.tail_padding(),
+            [0; PacketRtcpSenderReport::TAIL_PADDING_LEN]
+        );
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketRtcpSenderReport::parse(&expected_bytes).unwrap(),
+            expected
+        );
+
+        let mut padded_bytes = [0; PacketRtcpSenderReport::DATA_LEN];
+        padded_bytes[..4].copy_from_slice(&u32::MAX.to_ne_bytes());
+        padded_bytes[4..8].copy_from_slice(&[0x10, 0x11, 0x12, 0x13]);
+        padded_bytes[8..16].copy_from_slice(&u64::MAX.to_ne_bytes());
+        padded_bytes[16..20].copy_from_slice(&0x8000_0000_u32.to_ne_bytes());
+        padded_bytes[20..24].copy_from_slice(&0x7fff_ffff_u32.to_ne_bytes());
+        padded_bytes[24..28].copy_from_slice(&0x1234_5678_u32.to_ne_bytes());
+        padded_bytes[28..].copy_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
+        let padded = PacketRtcpSenderReport::parse(&padded_bytes).unwrap();
+        assert_eq!(padded.ssrc(), u32::MAX);
+        assert_eq!(padded.ntp_timestamp(), u64::MAX);
+        assert_eq!(padded.rtp_timestamp(), 0x8000_0000);
+        assert_eq!(padded.sender_packet_count(), 0x7fff_ffff);
+        assert_eq!(padded.sender_octet_count(), 0x1234_5678);
+        assert_eq!(padded.alignment_padding(), [0x10, 0x11, 0x12, 0x13]);
+        assert_eq!(padded.tail_padding(), [0xaa, 0xbb, 0xcc, 0xdd]);
+        assert_eq!(padded.to_bytes(), padded_bytes);
+
+        let side_data = SideData::new_rtcp_sender_report(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::RtcpSenderReport);
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(side_data.rtcp_sender_report().unwrap(), Some(expected));
+
+        let prft = SideData::new_with_kind(
+            PacketSideDataKind::ProducerReferenceTime,
+            expected_bytes.to_vec(),
+        )
+        .unwrap();
+        assert_eq!(prft.rtcp_sender_report().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_rtcp_sender_report_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; PacketRtcpSenderReport::DATA_LEN - 1],
+            vec![0; PacketRtcpSenderReport::DATA_LEN + 1],
+        ] {
+            assert_eq!(
+                PacketRtcpSenderReport::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let side_data = SideData::new_with_kind(
+            PacketSideDataKind::RtcpSenderReport,
+            vec![0; PacketRtcpSenderReport::DATA_LEN - 1],
+        )
+        .unwrap();
+        assert_eq!(
+            side_data.rtcp_sender_report().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
     }
