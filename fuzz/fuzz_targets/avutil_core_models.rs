@@ -1939,6 +1939,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.predictor() {
                         assert_ne!(value.raw(), 0);
                     }
+                    if let Some(value) = common.copyright() {
+                        assert!(value.is_ascii());
+                    }
                     if let Some(value) = common.compression() {
                         assert_ne!(value.raw(), 0);
                     }
@@ -4322,6 +4325,41 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let copyright_exif_bytes = exif_root_copyright_fixture();
+    let copyright_exif = FrameExif::parse(&copyright_exif_bytes).unwrap();
+    let copyright_tags = copyright_exif.common_tags().unwrap();
+    assert_eq!(copyright_tags.copyright(), Some("CC"));
+    let mut bad_copyright_type = exif_root_copyright_fixture();
+    bad_copyright_type[12..14].copy_from_slice(&FrameExifTiffType::Undefined.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_copyright_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_copyright_terminator = exif_root_copyright_fixture();
+    bad_copyright_terminator[20] = b'!';
+    assert_eq!(
+        FrameExif::parse(&bad_copyright_terminator)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_copyright_multiple_strings = exif_root_copyright_fixture();
+    bad_copyright_multiple_strings[14..18].copy_from_slice(&4u32.to_le_bytes());
+    bad_copyright_multiple_strings[18..22].copy_from_slice(&[b'C', 0, b'C', 0]);
+    assert_eq!(
+        FrameExif::parse(&bad_copyright_multiple_strings)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let coding_exif_bytes = exif_root_coding_fixture();
     let coding_exif = FrameExif::parse(&coding_exif_bytes).unwrap();
     let coding_tags = coding_exif.common_tags().unwrap();
@@ -6605,6 +6643,22 @@ fn exif_root_predictor_fixture() -> Vec<u8> {
         FrameExifTiffType::Short,
         1,
         [2, 0, 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data
+}
+
+fn exif_root_copyright_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_COPYRIGHT,
+        FrameExifTiffType::Ascii,
+        3,
+        [b'C', b'C', 0, 0],
     );
     data.extend_from_slice(&0u32.to_le_bytes());
     data

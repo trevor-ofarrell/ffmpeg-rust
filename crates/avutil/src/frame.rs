@@ -13806,6 +13806,25 @@ mod tests {
         data
     }
 
+    fn exif_root_copyright_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_COPYRIGHT,
+            FrameExifTiffType::Ascii,
+            3,
+            [b'C', b'C', 0, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        assert_eq!(data.len(), 26);
+        data
+    }
+
     fn exif_root_coding_fixture() -> Vec<u8> {
         let mut data = Vec::new();
         data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
@@ -21928,6 +21947,49 @@ mod tests {
         bad_zero[18..20].copy_from_slice(&0u16.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_zero)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_copyright_tag() {
+        let exif_bytes = exif_root_copyright_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.copyright(), Some("CC"));
+
+        let mut bad_type = exif_root_copyright_fixture();
+        bad_type[12..14].copy_from_slice(&FrameExifTiffType::Undefined.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_terminator = exif_root_copyright_fixture();
+        bad_terminator[20] = b'!';
+        assert_eq!(
+            FrameExif::parse(&bad_terminator)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_multiple_strings = exif_root_copyright_fixture();
+        bad_multiple_strings[14..18].copy_from_slice(&4u32.to_le_bytes());
+        bad_multiple_strings[18..22].copy_from_slice(&[b'C', 0, b'C', 0]);
+        assert_eq!(
+            FrameExif::parse(&bad_multiple_strings)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
