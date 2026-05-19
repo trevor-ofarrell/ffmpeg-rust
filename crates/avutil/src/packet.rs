@@ -552,6 +552,99 @@ impl PacketParamChange {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PacketJpDualMonoSelection {
+    MainLeft = 0,
+    SubRight = 1,
+    Both = 2,
+}
+
+impl PacketJpDualMonoSelection {
+    pub fn from_byte(value: u8) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::MainLeft),
+            1 => Ok(Self::SubRight),
+            2 => Ok(Self::Both),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid packet JP dual mono channel selection value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_byte(self) -> u8 {
+        self as u8
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketJpDualMono {
+    selected_channels: PacketJpDualMonoSelection,
+}
+
+impl PacketJpDualMono {
+    pub const DATA_LEN: usize = 1;
+
+    pub const fn new(selected_channels: PacketJpDualMonoSelection) -> Self {
+        Self { selected_channels }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "JP dual mono packet side data requires exactly {} byte, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self {
+            selected_channels: PacketJpDualMonoSelection::from_byte(data[0])?,
+        })
+    }
+
+    pub const fn selected_channels(self) -> PacketJpDualMonoSelection {
+        self.selected_channels
+    }
+
+    pub const fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        [self.selected_channels.as_byte()]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketMpegTsStreamId {
+    stream_id: u8,
+}
+
+impl PacketMpegTsStreamId {
+    pub const DATA_LEN: usize = 1;
+
+    pub const fn new(stream_id: u8) -> Self {
+        Self { stream_id }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "MPEG-TS stream id packet side data requires exactly {} byte, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self { stream_id: data[0] })
+    }
+
+    pub const fn stream_id(self) -> u8 {
+        self.stream_id
+    }
+
+    pub const fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        [self.stream_id]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketFrameCropping {
     crop_top: u32,
     crop_bottom: u32,
@@ -635,6 +728,17 @@ impl SideData {
         Self::new_with_kind(PacketSideDataKind::ParamChange, value.to_bytes())
     }
 
+    pub fn new_jp_dualmono(value: PacketJpDualMono) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::JpDualMono, value.to_bytes().to_vec())
+    }
+
+    pub fn new_mpegts_stream_id(value: PacketMpegTsStreamId) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::MpegTsStreamId,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_frame_cropping(value: PacketFrameCropping) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::FrameCropping, value.to_bytes().to_vec())
     }
@@ -688,6 +792,22 @@ impl SideData {
         }
 
         PacketParamChange::parse(self.data()).map(Some)
+    }
+
+    pub fn jp_dualmono(&self) -> AvResult<Option<PacketJpDualMono>> {
+        if self.kind != PacketSideDataKind::JpDualMono {
+            return Ok(None);
+        }
+
+        PacketJpDualMono::parse(self.data()).map(Some)
+    }
+
+    pub fn mpegts_stream_id(&self) -> AvResult<Option<PacketMpegTsStreamId>> {
+        if self.kind != PacketSideDataKind::MpegTsStreamId {
+            return Ok(None);
+        }
+
+        PacketMpegTsStreamId::parse(self.data()).map(Some)
     }
 
     pub fn frame_cropping(&self) -> AvResult<Option<PacketFrameCropping>> {
@@ -1350,6 +1470,56 @@ mod tests {
     }
 
     #[test]
+    fn packet_side_data_parses_jp_dualmono_payload() {
+        for (raw, selection) in [
+            (0, PacketJpDualMonoSelection::MainLeft),
+            (1, PacketJpDualMonoSelection::SubRight),
+            (2, PacketJpDualMonoSelection::Both),
+        ] {
+            let expected = PacketJpDualMono::new(selection);
+            assert_eq!(
+                PacketJpDualMonoSelection::from_byte(raw).unwrap(),
+                selection
+            );
+            assert_eq!(selection.as_byte(), raw);
+            assert_eq!(expected.to_bytes(), [raw]);
+            assert_eq!(PacketJpDualMono::parse(&[raw]).unwrap(), expected);
+            assert_eq!(expected.selected_channels(), selection);
+
+            let side_data = SideData::new_jp_dualmono(expected).unwrap();
+            assert_eq!(side_data.kind_id(), &PacketSideDataKind::JpDualMono);
+            assert_eq!(side_data.data(), &[raw]);
+            assert_eq!(side_data.jp_dualmono().unwrap(), Some(expected));
+        }
+
+        let skip_samples =
+            SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![2]).unwrap();
+        assert_eq!(skip_samples.jp_dualmono().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_jp_dualmono_payload() {
+        for data in [Vec::new(), vec![0, 1], vec![3]] {
+            assert_eq!(
+                PacketJpDualMono::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+        assert_eq!(
+            PacketJpDualMonoSelection::from_byte(0xff)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let side_data = SideData::new_with_kind(PacketSideDataKind::JpDualMono, vec![3]).unwrap();
+        assert_eq!(
+            side_data.jp_dualmono().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn packet_side_data_parses_skip_samples_payload() {
         let expected = PacketSkipSamples::new(
             1024,
@@ -1412,6 +1582,41 @@ mod tests {
             SideData::new_with_kind(PacketSideDataKind::SkipSamples, valid.to_vec()).unwrap();
         assert_eq!(
             side_data.skip_samples().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_mpegts_stream_id_payload() {
+        for raw in [0, 0x47, u8::MAX] {
+            let expected = PacketMpegTsStreamId::new(raw);
+            assert_eq!(expected.stream_id(), raw);
+            assert_eq!(expected.to_bytes(), [raw]);
+            assert_eq!(PacketMpegTsStreamId::parse(&[raw]).unwrap(), expected);
+
+            let side_data = SideData::new_mpegts_stream_id(expected).unwrap();
+            assert_eq!(side_data.kind_id(), &PacketSideDataKind::MpegTsStreamId);
+            assert_eq!(side_data.data(), &[raw]);
+            assert_eq!(side_data.mpegts_stream_id().unwrap(), Some(expected));
+        }
+
+        let palette = SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x47]).unwrap();
+        assert_eq!(palette.mpegts_stream_id().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_mpegts_stream_id_payload() {
+        for data in [Vec::new(), vec![0, 1]] {
+            assert_eq!(
+                PacketMpegTsStreamId::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let side_data =
+            SideData::new_with_kind(PacketSideDataKind::MpegTsStreamId, Vec::new()).unwrap();
+        assert_eq!(
+            side_data.mpegts_stream_id().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
     }

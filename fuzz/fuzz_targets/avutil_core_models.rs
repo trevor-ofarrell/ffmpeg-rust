@@ -32,8 +32,9 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketFlags, PacketFrameCropping, PacketParamChange, PacketSideDataKind,
-    PacketSkipSamples, PacketSkipSamplesReason, PixelFormat, Rational, Rounding, SampleFormat,
+    Packet, PacketFlags, PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
+    PacketMpegTsStreamId, PacketParamChange, PacketSideDataKind, PacketSkipSamples,
+    PacketSkipSamplesReason, PixelFormat, Rational, Rounding, SampleFormat,
     SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
@@ -3341,6 +3342,36 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_param_change_payload_invalid(&typed_payload));
         }
     }
+    match typed_payload_side_data.jp_dualmono() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::JpDualMono);
+            assert_eq!(typed_payload.len(), PacketJpDualMono::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketJpDualMonoSelection::from_byte(value.selected_channels().as_byte()).unwrap(),
+                value.selected_channels()
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::JpDualMono),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::JpDualMono);
+            assert!(packet_jp_dualmono_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.mpegts_stream_id() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::MpegTsStreamId);
+            assert_eq!(typed_payload.len(), PacketMpegTsStreamId::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::MpegTsStreamId),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::MpegTsStreamId);
+            assert!(packet_mpegts_stream_id_payload_invalid(&typed_payload));
+        }
+    }
     match typed_payload_side_data.frame_cropping() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::FrameCropping);
@@ -3656,6 +3687,53 @@ fn exercise_fixtures() {
     );
     assert_eq!(
         PacketParamChange::parse(&[0x10, 0, 0, 0])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    for (raw, selection) in [
+        (0, PacketJpDualMonoSelection::MainLeft),
+        (1, PacketJpDualMonoSelection::SubRight),
+        (2, PacketJpDualMonoSelection::Both),
+    ] {
+        let jp_dualmono = PacketJpDualMono::new(selection);
+        assert_eq!(PacketJpDualMonoSelection::from_byte(raw).unwrap(), selection);
+        assert_eq!(jp_dualmono.to_bytes(), [raw]);
+        assert_eq!(PacketJpDualMono::parse(&[raw]).unwrap(), jp_dualmono);
+        assert_eq!(
+            SideData::new_jp_dualmono(jp_dualmono)
+                .unwrap()
+                .jp_dualmono()
+                .unwrap(),
+            Some(jp_dualmono)
+        );
+    }
+    assert_eq!(
+        PacketJpDualMono::parse(&[3]).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        PacketJpDualMono::parse(&[]).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    for stream_id in [0, 0x47, u8::MAX] {
+        let mpegts_stream_id = PacketMpegTsStreamId::new(stream_id);
+        assert_eq!(mpegts_stream_id.stream_id(), stream_id);
+        assert_eq!(mpegts_stream_id.to_bytes(), [stream_id]);
+        assert_eq!(
+            PacketMpegTsStreamId::parse(&[stream_id]).unwrap(),
+            mpegts_stream_id
+        );
+        assert_eq!(
+            SideData::new_mpegts_stream_id(mpegts_stream_id)
+                .unwrap()
+                .mpegts_stream_id()
+                .unwrap(),
+            Some(mpegts_stream_id)
+        );
+    }
+    assert_eq!(
+        PacketMpegTsStreamId::parse(&[0, 1])
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData
@@ -9322,6 +9400,18 @@ fn packet_param_change_payload_invalid(data: &[u8]) -> bool {
     }
 
     data.len() != expected_len
+}
+
+fn packet_jp_dualmono_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != PacketJpDualMono::DATA_LEN {
+        return true;
+    }
+
+    PacketJpDualMonoSelection::from_byte(data[0]).is_err()
+}
+
+fn packet_mpegts_stream_id_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketMpegTsStreamId::DATA_LEN
 }
 
 fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {

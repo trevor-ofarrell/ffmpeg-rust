@@ -2,7 +2,9 @@
 
 ## Current Status
 
-Latest `avutil-packet` update: packet side-data now parses `AV_PKT_DATA_PARAM_CHANGE` in addition to the existing skip-samples and frame-cropping payloads. `PacketParamChange` preserves the little-endian flags word, optional signed sample-rate field, and optional signed width/height fields in FFmpeg's documented field order, rejects too-short, truncated, trailing-byte, and unknown-flag payloads, and exposes `SideData` constructor/deferred accessor hooks. Focused unit tests cover no-change, sample-rate-only, dimensions-only, combined signed-boundary payloads, non-matching kind behavior, unknown flags, truncation, and trailing bytes; `avutil_core_models` now build-checks the same parser invariants. This remains below `complete` because the remaining packet side-data payload parsers, full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still open.
+Latest `avutil-packet` update: packet side-data now parses the documented one-byte `AV_PKT_DATA_JP_DUALMONO` and `AV_PKT_DATA_MPEGTS_STREAM_ID` payloads in addition to the existing parameter-change, skip-samples, and frame-cropping payloads. `PacketJpDualMono` preserves the selected-channel byte and rejects values outside the documented main/left, sub/right, and both range; `PacketMpegTsStreamId` preserves the full `uint8_t` stream-id range. Focused unit tests cover all JP dual-mono variants, stream-id boundary values, non-matching kind behavior, malformed lengths, and invalid JP channel selections; `avutil_core_models` now build-checks the same parser invariants. This remains below `complete` because the remaining packet side-data payload parsers, full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still open.
+
+Previous `avutil-packet` update: packet side-data added `AV_PKT_DATA_PARAM_CHANGE` parsing in addition to the existing skip-samples and frame-cropping payloads. `PacketParamChange` preserves the little-endian flags word, optional signed sample-rate field, and optional signed width/height fields in FFmpeg's documented field order, rejects too-short, truncated, trailing-byte, and unknown-flag payloads, and exposes `SideData` constructor/deferred accessor hooks. Focused unit tests cover no-change, sample-rate-only, dimensions-only, combined signed-boundary payloads, non-matching kind behavior, unknown flags, truncation, and trailing bytes; `avutil_core_models` now build-checks the same parser invariants. This remains below `complete` because the remaining packet side-data payload parsers, full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still open.
 
 Previous `avutil-packet` update: packet side-data added the first typed payload parsers for `AV_PKT_DATA_SKIP_SAMPLES` and `AV_PKT_DATA_FRAME_CROPPING`. `PacketSkipSamples` preserves the two little-endian skip counts plus start/end reason bytes and rejects malformed lengths or unknown reason values; `PacketFrameCropping` preserves the four little-endian crop fields and rejects malformed lengths. `SideData` exposes constructors and deferred typed accessors for both packet side-data kinds, focused unit tests cover valid bytes, constructors, non-matching kind behavior, and malformed payloads, and `avutil_core_models` fuzz invariants now build-check the same parser contracts. This remains below `complete` because the remaining packet side-data payload parsers, full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still open.
 
@@ -124,6 +126,11 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil packet`
+- `cargo clippy -p avutil --all-targets -- -D warnings`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil packet`
 - `cargo clippy -p avutil --all-targets -- -D warnings`
@@ -2519,6 +2526,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- No remaining failing commands in the latest packet JP-dual-mono/MPEG-TS-stream-id side-data parser slice. `git diff --check` exited successfully with CRLF line-ending warnings only.
 - No remaining failing commands in the latest packet parameter-change side-data parser slice. `git diff --check` exited successfully with CRLF line-ending warnings only.
 - No remaining failing commands in the latest packet skip-samples/frame-cropping side-data parser slice. `git diff --check` exited successfully with CRLF line-ending warnings only.
 - No remaining failing commands in the latest typed packet side-data kind slice. `git diff --check` exited successfully with CRLF line-ending warnings only.
@@ -2690,7 +2698,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-packet` is the current focus for this slice. The concrete change is packet side-data payload parsing: `SideData` now exposes typed `AV_PKT_DATA_PARAM_CHANGE`, `AV_PKT_DATA_SKIP_SAMPLES`, and `AV_PKT_DATA_FRAME_CROPPING` constructors/accessors with fixed-layout parsing and malformed-input rejection.
+`avutil-packet` is the current focus for this slice. The concrete change is packet side-data payload parsing: `SideData` now exposes typed `AV_PKT_DATA_PARAM_CHANGE`, `AV_PKT_DATA_JP_DUALMONO`, `AV_PKT_DATA_SKIP_SAMPLES`, `AV_PKT_DATA_MPEGTS_STREAM_ID`, and `AV_PKT_DATA_FRAME_CROPPING` constructors/accessors with fixed-layout parsing and malformed-input rejection.
 
 This slice does not mark packet handling complete. The broader goal remains blocked on missing pinned-oracle snapshots, upstream FATE media mappings/samples, actual local fuzz execution, and many incomplete FFmpeg surfaces.
 
@@ -2710,4 +2718,4 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added a typed packet side-data payload parser for parameter changes. `PacketParamChange` models the pinned `AV_PKT_DATA_PARAM_CHANGE` layout with a little-endian flags field followed by optional signed sample-rate and width/height fields, rejects malformed lengths, trailing bytes, and unknown flags, and `SideData` can construct and defer-parse the payload only when the side-data kind matches. Focused packet unit tests cover no-change, sample-rate-only, dimensions-only, combined signed-boundary payloads, non-matching kind behavior, truncation, trailing-byte rejection, and unknown-flag rejection; `avutil_core_models` now build-checks the same invariants. Validation passed with `cargo fmt --all`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil packet`, `cargo clippy -p avutil --all-targets -- -D warnings`, `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`, `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`, `cargo fmt --all -- --check`, `git diff --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed --dry-run`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`, and `$env:CARGO_TARGET_DIR='target-codex'; .\target\debug\xtask.exe quick`.
+Latest slice: added typed packet side-data payload parsers for JP dual mono and MPEG-TS stream ID. `PacketJpDualMono` models the pinned `AV_PKT_DATA_JP_DUALMONO` one-byte selected-channel layout with validation for the documented 0/1/2 values, `PacketMpegTsStreamId` models the pinned one-byte `AV_PKT_DATA_MPEGTS_STREAM_ID` `uint8_t` payload, and `SideData` can construct and defer-parse both payloads only when the side-data kind matches. Focused packet unit tests cover all documented JP channel selections, invalid JP values, stream-id boundary values, non-matching kind behavior, and malformed lengths; `avutil_core_models` now build-checks the same invariants. Validation passed with `cargo fmt --all`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil packet`, `cargo clippy -p avutil --all-targets -- -D warnings`, `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`, `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`, `cargo fmt --all -- --check`, `git diff --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed --dry-run`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`, and `$env:CARGO_TARGET_DIR='target-codex'; .\target\debug\xtask.exe quick`.
