@@ -7683,7 +7683,7 @@ impl<'a> FrameExif<'a> {
         if let Some(exif_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Exif) {
             let ifd = exif_ifd.ifd();
             tags.exif_version =
-                Self::optional_undefined_array_tag(ifd, Self::TAG_EXIF_VERSION, "ExifVersion")?;
+                Self::optional_exif_version_tag(ifd, Self::TAG_EXIF_VERSION, "ExifVersion")?;
             tags.date_time_original =
                 Self::optional_datetime_tag(ifd, Self::TAG_DATE_TIME_ORIGINAL, "DateTimeOriginal")?;
             tags.date_time_digitized = Self::optional_datetime_tag(
@@ -7703,11 +7703,7 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_OFFSET_TIME_DIGITIZED,
                 "OffsetTimeDigitized",
             )?;
-            tags.components_configuration = Self::optional_undefined_array_tag(
-                ifd,
-                Self::TAG_COMPONENTS_CONFIGURATION,
-                "ComponentsConfiguration",
-            )?;
+            tags.components_configuration = Self::optional_components_configuration_tag(ifd)?;
             tags.compressed_bits_per_pixel = Self::optional_rational_tag(
                 ifd,
                 Self::TAG_COMPRESSED_BITS_PER_PIXEL,
@@ -7793,7 +7789,7 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_SUB_SEC_TIME_DIGITIZED,
                 "SubSecTimeDigitized",
             )?;
-            tags.flashpix_version = Self::optional_undefined_array_tag(
+            tags.flashpix_version = Self::optional_exif_version_tag(
                 ifd,
                 Self::TAG_FLASHPIX_VERSION,
                 "FlashpixVersion",
@@ -8563,6 +8559,43 @@ impl<'a> FrameExif<'a> {
         let mut array = [0; N];
         array.copy_from_slice(values);
         Ok(Some(array))
+    }
+
+    fn optional_exif_version_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<[u8; 4]>> {
+        let Some(value) = Self::optional_undefined_array_tag::<4>(ifd, tag, label)? else {
+            return Ok(None);
+        };
+        if !value.iter().all(u8::is_ascii_digit) {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "must contain four ASCII digit bytes",
+            ));
+        }
+        Ok(Some(value))
+    }
+
+    fn optional_components_configuration_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<[u8; 4]>> {
+        let Some(value) = Self::optional_undefined_array_tag::<4>(
+            ifd,
+            Self::TAG_COMPONENTS_CONFIGURATION,
+            "ComponentsConfiguration",
+        )?
+        else {
+            return Ok(None);
+        };
+        if let Some(component) = value.iter().find(|&&component| component > 6) {
+            return Err(Self::semantic_tag_error(
+                "ComponentsConfiguration",
+                Self::TAG_COMPONENTS_CONFIGURATION,
+                format!("component identifiers must be in 0..=6, got {component}"),
+            ));
+        }
+        Ok(Some(value))
     }
 
     fn optional_gps_latitude_ref_tag(
@@ -18942,10 +18975,43 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut bad_exif_version_count = exif_common_tags_fixture();
+        bad_exif_version_count[150..154].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_exif_version_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_exif_version_digit = exif_common_tags_fixture();
+        bad_exif_version_digit[154] = b'v';
+        assert_eq!(
+            FrameExif::parse(&bad_exif_version_digit)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_original_count = exif_common_tags_fixture();
         bad_original_count[162..166].copy_from_slice(&19u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_original_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_gps_version_count = exif_common_tags_fixture();
+        bad_gps_version_count[230..234].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_gps_version_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
@@ -19994,6 +20060,17 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut bad_components_value = exif_version_timing_comment_fixture();
+        bad_components_value[36] = 7;
+        assert_eq!(
+            FrameExif::parse(&bad_components_value)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_maker_note_type = exif_version_timing_comment_fixture();
         bad_maker_note_type[42..44].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
         assert_eq!(
@@ -20009,6 +20086,28 @@ mod tests {
         bad_sub_sec_time[75] = b'!';
         assert_eq!(
             FrameExif::parse(&bad_sub_sec_time)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_flashpix_count = exif_version_timing_comment_fixture();
+        bad_flashpix_count[104..108].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_flashpix_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_flashpix_digit = exif_version_timing_comment_fixture();
+        bad_flashpix_digit[108] = b'v';
+        assert_eq!(
+            FrameExif::parse(&bad_flashpix_digit)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

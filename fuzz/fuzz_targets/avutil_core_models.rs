@@ -3879,6 +3879,26 @@ fn exercise_fixtures() {
         Some(FrameExifResolutionUnit::Inch)
     );
     assert_eq!(common_tags.exif_version(), Some(*b"0231"));
+    let mut bad_exif_version_count = exif_common_tags_fixture();
+    bad_exif_version_count[150..154].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_exif_version_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_exif_version_digit = exif_common_tags_fixture();
+    bad_exif_version_digit[154] = b'v';
+    assert_eq!(
+        FrameExif::parse(&bad_exif_version_digit)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         common_tags.date_time_original(),
         Some("2026:05:04 12:34:56")
@@ -3894,6 +3914,16 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
     assert_eq!(common_tags.gps_version_id(), Some([2, 3, 0, 0]));
+    let mut bad_gps_version_count = exif_common_tags_fixture();
+    bad_gps_version_count[230..234].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_gps_version_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         common_tags.gps_latitude_ref(),
         Some(FrameExifGpsLatitudeRef::North)
@@ -4311,6 +4341,16 @@ fn exercise_fixtures() {
     let timing_exif = FrameExif::parse(&timing_exif_bytes).unwrap();
     let timing_tags = timing_exif.common_tags().unwrap();
     assert_eq!(timing_tags.components_configuration(), Some([1, 2, 3, 0]));
+    let mut bad_components_value = exif_version_timing_comment_fixture();
+    bad_components_value[36] = 7;
+    assert_eq!(
+        FrameExif::parse(&bad_components_value)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(timing_tags.maker_note(), Some(&b"maker!"[..]));
     assert_eq!(
         timing_tags.user_comment(),
@@ -4320,6 +4360,26 @@ fn exercise_fixtures() {
     assert_eq!(timing_tags.sub_sec_time_original(), Some("4567"));
     assert_eq!(timing_tags.sub_sec_time_digitized(), Some("89"));
     assert_eq!(timing_tags.flashpix_version(), Some(*b"0100"));
+    let mut bad_flashpix_count = exif_version_timing_comment_fixture();
+    bad_flashpix_count[104..108].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_flashpix_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_flashpix_digit = exif_version_timing_comment_fixture();
+    bad_flashpix_digit[108] = b'v';
+    assert_eq!(
+        FrameExif::parse(&bad_flashpix_digit)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(timing_tags.related_sound_file(), Some("SOUND001.WAV"));
 
     let camera_lens_exif_bytes = exif_camera_lens_fixture();
