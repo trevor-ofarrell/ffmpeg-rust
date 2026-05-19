@@ -5687,6 +5687,34 @@ impl FrameExifPhotometricInterpretation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifThresholding {
+    NoDitheringOrHalftoning,
+    OrderedDitherOrHalftone,
+    RandomizedProcess,
+}
+
+impl FrameExifThresholding {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            1 => Ok(Self::NoDitheringOrHalftoning),
+            2 => Ok(Self::OrderedDitherOrHalftone),
+            3 => Ok(Self::RandomizedProcess),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF thresholding value {raw} is outside the defined 1..=3 range"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::NoDitheringOrHalftoning => 1,
+            Self::OrderedDitherOrHalftone => 2,
+            Self::RandomizedProcess => 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifFillOrder {
     MostSignificantBitFirst,
     LeastSignificantBitFirst,
@@ -6667,6 +6695,7 @@ pub struct FrameExifCommonTags<'a> {
     image_length: Option<u32>,
     compression: Option<FrameExifCompression>,
     photometric_interpretation: Option<FrameExifPhotometricInterpretation>,
+    thresholding: Option<FrameExifThresholding>,
     fill_order: Option<FrameExifFillOrder>,
     samples_per_pixel: Option<u16>,
     rows_per_strip: Option<u32>,
@@ -6833,6 +6862,10 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn photometric_interpretation(&self) -> Option<FrameExifPhotometricInterpretation> {
         self.photometric_interpretation
+    }
+
+    pub const fn thresholding(&self) -> Option<FrameExifThresholding> {
+        self.thresholding
     }
 
     pub const fn fill_order(&self) -> Option<FrameExifFillOrder> {
@@ -7755,6 +7788,7 @@ impl<'a> FrameExif<'a> {
     pub const TAG_IMAGE_LENGTH: u16 = 0x0101;
     pub const TAG_COMPRESSION: u16 = 0x0103;
     pub const TAG_PHOTOMETRIC_INTERPRETATION: u16 = 0x0106;
+    pub const TAG_THRESHOLDING: u16 = 0x0107;
     pub const TAG_FILL_ORDER: u16 = 0x010A;
     pub const TAG_IMAGE_DESCRIPTION: u16 = 0x010E;
     pub const TAG_MAKE: u16 = 0x010F;
@@ -7984,6 +8018,7 @@ impl<'a> FrameExif<'a> {
             )?;
             tags.compression = Self::optional_compression_tag(root)?;
             tags.photometric_interpretation = Self::optional_photometric_interpretation_tag(root)?;
+            tags.thresholding = Self::optional_thresholding_tag(root)?;
             tags.fill_order = Self::optional_fill_order_tag(root)?;
             tags.samples_per_pixel = Self::optional_positive_short_tag(
                 root,
@@ -8762,6 +8797,16 @@ impl<'a> FrameExif<'a> {
             return Ok(None);
         };
         Ok(Some(FrameExifPhotometricInterpretation::from_raw(raw)))
+    }
+
+    fn optional_thresholding_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifThresholding>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_THRESHOLDING, "Thresholding")?
+        else {
+            return Ok(None);
+        };
+        FrameExifThresholding::from_raw(raw).map(Some)
     }
 
     fn optional_fill_order_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifFillOrder>> {
@@ -13447,6 +13492,25 @@ mod tests {
         data.extend_from_slice(&0u32.to_le_bytes());
 
         assert_eq!(data.len(), 38);
+        data
+    }
+
+    fn exif_root_thresholding_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_THRESHOLDING,
+            FrameExifTiffType::Short,
+            1,
+            [3, 0, 0, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        assert_eq!(data.len(), 26);
         data
     }
 
@@ -21363,6 +21427,55 @@ mod tests {
         bad_photometric_count[26..30].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_photometric_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_thresholding_tags() {
+        let exif_bytes = exif_root_thresholding_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.thresholding(),
+            Some(FrameExifThresholding::RandomizedProcess)
+        );
+        assert_eq!(
+            common.thresholding().map(FrameExifThresholding::raw),
+            Some(3)
+        );
+
+        let mut bad_type = exif_root_thresholding_fixture();
+        bad_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_count = exif_root_thresholding_fixture();
+        bad_count[14..18].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_value = exif_root_thresholding_fixture();
+        bad_value[18..20].copy_from_slice(&4u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_value)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

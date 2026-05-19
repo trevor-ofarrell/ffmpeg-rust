@@ -1916,6 +1916,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.compression() {
                         assert_ne!(value.raw(), 0);
                     }
+                    if let Some(value) = common.thresholding() {
+                        assert!((1..=3).contains(&value.raw()));
+                    }
                     if let Some(value) = common.fill_order() {
                         assert!((1..=2).contains(&value.raw()));
                     }
@@ -4174,6 +4177,20 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let thresholding_exif_bytes = exif_root_thresholding_fixture();
+    let thresholding_exif = FrameExif::parse(&thresholding_exif_bytes).unwrap();
+    let thresholding_tags = thresholding_exif.common_tags().unwrap();
+    assert_eq!(thresholding_tags.thresholding().unwrap().raw(), 3);
+    let mut bad_thresholding_value = exif_root_thresholding_fixture();
+    bad_thresholding_value[18..20].copy_from_slice(&4u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_thresholding_value)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let fill_order_exif_bytes = exif_root_fill_order_fixture();
     let fill_order_exif = FrameExif::parse(&fill_order_exif_bytes).unwrap();
     let fill_order_tags = fill_order_exif.common_tags().unwrap();
@@ -6331,6 +6348,22 @@ fn exif_root_coding_fixture() -> Vec<u8> {
         FrameExifTiffType::Short,
         1,
         [2, 0, 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data
+}
+
+fn exif_root_thresholding_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_THRESHOLDING,
+        FrameExifTiffType::Short,
+        1,
+        [3, 0, 0, 0],
     );
     data.extend_from_slice(&0u32.to_le_bytes());
     data
