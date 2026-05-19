@@ -5941,6 +5941,16 @@ fn exercise_fixtures() {
     let timing_exif = FrameExif::parse(&timing_exif_bytes).unwrap();
     let timing_tags = timing_exif.common_tags().unwrap();
     assert_eq!(timing_tags.components_configuration(), Some([1, 2, 3, 0]));
+    let mut bad_components_count = exif_version_timing_comment_fixture();
+    bad_components_count[32..36].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_components_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_components_value = exif_version_timing_comment_fixture();
     bad_components_value[36] = 7;
     assert_eq!(
@@ -5952,6 +5962,16 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
     assert_eq!(timing_tags.maker_note(), Some(&b"maker!"[..]));
+    let mut bad_maker_note_type = exif_version_timing_comment_fixture();
+    bad_maker_note_type[42..44].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_maker_note_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         timing_tags.user_comment(),
         Some(&b"ASCII\0\0\0hello\0\0\0"[..])
@@ -5959,6 +5979,16 @@ fn exercise_fixtures() {
     assert_eq!(timing_tags.sub_sec_time(), Some("123"));
     assert_eq!(timing_tags.sub_sec_time_original(), Some("4567"));
     assert_eq!(timing_tags.sub_sec_time_digitized(), Some("89"));
+    let mut bad_sub_sec_time = exif_version_timing_comment_fixture();
+    bad_sub_sec_time[75] = b'!';
+    assert_eq!(
+        FrameExif::parse(&bad_sub_sec_time)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_sub_sec_digit = exif_version_timing_comment_fixture();
     bad_sub_sec_digit[72] = b'a';
     assert_eq!(
@@ -6011,6 +6041,17 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
     assert_eq!(timing_tags.related_sound_file(), Some("SOUND001.WAV"));
+    let mut bad_related_sound_count = exif_version_timing_comment_fixture();
+    bad_related_sound_count[116..120].copy_from_slice(&12u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_related_sound_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(timing_tags.pixel_x_dimension(), Some(640));
 
     let camera_lens_exif_bytes = exif_camera_lens_fixture();
     let camera_lens_exif = FrameExif::parse(&camera_lens_exif_bytes).unwrap();

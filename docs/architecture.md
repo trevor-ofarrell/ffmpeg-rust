@@ -82,7 +82,7 @@ Rendering/scene common-tag fuzz coverage now includes ColorSpace, FileSource, Sc
 
 Optics/subject common-tag fuzz coverage now includes rectangle, point, and circle SubjectArea shapes plus SubjectArea type/count, SubjectLocation count, and ExposureIndex denominator rejection while preserving CompressedBitsPerPixel, MaxApertureValue, SubjectDistance, and ExposureIndex rational fields.
 
-SubSecTime, SubSecTimeOriginal, and SubSecTimeDigitized common-tag validation rejects non-digit fractional-second strings while preserving the original ASCII values.
+Version/timing/comment common-tag fuzz coverage now includes ComponentsConfiguration count/value rejection, MakerNote UNDEFINED type rejection, SubSecTime terminator and digit rejection for SubSecTime/SubSecTimeOriginal/SubSecTimeDigitized, FlashpixVersion count/digit rejection, RelatedSoundFile count rejection, and valid RelatedSoundFile plus PixelXDimension preservation while keeping the original ASCII and UNDEFINED payload values.
 
 ImageWidth, ImageLength, PixelXDimension, and PixelYDimension common-tag validation rejects zero values after the existing SHORT/LONG type and count checks.
 
