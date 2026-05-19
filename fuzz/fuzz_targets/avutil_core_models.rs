@@ -34,11 +34,11 @@ use avutil::{
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketActiveFormatDescription, PacketFallbackTrack, PacketFlags, PacketFrameCropping,
     PacketJpDualMono, PacketJpDualMonoSelection, PacketMatroskaBlockAdditional,
-    PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketQualityStats,
-    PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason,
-    PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat, Rational,
-    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
-    VideoFrame,
+    PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
+    PacketQualityStats, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
+    PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings,
+    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256,
+    Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3343,6 +3343,34 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_fallback_track_payload_invalid(&typed_payload));
         }
     }
+    match typed_payload_side_data.producer_reference_time() {
+        Ok(Some(value)) => {
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::ProducerReferenceTime
+            );
+            assert_eq!(typed_payload.len(), PacketProducerReferenceTime::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketProducerReferenceTime::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(
+            typed_payload_kind,
+            PacketSideDataKind::ProducerReferenceTime
+        ),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::ProducerReferenceTime
+            );
+            assert!(packet_producer_reference_time_payload_invalid(
+                &typed_payload
+            ));
+        }
+    }
     match typed_payload_side_data.skip_samples() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::SkipSamples);
@@ -4117,6 +4145,52 @@ fn exercise_fixtures() {
         )
         .unwrap()
         .fallback_track()
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_prft = PacketProducerReferenceTime::new(1_701_234_567_890_123, 24);
+    let packet_prft_bytes = packet_prft.to_bytes();
+    assert_eq!(
+        PacketProducerReferenceTime::parse(&packet_prft_bytes).unwrap(),
+        packet_prft
+    );
+    assert_eq!(packet_prft.wallclock(), 1_701_234_567_890_123);
+    assert_eq!(packet_prft.flags(), 24);
+    assert_eq!(
+        packet_prft.padding(),
+        [0; PacketProducerReferenceTime::PADDING_LEN]
+    );
+    assert_eq!(
+        SideData::new_producer_reference_time(packet_prft)
+            .unwrap()
+            .producer_reference_time()
+            .unwrap(),
+        Some(packet_prft)
+    );
+    let mut packet_prft_with_padding = [0; PacketProducerReferenceTime::DATA_LEN];
+    packet_prft_with_padding[..8].copy_from_slice(&i64::MIN.to_ne_bytes());
+    packet_prft_with_padding[8..12].copy_from_slice(&i32::MIN.to_ne_bytes());
+    packet_prft_with_padding[12..].copy_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
+    let packet_prft_parsed =
+        PacketProducerReferenceTime::parse(&packet_prft_with_padding).unwrap();
+    assert_eq!(packet_prft_parsed.wallclock(), i64::MIN);
+    assert_eq!(packet_prft_parsed.flags(), i32::MIN);
+    assert_eq!(packet_prft_parsed.padding(), [0xaa, 0xbb, 0xcc, 0xdd]);
+    assert_eq!(packet_prft_parsed.to_bytes(), packet_prft_with_padding);
+    assert_eq!(
+        PacketProducerReferenceTime::parse(&[0; PacketProducerReferenceTime::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        SideData::new_with_kind(
+            PacketSideDataKind::ProducerReferenceTime,
+            vec![0; PacketProducerReferenceTime::DATA_LEN - 1]
+        )
+        .unwrap()
+        .producer_reference_time()
         .unwrap_err()
         .kind(),
         AvErrorKind::InvalidData
@@ -9879,6 +9953,10 @@ fn packet_fallback_track_payload_invalid(data: &[u8]) -> bool {
     let mut bytes = [0; PacketFallbackTrack::DATA_LEN];
     bytes.copy_from_slice(data);
     i32::from_ne_bytes(bytes) < 0
+}
+
+fn packet_producer_reference_time_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketProducerReferenceTime::DATA_LEN
 }
 
 fn packet_active_format_description_payload_invalid(data: &[u8]) -> bool {

@@ -539,6 +539,64 @@ impl PacketFallbackTrack {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketProducerReferenceTime {
+    wallclock: i64,
+    flags: i32,
+    padding: [u8; Self::PADDING_LEN],
+}
+
+impl PacketProducerReferenceTime {
+    pub const DATA_LEN: usize = 16;
+    pub const PADDING_LEN: usize = 4;
+
+    pub const fn new(wallclock: i64, flags: i32) -> Self {
+        Self {
+            wallclock,
+            flags,
+            padding: [0; Self::PADDING_LEN],
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "producer reference time packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut padding = [0; Self::PADDING_LEN];
+        padding.copy_from_slice(&data[12..Self::DATA_LEN]);
+        Ok(Self {
+            wallclock: read_i64_ne(data, 0),
+            flags: read_i32_ne(data, 8),
+            padding,
+        })
+    }
+
+    pub const fn wallclock(self) -> i64 {
+        self.wallclock
+    }
+
+    pub const fn flags(self) -> i32 {
+        self.flags
+    }
+
+    pub const fn padding(self) -> [u8; Self::PADDING_LEN] {
+        self.padding
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[..8].copy_from_slice(&self.wallclock.to_ne_bytes());
+        bytes[8..12].copy_from_slice(&self.flags.to_ne_bytes());
+        bytes[12..Self::DATA_LEN].copy_from_slice(&self.padding);
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PacketSkipSamplesReason {
     PaddingSilence = 0,
@@ -1247,6 +1305,13 @@ impl SideData {
         Self::new_with_kind(PacketSideDataKind::FallbackTrack, value.to_bytes().to_vec())
     }
 
+    pub fn new_producer_reference_time(value: PacketProducerReferenceTime) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::ProducerReferenceTime,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_skip_samples(value: PacketSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -1352,6 +1417,14 @@ impl SideData {
         }
 
         PacketFallbackTrack::parse(self.data()).map(Some)
+    }
+
+    pub fn producer_reference_time(&self) -> AvResult<Option<PacketProducerReferenceTime>> {
+        if self.kind != PacketSideDataKind::ProducerReferenceTime {
+            return Ok(None);
+        }
+
+        PacketProducerReferenceTime::parse(self.data()).map(Some)
     }
 
     pub fn skip_samples(&self) -> AvResult<Option<PacketSkipSamples>> {
@@ -1787,6 +1860,12 @@ fn read_i32_le(data: &[u8], offset: usize) -> i32 {
     let mut bytes = [0; 4];
     bytes.copy_from_slice(&data[offset..offset + 4]);
     i32::from_le_bytes(bytes)
+}
+
+fn read_i64_ne(data: &[u8], offset: usize) -> i64 {
+    let mut bytes = [0; 8];
+    bytes.copy_from_slice(&data[offset..offset + 8]);
+    i64::from_ne_bytes(bytes)
 }
 
 fn read_i32_ne(data: &[u8], offset: usize) -> i32 {
@@ -2252,6 +2331,75 @@ mod tests {
         .unwrap();
         assert_eq!(
             side_data.fallback_track().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_producer_reference_time_payload() {
+        let expected = PacketProducerReferenceTime::new(1_701_234_567_890_123, 24);
+        let mut expected_bytes = [0; PacketProducerReferenceTime::DATA_LEN];
+        expected_bytes[..8].copy_from_slice(&1_701_234_567_890_123_i64.to_ne_bytes());
+        expected_bytes[8..12].copy_from_slice(&24_i32.to_ne_bytes());
+
+        assert_eq!(expected.wallclock(), 1_701_234_567_890_123);
+        assert_eq!(expected.flags(), 24);
+        assert_eq!(
+            expected.padding(),
+            [0; PacketProducerReferenceTime::PADDING_LEN]
+        );
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketProducerReferenceTime::parse(&expected_bytes).unwrap(),
+            expected
+        );
+
+        let mut padded_bytes = [0; PacketProducerReferenceTime::DATA_LEN];
+        padded_bytes[..8].copy_from_slice(&i64::MIN.to_ne_bytes());
+        padded_bytes[8..12].copy_from_slice(&i32::MIN.to_ne_bytes());
+        padded_bytes[12..].copy_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
+        let padded = PacketProducerReferenceTime::parse(&padded_bytes).unwrap();
+        assert_eq!(padded.wallclock(), i64::MIN);
+        assert_eq!(padded.flags(), i32::MIN);
+        assert_eq!(padded.padding(), [0xaa, 0xbb, 0xcc, 0xdd]);
+        assert_eq!(padded.to_bytes(), padded_bytes);
+
+        let side_data = SideData::new_producer_reference_time(expected).unwrap();
+        assert_eq!(
+            side_data.kind_id(),
+            &PacketSideDataKind::ProducerReferenceTime
+        );
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(side_data.producer_reference_time().unwrap(), Some(expected));
+
+        let quality_stats =
+            SideData::new_with_kind(PacketSideDataKind::QualityStats, expected_bytes.to_vec())
+                .unwrap();
+        assert_eq!(quality_stats.producer_reference_time().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_producer_reference_time_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; PacketProducerReferenceTime::DATA_LEN - 1],
+            vec![0; PacketProducerReferenceTime::DATA_LEN + 1],
+        ] {
+            assert_eq!(
+                PacketProducerReferenceTime::parse(&data)
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let side_data = SideData::new_with_kind(
+            PacketSideDataKind::ProducerReferenceTime,
+            vec![0; PacketProducerReferenceTime::DATA_LEN - 1],
+        )
+        .unwrap();
+        assert_eq!(
+            side_data.producer_reference_time().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
     }
