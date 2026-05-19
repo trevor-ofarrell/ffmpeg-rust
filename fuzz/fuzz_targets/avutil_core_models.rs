@@ -1936,6 +1936,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.host_computer() {
                         assert!(value.is_ascii());
                     }
+                    if let Some(value) = common.predictor() {
+                        assert_ne!(value.raw(), 0);
+                    }
                     if let Some(value) = common.compression() {
                         assert_ne!(value.raw(), 0);
                     }
@@ -4285,6 +4288,40 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let predictor_exif_bytes = exif_root_predictor_fixture();
+    let predictor_exif = FrameExif::parse(&predictor_exif_bytes).unwrap();
+    let predictor_tags = predictor_exif.common_tags().unwrap();
+    assert_eq!(predictor_tags.predictor().unwrap().raw(), 2);
+    let mut bad_predictor_type = exif_root_predictor_fixture();
+    bad_predictor_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_predictor_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_predictor_count = exif_root_predictor_fixture();
+    bad_predictor_count[14..18].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_predictor_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_predictor_zero = exif_root_predictor_fixture();
+    bad_predictor_zero[18..20].copy_from_slice(&0u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_predictor_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let coding_exif_bytes = exif_root_coding_fixture();
     let coding_exif = FrameExif::parse(&coding_exif_bytes).unwrap();
     let coding_tags = coding_exif.common_tags().unwrap();
@@ -6552,6 +6589,22 @@ fn exif_root_host_computer_fixture() -> Vec<u8> {
         FrameExifTiffType::Ascii,
         3,
         [b'P', b'C', 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data
+}
+
+fn exif_root_predictor_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_PREDICTOR,
+        FrameExifTiffType::Short,
+        1,
+        [2, 0, 0, 0],
     );
     data.extend_from_slice(&0u32.to_le_bytes());
     data

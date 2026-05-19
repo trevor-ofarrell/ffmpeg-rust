@@ -5687,6 +5687,26 @@ impl FrameExifPhotometricInterpretation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameExifPredictor {
+    raw: u16,
+}
+
+impl FrameExifPredictor {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        if raw == 0 {
+            return Err(AvError::invalid_data(
+                "EXIF predictor value must be non-zero",
+            ));
+        }
+        Ok(Self { raw })
+    }
+
+    pub const fn raw(self) -> u16 {
+        self.raw
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifThresholding {
     NoDitheringOrHalftoning,
     OrderedDitherOrHalftone,
@@ -6811,6 +6831,7 @@ pub struct FrameExifCommonTags<'a> {
     date_time: Option<&'a str>,
     artist: Option<&'a str>,
     host_computer: Option<&'a str>,
+    predictor: Option<FrameExifPredictor>,
     copyright: Option<&'a str>,
     exif_version: Option<[u8; 4]>,
     date_time_original: Option<&'a str>,
@@ -7066,6 +7087,10 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn host_computer(&self) -> Option<&'a str> {
         self.host_computer
+    }
+
+    pub const fn predictor(&self) -> Option<FrameExifPredictor> {
+        self.predictor
     }
 
     pub const fn copyright(&self) -> Option<&'a str> {
@@ -7936,6 +7961,7 @@ impl<'a> FrameExif<'a> {
     pub const TAG_DATE_TIME: u16 = 0x0132;
     pub const TAG_ARTIST: u16 = 0x013B;
     pub const TAG_HOST_COMPUTER: u16 = 0x013C;
+    pub const TAG_PREDICTOR: u16 = 0x013D;
     pub const TAG_WHITE_POINT: u16 = 0x013E;
     pub const TAG_PRIMARY_CHROMATICITIES: u16 = 0x013F;
     pub const TAG_YCBCR_COEFFICIENTS: u16 = 0x0211;
@@ -8203,6 +8229,7 @@ impl<'a> FrameExif<'a> {
             tags.artist = Self::optional_ascii_tag(root, Self::TAG_ARTIST, "Artist")?;
             tags.host_computer =
                 Self::optional_ascii_tag(root, Self::TAG_HOST_COMPUTER, "HostComputer")?;
+            tags.predictor = Self::optional_predictor_tag(root)?;
             tags.copyright = Self::optional_ascii_tag(root, Self::TAG_COPYRIGHT, "Copyright")?;
         }
 
@@ -8943,6 +8970,13 @@ impl<'a> FrameExif<'a> {
             return Ok(None);
         };
         FrameExifCompression::from_raw(raw).map(Some)
+    }
+
+    fn optional_predictor_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifPredictor>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_PREDICTOR, "Predictor")? else {
+            return Ok(None);
+        };
+        FrameExifPredictor::from_raw(raw).map(Some)
     }
 
     fn optional_photometric_interpretation_tag(
@@ -13746,6 +13780,25 @@ mod tests {
             FrameExifTiffType::Ascii,
             3,
             [b'P', b'C', 0, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        assert_eq!(data.len(), 26);
+        data
+    }
+
+    fn exif_root_predictor_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_PREDICTOR,
+            FrameExifTiffType::Short,
+            1,
+            [2, 0, 0, 0],
         );
         data.extend_from_slice(&0u32.to_le_bytes());
 
@@ -21833,6 +21886,48 @@ mod tests {
         bad_multiple_strings[18..22].copy_from_slice(&[b'P', 0, b'C', 0]);
         assert_eq!(
             FrameExif::parse(&bad_multiple_strings)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_predictor_tag() {
+        let exif_bytes = exif_root_predictor_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.predictor().map(FrameExifPredictor::raw), Some(2));
+
+        let mut bad_type = exif_root_predictor_fixture();
+        bad_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_count = exif_root_predictor_fixture();
+        bad_count[14..18].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_zero = exif_root_predictor_fixture();
+        bad_zero[18..20].copy_from_slice(&0u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_zero)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
