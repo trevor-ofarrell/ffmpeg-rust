@@ -13786,6 +13786,37 @@ mod tests {
         data
     }
 
+    fn exif_root_resolution_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&2u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_X_RESOLUTION,
+            FrameExifTiffType::Rational,
+            1,
+            38u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_Y_RESOLUTION,
+            FrameExifTiffType::Rational,
+            1,
+            46u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        data.extend_from_slice(&300u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&72u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+
+        assert_eq!(data.len(), 54);
+        data
+    }
+
     fn exif_root_document_page_fixture() -> Vec<u8> {
         let mut data = Vec::new();
         data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
@@ -21960,6 +21991,83 @@ mod tests {
         bad_resolution_value[30..32].copy_from_slice(&4u16.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_resolution_value)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_resolution_tags() {
+        let exif_bytes = exif_root_resolution_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.x_resolution(),
+            Some(FrameExifRational {
+                numerator: 300,
+                denominator: 1,
+            })
+        );
+        assert_eq!(
+            common.y_resolution(),
+            Some(FrameExifRational {
+                numerator: 72,
+                denominator: 1,
+            })
+        );
+
+        let mut bad_x_type = exif_root_resolution_fixture();
+        bad_x_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_x_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_x_count = exif_root_resolution_fixture();
+        bad_x_count[14..18].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_x_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_x_denominator = exif_root_resolution_fixture();
+        bad_x_denominator[42..46].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_x_denominator)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_y_count = exif_root_resolution_fixture();
+        bad_y_count[26..30].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_y_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_y_denominator = exif_root_resolution_fixture();
+        bad_y_denominator[50..54].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_y_denominator)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

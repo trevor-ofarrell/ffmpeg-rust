@@ -1957,6 +1957,12 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.resolution_unit() {
                         assert!((1..=3).contains(&value.raw()));
                     }
+                    if let Some(value) = common.x_resolution() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.y_resolution() {
+                        assert_ne!(value.denominator(), 0);
+                    }
                     if let Some(value) = common.predictor() {
                         assert_ne!(value.raw(), 0);
                     }
@@ -4322,6 +4328,63 @@ fn exercise_fixtures() {
     bad_resolution_value[30..32].copy_from_slice(&4u16.to_le_bytes());
     assert_eq!(
         FrameExif::parse(&bad_resolution_value)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let resolution_exif_bytes = exif_root_resolution_fixture();
+    let resolution_exif = FrameExif::parse(&resolution_exif_bytes).unwrap();
+    let resolution_tags = resolution_exif.common_tags().unwrap();
+    assert_eq!(resolution_tags.x_resolution().unwrap().numerator(), 300);
+    assert_eq!(resolution_tags.x_resolution().unwrap().denominator(), 1);
+    assert_eq!(resolution_tags.y_resolution().unwrap().numerator(), 72);
+    assert_eq!(resolution_tags.y_resolution().unwrap().denominator(), 1);
+    let mut bad_x_resolution_type = exif_root_resolution_fixture();
+    bad_x_resolution_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_x_resolution_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_x_resolution_count = exif_root_resolution_fixture();
+    bad_x_resolution_count[14..18].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_x_resolution_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_x_resolution_denominator = exif_root_resolution_fixture();
+    bad_x_resolution_denominator[42..46].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_x_resolution_denominator)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_y_resolution_count = exif_root_resolution_fixture();
+    bad_y_resolution_count[26..30].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_y_resolution_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_y_resolution_denominator = exif_root_resolution_fixture();
+    bad_y_resolution_denominator[50..54].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_y_resolution_denominator)
             .unwrap()
             .common_tags()
             .unwrap_err()
@@ -6766,6 +6829,33 @@ fn exif_root_orientation_resolution_fixture() -> Vec<u8> {
         [2, 0, 0, 0],
     );
     data.extend_from_slice(&0u32.to_le_bytes());
+    data
+}
+
+fn exif_root_resolution_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&2u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_X_RESOLUTION,
+        FrameExifTiffType::Rational,
+        1,
+        38u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_Y_RESOLUTION,
+        FrameExifTiffType::Rational,
+        1,
+        46u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(&300u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+    data.extend_from_slice(&72u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
     data
 }
 
