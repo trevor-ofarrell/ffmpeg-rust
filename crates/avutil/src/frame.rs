@@ -5768,6 +5768,23 @@ impl FrameExifGpsSpeedRef {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifGpsDistanceRef {
+    Kilometers,
+    Miles,
+    NauticalMiles,
+}
+
+impl FrameExifGpsDistanceRef {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Kilometers => "K",
+            Self::Miles => "M",
+            Self::NauticalMiles => "N",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifGpsDirectionRef {
     TrueDirection,
     MagneticDirection,
@@ -5822,6 +5839,14 @@ pub struct FrameExifCommonTags<'a> {
     gps_img_direction_ref: Option<FrameExifGpsDirectionRef>,
     gps_img_direction: Option<FrameExifRational>,
     gps_map_datum: Option<&'a str>,
+    gps_dest_latitude_ref: Option<FrameExifGpsLatitudeRef>,
+    gps_dest_latitude: Option<[FrameExifRational; 3]>,
+    gps_dest_longitude_ref: Option<FrameExifGpsLongitudeRef>,
+    gps_dest_longitude: Option<[FrameExifRational; 3]>,
+    gps_dest_bearing_ref: Option<FrameExifGpsDirectionRef>,
+    gps_dest_bearing: Option<FrameExifRational>,
+    gps_dest_distance_ref: Option<FrameExifGpsDistanceRef>,
+    gps_dest_distance: Option<FrameExifRational>,
     interoperability_index: Option<&'a str>,
 }
 
@@ -5976,6 +6001,38 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn gps_map_datum(&self) -> Option<&'a str> {
         self.gps_map_datum
+    }
+
+    pub const fn gps_dest_latitude_ref(&self) -> Option<FrameExifGpsLatitudeRef> {
+        self.gps_dest_latitude_ref
+    }
+
+    pub const fn gps_dest_latitude(&self) -> Option<[FrameExifRational; 3]> {
+        self.gps_dest_latitude
+    }
+
+    pub const fn gps_dest_longitude_ref(&self) -> Option<FrameExifGpsLongitudeRef> {
+        self.gps_dest_longitude_ref
+    }
+
+    pub const fn gps_dest_longitude(&self) -> Option<[FrameExifRational; 3]> {
+        self.gps_dest_longitude
+    }
+
+    pub const fn gps_dest_bearing_ref(&self) -> Option<FrameExifGpsDirectionRef> {
+        self.gps_dest_bearing_ref
+    }
+
+    pub const fn gps_dest_bearing(&self) -> Option<FrameExifRational> {
+        self.gps_dest_bearing
+    }
+
+    pub const fn gps_dest_distance_ref(&self) -> Option<FrameExifGpsDistanceRef> {
+        self.gps_dest_distance_ref
+    }
+
+    pub const fn gps_dest_distance(&self) -> Option<FrameExifRational> {
+        self.gps_dest_distance
     }
 
     pub const fn interoperability_index(&self) -> Option<&'a str> {
@@ -6355,6 +6412,14 @@ impl<'a> FrameExif<'a> {
     pub const TAG_GPS_IMG_DIRECTION_REF: u16 = 0x0010;
     pub const TAG_GPS_IMG_DIRECTION: u16 = 0x0011;
     pub const TAG_GPS_MAP_DATUM: u16 = 0x0012;
+    pub const TAG_GPS_DEST_LATITUDE_REF: u16 = 0x0013;
+    pub const TAG_GPS_DEST_LATITUDE: u16 = 0x0014;
+    pub const TAG_GPS_DEST_LONGITUDE_REF: u16 = 0x0015;
+    pub const TAG_GPS_DEST_LONGITUDE: u16 = 0x0016;
+    pub const TAG_GPS_DEST_BEARING_REF: u16 = 0x0017;
+    pub const TAG_GPS_DEST_BEARING: u16 = 0x0018;
+    pub const TAG_GPS_DEST_DISTANCE_REF: u16 = 0x0019;
+    pub const TAG_GPS_DEST_DISTANCE: u16 = 0x001A;
     pub const TAG_GPS_DATE_STAMP: u16 = 0x001D;
     pub const TAG_INTEROPERABILITY_INDEX: u16 = 0x0001;
 
@@ -6484,10 +6549,18 @@ impl<'a> FrameExif<'a> {
             let ifd = gps_ifd.ifd();
             tags.gps_version_id =
                 Self::optional_byte_array_tag(ifd, Self::TAG_GPS_VERSION_ID, "GPSVersionID")?;
-            tags.gps_latitude_ref = Self::optional_gps_latitude_ref_tag(ifd)?;
+            tags.gps_latitude_ref = Self::optional_gps_latitude_ref_tag(
+                ifd,
+                Self::TAG_GPS_LATITUDE_REF,
+                "GPSLatitudeRef",
+            )?;
             tags.gps_latitude =
                 Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_LATITUDE, "GPSLatitude")?;
-            tags.gps_longitude_ref = Self::optional_gps_longitude_ref_tag(ifd)?;
+            tags.gps_longitude_ref = Self::optional_gps_longitude_ref_tag(
+                ifd,
+                Self::TAG_GPS_LONGITUDE_REF,
+                "GPSLongitudeRef",
+            )?;
             tags.gps_longitude =
                 Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_LONGITUDE, "GPSLongitude")?;
             tags.gps_altitude_ref = Self::optional_gps_altitude_ref_tag(ifd)?;
@@ -6509,6 +6582,36 @@ impl<'a> FrameExif<'a> {
                 Self::optional_rational_tag(ifd, Self::TAG_GPS_IMG_DIRECTION, "GPSImgDirection")?;
             tags.gps_map_datum =
                 Self::optional_ascii_tag(ifd, Self::TAG_GPS_MAP_DATUM, "GPSMapDatum")?;
+            tags.gps_dest_latitude_ref = Self::optional_gps_latitude_ref_tag(
+                ifd,
+                Self::TAG_GPS_DEST_LATITUDE_REF,
+                "GPSDestLatitudeRef",
+            )?;
+            tags.gps_dest_latitude = Self::optional_rational_array3_tag(
+                ifd,
+                Self::TAG_GPS_DEST_LATITUDE,
+                "GPSDestLatitude",
+            )?;
+            tags.gps_dest_longitude_ref = Self::optional_gps_longitude_ref_tag(
+                ifd,
+                Self::TAG_GPS_DEST_LONGITUDE_REF,
+                "GPSDestLongitudeRef",
+            )?;
+            tags.gps_dest_longitude = Self::optional_rational_array3_tag(
+                ifd,
+                Self::TAG_GPS_DEST_LONGITUDE,
+                "GPSDestLongitude",
+            )?;
+            tags.gps_dest_bearing_ref = Self::optional_gps_direction_ref_tag(
+                ifd,
+                Self::TAG_GPS_DEST_BEARING_REF,
+                "GPSDestBearingRef",
+            )?;
+            tags.gps_dest_bearing =
+                Self::optional_rational_tag(ifd, Self::TAG_GPS_DEST_BEARING, "GPSDestBearing")?;
+            tags.gps_dest_distance_ref = Self::optional_gps_distance_ref_tag(ifd)?;
+            tags.gps_dest_distance =
+                Self::optional_rational_tag(ifd, Self::TAG_GPS_DEST_DISTANCE, "GPSDestDistance")?;
             tags.gps_date_stamp =
                 Self::optional_ascii_tag(ifd, Self::TAG_GPS_DATE_STAMP, "GPSDateStamp")?;
         }
@@ -6746,18 +6849,18 @@ impl<'a> FrameExif<'a> {
 
     fn optional_gps_latitude_ref_tag(
         ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
     ) -> AvResult<Option<FrameExifGpsLatitudeRef>> {
-        let Some(value) =
-            Self::optional_ascii_tag(ifd, Self::TAG_GPS_LATITUDE_REF, "GPSLatitudeRef")?
-        else {
+        let Some(value) = Self::optional_ascii_tag(ifd, tag, label)? else {
             return Ok(None);
         };
         match value {
             "N" => Ok(Some(FrameExifGpsLatitudeRef::North)),
             "S" => Ok(Some(FrameExifGpsLatitudeRef::South)),
             _ => Err(Self::semantic_tag_error(
-                "GPSLatitudeRef",
-                Self::TAG_GPS_LATITUDE_REF,
+                label,
+                tag,
                 format!("must be `N` or `S`, got `{value}`"),
             )),
         }
@@ -6765,18 +6868,18 @@ impl<'a> FrameExif<'a> {
 
     fn optional_gps_longitude_ref_tag(
         ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
     ) -> AvResult<Option<FrameExifGpsLongitudeRef>> {
-        let Some(value) =
-            Self::optional_ascii_tag(ifd, Self::TAG_GPS_LONGITUDE_REF, "GPSLongitudeRef")?
-        else {
+        let Some(value) = Self::optional_ascii_tag(ifd, tag, label)? else {
             return Ok(None);
         };
         match value {
             "E" => Ok(Some(FrameExifGpsLongitudeRef::East)),
             "W" => Ok(Some(FrameExifGpsLongitudeRef::West)),
             _ => Err(Self::semantic_tag_error(
-                "GPSLongitudeRef",
-                Self::TAG_GPS_LONGITUDE_REF,
+                label,
+                tag,
                 format!("must be `E` or `W`, got `{value}`"),
             )),
         }
@@ -6807,6 +6910,26 @@ impl<'a> FrameExif<'a> {
             _ => Err(Self::semantic_tag_error(
                 "GPSSpeedRef",
                 Self::TAG_GPS_SPEED_REF,
+                format!("must be `K`, `M`, or `N`, got `{value}`"),
+            )),
+        }
+    }
+
+    fn optional_gps_distance_ref_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifGpsDistanceRef>> {
+        let Some(value) =
+            Self::optional_ascii_tag(ifd, Self::TAG_GPS_DEST_DISTANCE_REF, "GPSDestDistanceRef")?
+        else {
+            return Ok(None);
+        };
+        match value {
+            "K" => Ok(Some(FrameExifGpsDistanceRef::Kilometers)),
+            "M" => Ok(Some(FrameExifGpsDistanceRef::Miles)),
+            "N" => Ok(Some(FrameExifGpsDistanceRef::NauticalMiles)),
+            _ => Err(Self::semantic_tag_error(
+                "GPSDestDistanceRef",
+                Self::TAG_GPS_DEST_DISTANCE_REF,
                 format!("must be `K`, `M`, or `N`, got `{value}`"),
             )),
         }
@@ -10668,6 +10791,99 @@ mod tests {
         data.extend_from_slice(b"WGS-84\0");
 
         assert_eq!(data.len(), 147);
+        data
+    }
+
+    fn exif_gps_destination_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::GPS_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&8u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_DEST_LATITUDE_REF,
+            FrameExifTiffType::Ascii,
+            2,
+            [b'S', 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_DEST_LATITUDE,
+            FrameExifTiffType::Rational,
+            3,
+            128u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_DEST_LONGITUDE_REF,
+            FrameExifTiffType::Ascii,
+            2,
+            [b'E', 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_DEST_LONGITUDE,
+            FrameExifTiffType::Rational,
+            3,
+            152u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_DEST_BEARING_REF,
+            FrameExifTiffType::Ascii,
+            2,
+            [b'T', 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_DEST_BEARING,
+            FrameExifTiffType::Rational,
+            1,
+            176u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_DEST_DISTANCE_REF,
+            FrameExifTiffType::Ascii,
+            2,
+            [b'N', 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_DEST_DISTANCE,
+            FrameExifTiffType::Rational,
+            1,
+            184u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 128);
+
+        for value in [33u32, 52, 7] {
+            data.extend_from_slice(&value.to_le_bytes());
+            data.extend_from_slice(&1u32.to_le_bytes());
+        }
+        for value in [151u32, 12, 9] {
+            data.extend_from_slice(&value.to_le_bytes());
+            data.extend_from_slice(&1u32.to_le_bytes());
+        }
+        data.extend_from_slice(&91u32.to_le_bytes());
+        data.extend_from_slice(&2u32.to_le_bytes());
+        data.extend_from_slice(&42u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+
+        assert_eq!(data.len(), 192);
         data
     }
 
@@ -16219,6 +16435,114 @@ mod tests {
         bad_map_datum_type[102..104].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_map_datum_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_gps_destination_tags() {
+        let exif_bytes = exif_gps_destination_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.gps_dest_latitude_ref(),
+            Some(FrameExifGpsLatitudeRef::South)
+        );
+        assert_eq!(
+            common.gps_dest_latitude(),
+            Some([
+                FrameExifRational {
+                    numerator: 33,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 52,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 7,
+                    denominator: 1,
+                },
+            ])
+        );
+        assert_eq!(
+            common.gps_dest_longitude_ref(),
+            Some(FrameExifGpsLongitudeRef::East)
+        );
+        assert_eq!(
+            common.gps_dest_longitude(),
+            Some([
+                FrameExifRational {
+                    numerator: 151,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 12,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 9,
+                    denominator: 1,
+                },
+            ])
+        );
+        assert_eq!(
+            common.gps_dest_bearing_ref(),
+            Some(FrameExifGpsDirectionRef::TrueDirection)
+        );
+        assert_eq!(common.gps_dest_bearing_ref().unwrap().as_str(), "T");
+        assert_eq!(
+            common.gps_dest_bearing(),
+            Some(FrameExifRational {
+                numerator: 91,
+                denominator: 2,
+            })
+        );
+        assert_eq!(
+            common.gps_dest_distance_ref(),
+            Some(FrameExifGpsDistanceRef::NauticalMiles)
+        );
+        assert_eq!(common.gps_dest_distance_ref().unwrap().as_str(), "N");
+        assert_eq!(
+            common.gps_dest_distance(),
+            Some(FrameExifRational {
+                numerator: 42,
+                denominator: 1,
+            })
+        );
+
+        let mut bad_dest_latitude_ref = exif_gps_destination_fixture();
+        bad_dest_latitude_ref[36] = b'X';
+        assert_eq!(
+            FrameExif::parse(&bad_dest_latitude_ref)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_dest_longitude_count = exif_gps_destination_fixture();
+        bad_dest_longitude_count[68..72].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_dest_longitude_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_dest_distance_ref_type = exif_gps_destination_fixture();
+        bad_dest_distance_ref_type[102..104]
+            .copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_dest_distance_ref_type)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

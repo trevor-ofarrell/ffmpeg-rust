@@ -10,11 +10,11 @@ use avutil::{
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
     FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifEntry, FrameExifGpsAltitudeRef,
-    FrameExifGpsDirectionRef, FrameExifGpsLatitudeRef, FrameExifGpsLongitudeRef,
-    FrameExifGpsSpeedRef, FrameExifIfdPointerKind, FrameExifOrientation, FrameExifResolutionUnit,
-    FrameExifTiffType, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
-    FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
-    FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
+    FrameExifGpsDirectionRef, FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef,
+    FrameExifGpsLongitudeRef, FrameExifGpsSpeedRef, FrameExifIfdPointerKind, FrameExifOrientation,
+    FrameExifResolutionUnit, FrameExifTiffType, FrameFilmGrainAomParams, FrameFilmGrainH274Params,
+    FrameFilmGrainParams, FrameFilmGrainParamsType, FrameGopTimecode,
+    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
     FrameLcevc, FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector,
     FrameMotionVectors, FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest,
@@ -1766,6 +1766,18 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                         assert_ne!(value.denominator(), 0);
                     }
                     if let Some(value) = common.gps_img_direction() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(latitude) = common.gps_dest_latitude() {
+                        assert!(latitude.iter().all(|value| value.denominator() != 0));
+                    }
+                    if let Some(longitude) = common.gps_dest_longitude() {
+                        assert!(longitude.iter().all(|value| value.denominator() != 0));
+                    }
+                    if let Some(value) = common.gps_dest_bearing() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.gps_dest_distance() {
                         assert_ne!(value.denominator(), 0);
                     }
                 }
@@ -3902,6 +3914,82 @@ fn exercise_fixtures() {
     );
     assert_eq!(gps_motion_tags.gps_map_datum(), Some("WGS-84"));
 
+    let gps_destination_exif_bytes = exif_gps_destination_fixture();
+    let gps_destination_exif = FrameExif::parse(&gps_destination_exif_bytes).unwrap();
+    let gps_destination_tags = gps_destination_exif.common_tags().unwrap();
+    assert_eq!(
+        gps_destination_tags.gps_dest_latitude_ref(),
+        Some(FrameExifGpsLatitudeRef::South)
+    );
+    assert_eq!(
+        gps_destination_tags.gps_dest_latitude().unwrap()[0].numerator(),
+        33
+    );
+    assert_eq!(
+        gps_destination_tags.gps_dest_latitude().unwrap()[1].numerator(),
+        52
+    );
+    assert_eq!(
+        gps_destination_tags.gps_dest_latitude().unwrap()[2].numerator(),
+        7
+    );
+    assert_eq!(
+        gps_destination_tags.gps_dest_longitude_ref(),
+        Some(FrameExifGpsLongitudeRef::East)
+    );
+    assert_eq!(
+        gps_destination_tags.gps_dest_longitude().unwrap()[0].numerator(),
+        151
+    );
+    assert_eq!(
+        gps_destination_tags.gps_dest_longitude().unwrap()[1].numerator(),
+        12
+    );
+    assert_eq!(
+        gps_destination_tags.gps_dest_longitude().unwrap()[2].numerator(),
+        9
+    );
+    assert_eq!(
+        gps_destination_tags.gps_dest_bearing_ref(),
+        Some(FrameExifGpsDirectionRef::TrueDirection)
+    );
+    assert_eq!(
+        gps_destination_tags
+            .gps_dest_bearing_ref()
+            .unwrap()
+            .as_str(),
+        "T"
+    );
+    assert_eq!(
+        gps_destination_tags.gps_dest_bearing().unwrap().numerator(),
+        91
+    );
+    assert_eq!(
+        gps_destination_tags
+            .gps_dest_bearing()
+            .unwrap()
+            .denominator(),
+        2
+    );
+    assert_eq!(
+        gps_destination_tags.gps_dest_distance_ref(),
+        Some(FrameExifGpsDistanceRef::NauticalMiles)
+    );
+    assert_eq!(
+        gps_destination_tags
+            .gps_dest_distance_ref()
+            .unwrap()
+            .as_str(),
+        "N"
+    );
+    assert_eq!(
+        gps_destination_tags
+            .gps_dest_distance()
+            .unwrap()
+            .numerator(),
+        42
+    );
+
     let exposure_exif_bytes = exif_exposure_tags_fixture();
     let exposure_exif = FrameExif::parse(&exposure_exif_bytes).unwrap();
     let exposure_tags = exposure_exif.common_tags().unwrap();
@@ -5269,6 +5357,94 @@ fn exif_gps_motion_fixture() -> Vec<u8> {
     data.extend_from_slice(&135u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_le_bytes());
     data.extend_from_slice(b"WGS-84\0");
+    data
+}
+
+fn exif_gps_destination_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::GPS_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&8u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_DEST_LATITUDE_REF,
+        FrameExifTiffType::Ascii,
+        2,
+        [b'S', 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_DEST_LATITUDE,
+        FrameExifTiffType::Rational,
+        3,
+        128u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_DEST_LONGITUDE_REF,
+        FrameExifTiffType::Ascii,
+        2,
+        [b'E', 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_DEST_LONGITUDE,
+        FrameExifTiffType::Rational,
+        3,
+        152u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_DEST_BEARING_REF,
+        FrameExifTiffType::Ascii,
+        2,
+        [b'T', 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_DEST_BEARING,
+        FrameExifTiffType::Rational,
+        1,
+        176u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_DEST_DISTANCE_REF,
+        FrameExifTiffType::Ascii,
+        2,
+        [b'N', 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_DEST_DISTANCE,
+        FrameExifTiffType::Rational,
+        1,
+        184u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    for value in [33u32, 52, 7] {
+        data.extend_from_slice(&value.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+    }
+    for value in [151u32, 12, 9] {
+        data.extend_from_slice(&value.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+    }
+    data.extend_from_slice(&91u32.to_le_bytes());
+    data.extend_from_slice(&2u32.to_le_bytes());
+    data.extend_from_slice(&42u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
     data
 }
 
