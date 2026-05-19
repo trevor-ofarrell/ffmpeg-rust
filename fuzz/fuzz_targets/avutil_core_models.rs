@@ -2498,6 +2498,54 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         AvErrorKind::InvalidArgument
     );
 
+    let mut take_frame =
+        Frame::audio(AudioFrame::new(48_000, 1, SampleFormat::S16, 1, vec![vec![0; 2]]).unwrap());
+    take_frame.add_side_data("alpha_info", vec![1, 2]).unwrap();
+    let replay_gain_buffer = BufferRef::copy_from_slice(&[9, 8, 7]);
+    let replay_gain = take_frame
+        .add_side_data_kind_buffer(FrameSideDataKind::ReplayGain, replay_gain_buffer.clone())
+        .unwrap();
+    replay_gain.metadata_mut().set("gain", "-3.0 dB").unwrap();
+    assert_eq!(take_frame.side_data().len(), 2);
+    assert_eq!(take_frame.side_data()[0].data(), &[1, 2]);
+    assert_eq!(
+        take_frame.side_data()[1].metadata().get("gain"),
+        Some("-3.0 dB")
+    );
+    assert_eq!(
+        take_frame
+            .side_data_by_kind(&FrameSideDataKind::ReplayGain)
+            .unwrap()
+            .data(),
+        &[9, 8, 7]
+    );
+    assert!(take_frame
+        .side_data_by_kind(&FrameSideDataKind::ReplayGain)
+        .unwrap()
+        .buffer()
+        .shares_storage(&replay_gain_buffer));
+    let removed_alpha = take_frame.remove_side_data("alpha_info").unwrap();
+    assert_eq!(removed_alpha.kind(), "alpha_info");
+    assert_eq!(removed_alpha.data(), &[1, 2]);
+    assert!(take_frame.remove_side_data("missing").is_none());
+    assert_eq!(take_frame.side_data().len(), 1);
+    let removed_replay_gain = take_frame.remove_side_data("replay_gain").unwrap();
+    assert_eq!(
+        removed_replay_gain.kind_id(),
+        &FrameSideDataKind::ReplayGain
+    );
+    assert_eq!(removed_replay_gain.metadata().get("gain"), Some("-3.0 dB"));
+    assert!(removed_replay_gain
+        .buffer()
+        .shares_storage(&replay_gain_buffer));
+    take_frame.push_side_data(removed_replay_gain);
+    let taken = take_frame.take_side_data();
+    assert!(take_frame.side_data().is_empty());
+    assert_eq!(taken.len(), 1);
+    assert_eq!(taken[0].kind(), "replaygain");
+    assert_eq!(taken[0].metadata().get("gain"), Some("-3.0 dB"));
+    assert!(taken[0].buffer().shares_storage(&replay_gain_buffer));
+
     let context_payload = vec![cursor.next().unwrap_or_default()];
     let released_contexts = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
     let release_capture = Arc::clone(&released_contexts);
