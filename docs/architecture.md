@@ -78,6 +78,8 @@ Offset-time common-tag fuzz coverage now includes OffsetTime, OffsetTimeOriginal
 
 Capture-setting common-tag fuzz coverage now includes ExposureProgram, LightSource, DigitalZoomRatio, and FocalLengthIn35mmFilm enum, RATIONAL type, and count rejection while preserving the current MeteringMode, Flash, and WhiteBalance typed values.
 
+Rendering/scene common-tag fuzz coverage now includes ColorSpace, FileSource, SceneCaptureType, and SubjectDistanceRange enum, UNDEFINED type, and count rejection while preserving the current SensingMethod, SceneType, CustomRendered, ExposureMode, GainControl, Contrast, Saturation, and Sharpness typed values.
+
 SubSecTime, SubSecTimeOriginal, and SubSecTimeDigitized common-tag validation rejects non-digit fractional-second strings while preserving the original ASCII values.
 
 ImageWidth, ImageLength, PixelXDimension, and PixelYDimension common-tag validation rejects zero values after the existing SHORT/LONG type and count checks.

@@ -5767,6 +5767,46 @@ fn exercise_fixtures() {
         rendering_tags.subject_distance_range(),
         Some(FrameExifSubjectDistanceRange::DistantView)
     );
+    let mut bad_color_space = exif_rendering_scene_fixture();
+    bad_color_space[36..38].copy_from_slice(&2u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_color_space)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_file_source_type = exif_rendering_scene_fixture();
+    bad_file_source_type[54..56].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_file_source_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_scene_capture_count = exif_rendering_scene_fixture();
+    bad_scene_capture_count[104..108].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_scene_capture_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_subject_distance_raw = exif_rendering_scene_fixture();
+    bad_subject_distance_raw[168..170].copy_from_slice(&4u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subject_distance_raw)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let optics_exif_bytes = exif_optics_subject_fixture();
     let optics_exif = FrameExif::parse(&optics_exif_bytes).unwrap();
