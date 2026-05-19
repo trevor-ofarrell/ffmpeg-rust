@@ -8493,40 +8493,7 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_vivid.dynamic_hdr_vivid().unwrap(), None);
 
-    let ambient = FrameAmbientViewingEnvironment::new(
-        Rational::from_raw(203, 10),
-        Rational::from_raw(15_635, 50_000),
-        Rational::from_raw(16_450, 50_000),
-    )
-    .unwrap();
-    let ambient_side_data = FrameSideData::new_ambient_viewing_environment(ambient).unwrap();
-    assert_eq!(
-        ambient_side_data.kind_id(),
-        &FrameSideDataKind::AmbientViewingEnvironment
-    );
-    assert_eq!(
-        ambient_side_data.ambient_viewing_environment().unwrap(),
-        Some(ambient)
-    );
-    assert_eq!(
-        FrameAmbientViewingEnvironment::parse(&ambient.to_bytes()).unwrap(),
-        ambient
-    );
-    let mut bad_ambient = ambient.to_bytes();
-    write_ne_rational(
-        &mut bad_ambient,
-        FrameAmbientViewingEnvironment::AMBIENT_LIGHT_X_OFFSET,
-        Rational::from_raw(2, 1),
-    );
-    assert_eq!(
-        FrameAmbientViewingEnvironment::parse(&bad_ambient)
-            .unwrap_err()
-            .kind(),
-        AvErrorKind::InvalidData
-    );
-    let non_ambient =
-        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
-    assert_eq!(non_ambient.ambient_viewing_environment().unwrap(), None);
+    exercise_ambient_viewing_environment_fixture();
 
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
@@ -8685,6 +8652,97 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
         4 => ChannelLayout::five_one_side(),
         _ => ChannelLayout::seven_one(),
     }
+}
+
+fn exercise_ambient_viewing_environment_fixture() {
+    let ambient = FrameAmbientViewingEnvironment::new(
+        Rational::from_raw(203, 10),
+        Rational::from_raw(15_635, 50_000),
+        Rational::from_raw(16_450, 50_000),
+    )
+    .unwrap();
+    let side_data = FrameSideData::new_ambient_viewing_environment(ambient).unwrap();
+    assert_eq!(FrameAmbientViewingEnvironment::DATA_LEN, 24);
+    assert_eq!(
+        side_data.kind_id(),
+        &FrameSideDataKind::AmbientViewingEnvironment
+    );
+    assert_eq!(side_data.data(), ambient.to_bytes().as_slice());
+    assert_eq!(ambient.ambient_illuminance(), Rational::from_raw(203, 10));
+    assert_eq!(
+        ambient.ambient_light_x(),
+        Rational::from_raw(15_635, 50_000)
+    );
+    assert_eq!(
+        ambient.ambient_light_y(),
+        Rational::from_raw(16_450, 50_000)
+    );
+    assert_eq!(
+        side_data.ambient_viewing_environment().unwrap(),
+        Some(ambient)
+    );
+    assert_eq!(
+        FrameAmbientViewingEnvironment::parse(&ambient.to_bytes()).unwrap(),
+        ambient
+    );
+
+    let default_ambient = FrameAmbientViewingEnvironment::new(
+        Rational::from_raw(0, 1),
+        Rational::from_raw(0, 1),
+        Rational::from_raw(0, 1),
+    )
+    .unwrap();
+    assert_eq!(
+        FrameAmbientViewingEnvironment::parse(&default_ambient.to_bytes()).unwrap(),
+        default_ambient
+    );
+    assert_eq!(
+        FrameAmbientViewingEnvironment::new(
+            Rational::from_raw(1, 1),
+            Rational::from_raw(3, 2),
+            Rational::from_raw(0, 1),
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+
+    for data in [
+        Vec::new(),
+        vec![0; FrameAmbientViewingEnvironment::DATA_LEN - 1],
+        vec![0; FrameAmbientViewingEnvironment::DATA_LEN + 1],
+    ] {
+        assert_ambient_viewing_environment_payload_rejected(data);
+    }
+    for (offset, bad_value) in [
+        (
+            FrameAmbientViewingEnvironment::AMBIENT_ILLUMINANCE_OFFSET,
+            Rational::from_raw(-1, 1),
+        ),
+        (
+            FrameAmbientViewingEnvironment::AMBIENT_ILLUMINANCE_OFFSET,
+            Rational::from_raw(1, 0),
+        ),
+        (
+            FrameAmbientViewingEnvironment::AMBIENT_LIGHT_X_OFFSET,
+            Rational::from_raw(2, 1),
+        ),
+        (
+            FrameAmbientViewingEnvironment::AMBIENT_LIGHT_Y_OFFSET,
+            Rational::from_raw(-1, 1),
+        ),
+        (
+            FrameAmbientViewingEnvironment::AMBIENT_LIGHT_Y_OFFSET,
+            Rational::from_raw(0, 0),
+        ),
+    ] {
+        let mut bad_ambient = ambient.to_bytes();
+        write_ne_rational(&mut bad_ambient, offset, bad_value);
+        assert_ambient_viewing_environment_payload_rejected(bad_ambient.to_vec());
+    }
+    let non_ambient =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_ambient.ambient_viewing_environment().unwrap(), None);
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
@@ -8871,6 +8929,24 @@ fn ambient_viewing_environment_payload_invalid(data: &[u8]) -> bool {
         data,
         FrameAmbientViewingEnvironment::AMBIENT_LIGHT_Y_OFFSET,
     ))
+}
+
+fn assert_ambient_viewing_environment_payload_rejected(data: Vec<u8>) {
+    assert!(ambient_viewing_environment_payload_invalid(&data));
+    assert_eq!(
+        FrameAmbientViewingEnvironment::parse(&data)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::AmbientViewingEnvironment, data)
+            .unwrap()
+            .ambient_viewing_environment()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 }
 
 fn ambient_nonnegative_rational(value: Rational) -> bool {
