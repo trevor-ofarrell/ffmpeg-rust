@@ -65,6 +65,54 @@ impl PacketFlags {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PacketPictureType {
+    Unknown = 0,
+    I = 1,
+    P = 2,
+    B = 3,
+    S = 4,
+    Si = 5,
+    Sp = 6,
+    Bi = 7,
+}
+
+impl PacketPictureType {
+    pub fn from_byte(value: u8) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::I),
+            2 => Ok(Self::P),
+            3 => Ok(Self::B),
+            4 => Ok(Self::S),
+            5 => Ok(Self::Si),
+            6 => Ok(Self::Sp),
+            7 => Ok(Self::Bi),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid packet picture type value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_byte(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Unknown => "AV_PICTURE_TYPE_NONE",
+            Self::I => "AV_PICTURE_TYPE_I",
+            Self::P => "AV_PICTURE_TYPE_P",
+            Self::B => "AV_PICTURE_TYPE_B",
+            Self::S => "AV_PICTURE_TYPE_S",
+            Self::Si => "AV_PICTURE_TYPE_SI",
+            Self::Sp => "AV_PICTURE_TYPE_SP",
+            Self::Bi => "AV_PICTURE_TYPE_BI",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PacketSideDataKind {
     Palette,
@@ -338,6 +386,119 @@ impl TryFrom<String> for PacketSideDataKind {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Self::from_name(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketQualityStats {
+    quality: u32,
+    picture_type: PacketPictureType,
+    errors: Vec<u64>,
+    trailing_data: Vec<u8>,
+}
+
+impl PacketQualityStats {
+    pub const FF_LAMBDA_MAX: u32 = 256 * 128 - 1;
+    pub const HEADER_LEN: usize = 8;
+    pub const ERROR_ENTRY_LEN: usize = 8;
+    pub const MAX_ERROR_COUNT: usize = u8::MAX as usize;
+
+    pub fn new(quality: u32, picture_type: PacketPictureType, errors: Vec<u64>) -> AvResult<Self> {
+        Self::from_parts(quality, picture_type, errors, Vec::new())
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() < Self::HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "quality stats packet side data requires at least {} bytes, got {}",
+                Self::HEADER_LEN,
+                data.len()
+            )));
+        }
+
+        let quality = read_u32_le(data, 0);
+        validate_quality_stats_quality(quality, AvError::invalid_data)?;
+        let picture_type = PacketPictureType::from_byte(data[4])?;
+        let error_count = usize::from(data[5]);
+        if data[6] != 0 || data[7] != 0 {
+            return Err(AvError::invalid_data(
+                "quality stats packet side data reserved bytes must be zero",
+            ));
+        }
+
+        let required_len = Self::HEADER_LEN + error_count * Self::ERROR_ENTRY_LEN;
+        if data.len() < required_len {
+            return Err(AvError::invalid_data(format!(
+                "quality stats packet side data declares {error_count} error entries but has {} bytes",
+                data.len()
+            )));
+        }
+
+        let errors = data[Self::HEADER_LEN..required_len]
+            .chunks_exact(Self::ERROR_ENTRY_LEN)
+            .map(|chunk| read_u64_le(chunk, 0))
+            .collect();
+
+        Ok(Self {
+            quality,
+            picture_type,
+            errors,
+            trailing_data: data[required_len..].to_vec(),
+        })
+    }
+
+    fn from_parts(
+        quality: u32,
+        picture_type: PacketPictureType,
+        errors: Vec<u64>,
+        trailing_data: Vec<u8>,
+    ) -> AvResult<Self> {
+        validate_quality_stats_quality(quality, AvError::invalid_argument)?;
+        if errors.len() > Self::MAX_ERROR_COUNT {
+            return Err(AvError::invalid_argument(format!(
+                "quality stats packet side data supports at most {} error entries, got {}",
+                Self::MAX_ERROR_COUNT,
+                errors.len()
+            )));
+        }
+
+        Ok(Self {
+            quality,
+            picture_type,
+            errors,
+            trailing_data,
+        })
+    }
+
+    pub const fn quality(&self) -> u32 {
+        self.quality
+    }
+
+    pub const fn picture_type(&self) -> PacketPictureType {
+        self.picture_type
+    }
+
+    pub fn errors(&self) -> &[u64] {
+        &self.errors
+    }
+
+    pub fn trailing_data(&self) -> &[u8] {
+        &self.trailing_data
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(
+            Self::HEADER_LEN + self.errors.len() * Self::ERROR_ENTRY_LEN + self.trailing_data.len(),
+        );
+        bytes.extend_from_slice(&self.quality.to_le_bytes());
+        bytes.push(self.picture_type.as_byte());
+        bytes.push(self.errors.len() as u8);
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        for error in &self.errors {
+            bytes.extend_from_slice(&error.to_le_bytes());
+        }
+        bytes.extend_from_slice(&self.trailing_data);
+        bytes
     }
 }
 
@@ -1042,6 +1203,10 @@ impl SideData {
         Self::new_with_kind(PacketSideDataKind::from_name(kind)?, data)
     }
 
+    pub fn new_quality_stats(value: PacketQualityStats) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::QualityStats, value.to_bytes())
+    }
+
     pub fn new_skip_samples(value: PacketSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -1131,6 +1296,14 @@ impl SideData {
 
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
+    }
+
+    pub fn quality_stats(&self) -> AvResult<Option<PacketQualityStats>> {
+        if self.kind != PacketSideDataKind::QualityStats {
+            return Ok(None);
+        }
+
+        PacketQualityStats::parse(self.data()).map(Some)
     }
 
     pub fn skip_samples(&self) -> AvResult<Option<PacketSkipSamples>> {
@@ -1556,6 +1729,12 @@ fn read_u32_le(data: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes(bytes)
 }
 
+fn read_u64_le(data: &[u8], offset: usize) -> u64 {
+    let mut bytes = [0; 8];
+    bytes.copy_from_slice(&data[offset..offset + 8]);
+    u64::from_le_bytes(bytes)
+}
+
 fn read_i32_le(data: &[u8], offset: usize) -> i32 {
     let mut bytes = [0; 4];
     bytes.copy_from_slice(&data[offset..offset + 4]);
@@ -1566,6 +1745,20 @@ fn read_u64_be(data: &[u8], offset: usize) -> u64 {
     let mut bytes = [0; 8];
     bytes.copy_from_slice(&data[offset..offset + 8]);
     u64::from_be_bytes(bytes)
+}
+
+fn validate_quality_stats_quality(
+    quality: u32,
+    error: impl FnOnce(String) -> AvError,
+) -> AvResult<()> {
+    if (1..=PacketQualityStats::FF_LAMBDA_MAX).contains(&quality) {
+        Ok(())
+    } else {
+        Err(error(format!(
+            "quality stats packet side data quality {quality} is outside 1..={}",
+            PacketQualityStats::FF_LAMBDA_MAX
+        )))
+    }
 }
 
 fn validate_webvtt_line_payload(data: &[u8], label: &str) -> AvResult<()> {
@@ -1808,6 +2001,138 @@ mod tests {
             "vendor_packet"
         );
         assert!(packet.side_data_by_kind("vendor_packet").is_none());
+    }
+
+    #[test]
+    fn packet_side_data_parses_quality_stats_payload() {
+        let expected = PacketQualityStats::new(
+            118,
+            PacketPictureType::I,
+            vec![0x0102_0304_0506_0708, u64::MAX],
+        )
+        .unwrap();
+        let expected_bytes = [
+            0x76, 0x00, 0x00, 0x00, 0x01, 0x02, 0x00, 0x00, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03,
+            0x02, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        ];
+
+        assert_eq!(expected.quality(), 118);
+        assert_eq!(expected.picture_type(), PacketPictureType::I);
+        assert_eq!(PacketPictureType::I.as_byte(), 1);
+        assert_eq!(PacketPictureType::Bi.as_byte(), 7);
+        assert_eq!(
+            PacketPictureType::Bi.ffmpeg_constant(),
+            "AV_PICTURE_TYPE_BI"
+        );
+        assert_eq!(
+            PacketPictureType::from_byte(PacketPictureType::Sp.as_byte()).unwrap(),
+            PacketPictureType::Sp
+        );
+        assert_eq!(
+            PacketPictureType::Unknown.ffmpeg_constant(),
+            "AV_PICTURE_TYPE_NONE"
+        );
+        assert_eq!(expected.errors(), &[0x0102_0304_0506_0708, u64::MAX]);
+        assert!(expected.trailing_data().is_empty());
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketQualityStats::parse(&expected_bytes).unwrap(),
+            expected
+        );
+
+        let empty_errors = PacketQualityStats::new(
+            PacketQualityStats::FF_LAMBDA_MAX,
+            PacketPictureType::Unknown,
+            Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            empty_errors.to_bytes(),
+            [0xff, 0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            PacketQualityStats::parse(&empty_errors.to_bytes()).unwrap(),
+            empty_errors
+        );
+
+        let mut with_trailing = expected_bytes.to_vec();
+        with_trailing.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+        let parsed_with_trailing = PacketQualityStats::parse(&with_trailing).unwrap();
+        assert_eq!(parsed_with_trailing.errors(), expected.errors());
+        assert_eq!(parsed_with_trailing.trailing_data(), &[0xaa, 0xbb, 0xcc]);
+        assert_eq!(parsed_with_trailing.to_bytes(), with_trailing);
+
+        let side_data = SideData::new_quality_stats(expected.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::QualityStats);
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(side_data.quality_stats().unwrap(), Some(expected));
+
+        let palette =
+            SideData::new_with_kind(PacketSideDataKind::Palette, expected_bytes.to_vec()).unwrap();
+        assert_eq!(palette.quality_stats().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_quality_stats_payload() {
+        assert_eq!(
+            PacketQualityStats::new(0, PacketPictureType::I, Vec::new())
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            PacketQualityStats::new(
+                PacketQualityStats::FF_LAMBDA_MAX + 1,
+                PacketPictureType::I,
+                Vec::new()
+            )
+            .unwrap_err()
+            .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            PacketQualityStats::new(1, PacketPictureType::I, vec![0_u64; 256])
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+
+        for data in [Vec::new(), vec![0; PacketQualityStats::HEADER_LEN - 1]] {
+            assert_eq!(
+                PacketQualityStats::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let mut truncated_errors = vec![1, 0, 0, 0, 1, 2, 0, 0];
+        truncated_errors.extend_from_slice(&[0; 15]);
+        for data in [
+            vec![0, 0, 0, 0, 1, 0, 0, 0],
+            vec![0, 0x80, 0, 0, 1, 0, 0, 0],
+            vec![1, 0, 0, 0, 8, 0, 0, 0],
+            vec![1, 0, 0, 0, 1, 0, 1, 0],
+            truncated_errors,
+        ] {
+            assert_eq!(
+                PacketQualityStats::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            PacketPictureType::from_byte(8).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let side_data = SideData::new_with_kind(
+            PacketSideDataKind::QualityStats,
+            vec![1, 0, 0, 0, 1, 1, 0, 0],
+        )
+        .unwrap();
+        assert_eq!(
+            side_data.quality_stats().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
     }
 
     #[test]

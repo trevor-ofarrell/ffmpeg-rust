@@ -34,10 +34,10 @@ use avutil::{
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketActiveFormatDescription, PacketFlags, PacketFrameCropping, PacketJpDualMono,
     PacketJpDualMonoSelection, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
-    PacketParamChange, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
-    PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings,
-    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256,
-    Sha384, Sha512, SideData, VideoFrame,
+    PacketParamChange, PacketPictureType, PacketQualityStats, PacketS12mTimecode,
+    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition,
+    PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat,
+    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3296,12 +3296,34 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .side_data_by_kind_id(&typed_side_data_kind)
         .is_none());
 
-    let typed_payload_len =
-        usize::from(cursor.next().unwrap_or_default()) % (PacketFrameCropping::DATA_LEN + 1);
+    let typed_payload_len = usize::from(cursor.next().unwrap_or_default())
+        % (PacketQualityStats::HEADER_LEN + PacketQualityStats::ERROR_ENTRY_LEN * 3 + 1);
     let typed_payload = payload_from(cursor, typed_payload_len);
     let typed_payload_kind = packet_side_data_kind_from(cursor.next());
     let typed_payload_side_data =
         SideData::new_with_kind(typed_payload_kind.clone(), typed_payload.clone()).unwrap();
+    match typed_payload_side_data.quality_stats() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::QualityStats);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert!((1..=PacketQualityStats::FF_LAMBDA_MAX).contains(&value.quality()));
+            assert_eq!(
+                PacketPictureType::from_byte(value.picture_type().as_byte()).unwrap(),
+                value.picture_type()
+            );
+            assert!(value.errors().len() <= PacketQualityStats::MAX_ERROR_COUNT);
+            assert_eq!(
+                PacketQualityStats::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::QualityStats),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::QualityStats);
+            assert!(packet_quality_stats_payload_invalid(&typed_payload));
+        }
+    }
     match typed_payload_side_data.skip_samples() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::SkipSamples);
@@ -3992,6 +4014,56 @@ fn exercise_fixtures() {
     );
     assert_eq!(
         PacketActiveFormatDescription::parse(&[8, 9])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_quality_stats = PacketQualityStats::new(
+        118,
+        PacketPictureType::I,
+        vec![0x0102_0304_0506_0708, u64::MAX],
+    )
+    .unwrap();
+    let packet_quality_stats_bytes = packet_quality_stats.to_bytes();
+    assert_eq!(
+        PacketQualityStats::parse(&packet_quality_stats_bytes).unwrap(),
+        packet_quality_stats
+    );
+    assert_eq!(packet_quality_stats.quality(), 118);
+    assert_eq!(packet_quality_stats.picture_type(), PacketPictureType::I);
+    assert_eq!(
+        PacketPictureType::Bi.ffmpeg_constant(),
+        "AV_PICTURE_TYPE_BI"
+    );
+    assert_eq!(
+        SideData::new_quality_stats(packet_quality_stats.clone())
+            .unwrap()
+            .quality_stats()
+            .unwrap(),
+        Some(packet_quality_stats)
+    );
+    let mut packet_quality_stats_with_trailing = packet_quality_stats_bytes.clone();
+    packet_quality_stats_with_trailing.extend_from_slice(&[0xaa, 0xbb]);
+    assert_eq!(
+        PacketQualityStats::parse(&packet_quality_stats_with_trailing)
+            .unwrap()
+            .trailing_data(),
+        &[0xaa, 0xbb]
+    );
+    assert_eq!(
+        PacketQualityStats::new(0, PacketPictureType::I, Vec::new())
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        PacketQualityStats::parse(&[1, 0, 0, 0, 8, 0, 0, 0])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        PacketQualityStats::parse(&[1, 0, 0, 0, 1, 1, 0, 0])
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData
@@ -9721,6 +9793,29 @@ fn packet_webvtt_settings_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_webvtt_line_payload_invalid(data: &[u8]) -> bool {
     data.is_empty() || data.iter().any(|byte| matches!(byte, 0 | b'\r' | b'\n'))
+}
+
+fn packet_quality_stats_payload_invalid(data: &[u8]) -> bool {
+    if data.len() < PacketQualityStats::HEADER_LEN {
+        return true;
+    }
+
+    let mut quality = [0; 4];
+    quality.copy_from_slice(&data[..4]);
+    if !(1..=PacketQualityStats::FF_LAMBDA_MAX).contains(&u32::from_le_bytes(quality)) {
+        return true;
+    }
+
+    if PacketPictureType::from_byte(data[4]).is_err() {
+        return true;
+    }
+
+    if data[6] != 0 || data[7] != 0 {
+        return true;
+    }
+
+    let error_count = usize::from(data[5]);
+    data.len() < PacketQualityStats::HEADER_LEN + error_count * PacketQualityStats::ERROR_ENTRY_LEN
 }
 
 fn packet_active_format_description_payload_invalid(data: &[u8]) -> bool {
