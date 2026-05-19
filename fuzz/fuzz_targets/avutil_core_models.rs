@@ -4410,9 +4410,25 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidArgument
     );
     assert_eq!(
+        FrameS12mTimecode::new(&[]).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
         FrameS12mTimecode::parse(&[0; FrameS12mTimecode::DATA_LEN - 1])
             .unwrap_err()
             .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameS12mTimecode::parse(&[0; FrameS12mTimecode::DATA_LEN + 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let empty_s12m_side_data =
+        FrameSideData::new_with_kind(FrameSideDataKind::S12mTimecode, Vec::new()).unwrap();
+    assert_eq!(
+        empty_s12m_side_data.s12m_timecode().unwrap_err().kind(),
         AvErrorKind::InvalidData
     );
     assert_eq!(
@@ -4421,6 +4437,27 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    for invalid_count in [4, u32::MAX] {
+        let invalid_s12m_words = [invalid_count, 1, 2, 3];
+        assert_eq!(
+            FrameS12mTimecode::from_raw_words(invalid_s12m_words)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        let invalid_s12m_payload = invalid_s12m_words
+            .iter()
+            .flat_map(|word| word.to_ne_bytes())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            FrameSideData::new_with_kind(FrameSideDataKind::S12mTimecode, invalid_s12m_payload)
+                .unwrap()
+                .s12m_timecode()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
     let non_s12m =
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 16]).unwrap();
     assert_eq!(non_s12m.s12m_timecode().unwrap(), None);
