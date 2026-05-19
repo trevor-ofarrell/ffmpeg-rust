@@ -32,14 +32,14 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketActiveFormatDescription, PacketContentLightMetadata, PacketCpbProperties,
-    PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketIccProfile, PacketJpDualMono,
-    PacketJpDualMonoSelection, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
-    PacketParamChange, PacketPictureType, PacketProducerReferenceTime, PacketQualityStats,
-    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
-    PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings,
-    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256,
-    Sha384, Sha512, SideData, VideoFrame,
+    Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription, PacketContentLightMetadata,
+    PacketCpbProperties, PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketIccProfile,
+    PacketJpDualMono, PacketJpDualMonoSelection, PacketMatroskaBlockAdditional,
+    PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
+    PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind,
+    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier,
+    PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3434,6 +3434,32 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             ));
         }
     }
+    match typed_payload_side_data.a53_closed_captions() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::A53ClosedCaptions);
+            assert_eq!(value.data(), typed_payload.as_slice());
+            assert_eq!(
+                value.entry_count(),
+                typed_payload.len() / PacketA53ClosedCaptions::BYTES_PER_CC
+            );
+            assert_eq!(value.entries().len(), value.entry_count());
+            assert_eq!(PacketA53ClosedCaptions::parse(value.data()).unwrap(), value);
+            for index in 0..value.entry_count() {
+                assert_eq!(
+                    value.entry(index).unwrap().as_slice(),
+                    &typed_payload[index * PacketA53ClosedCaptions::BYTES_PER_CC
+                        ..(index + 1) * PacketA53ClosedCaptions::BYTES_PER_CC]
+                );
+            }
+            assert_eq!(value.entry(value.entry_count()), None);
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::A53ClosedCaptions),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::A53ClosedCaptions);
+            assert!(packet_a53_closed_captions_payload_invalid(&typed_payload));
+        }
+    }
     match typed_payload_side_data.icc_profile() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::IccProfile);
@@ -4496,6 +4522,52 @@ fn exercise_fixtures() {
         .kind(),
         AvErrorKind::InvalidData
     );
+    let packet_a53_payload = vec![0xfc, 0x80, 0x41, 0xfd, 0x80, 0x42];
+    let packet_a53_side_data =
+        SideData::new_a53_closed_captions(packet_a53_payload.clone()).unwrap();
+    let parsed_packet_a53 = packet_a53_side_data
+        .a53_closed_captions()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        packet_a53_side_data.kind_id(),
+        &PacketSideDataKind::A53ClosedCaptions
+    );
+    assert_eq!(parsed_packet_a53.data(), packet_a53_payload.as_slice());
+    assert_eq!(parsed_packet_a53.entry_count(), 2);
+    assert_eq!(parsed_packet_a53.entry(0), Some([0xfc, 0x80, 0x41]));
+    assert_eq!(parsed_packet_a53.entry(1), Some([0xfd, 0x80, 0x42]));
+    assert_eq!(parsed_packet_a53.entry(2), None);
+    assert_eq!(
+        parsed_packet_a53.entries().collect::<Vec<_>>(),
+        vec![[0xfc, 0x80, 0x41], [0xfd, 0x80, 0x42]]
+    );
+    assert!(SideData::new_a53_closed_captions(Vec::new())
+        .unwrap()
+        .a53_closed_captions()
+        .unwrap()
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        SideData::new_a53_closed_captions(vec![0, 0])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        SideData::new_with_kind(PacketSideDataKind::A53ClosedCaptions, vec![0, 0])
+            .unwrap()
+            .a53_closed_captions()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_packet_a53 = SideData::new_with_kind(
+        PacketSideDataKind::ContentLightLevel,
+        packet_a53_payload.clone(),
+    )
+    .unwrap();
+    assert_eq!(non_packet_a53.a53_closed_captions().unwrap(), None);
     let packet_icc_profile = minimal_icc_profile_fixture();
     let packet_icc_side_data = SideData::new_icc_profile(packet_icc_profile.clone()).unwrap();
     let parsed_packet_icc = packet_icc_side_data.icc_profile().unwrap().unwrap();
@@ -10333,6 +10405,13 @@ fn packet_rtcp_sender_report_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_content_light_metadata_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketContentLightMetadata::DATA_LEN
+}
+
+fn packet_a53_closed_captions_payload_invalid(data: &[u8]) -> bool {
+    !data
+        .chunks_exact(PacketA53ClosedCaptions::BYTES_PER_CC)
+        .remainder()
+        .is_empty()
 }
 
 fn packet_active_format_description_payload_invalid(data: &[u8]) -> bool {

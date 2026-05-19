@@ -859,6 +859,56 @@ impl PacketContentLightMetadata {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketA53ClosedCaptions<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> PacketA53ClosedCaptions<'a> {
+    pub const BYTES_PER_CC: usize = 3;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() % Self::BYTES_PER_CC != 0 {
+            return Err(AvError::invalid_data(format!(
+                "A53 closed-caption packet side data requires whole {}-byte CC entries, got {} bytes",
+                Self::BYTES_PER_CC,
+                data.len()
+            )));
+        }
+
+        Ok(Self { data })
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub const fn entry_count(self) -> usize {
+        self.data.len() / Self::BYTES_PER_CC
+    }
+
+    pub fn entry(self, index: usize) -> Option<[u8; 3]> {
+        let start = index.checked_mul(Self::BYTES_PER_CC)?;
+        let end = start.checked_add(Self::BYTES_PER_CC)?;
+        let entry = self.data.get(start..end)?;
+        let mut bytes = [0; 3];
+        bytes.copy_from_slice(entry);
+        Some(bytes)
+    }
+
+    pub fn entries(self) -> impl ExactSizeIterator<Item = [u8; 3]> + 'a {
+        self.data.chunks_exact(Self::BYTES_PER_CC).map(|entry| {
+            let mut bytes = [0; 3];
+            bytes.copy_from_slice(entry);
+            bytes
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketIccProfile<'a> {
     data: &'a [u8],
     declared_size: u32,
@@ -1659,6 +1709,12 @@ impl SideData {
         )
     }
 
+    pub fn new_a53_closed_captions(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::A53ClosedCaptions, data)?;
+        PacketA53ClosedCaptions::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_icc_profile(data: Vec<u8>) -> AvResult<Self> {
         let side_data = Self::new_with_kind(PacketSideDataKind::IccProfile, data)?;
         PacketIccProfile::parse(side_data.data())?;
@@ -1802,6 +1858,14 @@ impl SideData {
         }
 
         PacketContentLightMetadata::parse(self.data()).map(Some)
+    }
+
+    pub fn a53_closed_captions(&self) -> AvResult<Option<PacketA53ClosedCaptions<'_>>> {
+        if self.kind != PacketSideDataKind::A53ClosedCaptions {
+            return Ok(None);
+        }
+
+        PacketA53ClosedCaptions::parse(self.data()).map(Some)
     }
 
     pub fn icc_profile(&self) -> AvResult<Option<PacketIccProfile<'_>>> {
@@ -3082,6 +3146,67 @@ mod tests {
         .unwrap();
         assert_eq!(
             side_data.content_light_metadata().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_a53_closed_captions_payload() {
+        let data = vec![0xfc, 0x80, 0x41, 0xfd, 0x80, 0x42];
+        let parsed = PacketA53ClosedCaptions::parse(&data).unwrap();
+
+        assert_eq!(PacketA53ClosedCaptions::BYTES_PER_CC, 3);
+        assert_eq!(parsed.data(), data.as_slice());
+        assert!(!parsed.is_empty());
+        assert_eq!(parsed.entry_count(), 2);
+        assert_eq!(parsed.entry(0), Some([0xfc, 0x80, 0x41]));
+        assert_eq!(parsed.entry(1), Some([0xfd, 0x80, 0x42]));
+        assert_eq!(parsed.entry(2), None);
+        assert_eq!(
+            parsed.entries().collect::<Vec<_>>(),
+            vec![[0xfc, 0x80, 0x41], [0xfd, 0x80, 0x42]]
+        );
+
+        let side_data = SideData::new_a53_closed_captions(data.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::A53ClosedCaptions);
+        assert_eq!(side_data.data(), data.as_slice());
+        assert_eq!(side_data.a53_closed_captions().unwrap(), Some(parsed));
+
+        let empty = SideData::new_a53_closed_captions(Vec::new()).unwrap();
+        let parsed_empty = empty.a53_closed_captions().unwrap().unwrap();
+        assert!(parsed_empty.is_empty());
+        assert_eq!(parsed_empty.entry_count(), 0);
+        assert_eq!(parsed_empty.entries().count(), 0);
+
+        let content_light = SideData::new_with_kind(
+            PacketSideDataKind::ContentLightLevel,
+            PacketContentLightMetadata::new(1000, 400)
+                .to_bytes()
+                .to_vec(),
+        )
+        .unwrap();
+        assert_eq!(content_light.a53_closed_captions().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_a53_closed_captions_payload() {
+        for data in [vec![0], vec![0, 0], vec![0, 0, 0, 0]] {
+            assert_eq!(
+                PacketA53ClosedCaptions::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_a53_closed_captions(data.clone())
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let side_data =
+            SideData::new_with_kind(PacketSideDataKind::A53ClosedCaptions, vec![0, 0]).unwrap();
+        assert_eq!(
+            side_data.a53_closed_captions().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
     }
