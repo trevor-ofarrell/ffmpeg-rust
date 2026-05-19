@@ -1,4 +1,4 @@
-use crate::{rescale_q, AvError, AvResult, Rational};
+use crate::{rescale_q, AvError, AvResult, BufferRef, Rational};
 
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
 pub const AV_PACKET_POS_UNKNOWN: i64 = -1;
@@ -118,7 +118,7 @@ impl SideData {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Packet {
-    data: Vec<u8>,
+    data: BufferRef,
     pts: i64,
     dts: i64,
     duration: i64,
@@ -130,6 +130,10 @@ pub struct Packet {
 
 impl Packet {
     pub fn new(data: Vec<u8>, stream_index: usize) -> Self {
+        Self::with_buffer(BufferRef::from_vec(data), stream_index)
+    }
+
+    pub fn with_buffer(data: BufferRef, stream_index: usize) -> Self {
         Self {
             data,
             pts: AV_NOPTS_VALUE,
@@ -143,6 +147,10 @@ impl Packet {
     }
 
     pub fn data(&self) -> &[u8] {
+        self.data.as_slice()
+    }
+
+    pub fn data_buffer(&self) -> &BufferRef {
         &self.data
     }
 
@@ -152,6 +160,18 @@ impl Packet {
 
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
+    }
+
+    pub fn is_data_writable(&self) -> bool {
+        self.data.is_writable()
+    }
+
+    pub fn data_mut(&mut self) -> Option<&mut [u8]> {
+        self.data.get_mut()
+    }
+
+    pub fn make_data_writable(&mut self) -> &mut [u8] {
+        self.data.make_mut()
     }
 
     pub fn pts(&self) -> Option<i64> {
@@ -263,6 +283,18 @@ impl Packet {
         self.side_data.clear();
     }
 
+    pub fn unref(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn ref_from(&mut self, src: &Self) {
+        *self = src.clone();
+    }
+
+    pub fn move_ref_from(&mut self, src: &mut Self) {
+        *self = std::mem::take(src);
+    }
+
     pub fn rescale_ts(&mut self, src: Rational, dst: Rational) -> AvResult<()> {
         rescale_q(0, src, dst)?;
 
@@ -289,6 +321,12 @@ impl Packet {
     }
 }
 
+impl Default for Packet {
+    fn default() -> Self {
+        Self::new(Vec::new(), 0)
+    }
+}
+
 fn pts_option(value: i64) -> Option<i64> {
     if value == AV_NOPTS_VALUE {
         None
@@ -308,6 +346,7 @@ fn pos_option(value: i64) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn packet_defaults_to_no_timestamps() {
@@ -451,6 +490,103 @@ mod tests {
 
         packet.clear_side_data();
         assert!(packet.side_data().is_empty());
+    }
+
+    #[test]
+    fn packet_ref_from_shares_payload_and_copies_side_data() {
+        let mut src = Packet::new(vec![1, 2, 3], 4);
+        src.set_pts(Some(12));
+        src.set_dts(Some(10));
+        src.set_duration(2).unwrap();
+        src.set_pos(Some(42)).unwrap();
+        src.set_key(true);
+        src.push_side_data(SideData::new("palette", vec![5, 6]).unwrap());
+
+        let mut dst = Packet::new(vec![9], 99);
+        dst.push_side_data(SideData::new("old", vec![8]).unwrap());
+        dst.ref_from(&src);
+
+        assert_eq!(dst.data(), &[1, 2, 3]);
+        assert!(dst.data_buffer().shares_storage(src.data_buffer()));
+        assert_eq!(dst.stream_index(), 4);
+        assert_eq!(dst.pts(), Some(12));
+        assert_eq!(dst.dts(), Some(10));
+        assert_eq!(dst.duration(), 2);
+        assert_eq!(dst.pos(), Some(42));
+        assert!(dst.flags().contains(PacketFlags::KEY));
+        assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+
+        dst.shrink_side_data("palette", 1).unwrap();
+        assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5]);
+        assert_eq!(src.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+    }
+
+    #[test]
+    fn packet_make_data_writable_detaches_shared_payload() {
+        let src = Packet::new(vec![1, 2, 3], 0);
+        let mut dst = Packet::default();
+        dst.ref_from(&src);
+
+        assert!(dst.data_buffer().shares_storage(src.data_buffer()));
+        assert!(!dst.is_data_writable());
+        assert!(dst.data_mut().is_none());
+
+        dst.make_data_writable()[0] = 9;
+
+        assert_eq!(dst.data(), &[9, 2, 3]);
+        assert_eq!(src.data(), &[1, 2, 3]);
+        assert!(!dst.data_buffer().shares_storage(src.data_buffer()));
+        assert!(dst.is_data_writable());
+        assert!(src.is_data_writable());
+    }
+
+    #[test]
+    fn packet_move_ref_and_unref_reset_packets_and_release_payloads() {
+        let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture_old = Arc::clone(&released);
+        let mut dst = Packet::with_buffer(
+            BufferRef::from_vec_with_release_callback(vec![9], move |data| {
+                capture_old.lock().unwrap().push(data);
+            }),
+            8,
+        );
+        dst.push_side_data(SideData::new("old", vec![0]).unwrap());
+
+        let capture_src = Arc::clone(&released);
+        let mut src = Packet::with_buffer(
+            BufferRef::from_vec_with_release_callback(vec![1, 2], move |data| {
+                capture_src.lock().unwrap().push(data);
+            }),
+            3,
+        );
+        src.set_pts(Some(7));
+        src.set_duration(5).unwrap();
+        src.push_side_data(SideData::new("palette", vec![4]).unwrap());
+
+        dst.move_ref_from(&mut src);
+
+        assert_eq!(*released.lock().unwrap(), vec![vec![9]]);
+        assert!(src.is_empty());
+        assert_eq!(src.stream_index(), 0);
+        assert_eq!(src.pts(), None);
+        assert!(src.side_data().is_empty());
+        assert_eq!(dst.data(), &[1, 2]);
+        assert_eq!(dst.stream_index(), 3);
+        assert_eq!(dst.pts(), Some(7));
+        assert_eq!(dst.duration(), 5);
+        assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[4]);
+
+        dst.unref();
+
+        assert_eq!(*released.lock().unwrap(), vec![vec![9], vec![1, 2]]);
+        assert!(dst.is_empty());
+        assert_eq!(dst.stream_index(), 0);
+        assert_eq!(dst.pts(), None);
+        assert_eq!(dst.dts(), None);
+        assert_eq!(dst.duration(), 0);
+        assert_eq!(dst.pos(), None);
+        assert!(dst.flags().is_empty());
+        assert!(dst.side_data().is_empty());
     }
 
     #[test]

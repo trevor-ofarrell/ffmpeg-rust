@@ -3280,6 +3280,65 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         AvErrorKind::InvalidArgument
     );
 
+    packet
+        .push_side_data(SideData::new("ref_side_data", vec![0xbb, 0xcc]).unwrap());
+    let mut packet_ref = Packet::default();
+    packet_ref.ref_from(&packet);
+    assert_eq!(packet_ref.data(), packet.data());
+    assert!(packet_ref
+        .data_buffer()
+        .shares_storage(packet.data_buffer()));
+    assert!(!packet_ref.is_data_writable());
+    assert!(packet_ref.data_mut().is_none());
+    assert_eq!(
+        packet_ref.side_data_by_kind("ref_side_data").unwrap().data(),
+        &[0xbb, 0xcc]
+    );
+    packet_ref.shrink_side_data("ref_side_data", 1).unwrap();
+    assert_eq!(
+        packet_ref.side_data_by_kind("ref_side_data").unwrap().data(),
+        &[0xbb]
+    );
+    assert_eq!(
+        packet.side_data_by_kind("ref_side_data").unwrap().data(),
+        &[0xbb, 0xcc]
+    );
+
+    let mut expected_ref_payload = payload.clone();
+    if let Some(first) = expected_ref_payload.first_mut() {
+        *first = first.wrapping_add(1);
+    }
+    if let Some(first) = packet_ref.make_data_writable().first_mut() {
+        *first = first.wrapping_add(1);
+    }
+    assert_eq!(packet_ref.data(), expected_ref_payload.as_slice());
+    assert_eq!(packet.data(), payload.as_slice());
+    assert!(!packet_ref
+        .data_buffer()
+        .shares_storage(packet.data_buffer()));
+    assert!(packet_ref.is_data_writable());
+
+    let mut moved_packet = Packet::new(vec![0xee], 3);
+    moved_packet.move_ref_from(&mut packet_ref);
+    assert!(packet_ref.is_empty());
+    assert_eq!(packet_ref.stream_index(), 0);
+    assert_eq!(packet_ref.pts(), None);
+    assert!(packet_ref.side_data().is_empty());
+    assert_eq!(moved_packet.data(), expected_ref_payload.as_slice());
+    assert_eq!(
+        moved_packet.side_data_by_kind("ref_side_data").unwrap().data(),
+        &[0xbb]
+    );
+    moved_packet.unref();
+    assert!(moved_packet.is_empty());
+    assert_eq!(moved_packet.stream_index(), 0);
+    assert_eq!(moved_packet.pts(), None);
+    assert_eq!(moved_packet.dts(), None);
+    assert_eq!(moved_packet.duration(), 0);
+    assert_eq!(moved_packet.pos(), None);
+    assert!(moved_packet.flags().is_empty());
+    assert!(moved_packet.side_data().is_empty());
+
     let split = usize::from(cursor.next().unwrap_or_default()) % (payload.len() + 1);
     let mut adler = Adler32::new();
     adler.update(&payload[..split]);
