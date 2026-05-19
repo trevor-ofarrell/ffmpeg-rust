@@ -5727,6 +5727,7 @@ pub enum FrameExifGpsLongitudeRef {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FrameExifCommonTags<'a> {
+    image_description: Option<&'a str>,
     make: Option<&'a str>,
     model: Option<&'a str>,
     image_width: Option<u32>,
@@ -5735,6 +5736,10 @@ pub struct FrameExifCommonTags<'a> {
     x_resolution: Option<FrameExifRational>,
     y_resolution: Option<FrameExifRational>,
     resolution_unit: Option<FrameExifResolutionUnit>,
+    software: Option<&'a str>,
+    date_time: Option<&'a str>,
+    artist: Option<&'a str>,
+    copyright: Option<&'a str>,
     exif_version: Option<[u8; 4]>,
     date_time_original: Option<&'a str>,
     date_time_digitized: Option<&'a str>,
@@ -5753,6 +5758,10 @@ pub struct FrameExifCommonTags<'a> {
 }
 
 impl<'a> FrameExifCommonTags<'a> {
+    pub const fn image_description(&self) -> Option<&'a str> {
+        self.image_description
+    }
+
     pub const fn make(&self) -> Option<&'a str> {
         self.make
     }
@@ -5783,6 +5792,22 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn resolution_unit(&self) -> Option<FrameExifResolutionUnit> {
         self.resolution_unit
+    }
+
+    pub const fn software(&self) -> Option<&'a str> {
+        self.software
+    }
+
+    pub const fn date_time(&self) -> Option<&'a str> {
+        self.date_time
+    }
+
+    pub const fn artist(&self) -> Option<&'a str> {
+        self.artist
+    }
+
+    pub const fn copyright(&self) -> Option<&'a str> {
+        self.copyright
     }
 
     pub const fn exif_version(&self) -> Option<[u8; 4]> {
@@ -6183,12 +6208,17 @@ impl<'a> FrameExif<'a> {
     pub const MAX_IFD_ENTRIES: usize = 4096;
     pub const TAG_IMAGE_WIDTH: u16 = 0x0100;
     pub const TAG_IMAGE_LENGTH: u16 = 0x0101;
+    pub const TAG_IMAGE_DESCRIPTION: u16 = 0x010E;
     pub const TAG_MAKE: u16 = 0x010F;
     pub const TAG_MODEL: u16 = 0x0110;
     pub const TAG_ORIENTATION: u16 = 0x0112;
     pub const TAG_X_RESOLUTION: u16 = 0x011A;
     pub const TAG_Y_RESOLUTION: u16 = 0x011B;
     pub const TAG_RESOLUTION_UNIT: u16 = 0x0128;
+    pub const TAG_SOFTWARE: u16 = 0x0131;
+    pub const TAG_DATE_TIME: u16 = 0x0132;
+    pub const TAG_ARTIST: u16 = 0x013B;
+    pub const TAG_COPYRIGHT: u16 = 0x8298;
     pub const TAG_EXPOSURE_TIME: u16 = 0x829A;
     pub const TAG_F_NUMBER: u16 = 0x829D;
     pub const TAG_EXIF_VERSION: u16 = 0x9000;
@@ -6277,6 +6307,8 @@ impl<'a> FrameExif<'a> {
         let mut tags = FrameExifCommonTags::default();
 
         if let Some(root) = self.ifd(0) {
+            tags.image_description =
+                Self::optional_ascii_tag(root, Self::TAG_IMAGE_DESCRIPTION, "ImageDescription")?;
             tags.make = Self::optional_ascii_tag(root, Self::TAG_MAKE, "Make")?;
             tags.model = Self::optional_ascii_tag(root, Self::TAG_MODEL, "Model")?;
             tags.image_width =
@@ -6289,6 +6321,10 @@ impl<'a> FrameExif<'a> {
             tags.y_resolution =
                 Self::optional_rational_tag(root, Self::TAG_Y_RESOLUTION, "YResolution")?;
             tags.resolution_unit = Self::optional_resolution_unit_tag(root)?;
+            tags.software = Self::optional_ascii_tag(root, Self::TAG_SOFTWARE, "Software")?;
+            tags.date_time = Self::optional_ascii_tag(root, Self::TAG_DATE_TIME, "DateTime")?;
+            tags.artist = Self::optional_ascii_tag(root, Self::TAG_ARTIST, "Artist")?;
+            tags.copyright = Self::optional_ascii_tag(root, Self::TAG_COPYRIGHT, "Copyright")?;
         }
 
         if let Some(exif_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Exif) {
@@ -10381,6 +10417,60 @@ mod tests {
         data.extend_from_slice(b"2026:05:04 12:35:00\0");
 
         assert_eq!(data.len(), 168);
+        data
+    }
+
+    fn exif_descriptive_tags_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&5u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_IMAGE_DESCRIPTION,
+            FrameExifTiffType::Ascii,
+            13,
+            74u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SOFTWARE,
+            FrameExifTiffType::Ascii,
+            11,
+            87u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_DATE_TIME,
+            FrameExifTiffType::Ascii,
+            20,
+            98u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_ARTIST,
+            FrameExifTiffType::Ascii,
+            7,
+            118u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_COPYRIGHT,
+            FrameExifTiffType::Ascii,
+            13,
+            125u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 74);
+
+        data.extend_from_slice(b"Frame sample\0");
+        data.extend_from_slice(b"ffmpegrust\0");
+        data.extend_from_slice(b"2026:05:05 01:02:03\0");
+        data.extend_from_slice(b"OpenAI\0");
+        data.extend_from_slice(b"2026 Example\0");
+
+        assert_eq!(data.len(), 138);
         data
     }
 
@@ -15708,6 +15798,42 @@ mod tests {
         bad_pixel_count[92..96].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_pixel_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_descriptive_tags() {
+        let exif_bytes = exif_descriptive_tags_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.image_description(), Some("Frame sample"));
+        assert_eq!(common.software(), Some("ffmpegrust"));
+        assert_eq!(common.date_time(), Some("2026:05:05 01:02:03"));
+        assert_eq!(common.artist(), Some("OpenAI"));
+        assert_eq!(common.copyright(), Some("2026 Example"));
+
+        let mut bad_software_type = exif_descriptive_tags_fixture();
+        bad_software_type[24..26].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_software_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_date_time_strings = exif_descriptive_tags_fixture();
+        bad_date_time_strings[38..42].copy_from_slice(&4u32.to_le_bytes());
+        bad_date_time_strings[42..46].copy_from_slice(b"A\0B\0");
+        assert_eq!(
+            FrameExif::parse(&bad_date_time_strings)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

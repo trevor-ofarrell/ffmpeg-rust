@@ -3847,6 +3847,15 @@ fn exercise_fixtures() {
         Some("2026:05:04 12:35:00")
     );
 
+    let descriptive_exif_bytes = exif_descriptive_tags_fixture();
+    let descriptive_exif = FrameExif::parse(&descriptive_exif_bytes).unwrap();
+    let descriptive_tags = descriptive_exif.common_tags().unwrap();
+    assert_eq!(descriptive_tags.image_description(), Some("Frame sample"));
+    assert_eq!(descriptive_tags.software(), Some("ffmpegrust"));
+    assert_eq!(descriptive_tags.date_time(), Some("2026:05:05 01:02:03"));
+    assert_eq!(descriptive_tags.artist(), Some("OpenAI"));
+    assert_eq!(descriptive_tags.copyright(), Some("2026 Example"));
+
     let linked_exif_side_data = FrameSideData::new_exif(exif_with_linked_ifds_fixture()).unwrap();
     let linked_exif = linked_exif_side_data.exif().unwrap().unwrap();
     assert_eq!(linked_exif.ifd_count(), 1);
@@ -5130,6 +5139,55 @@ fn exif_exposure_tags_fixture() -> Vec<u8> {
     data.extend_from_slice(&50u32.to_le_bytes());
     data.extend_from_slice(&1u32.to_le_bytes());
     data.extend_from_slice(b"2026:05:04 12:35:00\0");
+    data
+}
+
+fn exif_descriptive_tags_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&5u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_IMAGE_DESCRIPTION,
+        FrameExifTiffType::Ascii,
+        13,
+        74u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SOFTWARE,
+        FrameExifTiffType::Ascii,
+        11,
+        87u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_DATE_TIME,
+        FrameExifTiffType::Ascii,
+        20,
+        98u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_ARTIST,
+        FrameExifTiffType::Ascii,
+        7,
+        118u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_COPYRIGHT,
+        FrameExifTiffType::Ascii,
+        13,
+        125u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(b"Frame sample\0");
+    data.extend_from_slice(b"ffmpegrust\0");
+    data.extend_from_slice(b"2026:05:05 01:02:03\0");
+    data.extend_from_slice(b"OpenAI\0");
+    data.extend_from_slice(b"2026 Example\0");
     data
 }
 
