@@ -10,10 +10,11 @@ use avutil::{
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
     FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifEntry, FrameExifGpsAltitudeRef,
-    FrameExifGpsLatitudeRef, FrameExifGpsLongitudeRef, FrameExifIfdPointerKind,
-    FrameExifOrientation, FrameExifResolutionUnit, FrameExifTiffType, FrameFilmGrainAomParams,
-    FrameFilmGrainH274Params, FrameFilmGrainParams, FrameFilmGrainParamsType, FrameGopTimecode,
-    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
+    FrameExifGpsDirectionRef, FrameExifGpsLatitudeRef, FrameExifGpsLongitudeRef,
+    FrameExifGpsSpeedRef, FrameExifIfdPointerKind, FrameExifOrientation, FrameExifResolutionUnit,
+    FrameExifTiffType, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
+    FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
     FrameLcevc, FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector,
     FrameMotionVectors, FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest,
@@ -1757,6 +1758,15 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     }
                     if let Some(time_stamp) = common.gps_time_stamp() {
                         assert!(time_stamp.iter().all(|value| value.denominator() != 0));
+                    }
+                    if let Some(value) = common.gps_speed() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.gps_track() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.gps_img_direction() {
+                        assert_ne!(value.denominator(), 0);
                     }
                 }
                 Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
@@ -3862,6 +3872,36 @@ fn exercise_fixtures() {
     );
     assert_eq!(gps_altitude_time_tags.gps_date_stamp(), Some("2026:05:06"));
 
+    let gps_motion_exif_bytes = exif_gps_motion_fixture();
+    let gps_motion_exif = FrameExif::parse(&gps_motion_exif_bytes).unwrap();
+    let gps_motion_tags = gps_motion_exif.common_tags().unwrap();
+    assert_eq!(
+        gps_motion_tags.gps_speed_ref(),
+        Some(FrameExifGpsSpeedRef::KilometersPerHour)
+    );
+    assert_eq!(gps_motion_tags.gps_speed_ref().unwrap().as_str(), "K");
+    assert_eq!(gps_motion_tags.gps_speed().unwrap().numerator(), 88);
+    assert_eq!(gps_motion_tags.gps_speed().unwrap().denominator(), 5);
+    assert_eq!(
+        gps_motion_tags.gps_track_ref(),
+        Some(FrameExifGpsDirectionRef::TrueDirection)
+    );
+    assert_eq!(gps_motion_tags.gps_track_ref().unwrap().as_str(), "T");
+    assert_eq!(gps_motion_tags.gps_track().unwrap().numerator(), 270);
+    assert_eq!(
+        gps_motion_tags.gps_img_direction_ref(),
+        Some(FrameExifGpsDirectionRef::MagneticDirection)
+    );
+    assert_eq!(
+        gps_motion_tags.gps_img_direction_ref().unwrap().as_str(),
+        "M"
+    );
+    assert_eq!(
+        gps_motion_tags.gps_img_direction().unwrap().numerator(),
+        135
+    );
+    assert_eq!(gps_motion_tags.gps_map_datum(), Some("WGS-84"));
+
     let exposure_exif_bytes = exif_exposure_tags_fixture();
     let exposure_exif = FrameExif::parse(&exposure_exif_bytes).unwrap();
     let exposure_tags = exposure_exif.common_tags().unwrap();
@@ -5153,6 +5193,82 @@ fn exif_gps_altitude_time_fixture() -> Vec<u8> {
         data.extend_from_slice(&1u32.to_le_bytes());
     }
     data.extend_from_slice(b"2026:05:06\0");
+    data
+}
+
+fn exif_gps_motion_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::GPS_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&7u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_SPEED_REF,
+        FrameExifTiffType::Ascii,
+        2,
+        [b'K', 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_SPEED,
+        FrameExifTiffType::Rational,
+        1,
+        116u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_TRACK_REF,
+        FrameExifTiffType::Ascii,
+        2,
+        [b'T', 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_TRACK,
+        FrameExifTiffType::Rational,
+        1,
+        124u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_IMG_DIRECTION_REF,
+        FrameExifTiffType::Ascii,
+        2,
+        [b'M', 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_IMG_DIRECTION,
+        FrameExifTiffType::Rational,
+        1,
+        132u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_GPS_MAP_DATUM,
+        FrameExifTiffType::Ascii,
+        7,
+        140u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&88u32.to_le_bytes());
+    data.extend_from_slice(&5u32.to_le_bytes());
+    data.extend_from_slice(&270u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+    data.extend_from_slice(&135u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+    data.extend_from_slice(b"WGS-84\0");
     data
 }
 

@@ -5750,6 +5750,38 @@ impl FrameExifGpsAltitudeRef {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifGpsSpeedRef {
+    KilometersPerHour,
+    MilesPerHour,
+    Knots,
+}
+
+impl FrameExifGpsSpeedRef {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::KilometersPerHour => "K",
+            Self::MilesPerHour => "M",
+            Self::Knots => "N",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifGpsDirectionRef {
+    TrueDirection,
+    MagneticDirection,
+}
+
+impl FrameExifGpsDirectionRef {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TrueDirection => "T",
+            Self::MagneticDirection => "M",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FrameExifCommonTags<'a> {
     image_description: Option<&'a str>,
@@ -5783,6 +5815,13 @@ pub struct FrameExifCommonTags<'a> {
     gps_altitude: Option<FrameExifRational>,
     gps_time_stamp: Option<[FrameExifRational; 3]>,
     gps_date_stamp: Option<&'a str>,
+    gps_speed_ref: Option<FrameExifGpsSpeedRef>,
+    gps_speed: Option<FrameExifRational>,
+    gps_track_ref: Option<FrameExifGpsDirectionRef>,
+    gps_track: Option<FrameExifRational>,
+    gps_img_direction_ref: Option<FrameExifGpsDirectionRef>,
+    gps_img_direction: Option<FrameExifRational>,
+    gps_map_datum: Option<&'a str>,
     interoperability_index: Option<&'a str>,
 }
 
@@ -5909,6 +5948,34 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn gps_date_stamp(&self) -> Option<&'a str> {
         self.gps_date_stamp
+    }
+
+    pub const fn gps_speed_ref(&self) -> Option<FrameExifGpsSpeedRef> {
+        self.gps_speed_ref
+    }
+
+    pub const fn gps_speed(&self) -> Option<FrameExifRational> {
+        self.gps_speed
+    }
+
+    pub const fn gps_track_ref(&self) -> Option<FrameExifGpsDirectionRef> {
+        self.gps_track_ref
+    }
+
+    pub const fn gps_track(&self) -> Option<FrameExifRational> {
+        self.gps_track
+    }
+
+    pub const fn gps_img_direction_ref(&self) -> Option<FrameExifGpsDirectionRef> {
+        self.gps_img_direction_ref
+    }
+
+    pub const fn gps_img_direction(&self) -> Option<FrameExifRational> {
+        self.gps_img_direction
+    }
+
+    pub const fn gps_map_datum(&self) -> Option<&'a str> {
+        self.gps_map_datum
     }
 
     pub const fn interoperability_index(&self) -> Option<&'a str> {
@@ -6281,6 +6348,13 @@ impl<'a> FrameExif<'a> {
     pub const TAG_GPS_ALTITUDE_REF: u16 = 0x0005;
     pub const TAG_GPS_ALTITUDE: u16 = 0x0006;
     pub const TAG_GPS_TIME_STAMP: u16 = 0x0007;
+    pub const TAG_GPS_SPEED_REF: u16 = 0x000C;
+    pub const TAG_GPS_SPEED: u16 = 0x000D;
+    pub const TAG_GPS_TRACK_REF: u16 = 0x000E;
+    pub const TAG_GPS_TRACK: u16 = 0x000F;
+    pub const TAG_GPS_IMG_DIRECTION_REF: u16 = 0x0010;
+    pub const TAG_GPS_IMG_DIRECTION: u16 = 0x0011;
+    pub const TAG_GPS_MAP_DATUM: u16 = 0x0012;
     pub const TAG_GPS_DATE_STAMP: u16 = 0x001D;
     pub const TAG_INTEROPERABILITY_INDEX: u16 = 0x0001;
 
@@ -6421,6 +6495,20 @@ impl<'a> FrameExif<'a> {
                 Self::optional_rational_tag(ifd, Self::TAG_GPS_ALTITUDE, "GPSAltitude")?;
             tags.gps_time_stamp =
                 Self::optional_rational_array3_tag(ifd, Self::TAG_GPS_TIME_STAMP, "GPSTimeStamp")?;
+            tags.gps_speed_ref = Self::optional_gps_speed_ref_tag(ifd)?;
+            tags.gps_speed = Self::optional_rational_tag(ifd, Self::TAG_GPS_SPEED, "GPSSpeed")?;
+            tags.gps_track_ref =
+                Self::optional_gps_direction_ref_tag(ifd, Self::TAG_GPS_TRACK_REF, "GPSTrackRef")?;
+            tags.gps_track = Self::optional_rational_tag(ifd, Self::TAG_GPS_TRACK, "GPSTrack")?;
+            tags.gps_img_direction_ref = Self::optional_gps_direction_ref_tag(
+                ifd,
+                Self::TAG_GPS_IMG_DIRECTION_REF,
+                "GPSImgDirectionRef",
+            )?;
+            tags.gps_img_direction =
+                Self::optional_rational_tag(ifd, Self::TAG_GPS_IMG_DIRECTION, "GPSImgDirection")?;
+            tags.gps_map_datum =
+                Self::optional_ascii_tag(ifd, Self::TAG_GPS_MAP_DATUM, "GPSMapDatum")?;
             tags.gps_date_stamp =
                 Self::optional_ascii_tag(ifd, Self::TAG_GPS_DATE_STAMP, "GPSDateStamp")?;
         }
@@ -6703,6 +6791,44 @@ impl<'a> FrameExif<'a> {
             return Ok(None);
         };
         FrameExifGpsAltitudeRef::from_raw(value[0]).map(Some)
+    }
+
+    fn optional_gps_speed_ref_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifGpsSpeedRef>> {
+        let Some(value) = Self::optional_ascii_tag(ifd, Self::TAG_GPS_SPEED_REF, "GPSSpeedRef")?
+        else {
+            return Ok(None);
+        };
+        match value {
+            "K" => Ok(Some(FrameExifGpsSpeedRef::KilometersPerHour)),
+            "M" => Ok(Some(FrameExifGpsSpeedRef::MilesPerHour)),
+            "N" => Ok(Some(FrameExifGpsSpeedRef::Knots)),
+            _ => Err(Self::semantic_tag_error(
+                "GPSSpeedRef",
+                Self::TAG_GPS_SPEED_REF,
+                format!("must be `K`, `M`, or `N`, got `{value}`"),
+            )),
+        }
+    }
+
+    fn optional_gps_direction_ref_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<FrameExifGpsDirectionRef>> {
+        let Some(value) = Self::optional_ascii_tag(ifd, tag, label)? else {
+            return Ok(None);
+        };
+        match value {
+            "T" => Ok(Some(FrameExifGpsDirectionRef::TrueDirection)),
+            "M" => Ok(Some(FrameExifGpsDirectionRef::MagneticDirection)),
+            _ => Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!("must be `T` or `M`, got `{value}`"),
+            )),
+        }
     }
 
     fn semantic_tag_error(label: &str, tag: u16, message: impl core::fmt::Display) -> AvError {
@@ -10461,6 +10587,87 @@ mod tests {
         data.extend_from_slice(b"2026:05:06\0");
 
         assert_eq!(data.len(), 123);
+        data
+    }
+
+    fn exif_gps_motion_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::GPS_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&7u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_SPEED_REF,
+            FrameExifTiffType::Ascii,
+            2,
+            [b'K', 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_SPEED,
+            FrameExifTiffType::Rational,
+            1,
+            116u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_TRACK_REF,
+            FrameExifTiffType::Ascii,
+            2,
+            [b'T', 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_TRACK,
+            FrameExifTiffType::Rational,
+            1,
+            124u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_IMG_DIRECTION_REF,
+            FrameExifTiffType::Ascii,
+            2,
+            [b'M', 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_IMG_DIRECTION,
+            FrameExifTiffType::Rational,
+            1,
+            132u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_MAP_DATUM,
+            FrameExifTiffType::Ascii,
+            7,
+            140u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 116);
+
+        data.extend_from_slice(&88u32.to_le_bytes());
+        data.extend_from_slice(&5u32.to_le_bytes());
+        data.extend_from_slice(&270u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&135u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(b"WGS-84\0");
+
+        assert_eq!(data.len(), 147);
         data
     }
 
@@ -15934,6 +16141,84 @@ mod tests {
         bad_date_stamp_type[66..68].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_date_stamp_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_gps_motion_tags() {
+        let exif_bytes = exif_gps_motion_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.gps_speed_ref(),
+            Some(FrameExifGpsSpeedRef::KilometersPerHour)
+        );
+        assert_eq!(common.gps_speed_ref().unwrap().as_str(), "K");
+        assert_eq!(
+            common.gps_speed(),
+            Some(FrameExifRational {
+                numerator: 88,
+                denominator: 5,
+            })
+        );
+        assert_eq!(
+            common.gps_track_ref(),
+            Some(FrameExifGpsDirectionRef::TrueDirection)
+        );
+        assert_eq!(common.gps_track_ref().unwrap().as_str(), "T");
+        assert_eq!(
+            common.gps_track(),
+            Some(FrameExifRational {
+                numerator: 270,
+                denominator: 1,
+            })
+        );
+        assert_eq!(
+            common.gps_img_direction_ref(),
+            Some(FrameExifGpsDirectionRef::MagneticDirection)
+        );
+        assert_eq!(common.gps_img_direction_ref().unwrap().as_str(), "M");
+        assert_eq!(
+            common.gps_img_direction(),
+            Some(FrameExifRational {
+                numerator: 135,
+                denominator: 1,
+            })
+        );
+        assert_eq!(common.gps_map_datum(), Some("WGS-84"));
+
+        let mut bad_speed_ref = exif_gps_motion_fixture();
+        bad_speed_ref[36] = b'X';
+        assert_eq!(
+            FrameExif::parse(&bad_speed_ref)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_img_direction_count = exif_gps_motion_fixture();
+        bad_img_direction_count[92..96].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_img_direction_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_map_datum_type = exif_gps_motion_fixture();
+        bad_map_datum_type[102..104].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_map_datum_type)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
