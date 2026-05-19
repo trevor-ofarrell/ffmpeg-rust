@@ -4095,6 +4095,49 @@ fn exercise_fixtures() {
     assert_eq!(sensitivity_tags.iso_speed_latitude_yyy(), Some(125));
     assert_eq!(sensitivity_tags.iso_speed_latitude_zzz(), Some(400));
 
+    let characterization_exif_bytes = exif_camera_characterization_fixture();
+    let characterization_exif = FrameExif::parse(&characterization_exif_bytes).unwrap();
+    let characterization_tags = characterization_exif.common_tags().unwrap();
+    assert_eq!(
+        characterization_tags.spectral_sensitivity(),
+        Some("RGB 550")
+    );
+    assert_eq!(characterization_tags.oecf(), Some(&b"oecf0001"[..]));
+    assert_eq!(
+        characterization_tags.flash_energy().unwrap().numerator(),
+        25
+    );
+    assert_eq!(
+        characterization_tags.flash_energy().unwrap().denominator(),
+        10
+    );
+    assert_eq!(
+        characterization_tags.spatial_frequency_response(),
+        Some(&b"sfr0001"[..])
+    );
+    assert_eq!(
+        characterization_tags
+            .focal_plane_x_resolution()
+            .unwrap()
+            .numerator(),
+        3000
+    );
+    assert_eq!(
+        characterization_tags
+            .focal_plane_y_resolution()
+            .unwrap()
+            .numerator(),
+        2000
+    );
+    assert_eq!(
+        characterization_tags.focal_plane_resolution_unit(),
+        Some(FrameExifResolutionUnit::Centimeter)
+    );
+    assert_eq!(
+        characterization_tags.cfa_pattern(),
+        Some(&[2, 0, 2, 0, 1, 0, 2, 1][..])
+    );
+
     let capture_exif_bytes = exif_capture_settings_fixture();
     let capture_exif = FrameExif::parse(&capture_exif_bytes).unwrap();
     let capture_tags = capture_exif.common_tags().unwrap();
@@ -5943,6 +5986,92 @@ fn exif_sensitivity_fixture() -> Vec<u8> {
         400u32.to_le_bytes(),
     );
     data.extend_from_slice(&0u32.to_le_bytes());
+    data
+}
+
+fn exif_camera_characterization_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&8u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SPECTRAL_SENSITIVITY,
+        FrameExifTiffType::Ascii,
+        8,
+        128u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_OECF,
+        FrameExifTiffType::Undefined,
+        8,
+        136u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_FLASH_ENERGY,
+        FrameExifTiffType::Rational,
+        1,
+        144u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SPATIAL_FREQUENCY_RESPONSE,
+        FrameExifTiffType::Undefined,
+        7,
+        152u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_FOCAL_PLANE_X_RESOLUTION,
+        FrameExifTiffType::Rational,
+        1,
+        160u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_FOCAL_PLANE_Y_RESOLUTION,
+        FrameExifTiffType::Rational,
+        1,
+        168u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_FOCAL_PLANE_RESOLUTION_UNIT,
+        FrameExifTiffType::Short,
+        1,
+        [3, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_CFA_PATTERN,
+        FrameExifTiffType::Undefined,
+        8,
+        176u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(b"RGB 550\0");
+    data.extend_from_slice(b"oecf0001");
+    data.extend_from_slice(&25u32.to_le_bytes());
+    data.extend_from_slice(&10u32.to_le_bytes());
+    data.extend_from_slice(b"sfr0001");
+    data.push(0);
+    data.extend_from_slice(&3000u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+    data.extend_from_slice(&2000u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+    data.extend_from_slice(&[2, 0, 2, 0, 1, 0, 2, 1]);
     data
 }
 

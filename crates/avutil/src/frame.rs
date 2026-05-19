@@ -6537,7 +6537,9 @@ pub struct FrameExifCommonTags<'a> {
     exposure_program: Option<FrameExifExposureProgram>,
     exposure_time: Option<FrameExifRational>,
     f_number: Option<FrameExifRational>,
+    spectral_sensitivity: Option<&'a str>,
     photographic_sensitivity: Option<u16>,
+    oecf: Option<&'a [u8]>,
     sensitivity_type: Option<FrameExifSensitivityType>,
     standard_output_sensitivity: Option<u32>,
     recommended_exposure_index: Option<u32>,
@@ -6565,11 +6567,17 @@ pub struct FrameExifCommonTags<'a> {
     digital_zoom_ratio: Option<FrameExifRational>,
     focal_length_in_35mm_film: Option<u16>,
     color_space: Option<FrameExifColorSpace>,
+    flash_energy: Option<FrameExifRational>,
+    spatial_frequency_response: Option<&'a [u8]>,
+    focal_plane_x_resolution: Option<FrameExifRational>,
+    focal_plane_y_resolution: Option<FrameExifRational>,
+    focal_plane_resolution_unit: Option<FrameExifResolutionUnit>,
     subject_location: Option<[u16; 2]>,
     exposure_index: Option<FrameExifRational>,
     sensing_method: Option<FrameExifSensingMethod>,
     file_source: Option<FrameExifFileSource>,
     scene_type: Option<FrameExifSceneType>,
+    cfa_pattern: Option<&'a [u8]>,
     custom_rendered: Option<FrameExifCustomRendered>,
     exposure_mode: Option<FrameExifExposureMode>,
     scene_capture_type: Option<FrameExifSceneCaptureType>,
@@ -6714,8 +6722,16 @@ impl<'a> FrameExifCommonTags<'a> {
         self.f_number
     }
 
+    pub const fn spectral_sensitivity(&self) -> Option<&'a str> {
+        self.spectral_sensitivity
+    }
+
     pub const fn photographic_sensitivity(&self) -> Option<u16> {
         self.photographic_sensitivity
+    }
+
+    pub const fn oecf(&self) -> Option<&'a [u8]> {
+        self.oecf
     }
 
     pub const fn sensitivity_type(&self) -> Option<FrameExifSensitivityType> {
@@ -6826,6 +6842,26 @@ impl<'a> FrameExifCommonTags<'a> {
         self.color_space
     }
 
+    pub const fn flash_energy(&self) -> Option<FrameExifRational> {
+        self.flash_energy
+    }
+
+    pub const fn spatial_frequency_response(&self) -> Option<&'a [u8]> {
+        self.spatial_frequency_response
+    }
+
+    pub const fn focal_plane_x_resolution(&self) -> Option<FrameExifRational> {
+        self.focal_plane_x_resolution
+    }
+
+    pub const fn focal_plane_y_resolution(&self) -> Option<FrameExifRational> {
+        self.focal_plane_y_resolution
+    }
+
+    pub const fn focal_plane_resolution_unit(&self) -> Option<FrameExifResolutionUnit> {
+        self.focal_plane_resolution_unit
+    }
+
     pub const fn subject_location(&self) -> Option<[u16; 2]> {
         self.subject_location
     }
@@ -6844,6 +6880,10 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn scene_type(&self) -> Option<FrameExifSceneType> {
         self.scene_type
+    }
+
+    pub const fn cfa_pattern(&self) -> Option<&'a [u8]> {
+        self.cfa_pattern
     }
 
     pub const fn custom_rendered(&self) -> Option<FrameExifCustomRendered> {
@@ -7424,7 +7464,9 @@ impl<'a> FrameExif<'a> {
     pub const TAG_ARTIST: u16 = 0x013B;
     pub const TAG_COPYRIGHT: u16 = 0x8298;
     pub const TAG_EXPOSURE_PROGRAM: u16 = 0x8822;
+    pub const TAG_SPECTRAL_SENSITIVITY: u16 = 0x8824;
     pub const TAG_PHOTOGRAPHIC_SENSITIVITY: u16 = 0x8827;
+    pub const TAG_OECF: u16 = 0x8828;
     pub const TAG_SENSITIVITY_TYPE: u16 = 0x8830;
     pub const TAG_STANDARD_OUTPUT_SENSITIVITY: u16 = 0x8831;
     pub const TAG_RECOMMENDED_EXPOSURE_INDEX: u16 = 0x8832;
@@ -7465,11 +7507,17 @@ impl<'a> FrameExif<'a> {
     pub const TAG_PIXEL_X_DIMENSION: u16 = 0xA002;
     pub const TAG_PIXEL_Y_DIMENSION: u16 = 0xA003;
     pub const TAG_RELATED_SOUND_FILE: u16 = 0xA004;
+    pub const TAG_FLASH_ENERGY: u16 = 0xA20B;
+    pub const TAG_SPATIAL_FREQUENCY_RESPONSE: u16 = 0xA20C;
+    pub const TAG_FOCAL_PLANE_X_RESOLUTION: u16 = 0xA20E;
+    pub const TAG_FOCAL_PLANE_Y_RESOLUTION: u16 = 0xA20F;
+    pub const TAG_FOCAL_PLANE_RESOLUTION_UNIT: u16 = 0xA210;
     pub const TAG_SUBJECT_LOCATION: u16 = 0xA214;
     pub const TAG_EXPOSURE_INDEX: u16 = 0xA215;
     pub const TAG_SENSING_METHOD: u16 = 0xA217;
     pub const TAG_FILE_SOURCE: u16 = 0xA300;
     pub const TAG_SCENE_TYPE: u16 = 0xA301;
+    pub const TAG_CFA_PATTERN: u16 = 0xA302;
     pub const TAG_CUSTOM_RENDERED: u16 = 0xA401;
     pub const TAG_EXPOSURE_MODE: u16 = 0xA402;
     pub const TAG_WHITE_BALANCE: u16 = 0xA403;
@@ -7636,11 +7684,17 @@ impl<'a> FrameExif<'a> {
             tags.exposure_time =
                 Self::optional_rational_tag(ifd, Self::TAG_EXPOSURE_TIME, "ExposureTime")?;
             tags.f_number = Self::optional_rational_tag(ifd, Self::TAG_F_NUMBER, "FNumber")?;
+            tags.spectral_sensitivity = Self::optional_ascii_tag(
+                ifd,
+                Self::TAG_SPECTRAL_SENSITIVITY,
+                "SpectralSensitivity",
+            )?;
             tags.photographic_sensitivity = Self::optional_short_tag(
                 ifd,
                 Self::TAG_PHOTOGRAPHIC_SENSITIVITY,
                 "PhotographicSensitivity",
             )?;
+            tags.oecf = Self::optional_undefined_bytes_tag(ifd, Self::TAG_OECF, "OECF")?;
             tags.sensitivity_type = Self::optional_sensitivity_type_tag(ifd)?;
             tags.standard_output_sensitivity = Self::optional_long_tag(
                 ifd,
@@ -7720,6 +7774,24 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_FOCAL_LENGTH_IN_35MM_FILM,
                 "FocalLengthIn35mmFilm",
             )?;
+            tags.flash_energy =
+                Self::optional_rational_tag(ifd, Self::TAG_FLASH_ENERGY, "FlashEnergy")?;
+            tags.spatial_frequency_response = Self::optional_undefined_bytes_tag(
+                ifd,
+                Self::TAG_SPATIAL_FREQUENCY_RESPONSE,
+                "SpatialFrequencyResponse",
+            )?;
+            tags.focal_plane_x_resolution = Self::optional_rational_tag(
+                ifd,
+                Self::TAG_FOCAL_PLANE_X_RESOLUTION,
+                "FocalPlaneXResolution",
+            )?;
+            tags.focal_plane_y_resolution = Self::optional_rational_tag(
+                ifd,
+                Self::TAG_FOCAL_PLANE_Y_RESOLUTION,
+                "FocalPlaneYResolution",
+            )?;
+            tags.focal_plane_resolution_unit = Self::optional_focal_plane_resolution_unit_tag(ifd)?;
             tags.subject_location =
                 Self::optional_short_array_tag(ifd, Self::TAG_SUBJECT_LOCATION, "SubjectLocation")?;
             tags.exposure_index =
@@ -7727,6 +7799,8 @@ impl<'a> FrameExif<'a> {
             tags.sensing_method = Self::optional_sensing_method_tag(ifd)?;
             tags.file_source = Self::optional_file_source_tag(ifd)?;
             tags.scene_type = Self::optional_scene_type_tag(ifd)?;
+            tags.cfa_pattern =
+                Self::optional_undefined_bytes_tag(ifd, Self::TAG_CFA_PATTERN, "CFAPattern")?;
             tags.custom_rendered = Self::optional_custom_rendered_tag(ifd)?;
             tags.exposure_mode = Self::optional_exposure_mode_tag(ifd)?;
             tags.scene_capture_type = Self::optional_scene_capture_type_tag(ifd)?;
@@ -7979,8 +8053,25 @@ impl<'a> FrameExif<'a> {
     fn optional_resolution_unit_tag(
         ifd: &FrameExifIfd<'a>,
     ) -> AvResult<Option<FrameExifResolutionUnit>> {
-        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_RESOLUTION_UNIT, "ResolutionUnit")?
-        else {
+        Self::optional_resolution_unit_by_tag(ifd, Self::TAG_RESOLUTION_UNIT, "ResolutionUnit")
+    }
+
+    fn optional_focal_plane_resolution_unit_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifResolutionUnit>> {
+        Self::optional_resolution_unit_by_tag(
+            ifd,
+            Self::TAG_FOCAL_PLANE_RESOLUTION_UNIT,
+            "FocalPlaneResolutionUnit",
+        )
+    }
+
+    fn optional_resolution_unit_by_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<FrameExifResolutionUnit>> {
+        let Some(raw) = Self::optional_short_tag(ifd, tag, label)? else {
             return Ok(None);
         };
         FrameExifResolutionUnit::from_raw(raw).map(Some)
@@ -12755,6 +12846,97 @@ mod tests {
         );
         data.extend_from_slice(&0u32.to_le_bytes());
         assert_eq!(data.len(), 116);
+        data
+    }
+
+    fn exif_camera_characterization_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&8u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SPECTRAL_SENSITIVITY,
+            FrameExifTiffType::Ascii,
+            8,
+            128u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_OECF,
+            FrameExifTiffType::Undefined,
+            8,
+            136u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_FLASH_ENERGY,
+            FrameExifTiffType::Rational,
+            1,
+            144u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SPATIAL_FREQUENCY_RESPONSE,
+            FrameExifTiffType::Undefined,
+            7,
+            152u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_FOCAL_PLANE_X_RESOLUTION,
+            FrameExifTiffType::Rational,
+            1,
+            160u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_FOCAL_PLANE_Y_RESOLUTION,
+            FrameExifTiffType::Rational,
+            1,
+            168u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_FOCAL_PLANE_RESOLUTION_UNIT,
+            FrameExifTiffType::Short,
+            1,
+            [3, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_CFA_PATTERN,
+            FrameExifTiffType::Undefined,
+            8,
+            176u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 128);
+
+        data.extend_from_slice(b"RGB 550\0");
+        data.extend_from_slice(b"oecf0001");
+        data.extend_from_slice(&25u32.to_le_bytes());
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(b"sfr0001");
+        data.push(0);
+        data.extend_from_slice(&3000u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&2000u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&[2, 0, 2, 0, 1, 0, 2, 1]);
+        assert_eq!(data.len(), 184);
         data
     }
 
@@ -19144,6 +19326,112 @@ mod tests {
             .copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_standard_output_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_camera_characterization_tags() {
+        let exif_bytes = exif_camera_characterization_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.spectral_sensitivity(), Some("RGB 550"));
+        assert_eq!(common.oecf(), Some(&b"oecf0001"[..]));
+        assert_eq!(
+            common.flash_energy(),
+            Some(FrameExifRational {
+                numerator: 25,
+                denominator: 10,
+            })
+        );
+        assert_eq!(common.spatial_frequency_response(), Some(&b"sfr0001"[..]));
+        assert_eq!(
+            common.focal_plane_x_resolution(),
+            Some(FrameExifRational {
+                numerator: 3000,
+                denominator: 1,
+            })
+        );
+        assert_eq!(
+            common.focal_plane_y_resolution(),
+            Some(FrameExifRational {
+                numerator: 2000,
+                denominator: 1,
+            })
+        );
+        assert_eq!(
+            common.focal_plane_resolution_unit(),
+            Some(FrameExifResolutionUnit::Centimeter)
+        );
+        assert_eq!(common.focal_plane_resolution_unit().unwrap().raw(), 3);
+        assert_eq!(common.cfa_pattern(), Some(&[2, 0, 2, 0, 1, 0, 2, 1][..]));
+
+        let mut bad_spectral_type = exif_camera_characterization_fixture();
+        bad_spectral_type[30..32]
+            .copy_from_slice(&FrameExifTiffType::Undefined.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_spectral_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_oecf_type = exif_camera_characterization_fixture();
+        bad_oecf_type[42..44].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_oecf_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_flash_energy_count = exif_camera_characterization_fixture();
+        bad_flash_energy_count[56..60].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_flash_energy_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_spatial_type = exif_camera_characterization_fixture();
+        bad_spatial_type[66..68].copy_from_slice(&FrameExifTiffType::Ascii.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_spatial_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_focal_plane_unit_value = exif_camera_characterization_fixture();
+        bad_focal_plane_unit_value[108..110].copy_from_slice(&4u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_focal_plane_unit_value)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_cfa_type = exif_camera_characterization_fixture();
+        bad_cfa_type[114..116].copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
+        bad_cfa_type[116..120].copy_from_slice(&4u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_cfa_type)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

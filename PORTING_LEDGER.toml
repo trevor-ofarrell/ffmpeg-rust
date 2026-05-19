@@ -255,6 +255,7 @@ unit_tests = [
   "frame::tests::frame_side_data_interprets_exif_exposure_tags",
   "frame::tests::frame_side_data_interprets_exif_apex_exposure_tags",
   "frame::tests::frame_side_data_interprets_exif_sensitivity_tags",
+  "frame::tests::frame_side_data_interprets_exif_camera_characterization_tags",
   "frame::tests::frame_side_data_interprets_exif_capture_setting_tags",
   "frame::tests::frame_side_data_interprets_exif_rendering_scene_tags",
   "frame::tests::frame_side_data_interprets_exif_optics_subject_tags",
@@ -413,14 +414,16 @@ fuzz_targets = ["avutil_core_models"]
 # YResolution/ResolutionUnit/Software/DateTime/Artist/Copyright, linked EXIF
 # ExifVersion/DateTimeOriginal/DateTimeDigitized/ComponentsConfiguration/
 # CompressedBitsPerPixel/ExposureProgram/ExposureTime/FNumber/
-# PhotographicSensitivity/SensitivityType/StandardOutputSensitivity/
+# SpectralSensitivity/OECF/PhotographicSensitivity/SensitivityType/StandardOutputSensitivity/
 # RecommendedExposureIndex/ISOSpeed/ISOSpeedLatitudeyyy/
 # ISOSpeedLatitudezzz/ShutterSpeedValue/ApertureValue/BrightnessValue/ExposureBiasValue/
 # MaxApertureValue/SubjectDistance/MeteringMode/LightSource/Flash/
 # FocalLength/SubjectArea/MakerNote/UserComment/SubSecTime/
 # SubSecTimeOriginal/SubSecTimeDigitized/FlashpixVersion/ColorSpace/WhiteBalance/DigitalZoomRatio/
-# FocalLengthIn35mmFilm/SubjectLocation/ExposureIndex/SensingMethod/
-# FileSource/SceneType/CustomRendered/ExposureMode/SceneCaptureType/
+# FocalLengthIn35mmFilm/FlashEnergy/SpatialFrequencyResponse/
+# FocalPlaneXResolution/FocalPlaneYResolution/FocalPlaneResolutionUnit/
+# SubjectLocation/ExposureIndex/SensingMethod/FileSource/SceneType/CFAPattern/
+# CustomRendered/ExposureMode/SceneCaptureType/
 # GainControl/Contrast/Saturation/Sharpness/SubjectDistanceRange/
 # PixelXDimension/PixelYDimension/RelatedSoundFile/Temperature/Humidity/
 # Pressure/WaterDepth/Acceleration/CameraElevationAngle/ImageUniqueID/
