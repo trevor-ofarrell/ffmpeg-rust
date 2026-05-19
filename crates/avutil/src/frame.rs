@@ -6287,6 +6287,44 @@ impl FrameExifSubjectDistanceRange {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifSubjectArea {
+    Point {
+        x: u16,
+        y: u16,
+    },
+    Circle {
+        x: u16,
+        y: u16,
+        diameter: u16,
+    },
+    Rectangle {
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+    },
+}
+
+impl FrameExifSubjectArea {
+    pub const fn point(x: u16, y: u16) -> Self {
+        Self::Point { x, y }
+    }
+
+    pub const fn circle(x: u16, y: u16, diameter: u16) -> Self {
+        Self::Circle { x, y, diameter }
+    }
+
+    pub const fn rectangle(x: u16, y: u16, width: u16, height: u16) -> Self {
+        Self::Rectangle {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifGpsLatitudeRef {
     North,
     South,
@@ -6420,18 +6458,24 @@ pub struct FrameExifCommonTags<'a> {
     exif_version: Option<[u8; 4]>,
     date_time_original: Option<&'a str>,
     date_time_digitized: Option<&'a str>,
+    compressed_bits_per_pixel: Option<FrameExifRational>,
     exposure_program: Option<FrameExifExposureProgram>,
     exposure_time: Option<FrameExifRational>,
     f_number: Option<FrameExifRational>,
     exposure_bias_value: Option<FrameExifSignedRational>,
+    max_aperture_value: Option<FrameExifRational>,
+    subject_distance: Option<FrameExifRational>,
     metering_mode: Option<FrameExifMeteringMode>,
     light_source: Option<FrameExifLightSource>,
     flash: Option<FrameExifFlash>,
     focal_length: Option<FrameExifRational>,
+    subject_area: Option<FrameExifSubjectArea>,
     white_balance: Option<FrameExifWhiteBalance>,
     digital_zoom_ratio: Option<FrameExifRational>,
     focal_length_in_35mm_film: Option<u16>,
     color_space: Option<FrameExifColorSpace>,
+    subject_location: Option<[u16; 2]>,
+    exposure_index: Option<FrameExifRational>,
     sensing_method: Option<FrameExifSensingMethod>,
     file_source: Option<FrameExifFileSource>,
     scene_type: Option<FrameExifSceneType>,
@@ -6541,6 +6585,10 @@ impl<'a> FrameExifCommonTags<'a> {
         self.date_time_digitized
     }
 
+    pub const fn compressed_bits_per_pixel(&self) -> Option<FrameExifRational> {
+        self.compressed_bits_per_pixel
+    }
+
     pub const fn exposure_program(&self) -> Option<FrameExifExposureProgram> {
         self.exposure_program
     }
@@ -6555,6 +6603,14 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn exposure_bias_value(&self) -> Option<FrameExifSignedRational> {
         self.exposure_bias_value
+    }
+
+    pub const fn max_aperture_value(&self) -> Option<FrameExifRational> {
+        self.max_aperture_value
+    }
+
+    pub const fn subject_distance(&self) -> Option<FrameExifRational> {
+        self.subject_distance
     }
 
     pub const fn metering_mode(&self) -> Option<FrameExifMeteringMode> {
@@ -6573,6 +6629,10 @@ impl<'a> FrameExifCommonTags<'a> {
         self.focal_length
     }
 
+    pub const fn subject_area(&self) -> Option<FrameExifSubjectArea> {
+        self.subject_area
+    }
+
     pub const fn white_balance(&self) -> Option<FrameExifWhiteBalance> {
         self.white_balance
     }
@@ -6587,6 +6647,14 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn color_space(&self) -> Option<FrameExifColorSpace> {
         self.color_space
+    }
+
+    pub const fn subject_location(&self) -> Option<[u16; 2]> {
+        self.subject_location
+    }
+
+    pub const fn exposure_index(&self) -> Option<FrameExifRational> {
+        self.exposure_index
     }
 
     pub const fn sensing_method(&self) -> Option<FrameExifSensingMethod> {
@@ -7112,14 +7180,20 @@ impl<'a> FrameExif<'a> {
     pub const TAG_EXIF_VERSION: u16 = 0x9000;
     pub const TAG_DATE_TIME_ORIGINAL: u16 = 0x9003;
     pub const TAG_DATE_TIME_DIGITIZED: u16 = 0x9004;
+    pub const TAG_COMPRESSED_BITS_PER_PIXEL: u16 = 0x9102;
     pub const TAG_EXPOSURE_BIAS_VALUE: u16 = 0x9204;
+    pub const TAG_MAX_APERTURE_VALUE: u16 = 0x9205;
+    pub const TAG_SUBJECT_DISTANCE: u16 = 0x9206;
     pub const TAG_METERING_MODE: u16 = 0x9207;
     pub const TAG_LIGHT_SOURCE: u16 = 0x9208;
     pub const TAG_FLASH: u16 = 0x9209;
     pub const TAG_FOCAL_LENGTH: u16 = 0x920A;
+    pub const TAG_SUBJECT_AREA: u16 = 0x9214;
     pub const TAG_COLOR_SPACE: u16 = 0xA001;
     pub const TAG_PIXEL_X_DIMENSION: u16 = 0xA002;
     pub const TAG_PIXEL_Y_DIMENSION: u16 = 0xA003;
+    pub const TAG_SUBJECT_LOCATION: u16 = 0xA214;
+    pub const TAG_EXPOSURE_INDEX: u16 = 0xA215;
     pub const TAG_SENSING_METHOD: u16 = 0xA217;
     pub const TAG_FILE_SOURCE: u16 = 0xA300;
     pub const TAG_SCENE_TYPE: u16 = 0xA301;
@@ -7264,6 +7338,11 @@ impl<'a> FrameExif<'a> {
                 Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_ORIGINAL, "DateTimeOriginal")?;
             tags.date_time_digitized =
                 Self::optional_ascii_tag(ifd, Self::TAG_DATE_TIME_DIGITIZED, "DateTimeDigitized")?;
+            tags.compressed_bits_per_pixel = Self::optional_rational_tag(
+                ifd,
+                Self::TAG_COMPRESSED_BITS_PER_PIXEL,
+                "CompressedBitsPerPixel",
+            )?;
             tags.exposure_program = Self::optional_exposure_program_tag(ifd)?;
             tags.exposure_time =
                 Self::optional_rational_tag(ifd, Self::TAG_EXPOSURE_TIME, "ExposureTime")?;
@@ -7273,11 +7352,16 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_EXPOSURE_BIAS_VALUE,
                 "ExposureBiasValue",
             )?;
+            tags.max_aperture_value =
+                Self::optional_rational_tag(ifd, Self::TAG_MAX_APERTURE_VALUE, "MaxApertureValue")?;
+            tags.subject_distance =
+                Self::optional_rational_tag(ifd, Self::TAG_SUBJECT_DISTANCE, "SubjectDistance")?;
             tags.metering_mode = Self::optional_metering_mode_tag(ifd)?;
             tags.light_source = Self::optional_light_source_tag(ifd)?;
             tags.flash = Self::optional_flash_tag(ifd)?;
             tags.focal_length =
                 Self::optional_rational_tag(ifd, Self::TAG_FOCAL_LENGTH, "FocalLength")?;
+            tags.subject_area = Self::optional_subject_area_tag(ifd)?;
             tags.color_space = Self::optional_color_space_tag(ifd)?;
             tags.white_balance = Self::optional_white_balance_tag(ifd)?;
             tags.digital_zoom_ratio =
@@ -7287,6 +7371,10 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_FOCAL_LENGTH_IN_35MM_FILM,
                 "FocalLengthIn35mmFilm",
             )?;
+            tags.subject_location =
+                Self::optional_short_array_tag(ifd, Self::TAG_SUBJECT_LOCATION, "SubjectLocation")?;
+            tags.exposure_index =
+                Self::optional_rational_tag(ifd, Self::TAG_EXPOSURE_INDEX, "ExposureIndex")?;
             tags.sensing_method = Self::optional_sensing_method_tag(ifd)?;
             tags.file_source = Self::optional_file_source_tag(ifd)?;
             tags.scene_type = Self::optional_scene_type_tag(ifd)?;
@@ -7509,6 +7597,36 @@ impl<'a> FrameExif<'a> {
         Ok(Some(FrameExifFlash::from_raw(raw)))
     }
 
+    fn optional_subject_area_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifSubjectArea>> {
+        let Some(entry) = ifd.entry_by_tag(Self::TAG_SUBJECT_AREA) else {
+            return Ok(None);
+        };
+        if !(2..=4).contains(&entry.count()) {
+            return Err(Self::semantic_tag_error(
+                "SubjectArea",
+                Self::TAG_SUBJECT_AREA,
+                format!(
+                    "must contain 2, 3, or 4 SHORT values, got {}",
+                    entry.count()
+                ),
+            ));
+        }
+        let values = entry.short_values()?.ok_or_else(|| {
+            Self::semantic_tag_error(
+                "SubjectArea",
+                Self::TAG_SUBJECT_AREA,
+                "must have SHORT TIFF type",
+            )
+        })?;
+        let subject_area = match values.as_slice() {
+            [x, y] => FrameExifSubjectArea::point(*x, *y),
+            [x, y, diameter] => FrameExifSubjectArea::circle(*x, *y, *diameter),
+            [x, y, width, height] => FrameExifSubjectArea::rectangle(*x, *y, *width, *height),
+            _ => unreachable!("SubjectArea count was validated before value extraction"),
+        };
+        Ok(Some(subject_area))
+    }
+
     fn optional_color_space_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifColorSpace>> {
         let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_COLOR_SPACE, "ColorSpace")? else {
             return Ok(None);
@@ -7646,6 +7764,32 @@ impl<'a> FrameExif<'a> {
             .short_values()?
             .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have SHORT TIFF type"))?;
         Ok(Some(values[0]))
+    }
+
+    fn optional_short_array_tag<const N: usize>(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<[u16; N]>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        if entry.count() as usize != N {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!(
+                    "must contain exactly {N} SHORT values, got {}",
+                    entry.count()
+                ),
+            ));
+        }
+        let values = entry
+            .short_values()?
+            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have SHORT TIFF type"))?;
+        let mut array = [0; N];
+        array.copy_from_slice(&values);
+        Ok(Some(array))
     }
 
     fn optional_rational_tag(
@@ -12165,6 +12309,85 @@ mod tests {
         data.extend_from_slice(&0u32.to_le_bytes());
 
         assert_eq!(data.len(), 176);
+        data
+    }
+
+    fn exif_optics_subject_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&6u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_COMPRESSED_BITS_PER_PIXEL,
+            FrameExifTiffType::Rational,
+            1,
+            104u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_MAX_APERTURE_VALUE,
+            FrameExifTiffType::Rational,
+            1,
+            112u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SUBJECT_DISTANCE,
+            FrameExifTiffType::Rational,
+            1,
+            120u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SUBJECT_AREA,
+            FrameExifTiffType::Short,
+            4,
+            128u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SUBJECT_LOCATION,
+            FrameExifTiffType::Short,
+            2,
+            [0x40, 0x01, 0xF0, 0x00],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_EXPOSURE_INDEX,
+            FrameExifTiffType::Rational,
+            1,
+            136u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 104);
+
+        data.extend_from_slice(&3u32.to_le_bytes());
+        data.extend_from_slice(&2u32.to_le_bytes());
+        data.extend_from_slice(&14u32.to_le_bytes());
+        data.extend_from_slice(&5u32.to_le_bytes());
+        data.extend_from_slice(&125u32.to_le_bytes());
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(&100u16.to_le_bytes());
+        data.extend_from_slice(&150u16.to_le_bytes());
+        data.extend_from_slice(&80u16.to_le_bytes());
+        data.extend_from_slice(&60u16.to_le_bytes());
+        data.extend_from_slice(&200u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+
+        assert_eq!(data.len(), 144);
         data
     }
 
@@ -18039,6 +18262,122 @@ mod tests {
         bad_subject_distance_raw[168..170].copy_from_slice(&4u16.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_subject_distance_raw)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_optics_subject_tags() {
+        let exif_bytes = exif_optics_subject_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.compressed_bits_per_pixel(),
+            Some(FrameExifRational {
+                numerator: 3,
+                denominator: 2,
+            })
+        );
+        assert_eq!(
+            common.max_aperture_value(),
+            Some(FrameExifRational {
+                numerator: 14,
+                denominator: 5,
+            })
+        );
+        assert_eq!(
+            common.subject_distance(),
+            Some(FrameExifRational {
+                numerator: 125,
+                denominator: 10,
+            })
+        );
+        assert_eq!(
+            common.subject_area(),
+            Some(FrameExifSubjectArea::rectangle(100, 150, 80, 60))
+        );
+        assert_eq!(common.subject_location(), Some([320, 240]));
+        assert_eq!(
+            common.exposure_index(),
+            Some(FrameExifRational {
+                numerator: 200,
+                denominator: 1,
+            })
+        );
+
+        let mut point_area = exif_optics_subject_fixture();
+        point_area[68..72].copy_from_slice(&2u32.to_le_bytes());
+        point_area[72..76].copy_from_slice([0x40, 0x01, 0xF0, 0x00].as_slice());
+        assert_eq!(
+            FrameExif::parse(&point_area)
+                .unwrap()
+                .common_tags()
+                .unwrap()
+                .subject_area(),
+            Some(FrameExifSubjectArea::point(320, 240))
+        );
+
+        let mut circle_area = exif_optics_subject_fixture();
+        circle_area[68..72].copy_from_slice(&3u32.to_le_bytes());
+        circle_area[72..76].copy_from_slice(&144u32.to_le_bytes());
+        circle_area.extend_from_slice(&320u16.to_le_bytes());
+        circle_area.extend_from_slice(&240u16.to_le_bytes());
+        circle_area.extend_from_slice(&50u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&circle_area)
+                .unwrap()
+                .common_tags()
+                .unwrap()
+                .subject_area(),
+            Some(FrameExifSubjectArea::circle(320, 240, 50))
+        );
+
+        let mut bad_subject_area_count = exif_optics_subject_fixture();
+        bad_subject_area_count[68..72].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_subject_area_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_subject_area_type = exif_optics_subject_fixture();
+        bad_subject_area_type[66..68].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_subject_area_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_subject_location_count = exif_optics_subject_fixture();
+        bad_subject_location_count[80..84].copy_from_slice(&3u32.to_le_bytes());
+        bad_subject_location_count[84..88].copy_from_slice(&144u32.to_le_bytes());
+        bad_subject_location_count.extend_from_slice(&320u16.to_le_bytes());
+        bad_subject_location_count.extend_from_slice(&240u16.to_le_bytes());
+        bad_subject_location_count.extend_from_slice(&50u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_subject_location_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_exposure_index_denominator = exif_optics_subject_fixture();
+        bad_exposure_index_denominator[140..144].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_exposure_index_denominator)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

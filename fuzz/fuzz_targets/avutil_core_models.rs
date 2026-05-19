@@ -17,7 +17,7 @@ use avutil::{
     FrameExifGpsSpeedRef, FrameExifGpsStatus, FrameExifIfdPointerKind, FrameExifLightSource,
     FrameExifMeteringMode, FrameExifOrientation, FrameExifResolutionUnit, FrameExifSaturation,
     FrameExifSceneCaptureType, FrameExifSceneType, FrameExifSensingMethod, FrameExifSharpness,
-    FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance,
+    FrameExifSubjectArea, FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance,
     FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
@@ -4109,6 +4109,32 @@ fn exercise_fixtures() {
         Some(FrameExifSubjectDistanceRange::DistantView)
     );
 
+    let optics_exif_bytes = exif_optics_subject_fixture();
+    let optics_exif = FrameExif::parse(&optics_exif_bytes).unwrap();
+    let optics_tags = optics_exif.common_tags().unwrap();
+    assert_eq!(
+        optics_tags.compressed_bits_per_pixel().unwrap().numerator(),
+        3
+    );
+    assert_eq!(
+        optics_tags
+            .compressed_bits_per_pixel()
+            .unwrap()
+            .denominator(),
+        2
+    );
+    assert_eq!(optics_tags.max_aperture_value().unwrap().numerator(), 14);
+    assert_eq!(optics_tags.max_aperture_value().unwrap().denominator(), 5);
+    assert_eq!(optics_tags.subject_distance().unwrap().numerator(), 125);
+    assert_eq!(optics_tags.subject_distance().unwrap().denominator(), 10);
+    assert_eq!(
+        optics_tags.subject_area(),
+        Some(FrameExifSubjectArea::rectangle(100, 150, 80, 60))
+    );
+    assert_eq!(optics_tags.subject_location(), Some([320, 240]));
+    assert_eq!(optics_tags.exposure_index().unwrap().numerator(), 200);
+    assert_eq!(optics_tags.exposure_index().unwrap().denominator(), 1);
+
     let descriptive_exif_bytes = exif_descriptive_tags_fixture();
     let descriptive_exif = FrameExif::parse(&descriptive_exif_bytes).unwrap();
     let descriptive_tags = descriptive_exif.common_tags().unwrap();
@@ -5844,6 +5870,80 @@ fn exif_rendering_scene_fixture() -> Vec<u8> {
         [3, 0, 0, 0],
     );
     data.extend_from_slice(&0u32.to_le_bytes());
+    data
+}
+
+fn exif_optics_subject_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&6u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_COMPRESSED_BITS_PER_PIXEL,
+        FrameExifTiffType::Rational,
+        1,
+        104u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_MAX_APERTURE_VALUE,
+        FrameExifTiffType::Rational,
+        1,
+        112u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SUBJECT_DISTANCE,
+        FrameExifTiffType::Rational,
+        1,
+        120u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SUBJECT_AREA,
+        FrameExifTiffType::Short,
+        4,
+        128u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SUBJECT_LOCATION,
+        FrameExifTiffType::Short,
+        2,
+        [0x40, 0x01, 0xF0, 0x00],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_EXPOSURE_INDEX,
+        FrameExifTiffType::Rational,
+        1,
+        136u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&3u32.to_le_bytes());
+    data.extend_from_slice(&2u32.to_le_bytes());
+    data.extend_from_slice(&14u32.to_le_bytes());
+    data.extend_from_slice(&5u32.to_le_bytes());
+    data.extend_from_slice(&125u32.to_le_bytes());
+    data.extend_from_slice(&10u32.to_le_bytes());
+    data.extend_from_slice(&100u16.to_le_bytes());
+    data.extend_from_slice(&150u16.to_le_bytes());
+    data.extend_from_slice(&80u16.to_le_bytes());
+    data.extend_from_slice(&60u16.to_le_bytes());
+    data.extend_from_slice(&200u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
     data
 }
 
