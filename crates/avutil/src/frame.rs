@@ -6667,6 +6667,10 @@ pub struct FrameExifCommonTags<'a> {
     gps_differential: Option<FrameExifGpsDifferential>,
     gps_h_positioning_error: Option<FrameExifRational>,
     interoperability_index: Option<&'a str>,
+    interoperability_version: Option<[u8; 4]>,
+    related_image_file_format: Option<&'a str>,
+    related_image_width: Option<u32>,
+    related_image_length: Option<u32>,
 }
 
 impl<'a> FrameExifCommonTags<'a> {
@@ -7173,6 +7177,22 @@ impl<'a> FrameExifCommonTags<'a> {
     pub const fn interoperability_index(&self) -> Option<&'a str> {
         self.interoperability_index
     }
+
+    pub const fn interoperability_version(&self) -> Option<[u8; 4]> {
+        self.interoperability_version
+    }
+
+    pub const fn related_image_file_format(&self) -> Option<&'a str> {
+        self.related_image_file_format
+    }
+
+    pub const fn related_image_width(&self) -> Option<u32> {
+        self.related_image_width
+    }
+
+    pub const fn related_image_length(&self) -> Option<u32> {
+        self.related_image_length
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7636,6 +7656,10 @@ impl<'a> FrameExif<'a> {
     pub const TAG_GPS_DIFFERENTIAL: u16 = 0x001E;
     pub const TAG_GPS_H_POSITIONING_ERROR: u16 = 0x001F;
     pub const TAG_INTEROPERABILITY_INDEX: u16 = 0x0001;
+    pub const TAG_INTEROPERABILITY_VERSION: u16 = 0x0002;
+    pub const TAG_RELATED_IMAGE_FILE_FORMAT: u16 = 0x1000;
+    pub const TAG_RELATED_IMAGE_WIDTH: u16 = 0x1001;
+    pub const TAG_RELATED_IMAGE_LENGTH: u16 = 0x1002;
 
     pub fn parse(data: &'a [u8]) -> AvResult<Self> {
         if data.len() < Self::TIFF_HEADER_LEN {
@@ -8059,10 +8083,31 @@ impl<'a> FrameExif<'a> {
         }
 
         if let Some(interop_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Interoperability) {
+            let ifd = interop_ifd.ifd();
             tags.interoperability_index = Self::optional_ascii_tag(
-                interop_ifd.ifd(),
+                ifd,
                 Self::TAG_INTEROPERABILITY_INDEX,
                 "InteroperabilityIndex",
+            )?;
+            tags.interoperability_version = Self::optional_exif_version_tag(
+                ifd,
+                Self::TAG_INTEROPERABILITY_VERSION,
+                "InteroperabilityVersion",
+            )?;
+            tags.related_image_file_format = Self::optional_ascii_tag(
+                ifd,
+                Self::TAG_RELATED_IMAGE_FILE_FORMAT,
+                "RelatedImageFileFormat",
+            )?;
+            tags.related_image_width = Self::optional_positive_short_or_long_tag(
+                ifd,
+                Self::TAG_RELATED_IMAGE_WIDTH,
+                "RelatedImageWidth",
+            )?;
+            tags.related_image_length = Self::optional_positive_short_or_long_tag(
+                ifd,
+                Self::TAG_RELATED_IMAGE_LENGTH,
+                "RelatedImageLength",
             )?;
         }
 
@@ -13236,6 +13281,77 @@ mod tests {
         data.extend_from_slice(&2u32.to_le_bytes());
 
         assert_eq!(data.len(), 112);
+        data
+    }
+
+    fn exif_interoperability_related_image_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::INTEROPERABILITY_TAG,
+            FrameExifTiffType::Long,
+            1,
+            44u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 44);
+
+        data.extend_from_slice(&5u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_INTEROPERABILITY_INDEX,
+            FrameExifTiffType::Ascii,
+            4,
+            *b"R98\0",
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_INTEROPERABILITY_VERSION,
+            FrameExifTiffType::Undefined,
+            4,
+            *b"0100",
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_RELATED_IMAGE_FILE_FORMAT,
+            FrameExifTiffType::Ascii,
+            5,
+            110u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_RELATED_IMAGE_WIDTH,
+            FrameExifTiffType::Short,
+            1,
+            [64, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_RELATED_IMAGE_LENGTH,
+            FrameExifTiffType::Long,
+            1,
+            48u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 110);
+
+        data.extend_from_slice(b"JPEG\0");
+        assert_eq!(data.len(), 115);
         data
     }
 
@@ -20315,6 +20431,118 @@ mod tests {
         bad_h_positioning_error_denominator[108..112].copy_from_slice(&0u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_h_positioning_error_denominator)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_interoperability_related_image_tags() {
+        let exif_bytes = exif_interoperability_related_image_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.interoperability_index(), Some("R98"));
+        assert_eq!(common.interoperability_version(), Some(*b"0100"));
+        assert_eq!(common.related_image_file_format(), Some("JPEG"));
+        assert_eq!(common.related_image_width(), Some(64));
+        assert_eq!(common.related_image_length(), Some(48));
+
+        let mut bad_version_type = exif_interoperability_related_image_fixture();
+        bad_version_type[60..62].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_version_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_version_count = exif_interoperability_related_image_fixture();
+        bad_version_count[62..66].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_version_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_version_digit = exif_interoperability_related_image_fixture();
+        bad_version_digit[66] = b'v';
+        assert_eq!(
+            FrameExif::parse(&bad_version_digit)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_format_type = exif_interoperability_related_image_fixture();
+        bad_format_type[72..74].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_format_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_format_nul = exif_interoperability_related_image_fixture();
+        bad_format_nul[114] = b'X';
+        assert_eq!(
+            FrameExif::parse(&bad_format_nul)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_width_count = exif_interoperability_related_image_fixture();
+        bad_width_count[86..90].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_width_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_width_type = exif_interoperability_related_image_fixture();
+        bad_width_type[84..86].copy_from_slice(&FrameExifTiffType::Rational.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_width_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_width_zero = exif_interoperability_related_image_fixture();
+        bad_width_zero[90..92].copy_from_slice(&0u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_width_zero)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_length_zero = exif_interoperability_related_image_fixture();
+        bad_length_zero[102..106].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_length_zero)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

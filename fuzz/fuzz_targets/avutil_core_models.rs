@@ -2030,6 +2030,15 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.gps_h_positioning_error() {
                         assert_ne!(value.denominator(), 0);
                     }
+                    if let Some(value) = common.interoperability_version() {
+                        assert!(value.iter().all(u8::is_ascii_digit));
+                    }
+                    if let Some(value) = common.related_image_width() {
+                        assert!(value > 0);
+                    }
+                    if let Some(value) = common.related_image_length() {
+                        assert!(value > 0);
+                    }
                 }
                 Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
             }
