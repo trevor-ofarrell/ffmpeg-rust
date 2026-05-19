@@ -6528,6 +6528,12 @@ pub struct FrameExifCommonTags<'a> {
     pixel_x_dimension: Option<u32>,
     pixel_y_dimension: Option<u32>,
     related_sound_file: Option<&'a str>,
+    temperature: Option<FrameExifSignedRational>,
+    humidity: Option<FrameExifRational>,
+    pressure: Option<FrameExifRational>,
+    water_depth: Option<FrameExifSignedRational>,
+    acceleration: Option<FrameExifRational>,
+    camera_elevation_angle: Option<FrameExifSignedRational>,
     image_unique_id: Option<&'a str>,
     camera_owner_name: Option<&'a str>,
     body_serial_number: Option<&'a str>,
@@ -6789,6 +6795,30 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn related_sound_file(&self) -> Option<&'a str> {
         self.related_sound_file
+    }
+
+    pub const fn temperature(&self) -> Option<FrameExifSignedRational> {
+        self.temperature
+    }
+
+    pub const fn humidity(&self) -> Option<FrameExifRational> {
+        self.humidity
+    }
+
+    pub const fn pressure(&self) -> Option<FrameExifRational> {
+        self.pressure
+    }
+
+    pub const fn water_depth(&self) -> Option<FrameExifSignedRational> {
+        self.water_depth
+    }
+
+    pub const fn acceleration(&self) -> Option<FrameExifRational> {
+        self.acceleration
+    }
+
+    pub const fn camera_elevation_angle(&self) -> Option<FrameExifSignedRational> {
+        self.camera_elevation_angle
     }
 
     pub const fn image_unique_id(&self) -> Option<&'a str> {
@@ -7321,6 +7351,12 @@ impl<'a> FrameExif<'a> {
     pub const TAG_SUB_SEC_TIME: u16 = 0x9290;
     pub const TAG_SUB_SEC_TIME_ORIGINAL: u16 = 0x9291;
     pub const TAG_SUB_SEC_TIME_DIGITIZED: u16 = 0x9292;
+    pub const TAG_TEMPERATURE: u16 = 0x9400;
+    pub const TAG_HUMIDITY: u16 = 0x9401;
+    pub const TAG_PRESSURE: u16 = 0x9402;
+    pub const TAG_WATER_DEPTH: u16 = 0x9403;
+    pub const TAG_ACCELERATION: u16 = 0x9404;
+    pub const TAG_CAMERA_ELEVATION_ANGLE: u16 = 0x9405;
     pub const TAG_FLASHPIX_VERSION: u16 = 0xA000;
     pub const TAG_COLOR_SPACE: u16 = 0xA001;
     pub const TAG_PIXEL_X_DIMENSION: u16 = 0xA002;
@@ -7572,6 +7608,19 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_RELATED_SOUND_FILE,
                 "RelatedSoundFile",
                 13,
+            )?;
+            tags.temperature =
+                Self::optional_signed_rational_tag(ifd, Self::TAG_TEMPERATURE, "Temperature")?;
+            tags.humidity = Self::optional_rational_tag(ifd, Self::TAG_HUMIDITY, "Humidity")?;
+            tags.pressure = Self::optional_rational_tag(ifd, Self::TAG_PRESSURE, "Pressure")?;
+            tags.water_depth =
+                Self::optional_signed_rational_tag(ifd, Self::TAG_WATER_DEPTH, "WaterDepth")?;
+            tags.acceleration =
+                Self::optional_rational_tag(ifd, Self::TAG_ACCELERATION, "Acceleration")?;
+            tags.camera_elevation_angle = Self::optional_signed_rational_tag(
+                ifd,
+                Self::TAG_CAMERA_ELEVATION_ANGLE,
+                "CameraElevationAngle",
             )?;
             tags.image_unique_id = Self::optional_ascii_exact_count_tag(
                 ifd,
@@ -12911,6 +12960,85 @@ mod tests {
         data.extend_from_slice(b"exp-times-01");
 
         assert_eq!(data.len(), 100);
+        data
+    }
+
+    fn exif_environment_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&6u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_TEMPERATURE,
+            FrameExifTiffType::SignedRational,
+            1,
+            104u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_HUMIDITY,
+            FrameExifTiffType::Rational,
+            1,
+            112u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_PRESSURE,
+            FrameExifTiffType::Rational,
+            1,
+            120u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_WATER_DEPTH,
+            FrameExifTiffType::SignedRational,
+            1,
+            128u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_ACCELERATION,
+            FrameExifTiffType::Rational,
+            1,
+            136u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_CAMERA_ELEVATION_ANGLE,
+            FrameExifTiffType::SignedRational,
+            1,
+            144u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 104);
+
+        data.extend_from_slice(&(-5i32).to_le_bytes());
+        data.extend_from_slice(&1i32.to_le_bytes());
+        data.extend_from_slice(&55u32.to_le_bytes());
+        data.extend_from_slice(&1u32.to_le_bytes());
+        data.extend_from_slice(&1013u32.to_le_bytes());
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(&(-3i32).to_le_bytes());
+        data.extend_from_slice(&1i32.to_le_bytes());
+        data.extend_from_slice(&98u32.to_le_bytes());
+        data.extend_from_slice(&10u32.to_le_bytes());
+        data.extend_from_slice(&(-12i32).to_le_bytes());
+        data.extend_from_slice(&1i32.to_le_bytes());
+
+        assert_eq!(data.len(), 152);
         data
     }
 
@@ -19116,6 +19244,89 @@ mod tests {
         bad_exposure_type[68..72].copy_from_slice(&1u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_exposure_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_environment_tags() {
+        let exif_bytes = exif_environment_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.temperature(),
+            Some(FrameExifSignedRational {
+                numerator: -5,
+                denominator: 1,
+            })
+        );
+        assert_eq!(
+            common.humidity(),
+            Some(FrameExifRational {
+                numerator: 55,
+                denominator: 1,
+            })
+        );
+        assert_eq!(
+            common.pressure(),
+            Some(FrameExifRational {
+                numerator: 1013,
+                denominator: 10,
+            })
+        );
+        assert_eq!(
+            common.water_depth(),
+            Some(FrameExifSignedRational {
+                numerator: -3,
+                denominator: 1,
+            })
+        );
+        assert_eq!(
+            common.acceleration(),
+            Some(FrameExifRational {
+                numerator: 98,
+                denominator: 10,
+            })
+        );
+        assert_eq!(
+            common.camera_elevation_angle(),
+            Some(FrameExifSignedRational {
+                numerator: -12,
+                denominator: 1,
+            })
+        );
+
+        let mut bad_temperature_count = exif_environment_fixture();
+        bad_temperature_count[32..36].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_temperature_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_humidity_type = exif_environment_fixture();
+        bad_humidity_type[42..44].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_humidity_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_water_depth_denominator = exif_environment_fixture();
+        bad_water_depth_denominator[132..136].copy_from_slice(&0i32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_water_depth_denominator)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

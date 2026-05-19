@@ -1750,6 +1750,24 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.exposure_bias_value() {
                         assert_ne!(value.denominator(), 0);
                     }
+                    if let Some(value) = common.temperature() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.humidity() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.pressure() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.water_depth() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.acceleration() {
+                        assert_ne!(value.denominator(), 0);
+                    }
+                    if let Some(value) = common.camera_elevation_angle() {
+                        assert_ne!(value.denominator(), 0);
+                    }
                     if let Some(value) = common.focal_length() {
                         assert_ne!(value.denominator(), 0);
                     }
@@ -4186,6 +4204,34 @@ fn exercise_fixtures() {
         Some(&b"exp-times-01"[..])
     );
 
+    let environment_exif_bytes = exif_environment_fixture();
+    let environment_exif = FrameExif::parse(&environment_exif_bytes).unwrap();
+    let environment_tags = environment_exif.common_tags().unwrap();
+    assert_eq!(environment_tags.temperature().unwrap().numerator(), -5);
+    assert_eq!(environment_tags.temperature().unwrap().denominator(), 1);
+    assert_eq!(environment_tags.humidity().unwrap().numerator(), 55);
+    assert_eq!(environment_tags.humidity().unwrap().denominator(), 1);
+    assert_eq!(environment_tags.pressure().unwrap().numerator(), 1013);
+    assert_eq!(environment_tags.pressure().unwrap().denominator(), 10);
+    assert_eq!(environment_tags.water_depth().unwrap().numerator(), -3);
+    assert_eq!(environment_tags.water_depth().unwrap().denominator(), 1);
+    assert_eq!(environment_tags.acceleration().unwrap().numerator(), 98);
+    assert_eq!(environment_tags.acceleration().unwrap().denominator(), 10);
+    assert_eq!(
+        environment_tags
+            .camera_elevation_angle()
+            .unwrap()
+            .numerator(),
+        -12
+    );
+    assert_eq!(
+        environment_tags
+            .camera_elevation_angle()
+            .unwrap()
+            .denominator(),
+        1
+    );
+
     let descriptive_exif_bytes = exif_descriptive_tags_fixture();
     let descriptive_exif = FrameExif::parse(&descriptive_exif_bytes).unwrap();
     let descriptive_tags = descriptive_exif.common_tags().unwrap();
@@ -6216,6 +6262,80 @@ fn exif_gamma_composite_fixture() -> Vec<u8> {
     data.extend_from_slice(&22u32.to_le_bytes());
     data.extend_from_slice(&10u32.to_le_bytes());
     data.extend_from_slice(b"exp-times-01");
+    data
+}
+
+fn exif_environment_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&6u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_TEMPERATURE,
+        FrameExifTiffType::SignedRational,
+        1,
+        104u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_HUMIDITY,
+        FrameExifTiffType::Rational,
+        1,
+        112u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_PRESSURE,
+        FrameExifTiffType::Rational,
+        1,
+        120u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_WATER_DEPTH,
+        FrameExifTiffType::SignedRational,
+        1,
+        128u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_ACCELERATION,
+        FrameExifTiffType::Rational,
+        1,
+        136u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_CAMERA_ELEVATION_ANGLE,
+        FrameExifTiffType::SignedRational,
+        1,
+        144u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&(-5i32).to_le_bytes());
+    data.extend_from_slice(&1i32.to_le_bytes());
+    data.extend_from_slice(&55u32.to_le_bytes());
+    data.extend_from_slice(&1u32.to_le_bytes());
+    data.extend_from_slice(&1013u32.to_le_bytes());
+    data.extend_from_slice(&10u32.to_le_bytes());
+    data.extend_from_slice(&(-3i32).to_le_bytes());
+    data.extend_from_slice(&1i32.to_le_bytes());
+    data.extend_from_slice(&98u32.to_le_bytes());
+    data.extend_from_slice(&10u32.to_le_bytes());
+    data.extend_from_slice(&(-12i32).to_le_bytes());
+    data.extend_from_slice(&1i32.to_le_bytes());
     data
 }
 
