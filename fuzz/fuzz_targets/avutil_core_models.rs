@@ -19,8 +19,9 @@ use avutil::{
     FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
     FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
     FrameStereo3dType, FrameStereo3dView, FrameVideoBlockParams, FrameVideoEncParams,
-    FrameVideoEncParamsType, Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding,
-    SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, Md5, Packet,
+    PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224,
+    Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1588,6 +1589,32 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(frame_side_data_kind, FrameSideDataKind::VideoEncParams);
             assert!(video_enc_params_payload_invalid(&frame_side_data_payload));
+        }
+    }
+    match frame.side_data()[0].video_hint() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::VideoHint);
+            assert_eq!(value.to_bytes(), frame_side_data_payload);
+            assert_eq!(
+                frame_side_data_payload.len(),
+                FrameVideoHint::HEADER_LEN + value.nb_rects() * FrameVideoRect::DATA_LEN
+            );
+            assert!(matches!(
+                value.hint_type(),
+                FrameVideoHintType::Constant | FrameVideoHintType::Changed
+            ));
+            for rect in value.rects() {
+                assert!(rect.width() > 0);
+                assert!(rect.height() > 0);
+                assert!(rect.x().checked_add(rect.width()).is_some());
+                assert!(rect.y().checked_add(rect.height()).is_some());
+            }
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::VideoHint),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::VideoHint);
+            assert!(video_hint_payload_invalid(&frame_side_data_payload));
         }
     }
     match frame.side_data()[0].film_grain_params() {
@@ -3387,6 +3414,47 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_video_enc.video_enc_params().unwrap(), None);
 
+    let video_rect = FrameVideoRect::new(4, 8, 16, 32).unwrap();
+    let video_hint = FrameVideoHint::new(FrameVideoHintType::Changed, vec![video_rect]).unwrap();
+    let video_hint_side_data = FrameSideData::new_video_hint(video_hint.clone()).unwrap();
+    assert_eq!(
+        video_hint_side_data.kind_id(),
+        &FrameSideDataKind::VideoHint
+    );
+    let parsed_video_hint = video_hint_side_data.video_hint().unwrap().unwrap();
+    assert_eq!(parsed_video_hint, video_hint);
+    assert_eq!(parsed_video_hint.hint_type(), FrameVideoHintType::Changed);
+    assert_eq!(
+        parsed_video_hint.hint_type().ffmpeg_constant(),
+        "AV_VIDEO_HINT_TYPE_CHANGED"
+    );
+    assert_eq!(parsed_video_hint.rect(0), Some(video_rect));
+    assert_eq!(parsed_video_hint.rect(1), None);
+    assert_eq!(video_hint_side_data.data(), video_hint.to_bytes());
+    assert_eq!(
+        FrameVideoHint::parse(&[0; FrameVideoHint::HEADER_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_video_hint = video_hint.to_bytes();
+    write_ne_i32(&mut bad_video_hint, video_hint_type_field_offset(), 2);
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::VideoHint, bad_video_hint)
+            .unwrap()
+            .video_hint()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameVideoRect::new(u32::MAX, 0, 1, 1).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    let non_video_hint =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_video_hint.video_hint().unwrap(), None);
+
     let film_grain = minimal_film_grain_av1_fixture();
     let film_grain_side_data = FrameSideData::new_film_grain_params(film_grain.clone()).unwrap();
     let parsed_film_grain = film_grain_side_data.film_grain_params().unwrap().unwrap();
@@ -4218,6 +4286,63 @@ fn video_enc_params_block_size_field_offset() -> usize {
 
 fn video_enc_params_type_field_offset() -> usize {
     video_enc_params_block_size_field_offset() + core::mem::size_of::<usize>()
+}
+
+fn video_hint_payload_invalid(data: &[u8]) -> bool {
+    if data.len() < FrameVideoHint::HEADER_LEN {
+        return true;
+    }
+
+    if read_ne_usize(data, video_hint_rect_offset_field_offset()) != FrameVideoHint::HEADER_LEN {
+        return true;
+    }
+
+    if read_ne_usize(data, video_hint_rect_size_field_offset()) != FrameVideoRect::DATA_LEN {
+        return true;
+    }
+
+    if !matches!(read_ne_i32(data, video_hint_type_field_offset()), 0 | 1) {
+        return true;
+    }
+
+    let nb_rects = read_ne_usize(data, 0);
+    let Some(rects_len) = nb_rects.checked_mul(FrameVideoRect::DATA_LEN) else {
+        return true;
+    };
+    let Some(expected_len) = FrameVideoHint::HEADER_LEN.checked_add(rects_len) else {
+        return true;
+    };
+    if data.len() != expected_len {
+        return true;
+    }
+
+    for rect in data[FrameVideoHint::HEADER_LEN..].chunks_exact(FrameVideoRect::DATA_LEN) {
+        let x = read_ne_u32(rect, 0);
+        let y = read_ne_u32(rect, 4);
+        let width = read_ne_u32(rect, 8);
+        let height = read_ne_u32(rect, 12);
+        if width == 0
+            || height == 0
+            || x.checked_add(width).is_none()
+            || y.checked_add(height).is_none()
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn video_hint_rect_offset_field_offset() -> usize {
+    core::mem::size_of::<usize>()
+}
+
+fn video_hint_rect_size_field_offset() -> usize {
+    video_hint_rect_offset_field_offset() + core::mem::size_of::<usize>()
+}
+
+fn video_hint_type_field_offset() -> usize {
+    video_hint_rect_size_field_offset() + core::mem::size_of::<usize>()
 }
 
 fn minimal_film_grain_av1_fixture() -> Vec<u8> {

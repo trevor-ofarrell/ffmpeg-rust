@@ -1063,6 +1063,280 @@ impl FrameAmbientViewingEnvironment {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameVideoHintType {
+    Constant,
+    Changed,
+}
+
+impl FrameVideoHintType {
+    pub const fn as_raw(self) -> i32 {
+        match self {
+            Self::Constant => 0,
+            Self::Changed => 1,
+        }
+    }
+
+    pub fn from_raw(raw: i32) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Constant),
+            1 => Ok(Self::Changed),
+            _ => Err(AvError::invalid_data(format!(
+                "unknown video hint type {raw}"
+            ))),
+        }
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Constant => "AV_VIDEO_HINT_TYPE_CONSTANT",
+            Self::Changed => "AV_VIDEO_HINT_TYPE_CHANGED",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameVideoRect {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+impl FrameVideoRect {
+    pub const DATA_LEN: usize = 16;
+
+    pub fn new(x: u32, y: u32, width: u32, height: u32) -> AvResult<Self> {
+        Self::validate_rect(x, y, width, height, AvError::invalid_argument)?;
+
+        Ok(Self {
+            x,
+            y,
+            width,
+            height,
+        })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "video hint rectangle requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let x = Self::read_u32(data, 0);
+        let y = Self::read_u32(data, 4);
+        let width = Self::read_u32(data, 8);
+        let height = Self::read_u32(data, 12);
+        Self::validate_rect(x, y, width, height, AvError::invalid_data)?;
+
+        Ok(Self {
+            x,
+            y,
+            width,
+            height,
+        })
+    }
+
+    pub const fn x(self) -> u32 {
+        self.x
+    }
+
+    pub const fn y(self) -> u32 {
+        self.y
+    }
+
+    pub const fn width(self) -> u32 {
+        self.width
+    }
+
+    pub const fn height(self) -> u32 {
+        self.height
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[0..4].copy_from_slice(&self.x.to_ne_bytes());
+        bytes[4..8].copy_from_slice(&self.y.to_ne_bytes());
+        bytes[8..12].copy_from_slice(&self.width.to_ne_bytes());
+        bytes[12..16].copy_from_slice(&self.height.to_ne_bytes());
+        bytes
+    }
+
+    fn validate_rect(
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        make_error: impl FnOnce(String) -> AvError,
+    ) -> AvResult<()> {
+        if width == 0 || height == 0 {
+            return Err(make_error(format!(
+                "video hint rectangle dimensions must be positive, got {width}x{height}"
+            )));
+        }
+        if x.checked_add(width).is_none() || y.checked_add(height).is_none() {
+            return Err(make_error(format!(
+                "video hint rectangle {x},{y} {width}x{height} overflows u32 bounds"
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn read_u32(data: &[u8], offset: usize) -> u32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        u32::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameVideoHint {
+    hint_type: FrameVideoHintType,
+    rects: Vec<FrameVideoRect>,
+}
+
+impl FrameVideoHint {
+    const SIZE_T_LEN: usize = core::mem::size_of::<usize>();
+    const NB_RECTS_OFFSET: usize = 0;
+    const RECT_OFFSET_OFFSET: usize = Self::NB_RECTS_OFFSET + Self::SIZE_T_LEN;
+    const RECT_SIZE_OFFSET: usize = Self::RECT_OFFSET_OFFSET + Self::SIZE_T_LEN;
+    const TYPE_OFFSET: usize = Self::RECT_SIZE_OFFSET + Self::SIZE_T_LEN;
+    pub const HEADER_LEN: usize =
+        Self::align_up(Self::TYPE_OFFSET + 4, core::mem::align_of::<usize>());
+
+    pub fn new(hint_type: FrameVideoHintType, rects: Vec<FrameVideoRect>) -> AvResult<Self> {
+        Self::expected_data_len(rects.len()).map_err(|err| {
+            AvError::invalid_argument(format!("video hint payload length overflow: {err}"))
+        })?;
+
+        Ok(Self { hint_type, rects })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() < Self::HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "video hint frame side data requires at least {} header bytes, got {}",
+                Self::HEADER_LEN,
+                data.len()
+            )));
+        }
+
+        let nb_rects = Self::read_usize(data, Self::NB_RECTS_OFFSET);
+        let rect_offset = Self::read_usize(data, Self::RECT_OFFSET_OFFSET);
+        if rect_offset != Self::HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "video hint rectangle offset {rect_offset} does not match native offset {}",
+                Self::HEADER_LEN
+            )));
+        }
+
+        let rect_size = Self::read_usize(data, Self::RECT_SIZE_OFFSET);
+        if rect_size != FrameVideoRect::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "video hint rectangle size {rect_size} does not match native size {}",
+                FrameVideoRect::DATA_LEN
+            )));
+        }
+
+        let expected_len = Self::expected_data_len(nb_rects)?;
+        if data.len() != expected_len {
+            return Err(AvError::invalid_data(format!(
+                "video hint payload requires exactly {expected_len} bytes for {nb_rects} rectangles, got {}",
+                data.len()
+            )));
+        }
+
+        let hint_type = FrameVideoHintType::from_raw(Self::read_i32(data, Self::TYPE_OFFSET))?;
+        let mut rects = Vec::with_capacity(nb_rects);
+        for index in 0..nb_rects {
+            let offset = Self::HEADER_LEN + index * FrameVideoRect::DATA_LEN;
+            rects.push(FrameVideoRect::parse(
+                &data[offset..offset + FrameVideoRect::DATA_LEN],
+            )?);
+        }
+
+        Ok(Self { hint_type, rects })
+    }
+
+    pub const fn hint_type(&self) -> FrameVideoHintType {
+        self.hint_type
+    }
+
+    pub fn rects(&self) -> &[FrameVideoRect] {
+        &self.rects
+    }
+
+    pub fn into_rects(self) -> Vec<FrameVideoRect> {
+        self.rects
+    }
+
+    pub fn nb_rects(&self) -> usize {
+        self.rects.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rects.is_empty()
+    }
+
+    pub fn rect(&self, index: usize) -> Option<FrameVideoRect> {
+        self.rects.get(index).copied()
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![0; Self::HEADER_LEN];
+        Self::write_usize(&mut bytes, Self::NB_RECTS_OFFSET, self.rects.len());
+        Self::write_usize(&mut bytes, Self::RECT_OFFSET_OFFSET, Self::HEADER_LEN);
+        Self::write_usize(&mut bytes, Self::RECT_SIZE_OFFSET, FrameVideoRect::DATA_LEN);
+        Self::write_i32(&mut bytes, Self::TYPE_OFFSET, self.hint_type.as_raw());
+        for rect in &self.rects {
+            bytes.extend_from_slice(&rect.to_bytes());
+        }
+        bytes
+    }
+
+    fn expected_data_len(nb_rects: usize) -> AvResult<usize> {
+        let rects_len = nb_rects
+            .checked_mul(FrameVideoRect::DATA_LEN)
+            .ok_or_else(|| AvError::invalid_data("video hint rectangle data length overflow"))?;
+        Self::HEADER_LEN
+            .checked_add(rects_len)
+            .ok_or_else(|| AvError::invalid_data("video hint payload length overflow"))
+    }
+
+    const fn align_up(value: usize, align: usize) -> usize {
+        let remainder = value % align;
+        if remainder == 0 {
+            value
+        } else {
+            value + align - remainder
+        }
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+
+    fn read_usize(data: &[u8], offset: usize) -> usize {
+        let mut raw = [0; Self::SIZE_T_LEN];
+        raw.copy_from_slice(&data[offset..offset + Self::SIZE_T_LEN]);
+        usize::from_ne_bytes(raw)
+    }
+
+    fn write_i32(data: &mut [u8], offset: usize, value: i32) {
+        data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_usize(data: &mut [u8], offset: usize, value: usize) {
+        data[offset..offset + Self::SIZE_T_LEN].copy_from_slice(&value.to_ne_bytes());
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameDisplayMatrix {
     elements: [i32; Self::ELEMENTS],
 }
@@ -5893,6 +6167,10 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::VideoEncParams, value.to_bytes())
     }
 
+    pub fn new_video_hint(value: FrameVideoHint) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::VideoHint, value.to_bytes())
+    }
+
     pub fn new_film_grain_params(data: Vec<u8>) -> AvResult<Self> {
         let side_data = Self::new_with_kind(FrameSideDataKind::FilmGrainParams, data)?;
         FrameFilmGrainParams::parse(side_data.data())?;
@@ -6146,6 +6424,14 @@ impl FrameSideData {
         }
 
         FrameVideoEncParams::parse(self.data()).map(Some)
+    }
+
+    pub fn video_hint(&self) -> AvResult<Option<FrameVideoHint>> {
+        if self.kind != FrameSideDataKind::VideoHint {
+            return Ok(None);
+        }
+
+        FrameVideoHint::parse(self.data()).map(Some)
     }
 
     pub fn film_grain_params(&self) -> AvResult<Option<FrameFilmGrainParams<'_>>> {
@@ -12376,6 +12662,158 @@ mod tests {
         let non_ambient =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
         assert_eq!(non_ambient.ambient_viewing_environment().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_video_hint_payload() {
+        let first = FrameVideoRect::new(0, 16, 32, 48).unwrap();
+        let second = FrameVideoRect::new(64, 0, 16, 16).unwrap();
+        let value = FrameVideoHint::new(FrameVideoHintType::Changed, vec![first, second]).unwrap();
+        let side_data = FrameSideData::new_video_hint(value.clone()).unwrap();
+
+        assert_eq!(FrameVideoRect::DATA_LEN, 16);
+        assert_eq!(
+            FrameVideoHint::HEADER_LEN,
+            if core::mem::size_of::<usize>() == 8 {
+                32
+            } else {
+                16
+            }
+        );
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::VideoHint);
+        assert_eq!(side_data.data(), value.to_bytes());
+        let parsed = side_data.video_hint().unwrap().unwrap();
+        assert_eq!(parsed, value);
+        assert_eq!(parsed.hint_type(), FrameVideoHintType::Changed);
+        assert_eq!(
+            parsed.hint_type().ffmpeg_constant(),
+            "AV_VIDEO_HINT_TYPE_CHANGED"
+        );
+        assert_eq!(parsed.nb_rects(), 2);
+        assert!(!parsed.is_empty());
+        assert_eq!(parsed.rect(0), Some(first));
+        assert_eq!(parsed.rect(1), Some(second));
+        assert_eq!(parsed.rect(2), None);
+        assert_eq!(parsed.rects(), &[first, second]);
+        assert_eq!(
+            parsed.to_bytes().len(),
+            FrameVideoHint::HEADER_LEN + 2 * FrameVideoRect::DATA_LEN
+        );
+        assert_eq!(FrameVideoHint::parse(&parsed.to_bytes()).unwrap(), parsed);
+        assert_eq!(first.to_bytes()[0..4], 0u32.to_ne_bytes());
+        assert_eq!(first.x(), 0);
+        assert_eq!(first.y(), 16);
+        assert_eq!(first.width(), 32);
+        assert_eq!(first.height(), 48);
+
+        let empty = FrameVideoHint::new(FrameVideoHintType::Constant, Vec::new()).unwrap();
+        let empty_parsed = FrameVideoHint::parse(&empty.to_bytes()).unwrap();
+        assert_eq!(empty_parsed.hint_type(), FrameVideoHintType::Constant);
+        assert_eq!(
+            empty_parsed.hint_type().ffmpeg_constant(),
+            "AV_VIDEO_HINT_TYPE_CONSTANT"
+        );
+        assert_eq!(empty_parsed.nb_rects(), 0);
+        assert!(empty_parsed.is_empty());
+        assert_eq!(empty_parsed.to_bytes().len(), FrameVideoHint::HEADER_LEN);
+
+        let non_hint =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
+        assert_eq!(non_hint.video_hint().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_video_hint_payload() {
+        let rect = FrameVideoRect::new(0, 0, 16, 16).unwrap();
+        let value = FrameVideoHint::new(FrameVideoHintType::Changed, vec![rect]).unwrap();
+
+        assert_eq!(
+            FrameVideoRect::parse(&[0; FrameVideoRect::DATA_LEN - 1])
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameVideoHint::parse(&[0; FrameVideoHint::HEADER_LEN - 1])
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        for bad in [
+            {
+                let mut bad = value.to_bytes();
+                write_ne_usize(
+                    &mut bad,
+                    FrameVideoHint::RECT_OFFSET_OFFSET,
+                    FrameVideoHint::HEADER_LEN - 4,
+                );
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                write_ne_usize(
+                    &mut bad,
+                    FrameVideoHint::RECT_SIZE_OFFSET,
+                    FrameVideoRect::DATA_LEN + 4,
+                );
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                write_ne_i32(&mut bad, FrameVideoHint::TYPE_OFFSET, 2);
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                write_ne_usize(&mut bad, FrameVideoHint::NB_RECTS_OFFSET, 2);
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                bad.push(0);
+                bad
+            },
+        ] {
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::VideoHint, bad).unwrap();
+            assert_eq!(
+                side_data.video_hint().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let mut zero_width = value.to_bytes();
+        write_ne_u32(&mut zero_width, FrameVideoHint::HEADER_LEN + 8, 0);
+        let side_data =
+            FrameSideData::new_with_kind(FrameSideDataKind::VideoHint, zero_width).unwrap();
+        assert_eq!(
+            side_data.video_hint().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut overflow = value.to_bytes();
+        write_ne_u32(&mut overflow, FrameVideoHint::HEADER_LEN, u32::MAX);
+        write_ne_u32(&mut overflow, FrameVideoHint::HEADER_LEN + 8, 1);
+        let side_data =
+            FrameSideData::new_with_kind(FrameSideDataKind::VideoHint, overflow).unwrap();
+        assert_eq!(
+            side_data.video_hint().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        assert_eq!(
+            FrameVideoRect::new(0, 0, 0, 16).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            FrameVideoRect::new(u32::MAX, 0, 1, 16).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let non_hint =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
+        assert_eq!(non_hint.video_hint().unwrap(), None);
     }
 
     #[test]
