@@ -126,6 +126,7 @@ pub struct Packet {
     stream_index: usize,
     flags: PacketFlags,
     side_data: Vec<SideData>,
+    time_base: Rational,
 }
 
 impl Packet {
@@ -143,6 +144,7 @@ impl Packet {
             stream_index,
             flags: PacketFlags::empty(),
             side_data: Vec::new(),
+            time_base: Rational::ZERO,
         }
     }
 
@@ -202,6 +204,10 @@ impl Packet {
         &self.side_data
     }
 
+    pub fn time_base(&self) -> Rational {
+        self.time_base
+    }
+
     pub fn side_data_by_kind(&self, kind: &str) -> Option<&SideData> {
         self.side_data
             .iter()
@@ -254,6 +260,11 @@ impl Packet {
         self.set_flag(PacketFlags::KEY, is_key);
     }
 
+    pub fn set_time_base(&mut self, time_base: Rational) -> AvResult<()> {
+        self.time_base = Rational::new(time_base.num(), time_base.den())?;
+        Ok(())
+    }
+
     pub fn push_side_data(&mut self, side_data: SideData) {
         self.side_data.push(side_data);
     }
@@ -303,6 +314,7 @@ impl Packet {
         self.stream_index = src.stream_index;
         self.flags = src.flags;
         self.side_data = src.side_data.clone();
+        self.time_base = src.time_base;
     }
 
     pub fn rescale_ts(&mut self, src: Rational, dst: Rational) -> AvResult<()> {
@@ -370,6 +382,7 @@ mod tests {
         assert_eq!(packet.pos(), None);
         assert_eq!(packet.len(), 3);
         assert!(!packet.is_empty());
+        assert_eq!(packet.time_base(), Rational::ZERO);
     }
 
     #[test]
@@ -379,6 +392,9 @@ mod tests {
         packet.set_dts(Some(10));
         packet.set_duration(2).unwrap();
         packet.set_pos(Some(42)).unwrap();
+        packet
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
         packet.set_key(true);
         packet.set_flag(PacketFlags::CORRUPT, true);
         packet.set_flag(PacketFlags::DISCARD, true);
@@ -390,6 +406,7 @@ mod tests {
         assert_eq!(packet.dts(), Some(10));
         assert_eq!(packet.duration(), 2);
         assert_eq!(packet.pos(), Some(42));
+        assert_eq!(packet.time_base(), Rational::new(1, 90_000).unwrap());
         assert!(packet.flags().contains(PacketFlags::KEY));
         assert!(packet.flags().contains(PacketFlags::CORRUPT));
         assert!(packet.flags().contains(PacketFlags::DISCARD));
@@ -433,11 +450,22 @@ mod tests {
         let mut packet = Packet::new(Vec::new(), 0);
         packet.set_duration(5).unwrap();
         packet.set_pos(Some(9)).unwrap();
+        packet
+            .set_time_base(Rational::new(1, 1_000).unwrap())
+            .unwrap();
 
         assert!(packet.set_duration(-1).is_err());
         assert_eq!(packet.duration(), 5);
         assert!(packet.set_pos(Some(-1)).is_err());
         assert_eq!(packet.pos(), Some(9));
+        assert_eq!(
+            packet
+                .set_time_base(Rational::from_raw(1, 0))
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(packet.time_base(), Rational::new(1, 1_000).unwrap());
         packet.set_pos(None).unwrap();
         assert_eq!(packet.pos(), None);
         assert!(SideData::new(" ", Vec::new()).is_err());
@@ -509,6 +537,8 @@ mod tests {
         src.set_dts(Some(10));
         src.set_duration(2).unwrap();
         src.set_pos(Some(42)).unwrap();
+        src.set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
         src.set_key(true);
         src.push_side_data(SideData::new("palette", vec![5, 6]).unwrap());
 
@@ -523,6 +553,7 @@ mod tests {
         assert_eq!(dst.dts(), Some(10));
         assert_eq!(dst.duration(), 2);
         assert_eq!(dst.pos(), Some(42));
+        assert_eq!(dst.time_base(), Rational::new(1, 90_000).unwrap());
         assert!(dst.flags().contains(PacketFlags::KEY));
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
 
@@ -571,6 +602,8 @@ mod tests {
         );
         src.set_pts(Some(7));
         src.set_duration(5).unwrap();
+        src.set_time_base(Rational::new(1, 48_000).unwrap())
+            .unwrap();
         src.push_side_data(SideData::new("palette", vec![4]).unwrap());
 
         dst.move_ref_from(&mut src);
@@ -584,6 +617,7 @@ mod tests {
         assert_eq!(dst.stream_index(), 3);
         assert_eq!(dst.pts(), Some(7));
         assert_eq!(dst.duration(), 5);
+        assert_eq!(dst.time_base(), Rational::new(1, 48_000).unwrap());
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[4]);
 
         dst.unref();
@@ -595,6 +629,7 @@ mod tests {
         assert_eq!(dst.dts(), None);
         assert_eq!(dst.duration(), 0);
         assert_eq!(dst.pos(), None);
+        assert_eq!(dst.time_base(), Rational::ZERO);
         assert!(dst.flags().is_empty());
         assert!(dst.side_data().is_empty());
     }
@@ -606,6 +641,8 @@ mod tests {
         src.set_dts(Some(10));
         src.set_duration(2).unwrap();
         src.set_pos(Some(42)).unwrap();
+        src.set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
         src.set_key(true);
         src.set_flag(PacketFlags::CORRUPT, true);
         src.push_side_data(SideData::new("palette", vec![5, 6]).unwrap());
@@ -613,6 +650,7 @@ mod tests {
         let mut dst = Packet::new(vec![9, 8], 99);
         dst.set_pts(Some(99));
         dst.set_duration(9).unwrap();
+        dst.set_time_base(Rational::new(1, 1_000).unwrap()).unwrap();
         dst.push_side_data(SideData::new("old", vec![7]).unwrap());
 
         dst.copy_props_from(&src);
@@ -624,6 +662,7 @@ mod tests {
         assert_eq!(dst.dts(), Some(10));
         assert_eq!(dst.duration(), 2);
         assert_eq!(dst.pos(), Some(42));
+        assert_eq!(dst.time_base(), Rational::new(1, 90_000).unwrap());
         assert!(dst.flags().contains(PacketFlags::KEY));
         assert!(dst.flags().contains(PacketFlags::CORRUPT));
         assert!(dst.side_data_by_kind("old").is_none());
@@ -644,6 +683,45 @@ mod tests {
     }
 
     #[test]
+    fn packet_time_base_defaults_copies_resets_and_rescale_preserves() {
+        let mut src = Packet::new(vec![1, 2], 0);
+        assert_eq!(src.time_base(), Rational::ZERO);
+
+        src.set_time_base(Rational::from_raw(2, 4)).unwrap();
+        assert_eq!(src.time_base(), Rational::new(1, 2).unwrap());
+        assert_eq!(
+            src.set_time_base(Rational::from_raw(1, 0))
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(src.time_base(), Rational::new(1, 2).unwrap());
+
+        src.set_pts(Some(2));
+        src.set_duration(2).unwrap();
+        src.rescale_ts(Rational::new(1, 2).unwrap(), Rational::new(1, 4).unwrap())
+            .unwrap();
+        assert_eq!(src.time_base(), Rational::new(1, 2).unwrap());
+
+        let mut props = Packet::new(vec![9], 1);
+        props.copy_props_from(&src);
+        assert_eq!(props.data(), &[9]);
+        assert_eq!(props.time_base(), src.time_base());
+
+        let mut packet_ref = Packet::default();
+        packet_ref.ref_from(&src);
+        assert_eq!(packet_ref.time_base(), src.time_base());
+
+        let mut moved = Packet::default();
+        moved.move_ref_from(&mut packet_ref);
+        assert_eq!(moved.time_base(), src.time_base());
+        assert_eq!(packet_ref.time_base(), Rational::ZERO);
+
+        moved.unref();
+        assert_eq!(moved.time_base(), Rational::ZERO);
+    }
+
+    #[test]
     fn packet_rescales_valid_timestamps_and_duration() {
         let src = Rational::new(1, 90_000).unwrap();
         let dst = Rational::new(1, 1_000).unwrap();
@@ -652,6 +730,7 @@ mod tests {
         packet.set_dts(Some(45_000));
         packet.set_duration(3_003).unwrap();
         packet.set_pos(Some(77)).unwrap();
+        packet.set_time_base(src).unwrap();
         packet.set_key(true);
         packet.push_side_data(SideData::new("palette", vec![1, 2, 3]).unwrap());
 
@@ -661,6 +740,7 @@ mod tests {
         assert_eq!(packet.dts(), Some(500));
         assert_eq!(packet.duration(), 33);
         assert_eq!(packet.pos(), Some(77));
+        assert_eq!(packet.time_base(), src);
         assert_eq!(packet.stream_index(), 3);
         assert!(packet.flags().contains(PacketFlags::KEY));
         assert_eq!(packet.side_data()[0].data(), &[1, 2, 3]);

@@ -3140,6 +3140,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet.dts(), None);
     assert_eq!(packet.duration(), 0);
     assert_eq!(packet.pos(), None);
+    assert_eq!(packet.time_base(), Rational::ZERO);
 
     let pts = timestamp_from(cursor.next());
     let dts = timestamp_from(cursor.next());
@@ -3172,6 +3173,16 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
     let rescale_src = Rational::new(1, 90_000).unwrap();
     let rescale_dst = Rational::new(1, 1_000).unwrap();
+    packet.set_time_base(rescale_src).unwrap();
+    assert_eq!(packet.time_base(), rescale_src);
+    assert_eq!(
+        packet
+            .set_time_base(Rational::from_raw(1, 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(packet.time_base(), rescale_src);
     let original_timing = (packet.pts(), packet.dts(), packet.duration());
     packet.rescale_ts(rescale_src, rescale_dst).unwrap();
     assert_eq!(
@@ -3194,6 +3205,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             rescale_q(original_timing.2, rescale_src, rescale_dst).unwrap()
         }
     );
+    assert_eq!(packet.time_base(), rescale_src);
     let rescaled_timing = (packet.pts(), packet.dts(), packet.duration());
     assert_eq!(
         packet
@@ -3294,6 +3306,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         packet_ref.side_data_by_kind("ref_side_data").unwrap().data(),
         &[0xbb, 0xcc]
     );
+    assert_eq!(packet_ref.time_base(), packet.time_base());
     packet_ref.shrink_side_data("ref_side_data", 1).unwrap();
     assert_eq!(
         packet_ref.side_data_by_kind("ref_side_data").unwrap().data(),
@@ -3323,6 +3336,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(packet_ref.is_empty());
     assert_eq!(packet_ref.stream_index(), 0);
     assert_eq!(packet_ref.pts(), None);
+    assert_eq!(packet_ref.time_base(), Rational::ZERO);
     assert!(packet_ref.side_data().is_empty());
     assert_eq!(moved_packet.data(), expected_ref_payload.as_slice());
     assert_eq!(
@@ -3336,6 +3350,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(moved_packet.dts(), None);
     assert_eq!(moved_packet.duration(), 0);
     assert_eq!(moved_packet.pos(), None);
+    assert_eq!(moved_packet.time_base(), Rational::ZERO);
     assert!(moved_packet.flags().is_empty());
     assert!(moved_packet.side_data().is_empty());
 
@@ -3352,6 +3367,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(props_packet.pos(), packet.pos());
     assert_eq!(props_packet.stream_index(), packet.stream_index());
     assert_eq!(props_packet.flags(), packet.flags());
+    assert_eq!(props_packet.time_base(), packet.time_base());
     assert_eq!(
         props_packet.side_data_by_kind("ref_side_data").unwrap().data(),
         &[0xbb, 0xcc]
