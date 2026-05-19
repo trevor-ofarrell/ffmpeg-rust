@@ -2675,6 +2675,39 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     drop(cloned_frame);
     assert_eq!(*released_contexts.lock().unwrap(), vec![context_payload]);
 
+    let hw_replacements_released = Arc::new(Mutex::new(Vec::<String>::new()));
+    let first_release = Arc::clone(&hw_replacements_released);
+    let second_release = Arc::clone(&hw_replacements_released);
+    let first_context = BufferRef::from_external_slice_with_opaque_readonly(
+        Arc::<[u8]>::from(vec![1]),
+        String::from("first"),
+        move |opaque| {
+            first_release.lock().unwrap().push(opaque);
+        },
+    );
+    let second_context = BufferRef::from_external_slice_with_opaque_readonly(
+        Arc::<[u8]>::from(vec![2]),
+        String::from("second"),
+        move |opaque| {
+            second_release.lock().unwrap().push(opaque);
+        },
+    );
+    let replacement_audio =
+        AudioFrame::new(48_000, 1, SampleFormat::S16, 1, vec![vec![0; 2]]).unwrap();
+    let mut hw_replacement_frame = Frame::audio(replacement_audio);
+    hw_replacement_frame.set_hw_frames_context(Some(first_context));
+    assert!(hw_replacements_released.lock().unwrap().is_empty());
+    hw_replacement_frame.set_hw_frames_context(Some(second_context));
+    assert_eq!(
+        *hw_replacements_released.lock().unwrap(),
+        vec![String::from("first")]
+    );
+    hw_replacement_frame.set_hw_frames_context(None);
+    assert_eq!(
+        *hw_replacements_released.lock().unwrap(),
+        vec![String::from("first"), String::from("second")]
+    );
+
     if frame_size > 0 {
         let err = pixel_format
             .split_planes(&payload[..frame_size - 1], width, height)
