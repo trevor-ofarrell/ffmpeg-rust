@@ -8,16 +8,17 @@ use avutil::{
     FrameDetectionBbox, FrameDetectionBboxes, FrameDisplayMatrix, FrameDolbyVisionColorMetadata,
     FrameDolbyVisionDataMapping, FrameDolbyVisionDmData, FrameDolbyVisionMetadata,
     FrameDolbyVisionRpuBuffer, FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType,
-    FrameDynamicHdrPlus, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
-    FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
-    FrameHdrPlusOverlapProcessOption, FrameIccProfile, FrameMasteringDisplayMetadata,
-    FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors, FrameRegionOfInterest,
-    FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered,
-    FrameSideData, FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples,
-    FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection, FrameVideoBlockParams,
-    FrameVideoEncParams, FrameVideoEncParamsType, Md5, Packet, PacketFlags, PixelFormat, Rational,
-    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
-    VideoFrame,
+    FrameDynamicHdrPlus, FrameDynamicHdrVivid, FrameFilmGrainAomParams, FrameFilmGrainH274Params,
+    FrameFilmGrainParams, FrameFilmGrainParamsType, FrameGopTimecode,
+    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
+    FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
+    FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
+    FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode,
+    FrameSeiUnregistered, FrameSideData, FrameSideDataKind, FrameSideDataProperties,
+    FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection,
+    FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType, Md5, Packet, PacketFlags,
+    PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384,
+    Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1604,6 +1605,57 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert!(dolby_vision_metadata_payload_invalid(
                 &frame_side_data_payload
             ));
+        }
+    }
+    match frame.side_data()[0].dynamic_hdr_vivid() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DynamicHdrVivid);
+            assert_eq!(value.data(), frame_side_data_payload.as_slice());
+            assert!(!dynamic_hdr_vivid_payload_invalid(&frame_side_data_payload));
+            assert!((FrameDynamicHdrVivid::MIN_SYSTEM_START_CODE
+                ..=FrameDynamicHdrVivid::MAX_SYSTEM_START_CODE)
+                .contains(&value.system_start_code()));
+            assert!((1..=FrameDynamicHdrVivid::MAX_WINDOWS).contains(&value.num_windows()));
+            for index in 0..value.num_windows() {
+                let params = value.color_transform_params(index).unwrap();
+                assert_eq!(
+                    params.data().len(),
+                    FrameHdrVividColorTransformParams::DATA_LEN
+                );
+                assert!(matches!(params.tone_mapping_mode_flag(), 0 | 1));
+                assert!(matches!(params.color_saturation_mapping_flag(), 0 | 1));
+                if params.tone_mapping_mode_flag() == 1 {
+                    assert!(
+                        (1..=FrameHdrVividColorTransformParams::MAX_TONE_MAPPING_PARAMS)
+                            .contains(&params.tone_mapping_param_num())
+                    );
+                    for tm_index in 0..params.tone_mapping_param_num() {
+                        let tm = params.tone_mapping_params(tm_index).unwrap();
+                        assert!(matches!(tm.base_enable_flag(), 0 | 1));
+                        assert!(matches!(tm.three_spline_enable_flag(), 0 | 1));
+                        if tm.three_spline_enable_flag() == 1 {
+                            assert!((1..=FrameHdrVividColorToneMappingParams::MAX_THREE_SPLINES)
+                                .contains(&tm.three_spline_num()));
+                            for spline_index in 0..tm.three_spline_num() {
+                                let spline = tm.three_spline(spline_index).unwrap().unwrap();
+                                assert!((0..=3).contains(&spline.th_mode()));
+                            }
+                        }
+                    }
+                }
+                if params.color_saturation_mapping_flag() == 1 {
+                    assert!(
+                        params.color_saturation_num()
+                            <= FrameHdrVividColorTransformParams::MAX_COLOR_SATURATION_GAINS
+                    );
+                }
+            }
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::DynamicHdrVivid),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::DynamicHdrVivid);
+            assert!(dynamic_hdr_vivid_payload_invalid(&frame_side_data_payload));
         }
     }
     match frame.side_data()[0].sei_unregistered() {
@@ -3268,6 +3320,53 @@ fn exercise_fixtures() {
     assert_eq!(non_dovi.dolby_vision_rpu_buffer(), None);
     assert_eq!(non_dovi.dolby_vision_metadata().unwrap(), None);
 
+    let vivid_metadata = minimal_dynamic_hdr_vivid_fixture();
+    let vivid_side_data = FrameSideData::new_dynamic_hdr_vivid(vivid_metadata.clone()).unwrap();
+    let parsed_vivid = vivid_side_data.dynamic_hdr_vivid().unwrap().unwrap();
+    assert_eq!(
+        vivid_side_data.kind_id(),
+        &FrameSideDataKind::DynamicHdrVivid
+    );
+    assert_eq!(parsed_vivid.data(), vivid_metadata.as_slice());
+    assert_eq!(
+        parsed_vivid.system_start_code(),
+        FrameDynamicHdrVivid::MIN_SYSTEM_START_CODE
+    );
+    assert_eq!(parsed_vivid.num_windows(), 1);
+    let vivid_params = parsed_vivid.color_transform_params(0).unwrap();
+    assert_eq!(vivid_params.minimum_maxrgb(), Rational::from_raw(1, 4095));
+    assert_eq!(vivid_params.tone_mapping_mode_flag(), 1);
+    assert_eq!(vivid_params.tone_mapping_param_num(), 1);
+    let vivid_tm = vivid_params.tone_mapping_params(0).unwrap();
+    assert_eq!(vivid_tm.base_enable_flag(), 1);
+    assert_eq!(vivid_tm.three_spline_enable_flag(), 1);
+    let vivid_spline = vivid_tm.three_spline(0).unwrap().unwrap();
+    assert_eq!(vivid_spline.th_mode(), 0);
+    assert_eq!(vivid_params.color_saturation_mapping_flag(), 1);
+    assert_eq!(
+        vivid_params.color_saturation_gain(0),
+        Some(Rational::from_raw(1, 128))
+    );
+    assert_eq!(
+        FrameDynamicHdrVivid::parse(&[0; FrameDynamicHdrVivid::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_vivid = vivid_metadata.clone();
+    write_ne_i32(&mut bad_vivid, hdr_vivid_tone_mapping_mode_flag_offset(), 2);
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::DynamicHdrVivid, bad_vivid)
+            .unwrap()
+            .dynamic_hdr_vivid()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_vivid =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_vivid.dynamic_hdr_vivid().unwrap(), None);
+
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
@@ -3410,7 +3509,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 28 {
+    match byte.unwrap_or_default() % 29 {
         0 => FrameSideDataKind::DisplayMatrix,
         1 => FrameSideDataKind::MatrixEncoding,
         2 => FrameSideDataKind::DownmixInfo,
@@ -3438,6 +3537,7 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         24 => FrameSideDataKind::FilmGrainParams,
         25 => FrameSideDataKind::DetectionBboxes,
         26 => FrameSideDataKind::DolbyVisionMetadata,
+        27 => FrameSideDataKind::DynamicHdrVivid,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
@@ -3451,6 +3551,33 @@ fn minimal_dynamic_hdr_plus_fixture() -> Vec<u8> {
         &mut data,
         4 + 44,
         FrameHdrPlusOverlapProcessOption::WeightedAveraging.as_raw(),
+    );
+    data
+}
+
+fn minimal_dynamic_hdr_vivid_fixture() -> Vec<u8> {
+    let mut data = vec![0; FrameDynamicHdrVivid::DATA_LEN];
+    data[0] = FrameDynamicHdrVivid::MIN_SYSTEM_START_CODE;
+    data[1] = 1;
+
+    let params = hdr_vivid_params_offset(0);
+    write_ne_rational(&mut data, params, Rational::from_raw(1, 4095));
+    write_ne_i32(&mut data, hdr_vivid_tone_mapping_mode_flag_offset(), 1);
+    write_ne_i32(&mut data, hdr_vivid_tone_mapping_param_num_offset(), 1);
+
+    let tm = hdr_vivid_tone_mapping_params_offset();
+    write_ne_rational(&mut data, tm, Rational::from_raw(100, 4095));
+    write_ne_i32(&mut data, tm + 8, 1);
+    write_ne_i32(&mut data, tm + 76, 1);
+    write_ne_i32(&mut data, tm + 80, 1);
+    write_ne_i32(&mut data, tm + 84, 0);
+
+    write_ne_i32(&mut data, hdr_vivid_color_saturation_flag_offset(), 1);
+    write_ne_i32(&mut data, hdr_vivid_color_saturation_num_offset(), 1);
+    write_ne_rational(
+        &mut data,
+        hdr_vivid_color_saturation_gain_offset(),
+        Rational::from_raw(1, 128),
     );
     data
 }
@@ -3536,6 +3663,102 @@ fn peak_luminance_grid_invalid(flag: u8, rows: u8, cols: u8) -> bool {
         return true;
     }
     false
+}
+
+fn dynamic_hdr_vivid_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != FrameDynamicHdrVivid::DATA_LEN {
+        return true;
+    }
+    if !(FrameDynamicHdrVivid::MIN_SYSTEM_START_CODE..=FrameDynamicHdrVivid::MAX_SYSTEM_START_CODE)
+        .contains(&data[0])
+    {
+        return true;
+    }
+
+    let num_windows = usize::from(data[1]);
+    if !(1..=FrameDynamicHdrVivid::MAX_WINDOWS).contains(&num_windows) {
+        return true;
+    }
+
+    for window in 0..num_windows {
+        let params = hdr_vivid_params_offset(window);
+        if !matches!(read_ne_i32(data, params + 32), 0 | 1) {
+            return true;
+        }
+        if read_ne_i32(data, params + 32) == 1 {
+            let tone_mapping_count = read_ne_i32(data, params + 36);
+            if !(1..=FrameHdrVividColorTransformParams::MAX_TONE_MAPPING_PARAMS as i32)
+                .contains(&tone_mapping_count)
+            {
+                return true;
+            }
+            for tm_index in 0..tone_mapping_count as usize {
+                let tm = params + 40 + tm_index * FrameHdrVividColorToneMappingParams::DATA_LEN;
+                if !matches!(read_ne_i32(data, tm + 8), 0 | 1) {
+                    return true;
+                }
+                if !matches!(read_ne_i32(data, tm + 76), 0 | 1) {
+                    return true;
+                }
+                if read_ne_i32(data, tm + 76) == 1 {
+                    let spline_count = read_ne_i32(data, tm + 80);
+                    if !(1..=FrameHdrVividColorToneMappingParams::MAX_THREE_SPLINES as i32)
+                        .contains(&spline_count)
+                    {
+                        return true;
+                    }
+                    for spline_index in 0..spline_count as usize {
+                        let spline = tm + 84 + spline_index * FrameHdrVivid3SplineParams::DATA_LEN;
+                        if !(0..=3).contains(&read_ne_i32(data, spline)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if !matches!(read_ne_i32(data, params + 384), 0 | 1) {
+            return true;
+        }
+        if read_ne_i32(data, params + 384) == 1 {
+            let saturation_count = read_ne_i32(data, params + 388);
+            if !(0..=FrameHdrVividColorTransformParams::MAX_COLOR_SATURATION_GAINS as i32)
+                .contains(&saturation_count)
+            {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn hdr_vivid_params_offset(window: usize) -> usize {
+    4 + window * FrameHdrVividColorTransformParams::DATA_LEN
+}
+
+fn hdr_vivid_tone_mapping_mode_flag_offset() -> usize {
+    hdr_vivid_params_offset(0) + 32
+}
+
+fn hdr_vivid_tone_mapping_param_num_offset() -> usize {
+    hdr_vivid_params_offset(0) + 36
+}
+
+fn hdr_vivid_tone_mapping_params_offset() -> usize {
+    hdr_vivid_params_offset(0) + 40
+}
+
+fn hdr_vivid_color_saturation_flag_offset() -> usize {
+    hdr_vivid_params_offset(0) + 384
+}
+
+fn hdr_vivid_color_saturation_num_offset() -> usize {
+    hdr_vivid_params_offset(0) + 388
+}
+
+fn hdr_vivid_color_saturation_gain_offset() -> usize {
+    hdr_vivid_params_offset(0) + 392
 }
 
 fn regions_of_interest_payload_invalid(data: &[u8]) -> bool {

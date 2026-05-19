@@ -2316,6 +2316,468 @@ impl<'a> FrameHdrPlusColorTransformParams<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameHdrVivid3SplineParams<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameHdrVivid3SplineParams<'a> {
+    pub const DATA_LEN: usize = 44;
+    const TH_MODE_OFFSET: usize = 0;
+    const TH_ENABLE_MB_OFFSET: usize = 4;
+    const TH_ENABLE_OFFSET: usize = 12;
+    const TH_DELTA1_OFFSET: usize = 20;
+    const TH_DELTA2_OFFSET: usize = 28;
+    const ENABLE_STRENGTH_OFFSET: usize = 36;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "HDR Vivid three-spline params require exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let params = Self { data };
+        if !(0..=3).contains(&params.th_mode()) {
+            return Err(AvError::invalid_data(format!(
+                "HDR Vivid three-spline mode {} is outside 0..=3",
+                params.th_mode()
+            )));
+        }
+
+        Ok(params)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn th_mode(self) -> i32 {
+        Self::read_i32(self.data, Self::TH_MODE_OFFSET)
+    }
+
+    pub fn th_enable_mb(self) -> Rational {
+        Self::read_rational(self.data, Self::TH_ENABLE_MB_OFFSET)
+    }
+
+    pub fn th_enable(self) -> Rational {
+        Self::read_rational(self.data, Self::TH_ENABLE_OFFSET)
+    }
+
+    pub fn th_delta1(self) -> Rational {
+        Self::read_rational(self.data, Self::TH_DELTA1_OFFSET)
+    }
+
+    pub fn th_delta2(self) -> Rational {
+        Self::read_rational(self.data, Self::TH_DELTA2_OFFSET)
+    }
+
+    pub fn enable_strength(self) -> Rational {
+        Self::read_rational(self.data, Self::ENABLE_STRENGTH_OFFSET)
+    }
+
+    fn read_rational(data: &[u8], offset: usize) -> Rational {
+        Rational::from_raw(
+            Self::read_i32(data, offset),
+            Self::read_i32(data, offset + 4),
+        )
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameHdrVividColorToneMappingParams<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameHdrVividColorToneMappingParams<'a> {
+    pub const DATA_LEN: usize = 172;
+    pub const MAX_THREE_SPLINES: usize = 2;
+    const TARGETED_SYSTEM_DISPLAY_MAXIMUM_LUMINANCE_OFFSET: usize = 0;
+    const BASE_ENABLE_FLAG_OFFSET: usize = 8;
+    const BASE_PARAM_M_P_OFFSET: usize = 12;
+    const BASE_PARAM_M_M_OFFSET: usize = 20;
+    const BASE_PARAM_M_A_OFFSET: usize = 28;
+    const BASE_PARAM_M_B_OFFSET: usize = 36;
+    const BASE_PARAM_M_N_OFFSET: usize = 44;
+    const BASE_PARAM_K1_OFFSET: usize = 52;
+    const BASE_PARAM_K2_OFFSET: usize = 56;
+    const BASE_PARAM_K3_OFFSET: usize = 60;
+    const BASE_PARAM_DELTA_ENABLE_MODE_OFFSET: usize = 64;
+    const BASE_PARAM_DELTA_OFFSET: usize = 68;
+    const THREE_SPLINE_ENABLE_FLAG_OFFSET: usize = 76;
+    const THREE_SPLINE_NUM_OFFSET: usize = 80;
+    const THREE_SPLINE_OFFSET: usize = 84;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "HDR Vivid tone-mapping params require exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let params = Self { data };
+        validate_i32_bool(
+            params.base_enable_flag(),
+            "HDR Vivid tone-mapping base enable flag",
+        )?;
+        validate_i32_bool(
+            params.three_spline_enable_flag(),
+            "HDR Vivid three-spline enable flag",
+        )?;
+
+        if params.three_spline_enable_flag() == 1 {
+            let count = params.three_spline_num();
+            if !(1..=Self::MAX_THREE_SPLINES).contains(&count) {
+                return Err(AvError::invalid_data(format!(
+                    "HDR Vivid three-spline count {count} is outside 1..={}",
+                    Self::MAX_THREE_SPLINES
+                )));
+            }
+            for index in 0..count {
+                params.three_spline(index).unwrap()?.validate()?;
+            }
+        }
+
+        Ok(params)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn targeted_system_display_maximum_luminance(self) -> Rational {
+        Self::read_rational(
+            self.data,
+            Self::TARGETED_SYSTEM_DISPLAY_MAXIMUM_LUMINANCE_OFFSET,
+        )
+    }
+
+    pub fn base_enable_flag(self) -> i32 {
+        Self::read_i32(self.data, Self::BASE_ENABLE_FLAG_OFFSET)
+    }
+
+    pub fn base_param_m_p(self) -> Rational {
+        Self::read_rational(self.data, Self::BASE_PARAM_M_P_OFFSET)
+    }
+
+    pub fn base_param_m_m(self) -> Rational {
+        Self::read_rational(self.data, Self::BASE_PARAM_M_M_OFFSET)
+    }
+
+    pub fn base_param_m_a(self) -> Rational {
+        Self::read_rational(self.data, Self::BASE_PARAM_M_A_OFFSET)
+    }
+
+    pub fn base_param_m_b(self) -> Rational {
+        Self::read_rational(self.data, Self::BASE_PARAM_M_B_OFFSET)
+    }
+
+    pub fn base_param_m_n(self) -> Rational {
+        Self::read_rational(self.data, Self::BASE_PARAM_M_N_OFFSET)
+    }
+
+    pub fn base_param_k1(self) -> i32 {
+        Self::read_i32(self.data, Self::BASE_PARAM_K1_OFFSET)
+    }
+
+    pub fn base_param_k2(self) -> i32 {
+        Self::read_i32(self.data, Self::BASE_PARAM_K2_OFFSET)
+    }
+
+    pub fn base_param_k3(self) -> i32 {
+        Self::read_i32(self.data, Self::BASE_PARAM_K3_OFFSET)
+    }
+
+    pub fn base_param_delta_enable_mode(self) -> i32 {
+        Self::read_i32(self.data, Self::BASE_PARAM_DELTA_ENABLE_MODE_OFFSET)
+    }
+
+    pub fn base_param_delta(self) -> Rational {
+        Self::read_rational(self.data, Self::BASE_PARAM_DELTA_OFFSET)
+    }
+
+    pub fn three_spline_enable_flag(self) -> i32 {
+        Self::read_i32(self.data, Self::THREE_SPLINE_ENABLE_FLAG_OFFSET)
+    }
+
+    pub fn three_spline_num(self) -> usize {
+        Self::read_count(self.data, Self::THREE_SPLINE_NUM_OFFSET)
+    }
+
+    pub fn three_spline(self, index: usize) -> Option<AvResult<FrameHdrVivid3SplineParams<'a>>> {
+        if self.three_spline_enable_flag() != 1 || index >= self.three_spline_num() {
+            return None;
+        }
+        let offset = Self::THREE_SPLINE_OFFSET + index * FrameHdrVivid3SplineParams::DATA_LEN;
+        Some(FrameHdrVivid3SplineParams::parse(
+            &self.data[offset..offset + FrameHdrVivid3SplineParams::DATA_LEN],
+        ))
+    }
+
+    fn validate(self) -> AvResult<()> {
+        Self::parse(self.data).map(|_| ())
+    }
+
+    fn read_rational(data: &[u8], offset: usize) -> Rational {
+        Rational::from_raw(
+            Self::read_i32(data, offset),
+            Self::read_i32(data, offset + 4),
+        )
+    }
+
+    fn read_count(data: &[u8], offset: usize) -> usize {
+        usize::try_from(Self::read_i32(data, offset)).unwrap_or(usize::MAX)
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+}
+
+impl<'a> FrameHdrVivid3SplineParams<'a> {
+    fn validate(self) -> AvResult<()> {
+        Self::parse(self.data).map(|_| ())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameHdrVividColorTransformParams<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> FrameHdrVividColorTransformParams<'a> {
+    pub const DATA_LEN: usize = 456;
+    pub const MAX_TONE_MAPPING_PARAMS: usize = 2;
+    pub const MAX_COLOR_SATURATION_GAINS: usize = 7;
+    const MINIMUM_MAXRGB_OFFSET: usize = 0;
+    const AVERAGE_MAXRGB_OFFSET: usize = 8;
+    const VARIANCE_MAXRGB_OFFSET: usize = 16;
+    const MAXIMUM_MAXRGB_OFFSET: usize = 24;
+    const TONE_MAPPING_MODE_FLAG_OFFSET: usize = 32;
+    const TONE_MAPPING_PARAM_NUM_OFFSET: usize = 36;
+    const TONE_MAPPING_PARAMS_OFFSET: usize = 40;
+    const COLOR_SATURATION_MAPPING_FLAG_OFFSET: usize = Self::TONE_MAPPING_PARAMS_OFFSET
+        + Self::MAX_TONE_MAPPING_PARAMS * FrameHdrVividColorToneMappingParams::DATA_LEN;
+    const COLOR_SATURATION_NUM_OFFSET: usize = Self::COLOR_SATURATION_MAPPING_FLAG_OFFSET + 4;
+    const COLOR_SATURATION_GAIN_OFFSET: usize = Self::COLOR_SATURATION_NUM_OFFSET + 4;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "HDR Vivid color-transform params require exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let params = Self { data };
+        validate_i32_bool(
+            params.tone_mapping_mode_flag(),
+            "HDR Vivid tone-mapping mode flag",
+        )?;
+        validate_i32_bool(
+            params.color_saturation_mapping_flag(),
+            "HDR Vivid color-saturation mapping flag",
+        )?;
+
+        if params.tone_mapping_mode_flag() == 1 {
+            let count = params.tone_mapping_param_num();
+            if !(1..=Self::MAX_TONE_MAPPING_PARAMS).contains(&count) {
+                return Err(AvError::invalid_data(format!(
+                    "HDR Vivid tone-mapping parameter count {count} is outside 1..={}",
+                    Self::MAX_TONE_MAPPING_PARAMS
+                )));
+            }
+            for index in 0..count {
+                params.tone_mapping_params(index).unwrap().validate()?;
+            }
+        }
+
+        if params.color_saturation_mapping_flag() == 1
+            && params.color_saturation_num() > Self::MAX_COLOR_SATURATION_GAINS
+        {
+            return Err(AvError::invalid_data(format!(
+                "HDR Vivid color-saturation count {} exceeds {}",
+                params.color_saturation_num(),
+                Self::MAX_COLOR_SATURATION_GAINS
+            )));
+        }
+
+        Ok(params)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn minimum_maxrgb(self) -> Rational {
+        Self::read_rational(self.data, Self::MINIMUM_MAXRGB_OFFSET)
+    }
+
+    pub fn average_maxrgb(self) -> Rational {
+        Self::read_rational(self.data, Self::AVERAGE_MAXRGB_OFFSET)
+    }
+
+    pub fn variance_maxrgb(self) -> Rational {
+        Self::read_rational(self.data, Self::VARIANCE_MAXRGB_OFFSET)
+    }
+
+    pub fn maximum_maxrgb(self) -> Rational {
+        Self::read_rational(self.data, Self::MAXIMUM_MAXRGB_OFFSET)
+    }
+
+    pub fn tone_mapping_mode_flag(self) -> i32 {
+        Self::read_i32(self.data, Self::TONE_MAPPING_MODE_FLAG_OFFSET)
+    }
+
+    pub fn tone_mapping_param_num(self) -> usize {
+        Self::read_count(self.data, Self::TONE_MAPPING_PARAM_NUM_OFFSET)
+    }
+
+    pub fn tone_mapping_params(
+        self,
+        index: usize,
+    ) -> Option<FrameHdrVividColorToneMappingParams<'a>> {
+        if self.tone_mapping_mode_flag() != 1 || index >= self.tone_mapping_param_num() {
+            return None;
+        }
+        let offset = Self::TONE_MAPPING_PARAMS_OFFSET
+            + index * FrameHdrVividColorToneMappingParams::DATA_LEN;
+        Some(FrameHdrVividColorToneMappingParams {
+            data: &self.data[offset..offset + FrameHdrVividColorToneMappingParams::DATA_LEN],
+        })
+    }
+
+    pub fn color_saturation_mapping_flag(self) -> i32 {
+        Self::read_i32(self.data, Self::COLOR_SATURATION_MAPPING_FLAG_OFFSET)
+    }
+
+    pub fn color_saturation_num(self) -> usize {
+        Self::read_count(self.data, Self::COLOR_SATURATION_NUM_OFFSET)
+    }
+
+    pub fn color_saturation_gain(self, index: usize) -> Option<Rational> {
+        (self.color_saturation_mapping_flag() == 1 && index < self.color_saturation_num())
+            .then(|| Self::read_rational(self.data, Self::COLOR_SATURATION_GAIN_OFFSET + index * 8))
+    }
+
+    fn validate(self) -> AvResult<()> {
+        Self::parse(self.data).map(|_| ())
+    }
+
+    fn read_rational(data: &[u8], offset: usize) -> Rational {
+        Rational::from_raw(
+            Self::read_i32(data, offset),
+            Self::read_i32(data, offset + 4),
+        )
+    }
+
+    fn read_count(data: &[u8], offset: usize) -> usize {
+        usize::try_from(Self::read_i32(data, offset)).unwrap_or(usize::MAX)
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameDynamicHdrVivid<'a> {
+    data: &'a [u8],
+    num_windows: usize,
+}
+
+impl<'a> FrameDynamicHdrVivid<'a> {
+    pub const MIN_SYSTEM_START_CODE: u8 = 0x01;
+    pub const MAX_SYSTEM_START_CODE: u8 = 0x07;
+    pub const MAX_WINDOWS: usize = 3;
+    const PARAMS_OFFSET: usize = 4;
+    pub const DATA_LEN: usize =
+        Self::PARAMS_OFFSET + Self::MAX_WINDOWS * FrameHdrVividColorTransformParams::DATA_LEN;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "HDR Vivid frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        if !(Self::MIN_SYSTEM_START_CODE..=Self::MAX_SYSTEM_START_CODE).contains(&data[0]) {
+            return Err(AvError::invalid_data(format!(
+                "HDR Vivid system start code 0x{:02X} is outside 0x{:02X}..=0x{:02X}",
+                data[0],
+                Self::MIN_SYSTEM_START_CODE,
+                Self::MAX_SYSTEM_START_CODE
+            )));
+        }
+
+        let num_windows = usize::from(data[1]);
+        if !(1..=Self::MAX_WINDOWS).contains(&num_windows) {
+            return Err(AvError::invalid_data(format!(
+                "HDR Vivid window count {num_windows} is outside 1..={}",
+                Self::MAX_WINDOWS
+            )));
+        }
+
+        let parsed = Self { data, num_windows };
+        for index in 0..num_windows {
+            parsed.color_transform_params(index).unwrap().validate()?;
+        }
+
+        Ok(parsed)
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub fn system_start_code(self) -> u8 {
+        self.data[0]
+    }
+
+    pub const fn num_windows(self) -> usize {
+        self.num_windows
+    }
+
+    pub fn color_transform_params(
+        self,
+        index: usize,
+    ) -> Option<FrameHdrVividColorTransformParams<'a>> {
+        (index < self.num_windows).then(|| {
+            let offset = Self::PARAMS_OFFSET + index * FrameHdrVividColorTransformParams::DATA_LEN;
+            FrameHdrVividColorTransformParams {
+                data: &self.data[offset..offset + FrameHdrVividColorTransformParams::DATA_LEN],
+            }
+        })
+    }
+}
+
+fn validate_i32_bool(value: i32, name: &str) -> AvResult<()> {
+    if value == 0 || value == 1 {
+        return Ok(());
+    }
+
+    Err(AvError::invalid_data(format!(
+        "{name} {value} is not boolean"
+    )))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameRegionOfInterest {
     top: i32,
     bottom: i32,
@@ -4795,6 +5257,12 @@ impl FrameSideData {
         Ok(side_data)
     }
 
+    pub fn new_dynamic_hdr_vivid(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(FrameSideDataKind::DynamicHdrVivid, data)?;
+        FrameDynamicHdrVivid::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
         let total_len = FrameSeiUnregistered::UUID_LEN
             .checked_add(user_data.len())
@@ -5019,6 +5487,14 @@ impl FrameSideData {
         }
 
         FrameDolbyVisionMetadata::parse(self.data()).map(Some)
+    }
+
+    pub fn dynamic_hdr_vivid(&self) -> AvResult<Option<FrameDynamicHdrVivid<'_>>> {
+        if self.kind != FrameSideDataKind::DynamicHdrVivid {
+            return Ok(None);
+        }
+
+        FrameDynamicHdrVivid::parse(self.data()).map(Some)
     }
 
     pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
@@ -6021,6 +6497,215 @@ mod tests {
             FrameDynamicHdrPlus::TARGETED_SYSTEM_DISPLAY_ACTUAL_PEAK_LUMINANCE_OFFSET + 26 * 8,
             Rational::from_raw(2, 15),
         );
+        data
+    }
+
+    fn minimal_dynamic_hdr_vivid() -> Vec<u8> {
+        let mut data = vec![0; FrameDynamicHdrVivid::DATA_LEN];
+        data[0] = FrameDynamicHdrVivid::MIN_SYSTEM_START_CODE;
+        data[1] = 1;
+
+        let params = FrameDynamicHdrVivid::PARAMS_OFFSET;
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrVividColorTransformParams::MINIMUM_MAXRGB_OFFSET,
+            Rational::from_raw(1, 4095),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrVividColorTransformParams::AVERAGE_MAXRGB_OFFSET,
+            Rational::from_raw(2, 4095),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrVividColorTransformParams::VARIANCE_MAXRGB_OFFSET,
+            Rational::from_raw(3, 4095),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrVividColorTransformParams::MAXIMUM_MAXRGB_OFFSET,
+            Rational::from_raw(4, 4095),
+        );
+        write_ne_i32(
+            &mut data,
+            params + FrameHdrVividColorTransformParams::TONE_MAPPING_MODE_FLAG_OFFSET,
+            1,
+        );
+        write_ne_i32(
+            &mut data,
+            params + FrameHdrVividColorTransformParams::TONE_MAPPING_PARAM_NUM_OFFSET,
+            2,
+        );
+
+        let tm0 = params + FrameHdrVividColorTransformParams::TONE_MAPPING_PARAMS_OFFSET;
+        write_ne_rational(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::TARGETED_SYSTEM_DISPLAY_MAXIMUM_LUMINANCE_OFFSET,
+            Rational::from_raw(100, 4095),
+        );
+        write_ne_i32(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::BASE_ENABLE_FLAG_OFFSET,
+            1,
+        );
+        write_ne_rational(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::BASE_PARAM_M_P_OFFSET,
+            Rational::from_raw(10, 16383),
+        );
+        write_ne_rational(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::BASE_PARAM_M_M_OFFSET,
+            Rational::from_raw(11, 10),
+        );
+        write_ne_rational(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::BASE_PARAM_M_A_OFFSET,
+            Rational::from_raw(12, 1023),
+        );
+        write_ne_rational(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::BASE_PARAM_M_B_OFFSET,
+            Rational::from_raw(13, 1023),
+        );
+        write_ne_rational(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::BASE_PARAM_M_N_OFFSET,
+            Rational::from_raw(14, 10),
+        );
+        write_ne_i32(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::BASE_PARAM_K1_OFFSET,
+            1,
+        );
+        write_ne_i32(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::BASE_PARAM_K2_OFFSET,
+            0,
+        );
+        write_ne_i32(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::BASE_PARAM_K3_OFFSET,
+            2,
+        );
+        write_ne_i32(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::BASE_PARAM_DELTA_ENABLE_MODE_OFFSET,
+            1,
+        );
+        write_ne_rational(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::BASE_PARAM_DELTA_OFFSET,
+            Rational::from_raw(7, 127),
+        );
+        write_ne_i32(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::THREE_SPLINE_ENABLE_FLAG_OFFSET,
+            1,
+        );
+        write_ne_i32(
+            &mut data,
+            tm0 + FrameHdrVividColorToneMappingParams::THREE_SPLINE_NUM_OFFSET,
+            2,
+        );
+
+        let spline0 = tm0 + FrameHdrVividColorToneMappingParams::THREE_SPLINE_OFFSET;
+        write_ne_i32(
+            &mut data,
+            spline0 + FrameHdrVivid3SplineParams::TH_MODE_OFFSET,
+            0,
+        );
+        write_ne_rational(
+            &mut data,
+            spline0 + FrameHdrVivid3SplineParams::TH_ENABLE_MB_OFFSET,
+            Rational::from_raw(9, 255),
+        );
+        write_ne_rational(
+            &mut data,
+            spline0 + FrameHdrVivid3SplineParams::TH_ENABLE_OFFSET,
+            Rational::from_raw(10, 4095),
+        );
+        write_ne_rational(
+            &mut data,
+            spline0 + FrameHdrVivid3SplineParams::TH_DELTA1_OFFSET,
+            Rational::from_raw(11, 1023),
+        );
+        write_ne_rational(
+            &mut data,
+            spline0 + FrameHdrVivid3SplineParams::TH_DELTA2_OFFSET,
+            Rational::from_raw(12, 1023),
+        );
+        write_ne_rational(
+            &mut data,
+            spline0 + FrameHdrVivid3SplineParams::ENABLE_STRENGTH_OFFSET,
+            Rational::from_raw(13, 255),
+        );
+
+        let spline1 = spline0 + FrameHdrVivid3SplineParams::DATA_LEN;
+        write_ne_i32(
+            &mut data,
+            spline1 + FrameHdrVivid3SplineParams::TH_MODE_OFFSET,
+            3,
+        );
+        write_ne_rational(
+            &mut data,
+            spline1 + FrameHdrVivid3SplineParams::TH_ENABLE_OFFSET,
+            Rational::from_raw(20, 4095),
+        );
+        write_ne_rational(
+            &mut data,
+            spline1 + FrameHdrVivid3SplineParams::TH_DELTA1_OFFSET,
+            Rational::from_raw(21, 1023),
+        );
+        write_ne_rational(
+            &mut data,
+            spline1 + FrameHdrVivid3SplineParams::TH_DELTA2_OFFSET,
+            Rational::from_raw(22, 1023),
+        );
+        write_ne_rational(
+            &mut data,
+            spline1 + FrameHdrVivid3SplineParams::ENABLE_STRENGTH_OFFSET,
+            Rational::from_raw(23, 255),
+        );
+
+        let tm1 = tm0 + FrameHdrVividColorToneMappingParams::DATA_LEN;
+        write_ne_rational(
+            &mut data,
+            tm1 + FrameHdrVividColorToneMappingParams::TARGETED_SYSTEM_DISPLAY_MAXIMUM_LUMINANCE_OFFSET,
+            Rational::from_raw(200, 4095),
+        );
+        write_ne_i32(
+            &mut data,
+            tm1 + FrameHdrVividColorToneMappingParams::BASE_ENABLE_FLAG_OFFSET,
+            0,
+        );
+        write_ne_i32(
+            &mut data,
+            tm1 + FrameHdrVividColorToneMappingParams::THREE_SPLINE_ENABLE_FLAG_OFFSET,
+            0,
+        );
+
+        write_ne_i32(
+            &mut data,
+            params + FrameHdrVividColorTransformParams::COLOR_SATURATION_MAPPING_FLAG_OFFSET,
+            1,
+        );
+        write_ne_i32(
+            &mut data,
+            params + FrameHdrVividColorTransformParams::COLOR_SATURATION_NUM_OFFSET,
+            2,
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrVividColorTransformParams::COLOR_SATURATION_GAIN_OFFSET,
+            Rational::from_raw(1, 128),
+        );
+        write_ne_rational(
+            &mut data,
+            params + FrameHdrVividColorTransformParams::COLOR_SATURATION_GAIN_OFFSET + 8,
+            Rational::from_raw(2, 128),
+        );
+
         data
     }
 
@@ -10371,6 +11056,200 @@ mod tests {
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
         assert_eq!(non_dovi.dolby_vision_rpu_buffer(), None);
         assert_eq!(non_dovi.dolby_vision_metadata().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_dynamic_hdr_vivid_payload() {
+        let data = minimal_dynamic_hdr_vivid();
+        let side_data = FrameSideData::new_dynamic_hdr_vivid(data.clone()).unwrap();
+
+        assert_eq!(FrameDynamicHdrVivid::DATA_LEN, 1372);
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::DynamicHdrVivid);
+        let parsed = side_data.dynamic_hdr_vivid().unwrap().unwrap();
+        assert_eq!(parsed.data(), data.as_slice());
+        assert_eq!(
+            parsed.system_start_code(),
+            FrameDynamicHdrVivid::MIN_SYSTEM_START_CODE
+        );
+        assert_eq!(parsed.num_windows(), 1);
+        assert_eq!(parsed.color_transform_params(1), None);
+
+        let params = parsed.color_transform_params(0).unwrap();
+        assert_eq!(
+            params.data().len(),
+            FrameHdrVividColorTransformParams::DATA_LEN
+        );
+        assert_eq!(params.minimum_maxrgb(), Rational::from_raw(1, 4095));
+        assert_eq!(params.average_maxrgb(), Rational::from_raw(2, 4095));
+        assert_eq!(params.variance_maxrgb(), Rational::from_raw(3, 4095));
+        assert_eq!(params.maximum_maxrgb(), Rational::from_raw(4, 4095));
+        assert_eq!(params.tone_mapping_mode_flag(), 1);
+        assert_eq!(params.tone_mapping_param_num(), 2);
+        assert_eq!(params.tone_mapping_params(2), None);
+        assert_eq!(params.color_saturation_mapping_flag(), 1);
+        assert_eq!(params.color_saturation_num(), 2);
+        assert_eq!(
+            params.color_saturation_gain(0),
+            Some(Rational::from_raw(1, 128))
+        );
+        assert_eq!(
+            params.color_saturation_gain(1),
+            Some(Rational::from_raw(2, 128))
+        );
+        assert_eq!(params.color_saturation_gain(2), None);
+
+        let tone_mapping = params.tone_mapping_params(0).unwrap();
+        assert_eq!(
+            tone_mapping.targeted_system_display_maximum_luminance(),
+            Rational::from_raw(100, 4095)
+        );
+        assert_eq!(tone_mapping.base_enable_flag(), 1);
+        assert_eq!(tone_mapping.base_param_m_p(), Rational::from_raw(10, 16383));
+        assert_eq!(tone_mapping.base_param_m_m(), Rational::from_raw(11, 10));
+        assert_eq!(tone_mapping.base_param_m_a(), Rational::from_raw(12, 1023));
+        assert_eq!(tone_mapping.base_param_m_b(), Rational::from_raw(13, 1023));
+        assert_eq!(tone_mapping.base_param_m_n(), Rational::from_raw(14, 10));
+        assert_eq!(tone_mapping.base_param_k1(), 1);
+        assert_eq!(tone_mapping.base_param_k2(), 0);
+        assert_eq!(tone_mapping.base_param_k3(), 2);
+        assert_eq!(tone_mapping.base_param_delta_enable_mode(), 1);
+        assert_eq!(tone_mapping.base_param_delta(), Rational::from_raw(7, 127));
+        assert_eq!(tone_mapping.three_spline_enable_flag(), 1);
+        assert_eq!(tone_mapping.three_spline_num(), 2);
+        assert!(tone_mapping.three_spline(2).is_none());
+
+        let spline0 = tone_mapping.three_spline(0).unwrap().unwrap();
+        assert_eq!(spline0.data().len(), FrameHdrVivid3SplineParams::DATA_LEN);
+        assert_eq!(spline0.th_mode(), 0);
+        assert_eq!(spline0.th_enable_mb(), Rational::from_raw(9, 255));
+        assert_eq!(spline0.th_enable(), Rational::from_raw(10, 4095));
+        assert_eq!(spline0.th_delta1(), Rational::from_raw(11, 1023));
+        assert_eq!(spline0.th_delta2(), Rational::from_raw(12, 1023));
+        assert_eq!(spline0.enable_strength(), Rational::from_raw(13, 255));
+
+        let spline1 = tone_mapping.three_spline(1).unwrap().unwrap();
+        assert_eq!(spline1.th_mode(), 3);
+        assert_eq!(spline1.th_enable(), Rational::from_raw(20, 4095));
+        assert_eq!(spline1.th_delta1(), Rational::from_raw(21, 1023));
+        assert_eq!(spline1.th_delta2(), Rational::from_raw(22, 1023));
+        assert_eq!(spline1.enable_strength(), Rational::from_raw(23, 255));
+
+        let second_tone_mapping = params.tone_mapping_params(1).unwrap();
+        assert_eq!(
+            second_tone_mapping.targeted_system_display_maximum_luminance(),
+            Rational::from_raw(200, 4095)
+        );
+        assert_eq!(second_tone_mapping.base_enable_flag(), 0);
+        assert_eq!(second_tone_mapping.three_spline_enable_flag(), 0);
+        assert!(second_tone_mapping.three_spline(0).is_none());
+
+        let display_matrix =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, data).unwrap();
+        assert_eq!(display_matrix.dynamic_hdr_vivid().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_dynamic_hdr_vivid_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; FrameDynamicHdrVivid::DATA_LEN - 1],
+            vec![0; FrameDynamicHdrVivid::DATA_LEN + 1],
+        ] {
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::DynamicHdrVivid, data).unwrap();
+            assert_eq!(
+                side_data.dynamic_hdr_vivid().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for (offset, value) in [
+            (0, 0),
+            (0, FrameDynamicHdrVivid::MAX_SYSTEM_START_CODE + 1),
+            (1, 0),
+            (1, FrameDynamicHdrVivid::MAX_WINDOWS as u8 + 1),
+        ] {
+            let mut bad = minimal_dynamic_hdr_vivid();
+            bad[offset] = value;
+            assert_eq!(
+                FrameSideData::new_dynamic_hdr_vivid(bad)
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for (offset, value) in [
+            (
+                FrameDynamicHdrVivid::PARAMS_OFFSET
+                    + FrameHdrVividColorTransformParams::TONE_MAPPING_MODE_FLAG_OFFSET,
+                2,
+            ),
+            (
+                FrameDynamicHdrVivid::PARAMS_OFFSET
+                    + FrameHdrVividColorTransformParams::TONE_MAPPING_PARAM_NUM_OFFSET,
+                0,
+            ),
+            (
+                FrameDynamicHdrVivid::PARAMS_OFFSET
+                    + FrameHdrVividColorTransformParams::TONE_MAPPING_PARAM_NUM_OFFSET,
+                3,
+            ),
+            (
+                FrameDynamicHdrVivid::PARAMS_OFFSET
+                    + FrameHdrVividColorTransformParams::TONE_MAPPING_PARAMS_OFFSET
+                    + FrameHdrVividColorToneMappingParams::BASE_ENABLE_FLAG_OFFSET,
+                2,
+            ),
+            (
+                FrameDynamicHdrVivid::PARAMS_OFFSET
+                    + FrameHdrVividColorTransformParams::TONE_MAPPING_PARAMS_OFFSET
+                    + FrameHdrVividColorToneMappingParams::THREE_SPLINE_ENABLE_FLAG_OFFSET,
+                2,
+            ),
+            (
+                FrameDynamicHdrVivid::PARAMS_OFFSET
+                    + FrameHdrVividColorTransformParams::TONE_MAPPING_PARAMS_OFFSET
+                    + FrameHdrVividColorToneMappingParams::THREE_SPLINE_NUM_OFFSET,
+                0,
+            ),
+            (
+                FrameDynamicHdrVivid::PARAMS_OFFSET
+                    + FrameHdrVividColorTransformParams::TONE_MAPPING_PARAMS_OFFSET
+                    + FrameHdrVividColorToneMappingParams::THREE_SPLINE_NUM_OFFSET,
+                3,
+            ),
+            (
+                FrameDynamicHdrVivid::PARAMS_OFFSET
+                    + FrameHdrVividColorTransformParams::TONE_MAPPING_PARAMS_OFFSET
+                    + FrameHdrVividColorToneMappingParams::THREE_SPLINE_OFFSET
+                    + FrameHdrVivid3SplineParams::TH_MODE_OFFSET,
+                4,
+            ),
+            (
+                FrameDynamicHdrVivid::PARAMS_OFFSET
+                    + FrameHdrVividColorTransformParams::COLOR_SATURATION_MAPPING_FLAG_OFFSET,
+                2,
+            ),
+            (
+                FrameDynamicHdrVivid::PARAMS_OFFSET
+                    + FrameHdrVividColorTransformParams::COLOR_SATURATION_NUM_OFFSET,
+                8,
+            ),
+        ] {
+            let mut bad = minimal_dynamic_hdr_vivid();
+            write_ne_i32(&mut bad, offset, value);
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::DynamicHdrVivid, bad).unwrap();
+            assert_eq!(
+                side_data.dynamic_hdr_vivid().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_hdr =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
+        assert_eq!(non_hdr.dynamic_hdr_vivid().unwrap(), None);
     }
 
     #[test]
