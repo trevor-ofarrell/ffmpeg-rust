@@ -15,9 +15,9 @@ use avutil::{
     FrameExifGainControl, FrameExifGpsAltitudeRef, FrameExifGpsDirectionRef,
     FrameExifGpsDistanceRef, FrameExifGpsLatitudeRef, FrameExifGpsLongitudeRef,
     FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus, FrameExifIfdPointerKind,
-    FrameExifLightSource, FrameExifMeteringMode, FrameExifOrientation, FrameExifResolutionUnit,
-    FrameExifSaturation, FrameExifSceneCaptureType, FrameExifSceneType, FrameExifSensingMethod,
-    FrameExifSensitivityType, FrameExifSharpness, FrameExifSubjectArea,
+    FrameExifLightSource, FrameExifMeteringMode, FrameExifOrientation, FrameExifRational,
+    FrameExifResolutionUnit, FrameExifSaturation, FrameExifSceneCaptureType, FrameExifSceneType,
+    FrameExifSensingMethod, FrameExifSensitivityType, FrameExifSharpness, FrameExifSubjectArea,
     FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance,
     FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
@@ -92,6 +92,65 @@ fn assert_exif_offset_time_range(value: &str) {
 
 fn assert_ascii_digits(value: &str) {
     assert!(value.as_bytes().iter().all(u8::is_ascii_digit));
+}
+
+fn assert_exif_rational_less_than(value: FrameExifRational, upper: u32) {
+    assert!((value.numerator() as u128) < (upper as u128) * (value.denominator() as u128));
+}
+
+fn assert_exif_rational_less_or_equal(value: FrameExifRational, upper: u32) {
+    assert!((value.numerator() as u128) <= (upper as u128) * (value.denominator() as u128));
+}
+
+fn assert_exif_dms_less_than(values: [FrameExifRational; 3], upper_degrees: u32) {
+    assert!(
+        exif_dms_scaled_numerator(values)
+            < (upper_degrees as u128) * 3600 * exif_dms_scaled_denominator(values)
+    );
+}
+
+fn assert_exif_dms_less_or_equal(values: [FrameExifRational; 3], upper_degrees: u32) {
+    assert!(
+        exif_dms_scaled_numerator(values)
+            <= (upper_degrees as u128) * 3600 * exif_dms_scaled_denominator(values)
+    );
+}
+
+fn exif_dms_scaled_numerator(values: [FrameExifRational; 3]) -> u128 {
+    let [degrees, minutes, seconds] = values;
+    (degrees.numerator() as u128)
+        * 3600
+        * (minutes.denominator() as u128)
+        * (seconds.denominator() as u128)
+        + (minutes.numerator() as u128)
+            * 60
+            * (degrees.denominator() as u128)
+            * (seconds.denominator() as u128)
+        + (seconds.numerator() as u128)
+            * (degrees.denominator() as u128)
+            * (minutes.denominator() as u128)
+}
+
+fn exif_dms_scaled_denominator(values: [FrameExifRational; 3]) -> u128 {
+    values.iter().fold(1u128, |product, value| {
+        product * value.denominator() as u128
+    })
+}
+
+fn assert_exif_gps_coordinate_range(values: [FrameExifRational; 3], max_degrees: u32) {
+    assert!(values.iter().all(|value| value.denominator() != 0));
+    assert_exif_rational_less_or_equal(values[0], max_degrees);
+    assert_exif_rational_less_than(values[1], 60);
+    assert_exif_rational_less_than(values[2], 60);
+    assert_exif_dms_less_or_equal(values, max_degrees);
+}
+
+fn assert_exif_gps_time_stamp_range(values: [FrameExifRational; 3]) {
+    assert!(values.iter().all(|value| value.denominator() != 0));
+    assert_exif_rational_less_than(values[0], 24);
+    assert_exif_rational_less_than(values[1], 60);
+    assert_exif_rational_less_than(values[2], 60);
+    assert_exif_dms_less_than(values, 24);
 }
 
 fuzz_target!(|data: &[u8]| {
@@ -1924,16 +1983,16 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                         assert_ne!(value.denominator(), 0);
                     }
                     if let Some(latitude) = common.gps_latitude() {
-                        assert!(latitude.iter().all(|value| value.denominator() != 0));
+                        assert_exif_gps_coordinate_range(latitude, 90);
                     }
                     if let Some(longitude) = common.gps_longitude() {
-                        assert!(longitude.iter().all(|value| value.denominator() != 0));
+                        assert_exif_gps_coordinate_range(longitude, 180);
                     }
                     if let Some(value) = common.gps_altitude() {
                         assert_ne!(value.denominator(), 0);
                     }
                     if let Some(time_stamp) = common.gps_time_stamp() {
-                        assert!(time_stamp.iter().all(|value| value.denominator() != 0));
+                        assert_exif_gps_time_stamp_range(time_stamp);
                     }
                     if let Some(value) = common.gps_dop() {
                         assert_ne!(value.denominator(), 0);
@@ -1946,27 +2005,21 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     }
                     if let Some(value) = common.gps_track() {
                         assert_ne!(value.denominator(), 0);
-                        assert!(
-                            (value.numerator() as u128) < 360u128 * (value.denominator() as u128)
-                        );
+                        assert_exif_rational_less_than(value, 360);
                     }
                     if let Some(value) = common.gps_img_direction() {
                         assert_ne!(value.denominator(), 0);
-                        assert!(
-                            (value.numerator() as u128) < 360u128 * (value.denominator() as u128)
-                        );
+                        assert_exif_rational_less_than(value, 360);
                     }
                     if let Some(latitude) = common.gps_dest_latitude() {
-                        assert!(latitude.iter().all(|value| value.denominator() != 0));
+                        assert_exif_gps_coordinate_range(latitude, 90);
                     }
                     if let Some(longitude) = common.gps_dest_longitude() {
-                        assert!(longitude.iter().all(|value| value.denominator() != 0));
+                        assert_exif_gps_coordinate_range(longitude, 180);
                     }
                     if let Some(value) = common.gps_dest_bearing() {
                         assert_ne!(value.denominator(), 0);
-                        assert!(
-                            (value.numerator() as u128) < 360u128 * (value.denominator() as u128)
-                        );
+                        assert_exif_rational_less_than(value, 360);
                     }
                     if let Some(value) = common.gps_dest_distance() {
                         assert_ne!(value.denominator(), 0);

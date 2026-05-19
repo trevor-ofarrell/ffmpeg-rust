@@ -19404,10 +19404,88 @@ mod tests {
             AvErrorKind::InvalidData
         );
 
+        let mut latitude_boundary = exif_common_tags_fixture();
+        latitude_boundary[290..294].copy_from_slice(&90u32.to_le_bytes());
+        latitude_boundary[298..302].copy_from_slice(&0u32.to_le_bytes());
+        latitude_boundary[306..310].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&latitude_boundary)
+                .unwrap()
+                .common_tags()
+                .unwrap()
+                .gps_latitude(),
+            Some([
+                FrameExifRational {
+                    numerator: 90,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 0,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 0,
+                    denominator: 1,
+                },
+            ])
+        );
+
+        let mut bad_latitude_composite = exif_common_tags_fixture();
+        bad_latitude_composite[290..294].copy_from_slice(&90u32.to_le_bytes());
+        bad_latitude_composite[298..302].copy_from_slice(&1u32.to_le_bytes());
+        bad_latitude_composite[306..310].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_latitude_composite)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
         let mut bad_longitude_seconds = exif_common_tags_fixture();
         bad_longitude_seconds[330..334].copy_from_slice(&60u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_longitude_seconds)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut longitude_boundary = exif_common_tags_fixture();
+        longitude_boundary[314..318].copy_from_slice(&180u32.to_le_bytes());
+        longitude_boundary[322..326].copy_from_slice(&0u32.to_le_bytes());
+        longitude_boundary[330..334].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&longitude_boundary)
+                .unwrap()
+                .common_tags()
+                .unwrap()
+                .gps_longitude(),
+            Some([
+                FrameExifRational {
+                    numerator: 180,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 0,
+                    denominator: 1,
+                },
+                FrameExifRational {
+                    numerator: 0,
+                    denominator: 1,
+                },
+            ])
+        );
+
+        let mut bad_longitude_composite = exif_common_tags_fixture();
+        bad_longitude_composite[314..318].copy_from_slice(&180u32.to_le_bytes());
+        bad_longitude_composite[322..326].copy_from_slice(&0u32.to_le_bytes());
+        bad_longitude_composite[330..334].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_longitude_composite)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
@@ -19601,6 +19679,20 @@ mod tests {
         bad_time_stamp_seconds[104..108].copy_from_slice(&60u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_time_stamp_seconds)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_time_stamp_composite = exif_gps_altitude_time_fixture();
+        bad_time_stamp_composite[88..92].copy_from_slice(&47u32.to_le_bytes());
+        bad_time_stamp_composite[92..96].copy_from_slice(&2u32.to_le_bytes());
+        bad_time_stamp_composite[96..100].copy_from_slice(&30u32.to_le_bytes());
+        bad_time_stamp_composite[104..108].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_time_stamp_composite)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

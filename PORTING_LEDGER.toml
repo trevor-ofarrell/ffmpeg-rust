@@ -417,9 +417,9 @@ fuzz_targets = ["avutil_core_models"]
 # ExifVersion/DateTimeOriginal/DateTimeDigitized/OffsetTime/
 # OffsetTimeOriginal/OffsetTimeDigitized/ComponentsConfiguration plus strict
 # EXIF fixed-count, layout, calendar-date, and time range validation for DateTime,
-# OffsetTime, and GPSDateStamp ASCII fields, GPS coordinate DMS range
-# validation for latitude, longitude, and destination coordinates,
-# GPSTimeStamp UTC range validation,
+# OffsetTime, and GPSDateStamp ASCII fields, GPS coordinate DMS per-field
+# and composite range validation for latitude, longitude, and destination
+# coordinates, GPSTimeStamp UTC per-field and composite range validation,
 # GPS track/image-direction/destination-bearing range validation, and
 # digit-only validation for SubSecTime fields, positive ImageWidth/ImageLength/PixelXDimension/PixelYDimension validation, non-degenerate SubjectArea circle/rectangle validation, plus fixed-count validation for version-byte, ComponentsConfiguration,
 # GPSVersionID, and GPS one-character reference fields.
