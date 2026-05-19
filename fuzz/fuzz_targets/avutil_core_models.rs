@@ -17,8 +17,9 @@ use avutil::{
     FrameExifGpsMeasureMode, FrameExifGpsSpeedRef, FrameExifGpsStatus, FrameExifIfdPointerKind,
     FrameExifLightSource, FrameExifMeteringMode, FrameExifOrientation, FrameExifResolutionUnit,
     FrameExifSaturation, FrameExifSceneCaptureType, FrameExifSceneType, FrameExifSensingMethod,
-    FrameExifSharpness, FrameExifSubjectArea, FrameExifSubjectDistanceRange, FrameExifTiffType,
-    FrameExifWhiteBalance, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameExifSensitivityType, FrameExifSharpness, FrameExifSubjectArea,
+    FrameExifSubjectDistanceRange, FrameExifTiffType, FrameExifWhiteBalance,
+    FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
     FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
@@ -4080,6 +4081,20 @@ fn exercise_fixtures() {
     assert_eq!(apex_tags.brightness_value().unwrap().numerator(), -3);
     assert_eq!(apex_tags.brightness_value().unwrap().denominator(), 2);
 
+    let sensitivity_exif_bytes = exif_sensitivity_fixture();
+    let sensitivity_exif = FrameExif::parse(&sensitivity_exif_bytes).unwrap();
+    let sensitivity_tags = sensitivity_exif.common_tags().unwrap();
+    assert_eq!(sensitivity_tags.photographic_sensitivity(), Some(200));
+    assert_eq!(
+        sensitivity_tags.sensitivity_type(),
+        Some(FrameExifSensitivityType::IsoSpeed)
+    );
+    assert_eq!(sensitivity_tags.standard_output_sensitivity(), Some(160));
+    assert_eq!(sensitivity_tags.recommended_exposure_index(), Some(180));
+    assert_eq!(sensitivity_tags.iso_speed(), Some(200));
+    assert_eq!(sensitivity_tags.iso_speed_latitude_yyy(), Some(125));
+    assert_eq!(sensitivity_tags.iso_speed_latitude_zzz(), Some(400));
+
     let capture_exif_bytes = exif_capture_settings_fixture();
     let capture_exif = FrameExif::parse(&capture_exif_bytes).unwrap();
     let capture_tags = capture_exif.common_tags().unwrap();
@@ -5860,6 +5875,74 @@ fn exif_apex_exposure_fixture() -> Vec<u8> {
     data.extend_from_slice(&10u32.to_le_bytes());
     data.extend_from_slice(&(-3i32).to_le_bytes());
     data.extend_from_slice(&2i32.to_le_bytes());
+    data
+}
+
+fn exif_sensitivity_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        26u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+
+    data.extend_from_slice(&7u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_PHOTOGRAPHIC_SENSITIVITY,
+        FrameExifTiffType::Short,
+        1,
+        [200, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SENSITIVITY_TYPE,
+        FrameExifTiffType::Short,
+        1,
+        [3, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_STANDARD_OUTPUT_SENSITIVITY,
+        FrameExifTiffType::Long,
+        1,
+        160u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_RECOMMENDED_EXPOSURE_INDEX,
+        FrameExifTiffType::Long,
+        1,
+        180u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_ISO_SPEED,
+        FrameExifTiffType::Long,
+        1,
+        200u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_ISO_SPEED_LATITUDE_YYY,
+        FrameExifTiffType::Long,
+        1,
+        125u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_ISO_SPEED_LATITUDE_ZZZ,
+        FrameExifTiffType::Long,
+        1,
+        400u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
     data
 }
 

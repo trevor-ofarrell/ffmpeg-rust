@@ -5760,6 +5760,49 @@ impl FrameExifExposureProgram {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifSensitivityType {
+    Unknown,
+    StandardOutputSensitivity,
+    RecommendedExposureIndex,
+    IsoSpeed,
+    StandardOutputSensitivityAndRecommendedExposureIndex,
+    StandardOutputSensitivityAndIsoSpeed,
+    RecommendedExposureIndexAndIsoSpeed,
+    StandardOutputSensitivityAndRecommendedExposureIndexAndIsoSpeed,
+}
+
+impl FrameExifSensitivityType {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::StandardOutputSensitivity),
+            2 => Ok(Self::RecommendedExposureIndex),
+            3 => Ok(Self::IsoSpeed),
+            4 => Ok(Self::StandardOutputSensitivityAndRecommendedExposureIndex),
+            5 => Ok(Self::StandardOutputSensitivityAndIsoSpeed),
+            6 => Ok(Self::RecommendedExposureIndexAndIsoSpeed),
+            7 => Ok(Self::StandardOutputSensitivityAndRecommendedExposureIndexAndIsoSpeed),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF sensitivity type value {raw} is outside the defined set"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::Unknown => 0,
+            Self::StandardOutputSensitivity => 1,
+            Self::RecommendedExposureIndex => 2,
+            Self::IsoSpeed => 3,
+            Self::StandardOutputSensitivityAndRecommendedExposureIndex => 4,
+            Self::StandardOutputSensitivityAndIsoSpeed => 5,
+            Self::RecommendedExposureIndexAndIsoSpeed => 6,
+            Self::StandardOutputSensitivityAndRecommendedExposureIndexAndIsoSpeed => 7,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifMeteringMode {
     Unknown,
     Average,
@@ -6494,6 +6537,13 @@ pub struct FrameExifCommonTags<'a> {
     exposure_program: Option<FrameExifExposureProgram>,
     exposure_time: Option<FrameExifRational>,
     f_number: Option<FrameExifRational>,
+    photographic_sensitivity: Option<u16>,
+    sensitivity_type: Option<FrameExifSensitivityType>,
+    standard_output_sensitivity: Option<u32>,
+    recommended_exposure_index: Option<u32>,
+    iso_speed: Option<u32>,
+    iso_speed_latitude_yyy: Option<u32>,
+    iso_speed_latitude_zzz: Option<u32>,
     shutter_speed_value: Option<FrameExifSignedRational>,
     aperture_value: Option<FrameExifRational>,
     brightness_value: Option<FrameExifSignedRational>,
@@ -6662,6 +6712,34 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn f_number(&self) -> Option<FrameExifRational> {
         self.f_number
+    }
+
+    pub const fn photographic_sensitivity(&self) -> Option<u16> {
+        self.photographic_sensitivity
+    }
+
+    pub const fn sensitivity_type(&self) -> Option<FrameExifSensitivityType> {
+        self.sensitivity_type
+    }
+
+    pub const fn standard_output_sensitivity(&self) -> Option<u32> {
+        self.standard_output_sensitivity
+    }
+
+    pub const fn recommended_exposure_index(&self) -> Option<u32> {
+        self.recommended_exposure_index
+    }
+
+    pub const fn iso_speed(&self) -> Option<u32> {
+        self.iso_speed
+    }
+
+    pub const fn iso_speed_latitude_yyy(&self) -> Option<u32> {
+        self.iso_speed_latitude_yyy
+    }
+
+    pub const fn iso_speed_latitude_zzz(&self) -> Option<u32> {
+        self.iso_speed_latitude_zzz
     }
 
     pub const fn shutter_speed_value(&self) -> Option<FrameExifSignedRational> {
@@ -7346,6 +7424,13 @@ impl<'a> FrameExif<'a> {
     pub const TAG_ARTIST: u16 = 0x013B;
     pub const TAG_COPYRIGHT: u16 = 0x8298;
     pub const TAG_EXPOSURE_PROGRAM: u16 = 0x8822;
+    pub const TAG_PHOTOGRAPHIC_SENSITIVITY: u16 = 0x8827;
+    pub const TAG_SENSITIVITY_TYPE: u16 = 0x8830;
+    pub const TAG_STANDARD_OUTPUT_SENSITIVITY: u16 = 0x8831;
+    pub const TAG_RECOMMENDED_EXPOSURE_INDEX: u16 = 0x8832;
+    pub const TAG_ISO_SPEED: u16 = 0x8833;
+    pub const TAG_ISO_SPEED_LATITUDE_YYY: u16 = 0x8834;
+    pub const TAG_ISO_SPEED_LATITUDE_ZZZ: u16 = 0x8835;
     pub const TAG_EXPOSURE_TIME: u16 = 0x829A;
     pub const TAG_F_NUMBER: u16 = 0x829D;
     pub const TAG_EXIF_VERSION: u16 = 0x9000;
@@ -7551,6 +7636,33 @@ impl<'a> FrameExif<'a> {
             tags.exposure_time =
                 Self::optional_rational_tag(ifd, Self::TAG_EXPOSURE_TIME, "ExposureTime")?;
             tags.f_number = Self::optional_rational_tag(ifd, Self::TAG_F_NUMBER, "FNumber")?;
+            tags.photographic_sensitivity = Self::optional_short_tag(
+                ifd,
+                Self::TAG_PHOTOGRAPHIC_SENSITIVITY,
+                "PhotographicSensitivity",
+            )?;
+            tags.sensitivity_type = Self::optional_sensitivity_type_tag(ifd)?;
+            tags.standard_output_sensitivity = Self::optional_long_tag(
+                ifd,
+                Self::TAG_STANDARD_OUTPUT_SENSITIVITY,
+                "StandardOutputSensitivity",
+            )?;
+            tags.recommended_exposure_index = Self::optional_long_tag(
+                ifd,
+                Self::TAG_RECOMMENDED_EXPOSURE_INDEX,
+                "RecommendedExposureIndex",
+            )?;
+            tags.iso_speed = Self::optional_long_tag(ifd, Self::TAG_ISO_SPEED, "ISOSpeed")?;
+            tags.iso_speed_latitude_yyy = Self::optional_long_tag(
+                ifd,
+                Self::TAG_ISO_SPEED_LATITUDE_YYY,
+                "ISOSpeedLatitudeyyy",
+            )?;
+            tags.iso_speed_latitude_zzz = Self::optional_long_tag(
+                ifd,
+                Self::TAG_ISO_SPEED_LATITUDE_ZZZ,
+                "ISOSpeedLatitudezzz",
+            )?;
             tags.shutter_speed_value = Self::optional_signed_rational_tag(
                 ifd,
                 Self::TAG_SHUTTER_SPEED_VALUE,
@@ -7885,6 +7997,17 @@ impl<'a> FrameExif<'a> {
         FrameExifExposureProgram::from_raw(raw).map(Some)
     }
 
+    fn optional_sensitivity_type_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifSensitivityType>> {
+        let Some(raw) =
+            Self::optional_short_tag(ifd, Self::TAG_SENSITIVITY_TYPE, "SensitivityType")?
+        else {
+            return Ok(None);
+        };
+        FrameExifSensitivityType::from_raw(raw).map(Some)
+    }
+
     fn optional_metering_mode_tag(
         ifd: &FrameExifIfd<'a>,
     ) -> AvResult<Option<FrameExifMeteringMode>> {
@@ -8086,6 +8209,23 @@ impl<'a> FrameExif<'a> {
         let values = entry
             .short_values()?
             .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have SHORT TIFF type"))?;
+        Ok(Some(values[0]))
+    }
+
+    fn optional_long_tag(ifd: &FrameExifIfd<'a>, tag: u16, label: &str) -> AvResult<Option<u32>> {
+        let Some(entry) = ifd.entry_by_tag(tag) else {
+            return Ok(None);
+        };
+        if entry.count() != 1 {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                format!("must contain exactly one LONG value, got {}", entry.count()),
+            ));
+        }
+        let values = entry
+            .long_values()?
+            .ok_or_else(|| Self::semantic_tag_error(label, tag, "must have LONG TIFF type"))?;
         Ok(Some(values[0]))
     }
 
@@ -12544,6 +12684,77 @@ mod tests {
         data.extend_from_slice(&2i32.to_le_bytes());
 
         assert_eq!(data.len(), 92);
+        data
+    }
+
+    fn exif_sensitivity_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&7u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_PHOTOGRAPHIC_SENSITIVITY,
+            FrameExifTiffType::Short,
+            1,
+            [200, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_SENSITIVITY_TYPE,
+            FrameExifTiffType::Short,
+            1,
+            [3, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_STANDARD_OUTPUT_SENSITIVITY,
+            FrameExifTiffType::Long,
+            1,
+            160u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_RECOMMENDED_EXPOSURE_INDEX,
+            FrameExifTiffType::Long,
+            1,
+            180u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_ISO_SPEED,
+            FrameExifTiffType::Long,
+            1,
+            200u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_ISO_SPEED_LATITUDE_YYY,
+            FrameExifTiffType::Long,
+            1,
+            125u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_ISO_SPEED_LATITUDE_ZZZ,
+            FrameExifTiffType::Long,
+            1,
+            400u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 116);
         data
     }
 
@@ -18880,6 +19091,59 @@ mod tests {
         bad_brightness_denominator[88..92].copy_from_slice(&0i32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_brightness_denominator)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_sensitivity_tags() {
+        let exif_bytes = exif_sensitivity_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.photographic_sensitivity(), Some(200));
+        assert_eq!(
+            common.sensitivity_type(),
+            Some(FrameExifSensitivityType::IsoSpeed)
+        );
+        assert_eq!(common.sensitivity_type().unwrap().raw(), 3);
+        assert_eq!(common.standard_output_sensitivity(), Some(160));
+        assert_eq!(common.recommended_exposure_index(), Some(180));
+        assert_eq!(common.iso_speed(), Some(200));
+        assert_eq!(common.iso_speed_latitude_yyy(), Some(125));
+        assert_eq!(common.iso_speed_latitude_zzz(), Some(400));
+
+        let mut bad_photographic_count = exif_sensitivity_fixture();
+        bad_photographic_count[32..36].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_photographic_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_sensitivity_type_value = exif_sensitivity_fixture();
+        bad_sensitivity_type_value[48..50].copy_from_slice(&8u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_sensitivity_type_value)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_standard_output_type = exif_sensitivity_fixture();
+        bad_standard_output_type[54..56]
+            .copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_standard_output_type)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
