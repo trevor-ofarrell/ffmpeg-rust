@@ -4316,10 +4316,31 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let mut bad_colorimetry_primary_type = exif_root_colorimetry_fixture();
+    bad_colorimetry_primary_type[24..26]
+        .copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_colorimetry_primary_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_colorimetry_denominator = exif_root_colorimetry_fixture();
     bad_colorimetry_denominator[130..134].copy_from_slice(&0u32.to_le_bytes());
     assert_eq!(
         FrameExif::parse(&bad_colorimetry_denominator)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_colorimetry_reference_count = exif_root_colorimetry_fixture();
+    bad_colorimetry_reference_count[50..54].copy_from_slice(&5u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_colorimetry_reference_count)
             .unwrap()
             .common_tags()
             .unwrap_err()
