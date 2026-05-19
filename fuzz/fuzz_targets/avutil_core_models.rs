@@ -5382,6 +5382,16 @@ fn exercise_fixtures() {
         Some(FrameExifGpsSpeedRef::KilometersPerHour)
     );
     assert_eq!(gps_motion_tags.gps_speed_ref().unwrap().as_str(), "K");
+    let mut bad_speed_ref = exif_gps_motion_fixture();
+    bad_speed_ref[36] = b'X';
+    assert_eq!(
+        FrameExif::parse(&bad_speed_ref)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(gps_motion_tags.gps_speed().unwrap().numerator(), 88);
     assert_eq!(gps_motion_tags.gps_speed().unwrap().denominator(), 5);
     assert_eq!(
@@ -5422,6 +5432,16 @@ fn exercise_fixtures() {
         gps_motion_tags.gps_img_direction().unwrap().numerator(),
         135
     );
+    let mut bad_img_direction_count = exif_gps_motion_fixture();
+    bad_img_direction_count[92..96].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_img_direction_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_img_direction = exif_gps_motion_fixture();
     bad_img_direction[132..136].copy_from_slice(&360u32.to_le_bytes());
     assert_eq!(
@@ -5433,6 +5453,16 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
     assert_eq!(gps_motion_tags.gps_map_datum(), Some("WGS-84"));
+    let mut bad_map_datum_type = exif_gps_motion_fixture();
+    bad_map_datum_type[102..104].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_map_datum_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let gps_destination_exif_bytes = exif_gps_destination_fixture();
     let gps_destination_exif = FrameExif::parse(&gps_destination_exif_bytes).unwrap();
