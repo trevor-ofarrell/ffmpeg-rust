@@ -71,8 +71,8 @@ pub use options::{
 pub use packet::{
     Packet, PacketFlags, PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketSideDataKind,
-    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, SideData, AV_NOPTS_VALUE,
-    AV_PACKET_POS_UNKNOWN,
+    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier,
+    PacketWebVttSettings, SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 pub use pixel::PixelFormat;
 pub use rational::Rational;

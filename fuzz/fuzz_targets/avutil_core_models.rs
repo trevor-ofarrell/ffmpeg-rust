@@ -34,9 +34,9 @@ use avutil::{
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketFlags, PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketSideDataKind,
-    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PixelFormat, Rational,
-    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
-    VideoFrame,
+    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier,
+    PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3409,6 +3409,38 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             ));
         }
     }
+    match typed_payload_side_data.webvtt_identifier() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::WebVttIdentifier);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketWebVttIdentifier::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::WebVttIdentifier),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::WebVttIdentifier);
+            assert!(packet_webvtt_identifier_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.webvtt_settings() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::WebVttSettings);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketWebVttSettings::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::WebVttSettings),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::WebVttSettings);
+            assert!(packet_webvtt_settings_payload_invalid(&typed_payload));
+        }
+    }
     match typed_payload_side_data.frame_cropping() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::FrameCropping);
@@ -3828,6 +3860,53 @@ fn exercise_fixtures() {
         )
         .unwrap_err()
         .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_webvtt_identifier = PacketWebVttIdentifier::new(b"chapter-01".to_vec()).unwrap();
+    assert_eq!(
+        PacketWebVttIdentifier::parse(&packet_webvtt_identifier.to_bytes()).unwrap(),
+        packet_webvtt_identifier
+    );
+    assert_eq!(packet_webvtt_identifier.data(), b"chapter-01");
+    assert_eq!(packet_webvtt_identifier.as_str().unwrap(), "chapter-01");
+    assert_eq!(
+        SideData::new_webvtt_identifier(packet_webvtt_identifier.clone())
+            .unwrap()
+            .webvtt_identifier()
+            .unwrap(),
+        Some(packet_webvtt_identifier)
+    );
+    assert_eq!(
+        PacketWebVttIdentifier::parse(b"00:00:00.000 --> 00:00:01.000")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_webvtt_settings =
+        PacketWebVttSettings::new(b"line:0 position:50% align:start".to_vec()).unwrap();
+    assert_eq!(
+        PacketWebVttSettings::parse(&packet_webvtt_settings.to_bytes()).unwrap(),
+        packet_webvtt_settings
+    );
+    assert_eq!(
+        packet_webvtt_settings.data(),
+        b"line:0 position:50% align:start"
+    );
+    assert_eq!(
+        packet_webvtt_settings.as_str().unwrap(),
+        "line:0 position:50% align:start"
+    );
+    assert_eq!(
+        SideData::new_webvtt_settings(packet_webvtt_settings.clone())
+            .unwrap()
+            .webvtt_settings()
+            .unwrap(),
+        Some(packet_webvtt_settings)
+    );
+    assert_eq!(
+        PacketWebVttSettings::parse(b"line:0\n")
+            .unwrap_err()
+            .kind(),
         AvErrorKind::InvalidData
     );
     let packet_skip_samples = PacketSkipSamples::new(
@@ -9512,6 +9591,18 @@ fn packet_subtitle_position_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_matroska_block_additional_payload_invalid(data: &[u8]) -> bool {
     data.len() < PacketMatroskaBlockAdditional::MIN_DATA_LEN
+}
+
+fn packet_webvtt_identifier_payload_invalid(data: &[u8]) -> bool {
+    packet_webvtt_line_payload_invalid(data) || data.windows(3).any(|window| window == b"-->")
+}
+
+fn packet_webvtt_settings_payload_invalid(data: &[u8]) -> bool {
+    packet_webvtt_line_payload_invalid(data)
+}
+
+fn packet_webvtt_line_payload_invalid(data: &[u8]) -> bool {
+    data.is_empty() || data.iter().any(|byte| matches!(byte, 0 | b'\r' | b'\n'))
 }
 
 fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {

@@ -753,6 +753,80 @@ impl PacketMatroskaBlockAdditional {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketWebVttIdentifier {
+    data: Vec<u8>,
+}
+
+impl PacketWebVttIdentifier {
+    pub fn new(data: Vec<u8>) -> AvResult<Self> {
+        validate_webvtt_line_payload(&data, "WebVTT identifier")?;
+        validate_webvtt_identifier_payload(&data)?;
+        Ok(Self { data })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        validate_webvtt_line_payload(data, "WebVTT identifier")?;
+        validate_webvtt_identifier_payload(data)?;
+        Ok(Self {
+            data: data.to_vec(),
+        })
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
+    pub fn as_str(&self) -> AvResult<&str> {
+        std::str::from_utf8(&self.data)
+            .map_err(|_| AvError::invalid_data("WebVTT identifier is not valid UTF-8"))
+    }
+
+    pub fn into_data(self) -> Vec<u8> {
+        self.data
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.data.clone()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketWebVttSettings {
+    data: Vec<u8>,
+}
+
+impl PacketWebVttSettings {
+    pub fn new(data: Vec<u8>) -> AvResult<Self> {
+        validate_webvtt_line_payload(&data, "WebVTT settings")?;
+        Ok(Self { data })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        validate_webvtt_line_payload(data, "WebVTT settings")?;
+        Ok(Self {
+            data: data.to_vec(),
+        })
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
+    pub fn as_str(&self) -> AvResult<&str> {
+        std::str::from_utf8(&self.data)
+            .map_err(|_| AvError::invalid_data("WebVTT settings are not valid UTF-8"))
+    }
+
+    pub fn into_data(self) -> Vec<u8> {
+        self.data
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.data.clone()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketFrameCropping {
     crop_top: u32,
@@ -862,6 +936,14 @@ impl SideData {
         )
     }
 
+    pub fn new_webvtt_identifier(value: PacketWebVttIdentifier) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::WebVttIdentifier, value.to_bytes())
+    }
+
+    pub fn new_webvtt_settings(value: PacketWebVttSettings) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::WebVttSettings, value.to_bytes())
+    }
+
     pub fn new_frame_cropping(value: PacketFrameCropping) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::FrameCropping, value.to_bytes().to_vec())
     }
@@ -947,6 +1029,22 @@ impl SideData {
         }
 
         PacketMatroskaBlockAdditional::parse(self.data()).map(Some)
+    }
+
+    pub fn webvtt_identifier(&self) -> AvResult<Option<PacketWebVttIdentifier>> {
+        if self.kind != PacketSideDataKind::WebVttIdentifier {
+            return Ok(None);
+        }
+
+        PacketWebVttIdentifier::parse(self.data()).map(Some)
+    }
+
+    pub fn webvtt_settings(&self) -> AvResult<Option<PacketWebVttSettings>> {
+        if self.kind != PacketSideDataKind::WebVttSettings {
+            return Ok(None);
+        }
+
+        PacketWebVttSettings::parse(self.data()).map(Some)
     }
 
     pub fn frame_cropping(&self) -> AvResult<Option<PacketFrameCropping>> {
@@ -1302,6 +1400,32 @@ fn read_u64_be(data: &[u8], offset: usize) -> u64 {
     let mut bytes = [0; 8];
     bytes.copy_from_slice(&data[offset..offset + 8]);
     u64::from_be_bytes(bytes)
+}
+
+fn validate_webvtt_line_payload(data: &[u8], label: &str) -> AvResult<()> {
+    if data.is_empty() {
+        return Err(AvError::invalid_data(format!(
+            "{label} packet side data must not be empty"
+        )));
+    }
+
+    if data.iter().any(|byte| matches!(byte, 0 | b'\r' | b'\n')) {
+        return Err(AvError::invalid_data(format!(
+            "{label} packet side data must be a single NUL-free line"
+        )));
+    }
+
+    Ok(())
+}
+
+fn validate_webvtt_identifier_payload(data: &[u8]) -> AvResult<()> {
+    if data.windows(3).any(|window| window == b"-->") {
+        return Err(AvError::invalid_data(
+            "WebVTT identifier packet side data must not contain a timestamp separator",
+        ));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1864,6 +1988,114 @@ mod tests {
                 .unwrap();
         assert_eq!(
             side_data.matroska_block_additional().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_webvtt_identifier_and_settings_payloads() {
+        let identifier = PacketWebVttIdentifier::new(b"chapter-01".to_vec()).unwrap();
+        assert_eq!(identifier.data(), b"chapter-01");
+        assert_eq!(identifier.as_str().unwrap(), "chapter-01");
+        assert_eq!(identifier.to_bytes(), b"chapter-01");
+        assert_eq!(
+            PacketWebVttIdentifier::parse(b"chapter-01").unwrap(),
+            identifier
+        );
+
+        let raw_identifier = PacketWebVttIdentifier::parse(&[0xff, b'i', b'd']).unwrap();
+        assert_eq!(raw_identifier.data(), &[0xff, b'i', b'd']);
+        assert_eq!(
+            raw_identifier.as_str().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let identifier_side_data = SideData::new_webvtt_identifier(identifier.clone()).unwrap();
+        assert_eq!(
+            identifier_side_data.kind_id(),
+            &PacketSideDataKind::WebVttIdentifier
+        );
+        assert_eq!(identifier_side_data.data(), b"chapter-01");
+        assert_eq!(
+            identifier_side_data.webvtt_identifier().unwrap(),
+            Some(identifier)
+        );
+
+        let settings =
+            PacketWebVttSettings::new(b"line:0 position:50% align:start".to_vec()).unwrap();
+        assert_eq!(settings.data(), b"line:0 position:50% align:start");
+        assert_eq!(
+            settings.as_str().unwrap(),
+            "line:0 position:50% align:start"
+        );
+        assert_eq!(
+            PacketWebVttSettings::parse(b"line:0 position:50% align:start").unwrap(),
+            settings
+        );
+
+        let settings_side_data = SideData::new_webvtt_settings(settings.clone()).unwrap();
+        assert_eq!(
+            settings_side_data.kind_id(),
+            &PacketSideDataKind::WebVttSettings
+        );
+        assert_eq!(
+            settings_side_data.data(),
+            b"line:0 position:50% align:start"
+        );
+        assert_eq!(
+            settings_side_data.webvtt_settings().unwrap(),
+            Some(settings)
+        );
+
+        let palette =
+            SideData::new_with_kind(PacketSideDataKind::Palette, b"line:0 position:50%".to_vec())
+                .unwrap();
+        assert_eq!(palette.webvtt_identifier().unwrap(), None);
+        assert_eq!(palette.webvtt_settings().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_webvtt_payloads() {
+        for data in [
+            Vec::new(),
+            b"two\nlines".to_vec(),
+            b"two\rlines".to_vec(),
+            b"nul\0byte".to_vec(),
+            b"00:00:00.000 --> 00:00:01.000".to_vec(),
+        ] {
+            assert_eq!(
+                PacketWebVttIdentifier::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        for data in [
+            Vec::new(),
+            b"two\nlines".to_vec(),
+            b"two\rlines".to_vec(),
+            b"nul\0byte".to_vec(),
+        ] {
+            assert_eq!(
+                PacketWebVttSettings::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let identifier_side_data = SideData::new_with_kind(
+            PacketSideDataKind::WebVttIdentifier,
+            b"00:00:00.000 --> 00:00:01.000".to_vec(),
+        )
+        .unwrap();
+        assert_eq!(
+            identifier_side_data.webvtt_identifier().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let settings_side_data =
+            SideData::new_with_kind(PacketSideDataKind::WebVttSettings, b"line:0\n".to_vec())
+                .unwrap();
+        assert_eq!(
+            settings_side_data.webvtt_settings().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
     }
