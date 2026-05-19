@@ -6014,14 +6014,35 @@ fn exercise_fixtures() {
     );
     assert_eq!(
         characterization_tags
+            .focal_plane_x_resolution()
+            .unwrap()
+            .denominator(),
+        1
+    );
+    assert_eq!(
+        characterization_tags
             .focal_plane_y_resolution()
             .unwrap()
             .numerator(),
         2000
     );
     assert_eq!(
+        characterization_tags
+            .focal_plane_y_resolution()
+            .unwrap()
+            .denominator(),
+        1
+    );
+    assert_eq!(
         characterization_tags.focal_plane_resolution_unit(),
         Some(FrameExifResolutionUnit::Centimeter)
+    );
+    assert_eq!(
+        characterization_tags
+            .focal_plane_resolution_unit()
+            .unwrap()
+            .raw(),
+        3
     );
     assert_eq!(
         characterization_tags.cfa_pattern(),
@@ -6226,41 +6247,53 @@ fn exercise_fixtures() {
         rendering_tags.color_space(),
         Some(FrameExifColorSpace::Srgb)
     );
+    assert_eq!(rendering_tags.color_space().unwrap().raw(), 1);
     assert_eq!(
         rendering_tags.sensing_method(),
         Some(FrameExifSensingMethod::OneChipColorArea)
     );
+    assert_eq!(rendering_tags.sensing_method().unwrap().raw(), 2);
     assert_eq!(
         rendering_tags.file_source(),
         Some(FrameExifFileSource::DigitalStillCamera)
     );
+    assert_eq!(rendering_tags.file_source().unwrap().raw(), 3);
     assert_eq!(
         rendering_tags.scene_type(),
         Some(FrameExifSceneType::DirectlyPhotographed)
     );
+    assert_eq!(rendering_tags.scene_type().unwrap().raw(), 1);
     assert_eq!(
         rendering_tags.custom_rendered(),
         Some(FrameExifCustomRendered::Custom)
     );
+    assert_eq!(rendering_tags.custom_rendered().unwrap().raw(), 1);
     assert_eq!(
         rendering_tags.exposure_mode(),
         Some(FrameExifExposureMode::AutoBracket)
     );
+    assert_eq!(rendering_tags.exposure_mode().unwrap().raw(), 2);
     assert_eq!(
         rendering_tags.scene_capture_type(),
         Some(FrameExifSceneCaptureType::NightScene)
     );
+    assert_eq!(rendering_tags.scene_capture_type().unwrap().raw(), 3);
     assert_eq!(
         rendering_tags.gain_control(),
         Some(FrameExifGainControl::HighGainDown)
     );
+    assert_eq!(rendering_tags.gain_control().unwrap().raw(), 4);
     assert_eq!(rendering_tags.contrast(), Some(FrameExifContrast::Hard));
+    assert_eq!(rendering_tags.contrast().unwrap().raw(), 2);
     assert_eq!(rendering_tags.saturation(), Some(FrameExifSaturation::Low));
+    assert_eq!(rendering_tags.saturation().unwrap().raw(), 1);
     assert_eq!(rendering_tags.sharpness(), Some(FrameExifSharpness::Hard));
+    assert_eq!(rendering_tags.sharpness().unwrap().raw(), 2);
     assert_eq!(
         rendering_tags.subject_distance_range(),
         Some(FrameExifSubjectDistanceRange::DistantView)
     );
+    assert_eq!(rendering_tags.subject_distance_range().unwrap().raw(), 3);
     let mut bad_color_space = exif_rendering_scene_fixture();
     bad_color_space[36..38].copy_from_slice(&2u16.to_le_bytes());
     assert_eq!(
