@@ -5601,6 +5601,16 @@ fn exercise_fixtures() {
     assert_eq!(offset_time_tags.offset_time(), Some("+09:00"));
     assert_eq!(offset_time_tags.offset_time_original(), Some("-07:30"));
     assert_eq!(offset_time_tags.offset_time_digitized(), Some("+00:00"));
+    let mut bad_offset_count = exif_offset_time_fixture();
+    bad_offset_count[32..36].copy_from_slice(&6u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_offset_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_offset_shape = exif_offset_time_fixture();
     bad_offset_shape[68] = b'Z';
     assert_eq!(
@@ -5625,6 +5635,26 @@ fn exercise_fixtures() {
     bad_original_minute[79..81].copy_from_slice(b"60");
     assert_eq!(
         FrameExif::parse(&bad_original_minute)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_original_type = exif_offset_time_fixture();
+    bad_original_type[42..44].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_original_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_digitized_ascii = exif_offset_time_fixture();
+    bad_digitized_ascii[88] = b'!';
+    assert_eq!(
+        FrameExif::parse(&bad_digitized_ascii)
             .unwrap()
             .common_tags()
             .unwrap_err()

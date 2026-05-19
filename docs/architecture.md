@@ -74,6 +74,8 @@ Root colorimetry common-tag coverage now includes WhitePoint, PrimaryChromaticit
 
 Date/time common-tag range validation rejects DateTime, DateTimeOriginal, DateTimeDigitized, and GPSDateStamp calendar dates outside each month's valid day range, including leap-year handling for February; DateTime fields also reject time fields outside the 24-hour clock. OffsetTime, OffsetTimeOriginal, and OffsetTimeDigitized reject offset hours above 23 and minutes above 59.
 
+Offset-time common-tag fuzz coverage now includes OffsetTime, OffsetTimeOriginal, and OffsetTimeDigitized fixed-count, ASCII type, sign/colon layout, hour range, and minute range rejection.
+
 SubSecTime, SubSecTimeOriginal, and SubSecTimeDigitized common-tag validation rejects non-digit fractional-second strings while preserving the original ASCII values.
 
 ImageWidth, ImageLength, PixelXDimension, and PixelYDimension common-tag validation rejects zero values after the existing SHORT/LONG type and count checks.
