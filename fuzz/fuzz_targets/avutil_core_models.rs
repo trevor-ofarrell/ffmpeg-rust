@@ -16,9 +16,10 @@ use avutil::{
     FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain,
     FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
     FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
-    FrameSphericalProjection, FrameVideoBlockParams, FrameVideoEncParams, FrameVideoEncParamsType,
-    Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
+    FrameStereo3dType, FrameStereo3dView, FrameVideoBlockParams, FrameVideoEncParams,
+    FrameVideoEncParamsType, Md5, Packet, PacketFlags, PixelFormat, Rational, Rounding,
+    SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1023,6 +1024,50 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert!(a53_closed_captions_payload_invalid(
                 &frame_side_data_payload
             ));
+        }
+    }
+    match frame.side_data()[0].stereo3d() {
+        Ok(Some(value)) => {
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::Stereo3d);
+            assert_eq!(frame_side_data_payload.len(), FrameStereo3d::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), frame_side_data_payload);
+            assert_eq!(
+                FrameStereo3d::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+            assert_eq!(
+                FrameStereo3dType::from_raw(value.stereo_type().as_raw()).unwrap(),
+                value.stereo_type()
+            );
+            assert_eq!(
+                FrameStereo3dFlags::from_raw(value.flags().as_raw()).unwrap(),
+                value.flags()
+            );
+            assert_eq!(
+                FrameStereo3dView::from_raw(value.view().as_raw()).unwrap(),
+                value.view()
+            );
+            assert_eq!(
+                FrameStereo3dPrimaryEye::from_raw(value.primary_eye().as_raw()).unwrap(),
+                value.primary_eye()
+            );
+            assert_eq!(
+                value.has_inverted_views(),
+                value.flags().contains(FrameStereo3dFlags::INVERT)
+            );
+            assert_eq!(value.flags().bits() & !FrameStereo3dFlags::ALL.bits(), 0);
+            assert!(stereo3d_disparity_valid(
+                value.horizontal_disparity_adjustment()
+            ));
+            assert!(stereo3d_field_of_view_valid(
+                value.horizontal_field_of_view()
+            ));
+        }
+        Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::Stereo3d),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(frame_side_data_kind, FrameSideDataKind::Stereo3d);
+            assert!(stereo3d_payload_invalid(&frame_side_data_payload));
         }
     }
     match frame.side_data()[0].display_matrix() {
@@ -2688,6 +2733,73 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 3]).unwrap();
     assert_eq!(non_a53.a53_closed_captions().unwrap(), None);
 
+    let stereo3d = FrameStereo3d::new(
+        FrameStereo3dType::SideBySide,
+        FrameStereo3dFlags::INVERT,
+        FrameStereo3dView::Right,
+        FrameStereo3dPrimaryEye::Left,
+        63_500,
+        Rational::from_raw(-1, 2),
+        Rational::from_raw(90, 1),
+    )
+    .unwrap();
+    let stereo3d_side_data = FrameSideData::new_stereo3d(stereo3d).unwrap();
+    assert_eq!(stereo3d_side_data.kind_id(), &FrameSideDataKind::Stereo3d);
+    assert_eq!(stereo3d_side_data.stereo3d().unwrap(), Some(stereo3d));
+    assert_eq!(
+        FrameStereo3d::parse(&stereo3d.to_bytes()).unwrap(),
+        stereo3d
+    );
+    assert_eq!(
+        stereo3d.stereo_type().ffmpeg_constant(),
+        "AV_STEREO3D_SIDEBYSIDE"
+    );
+    assert_eq!(stereo3d.view().ffmpeg_constant(), "AV_STEREO3D_VIEW_RIGHT");
+    assert_eq!(
+        stereo3d.primary_eye().ffmpeg_constant(),
+        "AV_PRIMARY_EYE_LEFT"
+    );
+    assert!(stereo3d.has_inverted_views());
+    assert_eq!(
+        FrameStereo3d::parse(&[0; FrameStereo3d::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_stereo3d = stereo3d.to_bytes();
+    write_ne_i32(&mut bad_stereo3d, FrameStereo3d::TYPE_OFFSET, 9);
+    assert_eq!(
+        FrameStereo3d::parse(&bad_stereo3d).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_stereo3d = stereo3d.to_bytes();
+    write_ne_rational(
+        &mut bad_stereo3d,
+        FrameStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET,
+        Rational::from_raw(2, 1),
+    );
+    assert_eq!(
+        FrameStereo3d::parse(&bad_stereo3d).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    let unset_stereo3d = FrameStereo3d::new(
+        FrameStereo3dType::TwoDimensional,
+        FrameStereo3dFlags::EMPTY,
+        FrameStereo3dView::Packed,
+        FrameStereo3dPrimaryEye::None,
+        0,
+        Rational::from_raw(0, 0),
+        Rational::from_raw(0, 0),
+    )
+    .unwrap();
+    assert_eq!(
+        FrameStereo3d::parse(&unset_stereo3d.to_bytes()).unwrap(),
+        unset_stereo3d
+    );
+    let non_stereo =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 36]).unwrap();
+    assert_eq!(non_stereo.stereo3d().unwrap(), None);
+
     let display_matrix =
         FrameDisplayMatrix::new([1 << 16, 0, 0, 0, 1 << 16, 0, 12 << 16, -34 << 16, 1 << 30]);
     let display_matrix_side_data = FrameSideData::new_display_matrix(display_matrix).unwrap();
@@ -3600,37 +3712,38 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 31 {
+    match byte.unwrap_or_default() % 32 {
         0 => FrameSideDataKind::PanScan,
         1 => FrameSideDataKind::A53ClosedCaptions,
-        2 => FrameSideDataKind::DisplayMatrix,
-        3 => FrameSideDataKind::MatrixEncoding,
-        4 => FrameSideDataKind::DownmixInfo,
-        5 => FrameSideDataKind::ReplayGain,
-        6 => FrameSideDataKind::MotionVectors,
-        7 => FrameSideDataKind::MasteringDisplayMetadata,
-        8 => FrameSideDataKind::Spherical,
-        9 => FrameSideDataKind::ContentLightLevel,
-        10 => FrameSideDataKind::IccProfile,
-        11 => FrameSideDataKind::DolbyVisionRpuBuffer,
-        12 => FrameSideDataKind::Lcevc,
-        13 => FrameSideDataKind::GopTimecode,
-        14 => FrameSideDataKind::S12mTimecode,
-        15 => FrameSideDataKind::DynamicHdrPlus,
-        16 => FrameSideDataKind::RegionsOfInterest,
-        17 => FrameSideDataKind::VideoEncParams,
-        18 => FrameSideDataKind::VideoHint,
-        19 => FrameSideDataKind::ViewId,
-        20 => FrameSideDataKind::ThreeDReferenceDisplays,
-        21 => FrameSideDataKind::Exif,
-        22 => FrameSideDataKind::SeiUnregistered,
-        23 => FrameSideDataKind::ActiveFormatDescription,
-        24 => FrameSideDataKind::SkipSamples,
-        25 => FrameSideDataKind::AudioServiceType,
-        26 => FrameSideDataKind::FilmGrainParams,
-        27 => FrameSideDataKind::DetectionBboxes,
-        28 => FrameSideDataKind::DolbyVisionMetadata,
-        29 => FrameSideDataKind::DynamicHdrVivid,
+        2 => FrameSideDataKind::Stereo3d,
+        3 => FrameSideDataKind::DisplayMatrix,
+        4 => FrameSideDataKind::MatrixEncoding,
+        5 => FrameSideDataKind::DownmixInfo,
+        6 => FrameSideDataKind::ReplayGain,
+        7 => FrameSideDataKind::MotionVectors,
+        8 => FrameSideDataKind::MasteringDisplayMetadata,
+        9 => FrameSideDataKind::Spherical,
+        10 => FrameSideDataKind::ContentLightLevel,
+        11 => FrameSideDataKind::IccProfile,
+        12 => FrameSideDataKind::DolbyVisionRpuBuffer,
+        13 => FrameSideDataKind::Lcevc,
+        14 => FrameSideDataKind::GopTimecode,
+        15 => FrameSideDataKind::S12mTimecode,
+        16 => FrameSideDataKind::DynamicHdrPlus,
+        17 => FrameSideDataKind::RegionsOfInterest,
+        18 => FrameSideDataKind::VideoEncParams,
+        19 => FrameSideDataKind::VideoHint,
+        20 => FrameSideDataKind::ViewId,
+        21 => FrameSideDataKind::ThreeDReferenceDisplays,
+        22 => FrameSideDataKind::Exif,
+        23 => FrameSideDataKind::SeiUnregistered,
+        24 => FrameSideDataKind::ActiveFormatDescription,
+        25 => FrameSideDataKind::SkipSamples,
+        26 => FrameSideDataKind::AudioServiceType,
+        27 => FrameSideDataKind::FilmGrainParams,
+        28 => FrameSideDataKind::DetectionBboxes,
+        29 => FrameSideDataKind::DolbyVisionMetadata,
+        30 => FrameSideDataKind::DynamicHdrVivid,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
@@ -3683,6 +3796,50 @@ fn a53_closed_captions_payload_invalid(data: &[u8]) -> bool {
     !data
         .len()
         .is_multiple_of(FrameA53ClosedCaptions::BYTES_PER_CC)
+}
+
+fn stereo3d_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != FrameStereo3d::DATA_LEN {
+        return true;
+    }
+    if FrameStereo3dType::from_raw(read_ne_i32(data, FrameStereo3d::TYPE_OFFSET)).is_err() {
+        return true;
+    }
+    if FrameStereo3dFlags::from_raw(read_ne_i32(data, FrameStereo3d::FLAGS_OFFSET)).is_err() {
+        return true;
+    }
+    if FrameStereo3dView::from_raw(read_ne_i32(data, FrameStereo3d::VIEW_OFFSET)).is_err() {
+        return true;
+    }
+    if FrameStereo3dPrimaryEye::from_raw(read_ne_i32(data, FrameStereo3d::PRIMARY_EYE_OFFSET))
+        .is_err()
+    {
+        return true;
+    }
+
+    !stereo3d_disparity_valid(read_ne_rational(
+        data,
+        FrameStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET,
+    )) || !stereo3d_field_of_view_valid(read_ne_rational(
+        data,
+        FrameStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET,
+    ))
+}
+
+fn stereo3d_disparity_valid(value: Rational) -> bool {
+    stereo3d_rational_set_or_zero(value)
+        && (value.den() == 0 || i64::from(value.num()).abs() <= i64::from(value.den()).abs())
+}
+
+fn stereo3d_field_of_view_valid(value: Rational) -> bool {
+    stereo3d_rational_set_or_zero(value)
+        && (value.den() == 0
+            || value.num() == 0
+            || value.num().is_positive() == value.den().is_positive())
+}
+
+fn stereo3d_rational_set_or_zero(value: Rational) -> bool {
+    value.den() != 0 || value.num() == 0
 }
 
 fn dynamic_hdr_plus_payload_invalid(data: &[u8]) -> bool {
@@ -4560,6 +4717,10 @@ fn read_ne_i32(data: &[u8], offset: usize) -> i32 {
     let mut raw = [0; 4];
     raw.copy_from_slice(&data[offset..offset + 4]);
     i32::from_ne_bytes(raw)
+}
+
+fn read_ne_rational(data: &[u8], offset: usize) -> Rational {
+    Rational::from_raw(read_ne_i32(data, offset), read_ne_i32(data, offset + 4))
 }
 
 fn write_ne_u32(data: &mut [u8], offset: usize, value: u32) {

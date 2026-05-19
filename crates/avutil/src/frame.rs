@@ -577,6 +577,359 @@ impl<'a> FrameA53ClosedCaptions<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum FrameStereo3dType {
+    TwoDimensional = 0,
+    SideBySide = 1,
+    TopBottom = 2,
+    FrameSequence = 3,
+    Checkerboard = 4,
+    SideBySideQuincunx = 5,
+    Lines = 6,
+    Columns = 7,
+    Unspecified = 8,
+}
+
+impl FrameStereo3dType {
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::TwoDimensional),
+            1 => Ok(Self::SideBySide),
+            2 => Ok(Self::TopBottom),
+            3 => Ok(Self::FrameSequence),
+            4 => Ok(Self::Checkerboard),
+            5 => Ok(Self::SideBySideQuincunx),
+            6 => Ok(Self::Lines),
+            7 => Ok(Self::Columns),
+            8 => Ok(Self::Unspecified),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid stereo3d type value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::TwoDimensional => "AV_STEREO3D_2D",
+            Self::SideBySide => "AV_STEREO3D_SIDEBYSIDE",
+            Self::TopBottom => "AV_STEREO3D_TOPBOTTOM",
+            Self::FrameSequence => "AV_STEREO3D_FRAMESEQUENCE",
+            Self::Checkerboard => "AV_STEREO3D_CHECKERBOARD",
+            Self::SideBySideQuincunx => "AV_STEREO3D_SIDEBYSIDE_QUINCUNX",
+            Self::Lines => "AV_STEREO3D_LINES",
+            Self::Columns => "AV_STEREO3D_COLUMNS",
+            Self::Unspecified => "AV_STEREO3D_UNSPEC",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum FrameStereo3dView {
+    Packed = 0,
+    Left = 1,
+    Right = 2,
+    Unspecified = 3,
+}
+
+impl FrameStereo3dView {
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Packed),
+            1 => Ok(Self::Left),
+            2 => Ok(Self::Right),
+            3 => Ok(Self::Unspecified),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid stereo3d view value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Packed => "AV_STEREO3D_VIEW_PACKED",
+            Self::Left => "AV_STEREO3D_VIEW_LEFT",
+            Self::Right => "AV_STEREO3D_VIEW_RIGHT",
+            Self::Unspecified => "AV_STEREO3D_VIEW_UNSPEC",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum FrameStereo3dPrimaryEye {
+    None = 0,
+    Left = 1,
+    Right = 2,
+}
+
+impl FrameStereo3dPrimaryEye {
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::Left),
+            2 => Ok(Self::Right),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid stereo3d primary eye value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::None => "AV_PRIMARY_EYE_NONE",
+            Self::Left => "AV_PRIMARY_EYE_LEFT",
+            Self::Right => "AV_PRIMARY_EYE_RIGHT",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameStereo3dFlags(u32);
+
+impl FrameStereo3dFlags {
+    pub const EMPTY: Self = Self(0);
+    pub const INVERT: Self = Self(1 << 0);
+    pub const ALL: Self = Self(Self::INVERT.0);
+
+    pub fn from_bits(bits: u32) -> AvResult<Self> {
+        if bits & !Self::ALL.bits() != 0 {
+            return Err(AvError::invalid_data(format!(
+                "invalid stereo3d flags bits 0x{bits:08x}"
+            )));
+        }
+
+        Ok(Self(bits))
+    }
+
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        let bits = u32::try_from(value).map_err(|_| {
+            AvError::invalid_data(format!("invalid negative stereo3d flags value {value}"))
+        })?;
+        Self::from_bits(bits)
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self.0 as i32
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        (self.0 & other.0) == other.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameStereo3d {
+    stereo_type: FrameStereo3dType,
+    flags: FrameStereo3dFlags,
+    view: FrameStereo3dView,
+    primary_eye: FrameStereo3dPrimaryEye,
+    baseline: u32,
+    horizontal_disparity_adjustment: Rational,
+    horizontal_field_of_view: Rational,
+}
+
+impl FrameStereo3d {
+    pub const RATIONAL_LEN: usize = 8;
+    pub const TYPE_OFFSET: usize = 0;
+    pub const FLAGS_OFFSET: usize = 4;
+    pub const VIEW_OFFSET: usize = 8;
+    pub const PRIMARY_EYE_OFFSET: usize = 12;
+    pub const BASELINE_OFFSET: usize = 16;
+    pub const HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET: usize = 20;
+    pub const HORIZONTAL_FIELD_OF_VIEW_OFFSET: usize =
+        Self::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET + Self::RATIONAL_LEN;
+    pub const DATA_LEN: usize = Self::HORIZONTAL_FIELD_OF_VIEW_OFFSET + Self::RATIONAL_LEN;
+
+    pub fn new(
+        stereo_type: FrameStereo3dType,
+        flags: FrameStereo3dFlags,
+        view: FrameStereo3dView,
+        primary_eye: FrameStereo3dPrimaryEye,
+        baseline: u32,
+        horizontal_disparity_adjustment: Rational,
+        horizontal_field_of_view: Rational,
+    ) -> AvResult<Self> {
+        Self::validate_horizontal_disparity_adjustment(horizontal_disparity_adjustment)?;
+        Self::validate_horizontal_field_of_view(horizontal_field_of_view)?;
+
+        Ok(Self {
+            stereo_type,
+            flags,
+            view,
+            primary_eye,
+            baseline,
+            horizontal_disparity_adjustment,
+            horizontal_field_of_view,
+        })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "stereo3d frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Self::new(
+            FrameStereo3dType::from_raw(Self::read_i32(data, Self::TYPE_OFFSET))?,
+            FrameStereo3dFlags::from_raw(Self::read_i32(data, Self::FLAGS_OFFSET))?,
+            FrameStereo3dView::from_raw(Self::read_i32(data, Self::VIEW_OFFSET))?,
+            FrameStereo3dPrimaryEye::from_raw(Self::read_i32(data, Self::PRIMARY_EYE_OFFSET))?,
+            Self::read_u32(data, Self::BASELINE_OFFSET),
+            Self::read_rational(data, Self::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET),
+            Self::read_rational(data, Self::HORIZONTAL_FIELD_OF_VIEW_OFFSET),
+        )
+    }
+
+    pub const fn stereo_type(self) -> FrameStereo3dType {
+        self.stereo_type
+    }
+
+    pub const fn flags(self) -> FrameStereo3dFlags {
+        self.flags
+    }
+
+    pub const fn view(self) -> FrameStereo3dView {
+        self.view
+    }
+
+    pub const fn primary_eye(self) -> FrameStereo3dPrimaryEye {
+        self.primary_eye
+    }
+
+    pub const fn baseline(self) -> u32 {
+        self.baseline
+    }
+
+    pub const fn horizontal_disparity_adjustment(self) -> Rational {
+        self.horizontal_disparity_adjustment
+    }
+
+    pub const fn horizontal_field_of_view(self) -> Rational {
+        self.horizontal_field_of_view
+    }
+
+    pub const fn has_inverted_views(self) -> bool {
+        self.flags.contains(FrameStereo3dFlags::INVERT)
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        Self::write_i32(&mut bytes, Self::TYPE_OFFSET, self.stereo_type.as_raw());
+        Self::write_i32(&mut bytes, Self::FLAGS_OFFSET, self.flags.as_raw());
+        Self::write_i32(&mut bytes, Self::VIEW_OFFSET, self.view.as_raw());
+        Self::write_i32(
+            &mut bytes,
+            Self::PRIMARY_EYE_OFFSET,
+            self.primary_eye.as_raw(),
+        );
+        Self::write_u32(&mut bytes, Self::BASELINE_OFFSET, self.baseline);
+        Self::write_rational(
+            &mut bytes,
+            Self::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET,
+            self.horizontal_disparity_adjustment,
+        );
+        Self::write_rational(
+            &mut bytes,
+            Self::HORIZONTAL_FIELD_OF_VIEW_OFFSET,
+            self.horizontal_field_of_view,
+        );
+        bytes
+    }
+
+    fn validate_horizontal_disparity_adjustment(value: Rational) -> AvResult<()> {
+        Self::validate_rational_is_set_or_zero("stereo3d horizontal disparity adjustment", value)?;
+        if value.den() != 0 && i64::from(value.num()).abs() > i64::from(value.den()).abs() {
+            return Err(AvError::invalid_data(format!(
+                "stereo3d horizontal disparity adjustment {value} is outside -1..=1"
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn validate_horizontal_field_of_view(value: Rational) -> AvResult<()> {
+        Self::validate_rational_is_set_or_zero("stereo3d horizontal field of view", value)?;
+        if value.den() != 0
+            && value.num() != 0
+            && (value.num().is_positive() != value.den().is_positive())
+        {
+            return Err(AvError::invalid_data(format!(
+                "stereo3d horizontal field of view {value} must be nonnegative"
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn validate_rational_is_set_or_zero(name: &str, value: Rational) -> AvResult<()> {
+        if value.den() == 0 && value.num() != 0 {
+            return Err(AvError::invalid_data(format!(
+                "{name} has numerator {} with zero denominator",
+                value.num()
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+
+    fn read_u32(data: &[u8], offset: usize) -> u32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        u32::from_ne_bytes(raw)
+    }
+
+    fn read_rational(data: &[u8], offset: usize) -> Rational {
+        Rational::from_raw(
+            Self::read_i32(data, offset),
+            Self::read_i32(data, offset + 4),
+        )
+    }
+
+    fn write_i32(data: &mut [u8], offset: usize, value: i32) {
+        data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_u32(data: &mut [u8], offset: usize, value: u32) {
+        data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_rational(data: &mut [u8], offset: usize, value: Rational) {
+        Self::write_i32(data, offset, value.num());
+        Self::write_i32(data, offset + 4, value.den());
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameDisplayMatrix {
     elements: [i32; Self::ELEMENTS],
 }
@@ -5316,6 +5669,10 @@ impl FrameSideData {
         Ok(side_data)
     }
 
+    pub fn new_stereo3d(value: FrameStereo3d) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::Stereo3d, value.to_bytes().to_vec())
+    }
+
     pub fn new_active_format_description(value: FrameActiveFormatDescription) -> AvResult<Self> {
         Self::new_with_kind(
             FrameSideDataKind::ActiveFormatDescription,
@@ -5503,6 +5860,14 @@ impl FrameSideData {
         }
 
         FrameA53ClosedCaptions::parse(self.data()).map(Some)
+    }
+
+    pub fn stereo3d(&self) -> AvResult<Option<FrameStereo3d>> {
+        if self.kind != FrameSideDataKind::Stereo3d {
+            return Ok(None);
+        }
+
+        FrameStereo3d::parse(self.data()).map(Some)
     }
 
     pub fn display_matrix(&self) -> AvResult<Option<FrameDisplayMatrix>> {
@@ -8925,6 +9290,208 @@ mod tests {
         let non_a53 =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 3]).unwrap();
         assert_eq!(non_a53.a53_closed_captions().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_stereo3d_payload() {
+        let expected = FrameStereo3d::new(
+            FrameStereo3dType::SideBySide,
+            FrameStereo3dFlags::INVERT,
+            FrameStereo3dView::Right,
+            FrameStereo3dPrimaryEye::Left,
+            63_500,
+            Rational::from_raw(-1, 2),
+            Rational::from_raw(90, 1),
+        )
+        .unwrap();
+
+        assert_eq!(FrameStereo3d::DATA_LEN, 36);
+        assert_eq!(FrameStereo3d::TYPE_OFFSET, 0);
+        assert_eq!(FrameStereo3d::FLAGS_OFFSET, 4);
+        assert_eq!(FrameStereo3d::VIEW_OFFSET, 8);
+        assert_eq!(FrameStereo3d::PRIMARY_EYE_OFFSET, 12);
+        assert_eq!(FrameStereo3d::BASELINE_OFFSET, 16);
+        assert_eq!(FrameStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET, 20);
+        assert_eq!(FrameStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET, 28);
+        assert_eq!(expected.stereo_type(), FrameStereo3dType::SideBySide);
+        assert_eq!(expected.flags(), FrameStereo3dFlags::INVERT);
+        assert!(expected.has_inverted_views());
+        assert!(expected.flags().contains(FrameStereo3dFlags::INVERT));
+        assert_eq!(expected.view(), FrameStereo3dView::Right);
+        assert_eq!(expected.primary_eye(), FrameStereo3dPrimaryEye::Left);
+        assert_eq!(expected.baseline(), 63_500);
+        assert_eq!(
+            expected.horizontal_disparity_adjustment(),
+            Rational::from_raw(-1, 2)
+        );
+        assert_eq!(
+            expected.horizontal_field_of_view(),
+            Rational::from_raw(90, 1)
+        );
+        assert_eq!(
+            FrameStereo3d::parse(&expected.to_bytes()).unwrap(),
+            expected
+        );
+
+        let side_data = FrameSideData::new_stereo3d(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::Stereo3d);
+        assert_eq!(side_data.data(), &expected.to_bytes()[..]);
+        assert_eq!(side_data.stereo3d().unwrap(), Some(expected));
+
+        let unset_rationals = FrameStereo3d::new(
+            FrameStereo3dType::TwoDimensional,
+            FrameStereo3dFlags::EMPTY,
+            FrameStereo3dView::Packed,
+            FrameStereo3dPrimaryEye::None,
+            0,
+            Rational::from_raw(0, 0),
+            Rational::from_raw(0, 0),
+        )
+        .unwrap();
+        assert_eq!(
+            FrameStereo3d::parse(&unset_rationals.to_bytes()).unwrap(),
+            unset_rationals
+        );
+        assert!(unset_rationals.flags().is_empty());
+        assert!(!unset_rationals.has_inverted_views());
+
+        assert_eq!(
+            FrameStereo3dFlags::from_bits(FrameStereo3dFlags::INVERT.bits()).unwrap(),
+            FrameStereo3dFlags::INVERT
+        );
+        assert_eq!(
+            FrameStereo3dType::SideBySideQuincunx.ffmpeg_constant(),
+            "AV_STEREO3D_SIDEBYSIDE_QUINCUNX"
+        );
+        assert_eq!(
+            FrameStereo3dView::Unspecified.ffmpeg_constant(),
+            "AV_STEREO3D_VIEW_UNSPEC"
+        );
+        assert_eq!(
+            FrameStereo3dPrimaryEye::Right.ffmpeg_constant(),
+            "AV_PRIMARY_EYE_RIGHT"
+        );
+
+        let display_matrix = FrameSideData::new_with_kind(
+            FrameSideDataKind::DisplayMatrix,
+            expected.to_bytes().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(display_matrix.stereo3d().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_stereo3d_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; FrameStereo3d::DATA_LEN - 1],
+            vec![0; FrameStereo3d::DATA_LEN + 1],
+        ] {
+            assert_eq!(
+                FrameStereo3d::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::Stereo3d, data).unwrap();
+            assert_eq!(
+                side_data.stereo3d().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let valid_payload = FrameStereo3d::new(
+            FrameStereo3dType::SideBySide,
+            FrameStereo3dFlags::INVERT,
+            FrameStereo3dView::Packed,
+            FrameStereo3dPrimaryEye::Right,
+            1,
+            Rational::from_raw(0, 1),
+            Rational::from_raw(45, 1),
+        )
+        .unwrap()
+        .to_bytes();
+
+        let mut invalid_payloads = Vec::new();
+        for (offset, value) in [
+            (FrameStereo3d::TYPE_OFFSET, 9),
+            (FrameStereo3d::TYPE_OFFSET, -1),
+            (FrameStereo3d::FLAGS_OFFSET, 2),
+            (FrameStereo3d::FLAGS_OFFSET, -1),
+            (FrameStereo3d::VIEW_OFFSET, 4),
+            (FrameStereo3d::PRIMARY_EYE_OFFSET, 3),
+        ] {
+            let mut data = valid_payload.to_vec();
+            write_ne_i32(&mut data, offset, value);
+            invalid_payloads.push(data);
+        }
+
+        for value in [
+            Rational::from_raw(2, 1),
+            Rational::from_raw(-2, 1),
+            Rational::from_raw(1, 0),
+        ] {
+            let mut data = valid_payload.to_vec();
+            write_ne_rational(
+                &mut data,
+                FrameStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET,
+                value,
+            );
+            invalid_payloads.push(data);
+        }
+
+        for value in [Rational::from_raw(-1, 1), Rational::from_raw(1, 0)] {
+            let mut data = valid_payload.to_vec();
+            write_ne_rational(
+                &mut data,
+                FrameStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET,
+                value,
+            );
+            invalid_payloads.push(data);
+        }
+
+        for data in invalid_payloads {
+            assert_eq!(
+                FrameStereo3d::parse(&data).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::Stereo3d, data).unwrap();
+            assert_eq!(
+                side_data.stereo3d().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            FrameStereo3dType::from_raw(9).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameStereo3dFlags::from_bits(2).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameStereo3dFlags::from_raw(-1).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameStereo3d::new(
+                FrameStereo3dType::SideBySide,
+                FrameStereo3dFlags::EMPTY,
+                FrameStereo3dView::Packed,
+                FrameStereo3dPrimaryEye::None,
+                0,
+                Rational::from_raw(2, 1),
+                Rational::from_raw(0, 1),
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let non_stereo =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0; 36]).unwrap();
+        assert_eq!(non_stereo.stereo3d().unwrap(), None);
     }
 
     #[test]
