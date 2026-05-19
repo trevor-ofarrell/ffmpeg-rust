@@ -6128,6 +6128,47 @@ fn exercise_fixtures() {
         gamma_composite_tags.source_exposure_times_of_composite_image(),
         Some(&b"exp-times-01"[..])
     );
+    let mut bad_gamma_count = exif_gamma_composite_fixture();
+    bad_gamma_count[32..36].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_gamma_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_composite_value = exif_gamma_composite_fixture();
+    bad_composite_value[48..50].copy_from_slice(&9u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_composite_value)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_source_count = exif_gamma_composite_fixture();
+    bad_source_count[56..60].copy_from_slice(&1u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_source_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_exposure_type = exif_gamma_composite_fixture();
+    bad_exposure_type[66..68].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    bad_exposure_type[68..72].copy_from_slice(&1u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_exposure_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let environment_exif_bytes = exif_environment_fixture();
     let environment_exif = FrameExif::parse(&environment_exif_bytes).unwrap();
