@@ -446,6 +446,112 @@ impl PacketSkipSamples {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketParamChange {
+    sample_rate: Option<i32>,
+    dimensions: Option<(i32, i32)>,
+}
+
+impl PacketParamChange {
+    pub const MIN_DATA_LEN: usize = 4;
+    pub const MAX_DATA_LEN: usize = 16;
+    pub const SAMPLE_RATE_FLAG: u32 = 0x0004;
+    pub const DIMENSIONS_FLAG: u32 = 0x0008;
+    pub const KNOWN_FLAGS: u32 = Self::SAMPLE_RATE_FLAG | Self::DIMENSIONS_FLAG;
+
+    pub const fn new(sample_rate: Option<i32>, dimensions: Option<(i32, i32)>) -> Self {
+        Self {
+            sample_rate,
+            dimensions,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() < Self::MIN_DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "parameter change packet side data requires at least {} bytes, got {}",
+                Self::MIN_DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let flags = read_u32_le(data, 0);
+        let unknown_flags = flags & !Self::KNOWN_FLAGS;
+        if unknown_flags != 0 {
+            return Err(AvError::invalid_data(format!(
+                "parameter change packet side data has unknown flags 0x{unknown_flags:08x}"
+            )));
+        }
+
+        let mut expected_len = Self::MIN_DATA_LEN;
+        if flags & Self::SAMPLE_RATE_FLAG != 0 {
+            expected_len += 4;
+        }
+        if flags & Self::DIMENSIONS_FLAG != 0 {
+            expected_len += 8;
+        }
+        if data.len() != expected_len {
+            return Err(AvError::invalid_data(format!(
+                "parameter change packet side data with flags 0x{flags:08x} requires exactly {expected_len} bytes, got {}",
+                data.len()
+            )));
+        }
+
+        let mut offset = Self::MIN_DATA_LEN;
+        let sample_rate = if flags & Self::SAMPLE_RATE_FLAG != 0 {
+            let value = read_i32_le(data, offset);
+            offset += 4;
+            Some(value)
+        } else {
+            None
+        };
+        let dimensions = if flags & Self::DIMENSIONS_FLAG != 0 {
+            let width = read_i32_le(data, offset);
+            let height = read_i32_le(data, offset + 4);
+            Some((width, height))
+        } else {
+            None
+        };
+
+        Ok(Self {
+            sample_rate,
+            dimensions,
+        })
+    }
+
+    pub const fn sample_rate(self) -> Option<i32> {
+        self.sample_rate
+    }
+
+    pub const fn dimensions(self) -> Option<(i32, i32)> {
+        self.dimensions
+    }
+
+    pub const fn flags(self) -> u32 {
+        let mut flags = 0;
+        if self.sample_rate.is_some() {
+            flags |= Self::SAMPLE_RATE_FLAG;
+        }
+        if self.dimensions.is_some() {
+            flags |= Self::DIMENSIONS_FLAG;
+        }
+        flags
+    }
+
+    pub fn to_bytes(self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(Self::MAX_DATA_LEN);
+        bytes.extend_from_slice(&self.flags().to_le_bytes());
+        if let Some(sample_rate) = self.sample_rate {
+            bytes.extend_from_slice(&sample_rate.to_le_bytes());
+        }
+        if let Some((width, height)) = self.dimensions {
+            bytes.extend_from_slice(&width.to_le_bytes());
+            bytes.extend_from_slice(&height.to_le_bytes());
+        }
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketFrameCropping {
     crop_top: u32,
     crop_bottom: u32,
@@ -525,6 +631,10 @@ impl SideData {
         Self::new_with_kind(PacketSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
 
+    pub fn new_param_change(value: PacketParamChange) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::ParamChange, value.to_bytes())
+    }
+
     pub fn new_frame_cropping(value: PacketFrameCropping) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::FrameCropping, value.to_bytes().to_vec())
     }
@@ -570,6 +680,14 @@ impl SideData {
         }
 
         PacketSkipSamples::parse(self.data()).map(Some)
+    }
+
+    pub fn param_change(&self) -> AvResult<Option<PacketParamChange>> {
+        if self.kind != PacketSideDataKind::ParamChange {
+            return Ok(None);
+        }
+
+        PacketParamChange::parse(self.data()).map(Some)
     }
 
     pub fn frame_cropping(&self) -> AvResult<Option<PacketFrameCropping>> {
@@ -915,6 +1033,12 @@ fn read_u32_le(data: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes(bytes)
 }
 
+fn read_i32_le(data: &[u8], offset: usize) -> i32 {
+    let mut bytes = [0; 4];
+    bytes.copy_from_slice(&data[offset..offset + 4]);
+    i32::from_le_bytes(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1129,6 +1253,100 @@ mod tests {
             "vendor_packet"
         );
         assert!(packet.side_data_by_kind("vendor_packet").is_none());
+    }
+
+    #[test]
+    fn packet_side_data_parses_param_change_payload() {
+        let sample_rate_only = PacketParamChange::new(Some(48_000), None);
+        let sample_rate_bytes = [0x04, 0, 0, 0, 0x80, 0xbb, 0, 0];
+        assert_eq!(
+            sample_rate_only.flags(),
+            PacketParamChange::SAMPLE_RATE_FLAG
+        );
+        assert_eq!(sample_rate_only.to_bytes(), sample_rate_bytes);
+        assert_eq!(
+            PacketParamChange::parse(&sample_rate_bytes).unwrap(),
+            sample_rate_only
+        );
+        assert_eq!(sample_rate_only.sample_rate(), Some(48_000));
+        assert_eq!(sample_rate_only.dimensions(), None);
+
+        let dimensions_only = PacketParamChange::new(None, Some((1920, 1080)));
+        let dimensions_bytes = [0x08, 0, 0, 0, 0x80, 0x07, 0, 0, 0x38, 0x04, 0, 0];
+        assert_eq!(dimensions_only.flags(), PacketParamChange::DIMENSIONS_FLAG);
+        assert_eq!(dimensions_only.to_bytes(), dimensions_bytes);
+        assert_eq!(
+            PacketParamChange::parse(&dimensions_bytes).unwrap(),
+            dimensions_only
+        );
+        assert_eq!(dimensions_only.sample_rate(), None);
+        assert_eq!(dimensions_only.dimensions(), Some((1920, 1080)));
+
+        let both = PacketParamChange::new(Some(-1), Some((i32::MIN, i32::MAX)));
+        let both_bytes = [
+            0x0c, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0x80, 0xff, 0xff, 0xff, 0x7f,
+        ];
+        assert_eq!(
+            both.flags(),
+            PacketParamChange::SAMPLE_RATE_FLAG | PacketParamChange::DIMENSIONS_FLAG
+        );
+        assert_eq!(both.to_bytes(), both_bytes);
+        assert_eq!(PacketParamChange::parse(&both_bytes).unwrap(), both);
+
+        let no_change = PacketParamChange::new(None, None);
+        assert_eq!(no_change.to_bytes(), [0, 0, 0, 0]);
+        assert_eq!(PacketParamChange::parse(&[0, 0, 0, 0]).unwrap(), no_change);
+
+        let side_data = SideData::new_param_change(both).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::ParamChange);
+        assert_eq!(side_data.data(), &both_bytes[..]);
+        assert_eq!(side_data.param_change().unwrap(), Some(both));
+
+        let skip_samples =
+            SideData::new_with_kind(PacketSideDataKind::SkipSamples, both_bytes.to_vec()).unwrap();
+        assert_eq!(skip_samples.param_change().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_param_change_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; 3],
+            vec![0x04, 0, 0, 0],
+            vec![0x04, 0, 0, 0, 1],
+        ] {
+            assert_eq!(
+                PacketParamChange::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let trailing = [0, 0, 0, 0, 0];
+        assert_eq!(
+            PacketParamChange::parse(&trailing).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let unknown_flags = [0x10, 0, 0, 0];
+        assert_eq!(
+            PacketParamChange::parse(&unknown_flags).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let truncated_dimensions = [0x08, 0, 0, 0, 1, 0, 0, 0];
+        assert_eq!(
+            PacketParamChange::parse(&truncated_dimensions)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let side_data =
+            SideData::new_with_kind(PacketSideDataKind::ParamChange, vec![0x08, 0, 0, 0]).unwrap();
+        assert_eq!(
+            side_data.param_change().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
     }
 
     #[test]

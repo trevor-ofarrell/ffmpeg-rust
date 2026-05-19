@@ -32,9 +32,9 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketFlags, PacketFrameCropping, PacketSideDataKind, PacketSkipSamples,
-    PacketSkipSamplesReason, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    Packet, PacketFlags, PacketFrameCropping, PacketParamChange, PacketSideDataKind,
+    PacketSkipSamples, PacketSkipSamplesReason, PixelFormat, Rational, Rounding, SampleFormat,
+    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3320,6 +3320,27 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_skip_samples_payload_invalid(&typed_payload));
         }
     }
+    match typed_payload_side_data.param_change() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::ParamChange);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketParamChange::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+            assert_eq!(
+                value.flags() & !PacketParamChange::KNOWN_FLAGS,
+                0,
+                "typed constructors never emit unknown parameter-change flags"
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::ParamChange),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::ParamChange);
+            assert!(packet_param_change_payload_invalid(&typed_payload));
+        }
+    }
     match typed_payload_side_data.frame_cropping() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::FrameCropping);
@@ -3605,6 +3626,39 @@ fn exercise_fixtures() {
             .ffmpeg_constant()
             .unwrap(),
         "AV_PKT_DATA_EXIF"
+    );
+    let packet_param_change = PacketParamChange::new(Some(48_000), Some((1920, 1080)));
+    let packet_param_change_bytes = packet_param_change.to_bytes();
+    assert_eq!(
+        packet_param_change.flags(),
+        PacketParamChange::SAMPLE_RATE_FLAG | PacketParamChange::DIMENSIONS_FLAG
+    );
+    assert_eq!(
+        PacketParamChange::parse(&packet_param_change_bytes).unwrap(),
+        packet_param_change
+    );
+    assert_eq!(
+        SideData::new_param_change(packet_param_change)
+            .unwrap()
+            .param_change()
+            .unwrap(),
+        Some(packet_param_change)
+    );
+    assert_eq!(
+        PacketParamChange::parse(&[0, 0, 0, 0]).unwrap(),
+        PacketParamChange::new(None, None)
+    );
+    assert_eq!(
+        PacketParamChange::parse(&packet_param_change_bytes[..packet_param_change_bytes.len() - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        PacketParamChange::parse(&[0x10, 0, 0, 0])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
     );
     let packet_skip_samples = PacketSkipSamples::new(
         1024,
@@ -9245,6 +9299,29 @@ fn packet_skip_samples_payload_invalid(data: &[u8]) -> bool {
 
     PacketSkipSamplesReason::from_byte(data[8]).is_err()
         || PacketSkipSamplesReason::from_byte(data[9]).is_err()
+}
+
+fn packet_param_change_payload_invalid(data: &[u8]) -> bool {
+    if data.len() < PacketParamChange::MIN_DATA_LEN {
+        return true;
+    }
+
+    let mut flags_bytes = [0; 4];
+    flags_bytes.copy_from_slice(&data[..4]);
+    let flags = u32::from_le_bytes(flags_bytes);
+    if flags & !PacketParamChange::KNOWN_FLAGS != 0 {
+        return true;
+    }
+
+    let mut expected_len = PacketParamChange::MIN_DATA_LEN;
+    if flags & PacketParamChange::SAMPLE_RATE_FLAG != 0 {
+        expected_len += 4;
+    }
+    if flags & PacketParamChange::DIMENSIONS_FLAG != 0 {
+        expected_len += 8;
+    }
+
+    data.len() != expected_len
 }
 
 fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {
