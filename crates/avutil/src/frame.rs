@@ -6514,6 +6514,31 @@ impl FrameExifGpsDirectionRef {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifGpsDifferential {
+    NoCorrection,
+    DifferentialCorrectionApplied,
+}
+
+impl FrameExifGpsDifferential {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        match raw {
+            0 => Ok(Self::NoCorrection),
+            1 => Ok(Self::DifferentialCorrectionApplied),
+            _ => Err(AvError::invalid_data(format!(
+                "EXIF GPS differential value {raw} is outside the defined 0..=1 range"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u16 {
+        match self {
+            Self::NoCorrection => 0,
+            Self::DifferentialCorrectionApplied => 1,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FrameExifCommonTags<'a> {
     image_description: Option<&'a str>,
@@ -6637,6 +6662,10 @@ pub struct FrameExifCommonTags<'a> {
     gps_dest_bearing: Option<FrameExifRational>,
     gps_dest_distance_ref: Option<FrameExifGpsDistanceRef>,
     gps_dest_distance: Option<FrameExifRational>,
+    gps_processing_method: Option<&'a [u8]>,
+    gps_area_information: Option<&'a [u8]>,
+    gps_differential: Option<FrameExifGpsDifferential>,
+    gps_h_positioning_error: Option<FrameExifRational>,
     interoperability_index: Option<&'a str>,
 }
 
@@ -7125,6 +7154,22 @@ impl<'a> FrameExifCommonTags<'a> {
         self.gps_dest_distance
     }
 
+    pub const fn gps_processing_method(&self) -> Option<&'a [u8]> {
+        self.gps_processing_method
+    }
+
+    pub const fn gps_area_information(&self) -> Option<&'a [u8]> {
+        self.gps_area_information
+    }
+
+    pub const fn gps_differential(&self) -> Option<FrameExifGpsDifferential> {
+        self.gps_differential
+    }
+
+    pub const fn gps_h_positioning_error(&self) -> Option<FrameExifRational> {
+        self.gps_h_positioning_error
+    }
+
     pub const fn interoperability_index(&self) -> Option<&'a str> {
         self.interoperability_index
     }
@@ -7585,7 +7630,11 @@ impl<'a> FrameExif<'a> {
     pub const TAG_GPS_DEST_BEARING: u16 = 0x0018;
     pub const TAG_GPS_DEST_DISTANCE_REF: u16 = 0x0019;
     pub const TAG_GPS_DEST_DISTANCE: u16 = 0x001A;
+    pub const TAG_GPS_PROCESSING_METHOD: u16 = 0x001B;
+    pub const TAG_GPS_AREA_INFORMATION: u16 = 0x001C;
     pub const TAG_GPS_DATE_STAMP: u16 = 0x001D;
+    pub const TAG_GPS_DIFFERENTIAL: u16 = 0x001E;
+    pub const TAG_GPS_H_POSITIONING_ERROR: u16 = 0x001F;
     pub const TAG_INTEROPERABILITY_INDEX: u16 = 0x0001;
 
     pub fn parse(data: &'a [u8]) -> AvResult<Self> {
@@ -7990,7 +8039,23 @@ impl<'a> FrameExif<'a> {
             tags.gps_dest_distance_ref = Self::optional_gps_distance_ref_tag(ifd)?;
             tags.gps_dest_distance =
                 Self::optional_rational_tag(ifd, Self::TAG_GPS_DEST_DISTANCE, "GPSDestDistance")?;
+            tags.gps_processing_method = Self::optional_undefined_bytes_tag(
+                ifd,
+                Self::TAG_GPS_PROCESSING_METHOD,
+                "GPSProcessingMethod",
+            )?;
+            tags.gps_area_information = Self::optional_undefined_bytes_tag(
+                ifd,
+                Self::TAG_GPS_AREA_INFORMATION,
+                "GPSAreaInformation",
+            )?;
             tags.gps_date_stamp = Self::optional_gps_date_stamp_tag(ifd)?;
+            tags.gps_differential = Self::optional_gps_differential_tag(ifd)?;
+            tags.gps_h_positioning_error = Self::optional_rational_tag(
+                ifd,
+                Self::TAG_GPS_H_POSITIONING_ERROR,
+                "GPSHPositioningError",
+            )?;
         }
 
         if let Some(interop_ifd) = self.linked_ifd(FrameExifIfdPointerKind::Interoperability) {
@@ -9107,6 +9172,17 @@ impl<'a> FrameExif<'a> {
                 format!("must be `T` or `M`, got `{value}`"),
             )),
         }
+    }
+
+    fn optional_gps_differential_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifGpsDifferential>> {
+        let Some(raw) =
+            Self::optional_short_tag(ifd, Self::TAG_GPS_DIFFERENTIAL, "GPSDifferential")?
+        else {
+            return Ok(None);
+        };
+        FrameExifGpsDifferential::from_raw(raw).map(Some)
     }
 
     fn optional_gps_ascii_ref_tag(
@@ -13103,6 +13179,63 @@ mod tests {
         data.extend_from_slice(&1u32.to_le_bytes());
 
         assert_eq!(data.len(), 192);
+        data
+    }
+
+    fn exif_gps_processing_error_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::GPS_TAG,
+            FrameExifTiffType::Long,
+            1,
+            26u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 26);
+
+        data.extend_from_slice(&4u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_PROCESSING_METHOD,
+            FrameExifTiffType::Undefined,
+            12,
+            80u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_AREA_INFORMATION,
+            FrameExifTiffType::Undefined,
+            12,
+            92u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_DIFFERENTIAL,
+            FrameExifTiffType::Short,
+            1,
+            [1, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_GPS_H_POSITIONING_ERROR,
+            FrameExifTiffType::Rational,
+            1,
+            104u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        assert_eq!(data.len(), 80);
+
+        data.extend_from_slice(b"ASCII\0\0\0GPS\0");
+        data.extend_from_slice(b"ASCII\0\0\0AREA");
+        data.extend_from_slice(&5u32.to_le_bytes());
+        data.extend_from_slice(&2u32.to_le_bytes());
+
+        assert_eq!(data.len(), 112);
         data
     }
 
@@ -20090,6 +20223,98 @@ mod tests {
             .copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_dest_distance_ref_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_gps_processing_error_tags() {
+        let exif_bytes = exif_gps_processing_error_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(
+            common.gps_processing_method(),
+            Some(&b"ASCII\0\0\0GPS\0"[..])
+        );
+        assert_eq!(common.gps_area_information(), Some(&b"ASCII\0\0\0AREA"[..]));
+        assert_eq!(
+            common.gps_differential(),
+            Some(FrameExifGpsDifferential::DifferentialCorrectionApplied)
+        );
+        assert_eq!(common.gps_differential().unwrap().raw(), 1);
+        assert_eq!(
+            common.gps_h_positioning_error(),
+            Some(FrameExifRational {
+                numerator: 5,
+                denominator: 2,
+            })
+        );
+
+        let mut bad_processing_type = exif_gps_processing_error_fixture();
+        bad_processing_type[30..32].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_processing_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_area_type = exif_gps_processing_error_fixture();
+        bad_area_type[42..44].copy_from_slice(&FrameExifTiffType::Ascii.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_area_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_differential_count = exif_gps_processing_error_fixture();
+        bad_differential_count[56..60].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_differential_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_differential_value = exif_gps_processing_error_fixture();
+        bad_differential_value[60..62].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_differential_value)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_h_positioning_error_type = exif_gps_processing_error_fixture();
+        bad_h_positioning_error_type[66..68]
+            .copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_h_positioning_error_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_h_positioning_error_denominator = exif_gps_processing_error_fixture();
+        bad_h_positioning_error_denominator[108..112].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_h_positioning_error_denominator)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

@@ -2024,6 +2024,12 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.gps_dest_distance() {
                         assert_ne!(value.denominator(), 0);
                     }
+                    if let Some(value) = common.gps_differential() {
+                        assert!(value.raw() <= 1);
+                    }
+                    if let Some(value) = common.gps_h_positioning_error() {
+                        assert_ne!(value.denominator(), 0);
+                    }
                 }
                 Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
             }
