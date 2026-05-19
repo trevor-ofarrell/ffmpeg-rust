@@ -3487,6 +3487,62 @@ fn exercise_fixtures() {
         vec![String::from("move-source-plane")]
     );
 
+    let make_source = BufferRef::from_vec_readonly(vec![1, 2, 3, 4]);
+    let make_video =
+        VideoFrame::new_with_buffer_refs(2, 2, PixelFormat::Gray8, vec![make_source.clone()])
+            .unwrap();
+    let make_side_data = BufferRef::copy_from_slice(&[0xAA, 0xBB]);
+    let make_hw_context = BufferRef::copy_from_slice(&[0xCC]);
+    let mut make_frame = Frame::video(make_video).with_hw_frames_context(make_hw_context.clone());
+    make_frame
+        .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, make_side_data.clone())
+        .unwrap();
+    let make_clone = make_frame.clone();
+
+    assert!(!make_frame.is_writable());
+    make_frame.make_writable();
+    assert!(make_frame.is_writable());
+
+    let (make_frame_video, make_clone_video) = match (make_frame.data(), make_clone.data()) {
+        (FrameData::Video(make_frame_video), FrameData::Video(make_clone_video)) => {
+            (make_frame_video, make_clone_video)
+        }
+        _ => unreachable!("constructed video frames changed variant"),
+    };
+    assert!(!make_frame_video.plane_buffers()[0].shares_storage(&make_source));
+    assert!(make_clone_video.plane_buffers()[0].shares_storage(&make_source));
+    assert_eq!(make_frame_video.planes(), &[vec![1, 2, 3, 4]]);
+    assert_eq!(make_clone_video.planes(), &[vec![1, 2, 3, 4]]);
+    assert!(make_frame.side_data()[0]
+        .buffer()
+        .shares_storage(&make_side_data));
+    assert!(make_frame.side_data()[0]
+        .buffer()
+        .shares_storage(make_clone.side_data()[0].buffer()));
+    assert!(make_frame
+        .hw_frames_context()
+        .unwrap()
+        .shares_storage(&make_hw_context));
+    assert!(make_frame
+        .hw_frames_context()
+        .unwrap()
+        .shares_storage(make_clone.hw_frames_context().unwrap()));
+
+    make_frame.set_plane_visible_data(0, &[4, 3, 2, 1]).unwrap();
+    let (make_frame_video, make_clone_video) = match (make_frame.data(), make_clone.data()) {
+        (FrameData::Video(make_frame_video), FrameData::Video(make_clone_video)) => {
+            (make_frame_video, make_clone_video)
+        }
+        _ => unreachable!("constructed video frames changed variant"),
+    };
+    assert_eq!(make_frame_video.planes(), &[vec![4, 3, 2, 1]]);
+    assert_eq!(
+        make_frame_video.plane_buffers()[0].as_slice(),
+        &[4, 3, 2, 1]
+    );
+    assert_eq!(make_clone_video.planes(), &[vec![1, 2, 3, 4]]);
+    assert_eq!(make_source.as_slice(), &[1, 2, 3, 4]);
+
     let mut permission_frame = Frame::video(
         VideoFrame::new_with_buffer_refs(
             1,
