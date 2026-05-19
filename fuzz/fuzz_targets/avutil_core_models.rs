@@ -4498,12 +4498,89 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
-    let mut bad_hdr_plus = dynamic_hdr_plus.clone();
-    bad_hdr_plus[0] = 0;
+    for data in [
+        Vec::new(),
+        vec![0; FrameDynamicHdrPlus::DATA_LEN - 1],
+        vec![0; FrameDynamicHdrPlus::DATA_LEN + 1],
+    ] {
+        let side_data =
+            FrameSideData::new_with_kind(FrameSideDataKind::DynamicHdrPlus, data).unwrap();
+        assert_eq!(
+            side_data.dynamic_hdr_plus().unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    const HDR_PLUS_PARAMS_OFFSET: usize = 4;
+    const HDR_PLUS_OVERLAP_PROCESS_OPTION_OFFSET: usize = 44;
+    const HDR_PLUS_NUM_DISTRIBUTION_MAXRGB_PERCENTILES_OFFSET: usize = 80;
+    const HDR_PLUS_TONE_MAPPING_FLAG_OFFSET: usize = 272;
+    const HDR_PLUS_NUM_BEZIER_CURVE_ANCHORS_OFFSET: usize = 292;
+    const HDR_PLUS_COLOR_SATURATION_MAPPING_FLAG_OFFSET: usize = 416;
+    const HDR_PLUS_TARGET_MAX_LUMINANCE_OFFSET: usize = HDR_PLUS_PARAMS_OFFSET
+        + FrameDynamicHdrPlus::MAX_WINDOWS * FrameHdrPlusColorTransformParams::DATA_LEN;
+    const HDR_PLUS_TARGET_PEAK_FLAG_OFFSET: usize = HDR_PLUS_TARGET_MAX_LUMINANCE_OFFSET + 8;
+    const HDR_PLUS_TARGET_PEAK_ROWS_OFFSET: usize = HDR_PLUS_TARGET_PEAK_FLAG_OFFSET + 1;
+    const HDR_PLUS_TARGET_PEAK_COLS_OFFSET: usize = HDR_PLUS_TARGET_PEAK_ROWS_OFFSET + 1;
+    const HDR_PLUS_TARGET_PEAK_TABLE_OFFSET: usize = HDR_PLUS_TARGET_MAX_LUMINANCE_OFFSET + 12;
+    const HDR_PLUS_PEAK_TABLE_LEN: usize = FrameDynamicHdrPlus::MAX_PEAK_LUMINANCE_ROWS
+        * FrameDynamicHdrPlus::MAX_PEAK_LUMINANCE_COLS
+        * 8;
+    const HDR_PLUS_MASTERING_PEAK_FLAG_OFFSET: usize =
+        HDR_PLUS_TARGET_PEAK_TABLE_OFFSET + HDR_PLUS_PEAK_TABLE_LEN;
+    for (offset, value) in [
+        (0, 0xB4),
+        (1, 1),
+        (2, 0),
+        (2, 4),
+        (
+            HDR_PLUS_PARAMS_OFFSET + HDR_PLUS_NUM_DISTRIBUTION_MAXRGB_PERCENTILES_OFFSET,
+            16,
+        ),
+        (
+            HDR_PLUS_PARAMS_OFFSET + HDR_PLUS_TONE_MAPPING_FLAG_OFFSET,
+            2,
+        ),
+        (
+            HDR_PLUS_PARAMS_OFFSET + HDR_PLUS_NUM_BEZIER_CURVE_ANCHORS_OFFSET,
+            16,
+        ),
+        (
+            HDR_PLUS_PARAMS_OFFSET + HDR_PLUS_COLOR_SATURATION_MAPPING_FLAG_OFFSET,
+            2,
+        ),
+        (HDR_PLUS_TARGET_PEAK_FLAG_OFFSET, 2),
+        (HDR_PLUS_MASTERING_PEAK_FLAG_OFFSET, 2),
+    ] {
+        let mut bad_hdr_plus = dynamic_hdr_plus.clone();
+        bad_hdr_plus[offset] = value;
+        assert!(dynamic_hdr_plus_payload_invalid(&bad_hdr_plus));
+        assert_eq!(
+            FrameSideData::new_with_kind(FrameSideDataKind::DynamicHdrPlus, bad_hdr_plus)
+                .unwrap()
+                .dynamic_hdr_plus()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    let mut bad_hdr_plus_overlap = dynamic_hdr_plus.clone();
+    write_ne_i32(
+        &mut bad_hdr_plus_overlap,
+        HDR_PLUS_PARAMS_OFFSET + HDR_PLUS_OVERLAP_PROCESS_OPTION_OFFSET,
+        2,
+    );
     assert_eq!(
-        FrameSideData::new_with_kind(FrameSideDataKind::DynamicHdrPlus, bad_hdr_plus)
-            .unwrap()
-            .dynamic_hdr_plus()
+        FrameSideData::new_dynamic_hdr_plus(bad_hdr_plus_overlap)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_hdr_plus_grid = dynamic_hdr_plus.clone();
+    bad_hdr_plus_grid[HDR_PLUS_TARGET_PEAK_FLAG_OFFSET] = 1;
+    bad_hdr_plus_grid[HDR_PLUS_TARGET_PEAK_ROWS_OFFSET] = 1;
+    bad_hdr_plus_grid[HDR_PLUS_TARGET_PEAK_COLS_OFFSET] = 2;
+    assert_eq!(
+        FrameSideData::new_dynamic_hdr_plus(bad_hdr_plus_grid)
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData

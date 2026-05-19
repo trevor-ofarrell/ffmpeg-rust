@@ -38,7 +38,7 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `FrameS12mTimecode` covers `AV_FRAME_DATA_S12M_TIMECODE` as four native `uint32_t` words, preserving unused raw slots while validating the 1..=3 timecode count and exact 16-byte payload length through raw and deferred side-data paths.
 
-`FrameDynamicHdrPlus` covers the pinned FFmpeg 8.1.1 native `AVDynamicHDRPlus` payload envelope for `AV_FRAME_DATA_DYNAMIC_HDR_PLUS`, validating exact native length, ITU-T T.35 country/application/window counts, active-window overlap/count/flag bounds, and actual peak luminance grid flag/dimension bounds while preserving raw bytes and exposing selected fields.
+`FrameDynamicHdrPlus` covers the pinned FFmpeg 8.1.1 native `AVDynamicHDRPlus` payload envelope for `AV_FRAME_DATA_DYNAMIC_HDR_PLUS`, validating exact native length, ITU-T T.35 country/application/window counts, active-window overlap/count/flag bounds, and actual peak luminance grid flag/dimension bounds while preserving raw bytes and exposing selected fields; deterministic fuzz fixtures mirror malformed length, header/count/flag, overlap-option, and peak-grid rejection.
 
 `FrameRegionsOfInterest` covers the pinned FFmpeg 8.1.1 native `AVRegionOfInterest` record-array payload for `AV_FRAME_DATA_REGIONS_OF_INTEREST`, validating non-empty exact native records, per-record `self_size`, and the documented `qoffset` `-1..=1` range while preserving rectangle coordinates and raw rational values.
 
