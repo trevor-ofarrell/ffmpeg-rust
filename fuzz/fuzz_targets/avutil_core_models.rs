@@ -32,11 +32,12 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketFlags, PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
-    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketSideDataKind,
-    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier,
-    PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    Packet, PacketActiveFormatDescription, PacketFlags, PacketFrameCropping, PacketJpDualMono,
+    PacketJpDualMonoSelection, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
+    PacketParamChange, PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason,
+    PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat, Rational,
+    Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData,
+    VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3441,6 +3442,38 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_webvtt_settings_payload_invalid(&typed_payload));
         }
     }
+    match typed_payload_side_data.active_format_description() {
+        Ok(Some(value)) => {
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::ActiveFormatDescription
+            );
+            assert_eq!(typed_payload.len(), PacketActiveFormatDescription::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketActiveFormatDescription::from_byte(value.as_byte()).unwrap(),
+                value
+            );
+            assert_eq!(
+                PacketActiveFormatDescription::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(
+            typed_payload_kind,
+            PacketSideDataKind::ActiveFormatDescription
+        ),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::ActiveFormatDescription
+            );
+            assert!(packet_active_format_description_payload_invalid(
+                &typed_payload
+            ));
+        }
+    }
     match typed_payload_side_data.frame_cropping() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::FrameCropping);
@@ -3905,6 +3938,40 @@ fn exercise_fixtures() {
     );
     assert_eq!(
         PacketWebVttSettings::parse(b"line:0\n")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_active_format_description = PacketActiveFormatDescription::SixteenNine;
+    assert_eq!(
+        PacketActiveFormatDescription::parse(&packet_active_format_description.to_bytes())
+            .unwrap(),
+        packet_active_format_description
+    );
+    assert_eq!(
+        PacketActiveFormatDescription::from_byte(packet_active_format_description.as_byte())
+            .unwrap(),
+        packet_active_format_description
+    );
+    assert_eq!(
+        packet_active_format_description.ffmpeg_constant(),
+        "AV_AFD_16_9"
+    );
+    assert_eq!(
+        SideData::new_active_format_description(packet_active_format_description)
+            .unwrap()
+            .active_format_description()
+            .unwrap(),
+        Some(packet_active_format_description)
+    );
+    assert_eq!(
+        PacketActiveFormatDescription::from_byte(12)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        PacketActiveFormatDescription::parse(&[8, 9])
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData
@@ -9603,6 +9670,14 @@ fn packet_webvtt_settings_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_webvtt_line_payload_invalid(data: &[u8]) -> bool {
     data.is_empty() || data.iter().any(|byte| matches!(byte, 0 | b'\r' | b'\n'))
+}
+
+fn packet_active_format_description_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != PacketActiveFormatDescription::DATA_LEN {
+        return true;
+    }
+
+    PacketActiveFormatDescription::from_byte(data[0]).is_err()
 }
 
 fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {

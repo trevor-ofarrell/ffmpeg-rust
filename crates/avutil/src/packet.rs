@@ -828,6 +828,69 @@ impl PacketWebVttSettings {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PacketActiveFormatDescription {
+    Same = 8,
+    FourThree = 9,
+    SixteenNine = 10,
+    FourteenNine = 11,
+    FourThreeProtectedFourteenNine = 13,
+    SixteenNineProtectedFourteenNine = 14,
+    ProtectedFourThree = 15,
+}
+
+impl PacketActiveFormatDescription {
+    pub const DATA_LEN: usize = 1;
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "active format description packet side data requires exactly {} byte, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Self::from_byte(data[0])
+    }
+
+    pub fn from_byte(value: u8) -> AvResult<Self> {
+        match value {
+            8 => Ok(Self::Same),
+            9 => Ok(Self::FourThree),
+            10 => Ok(Self::SixteenNine),
+            11 => Ok(Self::FourteenNine),
+            13 => Ok(Self::FourThreeProtectedFourteenNine),
+            14 => Ok(Self::SixteenNineProtectedFourteenNine),
+            15 => Ok(Self::ProtectedFourThree),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid active format description value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_byte(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Same => "AV_AFD_SAME",
+            Self::FourThree => "AV_AFD_4_3",
+            Self::SixteenNine => "AV_AFD_16_9",
+            Self::FourteenNine => "AV_AFD_14_9",
+            Self::FourThreeProtectedFourteenNine => "AV_AFD_4_3_SP_14_9",
+            Self::SixteenNineProtectedFourteenNine => "AV_AFD_16_9_SP_14_9",
+            Self::ProtectedFourThree => "AV_AFD_SP_4_3",
+        }
+    }
+
+    pub const fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        [self.as_byte()]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketFrameCropping {
     crop_top: u32,
     crop_bottom: u32,
@@ -944,6 +1007,13 @@ impl SideData {
         Self::new_with_kind(PacketSideDataKind::WebVttSettings, value.to_bytes())
     }
 
+    pub fn new_active_format_description(value: PacketActiveFormatDescription) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::ActiveFormatDescription,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_frame_cropping(value: PacketFrameCropping) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::FrameCropping, value.to_bytes().to_vec())
     }
@@ -1045,6 +1115,14 @@ impl SideData {
         }
 
         PacketWebVttSettings::parse(self.data()).map(Some)
+    }
+
+    pub fn active_format_description(&self) -> AvResult<Option<PacketActiveFormatDescription>> {
+        if self.kind != PacketSideDataKind::ActiveFormatDescription {
+            return Ok(None);
+        }
+
+        PacketActiveFormatDescription::parse(self.data()).map(Some)
     }
 
     pub fn frame_cropping(&self) -> AvResult<Option<PacketFrameCropping>> {
@@ -2098,6 +2176,100 @@ mod tests {
             settings_side_data.webvtt_settings().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn packet_side_data_parses_active_format_description_payload() {
+        let expected = [
+            (PacketActiveFormatDescription::Same, 8, "AV_AFD_SAME"),
+            (PacketActiveFormatDescription::FourThree, 9, "AV_AFD_4_3"),
+            (
+                PacketActiveFormatDescription::SixteenNine,
+                10,
+                "AV_AFD_16_9",
+            ),
+            (
+                PacketActiveFormatDescription::FourteenNine,
+                11,
+                "AV_AFD_14_9",
+            ),
+            (
+                PacketActiveFormatDescription::FourThreeProtectedFourteenNine,
+                13,
+                "AV_AFD_4_3_SP_14_9",
+            ),
+            (
+                PacketActiveFormatDescription::SixteenNineProtectedFourteenNine,
+                14,
+                "AV_AFD_16_9_SP_14_9",
+            ),
+            (
+                PacketActiveFormatDescription::ProtectedFourThree,
+                15,
+                "AV_AFD_SP_4_3",
+            ),
+        ];
+
+        for (value, byte, ffmpeg_constant) in expected {
+            assert_eq!(value.as_byte(), byte);
+            assert_eq!(value.ffmpeg_constant(), ffmpeg_constant);
+            assert_eq!(
+                PacketActiveFormatDescription::from_byte(byte).unwrap(),
+                value
+            );
+            assert_eq!(
+                PacketActiveFormatDescription::parse(&[byte]).unwrap(),
+                value
+            );
+            assert_eq!(value.to_bytes(), [byte]);
+
+            let side_data = SideData::new_active_format_description(value).unwrap();
+            assert_eq!(
+                side_data.kind_id(),
+                &PacketSideDataKind::ActiveFormatDescription
+            );
+            assert_eq!(side_data.data(), &[byte]);
+            assert_eq!(side_data.active_format_description().unwrap(), Some(value));
+        }
+
+        let replay_gain = SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![8]).unwrap();
+        assert_eq!(replay_gain.active_format_description().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_active_format_description_payload() {
+        let bad_lengths: [&[u8]; 2] = [&[], &[8, 9]];
+        for data in bad_lengths {
+            assert_eq!(
+                PacketActiveFormatDescription::parse(data)
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::ActiveFormatDescription, data.to_vec())
+                    .unwrap();
+            assert_eq!(
+                side_data.active_format_description().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        for byte in [0, 12, 255] {
+            assert_eq!(
+                PacketActiveFormatDescription::from_byte(byte)
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::ActiveFormatDescription, vec![byte])
+                    .unwrap();
+            assert_eq!(
+                side_data.active_format_description().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
     }
 
     #[test]
