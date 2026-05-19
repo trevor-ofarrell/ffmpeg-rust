@@ -427,7 +427,8 @@ fuzz_targets = ["avutil_core_models"]
 # bitstream validation remains decoder/encoder work.
 # Current View ID coverage parses the pinned FFmpeg 8.1.1 native int payload
 # for AV_FRAME_DATA_VIEW_ID, preserves all signed 32-bit values, rejects
-# malformed lengths, and is build-checked by avutil_core_models.
+# malformed lengths through raw and deferred side-data paths, and is
+# build-checked by avutil_core_models.
 # Current 3D reference displays coverage parses the pinned FFmpeg 8.1.1
 # native AV3DReferenceDisplaysInfo allocation envelope for
 # AV_FRAME_DATA_3D_REFERENCE_DISPLAYS, validating precisions, flags, display
@@ -564,6 +565,8 @@ Latest EXIF root BitsPerSample fuzz coverage adds build-checked deterministic fu
 Latest frame alignment fuzz coverage adds build-checked deterministic assertions that public `VideoFrame::aligned_line_sizes` and `AudioFrame::aligned_line_sizes` reject nonzero alignment overflow with typed `InvalidArgument` errors, complementing the existing zero-alignment public API checks and the focused private-helper unit test.
 
 Latest video hint fuzz coverage adds build-checked deterministic assertions for two-rectangle `FrameVideoHintType::Changed` payloads, zero-rectangle `FrameVideoHintType::Constant` payloads, exact native header/rectangle sizes, rectangle coordinate preservation, FFmpeg constant-name mapping, non-video-hint lookup absence, and malformed length, rectangle-offset, rectangle-size, hint-type, rectangle-count, trailing-byte, zero-width/height, and coordinate-overflow rejection through raw parser and deferred side-data accessor paths.
+
+Latest View ID fuzz coverage adds build-checked deterministic assertions for positive, negative, `i32::MIN`, and `i32::MAX` native-int payload preservation plus malformed empty/short/long payload rejection through raw parser and deferred side-data accessor paths.
 
 Latest spherical mapping fuzz coverage adds build-checked deterministic assertions for the full `FrameSphericalProjection::KNOWN` table, including all seven FFmpeg 8.1.1 raw values and `AV_SPHERICAL_*` constant names.
 

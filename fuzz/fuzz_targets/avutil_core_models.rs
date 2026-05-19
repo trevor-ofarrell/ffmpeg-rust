@@ -4808,32 +4808,7 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_lcevc.lcevc(), None);
 
-    let view_id = FrameViewId::new(-7);
-    let view_id_side_data = FrameSideData::new_view_id(view_id).unwrap();
-    assert_eq!(view_id_side_data.kind_id(), &FrameSideDataKind::ViewId);
-    assert_eq!(
-        view_id_side_data.view_id().unwrap().unwrap().as_raw(),
-        view_id.as_raw()
-    );
-    assert_eq!(
-        FrameViewId::parse(&view_id.to_bytes()).unwrap().to_bytes(),
-        view_id.to_bytes()
-    );
-    for data in [Vec::new(), vec![0; 3], vec![0; 5]] {
-        assert_eq!(
-            FrameViewId::parse(&data).unwrap_err().kind(),
-            AvErrorKind::InvalidData
-        );
-        let invalid_view_id =
-            FrameSideData::new_with_kind(FrameSideDataKind::ViewId, data).unwrap();
-        assert_eq!(
-            invalid_view_id.view_id().unwrap_err().kind(),
-            AvErrorKind::InvalidData
-        );
-    }
-    let non_view_id =
-        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
-    assert_eq!(non_view_id.view_id().unwrap(), None);
+    exercise_view_id_fixture();
 
     let tdrdi_first = FrameThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
     let tdrdi_second = FrameThreeDReferenceDisplay::new(2, 3, (10, 20), (4, 40), false, 0);
@@ -8817,6 +8792,29 @@ fn exercise_video_hint_fixture() {
     assert_eq!(non_video_hint.video_hint().unwrap(), None);
 }
 
+fn exercise_view_id_fixture() {
+    for raw in [42, -1, i32::MIN, i32::MAX] {
+        let view_id = FrameViewId::new(raw);
+        let side_data = FrameSideData::new_view_id(view_id).unwrap();
+
+        assert_eq!(FrameViewId::DATA_LEN, 4);
+        assert_eq!(side_data.kind_id(), &FrameSideDataKind::ViewId);
+        assert_eq!(side_data.data(), &raw.to_ne_bytes());
+        assert_eq!(view_id.as_raw(), raw);
+        assert_eq!(view_id.to_bytes(), raw.to_ne_bytes());
+        assert_eq!(FrameViewId::parse(&view_id.to_bytes()).unwrap(), view_id);
+        assert_eq!(side_data.view_id().unwrap(), Some(view_id));
+    }
+
+    for data in [Vec::new(), vec![0; 3], vec![0; 5]] {
+        assert_view_id_payload_rejected(data);
+    }
+
+    let non_view_id =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_view_id.view_id().unwrap(), None);
+}
+
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
     match byte.unwrap_or_default() % 33 {
         0 => FrameSideDataKind::PanScan,
@@ -9408,6 +9406,22 @@ fn assert_video_hint_payload_rejected(data: Vec<u8>) {
         FrameSideData::new_with_kind(FrameSideDataKind::VideoHint, data)
             .unwrap()
             .video_hint()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+}
+
+fn assert_view_id_payload_rejected(data: Vec<u8>) {
+    assert_ne!(data.len(), FrameViewId::DATA_LEN);
+    assert_eq!(
+        FrameViewId::parse(&data).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::ViewId, data)
+            .unwrap()
+            .view_id()
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData

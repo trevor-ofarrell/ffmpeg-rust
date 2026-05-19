@@ -20224,19 +20224,17 @@ mod tests {
 
     #[test]
     fn frame_side_data_parses_view_id_payload() {
-        let value = FrameViewId::new(42);
-        let side_data = FrameSideData::new_view_id(value).unwrap();
+        for raw in [42, -1, i32::MIN, i32::MAX] {
+            let value = FrameViewId::new(raw);
+            let side_data = FrameSideData::new_view_id(value).unwrap();
 
-        assert_eq!(side_data.kind_id(), &FrameSideDataKind::ViewId);
-        assert_eq!(side_data.data(), &42i32.to_ne_bytes());
-        assert_eq!(FrameViewId::parse(&value.to_bytes()).unwrap(), value);
-        assert_eq!(side_data.view_id().unwrap(), Some(value));
-
-        let negative = FrameViewId::new(-1);
-        assert_eq!(
-            FrameViewId::parse(&negative.to_bytes()).unwrap().as_raw(),
-            -1
-        );
+            assert_eq!(side_data.kind_id(), &FrameSideDataKind::ViewId);
+            assert_eq!(side_data.data(), &raw.to_ne_bytes());
+            assert_eq!(value.as_raw(), raw);
+            assert_eq!(value.to_bytes(), raw.to_ne_bytes());
+            assert_eq!(FrameViewId::parse(&value.to_bytes()).unwrap(), value);
+            assert_eq!(side_data.view_id().unwrap(), Some(value));
+        }
 
         let non_view =
             FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 4]).unwrap();
