@@ -4198,6 +4198,114 @@ fn exercise_fixtures() {
     assert_eq!(green_luma.numerator(), 587);
     assert_eq!(green_luma.denominator(), 1000);
     assert_eq!(colorimetry_tags.reference_black_white().unwrap().len(), 6);
+    let image_layout_exif_bytes = exif_root_image_layout_fixture();
+    let image_layout_exif = FrameExif::parse(&image_layout_exif_bytes).unwrap();
+    let image_layout_tags = image_layout_exif.common_tags().unwrap();
+    assert_eq!(image_layout_tags.samples_per_pixel(), Some(3));
+    assert_eq!(image_layout_tags.planar_configuration().unwrap().raw(), 1);
+    assert_eq!(image_layout_tags.ycbcr_sub_sampling(), Some([2, 2]));
+    assert_eq!(image_layout_tags.ycbcr_positioning().unwrap().raw(), 1);
+    let mut bad_samples_type = exif_root_image_layout_fixture();
+    bad_samples_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_samples_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_samples_count = exif_root_image_layout_fixture();
+    bad_samples_count[14..18].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_samples_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_samples_zero = exif_root_image_layout_fixture();
+    bad_samples_zero[18..20].copy_from_slice(&0u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_samples_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_planar_count = exif_root_image_layout_fixture();
+    bad_planar_count[26..30].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_planar_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_planar_value = exif_root_image_layout_fixture();
+    bad_planar_value[30..32].copy_from_slice(&3u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_planar_value)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_subsampling_type = exif_root_image_layout_fixture();
+    bad_subsampling_type[36..38].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subsampling_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_subsampling_count = exif_root_image_layout_fixture();
+    bad_subsampling_count[38..42].copy_from_slice(&1u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subsampling_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_subsampling_zero = exif_root_image_layout_fixture();
+    bad_subsampling_zero[42..44].copy_from_slice(&0u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subsampling_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_ycbcr_positioning_type = exif_root_image_layout_fixture();
+    bad_ycbcr_positioning_type[48..50]
+        .copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_ycbcr_positioning_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_ycbcr_positioning_value = exif_root_image_layout_fixture();
+    bad_ycbcr_positioning_value[54..56].copy_from_slice(&3u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_ycbcr_positioning_value)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let mut bad_colorimetry_count = exif_root_colorimetry_fixture();
     bad_colorimetry_count[14..18].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
@@ -7449,6 +7557,43 @@ fn exif_root_colorimetry_fixture() -> Vec<u8> {
         data.extend_from_slice(&numerator.to_le_bytes());
         data.extend_from_slice(&denominator.to_le_bytes());
     }
+    data
+}
+
+fn exif_root_image_layout_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&4u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_SAMPLES_PER_PIXEL,
+        FrameExifTiffType::Short,
+        1,
+        [3, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_PLANAR_CONFIGURATION,
+        FrameExifTiffType::Short,
+        1,
+        [1, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_YCBCR_SUB_SAMPLING,
+        FrameExifTiffType::Short,
+        2,
+        [2, 0, 2, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_YCBCR_POSITIONING,
+        FrameExifTiffType::Short,
+        1,
+        [1, 0, 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
     data
 }
 
