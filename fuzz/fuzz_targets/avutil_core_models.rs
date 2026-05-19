@@ -1913,6 +1913,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.image_length() {
                         assert_ne!(value, 0);
                     }
+                    if let Some(value) = common.compression() {
+                        assert_ne!(value.raw(), 0);
+                    }
                     if let Some(value) = common.samples_per_pixel() {
                         assert_ne!(value, 0);
                     }
@@ -4153,6 +4156,21 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let coding_exif_bytes = exif_root_coding_fixture();
+    let coding_exif = FrameExif::parse(&coding_exif_bytes).unwrap();
+    let coding_tags = coding_exif.common_tags().unwrap();
+    assert_eq!(coding_tags.compression().unwrap().raw(), 1);
+    assert_eq!(coding_tags.photometric_interpretation().unwrap().raw(), 2);
+    let mut bad_coding_compression_zero = exif_root_coding_fixture();
+    bad_coding_compression_zero[18..20].copy_from_slice(&0u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_coding_compression_zero)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let strip_position_exif_bytes = exif_root_strip_position_fixture();
     let strip_position_exif = FrameExif::parse(&strip_position_exif_bytes).unwrap();
     let strip_position_tags = strip_position_exif.common_tags().unwrap();
@@ -6275,6 +6293,29 @@ fn exif_root_colorimetry_fixture() -> Vec<u8> {
         data.extend_from_slice(&numerator.to_le_bytes());
         data.extend_from_slice(&denominator.to_le_bytes());
     }
+    data
+}
+
+fn exif_root_coding_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&2u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_COMPRESSION,
+        FrameExifTiffType::Short,
+        1,
+        [1, 0, 0, 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_PHOTOMETRIC_INTERPRETATION,
+        FrameExifTiffType::Short,
+        1,
+        [2, 0, 0, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
     data
 }
 

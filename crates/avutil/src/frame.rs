@@ -5652,6 +5652,41 @@ impl FrameExifSignedRational {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameExifCompression {
+    raw: u16,
+}
+
+impl FrameExifCompression {
+    pub fn from_raw(raw: u16) -> AvResult<Self> {
+        if raw == 0 {
+            return Err(AvError::invalid_data(
+                "EXIF compression value 0 is outside the defined TIFF compression set",
+            ));
+        }
+        Ok(Self { raw })
+    }
+
+    pub const fn raw(self) -> u16 {
+        self.raw
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameExifPhotometricInterpretation {
+    raw: u16,
+}
+
+impl FrameExifPhotometricInterpretation {
+    pub const fn from_raw(raw: u16) -> Self {
+        Self { raw }
+    }
+
+    pub const fn raw(self) -> u16 {
+        self.raw
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameExifOrientation {
     TopLeft,
     TopRight,
@@ -6605,6 +6640,8 @@ pub struct FrameExifCommonTags<'a> {
     model: Option<&'a str>,
     image_width: Option<u32>,
     image_length: Option<u32>,
+    compression: Option<FrameExifCompression>,
+    photometric_interpretation: Option<FrameExifPhotometricInterpretation>,
     samples_per_pixel: Option<u16>,
     rows_per_strip: Option<u32>,
     planar_configuration: Option<FrameExifPlanarConfiguration>,
@@ -6762,6 +6799,14 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn image_length(&self) -> Option<u32> {
         self.image_length
+    }
+
+    pub const fn compression(&self) -> Option<FrameExifCompression> {
+        self.compression
+    }
+
+    pub const fn photometric_interpretation(&self) -> Option<FrameExifPhotometricInterpretation> {
+        self.photometric_interpretation
     }
 
     pub const fn samples_per_pixel(&self) -> Option<u16> {
@@ -7678,6 +7723,8 @@ impl<'a> FrameExif<'a> {
     pub const MAX_IFD_ENTRIES: usize = 4096;
     pub const TAG_IMAGE_WIDTH: u16 = 0x0100;
     pub const TAG_IMAGE_LENGTH: u16 = 0x0101;
+    pub const TAG_COMPRESSION: u16 = 0x0103;
+    pub const TAG_PHOTOMETRIC_INTERPRETATION: u16 = 0x0106;
     pub const TAG_IMAGE_DESCRIPTION: u16 = 0x010E;
     pub const TAG_MAKE: u16 = 0x010F;
     pub const TAG_MODEL: u16 = 0x0110;
@@ -7904,6 +7951,8 @@ impl<'a> FrameExif<'a> {
                 Self::TAG_IMAGE_LENGTH,
                 "ImageLength",
             )?;
+            tags.compression = Self::optional_compression_tag(root)?;
+            tags.photometric_interpretation = Self::optional_photometric_interpretation_tag(root)?;
             tags.samples_per_pixel = Self::optional_positive_short_tag(
                 root,
                 Self::TAG_SAMPLES_PER_PIXEL,
@@ -8660,6 +8709,27 @@ impl<'a> FrameExif<'a> {
             return Ok(None);
         };
         FrameExifPlanarConfiguration::from_raw(raw).map(Some)
+    }
+
+    fn optional_compression_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<FrameExifCompression>> {
+        let Some(raw) = Self::optional_short_tag(ifd, Self::TAG_COMPRESSION, "Compression")? else {
+            return Ok(None);
+        };
+        FrameExifCompression::from_raw(raw).map(Some)
+    }
+
+    fn optional_photometric_interpretation_tag(
+        ifd: &FrameExifIfd<'a>,
+    ) -> AvResult<Option<FrameExifPhotometricInterpretation>> {
+        let Some(raw) = Self::optional_short_tag(
+            ifd,
+            Self::TAG_PHOTOMETRIC_INTERPRETATION,
+            "PhotometricInterpretation",
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(FrameExifPhotometricInterpretation::from_raw(raw)))
     }
 
     fn optional_ycbcr_sub_sampling_tag(ifd: &FrameExifIfd<'a>) -> AvResult<Option<[u16; 2]>> {
@@ -13312,6 +13382,32 @@ mod tests {
         }
 
         assert_eq!(data.len(), 198);
+        data
+    }
+
+    fn exif_root_coding_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&2u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_COMPRESSION,
+            FrameExifTiffType::Short,
+            1,
+            [1, 0, 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_PHOTOMETRIC_INTERPRETATION,
+            FrameExifTiffType::Short,
+            1,
+            [2, 0, 0, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        assert_eq!(data.len(), 38);
         data
     }
 
@@ -21139,6 +21235,76 @@ mod tests {
         bad_reference_count[50..54].copy_from_slice(&5u32.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_reference_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_coding_tags() {
+        let exif_bytes = exif_root_coding_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.compression().map(FrameExifCompression::raw), Some(1));
+        assert_eq!(
+            common
+                .photometric_interpretation()
+                .map(FrameExifPhotometricInterpretation::raw),
+            Some(2)
+        );
+
+        let mut bad_compression_type = exif_root_coding_fixture();
+        bad_compression_type[12..14].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_compression_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_compression_count = exif_root_coding_fixture();
+        bad_compression_count[14..18].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_compression_count)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_compression_zero = exif_root_coding_fixture();
+        bad_compression_zero[18..20].copy_from_slice(&0u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_compression_zero)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_photometric_type = exif_root_coding_fixture();
+        bad_photometric_type[24..26].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_photometric_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_photometric_count = exif_root_coding_fixture();
+        bad_photometric_count[26..30].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_photometric_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()
