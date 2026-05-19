@@ -5563,6 +5563,36 @@ impl FrameExifTiffType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameExifIfdPointerKind {
+    Exif,
+    Gps,
+    Interoperability,
+}
+
+impl FrameExifIfdPointerKind {
+    pub const EXIF_TAG: u16 = 0x8769;
+    pub const GPS_TAG: u16 = 0x8825;
+    pub const INTEROPERABILITY_TAG: u16 = 0xA005;
+
+    pub const fn from_tag(tag: u16) -> Option<Self> {
+        match tag {
+            Self::EXIF_TAG => Some(Self::Exif),
+            Self::GPS_TAG => Some(Self::Gps),
+            Self::INTEROPERABILITY_TAG => Some(Self::Interoperability),
+            _ => None,
+        }
+    }
+
+    pub const fn tag(self) -> u16 {
+        match self {
+            Self::Exif => Self::EXIF_TAG,
+            Self::Gps => Self::GPS_TAG,
+            Self::Interoperability => Self::INTEROPERABILITY_TAG,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameExifEntry<'a> {
     tag: u16,
     tiff_type: FrameExifTiffType,
@@ -5610,6 +5640,38 @@ impl<'a> FrameExifEntry<'a> {
     pub const fn is_inline(self) -> bool {
         self.data_range.is_none()
     }
+
+    pub const fn ifd_pointer_kind(self) -> Option<FrameExifIfdPointerKind> {
+        FrameExifIfdPointerKind::from_tag(self.tag)
+    }
+
+    pub fn ifd_pointer_offset(self) -> AvResult<Option<usize>> {
+        let Some(kind) = self.ifd_pointer_kind() else {
+            return Ok(None);
+        };
+
+        if !matches!(
+            self.tiff_type,
+            FrameExifTiffType::Long | FrameExifTiffType::Ifd
+        ) {
+            return Err(AvError::invalid_data(format!(
+                "EXIF {:?} IFD pointer tag 0x{:04x} must have LONG/IFD type, got type {}",
+                kind,
+                kind.tag(),
+                self.tiff_type.raw()
+            )));
+        }
+        if self.count != 1 {
+            return Err(AvError::invalid_data(format!(
+                "EXIF {:?} IFD pointer tag 0x{:04x} must contain one offset, got {}",
+                kind,
+                kind.tag(),
+                self.count
+            )));
+        }
+
+        Ok(Some(self.value_offset as usize))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -5632,6 +5694,10 @@ impl<'a> FrameExifIfd<'a> {
         self.entries.get(index).copied()
     }
 
+    pub fn entry_by_tag(&self, tag: u16) -> Option<FrameExifEntry<'a>> {
+        self.entries.iter().copied().find(|entry| entry.tag == tag)
+    }
+
     pub fn entry_count(&self) -> usize {
         self.entries.len()
     }
@@ -5646,11 +5712,49 @@ impl<'a> FrameExifIfd<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameExifLinkedIfd<'a> {
+    kind: FrameExifIfdPointerKind,
+    parent_ifd_offset: usize,
+    source_tag: u16,
+    ifd: FrameExifIfd<'a>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FrameExifIfdPointer {
+    kind: FrameExifIfdPointerKind,
+    source_tag: u16,
+    offset: usize,
+}
+
+impl<'a> FrameExifLinkedIfd<'a> {
+    pub const fn kind(&self) -> FrameExifIfdPointerKind {
+        self.kind
+    }
+
+    pub const fn parent_ifd_offset(&self) -> usize {
+        self.parent_ifd_offset
+    }
+
+    pub const fn source_tag(&self) -> u16 {
+        self.source_tag
+    }
+
+    pub const fn offset(&self) -> usize {
+        self.ifd.offset
+    }
+
+    pub const fn ifd(&self) -> &FrameExifIfd<'a> {
+        &self.ifd
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrameExif<'a> {
     data: &'a [u8],
     endian: FrameExifEndian,
     first_ifd_offset: usize,
     ifds: Vec<FrameExifIfd<'a>>,
+    linked_ifds: Vec<FrameExifLinkedIfd<'a>>,
 }
 
 impl<'a> FrameExif<'a> {
@@ -5659,6 +5763,7 @@ impl<'a> FrameExif<'a> {
     pub const IFD_COUNT_LEN: usize = 2;
     pub const NEXT_IFD_OFFSET_LEN: usize = 4;
     pub const MAX_IFDS: usize = 16;
+    pub const MAX_LINKED_IFDS: usize = 16;
     pub const MAX_IFD_ENTRIES: usize = 4096;
 
     pub fn parse(data: &'a [u8]) -> AvResult<Self> {
@@ -5683,11 +5788,13 @@ impl<'a> FrameExif<'a> {
         Self::validate_ifd_offset(data, first_ifd_offset, "first")?;
 
         let ifds = Self::parse_ifd_chain(data, endian, first_ifd_offset)?;
+        let linked_ifds = Self::parse_linked_ifds(data, endian, &ifds)?;
         Ok(Self {
             data,
             endian,
             first_ifd_offset,
             ifds,
+            linked_ifds,
         })
     }
 
@@ -5713,6 +5820,128 @@ impl<'a> FrameExif<'a> {
 
     pub fn ifd_count(&self) -> usize {
         self.ifds.len()
+    }
+
+    pub fn linked_ifds(&self) -> &[FrameExifLinkedIfd<'a>] {
+        &self.linked_ifds
+    }
+
+    pub fn linked_ifd(&self, kind: FrameExifIfdPointerKind) -> Option<&FrameExifLinkedIfd<'a>> {
+        self.linked_ifds.iter().find(|ifd| ifd.kind == kind)
+    }
+
+    pub fn linked_ifd_count(&self) -> usize {
+        self.linked_ifds.len()
+    }
+
+    fn parse_linked_ifds(
+        data: &'a [u8],
+        endian: FrameExifEndian,
+        root_ifds: &[FrameExifIfd<'a>],
+    ) -> AvResult<Vec<FrameExifLinkedIfd<'a>>> {
+        let mut linked_ifds = Vec::new();
+        let mut seen_offsets = root_ifds
+            .iter()
+            .map(FrameExifIfd::offset)
+            .collect::<Vec<_>>();
+
+        for ifd in root_ifds {
+            for pointer in Self::ifd_pointers(ifd)? {
+                Self::append_linked_ifd_chain(
+                    data,
+                    endian,
+                    &mut seen_offsets,
+                    &mut linked_ifds,
+                    ifd.offset,
+                    pointer,
+                )?;
+            }
+        }
+
+        let mut index = 0;
+        while index < linked_ifds.len() {
+            let parent_offset = linked_ifds[index].offset();
+            let pointers = Self::ifd_pointers(linked_ifds[index].ifd())?;
+            for pointer in pointers {
+                Self::append_linked_ifd_chain(
+                    data,
+                    endian,
+                    &mut seen_offsets,
+                    &mut linked_ifds,
+                    parent_offset,
+                    pointer,
+                )?;
+            }
+            index += 1;
+        }
+
+        Ok(linked_ifds)
+    }
+
+    fn ifd_pointers(ifd: &FrameExifIfd<'a>) -> AvResult<Vec<FrameExifIfdPointer>> {
+        let mut pointers = Vec::new();
+        for entry in ifd.entries() {
+            if let Some(kind) = entry.ifd_pointer_kind() {
+                let offset = entry
+                    .ifd_pointer_offset()?
+                    .expect("pointer kind requires pointer offset");
+                if offset < Self::TIFF_HEADER_LEN {
+                    return Err(AvError::invalid_data(format!(
+                        "EXIF {:?} IFD pointer tag 0x{:04x} offset {offset} is before the TIFF header end {}",
+                        kind,
+                        kind.tag(),
+                        Self::TIFF_HEADER_LEN
+                    )));
+                }
+                pointers.push(FrameExifIfdPointer {
+                    kind,
+                    source_tag: entry.tag(),
+                    offset,
+                });
+            }
+        }
+
+        Ok(pointers)
+    }
+
+    fn append_linked_ifd_chain(
+        data: &'a [u8],
+        endian: FrameExifEndian,
+        seen_offsets: &mut Vec<usize>,
+        linked_ifds: &mut Vec<FrameExifLinkedIfd<'a>>,
+        parent_ifd_offset: usize,
+        pointer: FrameExifIfdPointer,
+    ) -> AvResult<()> {
+        let FrameExifIfdPointer {
+            kind,
+            source_tag,
+            offset,
+        } = pointer;
+        let chain = Self::parse_ifd_chain(data, endian, offset)?;
+        for ifd in chain {
+            if seen_offsets.contains(&ifd.offset) {
+                return Err(AvError::invalid_data(format!(
+                    "EXIF {:?} IFD pointer tag 0x{source_tag:04x} loops to already parsed IFD offset {}",
+                    kind,
+                    ifd.offset
+                )));
+            }
+            if linked_ifds.len() >= Self::MAX_LINKED_IFDS {
+                return Err(AvError::invalid_data(format!(
+                    "EXIF linked IFD count exceeds {}",
+                    Self::MAX_LINKED_IFDS
+                )));
+            }
+            seen_offsets.push(ifd.offset);
+            linked_ifds.push(FrameExifLinkedIfd {
+                kind,
+                parent_ifd_offset,
+                source_tag,
+                ifd,
+            });
+        }
+
+        Ok(())
     }
 
     fn parse_ifd_chain(
@@ -9019,6 +9248,71 @@ mod tests {
         data.extend_from_slice(&0u16.to_be_bytes());
         data.extend_from_slice(&0u32.to_be_bytes());
         data
+    }
+
+    fn exif_with_linked_ifds_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&3u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            0x010F,
+            FrameExifTiffType::Ascii,
+            6,
+            50u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::EXIF_TAG,
+            FrameExifTiffType::Long,
+            1,
+            56u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::GPS_TAG,
+            FrameExifTiffType::Long,
+            1,
+            74u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(b"Rusty\0");
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExifIfdPointerKind::INTEROPERABILITY_TAG,
+            FrameExifTiffType::Long,
+            1,
+            92u32.to_le_bytes(),
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(&mut data, 0x0000, FrameExifTiffType::Byte, 4, [2, 3, 0, 0]);
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        data.extend_from_slice(&1u16.to_le_bytes());
+        push_exif_entry(&mut data, 0x0001, FrameExifTiffType::Ascii, 4, *b"R98\0");
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        assert_eq!(data.len(), 110);
+        data
+    }
+
+    fn push_exif_entry(
+        data: &mut Vec<u8>,
+        tag: u16,
+        tiff_type: FrameExifTiffType,
+        count: u32,
+        value_or_offset: [u8; 4],
+    ) {
+        data.extend_from_slice(&tag.to_le_bytes());
+        data.extend_from_slice(&tiff_type.raw().to_le_bytes());
+        data.extend_from_slice(&count.to_le_bytes());
+        data.extend_from_slice(&value_or_offset);
     }
 
     #[test]
@@ -13963,6 +14257,65 @@ mod tests {
     }
 
     #[test]
+    fn frame_side_data_parses_exif_linked_ifds() {
+        let side_data = FrameSideData::new_exif(exif_with_linked_ifds_fixture()).unwrap();
+        let parsed = side_data.exif().unwrap().unwrap();
+
+        assert_eq!(parsed.ifd_count(), 1);
+        assert_eq!(parsed.ifd(0).unwrap().entry_count(), 3);
+        assert_eq!(parsed.linked_ifd_count(), 3);
+        assert_eq!(
+            parsed.linked_ifds()[0].kind(),
+            FrameExifIfdPointerKind::Exif
+        );
+        assert_eq!(parsed.linked_ifds()[1].kind(), FrameExifIfdPointerKind::Gps);
+        assert_eq!(
+            parsed.linked_ifds()[2].kind(),
+            FrameExifIfdPointerKind::Interoperability
+        );
+
+        let exif_ifd = parsed.linked_ifd(FrameExifIfdPointerKind::Exif).unwrap();
+        assert_eq!(exif_ifd.parent_ifd_offset(), 8);
+        assert_eq!(exif_ifd.source_tag(), FrameExifIfdPointerKind::EXIF_TAG);
+        assert_eq!(exif_ifd.offset(), 56);
+        assert_eq!(exif_ifd.ifd().entry_count(), 1);
+        assert_eq!(
+            exif_ifd
+                .ifd()
+                .entry_by_tag(FrameExifIfdPointerKind::INTEROPERABILITY_TAG)
+                .unwrap()
+                .ifd_pointer_offset()
+                .unwrap(),
+            Some(92)
+        );
+
+        let gps_ifd = parsed.linked_ifd(FrameExifIfdPointerKind::Gps).unwrap();
+        assert_eq!(gps_ifd.parent_ifd_offset(), 8);
+        assert_eq!(gps_ifd.source_tag(), FrameExifIfdPointerKind::GPS_TAG);
+        assert_eq!(gps_ifd.offset(), 74);
+        let gps_version = gps_ifd.ifd().entry_by_tag(0x0000).unwrap();
+        assert_eq!(gps_version.tiff_type(), FrameExifTiffType::Byte);
+        assert_eq!(gps_version.count(), 4);
+        assert_eq!(gps_version.value_data(), &[2, 3, 0, 0]);
+
+        let interop = parsed
+            .linked_ifd(FrameExifIfdPointerKind::Interoperability)
+            .unwrap();
+        assert_eq!(interop.parent_ifd_offset(), 56);
+        assert_eq!(
+            interop.source_tag(),
+            FrameExifIfdPointerKind::INTEROPERABILITY_TAG
+        );
+        assert_eq!(interop.offset(), 92);
+        let interop_index = interop.ifd().entry_by_tag(0x0001).unwrap();
+        assert_eq!(interop_index.tiff_type(), FrameExifTiffType::Ascii);
+        assert_eq!(interop_index.value_data(), b"R98\0");
+
+        assert_eq!(parsed.ifd(0).unwrap().entry_by_tag(0xDEAD), None);
+        assert_eq!(FrameExifIfdPointerKind::from_tag(0x010F), None);
+    }
+
+    #[test]
     fn frame_side_data_rejects_malformed_exif_payload() {
         fn assert_invalid(data: Vec<u8>) {
             assert_eq!(
@@ -14012,6 +14365,22 @@ mod tests {
         let mut bad_range = minimal_little_exif_fixture();
         bad_range[18..22].copy_from_slice(&250u32.to_le_bytes());
         assert_invalid(bad_range);
+
+        let mut bad_pointer_type = exif_with_linked_ifds_fixture();
+        bad_pointer_type[24..26].copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
+        assert_invalid(bad_pointer_type);
+
+        let mut bad_pointer_count = exif_with_linked_ifds_fixture();
+        bad_pointer_count[26..30].copy_from_slice(&2u32.to_le_bytes());
+        assert_invalid(bad_pointer_count);
+
+        let mut bad_pointer_offset = exif_with_linked_ifds_fixture();
+        bad_pointer_offset[30..34].copy_from_slice(&7u32.to_le_bytes());
+        assert_invalid(bad_pointer_offset);
+
+        let mut pointer_loop = exif_with_linked_ifds_fixture();
+        pointer_loop[30..34].copy_from_slice(&8u32.to_le_bytes());
+        assert_invalid(pointer_loop);
 
         let mut looped_ifd = Vec::new();
         looped_ifd.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);

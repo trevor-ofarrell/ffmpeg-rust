@@ -9,9 +9,10 @@ use avutil::{
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
-    FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifTiffType, FrameFilmGrainAomParams,
-    FrameFilmGrainH274Params, FrameFilmGrainParams, FrameFilmGrainParamsType, FrameGopTimecode,
-    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
+    FrameDynamicHdrVivid, FrameExif, FrameExifEndian, FrameExifIfdPointerKind, FrameExifTiffType,
+    FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
+    FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
     FrameLcevc, FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector,
     FrameMotionVectors, FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest,
@@ -1682,6 +1683,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert!(!exif_payload_invalid(&frame_side_data_payload));
             assert!(value.first_ifd_offset() >= FrameExif::TIFF_HEADER_LEN);
             assert!(value.ifd_count() <= FrameExif::MAX_IFDS);
+            assert!(value.linked_ifd_count() <= FrameExif::MAX_LINKED_IFDS);
             for ifd in value.ifds() {
                 assert!(ifd.offset() >= FrameExif::TIFF_HEADER_LEN);
                 assert!(ifd.entry_count() <= FrameExif::MAX_IFD_ENTRIES);
@@ -1711,6 +1713,19 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                         assert_eq!(entry.value_data().len(), entry.data_len());
                     }
                 }
+            }
+            for linked in value.linked_ifds() {
+                assert!(matches!(
+                    linked.kind(),
+                    FrameExifIfdPointerKind::Exif
+                        | FrameExifIfdPointerKind::Gps
+                        | FrameExifIfdPointerKind::Interoperability
+                ));
+                assert_eq!(linked.kind().tag(), linked.source_tag());
+                assert!(linked.parent_ifd_offset() >= FrameExif::TIFF_HEADER_LEN);
+                assert!(linked.offset() >= FrameExif::TIFF_HEADER_LEN);
+                assert!(linked.ifd().entry_count() <= FrameExif::MAX_IFD_ENTRIES);
+                assert!(value.linked_ifd(linked.kind()).is_some());
             }
         }
         Ok(None) => assert_ne!(frame_side_data_kind, FrameSideDataKind::Exif),
@@ -3688,6 +3703,51 @@ fn exercise_fixtures() {
     let non_exif = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_exif.exif().unwrap(), None);
 
+    let linked_exif_side_data = FrameSideData::new_exif(exif_with_linked_ifds_fixture()).unwrap();
+    let linked_exif = linked_exif_side_data.exif().unwrap().unwrap();
+    assert_eq!(linked_exif.ifd_count(), 1);
+    assert_eq!(linked_exif.linked_ifd_count(), 3);
+    let linked_exif_ifd = linked_exif
+        .linked_ifd(FrameExifIfdPointerKind::Exif)
+        .unwrap();
+    assert_eq!(linked_exif_ifd.parent_ifd_offset(), 8);
+    assert_eq!(
+        linked_exif_ifd.source_tag(),
+        FrameExifIfdPointerKind::EXIF_TAG
+    );
+    assert_eq!(linked_exif_ifd.offset(), 56);
+    let linked_gps_ifd = linked_exif
+        .linked_ifd(FrameExifIfdPointerKind::Gps)
+        .unwrap();
+    assert_eq!(linked_gps_ifd.offset(), 74);
+    assert_eq!(
+        linked_gps_ifd.ifd().entry_by_tag(0).unwrap().value_data(),
+        &[2, 3, 0, 0]
+    );
+    let linked_interop_ifd = linked_exif
+        .linked_ifd(FrameExifIfdPointerKind::Interoperability)
+        .unwrap();
+    assert_eq!(linked_interop_ifd.parent_ifd_offset(), 56);
+    assert_eq!(
+        linked_interop_ifd
+            .ifd()
+            .entry_by_tag(1)
+            .unwrap()
+            .value_data(),
+        b"R98\0"
+    );
+    let mut bad_linked_exif = exif_with_linked_ifds_fixture();
+    bad_linked_exif[24..26].copy_from_slice(&FrameExifTiffType::Short.raw().to_le_bytes());
+    assert!(exif_payload_invalid(&bad_linked_exif));
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::Exif, bad_linked_exif)
+            .unwrap()
+            .exif()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let film_grain = minimal_film_grain_av1_fixture();
     let film_grain_side_data = FrameSideData::new_film_grain_params(film_grain.clone()).unwrap();
     let parsed_film_grain = film_grain_side_data.film_grain_params().unwrap().unwrap();
@@ -4640,6 +4700,65 @@ fn minimal_little_exif_fixture() -> Vec<u8> {
     data
 }
 
+fn exif_with_linked_ifds_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&3u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        0x010F,
+        FrameExifTiffType::Ascii,
+        6,
+        50u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::EXIF_TAG,
+        FrameExifTiffType::Long,
+        1,
+        56u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::GPS_TAG,
+        FrameExifTiffType::Long,
+        1,
+        74u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(b"Rusty\0");
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExifIfdPointerKind::INTEROPERABILITY_TAG,
+        FrameExifTiffType::Long,
+        1,
+        92u32.to_le_bytes(),
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(&mut data, 0, FrameExifTiffType::Byte, 4, [2, 3, 0, 0]);
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(&1u16.to_le_bytes());
+    push_exif_entry(&mut data, 1, FrameExifTiffType::Ascii, 4, *b"R98\0");
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data
+}
+
+fn push_exif_entry(
+    data: &mut Vec<u8>,
+    tag: u16,
+    tiff_type: FrameExifTiffType,
+    count: u32,
+    value_or_offset: [u8; 4],
+) {
+    data.extend_from_slice(&tag.to_le_bytes());
+    data.extend_from_slice(&tiff_type.raw().to_le_bytes());
+    data.extend_from_slice(&count.to_le_bytes());
+    data.extend_from_slice(&value_or_offset);
+}
+
 fn exif_payload_invalid(data: &[u8]) -> bool {
     if data.len() < FrameExif::TIFF_HEADER_LEN {
         return true;
@@ -4652,9 +4771,39 @@ fn exif_payload_invalid(data: &[u8]) -> bool {
     } else {
         return true;
     };
-    let mut offset = read_exif_u32(data, endian, 4) as usize;
+    let offset = read_exif_u32(data, endian, 4) as usize;
     let mut seen_offsets = Vec::new();
+    let mut linked_offsets = Vec::new();
 
+    if exif_ifd_chain_invalid(data, endian, offset, &mut seen_offsets, &mut linked_offsets) {
+        return true;
+    }
+
+    let mut linked_index = 0;
+    let mut linked_count = 0;
+    while linked_index < linked_offsets.len() {
+        let offset = linked_offsets[linked_index];
+        linked_index += 1;
+        let seen_before = seen_offsets.len();
+        if exif_ifd_chain_invalid(data, endian, offset, &mut seen_offsets, &mut linked_offsets) {
+            return true;
+        }
+        linked_count += seen_offsets.len().saturating_sub(seen_before);
+        if linked_count > FrameExif::MAX_LINKED_IFDS {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn exif_ifd_chain_invalid(
+    data: &[u8],
+    endian: FrameExifEndian,
+    mut offset: usize,
+    seen_offsets: &mut Vec<usize>,
+    linked_offsets: &mut Vec<usize>,
+) -> bool {
     for _ in 0..FrameExif::MAX_IFDS {
         let Some(count_end) = offset.checked_add(FrameExif::IFD_COUNT_LEN) else {
             return true;
@@ -4687,23 +4836,33 @@ fn exif_payload_invalid(data: &[u8]) -> bool {
 
         for index in 0..entry_count {
             let entry_offset = count_end + index * FrameExif::IFD_ENTRY_LEN;
+            let tag = read_exif_u16(data, endian, entry_offset);
             let Ok(tiff_type) =
                 FrameExifTiffType::from_raw(read_exif_u16(data, endian, entry_offset + 2))
             else {
                 return true;
             };
             let count = read_exif_u32(data, endian, entry_offset + 4);
+            let value_offset = read_exif_u32(data, endian, entry_offset + 8) as usize;
             let Some(data_len) = tiff_type.element_size().checked_mul(count as usize) else {
                 return true;
             };
             if data_len > 4 {
-                let start = read_exif_u32(data, endian, entry_offset + 8) as usize;
-                let Some(end) = start.checked_add(data_len) else {
+                let Some(end) = value_offset.checked_add(data_len) else {
                     return true;
                 };
                 if end > data.len() {
                     return true;
                 }
+            }
+            if FrameExifIfdPointerKind::from_tag(tag).is_some() {
+                if !matches!(tiff_type, FrameExifTiffType::Long | FrameExifTiffType::Ifd)
+                    || count != 1
+                    || value_offset < FrameExif::TIFF_HEADER_LEN
+                {
+                    return true;
+                }
+                linked_offsets.push(value_offset);
             }
         }
 
