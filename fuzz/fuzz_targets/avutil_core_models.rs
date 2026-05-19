@@ -4687,26 +4687,106 @@ fn exercise_fixtures() {
         video_enc_side_data.video_enc_params().unwrap(),
         Some(video_enc_params)
     );
+    let zero_block_video_enc = FrameVideoEncParams::new(
+        FrameVideoEncParamsType::Vp9,
+        12,
+        [[0; FrameVideoEncParams::DELTA_QP_COEFFS]; FrameVideoEncParams::DELTA_QP_PLANES],
+        Vec::new(),
+    )
+    .unwrap();
+    assert!(zero_block_video_enc.is_empty());
     assert_eq!(
-        FrameVideoEncParams::parse(&[0; FrameVideoEncParams::HEADER_LEN - 1])
-            .unwrap_err()
-            .kind(),
-        AvErrorKind::InvalidData
+        FrameVideoEncParams::parse(&zero_block_video_enc.to_bytes()).unwrap(),
+        zero_block_video_enc
     );
-    let mut bad_video_enc = video_enc_side_data.data().to_vec();
-    write_ne_usize(
-        &mut bad_video_enc,
-        video_enc_params_blocks_offset_field_offset(),
-        FrameVideoEncParams::HEADER_LEN - 4,
-    );
-    assert_eq!(
-        FrameSideData::new_with_kind(FrameSideDataKind::VideoEncParams, bad_video_enc)
-            .unwrap()
-            .video_enc_params()
-            .unwrap_err()
-            .kind(),
-        AvErrorKind::InvalidData
-    );
+    let video_enc_payload = video_enc_side_data.data().to_vec();
+    for data in [
+        Vec::new(),
+        vec![0; FrameVideoEncParams::HEADER_LEN - 1],
+        {
+            let mut data = video_enc_payload.clone();
+            data.push(0);
+            data
+        },
+        {
+            let mut data = video_enc_payload.clone();
+            data.pop();
+            data
+        },
+    ] {
+        assert!(video_enc_params_payload_invalid(&data));
+        assert_eq!(
+            FrameVideoEncParams::parse(&data).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameSideData::new_with_kind(FrameSideDataKind::VideoEncParams, data)
+                .unwrap()
+                .video_enc_params()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    for (offset, value) in [
+        (video_enc_params_type_field_offset(), 3),
+        (FrameVideoEncParams::HEADER_LEN + 8, 0),
+        (FrameVideoEncParams::HEADER_LEN + 12, -1),
+    ] {
+        let mut bad_video_enc = video_enc_payload.clone();
+        write_ne_i32(&mut bad_video_enc, offset, value);
+        assert!(video_enc_params_payload_invalid(&bad_video_enc));
+        assert_eq!(
+            FrameVideoEncParams::parse(&bad_video_enc)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameSideData::new_with_kind(FrameSideDataKind::VideoEncParams, bad_video_enc)
+                .unwrap()
+                .video_enc_params()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    for (offset, value) in [
+        (
+            video_enc_params_blocks_offset_field_offset(),
+            FrameVideoEncParams::HEADER_LEN - 4,
+        ),
+        (
+            video_enc_params_block_size_field_offset(),
+            FrameVideoEncParams::BLOCK_SIZE + 4,
+        ),
+    ] {
+        let mut bad_video_enc = video_enc_payload.clone();
+        write_ne_usize(&mut bad_video_enc, offset, value);
+        assert!(video_enc_params_payload_invalid(&bad_video_enc));
+        assert_eq!(
+            FrameVideoEncParams::parse(&bad_video_enc)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameSideData::new_with_kind(FrameSideDataKind::VideoEncParams, bad_video_enc)
+                .unwrap()
+                .video_enc_params()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    for (width, height) in [(0, 16), (16, 0)] {
+        assert_eq!(
+            FrameVideoBlockParams::new(0, 0, width, height, 0)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
     let non_video_enc =
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_video_enc.video_enc_params().unwrap(), None);
