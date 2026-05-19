@@ -341,6 +341,175 @@ impl TryFrom<String> for PacketSideDataKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PacketSkipSamplesReason {
+    PaddingSilence = 0,
+    Convergence = 1,
+}
+
+impl PacketSkipSamplesReason {
+    pub fn from_byte(value: u8) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::PaddingSilence),
+            1 => Ok(Self::Convergence),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid packet skip samples reason value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_byte(self) -> u8 {
+        self as u8
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketSkipSamples {
+    start: u32,
+    end: u32,
+    start_reason: PacketSkipSamplesReason,
+    end_reason: PacketSkipSamplesReason,
+}
+
+impl PacketSkipSamples {
+    pub const DATA_LEN: usize = 10;
+
+    pub const fn new(
+        start: u32,
+        end: u32,
+        start_reason: PacketSkipSamplesReason,
+        end_reason: PacketSkipSamplesReason,
+    ) -> Self {
+        Self {
+            start,
+            end,
+            start_reason,
+            end_reason,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "skip samples packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut start = [0; 4];
+        start.copy_from_slice(&data[..4]);
+        let mut end = [0; 4];
+        end.copy_from_slice(&data[4..8]);
+
+        Ok(Self {
+            start: u32::from_le_bytes(start),
+            end: u32::from_le_bytes(end),
+            start_reason: PacketSkipSamplesReason::from_byte(data[8])?,
+            end_reason: PacketSkipSamplesReason::from_byte(data[9])?,
+        })
+    }
+
+    pub const fn start(self) -> u32 {
+        self.start
+    }
+
+    pub const fn end(self) -> u32 {
+        self.end
+    }
+
+    pub const fn start_reason(self) -> PacketSkipSamplesReason {
+        self.start_reason
+    }
+
+    pub const fn end_reason(self) -> PacketSkipSamplesReason {
+        self.end_reason
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let start = self.start.to_le_bytes();
+        let end = self.end.to_le_bytes();
+        [
+            start[0],
+            start[1],
+            start[2],
+            start[3],
+            end[0],
+            end[1],
+            end[2],
+            end[3],
+            self.start_reason.as_byte(),
+            self.end_reason.as_byte(),
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketFrameCropping {
+    crop_top: u32,
+    crop_bottom: u32,
+    crop_left: u32,
+    crop_right: u32,
+}
+
+impl PacketFrameCropping {
+    pub const DATA_LEN: usize = 16;
+
+    pub const fn new(crop_top: u32, crop_bottom: u32, crop_left: u32, crop_right: u32) -> Self {
+        Self {
+            crop_top,
+            crop_bottom,
+            crop_left,
+            crop_right,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "frame cropping packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self {
+            crop_top: read_u32_le(data, 0),
+            crop_bottom: read_u32_le(data, 4),
+            crop_left: read_u32_le(data, 8),
+            crop_right: read_u32_le(data, 12),
+        })
+    }
+
+    pub const fn crop_top(self) -> u32 {
+        self.crop_top
+    }
+
+    pub const fn crop_bottom(self) -> u32 {
+        self.crop_bottom
+    }
+
+    pub const fn crop_left(self) -> u32 {
+        self.crop_left
+    }
+
+    pub const fn crop_right(self) -> u32 {
+        self.crop_right
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let top = self.crop_top.to_le_bytes();
+        let bottom = self.crop_bottom.to_le_bytes();
+        let left = self.crop_left.to_le_bytes();
+        let right = self.crop_right.to_le_bytes();
+        [
+            top[0], top[1], top[2], top[3], bottom[0], bottom[1], bottom[2], bottom[3], left[0],
+            left[1], left[2], left[3], right[0], right[1], right[2], right[3],
+        ]
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SideData {
     kind: PacketSideDataKind,
@@ -350,6 +519,14 @@ pub struct SideData {
 impl SideData {
     pub fn new(kind: impl Into<String>, data: Vec<u8>) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::from_name(kind)?, data)
+    }
+
+    pub fn new_skip_samples(value: PacketSkipSamples) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::SkipSamples, value.to_bytes().to_vec())
+    }
+
+    pub fn new_frame_cropping(value: PacketFrameCropping) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::FrameCropping, value.to_bytes().to_vec())
     }
 
     pub fn new_with_kind(kind: PacketSideDataKind, data: Vec<u8>) -> AvResult<Self> {
@@ -385,6 +562,22 @@ impl SideData {
 
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
+    }
+
+    pub fn skip_samples(&self) -> AvResult<Option<PacketSkipSamples>> {
+        if self.kind != PacketSideDataKind::SkipSamples {
+            return Ok(None);
+        }
+
+        PacketSkipSamples::parse(self.data()).map(Some)
+    }
+
+    pub fn frame_cropping(&self) -> AvResult<Option<PacketFrameCropping>> {
+        if self.kind != PacketSideDataKind::FrameCropping {
+            return Ok(None);
+        }
+
+        PacketFrameCropping::parse(self.data()).map(Some)
     }
 
     pub fn shrink(&mut self, len: usize) -> AvResult<()> {
@@ -716,6 +909,12 @@ fn pos_option(value: i64) -> Option<i64> {
     }
 }
 
+fn read_u32_le(data: &[u8], offset: usize) -> u32 {
+    let mut bytes = [0; 4];
+    bytes.copy_from_slice(&data[offset..offset + 4]);
+    u32::from_le_bytes(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -930,6 +1129,124 @@ mod tests {
             "vendor_packet"
         );
         assert!(packet.side_data_by_kind("vendor_packet").is_none());
+    }
+
+    #[test]
+    fn packet_side_data_parses_skip_samples_payload() {
+        let expected = PacketSkipSamples::new(
+            1024,
+            256,
+            PacketSkipSamplesReason::PaddingSilence,
+            PacketSkipSamplesReason::Convergence,
+        );
+        let expected_bytes = [0x00, 0x04, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01];
+
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(PacketSkipSamples::parse(&expected_bytes).unwrap(), expected);
+        assert_eq!(expected.start(), 1024);
+        assert_eq!(expected.end(), 256);
+        assert_eq!(
+            expected.start_reason(),
+            PacketSkipSamplesReason::PaddingSilence
+        );
+        assert_eq!(expected.end_reason(), PacketSkipSamplesReason::Convergence);
+        assert_eq!(
+            PacketSkipSamplesReason::from_byte(expected.end_reason().as_byte()).unwrap(),
+            PacketSkipSamplesReason::Convergence
+        );
+
+        let side_data = SideData::new_skip_samples(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::SkipSamples);
+        assert_eq!(side_data.data(), &expected_bytes[..]);
+        assert_eq!(side_data.skip_samples().unwrap(), Some(expected));
+
+        let frame_cropping =
+            SideData::new_with_kind(PacketSideDataKind::FrameCropping, expected_bytes.to_vec())
+                .unwrap();
+        assert_eq!(frame_cropping.skip_samples().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_skip_samples_payload() {
+        let mut valid = PacketSkipSamples::new(
+            1,
+            2,
+            PacketSkipSamplesReason::PaddingSilence,
+            PacketSkipSamplesReason::Convergence,
+        )
+        .to_bytes();
+
+        assert_eq!(
+            PacketSkipSamples::parse(&valid[..PacketSkipSamples::DATA_LEN - 1])
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        valid[8] = 2;
+        assert_eq!(
+            PacketSkipSamples::parse(&valid).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+        valid[8] = 0;
+        valid[9] = 0xff;
+        let side_data =
+            SideData::new_with_kind(PacketSideDataKind::SkipSamples, valid.to_vec()).unwrap();
+        assert_eq!(
+            side_data.skip_samples().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_frame_cropping_payload() {
+        let expected = PacketFrameCropping::new(1, 2, 3, 4);
+        let expected_bytes = [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0];
+
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketFrameCropping::parse(&expected_bytes).unwrap(),
+            expected
+        );
+        assert_eq!(expected.crop_top(), 1);
+        assert_eq!(expected.crop_bottom(), 2);
+        assert_eq!(expected.crop_left(), 3);
+        assert_eq!(expected.crop_right(), 4);
+
+        let side_data = SideData::new_frame_cropping(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::FrameCropping);
+        assert_eq!(side_data.data(), &expected_bytes[..]);
+        assert_eq!(side_data.frame_cropping().unwrap(), Some(expected));
+
+        let skip_samples =
+            SideData::new_with_kind(PacketSideDataKind::SkipSamples, expected_bytes.to_vec())
+                .unwrap();
+        assert_eq!(skip_samples.frame_cropping().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_frame_cropping_payload() {
+        let valid = PacketFrameCropping::new(1, 2, 3, 4).to_bytes();
+
+        assert_eq!(
+            PacketFrameCropping::parse(&valid[..PacketFrameCropping::DATA_LEN - 1])
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PacketFrameCropping::parse(&[0; PacketFrameCropping::DATA_LEN + 1])
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let side_data =
+            SideData::new_with_kind(PacketSideDataKind::FrameCropping, vec![0; 4]).unwrap();
+        assert_eq!(
+            side_data.frame_cropping().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
     }
 
     #[test]

@@ -32,8 +32,9 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketFlags, PacketSideDataKind, PixelFormat, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    Packet, PacketFlags, PacketFrameCropping, PacketSideDataKind, PacketSkipSamples,
+    PacketSkipSamplesReason, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3292,6 +3293,51 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .side_data_by_kind_id(&typed_side_data_kind)
         .is_none());
 
+    let typed_payload_len =
+        usize::from(cursor.next().unwrap_or_default()) % (PacketFrameCropping::DATA_LEN + 1);
+    let typed_payload = payload_from(cursor, typed_payload_len);
+    let typed_payload_kind = packet_side_data_kind_from(cursor.next());
+    let typed_payload_side_data =
+        SideData::new_with_kind(typed_payload_kind.clone(), typed_payload.clone()).unwrap();
+    match typed_payload_side_data.skip_samples() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::SkipSamples);
+            assert_eq!(typed_payload.len(), PacketSkipSamples::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketSkipSamplesReason::from_byte(value.start_reason().as_byte()).unwrap(),
+                value.start_reason()
+            );
+            assert_eq!(
+                PacketSkipSamplesReason::from_byte(value.end_reason().as_byte()).unwrap(),
+                value.end_reason()
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::SkipSamples),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::SkipSamples);
+            assert!(packet_skip_samples_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.frame_cropping() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::FrameCropping);
+            assert_eq!(typed_payload.len(), PacketFrameCropping::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketFrameCropping::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::FrameCropping),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::FrameCropping);
+            assert!(packet_frame_cropping_payload_invalid(&typed_payload));
+        }
+    }
+
     let side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let side_data_payload = payload_from(cursor, side_data_len);
     let side_data = SideData::new("fuzz_side_data", side_data_payload.clone()).unwrap();
@@ -3559,6 +3605,59 @@ fn exercise_fixtures() {
             .ffmpeg_constant()
             .unwrap(),
         "AV_PKT_DATA_EXIF"
+    );
+    let packet_skip_samples = PacketSkipSamples::new(
+        1024,
+        256,
+        PacketSkipSamplesReason::PaddingSilence,
+        PacketSkipSamplesReason::Convergence,
+    );
+    let packet_skip_samples_bytes = packet_skip_samples.to_bytes();
+    assert_eq!(
+        PacketSkipSamples::parse(&packet_skip_samples_bytes).unwrap(),
+        packet_skip_samples
+    );
+    assert_eq!(
+        SideData::new_skip_samples(packet_skip_samples)
+            .unwrap()
+            .skip_samples()
+            .unwrap(),
+        Some(packet_skip_samples)
+    );
+    assert_eq!(
+        PacketSkipSamples::parse(&packet_skip_samples_bytes[..PacketSkipSamples::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut invalid_packet_skip_samples = packet_skip_samples_bytes;
+    invalid_packet_skip_samples[8] = 2;
+    assert_eq!(
+        PacketSkipSamples::parse(&invalid_packet_skip_samples)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let packet_frame_cropping = PacketFrameCropping::new(1, 2, 3, 4);
+    let packet_frame_cropping_bytes = packet_frame_cropping.to_bytes();
+    assert_eq!(
+        PacketFrameCropping::parse(&packet_frame_cropping_bytes).unwrap(),
+        packet_frame_cropping
+    );
+    assert_eq!(
+        SideData::new_frame_cropping(packet_frame_cropping)
+            .unwrap()
+            .frame_cropping()
+            .unwrap(),
+        Some(packet_frame_cropping)
+    );
+    assert_eq!(
+        PacketFrameCropping::parse(
+            &packet_frame_cropping_bytes[..PacketFrameCropping::DATA_LEN - 1]
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
     );
     let overflow_line_size = usize::MAX - 1;
     let overflow_alignment = usize::MAX - 2;
@@ -9137,6 +9236,19 @@ fn packet_side_data_kind_from(byte: Option<u8>) -> PacketSideDataKind {
     } else {
         known[value % known.len()].clone()
     }
+}
+
+fn packet_skip_samples_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != PacketSkipSamples::DATA_LEN {
+        return true;
+    }
+
+    PacketSkipSamplesReason::from_byte(data[8]).is_err()
+        || PacketSkipSamplesReason::from_byte(data[9]).is_err()
+}
+
+fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketFrameCropping::DATA_LEN
 }
 
 fn minimal_dynamic_hdr_plus_fixture() -> Vec<u8> {

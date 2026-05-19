@@ -2,7 +2,9 @@
 
 ## Current Status
 
-Latest `avutil-packet` update: packet side-data now has a typed `PacketSideDataKind` inventory matching the 41 public FFmpeg 8.1.1 `AV_PKT_DATA_*` constants before `AV_PKT_DATA_NB`. `SideData` stores the typed kind while preserving the string-facing `kind()` API, known-name aliasing maps FFmpeg constants and common spellings to typed variants, unknown extension names are preserved, and packet lookup/take helpers now work by string or typed kind. Focused unit tests and `avutil_core_models` fuzz invariants cover inventory order, FFmpeg constant mapping, aliases, unknown-name preservation, typed/id lookup, and typed take paths. This remains below `complete` because packet side-data payload parsers, full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still open.
+Latest `avutil-packet` update: packet side-data now has the first typed payload parsers for `AV_PKT_DATA_SKIP_SAMPLES` and `AV_PKT_DATA_FRAME_CROPPING`. `PacketSkipSamples` preserves the two little-endian skip counts plus start/end reason bytes and rejects malformed lengths or unknown reason values; `PacketFrameCropping` preserves the four little-endian crop fields and rejects malformed lengths. `SideData` exposes constructors and deferred typed accessors for both packet side-data kinds, focused unit tests cover valid bytes, constructors, non-matching kind behavior, and malformed payloads, and `avutil_core_models` fuzz invariants now build-check the same parser contracts. This remains below `complete` because the remaining packet side-data payload parsers, full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still open.
+
+Previous `avutil-packet` update: packet side-data now has a typed `PacketSideDataKind` inventory matching the 41 public FFmpeg 8.1.1 `AV_PKT_DATA_*` constants before `AV_PKT_DATA_NB`. `SideData` stores the typed kind while preserving the string-facing `kind()` API, known-name aliasing maps FFmpeg constants and common spellings to typed variants, unknown extension names are preserved, and packet lookup/take helpers now work by string or typed kind. Focused unit tests and `avutil_core_models` fuzz invariants cover inventory order, FFmpeg constant mapping, aliases, unknown-name preservation, typed/id lookup, and typed take paths. This remains below `complete` because additional packet side-data payload parsers, full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still open.
 
 Previous `avutil-packet` update: packet opaque user-reference metadata now models the `AVPacket.opaque_ref` field for the current Rust packet surface. `Packet` carries optional `BufferRef` opaque storage, exposes set/take/clear helpers, shares it through `ref_from`, transfers it through `move_ref_from`, copies a new shared reference through `copy_props_from`, and releases it through clear/take/drop/unref semantics; focused unit tests and `avutil_core_models` fuzz invariants cover those copy, share, move, take, unref, source-isolation, and release-timing paths. This remains below `complete` because raw `void *opaque`, full AVPacket ABI/field parity, pinned-oracle/FATE parity, and actual local fuzz execution are still open.
 
@@ -120,6 +122,18 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil packet`
+- `cargo clippy -p avutil --all-targets -- -D warnings`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`
+- `cargo fmt --all -- --check`
+- `git diff --check`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed --dry-run`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`
+- `$env:CARGO_TARGET_DIR='target-codex'; .\target\debug\xtask.exe quick`
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil packet`
 - `cargo clippy -p avutil --all-targets -- -D warnings`
@@ -2503,6 +2517,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- No remaining failing commands in the latest packet skip-samples/frame-cropping side-data parser slice. `git diff --check` exited successfully with CRLF line-ending warnings only.
 - No remaining failing commands in the latest typed packet side-data kind slice. `git diff --check` exited successfully with CRLF line-ending warnings only.
 - `cargo test -p avutil packet` compiled the focused test binary but Windows Application Control blocked launching `target\debug\deps\avutil-c501250f1d03cde5.exe` with `os error 4551`; rerunning with `CARGO_TARGET_DIR=target-avutil-opaque-ref-test`, with `CARGO_TARGET_DIR=target-avutil-timebase-test`, and outside the sandbox produced the same OS policy block. Rerunning with `CARGO_TARGET_DIR=target-codex` passed all 18 focused packet tests, and the local `fate-runner` mapping also passed through `target-codex`.
 - Cleanup of the generated `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` directories was requested after verifying both paths resolved under the workspace, but the recursive delete approval was rejected; the directories remain untracked.
@@ -2672,7 +2687,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-packet` is the current focus for this slice. The concrete change is typed packet side-data kind support: `SideData` now stores a `PacketSideDataKind` matching the pinned FFmpeg packet side-data enum while preserving the existing string-facing API and unknown extension names.
+`avutil-packet` is the current focus for this slice. The concrete change is packet side-data payload parsing: `SideData` now exposes typed `AV_PKT_DATA_SKIP_SAMPLES` and `AV_PKT_DATA_FRAME_CROPPING` constructors/accessors with fixed-layout parsing and malformed-input rejection.
 
 This slice does not mark packet handling complete. The broader goal remains blocked on missing pinned-oracle snapshots, upstream FATE media mappings/samples, actual local fuzz execution, and many incomplete FFmpeg surfaces.
 
@@ -2692,4 +2707,4 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added typed packet side-data kind support. `PacketSideDataKind` now covers the 41 public FFmpeg 8.1.1 `AV_PKT_DATA_*` values before `AV_PKT_DATA_NB` in header order, exposes canonical names and FFmpeg constant names, maps common aliases including full FFmpeg constants, and preserves unknown extension names. `SideData` stores the typed kind, exposes kind-id/known/constant helpers, and packet lookup/take helpers now support both string aliases and typed IDs. Focused packet unit tests cover inventory order, constant mapping, aliases, unknown-name preservation, typed lookup, and typed take behavior, and the `avutil_core_models` fuzz target build-checks the same typed-kind invariants. Validation passed with `cargo fmt --all`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil packet`, `cargo clippy -p avutil --all-targets -- -D warnings`, `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`, `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed --dry-run`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`, `cargo fmt --all -- --check`, `git diff --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `$env:CARGO_TARGET_DIR='target-codex'; .\target\debug\xtask.exe quick`.
+Latest slice: added typed packet side-data payload parsers for skip samples and frame cropping. `PacketSkipSamples` models the pinned 10-byte `AV_PKT_DATA_SKIP_SAMPLES` layout with little-endian start/end skip counts and validated start/end reason bytes, `PacketFrameCropping` models the pinned 16-byte `AV_PKT_DATA_FRAME_CROPPING` layout with top/bottom/left/right little-endian crop counts, and `SideData` can construct and defer-parse both payloads only when the side-data kind matches. Focused packet unit tests cover valid byte preservation, constructor output, non-matching kind behavior, malformed length rejection, and invalid skip-reason rejection; `avutil_core_models` now build-checks the same invariants. Validation passed with `cargo fmt --all`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil packet`, `cargo clippy -p avutil --all-targets -- -D warnings`, `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`, `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed --dry-run`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`, `cargo fmt --all -- --check`, `git diff --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `$env:CARGO_TARGET_DIR='target-codex'; .\target\debug\xtask.exe quick`.
