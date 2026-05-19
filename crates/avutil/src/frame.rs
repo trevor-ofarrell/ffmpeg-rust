@@ -13734,6 +13734,32 @@ mod tests {
         data
     }
 
+    fn exif_root_camera_identity_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&2u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_MAKE,
+            FrameExifTiffType::Ascii,
+            3,
+            [b'M', b'K', 0, 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_MODEL,
+            FrameExifTiffType::Ascii,
+            3,
+            [b'M', b'2', 0, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        assert_eq!(data.len(), 38);
+        data
+    }
+
     fn exif_root_document_page_fixture() -> Vec<u8> {
         let mut data = Vec::new();
         data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
@@ -21806,6 +21832,50 @@ mod tests {
         bad_subfile_type_value[30..32].copy_from_slice(&4u16.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_subfile_type_value)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_camera_identity_tags() {
+        let exif_bytes = exif_root_camera_identity_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.make(), Some("MK"));
+        assert_eq!(common.model(), Some("M2"));
+
+        let mut bad_make_type = exif_root_camera_identity_fixture();
+        bad_make_type[12..14].copy_from_slice(&FrameExifTiffType::Undefined.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_make_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_model_terminator = exif_root_camera_identity_fixture();
+        bad_model_terminator[32] = b'!';
+        assert_eq!(
+            FrameExif::parse(&bad_model_terminator)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_model_multiple_strings = exif_root_camera_identity_fixture();
+        bad_model_multiple_strings[26..30].copy_from_slice(&4u32.to_le_bytes());
+        bad_model_multiple_strings[30..34].copy_from_slice(&[b'M', 0, b'2', 0]);
+        assert_eq!(
+            FrameExif::parse(&bad_model_multiple_strings)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

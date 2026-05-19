@@ -274,6 +274,7 @@ unit_tests = [
   "frame::tests::frame_side_data_interprets_exif_root_image_layout_tags",
   "frame::tests::frame_side_data_interprets_exif_root_colorimetry_tags",
   "frame::tests::frame_side_data_interprets_exif_root_subfile_type_tags",
+  "frame::tests::frame_side_data_interprets_exif_root_camera_identity_tags",
   "frame::tests::frame_side_data_interprets_exif_root_document_page_tags",
   "frame::tests::frame_side_data_interprets_exif_root_host_computer_tag",
   "frame::tests::frame_side_data_interprets_exif_root_predictor_tag",
@@ -445,7 +446,7 @@ fuzz_targets = ["avutil_core_models"]
 # GPSDifferential 0/1 enum validation, GPSHPositioningError rational
 # validation, and digit-only validation for SubSecTime fields, NewSubfileType
 # flag-mask validation, SubfileType enum validation,
-# DocumentName/PageName/HostComputer/Copyright ASCII validation, Predictor
+# Make/Model/DocumentName/PageName/HostComputer/Copyright ASCII validation, Predictor
 # nonzero SHORT validation, PageNumber fixed-pair validation, positive
 # ImageWidth/ImageLength/SamplesPerPixel/RowsPerStrip/PixelXDimension/PixelYDimension validation, BitsPerSample positive SHORT-array validation with SamplesPerPixel count matching, Compression nonzero validation, PhotometricInterpretation raw SHORT preservation, Thresholding and FillOrder enum validation, PlanarConfiguration and YCbCrPositioning enum validation, nonzero YCbCrSubSampling factor validation, XPosition/YPosition rational validation, non-degenerate SubjectArea circle/rectangle validation, plus fixed-count validation for version-byte, ComponentsConfiguration,
 # GPSVersionID, and GPS one-character reference fields.
@@ -487,7 +488,7 @@ Latest EXIF typed-entry coverage extends the value semantics fixture and fuzz in
 
 Latest EXIF root colorimetry coverage adds WhitePoint, PrimaryChromaticities, YCbCrCoefficients, and ReferenceBlackWhite as fixed-count unsigned RATIONAL arrays with strict type/count/denominator rejection.
 
-Latest EXIF root image-layout/descriptive coverage adds DocumentName, PageName, HostComputer, and Copyright as single ASCII strings, Predictor as a nonzero raw SHORT, PageNumber as a fixed two-SHORT array, NewSubfileType as known bitflags, SubfileType as a typed 1/2/3 enum, BitsPerSample as a nonempty positive SHORT array checked against SamplesPerPixel when present, Compression as a nonzero raw SHORT, PhotometricInterpretation as a raw SHORT, Thresholding as a typed 1/2/3 enum, FillOrder as a typed 1/2 enum, SamplesPerPixel as a positive SHORT, RowsPerStrip as a positive SHORT/LONG, PlanarConfiguration as a typed 1/2 enum, YCbCrSubSampling as two nonzero SHORT factors, YCbCrPositioning as a typed 1/2 enum, and XPosition/YPosition as single unsigned RATIONAL values with strict type/count/value/denominator rejection.
+Latest EXIF root image-layout/descriptive coverage adds Make, Model, DocumentName, PageName, HostComputer, and Copyright as single ASCII strings, Predictor as a nonzero raw SHORT, PageNumber as a fixed two-SHORT array, NewSubfileType as known bitflags, SubfileType as a typed 1/2/3 enum, BitsPerSample as a nonempty positive SHORT array checked against SamplesPerPixel when present, Compression as a nonzero raw SHORT, PhotometricInterpretation as a raw SHORT, Thresholding as a typed 1/2/3 enum, FillOrder as a typed 1/2 enum, SamplesPerPixel as a positive SHORT, RowsPerStrip as a positive SHORT/LONG, PlanarConfiguration as a typed 1/2 enum, YCbCrSubSampling as two nonzero SHORT factors, YCbCrPositioning as a typed 1/2 enum, and XPosition/YPosition as single unsigned RATIONAL values with strict type/count/value/denominator rejection.
 
 Latest EXIF interoperability coverage adds InteroperabilityVersion as a strict four-byte digit-coded UNDEFINED value, RelatedImageFileFormat as a single ASCII string, and positive SHORT/LONG RelatedImageWidth/RelatedImageLength validation.
 
