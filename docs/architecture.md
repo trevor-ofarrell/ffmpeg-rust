@@ -84,6 +84,8 @@ Optics/subject common-tag fuzz coverage now includes rectangle, point, and circl
 
 Version/timing/comment common-tag fuzz coverage now includes ComponentsConfiguration count/value rejection, MakerNote UNDEFINED type rejection, SubSecTime terminator and digit rejection for SubSecTime/SubSecTimeOriginal/SubSecTimeDigitized, FlashpixVersion count/digit rejection, RelatedSoundFile count rejection, and valid RelatedSoundFile plus PixelXDimension preservation while keeping the original ASCII and UNDEFINED payload values.
 
+Camera-lens common-tag fuzz coverage now includes ImageUniqueID count rejection, LensSpecification count/type rejection, and LensModel ASCII rejection while preserving the camera owner, body serial, lens make/model/serial, and four-rational lens specification fields.
+
 ImageWidth, ImageLength, PixelXDimension, and PixelYDimension common-tag validation rejects zero values after the existing SHORT/LONG type and count checks.
 
 SubjectArea common-tag validation accepts point coordinates as-is and rejects zero diameter for circle shapes or zero width/height for rectangle shapes after the existing SHORT count/type checks.

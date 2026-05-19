@@ -6060,6 +6060,16 @@ fn exercise_fixtures() {
         camera_lens_tags.image_unique_id(),
         Some("0123456789abcdef0123456789abcdef")
     );
+    let mut bad_unique_id_count = exif_camera_lens_fixture();
+    bad_unique_id_count[32..36].copy_from_slice(&32u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_unique_id_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(camera_lens_tags.camera_owner_name(), Some("A Camera"));
     assert_eq!(camera_lens_tags.body_serial_number(), Some("BODY1234"));
     let lens_spec = camera_lens_tags.lens_specification().unwrap();
@@ -6067,8 +6077,38 @@ fn exercise_fixtures() {
     assert_eq!(lens_spec[1].numerator(), 70);
     assert_eq!(lens_spec[2].denominator(), 10);
     assert_eq!(lens_spec[3].denominator(), 10);
+    let mut bad_lens_spec_count = exif_camera_lens_fixture();
+    bad_lens_spec_count[68..72].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_lens_spec_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_lens_spec_type = exif_camera_lens_fixture();
+    bad_lens_spec_type[66..68].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_lens_spec_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(camera_lens_tags.lens_make(), Some("LensCo"));
     assert_eq!(camera_lens_tags.lens_model(), Some("Prime50"));
+    let mut bad_lens_model_ascii = exif_camera_lens_fixture();
+    bad_lens_model_ascii[206] = 0xff;
+    assert_eq!(
+        FrameExif::parse(&bad_lens_model_ascii)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(camera_lens_tags.lens_serial_number(), Some("LENS5678"));
 
     let gamma_composite_exif_bytes = exif_gamma_composite_fixture();
