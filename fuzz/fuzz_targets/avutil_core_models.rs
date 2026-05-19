@@ -4604,14 +4604,65 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    for data in [
+        Vec::new(),
+        vec![0; FrameRegionOfInterest::DATA_LEN - 1],
+        vec![0; FrameRegionOfInterest::DATA_LEN + 1],
+        vec![0; FrameRegionOfInterest::DATA_LEN * 2 - 1],
+    ] {
+        assert!(regions_of_interest_payload_invalid(&data));
+        assert_eq!(
+            FrameRegionsOfInterest::parse(&data).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameSideData::new_with_kind(FrameSideDataKind::RegionsOfInterest, data)
+                .unwrap()
+                .regions_of_interest()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
     let mut bad_roi = roi.to_bytes();
     write_ne_u32(&mut bad_roi, 0, FrameRegionOfInterest::SELF_SIZE + 4);
+    assert_eq!(
+        FrameRegionsOfInterest::parse(&bad_roi).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         FrameSideData::new_with_kind(FrameSideDataKind::RegionsOfInterest, bad_roi.to_vec())
             .unwrap()
             .regions_of_interest()
             .unwrap_err()
             .kind(),
+        AvErrorKind::InvalidData
+    );
+    for invalid_qoffset in [
+        Rational::from_raw(1, 0),
+        Rational::from_raw(2, 1),
+        Rational::from_raw(-2, 1),
+    ] {
+        assert_eq!(
+            FrameRegionOfInterest::new(0, 1, 0, 1, invalid_qoffset)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        let mut bad_qoffset = FrameRegionOfInterest::new(0, 1, 0, 1, Rational::from_raw(0, 1))
+            .unwrap()
+            .to_bytes();
+        write_ne_rational(&mut bad_qoffset, 20, invalid_qoffset);
+        assert!(regions_of_interest_payload_invalid(&bad_qoffset));
+        assert_eq!(
+            FrameRegionsOfInterest::parse(&bad_qoffset)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    assert_eq!(
+        FrameRegionsOfInterest::new(Vec::new()).unwrap_err().kind(),
         AvErrorKind::InvalidData
     );
     let non_roi = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();

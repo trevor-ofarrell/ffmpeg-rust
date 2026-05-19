@@ -40,7 +40,7 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `FrameDynamicHdrPlus` covers the pinned FFmpeg 8.1.1 native `AVDynamicHDRPlus` payload envelope for `AV_FRAME_DATA_DYNAMIC_HDR_PLUS`, validating exact native length, ITU-T T.35 country/application/window counts, active-window overlap/count/flag bounds, and actual peak luminance grid flag/dimension bounds while preserving raw bytes and exposing selected fields; deterministic fuzz fixtures mirror malformed length, header/count/flag, overlap-option, and peak-grid rejection.
 
-`FrameRegionsOfInterest` covers the pinned FFmpeg 8.1.1 native `AVRegionOfInterest` record-array payload for `AV_FRAME_DATA_REGIONS_OF_INTEREST`, validating non-empty exact native records, per-record `self_size`, and the documented `qoffset` `-1..=1` range while preserving rectangle coordinates and raw rational values.
+`FrameRegionsOfInterest` covers the pinned FFmpeg 8.1.1 native `AVRegionOfInterest` record-array payload for `AV_FRAME_DATA_REGIONS_OF_INTEREST`, validating non-empty exact native records, per-record `self_size`, and the documented `qoffset` `-1..=1` range while preserving rectangle coordinates and raw rational values; deterministic fuzz fixtures mirror empty, truncated, trailing-byte, invalid `self_size`, invalid `qoffset`, and empty aggregate rejection.
 
 `FrameVideoEncParams` covers the pinned FFmpeg 8.1.1 native `AVVideoEncParams` payload for `AV_FRAME_DATA_VIDEO_ENC_PARAMS`, validating exact native header and block sizes, type enum values, block-count/length consistency, and positive per-block dimensions while preserving frame-level `qp`, `delta_qp`, and block coordinates/delta QP fields.
 
