@@ -6779,6 +6779,7 @@ impl FrameExifSubfileType {
 pub struct FrameExifCommonTags<'a> {
     new_subfile_type: Option<FrameExifNewSubfileType>,
     subfile_type: Option<FrameExifSubfileType>,
+    document_name: Option<&'a str>,
     image_description: Option<&'a str>,
     make: Option<&'a str>,
     model: Option<&'a str>,
@@ -6792,6 +6793,8 @@ pub struct FrameExifCommonTags<'a> {
     samples_per_pixel: Option<u16>,
     rows_per_strip: Option<u32>,
     planar_configuration: Option<FrameExifPlanarConfiguration>,
+    page_name: Option<&'a str>,
+    page_number: Option<[u16; 2]>,
     white_point: Option<[FrameExifRational; 2]>,
     primary_chromaticities: Option<[FrameExifRational; 6]>,
     ycbcr_coefficients: Option<[FrameExifRational; 3]>,
@@ -6936,6 +6939,10 @@ impl<'a> FrameExifCommonTags<'a> {
         self.subfile_type
     }
 
+    pub const fn document_name(&self) -> Option<&'a str> {
+        self.document_name
+    }
+
     pub const fn image_description(&self) -> Option<&'a str> {
         self.image_description
     }
@@ -6986,6 +6993,14 @@ impl<'a> FrameExifCommonTags<'a> {
 
     pub const fn planar_configuration(&self) -> Option<FrameExifPlanarConfiguration> {
         self.planar_configuration
+    }
+
+    pub const fn page_name(&self) -> Option<&'a str> {
+        self.page_name
+    }
+
+    pub const fn page_number(&self) -> Option<[u16; 2]> {
+        self.page_number
     }
 
     pub const fn white_point(&self) -> Option<[FrameExifRational; 2]> {
@@ -7897,6 +7912,7 @@ impl<'a> FrameExif<'a> {
     pub const TAG_PHOTOMETRIC_INTERPRETATION: u16 = 0x0106;
     pub const TAG_THRESHOLDING: u16 = 0x0107;
     pub const TAG_FILL_ORDER: u16 = 0x010A;
+    pub const TAG_DOCUMENT_NAME: u16 = 0x010D;
     pub const TAG_IMAGE_DESCRIPTION: u16 = 0x010E;
     pub const TAG_MAKE: u16 = 0x010F;
     pub const TAG_MODEL: u16 = 0x0110;
@@ -7906,9 +7922,11 @@ impl<'a> FrameExif<'a> {
     pub const TAG_X_RESOLUTION: u16 = 0x011A;
     pub const TAG_Y_RESOLUTION: u16 = 0x011B;
     pub const TAG_PLANAR_CONFIGURATION: u16 = 0x011C;
+    pub const TAG_PAGE_NAME: u16 = 0x011D;
     pub const TAG_X_POSITION: u16 = 0x011E;
     pub const TAG_Y_POSITION: u16 = 0x011F;
     pub const TAG_RESOLUTION_UNIT: u16 = 0x0128;
+    pub const TAG_PAGE_NUMBER: u16 = 0x0129;
     pub const TAG_SOFTWARE: u16 = 0x0131;
     pub const TAG_DATE_TIME: u16 = 0x0132;
     pub const TAG_ARTIST: u16 = 0x013B;
@@ -8111,6 +8129,8 @@ impl<'a> FrameExif<'a> {
         if let Some(root) = self.ifd(0) {
             tags.new_subfile_type = Self::optional_new_subfile_type_tag(root)?;
             tags.subfile_type = Self::optional_subfile_type_tag(root)?;
+            tags.document_name =
+                Self::optional_ascii_tag(root, Self::TAG_DOCUMENT_NAME, "DocumentName")?;
             tags.image_description =
                 Self::optional_ascii_tag(root, Self::TAG_IMAGE_DESCRIPTION, "ImageDescription")?;
             tags.make = Self::optional_ascii_tag(root, Self::TAG_MAKE, "Make")?;
@@ -8142,6 +8162,7 @@ impl<'a> FrameExif<'a> {
                 "RowsPerStrip",
             )?;
             tags.planar_configuration = Self::optional_planar_configuration_tag(root)?;
+            tags.page_name = Self::optional_ascii_tag(root, Self::TAG_PAGE_NAME, "PageName")?;
             tags.white_point =
                 Self::optional_rational_array_tag(root, Self::TAG_WHITE_POINT, "WhitePoint")?;
             tags.primary_chromaticities = Self::optional_rational_array_tag(
@@ -8169,6 +8190,8 @@ impl<'a> FrameExif<'a> {
             tags.x_position = Self::optional_rational_tag(root, Self::TAG_X_POSITION, "XPosition")?;
             tags.y_position = Self::optional_rational_tag(root, Self::TAG_Y_POSITION, "YPosition")?;
             tags.resolution_unit = Self::optional_resolution_unit_tag(root)?;
+            tags.page_number =
+                Self::optional_short_array_tag::<2>(root, Self::TAG_PAGE_NUMBER, "PageNumber")?;
             tags.software = Self::optional_ascii_tag(root, Self::TAG_SOFTWARE, "Software")?;
             tags.date_time = Self::optional_datetime_tag(root, Self::TAG_DATE_TIME, "DateTime")?;
             tags.artist = Self::optional_ascii_tag(root, Self::TAG_ARTIST, "Artist")?;
@@ -13666,6 +13689,40 @@ mod tests {
         data.extend_from_slice(&0u32.to_le_bytes());
 
         assert_eq!(data.len(), 38);
+        data
+    }
+
+    fn exif_root_document_page_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+
+        data.extend_from_slice(&3u16.to_le_bytes());
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_DOCUMENT_NAME,
+            FrameExifTiffType::Ascii,
+            4,
+            [b'D', b'o', b'c', 0],
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_PAGE_NAME,
+            FrameExifTiffType::Ascii,
+            7,
+            50u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            FrameExif::TAG_PAGE_NUMBER,
+            FrameExifTiffType::Short,
+            2,
+            [1, 0, 10, 0],
+        );
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(b"Page A\0");
+
+        assert_eq!(data.len(), 57);
         data
     }
 
@@ -21650,6 +21707,62 @@ mod tests {
         bad_subfile_type_value[30..32].copy_from_slice(&4u16.to_le_bytes());
         assert_eq!(
             FrameExif::parse(&bad_subfile_type_value)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn frame_side_data_interprets_exif_root_document_page_tags() {
+        let exif_bytes = exif_root_document_page_fixture();
+        let parsed = FrameExif::parse(&exif_bytes).unwrap();
+        let common = parsed.common_tags().unwrap();
+
+        assert_eq!(common.document_name(), Some("Doc"));
+        assert_eq!(common.page_name(), Some("Page A"));
+        assert_eq!(common.page_number(), Some([1, 10]));
+
+        let mut bad_document_type = exif_root_document_page_fixture();
+        bad_document_type[12..14]
+            .copy_from_slice(&FrameExifTiffType::Undefined.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_document_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_page_name_terminator = exif_root_document_page_fixture();
+        bad_page_name_terminator[56] = b'!';
+        assert_eq!(
+            FrameExif::parse(&bad_page_name_terminator)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_page_number_type = exif_root_document_page_fixture();
+        bad_page_number_type[36..38].copy_from_slice(&FrameExifTiffType::Byte.raw().to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_page_number_type)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_page_number_count = exif_root_document_page_fixture();
+        bad_page_number_count[38..42].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_page_number_count)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

@@ -1927,6 +1927,12 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.subfile_type() {
                         assert!((1..=3).contains(&value.raw()));
                     }
+                    if let Some(value) = common.document_name() {
+                        assert!(value.is_ascii());
+                    }
+                    if let Some(value) = common.page_name() {
+                        assert!(value.is_ascii());
+                    }
                     if let Some(value) = common.compression() {
                         assert_ne!(value.raw(), 0);
                     }
@@ -4205,6 +4211,42 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let document_page_exif_bytes = exif_root_document_page_fixture();
+    let document_page_exif = FrameExif::parse(&document_page_exif_bytes).unwrap();
+    let document_page_tags = document_page_exif.common_tags().unwrap();
+    assert_eq!(document_page_tags.document_name(), Some("Doc"));
+    assert_eq!(document_page_tags.page_name(), Some("Page A"));
+    assert_eq!(document_page_tags.page_number(), Some([1, 10]));
+    let mut bad_document_type = exif_root_document_page_fixture();
+    bad_document_type[12..14].copy_from_slice(&FrameExifTiffType::Undefined.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_document_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_page_name_terminator = exif_root_document_page_fixture();
+    bad_page_name_terminator[56] = b'!';
+    assert_eq!(
+        FrameExif::parse(&bad_page_name_terminator)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_page_number_count = exif_root_document_page_fixture();
+    bad_page_number_count[38..42].copy_from_slice(&1u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_page_number_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     let coding_exif_bytes = exif_root_coding_fixture();
     let coding_exif = FrameExif::parse(&coding_exif_bytes).unwrap();
     let coding_tags = coding_exif.common_tags().unwrap();
@@ -6427,6 +6469,37 @@ fn exif_root_subfile_type_fixture() -> Vec<u8> {
         [2, 0, 0, 0],
     );
     data.extend_from_slice(&0u32.to_le_bytes());
+    data
+}
+
+fn exif_root_document_page_fixture() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+    data.extend_from_slice(&8u32.to_le_bytes());
+    data.extend_from_slice(&3u16.to_le_bytes());
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_DOCUMENT_NAME,
+        FrameExifTiffType::Ascii,
+        4,
+        [b'D', b'o', b'c', 0],
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_PAGE_NAME,
+        FrameExifTiffType::Ascii,
+        7,
+        50u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        FrameExif::TAG_PAGE_NUMBER,
+        FrameExifTiffType::Short,
+        2,
+        [1, 0, 10, 0],
+    );
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(b"Page A\0");
     data
 }
 
