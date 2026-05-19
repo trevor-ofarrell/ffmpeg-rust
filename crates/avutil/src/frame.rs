@@ -930,6 +930,139 @@ impl FrameStereo3d {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameAmbientViewingEnvironment {
+    ambient_illuminance: Rational,
+    ambient_light_x: Rational,
+    ambient_light_y: Rational,
+}
+
+impl FrameAmbientViewingEnvironment {
+    pub const RATIONAL_LEN: usize = 8;
+    pub const AMBIENT_ILLUMINANCE_OFFSET: usize = 0;
+    pub const AMBIENT_LIGHT_X_OFFSET: usize = Self::AMBIENT_ILLUMINANCE_OFFSET + Self::RATIONAL_LEN;
+    pub const AMBIENT_LIGHT_Y_OFFSET: usize = Self::AMBIENT_LIGHT_X_OFFSET + Self::RATIONAL_LEN;
+    pub const DATA_LEN: usize = Self::AMBIENT_LIGHT_Y_OFFSET + Self::RATIONAL_LEN;
+
+    pub fn new(
+        ambient_illuminance: Rational,
+        ambient_light_x: Rational,
+        ambient_light_y: Rational,
+    ) -> AvResult<Self> {
+        Self::validate_nonnegative_rational("ambient illuminance", ambient_illuminance)?;
+        Self::validate_unit_interval_rational("ambient light x", ambient_light_x)?;
+        Self::validate_unit_interval_rational("ambient light y", ambient_light_y)?;
+
+        Ok(Self {
+            ambient_illuminance,
+            ambient_light_x,
+            ambient_light_y,
+        })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "ambient viewing environment frame side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Self::new(
+            Self::read_rational(data, Self::AMBIENT_ILLUMINANCE_OFFSET),
+            Self::read_rational(data, Self::AMBIENT_LIGHT_X_OFFSET),
+            Self::read_rational(data, Self::AMBIENT_LIGHT_Y_OFFSET),
+        )
+    }
+
+    pub const fn ambient_illuminance(self) -> Rational {
+        self.ambient_illuminance
+    }
+
+    pub const fn ambient_light_x(self) -> Rational {
+        self.ambient_light_x
+    }
+
+    pub const fn ambient_light_y(self) -> Rational {
+        self.ambient_light_y
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        Self::write_rational(
+            &mut bytes,
+            Self::AMBIENT_ILLUMINANCE_OFFSET,
+            self.ambient_illuminance,
+        );
+        Self::write_rational(
+            &mut bytes,
+            Self::AMBIENT_LIGHT_X_OFFSET,
+            self.ambient_light_x,
+        );
+        Self::write_rational(
+            &mut bytes,
+            Self::AMBIENT_LIGHT_Y_OFFSET,
+            self.ambient_light_y,
+        );
+        bytes
+    }
+
+    fn validate_nonnegative_rational(name: &str, value: Rational) -> AvResult<()> {
+        Self::validate_rational_denominator(name, value)?;
+        if value.num() != 0 && (value.num().is_positive() != value.den().is_positive()) {
+            return Err(AvError::invalid_data(format!(
+                "{name} {value} must be nonnegative"
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn validate_unit_interval_rational(name: &str, value: Rational) -> AvResult<()> {
+        Self::validate_nonnegative_rational(name, value)?;
+        if i64::from(value.num()).abs() > i64::from(value.den()).abs() {
+            return Err(AvError::invalid_data(format!(
+                "{name} {value} is outside 0..=1"
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn validate_rational_denominator(name: &str, value: Rational) -> AvResult<()> {
+        if value.den() == 0 {
+            return Err(AvError::invalid_data(format!(
+                "{name} rational denominator must not be zero"
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn read_rational(data: &[u8], offset: usize) -> Rational {
+        Rational::from_raw(
+            Self::read_i32(data, offset),
+            Self::read_i32(data, offset + 4),
+        )
+    }
+
+    fn read_i32(data: &[u8], offset: usize) -> i32 {
+        let mut raw = [0; 4];
+        raw.copy_from_slice(&data[offset..offset + 4]);
+        i32::from_ne_bytes(raw)
+    }
+
+    fn write_rational(data: &mut [u8], offset: usize, value: Rational) {
+        Self::write_i32(data, offset, value.num());
+        Self::write_i32(data, offset + 4, value.den());
+    }
+
+    fn write_i32(data: &mut [u8], offset: usize, value: i32) {
+        data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameDisplayMatrix {
     elements: [i32; Self::ELEMENTS],
 }
@@ -5788,6 +5921,15 @@ impl FrameSideData {
         Ok(side_data)
     }
 
+    pub fn new_ambient_viewing_environment(
+        value: FrameAmbientViewingEnvironment,
+    ) -> AvResult<Self> {
+        Self::new_with_kind(
+            FrameSideDataKind::AmbientViewingEnvironment,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_sei_unregistered(uuid: [u8; 16], user_data: Vec<u8>) -> AvResult<Self> {
         let total_len = FrameSeiUnregistered::UUID_LEN
             .checked_add(user_data.len())
@@ -6044,6 +6186,14 @@ impl FrameSideData {
         }
 
         FrameDynamicHdrVivid::parse(self.data()).map(Some)
+    }
+
+    pub fn ambient_viewing_environment(&self) -> AvResult<Option<FrameAmbientViewingEnvironment>> {
+        if self.kind != FrameSideDataKind::AmbientViewingEnvironment {
+            return Ok(None);
+        }
+
+        FrameAmbientViewingEnvironment::parse(self.data()).map(Some)
     }
 
     pub fn sei_unregistered(&self) -> AvResult<Option<FrameSeiUnregistered<'_>>> {
@@ -12110,6 +12260,122 @@ mod tests {
         let non_hdr =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
         assert_eq!(non_hdr.dynamic_hdr_vivid().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_ambient_viewing_environment_payload() {
+        let value = FrameAmbientViewingEnvironment::new(
+            Rational::from_raw(203, 10),
+            Rational::from_raw(15_635, 50_000),
+            Rational::from_raw(16_450, 50_000),
+        )
+        .unwrap();
+        let side_data = FrameSideData::new_ambient_viewing_environment(value).unwrap();
+
+        assert_eq!(FrameAmbientViewingEnvironment::DATA_LEN, 24);
+        assert_eq!(
+            side_data.kind_id(),
+            &FrameSideDataKind::AmbientViewingEnvironment
+        );
+        assert_eq!(side_data.data(), value.to_bytes().as_slice());
+        let parsed = side_data.ambient_viewing_environment().unwrap().unwrap();
+        assert_eq!(parsed, value);
+        assert_eq!(parsed.ambient_illuminance(), Rational::from_raw(203, 10));
+        assert_eq!(parsed.ambient_light_x(), Rational::from_raw(15_635, 50_000));
+        assert_eq!(parsed.ambient_light_y(), Rational::from_raw(16_450, 50_000));
+        assert_eq!(
+            FrameAmbientViewingEnvironment::parse(&value.to_bytes()).unwrap(),
+            value
+        );
+
+        let default_value = FrameAmbientViewingEnvironment::new(
+            Rational::from_raw(0, 1),
+            Rational::from_raw(0, 1),
+            Rational::from_raw(0, 1),
+        )
+        .unwrap();
+        assert_eq!(
+            FrameAmbientViewingEnvironment::parse(&default_value.to_bytes()).unwrap(),
+            default_value
+        );
+
+        let non_ambient =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0; 36]).unwrap();
+        assert_eq!(non_ambient.ambient_viewing_environment().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_ambient_viewing_environment_payload() {
+        let value = FrameAmbientViewingEnvironment::new(
+            Rational::from_raw(203, 10),
+            Rational::from_raw(15_635, 50_000),
+            Rational::from_raw(16_450, 50_000),
+        )
+        .unwrap();
+
+        for data in [
+            Vec::new(),
+            vec![0; FrameAmbientViewingEnvironment::DATA_LEN - 1],
+            vec![0; FrameAmbientViewingEnvironment::DATA_LEN + 1],
+        ] {
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::AmbientViewingEnvironment, data)
+                    .unwrap();
+            assert_eq!(
+                side_data.ambient_viewing_environment().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        for (offset, bad_value) in [
+            (
+                FrameAmbientViewingEnvironment::AMBIENT_ILLUMINANCE_OFFSET,
+                Rational::from_raw(-1, 1),
+            ),
+            (
+                FrameAmbientViewingEnvironment::AMBIENT_ILLUMINANCE_OFFSET,
+                Rational::from_raw(1, 0),
+            ),
+            (
+                FrameAmbientViewingEnvironment::AMBIENT_LIGHT_X_OFFSET,
+                Rational::from_raw(2, 1),
+            ),
+            (
+                FrameAmbientViewingEnvironment::AMBIENT_LIGHT_Y_OFFSET,
+                Rational::from_raw(-1, 1),
+            ),
+            (
+                FrameAmbientViewingEnvironment::AMBIENT_LIGHT_Y_OFFSET,
+                Rational::from_raw(0, 0),
+            ),
+        ] {
+            let mut bad = value.to_bytes();
+            write_ne_rational(&mut bad, offset, bad_value);
+            let side_data = FrameSideData::new_with_kind(
+                FrameSideDataKind::AmbientViewingEnvironment,
+                bad.to_vec(),
+            )
+            .unwrap();
+            assert_eq!(
+                side_data.ambient_viewing_environment().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            FrameAmbientViewingEnvironment::new(
+                Rational::from_raw(1, 1),
+                Rational::from_raw(3, 2),
+                Rational::from_raw(0, 1)
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let non_ambient =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
+        assert_eq!(non_ambient.ambient_viewing_environment().unwrap(), None);
     }
 
     #[test]

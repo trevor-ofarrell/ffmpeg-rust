@@ -4,13 +4,14 @@ use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
     sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameA53ClosedCaptions,
-    FrameActiveFormatDescription, FrameAudioServiceType, FrameContentLightMetadata, FrameData,
-    FrameDetectionBbox, FrameDetectionBboxes, FrameDisplayMatrix, FrameDolbyVisionColorMetadata,
-    FrameDolbyVisionDataMapping, FrameDolbyVisionDmData, FrameDolbyVisionMetadata,
-    FrameDolbyVisionRpuBuffer, FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType,
-    FrameDynamicHdrPlus, FrameDynamicHdrVivid, FrameFilmGrainAomParams, FrameFilmGrainH274Params,
-    FrameFilmGrainParams, FrameFilmGrainParamsType, FrameGopTimecode,
-    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
+    FrameActiveFormatDescription, FrameAmbientViewingEnvironment, FrameAudioServiceType,
+    FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
+    FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
+    FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
+    FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
+    FrameDynamicHdrVivid, FrameFilmGrainAomParams, FrameFilmGrainH274Params, FrameFilmGrainParams,
+    FrameFilmGrainParamsType, FrameGopTimecode, FrameHdrPlusColorTransformParams,
+    FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
     FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors,
     FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain,
@@ -1743,6 +1744,40 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(frame_side_data_kind, FrameSideDataKind::DynamicHdrVivid);
             assert!(dynamic_hdr_vivid_payload_invalid(&frame_side_data_payload));
+        }
+    }
+    match frame.side_data()[0].ambient_viewing_environment() {
+        Ok(Some(value)) => {
+            assert_eq!(
+                frame_side_data_kind,
+                FrameSideDataKind::AmbientViewingEnvironment
+            );
+            assert_eq!(
+                frame_side_data_payload.len(),
+                FrameAmbientViewingEnvironment::DATA_LEN
+            );
+            assert_eq!(value.to_bytes().as_slice(), frame_side_data_payload);
+            assert_eq!(
+                FrameAmbientViewingEnvironment::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+            assert!(ambient_nonnegative_rational(value.ambient_illuminance()));
+            assert!(ambient_unit_interval_rational(value.ambient_light_x()));
+            assert!(ambient_unit_interval_rational(value.ambient_light_y()));
+        }
+        Ok(None) => assert_ne!(
+            frame_side_data_kind,
+            FrameSideDataKind::AmbientViewingEnvironment
+        ),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(
+                frame_side_data_kind,
+                FrameSideDataKind::AmbientViewingEnvironment
+            );
+            assert!(ambient_viewing_environment_payload_invalid(
+                &frame_side_data_payload
+            ));
         }
     }
     match frame.side_data()[0].sei_unregistered() {
@@ -3570,6 +3605,41 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_vivid.dynamic_hdr_vivid().unwrap(), None);
 
+    let ambient = FrameAmbientViewingEnvironment::new(
+        Rational::from_raw(203, 10),
+        Rational::from_raw(15_635, 50_000),
+        Rational::from_raw(16_450, 50_000),
+    )
+    .unwrap();
+    let ambient_side_data = FrameSideData::new_ambient_viewing_environment(ambient).unwrap();
+    assert_eq!(
+        ambient_side_data.kind_id(),
+        &FrameSideDataKind::AmbientViewingEnvironment
+    );
+    assert_eq!(
+        ambient_side_data.ambient_viewing_environment().unwrap(),
+        Some(ambient)
+    );
+    assert_eq!(
+        FrameAmbientViewingEnvironment::parse(&ambient.to_bytes()).unwrap(),
+        ambient
+    );
+    let mut bad_ambient = ambient.to_bytes();
+    write_ne_rational(
+        &mut bad_ambient,
+        FrameAmbientViewingEnvironment::AMBIENT_LIGHT_X_OFFSET,
+        Rational::from_raw(2, 1),
+    );
+    assert_eq!(
+        FrameAmbientViewingEnvironment::parse(&bad_ambient)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_ambient =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_ambient.ambient_viewing_environment().unwrap(), None);
+
     let sei_uuid = [0xA5; FrameSeiUnregistered::UUID_LEN];
     let sei_payload =
         FrameSideData::new_sei_unregistered(sei_uuid, vec![0x01, 0x02, 0x03]).unwrap();
@@ -3712,7 +3782,7 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
 }
 
 fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
-    match byte.unwrap_or_default() % 32 {
+    match byte.unwrap_or_default() % 33 {
         0 => FrameSideDataKind::PanScan,
         1 => FrameSideDataKind::A53ClosedCaptions,
         2 => FrameSideDataKind::Stereo3d,
@@ -3744,6 +3814,7 @@ fn frame_side_data_kind_from(byte: Option<u8>) -> FrameSideDataKind {
         28 => FrameSideDataKind::DetectionBboxes,
         29 => FrameSideDataKind::DolbyVisionMetadata,
         30 => FrameSideDataKind::DynamicHdrVivid,
+        31 => FrameSideDataKind::AmbientViewingEnvironment,
         _ => FrameSideDataKind::Unknown(String::from("fuzz_frame_side_data")),
     }
 }
@@ -3840,6 +3911,32 @@ fn stereo3d_field_of_view_valid(value: Rational) -> bool {
 
 fn stereo3d_rational_set_or_zero(value: Rational) -> bool {
     value.den() != 0 || value.num() == 0
+}
+
+fn ambient_viewing_environment_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != FrameAmbientViewingEnvironment::DATA_LEN {
+        return true;
+    }
+
+    !ambient_nonnegative_rational(read_ne_rational(
+        data,
+        FrameAmbientViewingEnvironment::AMBIENT_ILLUMINANCE_OFFSET,
+    )) || !ambient_unit_interval_rational(read_ne_rational(
+        data,
+        FrameAmbientViewingEnvironment::AMBIENT_LIGHT_X_OFFSET,
+    )) || !ambient_unit_interval_rational(read_ne_rational(
+        data,
+        FrameAmbientViewingEnvironment::AMBIENT_LIGHT_Y_OFFSET,
+    ))
+}
+
+fn ambient_nonnegative_rational(value: Rational) -> bool {
+    value.den() != 0 && (value.num() == 0 || value.num().is_positive() == value.den().is_positive())
+}
+
+fn ambient_unit_interval_rational(value: Rational) -> bool {
+    ambient_nonnegative_rational(value)
+        && i64::from(value.num()).abs() <= i64::from(value.den()).abs()
 }
 
 fn dynamic_hdr_plus_payload_invalid(data: &[u8]) -> bool {
