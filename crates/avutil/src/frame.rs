@@ -8438,8 +8438,26 @@ impl<'a> FrameExif<'a> {
         })?;
         let subject_area = match values.as_slice() {
             [x, y] => FrameExifSubjectArea::point(*x, *y),
-            [x, y, diameter] => FrameExifSubjectArea::circle(*x, *y, *diameter),
-            [x, y, width, height] => FrameExifSubjectArea::rectangle(*x, *y, *width, *height),
+            [x, y, diameter] => {
+                if *diameter == 0 {
+                    return Err(Self::semantic_tag_error(
+                        "SubjectArea",
+                        Self::TAG_SUBJECT_AREA,
+                        "circle diameter must be non-zero",
+                    ));
+                }
+                FrameExifSubjectArea::circle(*x, *y, *diameter)
+            }
+            [x, y, width, height] => {
+                if *width == 0 || *height == 0 {
+                    return Err(Self::semantic_tag_error(
+                        "SubjectArea",
+                        Self::TAG_SUBJECT_AREA,
+                        "rectangle width and height must be non-zero",
+                    ));
+                }
+                FrameExifSubjectArea::rectangle(*x, *y, *width, *height)
+            }
             _ => unreachable!("SubjectArea count was validated before value extraction"),
         };
         Ok(Some(subject_area))
@@ -20626,6 +20644,43 @@ mod tests {
                 .unwrap()
                 .subject_area(),
             Some(FrameExifSubjectArea::circle(320, 240, 50))
+        );
+
+        let mut bad_circle_diameter = exif_optics_subject_fixture();
+        bad_circle_diameter[68..72].copy_from_slice(&3u32.to_le_bytes());
+        bad_circle_diameter[72..76].copy_from_slice(&144u32.to_le_bytes());
+        bad_circle_diameter.extend_from_slice(&320u16.to_le_bytes());
+        bad_circle_diameter.extend_from_slice(&240u16.to_le_bytes());
+        bad_circle_diameter.extend_from_slice(&0u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_circle_diameter)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_rectangle_width = exif_optics_subject_fixture();
+        bad_rectangle_width[132..134].copy_from_slice(&0u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_rectangle_width)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_rectangle_height = exif_optics_subject_fixture();
+        bad_rectangle_height[134..136].copy_from_slice(&0u16.to_le_bytes());
+        assert_eq!(
+            FrameExif::parse(&bad_rectangle_height)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
         );
 
         let mut bad_subject_area_count = exif_optics_subject_fixture();

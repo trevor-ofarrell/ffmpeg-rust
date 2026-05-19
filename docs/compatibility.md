@@ -117,6 +117,7 @@ All media parsing, decoding, encoding, muxing, demuxing, filtering, playback, pr
 - Date/time common-tag range validation now rejects DateTime, DateTimeOriginal, DateTimeDigitized, and GPSDateStamp values whose calendar day is invalid for the parsed month and year, including February leap-year handling; timezone-law validation remains outside the current selected common-tag view.
 - SubSecTime common-tag validation now rejects non-digit values for SubSecTime, SubSecTimeOriginal, and SubSecTimeDigitized.
 - EXIF dimension common-tag validation now rejects zero values for ImageWidth, ImageLength, PixelXDimension, and PixelYDimension.
+- SubjectArea common-tag validation now rejects zero diameter for circle shapes and zero width or height for rectangle shapes while still accepting point coordinates.
 - GPS common-tag range validation currently rejects `GPSLatitude`/`GPSDestLatitude` values outside 0..=90 degrees, `GPSLongitude`/`GPSDestLongitude` values outside 0..=180 degrees, coordinate minutes or seconds greater than or equal to 60, `GPSTimeStamp` hour/minute/second triples outside the UTC 24-hour clock, and `GPSTrack`/`GPSImgDirection`/`GPSDestBearing` compass bearings greater than or equal to 360 degrees.
 - The version banner is compatibility-oriented but not byte-identical to upstream FFmpeg.
 - No inventory snapshot has been generated because no pinned FFmpeg oracle binary exists in this workspace yet.

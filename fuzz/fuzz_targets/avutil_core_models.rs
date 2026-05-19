@@ -1873,6 +1873,18 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     if let Some(value) = common.focal_length() {
                         assert_ne!(value.denominator(), 0);
                     }
+                    if let Some(value) = common.subject_area() {
+                        match value {
+                            FrameExifSubjectArea::Point { .. } => {}
+                            FrameExifSubjectArea::Circle { diameter, .. } => {
+                                assert_ne!(diameter, 0);
+                            }
+                            FrameExifSubjectArea::Rectangle { width, height, .. } => {
+                                assert_ne!(width, 0);
+                                assert_ne!(height, 0);
+                            }
+                        }
+                    }
                     if let Some(value) = common.digital_zoom_ratio() {
                         assert_ne!(value.denominator(), 0);
                     }
@@ -4713,6 +4725,40 @@ fn exercise_fixtures() {
     assert_eq!(optics_tags.subject_location(), Some([320, 240]));
     assert_eq!(optics_tags.exposure_index().unwrap().numerator(), 200);
     assert_eq!(optics_tags.exposure_index().unwrap().denominator(), 1);
+    let mut bad_subject_area_width = exif_optics_subject_fixture();
+    bad_subject_area_width[132..134].copy_from_slice(&0u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subject_area_width)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_subject_area_height = exif_optics_subject_fixture();
+    bad_subject_area_height[134..136].copy_from_slice(&0u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subject_area_height)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_subject_area_diameter = exif_optics_subject_fixture();
+    bad_subject_area_diameter[68..72].copy_from_slice(&3u32.to_le_bytes());
+    bad_subject_area_diameter[72..76].copy_from_slice(&144u32.to_le_bytes());
+    bad_subject_area_diameter.extend_from_slice(&320u16.to_le_bytes());
+    bad_subject_area_diameter.extend_from_slice(&240u16.to_le_bytes());
+    bad_subject_area_diameter.extend_from_slice(&0u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_subject_area_diameter)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let timing_exif_bytes = exif_version_timing_comment_fixture();
     let timing_exif = FrameExif::parse(&timing_exif_bytes).unwrap();
