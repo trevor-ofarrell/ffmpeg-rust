@@ -295,6 +295,16 @@ impl Packet {
         *self = std::mem::take(src);
     }
 
+    pub fn copy_props_from(&mut self, src: &Self) {
+        self.pts = src.pts;
+        self.dts = src.dts;
+        self.duration = src.duration;
+        self.pos = src.pos;
+        self.stream_index = src.stream_index;
+        self.flags = src.flags;
+        self.side_data = src.side_data.clone();
+    }
+
     pub fn rescale_ts(&mut self, src: Rational, dst: Rational) -> AvResult<()> {
         rescale_q(0, src, dst)?;
 
@@ -587,6 +597,50 @@ mod tests {
         assert_eq!(dst.pos(), None);
         assert!(dst.flags().is_empty());
         assert!(dst.side_data().is_empty());
+    }
+
+    #[test]
+    fn packet_copy_props_preserves_destination_payload() {
+        let mut src = Packet::new(vec![1, 2, 3], 4);
+        src.set_pts(Some(12));
+        src.set_dts(Some(10));
+        src.set_duration(2).unwrap();
+        src.set_pos(Some(42)).unwrap();
+        src.set_key(true);
+        src.set_flag(PacketFlags::CORRUPT, true);
+        src.push_side_data(SideData::new("palette", vec![5, 6]).unwrap());
+
+        let mut dst = Packet::new(vec![9, 8], 99);
+        dst.set_pts(Some(99));
+        dst.set_duration(9).unwrap();
+        dst.push_side_data(SideData::new("old", vec![7]).unwrap());
+
+        dst.copy_props_from(&src);
+
+        assert_eq!(dst.data(), &[9, 8]);
+        assert!(!dst.data_buffer().shares_storage(src.data_buffer()));
+        assert_eq!(dst.stream_index(), 4);
+        assert_eq!(dst.pts(), Some(12));
+        assert_eq!(dst.dts(), Some(10));
+        assert_eq!(dst.duration(), 2);
+        assert_eq!(dst.pos(), Some(42));
+        assert!(dst.flags().contains(PacketFlags::KEY));
+        assert!(dst.flags().contains(PacketFlags::CORRUPT));
+        assert!(dst.side_data_by_kind("old").is_none());
+        assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+    }
+
+    #[test]
+    fn packet_copy_props_copies_side_data_without_aliasing() {
+        let mut src = Packet::new(vec![1], 0);
+        src.push_side_data(SideData::new("palette", vec![5, 6]).unwrap());
+
+        let mut dst = Packet::new(vec![9], 1);
+        dst.copy_props_from(&src);
+        dst.shrink_side_data("palette", 1).unwrap();
+
+        assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5]);
+        assert_eq!(src.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
     }
 
     #[test]

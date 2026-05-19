@@ -3339,6 +3339,35 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(moved_packet.flags().is_empty());
     assert!(moved_packet.side_data().is_empty());
 
+    let mut props_packet = Packet::new(vec![0x44, 0x55], 2);
+    let props_payload = props_packet.data().to_vec();
+    props_packet.copy_props_from(&packet);
+    assert_eq!(props_packet.data(), props_payload.as_slice());
+    assert!(!props_packet
+        .data_buffer()
+        .shares_storage(packet.data_buffer()));
+    assert_eq!(props_packet.pts(), packet.pts());
+    assert_eq!(props_packet.dts(), packet.dts());
+    assert_eq!(props_packet.duration(), packet.duration());
+    assert_eq!(props_packet.pos(), packet.pos());
+    assert_eq!(props_packet.stream_index(), packet.stream_index());
+    assert_eq!(props_packet.flags(), packet.flags());
+    assert_eq!(
+        props_packet.side_data_by_kind("ref_side_data").unwrap().data(),
+        &[0xbb, 0xcc]
+    );
+    props_packet
+        .shrink_side_data("ref_side_data", 1)
+        .unwrap();
+    assert_eq!(
+        props_packet.side_data_by_kind("ref_side_data").unwrap().data(),
+        &[0xbb]
+    );
+    assert_eq!(
+        packet.side_data_by_kind("ref_side_data").unwrap().data(),
+        &[0xbb, 0xcc]
+    );
+
     let split = usize::from(cursor.next().unwrap_or_default()) % (payload.len() + 1);
     let mut adler = Adler32::new();
     adler.update(&payload[..split]);
