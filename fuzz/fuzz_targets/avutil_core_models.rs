@@ -4943,6 +4943,16 @@ fn exercise_fixtures() {
         common_tags.orientation(),
         Some(FrameExifOrientation::RightTop)
     );
+    let mut bad_orientation_count = exif_common_tags_fixture();
+    bad_orientation_count[62..66].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_orientation_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         common_tags.resolution_unit(),
         Some(FrameExifResolutionUnit::Inch)
@@ -5028,10 +5038,43 @@ fn exercise_fixtures() {
         common_tags.gps_latitude_ref(),
         Some(FrameExifGpsLatitudeRef::North)
     );
+    assert_eq!(
+        common_tags
+            .gps_latitude()
+            .unwrap()
+            .map(|value| (value.numerator(), value.denominator())),
+        [(37, 1), (48, 1), (30, 1)]
+    );
     let mut bad_latitude_degrees = exif_common_tags_fixture();
     bad_latitude_degrees[290..294].copy_from_slice(&91u32.to_le_bytes());
     assert_eq!(
         FrameExif::parse(&bad_latitude_degrees)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut latitude_boundary = exif_common_tags_fixture();
+    latitude_boundary[290..294].copy_from_slice(&90u32.to_le_bytes());
+    latitude_boundary[298..302].copy_from_slice(&0u32.to_le_bytes());
+    latitude_boundary[306..310].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&latitude_boundary)
+            .unwrap()
+            .common_tags()
+            .unwrap()
+            .gps_latitude()
+            .unwrap()
+            .map(|value| (value.numerator(), value.denominator())),
+        [(90, 1), (0, 1), (0, 1)]
+    );
+    let mut bad_latitude_composite = exif_common_tags_fixture();
+    bad_latitude_composite[290..294].copy_from_slice(&90u32.to_le_bytes());
+    bad_latitude_composite[298..302].copy_from_slice(&1u32.to_le_bytes());
+    bad_latitude_composite[306..310].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_latitude_composite)
             .unwrap()
             .common_tags()
             .unwrap_err()
@@ -5048,14 +5091,57 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
+    let mut bad_gps_ref = exif_common_tags_fixture();
+    bad_gps_ref[246] = b'X';
+    assert_eq!(
+        FrameExif::parse(&bad_gps_ref)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(
         common_tags.gps_longitude_ref(),
         Some(FrameExifGpsLongitudeRef::West)
+    );
+    assert_eq!(
+        common_tags
+            .gps_longitude()
+            .unwrap()
+            .map(|value| (value.numerator(), value.denominator())),
+        [(122, 1), (24, 1), (15, 1)]
     );
     let mut bad_longitude_seconds = exif_common_tags_fixture();
     bad_longitude_seconds[330..334].copy_from_slice(&60u32.to_le_bytes());
     assert_eq!(
         FrameExif::parse(&bad_longitude_seconds)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut longitude_boundary = exif_common_tags_fixture();
+    longitude_boundary[314..318].copy_from_slice(&180u32.to_le_bytes());
+    longitude_boundary[322..326].copy_from_slice(&0u32.to_le_bytes());
+    longitude_boundary[330..334].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&longitude_boundary)
+            .unwrap()
+            .common_tags()
+            .unwrap()
+            .gps_longitude()
+            .unwrap()
+            .map(|value| (value.numerator(), value.denominator())),
+        [(180, 1), (0, 1), (0, 1)]
+    );
+    let mut bad_longitude_composite = exif_common_tags_fixture();
+    bad_longitude_composite[314..318].copy_from_slice(&180u32.to_le_bytes());
+    bad_longitude_composite[322..326].copy_from_slice(&0u32.to_le_bytes());
+    bad_longitude_composite[330..334].copy_from_slice(&1u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_longitude_composite)
             .unwrap()
             .common_tags()
             .unwrap_err()
