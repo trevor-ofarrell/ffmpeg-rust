@@ -5684,6 +5684,46 @@ fn exercise_fixtures() {
     assert_eq!(capture_tags.digital_zoom_ratio().unwrap().numerator(), 3);
     assert_eq!(capture_tags.digital_zoom_ratio().unwrap().denominator(), 2);
     assert_eq!(capture_tags.focal_length_in_35mm_film(), Some(75));
+    let mut bad_exposure_program = exif_capture_settings_fixture();
+    bad_exposure_program[36..38].copy_from_slice(&9u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_exposure_program)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_light_source = exif_capture_settings_fixture();
+    bad_light_source[60..62].copy_from_slice(&7u16.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_light_source)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_digital_zoom_type = exif_capture_settings_fixture();
+    bad_digital_zoom_type[90..92].copy_from_slice(&FrameExifTiffType::Long.raw().to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_digital_zoom_type)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_focal_length_count = exif_capture_settings_fixture();
+    bad_focal_length_count[104..108].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        FrameExif::parse(&bad_focal_length_count)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 
     let rendering_exif_bytes = exif_rendering_scene_fixture();
     let rendering_exif = FrameExif::parse(&rendering_exif_bytes).unwrap();

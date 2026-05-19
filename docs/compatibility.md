@@ -122,6 +122,7 @@ All media parsing, decoding, encoding, muxing, demuxing, filtering, playback, pr
 - Root colorimetry common-tag coverage now includes WhitePoint, PrimaryChromaticities, YCbCrCoefficients, and ReferenceBlackWhite as fixed-count unsigned RATIONAL arrays with strict type/count/denominator rejection.
 - Date/time common-tag range validation now rejects DateTime, DateTimeOriginal, DateTimeDigitized, and GPSDateStamp values whose calendar day is invalid for the parsed month and year, including February leap-year handling; timezone-law validation remains outside the current selected common-tag view.
 - Offset-time common-tag coverage now includes OffsetTime, OffsetTimeOriginal, and OffsetTimeDigitized with deterministic fuzz checks for malformed count/type/layout/hour/minute shapes.
+- Capture-setting common-tag coverage now includes ExposureProgram, MeteringMode, LightSource, Flash, WhiteBalance, DigitalZoomRatio, and FocalLengthIn35mmFilm with deterministic fuzz checks for malformed enum/type/count shapes.
 - SubSecTime common-tag validation now rejects non-digit values for SubSecTime, SubSecTimeOriginal, and SubSecTimeDigitized.
 - EXIF dimension common-tag validation now rejects zero values for ImageWidth, ImageLength, PixelXDimension, and PixelYDimension.
 - SubjectArea common-tag validation now rejects zero diameter for circle shapes and zero width or height for rectangle shapes while still accepting point coordinates.

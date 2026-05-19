@@ -76,6 +76,8 @@ Date/time common-tag range validation rejects DateTime, DateTimeOriginal, DateTi
 
 Offset-time common-tag fuzz coverage now includes OffsetTime, OffsetTimeOriginal, and OffsetTimeDigitized fixed-count, ASCII type, sign/colon layout, hour range, and minute range rejection.
 
+Capture-setting common-tag fuzz coverage now includes ExposureProgram, LightSource, DigitalZoomRatio, and FocalLengthIn35mmFilm enum, RATIONAL type, and count rejection while preserving the current MeteringMode, Flash, and WhiteBalance typed values.
+
 SubSecTime, SubSecTimeOriginal, and SubSecTimeDigitized common-tag validation rejects non-digit fractional-second strings while preserving the original ASCII values.
 
 ImageWidth, ImageLength, PixelXDimension, and PixelYDimension common-tag validation rejects zero values after the existing SHORT/LONG type and count checks.
