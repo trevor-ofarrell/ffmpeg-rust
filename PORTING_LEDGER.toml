@@ -620,6 +620,27 @@ notes = "In-memory log filtering abstraction implemented with FFmpeg-style numer
 blocked_reason = ""
 
 [[component]]
+id = "repo-runtime-guard"
+kind = "utility"
+ffmpeg_name = "runtime FFmpeg linkage policy"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 1
+oracle_command = ""
+rust_command = "cargo test -p xtask runtime_guard; cargo run -p xtask -- guard-runtime"
+unit_tests = [
+  "tests::dependency_guard_allows_local_project_crates",
+  "tests::dependency_guard_rejects_forbidden_dependency_names_and_renames",
+  "tests::runtime_source_guard_rejects_wrapper_imports_and_process_spawns",
+  "tests::runtime_source_guard_allows_ffmpeg_named_rust_binaries",
+]
+differential_tests = []
+fate_tests = ["tests/fate/mappings.txt:repo-runtime-guard|local-runtime-guard"]
+fuzz_targets = []
+notes = "xtask guard-runtime scans Cargo dependency sections for known FFmpeg wrapper crates and scans runtime implementation crates for wrapper tokens or literal ffmpeg/ffprobe/ffplay process spawns. Oracle, FATE, test, fuzz, and xtask tooling remain allowed to invoke configured oracle binaries where appropriate. The guard is wired into xtask quick, changed, and full so future parity work fails early if FFmpeg runtime linkage is introduced."
+blocked_reason = ""
+
+[[component]]
 id = "oracle-inventory"
 kind = "utility"
 ffmpeg_name = "ffmpeg inventory commands"
@@ -670,6 +691,7 @@ unit_tests = [
   "tests::changed_selection_expands_prefix_rules_against_existing_ledger_ids",
   "tests::default_mappings_cover_current_fftools_smoke_selections",
   "tests::default_mappings_cover_current_avutil_smoke_selections",
+  "tests::default_mappings_cover_runtime_guard_selection",
   "tests::changed_selection_maps_fuzz_targets_to_covered_components",
   "tests::unmapped_relevant_paths_report_crate_files_but_ignore_docs",
   "tests::parses_run_options_for_component_changed_and_mapping_path",
@@ -690,7 +712,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:fate-runner|local-self-test"]
 fuzz_targets = []
-notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules and cargo-fuzz target files, parse the explicit tests/fate/mappings.txt format, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus local avutil unit-test, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
+notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules, xtask runtime guard, and cargo-fuzz target files, parse the explicit tests/fate/mappings.txt format, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus repo runtime guard, local avutil unit-test, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
 blocked_reason = "No upstream FATE samples path or media component mapping has been configured."
 
 [[component]]

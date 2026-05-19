@@ -65,6 +65,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "xtask/",
+        exact_ids: &["repo-runtime-guard"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/oracle/",
         exact_ids: &["oracle-inventory"],
         id_prefixes: &[],
@@ -1030,12 +1035,14 @@ mod tests {
             "avformat-rawvideo-demuxer",
             "avformat-rawvideo-muxer",
             "fate-runner",
+            "repo-runtime-guard",
         ]));
         let paths = vec![
             "crates\\fate-runner\\src\\main.rs".to_string(),
             "crates/avformat/src/rawvideo.rs".to_string(),
             "crates/avutil/src/error.rs".to_string(),
             "crates/avformat/src/rawvideo.rs".to_string(),
+            "xtask/src/main.rs".to_string(),
         ];
 
         assert_eq!(
@@ -1045,6 +1052,7 @@ mod tests {
                 "avformat-rawvideo-demuxer".to_string(),
                 "avformat-rawvideo-muxer".to_string(),
                 "fate-runner".to_string(),
+                "repo-runtime-guard".to_string(),
             ]
         );
     }
@@ -1113,6 +1121,26 @@ mod tests {
                 "fuzz/fuzz_targets/avutil_core_models.rs".to_string(),
             ],
         );
+
+        let missing_components = components_without_mappings(&selected_components, &mappings);
+
+        assert!(
+            missing_components.is_empty(),
+            "missing local FATE smoke mappings for {:?}",
+            missing_components
+        );
+    }
+
+    #[test]
+    fn default_mappings_cover_runtime_guard_selection() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let ledger_contents = fs::read_to_string(repo_root.join("PORTING_LEDGER.toml")).unwrap();
+        let component_ids = component_ids_from_ledger(&ledger_contents);
+        let mapping_contents =
+            fs::read_to_string(repo_root.join(DEFAULT_FATE_MAPPINGS_PATH)).unwrap();
+        let mappings = parse_fate_mappings(&mapping_contents, &component_ids).unwrap();
+        let selected_components =
+            changed_components(&component_ids, &["xtask/src/main.rs".to_string()]);
 
         let missing_components = components_without_mappings(&selected_components, &mappings);
 
