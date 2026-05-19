@@ -7778,13 +7778,13 @@ impl<'a> FrameExif<'a> {
             tags.user_comment =
                 Self::optional_undefined_bytes_tag(ifd, Self::TAG_USER_COMMENT, "UserComment")?;
             tags.sub_sec_time =
-                Self::optional_ascii_tag(ifd, Self::TAG_SUB_SEC_TIME, "SubSecTime")?;
-            tags.sub_sec_time_original = Self::optional_ascii_tag(
+                Self::optional_subsecond_time_tag(ifd, Self::TAG_SUB_SEC_TIME, "SubSecTime")?;
+            tags.sub_sec_time_original = Self::optional_subsecond_time_tag(
                 ifd,
                 Self::TAG_SUB_SEC_TIME_ORIGINAL,
                 "SubSecTimeOriginal",
             )?;
-            tags.sub_sec_time_digitized = Self::optional_ascii_tag(
+            tags.sub_sec_time_digitized = Self::optional_subsecond_time_tag(
                 ifd,
                 Self::TAG_SUB_SEC_TIME_DIGITIZED,
                 "SubSecTimeDigitized",
@@ -8069,6 +8069,24 @@ impl<'a> FrameExif<'a> {
             return Ok(None);
         };
         Self::validate_datetime_ascii(label, tag, value)?;
+        Ok(Some(value))
+    }
+
+    fn optional_subsecond_time_tag(
+        ifd: &FrameExifIfd<'a>,
+        tag: u16,
+        label: &str,
+    ) -> AvResult<Option<&'a str>> {
+        let Some(value) = Self::optional_ascii_tag(ifd, tag, label)? else {
+            return Ok(None);
+        };
+        if !value.as_bytes().iter().all(u8::is_ascii_digit) {
+            return Err(Self::semantic_tag_error(
+                label,
+                tag,
+                "must contain only digits",
+            ));
+        }
         Ok(Some(value))
     }
 
@@ -20548,6 +20566,39 @@ mod tests {
         bad_sub_sec_time[75] = b'!';
         assert_eq!(
             FrameExif::parse(&bad_sub_sec_time)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_sub_sec_digit = exif_version_timing_comment_fixture();
+        bad_sub_sec_digit[72] = b'a';
+        assert_eq!(
+            FrameExif::parse(&bad_sub_sec_digit)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_original_sub_sec_digit = exif_version_timing_comment_fixture();
+        bad_original_sub_sec_digit[164] = b'x';
+        assert_eq!(
+            FrameExif::parse(&bad_original_sub_sec_digit)
+                .unwrap()
+                .common_tags()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut bad_digitized_sub_sec_digit = exif_version_timing_comment_fixture();
+        bad_digitized_sub_sec_digit[97] = b'z';
+        assert_eq!(
+            FrameExif::parse(&bad_digitized_sub_sec_digit)
                 .unwrap()
                 .common_tags()
                 .unwrap_err()

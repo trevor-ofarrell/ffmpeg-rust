@@ -65,6 +65,10 @@ fn assert_exif_offset_time_range(value: &str) {
     assert!(exif_two_digits(value, 4) <= 59);
 }
 
+fn assert_ascii_digits(value: &str) {
+    assert!(value.as_bytes().iter().all(u8::is_ascii_digit));
+}
+
 fuzz_target!(|data: &[u8]| {
     let mut cursor = Cursor::new(data);
 
@@ -1819,6 +1823,15 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     }
                     if let Some(value) = common.offset_time_digitized() {
                         assert_exif_offset_time_range(value);
+                    }
+                    if let Some(value) = common.sub_sec_time() {
+                        assert_ascii_digits(value);
+                    }
+                    if let Some(value) = common.sub_sec_time_original() {
+                        assert_ascii_digits(value);
+                    }
+                    if let Some(value) = common.sub_sec_time_digitized() {
+                        assert_ascii_digits(value);
                     }
                     if let Some(value) = common.focal_length() {
                         assert_ne!(value.denominator(), 0);
@@ -4593,6 +4606,36 @@ fn exercise_fixtures() {
     assert_eq!(timing_tags.sub_sec_time(), Some("123"));
     assert_eq!(timing_tags.sub_sec_time_original(), Some("4567"));
     assert_eq!(timing_tags.sub_sec_time_digitized(), Some("89"));
+    let mut bad_sub_sec_digit = exif_version_timing_comment_fixture();
+    bad_sub_sec_digit[72] = b'a';
+    assert_eq!(
+        FrameExif::parse(&bad_sub_sec_digit)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_original_sub_sec_digit = exif_version_timing_comment_fixture();
+    bad_original_sub_sec_digit[164] = b'x';
+    assert_eq!(
+        FrameExif::parse(&bad_original_sub_sec_digit)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut bad_digitized_sub_sec_digit = exif_version_timing_comment_fixture();
+    bad_digitized_sub_sec_digit[97] = b'z';
+    assert_eq!(
+        FrameExif::parse(&bad_digitized_sub_sec_digit)
+            .unwrap()
+            .common_tags()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
     assert_eq!(timing_tags.flashpix_version(), Some(*b"0100"));
     let mut bad_flashpix_count = exif_version_timing_comment_fixture();
     bad_flashpix_count[104..108].copy_from_slice(&3u32.to_le_bytes());
