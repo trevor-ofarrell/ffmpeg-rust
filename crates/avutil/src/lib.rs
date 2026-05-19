@@ -40,7 +40,8 @@ pub use frame::{
     FrameSeiUnregistered, FrameSideData, FrameSideDataDescriptor, FrameSideDataKind,
     FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
     FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
-    FrameStereo3dType, FrameStereo3dView, FrameVideoBlockParams, FrameVideoEncParams,
+    FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
+    FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId,
     VideoFrame,
 };

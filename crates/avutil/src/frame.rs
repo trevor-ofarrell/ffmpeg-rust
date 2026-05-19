@@ -5119,6 +5119,357 @@ impl FrameViewId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameThreeDReferenceDisplay {
+    left_view_id: u16,
+    right_view_id: u16,
+    exponent_ref_display_width: u8,
+    mantissa_ref_display_width: u8,
+    exponent_ref_viewing_distance: u8,
+    mantissa_ref_viewing_distance: u8,
+    additional_shift_present: bool,
+    num_sample_shift: i16,
+}
+
+impl FrameThreeDReferenceDisplay {
+    pub const DATA_LEN: usize = 12;
+    const LEFT_VIEW_ID_OFFSET: usize = 0;
+    const RIGHT_VIEW_ID_OFFSET: usize = 2;
+    const EXPONENT_REF_DISPLAY_WIDTH_OFFSET: usize = 4;
+    const MANTISSA_REF_DISPLAY_WIDTH_OFFSET: usize = 5;
+    const EXPONENT_REF_VIEWING_DISTANCE_OFFSET: usize = 6;
+    const MANTISSA_REF_VIEWING_DISTANCE_OFFSET: usize = 7;
+    const ADDITIONAL_SHIFT_PRESENT_OFFSET: usize = 8;
+    const NUM_SAMPLE_SHIFT_OFFSET: usize = 10;
+
+    pub const fn new(
+        left_view_id: u16,
+        right_view_id: u16,
+        ref_display_width: (u8, u8),
+        ref_viewing_distance: (u8, u8),
+        additional_shift_present: bool,
+        num_sample_shift: i16,
+    ) -> Self {
+        Self {
+            left_view_id,
+            right_view_id,
+            exponent_ref_display_width: ref_display_width.0,
+            mantissa_ref_display_width: ref_display_width.1,
+            exponent_ref_viewing_distance: ref_viewing_distance.0,
+            mantissa_ref_viewing_distance: ref_viewing_distance.1,
+            additional_shift_present,
+            num_sample_shift,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "3D reference display entry requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let additional_shift_present = match data[Self::ADDITIONAL_SHIFT_PRESENT_OFFSET] {
+            0 => false,
+            1 => true,
+            value => {
+                return Err(AvError::invalid_data(format!(
+                    "3D reference display additional shift flag must be 0 or 1, got {value}"
+                )));
+            }
+        };
+
+        Ok(Self::new(
+            Self::read_u16(data, Self::LEFT_VIEW_ID_OFFSET),
+            Self::read_u16(data, Self::RIGHT_VIEW_ID_OFFSET),
+            (
+                data[Self::EXPONENT_REF_DISPLAY_WIDTH_OFFSET],
+                data[Self::MANTISSA_REF_DISPLAY_WIDTH_OFFSET],
+            ),
+            (
+                data[Self::EXPONENT_REF_VIEWING_DISTANCE_OFFSET],
+                data[Self::MANTISSA_REF_VIEWING_DISTANCE_OFFSET],
+            ),
+            additional_shift_present,
+            Self::read_i16(data, Self::NUM_SAMPLE_SHIFT_OFFSET),
+        ))
+    }
+
+    pub const fn left_view_id(self) -> u16 {
+        self.left_view_id
+    }
+
+    pub const fn right_view_id(self) -> u16 {
+        self.right_view_id
+    }
+
+    pub const fn exponent_ref_display_width(self) -> u8 {
+        self.exponent_ref_display_width
+    }
+
+    pub const fn mantissa_ref_display_width(self) -> u8 {
+        self.mantissa_ref_display_width
+    }
+
+    pub const fn exponent_ref_viewing_distance(self) -> u8 {
+        self.exponent_ref_viewing_distance
+    }
+
+    pub const fn mantissa_ref_viewing_distance(self) -> u8 {
+        self.mantissa_ref_viewing_distance
+    }
+
+    pub const fn additional_shift_present(self) -> bool {
+        self.additional_shift_present
+    }
+
+    pub const fn num_sample_shift(self) -> i16 {
+        self.num_sample_shift
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        Self::write_u16(&mut bytes, Self::LEFT_VIEW_ID_OFFSET, self.left_view_id);
+        Self::write_u16(&mut bytes, Self::RIGHT_VIEW_ID_OFFSET, self.right_view_id);
+        bytes[Self::EXPONENT_REF_DISPLAY_WIDTH_OFFSET] = self.exponent_ref_display_width;
+        bytes[Self::MANTISSA_REF_DISPLAY_WIDTH_OFFSET] = self.mantissa_ref_display_width;
+        bytes[Self::EXPONENT_REF_VIEWING_DISTANCE_OFFSET] = self.exponent_ref_viewing_distance;
+        bytes[Self::MANTISSA_REF_VIEWING_DISTANCE_OFFSET] = self.mantissa_ref_viewing_distance;
+        bytes[Self::ADDITIONAL_SHIFT_PRESENT_OFFSET] = u8::from(self.additional_shift_present);
+        Self::write_i16(
+            &mut bytes,
+            Self::NUM_SAMPLE_SHIFT_OFFSET,
+            self.num_sample_shift,
+        );
+        bytes
+    }
+
+    fn read_u16(data: &[u8], offset: usize) -> u16 {
+        let mut raw = [0; 2];
+        raw.copy_from_slice(&data[offset..offset + 2]);
+        u16::from_ne_bytes(raw)
+    }
+
+    fn read_i16(data: &[u8], offset: usize) -> i16 {
+        let mut raw = [0; 2];
+        raw.copy_from_slice(&data[offset..offset + 2]);
+        i16::from_ne_bytes(raw)
+    }
+
+    fn write_u16(data: &mut [u8], offset: usize, value: u16) {
+        data[offset..offset + 2].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_i16(data: &mut [u8], offset: usize, value: i16) {
+        data[offset..offset + 2].copy_from_slice(&value.to_ne_bytes());
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameThreeDReferenceDisplays {
+    prec_ref_display_width: u8,
+    ref_viewing_distance_flag: bool,
+    prec_ref_viewing_dist: u8,
+    displays: Vec<FrameThreeDReferenceDisplay>,
+}
+
+impl FrameThreeDReferenceDisplays {
+    pub const MAX_REF_DISPLAYS: usize = 32;
+    const SIZE_T_LEN: usize = core::mem::size_of::<usize>();
+    const SIZE_T_OFFSET: usize = Self::align_up(4, core::mem::align_of::<usize>());
+    pub const ENTRIES_OFFSET_OFFSET: usize = Self::SIZE_T_OFFSET;
+    pub const ENTRY_SIZE_OFFSET: usize = Self::ENTRIES_OFFSET_OFFSET + Self::SIZE_T_LEN;
+    pub const HEADER_LEN: usize = Self::ENTRY_SIZE_OFFSET + Self::SIZE_T_LEN;
+    pub const ENTRIES_OFFSET: usize =
+        Self::align_up(Self::HEADER_LEN, core::mem::align_of::<u16>());
+
+    pub fn new(
+        prec_ref_display_width: u8,
+        ref_viewing_distance_flag: bool,
+        prec_ref_viewing_dist: u8,
+        displays: Vec<FrameThreeDReferenceDisplay>,
+    ) -> AvResult<Self> {
+        Self::validate_precision("reference display width", prec_ref_display_width)?;
+        Self::validate_precision("reference viewing distance", prec_ref_viewing_dist)?;
+        Self::validate_display_count(displays.len())?;
+        Self::expected_data_len(displays.len()).map_err(|err| {
+            AvError::invalid_argument(format!(
+                "3D reference displays payload length overflow: {err}"
+            ))
+        })?;
+
+        Ok(Self {
+            prec_ref_display_width,
+            ref_viewing_distance_flag,
+            prec_ref_viewing_dist,
+            displays,
+        })
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() < Self::HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "3D reference displays side data requires at least {} header bytes, got {}",
+                Self::HEADER_LEN,
+                data.len()
+            )));
+        }
+
+        let prec_ref_display_width = data[0];
+        Self::validate_precision("reference display width", prec_ref_display_width)?;
+        let ref_viewing_distance_flag = match data[1] {
+            0 => false,
+            1 => true,
+            value => {
+                return Err(AvError::invalid_data(format!(
+                    "3D reference displays viewing-distance flag must be 0 or 1, got {value}"
+                )));
+            }
+        };
+        let prec_ref_viewing_dist = data[2];
+        Self::validate_precision("reference viewing distance", prec_ref_viewing_dist)?;
+
+        let num_ref_displays = data[3] as usize;
+        Self::validate_display_count(num_ref_displays)?;
+
+        let entries_offset = Self::read_usize(data, Self::ENTRIES_OFFSET_OFFSET);
+        if entries_offset != Self::ENTRIES_OFFSET {
+            return Err(AvError::invalid_data(format!(
+                "3D reference displays entry offset {entries_offset} does not match native offset {}",
+                Self::ENTRIES_OFFSET
+            )));
+        }
+
+        let entry_size = Self::read_usize(data, Self::ENTRY_SIZE_OFFSET);
+        if entry_size != FrameThreeDReferenceDisplay::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "3D reference display entry size {entry_size} does not match native size {}",
+                FrameThreeDReferenceDisplay::DATA_LEN
+            )));
+        }
+
+        let expected_len = Self::expected_data_len(num_ref_displays)?;
+        if data.len() != expected_len {
+            return Err(AvError::invalid_data(format!(
+                "3D reference displays payload requires exactly {expected_len} bytes for {num_ref_displays} displays, got {}",
+                data.len()
+            )));
+        }
+
+        let mut displays = Vec::with_capacity(num_ref_displays);
+        for index in 0..num_ref_displays {
+            let offset = Self::ENTRIES_OFFSET + index * FrameThreeDReferenceDisplay::DATA_LEN;
+            displays.push(FrameThreeDReferenceDisplay::parse(
+                &data[offset..offset + FrameThreeDReferenceDisplay::DATA_LEN],
+            )?);
+        }
+
+        Ok(Self {
+            prec_ref_display_width,
+            ref_viewing_distance_flag,
+            prec_ref_viewing_dist,
+            displays,
+        })
+    }
+
+    pub const fn prec_ref_display_width(&self) -> u8 {
+        self.prec_ref_display_width
+    }
+
+    pub const fn ref_viewing_distance_flag(&self) -> bool {
+        self.ref_viewing_distance_flag
+    }
+
+    pub const fn prec_ref_viewing_dist(&self) -> u8 {
+        self.prec_ref_viewing_dist
+    }
+
+    pub fn displays(&self) -> &[FrameThreeDReferenceDisplay] {
+        &self.displays
+    }
+
+    pub fn nb_displays(&self) -> usize {
+        self.displays.len()
+    }
+
+    pub fn display(&self, index: usize) -> Option<FrameThreeDReferenceDisplay> {
+        self.displays.get(index).copied()
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![0; Self::ENTRIES_OFFSET];
+        bytes[0] = self.prec_ref_display_width;
+        bytes[1] = u8::from(self.ref_viewing_distance_flag);
+        bytes[2] = self.prec_ref_viewing_dist;
+        bytes[3] = self.displays.len() as u8;
+        Self::write_usize(
+            &mut bytes,
+            Self::ENTRIES_OFFSET_OFFSET,
+            Self::ENTRIES_OFFSET,
+        );
+        Self::write_usize(
+            &mut bytes,
+            Self::ENTRY_SIZE_OFFSET,
+            FrameThreeDReferenceDisplay::DATA_LEN,
+        );
+        for display in &self.displays {
+            bytes.extend_from_slice(&display.to_bytes());
+        }
+        bytes
+    }
+
+    fn expected_data_len(nb_displays: usize) -> AvResult<usize> {
+        let displays_len = nb_displays
+            .checked_mul(FrameThreeDReferenceDisplay::DATA_LEN)
+            .ok_or_else(|| AvError::invalid_data("3D reference display data length overflow"))?;
+        Self::ENTRIES_OFFSET
+            .checked_add(displays_len)
+            .ok_or_else(|| AvError::invalid_data("3D reference displays payload length overflow"))
+    }
+
+    fn validate_display_count(nb_displays: usize) -> AvResult<()> {
+        if !(1..=Self::MAX_REF_DISPLAYS).contains(&nb_displays) {
+            return Err(AvError::invalid_data(format!(
+                "3D reference displays count must be 1..={}, got {nb_displays}",
+                Self::MAX_REF_DISPLAYS
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn validate_precision(label: &str, value: u8) -> AvResult<()> {
+        if value > 31 {
+            return Err(AvError::invalid_data(format!(
+                "3D reference displays {label} precision must be 0..=31, got {value}"
+            )));
+        }
+
+        Ok(())
+    }
+
+    const fn align_up(value: usize, align: usize) -> usize {
+        let remainder = value % align;
+        if remainder == 0 {
+            value
+        } else {
+            value + align - remainder
+        }
+    }
+
+    fn read_usize(data: &[u8], offset: usize) -> usize {
+        let mut raw = [0; Self::SIZE_T_LEN];
+        raw.copy_from_slice(&data[offset..offset + Self::SIZE_T_LEN]);
+        usize::from_ne_bytes(raw)
+    }
+
+    fn write_usize(data: &mut [u8], offset: usize, value: usize) {
+        data[offset..offset + Self::SIZE_T_LEN].copy_from_slice(&value.to_ne_bytes());
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameDolbyVisionRpuDataHeader<'a> {
     data: &'a [u8],
 }
@@ -6233,6 +6584,10 @@ impl FrameSideData {
         Self::new_with_kind(FrameSideDataKind::ViewId, value.to_bytes().to_vec())
     }
 
+    pub fn new_three_d_reference_displays(value: FrameThreeDReferenceDisplays) -> AvResult<Self> {
+        Self::new_with_kind(FrameSideDataKind::ThreeDReferenceDisplays, value.to_bytes())
+    }
+
     pub fn new_film_grain_params(data: Vec<u8>) -> AvResult<Self> {
         let side_data = Self::new_with_kind(FrameSideDataKind::FilmGrainParams, data)?;
         FrameFilmGrainParams::parse(side_data.data())?;
@@ -6510,6 +6865,14 @@ impl FrameSideData {
         }
 
         FrameViewId::parse(self.data()).map(Some)
+    }
+
+    pub fn three_d_reference_displays(&self) -> AvResult<Option<FrameThreeDReferenceDisplays>> {
+        if self.kind != FrameSideDataKind::ThreeDReferenceDisplays {
+            return Ok(None);
+        }
+
+        FrameThreeDReferenceDisplays::parse(self.data()).map(Some)
     }
 
     pub fn film_grain_params(&self) -> AvResult<Option<FrameFilmGrainParams<'_>>> {
@@ -12953,6 +13316,173 @@ mod tests {
         let non_view =
             FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
         assert_eq!(non_view.view_id().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_parses_three_d_reference_displays_payload() {
+        let first = FrameThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
+        let second = FrameThreeDReferenceDisplay::new(2, 3, (10, 20), (4, 40), false, 0);
+        let value = FrameThreeDReferenceDisplays::new(31, true, 7, vec![first, second]).unwrap();
+        let side_data = FrameSideData::new_three_d_reference_displays(value.clone()).unwrap();
+
+        assert_eq!(FrameThreeDReferenceDisplay::DATA_LEN, 12);
+        assert_eq!(
+            FrameThreeDReferenceDisplays::HEADER_LEN,
+            if core::mem::size_of::<usize>() == 8 {
+                24
+            } else {
+                12
+            }
+        );
+        assert_eq!(
+            FrameThreeDReferenceDisplays::ENTRIES_OFFSET,
+            FrameThreeDReferenceDisplays::HEADER_LEN
+        );
+        assert_eq!(
+            side_data.kind_id(),
+            &FrameSideDataKind::ThreeDReferenceDisplays
+        );
+        assert_eq!(side_data.data(), value.to_bytes());
+        let parsed = side_data.three_d_reference_displays().unwrap().unwrap();
+        assert_eq!(parsed, value);
+        assert_eq!(parsed.prec_ref_display_width(), 31);
+        assert!(parsed.ref_viewing_distance_flag());
+        assert_eq!(parsed.prec_ref_viewing_dist(), 7);
+        assert_eq!(parsed.nb_displays(), 2);
+        assert_eq!(parsed.displays(), &[first, second]);
+        assert_eq!(parsed.display(0), Some(first));
+        assert_eq!(parsed.display(1), Some(second));
+        assert_eq!(parsed.display(2), None);
+        assert_eq!(first.left_view_id(), 0);
+        assert_eq!(first.right_view_id(), 1);
+        assert_eq!(first.exponent_ref_display_width(), 12);
+        assert_eq!(first.mantissa_ref_display_width(), 34);
+        assert_eq!(first.exponent_ref_viewing_distance(), 5);
+        assert_eq!(first.mantissa_ref_viewing_distance(), 67);
+        assert!(first.additional_shift_present());
+        assert_eq!(first.num_sample_shift(), -11);
+        assert_eq!(
+            FrameThreeDReferenceDisplay::parse(&first.to_bytes()).unwrap(),
+            first
+        );
+        assert_eq!(
+            FrameThreeDReferenceDisplays::parse(&parsed.to_bytes()).unwrap(),
+            parsed
+        );
+
+        let non_tdrdi =
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+        assert_eq!(non_tdrdi.three_d_reference_displays().unwrap(), None);
+    }
+
+    #[test]
+    fn frame_side_data_rejects_malformed_three_d_reference_displays_payload() {
+        let display = FrameThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
+        let value = FrameThreeDReferenceDisplays::new(31, true, 7, vec![display]).unwrap();
+
+        assert_eq!(
+            FrameThreeDReferenceDisplay::parse(&[0; FrameThreeDReferenceDisplay::DATA_LEN - 1])
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameThreeDReferenceDisplays::parse(&[0; FrameThreeDReferenceDisplays::HEADER_LEN - 1])
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameThreeDReferenceDisplays::new(31, true, 7, Vec::new())
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            FrameThreeDReferenceDisplays::new(
+                31,
+                true,
+                7,
+                vec![display; FrameThreeDReferenceDisplays::MAX_REF_DISPLAYS + 1],
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidData
+        );
+
+        for bad in [
+            {
+                let mut bad = value.to_bytes();
+                bad[0] = 32;
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                bad[1] = 2;
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                bad[2] = 32;
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                bad[3] = 0;
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                bad[3] = (FrameThreeDReferenceDisplays::MAX_REF_DISPLAYS + 1) as u8;
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                write_ne_usize(
+                    &mut bad,
+                    FrameThreeDReferenceDisplays::ENTRIES_OFFSET_OFFSET,
+                    FrameThreeDReferenceDisplays::ENTRIES_OFFSET - 2,
+                );
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                write_ne_usize(
+                    &mut bad,
+                    FrameThreeDReferenceDisplays::ENTRY_SIZE_OFFSET,
+                    FrameThreeDReferenceDisplay::DATA_LEN + 2,
+                );
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                bad[FrameThreeDReferenceDisplays::ENTRIES_OFFSET
+                    + FrameThreeDReferenceDisplay::ADDITIONAL_SHIFT_PRESENT_OFFSET] = 2;
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                bad.push(0);
+                bad
+            },
+            {
+                let mut bad = value.to_bytes();
+                bad.pop();
+                bad
+            },
+        ] {
+            let side_data =
+                FrameSideData::new_with_kind(FrameSideDataKind::ThreeDReferenceDisplays, bad)
+                    .unwrap();
+            assert_eq!(
+                side_data.three_d_reference_displays().unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let non_tdrdi =
+            FrameSideData::new_with_kind(FrameSideDataKind::MotionVectors, vec![0]).unwrap();
+        assert_eq!(non_tdrdi.three_d_reference_displays().unwrap(), None);
     }
 
     #[test]

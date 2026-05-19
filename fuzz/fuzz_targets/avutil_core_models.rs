@@ -18,7 +18,8 @@ use avutil::{
     FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
     FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
     FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
-    FrameStereo3dType, FrameStereo3dView, FrameVideoBlockParams, FrameVideoEncParams,
+    FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
+    FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketFlags, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
     Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
@@ -1639,6 +1640,39 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(frame_side_data_kind, FrameSideDataKind::ViewId);
             assert_ne!(frame_side_data_payload.len(), FrameViewId::DATA_LEN);
+        }
+    }
+    match frame.side_data()[0].three_d_reference_displays() {
+        Ok(Some(value)) => {
+            assert_eq!(
+                frame_side_data_kind,
+                FrameSideDataKind::ThreeDReferenceDisplays
+            );
+            assert_eq!(value.to_bytes(), frame_side_data_payload);
+            assert!(
+                (1..=FrameThreeDReferenceDisplays::MAX_REF_DISPLAYS).contains(&value.nb_displays())
+            );
+            assert!(value.prec_ref_display_width() <= 31);
+            assert!(value.prec_ref_viewing_dist() <= 31);
+            assert_eq!(
+                frame_side_data_payload.len(),
+                FrameThreeDReferenceDisplays::ENTRIES_OFFSET
+                    + value.nb_displays() * FrameThreeDReferenceDisplay::DATA_LEN
+            );
+        }
+        Ok(None) => assert_ne!(
+            frame_side_data_kind,
+            FrameSideDataKind::ThreeDReferenceDisplays
+        ),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(
+                frame_side_data_kind,
+                FrameSideDataKind::ThreeDReferenceDisplays
+            );
+            assert!(three_d_reference_displays_payload_invalid(
+                &frame_side_data_payload
+            ));
         }
     }
     match frame.side_data()[0].film_grain_params() {
@@ -3521,6 +3555,63 @@ fn exercise_fixtures() {
         FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_view_id.view_id().unwrap(), None);
 
+    let tdrdi_display = FrameThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
+    let tdrdi = FrameThreeDReferenceDisplays::new(31, true, 7, vec![tdrdi_display]).unwrap();
+    let tdrdi_side_data = FrameSideData::new_three_d_reference_displays(tdrdi.clone()).unwrap();
+    assert_eq!(
+        tdrdi_side_data.kind_id(),
+        &FrameSideDataKind::ThreeDReferenceDisplays
+    );
+    let parsed_tdrdi = tdrdi_side_data
+        .three_d_reference_displays()
+        .unwrap()
+        .unwrap();
+    assert_eq!(parsed_tdrdi, tdrdi);
+    assert_eq!(parsed_tdrdi.display(0), Some(tdrdi_display));
+    assert_eq!(parsed_tdrdi.display(1), None);
+    assert!(tdrdi_display.additional_shift_present());
+    assert_eq!(tdrdi_display.num_sample_shift(), -11);
+    assert_eq!(tdrdi_side_data.data(), tdrdi.to_bytes());
+    for mut data in [
+        Vec::new(),
+        vec![0; FrameThreeDReferenceDisplays::HEADER_LEN - 1],
+        {
+            let mut data = tdrdi.to_bytes();
+            data[1] = 2;
+            data
+        },
+        {
+            let mut data = tdrdi.to_bytes();
+            data[3] = 0;
+            data
+        },
+        {
+            let mut data = tdrdi.to_bytes();
+            data[FrameThreeDReferenceDisplays::ENTRIES_OFFSET + 8] = 2;
+            data
+        },
+    ] {
+        assert_eq!(
+            FrameThreeDReferenceDisplays::parse(&data)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        data.resize(data.len().max(1), 0);
+        let invalid_tdrdi =
+            FrameSideData::new_with_kind(FrameSideDataKind::ThreeDReferenceDisplays, data).unwrap();
+        assert_eq!(
+            invalid_tdrdi
+                .three_d_reference_displays()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    let non_tdrdi =
+        FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
+    assert_eq!(non_tdrdi.three_d_reference_displays().unwrap(), None);
+
     let film_grain = minimal_film_grain_av1_fixture();
     let film_grain_side_data = FrameSideData::new_film_grain_params(film_grain.clone()).unwrap();
     let parsed_film_grain = film_grain_side_data.film_grain_params().unwrap().unwrap();
@@ -4409,6 +4500,54 @@ fn video_hint_rect_size_field_offset() -> usize {
 
 fn video_hint_type_field_offset() -> usize {
     video_hint_rect_size_field_offset() + core::mem::size_of::<usize>()
+}
+
+fn three_d_reference_displays_payload_invalid(data: &[u8]) -> bool {
+    if data.len() < FrameThreeDReferenceDisplays::HEADER_LEN {
+        return true;
+    }
+
+    if data[0] > 31 || !matches!(data[1], 0 | 1) || data[2] > 31 {
+        return true;
+    }
+
+    let nb_displays = data[3] as usize;
+    if !(1..=FrameThreeDReferenceDisplays::MAX_REF_DISPLAYS).contains(&nb_displays) {
+        return true;
+    }
+
+    if read_ne_usize(data, FrameThreeDReferenceDisplays::ENTRIES_OFFSET_OFFSET)
+        != FrameThreeDReferenceDisplays::ENTRIES_OFFSET
+    {
+        return true;
+    }
+
+    if read_ne_usize(data, FrameThreeDReferenceDisplays::ENTRY_SIZE_OFFSET)
+        != FrameThreeDReferenceDisplay::DATA_LEN
+    {
+        return true;
+    }
+
+    let Some(displays_len) = nb_displays.checked_mul(FrameThreeDReferenceDisplay::DATA_LEN) else {
+        return true;
+    };
+    let Some(expected_len) = FrameThreeDReferenceDisplays::ENTRIES_OFFSET.checked_add(displays_len)
+    else {
+        return true;
+    };
+    if data.len() != expected_len {
+        return true;
+    }
+
+    for display in data[FrameThreeDReferenceDisplays::ENTRIES_OFFSET..]
+        .chunks_exact(FrameThreeDReferenceDisplay::DATA_LEN)
+    {
+        if !matches!(display[8], 0 | 1) {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn minimal_film_grain_av1_fixture() -> Vec<u8> {
