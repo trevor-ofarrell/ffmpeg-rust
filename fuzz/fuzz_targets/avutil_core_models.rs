@@ -2546,6 +2546,109 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(taken[0].metadata().get("gain"), Some("-3.0 dB"));
     assert!(taken[0].buffer().shares_storage(&replay_gain_buffer));
 
+    let replacement_released = Arc::new(Mutex::new(Vec::<String>::new()));
+    let make_side_payload = |label: &'static str, bytes: Vec<u8>| {
+        let release_capture = Arc::clone(&replacement_released);
+        BufferRef::from_external_slice_with_opaque_readonly(
+            Arc::<[u8]>::from(bytes),
+            String::from(label),
+            move |opaque| {
+                release_capture.lock().unwrap().push(opaque);
+            },
+        )
+    };
+    let mut replacement_frame =
+        Frame::audio(AudioFrame::new(48_000, 1, SampleFormat::S16, 1, vec![vec![0; 2]]).unwrap());
+    let appended = replacement_frame
+        .set_side_data_kind(FrameSideDataKind::IccProfile, vec![5])
+        .unwrap();
+    assert!(appended.is_empty());
+    assert_eq!(
+        replacement_frame
+            .remove_side_data_kind(&FrameSideDataKind::IccProfile)
+            .unwrap()
+            .data(),
+        &[5]
+    );
+    replacement_frame
+        .add_side_data_kind_buffer(
+            FrameSideDataKind::DisplayMatrix,
+            make_side_payload("first-display", vec![1, 2]),
+        )
+        .unwrap();
+    replacement_frame
+        .add_side_data_kind_buffer(
+            FrameSideDataKind::ReplayGain,
+            make_side_payload("replaygain", vec![3]),
+        )
+        .unwrap();
+    replacement_frame
+        .add_side_data_buffer(
+            "Display Matrix",
+            make_side_payload("duplicate-display", vec![4, 5]),
+        )
+        .unwrap();
+    assert_eq!(replacement_frame.side_data().len(), 3);
+    let removed_display = replacement_frame
+        .set_side_data_buffer(
+            "display_matrix",
+            make_side_payload("replacement-display", vec![9, 8, 7]),
+        )
+        .unwrap();
+    assert_eq!(removed_display.len(), 2);
+    assert!(removed_display
+        .iter()
+        .all(|side_data| side_data.kind_id() == &FrameSideDataKind::DisplayMatrix));
+    assert_eq!(removed_display[0].data(), &[1, 2]);
+    assert_eq!(removed_display[1].data(), &[4, 5]);
+    assert_eq!(replacement_frame.side_data().len(), 2);
+    assert_eq!(
+        replacement_frame.side_data()[0].kind_id(),
+        &FrameSideDataKind::DisplayMatrix
+    );
+    assert_eq!(replacement_frame.side_data()[0].data(), &[9, 8, 7]);
+    assert_eq!(
+        replacement_frame.side_data()[1].kind_id(),
+        &FrameSideDataKind::ReplayGain
+    );
+    replacement_frame
+        .side_data_by_kind_mut(&FrameSideDataKind::DisplayMatrix)
+        .unwrap()
+        .metadata_mut()
+        .set("rotation", "180")
+        .unwrap();
+    assert_eq!(
+        replacement_frame
+            .side_data_by_kind(&FrameSideDataKind::DisplayMatrix)
+            .unwrap()
+            .metadata()
+            .get("rotation"),
+        Some("180")
+    );
+    assert!(replacement_released.lock().unwrap().is_empty());
+    drop(removed_display);
+    let mut released_after_removed = replacement_released.lock().unwrap().clone();
+    released_after_removed.sort();
+    assert_eq!(
+        released_after_removed,
+        vec![
+            String::from("duplicate-display"),
+            String::from("first-display"),
+        ]
+    );
+    drop(replacement_frame);
+    let mut all_released = replacement_released.lock().unwrap().clone();
+    all_released.sort();
+    assert_eq!(
+        all_released,
+        vec![
+            String::from("duplicate-display"),
+            String::from("first-display"),
+            String::from("replacement-display"),
+            String::from("replaygain"),
+        ]
+    );
+
     let context_payload = vec![cursor.next().unwrap_or_default()];
     let released_contexts = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
     let release_capture = Arc::clone(&released_contexts);
