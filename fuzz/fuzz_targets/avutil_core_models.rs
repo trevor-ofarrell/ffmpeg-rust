@@ -8242,6 +8242,14 @@ fn exercise_fixtures() {
     );
     assert_eq!(parsed_rpu.data(), rpu_bytes.as_slice());
     assert!(!parsed_rpu.is_empty());
+    let empty_rpu_side_data = FrameSideData::new_dolby_vision_rpu_buffer(Vec::new()).unwrap();
+    assert!(FrameDolbyVisionRpuBuffer::parse(empty_rpu_side_data.data())
+        .data()
+        .is_empty());
+    assert!(empty_rpu_side_data
+        .dolby_vision_rpu_buffer()
+        .unwrap()
+        .is_empty());
 
     let dovi_metadata = minimal_dolby_vision_metadata_fixture();
     let dovi_side_data = FrameSideData::new_dolby_vision_metadata(dovi_metadata.clone()).unwrap();
@@ -8250,8 +8258,17 @@ fn exercise_fixtures() {
         dovi_side_data.kind_id(),
         &FrameSideDataKind::DolbyVisionMetadata
     );
+    assert_eq!(
+        FrameDolbyVisionMetadata::DATA_LEN,
+        if core::mem::size_of::<usize>() == 8 {
+            7_848
+        } else {
+            7_804
+        }
+    );
     assert_eq!(parsed_dovi.data(), dovi_metadata.as_slice());
     assert_eq!(parsed_dovi.num_ext_blocks(), 2);
+    assert!(!parsed_dovi.is_empty());
     let dovi_header = parsed_dovi.header().unwrap();
     assert_eq!(
         dovi_header.data().len(),
@@ -8260,52 +8277,106 @@ fn exercise_fixtures() {
     assert_eq!(dovi_header.rpu_type(), 2);
     assert_eq!(dovi_header.rpu_format(), 18);
     assert_eq!(dovi_header.vdr_rpu_profile(), 8);
+    assert_eq!(dovi_header.vdr_rpu_level(), 6);
+    assert_eq!(dovi_header.coef_data_type(), 1);
+    assert_eq!(dovi_header.coef_log2_denom(), 28);
     assert_eq!(dovi_header.bl_bit_depth(), 10);
+    assert_eq!(dovi_header.el_bit_depth(), 10);
+    assert_eq!(dovi_header.vdr_bit_depth(), 12);
+    assert!(dovi_header.disable_residual_flag());
+    assert_eq!(dovi_header.ext_mapping_idc_0_4(), 4);
     let dovi_mapping = parsed_dovi.mapping().unwrap();
     assert_eq!(
         dovi_mapping.data().len(),
         FrameDolbyVisionDataMapping::DATA_LEN
     );
     assert_eq!(dovi_mapping.vdr_rpu_id(), 3);
+    assert_eq!(dovi_mapping.mapping_color_space(), 1);
+    assert_eq!(dovi_mapping.mapping_chroma_format_idc(), 2);
+    assert_eq!(dovi_mapping.nlq_method_idc(), 0);
     assert_eq!(dovi_mapping.num_x_partitions(), 1);
+    assert_eq!(dovi_mapping.num_y_partitions(), 1);
     let dovi_color = parsed_dovi.color().unwrap();
     assert_eq!(
         dovi_color.data().len(),
         FrameDolbyVisionColorMetadata::DATA_LEN
     );
     assert_eq!(dovi_color.dm_metadata_id(), 9);
+    assert_eq!(dovi_color.scene_refresh_flag(), 1);
     assert_eq!(
         dovi_color.ycc_to_rgb_matrix(0),
         Some(Rational::from_raw(1, 2))
     );
+    assert_eq!(dovi_color.ycc_to_rgb_matrix(9), None);
     assert_eq!(dovi_color.signal_eotf(), 2084);
     assert_eq!(dovi_color.signal_full_range_flag(), 3);
     let dovi_level1 = parsed_dovi.ext_block(0).unwrap().unwrap();
     assert_eq!(dovi_level1.data().len(), FrameDolbyVisionDmData::DATA_LEN);
     assert_eq!(dovi_level1.level(), 1);
+    assert_eq!(dovi_level1.level1_min_pq(), Some(10));
+    assert_eq!(dovi_level1.level1_max_pq(), Some(2048));
     assert_eq!(dovi_level1.level1_avg_pq(), Some(512));
+    assert_eq!(dovi_level1.level6_max_luminance(), None);
     let dovi_level6 = parsed_dovi.find_level(6).unwrap().unwrap();
+    assert_eq!(dovi_level6.level(), 6);
+    assert_eq!(dovi_level6.level6_max_luminance(), Some(1000));
+    assert_eq!(dovi_level6.level6_min_luminance(), Some(1));
     assert_eq!(dovi_level6.level6_max_content_light_level(), Some(800));
     assert_eq!(
-        FrameDolbyVisionMetadata::parse(&[0; FrameDolbyVisionMetadata::DATA_LEN - 1])
-            .unwrap_err()
-            .kind(),
-        AvErrorKind::InvalidData
+        dovi_level6.level6_max_frame_average_light_level(),
+        Some(400)
     );
-    let mut bad_dovi = dovi_metadata.clone();
-    write_ne_i32(
-        &mut bad_dovi,
-        dovi_num_ext_blocks_field_offset(),
-        FrameDolbyVisionMetadata::MAX_EXT_BLOCKS as i32 + 1,
-    );
-    assert_eq!(
-        FrameSideData::new_with_kind(FrameSideDataKind::DolbyVisionMetadata, bad_dovi)
-            .unwrap()
-            .dolby_vision_metadata()
-            .unwrap_err()
-            .kind(),
-        AvErrorKind::InvalidData
-    );
+    assert!(parsed_dovi.find_level(8).is_none());
+    assert!(parsed_dovi.ext_block(2).is_none());
+    assert_eq!(parsed_dovi.ext_blocks().count(), 2);
+    for data in [
+        Vec::new(),
+        vec![0; FrameDolbyVisionMetadata::DATA_LEN - 1],
+        {
+            let mut data = dovi_metadata.clone();
+            data.push(0);
+            data
+        },
+    ] {
+        assert_dolby_vision_metadata_payload_rejected(data);
+    }
+    for (offset, value) in [
+        (
+            dovi_header_offset_field_offset(),
+            FrameDolbyVisionMetadata::HEADER_OFFSET + 4,
+        ),
+        (
+            dovi_mapping_offset_field_offset(),
+            FrameDolbyVisionMetadata::MAPPING_OFFSET + 4,
+        ),
+        (
+            dovi_color_offset_field_offset(),
+            FrameDolbyVisionMetadata::COLOR_OFFSET + 4,
+        ),
+        (
+            dovi_ext_block_offset_field_offset(),
+            FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET + 4,
+        ),
+        (
+            dovi_ext_block_size_field_offset(),
+            FrameDolbyVisionMetadata::EXT_BLOCK_SIZE + 4,
+        ),
+    ] {
+        let mut bad_dovi = dovi_metadata.clone();
+        write_ne_usize(&mut bad_dovi, offset, value);
+        assert_dolby_vision_metadata_payload_rejected(bad_dovi);
+    }
+    for count in [-1, FrameDolbyVisionMetadata::MAX_EXT_BLOCKS as i32 + 1] {
+        let mut bad_dovi = dovi_metadata.clone();
+        write_ne_i32(&mut bad_dovi, dovi_num_ext_blocks_field_offset(), count);
+        assert_dolby_vision_metadata_payload_rejected(bad_dovi);
+    }
+    let mut bad_level = dovi_metadata.clone();
+    bad_level[FrameDolbyVisionMetadata::EXT_BLOCK_OFFSET] = 0;
+    assert_dolby_vision_metadata_payload_rejected(bad_level);
+    let mut bad_color = dovi_metadata;
+    bad_color[FrameDolbyVisionMetadata::COLOR_OFFSET + dovi_color_signal_full_range_offset()] = 4;
+    assert_dolby_vision_metadata_payload_rejected(bad_color);
     let non_dovi = FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0]).unwrap();
     assert_eq!(non_dovi.dolby_vision_rpu_buffer(), None);
     assert_eq!(non_dovi.dolby_vision_metadata().unwrap(), None);
@@ -11902,6 +11973,28 @@ fn minimal_dolby_vision_metadata_fixture() -> Vec<u8> {
     write_ne_u16(&mut data, level6 + 10, 400);
 
     data
+}
+
+fn assert_dolby_vision_metadata_payload_rejected(data: Vec<u8>) {
+    assert!(dolby_vision_metadata_payload_invalid(&data));
+    assert_eq!(
+        FrameDolbyVisionMetadata::parse(&data).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_with_kind(FrameSideDataKind::DolbyVisionMetadata, data.clone())
+            .unwrap()
+            .dolby_vision_metadata()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        FrameSideData::new_dolby_vision_metadata(data)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
 }
 
 fn dolby_vision_metadata_payload_invalid(data: &[u8]) -> bool {
