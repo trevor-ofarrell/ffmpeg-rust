@@ -5511,6 +5511,15 @@ impl FrameExifEndian {
             Self::Big => i32::from_be_bytes(raw),
         }
     }
+
+    fn read_u64(self, data: &[u8], offset: usize) -> u64 {
+        let mut raw = [0; 8];
+        raw.copy_from_slice(&data[offset..offset + 8]);
+        match self {
+            Self::Little => u64::from_le_bytes(raw),
+            Self::Big => u64::from_be_bytes(raw),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7395,6 +7404,18 @@ impl<'a> FrameExifEntry<'a> {
             .map(Some)
     }
 
+    pub fn signed_byte_values(self) -> AvResult<Option<Vec<i8>>> {
+        if self.tiff_type != FrameExifTiffType::SignedByte {
+            return Ok(None);
+        }
+        Ok(Some(
+            self.value_data
+                .iter()
+                .map(|value| i8::from_ne_bytes([*value]))
+                .collect(),
+        ))
+    }
+
     pub fn signed_long_values(self) -> AvResult<Option<Vec<i32>>> {
         if self.tiff_type != FrameExifTiffType::SignedLong {
             return Ok(None);
@@ -7451,6 +7472,26 @@ impl<'a> FrameExifEntry<'a> {
         }
 
         Ok(Some(values))
+    }
+
+    pub fn float_values(self) -> AvResult<Option<Vec<f32>>> {
+        if self.tiff_type != FrameExifTiffType::Float {
+            return Ok(None);
+        }
+        self.decode_values(4, |data, offset| {
+            f32::from_bits(self.endian.read_u32(data, offset))
+        })
+        .map(Some)
+    }
+
+    pub fn double_values(self) -> AvResult<Option<Vec<f64>>> {
+        if self.tiff_type != FrameExifTiffType::Double {
+            return Ok(None);
+        }
+        self.decode_values(8, |data, offset| {
+            f64::from_bits(self.endian.read_u64(data, offset))
+        })
+        .map(Some)
     }
 
     pub const fn ifd_pointer_kind(self) -> Option<FrameExifIfdPointerKind> {
@@ -12854,13 +12895,13 @@ mod tests {
         data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
         data.extend_from_slice(&8u32.to_le_bytes());
 
-        data.extend_from_slice(&8u16.to_le_bytes());
+        data.extend_from_slice(&11u16.to_le_bytes());
         push_exif_entry(
             &mut data,
             0x010F,
             FrameExifTiffType::Ascii,
             6,
-            110u32.to_le_bytes(),
+            146u32.to_le_bytes(),
         );
         push_exif_entry(&mut data, 0x0112, FrameExifTiffType::Short, 1, [6, 0, 0, 0]);
         push_exif_entry(
@@ -12875,7 +12916,7 @@ mod tests {
             0x011A,
             FrameExifTiffType::Rational,
             1,
-            116u32.to_le_bytes(),
+            152u32.to_le_bytes(),
         );
         push_exif_entry(
             &mut data,
@@ -12896,7 +12937,28 @@ mod tests {
             0xC003,
             FrameExifTiffType::SignedRational,
             1,
-            124u32.to_le_bytes(),
+            160u32.to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            0xC004,
+            FrameExifTiffType::SignedByte,
+            3,
+            [0xFF, 0x00, 0x02, 0x00],
+        );
+        push_exif_entry(
+            &mut data,
+            0xC005,
+            FrameExifTiffType::Float,
+            1,
+            1.25f32.to_bits().to_le_bytes(),
+        );
+        push_exif_entry(
+            &mut data,
+            0xC006,
+            FrameExifTiffType::Double,
+            1,
+            168u32.to_le_bytes(),
         );
         push_exif_entry(&mut data, 0x0000, FrameExifTiffType::Byte, 4, [2, 3, 0, 0]);
         data.extend_from_slice(&0u32.to_le_bytes());
@@ -12906,8 +12968,9 @@ mod tests {
         data.extend_from_slice(&1u32.to_le_bytes());
         data.extend_from_slice(&(-1i32).to_le_bytes());
         data.extend_from_slice(&2i32.to_le_bytes());
+        data.extend_from_slice(&(-2.5f64).to_bits().to_le_bytes());
 
-        assert_eq!(data.len(), 132);
+        assert_eq!(data.len(), 176);
         data
     }
 
@@ -19658,6 +19721,27 @@ mod tests {
             }]
         );
 
+        let signed_byte = ifd.entry_by_tag(0xC004).unwrap();
+        assert_eq!(
+            signed_byte.signed_byte_values().unwrap().unwrap(),
+            [-1, 0, 2]
+        );
+        assert_eq!(signed_byte.byte_values().unwrap(), None);
+
+        let float = ifd.entry_by_tag(0xC005).unwrap();
+        assert_eq!(
+            float.float_values().unwrap().unwrap()[0].to_bits(),
+            1.25f32.to_bits()
+        );
+        assert_eq!(float.long_values().unwrap(), None);
+
+        let double = ifd.entry_by_tag(0xC006).unwrap();
+        assert_eq!(
+            double.double_values().unwrap().unwrap()[0].to_bits(),
+            (-2.5f64).to_bits()
+        );
+        assert_eq!(double.rational_values().unwrap(), None);
+
         let gps_version = ifd.entry_by_tag(0x0000).unwrap();
         assert_eq!(gps_version.byte_values().unwrap().unwrap(), &[2, 3, 0, 0]);
 
@@ -19696,7 +19780,7 @@ mod tests {
         );
 
         let mut bad_ascii = exif_value_semantics_fixture();
-        bad_ascii[115] = b'!';
+        bad_ascii[151] = b'!';
         let bad_ascii = FrameExif::parse(&bad_ascii).unwrap();
         assert_eq!(
             bad_ascii
@@ -19711,7 +19795,7 @@ mod tests {
         );
 
         let mut bad_rational = exif_value_semantics_fixture();
-        bad_rational[120..124].copy_from_slice(&0u32.to_le_bytes());
+        bad_rational[156..160].copy_from_slice(&0u32.to_le_bytes());
         let bad_rational = FrameExif::parse(&bad_rational).unwrap();
         assert_eq!(
             bad_rational

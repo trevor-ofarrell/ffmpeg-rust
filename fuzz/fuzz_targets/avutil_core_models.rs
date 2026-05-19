@@ -6054,13 +6054,13 @@ fn exif_value_semantics_fixture() -> Vec<u8> {
     let mut data = Vec::new();
     data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
     data.extend_from_slice(&8u32.to_le_bytes());
-    data.extend_from_slice(&8u16.to_le_bytes());
+    data.extend_from_slice(&11u16.to_le_bytes());
     push_exif_entry(
         &mut data,
         0x010F,
         FrameExifTiffType::Ascii,
         6,
-        110u32.to_le_bytes(),
+        146u32.to_le_bytes(),
     );
     push_exif_entry(&mut data, 0x0112, FrameExifTiffType::Short, 1, [6, 0, 0, 0]);
     push_exif_entry(
@@ -6075,7 +6075,7 @@ fn exif_value_semantics_fixture() -> Vec<u8> {
         0x011A,
         FrameExifTiffType::Rational,
         1,
-        116u32.to_le_bytes(),
+        152u32.to_le_bytes(),
     );
     push_exif_entry(
         &mut data,
@@ -6096,7 +6096,28 @@ fn exif_value_semantics_fixture() -> Vec<u8> {
         0xC003,
         FrameExifTiffType::SignedRational,
         1,
-        124u32.to_le_bytes(),
+        160u32.to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        0xC004,
+        FrameExifTiffType::SignedByte,
+        3,
+        [0xFF, 0x00, 0x02, 0x00],
+    );
+    push_exif_entry(
+        &mut data,
+        0xC005,
+        FrameExifTiffType::Float,
+        1,
+        1.25f32.to_bits().to_le_bytes(),
+    );
+    push_exif_entry(
+        &mut data,
+        0xC006,
+        FrameExifTiffType::Double,
+        1,
+        168u32.to_le_bytes(),
     );
     push_exif_entry(&mut data, 0, FrameExifTiffType::Byte, 4, [2, 3, 0, 0]);
     data.extend_from_slice(&0u32.to_le_bytes());
@@ -6105,6 +6126,7 @@ fn exif_value_semantics_fixture() -> Vec<u8> {
     data.extend_from_slice(&1u32.to_le_bytes());
     data.extend_from_slice(&(-1i32).to_le_bytes());
     data.extend_from_slice(&2i32.to_le_bytes());
+    data.extend_from_slice(&(-2.5f64).to_bits().to_le_bytes());
     data
 }
 
@@ -7560,6 +7582,15 @@ fn exercise_exif_entry_typed_values(entry: FrameExifEntry<'_>) {
         Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
     }
 
+    match entry.signed_byte_values() {
+        Ok(Some(values)) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::SignedByte);
+            assert_eq!(values.len(), entry.count() as usize);
+        }
+        Ok(None) => assert_ne!(entry.tiff_type(), FrameExifTiffType::SignedByte),
+        Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
+    }
+
     match entry.signed_long_values() {
         Ok(Some(values)) => {
             assert_eq!(entry.tiff_type(), FrameExifTiffType::SignedLong);
@@ -7597,6 +7628,24 @@ fn exercise_exif_entry_typed_values(entry: FrameExifEntry<'_>) {
             assert_eq!(entry.tiff_type(), FrameExifTiffType::SignedRational);
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
         }
+    }
+
+    match entry.float_values() {
+        Ok(Some(values)) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::Float);
+            assert_eq!(values.len(), entry.count() as usize);
+        }
+        Ok(None) => assert_ne!(entry.tiff_type(), FrameExifTiffType::Float),
+        Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
+    }
+
+    match entry.double_values() {
+        Ok(Some(values)) => {
+            assert_eq!(entry.tiff_type(), FrameExifTiffType::Double);
+            assert_eq!(values.len(), entry.count() as usize);
+        }
+        Ok(None) => assert_ne!(entry.tiff_type(), FrameExifTiffType::Double),
+        Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
     }
 }
 
