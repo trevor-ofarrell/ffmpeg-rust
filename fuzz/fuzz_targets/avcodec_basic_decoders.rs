@@ -307,6 +307,23 @@ fn exercise_fixtures() {
     );
 
     for format in [
+        PixelFormat::Rgb8,
+        PixelFormat::Bgr8,
+        PixelFormat::Rgb4Byte,
+        PixelFormat::Bgr4Byte,
+    ] {
+        let decoder = RawVideoDecoder::new(4, 1, format).unwrap();
+        assert!(decoder.decode_packet(&Packet::new(vec![0; 4], 0)).is_ok());
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; 3], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    for format in [
         PixelFormat::Rgb565Le,
         PixelFormat::Rgb555Be,
         PixelFormat::Bgr565Le,

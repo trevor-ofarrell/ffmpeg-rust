@@ -279,6 +279,20 @@ mod tests {
             6
         );
         for format in [
+            RawVideoPixelFormat::Rgb8,
+            RawVideoPixelFormat::Bgr8,
+            RawVideoPixelFormat::Rgb4Byte,
+            RawVideoPixelFormat::Bgr4Byte,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 4], 2, 2, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                4
+            );
+        }
+        for format in [
             RawVideoPixelFormat::Rgb565Be,
             RawVideoPixelFormat::Rgb565Le,
             RawVideoPixelFormat::Rgb555Be,
@@ -887,6 +901,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 16);
+    }
+
+    #[test]
+    fn muxer_computes_low_bit_depth_rgb_byte_frame_sizes() {
+        for format in [
+            RawVideoPixelFormat::Rgb8,
+            RawVideoPixelFormat::Bgr8,
+            RawVideoPixelFormat::Rgb4Byte,
+            RawVideoPixelFormat::Bgr4Byte,
+        ] {
+            let muxer = RawVideoMuxer::new(3, 2, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), 6);
+        }
     }
 
     #[test]
