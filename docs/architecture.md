@@ -44,6 +44,8 @@ The rawvideo-facing packed 16-bit RGB/BGR subset now also includes FFmpeg's `rgb
 
 The rawvideo-facing byte-packed low-bit-depth RGB subset now also includes FFmpeg's `rgb8`, `bgr8`, `rgb4_byte`, and `bgr4_byte` names. They are modeled as one byte per pixel, RGB-class descriptors with three components, no alpha, no chroma subsampling, and scalar maximum component depths of 3 bits for `rgb8`/`bgr8` and 2 bits for `rgb4_byte`/`bgr4_byte`; channel packing is preserved as pixel-format naming until conversion code exists.
 
+The rawvideo-facing packed 4bpp RGB bitstream subset now also includes FFmpeg's `rgb4` and `bgr4` names. They are modeled as one bitstream plane with `ceil(width / 2)` bytes per row, RGB-class descriptors with three components, no alpha, no chroma subsampling, four descriptor bits per pixel, and scalar maximum component depth of 2 bits; nibble order and channel packing are preserved as pixel-format naming until conversion code exists.
+
 The rawvideo-facing packed YUV 4:2:2 subset now also includes FFmpeg's `yuyv422`, `uyvy422`, and `yvyu422` names. They are modeled as one packed two-byte-per-pixel YUV plane with log2 chroma `(1,0)` and even-width validation; byte order and byte layout are preserved as pixel-format naming until conversion code exists.
 
 The rawvideo-facing semi-planar YUV 4:2:0 subset now also includes FFmpeg's `nv12` and `nv21` names. They are modeled as planar descriptor formats with three 8-bit components, log2 chroma `(1,1)`, one full-resolution luma plane, and one full-width half-height interleaved chroma plane; UV/VU byte order is preserved as pixel-format naming until conversion code exists.
@@ -217,6 +219,8 @@ Both rawvideo packet paths use the shared `PixelFormat` model for planar 9-bit, 
 Both rawvideo packet paths also use the shared `PixelFormat` model for planar GBRA packet sizing, so `gbrap`, `gbrap10le`/`gbrap10be`, `gbrap12le`/`gbrap12be`, `gbrap14le`/`gbrap14be`, `gbrap16le`/`gbrap16be`, `gbrap32le`/`gbrap32be`, `gbrapf16le`/`gbrapf16be`, and `gbrapf32le`/`gbrapf32be` frames are accepted as four full-resolution planes with one, two, or four bytes per sample.
 
 Both rawvideo packet paths also accept FFmpeg's packed high-bit-depth grayscale names `gray9le`/`gray9be`, `gray10le`/`gray10be`, `gray12le`/`gray12be`, and `gray14le`/`gray14be`, including the `y9*`/`y10*`/`y12*`/`y14*` aliases, as one two-byte-per-sample grayscale plane.
+
+Both rawvideo packet paths also accept FFmpeg's packed 4bpp RGB bitstream names `rgb4` and `bgr4` as one row-padded plane with `ceil(width / 2) * height` bytes.
 
 Both rawvideo packet paths also accept FFmpeg's packed 16-bit RGB/BGR names `rgb565be`/`rgb565le`, `rgb555be`/`rgb555le`, `bgr565be`/`bgr565le`, `bgr555be`/`bgr555le`, `rgb444le`/`rgb444be`, and `bgr444le`/`bgr444be` as one two-byte-per-pixel payload plane through the shared `PixelFormat` model.
 

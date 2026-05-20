@@ -292,6 +292,15 @@ mod tests {
                 4
             );
         }
+        for format in [RawVideoPixelFormat::Rgb4, RawVideoPixelFormat::Bgr4] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 4], 3, 2, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                4
+            );
+        }
         for format in [
             RawVideoPixelFormat::Rgb565Be,
             RawVideoPixelFormat::Rgb565Le,
@@ -914,6 +923,15 @@ mod tests {
             let muxer = RawVideoMuxer::new(3, 2, format, Rational::new(25, 1).unwrap()).unwrap();
 
             assert_eq!(muxer.info().frame_size(), 6);
+        }
+    }
+
+    #[test]
+    fn muxer_computes_packed_4bit_rgb_frame_sizes() {
+        for format in [RawVideoPixelFormat::Rgb4, RawVideoPixelFormat::Bgr4] {
+            let muxer = RawVideoMuxer::new(3, 2, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), 4);
         }
     }
 

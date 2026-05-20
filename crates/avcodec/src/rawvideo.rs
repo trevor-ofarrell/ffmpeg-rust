@@ -701,6 +701,34 @@ mod tests {
     }
 
     #[test]
+    fn decodes_packed_4bit_rgb_packets_to_single_plane_frames() {
+        for (pixel_format, expected_name, payload) in [
+            (PixelFormat::Rgb4, "rgb4", vec![1, 2, 3, 4]),
+            (PixelFormat::Bgr4, "bgr4", vec![5, 6, 7, 8]),
+        ] {
+            let decoder = RawVideoDecoder::new(3, 2, pixel_format).unwrap();
+            let mut packet = Packet::new(payload.clone(), 0);
+            packet.set_pts(Some(18));
+
+            let frame = decoder.decode_packet(&packet).unwrap();
+
+            assert_eq!(decoder.frame_size(), 4);
+            assert_eq!(frame.pts(), Some(18));
+            match frame.data() {
+                FrameData::Video(video) => {
+                    assert_eq!(video.width(), 3);
+                    assert_eq!(video.height(), 2);
+                    assert_eq!(video.pixel_format(), pixel_format);
+                    assert_eq!(video.pixel_format_name(), expected_name);
+                    assert_eq!(video.line_sizes(), &[2]);
+                    assert_eq!(video.planes(), &[payload]);
+                }
+                FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+            }
+        }
+    }
+
+    #[test]
     fn decodes_packed_16bit_rgb_packets_to_single_plane_frames() {
         for (pixel_format, expected_name, payload) in [
             (PixelFormat::Rgb565Le, "rgb565le", vec![1, 2, 3, 4]),

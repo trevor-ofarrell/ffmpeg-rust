@@ -191,6 +191,20 @@ fuzz_target!(|data: &[u8]| {
         Rational::new(25, 1).unwrap(),
     );
     exercise_rawvideo(
+        b"abcd",
+        3,
+        2,
+        RawVideoPixelFormat::Rgb4,
+        Rational::new(25, 1).unwrap(),
+    );
+    exercise_rawvideo(
+        b"abcd",
+        3,
+        2,
+        RawVideoPixelFormat::Bgr4,
+        Rational::new(25, 1).unwrap(),
+    );
+    exercise_rawvideo(
         b"abcdefgh",
         2,
         2,

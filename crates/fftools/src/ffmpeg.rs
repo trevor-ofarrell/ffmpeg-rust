@@ -2856,6 +2856,37 @@ mod tests {
     }
 
     #[test]
+    fn runs_rawvideo_rgb4_to_null_stdout() {
+        let path = write_temp_bytes("rawvideo-rgb4-null", "raw", &[0, 1, 2, 3]);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb4",
+            "-s",
+            "3x2",
+            "-r",
+            "25",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("rawvideo rgb4 command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 4);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
     fn runs_rawvideo_rgb565le_to_null_stdout() {
         let path = write_temp_bytes("rawvideo-rgb565le-null", "raw", &[0, 1, 2, 3]);
         let path_arg = path.to_string_lossy().into_owned();

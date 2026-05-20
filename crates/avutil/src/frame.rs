@@ -12426,6 +12426,10 @@ fn video_plane_shapes(
                 rows: height,
             }])
         }
+        PixelFormat::Rgb4 | PixelFormat::Bgr4 => Ok(vec![VideoPlaneShape {
+            row_bytes: nibble_line_size(width),
+            rows: height,
+        }]),
         PixelFormat::Rgb565Be
         | PixelFormat::Rgb565Le
         | PixelFormat::Rgb555Be
@@ -12664,6 +12668,10 @@ fn checked_mul(value: usize, factor: usize, context: &'static str) -> AvResult<u
     value
         .checked_mul(factor)
         .ok_or_else(|| AvError::invalid_argument(format!("{context} overflow")))
+}
+
+fn nibble_line_size(width: usize) -> usize {
+    (width / 2) + (width % 2)
 }
 
 #[cfg(test)]
@@ -16438,6 +16446,12 @@ mod tests {
 
         let bgr4_byte = VideoFrame::new(3, 2, PixelFormat::Bgr4Byte, vec![vec![0; 6]]).unwrap();
         assert_eq!(bgr4_byte.line_sizes(), &[3]);
+
+        let rgb4 = VideoFrame::new(3, 2, PixelFormat::Rgb4, vec![vec![0; 4]]).unwrap();
+        assert_eq!(rgb4.line_sizes(), &[2]);
+
+        let bgr4 = VideoFrame::new(4, 1, PixelFormat::Bgr4, vec![vec![0; 2]]).unwrap();
+        assert_eq!(bgr4.line_sizes(), &[2]);
 
         let rgb565 = VideoFrame::new(3, 2, PixelFormat::Rgb565Le, vec![vec![0; 12]]).unwrap();
         assert_eq!(rgb565.line_sizes(), &[6]);
