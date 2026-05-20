@@ -681,30 +681,87 @@ mod tests {
     }
 
     #[test]
-    fn decodes_semiplanar_yuv420_packets_to_two_plane_frames() {
-        for (pixel_format, expected_name, payload) in [
-            (PixelFormat::Nv12, "nv12", (0..12).collect::<Vec<_>>()),
-            (PixelFormat::Nv21, "nv21", (12..24).collect::<Vec<_>>()),
+    fn decodes_semiplanar_yuv_packets_to_two_plane_frames() {
+        for (
+            pixel_format,
+            expected_name,
+            width,
+            height,
+            payload,
+            expected_lines,
+            expected_planes,
+        ) in [
+            (
+                PixelFormat::Nv12,
+                "nv12",
+                4,
+                2,
+                (0_u8..12).collect::<Vec<_>>(),
+                vec![4, 4],
+                vec![(0_u8..8).collect::<Vec<_>>(), (8_u8..12).collect()],
+            ),
+            (
+                PixelFormat::Nv21,
+                "nv21",
+                4,
+                2,
+                (12_u8..24).collect::<Vec<_>>(),
+                vec![4, 4],
+                vec![(12_u8..20).collect::<Vec<_>>(), (20_u8..24).collect()],
+            ),
+            (
+                PixelFormat::Nv16,
+                "nv16",
+                4,
+                3,
+                (0_u8..24).collect::<Vec<_>>(),
+                vec![4, 4],
+                vec![(0_u8..12).collect::<Vec<_>>(), (12_u8..24).collect()],
+            ),
+            (
+                PixelFormat::Nv20Le,
+                "nv20le",
+                4,
+                3,
+                (0_u8..48).collect::<Vec<_>>(),
+                vec![8, 8],
+                vec![(0_u8..24).collect::<Vec<_>>(), (24_u8..48).collect()],
+            ),
+            (
+                PixelFormat::Nv24,
+                "nv24",
+                3,
+                2,
+                (0_u8..18).collect::<Vec<_>>(),
+                vec![3, 6],
+                vec![(0_u8..6).collect::<Vec<_>>(), (6_u8..18).collect()],
+            ),
+            (
+                PixelFormat::Nv42,
+                "nv42",
+                3,
+                2,
+                (18_u8..36).collect::<Vec<_>>(),
+                vec![3, 6],
+                vec![(18_u8..24).collect::<Vec<_>>(), (24_u8..36).collect()],
+            ),
         ] {
-            let decoder = RawVideoDecoder::new(4, 2, pixel_format).unwrap();
+            let decoder = RawVideoDecoder::new(width, height, pixel_format).unwrap();
             let mut packet = Packet::new(payload.clone(), 0);
             packet.set_pts(Some(22));
 
             let frame = decoder.decode_packet(&packet).unwrap();
 
-            assert_eq!(decoder.frame_size(), 12);
+            assert_eq!(decoder.frame_size(), payload.len());
             assert_eq!(frame.pts(), Some(22));
             match frame.data() {
                 FrameData::Video(video) => {
-                    assert_eq!(video.width(), 4);
-                    assert_eq!(video.height(), 2);
+                    assert_eq!(video.width(), width);
+                    assert_eq!(video.height(), height);
                     assert_eq!(video.pixel_format(), pixel_format);
                     assert_eq!(video.pixel_format_name(), expected_name);
-                    assert_eq!(video.line_sizes(), &[4, 4]);
-                    assert_eq!(
-                        video.planes(),
-                        &[payload[..8].to_vec(), payload[8..].to_vec()]
-                    );
+                    assert_eq!(video.line_sizes(), expected_lines.as_slice());
+                    assert_eq!(video.planes(), expected_planes.as_slice());
                 }
                 FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
             }
@@ -1010,6 +1067,11 @@ mod tests {
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv12).is_err());
         assert!(RawVideoDecoder::new(2, 3, PixelFormat::Nv12).is_err());
         assert!(RawVideoDecoder::new(2, 2, PixelFormat::Nv12).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv16).is_err());
+        assert!(RawVideoDecoder::new(4, 3, PixelFormat::Nv16).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv20Be).is_err());
+        assert!(RawVideoDecoder::new(4, 3, PixelFormat::Nv20Be).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv24).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv411p).is_err());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::YuvJ411p).is_err());
         assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuv411p).is_ok());

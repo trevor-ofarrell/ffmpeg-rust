@@ -391,6 +391,27 @@ mod tests {
             );
         }
         for (format, width, height, payload_len, expected_size) in [
+            (RawVideoPixelFormat::Nv16, 4, 3, 24, 24),
+            (RawVideoPixelFormat::Nv20Le, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Nv20Be, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Nv24, 3, 2, 18, 18),
+            (RawVideoPixelFormat::Nv42, 3, 2, 18, 18),
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(
+                    &vec![0; payload_len],
+                    width,
+                    height,
+                    format,
+                    Rational::new(1, 1).unwrap(),
+                )
+                .unwrap()
+                .info()
+                .frame_size(),
+                expected_size
+            );
+        }
+        for (format, width, height, payload_len, expected_size) in [
             (RawVideoPixelFormat::Yuv420p9Le, 4, 2, 24, 24),
             (RawVideoPixelFormat::Yuv420p9Be, 4, 2, 24, 24),
             (RawVideoPixelFormat::Yuv422p9Le, 4, 3, 48, 48),
@@ -980,6 +1001,30 @@ mod tests {
         )
         .is_ok());
         assert!(RawVideoDemuxer::open(
+            &[0; 24],
+            3,
+            2,
+            RawVideoPixelFormat::Nv16,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 48],
+            3,
+            2,
+            RawVideoPixelFormat::Nv20Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 18],
+            3,
+            2,
+            RawVideoPixelFormat::Nv24,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoDemuxer::open(
             &[0; 18],
             3,
             2,
@@ -1293,6 +1338,22 @@ mod tests {
             let muxer = RawVideoMuxer::new(4, 2, format, Rational::new(25, 1).unwrap()).unwrap();
 
             assert_eq!(muxer.info().frame_size(), 12);
+        }
+    }
+
+    #[test]
+    fn muxer_computes_semiplanar_yuv422_and_yuv444_frame_sizes() {
+        for (format, width, height, expected_size) in [
+            (RawVideoPixelFormat::Nv16, 4, 3, 24),
+            (RawVideoPixelFormat::Nv20Le, 4, 3, 48),
+            (RawVideoPixelFormat::Nv20Be, 4, 3, 48),
+            (RawVideoPixelFormat::Nv24, 3, 2, 18),
+            (RawVideoPixelFormat::Nv42, 3, 2, 18),
+        ] {
+            let muxer =
+                RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), expected_size);
         }
     }
 
@@ -1875,6 +1936,27 @@ mod tests {
             2,
             2,
             RawVideoPixelFormat::Nv12,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Nv16,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Nv20Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Nv24,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());

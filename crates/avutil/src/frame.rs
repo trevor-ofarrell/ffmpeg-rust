@@ -12775,6 +12775,50 @@ fn video_plane_shapes(
                 rows: height >> 1,
             },
         ]),
+        PixelFormat::Nv16 => Ok(vec![
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height,
+            },
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height,
+            },
+        ]),
+        PixelFormat::Nv20Le | PixelFormat::Nv20Be => {
+            let row_bytes = checked_mul(
+                width,
+                2,
+                "semi-planar 10-bit 4:2:2 YUV video frame line size",
+            )?;
+            Ok(vec![
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+            ])
+        }
+        PixelFormat::Nv24 | PixelFormat::Nv42 => {
+            let chroma_row_bytes = checked_mul(
+                width,
+                2,
+                "semi-planar 4:4:4 YUV video frame chroma line size",
+            )?;
+            Ok(vec![
+                VideoPlaneShape {
+                    row_bytes: width,
+                    rows: height,
+                },
+                VideoPlaneShape {
+                    row_bytes: chroma_row_bytes,
+                    rows: height,
+                },
+            ])
+        }
     }
 }
 
@@ -16636,6 +16680,17 @@ mod tests {
 
         let nv21 = VideoFrame::new(2, 4, PixelFormat::Nv21, vec![vec![0; 8], vec![1; 4]]).unwrap();
         assert_eq!(nv21.line_sizes(), &[2, 2]);
+
+        let nv16 =
+            VideoFrame::new(4, 3, PixelFormat::Nv16, vec![vec![0; 12], vec![1; 12]]).unwrap();
+        assert_eq!(nv16.line_sizes(), &[4, 4]);
+
+        let nv20 =
+            VideoFrame::new(4, 3, PixelFormat::Nv20Le, vec![vec![0; 24], vec![1; 24]]).unwrap();
+        assert_eq!(nv20.line_sizes(), &[8, 8]);
+
+        let nv42 = VideoFrame::new(3, 2, PixelFormat::Nv42, vec![vec![0; 6], vec![1; 12]]).unwrap();
+        assert_eq!(nv42.line_sizes(), &[3, 6]);
 
         let rgba = VideoFrame::new(3, 2, PixelFormat::Rgba, vec![vec![0; 24]]).unwrap();
         assert_eq!(rgba.line_sizes(), &[12]);

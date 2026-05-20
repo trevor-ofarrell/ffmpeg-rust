@@ -413,6 +413,28 @@ fn exercise_fixtures() {
         assert!(RawVideoDecoder::new(4, 3, format).is_err());
     }
 
+    for (format, width, height, valid_len, invalid_len) in [
+        (PixelFormat::Nv16, 4, 3, 24, 23),
+        (PixelFormat::Nv20Le, 4, 3, 48, 47),
+        (PixelFormat::Nv20Be, 4, 3, 48, 47),
+        (PixelFormat::Nv24, 3, 2, 18, 17),
+        (PixelFormat::Nv42, 3, 2, 18, 17),
+    ] {
+        let decoder = RawVideoDecoder::new(width, height, format).unwrap();
+        assert!(decoder
+            .decode_packet(&Packet::new(vec![0; valid_len], 0))
+            .is_ok());
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; invalid_len], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv16).is_err());
+    assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv20Be).is_err());
+
     let rgb48 = RawVideoDecoder::new(1, 1, PixelFormat::Rgb48Le).unwrap();
     assert!(rgb48.decode_packet(&Packet::new(vec![0; 6], 0)).is_ok());
     assert_eq!(

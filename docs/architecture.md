@@ -38,6 +38,8 @@ The rawvideo-facing planar high-bit-depth YUV subset now also includes FFmpeg's 
 
 The rawvideo-facing planar YUVA subset now also includes FFmpeg's 8-bit `yuva420p`, `yuva422p`, and `yuva444p` names plus high-bit-depth `yuva420p9le`, `yuva420p9be`, `yuva422p9le`, `yuva422p9be`, `yuva444p9le`, `yuva444p9be`, `yuva420p10le`, `yuva420p10be`, `yuva422p10le`, `yuva422p10be`, `yuva444p10le`, `yuva444p10be`, `yuva422p12le`, `yuva422p12be`, `yuva444p12le`, `yuva444p12be`, `yuva420p16le`, `yuva420p16be`, `yuva422p16le`, `yuva422p16be`, `yuva444p16le`, and `yuva444p16be`. They are modeled as four planar YUVA planes with full-resolution alpha, 4:2:0, 4:2:2, or 4:4:4 chroma geometry, exact average descriptor bits per pixel including `45/2` for `yuva420p9*`, and one or two raw storage bytes per sample according to component depth. FFmpeg 8.1.1 does not define `yuva420p12*`, so no such Rust formats are exposed.
 
+The rawvideo-facing semi-planar NV subset now also includes FFmpeg's `nv16`, `nv20le`, `nv20be`, `nv24`, and `nv42` names in addition to `nv12` and `nv21`. `nv16` is modeled as 8-bit 4:2:2 with full-height luma and interleaved chroma planes, `nv20le`/`nv20be` as 10-bit 4:2:2 with two stored bytes per component sample, and `nv24`/`nv42` as 8-bit 4:4:4 with a full luma plane plus a double-width interleaved chroma plane.
+
 The rawvideo-facing packed grayscale subset now also includes FFmpeg's `gray9le`, `gray9be`, `gray10le`, `gray10be`, `gray12le`, `gray12be`, `gray14le`, and `gray14be` names plus `y9le`/`y9be`, `y10le`/`y10be`, `y12le`/`y12be`, and `y14le`/`y14be` aliases. They are modeled as one-component grayscale formats with 9, 10, 12, or 14 descriptor bits per pixel and two stored bytes per sample; byte order is preserved as pixel-format naming only until conversion code exists.
 
 The rawvideo-facing monochrome bitstream subset now also includes FFmpeg's `monow` and `monob` names. They are modeled as one 1bpp grayscale bitstream plane with MSB-first pixel storage and `ceil(width / 8)` bytes per row; white/black polarity is preserved as pixel-format naming only until conversion code exists.
@@ -243,6 +245,8 @@ Both rawvideo packet paths also accept FFmpeg's paletted `pal8` name as one byte
 Both rawvideo packet paths also accept FFmpeg's packed YUV 4:2:2 names `yuyv422`, `uyvy422`, and `yvyu422` as one two-byte-per-pixel payload plane with even-width validation through the shared `PixelFormat` model.
 
 Both rawvideo packet paths also accept FFmpeg's semi-planar YUV 4:2:0 names `nv12` and `nv21` as one full luma plane plus one interleaved chroma plane with even-width and even-height validation through the shared `PixelFormat` model.
+
+Both rawvideo packet paths also accept FFmpeg's semi-planar NV YUV 4:2:2 names `nv16`, `nv20le`, and `nv20be` plus 4:4:4 names `nv24` and `nv42` through the shared `PixelFormat` model, with even-width validation for the 4:2:2 formats and no chroma-parity requirement for 4:4:4.
 
 Both rawvideo packet paths also accept FFmpeg's deprecated full-range YUVJ names `yuvj420p`, `yuvj422p`, `yuvj411p`, `yuvj440p`, and `yuvj444p` with the same planar sizing and chroma geometry validation as their non-`j` YUV counterparts.
 

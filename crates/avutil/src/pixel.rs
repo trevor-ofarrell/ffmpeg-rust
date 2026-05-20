@@ -95,6 +95,11 @@ pub enum PixelFormat {
     Yvyu422,
     Nv12,
     Nv21,
+    Nv16,
+    Nv20Le,
+    Nv20Be,
+    Nv24,
+    Nv42,
     Yuv420p,
     YuvJ420p,
     Yuv422p,
@@ -294,6 +299,11 @@ impl PixelFormat {
         Self::Yvyu422,
         Self::Nv12,
         Self::Nv21,
+        Self::Nv16,
+        Self::Nv20Le,
+        Self::Nv20Be,
+        Self::Nv24,
+        Self::Nv42,
         Self::Yuv420p,
         Self::YuvJ420p,
         Self::Yuv422p,
@@ -462,6 +472,11 @@ impl PixelFormat {
             "yvyu422" => Some(Self::Yvyu422),
             "nv12" => Some(Self::Nv12),
             "nv21" => Some(Self::Nv21),
+            "nv16" => Some(Self::Nv16),
+            "nv20le" => Some(Self::Nv20Le),
+            "nv20be" => Some(Self::Nv20Be),
+            "nv24" => Some(Self::Nv24),
+            "nv42" => Some(Self::Nv42),
             "yuv420p" => Some(Self::Yuv420p),
             "yuvj420p" => Some(Self::YuvJ420p),
             "yuv422p" => Some(Self::Yuv422p),
@@ -1629,6 +1644,66 @@ impl PixelFormat {
                 1,
                 1,
             ),
+            Self::Nv16 => (
+                "nv16",
+                PixelFormatClass::Yuv,
+                3,
+                16,
+                2,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
+            Self::Nv20Le => (
+                "nv20le",
+                PixelFormatClass::Yuv,
+                3,
+                20,
+                2,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
+            Self::Nv20Be => (
+                "nv20be",
+                PixelFormatClass::Yuv,
+                3,
+                20,
+                2,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
+            Self::Nv24 => (
+                "nv24",
+                PixelFormatClass::Yuv,
+                3,
+                24,
+                2,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::Nv42 => (
+                "nv42",
+                PixelFormatClass::Yuv,
+                3,
+                24,
+                2,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
             Self::Yuv420p => (
                 "yuv420p",
                 PixelFormatClass::Yuv,
@@ -2564,6 +2639,8 @@ impl PixelFormat {
                     | Self::Gbrp10Be
                     | Self::Gbrap10Le
                     | Self::Gbrap10Be
+                    | Self::Nv20Le
+                    | Self::Nv20Be
                     | Self::Yuva420p10Le
                     | Self::Yuva420p10Be
                     | Self::Yuva422p10Le
@@ -2908,6 +2985,33 @@ impl PixelFormat {
                     height >> 1,
                     "semi-planar 4:2:0 YUV chroma plane area",
                 )?;
+                Ok(vec![pixels, chroma])
+            }
+            Self::Nv16 => {
+                if width % 2 != 0 {
+                    return Err(AvError::invalid_argument(format!(
+                        "{} pixel format width must be divisible by 2",
+                        self.name()
+                    )));
+                }
+                Ok(vec![pixels, pixels])
+            }
+            Self::Nv20Le | Self::Nv20Be => {
+                if width % 2 != 0 {
+                    return Err(AvError::invalid_argument(format!(
+                        "{} pixel format width must be divisible by 2",
+                        self.name()
+                    )));
+                }
+                let plane = checked_mul(
+                    pixels,
+                    2,
+                    "semi-planar 10-bit 4:2:2 YUV pixel format plane size",
+                )?;
+                Ok(vec![plane, plane])
+            }
+            Self::Nv24 | Self::Nv42 => {
+                let chroma = checked_mul(pixels, 2, "semi-planar 4:4:4 YUV chroma plane size")?;
                 Ok(vec![pixels, chroma])
             }
             Self::Yuv420p
@@ -3434,7 +3538,15 @@ mod tests {
             assert!(!format.has_alpha());
             assert_eq!(format.packed_bytes_per_pixel(), Some(2));
         }
-        for (name, format) in [("nv12", PixelFormat::Nv12), ("nv21", PixelFormat::Nv21)] {
+        for (name, format) in [
+            ("nv12", PixelFormat::Nv12),
+            ("nv21", PixelFormat::Nv21),
+            ("nv16", PixelFormat::Nv16),
+            ("nv20le", PixelFormat::Nv20Le),
+            ("nv20be", PixelFormat::Nv20Be),
+            ("nv24", PixelFormat::Nv24),
+            ("nv42", PixelFormat::Nv42),
+        ] {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
             assert_eq!(format.plane_count(), 2);
@@ -3537,7 +3649,7 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 160);
+        assert_eq!(PixelFormat::ALL.len(), 165);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
@@ -3554,6 +3666,11 @@ mod tests {
         assert_eq!(PixelFormat::Yvyu422.plane_count(), 1);
         assert_eq!(PixelFormat::Nv12.plane_count(), 2);
         assert_eq!(PixelFormat::Nv21.plane_count(), 2);
+        assert_eq!(PixelFormat::Nv16.plane_count(), 2);
+        assert_eq!(PixelFormat::Nv20Le.plane_count(), 2);
+        assert_eq!(PixelFormat::Nv20Be.plane_count(), 2);
+        assert_eq!(PixelFormat::Nv24.plane_count(), 2);
+        assert_eq!(PixelFormat::Nv42.plane_count(), 2);
         assert_eq!(PixelFormat::Yuv420p.plane_count(), 3);
         assert_eq!(PixelFormat::Yuv422p.plane_count(), 3);
         assert_eq!(PixelFormat::Yuv410p.plane_count(), 3);
@@ -3650,6 +3767,11 @@ mod tests {
         assert!(PixelFormat::Yvyu422.is_packed());
         assert!(PixelFormat::Nv12.is_planar());
         assert!(PixelFormat::Nv21.is_planar());
+        assert!(PixelFormat::Nv16.is_planar());
+        assert!(PixelFormat::Nv20Le.is_planar());
+        assert!(PixelFormat::Nv20Be.is_planar());
+        assert!(PixelFormat::Nv24.is_planar());
+        assert!(PixelFormat::Nv42.is_planar());
         assert!(PixelFormat::Yuv420p.is_planar());
         assert!(PixelFormat::Yuv422p.is_planar());
         assert!(PixelFormat::Yuv410p.is_planar());
@@ -3754,6 +3876,11 @@ mod tests {
         assert_eq!(PixelFormat::Yvyu422.packed_bytes_per_pixel(), Some(2));
         assert_eq!(PixelFormat::Nv12.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Nv21.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::Nv16.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::Nv20Le.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::Nv20Be.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::Nv24.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::Nv42.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Gbrp.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Gbrp9Le.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Gbrp10Le.packed_bytes_per_pixel(), None);
@@ -4172,6 +4299,42 @@ mod tests {
             assert_eq!(descriptor.packed_bytes_per_pixel, None);
             assert_eq!(format.log2_chroma(), (1, 1));
             assert!(format.has_chroma_subsampling());
+        }
+
+        for (
+            format,
+            expected_name,
+            expected_bits_per_component,
+            expected_bits_per_pixel,
+            expected_log2_chroma,
+        ) in [
+            (PixelFormat::Nv16, "nv16", 8, bpp(16), (1, 0)),
+            (PixelFormat::Nv20Le, "nv20le", 10, bpp(20), (1, 0)),
+            (PixelFormat::Nv20Be, "nv20be", 10, bpp(20), (1, 0)),
+            (PixelFormat::Nv24, "nv24", 8, bpp(24), (0, 0)),
+            (PixelFormat::Nv42, "nv42", 8, bpp(24), (0, 0)),
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.format, format);
+            assert_eq!(descriptor.name, expected_name);
+            assert_eq!(PixelFormat::from_name(descriptor.name), Some(format));
+            assert_eq!(descriptor.class, PixelFormatClass::Yuv);
+            assert!(format.is_yuv());
+            assert!(!format.is_rgb());
+            assert!(!format.is_gray());
+            assert_eq!(descriptor.component_count, 3);
+            assert_eq!(descriptor.bits_per_component, expected_bits_per_component);
+            assert_eq!(descriptor.bits_per_pixel, expected_bits_per_pixel);
+            assert_eq!(descriptor.plane_count, 2);
+            assert!(descriptor.is_planar);
+            assert!(!descriptor.has_alpha);
+            assert!(!descriptor.is_float);
+            assert_eq!(descriptor.packed_bytes_per_pixel, None);
+            assert_eq!(format.log2_chroma(), expected_log2_chroma);
+            assert_eq!(
+                format.has_chroma_subsampling(),
+                expected_log2_chroma != (0, 0)
+            );
         }
 
         assert_eq!(PixelFormat::Rgb24.component_count(), 3);
@@ -4607,6 +4770,14 @@ mod tests {
         assert_eq!(PixelFormat::Nv12.frame_size(4, 2).unwrap(), 12);
         assert_eq!(PixelFormat::Nv21.plane_sizes(2, 4).unwrap(), vec![8, 4]);
         assert_eq!(PixelFormat::Nv21.frame_size(2, 4).unwrap(), 12);
+        assert_eq!(PixelFormat::Nv16.plane_sizes(4, 3).unwrap(), vec![12, 12]);
+        assert_eq!(PixelFormat::Nv16.frame_size(4, 3).unwrap(), 24);
+        assert_eq!(PixelFormat::Nv20Le.plane_sizes(4, 3).unwrap(), vec![24, 24]);
+        assert_eq!(PixelFormat::Nv20Le.frame_size(4, 3).unwrap(), 48);
+        assert_eq!(PixelFormat::Nv20Be.frame_size(4, 3).unwrap(), 48);
+        assert_eq!(PixelFormat::Nv24.plane_sizes(3, 2).unwrap(), vec![6, 12]);
+        assert_eq!(PixelFormat::Nv24.frame_size(3, 2).unwrap(), 18);
+        assert_eq!(PixelFormat::Nv42.frame_size(3, 2).unwrap(), 18);
         assert_eq!(
             PixelFormat::Yuv420p.plane_sizes(4, 2).unwrap(),
             vec![8, 2, 2]
@@ -5135,6 +5306,30 @@ mod tests {
             vec![(12..20).collect::<Vec<_>>(), (20..24).collect()]
         );
 
+        let planes = PixelFormat::Nv16
+            .split_planes(&(0..24).collect::<Vec<_>>(), 4, 3)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![(0..12).collect::<Vec<_>>(), (12..24).collect()]
+        );
+
+        let planes = PixelFormat::Nv20Le
+            .split_planes(&(0..48).collect::<Vec<_>>(), 4, 3)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![(0..24).collect::<Vec<_>>(), (24..48).collect()]
+        );
+
+        let planes = PixelFormat::Nv42
+            .split_planes(&(0..18).collect::<Vec<_>>(), 3, 2)
+            .unwrap();
+
+        assert_eq!(planes, vec![(0..6).collect::<Vec<_>>(), (6..18).collect()]);
+
         let planes = PixelFormat::Rgba64Le
             .split_planes(&[0, 1, 2, 3, 4, 5, 6, 7], 1, 1)
             .unwrap();
@@ -5355,6 +5550,15 @@ mod tests {
             PixelFormat::Nv21.frame_size(2, 3).unwrap_err().kind(),
             AvErrorKind::InvalidArgument
         );
+        assert_eq!(
+            PixelFormat::Nv16.frame_size(3, 2).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            PixelFormat::Nv20Be.frame_size(3, 2).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(PixelFormat::Nv24.frame_size(3, 2).unwrap(), 18);
         assert_eq!(
             PixelFormat::Nv12
                 .split_planes(&[0; 11], 4, 2)
