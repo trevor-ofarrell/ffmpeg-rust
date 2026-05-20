@@ -274,6 +274,56 @@ fn exercise_fixtures() {
     );
     assert!(raw_gray32_demuxer.read_packet().unwrap().is_none());
 
+    let mut raw_grayf16 = RawVideoMuxer::new(
+        2,
+        1,
+        PixelFormat::GrayF16Le,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    raw_grayf16
+        .write_packet(&Packet::new((0..4).collect(), 0))
+        .unwrap();
+    let raw_grayf16_output = raw_grayf16.finish();
+    let mut raw_grayf16_demuxer = RawVideoDemuxer::open(
+        &raw_grayf16_output,
+        2,
+        1,
+        PixelFormat::GrayF16Le,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_grayf16_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..4).collect::<Vec<_>>()
+    );
+    assert!(raw_grayf16_demuxer.read_packet().unwrap().is_none());
+
+    let mut raw_grayf32 = RawVideoMuxer::new(
+        2,
+        1,
+        PixelFormat::GrayF32Be,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    raw_grayf32
+        .write_packet(&Packet::new((0..8).collect(), 0))
+        .unwrap();
+    let raw_grayf32_output = raw_grayf32.finish();
+    let mut raw_grayf32_demuxer = RawVideoDemuxer::open(
+        &raw_grayf32_output,
+        2,
+        1,
+        PixelFormat::GrayF32Be,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_grayf32_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..8).collect::<Vec<_>>()
+    );
+    assert!(raw_grayf32_demuxer.read_packet().unwrap().is_none());
+
     let mut raw_ya8 =
         RawVideoMuxer::new(2, 1, PixelFormat::Ya8, Rational::new(24, 1).unwrap()).unwrap();
     raw_ya8

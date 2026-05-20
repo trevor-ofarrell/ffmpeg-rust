@@ -133,6 +133,42 @@ mod tests {
     }
 
     #[test]
+    fn decodes_gray_float_packets_to_single_plane_frames() {
+        let grayf16 = RawVideoDecoder::new(2, 1, PixelFormat::GrayF16Le).unwrap();
+        let mut packet = Packet::new(vec![0, 1, 2, 3], 0);
+        packet.set_pts(Some(9));
+
+        let frame = grayf16.decode_packet(&packet).unwrap();
+
+        assert_eq!(grayf16.frame_size(), 4);
+        assert_eq!(frame.pts(), Some(9));
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.width(), 2);
+                assert_eq!(video.height(), 1);
+                assert_eq!(video.pixel_format(), PixelFormat::GrayF16Le);
+                assert_eq!(video.pixel_format_name(), "grayf16le");
+                assert_eq!(video.planes(), &[vec![0, 1, 2, 3]]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+
+        let grayf32 = RawVideoDecoder::new(2, 1, PixelFormat::GrayF32Be).unwrap();
+        let frame = grayf32
+            .decode_packet(&Packet::new(vec![4, 5, 6, 7, 8, 9, 10, 11], 0))
+            .unwrap();
+
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.pixel_format(), PixelFormat::GrayF32Be);
+                assert_eq!(video.pixel_format_name(), "grayf32be");
+                assert_eq!(video.planes(), &[vec![4, 5, 6, 7, 8, 9, 10, 11]]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+    }
+
+    #[test]
     fn decodes_ya8_packet_to_single_plane_frame() {
         let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Ya8).unwrap();
         let mut packet = Packet::new(vec![0x10, 0xff, 0x80, 0x40], 0);

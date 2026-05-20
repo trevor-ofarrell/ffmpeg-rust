@@ -140,6 +140,26 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    let grayf16 = RawVideoDecoder::new(2, 1, PixelFormat::GrayF16Le).unwrap();
+    assert!(grayf16.decode_packet(&Packet::new(vec![0; 4], 0)).is_ok());
+    assert_eq!(
+        grayf16
+            .decode_packet(&Packet::new(vec![0; 3], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
+    let grayf32 = RawVideoDecoder::new(2, 1, PixelFormat::GrayF32Be).unwrap();
+    assert!(grayf32.decode_packet(&Packet::new(vec![0; 8], 0)).is_ok());
+    assert_eq!(
+        grayf32
+            .decode_packet(&Packet::new(vec![0; 7], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let ya8 = RawVideoDecoder::new(2, 1, PixelFormat::Ya8).unwrap();
     assert!(ya8
         .decode_packet(&Packet::new(vec![0x10, 0xff, 0x80, 0x40], 0))

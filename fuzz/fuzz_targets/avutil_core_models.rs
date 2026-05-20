@@ -5247,6 +5247,25 @@ fn exercise_fixtures() {
     assert_eq!(PixelFormat::Gray32Be.frame_size(2, 2).unwrap(), 16);
     assert_eq!(PixelFormat::Gray32Le.bits_per_component(), 32);
     assert!(!PixelFormat::Gray32Le.has_alpha());
+    assert_eq!(
+        PixelFormat::from_name("grayf16le"),
+        Some(PixelFormat::GrayF16Le)
+    );
+    assert_eq!(
+        PixelFormat::from_name("grayf32le"),
+        Some(PixelFormat::GrayF32Le)
+    );
+    assert_eq!(
+        PixelFormat::from_name("yf32be"),
+        Some(PixelFormat::GrayF32Be)
+    );
+    assert_eq!(PixelFormat::GrayF16Be.frame_size(2, 2).unwrap(), 8);
+    assert_eq!(PixelFormat::GrayF32Be.frame_size(2, 2).unwrap(), 16);
+    assert_eq!(PixelFormat::GrayF16Le.bits_per_component(), 16);
+    assert_eq!(PixelFormat::GrayF32Le.bits_per_component(), 32);
+    assert!(PixelFormat::GrayF16Le.is_float());
+    assert!(PixelFormat::GrayF32Le.is_float());
+    assert!(!PixelFormat::GrayF32Le.has_alpha());
     assert_eq!(PixelFormat::from_name("ya8"), Some(PixelFormat::Ya8));
     assert_eq!(PixelFormat::from_name("gray8a"), Some(PixelFormat::Ya8));
     assert_eq!(PixelFormat::from_name("y400a"), Some(PixelFormat::Ya8));
@@ -16965,6 +16984,8 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         PixelFormat::Ya16Le | PixelFormat::Ya16Be => vec![width * 4],
         PixelFormat::Gray16Le | PixelFormat::Gray16Be => vec![width * 2],
         PixelFormat::Gray32Le | PixelFormat::Gray32Be => vec![width * 4],
+        PixelFormat::GrayF16Le | PixelFormat::GrayF16Be => vec![width * 2],
+        PixelFormat::GrayF32Le | PixelFormat::GrayF32Be => vec![width * 4],
         PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![width * 3],
         PixelFormat::Rgb48Le
         | PixelFormat::Rgb48Be
@@ -17007,6 +17028,8 @@ fn expected_video_plane_shapes(
         PixelFormat::Ya16Le | PixelFormat::Ya16Be => vec![(width * 4, height)],
         PixelFormat::Gray16Le | PixelFormat::Gray16Be => vec![(width * 2, height)],
         PixelFormat::Gray32Le | PixelFormat::Gray32Be => vec![(width * 4, height)],
+        PixelFormat::GrayF16Le | PixelFormat::GrayF16Be => vec![(width * 2, height)],
+        PixelFormat::GrayF32Le | PixelFormat::GrayF32Be => vec![(width * 4, height)],
         PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![(width * 3, height)],
         PixelFormat::Rgb48Le
         | PixelFormat::Rgb48Be
