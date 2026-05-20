@@ -118,6 +118,18 @@ fn exercise_fixtures() {
     let gray_frame = gray.decode_packet(&gray_packet).unwrap();
     assert_eq!(gray_frame.pts(), Some(7));
 
+    let gray16 = RawVideoDecoder::new(2, 1, PixelFormat::Gray16Le).unwrap();
+    assert!(gray16
+        .decode_packet(&Packet::new(vec![0, 1, 2, 3], 0))
+        .is_ok());
+    assert_eq!(
+        gray16
+            .decode_packet(&Packet::new(vec![0, 1, 2], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let rgb0 = RawVideoDecoder::new(2, 1, PixelFormat::Rgb0).unwrap();
     assert!(rgb0.decode_packet(&Packet::new(vec![0; 8], 0)).is_ok());
     assert_eq!(

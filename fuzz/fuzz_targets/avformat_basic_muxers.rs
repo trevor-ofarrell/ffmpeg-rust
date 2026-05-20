@@ -224,6 +224,31 @@ fn exercise_fixtures() {
     raw.write_packet(&Packet::new(vec![0, 1, 2, 3], 0)).unwrap();
     assert_eq!(raw.finish(), vec![0, 1, 2, 3]);
 
+    let mut raw_gray16 = RawVideoMuxer::new(
+        2,
+        1,
+        PixelFormat::Gray16Be,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    raw_gray16
+        .write_packet(&Packet::new((0..4).collect(), 0))
+        .unwrap();
+    let raw_gray16_output = raw_gray16.finish();
+    let mut raw_gray16_demuxer = RawVideoDemuxer::open(
+        &raw_gray16_output,
+        2,
+        1,
+        PixelFormat::Gray16Be,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_gray16_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..4).collect::<Vec<_>>()
+    );
+    assert!(raw_gray16_demuxer.read_packet().unwrap().is_none());
+
     let mut raw_rgb0 =
         RawVideoMuxer::new(2, 1, PixelFormat::Rgb0, Rational::new(24, 1).unwrap()).unwrap();
     raw_rgb0

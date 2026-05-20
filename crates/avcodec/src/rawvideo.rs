@@ -89,6 +89,28 @@ mod tests {
     }
 
     #[test]
+    fn decodes_gray16_packet_to_single_plane_frame() {
+        let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Gray16Le).unwrap();
+        let mut packet = Packet::new(vec![0, 1, 2, 3], 0);
+        packet.set_pts(Some(7));
+
+        let frame = decoder.decode_packet(&packet).unwrap();
+
+        assert_eq!(decoder.frame_size(), 4);
+        assert_eq!(frame.pts(), Some(7));
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.width(), 2);
+                assert_eq!(video.height(), 1);
+                assert_eq!(video.pixel_format(), PixelFormat::Gray16Le);
+                assert_eq!(video.pixel_format_name(), "gray16le");
+                assert_eq!(video.planes(), &[vec![0, 1, 2, 3]]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+    }
+
+    #[test]
     fn decodes_yuv420p_packet_to_three_planes() {
         let decoder = RawVideoDecoder::new(4, 2, PixelFormat::Yuv420p).unwrap();
         let packet = Packet::new(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], 0);

@@ -278,6 +278,15 @@ mod tests {
             .frame_size(),
             6
         );
+        for format in [RawVideoPixelFormat::Gray16Le, RawVideoPixelFormat::Gray16Be] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 4], 2, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                4
+            );
+        }
         for format in [
             RawVideoPixelFormat::Bgra,
             RawVideoPixelFormat::Argb,
@@ -568,6 +577,19 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 16);
+    }
+
+    #[test]
+    fn muxer_computes_gray16_frame_size() {
+        let muxer = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Gray16Be,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(muxer.info().frame_size(), 12);
     }
 
     #[test]

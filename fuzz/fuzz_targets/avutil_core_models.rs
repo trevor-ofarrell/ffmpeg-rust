@@ -5204,6 +5204,11 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
 fn exercise_fixtures() {
     assert_eq!(PixelFormat::from_name("gray8"), Some(PixelFormat::Gray8));
+    assert_eq!(
+        PixelFormat::from_name("gray16le"),
+        Some(PixelFormat::Gray16Le)
+    );
+    assert_eq!(PixelFormat::Gray16Be.frame_size(2, 2).unwrap(), 8);
     assert_eq!(PixelFormat::from_name("0rgb"), Some(PixelFormat::ZeroRgb));
     assert_eq!(PixelFormat::Rgb0.frame_size(2, 2).unwrap(), 16);
     assert_eq!(
@@ -16891,6 +16896,7 @@ fn write_fixed_bytes(data: &mut [u8], offset: usize, len: usize, value: &[u8]) {
 fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usize> {
     match pixel_format {
         PixelFormat::Gray8 => vec![width],
+        PixelFormat::Gray16Le | PixelFormat::Gray16Be => vec![width * 2],
         PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![width * 3],
         PixelFormat::Rgba
         | PixelFormat::Bgra
@@ -16921,6 +16927,7 @@ fn expected_video_plane_shapes(
 ) -> Vec<(usize, usize)> {
     match pixel_format {
         PixelFormat::Gray8 => vec![(width, height)],
+        PixelFormat::Gray16Le | PixelFormat::Gray16Be => vec![(width * 2, height)],
         PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![(width * 3, height)],
         PixelFormat::Rgba
         | PixelFormat::Bgra
