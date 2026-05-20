@@ -1,6 +1,6 @@
 use crate::frame::{
-    FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye, FrameStereo3dType,
-    FrameStereo3dView,
+    FrameAmbientViewingEnvironment, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
+    FrameStereo3dType, FrameStereo3dView,
 };
 use crate::{rescale_q, AvError, AvResult, BufferRef, Rational};
 
@@ -1196,6 +1196,57 @@ impl PacketContentLightMetadata {
         bytes[0..4].copy_from_slice(&self.max_content_light_level.to_ne_bytes());
         bytes[4..8].copy_from_slice(&self.max_average_light_level.to_ne_bytes());
         bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketAmbientViewingEnvironment(FrameAmbientViewingEnvironment);
+
+impl PacketAmbientViewingEnvironment {
+    pub const RATIONAL_LEN: usize = FrameAmbientViewingEnvironment::RATIONAL_LEN;
+    pub const AMBIENT_ILLUMINANCE_OFFSET: usize =
+        FrameAmbientViewingEnvironment::AMBIENT_ILLUMINANCE_OFFSET;
+    pub const AMBIENT_LIGHT_X_OFFSET: usize =
+        FrameAmbientViewingEnvironment::AMBIENT_LIGHT_X_OFFSET;
+    pub const AMBIENT_LIGHT_Y_OFFSET: usize =
+        FrameAmbientViewingEnvironment::AMBIENT_LIGHT_Y_OFFSET;
+    pub const DATA_LEN: usize = FrameAmbientViewingEnvironment::DATA_LEN;
+
+    pub fn new(
+        ambient_illuminance: Rational,
+        ambient_light_x: Rational,
+        ambient_light_y: Rational,
+    ) -> AvResult<Self> {
+        FrameAmbientViewingEnvironment::new(ambient_illuminance, ambient_light_x, ambient_light_y)
+            .map(Self)
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "ambient viewing environment packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        FrameAmbientViewingEnvironment::parse(data).map(Self)
+    }
+
+    pub const fn ambient_illuminance(self) -> Rational {
+        self.0.ambient_illuminance()
+    }
+
+    pub const fn ambient_light_x(self) -> Rational {
+        self.0.ambient_light_x()
+    }
+
+    pub const fn ambient_light_y(self) -> Rational {
+        self.0.ambient_light_y()
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        self.0.to_bytes()
     }
 }
 
@@ -2397,6 +2448,15 @@ impl SideData {
         )
     }
 
+    pub fn new_ambient_viewing_environment(
+        value: PacketAmbientViewingEnvironment,
+    ) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::AmbientViewingEnvironment,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_a53_closed_captions(data: Vec<u8>) -> AvResult<Self> {
         let side_data = Self::new_with_kind(PacketSideDataKind::A53ClosedCaptions, data)?;
         PacketA53ClosedCaptions::parse(side_data.data())?;
@@ -2589,6 +2649,14 @@ impl SideData {
         }
 
         PacketContentLightMetadata::parse(self.data()).map(Some)
+    }
+
+    pub fn ambient_viewing_environment(&self) -> AvResult<Option<PacketAmbientViewingEnvironment>> {
+        if self.kind != PacketSideDataKind::AmbientViewingEnvironment {
+            return Ok(None);
+        }
+
+        PacketAmbientViewingEnvironment::parse(self.data()).map(Some)
     }
 
     pub fn a53_closed_captions(&self) -> AvResult<Option<PacketA53ClosedCaptions<'_>>> {
@@ -3199,6 +3267,15 @@ mod tests {
         data[PacketIccProfile::TAG_COUNT_OFFSET..PacketIccProfile::TAG_COUNT_OFFSET + 4]
             .copy_from_slice(&0u32.to_be_bytes());
         data
+    }
+
+    fn write_packet_ambient_rational(
+        bytes: &mut [u8; PacketAmbientViewingEnvironment::DATA_LEN],
+        offset: usize,
+        value: Rational,
+    ) {
+        bytes[offset..offset + 4].copy_from_slice(&value.num().to_ne_bytes());
+        bytes[offset + 4..offset + 8].copy_from_slice(&value.den().to_ne_bytes());
     }
 
     #[test]
@@ -4280,6 +4357,162 @@ mod tests {
         .unwrap();
         assert_eq!(
             side_data.content_light_metadata().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn packet_side_data_parses_ambient_viewing_environment_payload() {
+        let expected = PacketAmbientViewingEnvironment::new(
+            Rational::from_raw(203, 10),
+            Rational::from_raw(15_635, 50_000),
+            Rational::from_raw(16_450, 50_000),
+        )
+        .unwrap();
+        let mut expected_bytes = [0; PacketAmbientViewingEnvironment::DATA_LEN];
+        write_packet_ambient_rational(
+            &mut expected_bytes,
+            PacketAmbientViewingEnvironment::AMBIENT_ILLUMINANCE_OFFSET,
+            Rational::from_raw(203, 10),
+        );
+        write_packet_ambient_rational(
+            &mut expected_bytes,
+            PacketAmbientViewingEnvironment::AMBIENT_LIGHT_X_OFFSET,
+            Rational::from_raw(15_635, 50_000),
+        );
+        write_packet_ambient_rational(
+            &mut expected_bytes,
+            PacketAmbientViewingEnvironment::AMBIENT_LIGHT_Y_OFFSET,
+            Rational::from_raw(16_450, 50_000),
+        );
+
+        assert_eq!(PacketAmbientViewingEnvironment::RATIONAL_LEN, 8);
+        assert_eq!(PacketAmbientViewingEnvironment::DATA_LEN, 24);
+        assert_eq!(
+            PacketAmbientViewingEnvironment::AMBIENT_ILLUMINANCE_OFFSET,
+            0
+        );
+        assert_eq!(PacketAmbientViewingEnvironment::AMBIENT_LIGHT_X_OFFSET, 8);
+        assert_eq!(PacketAmbientViewingEnvironment::AMBIENT_LIGHT_Y_OFFSET, 16);
+        assert_eq!(
+            PacketSideDataKind::AmbientViewingEnvironment
+                .ffmpeg_constant()
+                .unwrap(),
+            "AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT"
+        );
+        assert_eq!(expected.ambient_illuminance(), Rational::from_raw(203, 10));
+        assert_eq!(
+            expected.ambient_light_x(),
+            Rational::from_raw(15_635, 50_000)
+        );
+        assert_eq!(
+            expected.ambient_light_y(),
+            Rational::from_raw(16_450, 50_000)
+        );
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketAmbientViewingEnvironment::parse(&expected_bytes).unwrap(),
+            expected
+        );
+
+        let default_value = PacketAmbientViewingEnvironment::new(
+            Rational::from_raw(0, 1),
+            Rational::from_raw(0, 1),
+            Rational::from_raw(0, 1),
+        )
+        .unwrap();
+        assert_eq!(
+            PacketAmbientViewingEnvironment::parse(&default_value.to_bytes()).unwrap(),
+            default_value
+        );
+
+        let side_data = SideData::new_ambient_viewing_environment(expected).unwrap();
+        assert_eq!(
+            side_data.kind_id(),
+            &PacketSideDataKind::AmbientViewingEnvironment
+        );
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(
+            side_data.ambient_viewing_environment().unwrap(),
+            Some(expected)
+        );
+
+        let content_light = SideData::new_with_kind(
+            PacketSideDataKind::ContentLightLevel,
+            expected_bytes.to_vec(),
+        )
+        .unwrap();
+        assert_eq!(content_light.ambient_viewing_environment().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_ambient_viewing_environment_payload() {
+        let valid = PacketAmbientViewingEnvironment::new(
+            Rational::from_raw(203, 10),
+            Rational::from_raw(15_635, 50_000),
+            Rational::from_raw(16_450, 50_000),
+        )
+        .unwrap()
+        .to_bytes();
+
+        let mut invalid_payloads = Vec::new();
+        invalid_payloads.push(Vec::new());
+        invalid_payloads.push(valid[..PacketAmbientViewingEnvironment::DATA_LEN - 1].to_vec());
+        let mut long = valid.to_vec();
+        long.push(0);
+        invalid_payloads.push(long);
+
+        for (offset, bad_value) in [
+            (
+                PacketAmbientViewingEnvironment::AMBIENT_ILLUMINANCE_OFFSET,
+                Rational::from_raw(-1, 1),
+            ),
+            (
+                PacketAmbientViewingEnvironment::AMBIENT_ILLUMINANCE_OFFSET,
+                Rational::from_raw(1, 0),
+            ),
+            (
+                PacketAmbientViewingEnvironment::AMBIENT_LIGHT_X_OFFSET,
+                Rational::from_raw(2, 1),
+            ),
+            (
+                PacketAmbientViewingEnvironment::AMBIENT_LIGHT_Y_OFFSET,
+                Rational::from_raw(-1, 1),
+            ),
+            (
+                PacketAmbientViewingEnvironment::AMBIENT_LIGHT_Y_OFFSET,
+                Rational::from_raw(0, 0),
+            ),
+        ] {
+            let mut invalid = valid;
+            write_packet_ambient_rational(&mut invalid, offset, bad_value);
+            invalid_payloads.push(invalid.to_vec());
+        }
+
+        for data in invalid_payloads {
+            assert_eq!(
+                PacketAmbientViewingEnvironment::parse(&data)
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::AmbientViewingEnvironment, data)
+                    .unwrap();
+            assert_eq!(
+                side_data.ambient_viewing_environment().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            PacketAmbientViewingEnvironment::new(
+                Rational::from_raw(1, 1),
+                Rational::from_raw(3, 2),
+                Rational::from_raw(0, 1),
+            )
+            .unwrap_err()
+            .kind(),
             crate::AvErrorKind::InvalidData
         );
     }

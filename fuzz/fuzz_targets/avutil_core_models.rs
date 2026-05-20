@@ -32,8 +32,9 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription, PacketAudioServiceType,
-    PacketContentLightMetadata, PacketCpbProperties, PacketDisplayMatrix, PacketFallbackTrack, PacketFlags,
+    Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription,
+    PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
+    PacketCpbProperties, PacketDisplayMatrix, PacketFallbackTrack, PacketFlags,
     PacketFrameCropping, PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection,
     PacketLcevc, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
     PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
@@ -3310,6 +3311,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     .max(PacketDisplayMatrix::DATA_LEN + 1)
     .max(PacketReplayGain::DATA_LEN + 1)
     .max(PacketStereo3d::DATA_LEN + 1)
+    .max(PacketAmbientViewingEnvironment::DATA_LEN + 1)
     .max(PacketAudioServiceType::DATA_LEN + 1)
     .max(PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN + 1);
     let typed_payload_len =
@@ -3522,6 +3524,49 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::ContentLightLevel);
             assert!(packet_content_light_metadata_payload_invalid(
+                &typed_payload
+            ));
+        }
+    }
+    match typed_payload_side_data.ambient_viewing_environment() {
+        Ok(Some(value)) => {
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::AmbientViewingEnvironment
+            );
+            assert_eq!(
+                typed_payload.len(),
+                PacketAmbientViewingEnvironment::DATA_LEN
+            );
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketAmbientViewingEnvironment::new(
+                    value.ambient_illuminance(),
+                    value.ambient_light_x(),
+                    value.ambient_light_y()
+                )
+                .unwrap(),
+                value
+            );
+            assert_eq!(
+                PacketAmbientViewingEnvironment::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+            assert!(ambient_nonnegative_rational(value.ambient_illuminance()));
+            assert!(ambient_unit_interval_rational(value.ambient_light_x()));
+            assert!(ambient_unit_interval_rational(value.ambient_light_y()));
+        }
+        Ok(None) => assert_ne!(
+            typed_payload_kind,
+            PacketSideDataKind::AmbientViewingEnvironment
+        ),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::AmbientViewingEnvironment
+            );
+            assert!(packet_ambient_viewing_environment_payload_invalid(
                 &typed_payload
             ));
         }
@@ -4889,6 +4934,94 @@ fn exercise_fixtures() {
         .unwrap_err()
         .kind(),
         AvErrorKind::InvalidData
+    );
+    let packet_ambient = PacketAmbientViewingEnvironment::new(
+        Rational::from_raw(203, 10),
+        Rational::from_raw(15_635, 50_000),
+        Rational::from_raw(16_450, 50_000),
+    )
+    .unwrap();
+    assert_eq!(PacketAmbientViewingEnvironment::DATA_LEN, 24);
+    assert_eq!(
+        packet_ambient.ambient_illuminance(),
+        Rational::from_raw(203, 10)
+    );
+    assert_eq!(
+        packet_ambient.ambient_light_x(),
+        Rational::from_raw(15_635, 50_000)
+    );
+    assert_eq!(
+        packet_ambient.ambient_light_y(),
+        Rational::from_raw(16_450, 50_000)
+    );
+    assert_eq!(
+        PacketAmbientViewingEnvironment::parse(&packet_ambient.to_bytes()).unwrap(),
+        packet_ambient
+    );
+    assert_eq!(
+        SideData::new_ambient_viewing_environment(packet_ambient)
+            .unwrap()
+            .ambient_viewing_environment()
+            .unwrap(),
+        Some(packet_ambient)
+    );
+    let default_packet_ambient = PacketAmbientViewingEnvironment::new(
+        Rational::from_raw(0, 1),
+        Rational::from_raw(0, 1),
+        Rational::from_raw(0, 1),
+    )
+    .unwrap();
+    assert_eq!(
+        PacketAmbientViewingEnvironment::parse(&default_packet_ambient.to_bytes()).unwrap(),
+        default_packet_ambient
+    );
+    assert_eq!(
+        PacketAmbientViewingEnvironment::new(
+            Rational::from_raw(1, 1),
+            Rational::from_raw(3, 2),
+            Rational::from_raw(0, 1)
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        PacketAmbientViewingEnvironment::parse(&[0; PacketAmbientViewingEnvironment::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut invalid_packet_ambient = packet_ambient.to_bytes();
+    write_ne_rational(
+        &mut invalid_packet_ambient,
+        PacketAmbientViewingEnvironment::AMBIENT_LIGHT_X_OFFSET,
+        Rational::from_raw(2, 1),
+    );
+    assert_eq!(
+        PacketAmbientViewingEnvironment::parse(&invalid_packet_ambient)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        SideData::new_with_kind(
+            PacketSideDataKind::AmbientViewingEnvironment,
+            invalid_packet_ambient.to_vec()
+        )
+        .unwrap()
+        .ambient_viewing_environment()
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_packet_ambient = SideData::new_with_kind(
+        PacketSideDataKind::ContentLightLevel,
+        packet_ambient.to_bytes().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(
+        non_packet_ambient.ambient_viewing_environment().unwrap(),
+        None
     );
     let packet_a53_payload = vec![0xfc, 0x80, 0x41, 0xfd, 0x80, 0x42];
     let packet_a53_side_data =
@@ -11063,6 +11196,11 @@ fn packet_spherical_mapping_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_content_light_metadata_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketContentLightMetadata::DATA_LEN
+}
+
+fn packet_ambient_viewing_environment_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketAmbientViewingEnvironment::DATA_LEN
+        || PacketAmbientViewingEnvironment::parse(data).is_err()
 }
 
 fn packet_a53_closed_captions_payload_invalid(data: &[u8]) -> bool {
