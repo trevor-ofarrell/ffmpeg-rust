@@ -147,6 +147,13 @@ pub struct LogRecord {
     level: LogLevel,
     target: String,
     message: String,
+    kind: LogRecordKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogRecordKind {
+    Message,
+    RepetitionSummary { count: usize },
 }
 
 impl LogRecord {
@@ -155,6 +162,16 @@ impl LogRecord {
             level,
             target: target.into(),
             message: message.into(),
+            kind: LogRecordKind::Message,
+        }
+    }
+
+    fn repetition_summary(count: usize) -> Self {
+        Self {
+            level: LogLevel::Info,
+            target: String::new(),
+            message: format!("Last message repeated {count} times"),
+            kind: LogRecordKind::RepetitionSummary { count },
         }
     }
 
@@ -170,11 +187,26 @@ impl LogRecord {
         &self.message
     }
 
+    pub fn is_repetition_summary(&self) -> bool {
+        matches!(self.kind, LogRecordKind::RepetitionSummary { .. })
+    }
+
+    pub fn repetition_count(&self) -> Option<usize> {
+        match self.kind {
+            LogRecordKind::RepetitionSummary { count } => Some(count),
+            LogRecordKind::Message => None,
+        }
+    }
+
     pub fn format_line(&self) -> String {
         self.format_line_with_flags(LogFlags::PRINT_LEVEL)
     }
 
     pub fn format_line_with_flags(&self, flags: LogFlags) -> String {
+        if self.is_repetition_summary() {
+            return self.message.clone();
+        }
+
         let prefix = if flags.contains(LogFlags::PRINT_LEVEL) {
             format!("[{}] ", self.level.name())
         } else {
@@ -187,6 +219,20 @@ impl LogRecord {
             format!("{}{}: {}", prefix, self.target, self.message)
         }
     }
+
+    fn same_message_as(&self, other: &Self) -> bool {
+        self.kind == LogRecordKind::Message
+            && other.kind == LogRecordKind::Message
+            && self.level == other.level
+            && self.target == other.target
+            && self.message == other.message
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RepeatedLogState {
+    record: LogRecord,
+    count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -194,6 +240,7 @@ pub struct Logger {
     level: LogLevel,
     flags: LogFlags,
     records: Vec<LogRecord>,
+    repeated: Option<RepeatedLogState>,
 }
 
 impl Default for Logger {
@@ -212,6 +259,7 @@ impl Logger {
             level,
             flags,
             records: Vec::new(),
+            repeated: None,
         }
     }
 
@@ -228,11 +276,18 @@ impl Logger {
     }
 
     pub fn set_flags(&mut self, flags: LogFlags) {
-        self.flags = LogFlags::from_bits_truncate(flags.bits());
+        let flags = LogFlags::from_bits_truncate(flags.bits());
+        if self.flags.contains(LogFlags::SKIP_REPEATED) && !flags.contains(LogFlags::SKIP_REPEATED)
+        {
+            self.flush_repeated();
+        }
+        self.flags = flags;
     }
 
     pub fn set_flag(&mut self, flag: LogFlags, enabled: bool) {
-        self.flags.set(flag, enabled);
+        let mut flags = self.flags;
+        flags.set(flag, enabled);
+        self.set_flags(flags);
     }
 
     pub fn enabled(&self, level: LogLevel) -> bool {
@@ -241,7 +296,7 @@ impl Logger {
 
     pub fn log(&mut self, record: LogRecord) -> bool {
         if self.enabled(record.level()) {
-            self.records.push(record);
+            self.emit_record(record);
             true
         } else {
             false
@@ -253,9 +308,9 @@ impl Logger {
         F: FnOnce(&LogRecord),
     {
         if self.enabled(record.level()) {
-            self.records.push(record);
-            let record_index = self.records.len() - 1;
-            callback(&self.records[record_index]);
+            if let Some(record_index) = self.emit_record(record) {
+                callback(&self.records[record_index]);
+            }
             true
         } else {
             false
@@ -267,18 +322,62 @@ impl Logger {
     }
 
     pub fn formatted_records(&self) -> Vec<String> {
-        self.records
+        let mut formatted: Vec<_> = self
+            .records
             .iter()
             .map(|record| record.format_line_with_flags(self.flags))
-            .collect()
+            .collect();
+        if let Some(summary) = self.pending_repetition_summary() {
+            formatted.push(summary.format_line_with_flags(self.flags));
+        }
+        formatted
+    }
+
+    pub fn flush_repeated(&mut self) -> bool {
+        if let Some(repeated) = self.repeated.take() {
+            if repeated.count > 0 {
+                self.records
+                    .push(LogRecord::repetition_summary(repeated.count));
+                return true;
+            }
+        }
+        false
     }
 
     pub fn clear(&mut self) {
         self.records.clear();
+        self.repeated = None;
     }
 
     pub fn take_records(&mut self) -> Vec<LogRecord> {
+        self.flush_repeated();
         core::mem::take(&mut self.records)
+    }
+
+    fn emit_record(&mut self, record: LogRecord) -> Option<usize> {
+        if self.flags.contains(LogFlags::SKIP_REPEATED) {
+            if let Some(repeated) = &mut self.repeated {
+                if repeated.record.same_message_as(&record) {
+                    repeated.count = repeated.count.saturating_add(1);
+                    return None;
+                }
+            }
+
+            self.flush_repeated();
+            self.repeated = Some(RepeatedLogState {
+                record: record.clone(),
+                count: 0,
+            });
+        }
+
+        self.records.push(record);
+        Some(self.records.len() - 1)
+    }
+
+    fn pending_repetition_summary(&self) -> Option<LogRecord> {
+        self.repeated.as_ref().and_then(|repeated| {
+            (repeated.count > 0).then(|| LogRecord::repetition_summary(repeated.count))
+        })
     }
 }
 
@@ -401,6 +500,114 @@ mod tests {
     }
 
     #[test]
+    fn skip_repeated_flag_compresses_consecutive_messages_until_flush() {
+        let mut flags = LogFlags::PRINT_LEVEL;
+        flags.insert(LogFlags::SKIP_REPEATED);
+        let mut logger = Logger::new_with_flags(LogLevel::Warning, flags);
+        let record = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet");
+
+        assert!(logger.log(record.clone()));
+        assert!(logger.log(record.clone()));
+        assert!(logger.log(record));
+
+        assert_eq!(logger.records().len(), 1);
+        assert_eq!(
+            logger.formatted_records(),
+            [
+                "[warning] decoder: damaged packet".to_owned(),
+                "Last message repeated 2 times".to_owned()
+            ]
+        );
+        assert!(logger.flush_repeated());
+        assert_eq!(logger.records().len(), 2);
+        assert!(logger.records()[1].is_repetition_summary());
+        assert_eq!(logger.records()[1].repetition_count(), Some(2));
+        assert_eq!(
+            logger.formatted_records(),
+            [
+                "[warning] decoder: damaged packet".to_owned(),
+                "Last message repeated 2 times".to_owned()
+            ]
+        );
+        assert!(!logger.flush_repeated());
+    }
+
+    #[test]
+    fn repeated_summary_is_emitted_before_different_message() {
+        let mut flags = LogFlags::PRINT_LEVEL;
+        flags.insert(LogFlags::SKIP_REPEATED);
+        let mut logger = Logger::new_with_flags(LogLevel::Info, flags);
+        let repeated = LogRecord::new(LogLevel::Error, "demuxer", "bad header");
+
+        assert!(logger.log(repeated.clone()));
+        assert!(logger.log(repeated));
+        assert!(logger.log(LogRecord::new(
+            LogLevel::Warning,
+            "decoder",
+            "damaged packet"
+        )));
+
+        assert_eq!(
+            logger.formatted_records(),
+            [
+                "[error] demuxer: bad header".to_owned(),
+                "Last message repeated 1 times".to_owned(),
+                "[warning] decoder: damaged packet".to_owned()
+            ]
+        );
+        assert!(logger.records()[1].is_repetition_summary());
+        assert_eq!(logger.records()[1].repetition_count(), Some(1));
+    }
+
+    #[test]
+    fn repeated_summary_is_dropped_by_clear_and_flushed_by_take_or_flag_change() {
+        let mut flags = LogFlags::PRINT_LEVEL;
+        flags.insert(LogFlags::SKIP_REPEATED);
+        let repeated = LogRecord::new(LogLevel::Error, "ffmpeg", "bad packet");
+
+        let mut logger = Logger::new_with_flags(LogLevel::Info, flags);
+        assert!(logger.log(repeated.clone()));
+        assert!(logger.log(repeated.clone()));
+        logger.clear();
+        assert!(logger.records().is_empty());
+        assert!(logger.formatted_records().is_empty());
+
+        assert!(logger.log(repeated.clone()));
+        assert!(logger.log(repeated.clone()));
+        let records = logger.take_records();
+        assert_eq!(records.len(), 2);
+        assert!(records[1].is_repetition_summary());
+        assert!(logger.records().is_empty());
+        assert!(logger.formatted_records().is_empty());
+
+        assert!(logger.log(repeated.clone()));
+        assert!(logger.log(repeated.clone()));
+        logger.set_flag(LogFlags::SKIP_REPEATED, false);
+        assert_eq!(logger.records().len(), 2);
+        assert!(logger.records()[1].is_repetition_summary());
+        assert!(logger.log(repeated));
+        assert_eq!(logger.records().len(), 3);
+    }
+
+    #[test]
+    fn repeated_records_are_preserved_without_skip_repeated_flag() {
+        let mut logger = Logger::new(LogLevel::Info);
+        let record = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet");
+
+        assert!(logger.log(record.clone()));
+        assert!(logger.log(record));
+
+        assert_eq!(logger.records().len(), 2);
+        assert_eq!(
+            logger.formatted_records(),
+            [
+                "[warning] decoder: damaged packet".to_owned(),
+                "[warning] decoder: damaged packet".to_owned()
+            ]
+        );
+    }
+
+    #[test]
     fn callback_runs_only_for_accepted_records() {
         let mut logger = Logger::new(LogLevel::Error);
         let mut seen = Vec::new();
@@ -416,6 +623,34 @@ mod tests {
 
         assert_eq!(seen, ["[error] ffmpeg: kept"]);
         assert_eq!(logger.records().len(), 1);
+    }
+
+    #[test]
+    fn callback_runs_only_for_emitted_repeated_records() {
+        let mut flags = LogFlags::PRINT_LEVEL;
+        flags.insert(LogFlags::SKIP_REPEATED);
+        let mut logger = Logger::new_with_flags(LogLevel::Error, flags);
+        let mut seen = Vec::new();
+        let record = LogRecord::new(LogLevel::Error, "ffmpeg", "bad packet");
+
+        assert!(logger.log_with_callback(record.clone(), |record| seen.push(record.format_line())));
+        assert!(logger.log_with_callback(record, |record| seen.push(record.format_line())));
+
+        assert_eq!(seen, ["[error] ffmpeg: bad packet"]);
+        assert_eq!(logger.formatted_records().len(), 2);
+    }
+
+    #[test]
+    fn repetition_summary_records_format_without_level_prefix() {
+        let summary = LogRecord::repetition_summary(3);
+
+        assert!(summary.is_repetition_summary());
+        assert_eq!(summary.repetition_count(), Some(3));
+        assert_eq!(summary.format_line(), "Last message repeated 3 times");
+        assert_eq!(
+            summary.format_line_with_flags(LogFlags::PRINT_LEVEL),
+            "Last message repeated 3 times"
+        );
     }
 
     #[test]

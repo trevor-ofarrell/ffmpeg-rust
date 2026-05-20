@@ -33,8 +33,9 @@ use avutil::{
     FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
-    FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription,
+    FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId,
+    LogFlags, LogLevel, LogRecord, Logger, Md5, Packet, PacketA53ClosedCaptions,
+    PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
     PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
@@ -195,6 +196,7 @@ fuzz_target!(|data: &[u8]| {
     let mut cursor = Cursor::new(data);
 
     exercise_errors(&mut cursor);
+    exercise_logging(&mut cursor);
     exercise_buffers(&mut cursor);
     exercise_rational_and_timebase(&mut cursor);
     exercise_pixel_and_video_frame(&mut cursor);
@@ -812,6 +814,54 @@ fn exercise_errors(cursor: &mut Cursor<'_>) {
         assert_eq!(err.is_eof(), kind == AvErrorKind::EndOfFile);
         assert!(!err.message().is_empty());
     }
+}
+
+fn exercise_logging(cursor: &mut Cursor<'_>) {
+    let mut flags = LogFlags::PRINT_LEVEL;
+    if cursor.next().unwrap_or_default().is_multiple_of(2) {
+        flags.insert(LogFlags::SKIP_REPEATED);
+    }
+    let mut logger = Logger::new_with_flags(LogLevel::Info, flags);
+    let repeated = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet");
+    let repeat_count = usize::from(cursor.next().unwrap_or_default() % 5);
+
+    assert!(logger.log(repeated.clone()));
+    for _ in 0..repeat_count {
+        assert!(logger.log(repeated.clone()));
+    }
+
+    if flags.contains(LogFlags::SKIP_REPEATED) {
+        assert_eq!(logger.records().len(), 1);
+        let formatted = logger.formatted_records();
+        assert_eq!(formatted[0], "[warning] decoder: damaged packet");
+        if repeat_count > 0 {
+            assert_eq!(
+                formatted.last().unwrap(),
+                &format!("Last message repeated {repeat_count} times")
+            );
+            assert!(logger.flush_repeated());
+            assert_eq!(
+                logger.records().last().unwrap().repetition_count(),
+                Some(repeat_count)
+            );
+        } else {
+            assert_eq!(formatted.len(), 1);
+            assert!(!logger.flush_repeated());
+        }
+    } else {
+        assert_eq!(logger.records().len(), repeat_count + 1);
+        assert!(logger
+            .formatted_records()
+            .iter()
+            .all(|line| line == "[warning] decoder: damaged packet"));
+    }
+
+    assert!(logger.log(LogRecord::new(LogLevel::Error, "", "next")));
+    assert!(logger.records().iter().any(|record| record.message() == "next"));
+
+    logger.clear();
+    assert!(logger.records().is_empty());
+    assert!(logger.formatted_records().is_empty());
 }
 
 fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
