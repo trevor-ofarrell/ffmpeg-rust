@@ -1616,6 +1616,87 @@ impl PacketMpegTsStreamId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketReplayGain {
+    track_gain: i32,
+    track_peak: u32,
+    album_gain: i32,
+    album_peak: u32,
+}
+
+impl PacketReplayGain {
+    pub const DATA_LEN: usize = 16;
+    pub const GAIN_UNKNOWN: i32 = i32::MIN;
+    pub const PEAK_UNKNOWN: u32 = 0;
+
+    pub const fn new(track_gain: i32, track_peak: u32, album_gain: i32, album_peak: u32) -> Self {
+        Self {
+            track_gain,
+            track_peak,
+            album_gain,
+            album_peak,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "replaygain packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self {
+            track_gain: read_i32_ne(data, 0),
+            track_peak: read_u32_ne(data, 4),
+            album_gain: read_i32_ne(data, 8),
+            album_peak: read_u32_ne(data, 12),
+        })
+    }
+
+    pub const fn track_gain(self) -> i32 {
+        self.track_gain
+    }
+
+    pub const fn track_peak(self) -> u32 {
+        self.track_peak
+    }
+
+    pub const fn album_gain(self) -> i32 {
+        self.album_gain
+    }
+
+    pub const fn album_peak(self) -> u32 {
+        self.album_peak
+    }
+
+    pub const fn track_gain_unknown(self) -> bool {
+        self.track_gain == Self::GAIN_UNKNOWN
+    }
+
+    pub const fn album_gain_unknown(self) -> bool {
+        self.album_gain == Self::GAIN_UNKNOWN
+    }
+
+    pub const fn track_peak_unknown(self) -> bool {
+        self.track_peak == Self::PEAK_UNKNOWN
+    }
+
+    pub const fn album_peak_unknown(self) -> bool {
+        self.album_peak == Self::PEAK_UNKNOWN
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        bytes[0..4].copy_from_slice(&self.track_gain.to_ne_bytes());
+        bytes[4..8].copy_from_slice(&self.track_peak.to_ne_bytes());
+        bytes[8..12].copy_from_slice(&self.album_gain.to_ne_bytes());
+        bytes[12..16].copy_from_slice(&self.album_peak.to_ne_bytes());
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketSubtitlePosition {
     x1: u32,
     y1: u32,
@@ -2181,6 +2262,10 @@ impl SideData {
         Self::new_with_kind(PacketSideDataKind::FallbackTrack, value.to_bytes().to_vec())
     }
 
+    pub fn new_replay_gain(value: PacketReplayGain) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::ReplayGain, value.to_bytes().to_vec())
+    }
+
     pub fn new_cpb_properties(value: PacketCpbProperties) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::CpbProperties, value.to_bytes().to_vec())
     }
@@ -2349,6 +2434,14 @@ impl SideData {
         }
 
         PacketFallbackTrack::parse(self.data()).map(Some)
+    }
+
+    pub fn replay_gain(&self) -> AvResult<Option<PacketReplayGain>> {
+        if self.kind != PacketSideDataKind::ReplayGain {
+            return Ok(None);
+        }
+
+        PacketReplayGain::parse(self.data()).map(Some)
     }
 
     pub fn cpb_properties(&self) -> AvResult<Option<PacketCpbProperties>> {
@@ -3396,6 +3489,82 @@ mod tests {
             side_data.fallback_track().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn packet_side_data_parses_replay_gain_payload() {
+        let expected = PacketReplayGain::new(-250, 0x1020_3040, 125, 0x5060_7080);
+        let mut expected_bytes = [0; PacketReplayGain::DATA_LEN];
+        expected_bytes[0..4].copy_from_slice(&(-250_i32).to_ne_bytes());
+        expected_bytes[4..8].copy_from_slice(&0x1020_3040_u32.to_ne_bytes());
+        expected_bytes[8..12].copy_from_slice(&125_i32.to_ne_bytes());
+        expected_bytes[12..16].copy_from_slice(&0x5060_7080_u32.to_ne_bytes());
+
+        assert_eq!(PacketReplayGain::DATA_LEN, 16);
+        assert_eq!(expected.track_gain(), -250);
+        assert_eq!(expected.track_peak(), 0x1020_3040);
+        assert_eq!(expected.album_gain(), 125);
+        assert_eq!(expected.album_peak(), 0x5060_7080);
+        assert!(!expected.track_gain_unknown());
+        assert!(!expected.album_gain_unknown());
+        assert!(!expected.track_peak_unknown());
+        assert!(!expected.album_peak_unknown());
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(PacketReplayGain::parse(&expected_bytes).unwrap(), expected);
+
+        let unknown = PacketReplayGain::new(
+            PacketReplayGain::GAIN_UNKNOWN,
+            PacketReplayGain::PEAK_UNKNOWN,
+            PacketReplayGain::GAIN_UNKNOWN,
+            PacketReplayGain::PEAK_UNKNOWN,
+        );
+        assert!(unknown.track_gain_unknown());
+        assert!(unknown.album_gain_unknown());
+        assert!(unknown.track_peak_unknown());
+        assert!(unknown.album_peak_unknown());
+        assert_eq!(
+            PacketReplayGain::parse(&unknown.to_bytes()).unwrap(),
+            unknown
+        );
+
+        let boundaries = PacketReplayGain::new(i32::MIN, u32::MAX, i32::MAX, 1);
+        assert_eq!(
+            PacketReplayGain::parse(&boundaries.to_bytes()).unwrap(),
+            boundaries
+        );
+
+        let side_data = SideData::new_replay_gain(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::ReplayGain);
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(side_data.replay_gain().unwrap(), Some(expected));
+
+        let fallback_track =
+            SideData::new_with_kind(PacketSideDataKind::FallbackTrack, expected_bytes.to_vec())
+                .unwrap();
+        assert_eq!(fallback_track.replay_gain().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_replay_gain_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; PacketReplayGain::DATA_LEN - 1],
+            vec![0; PacketReplayGain::DATA_LEN + 1],
+        ] {
+            assert_eq!(
+                PacketReplayGain::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data = SideData::new_with_kind(PacketSideDataKind::ReplayGain, data).unwrap();
+            assert_eq!(
+                side_data.replay_gain().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let audio_service =
+            SideData::new_with_kind(PacketSideDataKind::AudioServiceType, vec![0; 16]).unwrap();
+        assert_eq!(audio_service.replay_gain().unwrap(), None);
     }
 
     #[test]

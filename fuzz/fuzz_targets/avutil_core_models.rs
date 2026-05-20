@@ -37,7 +37,7 @@ use avutil::{
     PacketFrameCropping, PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection,
     PacketLcevc, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
     PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
-    PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind,
+    PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind,
     PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection,
     PacketSubtitlePosition, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
@@ -3307,6 +3307,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     .max(PacketMasteringDisplayMetadata::DATA_LEN + 1)
     .max(PacketSphericalMapping::DATA_LEN + 1)
     .max(PacketDisplayMatrix::DATA_LEN + 1)
+    .max(PacketReplayGain::DATA_LEN + 1)
     .max(PacketAudioServiceType::DATA_LEN + 1)
     .max(PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN + 1);
     let typed_payload_len =
@@ -3335,6 +3336,32 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::QualityStats);
             assert!(packet_quality_stats_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.replay_gain() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::ReplayGain);
+            assert_eq!(typed_payload.len(), PacketReplayGain::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketReplayGain::new(
+                    value.track_gain(),
+                    value.track_peak(),
+                    value.album_gain(),
+                    value.album_peak()
+                ),
+                value
+            );
+            assert_eq!(
+                PacketReplayGain::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::ReplayGain),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::ReplayGain);
+            assert!(packet_replay_gain_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.fallback_track() {
@@ -5070,6 +5097,62 @@ fn exercise_fixtures() {
         SideData::new_with_kind(PacketSideDataKind::Lcevc, packet_display_matrix_bytes.to_vec())
             .unwrap();
     assert_eq!(non_packet_display_matrix.display_matrix().unwrap(), None);
+    let packet_replay_gain = PacketReplayGain::new(
+        120,
+        0x0102_0304,
+        PacketReplayGain::GAIN_UNKNOWN,
+        PacketReplayGain::PEAK_UNKNOWN,
+    );
+    let packet_replay_gain_bytes = packet_replay_gain.to_bytes();
+    assert_eq!(
+        PacketReplayGain::parse(&packet_replay_gain_bytes).unwrap(),
+        packet_replay_gain
+    );
+    assert_eq!(packet_replay_gain.track_gain(), 120);
+    assert_eq!(packet_replay_gain.track_peak(), 0x0102_0304);
+    assert_eq!(
+        packet_replay_gain.album_gain(),
+        PacketReplayGain::GAIN_UNKNOWN
+    );
+    assert_eq!(packet_replay_gain.album_peak(), PacketReplayGain::PEAK_UNKNOWN);
+    assert!(!packet_replay_gain.track_gain_unknown());
+    assert!(!packet_replay_gain.track_peak_unknown());
+    assert!(packet_replay_gain.album_gain_unknown());
+    assert!(packet_replay_gain.album_peak_unknown());
+    assert_eq!(
+        SideData::new_replay_gain(packet_replay_gain)
+            .unwrap()
+            .replay_gain()
+            .unwrap(),
+        Some(packet_replay_gain)
+    );
+    let packet_replay_gain_boundaries =
+        PacketReplayGain::new(i32::MIN, u32::MAX, i32::MAX, 0);
+    assert_eq!(
+        PacketReplayGain::parse(&packet_replay_gain_boundaries.to_bytes()).unwrap(),
+        packet_replay_gain_boundaries
+    );
+    assert_eq!(
+        PacketReplayGain::parse(&packet_replay_gain_bytes[..PacketReplayGain::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        SideData::new_with_kind(
+            PacketSideDataKind::ReplayGain,
+            vec![0; PacketReplayGain::DATA_LEN + 1]
+        )
+        .unwrap()
+        .replay_gain()
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_packet_replay_gain =
+        SideData::new_with_kind(PacketSideDataKind::Lcevc, packet_replay_gain_bytes.to_vec())
+            .unwrap();
+    assert_eq!(non_packet_replay_gain.replay_gain().unwrap(), None);
     assert_eq!(PacketAudioServiceType::KNOWN.len(), 9);
     for (value, raw, constant) in [
         (
@@ -10917,6 +11000,10 @@ fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_display_matrix_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketDisplayMatrix::DATA_LEN
+}
+
+fn packet_replay_gain_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketReplayGain::DATA_LEN
 }
 
 fn packet_audio_service_type_payload_invalid(data: &[u8]) -> bool {

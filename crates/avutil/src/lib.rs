@@ -74,10 +74,10 @@ pub use packet::{
     PacketFlags, PacketFrameCropping, PacketIccProfile, PacketJpDualMono,
     PacketJpDualMonoSelection, PacketLcevc, PacketMasteringDisplayMetadata,
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
-    PacketProducerReferenceTime, PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode,
-    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping,
-    PacketSphericalProjection, PacketSubtitlePosition, PacketWebVttIdentifier,
-    PacketWebVttSettings, SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport,
+    PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason,
+    PacketSphericalMapping, PacketSphericalProjection, PacketSubtitlePosition,
+    PacketWebVttIdentifier, PacketWebVttSettings, SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 pub use pixel::PixelFormat;
 pub use rational::Rational;
