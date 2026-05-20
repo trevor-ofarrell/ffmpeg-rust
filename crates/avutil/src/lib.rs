@@ -68,7 +68,8 @@ pub use logging::{
     global_formatted_log_records, global_formatted_log_records_with_options, global_log,
     global_log_flags, global_log_level, set_global_log_callback, set_global_log_flag,
     set_global_log_flags, set_global_log_level, take_global_log_records, LogColorMode, LogFlags,
-    LogFormatOptions, LogLevel, LogRecord, LogTimestamp, Logger,
+    LogFormatOptions, LogLevel, LogRecord, LogTimestamp, Logger, AV_LOG_FORCE_COLOR_ENV,
+    AV_LOG_FORCE_NOCOLOR_ENV,
 };
 pub use options::{
     OptionChild, OptionConstant, OptionDefinition, OptionFlags, OptionKind, OptionMatch,

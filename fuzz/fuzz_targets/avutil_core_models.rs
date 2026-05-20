@@ -57,8 +57,8 @@ use avutil::{
     PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE, AV_TIME_BASE,
-    AV_TIME_BASE_Q,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE,
+    AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE, AV_TIME_BASE_Q,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -922,6 +922,23 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert_eq!(
         timestamped.format_line_with_options(plain_options),
         "[error] demuxer: bad header"
+    );
+    assert_eq!(
+        LogColorMode::from_ffmpeg_env_vars(|name| name == AV_LOG_FORCE_COLOR_ENV),
+        LogColorMode::Always
+    );
+    assert_eq!(
+        LogColorMode::from_ffmpeg_env_vars(|name| {
+            name == AV_LOG_FORCE_NOCOLOR_ENV || name == AV_LOG_FORCE_COLOR_ENV
+        }),
+        LogColorMode::Never
+    );
+    let env_color_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+        .with_ffmpeg_env_color_vars(|name| name == AV_LOG_FORCE_COLOR_ENV);
+    assert_eq!(env_color_options.color_mode(), LogColorMode::Always);
+    assert_eq!(
+        timestamped.format_line_with_options(env_color_options),
+        "\x1b[31m[error] demuxer: bad header\x1b[0m"
     );
     let mut color_flags = LogFlags::PRINT_LEVEL;
     color_flags.insert(LogFlags::SKIP_REPEATED);

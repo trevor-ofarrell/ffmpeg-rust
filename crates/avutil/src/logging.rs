@@ -156,6 +156,25 @@ pub enum LogColorMode {
     Always,
 }
 
+pub const AV_LOG_FORCE_COLOR_ENV: &str = "AV_LOG_FORCE_COLOR";
+pub const AV_LOG_FORCE_NOCOLOR_ENV: &str = "AV_LOG_FORCE_NOCOLOR";
+
+impl LogColorMode {
+    pub fn from_ffmpeg_env() -> Self {
+        Self::from_ffmpeg_env_vars(|name| std::env::var_os(name).is_some())
+    }
+
+    pub fn from_ffmpeg_env_vars(mut is_set: impl FnMut(&str) -> bool) -> Self {
+        if is_set(AV_LOG_FORCE_NOCOLOR_ENV) {
+            Self::Never
+        } else if is_set(AV_LOG_FORCE_COLOR_ENV) {
+            Self::Always
+        } else {
+            Self::Never
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LogFormatOptions {
     flags: LogFlags,
@@ -181,6 +200,14 @@ impl LogFormatOptions {
             flags: self.flags,
             color_mode,
         }
+    }
+
+    pub fn with_ffmpeg_env_color(self) -> Self {
+        self.with_color_mode(LogColorMode::from_ffmpeg_env())
+    }
+
+    pub fn with_ffmpeg_env_color_vars(self, is_set: impl FnMut(&str) -> bool) -> Self {
+        self.with_color_mode(LogColorMode::from_ffmpeg_env_vars(is_set))
     }
 
     pub const fn flags(self) -> LogFlags {
@@ -968,6 +995,48 @@ mod tests {
         assert_eq!(
             LogRecord::repetition_summary(2).format_line_with_options(color_options),
             "Last message repeated 2 times"
+        );
+    }
+
+    #[test]
+    fn color_mode_resolves_ffmpeg_force_color_env_vars() {
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars(|name| name == AV_LOG_FORCE_COLOR_ENV),
+            LogColorMode::Always
+        );
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars(|_| false),
+            LogColorMode::Never
+        );
+
+        let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+            .with_ffmpeg_env_color_vars(|name| name == AV_LOG_FORCE_COLOR_ENV);
+        assert_eq!(options.color_mode(), LogColorMode::Always);
+        assert_eq!(
+            LogRecord::new(LogLevel::Error, "demuxer", "bad header")
+                .format_line_with_options(options),
+            "\x1b[31m[error] demuxer: bad header\x1b[0m"
+        );
+    }
+
+    #[test]
+    fn color_mode_force_nocolor_env_wins_over_force_color() {
+        let mut checked = Vec::new();
+        let mode = LogColorMode::from_ffmpeg_env_vars(|name| {
+            checked.push(name.to_owned());
+            name == AV_LOG_FORCE_NOCOLOR_ENV || name == AV_LOG_FORCE_COLOR_ENV
+        });
+
+        assert_eq!(mode, LogColorMode::Never);
+        assert_eq!(checked, [AV_LOG_FORCE_NOCOLOR_ENV.to_owned()]);
+
+        let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+            .with_ffmpeg_env_color_vars(|name| name == AV_LOG_FORCE_NOCOLOR_ENV);
+        assert_eq!(options.color_mode(), LogColorMode::Never);
+        assert_eq!(
+            LogRecord::new(LogLevel::Error, "demuxer", "bad header")
+                .format_line_with_options(options),
+            "[error] demuxer: bad header"
         );
     }
 
