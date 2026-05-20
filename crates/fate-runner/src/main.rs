@@ -344,6 +344,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/fftools/src/cli_logging.rs",
+        exact_ids: &["fftools-option-parser"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/fftools/src/io_plan.rs",
         exact_ids: &["fftools-basic-io"],
         id_prefixes: &[],
@@ -1203,6 +1208,7 @@ mod tests {
                 "crates/fftools/src/lib.rs".to_string(),
                 "crates/fftools/src/bin/ffmpeg-rs.rs".to_string(),
                 "crates/fftools/src/option_parser.rs".to_string(),
+                "crates/fftools/src/cli_logging.rs".to_string(),
                 "crates/fftools/src/io_plan.rs".to_string(),
                 "crates/fftools/src/ffmpeg.rs".to_string(),
                 "crates/fftools/src/ffprobe.rs".to_string(),

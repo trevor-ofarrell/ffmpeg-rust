@@ -436,7 +436,10 @@ pub fn run_ffprobe_tool(args: &[String]) -> i32 {
             0
         }
         Err(err) => {
-            eprintln!("ffprobe: {err}");
+            eprint!(
+                "{}",
+                crate::cli_logging::tool_error_stderr("ffprobe", args, &err)
+            );
             err.exit_code()
         }
     }

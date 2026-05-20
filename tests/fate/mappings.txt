@@ -29,6 +29,7 @@ avcodec-pcm-s16le|local-avcodec-unit|.|cargo|test|-p|avcodec|pcm
 fftools-version|local-version-unit|.|cargo|test|-p|fftools|--lib|version
 fftools-hide-banner|local-hide-banner-unit|.|cargo|test|-p|fftools|--lib|hide_banner
 fftools-option-parser|local-option-parser-unit|.|cargo|test|-p|fftools|--lib|option_parser
+fftools-option-parser|local-cli-logging-unit|.|cargo|test|-p|fftools|--lib|cli_logging
 fftools-basic-io|local-io-plan-unit|.|cargo|test|-p|fftools|--lib|io_plan
 fftools-ffmpeg-mov-framecrc-null|local-ffmpeg-unit|.|cargo|test|-p|fftools|--lib|ffmpeg
 fftools-ffmpeg-hash-output|local-ffmpeg-unit|.|cargo|test|-p|fftools|--lib|ffmpeg

@@ -300,7 +300,10 @@ pub fn run_ffmpeg_tool(args: &[String]) -> i32 {
             0
         }
         Err(err) => {
-            eprintln!("ffmpeg: {err}");
+            eprint!(
+                "{}",
+                crate::cli_logging::tool_error_stderr("ffmpeg", args, &err)
+            );
             err.exit_code()
         }
     }

@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod cli_logging;
 pub mod ffmpeg;
 pub mod ffprobe;
 pub mod io_plan;

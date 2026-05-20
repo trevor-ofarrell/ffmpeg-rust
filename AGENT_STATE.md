@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `fftools-option-parser`/logging integration update: process-level `ffmpeg-rs` and `ffprobe-rs` errors now route through a shared private CLI logging helper instead of ad hoc `eprintln!` formatting. The helper performs a best-effort scan for `-loglevel`/`-v`, applies the existing `CliLogConfig` and `avutil::LogRecord` formatting, preserves the default `tool: error` shape, suppresses entrypoint errors at `quiet`/`-8`, and emits `[error] tool: ...` when the `level` flag is active. Local tests cover default formatting, quiet suppression including numeric quiet, level prefixes, last-loglevel-wins behavior, and malformed loglevel fallback. `fate-runner` changed-path selection now maps `crates/fftools/src/cli_logging.rs` to `fftools-option-parser`, and the local mapping runs both the option parser and CLI logging filters. This remains below `complete` because it is not byte-identical upstream stderr, does not cover media progress logging, timestamp/repeat stderr behavior, terminal/env color auto-detection, pinned FFmpeg differential vectors, upstream FATE parity, or actual fuzz execution.
+
 Latest `avutil-logging` update: logging formatting now has explicit `LogFormatOptions` and `LogColorMode` support. The default path remains uncolored, while opt-in `Always` color mode wraps warning records in ANSI yellow and error/fatal/panic records in ANSI red, including the `Logger` and global formatted-record helpers. Repetition summaries and info/verbose/debug/trace records stay uncolored. Focused unit tests cover record, logger, repeat-summary, and global formatted-record color behavior; the build-checked `avutil_core_models` fuzz target mirrors deterministic color formatting. This remains below `complete` because terminal/env color auto-detection, byte-identical upstream color formatting, full C ABI `av_log_set_callback` semantics, local-time formatting parity, CLI stderr/repeat/time/datetime parity, pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
 
 Latest `avutil-logging` update: `LogTimestamp` now converts `SystemTime` values to the existing Unix-microsecond timestamp domain, including pre-epoch floor-to-microsecond behavior, and exposes `now_utc()` for current system-clock capture. `LogRecord::with_current_timestamp()` attaches that current timestamp for callers that need real-time records. Focused unit tests cover exact post-epoch conversion, pre-epoch conversion, sub-microsecond rounding, current timestamp bounds, and record timestamp attachment; the build-checked `avutil_core_models` fuzz target mirrors deterministic representable `SystemTime` conversion plus record timestamp attachment. This remains below `complete` because full C ABI `av_log_set_callback` semantics, byte-identical `av_log` formatting, local-time formatting parity, color handling, CLI stderr/repeat/time/datetime parity, pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
@@ -206,6 +208,17 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-logging-test'; cargo test -p fftools --lib cli_logging`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-logging-test'; cargo test -p fate-runner`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-logging-test'; cargo test -p fftools --lib`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-logging-test'; cargo clippy -p fftools -p fate-runner --all-targets -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-logging-test'; cargo run -p fate-runner -- run --component fftools-option-parser`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-logging-test'; cargo run -p fate-runner -- run --changed`
+- `cargo fmt --all -- --check`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-logging-test'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-logging-test'; cargo test --workspace --all-features --lib`
+- `git diff --check`
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-avutil-logging-color-test'; cargo test -p avutil logging`
 - `cargo fmt --all -- --check`
@@ -2831,6 +2844,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `fftools-option-parser`/CLI logging slice: `$env:CARGO_TARGET_DIR='target-fftools-cli-logging-test'; cargo test -p fate-runner changed_selection default_mappings_cover_current_fftools_smoke_selections` failed because Cargo accepts only one test-name filter. The `fate-runner` unit suite was rerun as `$env:CARGO_TARGET_DIR='target-fftools-cli-logging-test'; cargo test -p fate-runner` and passed. No remaining failing validation commands for the final slice; `git diff --check` reported CRLF warnings only.
 - Current `avutil-logging` color-formatting slice: no remaining failing commands. Formatting, focused logging tests, fuzz-target check/clippy, avutil clippy, workspace clippy, local FATE-runner logging/changed mappings, and `git diff --check` all passed; `git diff --check` reported CRLF warnings only.
 - Current `avutil-logging` system-time timestamp slice: `$env:CARGO_TARGET_DIR='target-avutil-logging-repeat-test'; cargo test -p avutil logging` initially failed `logging::tests::log_timestamps_convert_system_time_to_unix_micros` because Windows `SystemTime` did not preserve `UNIX_EPOCH - 1ns` as a distinct pre-epoch public value; the test now checks that sub-microsecond floor behavior through the internal duration conversion helper and uses representable `SystemTime` values for public conversion. `cargo fmt --manifest-path fuzz\Cargo.toml --all -- --check` also failed with a rustfmt stack overflow on the very large fuzz package even with `RUST_MIN_STACK=33554432`; the workspace format check passed, and the touched fuzz target passed check and clippy. No remaining failing validation commands for the final slice; `git diff --check` reported CRLF warnings only.
 - Current `avutil-logging` global logger slice: no remaining failing commands. Formatting, focused logging tests, fuzz-target check/clippy, avutil clippy, workspace clippy, local FATE-runner logging/changed mappings, and `git diff --check` all passed; `git diff --check` reported CRLF warnings only.
@@ -3027,6 +3041,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`fftools-option-parser` is the current focus for this slice. The concrete change is CLI stderr integration for process-level `ffmpeg-rs`/`ffprobe-rs` errors using the existing shared loglevel parser model and `avutil::LogRecord` formatter. It does not claim full FFmpeg stderr/progress behavior, timestamp/repeat flag parity, byte-identical upstream formatting, pinned oracle parity, or upstream FATE parity.
+
 `avutil-logging` is the current focus for this slice. The concrete change is explicit opt-in ANSI color formatting through `LogFormatOptions`/`LogColorMode`, with record, logger, global-helper, repeat-summary, and fuzz-harness coverage. It does not claim byte-identical upstream color formatting, terminal/env color auto-detection, byte-identical `av_log`, CLI stderr, C ABI callback parity, local-time parity, pinned oracle parity, or upstream FATE parity yet.
 
 `avutil-options` is the current focus for this slice. The concrete change is rational option kind/value support with positive-denominator range validation, parsed `num/den` and integer text support, and unit/fuzz-harness invariant coverage. It does not claim full `AVOption` API parity, CLI option-ordering parity, pinned oracle parity, or upstream FATE parity yet.
@@ -3049,19 +3065,21 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 primitive work by tightening the next unblocked avutil surface, likely logging C-ABI callback shape/CLI stderr integration, deeper bit I/O vectors, or option API/CLI integration, unless a pinned-oracle scaffold becomes available first.
-2. Add pinned-oracle differential coverage for logging repeat/time/flag formatting, AVOption parsing/ranges, direct/rational rescale, rational reduction/double-conversion, error strings/codes, and constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
-3. Add upstream FATE sample-backed media mappings for constrained `ffmpeg-rs` null/framecrc/hash-style command paths once samples and the pinned oracle are available.
+1. Continue priority-1 logging/CLI integration by deciding the next unblocked stderr slice, likely timestamp/repeat flag handling for run-tool errors or moving successful command diagnostics toward the shared logger without inventing media progress parity.
+2. Add pinned-oracle differential coverage for `-loglevel quiet`, `-loglevel level+error`, malformed loglevel usage, logging repeat/time/flag formatting, and constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
+3. Continue priority-1 primitive work that unlocks parity tests, likely deeper bit I/O vectors, option API integration, or C ABI logging callback shape if CLI stderr has no oracle available.
 
 ## Known Blockers
 
 - No pinned FFmpeg 8.1.1 oracle binary exists at `third_party/ffmpeg-oracle/build/bin/ffmpeg`, so oracle snapshots and differential tests have not been generated.
-- Upstream FATE samples and media target mappings are not configured. `tests/fate/mappings.txt` currently contains local `fate-runner`, repo runtime guard, avutil unit-test, avcodec decoder unit-test, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings only. The runner has `mappings`, `--check-prereqs`, `--samples`, `--oracle-ffmpeg`, and `--dry-run` support for future mappings.
+- Upstream FATE samples and media target mappings are not configured. `tests/fate/mappings.txt` currently contains local `fate-runner`, repo runtime guard, avutil unit-test, avcodec decoder unit-test, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools CLI logging, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings only. The runner has `mappings`, `--check-prereqs`, `--samples`, `--oracle-ffmpeg`, and `--dry-run` support for future mappings.
 - The `cargo fuzz` subcommand is not installed in this environment. The fuzz package can be checked with `cargo check --manifest-path fuzz/Cargo.toml --bins` and `cargo clippy --manifest-path fuzz/Cargo.toml --bins -- -D warnings`, but actual fuzz execution requires installing cargo-fuzz.
 - `./xtask quick` cannot be a file command while `xtask/` is a crate directory on this filesystem; use `cargo run -p xtask -- quick`.
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added shared CLI error logging for process-level `ffmpeg-rs` and `ffprobe-rs` errors. New `fftools::cli_logging` derives loglevel flags from argv with the existing parser model, formats errors through `avutil::LogRecord`, preserves default `ffmpeg: error`/`ffprobe: error` text, suppresses output for quiet, and emits severity prefixes when `level` is active. `fate-runner` now maps the new helper path to `fftools-option-parser`, and `tests/fate/mappings.txt` runs a local CLI logging unit filter for that component. Validation passed with focused helper tests, `fftools` library tests, `fate-runner` tests, targeted and workspace clippy, component and changed FATE mappings, workspace lib tests, format check, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`.
 
 Latest slice: added explicit logging color formatting. `LogFormatOptions` now carries formatting flags plus a `LogColorMode`, `LogRecord::format_line_with_options` applies opt-in ANSI yellow/red severity coloring, `Logger::formatted_records_with_options` and `global_formatted_log_records_with_options` expose the same formatting path, and default formatted output remains uncolored. Unit coverage checks record-level colors, uncolored info/repeat summaries, logger repeat summaries under color mode, and global formatted-record color output; `avutil_core_models` now build-checks the deterministic color invariants. Validation passed with formatting, focused logging tests, fuzz-target check/clippy, avutil clippy, workspace clippy, local FATE-runner logging/changed mappings, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`.
 
