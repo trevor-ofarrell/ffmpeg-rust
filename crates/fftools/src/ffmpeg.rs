@@ -3529,6 +3529,38 @@ mod tests {
     }
 
     #[test]
+    fn runs_rawvideo_yuvj420p_to_null_stdout() {
+        let payload = (0_u8..12).collect::<Vec<_>>();
+        let path = write_temp_bytes("rawvideo-yuvj420p-null", "raw", &payload);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuvj420p",
+            "-s",
+            "4x2",
+            "-r",
+            "25",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("rawvideo yuvj420p null path should execute");
+
+        remove_temp_files(&[path]);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 12);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
     fn runs_rawvideo_yuv411p_to_null_stdout() {
         let path = write_temp_bytes("rawvideo-yuv411p-null", "raw", &[0, 1, 2, 3, 4, 5]);
         let path_arg = path.to_string_lossy().into_owned();

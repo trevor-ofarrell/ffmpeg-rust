@@ -693,6 +693,27 @@ mod tests {
             .frame_size(),
             18
         );
+        for (format, width, height, payload_len, expected_size) in [
+            (RawVideoPixelFormat::YuvJ420p, 4, 2, 12, 12),
+            (RawVideoPixelFormat::YuvJ422p, 4, 3, 24, 24),
+            (RawVideoPixelFormat::YuvJ411p, 4, 3, 18, 18),
+            (RawVideoPixelFormat::YuvJ440p, 3, 2, 12, 12),
+            (RawVideoPixelFormat::YuvJ444p, 3, 2, 18, 18),
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(
+                    &vec![0; payload_len],
+                    width,
+                    height,
+                    format,
+                    Rational::new(1, 1).unwrap(),
+                )
+                .unwrap()
+                .info()
+                .frame_size(),
+                expected_size
+            );
+        }
     }
 
     #[test]
@@ -729,10 +750,26 @@ mod tests {
         )
         .is_err());
         assert!(RawVideoDemuxer::open(
+            &[0; 12],
+            3,
+            2,
+            RawVideoPixelFormat::YuvJ420p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
             &[0; 8],
             3,
             2,
             RawVideoPixelFormat::Yuv422p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 8],
+            3,
+            2,
+            RawVideoPixelFormat::YuvJ422p,
             Rational::new(1, 1).unwrap(),
         )
         .is_err());
@@ -786,6 +823,14 @@ mod tests {
         .is_err());
         assert!(RawVideoDemuxer::open(
             &[0; 18],
+            3,
+            2,
+            RawVideoPixelFormat::YuvJ411p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 18],
             4,
             3,
             RawVideoPixelFormat::Yuv411p,
@@ -825,6 +870,14 @@ mod tests {
         )
         .is_err());
         assert!(RawVideoDemuxer::open(
+            &[0; 18],
+            3,
+            3,
+            RawVideoPixelFormat::YuvJ440p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
             &[0; 12],
             3,
             2,
@@ -837,6 +890,14 @@ mod tests {
             3,
             2,
             RawVideoPixelFormat::Yuv444p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoDemuxer::open(
+            &[0; 18],
+            3,
+            2,
+            RawVideoPixelFormat::YuvJ444p,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());
@@ -1316,6 +1377,22 @@ mod tests {
     }
 
     #[test]
+    fn muxer_computes_yuvj_frame_sizes() {
+        for (format, width, height, expected_size) in [
+            (RawVideoPixelFormat::YuvJ420p, 4, 2, 12),
+            (RawVideoPixelFormat::YuvJ422p, 4, 3, 24),
+            (RawVideoPixelFormat::YuvJ411p, 4, 3, 18),
+            (RawVideoPixelFormat::YuvJ440p, 3, 2, 12),
+            (RawVideoPixelFormat::YuvJ444p, 3, 2, 18),
+        ] {
+            let muxer =
+                RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), expected_size);
+        }
+    }
+
+    #[test]
     fn muxer_rejects_invalid_geometry_rate_stream_and_frame_size() {
         assert!(RawVideoMuxer::new(
             0,
@@ -1334,7 +1411,21 @@ mod tests {
         assert!(RawVideoMuxer::new(
             3,
             2,
+            RawVideoPixelFormat::YuvJ420p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
             RawVideoPixelFormat::Yuv422p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::YuvJ422p,
             Rational::new(1, 1).unwrap(),
         )
         .is_err());
@@ -1377,6 +1468,13 @@ mod tests {
             3,
             2,
             RawVideoPixelFormat::Yuv411p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::YuvJ411p,
             Rational::new(1, 1).unwrap(),
         )
         .is_err());
@@ -1412,6 +1510,13 @@ mod tests {
             3,
             3,
             RawVideoPixelFormat::Yuv440p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            3,
+            RawVideoPixelFormat::YuvJ440p,
             Rational::new(1, 1).unwrap(),
         )
         .is_err());
@@ -1426,6 +1531,13 @@ mod tests {
             3,
             2,
             RawVideoPixelFormat::Yuv444p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::YuvJ444p,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());

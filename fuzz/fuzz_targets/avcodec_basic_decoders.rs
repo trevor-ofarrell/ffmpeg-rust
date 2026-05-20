@@ -481,6 +481,26 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    for (format, width, height, valid_len, invalid_len) in [
+        (PixelFormat::YuvJ420p, 4, 2, 12, 11),
+        (PixelFormat::YuvJ422p, 4, 3, 24, 23),
+        (PixelFormat::YuvJ411p, 4, 3, 18, 17),
+        (PixelFormat::YuvJ440p, 3, 2, 12, 11),
+        (PixelFormat::YuvJ444p, 3, 2, 18, 17),
+    ] {
+        let decoder = RawVideoDecoder::new(width, height, format).unwrap();
+        assert!(decoder
+            .decode_packet(&Packet::new(vec![0; valid_len], 0))
+            .is_ok());
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; invalid_len], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
     let pcm = PcmS16leDecoder::new(48_000, 2).unwrap();
     let mut packet = Packet::new(vec![0, 0, 1, 0, 2, 0, 3, 0], 0);
     packet.set_pts(Some(1024));

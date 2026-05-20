@@ -316,6 +316,41 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::Yuv444p,
         Rational::new(25, 1).unwrap(),
     );
+    exercise_rawvideo(
+        b"abcdefghijkl",
+        4,
+        2,
+        RawVideoPixelFormat::YuvJ420p,
+        Rational::new(25, 1).unwrap(),
+    );
+    exercise_rawvideo(
+        b"abcdefghijklmnopqrstuvwx",
+        4,
+        3,
+        RawVideoPixelFormat::YuvJ422p,
+        Rational::new(25, 1).unwrap(),
+    );
+    exercise_rawvideo(
+        b"abcdefghijklmnopqr",
+        4,
+        3,
+        RawVideoPixelFormat::YuvJ411p,
+        Rational::new(25, 1).unwrap(),
+    );
+    exercise_rawvideo(
+        b"abcdefghijkl",
+        3,
+        2,
+        RawVideoPixelFormat::YuvJ440p,
+        Rational::new(25, 1).unwrap(),
+    );
+    exercise_rawvideo(
+        b"abcdefghijklmnopqr",
+        3,
+        2,
+        RawVideoPixelFormat::YuvJ444p,
+        Rational::new(25, 1).unwrap(),
+    );
 });
 
 fn exercise_rawvideo(

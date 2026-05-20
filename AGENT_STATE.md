@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes FFmpeg's deprecated full-range planar YUVJ formats `yuvj420p`, `yuvj422p`, `yuvj411p`, `yuvj440p`, and `yuvj444p`. The slice was checked against pinned FFmpeg 8.1.1 `libavutil/pixfmt.h` and `libavutil/pixdesc.c`: upstream marks the `yuvj*` names as deprecated full-scale variants of the corresponding planar YUV formats, with the same component geometry and chroma subsampling as `yuv420p`, `yuv422p`, `yuv411p`, `yuv440p`, and `yuv444p`. Rust now exposes distinct `PixelFormat` variants and FFmpeg names, descriptor metadata, frame-size and plane-splitting math, `VideoFrame` line sizing, rawvideo decode/demux/mux packet sizing, constrained `ffmpeg-rs -f rawvideo ... -pix_fmt yuvj420p -f null -` execution, and affected fuzz-harness invariants. Full-range color semantics are preserved as naming only until a color-range model exists. This remains below `complete` because full color-range metadata, complete `AVPixFmtDescriptor` parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
+
 Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes FFmpeg's 1bpp monochrome bitstream formats `monow` and `monob`. The slice was checked against pinned FFmpeg 8.1.1 `libavutil/pixfmt.h` and `libavutil/pixdesc.c`: upstream models them as one-component grayscale bitstream formats with MSB-first pixels, `monow` using 0 white/1 black and `monob` using 0 black/1 white. Rust now exposes the new `PixelFormat` variants, name lookup, descriptor metadata, frame-size and plane-splitting math with `ceil(width / 8)` bytes per row, `VideoFrame` line sizing, rawvideo decode/demux/mux packet sizing, constrained `ffmpeg-rs -f rawvideo ... -pix_fmt monow -f null -` execution, and affected fuzz-harness invariants. This remains below `complete` because full per-component `AVPixFmtDescriptor` bitstream flag/component-offset parity, palette and color-range formats, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
 
 Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes FFmpeg's packed 4bpp RGB bitstream formats `rgb4` and `bgr4`. The slice was checked against pinned FFmpeg 8.1.1 `libavutil/pixfmt.h` and `libavutil/pixdesc.c`: upstream models them as 1:2:1 RGB bitstream formats with two pixels per byte and the first pixel in the high nibble. Rust now exposes the new `PixelFormat` variants, name lookup, descriptor metadata, frame-size and plane-splitting math with `ceil(width / 2)` bytes per row, `VideoFrame` line sizing, rawvideo decode/demux/mux packet sizing, constrained `ffmpeg-rs -f rawvideo ... -pix_fmt rgb4 -f null -` execution, and affected fuzz-harness invariants. This remains below `complete` because full per-component `AVPixFmtDescriptor` bitstream flag/layout parity, full `ffmpeg -pix_fmts` inventory parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
@@ -289,6 +291,27 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current deprecated full-range planar YUVJ `avutil-pixel-format` / rawvideo slice:
+  - `cargo fmt --all`
+  - `cargo test --target-dir target-codex -p avutil pixel`
+  - `cargo test --target-dir target-codex -p avutil frames_report_tightly_packed_line_sizes`
+  - `cargo test --target-dir target-codex -p avcodec rawvideo`
+  - `cargo test --target-dir target-codex -p avformat rawvideo`
+  - `cargo test --target-dir target-codex -p fftools --lib runs_rawvideo_yuvj420p_to_null_stdout`
+  - `cargo check --target-dir target-codex --manifest-path fuzz\Cargo.toml --bin avutil_core_models --bin avcodec_basic_decoders --bin avformat_rawvideo --bin avformat_basic_muxers`
+  - `cargo clippy --target-dir target-codex --manifest-path fuzz\Cargo.toml --bin avutil_core_models --bin avcodec_basic_decoders --bin avformat_rawvideo --bin avformat_basic_muxers -- -D warnings`
+  - `cargo clippy --target-dir target-codex -p avutil -p avcodec -p avformat -p fftools --all-targets -- -D warnings`
+  - `cargo fmt --all -- --check`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-pixel-format`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avcodec-rawvideo`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avformat-rawvideo-demuxer`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avformat-rawvideo-muxer`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component fftools-ffmpeg-rawvideo-framecrc-null`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `cargo clippy --target-dir target-codex --workspace --all-targets --all-features -- -D warnings`
+  - `cargo test --target-dir target-codex --workspace --lib --all-features`
+  - `git diff --check` (CRLF warnings only)
 
 - Current 1bpp monochrome bitstream `avutil-pixel-format` / rawvideo slice:
   - `cargo fmt --all`
@@ -3581,6 +3604,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current deprecated full-range planar YUVJ `avutil-pixel-format` / rawvideo slice: no remaining code/test assertion failures. The first focused `fftools` test failed because the new test used a nonexistent `FfmpegOutput::muxer()` helper; switching to the existing `output_format()` accessor fixed it. Focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, affected-crate clippy, local FATE-runner component mappings, local `run --changed`, workspace clippy, workspace library tests, and `git diff --check` passed. `git diff --check` reported CRLF warnings only; Cargo commands continue to report the usual `could not canonicalize path C:\Users\trevo` warning.
+
 - Current 1bpp monochrome bitstream `avutil-pixel-format` / rawvideo slice: no remaining code/test assertion failures. The first touched fuzz-target clippy run failed on `manual_is_multiple_of` for the new fuzz helper; replacing the helper with `is_multiple_of` then failed affected-crate clippy because the method is newer than the repo's MSRV 1.75. The final helper uses `width.div_ceil(8)`, and focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, affected-crate clippy, workspace clippy, local FATE-runner component mappings, local `run --changed`, and `git diff --check` passed. `git diff --check` reported CRLF warnings only; Cargo commands continue to report the usual `could not canonicalize path C:\Users\trevo` warning.
 
 - Current packed 4bpp RGB bitstream `avutil-pixel-format` / rawvideo slice: no remaining code/test assertion failures and no fresh Windows Application Control blocks during validation. Focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, affected-crate clippy, workspace clippy, local FATE-runner component mappings, local `run --changed`, and `git diff --check` passed. `git diff --check` reported CRLF warnings only; Cargo commands continue to report the usual `could not canonicalize path C:\Users\trevo` warning.
@@ -3846,6 +3871,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-pixel-format` remains the current focus, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The latest concrete change adds FFmpeg's deprecated full-range planar YUVJ names `yuvj420p`, `yuvj422p`, `yuvj411p`, `yuvj440p`, and `yuvj444p` as distinct `PixelFormat` variants that reuse the corresponding YUV planar geometry. It does not claim color-range conversion, full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
+
 `avutil-pixel-format` remains the current focus, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The latest concrete change adds FFmpeg's 1bpp monochrome bitstream `monow` and `monob` formats to the shared pixel model as one row-padded grayscale bitstream plane with `ceil(width / 8)` bytes per row, one descriptor bit per pixel, and no polarity conversion. It does not claim conversion support, full `AVPixFmtDescriptor` bitstream flag/component-offset parity, full `ffmpeg -pix_fmts` inventory, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
 
 `avutil-pixel-format` remains the current focus, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The latest concrete change adds FFmpeg's packed 4bpp RGB bitstream `rgb4` and `bgr4` formats to the shared pixel model as one row-padded plane with `ceil(width / 2)` bytes per row, four descriptor bits per pixel, and scalar max component depth 2. It does not claim conversion support, full `AVPixFmtDescriptor` bitstream flag/component-layout parity, full `ffmpeg -pix_fmts` inventory, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
@@ -3950,12 +3977,13 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 format-model work by adding the next narrow `PixelFormat` inventory slice needed by rawvideo parity after re-checking pinned FFmpeg 8.1.1 headers/descriptors, likely another compact packed or planar rawvideo-facing family not yet represented in `PixelFormat::ALL`.
+1. Continue priority-1 format-model work by investigating the next rawvideo-facing `PixelFormat` gap, likely `pal8`, and model palette-plane semantics only if the shared frame/packet sizing invariants can represent it without pretending conversion or palette interpretation is complete.
 2. Add pinned-oracle differential coverage for constrained pixel-format inventory, rawvideo packet sizing, and existing channel-layout/byte/hash behavior once the FFmpeg 8.1.1 oracle binary is available.
 3. Keep local FATE-runner changed-path coverage aligned with ledger selections, especially shared fuzz targets that select multiple muxers or format-model components, while keeping those mappings clearly separate from upstream FATE parity.
 
 ## Known Blockers
 
+- Current deprecated full-range planar YUVJ validation has no remaining code/test assertion failures. `git diff --check` reported CRLF warnings only; Cargo commands reported only the usual `could not canonicalize path C:\Users\trevo` warning. No pinned FFmpeg oracle binary exists in the workspace for differential vectors, upstream FATE media parity is still absent, and actual fuzz execution is still blocked by the missing cargo-fuzz subcommand.
 - Current 1bpp monochrome bitstream validation has no remaining code/test assertion failures after the MSRV-compatible row-size helper fix. `git diff --check` reported CRLF warnings only; Cargo commands reported only the usual `could not canonicalize path C:\Users\trevo` warning.
 - Current packed 4bpp RGB bitstream validation has no remaining code/test assertion failures and did not hit a fresh Windows Application Control block. `git diff --check` reported CRLF warnings only; Cargo commands reported only the usual `could not canonicalize path C:\Users\trevo` warning.
 - Current byte-packed low-bit-depth RGB validation has no remaining code/test assertion failures. Default-target focused avutil and avcodec test launches were blocked by Windows Application Control, but the same tests passed through `target-codex`; subsequent focused tests, fuzz build checks, clippy gates, local FATE mappings, and local `run --changed` passed. Cargo commands reported only the usual `could not canonicalize path C:\Users\trevo` warning.
@@ -3976,6 +4004,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added deprecated full-range planar YUVJ support to the current shared pixel/rawvideo model. `PixelFormat` now reports `yuvj420p`, `yuvj422p`, `yuvj411p`, `yuvj440p`, and `yuvj444p` in the inventory with YUV descriptor metadata, three 8-bit components, three planar payload planes, no alpha flag, no float flag, and the same chroma geometry validation as the matching non-`j` YUV formats. `VideoFrame`, `RawVideoDecoder`, `RawVideoDemuxer`, `RawVideoMuxer`, constrained `ffmpeg-rs` rawvideo-to-null execution, and the affected fuzz harnesses now exercise the family, including all five decoder fixtures, rawvideo demux/mux sizing, `yuvj420p` CLI coverage, and fuzz build invariants. Validation passed with focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, affected crate clippy, workspace format check, workspace clippy, workspace library tests, local FATE-runner component mappings, local `run --changed`, and `git diff --check` with CRLF warnings only. The affected components remain `implemented`, not `complete`, because color-range metadata/conversion, oracle differentials, upstream FATE media coverage, full pixel inventory coverage, full `AVPixFmtDescriptor` parity, and actual fuzz execution are still absent.
 
 Latest slice: added 1bpp monochrome bitstream support to the current shared pixel/rawvideo model. `PixelFormat` now reports `monow` and `monob` in the inventory with grayscale descriptor metadata, one modeled component, one row-padded payload plane, one descriptor bit per pixel, no alpha flag, no float flag, no chroma subsampling, and no whole-byte packed-bytes-per-pixel value because eight pixels share each byte. `VideoFrame`, `RawVideoDecoder`, `RawVideoDemuxer`, `RawVideoMuxer`, constrained `ffmpeg-rs` rawvideo-to-null execution, and the affected fuzz harnesses now exercise the family, including decoder coverage for both polarities, `monow` CLI coverage, and rawvideo mux sizing coverage. Validation passed with focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, affected crate clippy, workspace clippy, local FATE-runner component mappings, local `run --changed`, and `git diff --check` with CRLF warnings only. The affected components remain `implemented`, not `complete`, because oracle differentials, upstream FATE media coverage, full pixel inventory coverage, full `AVPixFmtDescriptor` bitstream/component layout parity, and actual fuzz execution are still absent.
 
