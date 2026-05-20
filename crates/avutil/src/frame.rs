@@ -12448,6 +12448,23 @@ fn video_plane_shapes(
                 rows: height,
             },
         ]),
+        PixelFormat::Gbrp9Le | PixelFormat::Gbrp9Be => {
+            let row_bytes = checked_mul(width, 2, "9-bit planar GBR video frame line size")?;
+            Ok(vec![
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+            ])
+        }
         PixelFormat::Yuv420p
         | PixelFormat::Yuv422p
         | PixelFormat::Yuv410p
@@ -16308,6 +16325,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(gbrp.line_sizes(), &[3, 3, 3]);
+
+        let gbrp9 = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::Gbrp9Le,
+            vec![vec![0; 12], vec![0; 12], vec![0; 12]],
+        )
+        .unwrap();
+        assert_eq!(gbrp9.line_sizes(), &[6, 6, 6]);
 
         let ya8 = VideoFrame::new(3, 2, PixelFormat::Ya8, vec![vec![0; 12]]).unwrap();
         assert_eq!(ya8.line_sizes(), &[6]);
