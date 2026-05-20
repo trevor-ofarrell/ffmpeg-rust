@@ -267,6 +267,32 @@ mod tests {
         );
         assert_eq!(
             RawVideoDemuxer::open(
+                &[0; 6],
+                1,
+                2,
+                RawVideoPixelFormat::Bgr24,
+                Rational::new(1, 1).unwrap(),
+            )
+            .unwrap()
+            .info()
+            .frame_size(),
+            6
+        );
+        for format in [
+            RawVideoPixelFormat::Bgra,
+            RawVideoPixelFormat::Argb,
+            RawVideoPixelFormat::Abgr,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 4], 1, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                4
+            );
+        }
+        assert_eq!(
+            RawVideoDemuxer::open(
                 &[0; 12],
                 4,
                 2,

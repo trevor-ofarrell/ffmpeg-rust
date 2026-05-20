@@ -1230,6 +1230,16 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     let width = dimension_from(cursor.next());
     let height = dimension_from(cursor.next());
 
+    assert_eq!(PixelFormat::from_name(pixel_format.name()), Some(pixel_format));
+    assert_eq!(pixel_format.is_packed(), !pixel_format.is_planar());
+    if let Some(bytes_per_pixel) = pixel_format.packed_bytes_per_pixel() {
+        assert_eq!(pixel_format.plane_count(), 1);
+        assert_eq!(pixel_format.has_alpha(), bytes_per_pixel == 4);
+    } else {
+        assert_eq!(pixel_format, PixelFormat::Yuv420p);
+        assert!(!pixel_format.has_alpha());
+    }
+
     let Ok(plane_sizes) = pixel_format.plane_sizes(width, height) else {
         assert!(width == 0 || height == 0 || pixel_format == PixelFormat::Yuv420p);
         return;
@@ -12436,12 +12446,8 @@ fn div_round(numerator: i128, denominator: i128, rounding: Rounding) -> i128 {
 }
 
 fn pixel_format_from(byte: Option<u8>) -> PixelFormat {
-    match byte.unwrap_or_default() % 4 {
-        0 => PixelFormat::Gray8,
-        1 => PixelFormat::Rgb24,
-        2 => PixelFormat::Rgba,
-        _ => PixelFormat::Yuv420p,
-    }
+    let formats = PixelFormat::ALL;
+    formats[usize::from(byte.unwrap_or_default()) % formats.len()]
 }
 
 fn sample_format_from(byte: Option<u8>) -> SampleFormat {
@@ -16788,8 +16794,10 @@ fn write_fixed_bytes(data: &mut [u8], offset: usize, len: usize, value: &[u8]) {
 fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usize> {
     match pixel_format {
         PixelFormat::Gray8 => vec![width],
-        PixelFormat::Rgb24 => vec![width * 3],
-        PixelFormat::Rgba => vec![width * 4],
+        PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![width * 3],
+        PixelFormat::Rgba | PixelFormat::Bgra | PixelFormat::Argb | PixelFormat::Abgr => {
+            vec![width * 4]
+        }
         PixelFormat::Yuv420p => vec![width, width / 2, width / 2],
     }
 }
@@ -16801,8 +16809,10 @@ fn expected_video_plane_shapes(
 ) -> Vec<(usize, usize)> {
     match pixel_format {
         PixelFormat::Gray8 => vec![(width, height)],
-        PixelFormat::Rgb24 => vec![(width * 3, height)],
-        PixelFormat::Rgba => vec![(width * 4, height)],
+        PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![(width * 3, height)],
+        PixelFormat::Rgba | PixelFormat::Bgra | PixelFormat::Argb | PixelFormat::Abgr => {
+            vec![(width * 4, height)]
+        }
         PixelFormat::Yuv420p => vec![
             (width, height),
             (width / 2, height / 2),

@@ -160,12 +160,8 @@ fn payload_from(cursor: &mut Cursor<'_>, len: usize) -> Vec<u8> {
 }
 
 fn pixel_format_from(byte: Option<u8>) -> PixelFormat {
-    match byte.unwrap_or_default() % 4 {
-        0 => PixelFormat::Gray8,
-        1 => PixelFormat::Rgb24,
-        2 => PixelFormat::Rgba,
-        _ => PixelFormat::Yuv420p,
-    }
+    let formats = PixelFormat::ALL;
+    formats[usize::from(byte.unwrap_or_default()) % formats.len()]
 }
 
 fn dimension_from(byte: Option<u8>, pixel_format: PixelFormat, is_width: bool) -> usize {

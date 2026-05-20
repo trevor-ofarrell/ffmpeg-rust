@@ -86,12 +86,8 @@ fn dimension_from(byte: u8) -> usize {
 }
 
 fn pixel_format_from(byte: u8) -> RawVideoPixelFormat {
-    match byte % 4 {
-        0 => RawVideoPixelFormat::Gray8,
-        1 => RawVideoPixelFormat::Rgb24,
-        2 => RawVideoPixelFormat::Rgba,
-        _ => RawVideoPixelFormat::Yuv420p,
-    }
+    let formats = RawVideoPixelFormat::ALL;
+    formats[usize::from(byte) % formats.len()]
 }
 
 fn frame_rate_from(byte: u8) -> Rational {

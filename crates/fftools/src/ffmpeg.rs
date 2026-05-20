@@ -925,15 +925,11 @@ fn parse_nonzero_usize(value: &str, description: &str) -> Result<usize, FfmpegEr
 fn parse_rawvideo_pixel_format(file: &PlannedFile) -> Result<RawVideoPixelFormat, FfmpegError> {
     let value = last_option_value(file.options(), "pix_fmt")
         .ok_or_else(|| FfmpegError::usage("rawvideo pixel format requires `-pix_fmt`"))?;
-    match value.to_ascii_lowercase().as_str() {
-        "gray" | "gray8" => Ok(RawVideoPixelFormat::Gray8),
-        "rgb24" => Ok(RawVideoPixelFormat::Rgb24),
-        "rgba" => Ok(RawVideoPixelFormat::Rgba),
-        "yuv420p" => Ok(RawVideoPixelFormat::Yuv420p),
-        _ => Err(FfmpegError::unsupported(format!(
+    RawVideoPixelFormat::from_name(&value.to_ascii_lowercase()).ok_or_else(|| {
+        FfmpegError::unsupported(format!(
             "rawvideo pixel format `{value}` is not implemented"
-        ))),
-    }
+        ))
+    })
 }
 
 fn parse_image2_frame_rate_option(file: &PlannedFile) -> Result<Rational, FfmpegError> {
@@ -2762,6 +2758,37 @@ mod tests {
         assert_eq!(output.output_format(), Some("null"));
         assert_eq!(output.packet_count(), 1);
         assert_eq!(output.byte_count(), 4);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
+    fn runs_rawvideo_bgra_to_null_stdout() {
+        let path = write_temp_bytes("rawvideo-bgra-null", "raw", &[0, 1, 2, 3, 4, 5, 6, 7]);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "BGRA",
+            "-s",
+            "1x1",
+            "-r",
+            "25",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("rawvideo BGRA command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 8);
         assert!(output.stdout().is_empty());
         assert!(output.stderr().is_empty());
     }

@@ -12381,14 +12381,16 @@ fn video_plane_shapes(
             row_bytes: width,
             rows: height,
         }]),
-        PixelFormat::Rgb24 => Ok(vec![VideoPlaneShape {
-            row_bytes: checked_mul(width, 3, "rgb24 video frame line size")?,
+        PixelFormat::Rgb24 | PixelFormat::Bgr24 => Ok(vec![VideoPlaneShape {
+            row_bytes: checked_mul(width, 3, "24-bit packed video frame line size")?,
             rows: height,
         }]),
-        PixelFormat::Rgba => Ok(vec![VideoPlaneShape {
-            row_bytes: checked_mul(width, 4, "rgba video frame line size")?,
-            rows: height,
-        }]),
+        PixelFormat::Rgba | PixelFormat::Bgra | PixelFormat::Argb | PixelFormat::Abgr => {
+            Ok(vec![VideoPlaneShape {
+                row_bytes: checked_mul(width, 4, "32-bit packed video frame line size")?,
+                rows: height,
+            }])
+        }
         PixelFormat::Yuv420p => Ok(vec![
             VideoPlaneShape {
                 row_bytes: width,
