@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-channel-layout` update: the current channel model now exposes FFmpeg-native mask bits for modeled common channels, canonical layout masks, canonical `FL+FR`-style channel strings, and a narrow `ChannelLayout::parse` path for current named layouts or `+`-separated channel expressions that resolve exactly to one modeled layout. Empty, NUL-containing, unknown-channel, duplicate-channel, and unsupported custom expressions return typed invalid-argument errors. Focused unit tests and the build-checked `avutil_core_models` fuzz target cover name/mask/expression round trips and invalid expression rejection. This remains below `complete` because full `AVChannelLayout` order/native/custom/ambisonic semantics, all `ffmpeg -layouts` entries, pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
+
 Latest `avutil-dict` update: dictionaries now support FFmpeg-shaped escaped pair serialization and parsing. `Dictionary::to_pairs_string` renders insertion-ordered key/value pairs with backslash escaping for separators and literal backslashes, while `parse_pairs` and `parse_pairs_into` accept configurable key/value and pair separator sets, apply the caller-selected match/set mode, reject invalid separator sets and dangling escapes, and preserve successfully parsed entries when a later token is malformed. Focused unit tests and the build-checked `avutil_metadata_options` fuzz target cover round trips with duplicate keys, escaped separators, mode application, partial-success parse failures, separator validation, and malformed token rejection. This remains below `complete` because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
 
 Latest `avutil-options` update: child option namespaces are now mutable through explicit parent helpers. `OptionChild` exposes mutable option-set access, and `OptionSet` can get child values, query child ranges, set typed child values, and parse string child values while preserving state on missing-child, missing-option, read-only, type, and range failures. Focused unit tests and the build-checked `avutil_metadata_options` fuzz target cover child mutation, unit-constant parsing inside children, root/child namespace independence, and failed-mutation preservation. This remains below `complete` because full AVOption API parity, CLI option-ordering integration, pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
@@ -229,6 +231,18 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avutil channel_layout`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo clippy -p avutil --all-targets -- -D warnings`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo run -p fate-runner -- run --component avutil-channel-layout`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo run -p fate-runner -- run --changed`
+- `cargo fmt --all -- --check`
+- `git diff --check` (passed with CRLF warnings only)
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test --workspace --all-features --lib`
 
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avutil dict`
@@ -3202,6 +3216,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-channel-layout` is the current focus for this slice. The concrete change is native mask helpers for the modeled common channels, canonical layout masks and channel-expression serialization, narrow named/expression parsing for the six modeled layouts, and unit/fuzz-harness coverage for successful round trips plus invalid expression rejection. It does not claim full `AVChannelLayout` parsing, custom/ambisonic/downmix layouts, pinned `ffmpeg -layouts` differential parity, upstream FATE parity, or actual fuzz execution.
+
 `avutil-dict` is the current focus for this slice. The concrete change is escaped dictionary pair serialization/parsing with configurable separator sets, selected set/match mode application, successful-entry preservation on later malformed tokens, separator/token validation, local unit tests, and fuzz-harness invariant coverage. It does not claim pinned `AVDictionary` differential parity, upstream FATE parity, or actual fuzz execution.
 
 `avutil-options` is the current focus for this slice. The concrete change is parent-mediated child option access and mutation with typed/string setters, child range lookup, mutable child option-set access, root/child namespace independence, and no-mutation error coverage. It does not claim full `AVOption` API parity, CLI option-ordering parity, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
@@ -3248,8 +3264,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 primitive work that unlocks parser and muxer parity, likely dictionary serialization/parsing, broader option API semantics, or pinned bit/byte I/O compatibility vectors once oracle data exists.
-2. Add pinned-oracle differential coverage for constrained byte/hash/framehash/streamhash behavior once the FFmpeg 8.1.1 oracle binary is available.
+1. Continue priority-1 primitive work that unlocks parser and muxer parity, likely broader channel-layout inventory/parsing, pixel/sample format inventory expansion, or pinned bit/byte I/O compatibility vectors once oracle data exists.
+2. Add pinned-oracle differential coverage for constrained channel-layout, byte/hash/framehash/streamhash behavior once the FFmpeg 8.1.1 oracle binary is available.
 3. Keep improving local FATE-runner changed-path coverage where selected implemented components still lack a runnable local mapping, while keeping those mappings clearly separate from upstream FATE parity.
 
 ## Known Blockers
@@ -3261,6 +3277,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added narrow parser and mask support for `avutil-channel-layout`. `Channel` now exposes the modeled channel inventory, case-insensitive short-name lookup, and native mask bits; `ChannelLayout` now exposes known-layout enumeration, mask lookup, `from_channels`, canonical `FL+FR`-style serialization, and `parse` for current named layouts or channel expressions that canonicalize to one of the six modeled layouts. Invalid empty, NUL-containing, unknown, duplicate, and unsupported custom expressions are rejected with typed invalid-argument errors. Unit coverage now includes mask/string canonicalization, named/expression parsing, and invalid-expression rejection; `avutil_core_models` build-checks name, mask, and expression round trips plus duplicate/unsupported rejection. Validation passed with focused channel-layout tests, fuzz target check/clippy, avutil clippy, local FATE-runner avutil-channel-layout and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`.
 
 Latest slice: added escaped pair serialization/parsing for `avutil-dict`. `Dictionary::to_pairs_string` emits insertion-ordered key/value pairs with backslash escaping for the configured separators and literal backslashes; `Dictionary::parse_pairs` and `parse_pairs_into` parse escaped strings with configurable separator sets, use the caller-selected match/set modes, validate separators before mutation, reject malformed tokens, and preserve successfully parsed entries on later parse failure. Unit coverage now includes duplicate-key round trips, escaped separator round trips, append-mode parsing, partial-success failures, invalid separator rejection, dangling escapes, and empty-key rejection; `avutil_metadata_options` build-checks parser/serializer round trips and malformed-input paths. Validation passed with focused dict tests, fuzz target check/clippy, avutil clippy, local FATE-runner avutil-dict and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`.
 

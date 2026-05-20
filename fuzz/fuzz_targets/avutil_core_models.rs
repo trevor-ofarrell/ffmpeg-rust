@@ -3475,6 +3475,40 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert!(!frame_audio.plane_buffers()[0].shares_storage(&shared_audio.plane_buffers()[0]));
 
     let layout = channel_layout_from(cursor.next());
+    assert_eq!(ChannelLayout::from_name(layout.name()), Some(layout));
+    assert_eq!(ChannelLayout::parse(layout.name()).unwrap(), layout);
+    assert_eq!(
+        ChannelLayout::parse(&layout.channel_string()).unwrap(),
+        layout
+    );
+    assert_eq!(ChannelLayout::from_channel_mask(layout.channel_mask()), Some(layout));
+    assert_eq!(ChannelLayout::from_channels(layout.channels()), Some(layout));
+    assert_eq!(
+        layout.channels().iter().fold(0u64, |mask, channel| {
+            assert_eq!(Channel::from_name(channel.name()), Some(*channel));
+            assert_ne!(channel.mask(), 0);
+            mask | channel.mask()
+        }),
+        layout.channel_mask()
+    );
+    let duplicate_layout = format!(
+        "{}+{}",
+        layout.channels()[0].name(),
+        layout.channels()[0].name()
+    );
+    assert_eq!(
+        ChannelLayout::parse(&duplicate_layout).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    let unsupported_layout = if layout.contains(Channel::BackRight) {
+        "FL+SR"
+    } else {
+        "FL+BR"
+    };
+    assert_eq!(
+        ChannelLayout::parse(unsupported_layout).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
     if layout.channel_count() == channels {
         let frame = AudioFrame::new_with_channel_layout(
             sample_rate,

@@ -13,6 +13,17 @@ pub enum Channel {
 }
 
 impl Channel {
+    pub const ALL: &'static [Self] = &[
+        Self::FrontLeft,
+        Self::FrontRight,
+        Self::FrontCenter,
+        Self::LowFrequency,
+        Self::BackLeft,
+        Self::BackRight,
+        Self::SideLeft,
+        Self::SideRight,
+    ];
+
     pub fn name(self) -> &'static str {
         match self {
             Self::FrontLeft => "FL",
@@ -23,6 +34,26 @@ impl Channel {
             Self::BackRight => "BR",
             Self::SideLeft => "SL",
             Self::SideRight => "SR",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|channel| channel.name().eq_ignore_ascii_case(name))
+    }
+
+    pub fn mask(self) -> u64 {
+        match self {
+            Self::FrontLeft => 1 << 0,
+            Self::FrontRight => 1 << 1,
+            Self::FrontCenter => 1 << 2,
+            Self::LowFrequency => 1 << 3,
+            Self::BackLeft => 1 << 4,
+            Self::BackRight => 1 << 5,
+            Self::SideLeft => 1 << 9,
+            Self::SideRight => 1 << 10,
         }
     }
 }
@@ -102,6 +133,17 @@ impl ChannelLayout {
         )
     }
 
+    pub fn known_layouts() -> [Self; 6] {
+        [
+            Self::mono(),
+            Self::stereo(),
+            Self::quad(),
+            Self::five_one(),
+            Self::five_one_side(),
+            Self::seven_one(),
+        ]
+    }
+
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "mono" => Some(Self::mono()),
@@ -112,6 +154,71 @@ impl ChannelLayout {
             "7.1" => Some(Self::seven_one()),
             _ => None,
         }
+    }
+
+    pub fn parse(name_or_channels: &str) -> AvResult<Self> {
+        let trimmed = name_or_channels.trim();
+        if trimmed.is_empty() {
+            return Err(AvError::invalid_argument("empty channel layout"));
+        }
+        if trimmed.contains('\0') {
+            return Err(AvError::invalid_argument(
+                "channel layout contains NUL byte",
+            ));
+        }
+        if let Some(layout) = Self::known_layouts()
+            .into_iter()
+            .find(|layout| layout.name().eq_ignore_ascii_case(trimmed))
+        {
+            return Ok(layout);
+        }
+
+        let mut channels = Vec::new();
+        for token in trimmed.split('+') {
+            let token = token.trim();
+            if token.is_empty() {
+                return Err(AvError::invalid_argument(format!(
+                    "empty channel name in layout {name_or_channels:?}"
+                )));
+            }
+            let channel = Channel::from_name(token).ok_or_else(|| {
+                AvError::invalid_argument(format!("unknown channel name {token:?}"))
+            })?;
+            if channels.contains(&channel) {
+                return Err(AvError::invalid_argument(format!(
+                    "duplicate channel name {}",
+                    channel.name()
+                )));
+            }
+            channels.push(channel);
+        }
+
+        Self::from_channels(&channels).ok_or_else(|| {
+            AvError::invalid_argument(format!(
+                "unsupported channel layout expression {name_or_channels:?}"
+            ))
+        })
+    }
+
+    pub fn from_channels(channels: &[Channel]) -> Option<Self> {
+        if channels.is_empty() {
+            return None;
+        }
+        let mut mask = 0u64;
+        for channel in channels {
+            let channel_mask = channel.mask();
+            if mask & channel_mask != 0 {
+                return None;
+            }
+            mask |= channel_mask;
+        }
+        Self::from_channel_mask(mask)
+    }
+
+    pub fn from_channel_mask(mask: u64) -> Option<Self> {
+        Self::known_layouts()
+            .into_iter()
+            .find(|layout| layout.channel_mask() == mask)
     }
 
     pub fn default_for_count(channels: u16) -> Option<Self> {
@@ -128,6 +235,23 @@ impl ChannelLayout {
 
     pub fn channels(self) -> &'static [Channel] {
         self.channels
+    }
+
+    pub fn channel_mask(self) -> u64 {
+        self.channels
+            .iter()
+            .fold(0u64, |mask, channel| mask | channel.mask())
+    }
+
+    pub fn channel_string(self) -> String {
+        let mut output = String::new();
+        for (index, channel) in self.channels.iter().enumerate() {
+            if index != 0 {
+                output.push('+');
+            }
+            output.push_str(channel.name());
+        }
+        output
     }
 
     pub fn channel_count(self) -> u16 {
@@ -165,6 +289,13 @@ mod tests {
         assert_eq!(Channel::BackRight.name(), "BR");
         assert_eq!(Channel::SideLeft.name(), "SL");
         assert_eq!(Channel::SideRight.name(), "SR");
+
+        assert_eq!(Channel::from_name("fl"), Some(Channel::FrontLeft));
+        assert_eq!(Channel::from_name("LFE"), Some(Channel::LowFrequency));
+        assert_eq!(Channel::from_name("unknown"), None);
+        assert_eq!(Channel::FrontLeft.mask(), 1);
+        assert_eq!(Channel::LowFrequency.mask(), 1 << 3);
+        assert_eq!(Channel::SideLeft.mask(), 1 << 9);
     }
 
     #[test]
@@ -184,6 +315,33 @@ mod tests {
         assert_eq!(surround.channel_count(), 6);
         assert!(surround.contains(Channel::LowFrequency));
         assert!(surround.contains(Channel::BackLeft));
+    }
+
+    #[test]
+    fn layout_masks_and_channel_strings_are_canonical() {
+        let stereo_mask = Channel::FrontLeft.mask() | Channel::FrontRight.mask();
+        assert_eq!(ChannelLayout::stereo().channel_mask(), stereo_mask);
+        assert_eq!(
+            ChannelLayout::from_channel_mask(stereo_mask),
+            Some(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayout::from_channels(&[Channel::FrontRight, Channel::FrontLeft]),
+            Some(ChannelLayout::stereo())
+        );
+        assert_eq!(ChannelLayout::stereo().channel_string(), "FL+FR");
+        assert_eq!(
+            ChannelLayout::five_one_side().channel_string(),
+            "FL+FR+FC+LFE+SL+SR"
+        );
+        assert_eq!(
+            ChannelLayout::from_channel_mask(Channel::FrontLeft.mask() | Channel::BackRight.mask()),
+            None
+        );
+        assert_eq!(
+            ChannelLayout::from_channels(&[Channel::FrontLeft, Channel::FrontLeft]),
+            None
+        );
     }
 
     #[test]
@@ -211,6 +369,45 @@ mod tests {
             Some(ChannelLayout::stereo())
         );
         assert_eq!(ChannelLayout::default_for_count(6), None);
+    }
+
+    #[test]
+    fn layout_parser_accepts_named_and_channel_expressions() {
+        assert_eq!(
+            ChannelLayout::parse("stereo").unwrap(),
+            ChannelLayout::stereo()
+        );
+        assert_eq!(
+            ChannelLayout::parse("  STEREO  ").unwrap(),
+            ChannelLayout::stereo()
+        );
+        assert_eq!(ChannelLayout::parse("FC").unwrap(), ChannelLayout::mono());
+        assert_eq!(
+            ChannelLayout::parse("fr + fl").unwrap(),
+            ChannelLayout::stereo()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+LFE+BL+BR").unwrap(),
+            ChannelLayout::five_one()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+LFE+SL+SR").unwrap(),
+            ChannelLayout::five_one_side()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FR+FC+FL+LFE+SR+SL").unwrap(),
+            ChannelLayout::five_one_side()
+        );
+    }
+
+    #[test]
+    fn layout_parser_rejects_invalid_or_unsupported_expressions() {
+        for input in ["", "   ", "+", "FL+", "FL++FR", "FL\0FR", "FL+FL", "FL+BR"] {
+            let err = ChannelLayout::parse(input).unwrap_err();
+            assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        }
+        let err = ChannelLayout::parse("FL+unknown").unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
     }
 
     #[test]

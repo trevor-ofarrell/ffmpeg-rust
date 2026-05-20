@@ -1062,13 +1062,16 @@ rust_command = "cargo test -p avutil channel_layout"
 unit_tests = [
   "channel_layout::tests::channels_report_ffmpeg_short_names",
   "channel_layout::tests::named_layouts_expose_ordered_channels_and_counts",
+  "channel_layout::tests::layout_masks_and_channel_strings_are_canonical",
   "channel_layout::tests::layout_name_and_default_count_lookup_are_narrow_and_explicit",
+  "channel_layout::tests::layout_parser_accepts_named_and_channel_expressions",
+  "channel_layout::tests::layout_parser_rejects_invalid_or_unsupported_expressions",
   "channel_layout::tests::layouts_validate_channel_counts",
 ]
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-channel-layout|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Initial shared channel layout model covers common native channel names and a narrow set of named layouts: mono, stereo, quad, 5.1, 5.1(side), and 7.1. AudioFrame derives mono/stereo from channel count for existing PCM paths and validates explicit layouts by channel count. Build-checked cargo-fuzz target avutil_core_models covers default layout lookup, explicit layout validation, channel containment, and AudioFrame layout integration, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVChannelLayout order/native/custom/ambisonic semantics, all layouts from ffmpeg -layouts, layout parsing syntax, downmix layouts, oracle inventory comparison, FATE, and broader fuzzing are pending. The local FATE-runner smoke mapping executes the channel_layout unit filter only and does not count as upstream FATE parity."
+notes = "Initial shared channel layout model covers common native channel names and a narrow set of named layouts: mono, stereo, quad, 5.1, 5.1(side), and 7.1. Latest addition: modeled channels expose FFmpeg native mask bits, known layouts expose canonical masks and FL+FR-style channel strings, and ChannelLayout::parse accepts current named layouts plus '+'-separated known channel expressions that resolve exactly to one of the currently modeled layouts while rejecting empty, NUL-containing, unknown, duplicate, and unsupported custom expressions. AudioFrame derives mono/stereo from channel count for existing PCM paths and validates explicit layouts by channel count. Build-checked cargo-fuzz target avutil_core_models covers default layout lookup, explicit layout validation, channel containment, channel-name/mask/layout-expression round trips, unsupported-expression rejection, and AudioFrame layout integration, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVChannelLayout order/native/custom/ambisonic semantics, all layouts from ffmpeg -layouts, downmix layouts, oracle inventory comparison, FATE, and broader fuzzing are pending. The local FATE-runner smoke mapping executes the channel_layout unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
