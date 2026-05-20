@@ -1,7 +1,8 @@
 use crate::frame::{
-    FrameAmbientViewingEnvironment, FrameExif, FrameStereo3d, FrameStereo3dFlags,
-    FrameStereo3dPrimaryEye, FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
-    FrameThreeDReferenceDisplays,
+    FrameAmbientViewingEnvironment, FrameDynamicHdrPlus, FrameExif,
+    FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrPlusPercentile,
+    FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye, FrameStereo3dType,
+    FrameStereo3dView, FrameThreeDReferenceDisplay, FrameThreeDReferenceDisplays,
 };
 use crate::{rescale_q, AvError, AvResult, BufferRef, Rational};
 
@@ -1642,6 +1643,108 @@ impl PacketDolbyVisionConf {
     }
 }
 
+pub type PacketHdrPlusColorTransformParams<'a> = FrameHdrPlusColorTransformParams<'a>;
+pub type PacketHdrPlusOverlapProcessOption = FrameHdrPlusOverlapProcessOption;
+pub type PacketHdrPlusPercentile = FrameHdrPlusPercentile;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketDynamicHdr10Plus<'a>(FrameDynamicHdrPlus<'a>);
+
+impl<'a> PacketDynamicHdr10Plus<'a> {
+    pub const ITU_T_T35_COUNTRY_CODE: u8 = FrameDynamicHdrPlus::ITU_T_T35_COUNTRY_CODE;
+    pub const APPLICATION_VERSION: u8 = FrameDynamicHdrPlus::APPLICATION_VERSION;
+    pub const MAX_WINDOWS: usize = FrameDynamicHdrPlus::MAX_WINDOWS;
+    pub const MAX_PEAK_LUMINANCE_ROWS: usize = FrameDynamicHdrPlus::MAX_PEAK_LUMINANCE_ROWS;
+    pub const MAX_PEAK_LUMINANCE_COLS: usize = FrameDynamicHdrPlus::MAX_PEAK_LUMINANCE_COLS;
+    pub const DATA_LEN: usize = FrameDynamicHdrPlus::DATA_LEN;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "dynamic HDR10+ packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        FrameDynamicHdrPlus::parse(data).map(Self)
+    }
+
+    pub const fn as_frame_dynamic_hdr_plus(self) -> FrameDynamicHdrPlus<'a> {
+        self.0
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.0.data()
+    }
+
+    pub fn itu_t_t35_country_code(self) -> u8 {
+        self.0.itu_t_t35_country_code()
+    }
+
+    pub fn application_version(self) -> u8 {
+        self.0.application_version()
+    }
+
+    pub const fn num_windows(self) -> usize {
+        self.0.num_windows()
+    }
+
+    pub fn color_transform_params(
+        self,
+        index: usize,
+    ) -> Option<PacketHdrPlusColorTransformParams<'a>> {
+        self.0.color_transform_params(index)
+    }
+
+    pub fn targeted_system_display_maximum_luminance(self) -> Rational {
+        self.0.targeted_system_display_maximum_luminance()
+    }
+
+    pub fn targeted_system_display_actual_peak_luminance_flag(self) -> u8 {
+        self.0.targeted_system_display_actual_peak_luminance_flag()
+    }
+
+    pub fn num_rows_targeted_system_display_actual_peak_luminance(self) -> usize {
+        self.0
+            .num_rows_targeted_system_display_actual_peak_luminance()
+    }
+
+    pub fn num_cols_targeted_system_display_actual_peak_luminance(self) -> usize {
+        self.0
+            .num_cols_targeted_system_display_actual_peak_luminance()
+    }
+
+    pub fn targeted_system_display_actual_peak_luminance(
+        self,
+        row: usize,
+        col: usize,
+    ) -> Option<Rational> {
+        self.0
+            .targeted_system_display_actual_peak_luminance(row, col)
+    }
+
+    pub fn mastering_display_actual_peak_luminance_flag(self) -> u8 {
+        self.0.mastering_display_actual_peak_luminance_flag()
+    }
+
+    pub fn num_rows_mastering_display_actual_peak_luminance(self) -> usize {
+        self.0.num_rows_mastering_display_actual_peak_luminance()
+    }
+
+    pub fn num_cols_mastering_display_actual_peak_luminance(self) -> usize {
+        self.0.num_cols_mastering_display_actual_peak_luminance()
+    }
+
+    pub fn mastering_display_actual_peak_luminance(
+        self,
+        row: usize,
+        col: usize,
+    ) -> Option<Rational> {
+        self.0.mastering_display_actual_peak_luminance(row, col)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketSkipSamples {
     start: u32,
@@ -2741,6 +2844,12 @@ impl SideData {
         )
     }
 
+    pub fn new_dynamic_hdr10_plus(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::DynamicHdr10Plus, data)?;
+        PacketDynamicHdr10Plus::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_skip_samples(value: PacketSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -2969,6 +3078,14 @@ impl SideData {
         }
 
         PacketDolbyVisionConf::parse(self.data()).map(Some)
+    }
+
+    pub fn dynamic_hdr10_plus(&self) -> AvResult<Option<PacketDynamicHdr10Plus<'_>>> {
+        if self.kind != PacketSideDataKind::DynamicHdr10Plus {
+            return Ok(None);
+        }
+
+        PacketDynamicHdr10Plus::parse(self.data()).map(Some)
     }
 
     pub fn skip_samples(&self) -> AvResult<Option<PacketSkipSamples>> {
@@ -3573,6 +3690,14 @@ mod tests {
         data[36..40].copy_from_slice(&PacketIccProfile::ICC_SIGNATURE);
         data[PacketIccProfile::TAG_COUNT_OFFSET..PacketIccProfile::TAG_COUNT_OFFSET + 4]
             .copy_from_slice(&0u32.to_be_bytes());
+        data
+    }
+
+    fn minimal_packet_dynamic_hdr10_plus() -> Vec<u8> {
+        let mut data = vec![0; PacketDynamicHdr10Plus::DATA_LEN];
+        data[0] = PacketDynamicHdr10Plus::ITU_T_T35_COUNTRY_CODE;
+        data[1] = PacketDynamicHdr10Plus::APPLICATION_VERSION;
+        data[2] = 1;
         data
     }
 
@@ -5450,6 +5575,143 @@ mod tests {
         let non_dovi =
             SideData::new_with_kind(PacketSideDataKind::IccProfile, valid.to_vec()).unwrap();
         assert_eq!(non_dovi.dolby_vision_conf().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_parses_dynamic_hdr10_plus_payload() {
+        let data = minimal_packet_dynamic_hdr10_plus();
+        let side_data = SideData::new_dynamic_hdr10_plus(data.clone()).unwrap();
+
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::DynamicHdr10Plus);
+        assert_eq!(side_data.data(), data.as_slice());
+        assert_eq!(
+            PacketSideDataKind::DynamicHdr10Plus
+                .ffmpeg_constant()
+                .unwrap(),
+            "AV_PKT_DATA_DYNAMIC_HDR10_PLUS"
+        );
+        assert_eq!(PacketDynamicHdr10Plus::MAX_WINDOWS, 3);
+        assert_eq!(PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_ROWS, 25);
+        assert_eq!(PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_COLS, 25);
+
+        let parsed = side_data.dynamic_hdr10_plus().unwrap().unwrap();
+        assert_eq!(PacketDynamicHdr10Plus::parse(&data).unwrap(), parsed);
+        assert_eq!(parsed.data(), data.as_slice());
+        assert_eq!(parsed.as_frame_dynamic_hdr_plus().data(), data.as_slice());
+        assert_eq!(
+            parsed.itu_t_t35_country_code(),
+            PacketDynamicHdr10Plus::ITU_T_T35_COUNTRY_CODE
+        );
+        assert_eq!(
+            parsed.application_version(),
+            PacketDynamicHdr10Plus::APPLICATION_VERSION
+        );
+        assert_eq!(parsed.num_windows(), 1);
+        assert!(parsed.color_transform_params(1).is_none());
+
+        let params = parsed.color_transform_params(0).unwrap();
+        assert_eq!(
+            params.data().len(),
+            PacketHdrPlusColorTransformParams::DATA_LEN
+        );
+        assert_eq!(
+            params.overlap_process_option().unwrap(),
+            PacketHdrPlusOverlapProcessOption::WeightedAveraging
+        );
+        assert_eq!(params.num_distribution_maxrgb_percentiles(), 0);
+        assert_eq!(params.distribution_maxrgb(0), None);
+        assert_eq!(params.tone_mapping_flag(), 0);
+        assert_eq!(params.num_bezier_curve_anchors(), 0);
+        assert_eq!(params.bezier_curve_anchor(0), None);
+        assert_eq!(params.color_saturation_mapping_flag(), 0);
+
+        assert_eq!(
+            parsed.targeted_system_display_actual_peak_luminance_flag(),
+            0
+        );
+        assert_eq!(
+            parsed.num_rows_targeted_system_display_actual_peak_luminance(),
+            0
+        );
+        assert_eq!(
+            parsed.num_cols_targeted_system_display_actual_peak_luminance(),
+            0
+        );
+        assert_eq!(
+            parsed.targeted_system_display_actual_peak_luminance(0, 0),
+            None
+        );
+        assert_eq!(parsed.mastering_display_actual_peak_luminance_flag(), 0);
+        assert_eq!(parsed.num_rows_mastering_display_actual_peak_luminance(), 0);
+        assert_eq!(parsed.num_cols_mastering_display_actual_peak_luminance(), 0);
+        assert_eq!(parsed.mastering_display_actual_peak_luminance(0, 0), None);
+
+        let non_hdr10_plus =
+            SideData::new_with_kind(PacketSideDataKind::DolbyVisionConf, data).unwrap();
+        assert_eq!(non_hdr10_plus.dynamic_hdr10_plus().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_dynamic_hdr10_plus_payload() {
+        let valid = minimal_packet_dynamic_hdr10_plus();
+        let mut invalid_payloads = vec![
+            Vec::new(),
+            vec![0; PacketDynamicHdr10Plus::DATA_LEN - 1],
+            {
+                let mut data = valid.clone();
+                data.push(0);
+                data
+            },
+            {
+                let mut data = valid.clone();
+                data[0] = PacketDynamicHdr10Plus::ITU_T_T35_COUNTRY_CODE - 1;
+                data
+            },
+            {
+                let mut data = valid.clone();
+                data[1] = PacketDynamicHdr10Plus::APPLICATION_VERSION + 1;
+                data
+            },
+            {
+                let mut data = valid.clone();
+                data[2] = 0;
+                data
+            },
+            {
+                let mut data = valid.clone();
+                data[2] = PacketDynamicHdr10Plus::MAX_WINDOWS as u8 + 1;
+                data
+            },
+        ];
+
+        let mut invalid_overlap = valid.clone();
+        const PARAMS_OFFSET: usize = 4;
+        const OVERLAP_PROCESS_OPTION_OFFSET: usize = 44;
+        invalid_overlap[PARAMS_OFFSET + OVERLAP_PROCESS_OPTION_OFFSET
+            ..PARAMS_OFFSET + OVERLAP_PROCESS_OPTION_OFFSET + 4]
+            .copy_from_slice(&2i32.to_ne_bytes());
+        invalid_payloads.push(invalid_overlap);
+
+        for data in invalid_payloads {
+            assert_eq!(
+                PacketDynamicHdr10Plus::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_dynamic_hdr10_plus(data.clone())
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_with_kind(PacketSideDataKind::DynamicHdr10Plus, data)
+                    .unwrap()
+                    .dynamic_hdr10_plus()
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
     }
 
     #[test]
