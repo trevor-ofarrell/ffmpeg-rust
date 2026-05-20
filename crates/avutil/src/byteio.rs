@@ -39,16 +39,33 @@ impl<'a> ByteReader<'a> {
         self.take(count)
     }
 
+    pub fn peek_exact(&self, count: usize) -> AvResult<&'a [u8]> {
+        self.view(count)
+    }
+
     pub fn read_u8(&mut self) -> AvResult<u8> {
         Ok(self.take(1)?[0])
+    }
+
+    pub fn peek_u8(&self) -> AvResult<u8> {
+        Ok(self.view(1)?[0])
     }
 
     pub fn read_i8(&mut self) -> AvResult<i8> {
         Ok(i8::from_ne_bytes([self.read_u8()?]))
     }
 
+    pub fn peek_i8(&self) -> AvResult<i8> {
+        Ok(i8::from_ne_bytes([self.peek_u8()?]))
+    }
+
     pub fn read_u16_le(&mut self) -> AvResult<u16> {
         let bytes = self.take(2)?;
+        Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
+    }
+
+    pub fn peek_u16_le(&self) -> AvResult<u16> {
+        let bytes = self.view(2)?;
         Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
     }
 
@@ -57,8 +74,18 @@ impl<'a> ByteReader<'a> {
         Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
     }
 
+    pub fn peek_u16_be(&self) -> AvResult<u16> {
+        let bytes = self.view(2)?;
+        Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+    }
+
     pub fn read_i16_le(&mut self) -> AvResult<i16> {
         let bytes = self.take(2)?;
+        Ok(i16::from_le_bytes([bytes[0], bytes[1]]))
+    }
+
+    pub fn peek_i16_le(&self) -> AvResult<i16> {
+        let bytes = self.view(2)?;
         Ok(i16::from_le_bytes([bytes[0], bytes[1]]))
     }
 
@@ -67,8 +94,18 @@ impl<'a> ByteReader<'a> {
         Ok(i16::from_be_bytes([bytes[0], bytes[1]]))
     }
 
+    pub fn peek_i16_be(&self) -> AvResult<i16> {
+        let bytes = self.view(2)?;
+        Ok(i16::from_be_bytes([bytes[0], bytes[1]]))
+    }
+
     pub fn read_u24_le(&mut self) -> AvResult<u32> {
         let bytes = self.take(3)?;
+        Ok(u32::from(bytes[0]) | (u32::from(bytes[1]) << 8) | (u32::from(bytes[2]) << 16))
+    }
+
+    pub fn peek_u24_le(&self) -> AvResult<u32> {
+        let bytes = self.view(3)?;
         Ok(u32::from(bytes[0]) | (u32::from(bytes[1]) << 8) | (u32::from(bytes[2]) << 16))
     }
 
@@ -77,16 +114,34 @@ impl<'a> ByteReader<'a> {
         Ok((u32::from(bytes[0]) << 16) | (u32::from(bytes[1]) << 8) | u32::from(bytes[2]))
     }
 
+    pub fn peek_u24_be(&self) -> AvResult<u32> {
+        let bytes = self.view(3)?;
+        Ok((u32::from(bytes[0]) << 16) | (u32::from(bytes[1]) << 8) | u32::from(bytes[2]))
+    }
+
     pub fn read_i24_le(&mut self) -> AvResult<i32> {
         Ok(sign_extend_i24(self.read_u24_le()?))
+    }
+
+    pub fn peek_i24_le(&self) -> AvResult<i32> {
+        Ok(sign_extend_i24(self.peek_u24_le()?))
     }
 
     pub fn read_i24_be(&mut self) -> AvResult<i32> {
         Ok(sign_extend_i24(self.read_u24_be()?))
     }
 
+    pub fn peek_i24_be(&self) -> AvResult<i32> {
+        Ok(sign_extend_i24(self.peek_u24_be()?))
+    }
+
     pub fn read_u32_le(&mut self) -> AvResult<u32> {
         let bytes = self.take(4)?;
+        Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
+    pub fn peek_u32_le(&self) -> AvResult<u32> {
+        let bytes = self.view(4)?;
         Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
@@ -95,8 +150,23 @@ impl<'a> ByteReader<'a> {
         Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
+    pub fn peek_u32_be(&self) -> AvResult<u32> {
+        let bytes = self.view(4)?;
+        Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
     pub fn read_u48_le(&mut self) -> AvResult<u64> {
         let bytes = self.take(6)?;
+        Ok(u64::from(bytes[0])
+            | (u64::from(bytes[1]) << 8)
+            | (u64::from(bytes[2]) << 16)
+            | (u64::from(bytes[3]) << 24)
+            | (u64::from(bytes[4]) << 32)
+            | (u64::from(bytes[5]) << 40))
+    }
+
+    pub fn peek_u48_le(&self) -> AvResult<u64> {
+        let bytes = self.view(6)?;
         Ok(u64::from(bytes[0])
             | (u64::from(bytes[1]) << 8)
             | (u64::from(bytes[2]) << 16)
@@ -115,16 +185,39 @@ impl<'a> ByteReader<'a> {
             | u64::from(bytes[5]))
     }
 
+    pub fn peek_u48_be(&self) -> AvResult<u64> {
+        let bytes = self.view(6)?;
+        Ok((u64::from(bytes[0]) << 40)
+            | (u64::from(bytes[1]) << 32)
+            | (u64::from(bytes[2]) << 24)
+            | (u64::from(bytes[3]) << 16)
+            | (u64::from(bytes[4]) << 8)
+            | u64::from(bytes[5]))
+    }
+
     pub fn read_i48_le(&mut self) -> AvResult<i64> {
         Ok(sign_extend_i48(self.read_u48_le()?))
+    }
+
+    pub fn peek_i48_le(&self) -> AvResult<i64> {
+        Ok(sign_extend_i48(self.peek_u48_le()?))
     }
 
     pub fn read_i48_be(&mut self) -> AvResult<i64> {
         Ok(sign_extend_i48(self.read_u48_be()?))
     }
 
+    pub fn peek_i48_be(&self) -> AvResult<i64> {
+        Ok(sign_extend_i48(self.peek_u48_be()?))
+    }
+
     pub fn read_i32_le(&mut self) -> AvResult<i32> {
         let bytes = self.take(4)?;
+        Ok(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
+    pub fn peek_i32_le(&self) -> AvResult<i32> {
+        let bytes = self.view(4)?;
         Ok(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
@@ -133,8 +226,20 @@ impl<'a> ByteReader<'a> {
         Ok(i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
+    pub fn peek_i32_be(&self) -> AvResult<i32> {
+        let bytes = self.view(4)?;
+        Ok(i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
     pub fn read_u64_le(&mut self) -> AvResult<u64> {
         let bytes = self.take(8)?;
+        Ok(u64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]))
+    }
+
+    pub fn peek_u64_le(&self) -> AvResult<u64> {
+        let bytes = self.view(8)?;
         Ok(u64::from_le_bytes([
             bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         ]))
@@ -147,8 +252,22 @@ impl<'a> ByteReader<'a> {
         ]))
     }
 
+    pub fn peek_u64_be(&self) -> AvResult<u64> {
+        let bytes = self.view(8)?;
+        Ok(u64::from_be_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]))
+    }
+
     pub fn read_i64_le(&mut self) -> AvResult<i64> {
         let bytes = self.take(8)?;
+        Ok(i64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]))
+    }
+
+    pub fn peek_i64_le(&self) -> AvResult<i64> {
+        let bytes = self.view(8)?;
         Ok(i64::from_le_bytes([
             bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         ]))
@@ -161,7 +280,26 @@ impl<'a> ByteReader<'a> {
         ]))
     }
 
+    pub fn peek_i64_be(&self) -> AvResult<i64> {
+        let bytes = self.view(8)?;
+        Ok(i64::from_be_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]))
+    }
+
     fn take(&mut self, count: usize) -> AvResult<&'a [u8]> {
+        let end = self.checked_end(count)?;
+        let bytes = &self.data[self.position..end];
+        self.position = end;
+        Ok(bytes)
+    }
+
+    fn view(&self, count: usize) -> AvResult<&'a [u8]> {
+        let end = self.checked_end(count)?;
+        Ok(&self.data[self.position..end])
+    }
+
+    fn checked_end(&self, count: usize) -> AvResult<usize> {
         let end = self.position.checked_add(count).ok_or_else(|| {
             AvError::invalid_argument("byte read length overflows addressable memory")
         })?;
@@ -177,9 +315,7 @@ impl<'a> ByteReader<'a> {
             ));
         }
 
-        let bytes = &self.data[self.position..end];
-        self.position = end;
-        Ok(bytes)
+        Ok(end)
     }
 }
 
@@ -456,6 +592,78 @@ mod tests {
         assert_eq!(reader.position(), 2);
         assert_eq!(reader.read_exact(2).unwrap(), &[2, 3]);
         assert_eq!(reader.remaining(), 1);
+    }
+
+    #[test]
+    fn peeks_unsigned_integers_without_advancing() {
+        let reader = ByteReader::new(&[1, 2, 3, 4, 5, 6, 7, 8]);
+
+        assert_eq!(reader.peek_exact(3).unwrap(), &[1, 2, 3]);
+        assert_eq!(reader.peek_u8().unwrap(), 1);
+        assert_eq!(reader.peek_u16_le().unwrap(), 0x0201);
+        assert_eq!(reader.peek_u16_be().unwrap(), 0x0102);
+        assert_eq!(reader.peek_u24_le().unwrap(), 0x030201);
+        assert_eq!(reader.peek_u24_be().unwrap(), 0x010203);
+        assert_eq!(reader.peek_u32_le().unwrap(), 0x0403_0201);
+        assert_eq!(reader.peek_u32_be().unwrap(), 0x0102_0304);
+        assert_eq!(reader.peek_u48_le().unwrap(), 0x0605_0403_0201);
+        assert_eq!(reader.peek_u48_be().unwrap(), 0x0102_0304_0506);
+        assert_eq!(reader.peek_u64_le().unwrap(), 0x0807_0605_0403_0201);
+        assert_eq!(reader.peek_u64_be().unwrap(), 0x0102_0304_0506_0708);
+        assert_eq!(reader.position(), 0);
+
+        let mut reader = reader;
+        assert_eq!(reader.read_exact(8).unwrap(), &[1, 2, 3, 4, 5, 6, 7, 8]);
+        assert!(reader.is_eof());
+    }
+
+    #[test]
+    fn peeks_signed_integers_without_advancing() {
+        let le = (-2_i64).to_le_bytes();
+        let reader = ByteReader::new(&le);
+        assert_eq!(reader.peek_i8().unwrap(), -2);
+        assert_eq!(reader.peek_i16_le().unwrap(), -2);
+        assert_eq!(reader.peek_i24_le().unwrap(), -2);
+        assert_eq!(reader.peek_i32_le().unwrap(), -2);
+        assert_eq!(reader.peek_i48_le().unwrap(), -2);
+        assert_eq!(reader.peek_i64_le().unwrap(), -2);
+        assert_eq!(reader.position(), 0);
+
+        let reader = ByteReader::new(&[0xff, 0xfe]);
+        assert_eq!(reader.peek_i16_be().unwrap(), -2);
+        assert_eq!(reader.position(), 0);
+
+        let reader = ByteReader::new(&[0xff, 0xff, 0xfe]);
+        assert_eq!(reader.peek_i24_be().unwrap(), -2);
+        assert_eq!(reader.position(), 0);
+
+        let reader = ByteReader::new(&[0xff, 0xff, 0xff, 0xfe]);
+        assert_eq!(reader.peek_i32_be().unwrap(), -2);
+        assert_eq!(reader.position(), 0);
+
+        let reader = ByteReader::new(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xfe]);
+        assert_eq!(reader.peek_i48_be().unwrap(), -2);
+        assert_eq!(reader.position(), 0);
+
+        let be = (-2_i64).to_be_bytes();
+        let reader = ByteReader::new(&be);
+        assert_eq!(reader.peek_i64_be().unwrap(), -2);
+        assert_eq!(reader.position(), 0);
+    }
+
+    #[test]
+    fn peek_reports_typed_errors_without_advancing() {
+        let mut reader = ByteReader::new(&[0x12, 0x34]);
+        reader.skip(1).unwrap();
+
+        let eof = reader.peek_u16_be().unwrap_err();
+        assert_eq!(eof.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(reader.position(), 1);
+        assert_eq!(reader.read_u8().unwrap(), 0x34);
+
+        let overflow = reader.peek_exact(usize::MAX).unwrap_err();
+        assert_eq!(overflow.kind(), AvErrorKind::InvalidArgument);
+        assert!(reader.is_eof());
     }
 
     #[test]

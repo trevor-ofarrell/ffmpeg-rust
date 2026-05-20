@@ -839,6 +839,9 @@ unit_tests = [
   "byteio::tests::reads_signed_24_and_48_bit_values_with_sign_extension",
   "byteio::tests::reports_typed_eof_without_advancing_past_end",
   "byteio::tests::skip_and_exact_reads_advance_position",
+  "byteio::tests::peeks_unsigned_integers_without_advancing",
+  "byteio::tests::peeks_signed_integers_without_advancing",
+  "byteio::tests::peek_reports_typed_errors_without_advancing",
   "byteio::tests::writes_unsigned_integers_in_both_endiannesses",
   "byteio::tests::writes_signed_integers_in_both_endiannesses",
   "byteio::tests::writer_rejects_values_too_wide_for_u24_and_u48",
@@ -847,7 +850,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-byteio|local-avutil-unit"]
 fuzz_targets = ["avutil_byteio"]
-notes = "Endian-aware byte reader/writer implemented for common unsigned and signed 8/16/24/32/48/64-bit integer operations, with signed 24/48-bit sign extension and constrained u24/u48/i24/i48 writer validation before mutation. MOV hvcC parsing now uses the shared u48 big-endian reader instead of a local helper. Build-checked cargo-fuzz target avutil_byteio exercises bounded read operations, EOF cursor invariants, signed and unsigned 24/48/64-bit paths, and byte writer helper no-mutation failure paths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper FFmpeg compatibility vectors are still pending, so this is not marked complete. The local FATE-runner smoke mapping executes the byteio unit filter only and does not count as upstream FATE parity."
+notes = "Endian-aware byte reader/writer implemented for common unsigned and signed 8/16/24/32/48/64-bit integer operations, with non-advancing exact and endian-aware numeric peek helpers using the same EOF/overflow validation as advancing reads. Signed 24/48-bit values are sign-extended consistently for read and peek paths, and constrained u24/u48/i24/i48 writer helpers validate before mutation. MOV hvcC parsing now uses the shared u48 big-endian reader instead of a local helper. Build-checked cargo-fuzz target avutil_byteio exercises bounded reads, bounded peeks, EOF cursor invariants, signed and unsigned 24/48/64-bit paths, and byte writer helper no-mutation failure paths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper FFmpeg compatibility vectors are still pending, so this is not marked complete. The local FATE-runner smoke mapping executes the byteio unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

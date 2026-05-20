@@ -10,10 +10,12 @@ fuzz_target!(|data: &[u8]| {
 
     while let Ok(op) = control.read_u8() {
         let before = reader.position();
-        let result = run_read_operation(&mut reader, op);
+        let opcode = op % 47;
+        let is_peek = opcode >= 24;
+        let result = run_read_operation(&mut reader, opcode, op);
 
         assert!(reader.position() <= reader.len());
-        if result.is_err() {
+        if result.is_err() || is_peek {
             assert_eq!(reader.position(), before);
         } else {
             assert!(reader.position() >= before);
@@ -27,8 +29,8 @@ fuzz_target!(|data: &[u8]| {
     assert_eq!(writer.is_empty(), writer.as_slice().is_empty());
 });
 
-fn run_read_operation(reader: &mut ByteReader<'_>, op: u8) -> AvResult<()> {
-    match op % 24 {
+fn run_read_operation(reader: &mut ByteReader<'_>, opcode: u8, op: u8) -> AvResult<()> {
+    match opcode {
         0 => reader.read_u8().map(|_| ()),
         1 => reader.read_i8().map(|_| ()),
         2 => reader.read_u16_le().map(|_| ()),
@@ -52,7 +54,30 @@ fn run_read_operation(reader: &mut ByteReader<'_>, op: u8) -> AvResult<()> {
         20 => reader.read_i64_le().map(|_| ()),
         21 => reader.read_i64_be().map(|_| ()),
         22 => reader.skip(usize::from(op >> 4)),
-        _ => reader.read_exact(usize::from(op >> 4)).map(|_| ()),
+        23 => reader.read_exact(usize::from(op >> 4)).map(|_| ()),
+        24 => reader.peek_u8().map(|_| ()),
+        25 => reader.peek_i8().map(|_| ()),
+        26 => reader.peek_u16_le().map(|_| ()),
+        27 => reader.peek_u16_be().map(|_| ()),
+        28 => reader.peek_i16_le().map(|_| ()),
+        29 => reader.peek_i16_be().map(|_| ()),
+        30 => reader.peek_u24_le().map(|_| ()),
+        31 => reader.peek_u24_be().map(|_| ()),
+        32 => reader.peek_i24_le().map(|_| ()),
+        33 => reader.peek_i24_be().map(|_| ()),
+        34 => reader.peek_u32_le().map(|_| ()),
+        35 => reader.peek_u32_be().map(|_| ()),
+        36 => reader.peek_i32_le().map(|_| ()),
+        37 => reader.peek_i32_be().map(|_| ()),
+        38 => reader.peek_u48_le().map(|_| ()),
+        39 => reader.peek_u48_be().map(|_| ()),
+        40 => reader.peek_i48_le().map(|_| ()),
+        41 => reader.peek_i48_be().map(|_| ()),
+        42 => reader.peek_u64_le().map(|_| ()),
+        43 => reader.peek_u64_be().map(|_| ()),
+        44 => reader.peek_i64_le().map(|_| ()),
+        45 => reader.peek_i64_be().map(|_| ()),
+        _ => reader.peek_exact(usize::from(op >> 4)).map(|_| ()),
     }
 }
 

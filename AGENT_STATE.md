@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-byteio` update: `ByteReader` now exposes non-advancing `peek_exact` plus endian-aware unsigned and signed 8/16/24/32/48/64-bit peek helpers that share the same checked EOF/overflow path as advancing reads. Focused unit tests cover unsigned lookahead, signed sign-extension lookahead, no-advance success behavior, EOF no-advance behavior, and checked length-overflow errors; `avutil_byteio` now build-checks those peek operations and asserts peek cursor preservation under fuzz-generated operation sequences. This remains below `complete` because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
+
 Latest `avutil-timebase` update: `AV_TIME_BASE`, `AV_TIME_BASE_Q`, direct `rescale`, `rescale_rnd`, and `rescale_rnd_pass_minmax` helpers now cover `av_rescale`-style integer-term timestamp math through the same checked rounding core used by `rescale_q` and `rescale_q_rnd`. Direct and rational paths validate invalid multiplier/divisor/time-base shapes as typed errors, preserve `i64::MIN`/`i64::MAX` sentinels through pass-min/max helpers, and reject out-of-range results. Focused unit tests cover constants, direct integer-term rounding modes, direct pass-min/max behavior, invalid terms, overflow, common media timebase conversion, rational rounding modes, rational pass-min/max, and malformed time bases; `avutil_core_models` build-checks constants, direct rescale terms, invalid direct terms, sentinel preservation, and rational rescale against an independent i128 model. This remains below `complete` because pinned FFmpeg edge-case differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
 
 Latest `avutil-rational` update: `Rational::reduce_i64` now models max-bounded `av_reduce`-style reduction over signed i64 numerators/denominators, including exactness reporting, sign normalization, zero and infinity raw-rational sentinels, invalid-limit rejection, and continued-fraction approximation when either output side exceeds the caller max. `Rational::from_f64_limited` adds an `av_d2q`-style conversion path with finite max-bounded output, NaN as `0/0`, and infinity or overlarge values as `+/-1/0`; `Rational::to_f64` provides the matching `av_q2d`-style conversion. Focused unit tests cover exact reduction, approximation under tight limits, invalid limits, finite f64 conversion, bounded approximation, and NaN/infinity sentinels; `avutil_core_models` build-checks reduction bounds, exactness cross-products, and f64 sentinel invariants. This remains below `complete` because pinned FFmpeg differential vectors, upstream FATE parity, broader rational helper coverage, and actual fuzz execution are still absent.
@@ -2943,6 +2945,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-byteio` is the current focus for this slice. The concrete change is non-advancing byte lookahead for exact slices and endian-aware signed/unsigned integer widths, with local unit and fuzz-harness invariant coverage. It does not claim pinned AVIO/GetByte compatibility vectors or upstream FATE parity yet.
+
 `avutil-timebase` is the current focus for this slice. The concrete change is direct `av_rescale`-style integer-term helpers plus FFmpeg timebase constants, with the existing rational rescale helpers routed through the same checked core. It does not claim pinned `av_rescale_rnd` differential parity yet.
 
 `avutil-rational` is the current focus for this slice. The concrete change is limited rational reduction and double conversion parity scaffolding: `reduce_i64`, `from_f64_limited`, and `to_f64`, with unit and fuzz-harness invariant coverage. It does not claim exact pinned `av_reduce`/`av_d2q` differential parity yet.
@@ -2957,7 +2961,7 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 primitive work by tightening the next unblocked avutil surface, likely byte I/O or bit I/O edge parity, unless a pinned-oracle scaffold becomes available first.
+1. Continue priority-1 primitive work by tightening the next unblocked avutil surface, likely dictionary/options edge parity or deeper bit I/O vectors, unless a pinned-oracle scaffold becomes available first.
 2. Add pinned-oracle differential coverage for direct/rational rescale, rational reduction/double-conversion, error strings/codes, and constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
 3. Add upstream FATE sample-backed media mappings for constrained `ffmpeg-rs` null/framecrc/hash-style command paths once samples and the pinned oracle are available.
 
@@ -2970,6 +2974,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added `ByteReader::peek_exact` plus endian-aware unsigned and signed 8/16/24/32/48/64-bit peek helpers. The peek paths share checked EOF/overflow validation with reads and never advance the cursor on success or failure. Unit coverage now checks unsigned peeks, signed sign extension, read-after-peek behavior, EOF preservation, and overflow errors; `avutil_byteio` now build-checks peek operations and cursor preservation in its generated operation loop. Focused `avutil` byteio tests and fuzz-target build checks pass. The component remains `implemented`, not `complete`.
 
 Latest slice: added `AV_TIME_BASE`, `AV_TIME_BASE_Q`, `rescale`, `rescale_rnd`, and `rescale_rnd_pass_minmax`, and routed `rescale_q`/`rescale_q_rnd`/`rescale_q_rnd_pass_minmax` through the same checked multiplier/divisor core. Unit and fuzz-harness coverage now checks direct integer-term rounding, direct pass-min/max sentinel preservation, invalid term rejection, overflow rejection, constants, and rational rescale behavior against an independent i128 model. Validation passed with focused timebase tests, fuzz target check/clippy, avutil clippy, format check, workspace clippy, and FATE-runner timebase plus changed avutil mappings. The component remains `implemented`, not `complete`.
 
