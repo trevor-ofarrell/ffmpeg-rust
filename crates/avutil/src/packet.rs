@@ -1,6 +1,7 @@
 use crate::frame::{
     FrameAmbientViewingEnvironment, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
-    FrameStereo3dType, FrameStereo3dView,
+    FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
+    FrameThreeDReferenceDisplays,
 };
 use crate::{rescale_q, AvError, AvResult, BufferRef, Rational};
 
@@ -1250,6 +1251,75 @@ impl PacketAmbientViewingEnvironment {
     }
 }
 
+pub type PacketThreeDReferenceDisplay = FrameThreeDReferenceDisplay;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketThreeDReferenceDisplays(FrameThreeDReferenceDisplays);
+
+impl PacketThreeDReferenceDisplays {
+    pub const MAX_REF_DISPLAYS: usize = FrameThreeDReferenceDisplays::MAX_REF_DISPLAYS;
+    pub const ENTRY_DATA_LEN: usize = FrameThreeDReferenceDisplay::DATA_LEN;
+    pub const ENTRIES_OFFSET_OFFSET: usize = FrameThreeDReferenceDisplays::ENTRIES_OFFSET_OFFSET;
+    pub const ENTRY_SIZE_OFFSET: usize = FrameThreeDReferenceDisplays::ENTRY_SIZE_OFFSET;
+    pub const HEADER_LEN: usize = FrameThreeDReferenceDisplays::HEADER_LEN;
+    pub const ENTRIES_OFFSET: usize = FrameThreeDReferenceDisplays::ENTRIES_OFFSET;
+
+    pub fn new(
+        prec_ref_display_width: u8,
+        ref_viewing_distance_flag: bool,
+        prec_ref_viewing_dist: u8,
+        displays: Vec<PacketThreeDReferenceDisplay>,
+    ) -> AvResult<Self> {
+        FrameThreeDReferenceDisplays::new(
+            prec_ref_display_width,
+            ref_viewing_distance_flag,
+            prec_ref_viewing_dist,
+            displays,
+        )
+        .map(Self)
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() < Self::HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "3D reference displays packet side data requires at least {} header bytes, got {}",
+                Self::HEADER_LEN,
+                data.len()
+            )));
+        }
+
+        FrameThreeDReferenceDisplays::parse(data).map(Self)
+    }
+
+    pub const fn prec_ref_display_width(&self) -> u8 {
+        self.0.prec_ref_display_width()
+    }
+
+    pub const fn ref_viewing_distance_flag(&self) -> bool {
+        self.0.ref_viewing_distance_flag()
+    }
+
+    pub const fn prec_ref_viewing_dist(&self) -> u8 {
+        self.0.prec_ref_viewing_dist()
+    }
+
+    pub fn displays(&self) -> &[PacketThreeDReferenceDisplay] {
+        self.0.displays()
+    }
+
+    pub fn nb_displays(&self) -> usize {
+        self.0.nb_displays()
+    }
+
+    pub fn display(&self, index: usize) -> Option<PacketThreeDReferenceDisplay> {
+        self.0.display(index)
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.0.to_bytes()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketA53ClosedCaptions<'a> {
     data: &'a [u8],
@@ -2457,6 +2527,13 @@ impl SideData {
         )
     }
 
+    pub fn new_three_d_reference_displays(value: PacketThreeDReferenceDisplays) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::ThreeDReferenceDisplays,
+            value.to_bytes(),
+        )
+    }
+
     pub fn new_a53_closed_captions(data: Vec<u8>) -> AvResult<Self> {
         let side_data = Self::new_with_kind(PacketSideDataKind::A53ClosedCaptions, data)?;
         PacketA53ClosedCaptions::parse(side_data.data())?;
@@ -2657,6 +2734,14 @@ impl SideData {
         }
 
         PacketAmbientViewingEnvironment::parse(self.data()).map(Some)
+    }
+
+    pub fn three_d_reference_displays(&self) -> AvResult<Option<PacketThreeDReferenceDisplays>> {
+        if self.kind != PacketSideDataKind::ThreeDReferenceDisplays {
+            return Ok(None);
+        }
+
+        PacketThreeDReferenceDisplays::parse(self.data()).map(Some)
     }
 
     pub fn a53_closed_captions(&self) -> AvResult<Option<PacketA53ClosedCaptions<'_>>> {
@@ -3276,6 +3361,10 @@ mod tests {
     ) {
         bytes[offset..offset + 4].copy_from_slice(&value.num().to_ne_bytes());
         bytes[offset + 4..offset + 8].copy_from_slice(&value.den().to_ne_bytes());
+    }
+
+    fn write_packet_three_d_usize(data: &mut [u8], offset: usize, value: usize) {
+        data[offset..offset + core::mem::size_of::<usize>()].copy_from_slice(&value.to_ne_bytes());
     }
 
     #[test]
@@ -4515,6 +4604,188 @@ mod tests {
             .kind(),
             crate::AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn packet_side_data_parses_three_d_reference_displays_payload() {
+        let first = PacketThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
+        let second = PacketThreeDReferenceDisplay::new(2, 3, (10, 20), (4, 40), false, 0);
+        let value = PacketThreeDReferenceDisplays::new(31, true, 7, vec![first, second]).unwrap();
+        let expected_bytes = value.to_bytes();
+        let side_data = SideData::new_three_d_reference_displays(value.clone()).unwrap();
+
+        assert_eq!(PacketThreeDReferenceDisplay::DATA_LEN, 12);
+        assert_eq!(PacketThreeDReferenceDisplays::ENTRY_DATA_LEN, 12);
+        assert_eq!(
+            PacketThreeDReferenceDisplays::HEADER_LEN,
+            if core::mem::size_of::<usize>() == 8 {
+                24
+            } else {
+                12
+            }
+        );
+        assert_eq!(
+            PacketThreeDReferenceDisplays::ENTRIES_OFFSET,
+            PacketThreeDReferenceDisplays::HEADER_LEN
+        );
+        assert_eq!(
+            PacketSideDataKind::ThreeDReferenceDisplays
+                .ffmpeg_constant()
+                .unwrap(),
+            "AV_PKT_DATA_3D_REFERENCE_DISPLAYS"
+        );
+
+        assert_eq!(value.prec_ref_display_width(), 31);
+        assert!(value.ref_viewing_distance_flag());
+        assert_eq!(value.prec_ref_viewing_dist(), 7);
+        assert_eq!(value.nb_displays(), 2);
+        assert_eq!(value.displays(), &[first, second]);
+        assert_eq!(value.display(0), Some(first));
+        assert_eq!(value.display(1), Some(second));
+        assert_eq!(value.display(2), None);
+        assert_eq!(first.left_view_id(), 0);
+        assert_eq!(first.right_view_id(), 1);
+        assert_eq!(first.exponent_ref_display_width(), 12);
+        assert_eq!(first.mantissa_ref_display_width(), 34);
+        assert_eq!(first.exponent_ref_viewing_distance(), 5);
+        assert_eq!(first.mantissa_ref_viewing_distance(), 67);
+        assert!(first.additional_shift_present());
+        assert_eq!(first.num_sample_shift(), -11);
+        assert_eq!(
+            PacketThreeDReferenceDisplay::parse(&first.to_bytes()).unwrap(),
+            first
+        );
+        assert_eq!(
+            PacketThreeDReferenceDisplays::parse(&expected_bytes).unwrap(),
+            value
+        );
+
+        assert_eq!(
+            side_data.kind_id(),
+            &PacketSideDataKind::ThreeDReferenceDisplays
+        );
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(side_data.three_d_reference_displays().unwrap(), Some(value));
+
+        let non_tdrdi = SideData::new_with_kind(
+            PacketSideDataKind::AmbientViewingEnvironment,
+            expected_bytes,
+        )
+        .unwrap();
+        assert_eq!(non_tdrdi.three_d_reference_displays().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_three_d_reference_displays_payload() {
+        let display = PacketThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
+        let value = PacketThreeDReferenceDisplays::new(31, true, 7, vec![display]).unwrap();
+        let valid = value.to_bytes();
+
+        assert_eq!(
+            PacketThreeDReferenceDisplay::parse(&[0; PacketThreeDReferenceDisplay::DATA_LEN - 1])
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PacketThreeDReferenceDisplays::parse(
+                &[0; PacketThreeDReferenceDisplays::HEADER_LEN - 1]
+            )
+            .unwrap_err()
+            .kind(),
+            crate::AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PacketThreeDReferenceDisplays::new(31, true, 7, Vec::new())
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PacketThreeDReferenceDisplays::new(
+                31,
+                true,
+                7,
+                vec![display; PacketThreeDReferenceDisplays::MAX_REF_DISPLAYS + 1],
+            )
+            .unwrap_err()
+            .kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let mut invalid_payloads = Vec::new();
+        invalid_payloads.push(valid[..valid.len() - 1].to_vec());
+        let mut long = valid.clone();
+        long.push(0);
+        invalid_payloads.push(long);
+
+        invalid_payloads.push({
+            let mut bad = valid.clone();
+            bad[0] = 32;
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = valid.clone();
+            bad[1] = 2;
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = valid.clone();
+            bad[2] = 32;
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = valid.clone();
+            bad[3] = 0;
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = valid.clone();
+            bad[3] = (PacketThreeDReferenceDisplays::MAX_REF_DISPLAYS + 1) as u8;
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = valid.clone();
+            write_packet_three_d_usize(
+                &mut bad,
+                PacketThreeDReferenceDisplays::ENTRIES_OFFSET_OFFSET,
+                PacketThreeDReferenceDisplays::ENTRIES_OFFSET - 2,
+            );
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = valid.clone();
+            write_packet_three_d_usize(
+                &mut bad,
+                PacketThreeDReferenceDisplays::ENTRY_SIZE_OFFSET,
+                PacketThreeDReferenceDisplay::DATA_LEN + 2,
+            );
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = valid.clone();
+            bad[PacketThreeDReferenceDisplays::ENTRIES_OFFSET + 8] = 2;
+            bad
+        });
+
+        for data in invalid_payloads {
+            assert_eq!(
+                PacketThreeDReferenceDisplays::parse(&data)
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::ThreeDReferenceDisplays, data).unwrap();
+            assert_eq!(
+                side_data.three_d_reference_displays().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let non_tdrdi =
+            SideData::new_with_kind(PacketSideDataKind::AmbientViewingEnvironment, valid).unwrap();
+        assert_eq!(non_tdrdi.three_d_reference_displays().unwrap(), None);
     }
 
     #[test]

@@ -41,7 +41,8 @@ use avutil::{
     PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
     PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping,
     PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags, PacketStereo3dPrimaryEye,
-    PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition, PacketWebVttIdentifier,
+    PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition,
+    PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
     Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
@@ -3312,6 +3313,11 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     .max(PacketReplayGain::DATA_LEN + 1)
     .max(PacketStereo3d::DATA_LEN + 1)
     .max(PacketAmbientViewingEnvironment::DATA_LEN + 1)
+    .max(
+        PacketThreeDReferenceDisplays::ENTRIES_OFFSET
+            + PacketThreeDReferenceDisplay::DATA_LEN * 3
+            + 1,
+    )
     .max(PacketAudioServiceType::DATA_LEN + 1)
     .max(PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN + 1);
     let typed_payload_len =
@@ -3567,6 +3573,54 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
                 PacketSideDataKind::AmbientViewingEnvironment
             );
             assert!(packet_ambient_viewing_environment_payload_invalid(
+                &typed_payload
+            ));
+        }
+    }
+    match typed_payload_side_data.three_d_reference_displays() {
+        Ok(Some(value)) => {
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::ThreeDReferenceDisplays
+            );
+            assert_eq!(value.to_bytes(), typed_payload);
+            assert!(
+                (1..=PacketThreeDReferenceDisplays::MAX_REF_DISPLAYS)
+                    .contains(&value.nb_displays())
+            );
+            assert!(value.prec_ref_display_width() <= 31);
+            assert!(value.prec_ref_viewing_dist() <= 31);
+            assert_eq!(
+                typed_payload.len(),
+                PacketThreeDReferenceDisplays::ENTRIES_OFFSET
+                    + value.nb_displays() * PacketThreeDReferenceDisplay::DATA_LEN
+            );
+            assert_eq!(
+                PacketThreeDReferenceDisplays::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+            assert_eq!(
+                PacketThreeDReferenceDisplays::new(
+                    value.prec_ref_display_width(),
+                    value.ref_viewing_distance_flag(),
+                    value.prec_ref_viewing_dist(),
+                    value.displays().to_vec()
+                )
+                .unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(
+            typed_payload_kind,
+            PacketSideDataKind::ThreeDReferenceDisplays
+        ),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::ThreeDReferenceDisplays
+            );
+            assert!(packet_three_d_reference_displays_payload_invalid(
                 &typed_payload
             ));
         }
@@ -5023,6 +5077,153 @@ fn exercise_fixtures() {
         non_packet_ambient.ambient_viewing_environment().unwrap(),
         None
     );
+    let packet_tdrdi_first =
+        PacketThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
+    let packet_tdrdi_second =
+        PacketThreeDReferenceDisplay::new(2, 3, (10, 20), (4, 40), false, 0);
+    let packet_tdrdi = PacketThreeDReferenceDisplays::new(
+        31,
+        true,
+        7,
+        vec![packet_tdrdi_first, packet_tdrdi_second],
+    )
+    .unwrap();
+    let packet_tdrdi_side_data =
+        SideData::new_three_d_reference_displays(packet_tdrdi.clone()).unwrap();
+    assert_eq!(PacketThreeDReferenceDisplay::DATA_LEN, 12);
+    assert_eq!(PacketThreeDReferenceDisplays::ENTRY_DATA_LEN, 12);
+    assert_eq!(packet_tdrdi.prec_ref_display_width(), 31);
+    assert!(packet_tdrdi.ref_viewing_distance_flag());
+    assert_eq!(packet_tdrdi.prec_ref_viewing_dist(), 7);
+    assert_eq!(packet_tdrdi.nb_displays(), 2);
+    assert_eq!(packet_tdrdi.display(0), Some(packet_tdrdi_first));
+    assert_eq!(packet_tdrdi.display(1), Some(packet_tdrdi_second));
+    assert_eq!(packet_tdrdi.display(2), None);
+    assert_eq!(
+        PacketThreeDReferenceDisplay::parse(&packet_tdrdi_first.to_bytes()).unwrap(),
+        packet_tdrdi_first
+    );
+    let parsed_packet_tdrdi = packet_tdrdi_side_data
+        .three_d_reference_displays()
+        .unwrap()
+        .unwrap();
+    assert_eq!(parsed_packet_tdrdi, packet_tdrdi);
+    assert_eq!(
+        PacketThreeDReferenceDisplays::parse(&parsed_packet_tdrdi.to_bytes()).unwrap(),
+        parsed_packet_tdrdi
+    );
+    assert_eq!(
+        PacketThreeDReferenceDisplay::parse(&[0; PacketThreeDReferenceDisplay::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        PacketThreeDReferenceDisplays::parse(&[0; PacketThreeDReferenceDisplays::HEADER_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        PacketThreeDReferenceDisplays::new(31, true, 7, Vec::new())
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        PacketThreeDReferenceDisplays::new(
+            31,
+            true,
+            7,
+            vec![packet_tdrdi_first; PacketThreeDReferenceDisplays::MAX_REF_DISPLAYS + 1],
+        )
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let invalid_packet_tdrdi =
+        PacketThreeDReferenceDisplays::new(31, true, 7, vec![packet_tdrdi_first])
+            .unwrap();
+    let invalid_packet_tdrdi_bytes = invalid_packet_tdrdi.to_bytes();
+    for data in [
+        vec![0; PacketThreeDReferenceDisplays::HEADER_LEN - 1],
+        invalid_packet_tdrdi_bytes[..invalid_packet_tdrdi_bytes.len() - 1].to_vec(),
+        {
+            let mut data = invalid_packet_tdrdi_bytes.clone();
+            data.push(0);
+            data
+        },
+        {
+            let mut data = invalid_packet_tdrdi_bytes.clone();
+            data[0] = 32;
+            data
+        },
+        {
+            let mut data = invalid_packet_tdrdi_bytes.clone();
+            data[1] = 2;
+            data
+        },
+        {
+            let mut data = invalid_packet_tdrdi_bytes.clone();
+            data[2] = 32;
+            data
+        },
+        {
+            let mut data = invalid_packet_tdrdi_bytes.clone();
+            data[3] = 0;
+            data
+        },
+        {
+            let mut data = invalid_packet_tdrdi_bytes.clone();
+            data[3] = (PacketThreeDReferenceDisplays::MAX_REF_DISPLAYS + 1) as u8;
+            data
+        },
+        {
+            let mut data = invalid_packet_tdrdi_bytes.clone();
+            write_ne_usize(
+                &mut data,
+                PacketThreeDReferenceDisplays::ENTRIES_OFFSET_OFFSET,
+                PacketThreeDReferenceDisplays::ENTRIES_OFFSET - 2,
+            );
+            data
+        },
+        {
+            let mut data = invalid_packet_tdrdi_bytes.clone();
+            write_ne_usize(
+                &mut data,
+                PacketThreeDReferenceDisplays::ENTRY_SIZE_OFFSET,
+                PacketThreeDReferenceDisplay::DATA_LEN + 2,
+            );
+            data
+        },
+        {
+            let mut data = invalid_packet_tdrdi_bytes.clone();
+            data[PacketThreeDReferenceDisplays::ENTRIES_OFFSET + 8] = 2;
+            data
+        },
+    ] {
+        assert!(packet_three_d_reference_displays_payload_invalid(&data));
+        assert_eq!(
+            PacketThreeDReferenceDisplays::parse(&data)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            SideData::new_with_kind(PacketSideDataKind::ThreeDReferenceDisplays, data)
+                .unwrap()
+                .three_d_reference_displays()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    let non_packet_tdrdi = SideData::new_with_kind(
+        PacketSideDataKind::ContentLightLevel,
+        packet_tdrdi.to_bytes(),
+    )
+    .unwrap();
+    assert_eq!(non_packet_tdrdi.three_d_reference_displays().unwrap(), None);
     let packet_a53_payload = vec![0xfc, 0x80, 0x41, 0xfd, 0x80, 0x42];
     let packet_a53_side_data =
         SideData::new_a53_closed_captions(packet_a53_payload.clone()).unwrap();
@@ -11201,6 +11402,10 @@ fn packet_content_light_metadata_payload_invalid(data: &[u8]) -> bool {
 fn packet_ambient_viewing_environment_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketAmbientViewingEnvironment::DATA_LEN
         || PacketAmbientViewingEnvironment::parse(data).is_err()
+}
+
+fn packet_three_d_reference_displays_payload_invalid(data: &[u8]) -> bool {
+    PacketThreeDReferenceDisplays::parse(data).is_err()
 }
 
 fn packet_a53_closed_captions_payload_invalid(data: &[u8]) -> bool {
