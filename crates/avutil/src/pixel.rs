@@ -41,6 +41,8 @@ pub enum PixelFormat {
     Gbrp12Be,
     Gbrp14Le,
     Gbrp14Be,
+    Gbrp16Le,
+    Gbrp16Be,
     Yuv420p,
     Yuv422p,
     Yuv410p,
@@ -114,6 +116,8 @@ impl PixelFormat {
         Self::Gbrp12Be,
         Self::Gbrp14Le,
         Self::Gbrp14Be,
+        Self::Gbrp16Le,
+        Self::Gbrp16Be,
         Self::Yuv420p,
         Self::Yuv422p,
         Self::Yuv410p,
@@ -167,6 +171,8 @@ impl PixelFormat {
             "gbrp12be" => Some(Self::Gbrp12Be),
             "gbrp14le" => Some(Self::Gbrp14Le),
             "gbrp14be" => Some(Self::Gbrp14Be),
+            "gbrp16le" => Some(Self::Gbrp16Le),
+            "gbrp16be" => Some(Self::Gbrp16Be),
             "yuv420p" => Some(Self::Yuv420p),
             "yuv422p" => Some(Self::Yuv422p),
             "yuv410p" => Some(Self::Yuv410p),
@@ -658,6 +664,30 @@ impl PixelFormat {
                 0,
                 0,
             ),
+            Self::Gbrp16Le => (
+                "gbrp16le",
+                PixelFormatClass::Rgb,
+                3,
+                48,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrp16Be => (
+                "gbrp16be",
+                PixelFormatClass::Rgb,
+                3,
+                48,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
             Self::Yuv420p => (
                 "yuv420p",
                 PixelFormatClass::Yuv,
@@ -753,6 +783,8 @@ impl PixelFormat {
                     | Self::Rgba64Be
                     | Self::Bgra64Le
                     | Self::Bgra64Be
+                    | Self::Gbrp16Le
+                    | Self::Gbrp16Be
             ) {
                 16
             } else if matches!(self, Self::Gbrp9Le | Self::Gbrp9Be) {
@@ -920,7 +952,9 @@ impl PixelFormat {
             | Self::Gbrp12Le
             | Self::Gbrp12Be
             | Self::Gbrp14Le
-            | Self::Gbrp14Be => {
+            | Self::Gbrp14Be
+            | Self::Gbrp16Le
+            | Self::Gbrp16Be => {
                 let plane = checked_mul(
                     pixels,
                     2,
@@ -1156,6 +1190,14 @@ mod tests {
             Some(PixelFormat::Gbrp14Be)
         );
         assert_eq!(
+            PixelFormat::from_name("gbrp16le"),
+            Some(PixelFormat::Gbrp16Le)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrp16be"),
+            Some(PixelFormat::Gbrp16Be)
+        );
+        assert_eq!(
             PixelFormat::from_name("yuv422p"),
             Some(PixelFormat::Yuv422p)
         );
@@ -1175,7 +1217,7 @@ mod tests {
             PixelFormat::from_name("yuv444p"),
             Some(PixelFormat::Yuv444p)
         );
-        assert_eq!(PixelFormat::ALL.len(), 45);
+        assert_eq!(PixelFormat::ALL.len(), 47);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray16Le.plane_count(), 1);
@@ -1201,6 +1243,8 @@ mod tests {
         assert_eq!(PixelFormat::Gbrp12Be.plane_count(), 3);
         assert_eq!(PixelFormat::Gbrp14Le.plane_count(), 3);
         assert_eq!(PixelFormat::Gbrp14Be.plane_count(), 3);
+        assert_eq!(PixelFormat::Gbrp16Le.plane_count(), 3);
+        assert_eq!(PixelFormat::Gbrp16Be.plane_count(), 3);
         assert!(!PixelFormat::Rgb24.is_planar());
         assert!(PixelFormat::Rgb24.is_packed());
         assert!(PixelFormat::Ya8.is_packed());
@@ -1223,12 +1267,14 @@ mod tests {
         assert!(PixelFormat::Gbrp10Le.is_planar());
         assert!(PixelFormat::Gbrp12Le.is_planar());
         assert!(PixelFormat::Gbrp14Le.is_planar());
+        assert!(PixelFormat::Gbrp16Le.is_planar());
         assert!(!PixelFormat::Yuv420p.is_packed());
         assert!(!PixelFormat::Gbrp.is_packed());
         assert!(!PixelFormat::Gbrp9Le.is_packed());
         assert!(!PixelFormat::Gbrp10Le.is_packed());
         assert!(!PixelFormat::Gbrp12Le.is_packed());
         assert!(!PixelFormat::Gbrp14Le.is_packed());
+        assert!(!PixelFormat::Gbrp16Le.is_packed());
         assert!(!PixelFormat::Rgb24.has_alpha());
         assert!(PixelFormat::Ya8.has_alpha());
         assert!(PixelFormat::Ya16Le.has_alpha());
@@ -1254,6 +1300,7 @@ mod tests {
         assert_eq!(PixelFormat::Gbrp10Le.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Gbrp12Le.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Gbrp14Le.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::Gbrp16Le.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Yuv420p.packed_bytes_per_pixel(), None);
     }
 
@@ -1453,6 +1500,8 @@ mod tests {
             (PixelFormat::Gbrp12Be, "gbrp12be", 12, 36),
             (PixelFormat::Gbrp14Le, "gbrp14le", 14, 42),
             (PixelFormat::Gbrp14Be, "gbrp14be", 14, 42),
+            (PixelFormat::Gbrp16Le, "gbrp16le", 16, 48),
+            (PixelFormat::Gbrp16Be, "gbrp16be", 16, 48),
         ] {
             let descriptor = format.descriptor();
             assert_eq!(descriptor.format, format);
@@ -1491,6 +1540,9 @@ mod tests {
         assert_eq!(PixelFormat::Gbrp14Le.component_count(), 3);
         assert_eq!(PixelFormat::Gbrp14Le.bits_per_component(), 14);
         assert_eq!(PixelFormat::Gbrp14Le.bits_per_pixel(), 42);
+        assert_eq!(PixelFormat::Gbrp16Le.component_count(), 3);
+        assert_eq!(PixelFormat::Gbrp16Le.bits_per_component(), 16);
+        assert_eq!(PixelFormat::Gbrp16Le.bits_per_pixel(), 48);
         assert_eq!(PixelFormat::Ya16Le.component_count(), 2);
         assert_eq!(PixelFormat::Ya16Le.bits_per_component(), 16);
         assert_eq!(PixelFormat::Ya16Le.bits_per_pixel(), 32);
@@ -1635,6 +1687,11 @@ mod tests {
             vec![12, 12, 12]
         );
         assert_eq!(PixelFormat::Gbrp14Le.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(
+            PixelFormat::Gbrp16Le.plane_sizes(3, 2).unwrap(),
+            vec![12, 12, 12]
+        );
+        assert_eq!(PixelFormat::Gbrp16Le.frame_size(3, 2).unwrap(), 36);
     }
 
     #[test]
@@ -1719,6 +1776,15 @@ mod tests {
         );
 
         let planes = PixelFormat::Gbrp14Le
+            .split_planes(&(0..12).collect::<Vec<_>>(), 1, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]]
+        );
+
+        let planes = PixelFormat::Gbrp16Le
             .split_planes(&(0..12).collect::<Vec<_>>(), 1, 2)
             .unwrap();
 

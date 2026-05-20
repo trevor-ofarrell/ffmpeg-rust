@@ -5347,6 +5347,24 @@ fn exercise_fixtures() {
     assert!(PixelFormat::Gbrp14Le.is_rgb());
     assert!(PixelFormat::Gbrp14Le.is_planar());
     assert!(!PixelFormat::Gbrp14Le.has_alpha());
+    assert_eq!(
+        PixelFormat::from_name("gbrp16le"),
+        Some(PixelFormat::Gbrp16Le)
+    );
+    assert_eq!(
+        PixelFormat::from_name("gbrp16be"),
+        Some(PixelFormat::Gbrp16Be)
+    );
+    assert_eq!(PixelFormat::Gbrp16Le.frame_size(2, 2).unwrap(), 24);
+    assert_eq!(
+        PixelFormat::Gbrp16Le.plane_sizes(2, 2).unwrap(),
+        vec![8, 8, 8]
+    );
+    assert_eq!(PixelFormat::Gbrp16Le.bits_per_component(), 16);
+    assert_eq!(PixelFormat::Gbrp16Le.bits_per_pixel(), 48);
+    assert!(PixelFormat::Gbrp16Le.is_rgb());
+    assert!(PixelFormat::Gbrp16Le.is_planar());
+    assert!(!PixelFormat::Gbrp16Le.has_alpha());
     assert_eq!(PixelFormat::from_name("ya8"), Some(PixelFormat::Ya8));
     assert_eq!(PixelFormat::from_name("gray8a"), Some(PixelFormat::Ya8));
     assert_eq!(PixelFormat::from_name("y400a"), Some(PixelFormat::Ya8));
@@ -17094,7 +17112,9 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Gbrp12Le
         | PixelFormat::Gbrp12Be
         | PixelFormat::Gbrp14Le
-        | PixelFormat::Gbrp14Be => {
+        | PixelFormat::Gbrp14Be
+        | PixelFormat::Gbrp16Le
+        | PixelFormat::Gbrp16Be => {
             vec![width * 2, width * 2, width * 2]
         }
         PixelFormat::Yuv420p
@@ -17149,7 +17169,9 @@ fn expected_video_plane_shapes(
         | PixelFormat::Gbrp12Le
         | PixelFormat::Gbrp12Be
         | PixelFormat::Gbrp14Le
-        | PixelFormat::Gbrp14Be => vec![
+        | PixelFormat::Gbrp14Be
+        | PixelFormat::Gbrp16Le
+        | PixelFormat::Gbrp16Be => vec![
             (width * 2, height),
             (width * 2, height),
             (width * 2, height),

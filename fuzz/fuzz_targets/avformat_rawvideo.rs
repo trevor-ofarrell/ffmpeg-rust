@@ -88,6 +88,14 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::Gbrp14Le,
         Rational::ONE,
     );
+    let gbrp16 = (0..12).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &gbrp16,
+        2,
+        1,
+        RawVideoPixelFormat::Gbrp16Le,
+        Rational::ONE,
+    );
     exercise_rawvideo(
         b"abcdefgh",
         2,

@@ -424,6 +424,26 @@ fn exercise_fixtures() {
     );
     assert!(raw_gbrp14_demuxer.read_packet().unwrap().is_none());
 
+    let mut raw_gbrp16 =
+        RawVideoMuxer::new(2, 1, PixelFormat::Gbrp16Le, Rational::new(24, 1).unwrap()).unwrap();
+    raw_gbrp16
+        .write_packet(&Packet::new((0..12).collect(), 0))
+        .unwrap();
+    let raw_gbrp16_output = raw_gbrp16.finish();
+    let mut raw_gbrp16_demuxer = RawVideoDemuxer::open(
+        &raw_gbrp16_output,
+        2,
+        1,
+        PixelFormat::Gbrp16Le,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_gbrp16_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..12).collect::<Vec<_>>()
+    );
+    assert!(raw_gbrp16_demuxer.read_packet().unwrap().is_none());
+
     let mut raw_ya8 =
         RawVideoMuxer::new(2, 1, PixelFormat::Ya8, Rational::new(24, 1).unwrap()).unwrap();
     raw_ya8
