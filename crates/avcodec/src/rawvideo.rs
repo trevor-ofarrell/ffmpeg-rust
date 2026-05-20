@@ -785,6 +785,29 @@ mod tests {
     }
 
     #[test]
+    fn decodes_pal8_packet_to_single_index_plane_frame() {
+        let decoder = RawVideoDecoder::new(2, 2, PixelFormat::Pal8).unwrap();
+        let mut packet = Packet::new(vec![0, 1, 2, 3], 0);
+        packet.set_pts(Some(20));
+
+        let frame = decoder.decode_packet(&packet).unwrap();
+
+        assert_eq!(decoder.frame_size(), 4);
+        assert_eq!(frame.pts(), Some(20));
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.width(), 2);
+                assert_eq!(video.height(), 2);
+                assert_eq!(video.pixel_format(), PixelFormat::Pal8);
+                assert_eq!(video.pixel_format_name(), "pal8");
+                assert_eq!(video.line_sizes(), &[2]);
+                assert_eq!(video.planes(), &[vec![0, 1, 2, 3]]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+    }
+
+    #[test]
     fn decodes_packed_4bit_rgb_packets_to_single_plane_frames() {
         for (pixel_format, expected_name, payload) in [
             (PixelFormat::Rgb4, "rgb4", vec![1, 2, 3, 4]),

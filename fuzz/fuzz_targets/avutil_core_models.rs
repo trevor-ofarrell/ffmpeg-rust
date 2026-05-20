@@ -59,7 +59,7 @@ use avutil::{
     PacketWebVttSettings, PixelFormat, PixelFormatClass, Rational, Rounding, SampleFormat,
     SampleFormatNumericKind, Sha1, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
     AV_ERROR_MAX_STRING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE,
-    AV_TIME_BASE_Q,
+    AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1241,6 +1241,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(descriptor.plane_count, pixel_format.plane_count());
     assert_eq!(descriptor.is_planar, pixel_format.is_planar());
     assert_eq!(descriptor.has_alpha, pixel_format.has_alpha());
+    assert_eq!(descriptor.is_paletted, pixel_format.is_paletted());
     assert_eq!(
         descriptor.packed_bytes_per_pixel,
         pixel_format.packed_bytes_per_pixel()
@@ -1285,7 +1286,10 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert!(!pixel_format.is_gray());
             assert!(pixel_format.is_rgb());
             assert!(!pixel_format.is_yuv());
-            assert!(matches!(pixel_format.component_count(), 3 | 4));
+            assert!(
+                matches!(pixel_format.component_count(), 3 | 4)
+                    || (pixel_format.is_paletted() && pixel_format.component_count() == 1)
+            );
             assert_eq!(pixel_format.log2_chroma(), (0, 0));
             assert!(!pixel_format.has_chroma_subsampling());
         }
@@ -1312,6 +1316,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 || matches!(
                     pixel_format,
                     PixelFormat::Ya8
+                        | PixelFormat::Pal8
                         | PixelFormat::Ya16Le
                         | PixelFormat::Ya16Be
                         | PixelFormat::Rgba64Le
@@ -5516,6 +5521,22 @@ fn exercise_fixtures() {
         assert_eq!(format.frame_size(9, 2).unwrap(), 4);
         assert_eq!(format.plane_sizes(9, 2).unwrap(), vec![4]);
     }
+    let pal8 = PixelFormat::Pal8.descriptor();
+    assert_eq!(PixelFormat::from_name("pal8"), Some(PixelFormat::Pal8));
+    assert_eq!(pal8.name, "pal8");
+    assert_eq!(pal8.class, PixelFormatClass::Rgb);
+    assert_eq!(pal8.component_count, 1);
+    assert_eq!(pal8.bits_per_component, 8);
+    assert_eq!(pal8.bits_per_pixel, 8);
+    assert_eq!(pal8.packed_bytes_per_pixel, Some(1));
+    assert!(pal8.has_alpha);
+    assert!(pal8.is_paletted);
+    assert!(PixelFormat::Pal8.has_alpha());
+    assert!(PixelFormat::Pal8.is_paletted());
+    assert_eq!(PixelFormat::Pal8.frame_size(2, 2).unwrap(), 4);
+    assert_eq!(PixelFormat::Pal8.plane_sizes(2, 2).unwrap(), vec![4]);
+    assert_eq!(AVPALETTE_COUNT, 256);
+    assert_eq!(AVPALETTE_SIZE, 1024);
     for (
         name,
         format,
@@ -17363,7 +17384,8 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         PixelFormat::GrayF16Le | PixelFormat::GrayF16Be => vec![width * 2],
         PixelFormat::GrayF32Le | PixelFormat::GrayF32Be => vec![width * 4],
         PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![width * 3],
-        PixelFormat::Rgb8
+        PixelFormat::Pal8
+        | PixelFormat::Rgb8
         | PixelFormat::Bgr8
         | PixelFormat::Rgb4Byte
         | PixelFormat::Bgr4Byte => vec![width],
@@ -17476,7 +17498,8 @@ fn expected_video_plane_shapes(
         PixelFormat::GrayF16Le | PixelFormat::GrayF16Be => vec![(width * 2, height)],
         PixelFormat::GrayF32Le | PixelFormat::GrayF32Be => vec![(width * 4, height)],
         PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![(width * 3, height)],
-        PixelFormat::Rgb8
+        PixelFormat::Pal8
+        | PixelFormat::Rgb8
         | PixelFormat::Bgr8
         | PixelFormat::Rgb4Byte
         | PixelFormat::Bgr4Byte => vec![(width, height)],

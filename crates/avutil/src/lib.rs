@@ -97,7 +97,9 @@ pub use packet::{
     PacketThreeDReferenceDisplays, PacketWebVttIdentifier, PacketWebVttSettings, SideData,
     AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
-pub use pixel::{PixelFormat, PixelFormatClass, PixelFormatDescriptor};
+pub use pixel::{
+    PixelFormat, PixelFormatClass, PixelFormatDescriptor, AVPALETTE_COUNT, AVPALETTE_SIZE,
+};
 pub use rational::Rational;
 pub use samplefmt::{SampleFormat, SampleFormatFamily, SampleFormatNumericKind};
 pub use timebase::{

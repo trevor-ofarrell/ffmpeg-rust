@@ -12424,12 +12424,14 @@ fn video_plane_shapes(
             row_bytes: checked_mul(width, 3, "24-bit packed video frame line size")?,
             rows: height,
         }]),
-        PixelFormat::Rgb8 | PixelFormat::Bgr8 | PixelFormat::Rgb4Byte | PixelFormat::Bgr4Byte => {
-            Ok(vec![VideoPlaneShape {
-                row_bytes: width,
-                rows: height,
-            }])
-        }
+        PixelFormat::Pal8
+        | PixelFormat::Rgb8
+        | PixelFormat::Bgr8
+        | PixelFormat::Rgb4Byte
+        | PixelFormat::Bgr4Byte => Ok(vec![VideoPlaneShape {
+            row_bytes: width,
+            rows: height,
+        }]),
         PixelFormat::Rgb4 | PixelFormat::Bgr4 => Ok(vec![VideoPlaneShape {
             row_bytes: nibble_line_size(width),
             rows: height,
@@ -16456,6 +16458,9 @@ mod tests {
 
         let rgb8 = VideoFrame::new(3, 2, PixelFormat::Rgb8, vec![vec![0; 6]]).unwrap();
         assert_eq!(rgb8.line_sizes(), &[3]);
+
+        let pal8 = VideoFrame::new(3, 2, PixelFormat::Pal8, vec![vec![0; 6]]).unwrap();
+        assert_eq!(pal8.line_sizes(), &[3]);
 
         let bgr4_byte = VideoFrame::new(3, 2, PixelFormat::Bgr4Byte, vec![vec![0; 6]]).unwrap();
         assert_eq!(bgr4_byte.line_sizes(), &[3]);

@@ -629,6 +629,26 @@ fn exercise_fixtures() {
     );
     assert!(raw_rgb8_demuxer.read_packet().unwrap().is_none());
 
+    let mut raw_pal8 =
+        RawVideoMuxer::new(2, 2, PixelFormat::Pal8, Rational::new(24, 1).unwrap()).unwrap();
+    raw_pal8
+        .write_packet(&Packet::new((0..4).collect(), 0))
+        .unwrap();
+    let raw_pal8_output = raw_pal8.finish();
+    let mut raw_pal8_demuxer = RawVideoDemuxer::open(
+        &raw_pal8_output,
+        2,
+        2,
+        PixelFormat::Pal8,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_pal8_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..4).collect::<Vec<_>>()
+    );
+    assert!(raw_pal8_demuxer.read_packet().unwrap().is_none());
+
     let mut raw_rgb4 =
         RawVideoMuxer::new(3, 2, PixelFormat::Rgb4, Rational::new(24, 1).unwrap()).unwrap();
     raw_rgb4

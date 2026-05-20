@@ -180,6 +180,13 @@ fuzz_target!(|data: &[u8]| {
         b"abcd",
         2,
         2,
+        RawVideoPixelFormat::Pal8,
+        Rational::new(25, 1).unwrap(),
+    );
+    exercise_rawvideo(
+        b"abcd",
+        2,
+        2,
         RawVideoPixelFormat::Rgb8,
         Rational::new(25, 1).unwrap(),
     );

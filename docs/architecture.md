@@ -54,6 +54,8 @@ The rawvideo-facing semi-planar YUV 4:2:0 subset now also includes FFmpeg's `nv1
 
 The rawvideo-facing deprecated full-range YUVJ subset now also includes FFmpeg's `yuvj420p`, `yuvj422p`, `yuvj411p`, `yuvj440p`, and `yuvj444p` names. They are modeled with the same planar geometry as `yuv420p`, `yuv422p`, `yuv411p`, `yuv440p`, and `yuv444p`; full-range color semantics are preserved as pixel-format naming only until a color-range model exists.
 
+The rawvideo-facing paletted subset now includes FFmpeg's `pal8` name. The shared model exposes `AVPALETTE_COUNT` and `AVPALETTE_SIZE`, a paletted descriptor flag, RGB-class alpha metadata matching FFmpeg's descriptor flags, and one byte-per-pixel raw packet index-plane sizing. Full `AVFrame.data[1]` palette allocation and raw decoder palette-context propagation remain pending.
+
 `Dictionary` pair serialization and parsing cover the initial `av_dict_get_string`/`av_dict_parse_string` shape: entries serialize in insertion order with backslash escaping for separators and literal backslashes, parser separator sets are validated before mutation, parsed entries use the caller-selected match/set modes, and successfully parsed entries remain visible when a later malformed token fails.
 
 `OptionSet` child option namespaces are mutable through explicit parent helpers: callers can get child values, query child ranges, set typed child values, and parse child values from strings while preserving the parent and child state on missing-child, missing-option, read-only, type, and range errors.
@@ -231,6 +233,8 @@ Both rawvideo packet paths also accept FFmpeg's packed 4bpp RGB bitstream names 
 Both rawvideo packet paths also accept FFmpeg's packed 16-bit RGB/BGR names `rgb565be`/`rgb565le`, `rgb555be`/`rgb555le`, `bgr565be`/`bgr565le`, `bgr555be`/`bgr555le`, `rgb444le`/`rgb444be`, and `bgr444le`/`bgr444be` as one two-byte-per-pixel payload plane through the shared `PixelFormat` model.
 
 Both rawvideo packet paths also accept FFmpeg's byte-packed low-bit-depth RGB names `rgb8`, `bgr8`, `rgb4_byte`, and `bgr4_byte` as one byte-per-pixel payload plane through the shared `PixelFormat` model.
+
+Both rawvideo packet paths also accept FFmpeg's paletted `pal8` name as one byte-per-pixel index payload plane through the shared `PixelFormat` model; palette side-plane handling is intentionally not yet modeled in `VideoFrame`.
 
 Both rawvideo packet paths also accept FFmpeg's packed YUV 4:2:2 names `yuyv422`, `uyvy422`, and `yvyu422` as one two-byte-per-pixel payload plane with even-width validation through the shared `PixelFormat` model.
 

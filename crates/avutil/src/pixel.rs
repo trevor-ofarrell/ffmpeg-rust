@@ -1,10 +1,14 @@
 use crate::{AvError, AvResult};
 
+pub const AVPALETTE_COUNT: usize = 256;
+pub const AVPALETTE_SIZE: usize = AVPALETTE_COUNT * 4;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PixelFormat {
     Gray8,
     MonoWhite,
     MonoBlack,
+    Pal8,
     Ya8,
     Ya16Le,
     Ya16Be,
@@ -123,6 +127,7 @@ pub struct PixelFormatDescriptor {
     pub is_planar: bool,
     pub has_alpha: bool,
     pub is_float: bool,
+    pub is_paletted: bool,
     pub packed_bytes_per_pixel: Option<usize>,
     pub log2_chroma_w: u8,
     pub log2_chroma_h: u8,
@@ -133,6 +138,7 @@ impl PixelFormat {
         Self::Gray8,
         Self::MonoWhite,
         Self::MonoBlack,
+        Self::Pal8,
         Self::Ya8,
         Self::Ya16Le,
         Self::Ya16Be,
@@ -241,6 +247,7 @@ impl PixelFormat {
             "gray" | "gray8" => Some(Self::Gray8),
             "monow" => Some(Self::MonoWhite),
             "monob" => Some(Self::MonoBlack),
+            "pal8" => Some(Self::Pal8),
             "ya8" | "gray8a" | "y400a" => Some(Self::Ya8),
             "ya16le" => Some(Self::Ya16Le),
             "ya16be" => Some(Self::Ya16Be),
@@ -388,6 +395,18 @@ impl PixelFormat {
                 false,
                 false,
                 None,
+                0,
+                0,
+            ),
+            Self::Pal8 => (
+                "pal8",
+                PixelFormatClass::Rgb,
+                1,
+                8,
+                1,
+                false,
+                true,
+                Some(1),
                 0,
                 0,
             ),
@@ -1675,6 +1694,7 @@ impl PixelFormat {
                     | Self::GbrapF32Le
                     | Self::GbrapF32Be
             ),
+            is_paletted: matches!(self, Self::Pal8),
             packed_bytes_per_pixel,
             log2_chroma_w,
             log2_chroma_h,
@@ -1739,6 +1759,10 @@ impl PixelFormat {
         self.descriptor().is_float
     }
 
+    pub fn is_paletted(self) -> bool {
+        self.descriptor().is_paletted
+    }
+
     pub fn packed_bytes_per_pixel(self) -> Option<usize> {
         self.descriptor().packed_bytes_per_pixel
     }
@@ -1801,7 +1825,9 @@ impl PixelFormat {
                 3,
                 "24-bit packed pixel format frame size",
             )?]),
-            Self::Rgb8 | Self::Bgr8 | Self::Rgb4Byte | Self::Bgr4Byte => Ok(vec![pixels]),
+            Self::Pal8 | Self::Rgb8 | Self::Bgr8 | Self::Rgb4Byte | Self::Bgr4Byte => {
+                Ok(vec![pixels])
+            }
             Self::Rgb4 | Self::Bgr4 => Ok(vec![checked_mul(
                 nibble_line_size(width),
                 height,
@@ -2049,8 +2075,19 @@ mod tests {
             assert!(format.is_gray());
             assert!(format.is_packed());
             assert!(!format.has_alpha());
+            assert!(!format.is_paletted());
             assert_eq!(format.packed_bytes_per_pixel(), None);
         }
+        assert_eq!(PixelFormat::Pal8.name(), "pal8");
+        assert_eq!(PixelFormat::from_name("pal8"), Some(PixelFormat::Pal8));
+        assert_eq!(PixelFormat::Pal8.plane_count(), 1);
+        assert!(PixelFormat::Pal8.is_rgb());
+        assert!(PixelFormat::Pal8.is_packed());
+        assert!(PixelFormat::Pal8.has_alpha());
+        assert!(PixelFormat::Pal8.is_paletted());
+        assert_eq!(PixelFormat::Pal8.packed_bytes_per_pixel(), Some(1));
+        assert_eq!(AVPALETTE_COUNT, 256);
+        assert_eq!(AVPALETTE_SIZE, 1024);
         assert_eq!(PixelFormat::from_name("ya8"), Some(PixelFormat::Ya8));
         assert_eq!(PixelFormat::from_name("gray8a"), Some(PixelFormat::Ya8));
         assert_eq!(PixelFormat::from_name("y400a"), Some(PixelFormat::Ya8));
@@ -2333,7 +2370,7 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 100);
+        assert_eq!(PixelFormat::ALL.len(), 101);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
@@ -2394,6 +2431,7 @@ mod tests {
         assert!(!PixelFormat::Rgb24.is_planar());
         assert!(PixelFormat::Rgb24.is_packed());
         assert!(PixelFormat::MonoWhite.is_packed());
+        assert!(PixelFormat::Pal8.is_packed());
         assert!(PixelFormat::Rgb8.is_packed());
         assert!(PixelFormat::Rgb4.is_packed());
         assert!(PixelFormat::Bgr4Byte.is_packed());
@@ -2452,6 +2490,7 @@ mod tests {
         assert!(!PixelFormat::GbrapF16Le.is_packed());
         assert!(!PixelFormat::GbrapF32Le.is_packed());
         assert!(!PixelFormat::Rgb24.has_alpha());
+        assert!(PixelFormat::Pal8.has_alpha());
         assert!(PixelFormat::Ya8.has_alpha());
         assert!(PixelFormat::Ya16Le.has_alpha());
         assert!(PixelFormat::Bgra.has_alpha());
@@ -2467,6 +2506,7 @@ mod tests {
         assert!(PixelFormat::GbrapF16Le.is_float());
         assert!(PixelFormat::GbrapF32Be.is_float());
         assert_eq!(PixelFormat::MonoWhite.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::Pal8.packed_bytes_per_pixel(), Some(1));
         assert_eq!(PixelFormat::Bgr24.packed_bytes_per_pixel(), Some(3));
         assert_eq!(PixelFormat::Rgb8.packed_bytes_per_pixel(), Some(1));
         assert_eq!(PixelFormat::Rgb4.packed_bytes_per_pixel(), None);
@@ -2513,6 +2553,7 @@ mod tests {
         assert!(!gray.is_planar);
         assert!(!gray.has_alpha);
         assert!(!gray.is_float);
+        assert!(!gray.is_paletted);
         assert_eq!(gray.packed_bytes_per_pixel, Some(1));
         assert_eq!((gray.log2_chroma_w, gray.log2_chroma_h), (0, 0));
 
@@ -2529,9 +2570,30 @@ mod tests {
             assert!(!descriptor.is_planar);
             assert!(!descriptor.has_alpha);
             assert!(!descriptor.is_float);
+            assert!(!descriptor.is_paletted);
             assert_eq!(descriptor.packed_bytes_per_pixel, None);
             assert_eq!(format.log2_chroma(), (0, 0));
         }
+
+        let pal8 = PixelFormat::Pal8.descriptor();
+        assert_eq!(pal8.format, PixelFormat::Pal8);
+        assert_eq!(pal8.name, "pal8");
+        assert_eq!(PixelFormat::from_name(pal8.name), Some(PixelFormat::Pal8));
+        assert_eq!(pal8.class, PixelFormatClass::Rgb);
+        assert!(PixelFormat::Pal8.is_rgb());
+        assert!(!PixelFormat::Pal8.is_gray());
+        assert!(!PixelFormat::Pal8.is_yuv());
+        assert_eq!(pal8.component_count, 1);
+        assert_eq!(pal8.bits_per_component, 8);
+        assert_eq!(pal8.bits_per_pixel, 8);
+        assert_eq!(pal8.plane_count, 1);
+        assert!(!pal8.is_planar);
+        assert!(pal8.has_alpha);
+        assert!(!pal8.is_float);
+        assert!(pal8.is_paletted);
+        assert_eq!(pal8.packed_bytes_per_pixel, Some(1));
+        assert_eq!(PixelFormat::Pal8.log2_chroma(), (0, 0));
+        assert!(!PixelFormat::Pal8.has_chroma_subsampling());
 
         let ya8 = PixelFormat::Ya8.descriptor();
         assert_eq!(ya8.format, PixelFormat::Ya8);
@@ -2885,6 +2947,9 @@ mod tests {
         }
 
         assert_eq!(PixelFormat::Rgb24.component_count(), 3);
+        assert_eq!(PixelFormat::Pal8.component_count(), 1);
+        assert_eq!(PixelFormat::Pal8.bits_per_component(), 8);
+        assert_eq!(PixelFormat::Pal8.bits_per_pixel(), 8);
         assert_eq!(PixelFormat::Rgb24.bits_per_pixel(), 24);
         assert_eq!(PixelFormat::Rgb8.component_count(), 3);
         assert_eq!(PixelFormat::Rgb8.bits_per_component(), 3);
@@ -3031,6 +3096,8 @@ mod tests {
         assert_eq!(PixelFormat::GrayF32Be.frame_size(2, 2).unwrap(), 16);
         assert_eq!(PixelFormat::MonoWhite.plane_sizes(9, 2).unwrap(), vec![4]);
         assert_eq!(PixelFormat::MonoBlack.frame_size(16, 2).unwrap(), 4);
+        assert_eq!(PixelFormat::Pal8.plane_sizes(2, 2).unwrap(), vec![4]);
+        assert_eq!(PixelFormat::Pal8.frame_size(2, 2).unwrap(), 4);
         assert_eq!(PixelFormat::Rgb24.frame_size(2, 2).unwrap(), 12);
         assert_eq!(PixelFormat::Bgr24.frame_size(2, 2).unwrap(), 12);
         assert_eq!(PixelFormat::Rgb8.plane_sizes(2, 2).unwrap(), vec![4]);
@@ -3338,6 +3405,10 @@ mod tests {
         assert_eq!(planes, vec![vec![0, 1, 2, 3]]);
 
         let planes = PixelFormat::Rgb8.split_planes(&[0, 1, 2, 3], 2, 2).unwrap();
+
+        assert_eq!(planes, vec![vec![0, 1, 2, 3]]);
+
+        let planes = PixelFormat::Pal8.split_planes(&[0, 1, 2, 3], 2, 2).unwrap();
 
         assert_eq!(planes, vec![vec![0, 1, 2, 3]]);
 

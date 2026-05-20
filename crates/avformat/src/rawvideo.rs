@@ -238,6 +238,32 @@ mod tests {
     }
 
     #[test]
+    fn slices_pal8_index_frames_with_format_side_data() {
+        let input = vec![0, 1, 2, 3, 4, 5, 6, 7];
+        let mut demuxer = RawVideoDemuxer::open(
+            &input,
+            2,
+            2,
+            RawVideoPixelFormat::Pal8,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(demuxer.info().pixel_format(), RawVideoPixelFormat::Pal8);
+        assert_eq!(demuxer.info().frame_size(), 4);
+        assert_eq!(demuxer.info().frame_count(), 2);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), &[0, 1, 2, 3]);
+        assert_eq!(first.side_data()[0].kind(), "rawvideo_pix_fmt");
+        assert_eq!(first.side_data()[0].data(), b"pal8");
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second.data(), &[4, 5, 6, 7]);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn computes_frame_sizes_for_supported_pixel_formats() {
         assert_eq!(
             RawVideoDemuxer::open(
@@ -279,6 +305,7 @@ mod tests {
             6
         );
         for format in [
+            RawVideoPixelFormat::Pal8,
             RawVideoPixelFormat::Rgb8,
             RawVideoPixelFormat::Bgr8,
             RawVideoPixelFormat::Rgb4Byte,
@@ -994,6 +1021,7 @@ mod tests {
     #[test]
     fn muxer_computes_low_bit_depth_rgb_byte_frame_sizes() {
         for format in [
+            RawVideoPixelFormat::Pal8,
             RawVideoPixelFormat::Rgb8,
             RawVideoPixelFormat::Bgr8,
             RawVideoPixelFormat::Rgb4Byte,

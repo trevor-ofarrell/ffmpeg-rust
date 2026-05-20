@@ -323,6 +323,17 @@ fn exercise_fixtures() {
         );
     }
 
+    let pal8 = RawVideoDecoder::new(2, 2, PixelFormat::Pal8).unwrap();
+    assert!(pal8
+        .decode_packet(&Packet::new(vec![0, 1, 2, 3], 0))
+        .is_ok());
+    assert_eq!(
+        pal8.decode_packet(&Packet::new(vec![0, 1, 2], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     for format in [PixelFormat::Rgb4, PixelFormat::Bgr4] {
         let decoder = RawVideoDecoder::new(3, 2, format).unwrap();
         assert!(decoder.decode_packet(&Packet::new(vec![0; 4], 0)).is_ok());
