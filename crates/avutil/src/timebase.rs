@@ -1,5 +1,8 @@
 use crate::{AvError, AvResult, Rational};
 
+pub const AV_TIME_BASE: i64 = 1_000_000;
+pub const AV_TIME_BASE_Q: Rational = Rational::from_raw(1, AV_TIME_BASE as i32);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rounding {
     Zero,
@@ -7,6 +10,27 @@ pub enum Rounding {
     Down,
     Up,
     NearInf,
+}
+
+pub fn rescale(value: i64, multiplier: i64, divisor: i64) -> AvResult<i64> {
+    rescale_rnd(value, multiplier, divisor, Rounding::NearInf)
+}
+
+pub fn rescale_rnd(value: i64, multiplier: i64, divisor: i64, rounding: Rounding) -> AvResult<i64> {
+    rescale_rnd_inner(value, multiplier, divisor, rounding)
+}
+
+pub fn rescale_rnd_pass_minmax(
+    value: i64,
+    multiplier: i64,
+    divisor: i64,
+    rounding: Rounding,
+) -> AvResult<i64> {
+    if value == i64::MIN || value == i64::MAX {
+        return Ok(value);
+    }
+
+    rescale_rnd_inner(value, multiplier, divisor, rounding)
 }
 
 pub fn rescale_q(value: i64, src: Rational, dst: Rational) -> AvResult<i64> {
@@ -19,7 +43,8 @@ pub fn rescale_q_rnd(
     dst: Rational,
     rounding: Rounding,
 ) -> AvResult<i64> {
-    rescale_q_rnd_inner(value, src, dst, rounding)
+    let (multiplier, divisor) = rescale_q_terms(src, dst)?;
+    rescale_rnd_inner(value, multiplier, divisor, rounding)
 }
 
 pub fn rescale_q_rnd_pass_minmax(
@@ -32,29 +57,34 @@ pub fn rescale_q_rnd_pass_minmax(
         return Ok(value);
     }
 
-    rescale_q_rnd_inner(value, src, dst, rounding)
+    let (multiplier, divisor) = rescale_q_terms(src, dst)?;
+    rescale_rnd_inner(value, multiplier, divisor, rounding)
 }
 
-fn rescale_q_rnd_inner(
-    value: i64,
-    src: Rational,
-    dst: Rational,
-    rounding: Rounding,
-) -> AvResult<i64> {
-    if src.den() == 0 || dst.num() == 0 || dst.den() == 0 {
+fn rescale_q_terms(src: Rational, dst: Rational) -> AvResult<(i64, i64)> {
+    if src.num() < 0 || src.den() <= 0 || dst.num() <= 0 || dst.den() <= 0 {
         return Err(AvError::invalid_argument("invalid time base for rescale"));
     }
 
-    let numerator = i128::from(value) * i128::from(src.num()) * i128::from(dst.den());
-    let denominator = i128::from(src.den()) * i128::from(dst.num());
+    let multiplier = i64::from(src.num()) * i64::from(dst.den());
+    let divisor = i64::from(src.den()) * i64::from(dst.num());
+    Ok((multiplier, divisor))
+}
 
-    if denominator == 0 {
+fn rescale_rnd_inner(
+    value: i64,
+    multiplier: i64,
+    divisor: i64,
+    rounding: Rounding,
+) -> AvResult<i64> {
+    if multiplier < 0 || divisor <= 0 {
         return Err(AvError::invalid_argument(
-            "invalid zero denominator for rescale",
+            "invalid multiplier or divisor for rescale",
         ));
     }
 
-    let result = div_round(numerator, denominator, rounding);
+    let numerator = i128::from(value) * i128::from(multiplier);
+    let result = div_round(numerator, i128::from(divisor), rounding);
     i64::try_from(result).map_err(|_| AvError::invalid_argument("rescaled timestamp out of range"))
 }
 
@@ -112,6 +142,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn exposes_ffmpeg_timebase_constants() {
+        assert_eq!(AV_TIME_BASE, 1_000_000);
+        assert_eq!(AV_TIME_BASE_Q, Rational::new(1, 1_000_000).unwrap());
+    }
+
+    #[test]
+    fn rescales_integer_terms_with_rounding_modes() {
+        assert_eq!(rescale(3, 1, 2).unwrap(), 2);
+        assert_eq!(rescale_rnd(1, 1, 3, Rounding::Zero).unwrap(), 0);
+        assert_eq!(rescale_rnd(1, 1, 3, Rounding::Inf).unwrap(), 1);
+        assert_eq!(rescale_rnd(-1, 1, 3, Rounding::Inf).unwrap(), -1);
+        assert_eq!(rescale_rnd(1, 1, 3, Rounding::Up).unwrap(), 1);
+        assert_eq!(rescale_rnd(-1, 1, 3, Rounding::Up).unwrap(), 0);
+        assert_eq!(rescale_rnd(-1, 1, 3, Rounding::Down).unwrap(), -1);
+        assert_eq!(rescale_rnd(1, 1, 2, Rounding::NearInf).unwrap(), 1);
+        assert_eq!(rescale_rnd(-1, 1, 2, Rounding::NearInf).unwrap(), -1);
+    }
+
+    #[test]
+    fn direct_pass_minmax_preserves_timestamp_sentinels() {
+        assert_eq!(
+            rescale_rnd_pass_minmax(i64::MIN, 1, 2, Rounding::Up).unwrap(),
+            i64::MIN
+        );
+        assert_eq!(
+            rescale_rnd_pass_minmax(i64::MAX, 1, 2, Rounding::Up).unwrap(),
+            i64::MAX
+        );
+        assert_eq!(rescale_rnd_pass_minmax(3, 1, 2, Rounding::Up).unwrap(), 2);
+    }
+
+    #[test]
+    fn direct_rescale_rejects_invalid_terms_and_overflow() {
+        assert_eq!(
+            rescale_rnd(1, -1, 2, Rounding::NearInf).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            rescale_rnd(1, 1, 0, Rounding::NearInf).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            rescale_rnd(i64::MAX, i64::MAX, 1, Rounding::NearInf)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+    }
+
+    #[test]
     fn rescales_between_common_media_timebases() {
         let ninety_khz = Rational::new(1, 90_000).unwrap();
         let milliseconds = Rational::new(1, 1_000).unwrap();
@@ -158,6 +238,18 @@ mod tests {
 
         assert_eq!(
             rescale_q_rnd(1, Rational::from_raw(1, 0), one, Rounding::NearInf)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            rescale_q_rnd(1, Rational::from_raw(-1, 1), one, Rounding::NearInf)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            rescale_q_rnd(1, one, Rational::from_raw(1, -1), Rounding::NearInf)
                 .unwrap_err()
                 .kind(),
             crate::AvErrorKind::InvalidArgument

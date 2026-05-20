@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-timebase` update: `AV_TIME_BASE`, `AV_TIME_BASE_Q`, direct `rescale`, `rescale_rnd`, and `rescale_rnd_pass_minmax` helpers now cover `av_rescale`-style integer-term timestamp math through the same checked rounding core used by `rescale_q` and `rescale_q_rnd`. Direct and rational paths validate invalid multiplier/divisor/time-base shapes as typed errors, preserve `i64::MIN`/`i64::MAX` sentinels through pass-min/max helpers, and reject out-of-range results. Focused unit tests cover constants, direct integer-term rounding modes, direct pass-min/max behavior, invalid terms, overflow, common media timebase conversion, rational rounding modes, rational pass-min/max, and malformed time bases; `avutil_core_models` build-checks constants, direct rescale terms, invalid direct terms, sentinel preservation, and rational rescale against an independent i128 model. This remains below `complete` because pinned FFmpeg edge-case differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
+
 Latest `avutil-rational` update: `Rational::reduce_i64` now models max-bounded `av_reduce`-style reduction over signed i64 numerators/denominators, including exactness reporting, sign normalization, zero and infinity raw-rational sentinels, invalid-limit rejection, and continued-fraction approximation when either output side exceeds the caller max. `Rational::from_f64_limited` adds an `av_d2q`-style conversion path with finite max-bounded output, NaN as `0/0`, and infinity or overlarge values as `+/-1/0`; `Rational::to_f64` provides the matching `av_q2d`-style conversion. Focused unit tests cover exact reduction, approximation under tight limits, invalid limits, finite f64 conversion, bounded approximation, and NaN/infinity sentinels; `avutil_core_models` build-checks reduction bounds, exactness cross-products, and f64 sentinel invariants. This remains below `complete` because pinned FFmpeg differential vectors, upstream FATE parity, broader rational helper coverage, and actual fuzz execution are still absent.
 
 Latest `avutil-error` update: `AvErrorCode` now models the documented FFmpeg tag-based `libavutil/error.h` constants through an exact `FFERRTAG` helper plus raw-code preservation. `AvError` carries optional code metadata, preserves caller-supplied custom codes, and attaches unambiguous FFmpeg codes for invalid-data, EOF, external, and bug constructors while leaving platform errno-derived invalid-argument/not-found/unsupported cases code-less until a pinned oracle or platform profile defines exact `AVERROR(errno)` behavior. Focused unit tests cover `AV_ERROR_MAX_STRING_SIZE`, tag constants, raw-code round trips, custom-code preservation, constructor code metadata, IO-code mapping, and EOF predicates; `avutil_core_models` build-checks the same code invariants. This remains below `complete` because pinned `av_strerror`/`AVERROR(errno)` differential coverage and upstream FATE parity are still absent.
@@ -186,6 +188,15 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo test -p avutil timebase`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo clippy -p avutil --all-targets -- -D warnings`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+- `cargo fmt --all -- --check`
+- `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo run -p fate-runner -- run --component avutil-timebase`
+- `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo run -p fate-runner -- run --changed`
 - `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo test -p avutil rational`
 - `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
 - `cargo fmt --all`
@@ -2932,6 +2943,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-timebase` is the current focus for this slice. The concrete change is direct `av_rescale`-style integer-term helpers plus FFmpeg timebase constants, with the existing rational rescale helpers routed through the same checked core. It does not claim pinned `av_rescale_rnd` differential parity yet.
+
 `avutil-rational` is the current focus for this slice. The concrete change is limited rational reduction and double conversion parity scaffolding: `reduce_i64`, `from_f64_limited`, and `to_f64`, with unit and fuzz-harness invariant coverage. It does not claim exact pinned `av_reduce`/`av_d2q` differential parity yet.
 
 `avutil-error` is the current focus for this slice. The concrete change is FFmpeg-style error-code metadata for documented tag-based `AVERROR_*` constants and constructor/accessor coverage; it does not claim full platform `AVERROR(errno)` or `av_strerror` parity.
@@ -2944,8 +2957,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 primitive work by tightening `avutil-timebase` edge behavior or adding an oracle-vector scaffold for future pinned `av_rescale_q` comparisons.
-2. Add pinned-oracle differential coverage for rational reduction/double-conversion, error strings/codes, and constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
+1. Continue priority-1 primitive work by tightening the next unblocked avutil surface, likely byte I/O or bit I/O edge parity, unless a pinned-oracle scaffold becomes available first.
+2. Add pinned-oracle differential coverage for direct/rational rescale, rational reduction/double-conversion, error strings/codes, and constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
 3. Add upstream FATE sample-backed media mappings for constrained `ffmpeg-rs` null/framecrc/hash-style command paths once samples and the pinned oracle are available.
 
 ## Known Blockers
@@ -2957,6 +2970,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added `AV_TIME_BASE`, `AV_TIME_BASE_Q`, `rescale`, `rescale_rnd`, and `rescale_rnd_pass_minmax`, and routed `rescale_q`/`rescale_q_rnd`/`rescale_q_rnd_pass_minmax` through the same checked multiplier/divisor core. Unit and fuzz-harness coverage now checks direct integer-term rounding, direct pass-min/max sentinel preservation, invalid term rejection, overflow rejection, constants, and rational rescale behavior against an independent i128 model. Validation passed with focused timebase tests, fuzz target check/clippy, avutil clippy, format check, workspace clippy, and FATE-runner timebase plus changed avutil mappings. The component remains `implemented`, not `complete`.
 
 Latest slice: added `Rational::reduce_i64`, `Rational::from_f64_limited`, and `Rational::to_f64`. The reduction path reports whether the bounded result is exact, preserves raw zero/infinity sentinel shapes where FFmpeg's rational API permits them, approximates oversized finite fractions within caller limits, and rejects invalid max bounds. The f64 conversion path preserves finite bounded conversion plus NaN and infinity/overlarge sentinels. Unit and fuzz-harness coverage now checks exact reductions, approximation under tight limits, invalid limits, finite f64 conversions, bounded approximations, sentinel handling, reduction bounds, and exactness cross-products. Validation passed with focused rational tests, fuzz target check/clippy, avutil clippy, format check, workspace clippy, and FATE-runner rational plus changed avutil mappings. The component remains `implemented`, not `complete`.
 

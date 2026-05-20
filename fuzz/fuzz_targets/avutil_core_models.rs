@@ -1,9 +1,10 @@
 #![no_main]
 
 use avutil::{
-    adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
-    sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind,
-    BufferPool, BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32,
+    adler32, crc32_ieee, digest_to_hex, md5, rescale, rescale_q, rescale_q_rnd,
+    rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha224, sha256, sha384,
+    sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
+    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32,
     Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
     FrameAudioServiceType,
     FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
@@ -51,7 +52,8 @@ use avutil::{
     PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE, AV_TIME_BASE,
+    AV_TIME_BASE_Q,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -888,9 +890,42 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
         Rational::from_raw(1, 0)
     );
 
+    let value = small_i64_from(cursor.next(), cursor.next());
+    assert_eq!(AV_TIME_BASE, 1_000_000);
+    assert_eq!(AV_TIME_BASE_Q, Rational::from_raw(1, 1_000_000));
+    let multiplier = i64::from(cursor.next().unwrap_or_default() % 31);
+    let divisor = i64::from(cursor.next().unwrap_or_default() % 31) + 1;
+    assert_eq!(
+        rescale(value, multiplier, divisor).unwrap(),
+        expected_rescale_terms(value, multiplier, divisor, Rounding::NearInf).unwrap()
+    );
+    for rounding in [
+        Rounding::Zero,
+        Rounding::Inf,
+        Rounding::Down,
+        Rounding::Up,
+        Rounding::NearInf,
+    ] {
+        assert_eq!(
+            rescale_rnd(value, multiplier, divisor, rounding).unwrap(),
+            expected_rescale_terms(value, multiplier, divisor, rounding).unwrap()
+        );
+    }
+    for sentinel in [i64::MIN, i64::MAX] {
+        assert_eq!(
+            rescale_rnd_pass_minmax(sentinel, multiplier, divisor, Rounding::NearInf).unwrap(),
+            sentinel
+        );
+    }
+    assert_eq!(
+        rescale_rnd_pass_minmax(value, multiplier, divisor, Rounding::NearInf).unwrap(),
+        expected_rescale_terms(value, multiplier, divisor, Rounding::NearInf).unwrap()
+    );
+    assert!(rescale_rnd(value, -1, divisor, Rounding::NearInf).is_err());
+    assert!(rescale_rnd(value, multiplier, 0, Rounding::NearInf).is_err());
+
     let src = positive_rational_from(cursor.next(), cursor.next());
     let dst = positive_rational_from(cursor.next(), cursor.next());
-    let value = small_i64_from(cursor.next(), cursor.next());
     assert_eq!(
         rescale_q(value, src, dst).unwrap(),
         expected_rescale(value, src, dst, Rounding::NearInf).unwrap()
@@ -12022,9 +12057,19 @@ fn expected_rescale(
     dst: Rational,
     rounding: Rounding,
 ) -> Result<i64, ()> {
-    let numerator = i128::from(value) * i128::from(src.num()) * i128::from(dst.den());
-    let denominator = i128::from(src.den()) * i128::from(dst.num());
-    i64::try_from(div_round(numerator, denominator, rounding)).map_err(|_| ())
+    let multiplier = i64::from(src.num()) * i64::from(dst.den());
+    let divisor = i64::from(src.den()) * i64::from(dst.num());
+    expected_rescale_terms(value, multiplier, divisor, rounding)
+}
+
+fn expected_rescale_terms(
+    value: i64,
+    multiplier: i64,
+    divisor: i64,
+    rounding: Rounding,
+) -> Result<i64, ()> {
+    let numerator = i128::from(value) * i128::from(multiplier);
+    i64::try_from(div_round(numerator, i128::from(divisor), rounding)).map_err(|_| ())
 }
 
 fn div_round(numerator: i128, denominator: i128, rounding: Rounding) -> i128 {
