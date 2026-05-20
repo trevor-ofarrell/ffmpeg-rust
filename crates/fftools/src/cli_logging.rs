@@ -1,6 +1,6 @@
 use crate::option_parser::{apply_log_level_value, parse_log_level_directive};
 use crate::CliLogConfig;
-use avutil::{LogFormatOptions, LogLevel, LogRecord};
+use avutil::{LogFlags, LogFormatOptions, LogLevel, LogRecord, LogTimestamp};
 use std::fmt;
 
 pub(crate) fn tool_error_stderr(
@@ -9,15 +9,46 @@ pub(crate) fn tool_error_stderr(
     error: impl fmt::Display,
 ) -> String {
     let log_config = log_config_from_args(args);
+    let timestamp = timestamp_for_flags(log_config.flags());
+    format_tool_error_stderr(tool_name, error, log_config, timestamp)
+}
+
+#[cfg(test)]
+fn tool_error_stderr_with_timestamp(
+    tool_name: &str,
+    args: &[String],
+    error: impl fmt::Display,
+    timestamp: Option<LogTimestamp>,
+) -> String {
+    format_tool_error_stderr(tool_name, error, log_config_from_args(args), timestamp)
+}
+
+fn format_tool_error_stderr(
+    tool_name: &str,
+    error: impl fmt::Display,
+    log_config: CliLogConfig,
+    timestamp: Option<LogTimestamp>,
+) -> String {
     if log_config.level() == LogLevel::Quiet {
         return String::new();
     }
 
-    let record = LogRecord::new(LogLevel::Error, tool_name, error.to_string());
+    let mut record = LogRecord::new(LogLevel::Error, tool_name, error.to_string());
+    if let Some(timestamp) = timestamp {
+        record = record.with_timestamp(timestamp);
+    }
     format!(
         "{}\n",
         record.format_line_with_options(LogFormatOptions::new(log_config.flags()))
     )
+}
+
+fn timestamp_for_flags(flags: LogFlags) -> Option<LogTimestamp> {
+    if flags.intersects(LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME) {
+        LogTimestamp::now_utc()
+    } else {
+        None
+    }
 }
 
 fn log_config_from_args(args: &[String]) -> CliLogConfig {
@@ -78,6 +109,43 @@ mod tests {
                 "ffmpeg",
                 &strings(&["-loglevel", "level+error"]),
                 "missing command"
+            ),
+            "[error] ffmpeg: missing command\n"
+        );
+    }
+
+    #[test]
+    fn time_flags_add_timestamp_prefix_to_tool_errors() {
+        let timestamp = LogTimestamp::from_unix_micros(1_704_112_705_123_456);
+
+        assert_eq!(
+            tool_error_stderr_with_timestamp(
+                "ffmpeg",
+                &strings(&["-loglevel", "time+error"]),
+                "missing command",
+                Some(timestamp),
+            ),
+            "[12:38:25.123456] ffmpeg: missing command\n"
+        );
+        assert_eq!(
+            tool_error_stderr_with_timestamp(
+                "ffprobe",
+                &strings(&["-loglevel", "time+datetime+level+error"]),
+                "missing command",
+                Some(timestamp),
+            ),
+            "[2024-01-01 12:38:25.123456] [error] ffprobe: missing command\n"
+        );
+    }
+
+    #[test]
+    fn time_flags_without_timestamp_keep_previous_tool_error_shape() {
+        assert_eq!(
+            tool_error_stderr_with_timestamp(
+                "ffmpeg",
+                &strings(&["-loglevel", "time+level+error"]),
+                "missing command",
+                None,
             ),
             "[error] ffmpeg: missing command\n"
         );
