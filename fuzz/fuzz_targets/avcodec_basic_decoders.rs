@@ -127,6 +127,16 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    let yuv422 = RawVideoDecoder::new(4, 3, PixelFormat::Yuv422p).unwrap();
+    assert!(yuv422.decode_packet(&Packet::new(vec![0; 24], 0)).is_ok());
+    assert_eq!(
+        yuv422
+            .decode_packet(&Packet::new(vec![0; 23], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let pcm = PcmS16leDecoder::new(48_000, 2).unwrap();
     let mut packet = Packet::new(vec![0, 0, 1, 0, 2, 0, 3, 0], 0);
     packet.set_pts(Some(1024));
@@ -166,11 +176,14 @@ fn pixel_format_from(byte: Option<u8>) -> PixelFormat {
 
 fn dimension_from(byte: Option<u8>, pixel_format: PixelFormat, is_width: bool) -> usize {
     let mut dimension = usize::from(byte.unwrap_or_default() % 8) + 1;
-    if pixel_format == PixelFormat::Yuv420p && (dimension % 2 != 0) {
+    let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
+    if ((is_width && log2_chroma_w != 0) || (!is_width && log2_chroma_h != 0))
+        && (dimension % 2 != 0)
+    {
         dimension = if dimension == 1 { 2 } else { dimension - 1 };
     }
     if !is_width && byte.unwrap_or_default() == 0 {
-        return usize::from(pixel_format != PixelFormat::Yuv420p);
+        return usize::from(log2_chroma_h == 0);
     }
     dimension
 }

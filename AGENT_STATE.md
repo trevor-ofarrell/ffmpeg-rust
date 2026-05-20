@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes planar 8-bit `yuv422p` with descriptor metadata, frame-size math, plane splitting, and even-width validation. `VideoFrame` line sizing, rawvideo decode/demux/mux paths, constrained `ffmpeg-rs -f rawvideo ... -f null -` execution, and the affected fuzz harnesses now use the shared chroma-subsampling metadata for both `yuv420p` and `yuv422p`. This remains below `complete` because full `AVPixFmtDescriptor` coverage, full `ffmpeg -pix_fmts` inventory parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
+
 Latest `avutil-pixel-format` update: the shared pixel format model now exposes descriptor-style metadata for the current `gray`/`gray8`, `rgb24`, `bgr24`, `rgba`, `bgra`, `argb`, `abgr`, and `yuv420p` subset. `PixelFormatDescriptor` records FFmpeg-style name, class, component count, bits per component, average bits per pixel, plane count, packed/planar status, alpha status, packed bytes per pixel, and log2 chroma subsampling; `PixelFormat` exposes convenience helpers for those fields. Unit tests and the build-checked `avutil_core_models` fuzz target cover descriptor/name/class/component/bit-depth/chroma invariants alongside existing frame-size and plane-splitting checks. This remains below `complete` because full `AVPixFmtDescriptor` parity, the full `ffmpeg -pix_fmts` inventory, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
 
 Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now covers `bgr24`, `bgra`, `argb`, and `abgr` in addition to the existing `gray`/`gray8`, `rgb24`, `rgba`, and `yuv420p` subset. `PixelFormat::ALL`, packed/planar metadata, alpha metadata, and packed bytes-per-pixel metadata are wired through video frame line sizing, the rawvideo decoder, rawvideo demuxer/muxer frame sizing, relevant fuzz harnesses, and constrained `ffmpeg-rs` rawvideo input parsing. A new CLI test covers uppercase `BGRA` rawvideo input to `-f null -`. Local FATE-runner mappings now cover rawvideo demuxer/muxer plus the shared basic muxer components selected by `avformat_basic_muxers` changes. This remains below `complete` because full `AVPixFmtDescriptor` coverage, many FFmpeg pixel formats, pinned `ffmpeg -pix_fmts` differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
@@ -235,6 +237,26 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil pixel`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil frames_report_tightly_packed_line_sizes`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avcodec rawvideo`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avformat rawvideo`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fftools runs_rawvideo_yuv422p_to_null_stdout`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models --bin avcodec_basic_decoders --bin avformat_rawvideo --bin avformat_basic_muxers`
+- `cargo fmt --all -- --check`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models --bin avcodec_basic_decoders --bin avformat_rawvideo --bin avformat_basic_muxers -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil -p avcodec -p avformat -p fftools --all-targets -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-pixel-format`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avcodec-rawvideo`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avformat-rawvideo-demuxer`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avformat-rawvideo-muxer`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component fftools-ffmpeg-rawvideo-framecrc-null`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test --workspace --all-features --lib`
+- `git diff --check` (passed with CRLF warnings only)
 
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil pixel`
@@ -3042,6 +3064,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-pixel-format` / rawvideo `yuv422p` slice: the first `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avcodec rawvideo` run failed to compile the new rawvideo decoder test because the `FrameData` match did not cover `FrameData::Empty`; adding the missing match arm fixed it. No remaining failing validation commands. Focused unit tests, touched fuzz-target check/clippy, touched crate clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` passed; `git diff --check` reported CRLF warnings only.
+
 - Current `avutil-pixel-format` descriptor metadata slice: no remaining failing validation. Focused pixel tests, fuzz-target check/clippy, `avutil` clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` passed; `git diff --check` reported CRLF warnings only.
 
 - Current `avutil-pixel-format` / rawvideo packed-RGB slice: `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avformat rawvideo` compiled but Windows Application Control blocked the freshly built avformat unit-test executable with `os error 4551`; rerunning the same focused test through `target-codex` passed. The first `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed` failed because changed `avformat_basic_muxers` coverage selected `avformat-wav-muxer`, `avformat-pcm-s16le-muxer`, and `avformat-yuv4mpegpipe-muxer` without local mappings. Added local smoke mappings for those muxers, plus rawvideo demuxer/muxer mappings, updated the ledger/docs, and reran `run --changed` successfully. No code-related failing validation remains; `git diff --check` reported CRLF warnings only.
@@ -3253,6 +3277,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-pixel-format` is the current focus for this slice, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The concrete change is adding planar 8-bit `yuv422p` to the current shared pixel model and using descriptor chroma metadata for width-only subsampling validation, plane sizing, frame line sizes, packet splitting, and rawvideo packetization. It does not claim full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pixel conversion, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
+
 `avutil-pixel-format` is the current focus for this slice. The concrete change is descriptor-style metadata for the already modeled pixel formats: class, component count, bits per component, average bits per pixel, packed bytes per pixel, alpha flag, plane count, and log2 chroma subsampling, with unit and fuzz-harness invariant coverage. It does not claim full `AVPixFmtDescriptor` parity, complete `ffmpeg -pix_fmts` inventory, pixel conversion, pinned oracle parity, upstream FATE parity, hardware formats, or actual fuzz execution.
 
 `avutil-pixel-format` is the current focus for this slice, with linked rawvideo decoder, demuxer, muxer, and constrained `ffmpeg-rs` input parsing coverage. The concrete change is expanding the current packed RGB-family subset to include `bgr24`, `bgra`, `argb`, and `abgr`, adding shared inventory and packed/alpha metadata, and build-checking the touched fuzz harnesses against the expanded inventory. It does not claim full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pixel conversion, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
@@ -3305,7 +3331,7 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 format-model work by adding the next narrow `PixelFormat` inventory slice needed by rawvideo/AVI/YUV4MPEG2, such as another simple packed or planar format, without claiming conversion support.
+1. Continue priority-1 format-model work by adding the next narrow `PixelFormat` inventory slice needed by rawvideo/AVI/YUV4MPEG2, such as another simple planar or packed format, without claiming conversion support.
 2. Add pinned-oracle differential coverage for constrained pixel-format inventory, rawvideo packet sizing, and existing channel-layout/byte/hash behavior once the FFmpeg 8.1.1 oracle binary is available.
 3. Keep local FATE-runner changed-path coverage aligned with ledger selections, especially shared fuzz targets that select multiple muxers or format-model components, while keeping those mappings clearly separate from upstream FATE parity.
 
@@ -3318,6 +3344,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added planar 8-bit `yuv422p` support to the current shared pixel/rawvideo model. `PixelFormat` now reports `yuv422p` in the inventory with YUV descriptor metadata, validates even width while permitting odd height, computes 4:2:2 plane sizes, and splits frame payloads by plane. `VideoFrame`, `RawVideoDecoder`, `RawVideoDemuxer`, `RawVideoMuxer`, constrained `ffmpeg-rs` rawvideo-to-null execution, and the affected fuzz harnesses now exercise the format. Validation passed with focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, touched crate clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` with CRLF warnings only. The affected components remain `implemented`, not `complete`, because oracle differentials, upstream FATE media coverage, full pixel inventory coverage, and actual fuzz execution are still absent.
 
 Latest slice: added descriptor-style pixel format metadata for the current `avutil::PixelFormat` subset. `PixelFormatDescriptor` and `PixelFormatClass` are exported from `avutil`; `PixelFormat` now reports class, component count, bits per component, average bits per pixel, packed bytes per pixel, alpha status, plane count, and log2 chroma subsampling. Unit coverage now includes `pixel_formats_report_descriptor_metadata`, and `avutil_core_models` build-checks descriptor/name/class/component/bit-depth/chroma invariants against frame-size and plane-splitting behavior. Validation passed with focused pixel tests, fuzz target check/clippy, `avutil` clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`.
 

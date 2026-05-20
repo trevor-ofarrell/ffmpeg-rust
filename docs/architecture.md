@@ -28,6 +28,8 @@ Early shared types intentionally encode invariants at construction boundaries. `
 
 `PixelFormatDescriptor` records the current modeled pixel-format class, component count, bit depth, average bits per pixel, packed bytes per pixel, alpha flag, plane count, and log2 chroma subsampling. It is descriptor-style metadata for the currently implemented subset, not complete `AVPixFmtDescriptor` parity.
 
+The current rawvideo-facing `PixelFormat` subset also includes planar 8-bit `yuv422p`; its descriptor and frame-size validation model horizontal chroma subsampling with even-width geometry and no vertical parity requirement.
+
 `Dictionary` pair serialization and parsing cover the initial `av_dict_get_string`/`av_dict_parse_string` shape: entries serialize in insertion order with backslash escaping for separators and literal backslashes, parser separator sets are validated before mutation, parsed entries use the caller-selected match/set modes, and successfully parsed entries remain visible when a later malformed token fails.
 
 `OptionSet` child option namespaces are mutable through explicit parent helpers: callers can get child values, query child ranges, set typed child values, and parse child values from strings while preserving the parent and child state on missing-child, missing-option, read-only, type, and range errors.
@@ -188,7 +190,7 @@ GPS common-tag range validation currently rejects `GPSLatitude`/`GPSDestLatitude
 
 `Image2Muxer` implements the matching initial image2 muxer path. It maps stream-0 packet payloads to single-image or numbered output entries without touching the filesystem, validating path generation and non-empty image payloads before recording entries.
 
-`RawVideoDemuxer` implements an initial rawvideo packet slicer for fixed-size `gray`, `rgb24`, `bgr24`, `rgba`, `bgra`, `argb`, `abgr`, and `yuv420p` frame payloads. It uses `VideoStreamParameters` and the shared `PixelFormat` model to validate dimensions, frame rate, yuv420p parity, frame size, and whole-frame byte counts before emitting monotonically timed packets.
+`RawVideoDemuxer` implements an initial rawvideo packet slicer for fixed-size `gray`, `rgb24`, `bgr24`, `rgba`, `bgra`, `argb`, `abgr`, `yuv420p`, and `yuv422p` frame payloads. It uses `VideoStreamParameters` and the shared `PixelFormat` model to validate dimensions, frame rate, chroma parity, frame size, and whole-frame byte counts before emitting monotonically timed packets.
 
 `RawVideoMuxer` implements the matching initial rawvideo muxer path. It uses `VideoStreamParameters` and the shared `PixelFormat` model to validate stream-0 packet ownership and exact fixed-size frame payloads before concatenating raw frame bytes and updating frame accounting.
 

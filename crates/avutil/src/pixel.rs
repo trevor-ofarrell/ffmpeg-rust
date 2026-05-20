@@ -10,6 +10,7 @@ pub enum PixelFormat {
     Argb,
     Abgr,
     Yuv420p,
+    Yuv422p,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -45,6 +46,7 @@ impl PixelFormat {
         Self::Argb,
         Self::Abgr,
         Self::Yuv420p,
+        Self::Yuv422p,
     ];
 
     pub fn name(self) -> &'static str {
@@ -61,6 +63,7 @@ impl PixelFormat {
             "argb" => Some(Self::Argb),
             "abgr" => Some(Self::Abgr),
             "yuv420p" => Some(Self::Yuv420p),
+            "yuv422p" => Some(Self::Yuv422p),
             _ => None,
         }
     }
@@ -174,6 +177,18 @@ impl PixelFormat {
                 1,
                 1,
             ),
+            Self::Yuv422p => (
+                "yuv422p",
+                PixelFormatClass::Yuv,
+                3,
+                16,
+                3,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
         };
 
         PixelFormatDescriptor {
@@ -266,13 +281,29 @@ impl PixelFormat {
                 4,
                 "32-bit packed pixel format frame size",
             )?]),
-            Self::Yuv420p => {
-                if width % 2 != 0 || height % 2 != 0 {
-                    return Err(AvError::invalid_argument(
-                        "yuv420p pixel format dimensions must be even",
-                    ));
+            Self::Yuv420p | Self::Yuv422p => {
+                let descriptor = self.descriptor();
+                let chroma_w = 1_usize << descriptor.log2_chroma_w;
+                let chroma_h = 1_usize << descriptor.log2_chroma_h;
+                if descriptor.log2_chroma_w != 0 && width % chroma_w != 0 {
+                    return Err(AvError::invalid_argument(format!(
+                        "{} pixel format width must be divisible by {}",
+                        self.name(),
+                        chroma_w
+                    )));
                 }
-                let chroma = checked_area(width / 2, height / 2, "yuv420p chroma plane area")?;
+                if descriptor.log2_chroma_h != 0 && height % chroma_h != 0 {
+                    return Err(AvError::invalid_argument(format!(
+                        "{} pixel format height must be divisible by {}",
+                        self.name(),
+                        chroma_h
+                    )));
+                }
+                let chroma = checked_area(
+                    width >> descriptor.log2_chroma_w,
+                    height >> descriptor.log2_chroma_h,
+                    "planar YUV chroma plane area",
+                )?;
                 Ok(vec![pixels, chroma, chroma])
             }
         }
@@ -356,12 +387,18 @@ mod tests {
         assert_eq!(PixelFormat::from_name("bgra"), Some(PixelFormat::Bgra));
         assert_eq!(PixelFormat::from_name("argb"), Some(PixelFormat::Argb));
         assert_eq!(PixelFormat::from_name("abgr"), Some(PixelFormat::Abgr));
-        assert_eq!(PixelFormat::ALL.len(), 8);
+        assert_eq!(
+            PixelFormat::from_name("yuv422p"),
+            Some(PixelFormat::Yuv422p)
+        );
+        assert_eq!(PixelFormat::ALL.len(), 9);
         assert_eq!(PixelFormat::Rgba.plane_count(), 1);
         assert_eq!(PixelFormat::Yuv420p.plane_count(), 3);
+        assert_eq!(PixelFormat::Yuv422p.plane_count(), 3);
         assert!(!PixelFormat::Rgb24.is_planar());
         assert!(PixelFormat::Rgb24.is_packed());
         assert!(PixelFormat::Yuv420p.is_planar());
+        assert!(PixelFormat::Yuv422p.is_planar());
         assert!(!PixelFormat::Yuv420p.is_packed());
         assert!(!PixelFormat::Rgb24.has_alpha());
         assert!(PixelFormat::Bgra.has_alpha());
@@ -417,21 +454,27 @@ mod tests {
         assert_eq!(PixelFormat::Rgba.component_count(), 4);
         assert_eq!(PixelFormat::Rgba.bits_per_pixel(), 32);
 
-        let yuv = PixelFormat::Yuv420p.descriptor();
-        assert_eq!(yuv.format, PixelFormat::Yuv420p);
-        assert_eq!(yuv.name, "yuv420p");
-        assert_eq!(yuv.class, PixelFormatClass::Yuv);
-        assert!(PixelFormat::Yuv420p.is_yuv());
-        assert!(!PixelFormat::Yuv420p.is_rgb());
-        assert_eq!(yuv.component_count, 3);
-        assert_eq!(yuv.bits_per_component, 8);
-        assert_eq!(yuv.bits_per_pixel, 12);
-        assert_eq!(yuv.plane_count, 3);
-        assert!(yuv.is_planar);
-        assert!(!yuv.has_alpha);
-        assert_eq!(yuv.packed_bytes_per_pixel, None);
+        for (format, expected_name, expected_bits_per_pixel, expected_log2_chroma) in [
+            (PixelFormat::Yuv420p, "yuv420p", 12, (1, 1)),
+            (PixelFormat::Yuv422p, "yuv422p", 16, (1, 0)),
+        ] {
+            let yuv = format.descriptor();
+            assert_eq!(yuv.format, format);
+            assert_eq!(yuv.name, expected_name);
+            assert_eq!(yuv.class, PixelFormatClass::Yuv);
+            assert!(format.is_yuv());
+            assert!(!format.is_rgb());
+            assert_eq!(yuv.component_count, 3);
+            assert_eq!(yuv.bits_per_component, 8);
+            assert_eq!(yuv.bits_per_pixel, expected_bits_per_pixel);
+            assert_eq!(yuv.plane_count, 3);
+            assert!(yuv.is_planar);
+            assert!(!yuv.has_alpha);
+            assert_eq!(yuv.packed_bytes_per_pixel, None);
+            assert_eq!(format.log2_chroma(), expected_log2_chroma);
+            assert!(format.has_chroma_subsampling());
+        }
         assert_eq!(PixelFormat::Yuv420p.log2_chroma(), (1, 1));
-        assert!(PixelFormat::Yuv420p.has_chroma_subsampling());
     }
 
     #[test]
@@ -448,6 +491,11 @@ mod tests {
             vec![8, 2, 2]
         );
         assert_eq!(PixelFormat::Yuv420p.frame_size(4, 2).unwrap(), 12);
+        assert_eq!(
+            PixelFormat::Yuv422p.plane_sizes(4, 3).unwrap(),
+            vec![12, 6, 6]
+        );
+        assert_eq!(PixelFormat::Yuv422p.frame_size(4, 3).unwrap(), 24);
     }
 
     #[test]
@@ -457,6 +505,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(planes, vec![vec![0, 1, 2, 3], vec![4], vec![5]]);
+
+        let planes = PixelFormat::Yuv422p
+            .split_planes(&[0, 1, 2, 3, 4, 5, 6, 7], 2, 2)
+            .unwrap();
+
+        assert_eq!(planes, vec![vec![0, 1, 2, 3], vec![4, 5], vec![6, 7]]);
     }
 
     #[test]
@@ -469,6 +523,11 @@ mod tests {
             PixelFormat::Yuv420p.frame_size(3, 2).unwrap_err().kind(),
             AvErrorKind::InvalidArgument
         );
+        assert_eq!(
+            PixelFormat::Yuv422p.frame_size(3, 2).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(PixelFormat::Yuv422p.frame_size(2, 3).unwrap(), 12);
         assert_eq!(
             PixelFormat::Rgb24
                 .split_planes(&[0; 5], 1, 2)

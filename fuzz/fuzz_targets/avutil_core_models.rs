@@ -1276,10 +1276,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert!(!pixel_format.is_gray());
             assert!(!pixel_format.is_rgb());
             assert!(pixel_format.is_yuv());
-            assert_eq!(pixel_format, PixelFormat::Yuv420p);
             assert_eq!(pixel_format.component_count(), 3);
-            assert_eq!(pixel_format.bits_per_pixel(), 12);
-            assert_eq!(pixel_format.log2_chroma(), (1, 1));
+            assert!(matches!(pixel_format.bits_per_pixel(), 12 | 16));
+            assert!(matches!(pixel_format.log2_chroma(), (1, 1) | (1, 0)));
             assert!(pixel_format.has_chroma_subsampling());
         }
     }
@@ -1288,12 +1287,19 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         assert_eq!(pixel_format.has_alpha(), bytes_per_pixel == 4);
         assert_eq!(usize::from(pixel_format.bits_per_pixel()), bytes_per_pixel * 8);
     } else {
-        assert_eq!(pixel_format, PixelFormat::Yuv420p);
+        assert!(matches!(
+            pixel_format,
+            PixelFormat::Yuv420p | PixelFormat::Yuv422p
+        ));
         assert!(!pixel_format.has_alpha());
     }
 
     let Ok(plane_sizes) = pixel_format.plane_sizes(width, height) else {
-        assert!(width == 0 || height == 0 || pixel_format == PixelFormat::Yuv420p);
+        assert!(
+            width == 0
+                || height == 0
+                || matches!(pixel_format, PixelFormat::Yuv420p | PixelFormat::Yuv422p)
+        );
         return;
     };
     let frame_size = pixel_format.frame_size(width, height).unwrap();
@@ -5184,6 +5190,10 @@ fn exercise_fixtures() {
     assert_eq!(
         PixelFormat::Yuv420p.plane_sizes(2, 2).unwrap(),
         vec![4, 1, 1]
+    );
+    assert_eq!(
+        PixelFormat::Yuv422p.plane_sizes(2, 3).unwrap(),
+        vec![6, 3, 3]
     );
     assert_eq!(SampleFormat::U8.plane_sizes(2, 2).unwrap(), vec![4]);
     assert_eq!(SampleFormat::S16.plane_sizes(2, 2).unwrap(), vec![8]);
@@ -16850,7 +16860,10 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         PixelFormat::Rgba | PixelFormat::Bgra | PixelFormat::Argb | PixelFormat::Abgr => {
             vec![width * 4]
         }
-        PixelFormat::Yuv420p => vec![width, width / 2, width / 2],
+        PixelFormat::Yuv420p | PixelFormat::Yuv422p => {
+            let (log2_chroma_w, _) = pixel_format.log2_chroma();
+            vec![width, width >> log2_chroma_w, width >> log2_chroma_w]
+        }
     }
 }
 
@@ -16865,11 +16878,14 @@ fn expected_video_plane_shapes(
         PixelFormat::Rgba | PixelFormat::Bgra | PixelFormat::Argb | PixelFormat::Abgr => {
             vec![(width * 4, height)]
         }
-        PixelFormat::Yuv420p => vec![
-            (width, height),
-            (width / 2, height / 2),
-            (width / 2, height / 2),
-        ],
+        PixelFormat::Yuv420p | PixelFormat::Yuv422p => {
+            let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
+            vec![
+                (width, height),
+                (width >> log2_chroma_w, height >> log2_chroma_h),
+                (width >> log2_chroma_w, height >> log2_chroma_h),
+            ]
+        }
     }
 }
 

@@ -329,7 +329,7 @@ fn pixel_format_from(byte: Option<u8>) -> PixelFormat {
 
 fn video_dimension_from(byte: Option<u8>, pixel_format: PixelFormat) -> usize {
     let mut value = usize::from(byte.unwrap_or_default() % 8) + 1;
-    if pixel_format == PixelFormat::Yuv420p && value % 2 != 0 {
+    if pixel_format.has_chroma_subsampling() && value % 2 != 0 {
         value += 1;
     }
     value
