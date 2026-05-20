@@ -12420,10 +12420,12 @@ fn video_plane_shapes(
             row_bytes: checked_mul(width, 4, "32-bit floating gray video frame line size")?,
             rows: height,
         }]),
-        PixelFormat::Rgb24 | PixelFormat::Bgr24 => Ok(vec![VideoPlaneShape {
-            row_bytes: checked_mul(width, 3, "24-bit packed video frame line size")?,
-            rows: height,
-        }]),
+        PixelFormat::Rgb24 | PixelFormat::Bgr24 | PixelFormat::Vyu444 => {
+            Ok(vec![VideoPlaneShape {
+                row_bytes: checked_mul(width, 3, "24-bit packed video frame line size")?,
+                rows: height,
+            }])
+        }
         PixelFormat::Pal8
         | PixelFormat::Rgb8
         | PixelFormat::Bgr8
@@ -12499,7 +12501,11 @@ fn video_plane_shapes(
         | PixelFormat::X2Rgb10Le
         | PixelFormat::X2Rgb10Be
         | PixelFormat::X2Bgr10Le
-        | PixelFormat::X2Bgr10Be => Ok(vec![VideoPlaneShape {
+        | PixelFormat::X2Bgr10Be
+        | PixelFormat::Vuya
+        | PixelFormat::Vuyx
+        | PixelFormat::Ayuv
+        | PixelFormat::Uyva => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 4, "32-bit packed video frame line size")?,
             rows: height,
         }]),
@@ -16780,6 +16786,12 @@ mod tests {
 
         let x2rgb10 = VideoFrame::new(3, 2, PixelFormat::X2Rgb10Le, vec![vec![0; 24]]).unwrap();
         assert_eq!(x2rgb10.line_sizes(), &[12]);
+
+        let vuya = VideoFrame::new(3, 2, PixelFormat::Vuya, vec![vec![0; 24]]).unwrap();
+        assert_eq!(vuya.line_sizes(), &[12]);
+
+        let vyu444 = VideoFrame::new(3, 2, PixelFormat::Vyu444, vec![vec![0; 18]]).unwrap();
+        assert_eq!(vyu444.line_sizes(), &[9]);
 
         let gray16 = VideoFrame::new(3, 2, PixelFormat::Gray16Le, vec![vec![0; 12]]).unwrap();
         assert_eq!(gray16.line_sizes(), &[6]);

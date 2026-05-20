@@ -1167,6 +1167,34 @@ fn exercise_fixtures() {
         assert!(raw_yuv_demuxer.read_packet().unwrap().is_none());
     }
 
+    for (format, width, height, payload) in [
+        (PixelFormat::Vuya, 2, 1, (0..8).collect::<Vec<_>>()),
+        (PixelFormat::Vuyx, 2, 1, (8..16).collect::<Vec<_>>()),
+        (PixelFormat::Ayuv, 2, 1, (16..24).collect::<Vec<_>>()),
+        (PixelFormat::Uyva, 2, 1, (24..32).collect::<Vec<_>>()),
+        (PixelFormat::Vyu444, 2, 1, (32..38).collect::<Vec<_>>()),
+    ] {
+        let mut raw_packed_yuv =
+            RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
+        raw_packed_yuv
+            .write_packet(&Packet::new(payload.clone(), 0))
+            .unwrap();
+        let raw_packed_yuv_output = raw_packed_yuv.finish();
+        let mut raw_packed_yuv_demuxer = RawVideoDemuxer::open(
+            &raw_packed_yuv_output,
+            width,
+            height,
+            format,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            raw_packed_yuv_demuxer.read_packet().unwrap().unwrap().data(),
+            payload.as_slice()
+        );
+        assert!(raw_packed_yuv_demuxer.read_packet().unwrap().is_none());
+    }
+
     let mut y4m = Yuv4MpegMuxer::new(2, 2, Rational::new(25, 1).unwrap(), None).unwrap();
     y4m.write_packet(&Packet::new(vec![0, 1, 2, 3, 4, 5], 0))
         .unwrap();

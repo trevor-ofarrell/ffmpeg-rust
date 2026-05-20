@@ -305,6 +305,33 @@ mod tests {
                 24
             );
         }
+        for format in [
+            RawVideoPixelFormat::Vuya,
+            RawVideoPixelFormat::Vuyx,
+            RawVideoPixelFormat::Ayuv,
+            RawVideoPixelFormat::Uyva,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 24], 3, 2, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                24
+            );
+        }
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &[0; 18],
+                3,
+                2,
+                RawVideoPixelFormat::Vyu444,
+                Rational::new(1, 1).unwrap(),
+            )
+            .unwrap()
+            .info()
+            .frame_size(),
+            18
+        );
         assert_eq!(
             RawVideoDemuxer::open(
                 &[0; 6],
@@ -1807,6 +1834,22 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 18);
+    }
+
+    #[test]
+    fn muxer_computes_packed_8bit_yuv_frame_sizes() {
+        for (format, width, height, expected_size) in [
+            (RawVideoPixelFormat::Vuya, 3, 2, 24),
+            (RawVideoPixelFormat::Vuyx, 3, 2, 24),
+            (RawVideoPixelFormat::Ayuv, 3, 2, 24),
+            (RawVideoPixelFormat::Uyva, 3, 2, 24),
+            (RawVideoPixelFormat::Vyu444, 3, 2, 18),
+        ] {
+            let muxer =
+                RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), expected_size);
+        }
     }
 
     #[test]

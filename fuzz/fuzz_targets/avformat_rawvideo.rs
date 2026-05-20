@@ -294,6 +294,22 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::X2Rgb10Le,
         Rational::new(25, 1).unwrap(),
     );
+    let vuya = (84..92).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &vuya,
+        2,
+        1,
+        RawVideoPixelFormat::Vuya,
+        Rational::new(25, 1).unwrap(),
+    );
+    let vyu444 = (92..98).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &vyu444,
+        2,
+        1,
+        RawVideoPixelFormat::Vyu444,
+        Rational::new(25, 1).unwrap(),
+    );
     exercise_rawvideo(
         b"abcdefghijkl",
         4,

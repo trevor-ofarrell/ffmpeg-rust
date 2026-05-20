@@ -50,6 +50,8 @@ The rawvideo-facing packed XYZ subset now also includes FFmpeg's `xyz12le` and `
 
 The rawvideo-facing packed 10-bit RGB/BGR subset now also includes FFmpeg's `x2rgb10le`, `x2rgb10be`, `x2bgr10le`, and `x2bgr10be` names. They are modeled as one packed four-byte-per-pixel RGB-class plane with three 10-bit color components, no alpha, no chroma subsampling, and 30 logical bits per pixel; the unused two-bit lane is preserved as raw storage padding until conversion code exists.
 
+The rawvideo-facing packed 8-bit YUV/YUVA subset now also includes FFmpeg's `vuya`, `vuyx`, `ayuv`, `uyva`, and `vyu444` names. `vuya`, `ayuv`, and `uyva` are modeled as one packed four-byte-per-pixel YUV-class plane with four 8-bit components, alpha metadata, no chroma subsampling, and 32 logical bits per pixel; `vuyx` is modeled as three exposed 8-bit components, no alpha, 24 logical bits per pixel, and four stored bytes per pixel with the undefined X lane preserved as raw storage; `vyu444` is modeled as one packed three-byte-per-pixel VYU plane with three 8-bit components and no chroma subsampling. Byte order and component order are preserved as pixel-format naming and raw storage until conversion code exists.
+
 The rawvideo-facing packed grayscale subset now also includes FFmpeg's `gray9le`, `gray9be`, `gray10le`, `gray10be`, `gray12le`, `gray12be`, `gray14le`, and `gray14be` names plus `y9le`/`y9be`, `y10le`/`y10be`, `y12le`/`y12be`, and `y14le`/`y14be` aliases. They are modeled as one-component grayscale formats with 9, 10, 12, or 14 descriptor bits per pixel and two stored bytes per sample; byte order is preserved as pixel-format naming only until conversion code exists.
 
 The rawvideo-facing monochrome bitstream subset now also includes FFmpeg's `monow` and `monob` names. They are modeled as one 1bpp grayscale bitstream plane with MSB-first pixel storage and `ceil(width / 8)` bytes per row; white/black polarity is preserved as pixel-format naming only until conversion code exists.
@@ -257,6 +259,8 @@ Both rawvideo packet paths also accept FFmpeg's packed YUV 4:2:2 names `yuyv422`
 Both rawvideo packet paths also accept FFmpeg's high-bit packed YUV 4:2:2 names `y210le`/`y210be`, `y212le`/`y212be`, and `y216le`/`y216be` as one four-byte-per-pixel payload plane with even-width validation through the shared `PixelFormat` model. Their descriptors preserve FFmpeg's logical average bpp values of 20, 24, and 32 while storage sizing uses four bytes per pixel.
 
 Both rawvideo packet paths also accept FFmpeg's packed 10-bit RGB/BGR names `x2rgb10le`/`x2rgb10be` and `x2bgr10le`/`x2bgr10be` as one four-byte-per-pixel payload plane through the shared `PixelFormat` model. Their descriptors preserve FFmpeg's logical 30 bpp and no-alpha semantics while storage sizing keeps the unused two-bit lane.
+
+Both rawvideo packet paths also accept FFmpeg's packed 8-bit YUV/YUVA names `vuya`, `vuyx`, `ayuv`, `uyva`, and `vyu444` through the shared `PixelFormat` model. `vuya`/`ayuv`/`uyva` use one four-byte-per-pixel payload plane with alpha metadata, `vuyx` uses one four-byte-per-pixel payload plane while preserving FFmpeg's three-component/no-alpha descriptor semantics, and `vyu444` uses one three-byte-per-pixel payload plane.
 
 Both rawvideo packet paths also accept FFmpeg's semi-planar YUV 4:2:0 names `nv12` and `nv21` as one full luma plane plus one interleaved chroma plane with even-width and even-height validation through the shared `PixelFormat` model.
 

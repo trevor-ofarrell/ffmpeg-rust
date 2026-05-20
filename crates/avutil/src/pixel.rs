@@ -96,6 +96,11 @@ pub enum PixelFormat {
     GbrapF32Be,
     Ayuv64Le,
     Ayuv64Be,
+    Vuya,
+    Vuyx,
+    Ayuv,
+    Uyva,
+    Vyu444,
     Xyz12Le,
     Xyz12Be,
     Yuyv422,
@@ -333,6 +338,11 @@ impl PixelFormat {
         Self::GbrapF32Be,
         Self::Ayuv64Le,
         Self::Ayuv64Be,
+        Self::Vuya,
+        Self::Vuyx,
+        Self::Ayuv,
+        Self::Uyva,
+        Self::Vyu444,
         Self::Xyz12Le,
         Self::Xyz12Be,
         Self::Yuyv422,
@@ -538,6 +548,11 @@ impl PixelFormat {
             "gbrapf32be" => Some(Self::GbrapF32Be),
             "ayuv64le" => Some(Self::Ayuv64Le),
             "ayuv64be" => Some(Self::Ayuv64Be),
+            "vuya" => Some(Self::Vuya),
+            "vuyx" => Some(Self::Vuyx),
+            "ayuv" => Some(Self::Ayuv),
+            "uyva" => Some(Self::Uyva),
+            "vyu444" => Some(Self::Vyu444),
             "xyz12le" => Some(Self::Xyz12Le),
             "xyz12be" => Some(Self::Xyz12Be),
             "yuyv422" => Some(Self::Yuyv422),
@@ -1750,6 +1765,66 @@ impl PixelFormat {
                 false,
                 true,
                 Some(8),
+                0,
+                0,
+            ),
+            Self::Vuya => (
+                "vuya",
+                PixelFormatClass::Yuv,
+                4,
+                32,
+                1,
+                false,
+                true,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Vuyx => (
+                "vuyx",
+                PixelFormatClass::Yuv,
+                3,
+                24,
+                1,
+                false,
+                false,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Ayuv => (
+                "ayuv",
+                PixelFormatClass::Yuv,
+                4,
+                32,
+                1,
+                false,
+                true,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Uyva => (
+                "uyva",
+                PixelFormatClass::Yuv,
+                4,
+                32,
+                1,
+                false,
+                true,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Vyu444 => (
+                "vyu444",
+                PixelFormatClass::Yuv,
+                3,
+                24,
+                1,
+                false,
+                false,
+                Some(3),
                 0,
                 0,
             ),
@@ -3480,6 +3555,16 @@ impl PixelFormat {
                 8,
                 "packed 64-bit AYUV pixel format frame size",
             )?]),
+            Self::Vuya | Self::Vuyx | Self::Ayuv | Self::Uyva => Ok(vec![checked_mul(
+                pixels,
+                4,
+                "packed 8-bit YUV 4:4:4:4 pixel format frame size",
+            )?]),
+            Self::Vyu444 => Ok(vec![checked_mul(
+                pixels,
+                3,
+                "packed 8-bit VYU 4:4:4 pixel format frame size",
+            )?]),
             Self::Xyz12Le | Self::Xyz12Be => Ok(vec![checked_mul(
                 pixels,
                 6,
@@ -4153,6 +4238,21 @@ mod tests {
             assert!(format.has_alpha());
             assert_eq!(format.packed_bytes_per_pixel(), Some(8));
         }
+        for (name, format, has_alpha, bytes_per_pixel) in [
+            ("vuya", PixelFormat::Vuya, true, 4),
+            ("vuyx", PixelFormat::Vuyx, false, 4),
+            ("ayuv", PixelFormat::Ayuv, true, 4),
+            ("uyva", PixelFormat::Uyva, true, 4),
+            ("vyu444", PixelFormat::Vyu444, false, 3),
+        ] {
+            assert_eq!(format.name(), name);
+            assert_eq!(PixelFormat::from_name(name), Some(format));
+            assert_eq!(format.plane_count(), 1);
+            assert!(format.is_yuv());
+            assert!(format.is_packed());
+            assert_eq!(format.has_alpha(), has_alpha);
+            assert_eq!(format.packed_bytes_per_pixel(), Some(bytes_per_pixel));
+        }
         for (name, format) in [
             ("xyz12le", PixelFormat::Xyz12Le),
             ("xyz12be", PixelFormat::Xyz12Be),
@@ -4307,7 +4407,7 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 197);
+        assert_eq!(PixelFormat::ALL.len(), 202);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
@@ -5208,6 +5308,27 @@ mod tests {
             assert_eq!(format.log2_chroma(), (0, 0));
             assert!(!format.has_chroma_subsampling());
         }
+        for (format, name, components, bpp, has_alpha, bytes_per_pixel) in [
+            (PixelFormat::Vuya, "vuya", 4, bpp(32), true, 4),
+            (PixelFormat::Vuyx, "vuyx", 3, bpp(24), false, 4),
+            (PixelFormat::Ayuv, "ayuv", 4, bpp(32), true, 4),
+            (PixelFormat::Uyva, "uyva", 4, bpp(32), true, 4),
+            (PixelFormat::Vyu444, "vyu444", 3, bpp(24), false, 3),
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.name, name);
+            assert_eq!(descriptor.class, PixelFormatClass::Yuv);
+            assert_eq!(descriptor.component_count, components);
+            assert_eq!(descriptor.bits_per_component, 8);
+            assert_eq!(descriptor.bits_per_pixel, bpp);
+            assert_eq!(descriptor.plane_count, 1);
+            assert!(!descriptor.is_planar);
+            assert_eq!(descriptor.has_alpha, has_alpha);
+            assert!(!descriptor.is_float);
+            assert_eq!(descriptor.packed_bytes_per_pixel, Some(bytes_per_pixel));
+            assert_eq!(format.log2_chroma(), (0, 0));
+            assert!(!format.has_chroma_subsampling());
+        }
         assert_eq!(PixelFormat::Rgba.component_count(), 4);
         assert_eq!(PixelFormat::Rgba.bits_per_pixel(), bpp(32));
         assert_eq!(PixelFormat::ZeroRgb.component_count(), 3);
@@ -5556,6 +5677,11 @@ mod tests {
         assert_eq!(PixelFormat::Bgr0.frame_size(2, 2).unwrap(), 16);
         assert_eq!(PixelFormat::X2Rgb10Le.plane_sizes(3, 2).unwrap(), vec![24]);
         assert_eq!(PixelFormat::X2Bgr10Be.frame_size(3, 2).unwrap(), 24);
+        assert_eq!(PixelFormat::Vuya.plane_sizes(2, 2).unwrap(), vec![16]);
+        assert_eq!(PixelFormat::Vuyx.frame_size(3, 2).unwrap(), 24);
+        assert_eq!(PixelFormat::Ayuv.frame_size(2, 2).unwrap(), 16);
+        assert_eq!(PixelFormat::Uyva.frame_size(2, 2).unwrap(), 16);
+        assert_eq!(PixelFormat::Vyu444.frame_size(3, 2).unwrap(), 18);
         assert_eq!(PixelFormat::Yuyv422.plane_sizes(2, 2).unwrap(), vec![8]);
         assert_eq!(PixelFormat::Uyvy422.frame_size(2, 2).unwrap(), 8);
         assert_eq!(PixelFormat::Yvyu422.frame_size(4, 1).unwrap(), 8);
@@ -6063,6 +6189,18 @@ mod tests {
 
         assert_eq!(planes, vec![(52..60).collect::<Vec<_>>()]);
 
+        let planes = PixelFormat::Vuya
+            .split_planes(&(60..68).collect::<Vec<_>>(), 2, 1)
+            .unwrap();
+
+        assert_eq!(planes, vec![(60..68).collect::<Vec<_>>()]);
+
+        let planes = PixelFormat::Vyu444
+            .split_planes(&(68..74).collect::<Vec<_>>(), 2, 1)
+            .unwrap();
+
+        assert_eq!(planes, vec![(68..74).collect::<Vec<_>>()]);
+
         let planes = PixelFormat::Rgb565Le
             .split_planes(&[0, 1, 2, 3], 2, 1)
             .unwrap();
@@ -6456,6 +6594,20 @@ mod tests {
         assert_eq!(
             PixelFormat::X2Bgr10Le
                 .split_planes(&[0; 3], 1, 1)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PixelFormat::Vuya
+                .split_planes(&[0; 3], 1, 1)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PixelFormat::Vyu444
+                .split_planes(&[0; 2], 1, 1)
                 .unwrap_err()
                 .kind(),
             AvErrorKind::InvalidData
