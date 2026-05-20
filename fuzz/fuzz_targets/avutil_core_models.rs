@@ -38,14 +38,14 @@ use avutil::{
     PacketDynamicHdr10Plus, PacketExif, PacketFallbackTrack, PacketFlags, PacketFrameCropping,
     PacketHdrPlusColorTransformParams, PacketIccProfile, PacketJpDualMono,
     PacketJpDualMonoSelection, PacketLcevc, PacketMasteringDisplayMetadata,
-    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
-    PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport,
-    PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason,
-    PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,
-    PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition,
-    PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
-    PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketPalette, PacketParamChange,
+    PacketPictureType, PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain,
+    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
+    PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d,
+    PacketStereo3dFlags, PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView,
+    PacketSubtitlePosition, PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays,
+    PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat,
+    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3307,6 +3307,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let typed_payload_max_len = (PacketQualityStats::HEADER_LEN
         + PacketQualityStats::ERROR_ENTRY_LEN * 3
         + 1)
+    .max(PacketPalette::DATA_LEN + 1)
     .max(PacketCpbProperties::DATA_LEN + 1)
     .max(PacketMasteringDisplayMetadata::DATA_LEN + 1)
     .max(PacketSphericalMapping::DATA_LEN + 1)
@@ -3336,6 +3337,37 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let typed_payload_kind = packet_side_data_kind_from(cursor.next());
     let typed_payload_side_data =
         SideData::new_with_kind(typed_payload_kind.clone(), typed_payload.clone()).unwrap();
+    match typed_payload_side_data.palette() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::Palette);
+            assert_eq!(value.data(), typed_payload.as_slice());
+            assert_eq!(typed_payload.len(), PacketPalette::DATA_LEN);
+            assert_eq!(value.len(), PacketPalette::DATA_LEN);
+            assert!(!value.is_empty());
+            assert_eq!(value.entry_count(), PacketPalette::ENTRY_COUNT);
+            assert_eq!(
+                value.entry_bytes(0).unwrap(),
+                [
+                    typed_payload[0],
+                    typed_payload[1],
+                    typed_payload[2],
+                    typed_payload[3],
+                ]
+            );
+            assert_eq!(
+                value.entry_native(0).unwrap(),
+                u32::from_ne_bytes(value.entry_bytes(0).unwrap())
+            );
+            assert_eq!(value.entry_bytes(PacketPalette::ENTRY_COUNT), None);
+            assert_eq!(PacketPalette::parse(value.data()).unwrap(), value);
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::Palette),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::Palette);
+            assert!(packet_palette_payload_invalid(&typed_payload));
+        }
+    }
     match typed_payload_side_data.quality_stats() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::QualityStats);
@@ -4357,6 +4389,58 @@ fn exercise_fixtures() {
             .unwrap(),
         "AV_PKT_DATA_EXIF"
     );
+    let mut packet_palette = vec![0; PacketPalette::DATA_LEN];
+    packet_palette[0..4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
+    let packet_palette_last = (PacketPalette::ENTRY_COUNT - 1) * PacketPalette::ENTRY_LEN;
+    packet_palette[packet_palette_last..packet_palette_last + PacketPalette::ENTRY_LEN]
+        .copy_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
+    let packet_palette_side_data = SideData::new_palette(packet_palette.clone()).unwrap();
+    let parsed_packet_palette = packet_palette_side_data.palette().unwrap().unwrap();
+    assert_eq!(packet_palette_side_data.kind_id(), &PacketSideDataKind::Palette);
+    assert_eq!(parsed_packet_palette.data(), packet_palette.as_slice());
+    assert_eq!(parsed_packet_palette.len(), PacketPalette::DATA_LEN);
+    assert_eq!(
+        parsed_packet_palette.entry_count(),
+        PacketPalette::ENTRY_COUNT
+    );
+    assert_eq!(
+        parsed_packet_palette.entry_bytes(0),
+        Some([0x11, 0x22, 0x33, 0x44])
+    );
+    assert_eq!(
+        parsed_packet_palette.entry_native(0),
+        Some(u32::from_ne_bytes([0x11, 0x22, 0x33, 0x44]))
+    );
+    assert_eq!(
+        parsed_packet_palette.entry_bytes(PacketPalette::ENTRY_COUNT - 1),
+        Some([0xaa, 0xbb, 0xcc, 0xdd])
+    );
+    assert_eq!(
+        parsed_packet_palette.entry_native(PacketPalette::ENTRY_COUNT),
+        None
+    );
+    for data in [
+        Vec::new(),
+        vec![0; PacketPalette::DATA_LEN - 1],
+        {
+            let mut data = packet_palette.clone();
+            data.push(0);
+            data
+        },
+    ] {
+        assert!(packet_palette_payload_invalid(&data));
+        assert_eq!(
+            SideData::new_with_kind(PacketSideDataKind::Palette, data)
+                .unwrap()
+                .palette()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    let non_packet_palette =
+        SideData::new_with_kind(PacketSideDataKind::QualityStats, packet_palette).unwrap();
+    assert_eq!(non_packet_palette.palette().unwrap(), None);
     let packet_param_change = PacketParamChange::new(Some(48_000), Some((1920, 1080)));
     let packet_param_change_bytes = packet_param_change.to_bytes();
     assert_eq!(
@@ -15491,6 +15575,10 @@ fn packet_icc_profile_payload_invalid(data: &[u8]) -> bool {
     };
 
     tag_table_len > data.len()
+}
+
+fn packet_palette_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketPalette::DATA_LEN
 }
 
 fn packet_dolby_vision_conf_payload_invalid(data: &[u8]) -> bool {

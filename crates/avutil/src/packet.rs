@@ -395,6 +395,58 @@ impl TryFrom<String> for PacketSideDataKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketPalette<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> PacketPalette<'a> {
+    pub const ENTRY_COUNT: usize = 256;
+    pub const ENTRY_LEN: usize = 4;
+    pub const DATA_LEN: usize = Self::ENTRY_COUNT * Self::ENTRY_LEN;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "palette packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self { data })
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn len(self) -> usize {
+        self.data.len()
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub const fn entry_count(self) -> usize {
+        Self::ENTRY_COUNT
+    }
+
+    pub fn entry_bytes(self, index: usize) -> Option<[u8; 4]> {
+        let start = index.checked_mul(Self::ENTRY_LEN)?;
+        let end = start.checked_add(Self::ENTRY_LEN)?;
+        let entry = self.data.get(start..end)?;
+        let mut bytes = [0; 4];
+        bytes.copy_from_slice(entry);
+        Some(bytes)
+    }
+
+    pub fn entry_native(self, index: usize) -> Option<u32> {
+        self.entry_bytes(index).map(u32::from_ne_bytes)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PacketQualityStats {
     quality: u32,
@@ -2755,6 +2807,12 @@ impl SideData {
         Self::new_with_kind(PacketSideDataKind::from_name(kind)?, data)
     }
 
+    pub fn new_palette(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::Palette, data)?;
+        PacketPalette::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_quality_stats(value: PacketQualityStats) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::QualityStats, value.to_bytes())
     }
@@ -2958,6 +3016,14 @@ impl SideData {
 
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
+    }
+
+    pub fn palette(&self) -> AvResult<Option<PacketPalette<'_>>> {
+        if self.kind != PacketSideDataKind::Palette {
+            return Ok(None);
+        }
+
+        PacketPalette::parse(self.data()).map(Some)
     }
 
     pub fn quality_stats(&self) -> AvResult<Option<PacketQualityStats>> {
@@ -3701,6 +3767,14 @@ mod tests {
         data
     }
 
+    fn minimal_packet_palette() -> Vec<u8> {
+        let mut data = vec![0; PacketPalette::DATA_LEN];
+        data[0..4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
+        let last = (PacketPalette::ENTRY_COUNT - 1) * PacketPalette::ENTRY_LEN;
+        data[last..last + PacketPalette::ENTRY_LEN].copy_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
+        data
+    }
+
     fn minimal_little_exif_fixture() -> Vec<u8> {
         let mut data = Vec::new();
         data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
@@ -3946,6 +4020,70 @@ mod tests {
             "vendor_packet"
         );
         assert!(packet.side_data_by_kind("vendor_packet").is_none());
+    }
+
+    #[test]
+    fn packet_side_data_parses_palette_payload() {
+        let data = minimal_packet_palette();
+        let side_data = SideData::new_palette(data.clone()).unwrap();
+
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::Palette);
+        assert_eq!(side_data.data(), data.as_slice());
+        assert_eq!(
+            PacketSideDataKind::Palette.ffmpeg_constant().unwrap(),
+            "AV_PKT_DATA_PALETTE"
+        );
+        assert_eq!(PacketPalette::ENTRY_COUNT, 256);
+        assert_eq!(PacketPalette::ENTRY_LEN, 4);
+        assert_eq!(PacketPalette::DATA_LEN, 1024);
+
+        let parsed = side_data.palette().unwrap().unwrap();
+        assert_eq!(PacketPalette::parse(&data).unwrap(), parsed);
+        assert_eq!(parsed.data(), data.as_slice());
+        assert_eq!(parsed.len(), PacketPalette::DATA_LEN);
+        assert!(!parsed.is_empty());
+        assert_eq!(parsed.entry_count(), PacketPalette::ENTRY_COUNT);
+        assert_eq!(parsed.entry_bytes(0), Some([0x11, 0x22, 0x33, 0x44]));
+        assert_eq!(
+            parsed.entry_native(0),
+            Some(u32::from_ne_bytes([0x11, 0x22, 0x33, 0x44]))
+        );
+        assert_eq!(
+            parsed.entry_bytes(PacketPalette::ENTRY_COUNT - 1),
+            Some([0xaa, 0xbb, 0xcc, 0xdd])
+        );
+        assert_eq!(parsed.entry_bytes(PacketPalette::ENTRY_COUNT), None);
+        assert_eq!(parsed.entry_native(PacketPalette::ENTRY_COUNT), None);
+
+        let non_palette = SideData::new_with_kind(PacketSideDataKind::QualityStats, data).unwrap();
+        assert_eq!(non_palette.palette().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_palette_payload() {
+        let valid = minimal_packet_palette();
+        for data in [Vec::new(), vec![0; PacketPalette::DATA_LEN - 1], {
+            let mut data = valid.clone();
+            data.push(0);
+            data
+        }] {
+            assert_eq!(
+                PacketPalette::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_palette(data.clone()).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_with_kind(PacketSideDataKind::Palette, data)
+                    .unwrap()
+                    .palette()
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
     }
 
     #[test]
