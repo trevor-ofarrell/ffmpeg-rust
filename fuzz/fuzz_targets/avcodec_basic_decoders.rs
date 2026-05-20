@@ -456,6 +456,34 @@ fn exercise_fixtures() {
     assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva420p).is_err());
     assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuva420p).is_err());
 
+    let yuva420p9 = RawVideoDecoder::new(4, 2, PixelFormat::Yuva420p9Le).unwrap();
+    assert!(yuva420p9
+        .decode_packet(&Packet::new(vec![0; 40], 0))
+        .is_ok());
+    assert_eq!(
+        yuva420p9
+            .decode_packet(&Packet::new(vec![0; 39], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva420p9Le).is_err());
+
+    let yuva444p16 = RawVideoDecoder::new(3, 2, PixelFormat::Yuva444p16Be).unwrap();
+    assert!(yuva444p16
+        .decode_packet(&Packet::new(vec![0; 48], 0))
+        .is_ok());
+    assert_eq!(
+        yuva444p16
+            .decode_packet(&Packet::new(vec![0; 47], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuva420p10Be).is_err());
+    assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva422p16Le).is_err());
+    assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva444p12Be).is_ok());
+
     let yuv422 = RawVideoDecoder::new(4, 3, PixelFormat::Yuv422p).unwrap();
     assert!(yuv422.decode_packet(&Packet::new(vec![0; 24], 0)).is_ok());
     assert_eq!(

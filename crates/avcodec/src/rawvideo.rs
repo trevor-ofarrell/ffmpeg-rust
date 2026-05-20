@@ -832,6 +832,62 @@ mod tests {
                 ],
                 vec![3, 3, 3, 3],
             ),
+            (
+                PixelFormat::Yuva420p9Le,
+                "yuva420p9le",
+                4,
+                2,
+                40,
+                vec![
+                    (0..16).collect::<Vec<_>>(),
+                    (16..20).collect::<Vec<_>>(),
+                    (20..24).collect::<Vec<_>>(),
+                    (24..40).collect::<Vec<_>>(),
+                ],
+                vec![8, 4, 4, 8],
+            ),
+            (
+                PixelFormat::Yuva422p10Be,
+                "yuva422p10be",
+                4,
+                3,
+                72,
+                vec![
+                    (0..24).collect::<Vec<_>>(),
+                    (24..36).collect::<Vec<_>>(),
+                    (36..48).collect::<Vec<_>>(),
+                    (48..72).collect::<Vec<_>>(),
+                ],
+                vec![8, 4, 4, 8],
+            ),
+            (
+                PixelFormat::Yuva422p12Le,
+                "yuva422p12le",
+                4,
+                3,
+                72,
+                vec![
+                    (0..24).collect::<Vec<_>>(),
+                    (24..36).collect::<Vec<_>>(),
+                    (36..48).collect::<Vec<_>>(),
+                    (48..72).collect::<Vec<_>>(),
+                ],
+                vec![8, 4, 4, 8],
+            ),
+            (
+                PixelFormat::Yuva444p16Be,
+                "yuva444p16be",
+                3,
+                2,
+                48,
+                vec![
+                    (0..12).collect::<Vec<_>>(),
+                    (12..24).collect::<Vec<_>>(),
+                    (24..36).collect::<Vec<_>>(),
+                    (36..48).collect::<Vec<_>>(),
+                ],
+                vec![6, 6, 6, 6],
+            ),
         ] {
             let decoder = RawVideoDecoder::new(width, height, format).unwrap();
             let packet = Packet::new((0_u8..payload_len).collect::<Vec<_>>(), 0);
@@ -973,6 +1029,10 @@ mod tests {
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva422p).is_err());
         assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuva422p).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva444p).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva420p9Le).is_err());
+        assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuva420p10Be).is_err());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva422p16Le).is_err());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva444p12Be).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::YuvJ444p).is_ok());
 
         let decoder = RawVideoDecoder::new(2, 2, PixelFormat::Rgb24).unwrap();

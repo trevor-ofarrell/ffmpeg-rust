@@ -869,6 +869,30 @@ fn exercise_fixtures() {
     );
     assert!(raw_yuva420_demuxer.read_packet().unwrap().is_none());
 
+    let mut raw_yuva420p9 =
+        RawVideoMuxer::new(4, 2, PixelFormat::Yuva420p9Le, Rational::new(25, 1).unwrap()).unwrap();
+    raw_yuva420p9
+        .write_packet(&Packet::new((0..40).collect(), 0))
+        .unwrap();
+    let raw_yuva420p9_output = raw_yuva420p9.finish();
+    let mut raw_yuva420p9_demuxer = RawVideoDemuxer::open(
+        &raw_yuva420p9_output,
+        4,
+        2,
+        PixelFormat::Yuva420p9Le,
+        Rational::new(25, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_yuva420p9_demuxer
+            .read_packet()
+            .unwrap()
+            .unwrap()
+            .data(),
+        &(0..40).collect::<Vec<_>>()
+    );
+    assert!(raw_yuva420p9_demuxer.read_packet().unwrap().is_none());
+
     for (format, width, height, payload) in [
         (
             PixelFormat::YuvJ420p,

@@ -1311,25 +1311,23 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     | (16, 1)
                     | (24, 1)
                     | (27, 2)
+                    | (45, 2)
                     | (18, 1)
                     | (27, 1)
                     | (15, 1)
+                    | (25, 1)
                     | (20, 1)
                     | (30, 1)
                     | (21, 1)
                     | (28, 1)
+                    | (40, 1)
                     | (42, 1)
                     | (32, 1)
                     | (48, 1)
+                    | (64, 1)
                     | (36, 1)
             ));
-            assert_eq!(
-                pixel_format.has_alpha(),
-                matches!(
-                    pixel_format,
-                    PixelFormat::Yuva420p | PixelFormat::Yuva422p | PixelFormat::Yuva444p
-                )
-            );
+            assert_eq!(pixel_format.has_alpha(), is_yuva_pixel_format(pixel_format));
             assert!(matches!(
                 pixel_format.log2_chroma(),
                 (1, 1) | (1, 0) | (2, 0) | (2, 2) | (0, 1) | (0, 0)
@@ -1380,6 +1378,28 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 | PixelFormat::Yuva420p
                 | PixelFormat::Yuva422p
                 | PixelFormat::Yuva444p
+                | PixelFormat::Yuva420p9Le
+                | PixelFormat::Yuva420p9Be
+                | PixelFormat::Yuva422p9Le
+                | PixelFormat::Yuva422p9Be
+                | PixelFormat::Yuva444p9Le
+                | PixelFormat::Yuva444p9Be
+                | PixelFormat::Yuva420p10Le
+                | PixelFormat::Yuva420p10Be
+                | PixelFormat::Yuva422p10Le
+                | PixelFormat::Yuva422p10Be
+                | PixelFormat::Yuva444p10Le
+                | PixelFormat::Yuva444p10Be
+                | PixelFormat::Yuva422p12Le
+                | PixelFormat::Yuva422p12Be
+                | PixelFormat::Yuva444p12Le
+                | PixelFormat::Yuva444p12Be
+                | PixelFormat::Yuva420p16Le
+                | PixelFormat::Yuva420p16Be
+                | PixelFormat::Yuva422p16Le
+                | PixelFormat::Yuva422p16Be
+                | PixelFormat::Yuva444p16Le
+                | PixelFormat::Yuva444p16Be
                 | PixelFormat::Yuv440p10Le
                 | PixelFormat::Yuv440p10Be
                 | PixelFormat::Yuv440p12Le
@@ -1417,13 +1437,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 | PixelFormat::Nv12
                 | PixelFormat::Nv21
         ));
-        assert_eq!(
-            pixel_format.has_alpha(),
-            matches!(
-                pixel_format,
-                PixelFormat::Yuva420p | PixelFormat::Yuva422p | PixelFormat::Yuva444p
-            )
-        );
+        assert_eq!(pixel_format.has_alpha(), is_yuva_pixel_format(pixel_format));
     }
 
     let Ok(plane_sizes) = pixel_format.plane_sizes(width, height) else {
@@ -5856,6 +5870,39 @@ fn exercise_fixtures() {
         PixelFormat::Yuva444p.plane_sizes(3, 2).unwrap(),
         vec![6, 6, 6, 6]
     );
+    assert_eq!(
+        PixelFormat::from_name("yuva420p9le"),
+        Some(PixelFormat::Yuva420p9Le)
+    );
+    assert_eq!(
+        PixelFormat::Yuva420p9Le.plane_sizes(4, 2).unwrap(),
+        vec![16, 4, 4, 16]
+    );
+    assert_eq!(
+        PixelFormat::Yuva420p9Le.bits_per_pixel(),
+        Rational::from_raw(45, 2)
+    );
+    assert!(PixelFormat::Yuva420p9Le.has_alpha());
+    assert_eq!(
+        PixelFormat::from_name("yuva422p12le"),
+        Some(PixelFormat::Yuva422p12Le)
+    );
+    assert_eq!(
+        PixelFormat::Yuva422p12Le.plane_sizes(4, 3).unwrap(),
+        vec![24, 12, 12, 24]
+    );
+    assert_eq!(PixelFormat::Yuva422p12Le.bits_per_pixel(), bpp(36));
+    assert!(PixelFormat::Yuva422p12Le.has_alpha());
+    assert_eq!(
+        PixelFormat::from_name("yuva444p16be"),
+        Some(PixelFormat::Yuva444p16Be)
+    );
+    assert_eq!(
+        PixelFormat::Yuva444p16Be.plane_sizes(3, 2).unwrap(),
+        vec![12, 12, 12, 12]
+    );
+    assert_eq!(PixelFormat::Yuva444p16Be.bits_per_pixel(), bpp(64));
+    assert!(PixelFormat::Yuva444p16Be.has_alpha());
     assert_eq!(
         PixelFormat::Yuv444p10Be.plane_sizes(3, 2).unwrap(),
         vec![12, 12, 12]
@@ -17623,13 +17670,38 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
             let (log2_chroma_w, _) = pixel_format.log2_chroma();
             vec![width, width >> log2_chroma_w, width >> log2_chroma_w]
         }
-        PixelFormat::Yuva420p | PixelFormat::Yuva422p | PixelFormat::Yuva444p => {
+        PixelFormat::Yuva420p
+        | PixelFormat::Yuva422p
+        | PixelFormat::Yuva444p
+        | PixelFormat::Yuva420p9Le
+        | PixelFormat::Yuva420p9Be
+        | PixelFormat::Yuva422p9Le
+        | PixelFormat::Yuva422p9Be
+        | PixelFormat::Yuva444p9Le
+        | PixelFormat::Yuva444p9Be
+        | PixelFormat::Yuva420p10Le
+        | PixelFormat::Yuva420p10Be
+        | PixelFormat::Yuva422p10Le
+        | PixelFormat::Yuva422p10Be
+        | PixelFormat::Yuva444p10Le
+        | PixelFormat::Yuva444p10Be
+        | PixelFormat::Yuva422p12Le
+        | PixelFormat::Yuva422p12Be
+        | PixelFormat::Yuva444p12Le
+        | PixelFormat::Yuva444p12Be
+        | PixelFormat::Yuva420p16Le
+        | PixelFormat::Yuva420p16Be
+        | PixelFormat::Yuva422p16Le
+        | PixelFormat::Yuva422p16Be
+        | PixelFormat::Yuva444p16Le
+        | PixelFormat::Yuva444p16Be => {
             let (log2_chroma_w, _) = pixel_format.log2_chroma();
+            let bytes_per_sample = if pixel_format.bits_per_component() > 8 { 2 } else { 1 };
             vec![
-                width,
-                width >> log2_chroma_w,
-                width >> log2_chroma_w,
-                width,
+                width * bytes_per_sample,
+                (width >> log2_chroma_w) * bytes_per_sample,
+                (width >> log2_chroma_w) * bytes_per_sample,
+                width * bytes_per_sample,
             ]
         }
         PixelFormat::Yuv420p9Le
@@ -17804,13 +17876,44 @@ fn expected_video_plane_shapes(
                 (width >> log2_chroma_w, height >> log2_chroma_h),
             ]
         }
-        PixelFormat::Yuva420p | PixelFormat::Yuva422p | PixelFormat::Yuva444p => {
+        PixelFormat::Yuva420p
+        | PixelFormat::Yuva422p
+        | PixelFormat::Yuva444p
+        | PixelFormat::Yuva420p9Le
+        | PixelFormat::Yuva420p9Be
+        | PixelFormat::Yuva422p9Le
+        | PixelFormat::Yuva422p9Be
+        | PixelFormat::Yuva444p9Le
+        | PixelFormat::Yuva444p9Be
+        | PixelFormat::Yuva420p10Le
+        | PixelFormat::Yuva420p10Be
+        | PixelFormat::Yuva422p10Le
+        | PixelFormat::Yuva422p10Be
+        | PixelFormat::Yuva444p10Le
+        | PixelFormat::Yuva444p10Be
+        | PixelFormat::Yuva422p12Le
+        | PixelFormat::Yuva422p12Be
+        | PixelFormat::Yuva444p12Le
+        | PixelFormat::Yuva444p12Be
+        | PixelFormat::Yuva420p16Le
+        | PixelFormat::Yuva420p16Be
+        | PixelFormat::Yuva422p16Le
+        | PixelFormat::Yuva422p16Be
+        | PixelFormat::Yuva444p16Le
+        | PixelFormat::Yuva444p16Be => {
             let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
+            let bytes_per_sample = if pixel_format.bits_per_component() > 8 { 2 } else { 1 };
             vec![
-                (width, height),
-                (width >> log2_chroma_w, height >> log2_chroma_h),
-                (width >> log2_chroma_w, height >> log2_chroma_h),
-                (width, height),
+                (width * bytes_per_sample, height),
+                (
+                    (width >> log2_chroma_w) * bytes_per_sample,
+                    height >> log2_chroma_h,
+                ),
+                (
+                    (width >> log2_chroma_w) * bytes_per_sample,
+                    height >> log2_chroma_h,
+                ),
+                (width * bytes_per_sample, height),
             ]
         }
         PixelFormat::Yuv420p9Le
@@ -17867,6 +17970,37 @@ fn one_bit_line_size(width: usize) -> usize {
 
 fn bpp(bits: u8) -> Rational {
     Rational::from_raw(i32::from(bits), 1)
+}
+
+fn is_yuva_pixel_format(pixel_format: PixelFormat) -> bool {
+    matches!(
+        pixel_format,
+        PixelFormat::Yuva420p
+            | PixelFormat::Yuva422p
+            | PixelFormat::Yuva444p
+            | PixelFormat::Yuva420p9Le
+            | PixelFormat::Yuva420p9Be
+            | PixelFormat::Yuva422p9Le
+            | PixelFormat::Yuva422p9Be
+            | PixelFormat::Yuva444p9Le
+            | PixelFormat::Yuva444p9Be
+            | PixelFormat::Yuva420p10Le
+            | PixelFormat::Yuva420p10Be
+            | PixelFormat::Yuva422p10Le
+            | PixelFormat::Yuva422p10Be
+            | PixelFormat::Yuva444p10Le
+            | PixelFormat::Yuva444p10Be
+            | PixelFormat::Yuva422p12Le
+            | PixelFormat::Yuva422p12Be
+            | PixelFormat::Yuva444p12Le
+            | PixelFormat::Yuva444p12Be
+            | PixelFormat::Yuva420p16Le
+            | PixelFormat::Yuva420p16Be
+            | PixelFormat::Yuva422p16Le
+            | PixelFormat::Yuva422p16Be
+            | PixelFormat::Yuva444p16Le
+            | PixelFormat::Yuva444p16Be
+    )
 }
 
 fn dimension_from(byte: Option<u8>) -> usize {

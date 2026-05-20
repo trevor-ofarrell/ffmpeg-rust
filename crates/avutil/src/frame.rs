@@ -12596,12 +12596,47 @@ fn video_plane_shapes(
                 },
             ])
         }
-        PixelFormat::Yuva420p | PixelFormat::Yuva422p | PixelFormat::Yuva444p => {
+        PixelFormat::Yuva420p
+        | PixelFormat::Yuva422p
+        | PixelFormat::Yuva444p
+        | PixelFormat::Yuva420p9Le
+        | PixelFormat::Yuva420p9Be
+        | PixelFormat::Yuva422p9Le
+        | PixelFormat::Yuva422p9Be
+        | PixelFormat::Yuva444p9Le
+        | PixelFormat::Yuva444p9Be
+        | PixelFormat::Yuva420p10Le
+        | PixelFormat::Yuva420p10Be
+        | PixelFormat::Yuva422p10Le
+        | PixelFormat::Yuva422p10Be
+        | PixelFormat::Yuva444p10Le
+        | PixelFormat::Yuva444p10Be
+        | PixelFormat::Yuva422p12Le
+        | PixelFormat::Yuva422p12Be
+        | PixelFormat::Yuva444p12Le
+        | PixelFormat::Yuva444p12Be
+        | PixelFormat::Yuva420p16Le
+        | PixelFormat::Yuva420p16Be
+        | PixelFormat::Yuva422p16Le
+        | PixelFormat::Yuva422p16Be
+        | PixelFormat::Yuva444p16Le
+        | PixelFormat::Yuva444p16Be => {
             let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
-            let chroma_row_bytes = width >> log2_chroma_w;
+            let bytes_per_sample = if pixel_format.bits_per_component() > 8 {
+                2
+            } else {
+                1
+            };
+            let luma_row_bytes =
+                checked_mul(width, bytes_per_sample, "planar YUVA video frame line size")?;
+            let chroma_row_bytes = checked_mul(
+                width >> log2_chroma_w,
+                bytes_per_sample,
+                "planar YUVA chroma video frame line size",
+            )?;
             Ok(vec![
                 VideoPlaneShape {
-                    row_bytes: width,
+                    row_bytes: luma_row_bytes,
                     rows: height,
                 },
                 VideoPlaneShape {
@@ -12613,7 +12648,7 @@ fn video_plane_shapes(
                     rows: height >> log2_chroma_h,
                 },
                 VideoPlaneShape {
-                    row_bytes: width,
+                    row_bytes: luma_row_bytes,
                     rows: height,
                 },
             ])
@@ -16859,6 +16894,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(yuva420.line_sizes(), &[4, 2, 2, 4]);
+
+        let yuva420p9 = VideoFrame::new(
+            4,
+            2,
+            PixelFormat::Yuva420p9Le,
+            vec![vec![0; 16], vec![1; 4], vec![2; 4], vec![3; 16]],
+        )
+        .unwrap();
+        assert_eq!(yuva420p9.line_sizes(), &[8, 4, 4, 8]);
+
+        let yuva444p16 = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::Yuva444p16Be,
+            vec![vec![0; 12], vec![1; 12], vec![2; 12], vec![3; 12]],
+        )
+        .unwrap();
+        assert_eq!(yuva444p16.line_sizes(), &[6, 6, 6, 6]);
 
         let audio = AudioFrame::new(48_000, 2, SampleFormat::S16, 3, vec![vec![0; 12]]).unwrap();
         assert_eq!(audio.line_sizes(), &[12]);
