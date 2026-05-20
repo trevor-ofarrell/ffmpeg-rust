@@ -287,6 +287,19 @@ mod tests {
                 4
             );
         }
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &[0; 8],
+                2,
+                2,
+                RawVideoPixelFormat::Ya8,
+                Rational::new(1, 1).unwrap(),
+            )
+            .unwrap()
+            .info()
+            .frame_size(),
+            8
+        );
         for format in [
             RawVideoPixelFormat::Bgra,
             RawVideoPixelFormat::Argb,
@@ -599,6 +612,19 @@ mod tests {
             3,
             2,
             RawVideoPixelFormat::Gray16Be,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(muxer.info().frame_size(), 12);
+    }
+
+    #[test]
+    fn muxer_computes_ya8_frame_size() {
+        let muxer = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Ya8,
             Rational::new(25, 1).unwrap(),
         )
         .unwrap();
