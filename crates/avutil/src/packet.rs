@@ -447,6 +447,142 @@ impl<'a> PacketPalette<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketNewExtradata<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> PacketNewExtradata<'a> {
+    pub const fn parse(data: &'a [u8]) -> AvResult<Self> {
+        Ok(Self { data })
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn len(self) -> usize {
+        self.data.len()
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.data.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketH263MbInfoEntry {
+    bit_offset: u32,
+    quantizer: u8,
+    gob_number: u8,
+    macroblock_address: u16,
+    horizontal_mv_predictor: u8,
+    vertical_mv_predictor: u8,
+    block3_horizontal_mv_predictor: u8,
+    block3_vertical_mv_predictor: u8,
+}
+
+impl PacketH263MbInfoEntry {
+    pub const DATA_LEN: usize = 12;
+
+    fn parse(data: &[u8]) -> Self {
+        debug_assert_eq!(data.len(), Self::DATA_LEN);
+        Self {
+            bit_offset: read_u32_le(data, 0),
+            quantizer: data[4],
+            gob_number: data[5],
+            macroblock_address: read_u16_le(data, 6),
+            horizontal_mv_predictor: data[8],
+            vertical_mv_predictor: data[9],
+            block3_horizontal_mv_predictor: data[10],
+            block3_vertical_mv_predictor: data[11],
+        }
+    }
+
+    pub const fn bit_offset(self) -> u32 {
+        self.bit_offset
+    }
+
+    pub const fn quantizer(self) -> u8 {
+        self.quantizer
+    }
+
+    pub const fn gob_number(self) -> u8 {
+        self.gob_number
+    }
+
+    pub const fn macroblock_address(self) -> u16 {
+        self.macroblock_address
+    }
+
+    pub const fn horizontal_mv_predictor(self) -> u8 {
+        self.horizontal_mv_predictor
+    }
+
+    pub const fn vertical_mv_predictor(self) -> u8 {
+        self.vertical_mv_predictor
+    }
+
+    pub const fn block3_horizontal_mv_predictor(self) -> u8 {
+        self.block3_horizontal_mv_predictor
+    }
+
+    pub const fn block3_vertical_mv_predictor(self) -> u8 {
+        self.block3_vertical_mv_predictor
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketH263MbInfo<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> PacketH263MbInfo<'a> {
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if !data
+            .chunks_exact(PacketH263MbInfoEntry::DATA_LEN)
+            .remainder()
+            .is_empty()
+        {
+            return Err(AvError::invalid_data(format!(
+                "H.263 macroblock-info packet side data requires whole {}-byte records, got {} bytes",
+                PacketH263MbInfoEntry::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self { data })
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn len(self) -> usize {
+        self.data.len()
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub const fn entry_count(self) -> usize {
+        self.data.len() / PacketH263MbInfoEntry::DATA_LEN
+    }
+
+    pub fn entry(self, index: usize) -> Option<PacketH263MbInfoEntry> {
+        let start = index.checked_mul(PacketH263MbInfoEntry::DATA_LEN)?;
+        let end = start.checked_add(PacketH263MbInfoEntry::DATA_LEN)?;
+        self.data.get(start..end).map(PacketH263MbInfoEntry::parse)
+    }
+
+    pub fn entries(self) -> impl ExactSizeIterator<Item = PacketH263MbInfoEntry> + 'a {
+        self.data
+            .chunks_exact(PacketH263MbInfoEntry::DATA_LEN)
+            .map(PacketH263MbInfoEntry::parse)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PacketQualityStats {
     quality: u32,
@@ -2813,6 +2949,10 @@ impl SideData {
         Ok(side_data)
     }
 
+    pub fn new_extradata(data: Vec<u8>) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::NewExtradata, data)
+    }
+
     pub fn new_quality_stats(value: PacketQualityStats) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::QualityStats, value.to_bytes())
     }
@@ -2914,6 +3054,12 @@ impl SideData {
 
     pub fn new_param_change(value: PacketParamChange) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::ParamChange, value.to_bytes())
+    }
+
+    pub fn new_h263_mb_info(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::H263MbInfo, data)?;
+        PacketH263MbInfo::parse(side_data.data())?;
+        Ok(side_data)
     }
 
     pub fn new_jp_dualmono(value: PacketJpDualMono) -> AvResult<Self> {
@@ -3024,6 +3170,14 @@ impl SideData {
         }
 
         PacketPalette::parse(self.data()).map(Some)
+    }
+
+    pub fn extradata(&self) -> AvResult<Option<PacketNewExtradata<'_>>> {
+        if self.kind != PacketSideDataKind::NewExtradata {
+            return Ok(None);
+        }
+
+        PacketNewExtradata::parse(self.data()).map(Some)
     }
 
     pub fn quality_stats(&self) -> AvResult<Option<PacketQualityStats>> {
@@ -3168,6 +3322,14 @@ impl SideData {
         }
 
         PacketParamChange::parse(self.data()).map(Some)
+    }
+
+    pub fn h263_mb_info(&self) -> AvResult<Option<PacketH263MbInfo<'_>>> {
+        if self.kind != PacketSideDataKind::H263MbInfo {
+            return Ok(None);
+        }
+
+        PacketH263MbInfo::parse(self.data()).map(Some)
     }
 
     pub fn jp_dualmono(&self) -> AvResult<Option<PacketJpDualMono>> {
@@ -3609,6 +3771,12 @@ fn read_u32_le(data: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes(bytes)
 }
 
+fn read_u16_le(data: &[u8], offset: usize) -> u16 {
+    let mut bytes = [0; 2];
+    bytes.copy_from_slice(&data[offset..offset + 2]);
+    u16::from_le_bytes(bytes)
+}
+
 fn read_u64_le(data: &[u8], offset: usize) -> u64 {
     let mut bytes = [0; 8];
     bytes.copy_from_slice(&data[offset..offset + 8]);
@@ -3772,6 +3940,19 @@ mod tests {
         data[0..4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
         let last = (PacketPalette::ENTRY_COUNT - 1) * PacketPalette::ENTRY_LEN;
         data[last..last + PacketPalette::ENTRY_LEN].copy_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
+        data
+    }
+
+    fn minimal_h263_mb_info() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&0x0102_0304u32.to_le_bytes());
+        data.extend_from_slice(&[31, 2]);
+        data.extend_from_slice(&0x0506u16.to_le_bytes());
+        data.extend_from_slice(&[0x07, 0x08, 0x09, 0x0a]);
+        data.extend_from_slice(&u32::MAX.to_le_bytes());
+        data.extend_from_slice(&[0, u8::MAX]);
+        data.extend_from_slice(&u16::MAX.to_le_bytes());
+        data.extend_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
         data
     }
 
@@ -4079,6 +4260,114 @@ mod tests {
                 SideData::new_with_kind(PacketSideDataKind::Palette, data)
                     .unwrap()
                     .palette()
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+    }
+
+    #[test]
+    fn packet_side_data_preserves_new_extradata_payload() {
+        let data = vec![0x01, 0x64, 0x00, 0x1f, 0xff, 0xe1, 0xaa, 0xbb];
+        let side_data = SideData::new_extradata(data.clone()).unwrap();
+
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::NewExtradata);
+        assert_eq!(side_data.data(), data.as_slice());
+        assert_eq!(
+            PacketSideDataKind::NewExtradata.ffmpeg_constant().unwrap(),
+            "AV_PKT_DATA_NEW_EXTRADATA"
+        );
+
+        let parsed = side_data.extradata().unwrap().unwrap();
+        assert_eq!(PacketNewExtradata::parse(&data).unwrap(), parsed);
+        assert_eq!(parsed.data(), data.as_slice());
+        assert_eq!(parsed.len(), data.len());
+        assert!(!parsed.is_empty());
+
+        let empty = SideData::new_extradata(Vec::new()).unwrap();
+        let parsed_empty = empty.extradata().unwrap().unwrap();
+        assert!(parsed_empty.is_empty());
+        assert_eq!(parsed_empty.len(), 0);
+
+        let non_extradata = SideData::new_with_kind(PacketSideDataKind::Palette, data).unwrap();
+        assert_eq!(non_extradata.extradata().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_parses_h263_mb_info_payload() {
+        let data = minimal_h263_mb_info();
+        let side_data = SideData::new_h263_mb_info(data.clone()).unwrap();
+
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::H263MbInfo);
+        assert_eq!(side_data.data(), data.as_slice());
+        assert_eq!(
+            PacketSideDataKind::H263MbInfo.ffmpeg_constant().unwrap(),
+            "AV_PKT_DATA_H263_MB_INFO"
+        );
+        assert_eq!(PacketH263MbInfoEntry::DATA_LEN, 12);
+
+        let parsed = side_data.h263_mb_info().unwrap().unwrap();
+        assert_eq!(PacketH263MbInfo::parse(&data).unwrap(), parsed);
+        assert_eq!(parsed.data(), data.as_slice());
+        assert_eq!(parsed.len(), data.len());
+        assert!(!parsed.is_empty());
+        assert_eq!(parsed.entry_count(), 2);
+        assert_eq!(parsed.entries().len(), 2);
+
+        let first = parsed.entry(0).unwrap();
+        assert_eq!(first.bit_offset(), 0x0102_0304);
+        assert_eq!(first.quantizer(), 31);
+        assert_eq!(first.gob_number(), 2);
+        assert_eq!(first.macroblock_address(), 0x0506);
+        assert_eq!(first.horizontal_mv_predictor(), 0x07);
+        assert_eq!(first.vertical_mv_predictor(), 0x08);
+        assert_eq!(first.block3_horizontal_mv_predictor(), 0x09);
+        assert_eq!(first.block3_vertical_mv_predictor(), 0x0a);
+
+        let second = parsed.entry(1).unwrap();
+        assert_eq!(second.bit_offset(), u32::MAX);
+        assert_eq!(second.quantizer(), 0);
+        assert_eq!(second.gob_number(), u8::MAX);
+        assert_eq!(second.macroblock_address(), u16::MAX);
+        assert_eq!(second.horizontal_mv_predictor(), 0xaa);
+        assert_eq!(second.vertical_mv_predictor(), 0xbb);
+        assert_eq!(second.block3_horizontal_mv_predictor(), 0xcc);
+        assert_eq!(second.block3_vertical_mv_predictor(), 0xdd);
+        assert_eq!(parsed.entry(2), None);
+
+        let entries: Vec<_> = parsed.entries().collect();
+        assert_eq!(entries, vec![first, second]);
+
+        let empty = SideData::new_h263_mb_info(Vec::new()).unwrap();
+        let parsed_empty = empty.h263_mb_info().unwrap().unwrap();
+        assert!(parsed_empty.is_empty());
+        assert_eq!(parsed_empty.entry_count(), 0);
+
+        let non_h263 = SideData::new_with_kind(PacketSideDataKind::NewExtradata, data).unwrap();
+        assert_eq!(non_h263.h263_mb_info().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_h263_mb_info_payload() {
+        let valid = minimal_h263_mb_info();
+        for data in [vec![0; PacketH263MbInfoEntry::DATA_LEN - 1], {
+            let mut data = valid.clone();
+            data.push(0);
+            data
+        }] {
+            assert_eq!(
+                PacketH263MbInfo::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_h263_mb_info(data.clone()).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_with_kind(PacketSideDataKind::H263MbInfo, data)
+                    .unwrap()
+                    .h263_mb_info()
                     .unwrap_err()
                     .kind(),
                 crate::AvErrorKind::InvalidData
