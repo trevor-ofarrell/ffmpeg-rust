@@ -115,10 +115,30 @@ impl Dictionary {
             .find(|entry| key_matches(entry.key(), key, match_mode))
     }
 
+    pub fn matching_entries<'a>(
+        &'a self,
+        key: &'a str,
+        match_mode: MatchMode,
+    ) -> impl Iterator<Item = &'a DictionaryEntry> + 'a {
+        self.entries
+            .iter()
+            .filter(move |entry| key_matches(entry.key(), key, match_mode))
+    }
+
     pub fn get_prefixed(&self, prefix: &str, match_mode: MatchMode) -> Option<&DictionaryEntry> {
         self.entries
             .iter()
             .find(|entry| key_has_prefix(entry.key(), prefix, match_mode))
+    }
+
+    pub fn prefixed_entries<'a>(
+        &'a self,
+        prefix: &'a str,
+        match_mode: MatchMode,
+    ) -> impl Iterator<Item = &'a DictionaryEntry> + 'a {
+        self.entries
+            .iter()
+            .filter(move |entry| key_has_prefix(entry.key(), prefix, match_mode))
     }
 
     pub fn remove(&mut self, key: &str, match_mode: MatchMode) -> Option<DictionaryEntry> {
@@ -330,6 +350,88 @@ mod tests {
         assert!(dict
             .get_prefixed("ARTIST", MatchMode::CaseSensitive)
             .is_none());
+    }
+
+    #[test]
+    fn exact_match_iterator_preserves_duplicate_order() {
+        let mut dict = Dictionary::new();
+        dict.set("artist", "first").unwrap();
+        dict.set_with_mode(
+            "ARTIST",
+            "second",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "album",
+            "record",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+
+        let insensitive_matches: Vec<_> = dict
+            .matching_entries("artist", MatchMode::CaseInsensitive)
+            .map(|entry| (entry.key(), entry.value()))
+            .collect();
+        let sensitive_matches: Vec<_> = dict
+            .matching_entries("artist", MatchMode::CaseSensitive)
+            .map(DictionaryEntry::value)
+            .collect();
+
+        assert_eq!(
+            insensitive_matches,
+            vec![("artist", "first"), ("ARTIST", "second")]
+        );
+        assert_eq!(sensitive_matches, vec!["first"]);
+        assert!(dict
+            .matching_entries("missing", MatchMode::CaseInsensitive)
+            .next()
+            .is_none());
+    }
+
+    #[test]
+    fn prefix_match_iterator_preserves_order_and_empty_prefix_matches_all() {
+        let mut dict = Dictionary::new();
+        dict.set_with_mode(
+            "artist",
+            "name",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "ARTIST-sort",
+            "sort",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "album",
+            "record",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+
+        let insensitive: Vec<_> = dict
+            .prefixed_entries("artist", MatchMode::CaseInsensitive)
+            .map(DictionaryEntry::key)
+            .collect();
+        let sensitive: Vec<_> = dict
+            .prefixed_entries("artist", MatchMode::CaseSensitive)
+            .map(DictionaryEntry::key)
+            .collect();
+        let all_keys: Vec<_> = dict
+            .prefixed_entries("", MatchMode::CaseInsensitive)
+            .map(DictionaryEntry::key)
+            .collect();
+
+        assert_eq!(insensitive, vec!["artist", "ARTIST-sort"]);
+        assert_eq!(sensitive, vec!["artist"]);
+        assert_eq!(all_keys, vec!["artist", "ARTIST-sort", "album"]);
     }
 
     #[test]

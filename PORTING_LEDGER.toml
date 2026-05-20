@@ -926,13 +926,15 @@ unit_tests = [
   "dict::tests::append_mode_concatenates_existing_value",
   "dict::tests::multikey_mode_preserves_duplicate_entries_in_order",
   "dict::tests::prefix_lookup_returns_first_matching_entry",
+  "dict::tests::exact_match_iterator_preserves_duplicate_order",
+  "dict::tests::prefix_match_iterator_preserves_order_and_empty_prefix_matches_all",
   "dict::tests::remove_defaults_to_requested_match_mode",
   "dict::tests::rejects_empty_or_nul_keys_and_nul_values",
 ]
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-dict|local-avutil-unit"]
 fuzz_targets = ["avutil_metadata_options"]
-notes = "Order-preserving metadata dictionary implemented with ASCII case-insensitive default matching, case-sensitive lookup, prefix lookup, keep-existing, append, AV_DICT_MULTIKEY-like duplicate-key insertion, removal, and invalid string checks. Build-checked cargo-fuzz target avutil_metadata_options covers key/value validation, case-sensitive and case-insensitive mutation, duplicate-key insertion, lookup, removal, clear, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. Differential vectors are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the dict unit filter only and does not count as upstream FATE parity."
+notes = "Order-preserving metadata dictionary implemented with ASCII case-insensitive default matching, case-sensitive lookup, prefix lookup, ordered exact-match and prefix-match iterators for AV_DICT_MULTIKEY/AV_DICT_IGNORE_SUFFIX-style scans, keep-existing, append, AV_DICT_MULTIKEY-like duplicate-key insertion, removal, and invalid string checks. Build-checked cargo-fuzz target avutil_metadata_options covers key/value validation, case-sensitive and case-insensitive mutation, duplicate-key insertion, first-match lookup consistency, ordered exact/prefix iterator matches, removal, clear, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. Differential vectors are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the dict unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

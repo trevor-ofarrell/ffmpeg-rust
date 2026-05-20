@@ -21,7 +21,7 @@ fn exercise_dictionary(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 6 {
+        match cursor.next().unwrap_or_default() % 8 {
             0 => {
                 let key = literal_from(cursor);
                 let value = literal_from(cursor);
@@ -65,6 +65,32 @@ fn exercise_dictionary(cursor: &mut Cursor<'_>) {
             }
             4 => {
                 let _ = dict.get_prefixed(&literal_from(cursor), match_mode_from(cursor.next()));
+            }
+            5 => {
+                let key = literal_from(cursor);
+                let match_mode = match_mode_from(cursor.next());
+                let matches: Vec<_> = dict.matching_entries(&key, match_mode).collect();
+                for entry in &matches {
+                    assert!(dictionary_key_matches(entry.key(), &key, match_mode));
+                }
+                if let Some(first) = matches.first() {
+                    assert_eq!(dict.get_entry(&key, match_mode), Some(*first));
+                } else {
+                    assert!(dict.get_entry(&key, match_mode).is_none());
+                }
+            }
+            6 => {
+                let prefix = literal_from(cursor);
+                let match_mode = match_mode_from(cursor.next());
+                let matches: Vec<_> = dict.prefixed_entries(&prefix, match_mode).collect();
+                for entry in &matches {
+                    assert!(dictionary_key_has_prefix(entry.key(), &prefix, match_mode));
+                }
+                if let Some(first) = matches.first() {
+                    assert_eq!(dict.get_prefixed(&prefix, match_mode), Some(*first));
+                } else {
+                    assert!(dict.get_prefixed(&prefix, match_mode).is_none());
+                }
             }
             _ => {
                 dict.clear();
@@ -191,6 +217,16 @@ fn exercise_fixtures() {
     );
     assert_eq!(dict.len(), 2);
     assert_eq!(dict.get("title"), Some("Second"));
+    let duplicate_values: Vec<_> = dict
+        .matching_entries("TITLE", MatchMode::CaseInsensitive)
+        .map(|entry| entry.value())
+        .collect();
+    assert_eq!(duplicate_values, vec!["Second", "Third"]);
+    let all_keys: Vec<_> = dict
+        .prefixed_entries("", MatchMode::CaseInsensitive)
+        .map(|entry| entry.key())
+        .collect();
+    assert_eq!(all_keys, vec!["title", "TITLE"]);
     assert!(dict.set("", "value").is_err());
     assert!(dict.set("bad\0key", "value").is_err());
     assert!(dict.set("key", "bad\0value").is_err());
@@ -755,6 +791,26 @@ fn ascii_eq_ignore_case(left: &str, right: &str) -> bool {
             .iter()
             .zip(right.as_bytes())
             .all(|(left, right)| left.eq_ignore_ascii_case(right))
+}
+
+fn dictionary_key_matches(candidate: &str, key: &str, match_mode: MatchMode) -> bool {
+    match match_mode {
+        MatchMode::CaseInsensitive => ascii_eq_ignore_case(candidate, key),
+        MatchMode::CaseSensitive => candidate == key,
+    }
+}
+
+fn dictionary_key_has_prefix(candidate: &str, prefix: &str, match_mode: MatchMode) -> bool {
+    match match_mode {
+        MatchMode::CaseInsensitive => {
+            candidate.len() >= prefix.len()
+                && candidate.as_bytes()[..prefix.len()]
+                    .iter()
+                    .zip(prefix.as_bytes())
+                    .all(|(left, right)| left.eq_ignore_ascii_case(right))
+        }
+        MatchMode::CaseSensitive => candidate.starts_with(prefix),
+    }
 }
 
 struct Cursor<'a> {
