@@ -349,6 +349,33 @@ mod tests {
     }
 
     #[test]
+    fn slices_rgbf_frames_with_format_side_data() {
+        let input = (0_u8..24).collect::<Vec<_>>();
+        let mut demuxer = RawVideoDemuxer::open(
+            &input,
+            1,
+            1,
+            RawVideoPixelFormat::RgbF32Le,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(demuxer.info().frame_size(), 12);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        assert_eq!(first.side_data()[0].kind(), "rawvideo_pix_fmt");
+        assert_eq!(first.side_data()[0].data(), b"rgbf32le");
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(
+            second.data(),
+            &[12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+        );
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn slices_bayer_frames_with_format_side_data() {
         let input = (0_u8..12).collect::<Vec<_>>();
         let mut demuxer = RawVideoDemuxer::open(
@@ -997,6 +1024,8 @@ mod tests {
             RawVideoPixelFormat::Rgb48Be,
             RawVideoPixelFormat::Bgr48Le,
             RawVideoPixelFormat::Bgr48Be,
+            RawVideoPixelFormat::RgbF16Le,
+            RawVideoPixelFormat::RgbF16Be,
         ] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 6], 1, 1, format, Rational::new(1, 1).unwrap(),)
@@ -1004,6 +1033,15 @@ mod tests {
                     .info()
                     .frame_size(),
                 6
+            );
+        }
+        for format in [RawVideoPixelFormat::RgbF32Le, RawVideoPixelFormat::RgbF32Be] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 12], 1, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                12
             );
         }
         for format in [
@@ -2054,6 +2092,21 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 24);
+    }
+
+    #[test]
+    fn muxer_computes_rgbf_frame_sizes() {
+        for (format, width, height, expected_size) in [
+            (RawVideoPixelFormat::RgbF16Le, 3, 2, 36),
+            (RawVideoPixelFormat::RgbF16Be, 1, 2, 12),
+            (RawVideoPixelFormat::RgbF32Le, 3, 2, 72),
+            (RawVideoPixelFormat::RgbF32Be, 1, 2, 24),
+        ] {
+            let muxer =
+                RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), expected_size);
+        }
     }
 
     #[test]

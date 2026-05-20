@@ -6015,6 +6015,39 @@ fn exercise_fixtures() {
         Some(PixelFormat::Rgb48Le)
     );
     assert_eq!(PixelFormat::Bgr48Be.frame_size(2, 2).unwrap(), 24);
+    for (
+        name,
+        format,
+        bits_per_component,
+        bits_per_pixel,
+        packed_bytes_per_pixel,
+        frame_size,
+    ) in [
+        ("rgbf16le", PixelFormat::RgbF16Le, 16, 48, Some(6), 24),
+        ("rgbf16be", PixelFormat::RgbF16Be, 16, 48, Some(6), 24),
+        ("rgbf32le", PixelFormat::RgbF32Le, 32, 96, Some(12), 48),
+        ("rgbf32be", PixelFormat::RgbF32Be, 32, 96, Some(12), 48),
+    ] {
+        let descriptor = format.descriptor();
+        assert_eq!(PixelFormat::from_name(name), Some(format));
+        assert_eq!(descriptor.name, name);
+        assert_eq!(descriptor.class, PixelFormatClass::Rgb);
+        assert_eq!(descriptor.component_count, 3);
+        assert_eq!(descriptor.bits_per_component, bits_per_component);
+        assert_eq!(descriptor.bits_per_pixel, bpp(bits_per_pixel));
+        assert_eq!(
+            descriptor.packed_bytes_per_pixel,
+            packed_bytes_per_pixel
+        );
+        assert_eq!(descriptor.plane_count, 1);
+        assert!(!descriptor.is_planar);
+        assert!(!descriptor.has_alpha);
+        assert!(descriptor.is_float);
+        assert_eq!(format.log2_chroma(), (0, 0));
+        assert!(!format.has_chroma_subsampling());
+        assert_eq!(format.frame_size(2, 2).unwrap(), frame_size);
+        assert_eq!(format.plane_sizes(2, 2).unwrap(), vec![frame_size]);
+    }
     assert_eq!(
         PixelFormat::from_name("rgba64le"),
         Some(PixelFormat::Rgba64Le)
@@ -18283,10 +18316,13 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le
         | PixelFormat::Bgr48Be
+        | PixelFormat::RgbF16Le
+        | PixelFormat::RgbF16Be
         | PixelFormat::Xyz12Le
         | PixelFormat::Xyz12Be
         | PixelFormat::Xv36Le
         | PixelFormat::Xv36Be => vec![width * 6],
+        PixelFormat::RgbF32Le | PixelFormat::RgbF32Be => vec![width * 12],
         PixelFormat::Rgba64Le
         | PixelFormat::Rgba64Be
         | PixelFormat::Bgra64Le
@@ -18546,10 +18582,13 @@ fn expected_video_plane_shapes(
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le
         | PixelFormat::Bgr48Be
+        | PixelFormat::RgbF16Le
+        | PixelFormat::RgbF16Be
         | PixelFormat::Xyz12Le
         | PixelFormat::Xyz12Be
         | PixelFormat::Xv36Le
         | PixelFormat::Xv36Be => vec![(width * 6, height)],
+        PixelFormat::RgbF32Le | PixelFormat::RgbF32Be => vec![(width * 12, height)],
         PixelFormat::Rgba64Le
         | PixelFormat::Rgba64Be
         | PixelFormat::Bgra64Le

@@ -285,6 +285,30 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    let rgbf16 = RawVideoDecoder::new(2, 1, PixelFormat::RgbF16Le).unwrap();
+    assert!(rgbf16
+        .decode_packet(&Packet::new((0..12).collect(), 0))
+        .is_ok());
+    assert_eq!(
+        rgbf16
+            .decode_packet(&Packet::new((0..11).collect(), 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
+    let rgbf32 = RawVideoDecoder::new(1, 1, PixelFormat::RgbF32Be).unwrap();
+    assert!(rgbf32
+        .decode_packet(&Packet::new((0..12).collect(), 0))
+        .is_ok());
+    assert_eq!(
+        rgbf32
+            .decode_packet(&Packet::new((0..11).collect(), 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let gbrap = RawVideoDecoder::new(2, 1, PixelFormat::Gbrap).unwrap();
     assert!(gbrap
         .decode_packet(&Packet::new((0..8).collect(), 0))
@@ -590,6 +614,26 @@ fn exercise_fixtures() {
     assert_eq!(
         rgb48
             .decode_packet(&Packet::new(vec![0; 5], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
+    let rgbf16 = RawVideoDecoder::new(1, 1, PixelFormat::RgbF16Le).unwrap();
+    assert!(rgbf16.decode_packet(&Packet::new(vec![0; 6], 0)).is_ok());
+    assert_eq!(
+        rgbf16
+            .decode_packet(&Packet::new(vec![0; 5], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
+    let rgbf32 = RawVideoDecoder::new(1, 1, PixelFormat::RgbF32Be).unwrap();
+    assert!(rgbf32.decode_packet(&Packet::new(vec![0; 12], 0)).is_ok());
+    assert_eq!(
+        rgbf32
+            .decode_packet(&Packet::new(vec![0; 11], 0))
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData

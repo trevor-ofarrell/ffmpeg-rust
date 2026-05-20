@@ -64,6 +64,8 @@ The rawvideo-facing planar RGB subset now also includes FFmpeg's `gbrp9le`, `gbr
 
 The rawvideo-facing planar floating RGB subset now also includes FFmpeg's `gbrpf16le`, `gbrpf16be`, `gbrpf32le`, and `gbrpf32be` names. They are modeled as three full-resolution GBR planes with float descriptor metadata, no alpha, no chroma subsampling, 16-bit half-float or 32-bit single-precision components, 48 or 96 descriptor bits per pixel, and two or four raw storage bytes per sample in each plane.
 
+The rawvideo-facing packed floating RGB subset now also includes FFmpeg's `rgbf16le`, `rgbf16be`, `rgbf32le`, and `rgbf32be` names. They are modeled as one packed RGB plane with float descriptor metadata, no alpha, no chroma subsampling, 16-bit half-float or 32-bit single-precision components, 48 or 96 descriptor bits per pixel, and six or twelve stored bytes per pixel.
+
 The rawvideo-facing planar RGB+alpha subset now also includes FFmpeg's `gbrap`, `gbrap10le`, `gbrap10be`, `gbrap12le`, `gbrap12be`, `gbrap14le`, `gbrap14be`, `gbrap16le`, `gbrap16be`, `gbrap32le`, `gbrap32be`, `gbrapf16le`, `gbrapf16be`, `gbrapf32le`, and `gbrapf32be` names. They are modeled as four full-resolution GBRA planes with alpha metadata, no chroma subsampling, integer 8/10/12/14/16/32-bit or floating 16/32-bit components, and one, two, or four storage bytes per sample according to FFmpeg's pinned descriptors.
 
 The rawvideo-facing packed 16-bit RGB/BGR subset now also includes FFmpeg's `rgb565be`, `rgb565le`, `rgb555be`, `rgb555le`, `bgr565be`, `bgr565le`, `bgr555be`, `bgr555le`, `rgb444le`, `rgb444be`, `bgr444le`, and `bgr444be` names. They are modeled as one packed two-byte-per-pixel RGB plane. The current descriptor model has one scalar `bits_per_component`, so 565 formats report the maximum component depth of 6 while 555 and 444 formats report 5 and 4 respectively; byte order and channel packing are preserved as pixel-format naming until conversion code exists.
@@ -247,6 +249,8 @@ GPS common-tag range validation currently rejects `GPSLatitude`/`GPSDestLatitude
 Both rawvideo packet paths use the shared `PixelFormat` model for planar 9-bit, 10-bit, 12-bit, 14-bit, and 16-bit GBR packet sizing, so `gbrp9le`/`gbrp9be`, `gbrp10le`/`gbrp10be`, `gbrp12le`/`gbrp12be`, `gbrp14le`/`gbrp14be`, and `gbrp16le`/`gbrp16be` frames are accepted as three two-byte-per-sample full-resolution planes.
 
 Both rawvideo packet paths also use the shared `PixelFormat` model for planar floating GBR packet sizing, so `gbrpf16le`/`gbrpf16be` and `gbrpf32le`/`gbrpf32be` frames are accepted as three full-resolution float planes with two or four bytes per sample.
+
+Both rawvideo packet paths also accept FFmpeg's packed floating RGB names `rgbf16le`/`rgbf16be` and `rgbf32le`/`rgbf32be` as one packed RGB float plane with six or twelve stored bytes per pixel through the shared `PixelFormat` model.
 
 Both rawvideo packet paths also use the shared `PixelFormat` model for planar GBRA packet sizing, so `gbrap`, `gbrap10le`/`gbrap10be`, `gbrap12le`/`gbrap12be`, `gbrap14le`/`gbrap14be`, `gbrap16le`/`gbrap16be`, `gbrap32le`/`gbrap32be`, `gbrapf16le`/`gbrapf16be`, and `gbrapf32le`/`gbrapf32be` frames are accepted as four full-resolution planes with one, two, or four bytes per sample.
 
