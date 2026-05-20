@@ -90,6 +90,8 @@ pub enum PixelFormat {
     GbrapF16Be,
     GbrapF32Le,
     GbrapF32Be,
+    Ayuv64Le,
+    Ayuv64Be,
     Yuyv422,
     Uyvy422,
     Yvyu422,
@@ -318,6 +320,8 @@ impl PixelFormat {
         Self::GbrapF16Be,
         Self::GbrapF32Le,
         Self::GbrapF32Be,
+        Self::Ayuv64Le,
+        Self::Ayuv64Be,
         Self::Yuyv422,
         Self::Uyvy422,
         Self::Yvyu422,
@@ -515,6 +519,8 @@ impl PixelFormat {
             "gbrapf16be" => Some(Self::GbrapF16Be),
             "gbrapf32le" => Some(Self::GbrapF32Le),
             "gbrapf32be" => Some(Self::GbrapF32Be),
+            "ayuv64le" => Some(Self::Ayuv64Le),
+            "ayuv64be" => Some(Self::Ayuv64Be),
             "yuyv422" => Some(Self::Yuyv422),
             "uyvy422" => Some(Self::Uyvy422),
             "yvyu422" => Some(Self::Yvyu422),
@@ -1653,6 +1659,30 @@ impl PixelFormat {
                 true,
                 true,
                 None,
+                0,
+                0,
+            ),
+            Self::Ayuv64Le => (
+                "ayuv64le",
+                PixelFormatClass::Yuv,
+                4,
+                64,
+                1,
+                false,
+                true,
+                Some(8),
+                0,
+                0,
+            ),
+            Self::Ayuv64Be => (
+                "ayuv64be",
+                PixelFormatClass::Yuv,
+                4,
+                64,
+                1,
+                false,
+                true,
+                Some(8),
                 0,
                 0,
             ),
@@ -2929,6 +2959,8 @@ impl PixelFormat {
                     | Self::Rgba64Be
                     | Self::Bgra64Le
                     | Self::Bgra64Be
+                    | Self::Ayuv64Le
+                    | Self::Ayuv64Be
                     | Self::Gbrp16Le
                     | Self::Gbrp16Be
                     | Self::Gbrap16Le
@@ -3338,6 +3370,11 @@ impl PixelFormat {
                 let plane = checked_mul(pixels, 4, "32-bit planar GBRA pixel format plane size")?;
                 Ok(vec![plane, plane, plane, plane])
             }
+            Self::Ayuv64Le | Self::Ayuv64Be => Ok(vec![checked_mul(
+                pixels,
+                8,
+                "packed 64-bit AYUV pixel format frame size",
+            )?]),
             Self::Yuyv422 | Self::Uyvy422 | Self::Yvyu422 => {
                 if width % 2 != 0 {
                     return Err(AvError::invalid_argument(format!(
@@ -3981,6 +4018,18 @@ mod tests {
             Some(PixelFormat::GbrapF32Be)
         );
         for (name, format) in [
+            ("ayuv64le", PixelFormat::Ayuv64Le),
+            ("ayuv64be", PixelFormat::Ayuv64Be),
+        ] {
+            assert_eq!(format.name(), name);
+            assert_eq!(PixelFormat::from_name(name), Some(format));
+            assert_eq!(format.plane_count(), 1);
+            assert!(format.is_yuv());
+            assert!(format.is_packed());
+            assert!(format.has_alpha());
+            assert_eq!(format.packed_bytes_per_pixel(), Some(8));
+        }
+        for (name, format) in [
             ("yuyv422", PixelFormat::Yuyv422),
             ("uyvy422", PixelFormat::Uyvy422),
             ("yvyu422", PixelFormat::Yvyu422),
@@ -4122,7 +4171,7 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 189);
+        assert_eq!(PixelFormat::ALL.len(), 191);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
@@ -4238,6 +4287,8 @@ mod tests {
         assert!(PixelFormat::Yuyv422.is_packed());
         assert!(PixelFormat::Uyvy422.is_packed());
         assert!(PixelFormat::Yvyu422.is_packed());
+        assert!(PixelFormat::Ayuv64Le.is_packed());
+        assert!(PixelFormat::Ayuv64Be.is_packed());
         assert!(PixelFormat::Nv12.is_planar());
         assert!(PixelFormat::Nv21.is_planar());
         assert!(PixelFormat::Nv16.is_planar());
@@ -4321,6 +4372,8 @@ mod tests {
         assert!(PixelFormat::Yuva420p9Le.has_alpha());
         assert!(PixelFormat::Yuva422p12Be.has_alpha());
         assert!(PixelFormat::Yuva444p16Be.has_alpha());
+        assert!(PixelFormat::Ayuv64Le.has_alpha());
+        assert!(PixelFormat::Ayuv64Be.has_alpha());
         assert!(!PixelFormat::ZeroRgb.has_alpha());
         assert!(!PixelFormat::Gray16Le.is_float());
         assert!(PixelFormat::GrayF16Le.is_float());
@@ -4350,6 +4403,8 @@ mod tests {
         assert_eq!(PixelFormat::Y210Le.packed_bytes_per_pixel(), Some(4));
         assert_eq!(PixelFormat::Y212Be.packed_bytes_per_pixel(), Some(4));
         assert_eq!(PixelFormat::Y216Le.packed_bytes_per_pixel(), Some(4));
+        assert_eq!(PixelFormat::Ayuv64Le.packed_bytes_per_pixel(), Some(8));
+        assert_eq!(PixelFormat::Ayuv64Be.packed_bytes_per_pixel(), Some(8));
         assert_eq!(PixelFormat::Nv12.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Nv21.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Nv16.packed_bytes_per_pixel(), None);
@@ -4783,6 +4838,30 @@ mod tests {
             assert_eq!(descriptor.packed_bytes_per_pixel, Some(4));
             assert_eq!(format.log2_chroma(), (1, 0));
             assert!(format.has_chroma_subsampling());
+        }
+
+        for (format, expected_name) in [
+            (PixelFormat::Ayuv64Le, "ayuv64le"),
+            (PixelFormat::Ayuv64Be, "ayuv64be"),
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.format, format);
+            assert_eq!(descriptor.name, expected_name);
+            assert_eq!(PixelFormat::from_name(descriptor.name), Some(format));
+            assert_eq!(descriptor.class, PixelFormatClass::Yuv);
+            assert!(format.is_yuv());
+            assert!(!format.is_rgb());
+            assert!(!format.is_gray());
+            assert_eq!(descriptor.component_count, 4);
+            assert_eq!(descriptor.bits_per_component, 16);
+            assert_eq!(descriptor.bits_per_pixel, bpp(64));
+            assert_eq!(descriptor.plane_count, 1);
+            assert!(!descriptor.is_planar);
+            assert!(descriptor.has_alpha);
+            assert!(!descriptor.is_float);
+            assert_eq!(descriptor.packed_bytes_per_pixel, Some(8));
+            assert_eq!(format.log2_chroma(), (0, 0));
+            assert!(!format.has_chroma_subsampling());
         }
 
         for format in [PixelFormat::Nv12, PixelFormat::Nv21] {
@@ -5277,6 +5356,8 @@ mod tests {
         assert_eq!(PixelFormat::Rgba64Be.frame_size(2, 2).unwrap(), 32);
         assert_eq!(PixelFormat::Bgra64Le.frame_size(2, 2).unwrap(), 32);
         assert_eq!(PixelFormat::Bgra64Be.frame_size(2, 2).unwrap(), 32);
+        assert_eq!(PixelFormat::Ayuv64Le.plane_sizes(2, 2).unwrap(), vec![32]);
+        assert_eq!(PixelFormat::Ayuv64Be.frame_size(1, 2).unwrap(), 16);
         assert_eq!(PixelFormat::Rgba.frame_size(2, 2).unwrap(), 16);
         assert_eq!(PixelFormat::Bgra.frame_size(2, 2).unwrap(), 16);
         assert_eq!(PixelFormat::Argb.frame_size(2, 2).unwrap(), 16);
@@ -5860,6 +5941,12 @@ mod tests {
 
         assert_eq!(planes, vec![(16..24).collect::<Vec<_>>()]);
 
+        let planes = PixelFormat::Ayuv64Le
+            .split_planes(&(24..40).collect::<Vec<_>>(), 2, 1)
+            .unwrap();
+
+        assert_eq!(planes, vec![(24..40).collect::<Vec<_>>()]);
+
         let planes = PixelFormat::Nv12
             .split_planes(&(0..12).collect::<Vec<_>>(), 4, 2)
             .unwrap();
@@ -6146,6 +6233,13 @@ mod tests {
         assert_eq!(
             PixelFormat::Y216Le
                 .split_planes(&[0; 15], 2, 2)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PixelFormat::Ayuv64Le
+                .split_planes(&[0; 7], 1, 1)
                 .unwrap_err()
                 .kind(),
             AvErrorKind::InvalidData

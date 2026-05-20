@@ -12480,7 +12480,9 @@ fn video_plane_shapes(
         PixelFormat::Rgba64Le
         | PixelFormat::Rgba64Be
         | PixelFormat::Bgra64Le
-        | PixelFormat::Bgra64Be => Ok(vec![VideoPlaneShape {
+        | PixelFormat::Bgra64Be
+        | PixelFormat::Ayuv64Le
+        | PixelFormat::Ayuv64Be => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 8, "64-bit packed video frame line size")?,
             rows: height,
         }]),
@@ -16895,6 +16897,9 @@ mod tests {
 
         let rgba64 = VideoFrame::new(3, 2, PixelFormat::Rgba64Le, vec![vec![0; 48]]).unwrap();
         assert_eq!(rgba64.line_sizes(), &[24]);
+
+        let ayuv64 = VideoFrame::new(2, 2, PixelFormat::Ayuv64Le, vec![vec![0; 32]]).unwrap();
+        assert_eq!(ayuv64.line_sizes(), &[16]);
 
         let rgb0 = VideoFrame::new(3, 2, PixelFormat::Rgb0, vec![vec![0; 24]]).unwrap();
         assert_eq!(rgb0.line_sizes(), &[12]);

@@ -1352,6 +1352,8 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                         | PixelFormat::Rgba64Be
                         | PixelFormat::Bgra64Le
                         | PixelFormat::Bgra64Be
+                        | PixelFormat::Ayuv64Le
+                        | PixelFormat::Ayuv64Be
                         | PixelFormat::Rgba
                         | PixelFormat::Bgra
                         | PixelFormat::Argb
@@ -6193,6 +6195,17 @@ fn exercise_fixtures() {
     assert_eq!(PixelFormat::Y216Le.bits_per_component(), 16);
     assert_eq!(PixelFormat::Y216Le.bits_per_pixel(), bpp(32));
     assert_eq!(PixelFormat::Y216Le.plane_sizes(2, 2).unwrap(), vec![16]);
+    assert_eq!(
+        PixelFormat::from_name("ayuv64le"),
+        Some(PixelFormat::Ayuv64Le)
+    );
+    assert_eq!(PixelFormat::Ayuv64Le.bits_per_component(), 16);
+    assert_eq!(PixelFormat::Ayuv64Le.bits_per_pixel(), bpp(64));
+    assert_eq!(PixelFormat::Ayuv64Le.packed_bytes_per_pixel(), Some(8));
+    assert!(PixelFormat::Ayuv64Le.has_alpha());
+    assert_eq!(PixelFormat::Ayuv64Le.log2_chroma(), (0, 0));
+    assert_eq!(PixelFormat::Ayuv64Le.plane_sizes(2, 2).unwrap(), vec![32]);
+    assert_eq!(PixelFormat::Ayuv64Be.frame_size(1, 2).unwrap(), 16);
     assert_eq!(SampleFormat::U8.plane_sizes(2, 2).unwrap(), vec![4]);
     assert_eq!(SampleFormat::S16.plane_sizes(2, 2).unwrap(), vec![8]);
     assert_eq!(SampleFormat::S32.plane_sizes(2, 2).unwrap(), vec![16]);
@@ -17925,7 +17938,9 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         PixelFormat::Rgba64Le
         | PixelFormat::Rgba64Be
         | PixelFormat::Bgra64Le
-        | PixelFormat::Bgra64Be => vec![width * 8],
+        | PixelFormat::Bgra64Be
+        | PixelFormat::Ayuv64Le
+        | PixelFormat::Ayuv64Be => vec![width * 8],
         PixelFormat::Rgba
         | PixelFormat::Bgra
         | PixelFormat::Argb
@@ -18143,7 +18158,9 @@ fn expected_video_plane_shapes(
         PixelFormat::Rgba64Le
         | PixelFormat::Rgba64Be
         | PixelFormat::Bgra64Le
-        | PixelFormat::Bgra64Be => vec![(width * 8, height)],
+        | PixelFormat::Bgra64Be
+        | PixelFormat::Ayuv64Le
+        | PixelFormat::Ayuv64Be => vec![(width * 8, height)],
         PixelFormat::Rgba
         | PixelFormat::Bgra
         | PixelFormat::Argb

@@ -462,6 +462,51 @@ mod tests {
     }
 
     #[test]
+    fn decodes_ayuv64_packets_to_single_plane_frames() {
+        for (pixel_format, expected_name, payload) in [
+            (
+                PixelFormat::Ayuv64Le,
+                "ayuv64le",
+                (0..16).collect::<Vec<_>>(),
+            ),
+            (
+                PixelFormat::Ayuv64Be,
+                "ayuv64be",
+                (16..32).collect::<Vec<_>>(),
+            ),
+        ] {
+            let decoder = RawVideoDecoder::new(1, 2, pixel_format).unwrap();
+            let mut packet = Packet::new(payload.clone(), 0);
+            packet.set_pts(Some(17));
+
+            let frame = decoder.decode_packet(&packet).unwrap();
+
+            assert_eq!(decoder.frame_size(), 16);
+            assert_eq!(frame.pts(), Some(17));
+            match frame.data() {
+                FrameData::Video(video) => {
+                    assert_eq!(video.width(), 1);
+                    assert_eq!(video.height(), 2);
+                    assert_eq!(video.pixel_format(), pixel_format);
+                    assert_eq!(video.pixel_format_name(), expected_name);
+                    assert_eq!(video.line_sizes(), &[8]);
+                    assert_eq!(video.planes(), &[payload]);
+                }
+                FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+            }
+        }
+
+        let decoder = RawVideoDecoder::new(1, 1, PixelFormat::Ayuv64Le).unwrap();
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; 7], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn decodes_yuv420p_packet_to_three_planes() {
         let decoder = RawVideoDecoder::new(4, 2, PixelFormat::Yuv420p).unwrap();
         let packet = Packet::new(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], 0);

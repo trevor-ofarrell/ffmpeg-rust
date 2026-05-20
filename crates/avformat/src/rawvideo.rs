@@ -763,6 +763,8 @@ mod tests {
             RawVideoPixelFormat::Rgba64Be,
             RawVideoPixelFormat::Bgra64Le,
             RawVideoPixelFormat::Bgra64Be,
+            RawVideoPixelFormat::Ayuv64Le,
+            RawVideoPixelFormat::Ayuv64Be,
         ] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 8], 1, 1, format, Rational::new(1, 1).unwrap(),)
@@ -1685,6 +1687,15 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 32);
+    }
+
+    #[test]
+    fn muxer_computes_ayuv64_frame_size() {
+        for format in [RawVideoPixelFormat::Ayuv64Le, RawVideoPixelFormat::Ayuv64Be] {
+            let muxer = RawVideoMuxer::new(2, 2, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), 32);
+        }
     }
 
     #[test]
