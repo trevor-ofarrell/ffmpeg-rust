@@ -2003,6 +2003,61 @@ impl PacketFrameCropping {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketDisplayMatrix {
+    elements: [i32; Self::ELEMENTS],
+}
+
+impl PacketDisplayMatrix {
+    pub const ELEMENTS: usize = 9;
+    pub const DATA_LEN: usize = Self::ELEMENTS * 4;
+
+    pub const fn new(elements: [i32; Self::ELEMENTS]) -> Self {
+        Self { elements }
+    }
+
+    pub const fn identity() -> Self {
+        Self {
+            elements: [1 << 16, 0, 0, 0, 1 << 16, 0, 0, 0, 1 << 30],
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "display matrix packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut elements = [0; Self::ELEMENTS];
+        for (element, chunk) in elements.iter_mut().zip(data.chunks_exact(4)) {
+            let mut bytes = [0; 4];
+            bytes.copy_from_slice(chunk);
+            *element = i32::from_ne_bytes(bytes);
+        }
+
+        Ok(Self { elements })
+    }
+
+    pub const fn elements(self) -> [i32; Self::ELEMENTS] {
+        self.elements
+    }
+
+    pub fn as_elements(&self) -> &[i32; Self::ELEMENTS] {
+        &self.elements
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        for (element, chunk) in self.elements.iter().zip(bytes.chunks_exact_mut(4)) {
+            chunk.copy_from_slice(&element.to_ne_bytes());
+        }
+        bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketLcevc<'a> {
     data: &'a [u8],
 }
@@ -2146,6 +2201,10 @@ impl SideData {
 
     pub fn new_frame_cropping(value: PacketFrameCropping) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::FrameCropping, value.to_bytes().to_vec())
+    }
+
+    pub fn new_display_matrix(value: PacketDisplayMatrix) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::DisplayMatrix, value.to_bytes().to_vec())
     }
 
     pub fn new_lcevc(data: Vec<u8>) -> AvResult<Self> {
@@ -2353,6 +2412,14 @@ impl SideData {
         }
 
         PacketFrameCropping::parse(self.data()).map(Some)
+    }
+
+    pub fn display_matrix(&self) -> AvResult<Option<PacketDisplayMatrix>> {
+        if self.kind != PacketSideDataKind::DisplayMatrix {
+            return Ok(None);
+        }
+
+        PacketDisplayMatrix::parse(self.data()).map(Some)
     }
 
     pub fn lcevc(&self) -> AvResult<Option<PacketLcevc<'_>>> {
@@ -4671,6 +4738,79 @@ mod tests {
             side_data.frame_cropping().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn packet_side_data_parses_display_matrix_payload() {
+        let identity = PacketDisplayMatrix::identity();
+        let mut expected_bytes = [0; PacketDisplayMatrix::DATA_LEN];
+        for (element, chunk) in identity
+            .as_elements()
+            .iter()
+            .zip(expected_bytes.chunks_exact_mut(4))
+        {
+            chunk.copy_from_slice(&element.to_ne_bytes());
+        }
+
+        assert_eq!(PacketDisplayMatrix::ELEMENTS, 9);
+        assert_eq!(PacketDisplayMatrix::DATA_LEN, 36);
+        assert_eq!(
+            identity.elements(),
+            [1 << 16, 0, 0, 0, 1 << 16, 0, 0, 0, 1 << 30]
+        );
+        assert_eq!(identity.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketDisplayMatrix::parse(&expected_bytes).unwrap(),
+            identity
+        );
+
+        let raw_values = PacketDisplayMatrix::new([
+            i32::MIN,
+            -1,
+            0,
+            1,
+            1 << 16,
+            -(1 << 16),
+            1 << 30,
+            -(1 << 30),
+            i32::MAX,
+        ]);
+        assert_eq!(
+            PacketDisplayMatrix::parse(&raw_values.to_bytes()).unwrap(),
+            raw_values
+        );
+
+        let side_data = SideData::new_display_matrix(identity).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::DisplayMatrix);
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(side_data.display_matrix().unwrap(), Some(identity));
+
+        let lcevc = SideData::new_lcevc(expected_bytes.to_vec()).unwrap();
+        assert_eq!(lcevc.display_matrix().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_display_matrix_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; PacketDisplayMatrix::DATA_LEN - 1],
+            vec![0; PacketDisplayMatrix::DATA_LEN + 1],
+        ] {
+            assert_eq!(
+                PacketDisplayMatrix::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, data).unwrap();
+            assert_eq!(
+                side_data.display_matrix().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let frame_cropping =
+            SideData::new_with_kind(PacketSideDataKind::FrameCropping, vec![0; 36]).unwrap();
+        assert_eq!(frame_cropping.display_matrix().unwrap(), None);
     }
 
     #[test]

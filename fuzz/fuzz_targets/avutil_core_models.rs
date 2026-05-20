@@ -33,12 +33,13 @@ use avutil::{
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription, PacketContentLightMetadata,
-    PacketCpbProperties, PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketIccProfile,
-    PacketJpDualMono, PacketJpDualMonoSelection, PacketLcevc, PacketMasteringDisplayMetadata,
-    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
-    PacketProducerReferenceTime, PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode,
-    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping,
-    PacketSphericalProjection, PacketSubtitlePosition, PacketWebVttIdentifier,
+    PacketCpbProperties, PacketDisplayMatrix, PacketFallbackTrack, PacketFlags,
+    PacketFrameCropping, PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection,
+    PacketLcevc, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
+    PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
+    PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind,
+    PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection,
+    PacketSubtitlePosition, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
     Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
@@ -3305,6 +3306,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     .max(PacketCpbProperties::DATA_LEN + 1)
     .max(PacketMasteringDisplayMetadata::DATA_LEN + 1)
     .max(PacketSphericalMapping::DATA_LEN + 1)
+    .max(PacketDisplayMatrix::DATA_LEN + 1)
     .max(PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN + 1);
     let typed_payload_len =
         usize::from(cursor.next().unwrap_or_default()) % typed_payload_max_len;
@@ -3751,6 +3753,24 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::FrameCropping);
             assert!(packet_frame_cropping_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.display_matrix() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::DisplayMatrix);
+            assert_eq!(typed_payload.len(), PacketDisplayMatrix::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(PacketDisplayMatrix::new(value.elements()), value);
+            assert_eq!(
+                PacketDisplayMatrix::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::DisplayMatrix),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::DisplayMatrix);
+            assert!(packet_display_matrix_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.lcevc() {
@@ -4977,6 +4997,58 @@ fn exercise_fixtures() {
         .kind(),
         AvErrorKind::InvalidData
     );
+    let packet_display_matrix = PacketDisplayMatrix::identity();
+    let packet_display_matrix_bytes = packet_display_matrix.to_bytes();
+    assert_eq!(
+        PacketDisplayMatrix::parse(&packet_display_matrix_bytes).unwrap(),
+        packet_display_matrix
+    );
+    assert_eq!(packet_display_matrix.elements()[0], 1 << 16);
+    assert_eq!(packet_display_matrix.elements()[4], 1 << 16);
+    assert_eq!(packet_display_matrix.elements()[8], 1 << 30);
+    let packet_display_matrix_raw = PacketDisplayMatrix::new([
+        i32::MIN,
+        -1,
+        0,
+        1,
+        1 << 16,
+        -(1 << 16),
+        1 << 30,
+        -(1 << 30),
+        i32::MAX,
+    ]);
+    assert_eq!(
+        PacketDisplayMatrix::parse(&packet_display_matrix_raw.to_bytes()).unwrap(),
+        packet_display_matrix_raw
+    );
+    assert_eq!(
+        SideData::new_display_matrix(packet_display_matrix)
+            .unwrap()
+            .display_matrix()
+            .unwrap(),
+        Some(packet_display_matrix)
+    );
+    assert_eq!(
+        PacketDisplayMatrix::parse(&packet_display_matrix_bytes[..PacketDisplayMatrix::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        SideData::new_with_kind(
+            PacketSideDataKind::DisplayMatrix,
+            vec![0; PacketDisplayMatrix::DATA_LEN + 1]
+        )
+        .unwrap()
+        .display_matrix()
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_packet_display_matrix =
+        SideData::new_with_kind(PacketSideDataKind::Lcevc, packet_display_matrix_bytes.to_vec())
+            .unwrap();
+    assert_eq!(non_packet_display_matrix.display_matrix().unwrap(), None);
     let packet_lcevc_payload = vec![0x00, 0x00, 0x03, 0x7e, 0xaa];
     let packet_lcevc_side_data = SideData::new_lcevc(packet_lcevc_payload.clone()).unwrap();
     let packet_lcevc = packet_lcevc_side_data.lcevc().unwrap().unwrap();
@@ -10735,6 +10807,10 @@ fn packet_s12m_timecode_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketFrameCropping::DATA_LEN
+}
+
+fn packet_display_matrix_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketDisplayMatrix::DATA_LEN
 }
 
 fn minimal_dynamic_hdr_plus_fixture() -> Vec<u8> {
