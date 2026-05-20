@@ -381,6 +381,22 @@ mod tests {
                 4
             );
         }
+        for format in [
+            RawVideoPixelFormat::Y210Le,
+            RawVideoPixelFormat::Y210Be,
+            RawVideoPixelFormat::Y212Le,
+            RawVideoPixelFormat::Y212Be,
+            RawVideoPixelFormat::Y216Le,
+            RawVideoPixelFormat::Y216Be,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 16], 2, 2, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                16
+            );
+        }
         for format in [RawVideoPixelFormat::Nv12, RawVideoPixelFormat::Nv21] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 12], 4, 2, format, Rational::new(1, 1).unwrap(),)
@@ -1983,6 +1999,48 @@ mod tests {
             2,
             3,
             RawVideoPixelFormat::Yuyv422,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Y210Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            2,
+            2,
+            RawVideoPixelFormat::Y210Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Y212Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            2,
+            2,
+            RawVideoPixelFormat::Y212Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Y216Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            2,
+            2,
+            RawVideoPixelFormat::Y216Be,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());

@@ -1360,7 +1360,14 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         );
         let bits_per_pixel = usize::from(pixel_format.bits_per_pixel_integer().unwrap());
         assert!(bits_per_pixel <= bytes_per_pixel * 8);
-        assert!(bits_per_pixel > bytes_per_pixel.saturating_sub(1) * 8);
+        let descriptor_bpp_is_below_storage_lane = matches!(
+            pixel_format,
+            PixelFormat::Y210Le | PixelFormat::Y210Be | PixelFormat::Y212Le | PixelFormat::Y212Be
+        );
+        assert!(
+            bits_per_pixel > bytes_per_pixel.saturating_sub(1) * 8
+                || descriptor_bpp_is_below_storage_lane
+        );
     } else {
         assert!(matches!(
             pixel_format,
@@ -6173,6 +6180,19 @@ fn exercise_fixtures() {
         PixelFormat::Yuv444p10Be.plane_sizes(3, 2).unwrap(),
         vec![12, 12, 12]
     );
+    assert_eq!(
+        PixelFormat::from_name("y210le"),
+        Some(PixelFormat::Y210Le)
+    );
+    assert_eq!(PixelFormat::Y210Le.bits_per_component(), 10);
+    assert_eq!(PixelFormat::Y210Le.bits_per_pixel(), bpp(20));
+    assert_eq!(PixelFormat::Y210Le.plane_sizes(2, 2).unwrap(), vec![16]);
+    assert_eq!(PixelFormat::Y212Be.bits_per_component(), 12);
+    assert_eq!(PixelFormat::Y212Be.bits_per_pixel(), bpp(24));
+    assert_eq!(PixelFormat::Y212Be.plane_sizes(2, 2).unwrap(), vec![16]);
+    assert_eq!(PixelFormat::Y216Le.bits_per_component(), 16);
+    assert_eq!(PixelFormat::Y216Le.bits_per_pixel(), bpp(32));
+    assert_eq!(PixelFormat::Y216Le.plane_sizes(2, 2).unwrap(), vec![16]);
     assert_eq!(SampleFormat::U8.plane_sizes(2, 2).unwrap(), vec![4]);
     assert_eq!(SampleFormat::S16.plane_sizes(2, 2).unwrap(), vec![8]);
     assert_eq!(SampleFormat::S32.plane_sizes(2, 2).unwrap(), vec![16]);
@@ -17871,6 +17891,12 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Yuyv422
         | PixelFormat::Uyvy422
         | PixelFormat::Yvyu422 => vec![width * 2],
+        PixelFormat::Y210Le
+        | PixelFormat::Y210Be
+        | PixelFormat::Y212Le
+        | PixelFormat::Y212Be
+        | PixelFormat::Y216Le
+        | PixelFormat::Y216Be => vec![width * 4],
         PixelFormat::Nv12 | PixelFormat::Nv21 | PixelFormat::Nv16 => vec![width, width],
         PixelFormat::Nv20Le | PixelFormat::Nv20Be => vec![width * 2, width * 2],
         PixelFormat::Nv24 | PixelFormat::Nv42 => vec![width, width * 2],
@@ -18080,6 +18106,12 @@ fn expected_video_plane_shapes(
         | PixelFormat::Yuyv422
         | PixelFormat::Uyvy422
         | PixelFormat::Yvyu422 => vec![(width * 2, height)],
+        PixelFormat::Y210Le
+        | PixelFormat::Y210Be
+        | PixelFormat::Y212Le
+        | PixelFormat::Y212Be
+        | PixelFormat::Y216Le
+        | PixelFormat::Y216Be => vec![(width * 4, height)],
         PixelFormat::Nv12 | PixelFormat::Nv21 => vec![(width, height), (width, height / 2)],
         PixelFormat::Nv16 => vec![(width, height), (width, height)],
         PixelFormat::Nv20Le | PixelFormat::Nv20Be => {

@@ -1100,6 +1100,12 @@ mod tests {
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p16Be).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuyv422).is_err());
         assert!(RawVideoDecoder::new(2, 3, PixelFormat::Yuyv422).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Y210Le).is_err());
+        assert!(RawVideoDecoder::new(2, 2, PixelFormat::Y210Be).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Y212Le).is_err());
+        assert!(RawVideoDecoder::new(2, 2, PixelFormat::Y212Be).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Y216Le).is_err());
+        assert!(RawVideoDecoder::new(2, 2, PixelFormat::Y216Be).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv12).is_err());
         assert!(RawVideoDecoder::new(2, 3, PixelFormat::Nv12).is_err());
         assert!(RawVideoDecoder::new(2, 2, PixelFormat::Nv12).is_ok());
@@ -1306,6 +1312,47 @@ mod tests {
                 FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
             }
         }
+    }
+
+    #[test]
+    fn decodes_high_bit_packed_yuv_packets_to_single_plane_frames() {
+        for (pixel_format, expected_name, payload) in [
+            (PixelFormat::Y210Le, "y210le", (0..16).collect::<Vec<_>>()),
+            (PixelFormat::Y210Be, "y210be", (16..32).collect::<Vec<_>>()),
+            (PixelFormat::Y212Le, "y212le", (32..48).collect::<Vec<_>>()),
+            (PixelFormat::Y212Be, "y212be", (48..64).collect::<Vec<_>>()),
+            (PixelFormat::Y216Le, "y216le", (64..80).collect::<Vec<_>>()),
+            (PixelFormat::Y216Be, "y216be", (80..96).collect::<Vec<_>>()),
+        ] {
+            let decoder = RawVideoDecoder::new(2, 2, pixel_format).unwrap();
+            let mut packet = Packet::new(payload.clone(), 0);
+            packet.set_pts(Some(21));
+
+            let frame = decoder.decode_packet(&packet).unwrap();
+
+            assert_eq!(decoder.frame_size(), 16);
+            assert_eq!(frame.pts(), Some(21));
+            match frame.data() {
+                FrameData::Video(video) => {
+                    assert_eq!(video.width(), 2);
+                    assert_eq!(video.height(), 2);
+                    assert_eq!(video.pixel_format(), pixel_format);
+                    assert_eq!(video.pixel_format_name(), expected_name);
+                    assert_eq!(video.line_sizes(), &[8]);
+                    assert_eq!(video.planes(), &[payload]);
+                }
+                FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+            }
+        }
+
+        let decoder = RawVideoDecoder::new(2, 2, PixelFormat::Y210Le).unwrap();
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; 15], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
     }
 
     #[test]

@@ -709,6 +709,36 @@ fn exercise_fixtures() {
     );
     assert!(raw_yuyv422_demuxer.read_packet().unwrap().is_none());
 
+    for (format, payload) in [
+        (PixelFormat::Y210Le, (0..16).collect::<Vec<_>>()),
+        (PixelFormat::Y212Be, (16..32).collect::<Vec<_>>()),
+        (PixelFormat::Y216Le, (32..48).collect::<Vec<_>>()),
+    ] {
+        let mut raw_yuv_packed =
+            RawVideoMuxer::new(2, 2, format, Rational::new(24, 1).unwrap()).unwrap();
+        raw_yuv_packed
+            .write_packet(&Packet::new(payload.clone(), 0))
+            .unwrap();
+        let raw_yuv_packed_output = raw_yuv_packed.finish();
+        let mut raw_yuv_packed_demuxer = RawVideoDemuxer::open(
+            &raw_yuv_packed_output,
+            2,
+            2,
+            format,
+            Rational::new(24, 1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            raw_yuv_packed_demuxer
+                .read_packet()
+                .unwrap()
+                .unwrap()
+                .data(),
+            payload.as_slice()
+        );
+        assert!(raw_yuv_packed_demuxer.read_packet().unwrap().is_none());
+    }
+
     let mut raw_nv12 =
         RawVideoMuxer::new(4, 2, PixelFormat::Nv12, Rational::new(24, 1).unwrap()).unwrap();
     raw_nv12
