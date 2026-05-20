@@ -42,6 +42,8 @@ The rawvideo-facing planar RGB+alpha subset now also includes FFmpeg's `gbrap`, 
 
 The rawvideo-facing packed 16-bit RGB/BGR subset now also includes FFmpeg's `rgb565be`, `rgb565le`, `rgb555be`, `rgb555le`, `bgr565be`, `bgr565le`, `bgr555be`, `bgr555le`, `rgb444le`, `rgb444be`, `bgr444le`, and `bgr444be` names. They are modeled as one packed two-byte-per-pixel RGB plane. The current descriptor model has one scalar `bits_per_component`, so 565 formats report the maximum component depth of 6 while 555 and 444 formats report 5 and 4 respectively; byte order and channel packing are preserved as pixel-format naming until conversion code exists.
 
+The rawvideo-facing packed YUV 4:2:2 subset now also includes FFmpeg's `yuyv422`, `uyvy422`, and `yvyu422` names. They are modeled as one packed two-byte-per-pixel YUV plane with log2 chroma `(1,0)` and even-width validation; byte order and byte layout are preserved as pixel-format naming until conversion code exists.
+
 `Dictionary` pair serialization and parsing cover the initial `av_dict_get_string`/`av_dict_parse_string` shape: entries serialize in insertion order with backslash escaping for separators and literal backslashes, parser separator sets are validated before mutation, parsed entries use the caller-selected match/set modes, and successfully parsed entries remain visible when a later malformed token fails.
 
 `OptionSet` child option namespaces are mutable through explicit parent helpers: callers can get child values, query child ranges, set typed child values, and parse child values from strings while preserving the parent and child state on missing-child, missing-option, read-only, type, and range errors.
@@ -213,6 +215,8 @@ Both rawvideo packet paths also use the shared `PixelFormat` model for planar GB
 Both rawvideo packet paths also accept FFmpeg's packed high-bit-depth grayscale names `gray9le`/`gray9be`, `gray10le`/`gray10be`, `gray12le`/`gray12be`, and `gray14le`/`gray14be`, including the `y9*`/`y10*`/`y12*`/`y14*` aliases, as one two-byte-per-sample grayscale plane.
 
 Both rawvideo packet paths also accept FFmpeg's packed 16-bit RGB/BGR names `rgb565be`/`rgb565le`, `rgb555be`/`rgb555le`, `bgr565be`/`bgr565le`, `bgr555be`/`bgr555le`, `rgb444le`/`rgb444be`, and `bgr444le`/`bgr444be` as one two-byte-per-pixel payload plane through the shared `PixelFormat` model.
+
+Both rawvideo packet paths also accept FFmpeg's packed YUV 4:2:2 names `yuyv422`, `uyvy422`, and `yvyu422` as one two-byte-per-pixel payload plane with even-width validation through the shared `PixelFormat` model.
 
 `PcmS16leDemuxer` implements an initial raw PCM audio packet slicer for packed little-endian signed 16-bit samples. It uses `AudioStreamParameters` and the shared `SampleFormat::S16` model for sample-rate/channel validation and sample-frame sizing, derives mono/stereo layout metadata where safe, and validates packet sample count plus whole interleaved sample-frame input before emitting packets with sample-count durations.
 

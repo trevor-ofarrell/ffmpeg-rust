@@ -300,6 +300,19 @@ mod tests {
                 4
             );
         }
+        for format in [
+            RawVideoPixelFormat::Yuyv422,
+            RawVideoPixelFormat::Uyvy422,
+            RawVideoPixelFormat::Yvyu422,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 4], 2, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                4
+            );
+        }
         for format in [RawVideoPixelFormat::Gray16Le, RawVideoPixelFormat::Gray16Be] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 4], 2, 1, format, Rational::new(1, 1).unwrap(),)
@@ -674,6 +687,22 @@ mod tests {
         )
         .is_err());
         assert!(RawVideoDemuxer::open(
+            &[0; 12],
+            3,
+            2,
+            RawVideoPixelFormat::Yuyv422,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 12],
+            2,
+            3,
+            RawVideoPixelFormat::Yuyv422,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoDemuxer::open(
             &[0; 18],
             3,
             2,
@@ -840,6 +869,19 @@ mod tests {
             let muxer = RawVideoMuxer::new(3, 2, format, Rational::new(25, 1).unwrap()).unwrap();
 
             assert_eq!(muxer.info().frame_size(), 12);
+        }
+    }
+
+    #[test]
+    fn muxer_computes_packed_yuv422_frame_sizes() {
+        for format in [
+            RawVideoPixelFormat::Yuyv422,
+            RawVideoPixelFormat::Uyvy422,
+            RawVideoPixelFormat::Yvyu422,
+        ] {
+            let muxer = RawVideoMuxer::new(4, 2, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), 16);
         }
     }
 
@@ -1177,6 +1219,20 @@ mod tests {
             Rational::new(1, 1).unwrap(),
         )
         .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuyv422,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            2,
+            3,
+            RawVideoPixelFormat::Yuyv422,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
         assert!(RawVideoMuxer::new(
             3,
             2,

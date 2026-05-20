@@ -5519,6 +5519,27 @@ fn exercise_fixtures() {
         assert_eq!(format.frame_size(2, 2).unwrap(), 8);
         assert_eq!(format.plane_sizes(2, 2).unwrap(), vec![8]);
     }
+    for (name, format) in [
+        ("yuyv422", PixelFormat::Yuyv422),
+        ("uyvy422", PixelFormat::Uyvy422),
+        ("yvyu422", PixelFormat::Yvyu422),
+    ] {
+        let descriptor = format.descriptor();
+        assert_eq!(PixelFormat::from_name(name), Some(format));
+        assert_eq!(descriptor.name, name);
+        assert_eq!(descriptor.class, PixelFormatClass::Yuv);
+        assert_eq!(descriptor.component_count, 3);
+        assert_eq!(descriptor.bits_per_component, 8);
+        assert_eq!(descriptor.bits_per_pixel, 16);
+        assert_eq!(descriptor.packed_bytes_per_pixel, Some(2));
+        assert_eq!(descriptor.plane_count, 1);
+        assert!(!descriptor.is_planar);
+        assert_eq!(format.log2_chroma(), (1, 0));
+        assert!(format.has_chroma_subsampling());
+        assert_eq!(format.frame_size(2, 2).unwrap(), 8);
+        assert_eq!(format.plane_sizes(2, 2).unwrap(), vec![8]);
+        assert!(format.frame_size(3, 2).is_err());
+    }
     assert_eq!(
         PixelFormat::from_name("rgb48le"),
         Some(PixelFormat::Rgb48Le)
@@ -17241,7 +17262,10 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Rgb444Le
         | PixelFormat::Rgb444Be
         | PixelFormat::Bgr444Le
-        | PixelFormat::Bgr444Be => vec![width * 2],
+        | PixelFormat::Bgr444Be
+        | PixelFormat::Yuyv422
+        | PixelFormat::Uyvy422
+        | PixelFormat::Yvyu422 => vec![width * 2],
         PixelFormat::Rgb48Le
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le
@@ -17337,7 +17361,10 @@ fn expected_video_plane_shapes(
         | PixelFormat::Rgb444Le
         | PixelFormat::Rgb444Be
         | PixelFormat::Bgr444Le
-        | PixelFormat::Bgr444Be => vec![(width * 2, height)],
+        | PixelFormat::Bgr444Be
+        | PixelFormat::Yuyv422
+        | PixelFormat::Uyvy422
+        | PixelFormat::Yvyu422 => vec![(width * 2, height)],
         PixelFormat::Rgb48Le
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le

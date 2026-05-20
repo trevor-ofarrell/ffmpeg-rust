@@ -12435,6 +12435,12 @@ fn video_plane_shapes(
             row_bytes: checked_mul(width, 2, "16-bit packed RGB video frame line size")?,
             rows: height,
         }]),
+        PixelFormat::Yuyv422 | PixelFormat::Uyvy422 | PixelFormat::Yvyu422 => {
+            Ok(vec![VideoPlaneShape {
+                row_bytes: checked_mul(width, 2, "packed YUV 4:2:2 video frame line size")?,
+                rows: height,
+            }])
+        }
         PixelFormat::Rgb48Le
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le
@@ -16416,6 +16422,12 @@ mod tests {
 
         let bgr444 = VideoFrame::new(3, 2, PixelFormat::Bgr444Be, vec![vec![0; 12]]).unwrap();
         assert_eq!(bgr444.line_sizes(), &[6]);
+
+        let yuyv422 = VideoFrame::new(2, 2, PixelFormat::Yuyv422, vec![vec![0; 8]]).unwrap();
+        assert_eq!(yuyv422.line_sizes(), &[4]);
+
+        let uyvy422 = VideoFrame::new(4, 1, PixelFormat::Uyvy422, vec![vec![0; 8]]).unwrap();
+        assert_eq!(uyvy422.line_sizes(), &[8]);
 
         let rgba = VideoFrame::new(3, 2, PixelFormat::Rgba, vec![vec![0; 24]]).unwrap();
         assert_eq!(rgba.line_sizes(), &[12]);

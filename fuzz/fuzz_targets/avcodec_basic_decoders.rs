@@ -325,6 +325,23 @@ fn exercise_fixtures() {
         );
     }
 
+    for format in [
+        PixelFormat::Yuyv422,
+        PixelFormat::Uyvy422,
+        PixelFormat::Yvyu422,
+    ] {
+        let decoder = RawVideoDecoder::new(2, 1, format).unwrap();
+        assert!(decoder.decode_packet(&Packet::new(vec![0; 4], 0)).is_ok());
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; 3], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert!(RawVideoDecoder::new(3, 1, format).is_err());
+    }
+
     let rgb48 = RawVideoDecoder::new(1, 1, PixelFormat::Rgb48Le).unwrap();
     assert!(rgb48.decode_packet(&Packet::new(vec![0; 6], 0)).is_ok());
     assert_eq!(
