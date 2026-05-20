@@ -1,6 +1,6 @@
 use crate::option_parser::{apply_log_level_value, parse_log_level_directive};
 use crate::CliLogConfig;
-use avutil::{LogFlags, LogFormatOptions, LogLevel, LogRecord, LogTimestamp};
+use avutil::{LogFlags, LogFormatOptions, LogRecord, LogTimestamp, Logger};
 use std::fmt;
 
 pub(crate) fn tool_error_stderr(
@@ -11,7 +11,7 @@ pub(crate) fn tool_error_stderr(
     let log_config = log_config_from_args(args);
     let timestamp = timestamp_for_flags(log_config.flags());
     let format_options = LogFormatOptions::new(log_config.flags()).with_ffmpeg_env_color();
-    format_tool_error_stderr(tool_name, error, log_config, timestamp, format_options)
+    format_tool_diagnostics_stderr(tool_name, [error], log_config, timestamp, format_options)
 }
 
 #[cfg(test)]
@@ -23,7 +23,7 @@ fn tool_error_stderr_with_timestamp(
 ) -> String {
     let log_config = log_config_from_args(args);
     let format_options = LogFormatOptions::new(log_config.flags());
-    format_tool_error_stderr(tool_name, error, log_config, timestamp, format_options)
+    format_tool_diagnostics_stderr(tool_name, [error], log_config, timestamp, format_options)
 }
 
 #[cfg(test)]
@@ -37,7 +37,7 @@ fn tool_error_stderr_with_timestamp_and_color_env(
     let log_config = log_config_from_args(args);
     let format_options =
         LogFormatOptions::new(log_config.flags()).with_ffmpeg_env_color_vars(color_env_is_set);
-    format_tool_error_stderr(tool_name, error, log_config, timestamp, format_options)
+    format_tool_diagnostics_stderr(tool_name, [error], log_config, timestamp, format_options)
 }
 
 #[cfg(test)]
@@ -52,25 +52,53 @@ fn tool_error_stderr_with_timestamp_color_env_and_terminal(
     let log_config = log_config_from_args(args);
     let format_options = LogFormatOptions::new(log_config.flags())
         .with_ffmpeg_env_color_vars_and_stderr(color_env_is_set, stderr_is_terminal);
-    format_tool_error_stderr(tool_name, error, log_config, timestamp, format_options)
+    format_tool_diagnostics_stderr(tool_name, [error], log_config, timestamp, format_options)
 }
 
-fn format_tool_error_stderr(
+#[cfg(test)]
+fn tool_diagnostics_stderr_with_timestamp(
     tool_name: &str,
-    error: impl fmt::Display,
+    args: &[String],
+    diagnostics: &[&str],
+    timestamp: Option<LogTimestamp>,
+) -> String {
+    let log_config = log_config_from_args(args);
+    let format_options = LogFormatOptions::new(log_config.flags());
+    format_tool_diagnostics_stderr(
+        tool_name,
+        diagnostics.iter().copied(),
+        log_config,
+        timestamp,
+        format_options,
+    )
+}
+
+fn format_tool_diagnostics_stderr<I, E>(
+    tool_name: &str,
+    diagnostics: I,
     log_config: CliLogConfig,
     timestamp: Option<LogTimestamp>,
     format_options: LogFormatOptions,
-) -> String {
-    if log_config.level() == LogLevel::Quiet {
-        return String::new();
+) -> String
+where
+    I: IntoIterator<Item = E>,
+    E: fmt::Display,
+{
+    let mut logger = Logger::new_with_flags(log_config.level(), log_config.flags());
+    for diagnostic in diagnostics {
+        let mut record = LogRecord::new(avutil::LogLevel::Error, tool_name, diagnostic.to_string());
+        if let Some(timestamp) = timestamp {
+            record = record.with_timestamp(timestamp);
+        }
+        logger.log(record);
     }
 
-    let mut record = LogRecord::new(LogLevel::Error, tool_name, error.to_string());
-    if let Some(timestamp) = timestamp {
-        record = record.with_timestamp(timestamp);
+    let lines = logger.formatted_records_with_options(format_options);
+    if lines.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", lines.join("\n"))
     }
-    format!("{}\n", record.format_line_with_options(format_options))
 }
 
 fn timestamp_for_flags(flags: LogFlags) -> Option<LogTimestamp> {
@@ -189,6 +217,32 @@ mod tests {
                 None,
             ),
             "[error] ffmpeg: missing command\n"
+        );
+    }
+
+    #[test]
+    fn repeat_flag_compresses_repeated_tool_errors() {
+        assert_eq!(
+            tool_diagnostics_stderr_with_timestamp(
+                "ffmpeg",
+                &strings(&["-loglevel", "repeat+level+error"]),
+                &["bad packet", "bad packet", "bad packet", "bad output"],
+                None,
+            ),
+            "[error] ffmpeg: bad packet\nLast message repeated 2 times\n[error] ffmpeg: bad output\n"
+        );
+    }
+
+    #[test]
+    fn repeated_tool_errors_are_preserved_without_repeat_flag() {
+        assert_eq!(
+            tool_diagnostics_stderr_with_timestamp(
+                "ffprobe",
+                &strings(&["-loglevel", "level+error"]),
+                &["bad packet", "bad packet"],
+                None,
+            ),
+            "[error] ffprobe: bad packet\n[error] ffprobe: bad packet\n"
         );
     }
 
