@@ -469,12 +469,15 @@ fn exercise_fixtures() {
         (PixelFormat::Y216Le, 16, 15),
         (PixelFormat::Ayuv64Le, 8, 7),
         (PixelFormat::Ayuv64Be, 8, 7),
+        (PixelFormat::Xyz12Le, 6, 5),
+        (PixelFormat::Xyz12Be, 6, 5),
     ] {
-        let (width, height) = if matches!(format, PixelFormat::Ayuv64Le | PixelFormat::Ayuv64Be) {
-            (1, 1)
-        } else {
-            (2, 2)
-        };
+        let (width, height) =
+            if matches!(format, PixelFormat::Ayuv64Le | PixelFormat::Ayuv64Be | PixelFormat::Xyz12Le | PixelFormat::Xyz12Be) {
+                (1, 1)
+            } else {
+                (2, 2)
+            };
         let decoder = RawVideoDecoder::new(width, height, format).unwrap();
         assert!(decoder
             .decode_packet(&Packet::new(vec![0; valid_len], 0))

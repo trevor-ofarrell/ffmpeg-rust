@@ -46,6 +46,8 @@ The rawvideo-facing high-bit packed YUV 4:2:2 subset now also includes FFmpeg's 
 
 The rawvideo-facing packed YUVA subset now also includes FFmpeg's `ayuv64le` and `ayuv64be` names. They are modeled as one packed eight-byte-per-pixel AYUV plane with four 16-bit components, alpha metadata, no chroma subsampling, and 64 logical bits per pixel; byte order is preserved as pixel-format naming only until conversion code exists.
 
+The rawvideo-facing packed XYZ subset now also includes FFmpeg's `xyz12le` and `xyz12be` names. They are modeled as one packed six-byte-per-pixel XYZ plane with three 12-bit components, no alpha, no chroma subsampling, and 36 logical bits per pixel; byte order and lower-bit padding are preserved as pixel-format naming and raw storage until conversion code exists.
+
 The rawvideo-facing packed grayscale subset now also includes FFmpeg's `gray9le`, `gray9be`, `gray10le`, `gray10be`, `gray12le`, `gray12be`, `gray14le`, and `gray14be` names plus `y9le`/`y9be`, `y10le`/`y10be`, `y12le`/`y12be`, and `y14le`/`y14be` aliases. They are modeled as one-component grayscale formats with 9, 10, 12, or 14 descriptor bits per pixel and two stored bytes per sample; byte order is preserved as pixel-format naming only until conversion code exists.
 
 The rawvideo-facing monochrome bitstream subset now also includes FFmpeg's `monow` and `monob` names. They are modeled as one 1bpp grayscale bitstream plane with MSB-first pixel storage and `ceil(width / 8)` bytes per row; white/black polarity is preserved as pixel-format naming only until conversion code exists.

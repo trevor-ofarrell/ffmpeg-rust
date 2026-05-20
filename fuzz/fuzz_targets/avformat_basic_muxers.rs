@@ -764,6 +764,31 @@ fn exercise_fixtures() {
         assert!(raw_ayuv64_demuxer.read_packet().unwrap().is_none());
     }
 
+    for (format, payload) in [
+        (PixelFormat::Xyz12Le, (64..70).collect::<Vec<_>>()),
+        (PixelFormat::Xyz12Be, (70..76).collect::<Vec<_>>()),
+    ] {
+        let mut raw_xyz12 =
+            RawVideoMuxer::new(1, 1, format, Rational::new(24, 1).unwrap()).unwrap();
+        raw_xyz12
+            .write_packet(&Packet::new(payload.clone(), 0))
+            .unwrap();
+        let raw_xyz12_output = raw_xyz12.finish();
+        let mut raw_xyz12_demuxer = RawVideoDemuxer::open(
+            &raw_xyz12_output,
+            1,
+            1,
+            format,
+            Rational::new(24, 1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            raw_xyz12_demuxer.read_packet().unwrap().unwrap().data(),
+            payload.as_slice()
+        );
+        assert!(raw_xyz12_demuxer.read_packet().unwrap().is_none());
+    }
+
     let mut raw_nv12 =
         RawVideoMuxer::new(4, 2, PixelFormat::Nv12, Rational::new(24, 1).unwrap()).unwrap();
     raw_nv12

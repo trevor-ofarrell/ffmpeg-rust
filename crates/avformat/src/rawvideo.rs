@@ -774,6 +774,15 @@ mod tests {
                 8
             );
         }
+        for format in [RawVideoPixelFormat::Xyz12Le, RawVideoPixelFormat::Xyz12Be] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 12], 1, 2, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                12
+            );
+        }
         assert_eq!(
             RawVideoDemuxer::open(
                 &[0; 12],
@@ -1695,6 +1704,15 @@ mod tests {
             let muxer = RawVideoMuxer::new(2, 2, format, Rational::new(25, 1).unwrap()).unwrap();
 
             assert_eq!(muxer.info().frame_size(), 32);
+        }
+    }
+
+    #[test]
+    fn muxer_computes_xyz12_frame_size() {
+        for format in [RawVideoPixelFormat::Xyz12Le, RawVideoPixelFormat::Xyz12Be] {
+            let muxer = RawVideoMuxer::new(2, 2, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), 24);
         }
     }
 

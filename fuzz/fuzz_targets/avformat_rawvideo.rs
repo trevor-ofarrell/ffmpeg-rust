@@ -278,6 +278,14 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::Ayuv64Le,
         Rational::new(25, 1).unwrap(),
     );
+    let xyz12le = (64..76).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &xyz12le,
+        1,
+        2,
+        RawVideoPixelFormat::Xyz12Le,
+        Rational::new(25, 1).unwrap(),
+    );
     exercise_rawvideo(
         b"abcdefghijkl",
         4,
