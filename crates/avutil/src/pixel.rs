@@ -11,6 +11,7 @@ pub enum PixelFormat {
     Abgr,
     Yuv420p,
     Yuv422p,
+    Yuv410p,
     Yuv411p,
     Yuv444p,
 }
@@ -49,6 +50,7 @@ impl PixelFormat {
         Self::Abgr,
         Self::Yuv420p,
         Self::Yuv422p,
+        Self::Yuv410p,
         Self::Yuv411p,
         Self::Yuv444p,
     ];
@@ -68,6 +70,7 @@ impl PixelFormat {
             "abgr" => Some(Self::Abgr),
             "yuv420p" => Some(Self::Yuv420p),
             "yuv422p" => Some(Self::Yuv422p),
+            "yuv410p" => Some(Self::Yuv410p),
             "yuv411p" => Some(Self::Yuv411p),
             "yuv444p" => Some(Self::Yuv444p),
             _ => None,
@@ -207,6 +210,18 @@ impl PixelFormat {
                 2,
                 0,
             ),
+            Self::Yuv410p => (
+                "yuv410p",
+                PixelFormatClass::Yuv,
+                3,
+                9,
+                3,
+                true,
+                false,
+                None,
+                2,
+                2,
+            ),
             Self::Yuv444p => (
                 "yuv444p",
                 PixelFormatClass::Yuv,
@@ -311,7 +326,7 @@ impl PixelFormat {
                 4,
                 "32-bit packed pixel format frame size",
             )?]),
-            Self::Yuv420p | Self::Yuv422p | Self::Yuv411p | Self::Yuv444p => {
+            Self::Yuv420p | Self::Yuv422p | Self::Yuv410p | Self::Yuv411p | Self::Yuv444p => {
                 let descriptor = self.descriptor();
                 let chroma_w = 1_usize << descriptor.log2_chroma_w;
                 let chroma_h = 1_usize << descriptor.log2_chroma_h;
@@ -426,19 +441,25 @@ mod tests {
             Some(PixelFormat::Yuv411p)
         );
         assert_eq!(
+            PixelFormat::from_name("yuv410p"),
+            Some(PixelFormat::Yuv410p)
+        );
+        assert_eq!(
             PixelFormat::from_name("yuv444p"),
             Some(PixelFormat::Yuv444p)
         );
-        assert_eq!(PixelFormat::ALL.len(), 11);
+        assert_eq!(PixelFormat::ALL.len(), 12);
         assert_eq!(PixelFormat::Rgba.plane_count(), 1);
         assert_eq!(PixelFormat::Yuv420p.plane_count(), 3);
         assert_eq!(PixelFormat::Yuv422p.plane_count(), 3);
+        assert_eq!(PixelFormat::Yuv410p.plane_count(), 3);
         assert_eq!(PixelFormat::Yuv411p.plane_count(), 3);
         assert_eq!(PixelFormat::Yuv444p.plane_count(), 3);
         assert!(!PixelFormat::Rgb24.is_planar());
         assert!(PixelFormat::Rgb24.is_packed());
         assert!(PixelFormat::Yuv420p.is_planar());
         assert!(PixelFormat::Yuv422p.is_planar());
+        assert!(PixelFormat::Yuv410p.is_planar());
         assert!(PixelFormat::Yuv411p.is_planar());
         assert!(PixelFormat::Yuv444p.is_planar());
         assert!(!PixelFormat::Yuv420p.is_packed());
@@ -499,6 +520,7 @@ mod tests {
         for (format, expected_name, expected_bits_per_pixel, expected_log2_chroma) in [
             (PixelFormat::Yuv420p, "yuv420p", 12, (1, 1)),
             (PixelFormat::Yuv422p, "yuv422p", 16, (1, 0)),
+            (PixelFormat::Yuv410p, "yuv410p", 9, (2, 2)),
             (PixelFormat::Yuv411p, "yuv411p", 12, (2, 0)),
             (PixelFormat::Yuv444p, "yuv444p", 24, (0, 0)),
         ] {
@@ -549,6 +571,11 @@ mod tests {
         );
         assert_eq!(PixelFormat::Yuv411p.frame_size(4, 3).unwrap(), 18);
         assert_eq!(
+            PixelFormat::Yuv410p.plane_sizes(4, 4).unwrap(),
+            vec![16, 1, 1]
+        );
+        assert_eq!(PixelFormat::Yuv410p.frame_size(4, 4).unwrap(), 18);
+        assert_eq!(
             PixelFormat::Yuv444p.plane_sizes(3, 2).unwrap(),
             vec![6, 6, 6]
         );
@@ -574,6 +601,15 @@ mod tests {
             .unwrap();
 
         assert_eq!(planes, vec![vec![0, 1, 2, 3], vec![4], vec![5]]);
+
+        let planes = PixelFormat::Yuv410p
+            .split_planes(&(0..18).collect::<Vec<_>>(), 4, 4)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![(0..16).collect::<Vec<_>>(), vec![16], vec![17]]
+        );
 
         let planes = PixelFormat::Yuv444p
             .split_planes(&[0, 1, 2, 3, 4, 5], 1, 2)
@@ -602,6 +638,15 @@ mod tests {
             AvErrorKind::InvalidArgument
         );
         assert_eq!(PixelFormat::Yuv411p.frame_size(4, 3).unwrap(), 18);
+        assert_eq!(
+            PixelFormat::Yuv410p.frame_size(4, 3).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            PixelFormat::Yuv410p.frame_size(2, 4).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(PixelFormat::Yuv410p.frame_size(4, 4).unwrap(), 18);
         assert_eq!(PixelFormat::Yuv444p.frame_size(3, 2).unwrap(), 18);
         assert_eq!(
             PixelFormat::Rgb24

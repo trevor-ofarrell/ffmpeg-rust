@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes planar 8-bit `yuv410p` with descriptor metadata, width-and-height-divisible-by-4 chroma geometry, plane splitting, and rawvideo packet-size validation. `VideoFrame` line sizing, rawvideo decode/demux/mux paths, constrained `ffmpeg-rs -f rawvideo ... -f null -` execution, and the affected fuzz harnesses now exercise `yuv420p`, `yuv422p`, `yuv410p`, `yuv411p`, and `yuv444p` through the same descriptor-driven YUV plane model. This remains below `complete` because full `AVPixFmtDescriptor` coverage, full `ffmpeg -pix_fmts` inventory parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
+
 Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes planar 8-bit `yuv411p` with descriptor metadata, width-divisible-by-4 chroma geometry, plane splitting, and rawvideo packet-size validation. `VideoFrame` line sizing, rawvideo decode/demux/mux paths, constrained `ffmpeg-rs -f rawvideo ... -f null -` execution, and the affected fuzz harnesses now exercise `yuv420p`, `yuv422p`, `yuv411p`, and `yuv444p` through the same descriptor-driven YUV plane model. This remains below `complete` because full `AVPixFmtDescriptor` coverage, full `ffmpeg -pix_fmts` inventory parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
 
 Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes planar 8-bit `yuv444p` with descriptor metadata, full-resolution chroma plane sizing, plane splitting, and no chroma parity requirement. `VideoFrame` line sizing, rawvideo decode/demux/mux paths, constrained `ffmpeg-rs -f rawvideo ... -f null -` execution, and the affected fuzz harnesses now exercise `yuv420p`, `yuv422p`, and `yuv444p` through the same descriptor-driven YUV plane model. This remains below `complete` because full `AVPixFmtDescriptor` coverage, full `ffmpeg -pix_fmts` inventory parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
@@ -241,6 +243,26 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil pixel`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil frames_report_tightly_packed_line_sizes`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avcodec rawvideo`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avformat rawvideo`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fftools runs_rawvideo_yuv410p_to_null_stdout`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models --bin avcodec_basic_decoders --bin avformat_rawvideo --bin avformat_basic_muxers`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models --bin avcodec_basic_decoders --bin avformat_rawvideo --bin avformat_basic_muxers -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil -p avcodec -p avformat -p fftools --all-targets -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-pixel-format`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avcodec-rawvideo`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avformat-rawvideo-demuxer`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avformat-rawvideo-muxer`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component fftools-ffmpeg-rawvideo-framecrc-null`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`
+- `cargo fmt --all -- --check`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test --workspace --all-features --lib`
+- `git diff --check` (passed with CRLF warnings only)
 
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil pixel`
@@ -3108,6 +3130,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-pixel-format` / rawvideo `yuv410p` slice: no remaining failing validation commands. Focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, touched crate clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` passed; `git diff --check` reported CRLF warnings only.
+
 - Current `avutil-pixel-format` / rawvideo `yuv411p` slice: the first `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fftools runs_rawvideo_yuv411p_to_null_stdout` run failed to compile because the new test asserted a nonexistent `FfmpegOutput::input_format()` helper; removing that stray assertion fixed it. No remaining failing validation commands. Focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, touched crate clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` passed; `git diff --check` reported CRLF warnings only.
 
 - Current `avutil-pixel-format` / rawvideo `yuv444p` slice: no remaining failing validation commands. Focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, touched crate clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, and workspace library tests passed.
@@ -3325,6 +3349,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-pixel-format` is the current focus for this slice, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The concrete change is adding planar 8-bit `yuv410p` to the current shared pixel model and using descriptor chroma metadata for width-and-height-divisible-by-4 4:1:0 sizing, frame line sizes, packet splitting, and rawvideo packetization. It does not claim full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pixel conversion, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
+
 `avutil-pixel-format` is the current focus for this slice, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The concrete change is adding planar 8-bit `yuv411p` to the current shared pixel model and using descriptor chroma metadata for width-divisible-by-4 4:1:1 sizing, frame line sizes, packet splitting, and rawvideo packetization. It does not claim full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pixel conversion, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
 
 `avutil-pixel-format` is the current focus for this slice, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The concrete change is adding planar 8-bit `yuv444p` to the current shared pixel model and using descriptor chroma metadata for full-resolution three-plane sizing, frame line sizes, packet splitting, and rawvideo packetization. It does not claim full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pixel conversion, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
@@ -3396,6 +3422,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added planar 8-bit `yuv410p` support to the current shared pixel/rawvideo model. `PixelFormat` now reports `yuv410p` in the inventory with YUV descriptor metadata, validates width and height divisible by 4, computes 4:1:0 plane sizes, and splits frame payloads by plane. `VideoFrame`, `RawVideoDecoder`, `RawVideoDemuxer`, `RawVideoMuxer`, constrained `ffmpeg-rs` rawvideo-to-null execution, and the affected fuzz harnesses now exercise the format. Validation passed with focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, touched crate clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` with CRLF warnings only. The affected components remain `implemented`, not `complete`, because oracle differentials, upstream FATE media coverage, full pixel inventory coverage, and actual fuzz execution are still absent.
 
 Latest slice: added planar 8-bit `yuv411p` support to the current shared pixel/rawvideo model. `PixelFormat` now reports `yuv411p` in the inventory with YUV descriptor metadata, validates width divisible by 4 while permitting odd height, computes 4:1:1 plane sizes, and splits frame payloads by plane. `VideoFrame`, `RawVideoDecoder`, `RawVideoDemuxer`, `RawVideoMuxer`, constrained `ffmpeg-rs` rawvideo-to-null execution, and the affected fuzz harnesses now exercise the format. Validation passed with focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, touched crate clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` with CRLF warnings only. The affected components remain `implemented`, not `complete`, because oracle differentials, upstream FATE media coverage, full pixel inventory coverage, and actual fuzz execution are still absent.
 

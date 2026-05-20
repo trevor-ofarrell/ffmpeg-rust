@@ -333,6 +333,19 @@ mod tests {
         assert_eq!(
             RawVideoDemuxer::open(
                 &[0; 18],
+                4,
+                4,
+                RawVideoPixelFormat::Yuv410p,
+                Rational::new(1, 1).unwrap(),
+            )
+            .unwrap()
+            .info()
+            .frame_size(),
+            18
+        );
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &[0; 18],
                 3,
                 2,
                 RawVideoPixelFormat::Yuv444p,
@@ -399,6 +412,30 @@ mod tests {
             4,
             3,
             RawVideoPixelFormat::Yuv411p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoDemuxer::open(
+            &[0; 18],
+            4,
+            3,
+            RawVideoPixelFormat::Yuv410p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 18],
+            2,
+            4,
+            RawVideoPixelFormat::Yuv410p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 18],
+            4,
+            4,
+            RawVideoPixelFormat::Yuv410p,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());
@@ -514,6 +551,19 @@ mod tests {
     }
 
     #[test]
+    fn muxer_computes_yuv410p_frame_size() {
+        let muxer = RawVideoMuxer::new(
+            4,
+            4,
+            RawVideoPixelFormat::Yuv410p,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(muxer.info().frame_size(), 18);
+    }
+
+    #[test]
     fn muxer_computes_yuv444p_frame_size() {
         let muxer = RawVideoMuxer::new(
             3,
@@ -560,6 +610,27 @@ mod tests {
             4,
             3,
             RawVideoPixelFormat::Yuv411p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            4,
+            3,
+            RawVideoPixelFormat::Yuv410p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            2,
+            4,
+            RawVideoPixelFormat::Yuv410p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            4,
+            4,
+            RawVideoPixelFormat::Yuv410p,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());

@@ -147,6 +147,25 @@ mod tests {
     }
 
     #[test]
+    fn decodes_yuv410p_packet_to_three_planes() {
+        let decoder = RawVideoDecoder::new(4, 4, PixelFormat::Yuv410p).unwrap();
+        let packet = Packet::new((0..18).collect(), 0);
+
+        let frame = decoder.decode_packet(&packet).unwrap();
+
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.pixel_format(), PixelFormat::Yuv410p);
+                assert_eq!(video.pixel_format_name(), "yuv410p");
+                assert_eq!(video.planes()[0], (0..16).collect::<Vec<_>>());
+                assert_eq!(video.planes()[1], vec![16]);
+                assert_eq!(video.planes()[2], vec![17]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+    }
+
+    #[test]
     fn decodes_yuv444p_packet_to_three_planes() {
         let decoder = RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p).unwrap();
         let packet = Packet::new((0..18).collect(), 0);
@@ -172,6 +191,9 @@ mod tests {
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv422p).is_err());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv411p).is_err());
         assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuv411p).is_ok());
+        assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuv410p).is_err());
+        assert!(RawVideoDecoder::new(2, 4, PixelFormat::Yuv410p).is_err());
+        assert!(RawVideoDecoder::new(4, 4, PixelFormat::Yuv410p).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p).is_ok());
 
         let decoder = RawVideoDecoder::new(2, 2, PixelFormat::Rgb24).unwrap();
