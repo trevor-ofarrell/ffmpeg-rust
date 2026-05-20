@@ -1,3 +1,7 @@
+use crate::frame::{
+    FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye, FrameStereo3dType,
+    FrameStereo3dView,
+};
 use crate::{rescale_q, AvError, AvResult, BufferRef, Rational};
 
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
@@ -2138,6 +2142,97 @@ impl PacketDisplayMatrix {
     }
 }
 
+pub type PacketStereo3dType = FrameStereo3dType;
+pub type PacketStereo3dFlags = FrameStereo3dFlags;
+pub type PacketStereo3dView = FrameStereo3dView;
+pub type PacketStereo3dPrimaryEye = FrameStereo3dPrimaryEye;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketStereo3d(FrameStereo3d);
+
+impl PacketStereo3d {
+    pub const RATIONAL_LEN: usize = FrameStereo3d::RATIONAL_LEN;
+    pub const TYPE_OFFSET: usize = FrameStereo3d::TYPE_OFFSET;
+    pub const FLAGS_OFFSET: usize = FrameStereo3d::FLAGS_OFFSET;
+    pub const VIEW_OFFSET: usize = FrameStereo3d::VIEW_OFFSET;
+    pub const PRIMARY_EYE_OFFSET: usize = FrameStereo3d::PRIMARY_EYE_OFFSET;
+    pub const BASELINE_OFFSET: usize = FrameStereo3d::BASELINE_OFFSET;
+    pub const HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET: usize =
+        FrameStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET;
+    pub const HORIZONTAL_FIELD_OF_VIEW_OFFSET: usize =
+        FrameStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET;
+    pub const DATA_LEN: usize = FrameStereo3d::DATA_LEN;
+
+    pub fn new(
+        stereo_type: PacketStereo3dType,
+        flags: PacketStereo3dFlags,
+        view: PacketStereo3dView,
+        primary_eye: PacketStereo3dPrimaryEye,
+        baseline: u32,
+        horizontal_disparity_adjustment: Rational,
+        horizontal_field_of_view: Rational,
+    ) -> AvResult<Self> {
+        FrameStereo3d::new(
+            stereo_type,
+            flags,
+            view,
+            primary_eye,
+            baseline,
+            horizontal_disparity_adjustment,
+            horizontal_field_of_view,
+        )
+        .map(Self)
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "stereo3d packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        FrameStereo3d::parse(data).map(Self)
+    }
+
+    pub const fn stereo_type(self) -> PacketStereo3dType {
+        self.0.stereo_type()
+    }
+
+    pub const fn flags(self) -> PacketStereo3dFlags {
+        self.0.flags()
+    }
+
+    pub const fn view(self) -> PacketStereo3dView {
+        self.0.view()
+    }
+
+    pub const fn primary_eye(self) -> PacketStereo3dPrimaryEye {
+        self.0.primary_eye()
+    }
+
+    pub const fn baseline(self) -> u32 {
+        self.0.baseline()
+    }
+
+    pub const fn horizontal_disparity_adjustment(self) -> Rational {
+        self.0.horizontal_disparity_adjustment()
+    }
+
+    pub const fn horizontal_field_of_view(self) -> Rational {
+        self.0.horizontal_field_of_view()
+    }
+
+    pub const fn has_inverted_views(self) -> bool {
+        self.0.has_inverted_views()
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        self.0.to_bytes()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum PacketAudioServiceType {
@@ -2374,6 +2469,10 @@ impl SideData {
         Self::new_with_kind(PacketSideDataKind::DisplayMatrix, value.to_bytes().to_vec())
     }
 
+    pub fn new_stereo3d(value: PacketStereo3d) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::Stereo3d, value.to_bytes().to_vec())
+    }
+
     pub fn new_audio_service_type(value: PacketAudioServiceType) -> AvResult<Self> {
         Self::new_with_kind(
             PacketSideDataKind::AudioServiceType,
@@ -2602,6 +2701,14 @@ impl SideData {
         }
 
         PacketDisplayMatrix::parse(self.data()).map(Some)
+    }
+
+    pub fn stereo3d(&self) -> AvResult<Option<PacketStereo3d>> {
+        if self.kind != PacketSideDataKind::Stereo3d {
+            return Ok(None);
+        }
+
+        PacketStereo3d::parse(self.data()).map(Some)
     }
 
     pub fn audio_service_type(&self) -> AvResult<Option<PacketAudioServiceType>> {
@@ -5077,6 +5184,206 @@ mod tests {
         let frame_cropping =
             SideData::new_with_kind(PacketSideDataKind::FrameCropping, vec![0; 36]).unwrap();
         assert_eq!(frame_cropping.display_matrix().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_parses_stereo3d_payload() {
+        let expected = PacketStereo3d::new(
+            PacketStereo3dType::SideBySide,
+            PacketStereo3dFlags::INVERT,
+            PacketStereo3dView::Right,
+            PacketStereo3dPrimaryEye::Left,
+            63_500,
+            Rational::from_raw(-1, 2),
+            Rational::from_raw(90, 1),
+        )
+        .unwrap();
+        let mut expected_bytes = [0; PacketStereo3d::DATA_LEN];
+        expected_bytes[PacketStereo3d::TYPE_OFFSET..PacketStereo3d::TYPE_OFFSET + 4]
+            .copy_from_slice(&1i32.to_ne_bytes());
+        expected_bytes[PacketStereo3d::FLAGS_OFFSET..PacketStereo3d::FLAGS_OFFSET + 4]
+            .copy_from_slice(&1i32.to_ne_bytes());
+        expected_bytes[PacketStereo3d::VIEW_OFFSET..PacketStereo3d::VIEW_OFFSET + 4]
+            .copy_from_slice(&2i32.to_ne_bytes());
+        expected_bytes[PacketStereo3d::PRIMARY_EYE_OFFSET..PacketStereo3d::PRIMARY_EYE_OFFSET + 4]
+            .copy_from_slice(&1i32.to_ne_bytes());
+        expected_bytes[PacketStereo3d::BASELINE_OFFSET..PacketStereo3d::BASELINE_OFFSET + 4]
+            .copy_from_slice(&63_500u32.to_ne_bytes());
+        expected_bytes[PacketStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET
+            ..PacketStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET + 4]
+            .copy_from_slice(&(-1i32).to_ne_bytes());
+        expected_bytes[PacketStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET + 4
+            ..PacketStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET + 8]
+            .copy_from_slice(&2i32.to_ne_bytes());
+        expected_bytes[PacketStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET
+            ..PacketStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET + 4]
+            .copy_from_slice(&90i32.to_ne_bytes());
+        expected_bytes[PacketStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET + 4
+            ..PacketStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET + 8]
+            .copy_from_slice(&1i32.to_ne_bytes());
+
+        assert_eq!(PacketStereo3d::RATIONAL_LEN, 8);
+        assert_eq!(PacketStereo3d::DATA_LEN, 36);
+        assert_eq!(PacketStereo3d::TYPE_OFFSET, 0);
+        assert_eq!(PacketStereo3d::FLAGS_OFFSET, 4);
+        assert_eq!(PacketStereo3d::VIEW_OFFSET, 8);
+        assert_eq!(PacketStereo3d::PRIMARY_EYE_OFFSET, 12);
+        assert_eq!(PacketStereo3d::BASELINE_OFFSET, 16);
+        assert_eq!(PacketStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET, 20);
+        assert_eq!(PacketStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET, 28);
+        assert_eq!(expected.stereo_type(), PacketStereo3dType::SideBySide);
+        assert_eq!(
+            expected.stereo_type().ffmpeg_constant(),
+            "AV_STEREO3D_SIDEBYSIDE"
+        );
+        assert_eq!(expected.flags(), PacketStereo3dFlags::INVERT);
+        assert!(expected.has_inverted_views());
+        assert_eq!(expected.view(), PacketStereo3dView::Right);
+        assert_eq!(expected.view().ffmpeg_constant(), "AV_STEREO3D_VIEW_RIGHT");
+        assert_eq!(expected.primary_eye(), PacketStereo3dPrimaryEye::Left);
+        assert_eq!(
+            expected.primary_eye().ffmpeg_constant(),
+            "AV_PRIMARY_EYE_LEFT"
+        );
+        assert_eq!(expected.baseline(), 63_500);
+        assert_eq!(
+            expected.horizontal_disparity_adjustment(),
+            Rational::from_raw(-1, 2)
+        );
+        assert_eq!(
+            expected.horizontal_field_of_view(),
+            Rational::from_raw(90, 1)
+        );
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(PacketStereo3d::parse(&expected_bytes).unwrap(), expected);
+
+        let unset_rationals = PacketStereo3d::new(
+            PacketStereo3dType::TwoDimensional,
+            PacketStereo3dFlags::EMPTY,
+            PacketStereo3dView::Packed,
+            PacketStereo3dPrimaryEye::None,
+            0,
+            Rational::from_raw(0, 0),
+            Rational::from_raw(0, 0),
+        )
+        .unwrap();
+        assert_eq!(
+            PacketStereo3d::parse(&unset_rationals.to_bytes()).unwrap(),
+            unset_rationals
+        );
+
+        let side_data = SideData::new_stereo3d(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::Stereo3d);
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(side_data.stereo3d().unwrap(), Some(expected));
+
+        let display_matrix =
+            SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, expected_bytes.to_vec())
+                .unwrap();
+        assert_eq!(display_matrix.stereo3d().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_stereo3d_payload() {
+        let valid = PacketStereo3d::new(
+            PacketStereo3dType::SideBySide,
+            PacketStereo3dFlags::INVERT,
+            PacketStereo3dView::Packed,
+            PacketStereo3dPrimaryEye::Right,
+            1,
+            Rational::from_raw(0, 1),
+            Rational::from_raw(45, 1),
+        )
+        .unwrap()
+        .to_bytes();
+
+        let mut invalid_payloads = Vec::new();
+        invalid_payloads.push(Vec::new());
+        invalid_payloads.push(valid[..PacketStereo3d::DATA_LEN - 1].to_vec());
+        let mut long = valid.to_vec();
+        long.push(0);
+        invalid_payloads.push(long);
+
+        for (offset, value) in [
+            (PacketStereo3d::TYPE_OFFSET, 9_i32),
+            (PacketStereo3d::FLAGS_OFFSET, 2_i32),
+            (PacketStereo3d::FLAGS_OFFSET, -1_i32),
+            (PacketStereo3d::VIEW_OFFSET, 4_i32),
+            (PacketStereo3d::PRIMARY_EYE_OFFSET, 3_i32),
+        ] {
+            let mut invalid = valid;
+            invalid[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+            invalid_payloads.push(invalid.to_vec());
+        }
+
+        let mut invalid_disparity = valid;
+        invalid_disparity[PacketStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET
+            ..PacketStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET + 4]
+            .copy_from_slice(&2i32.to_ne_bytes());
+        invalid_payloads.push(invalid_disparity.to_vec());
+
+        let mut invalid_disparity_unset = valid;
+        invalid_disparity_unset[PacketStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET
+            ..PacketStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET + 4]
+            .copy_from_slice(&1i32.to_ne_bytes());
+        invalid_disparity_unset[PacketStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET + 4
+            ..PacketStereo3d::HORIZONTAL_DISPARITY_ADJUSTMENT_OFFSET + 8]
+            .copy_from_slice(&0i32.to_ne_bytes());
+        invalid_payloads.push(invalid_disparity_unset.to_vec());
+
+        let mut invalid_fov_negative = valid;
+        invalid_fov_negative[PacketStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET
+            ..PacketStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET + 4]
+            .copy_from_slice(&(-1i32).to_ne_bytes());
+        invalid_payloads.push(invalid_fov_negative.to_vec());
+
+        let mut invalid_fov_unset = valid;
+        invalid_fov_unset[PacketStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET
+            ..PacketStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET + 4]
+            .copy_from_slice(&1i32.to_ne_bytes());
+        invalid_fov_unset[PacketStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET + 4
+            ..PacketStereo3d::HORIZONTAL_FIELD_OF_VIEW_OFFSET + 8]
+            .copy_from_slice(&0i32.to_ne_bytes());
+        invalid_payloads.push(invalid_fov_unset.to_vec());
+
+        for data in invalid_payloads {
+            assert_eq!(
+                PacketStereo3d::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data = SideData::new_with_kind(PacketSideDataKind::Stereo3d, data).unwrap();
+            assert_eq!(
+                side_data.stereo3d().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            PacketStereo3dType::from_raw(9).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PacketStereo3dFlags::from_bits(2).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PacketStereo3dFlags::from_raw(-1).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PacketStereo3d::new(
+                PacketStereo3dType::SideBySide,
+                PacketStereo3dFlags::EMPTY,
+                PacketStereo3dView::Packed,
+                PacketStereo3dPrimaryEye::None,
+                0,
+                Rational::from_raw(2, 1),
+                Rational::from_raw(0, 1),
+            )
+            .unwrap_err()
+            .kind(),
+            crate::AvErrorKind::InvalidData
+        );
     }
 
     #[test]

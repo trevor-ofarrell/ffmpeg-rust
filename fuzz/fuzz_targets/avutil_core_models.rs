@@ -37,9 +37,10 @@ use avutil::{
     PacketFrameCropping, PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection,
     PacketLcevc, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
     PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
-    PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind,
-    PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection,
-    PacketSubtitlePosition, PacketWebVttIdentifier,
+    PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
+    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping,
+    PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags, PacketStereo3dPrimaryEye,
+    PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
     Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
@@ -3308,6 +3309,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     .max(PacketSphericalMapping::DATA_LEN + 1)
     .max(PacketDisplayMatrix::DATA_LEN + 1)
     .max(PacketReplayGain::DATA_LEN + 1)
+    .max(PacketStereo3d::DATA_LEN + 1)
     .max(PacketAudioServiceType::DATA_LEN + 1)
     .max(PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN + 1);
     let typed_payload_len =
@@ -3799,6 +3801,36 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::DisplayMatrix);
             assert!(packet_display_matrix_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.stereo3d() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::Stereo3d);
+            assert_eq!(typed_payload.len(), PacketStereo3d::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketStereo3d::new(
+                    value.stereo_type(),
+                    value.flags(),
+                    value.view(),
+                    value.primary_eye(),
+                    value.baseline(),
+                    value.horizontal_disparity_adjustment(),
+                    value.horizontal_field_of_view()
+                )
+                .unwrap(),
+                value
+            );
+            assert_eq!(
+                PacketStereo3d::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::Stereo3d),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::Stereo3d);
+            assert!(packet_stereo3d_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.audio_service_type() {
@@ -5097,6 +5129,70 @@ fn exercise_fixtures() {
         SideData::new_with_kind(PacketSideDataKind::Lcevc, packet_display_matrix_bytes.to_vec())
             .unwrap();
     assert_eq!(non_packet_display_matrix.display_matrix().unwrap(), None);
+    let packet_stereo3d = PacketStereo3d::new(
+        PacketStereo3dType::SideBySide,
+        PacketStereo3dFlags::INVERT,
+        PacketStereo3dView::Right,
+        PacketStereo3dPrimaryEye::Left,
+        63_500,
+        Rational::from_raw(-1, 2),
+        Rational::from_raw(90, 1),
+    )
+    .unwrap();
+    assert_eq!(PacketStereo3d::DATA_LEN, 36);
+    assert_eq!(packet_stereo3d.stereo_type(), PacketStereo3dType::SideBySide);
+    assert_eq!(packet_stereo3d.flags(), PacketStereo3dFlags::INVERT);
+    assert!(packet_stereo3d.has_inverted_views());
+    assert_eq!(packet_stereo3d.view(), PacketStereo3dView::Right);
+    assert_eq!(
+        packet_stereo3d.primary_eye(),
+        PacketStereo3dPrimaryEye::Left
+    );
+    assert_eq!(packet_stereo3d.baseline(), 63_500);
+    assert_eq!(
+        PacketStereo3d::parse(&packet_stereo3d.to_bytes()).unwrap(),
+        packet_stereo3d
+    );
+    assert_eq!(
+        SideData::new_stereo3d(packet_stereo3d)
+            .unwrap()
+            .stereo3d()
+            .unwrap(),
+        Some(packet_stereo3d)
+    );
+    let packet_stereo3d_unset = PacketStereo3d::new(
+        PacketStereo3dType::TwoDimensional,
+        PacketStereo3dFlags::EMPTY,
+        PacketStereo3dView::Packed,
+        PacketStereo3dPrimaryEye::None,
+        0,
+        Rational::from_raw(0, 0),
+        Rational::from_raw(0, 0),
+    )
+    .unwrap();
+    assert_eq!(
+        PacketStereo3d::parse(&packet_stereo3d_unset.to_bytes()).unwrap(),
+        packet_stereo3d_unset
+    );
+    assert_eq!(
+        PacketStereo3d::parse(&packet_stereo3d.to_bytes()[..PacketStereo3d::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut invalid_packet_stereo3d = packet_stereo3d.to_bytes();
+    invalid_packet_stereo3d[PacketStereo3d::FLAGS_OFFSET..PacketStereo3d::FLAGS_OFFSET + 4]
+        .copy_from_slice(&2i32.to_ne_bytes());
+    assert_eq!(
+        PacketStereo3d::parse(&invalid_packet_stereo3d)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_packet_stereo3d =
+        SideData::new_with_kind(PacketSideDataKind::Lcevc, packet_stereo3d.to_bytes().to_vec())
+            .unwrap();
+    assert_eq!(non_packet_stereo3d.stereo3d().unwrap(), None);
     let packet_replay_gain = PacketReplayGain::new(
         120,
         0x0102_0304,
@@ -11000,6 +11096,10 @@ fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_display_matrix_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketDisplayMatrix::DATA_LEN
+}
+
+fn packet_stereo3d_payload_invalid(data: &[u8]) -> bool {
+    data.len() != PacketStereo3d::DATA_LEN || PacketStereo3d::parse(data).is_err()
 }
 
 fn packet_replay_gain_payload_invalid(data: &[u8]) -> bool {
