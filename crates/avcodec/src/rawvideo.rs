@@ -258,6 +258,10 @@ mod tests {
     fn packed_rgb_and_rgba_use_single_payload_plane() {
         let rgb = RawVideoDecoder::new(1, 2, PixelFormat::Rgb24).unwrap();
         let bgr = RawVideoDecoder::new(1, 2, PixelFormat::Bgr24).unwrap();
+        let rgb48le = RawVideoDecoder::new(1, 1, PixelFormat::Rgb48Le).unwrap();
+        let rgb48be = RawVideoDecoder::new(1, 1, PixelFormat::Rgb48Be).unwrap();
+        let bgr48le = RawVideoDecoder::new(1, 1, PixelFormat::Bgr48Le).unwrap();
+        let bgr48be = RawVideoDecoder::new(1, 1, PixelFormat::Bgr48Be).unwrap();
         let rgba = RawVideoDecoder::new(1, 1, PixelFormat::Rgba).unwrap();
         let bgra = RawVideoDecoder::new(1, 1, PixelFormat::Bgra).unwrap();
         let argb = RawVideoDecoder::new(1, 1, PixelFormat::Argb).unwrap();
@@ -269,6 +273,10 @@ mod tests {
 
         assert_eq!(rgb.frame_size(), 6);
         assert_eq!(bgr.frame_size(), 6);
+        assert_eq!(rgb48le.frame_size(), 6);
+        assert_eq!(rgb48be.frame_size(), 6);
+        assert_eq!(bgr48le.frame_size(), 6);
+        assert_eq!(bgr48be.frame_size(), 6);
         assert_eq!(rgba.frame_size(), 4);
         assert_eq!(bgra.frame_size(), 4);
         assert_eq!(argb.frame_size(), 4);
@@ -281,6 +289,18 @@ mod tests {
             .decode_packet(&Packet::new(vec![1, 2, 3, 4, 5, 6], 0))
             .is_ok());
         assert!(bgr
+            .decode_packet(&Packet::new(vec![1, 2, 3, 4, 5, 6], 0))
+            .is_ok());
+        assert!(rgb48le
+            .decode_packet(&Packet::new(vec![1, 2, 3, 4, 5, 6], 0))
+            .is_ok());
+        assert!(rgb48be
+            .decode_packet(&Packet::new(vec![1, 2, 3, 4, 5, 6], 0))
+            .is_ok());
+        assert!(bgr48le
+            .decode_packet(&Packet::new(vec![1, 2, 3, 4, 5, 6], 0))
+            .is_ok());
+        assert!(bgr48be
             .decode_packet(&Packet::new(vec![1, 2, 3, 4, 5, 6], 0))
             .is_ok());
         assert!(rgba
