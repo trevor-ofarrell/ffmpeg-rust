@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes FFmpeg's packed 32-bit grayscale formats `gray32le` and `gray32be`, with `y32le` and `y32be` accepted as aliases. Descriptor metadata, 32-bit-per-component reporting, 4-byte-per-pixel frame-size math, `VideoFrame` line sizing, rawvideo decode/demux/mux packet sizing, constrained `ffmpeg-rs -f rawvideo ... -pix_fmt gray32le -f null -` execution, and the affected fuzz harnesses now exercise these single-plane grayscale formats while treating byte order as raw storage naming only, not conversion. This remains below `complete` because full `AVPixFmtDescriptor` coverage, full `ffmpeg -pix_fmts` inventory parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
+
 Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes FFmpeg's packed 16-bit gray+alpha formats `ya16le` and `ya16be`. Descriptor metadata, 16-bit-per-component reporting, 4-byte-per-pixel frame-size math, `VideoFrame` line sizing, rawvideo decode/demux/mux packet sizing, constrained `ffmpeg-rs -f rawvideo ... -pix_fmt ya16le -f null -` execution, and the affected fuzz harnesses now exercise these single-plane alpha-carrying grayscale formats while treating byte order as raw storage naming only, not conversion. This remains below `complete` because full `AVPixFmtDescriptor` coverage, full `ffmpeg -pix_fmts` inventory parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
 
 Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes FFmpeg's packed 64-bit RGBA/BGRA formats `rgba64le`, `rgba64be`, `bgra64le`, and `bgra64be`. Descriptor metadata, 16-bit-per-component reporting, 8-byte-per-pixel frame-size math, `VideoFrame` line sizing, rawvideo decode/demux/mux packet sizing, constrained `ffmpeg-rs -f rawvideo ... -pix_fmt rgba64le -f null -` execution, and the affected fuzz harnesses now exercise these single-plane alpha-carrying formats while treating byte order as raw storage naming only, not conversion. This remains below `complete` because full `AVPixFmtDescriptor` coverage, full `ffmpeg -pix_fmts` inventory parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
@@ -257,6 +259,26 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `gray32le`/`gray32be` slice:
+  - `cargo fmt --all`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil pixel`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil frames_report_tightly_packed_line_sizes`
+  - `$env:CARGO_TARGET_DIR='target-avcodec-gray32-test'; cargo test -p avcodec rawvideo`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avformat rawvideo`
+  - `$env:CARGO_TARGET_DIR='target-fftools-gray32-test'; cargo test -p fftools --lib runs_rawvideo_gray32le_to_null_stdout`
+  - `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models --bin avcodec_basic_decoders --bin avformat_rawvideo --bin avformat_basic_muxers`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models --bin avcodec_basic_decoders --bin avformat_rawvideo --bin avformat_basic_muxers -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil -p avcodec -p avformat -p fftools --all-targets -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-pixel-format`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avformat-rawvideo-demuxer`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avformat-rawvideo-muxer`
+  - `$env:CARGO_TARGET_DIR='target-avcodec-gray32-test'; .\target-codex\debug\fate-runner.exe run --component avcodec-rawvideo`
+  - `$env:CARGO_TARGET_DIR='target-fftools-gray32-test'; .\target-codex\debug\fate-runner.exe run --component fftools-ffmpeg-rawvideo-framecrc-null`
+  - `$env:CARGO_TARGET_DIR='target-fftools-gray32-test'; .\target-codex\debug\fate-runner.exe run --changed`
+  - `cargo fmt --all -- --check`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  - `git diff --check`
 
 - Current `ya16le`/`ya16be` slice:
   - `cargo fmt --all`
@@ -3226,6 +3248,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-pixel-format` / rawvideo `gray32le`/`gray32be` slice: no remaining code/test assertion failures. Focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, touched crate clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, and `git diff --check` passed; `git diff --check` reported CRLF warnings only.
+
 - Current `avutil-pixel-format` / rawvideo `ya16le`/`ya16be` slice: no remaining code/test assertion failures. Focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, touched crate clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, and `git diff --check` passed; `git diff --check` reported CRLF warnings only. The known Windows Application Control limitation on a single broad workspace library-test invocation remains documented from previous slices and was not used as the gate for this narrow slice.
 
 - Current `avutil-pixel-format` / rawvideo `rgba64le`/`rgba64be`/`bgra64le`/`bgra64be` slice: no remaining code/test assertion failures. Windows Application Control blocked several freshly built test executables in specific target directories: `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avcodec rawvideo`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fftools --lib runs_rawvideo_rgba64le_to_null_stdout`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avcodec-rawvideo`, `$env:CARGO_TARGET_DIR='target-avcodec-rgba64-test'; cargo run -p fate-runner -- run --component avcodec-rawvideo`, `$env:CARGO_TARGET_DIR='target-fftools-rgba64-test'; cargo test --workspace --all-features --lib` at `avdevice`, default-target `cargo test --workspace --all-features --lib` at `swscale`, and `$env:CARGO_TARGET_DIR='target-codex'; cargo test --workspace --all-features --lib` at `avcodec`. The affected focused tests and FATE mappings passed by running the already-built `target-codex` fate-runner with accepted target directories, and `avdevice`/`swscale` zero-test crates pass individually from `target-codex`; workspace-wide `--lib` in one target directory remains blocked by policy rather than Rust test failures. `git diff --check` passed with CRLF warnings only.
@@ -3459,6 +3483,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-pixel-format` is the current focus for this slice, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The concrete change is adding packed 32-bit grayscale formats `gray32le` and `gray32be` to the current shared pixel model, accepting `y32le` and `y32be` aliases, and treating them as single-plane 4-byte-per-pixel formats with endian-specific raw storage names but no conversion semantics. It does not claim full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pixel conversion, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
+
 `avutil-pixel-format` is the current focus for this slice, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The concrete change is adding packed 16-bit gray+alpha formats `ya16le` and `ya16be` to the current shared pixel model and treating them as single-plane 4-byte-per-pixel formats with endian-specific raw storage names and alpha metadata but no conversion semantics. It does not claim full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pixel conversion, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
 
 `avutil-pixel-format` is the current focus for this slice, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The concrete change is adding packed 64-bit RGBA/BGRA formats `rgba64le`, `rgba64be`, `bgra64le`, and `bgra64be` to the current shared pixel model and treating them as single-plane 8-byte-per-pixel formats with endian-specific raw storage names and alpha metadata but no conversion semantics. It does not claim full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pixel conversion, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
@@ -3546,6 +3572,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added packed 32-bit grayscale formats `gray32le` and `gray32be` to the current shared pixel/rawvideo model, including `y32le` and `y32be` aliases. `PixelFormat` now reports these names in the inventory with grayscale descriptor metadata, one modeled component, 32 bits per component and pixel, one packed payload plane, no alpha flag, and 4-byte-per-pixel sizing. `VideoFrame`, `RawVideoDecoder`, `RawVideoDemuxer`, `RawVideoMuxer`, constrained `ffmpeg-rs` rawvideo-to-null execution, and the affected fuzz harnesses now exercise the formats, including a new `gray32le` CLI test. Validation passed with focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, touched crate clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, and `git diff --check` with CRLF warnings only. The affected components remain `implemented`, not `complete`, because oracle differentials, upstream FATE media coverage, full pixel inventory coverage, and actual fuzz execution are still absent.
 
 Latest slice: added packed 16-bit gray+alpha formats `ya16le` and `ya16be` to the current shared pixel/rawvideo model. `PixelFormat` now reports these names in the inventory with grayscale descriptor metadata, two modeled components, 16 bits per component, 32 bits per pixel, one packed payload plane, alpha flag, and 4-byte-per-pixel sizing. `VideoFrame`, `RawVideoDecoder`, `RawVideoDemuxer`, `RawVideoMuxer`, constrained `ffmpeg-rs` rawvideo-to-null execution, and the affected fuzz harnesses now exercise the formats, including a new `ya16le` CLI test. Validation passed with focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, touched crate clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, and `git diff --check` with CRLF warnings only. The affected components remain `implemented`, not `complete`, because oracle differentials, upstream FATE media coverage, full pixel inventory coverage, and actual fuzz execution are still absent.
 
