@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
@@ -559,10 +559,74 @@ impl Logger {
     }
 }
 
+static GLOBAL_LOGGER: OnceLock<Mutex<Logger>> = OnceLock::new();
+
+fn global_logger() -> &'static Mutex<Logger> {
+    GLOBAL_LOGGER.get_or_init(|| Mutex::new(Logger::default()))
+}
+
+pub fn global_log_level() -> LogLevel {
+    global_logger().lock().unwrap().level()
+}
+
+pub fn set_global_log_level(level: LogLevel) {
+    global_logger().lock().unwrap().set_level(level);
+}
+
+pub fn global_log_flags() -> LogFlags {
+    global_logger().lock().unwrap().flags()
+}
+
+pub fn set_global_log_flags(flags: LogFlags) {
+    global_logger().lock().unwrap().set_flags(flags);
+}
+
+pub fn set_global_log_flag(flag: LogFlags, enabled: bool) {
+    global_logger().lock().unwrap().set_flag(flag, enabled);
+}
+
+pub fn set_global_log_callback<F>(callback: F)
+where
+    F: Fn(&LogRecord) + Send + Sync + 'static,
+{
+    global_logger().lock().unwrap().set_callback(callback);
+}
+
+pub fn clear_global_log_callback() -> bool {
+    global_logger().lock().unwrap().clear_callback()
+}
+
+pub fn global_log(record: LogRecord) -> bool {
+    global_logger().lock().unwrap().log(record)
+}
+
+pub fn flush_global_log_repeated() -> bool {
+    global_logger().lock().unwrap().flush_repeated()
+}
+
+pub fn global_formatted_log_records() -> Vec<String> {
+    global_logger().lock().unwrap().formatted_records()
+}
+
+pub fn clear_global_log_records() {
+    global_logger().lock().unwrap().clear();
+}
+
+pub fn take_global_log_records() -> Vec<LogRecord> {
+    global_logger().lock().unwrap().take_records()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+
+    static GLOBAL_LOGGER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn reset_global_logger_for_tests(level: LogLevel, flags: LogFlags) {
+        let mut logger = global_logger().lock().unwrap();
+        *logger = Logger::new_with_flags(level, flags);
+    }
 
     #[test]
     fn logger_filters_by_level() {
@@ -963,6 +1027,116 @@ mod tests {
 
         assert_eq!(seen, ["[error] ffmpeg: bad packet"]);
         assert_eq!(logger.formatted_records().len(), 2);
+    }
+
+    #[test]
+    fn global_logger_filters_and_takes_records() {
+        let _guard = GLOBAL_LOGGER_TEST_LOCK.lock().unwrap();
+        reset_global_logger_for_tests(LogLevel::Warning, LogFlags::PRINT_LEVEL);
+
+        assert_eq!(global_log_level(), LogLevel::Warning);
+        assert_eq!(global_log_flags(), LogFlags::PRINT_LEVEL);
+        assert!(!global_log(LogRecord::new(
+            LogLevel::Info,
+            "ffmpeg",
+            "ignored"
+        )));
+        assert!(global_log(LogRecord::new(
+            LogLevel::Error,
+            "ffmpeg",
+            "kept"
+        )));
+        assert_eq!(global_formatted_log_records(), ["[error] ffmpeg: kept"]);
+
+        let records = take_global_log_records();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].message(), "kept");
+        assert!(global_formatted_log_records().is_empty());
+
+        reset_global_logger_for_tests(LogLevel::Info, LogFlags::PRINT_LEVEL);
+    }
+
+    #[test]
+    fn global_logger_shared_flags_flush_repeated_state() {
+        let _guard = GLOBAL_LOGGER_TEST_LOCK.lock().unwrap();
+        let mut flags = LogFlags::PRINT_LEVEL;
+        flags.insert(LogFlags::SKIP_REPEATED);
+        reset_global_logger_for_tests(LogLevel::Info, flags);
+
+        let repeated = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet");
+        assert!(global_log(repeated.clone()));
+        assert!(global_log(repeated));
+        assert_eq!(global_formatted_log_records().len(), 2);
+
+        set_global_log_flag(LogFlags::SKIP_REPEATED, false);
+        assert!(!global_log_flags().contains(LogFlags::SKIP_REPEATED));
+        let records = take_global_log_records();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[1].repetition_count(), Some(1));
+
+        set_global_log_flag(LogFlags::SKIP_REPEATED, true);
+        let repeated = LogRecord::new(LogLevel::Error, "decoder", "corrupt packet");
+        assert!(global_log(repeated.clone()));
+        assert!(global_log(repeated));
+        assert!(flush_global_log_repeated());
+        assert!(!flush_global_log_repeated());
+        let records = take_global_log_records();
+        assert_eq!(records.len(), 2);
+        assert!(records[1].is_repetition_summary());
+        assert_eq!(records[1].repetition_count(), Some(1));
+
+        reset_global_logger_for_tests(LogLevel::Info, LogFlags::PRINT_LEVEL);
+    }
+
+    #[test]
+    fn global_logger_installed_callback_receives_emitted_records() {
+        let _guard = GLOBAL_LOGGER_TEST_LOCK.lock().unwrap();
+        let mut flags = LogFlags::PRINT_LEVEL;
+        flags.insert(LogFlags::SKIP_REPEATED);
+        reset_global_logger_for_tests(LogLevel::Info, flags);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let callback_seen = Arc::clone(&seen);
+        set_global_log_callback(move |record| {
+            callback_seen.lock().unwrap().push(record.format_line());
+        });
+
+        assert!(!global_log(LogRecord::new(
+            LogLevel::Debug,
+            "decoder",
+            "hidden"
+        )));
+        let repeated = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet");
+        assert!(global_log(repeated.clone()));
+        assert!(global_log(repeated));
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            ["[warning] decoder: damaged packet"]
+        );
+
+        assert!(global_log(LogRecord::new(
+            LogLevel::Error,
+            "demuxer",
+            "bad header"
+        )));
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            [
+                "[warning] decoder: damaged packet",
+                "Last message repeated 1 times",
+                "[error] demuxer: bad header",
+            ]
+        );
+
+        assert!(clear_global_log_callback());
+        assert!(!clear_global_log_callback());
+        assert!(global_log(LogRecord::new(
+            LogLevel::Error,
+            "demuxer",
+            "after clear"
+        )));
+        assert_eq!(seen.lock().unwrap().len(), 3);
+
+        reset_global_logger_for_tests(LogLevel::Info, LogFlags::PRINT_LEVEL);
     }
 
     #[test]

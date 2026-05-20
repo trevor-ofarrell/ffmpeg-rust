@@ -34,7 +34,11 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId,
-    LogFlags, LogLevel, LogRecord, LogTimestamp, Logger, Md5, Packet, PacketA53ClosedCaptions,
+    clear_global_log_callback, clear_global_log_records, flush_global_log_repeated,
+    global_formatted_log_records, global_log, global_log_flags, global_log_level,
+    set_global_log_callback, set_global_log_flag, set_global_log_flags, set_global_log_level,
+    take_global_log_records, LogFlags, LogLevel, LogRecord, LogTimestamp, Logger, Md5, Packet,
+    PacketA53ClosedCaptions,
     PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
@@ -918,6 +922,62 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         "after clear"
     )));
     assert_eq!(callback_seen.lock().unwrap().len(), 3);
+
+    clear_global_log_callback();
+    clear_global_log_records();
+    set_global_log_level(LogLevel::Info);
+    set_global_log_flags(callback_flags);
+    assert_eq!(global_log_level(), LogLevel::Info);
+    assert!(global_log_flags().contains(LogFlags::SKIP_REPEATED));
+    let global_seen = Arc::new(Mutex::new(Vec::new()));
+    let seen_by_global_callback = Arc::clone(&global_seen);
+    set_global_log_callback(move |record| {
+        seen_by_global_callback
+            .lock()
+            .unwrap()
+            .push(record.format_line());
+    });
+    assert!(!global_log(LogRecord::new(
+        LogLevel::Debug,
+        "decoder",
+        "global hidden"
+    )));
+    let global_repeated = LogRecord::new(LogLevel::Warning, "decoder", "global damaged packet");
+    assert!(global_log(global_repeated.clone()));
+    assert!(global_log(global_repeated));
+    assert_eq!(
+        global_formatted_log_records(),
+        [
+            "[warning] decoder: global damaged packet".to_owned(),
+            "Last message repeated 1 times".to_owned()
+        ]
+    );
+    set_global_log_flag(LogFlags::SKIP_REPEATED, false);
+    assert_eq!(
+        global_seen.lock().unwrap().as_slice(),
+        [
+            "[warning] decoder: global damaged packet",
+            "Last message repeated 1 times"
+        ]
+    );
+    assert_eq!(take_global_log_records().len(), 2);
+    assert!(clear_global_log_callback());
+    assert!(global_log(LogRecord::new(
+        LogLevel::Error,
+        "demuxer",
+        "after global clear"
+    )));
+    assert_eq!(global_seen.lock().unwrap().len(), 2);
+    assert_eq!(take_global_log_records().len(), 1);
+    set_global_log_flags(callback_flags);
+    let global_flush_repeated =
+        LogRecord::new(LogLevel::Warning, "decoder", "global flush packet");
+    assert!(global_log(global_flush_repeated.clone()));
+    assert!(global_log(global_flush_repeated));
+    assert!(flush_global_log_repeated());
+    assert!(!flush_global_log_repeated());
+    assert_eq!(take_global_log_records().len(), 2);
+    set_global_log_flags(LogFlags::PRINT_LEVEL);
 
     let mut time_flags = LogFlags::PRINT_LEVEL;
     time_flags.insert(LogFlags::PRINT_TIME);
