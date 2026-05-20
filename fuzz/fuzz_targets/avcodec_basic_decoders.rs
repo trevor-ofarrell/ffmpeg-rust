@@ -331,6 +331,10 @@ fn exercise_fixtures() {
         PixelFormat::Bgr8,
         PixelFormat::Rgb4Byte,
         PixelFormat::Bgr4Byte,
+        PixelFormat::BayerBggr8,
+        PixelFormat::BayerRggb8,
+        PixelFormat::BayerGbrg8,
+        PixelFormat::BayerGrbg8,
     ] {
         let decoder = RawVideoDecoder::new(4, 1, format).unwrap();
         assert!(decoder.decode_packet(&Packet::new(vec![0; 4], 0)).is_ok());
@@ -390,6 +394,8 @@ fn exercise_fixtures() {
         PixelFormat::Bgr555Be,
         PixelFormat::Rgb444Le,
         PixelFormat::Bgr444Be,
+        PixelFormat::BayerBggr16Le,
+        PixelFormat::BayerRggb16Be,
     ] {
         let decoder = RawVideoDecoder::new(2, 1, format).unwrap();
         assert!(decoder.decode_packet(&Packet::new(vec![0; 4], 0)).is_ok());

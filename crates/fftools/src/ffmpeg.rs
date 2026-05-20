@@ -3019,6 +3019,38 @@ mod tests {
     }
 
     #[test]
+    fn runs_rawvideo_bayer_bggr8_to_null_stdout() {
+        let payload = (0_u8..4).collect::<Vec<_>>();
+        let path = write_temp_bytes("rawvideo-bayer-bggr8-null", "raw", &payload);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bayer_bggr8",
+            "-s",
+            "2x2",
+            "-r",
+            "25",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("rawvideo bayer_bggr8 null path should execute");
+
+        remove_temp_files(&[path]);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), 4);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
     fn runs_rawvideo_yuv420p9le_to_null_stdout() {
         let payload = (0_u8..24).collect::<Vec<_>>();
         let path = write_temp_bytes("rawvideo-yuv420p9le-null", "raw", &payload);

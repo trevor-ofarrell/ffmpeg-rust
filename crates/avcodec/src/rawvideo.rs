@@ -1371,6 +1371,57 @@ mod tests {
     }
 
     #[test]
+    fn decodes_bayer_packets_to_single_plane_frames() {
+        for (pixel_format, expected_name, width, height, payload, expected_line_size) in [
+            (
+                PixelFormat::BayerBggr8,
+                "bayer_bggr8",
+                2,
+                2,
+                vec![0, 1, 2, 3],
+                2,
+            ),
+            (
+                PixelFormat::BayerRggb16Be,
+                "bayer_rggb16be",
+                2,
+                1,
+                vec![4, 5, 6, 7],
+                4,
+            ),
+        ] {
+            let decoder = RawVideoDecoder::new(width, height, pixel_format).unwrap();
+            let mut packet = Packet::new(payload.clone(), 0);
+            packet.set_pts(Some(21));
+
+            let frame = decoder.decode_packet(&packet).unwrap();
+
+            assert_eq!(decoder.frame_size(), payload.len());
+            assert_eq!(frame.pts(), Some(21));
+            match frame.data() {
+                FrameData::Video(video) => {
+                    assert_eq!(video.width(), width);
+                    assert_eq!(video.height(), height);
+                    assert_eq!(video.pixel_format(), pixel_format);
+                    assert_eq!(video.pixel_format_name(), expected_name);
+                    assert_eq!(video.line_sizes(), &[expected_line_size]);
+                    assert_eq!(video.planes(), &[payload]);
+                }
+                FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+            }
+        }
+
+        let decoder = RawVideoDecoder::new(2, 1, PixelFormat::BayerRggb16Be).unwrap();
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; 3], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn decodes_packed_4bit_rgb_packets_to_single_plane_frames() {
         for (pixel_format, expected_name, payload) in [
             (PixelFormat::Rgb4, "rgb4", vec![1, 2, 3, 4]),

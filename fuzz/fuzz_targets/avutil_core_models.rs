@@ -1368,6 +1368,24 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             );
         }
     }
+    assert_eq!(
+        pixel_format.is_bayer(),
+        matches!(
+            pixel_format,
+            PixelFormat::BayerBggr8
+                | PixelFormat::BayerRggb8
+                | PixelFormat::BayerGbrg8
+                | PixelFormat::BayerGrbg8
+                | PixelFormat::BayerBggr16Le
+                | PixelFormat::BayerBggr16Be
+                | PixelFormat::BayerRggb16Le
+                | PixelFormat::BayerRggb16Be
+                | PixelFormat::BayerGbrg16Le
+                | PixelFormat::BayerGbrg16Be
+                | PixelFormat::BayerGrbg16Le
+                | PixelFormat::BayerGrbg16Be
+        )
+    );
     if let Some(bytes_per_pixel) = pixel_format.packed_bytes_per_pixel() {
         assert_eq!(pixel_format.plane_count(), 1);
         assert!(
@@ -5737,6 +5755,74 @@ fn exercise_fixtures() {
         ("bgr4", PixelFormat::Bgr4, 2, 4, None, 2),
         ("rgb4_byte", PixelFormat::Rgb4Byte, 2, 8, Some(1), 4),
         ("bgr4_byte", PixelFormat::Bgr4Byte, 2, 8, Some(1), 4),
+        ("bayer_bggr8", PixelFormat::BayerBggr8, 8, 8, Some(1), 4),
+        ("bayer_rggb8", PixelFormat::BayerRggb8, 8, 8, Some(1), 4),
+        ("bayer_gbrg8", PixelFormat::BayerGbrg8, 8, 8, Some(1), 4),
+        ("bayer_grbg8", PixelFormat::BayerGrbg8, 8, 8, Some(1), 4),
+        (
+            "bayer_bggr16le",
+            PixelFormat::BayerBggr16Le,
+            16,
+            16,
+            Some(2),
+            8,
+        ),
+        (
+            "bayer_bggr16be",
+            PixelFormat::BayerBggr16Be,
+            16,
+            16,
+            Some(2),
+            8,
+        ),
+        (
+            "bayer_rggb16le",
+            PixelFormat::BayerRggb16Le,
+            16,
+            16,
+            Some(2),
+            8,
+        ),
+        (
+            "bayer_rggb16be",
+            PixelFormat::BayerRggb16Be,
+            16,
+            16,
+            Some(2),
+            8,
+        ),
+        (
+            "bayer_gbrg16le",
+            PixelFormat::BayerGbrg16Le,
+            16,
+            16,
+            Some(2),
+            8,
+        ),
+        (
+            "bayer_gbrg16be",
+            PixelFormat::BayerGbrg16Be,
+            16,
+            16,
+            Some(2),
+            8,
+        ),
+        (
+            "bayer_grbg16le",
+            PixelFormat::BayerGrbg16Le,
+            16,
+            16,
+            Some(2),
+            8,
+        ),
+        (
+            "bayer_grbg16be",
+            PixelFormat::BayerGrbg16Be,
+            16,
+            16,
+            Some(2),
+            8,
+        ),
         ("rgb565be", PixelFormat::Rgb565Be, 6, 16, Some(2), 8),
         ("rgb565le", PixelFormat::Rgb565Le, 6, 16, Some(2), 8),
         ("rgb555be", PixelFormat::Rgb555Be, 5, 16, Some(2), 8),
@@ -5767,6 +5853,7 @@ fn exercise_fixtures() {
         );
         assert_eq!(format.frame_size(2, 2).unwrap(), frame_size);
         assert_eq!(format.plane_sizes(2, 2).unwrap(), vec![frame_size]);
+        assert_eq!(format.is_bayer(), name.starts_with("bayer_"));
     }
     for (name, format, components, bits_per_pixel, packed_bytes_per_pixel, frame_size, alpha) in [
         ("vuya", PixelFormat::Vuya, 4, 32, Some(4), 16, true),
@@ -6379,6 +6466,22 @@ fn exercise_fixtures() {
     assert_eq!(PixelFormat::Xv36Be.frame_size(2, 2).unwrap(), 24);
     assert_eq!(PixelFormat::Xv48Le.frame_size(2, 2).unwrap(), 32);
     assert_eq!(PixelFormat::V30xBe.frame_size(2, 2).unwrap(), 16);
+    assert_eq!(
+        PixelFormat::from_name("bayer_bggr8"),
+        Some(PixelFormat::BayerBggr8)
+    );
+    assert!(PixelFormat::BayerBggr8.is_bayer());
+    assert_eq!(PixelFormat::BayerBggr8.bits_per_component(), 8);
+    assert_eq!(PixelFormat::BayerBggr8.bits_per_pixel(), bpp(8));
+    assert_eq!(PixelFormat::BayerBggr8.frame_size(2, 2).unwrap(), 4);
+    assert_eq!(
+        PixelFormat::from_name("bayer_grbg16be"),
+        Some(PixelFormat::BayerGrbg16Be)
+    );
+    assert!(PixelFormat::BayerGrbg16Be.is_bayer());
+    assert_eq!(PixelFormat::BayerGrbg16Be.bits_per_component(), 16);
+    assert_eq!(PixelFormat::BayerGrbg16Be.bits_per_pixel(), bpp(16));
+    assert_eq!(PixelFormat::BayerGrbg16Be.frame_size(2, 2).unwrap(), 8);
     assert_eq!(PixelFormat::Vyu444.plane_sizes(2, 2).unwrap(), vec![12]);
     assert_eq!(SampleFormat::U8.plane_sizes(2, 2).unwrap(), vec![4]);
     assert_eq!(SampleFormat::S16.plane_sizes(2, 2).unwrap(), vec![8]);
@@ -18065,7 +18168,11 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Rgb8
         | PixelFormat::Bgr8
         | PixelFormat::Rgb4Byte
-        | PixelFormat::Bgr4Byte => vec![width],
+        | PixelFormat::Bgr4Byte
+        | PixelFormat::BayerBggr8
+        | PixelFormat::BayerRggb8
+        | PixelFormat::BayerGbrg8
+        | PixelFormat::BayerGrbg8 => vec![width],
         PixelFormat::Rgb4 | PixelFormat::Bgr4 => vec![nibble_line_size(width)],
         PixelFormat::Rgb565Be
         | PixelFormat::Rgb565Le
@@ -18079,6 +18186,14 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Rgb444Be
         | PixelFormat::Bgr444Le
         | PixelFormat::Bgr444Be
+        | PixelFormat::BayerBggr16Le
+        | PixelFormat::BayerBggr16Be
+        | PixelFormat::BayerRggb16Le
+        | PixelFormat::BayerRggb16Be
+        | PixelFormat::BayerGbrg16Le
+        | PixelFormat::BayerGbrg16Be
+        | PixelFormat::BayerGrbg16Le
+        | PixelFormat::BayerGrbg16Be
         | PixelFormat::Yuyv422
         | PixelFormat::Uyvy422
         | PixelFormat::Yvyu422 => vec![width * 2],
@@ -18307,7 +18422,11 @@ fn expected_video_plane_shapes(
         | PixelFormat::Rgb8
         | PixelFormat::Bgr8
         | PixelFormat::Rgb4Byte
-        | PixelFormat::Bgr4Byte => vec![(width, height)],
+        | PixelFormat::Bgr4Byte
+        | PixelFormat::BayerBggr8
+        | PixelFormat::BayerRggb8
+        | PixelFormat::BayerGbrg8
+        | PixelFormat::BayerGrbg8 => vec![(width, height)],
         PixelFormat::Rgb4 | PixelFormat::Bgr4 => vec![(nibble_line_size(width), height)],
         PixelFormat::Rgb565Be
         | PixelFormat::Rgb565Le
@@ -18321,6 +18440,14 @@ fn expected_video_plane_shapes(
         | PixelFormat::Rgb444Be
         | PixelFormat::Bgr444Le
         | PixelFormat::Bgr444Be
+        | PixelFormat::BayerBggr16Le
+        | PixelFormat::BayerBggr16Be
+        | PixelFormat::BayerRggb16Le
+        | PixelFormat::BayerRggb16Be
+        | PixelFormat::BayerGbrg16Le
+        | PixelFormat::BayerGbrg16Be
+        | PixelFormat::BayerGrbg16Le
+        | PixelFormat::BayerGrbg16Be
         | PixelFormat::Yuyv422
         | PixelFormat::Uyvy422
         | PixelFormat::Yvyu422 => vec![(width * 2, height)],

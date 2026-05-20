@@ -12436,7 +12436,11 @@ fn video_plane_shapes(
         | PixelFormat::Rgb8
         | PixelFormat::Bgr8
         | PixelFormat::Rgb4Byte
-        | PixelFormat::Bgr4Byte => Ok(vec![VideoPlaneShape {
+        | PixelFormat::Bgr4Byte
+        | PixelFormat::BayerBggr8
+        | PixelFormat::BayerRggb8
+        | PixelFormat::BayerGbrg8
+        | PixelFormat::BayerGrbg8 => Ok(vec![VideoPlaneShape {
             row_bytes: width,
             rows: height,
         }]),
@@ -12455,7 +12459,15 @@ fn video_plane_shapes(
         | PixelFormat::Rgb444Le
         | PixelFormat::Rgb444Be
         | PixelFormat::Bgr444Le
-        | PixelFormat::Bgr444Be => Ok(vec![VideoPlaneShape {
+        | PixelFormat::Bgr444Be
+        | PixelFormat::BayerBggr16Le
+        | PixelFormat::BayerBggr16Be
+        | PixelFormat::BayerRggb16Le
+        | PixelFormat::BayerRggb16Be
+        | PixelFormat::BayerGbrg16Le
+        | PixelFormat::BayerGbrg16Be
+        | PixelFormat::BayerGrbg16Le
+        | PixelFormat::BayerGrbg16Be => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 2, "16-bit packed RGB video frame line size")?,
             rows: height,
         }]),
@@ -16730,6 +16742,9 @@ mod tests {
         let pal8 = VideoFrame::new(3, 2, PixelFormat::Pal8, vec![vec![0; 6]]).unwrap();
         assert_eq!(pal8.line_sizes(), &[3]);
 
+        let bayer8 = VideoFrame::new(3, 2, PixelFormat::BayerBggr8, vec![vec![0; 6]]).unwrap();
+        assert_eq!(bayer8.line_sizes(), &[3]);
+
         let bgr4_byte = VideoFrame::new(3, 2, PixelFormat::Bgr4Byte, vec![vec![0; 6]]).unwrap();
         assert_eq!(bgr4_byte.line_sizes(), &[3]);
 
@@ -16750,6 +16765,9 @@ mod tests {
 
         let bgr444 = VideoFrame::new(3, 2, PixelFormat::Bgr444Be, vec![vec![0; 12]]).unwrap();
         assert_eq!(bgr444.line_sizes(), &[6]);
+
+        let bayer16 = VideoFrame::new(3, 2, PixelFormat::BayerGrbg16Be, vec![vec![0; 12]]).unwrap();
+        assert_eq!(bayer16.line_sizes(), &[6]);
 
         let yuyv422 = VideoFrame::new(2, 2, PixelFormat::Yuyv422, vec![vec![0; 8]]).unwrap();
         assert_eq!(yuyv422.line_sizes(), &[4]);

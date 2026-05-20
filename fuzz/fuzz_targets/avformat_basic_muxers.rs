@@ -249,6 +249,36 @@ fn exercise_fixtures() {
     );
     assert!(raw_gray16_demuxer.read_packet().unwrap().is_none());
 
+    for (format, width, height, payload) in [
+        (PixelFormat::BayerBggr8, 2, 2, (0..4).collect::<Vec<_>>()),
+        (
+            PixelFormat::BayerRggb16Be,
+            2,
+            2,
+            (4..12).collect::<Vec<_>>(),
+        ),
+    ] {
+        let mut raw_bayer =
+            RawVideoMuxer::new(width, height, format, Rational::new(24, 1).unwrap()).unwrap();
+        raw_bayer
+            .write_packet(&Packet::new(payload.clone(), 0))
+            .unwrap();
+        let raw_bayer_output = raw_bayer.finish();
+        let mut raw_bayer_demuxer = RawVideoDemuxer::open(
+            &raw_bayer_output,
+            width,
+            height,
+            format,
+            Rational::new(24, 1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            raw_bayer_demuxer.read_packet().unwrap().unwrap().data(),
+            payload.as_slice()
+        );
+        assert!(raw_bayer_demuxer.read_packet().unwrap().is_none());
+    }
+
     let mut raw_gray10 = RawVideoMuxer::new(
         2,
         1,

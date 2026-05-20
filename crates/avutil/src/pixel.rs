@@ -40,6 +40,18 @@ pub enum PixelFormat {
     Bgr4,
     Rgb4Byte,
     Bgr4Byte,
+    BayerBggr8,
+    BayerRggb8,
+    BayerGbrg8,
+    BayerGrbg8,
+    BayerBggr16Le,
+    BayerBggr16Be,
+    BayerRggb16Le,
+    BayerRggb16Be,
+    BayerGbrg16Le,
+    BayerGbrg16Be,
+    BayerGrbg16Le,
+    BayerGrbg16Be,
     Rgb565Be,
     Rgb565Le,
     Rgb555Be,
@@ -294,6 +306,18 @@ impl PixelFormat {
         Self::Bgr4,
         Self::Rgb4Byte,
         Self::Bgr4Byte,
+        Self::BayerBggr8,
+        Self::BayerRggb8,
+        Self::BayerGbrg8,
+        Self::BayerGrbg8,
+        Self::BayerBggr16Le,
+        Self::BayerBggr16Be,
+        Self::BayerRggb16Le,
+        Self::BayerRggb16Be,
+        Self::BayerGbrg16Le,
+        Self::BayerGbrg16Be,
+        Self::BayerGrbg16Le,
+        Self::BayerGrbg16Be,
         Self::Rgb565Be,
         Self::Rgb565Le,
         Self::Rgb555Be,
@@ -516,6 +540,18 @@ impl PixelFormat {
             "bgr4" => Some(Self::Bgr4),
             "rgb4_byte" => Some(Self::Rgb4Byte),
             "bgr4_byte" => Some(Self::Bgr4Byte),
+            "bayer_bggr8" => Some(Self::BayerBggr8),
+            "bayer_rggb8" => Some(Self::BayerRggb8),
+            "bayer_gbrg8" => Some(Self::BayerGbrg8),
+            "bayer_grbg8" => Some(Self::BayerGrbg8),
+            "bayer_bggr16le" => Some(Self::BayerBggr16Le),
+            "bayer_bggr16be" => Some(Self::BayerBggr16Be),
+            "bayer_rggb16le" => Some(Self::BayerRggb16Le),
+            "bayer_rggb16be" => Some(Self::BayerRggb16Be),
+            "bayer_gbrg16le" => Some(Self::BayerGbrg16Le),
+            "bayer_gbrg16be" => Some(Self::BayerGbrg16Be),
+            "bayer_grbg16le" => Some(Self::BayerGrbg16Le),
+            "bayer_grbg16be" => Some(Self::BayerGrbg16Be),
             "rgb565be" => Some(Self::Rgb565Be),
             "rgb565le" => Some(Self::Rgb565Le),
             "rgb555be" => Some(Self::Rgb555Be),
@@ -1129,6 +1165,150 @@ impl PixelFormat {
                 false,
                 false,
                 Some(1),
+                0,
+                0,
+            ),
+            Self::BayerBggr8 => (
+                "bayer_bggr8",
+                PixelFormatClass::Rgb,
+                3,
+                8,
+                1,
+                false,
+                false,
+                Some(1),
+                0,
+                0,
+            ),
+            Self::BayerRggb8 => (
+                "bayer_rggb8",
+                PixelFormatClass::Rgb,
+                3,
+                8,
+                1,
+                false,
+                false,
+                Some(1),
+                0,
+                0,
+            ),
+            Self::BayerGbrg8 => (
+                "bayer_gbrg8",
+                PixelFormatClass::Rgb,
+                3,
+                8,
+                1,
+                false,
+                false,
+                Some(1),
+                0,
+                0,
+            ),
+            Self::BayerGrbg8 => (
+                "bayer_grbg8",
+                PixelFormatClass::Rgb,
+                3,
+                8,
+                1,
+                false,
+                false,
+                Some(1),
+                0,
+                0,
+            ),
+            Self::BayerBggr16Le => (
+                "bayer_bggr16le",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::BayerBggr16Be => (
+                "bayer_bggr16be",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::BayerRggb16Le => (
+                "bayer_rggb16le",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::BayerRggb16Be => (
+                "bayer_rggb16be",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::BayerGbrg16Le => (
+                "bayer_gbrg16le",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::BayerGbrg16Be => (
+                "bayer_gbrg16be",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::BayerGrbg16Le => (
+                "bayer_grbg16le",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::BayerGrbg16Be => (
+                "bayer_grbg16be",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
                 0,
                 0,
             ),
@@ -3307,6 +3487,14 @@ impl PixelFormat {
                     | Self::Rgba64Be
                     | Self::Bgra64Le
                     | Self::Bgra64Be
+                    | Self::BayerBggr16Le
+                    | Self::BayerBggr16Be
+                    | Self::BayerRggb16Le
+                    | Self::BayerRggb16Be
+                    | Self::BayerGbrg16Le
+                    | Self::BayerGbrg16Be
+                    | Self::BayerGrbg16Le
+                    | Self::BayerGrbg16Be
                     | Self::Ayuv64Le
                     | Self::Ayuv64Be
                     | Self::Xv48Le
@@ -3592,6 +3780,24 @@ impl PixelFormat {
         self.descriptor().is_paletted
     }
 
+    pub fn is_bayer(self) -> bool {
+        matches!(
+            self,
+            Self::BayerBggr8
+                | Self::BayerRggb8
+                | Self::BayerGbrg8
+                | Self::BayerGrbg8
+                | Self::BayerBggr16Le
+                | Self::BayerBggr16Be
+                | Self::BayerRggb16Le
+                | Self::BayerRggb16Be
+                | Self::BayerGbrg16Le
+                | Self::BayerGbrg16Be
+                | Self::BayerGrbg16Le
+                | Self::BayerGrbg16Be
+        )
+    }
+
     pub fn packed_bytes_per_pixel(self) -> Option<usize> {
         self.descriptor().packed_bytes_per_pixel
     }
@@ -3659,9 +3865,15 @@ impl PixelFormat {
                 3,
                 "24-bit packed pixel format frame size",
             )?]),
-            Self::Pal8 | Self::Rgb8 | Self::Bgr8 | Self::Rgb4Byte | Self::Bgr4Byte => {
-                Ok(vec![pixels])
-            }
+            Self::Pal8
+            | Self::Rgb8
+            | Self::Bgr8
+            | Self::Rgb4Byte
+            | Self::Bgr4Byte
+            | Self::BayerBggr8
+            | Self::BayerRggb8
+            | Self::BayerGbrg8
+            | Self::BayerGrbg8 => Ok(vec![pixels]),
             Self::Rgb4 | Self::Bgr4 => Ok(vec![checked_mul(
                 nibble_line_size(width),
                 height,
@@ -3678,7 +3890,15 @@ impl PixelFormat {
             | Self::Rgb444Le
             | Self::Rgb444Be
             | Self::Bgr444Le
-            | Self::Bgr444Be => Ok(vec![checked_mul(
+            | Self::Bgr444Be
+            | Self::BayerBggr16Le
+            | Self::BayerBggr16Be
+            | Self::BayerRggb16Le
+            | Self::BayerRggb16Be
+            | Self::BayerGbrg16Le
+            | Self::BayerGbrg16Be
+            | Self::BayerGrbg16Le
+            | Self::BayerGrbg16Be => Ok(vec![checked_mul(
                 pixels,
                 2,
                 "16-bit packed RGB pixel format frame size",
@@ -4266,6 +4486,29 @@ mod tests {
             assert!(!format.has_alpha());
             assert_eq!(format.packed_bytes_per_pixel(), Some(1));
         }
+        for (name, format, bytes_per_pixel) in [
+            ("bayer_bggr8", PixelFormat::BayerBggr8, 1),
+            ("bayer_rggb8", PixelFormat::BayerRggb8, 1),
+            ("bayer_gbrg8", PixelFormat::BayerGbrg8, 1),
+            ("bayer_grbg8", PixelFormat::BayerGrbg8, 1),
+            ("bayer_bggr16le", PixelFormat::BayerBggr16Le, 2),
+            ("bayer_bggr16be", PixelFormat::BayerBggr16Be, 2),
+            ("bayer_rggb16le", PixelFormat::BayerRggb16Le, 2),
+            ("bayer_rggb16be", PixelFormat::BayerRggb16Be, 2),
+            ("bayer_gbrg16le", PixelFormat::BayerGbrg16Le, 2),
+            ("bayer_gbrg16be", PixelFormat::BayerGbrg16Be, 2),
+            ("bayer_grbg16le", PixelFormat::BayerGrbg16Le, 2),
+            ("bayer_grbg16be", PixelFormat::BayerGrbg16Be, 2),
+        ] {
+            assert_eq!(format.name(), name);
+            assert_eq!(PixelFormat::from_name(name), Some(format));
+            assert_eq!(format.plane_count(), 1);
+            assert!(format.is_rgb());
+            assert!(format.is_bayer());
+            assert!(format.is_packed());
+            assert!(!format.has_alpha());
+            assert_eq!(format.packed_bytes_per_pixel(), Some(bytes_per_pixel));
+        }
         for (name, format) in [("rgb4", PixelFormat::Rgb4), ("bgr4", PixelFormat::Bgr4)] {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
@@ -4646,11 +4889,13 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 214);
+        assert_eq!(PixelFormat::ALL.len(), 226);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Yaf16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Yaf32Le.plane_count(), 1);
+        assert_eq!(PixelFormat::BayerBggr8.plane_count(), 1);
+        assert_eq!(PixelFormat::BayerGrbg16Be.plane_count(), 1);
         assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray32Le.plane_count(), 1);
@@ -5492,6 +5737,16 @@ mod tests {
         assert_eq!(PixelFormat::Bgr4.bits_per_pixel(), bpp(4));
         assert_eq!(PixelFormat::Rgb4Byte.bits_per_component(), 2);
         assert_eq!(PixelFormat::Bgr4Byte.bits_per_pixel(), bpp(8));
+        assert_eq!(PixelFormat::BayerBggr8.component_count(), 3);
+        assert_eq!(PixelFormat::BayerBggr8.bits_per_component(), 8);
+        assert_eq!(PixelFormat::BayerBggr8.bits_per_pixel(), bpp(8));
+        assert_eq!(PixelFormat::BayerBggr8.packed_bytes_per_pixel(), Some(1));
+        assert!(PixelFormat::BayerBggr8.is_bayer());
+        assert_eq!(PixelFormat::BayerGrbg16Be.component_count(), 3);
+        assert_eq!(PixelFormat::BayerGrbg16Be.bits_per_component(), 16);
+        assert_eq!(PixelFormat::BayerGrbg16Be.bits_per_pixel(), bpp(16));
+        assert_eq!(PixelFormat::BayerGrbg16Be.packed_bytes_per_pixel(), Some(2));
+        assert!(PixelFormat::BayerGrbg16Be.is_bayer());
         assert_eq!(PixelFormat::Gbrp.component_count(), 3);
         assert_eq!(PixelFormat::Gbrp.bits_per_component(), 8);
         assert_eq!(PixelFormat::Gbrp.bits_per_pixel(), bpp(24));
@@ -5594,6 +5849,35 @@ mod tests {
             assert_eq!(descriptor.packed_bytes_per_pixel, Some(4));
             assert_eq!(format.log2_chroma(), (0, 0));
             assert!(!format.has_chroma_subsampling());
+        }
+        for (format, name, bits_per_component, bits_per_pixel, bytes_per_pixel) in [
+            (PixelFormat::BayerBggr8, "bayer_bggr8", 8, bpp(8), 1),
+            (PixelFormat::BayerRggb8, "bayer_rggb8", 8, bpp(8), 1),
+            (PixelFormat::BayerGbrg8, "bayer_gbrg8", 8, bpp(8), 1),
+            (PixelFormat::BayerGrbg8, "bayer_grbg8", 8, bpp(8), 1),
+            (PixelFormat::BayerBggr16Le, "bayer_bggr16le", 16, bpp(16), 2),
+            (PixelFormat::BayerBggr16Be, "bayer_bggr16be", 16, bpp(16), 2),
+            (PixelFormat::BayerRggb16Le, "bayer_rggb16le", 16, bpp(16), 2),
+            (PixelFormat::BayerRggb16Be, "bayer_rggb16be", 16, bpp(16), 2),
+            (PixelFormat::BayerGbrg16Le, "bayer_gbrg16le", 16, bpp(16), 2),
+            (PixelFormat::BayerGbrg16Be, "bayer_gbrg16be", 16, bpp(16), 2),
+            (PixelFormat::BayerGrbg16Le, "bayer_grbg16le", 16, bpp(16), 2),
+            (PixelFormat::BayerGrbg16Be, "bayer_grbg16be", 16, bpp(16), 2),
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.name, name);
+            assert_eq!(descriptor.class, PixelFormatClass::Rgb);
+            assert_eq!(descriptor.component_count, 3);
+            assert_eq!(descriptor.bits_per_component, bits_per_component);
+            assert_eq!(descriptor.bits_per_pixel, bits_per_pixel);
+            assert_eq!(descriptor.plane_count, 1);
+            assert!(!descriptor.is_planar);
+            assert!(!descriptor.has_alpha);
+            assert!(!descriptor.is_float);
+            assert_eq!(descriptor.packed_bytes_per_pixel, Some(bytes_per_pixel));
+            assert_eq!(format.log2_chroma(), (0, 0));
+            assert!(!format.has_chroma_subsampling());
+            assert!(format.is_bayer());
         }
         for (format, name, components, bpp, has_alpha, bytes_per_pixel) in [
             (PixelFormat::Vuya, "vuya", 4, bpp(32), true, 4),
@@ -5965,6 +6249,13 @@ mod tests {
         assert_eq!(PixelFormat::Bgr4.frame_size(4, 1).unwrap(), 2);
         assert_eq!(PixelFormat::Rgb4Byte.plane_sizes(2, 2).unwrap(), vec![4]);
         assert_eq!(PixelFormat::Bgr4Byte.frame_size(2, 2).unwrap(), 4);
+        assert_eq!(PixelFormat::BayerBggr8.plane_sizes(2, 2).unwrap(), vec![4]);
+        assert_eq!(PixelFormat::BayerGrbg8.frame_size(3, 2).unwrap(), 6);
+        assert_eq!(
+            PixelFormat::BayerBggr16Le.plane_sizes(2, 2).unwrap(),
+            vec![8]
+        );
+        assert_eq!(PixelFormat::BayerGrbg16Be.frame_size(3, 2).unwrap(), 12);
         assert_eq!(PixelFormat::Rgb565Le.plane_sizes(2, 2).unwrap(), vec![8]);
         assert_eq!(PixelFormat::Rgb565Be.frame_size(2, 2).unwrap(), 8);
         assert_eq!(PixelFormat::Bgr555Be.frame_size(2, 2).unwrap(), 8);
@@ -6545,6 +6836,18 @@ mod tests {
         let planes = PixelFormat::Pal8.split_planes(&[0, 1, 2, 3], 2, 2).unwrap();
 
         assert_eq!(planes, vec![vec![0, 1, 2, 3]]);
+
+        let planes = PixelFormat::BayerBggr8
+            .split_planes(&[0, 1, 2, 3], 2, 2)
+            .unwrap();
+
+        assert_eq!(planes, vec![vec![0, 1, 2, 3]]);
+
+        let planes = PixelFormat::BayerRggb16Be
+            .split_planes(&(0..8).collect::<Vec<_>>(), 2, 2)
+            .unwrap();
+
+        assert_eq!(planes, vec![(0..8).collect::<Vec<_>>()]);
 
         let planes = PixelFormat::Rgb4.split_planes(&[0, 1, 2, 3], 3, 2).unwrap();
 

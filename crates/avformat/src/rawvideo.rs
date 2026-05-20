@@ -290,6 +290,35 @@ mod tests {
     }
 
     #[test]
+    fn slices_bayer_frames_with_format_side_data() {
+        let input = (0_u8..12).collect::<Vec<_>>();
+        let mut demuxer = RawVideoDemuxer::open(
+            &input,
+            2,
+            3,
+            RawVideoPixelFormat::BayerBggr8,
+            Rational::new(24, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            demuxer.info().pixel_format(),
+            RawVideoPixelFormat::BayerBggr8
+        );
+        assert_eq!(demuxer.info().frame_size(), 6);
+        assert_eq!(demuxer.info().frame_count(), 2);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), &[0, 1, 2, 3, 4, 5]);
+        assert_eq!(first.side_data()[0].kind(), "rawvideo_pix_fmt");
+        assert_eq!(first.side_data()[0].data(), b"bayer_bggr8");
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second.data(), &[6, 7, 8, 9, 10, 11]);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn computes_frame_sizes_for_supported_pixel_formats() {
         assert_eq!(
             RawVideoDemuxer::open(
@@ -401,6 +430,10 @@ mod tests {
             RawVideoPixelFormat::Bgr8,
             RawVideoPixelFormat::Rgb4Byte,
             RawVideoPixelFormat::Bgr4Byte,
+            RawVideoPixelFormat::BayerBggr8,
+            RawVideoPixelFormat::BayerRggb8,
+            RawVideoPixelFormat::BayerGbrg8,
+            RawVideoPixelFormat::BayerGrbg8,
         ] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 4], 2, 2, format, Rational::new(1, 1).unwrap(),)
@@ -450,6 +483,14 @@ mod tests {
             RawVideoPixelFormat::Rgb444Be,
             RawVideoPixelFormat::Bgr444Le,
             RawVideoPixelFormat::Bgr444Be,
+            RawVideoPixelFormat::BayerBggr16Le,
+            RawVideoPixelFormat::BayerBggr16Be,
+            RawVideoPixelFormat::BayerRggb16Le,
+            RawVideoPixelFormat::BayerRggb16Be,
+            RawVideoPixelFormat::BayerGbrg16Le,
+            RawVideoPixelFormat::BayerGbrg16Be,
+            RawVideoPixelFormat::BayerGrbg16Le,
+            RawVideoPixelFormat::BayerGrbg16Be,
         ] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 4], 2, 1, format, Rational::new(1, 1).unwrap(),)
@@ -1829,6 +1870,29 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 24);
+    }
+
+    #[test]
+    fn muxer_computes_bayer_frame_sizes() {
+        for (format, width, height, expected_size) in [
+            (RawVideoPixelFormat::BayerBggr8, 3, 2, 6),
+            (RawVideoPixelFormat::BayerRggb8, 3, 2, 6),
+            (RawVideoPixelFormat::BayerGbrg8, 3, 2, 6),
+            (RawVideoPixelFormat::BayerGrbg8, 3, 2, 6),
+            (RawVideoPixelFormat::BayerBggr16Le, 3, 2, 12),
+            (RawVideoPixelFormat::BayerBggr16Be, 3, 2, 12),
+            (RawVideoPixelFormat::BayerRggb16Le, 3, 2, 12),
+            (RawVideoPixelFormat::BayerRggb16Be, 3, 2, 12),
+            (RawVideoPixelFormat::BayerGbrg16Le, 3, 2, 12),
+            (RawVideoPixelFormat::BayerGbrg16Be, 3, 2, 12),
+            (RawVideoPixelFormat::BayerGrbg16Le, 3, 2, 12),
+            (RawVideoPixelFormat::BayerGrbg16Be, 3, 2, 12),
+        ] {
+            let muxer =
+                RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), expected_size);
+        }
     }
 
     #[test]
