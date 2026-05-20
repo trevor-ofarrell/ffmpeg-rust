@@ -137,6 +137,16 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    let yuv411 = RawVideoDecoder::new(4, 3, PixelFormat::Yuv411p).unwrap();
+    assert!(yuv411.decode_packet(&Packet::new(vec![0; 18], 0)).is_ok());
+    assert_eq!(
+        yuv411
+            .decode_packet(&Packet::new(vec![0; 17], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let yuv444 = RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p).unwrap();
     assert!(yuv444.decode_packet(&Packet::new(vec![0; 18], 0)).is_ok());
     assert_eq!(
@@ -187,10 +197,13 @@ fn pixel_format_from(byte: Option<u8>) -> PixelFormat {
 fn dimension_from(byte: Option<u8>, pixel_format: PixelFormat, is_width: bool) -> usize {
     let mut dimension = usize::from(byte.unwrap_or_default() % 8) + 1;
     let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
-    if ((is_width && log2_chroma_w != 0) || (!is_width && log2_chroma_h != 0))
-        && (dimension % 2 != 0)
-    {
-        dimension = if dimension == 1 { 2 } else { dimension - 1 };
+    let divisor = if is_width {
+        1_usize << log2_chroma_w
+    } else {
+        1_usize << log2_chroma_h
+    };
+    if divisor > 1 && dimension % divisor != 0 {
+        dimension += divisor - (dimension % divisor);
     }
     if !is_width && byte.unwrap_or_default() == 0 {
         return usize::from(log2_chroma_h == 0);

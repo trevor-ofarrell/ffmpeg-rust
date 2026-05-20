@@ -37,6 +37,13 @@ fuzz_target!(|data: &[u8]| {
     );
     exercise_rawvideo(
         b"abcdefghijklmnopqr",
+        4,
+        3,
+        RawVideoPixelFormat::Yuv411p,
+        Rational::new(25, 1).unwrap(),
+    );
+    exercise_rawvideo(
+        b"abcdefghijklmnopqr",
         3,
         2,
         RawVideoPixelFormat::Yuv444p,

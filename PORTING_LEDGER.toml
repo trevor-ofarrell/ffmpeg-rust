@@ -1026,7 +1026,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-pixel-format|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Initial shared pixel format model covers gray/gray8, rgb24, bgr24, rgba, bgra, argb, abgr, yuv420p, yuv422p, and yuv444p with FFmpeg-style names, an ALL inventory, descriptor-style class/component/bit-depth/chroma metadata for the current subset, plane counts, packed/planar and alpha metadata, packed bytes-per-pixel metadata, frame-size math, yuv420p even-dimension validation, yuv422p even-width validation, yuv444p full-resolution planar validation, and plane splitting. It is wired into avutil::VideoFrame plus the rawvideo decoder and demuxer/muxer type alias. Build-checked cargo-fuzz target avutil_core_models covers pixel format lookup across the current inventory, descriptor/name/class/component/bit-depth/chroma invariants, plane/frame-size invariants, packed/alpha metadata, payload splitting, invalid dimensions, and invalid payload lengths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVPixFmtDescriptor coverage, additional pixel formats, endian flags beyond packed byte order naming, chroma subsampling descriptors beyond yuv420p/yuv422p/yuv444p, hardware formats, oracle inventory comparison, upstream FATE, and broader fuzzing are pending. The local FATE-runner smoke mapping executes the pixel unit filter only and does not count as upstream FATE parity."
+notes = "Initial shared pixel format model covers gray/gray8, rgb24, bgr24, rgba, bgra, argb, abgr, yuv420p, yuv422p, yuv411p, and yuv444p with FFmpeg-style names, an ALL inventory, descriptor-style class/component/bit-depth/chroma metadata for the current subset, plane counts, packed/planar and alpha metadata, packed bytes-per-pixel metadata, frame-size math, yuv420p even-dimension validation, yuv422p even-width validation, yuv411p width-divisible-by-4 validation, yuv444p full-resolution planar validation, and plane splitting. It is wired into avutil::VideoFrame plus the rawvideo decoder and demuxer/muxer type alias. Build-checked cargo-fuzz target avutil_core_models covers pixel format lookup across the current inventory, descriptor/name/class/component/bit-depth/chroma invariants, plane/frame-size invariants, packed/alpha metadata, payload splitting, invalid dimensions, and invalid payload lengths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVPixFmtDescriptor coverage, additional pixel formats, endian flags beyond packed byte order naming, chroma subsampling descriptors beyond the current YUV subset, hardware formats, oracle inventory comparison, upstream FATE, and broader fuzzing are pending. The local FATE-runner smoke mapping executes the pixel unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -2000,6 +2000,7 @@ unit_tests = [
   "ffmpeg::tests::runs_rawvideo_to_null_stdout",
   "ffmpeg::tests::runs_rawvideo_bgra_to_null_stdout",
   "ffmpeg::tests::runs_rawvideo_yuv422p_to_null_stdout",
+  "ffmpeg::tests::runs_rawvideo_yuv411p_to_null_stdout",
   "ffmpeg::tests::runs_rawvideo_yuv444p_to_null_stdout",
   "ffmpeg::tests::rejects_rawvideo_without_required_stream_parameters",
   "ffmpeg::tests::rejects_rawvideo_truncated_frame",
@@ -2007,7 +2008,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-rawvideo-framecrc-null|local-ffmpeg-unit"]
 fuzz_targets = []
-notes = "ffmpeg-rs command execution now supports exactly one local seekable rawvideo input and one stdout pipe output with explicit -f rawvideo plus required -pix_fmt, -s, and -r stream parameters. It uses the Rust rawvideo demuxer and Rust null/framecrc muxers, supports gray/gray8, rgb24, bgr24, rgba, bgra, argb, abgr, yuv420p, yuv422p, and yuv444p input packetization through the shared PixelFormat model, accepts uppercase pixel-format spelling through lowercase normalization, rejects missing parameters and partial frames, and has no oracle differential or upstream FATE coverage yet. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution now supports exactly one local seekable rawvideo input and one stdout pipe output with explicit -f rawvideo plus required -pix_fmt, -s, and -r stream parameters. It uses the Rust rawvideo demuxer and Rust null/framecrc muxers, supports gray/gray8, rgb24, bgr24, rgba, bgra, argb, abgr, yuv420p, yuv422p, yuv411p, and yuv444p input packetization through the shared PixelFormat model, accepts uppercase pixel-format spelling through lowercase normalization, rejects missing parameters and partial frames, and has no oracle differential or upstream FATE coverage yet. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -2404,6 +2405,7 @@ unit_tests = [
   "rawvideo::tests::decodes_gray8_packet_to_single_plane_frame",
   "rawvideo::tests::decodes_yuv420p_packet_to_three_planes",
   "rawvideo::tests::decodes_yuv422p_packet_to_three_planes",
+  "rawvideo::tests::decodes_yuv411p_packet_to_three_planes",
   "rawvideo::tests::decodes_yuv444p_packet_to_three_planes",
   "rawvideo::tests::validates_dimensions_and_packet_size",
   "rawvideo::tests::packed_rgb_and_rgba_use_single_payload_plane",
@@ -2411,7 +2413,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avcodec-rawvideo|local-avcodec-unit"]
 fuzz_targets = ["avcodec_basic_decoders"]
-notes = "Initial rawvideo decoder emits avutil video frames for gray, rgb24, bgr24, rgba, bgra, argb, abgr, yuv420p, yuv422p, and yuv444p with strict dimensions and packet-size validation. Build-checked cargo-fuzz target avcodec_basic_decoders covers constructor validation, packet-size rejection, decoded frame geometry, plane splitting, payload preservation, and PTS propagation across the current PixelFormat inventory, but actual local fuzz execution is blocked until cargo-fuzz is installed. The local FATE-runner smoke mapping executes the rawvideo decoder unit filter only and does not count as upstream FATE parity. Many FFmpeg raw pixel formats, demuxer wiring, differential tests, and FATE coverage are pending."
+notes = "Initial rawvideo decoder emits avutil video frames for gray, rgb24, bgr24, rgba, bgra, argb, abgr, yuv420p, yuv422p, yuv411p, and yuv444p with strict dimensions and packet-size validation. Build-checked cargo-fuzz target avcodec_basic_decoders covers constructor validation, packet-size rejection, decoded frame geometry, plane splitting, payload preservation, and PTS propagation across the current PixelFormat inventory, but actual local fuzz execution is blocked until cargo-fuzz is installed. The local FATE-runner smoke mapping executes the rawvideo decoder unit filter only and does not count as upstream FATE parity. Many FFmpeg raw pixel formats, demuxer wiring, differential tests, and FATE coverage are pending."
 blocked_reason = ""
 
 [[component]]
@@ -2538,7 +2540,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avformat-rawvideo-demuxer|local-avformat-rawvideo-unit"]
 fuzz_targets = ["avformat_rawvideo"]
-notes = "Initial rawvideo demuxer slices fixed-size frame packets for gray, rgb24, bgr24, rgba, bgra, argb, abgr, yuv420p, yuv422p, and yuv444p with shared VideoStreamParameters dimensions/frame-size validation, frame-rate validation, monotonic PTS, and truncated-frame rejection. Build-checked cargo-fuzz target avformat_rawvideo exercises geometry/format/rate validation, frame slicing, packet timing, side-data invariants, and current PixelFormat inventory selection, but actual local fuzz execution is blocked until cargo-fuzz is installed. CLI wiring, probe integration, more pixel formats, differential tests, and upstream FATE are pending. The local FATE-runner smoke mapping executes the rawvideo unit filter only and does not count as upstream FATE parity."
+notes = "Initial rawvideo demuxer slices fixed-size frame packets for gray, rgb24, bgr24, rgba, bgra, argb, abgr, yuv420p, yuv422p, yuv411p, and yuv444p with shared VideoStreamParameters dimensions/frame-size validation, frame-rate validation, monotonic PTS, and truncated-frame rejection. Build-checked cargo-fuzz target avformat_rawvideo exercises geometry/format/rate validation, frame slicing, packet timing, side-data invariants, and current PixelFormat inventory selection, but actual local fuzz execution is blocked until cargo-fuzz is installed. CLI wiring, probe integration, more pixel formats, differential tests, and upstream FATE are pending. The local FATE-runner smoke mapping executes the rawvideo unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -2597,6 +2599,7 @@ unit_tests = [
   "rawvideo::tests::muxer_supports_empty_output_when_geometry_is_valid",
   "rawvideo::tests::muxer_computes_yuv420p_frame_size",
   "rawvideo::tests::muxer_computes_yuv422p_frame_size",
+  "rawvideo::tests::muxer_computes_yuv411p_frame_size",
   "rawvideo::tests::muxer_computes_yuv444p_frame_size",
   "rawvideo::tests::muxer_rejects_invalid_geometry_rate_stream_and_frame_size",
   "rawvideo::tests::muxer_finish_prevents_more_writes",
@@ -2604,7 +2607,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avformat-rawvideo-muxer|local-avformat-rawvideo-unit"]
 fuzz_targets = ["avformat_basic_muxers"]
-notes = "Initial rawvideo muxer concatenates stream-0 fixed-size frame packet payloads validated with shared VideoStreamParameters dimensions/frame-size checks for gray, rgb24, bgr24, rgba, bgra, argb, abgr, yuv420p, yuv422p, and yuv444p, tracks frame/byte counts, supports empty output, and prevents writes after finish. It is wired to a constrained ffmpeg-rs rawvideo file-output path. Build-checked cargo-fuzz target avformat_basic_muxers covers accepted/rejected packet writes, state accounting, render/finish stability, post-finish rejection, and RawVideoDemuxer round trips across the current PixelFormat inventory, but actual local fuzz execution is blocked until cargo-fuzz is installed. Probe integration, more pixel formats, broader CLI execution, differential tests, and upstream FATE are pending. The local FATE-runner smoke mapping executes the rawvideo unit filter only and does not count as upstream FATE parity."
+notes = "Initial rawvideo muxer concatenates stream-0 fixed-size frame packet payloads validated with shared VideoStreamParameters dimensions/frame-size checks for gray, rgb24, bgr24, rgba, bgra, argb, abgr, yuv420p, yuv422p, yuv411p, and yuv444p, tracks frame/byte counts, supports empty output, and prevents writes after finish. It is wired to a constrained ffmpeg-rs rawvideo file-output path. Build-checked cargo-fuzz target avformat_basic_muxers covers accepted/rejected packet writes, state accounting, render/finish stability, post-finish rejection, and RawVideoDemuxer round trips across the current PixelFormat inventory, but actual local fuzz execution is blocked until cargo-fuzz is installed. Probe integration, more pixel formats, broader CLI execution, differential tests, and upstream FATE are pending. The local FATE-runner smoke mapping executes the rawvideo unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

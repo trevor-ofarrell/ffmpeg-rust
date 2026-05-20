@@ -114,8 +114,8 @@ fn exercise_wav_muxer(cursor: &mut Cursor<'_>) {
 
 fn exercise_rawvideo_muxer(cursor: &mut Cursor<'_>) {
     let pixel_format = pixel_format_from(cursor.next());
-    let width = video_dimension_from(cursor.next(), pixel_format);
-    let height = video_dimension_from(cursor.next(), pixel_format);
+    let width = video_dimension_from(cursor.next(), pixel_format, true);
+    let height = video_dimension_from(cursor.next(), pixel_format, false);
     let frame_rate = positive_rate_from(cursor.next());
     let Ok(mut muxer) = RawVideoMuxer::new(width, height, pixel_format, frame_rate) else {
         return;
@@ -224,6 +224,26 @@ fn exercise_fixtures() {
     raw.write_packet(&Packet::new(vec![0, 1, 2, 3], 0)).unwrap();
     assert_eq!(raw.finish(), vec![0, 1, 2, 3]);
 
+    let mut raw_yuv411 =
+        RawVideoMuxer::new(4, 3, PixelFormat::Yuv411p, Rational::new(25, 1).unwrap()).unwrap();
+    raw_yuv411
+        .write_packet(&Packet::new((0..18).collect(), 0))
+        .unwrap();
+    let raw_yuv411_output = raw_yuv411.finish();
+    let mut raw_yuv411_demuxer = RawVideoDemuxer::open(
+        &raw_yuv411_output,
+        4,
+        3,
+        PixelFormat::Yuv411p,
+        Rational::new(25, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_yuv411_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..18).collect::<Vec<_>>()
+    );
+    assert!(raw_yuv411_demuxer.read_packet().unwrap().is_none());
+
     let mut y4m = Yuv4MpegMuxer::new(2, 2, Rational::new(25, 1).unwrap(), None).unwrap();
     y4m.write_packet(&Packet::new(vec![0, 1, 2, 3, 4, 5], 0))
         .unwrap();
@@ -327,10 +347,16 @@ fn pixel_format_from(byte: Option<u8>) -> PixelFormat {
     formats[usize::from(byte.unwrap_or_default()) % formats.len()]
 }
 
-fn video_dimension_from(byte: Option<u8>, pixel_format: PixelFormat) -> usize {
+fn video_dimension_from(byte: Option<u8>, pixel_format: PixelFormat, is_width: bool) -> usize {
     let mut value = usize::from(byte.unwrap_or_default() % 8) + 1;
-    if pixel_format.has_chroma_subsampling() && value % 2 != 0 {
-        value += 1;
+    let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
+    let divisor = if is_width {
+        1_usize << log2_chroma_w
+    } else {
+        1_usize << log2_chroma_h
+    };
+    if divisor > 1 && value % divisor != 0 {
+        value += divisor - (value % divisor);
     }
     value
 }
