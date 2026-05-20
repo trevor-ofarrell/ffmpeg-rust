@@ -10,14 +10,15 @@ fuzz_target!(|data: &[u8]| {
 
     while let Ok(op) = control.read_u8() {
         let before = reader.position();
-        let opcode = op % 47;
-        let is_peek = opcode >= 24;
+        let opcode = op % 50;
+        let is_peek = (24..=46).contains(&opcode);
+        let may_move_backward = matches!(opcode, 47..=49);
         let result = run_read_operation(&mut reader, opcode, op);
 
         assert!(reader.position() <= reader.len());
         if result.is_err() || is_peek {
             assert_eq!(reader.position(), before);
-        } else {
+        } else if !may_move_backward {
             assert!(reader.position() >= before);
         }
 
@@ -77,7 +78,13 @@ fn run_read_operation(reader: &mut ByteReader<'_>, opcode: u8, op: u8) -> AvResu
         43 => reader.peek_u64_be().map(|_| ()),
         44 => reader.peek_i64_le().map(|_| ()),
         45 => reader.peek_i64_be().map(|_| ()),
-        _ => reader.peek_exact(usize::from(op >> 4)).map(|_| ()),
+        46 => reader.peek_exact(usize::from(op >> 4)).map(|_| ()),
+        47 => reader.set_position(usize::from(op)),
+        48 => reader.seek_relative(i8::from_ne_bytes([op]) as isize),
+        _ => {
+            reader.rewind();
+            Ok(())
+        }
     }
 }
 
@@ -116,6 +123,8 @@ fn run_write_operation(writer: &mut ByteWriter, data: &[u8], op: u8) {
     writer.write_u64_be(wide_value);
     writer.write_i64_le(wide_value as i64);
     writer.write_i64_be(wide_value as i64);
+
+    run_patch_operations(writer, data, op, value, wide_value);
 }
 
 fn write_i24_and_assert_non_mutation(writer: &mut ByteWriter, value: i32, little_endian: bool) {
@@ -141,5 +150,99 @@ fn write_i48_and_assert_non_mutation(writer: &mut ByteWriter, value: i64, little
 
     if result.is_err() {
         assert_eq!(writer.as_slice(), before.as_slice());
+    }
+}
+
+fn run_patch_operations(
+    writer: &mut ByteWriter,
+    data: &[u8],
+    op: u8,
+    value: u32,
+    wide_value: u64,
+) {
+    let offset = usize::from(op);
+    let patch_len = data.len().min(4);
+    let before_patch_all = writer.as_slice().to_vec();
+    let patch_all_result = writer.patch_all(offset, &data[..patch_len]);
+    if patch_all_result.is_err() {
+        assert_eq!(writer.as_slice(), before_patch_all.as_slice());
+    }
+
+    patch_and_assert_non_mutation(writer, offset, |writer| writer.patch_u8(offset, op));
+    patch_and_assert_non_mutation(writer, offset, |writer| writer.patch_i8(offset, op as i8));
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_u16_le(offset, u16::from(op))
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_u16_be(offset, u16::from(op))
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_i16_le(offset, i16::from(op))
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_i16_be(offset, i16::from(op))
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| writer.patch_u24_le(offset, value));
+    patch_and_assert_non_mutation(writer, offset, |writer| writer.patch_u24_be(offset, value));
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_i24_le(offset, value as i32)
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_i24_be(offset, value as i32)
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| writer.patch_u32_le(offset, value));
+    patch_and_assert_non_mutation(writer, offset, |writer| writer.patch_u32_be(offset, value));
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_i32_le(offset, value as i32)
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_i32_be(offset, value as i32)
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_u48_le(offset, wide_value)
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_u48_be(offset, wide_value)
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_i48_le(offset, wide_value as i64)
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_i48_be(offset, wide_value as i64)
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_u64_le(offset, wide_value)
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_u64_be(offset, wide_value)
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_i64_le(offset, wide_value as i64)
+    });
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_i64_be(offset, wide_value as i64)
+    });
+
+    let before_truncate = writer.as_slice().to_vec();
+    let truncate_result = writer.truncate(offset);
+    if truncate_result.is_err() {
+        assert_eq!(writer.as_slice(), before_truncate.as_slice());
+    } else {
+        assert_eq!(writer.len(), offset);
+        assert_eq!(writer.position(), offset);
+    }
+}
+
+fn patch_and_assert_non_mutation(
+    writer: &mut ByteWriter,
+    offset: usize,
+    patch: impl FnOnce(&mut ByteWriter) -> AvResult<()>,
+) {
+    let before = writer.as_slice().to_vec();
+    let result = patch(writer);
+    if result.is_err() {
+        assert_eq!(writer.as_slice(), before.as_slice());
+    } else {
+        assert!(writer.len() >= offset);
     }
 }

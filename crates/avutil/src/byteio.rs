@@ -23,6 +23,39 @@ impl<'a> ByteReader<'a> {
         self.position
     }
 
+    pub fn set_position(&mut self, position: usize) -> AvResult<()> {
+        if position > self.data.len() {
+            return Err(AvError::new(
+                AvErrorKind::EndOfFile,
+                format!(
+                    "byte seek out of range: offset {position}, length {}",
+                    self.data.len()
+                ),
+            ));
+        }
+
+        self.position = position;
+        Ok(())
+    }
+
+    pub fn seek_relative(&mut self, offset: isize) -> AvResult<()> {
+        let position = if offset >= 0 {
+            self.position.checked_add(offset as usize).ok_or_else(|| {
+                AvError::invalid_argument("byte seek offset overflows addressable memory")
+            })?
+        } else {
+            self.position
+                .checked_sub(offset.unsigned_abs())
+                .ok_or_else(|| AvError::invalid_argument("byte seek before start of stream"))?
+        };
+
+        self.set_position(position)
+    }
+
+    pub fn rewind(&mut self) {
+        self.position = 0;
+    }
+
     pub fn remaining(&self) -> usize {
         self.data.len().saturating_sub(self.position)
     }
@@ -339,6 +372,10 @@ impl ByteWriter {
         self.data.len()
     }
 
+    pub fn position(&self) -> usize {
+        self.data.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -351,32 +388,81 @@ impl ByteWriter {
         self.data
     }
 
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
+
+    pub fn truncate(&mut self, len: usize) -> AvResult<()> {
+        if len > self.data.len() {
+            return Err(AvError::new(
+                AvErrorKind::EndOfFile,
+                format!(
+                    "byte truncate out of range: offset {len}, length {}",
+                    self.data.len()
+                ),
+            ));
+        }
+
+        self.data.truncate(len);
+        Ok(())
+    }
+
     pub fn write_all(&mut self, bytes: &[u8]) {
         self.data.extend_from_slice(bytes);
+    }
+
+    pub fn patch_all(&mut self, offset: usize, bytes: &[u8]) -> AvResult<()> {
+        let end = self.checked_patch_end(offset, bytes.len())?;
+        self.data[offset..end].copy_from_slice(bytes);
+        Ok(())
     }
 
     pub fn write_u8(&mut self, value: u8) {
         self.data.push(value);
     }
 
+    pub fn patch_u8(&mut self, offset: usize, value: u8) -> AvResult<()> {
+        self.patch_all(offset, &[value])
+    }
+
     pub fn write_i8(&mut self, value: i8) {
         self.write_all(&value.to_ne_bytes());
+    }
+
+    pub fn patch_i8(&mut self, offset: usize, value: i8) -> AvResult<()> {
+        self.patch_all(offset, &value.to_ne_bytes())
     }
 
     pub fn write_u16_le(&mut self, value: u16) {
         self.write_all(&value.to_le_bytes());
     }
 
+    pub fn patch_u16_le(&mut self, offset: usize, value: u16) -> AvResult<()> {
+        self.patch_all(offset, &value.to_le_bytes())
+    }
+
     pub fn write_u16_be(&mut self, value: u16) {
         self.write_all(&value.to_be_bytes());
+    }
+
+    pub fn patch_u16_be(&mut self, offset: usize, value: u16) -> AvResult<()> {
+        self.patch_all(offset, &value.to_be_bytes())
     }
 
     pub fn write_i16_le(&mut self, value: i16) {
         self.write_all(&value.to_le_bytes());
     }
 
+    pub fn patch_i16_le(&mut self, offset: usize, value: i16) -> AvResult<()> {
+        self.patch_all(offset, &value.to_le_bytes())
+    }
+
     pub fn write_i16_be(&mut self, value: i16) {
         self.write_all(&value.to_be_bytes());
+    }
+
+    pub fn patch_i16_be(&mut self, offset: usize, value: i16) -> AvResult<()> {
+        self.patch_all(offset, &value.to_be_bytes())
     }
 
     pub fn write_u24_le(&mut self, value: u32) -> AvResult<()> {
@@ -385,26 +471,58 @@ impl ByteWriter {
         Ok(())
     }
 
+    pub fn patch_u24_le(&mut self, offset: usize, value: u32) -> AvResult<()> {
+        validate_u24(value)?;
+        self.patch_all(
+            offset,
+            &[value as u8, (value >> 8) as u8, (value >> 16) as u8],
+        )
+    }
+
     pub fn write_u24_be(&mut self, value: u32) -> AvResult<()> {
         validate_u24(value)?;
         self.write_all(&[(value >> 16) as u8, (value >> 8) as u8, value as u8]);
         Ok(())
     }
 
+    pub fn patch_u24_be(&mut self, offset: usize, value: u32) -> AvResult<()> {
+        validate_u24(value)?;
+        self.patch_all(
+            offset,
+            &[(value >> 16) as u8, (value >> 8) as u8, value as u8],
+        )
+    }
+
     pub fn write_i24_le(&mut self, value: i32) -> AvResult<()> {
         self.write_u24_le(encode_i24(value)?)
+    }
+
+    pub fn patch_i24_le(&mut self, offset: usize, value: i32) -> AvResult<()> {
+        self.patch_u24_le(offset, encode_i24(value)?)
     }
 
     pub fn write_i24_be(&mut self, value: i32) -> AvResult<()> {
         self.write_u24_be(encode_i24(value)?)
     }
 
+    pub fn patch_i24_be(&mut self, offset: usize, value: i32) -> AvResult<()> {
+        self.patch_u24_be(offset, encode_i24(value)?)
+    }
+
     pub fn write_u32_le(&mut self, value: u32) {
         self.write_all(&value.to_le_bytes());
     }
 
+    pub fn patch_u32_le(&mut self, offset: usize, value: u32) -> AvResult<()> {
+        self.patch_all(offset, &value.to_le_bytes())
+    }
+
     pub fn write_u32_be(&mut self, value: u32) {
         self.write_all(&value.to_be_bytes());
+    }
+
+    pub fn patch_u32_be(&mut self, offset: usize, value: u32) -> AvResult<()> {
+        self.patch_all(offset, &value.to_be_bytes())
     }
 
     pub fn write_u48_le(&mut self, value: u64) -> AvResult<()> {
@@ -420,6 +538,21 @@ impl ByteWriter {
         Ok(())
     }
 
+    pub fn patch_u48_le(&mut self, offset: usize, value: u64) -> AvResult<()> {
+        validate_u48(value)?;
+        self.patch_all(
+            offset,
+            &[
+                value as u8,
+                (value >> 8) as u8,
+                (value >> 16) as u8,
+                (value >> 24) as u8,
+                (value >> 32) as u8,
+                (value >> 40) as u8,
+            ],
+        )
+    }
+
     pub fn write_u48_be(&mut self, value: u64) -> AvResult<()> {
         validate_u48(value)?;
         self.write_all(&[
@@ -433,36 +566,101 @@ impl ByteWriter {
         Ok(())
     }
 
+    pub fn patch_u48_be(&mut self, offset: usize, value: u64) -> AvResult<()> {
+        validate_u48(value)?;
+        self.patch_all(
+            offset,
+            &[
+                (value >> 40) as u8,
+                (value >> 32) as u8,
+                (value >> 24) as u8,
+                (value >> 16) as u8,
+                (value >> 8) as u8,
+                value as u8,
+            ],
+        )
+    }
+
     pub fn write_i48_le(&mut self, value: i64) -> AvResult<()> {
         self.write_u48_le(encode_i48(value)?)
+    }
+
+    pub fn patch_i48_le(&mut self, offset: usize, value: i64) -> AvResult<()> {
+        self.patch_u48_le(offset, encode_i48(value)?)
     }
 
     pub fn write_i48_be(&mut self, value: i64) -> AvResult<()> {
         self.write_u48_be(encode_i48(value)?)
     }
 
+    pub fn patch_i48_be(&mut self, offset: usize, value: i64) -> AvResult<()> {
+        self.patch_u48_be(offset, encode_i48(value)?)
+    }
+
     pub fn write_i32_le(&mut self, value: i32) {
         self.write_all(&value.to_le_bytes());
+    }
+
+    pub fn patch_i32_le(&mut self, offset: usize, value: i32) -> AvResult<()> {
+        self.patch_all(offset, &value.to_le_bytes())
     }
 
     pub fn write_i32_be(&mut self, value: i32) {
         self.write_all(&value.to_be_bytes());
     }
 
+    pub fn patch_i32_be(&mut self, offset: usize, value: i32) -> AvResult<()> {
+        self.patch_all(offset, &value.to_be_bytes())
+    }
+
     pub fn write_u64_le(&mut self, value: u64) {
         self.write_all(&value.to_le_bytes());
+    }
+
+    pub fn patch_u64_le(&mut self, offset: usize, value: u64) -> AvResult<()> {
+        self.patch_all(offset, &value.to_le_bytes())
     }
 
     pub fn write_u64_be(&mut self, value: u64) {
         self.write_all(&value.to_be_bytes());
     }
 
+    pub fn patch_u64_be(&mut self, offset: usize, value: u64) -> AvResult<()> {
+        self.patch_all(offset, &value.to_be_bytes())
+    }
+
     pub fn write_i64_le(&mut self, value: i64) {
         self.write_all(&value.to_le_bytes());
     }
 
+    pub fn patch_i64_le(&mut self, offset: usize, value: i64) -> AvResult<()> {
+        self.patch_all(offset, &value.to_le_bytes())
+    }
+
     pub fn write_i64_be(&mut self, value: i64) {
         self.write_all(&value.to_be_bytes());
+    }
+
+    pub fn patch_i64_be(&mut self, offset: usize, value: i64) -> AvResult<()> {
+        self.patch_all(offset, &value.to_be_bytes())
+    }
+
+    fn checked_patch_end(&self, offset: usize, count: usize) -> AvResult<usize> {
+        let end = offset.checked_add(count).ok_or_else(|| {
+            AvError::invalid_argument("byte patch length overflows addressable memory")
+        })?;
+
+        if end > self.data.len() {
+            return Err(AvError::new(
+                AvErrorKind::EndOfFile,
+                format!(
+                    "byte patch out of range: need {count} bytes at offset {offset}, length {}",
+                    self.data.len()
+                ),
+            ));
+        }
+
+        Ok(end)
     }
 }
 
@@ -592,6 +790,38 @@ mod tests {
         assert_eq!(reader.position(), 2);
         assert_eq!(reader.read_exact(2).unwrap(), &[2, 3]);
         assert_eq!(reader.remaining(), 1);
+    }
+
+    #[test]
+    fn set_position_seek_relative_and_rewind_are_checked() {
+        let mut reader = ByteReader::new(&[10, 20, 30, 40]);
+
+        reader.set_position(2).unwrap();
+        assert_eq!(reader.read_u8().unwrap(), 30);
+
+        reader.seek_relative(-2).unwrap();
+        assert_eq!(reader.position(), 1);
+        assert_eq!(reader.peek_u8().unwrap(), 20);
+
+        reader.seek_relative(3).unwrap();
+        assert_eq!(reader.position(), 4);
+        assert!(reader.is_eof());
+
+        let beyond = reader.seek_relative(1).unwrap_err();
+        assert_eq!(beyond.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(reader.position(), 4);
+
+        let before_start = reader.seek_relative(-5).unwrap_err();
+        assert_eq!(before_start.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(reader.position(), 4);
+
+        let absolute_beyond = reader.set_position(5).unwrap_err();
+        assert_eq!(absolute_beyond.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(reader.position(), 4);
+
+        reader.rewind();
+        assert_eq!(reader.position(), 0);
+        assert_eq!(reader.read_u8().unwrap(), 10);
     }
 
     #[test]
@@ -746,6 +976,88 @@ mod tests {
         assert_eq!(i24_low_err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(i48_high_err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(i48_low_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(writer.as_slice(), before.as_slice());
+    }
+
+    #[test]
+    fn writer_patches_existing_bytes_and_truncates() {
+        let mut writer = ByteWriter::new();
+        writer.write_all(&[0; 96]);
+
+        writer.patch_u8(0, 0x7f).unwrap();
+        writer.patch_i8(1, -1).unwrap();
+        writer.patch_u16_le(2, 0x1234).unwrap();
+        writer.patch_u16_be(4, 0x5678).unwrap();
+        writer.patch_i16_le(6, -2).unwrap();
+        writer.patch_i16_be(8, -3).unwrap();
+        writer.patch_u24_le(10, 0x0001_0203).unwrap();
+        writer.patch_u24_be(13, 0x00ab_cdef).unwrap();
+        writer.patch_i24_le(16, -2).unwrap();
+        writer.patch_i24_be(19, -8_388_608).unwrap();
+        writer.patch_u32_le(22, 0x0506_0708).unwrap();
+        writer.patch_u32_be(26, 0x0102_0304).unwrap();
+        writer.patch_i32_le(30, i32::MIN).unwrap();
+        writer.patch_i32_be(34, i32::MAX).unwrap();
+        writer.patch_u48_le(38, 0x0102_0304_0506).unwrap();
+        writer.patch_u48_be(44, 0x0a0b_0c0d_0e0f).unwrap();
+        writer.patch_i48_le(50, -140_737_488_355_328).unwrap();
+        writer.patch_i48_be(56, 140_737_488_355_327).unwrap();
+        writer.patch_u64_le(62, 0x0102_0304_0506_0708).unwrap();
+        writer.patch_u64_be(70, 0x1112_1314_1516_1718).unwrap();
+        writer.patch_i64_le(78, i64::MIN).unwrap();
+        writer.patch_i64_be(86, i64::MAX).unwrap();
+        writer.patch_all(94, &[0xaa, 0xbb]).unwrap();
+
+        assert_eq!(writer.position(), 96);
+        let mut reader = ByteReader::new(writer.as_slice());
+        assert_eq!(reader.read_u8().unwrap(), 0x7f);
+        assert_eq!(reader.read_i8().unwrap(), -1);
+        assert_eq!(reader.read_u16_le().unwrap(), 0x1234);
+        assert_eq!(reader.read_u16_be().unwrap(), 0x5678);
+        assert_eq!(reader.read_i16_le().unwrap(), -2);
+        assert_eq!(reader.read_i16_be().unwrap(), -3);
+        assert_eq!(reader.read_u24_le().unwrap(), 0x0001_0203);
+        assert_eq!(reader.read_u24_be().unwrap(), 0x00ab_cdef);
+        assert_eq!(reader.read_i24_le().unwrap(), -2);
+        assert_eq!(reader.read_i24_be().unwrap(), -8_388_608);
+        assert_eq!(reader.read_u32_le().unwrap(), 0x0506_0708);
+        assert_eq!(reader.read_u32_be().unwrap(), 0x0102_0304);
+        assert_eq!(reader.read_i32_le().unwrap(), i32::MIN);
+        assert_eq!(reader.read_i32_be().unwrap(), i32::MAX);
+        assert_eq!(reader.read_u48_le().unwrap(), 0x0102_0304_0506);
+        assert_eq!(reader.read_u48_be().unwrap(), 0x0a0b_0c0d_0e0f);
+        assert_eq!(reader.read_i48_le().unwrap(), -140_737_488_355_328);
+        assert_eq!(reader.read_i48_be().unwrap(), 140_737_488_355_327);
+        assert_eq!(reader.read_u64_le().unwrap(), 0x0102_0304_0506_0708);
+        assert_eq!(reader.read_u64_be().unwrap(), 0x1112_1314_1516_1718);
+        assert_eq!(reader.read_i64_le().unwrap(), i64::MIN);
+        assert_eq!(reader.read_i64_be().unwrap(), i64::MAX);
+        assert_eq!(reader.read_exact(2).unwrap(), &[0xaa, 0xbb]);
+
+        writer.truncate(94).unwrap();
+        assert_eq!(writer.len(), 94);
+        writer.clear();
+        assert!(writer.is_empty());
+        assert_eq!(writer.position(), 0);
+    }
+
+    #[test]
+    fn writer_patch_and_truncate_errors_preserve_buffer() {
+        let mut writer = ByteWriter::new();
+        writer.write_all(&[1, 2, 3, 4]);
+
+        let before = writer.as_slice().to_vec();
+        let patch_oob = writer.patch_u32_be(1, 0x0102_0304).unwrap_err();
+        let patch_overflow = writer.patch_all(usize::MAX, &[0]).unwrap_err();
+        let truncate_oob = writer.truncate(5).unwrap_err();
+        let patch_u24_wide = writer.patch_u24_be(0, 0x0100_0000).unwrap_err();
+        let patch_i48_wide = writer.patch_i48_le(0, 140_737_488_355_328).unwrap_err();
+
+        assert_eq!(patch_oob.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(patch_overflow.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(truncate_oob.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(patch_u24_wide.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(patch_i48_wide.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(writer.as_slice(), before.as_slice());
     }
 }

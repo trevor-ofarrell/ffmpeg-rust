@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-byteio` update: `ByteReader` now supports checked absolute positioning, relative seek, and rewind for bounded in-memory byte streams, preserving the cursor on invalid seeks. `ByteWriter` now exposes append-position, clear, checked truncate, raw patching, and endian-aware signed/unsigned patch helpers for existing bytes; invalid bounds and constrained-width failures preserve the existing buffer. Local unit tests and the build-checked `avutil_byteio` fuzz target cover seek/cursor invariants and patch/truncate mutation invariants. This remains below `complete` because pinned FFmpeg AVIO/GetByte differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
+
 Latest `avutil-hash` / hash-muxer update: `avutil` now has a Rust-native SHA-1 implementation with one-shot and streaming APIs, standard known-vector tests, and fuzz-harness streaming equivalence coverage. `avformat::HashAlgorithm` now exposes SHA-160/SHA-1 as `SHA160` for hash, framehash, and streamhash muxers, and `ffmpeg-rs -f hash -hash sha-160 -` accepts the normalized CLI spelling without invoking FFmpeg at runtime. Local FATE-runner mappings now include the avformat null/hash/framecrc/framehash/streamhash unit filters so packet-muxer and shared fuzz-target changes are measurable by `run --changed`. This remains below `complete` because the SHA-160 behavior has no pinned FFmpeg 8.1.1 oracle differential vectors, no upstream FATE media coverage, and no actual local fuzz execution.
 
 Latest `fftools-option-parser`/logging integration update: process-level CLI diagnostic formatting now routes through `avutil::Logger` instead of formatting a single `LogRecord` directly. This preserves existing quiet, level, time/datetime, and color behavior while adding deterministic repeat-summary compression for consecutive identical diagnostics when the parsed `repeat` flag enables `LogFlags::SKIP_REPEATED`; without the flag, repeated diagnostics remain separate lines. This remains below `complete` because byte-identical upstream repeat behavior, media progress logs, pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
@@ -221,6 +223,18 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avutil byteio`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo check --manifest-path fuzz\Cargo.toml --bin avutil_byteio`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo clippy -p avutil --all-targets -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_byteio -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo run -p fate-runner -- run --component avutil-byteio`
+- `cargo fmt --all -- --check`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo run -p fate-runner -- run --changed`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test --workspace --all-features --lib`
+- `git diff --check`
 
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avutil hash`
@@ -3144,6 +3158,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-byteio` is the current focus for this slice. The concrete change is checked reader repositioning plus writer patch/truncate support for bounded byte streams, with local unit and fuzz-harness invariant coverage. It does not claim pinned AVIO/GetByte differential parity, upstream FATE media parity, or actual fuzz execution.
+
 `avutil-hash` is the current focus for this slice, with linked `avformat-hash-muxer` and `fftools-ffmpeg-hash-output` coverage. The concrete change is SHA-1/SHA-160 digest support across the shared hash primitive, hash muxer state, CLI `-hash` algorithm parsing, and packet-muxer fuzz invariants. It does not claim exact FFmpeg hash muxer output semantics, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
 
 `fftools-option-parser` is the current focus for this slice. The concrete change is repeat-summary compression for process-level CLI diagnostics by routing the formatter through the shared `avutil::Logger`, with tests proving repeated diagnostics compress only when the parsed `repeat` flag is active. It does not claim media-progress stderr, byte-identical upstream repeat/timestamp/color formatting, pinned oracle parity, or upstream FATE parity.
@@ -3182,8 +3198,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 primitive work that unlocks parity tests, likely deeper bit I/O vectors, option API integration, or another documented hash/checksum algorithm if it can be implemented from public specs with local vectors.
-2. Add pinned-oracle differential coverage for constrained hash/framehash/streamhash algorithms, including SHA-160/SHA-1, once the FFmpeg 8.1.1 oracle binary is available.
+1. Continue priority-1 primitive work that unlocks parser and muxer parity, likely deeper bit I/O vectors or byte I/O compatibility vectors around FFmpeg-style seek/read/write semantics.
+2. Add pinned-oracle differential coverage for constrained byte/hash/framehash/streamhash behavior once the FFmpeg 8.1.1 oracle binary is available.
 3. Keep improving local FATE-runner changed-path coverage where selected implemented components still lack a runnable local mapping, while keeping those mappings clearly separate from upstream FATE parity.
 
 ## Known Blockers
@@ -3195,6 +3211,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added checked byte I/O random-access and patching support. `ByteReader` now has `set_position`, `seek_relative`, and `rewind` with invalid-seek cursor preservation; `ByteWriter` now has append-position, clear, checked truncate, raw `patch_all`, and endian-aware patch helpers for signed/unsigned 8/16/24/32/48/64-bit values with constrained-width validation before mutation. Unit coverage now includes checked reader seeking, writer patch/truncate round trips, and no-mutation error cases; `avutil_byteio` build-checks generated seek, patch, truncate, cursor, and buffer-mutation invariants. Validation passed with focused byteio tests, fuzz-target build/clippy, avutil clippy, local FATE-runner avutil-byteio and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`.
 
 Latest slice: added SHA-1/SHA-160 hash support. `avutil::Sha1` and `avutil::sha1` implement SHA-1 with standard vectors and streaming-boundary tests; `avformat::HashAlgorithm::Sha160` renders `SHA160` and routes through the shared hash, framehash, and streamhash muxer state; `ffmpeg-rs` accepts `-hash sha1`, `-hash sha160`, and normalized `-hash sha-160` for constrained hash output; and the avutil/avformat fuzz harnesses now build-check SHA-1/SHA-160 invariants. Local avformat packet-muxer FATE mappings were added so `run --changed` can exercise null/hash/framecrc/framehash/streamhash unit filters. Validation passed with focused hash/muxer/ffmpeg tests, affected-crate clippy, fuzz package check/clippy, local FATE-runner avutil-hash and changed mappings, workspace format check, workspace clippy, workspace library compile check, full workspace library tests, and `git diff --check` with CRLF warnings only. The affected components remain `implemented`, not `complete`.
 
