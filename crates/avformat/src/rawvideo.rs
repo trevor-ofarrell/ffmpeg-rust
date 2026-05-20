@@ -437,6 +437,53 @@ mod tests {
             .frame_size(),
             12
         );
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &[0; 8],
+                2,
+                1,
+                RawVideoPixelFormat::Gbrap,
+                Rational::new(1, 1).unwrap(),
+            )
+            .unwrap()
+            .info()
+            .frame_size(),
+            8
+        );
+        for format in [
+            RawVideoPixelFormat::Gbrap10Le,
+            RawVideoPixelFormat::Gbrap10Be,
+            RawVideoPixelFormat::Gbrap12Le,
+            RawVideoPixelFormat::Gbrap12Be,
+            RawVideoPixelFormat::Gbrap14Le,
+            RawVideoPixelFormat::Gbrap14Be,
+            RawVideoPixelFormat::Gbrap16Le,
+            RawVideoPixelFormat::Gbrap16Be,
+            RawVideoPixelFormat::GbrapF16Le,
+            RawVideoPixelFormat::GbrapF16Be,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 16], 2, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                16
+            );
+        }
+        for format in [
+            RawVideoPixelFormat::Gbrap32Le,
+            RawVideoPixelFormat::Gbrap32Be,
+            RawVideoPixelFormat::GbrapF32Le,
+            RawVideoPixelFormat::GbrapF32Be,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 32], 2, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                32
+            );
+        }
         for format in [
             RawVideoPixelFormat::Rgb48Le,
             RawVideoPixelFormat::Rgb48Be,
@@ -865,6 +912,59 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 36);
+    }
+
+    #[test]
+    fn muxer_computes_gbrap_frame_sizes() {
+        let gbrap = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Gbrap,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(gbrap.info().frame_size(), 24);
+
+        let gbrap16 = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Gbrap16Be,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(gbrap16.info().frame_size(), 48);
+
+        let gbrap32 = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Gbrap32Le,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(gbrap32.info().frame_size(), 96);
+
+        let gbrapf16 = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::GbrapF16Le,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(gbrapf16.info().frame_size(), 48);
+
+        let gbrapf32 = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::GbrapF32Be,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(gbrapf32.info().frame_size(), 96);
     }
 
     #[test]

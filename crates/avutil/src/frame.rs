@@ -12448,6 +12448,24 @@ fn video_plane_shapes(
                 rows: height,
             },
         ]),
+        PixelFormat::Gbrap => Ok(vec![
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height,
+            },
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height,
+            },
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height,
+            },
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height,
+            },
+        ]),
         PixelFormat::Gbrp9Le
         | PixelFormat::Gbrp9Be
         | PixelFormat::Gbrp10Le
@@ -12461,6 +12479,61 @@ fn video_plane_shapes(
             let row_bytes =
                 checked_mul(width, 2, "high bit-depth planar GBR video frame line size")?;
             Ok(vec![
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+            ])
+        }
+        PixelFormat::Gbrap10Le
+        | PixelFormat::Gbrap10Be
+        | PixelFormat::Gbrap12Le
+        | PixelFormat::Gbrap12Be
+        | PixelFormat::Gbrap14Le
+        | PixelFormat::Gbrap14Be
+        | PixelFormat::Gbrap16Le
+        | PixelFormat::Gbrap16Be
+        | PixelFormat::GbrapF16Le
+        | PixelFormat::GbrapF16Be => {
+            let row_bytes =
+                checked_mul(width, 2, "high bit-depth planar GBRA video frame line size")?;
+            Ok(vec![
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
+            ])
+        }
+        PixelFormat::Gbrap32Le
+        | PixelFormat::Gbrap32Be
+        | PixelFormat::GbrapF32Le
+        | PixelFormat::GbrapF32Be => {
+            let row_bytes = checked_mul(width, 4, "32-bit planar GBRA video frame line size")?;
+            Ok(vec![
+                VideoPlaneShape {
+                    row_bytes,
+                    rows: height,
+                },
                 VideoPlaneShape {
                     row_bytes,
                     rows: height,
@@ -16380,6 +16453,51 @@ mod tests {
         )
         .unwrap();
         assert_eq!(gbrp16.line_sizes(), &[6, 6, 6]);
+
+        let gbrap = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::Gbrap,
+            vec![vec![0; 6], vec![0; 6], vec![0; 6], vec![0; 6]],
+        )
+        .unwrap();
+        assert_eq!(gbrap.line_sizes(), &[3, 3, 3, 3]);
+
+        let gbrap16 = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::Gbrap16Be,
+            vec![vec![0; 12], vec![0; 12], vec![0; 12], vec![0; 12]],
+        )
+        .unwrap();
+        assert_eq!(gbrap16.line_sizes(), &[6, 6, 6, 6]);
+
+        let gbrap32 = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::Gbrap32Be,
+            vec![vec![0; 24], vec![0; 24], vec![0; 24], vec![0; 24]],
+        )
+        .unwrap();
+        assert_eq!(gbrap32.line_sizes(), &[12, 12, 12, 12]);
+
+        let gbrapf16 = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::GbrapF16Be,
+            vec![vec![0; 12], vec![0; 12], vec![0; 12], vec![0; 12]],
+        )
+        .unwrap();
+        assert_eq!(gbrapf16.line_sizes(), &[6, 6, 6, 6]);
+
+        let gbrapf32 = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::GbrapF32Be,
+            vec![vec![0; 24], vec![0; 24], vec![0; 24], vec![0; 24]],
+        )
+        .unwrap();
+        assert_eq!(gbrapf32.line_sizes(), &[12, 12, 12, 12]);
 
         let ya8 = VideoFrame::new(3, 2, PixelFormat::Ya8, vec![vec![0; 12]]).unwrap();
         assert_eq!(ya8.line_sizes(), &[6]);

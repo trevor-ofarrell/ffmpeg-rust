@@ -444,6 +444,66 @@ fn exercise_fixtures() {
     );
     assert!(raw_gbrp16_demuxer.read_packet().unwrap().is_none());
 
+    let mut raw_gbrap =
+        RawVideoMuxer::new(2, 1, PixelFormat::Gbrap, Rational::new(24, 1).unwrap()).unwrap();
+    raw_gbrap
+        .write_packet(&Packet::new((0..8).collect(), 0))
+        .unwrap();
+    let raw_gbrap_output = raw_gbrap.finish();
+    let mut raw_gbrap_demuxer = RawVideoDemuxer::open(
+        &raw_gbrap_output,
+        2,
+        1,
+        PixelFormat::Gbrap,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_gbrap_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..8).collect::<Vec<_>>()
+    );
+    assert!(raw_gbrap_demuxer.read_packet().unwrap().is_none());
+
+    let mut raw_gbrap16 =
+        RawVideoMuxer::new(2, 1, PixelFormat::Gbrap16Le, Rational::new(24, 1).unwrap()).unwrap();
+    raw_gbrap16
+        .write_packet(&Packet::new((0..16).collect(), 0))
+        .unwrap();
+    let raw_gbrap16_output = raw_gbrap16.finish();
+    let mut raw_gbrap16_demuxer = RawVideoDemuxer::open(
+        &raw_gbrap16_output,
+        2,
+        1,
+        PixelFormat::Gbrap16Le,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_gbrap16_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..16).collect::<Vec<_>>()
+    );
+    assert!(raw_gbrap16_demuxer.read_packet().unwrap().is_none());
+
+    let mut raw_gbrapf32 =
+        RawVideoMuxer::new(1, 1, PixelFormat::GbrapF32Le, Rational::new(24, 1).unwrap()).unwrap();
+    raw_gbrapf32
+        .write_packet(&Packet::new((0..16).collect(), 0))
+        .unwrap();
+    let raw_gbrapf32_output = raw_gbrapf32.finish();
+    let mut raw_gbrapf32_demuxer = RawVideoDemuxer::open(
+        &raw_gbrapf32_output,
+        1,
+        1,
+        PixelFormat::GbrapF32Le,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_gbrapf32_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..16).collect::<Vec<_>>()
+    );
+    assert!(raw_gbrapf32_demuxer.read_packet().unwrap().is_none());
+
     let mut raw_ya8 =
         RawVideoMuxer::new(2, 1, PixelFormat::Ya8, Rational::new(24, 1).unwrap()).unwrap();
     raw_ya8

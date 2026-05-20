@@ -229,6 +229,42 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    let gbrap = RawVideoDecoder::new(2, 1, PixelFormat::Gbrap).unwrap();
+    assert!(gbrap
+        .decode_packet(&Packet::new((0..8).collect(), 0))
+        .is_ok());
+    assert_eq!(
+        gbrap
+            .decode_packet(&Packet::new((0..7).collect(), 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
+    let gbrap16 = RawVideoDecoder::new(2, 1, PixelFormat::Gbrap16Le).unwrap();
+    assert!(gbrap16
+        .decode_packet(&Packet::new((0..16).collect(), 0))
+        .is_ok());
+    assert_eq!(
+        gbrap16
+            .decode_packet(&Packet::new((0..15).collect(), 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
+    let gbrapf32 = RawVideoDecoder::new(1, 1, PixelFormat::GbrapF32Le).unwrap();
+    assert!(gbrapf32
+        .decode_packet(&Packet::new((0..16).collect(), 0))
+        .is_ok());
+    assert_eq!(
+        gbrapf32
+            .decode_packet(&Packet::new((0..15).collect(), 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let ya8 = RawVideoDecoder::new(2, 1, PixelFormat::Ya8).unwrap();
     assert!(ya8
         .decode_packet(&Packet::new(vec![0x10, 0xff, 0x80, 0x40], 0))

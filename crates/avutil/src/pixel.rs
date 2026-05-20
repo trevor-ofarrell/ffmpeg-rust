@@ -43,6 +43,21 @@ pub enum PixelFormat {
     Gbrp14Be,
     Gbrp16Le,
     Gbrp16Be,
+    Gbrap,
+    Gbrap10Le,
+    Gbrap10Be,
+    Gbrap12Le,
+    Gbrap12Be,
+    Gbrap14Le,
+    Gbrap14Be,
+    Gbrap16Le,
+    Gbrap16Be,
+    Gbrap32Le,
+    Gbrap32Be,
+    GbrapF16Le,
+    GbrapF16Be,
+    GbrapF32Le,
+    GbrapF32Be,
     Yuv420p,
     Yuv422p,
     Yuv410p,
@@ -118,6 +133,21 @@ impl PixelFormat {
         Self::Gbrp14Be,
         Self::Gbrp16Le,
         Self::Gbrp16Be,
+        Self::Gbrap,
+        Self::Gbrap10Le,
+        Self::Gbrap10Be,
+        Self::Gbrap12Le,
+        Self::Gbrap12Be,
+        Self::Gbrap14Le,
+        Self::Gbrap14Be,
+        Self::Gbrap16Le,
+        Self::Gbrap16Be,
+        Self::Gbrap32Le,
+        Self::Gbrap32Be,
+        Self::GbrapF16Le,
+        Self::GbrapF16Be,
+        Self::GbrapF32Le,
+        Self::GbrapF32Be,
         Self::Yuv420p,
         Self::Yuv422p,
         Self::Yuv410p,
@@ -173,6 +203,21 @@ impl PixelFormat {
             "gbrp14be" => Some(Self::Gbrp14Be),
             "gbrp16le" => Some(Self::Gbrp16Le),
             "gbrp16be" => Some(Self::Gbrp16Be),
+            "gbrap" => Some(Self::Gbrap),
+            "gbrap10le" => Some(Self::Gbrap10Le),
+            "gbrap10be" => Some(Self::Gbrap10Be),
+            "gbrap12le" => Some(Self::Gbrap12Le),
+            "gbrap12be" => Some(Self::Gbrap12Be),
+            "gbrap14le" => Some(Self::Gbrap14Le),
+            "gbrap14be" => Some(Self::Gbrap14Be),
+            "gbrap16le" => Some(Self::Gbrap16Le),
+            "gbrap16be" => Some(Self::Gbrap16Be),
+            "gbrap32le" => Some(Self::Gbrap32Le),
+            "gbrap32be" => Some(Self::Gbrap32Be),
+            "gbrapf16le" => Some(Self::GbrapF16Le),
+            "gbrapf16be" => Some(Self::GbrapF16Be),
+            "gbrapf32le" => Some(Self::GbrapF32Le),
+            "gbrapf32be" => Some(Self::GbrapF32Be),
             "yuv420p" => Some(Self::Yuv420p),
             "yuv422p" => Some(Self::Yuv422p),
             "yuv410p" => Some(Self::Yuv410p),
@@ -688,6 +733,186 @@ impl PixelFormat {
                 0,
                 0,
             ),
+            Self::Gbrap => (
+                "gbrap",
+                PixelFormatClass::Rgb,
+                4,
+                32,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrap10Le => (
+                "gbrap10le",
+                PixelFormatClass::Rgb,
+                4,
+                40,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrap10Be => (
+                "gbrap10be",
+                PixelFormatClass::Rgb,
+                4,
+                40,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrap12Le => (
+                "gbrap12le",
+                PixelFormatClass::Rgb,
+                4,
+                48,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrap12Be => (
+                "gbrap12be",
+                PixelFormatClass::Rgb,
+                4,
+                48,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrap14Le => (
+                "gbrap14le",
+                PixelFormatClass::Rgb,
+                4,
+                56,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrap14Be => (
+                "gbrap14be",
+                PixelFormatClass::Rgb,
+                4,
+                56,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrap16Le => (
+                "gbrap16le",
+                PixelFormatClass::Rgb,
+                4,
+                64,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrap16Be => (
+                "gbrap16be",
+                PixelFormatClass::Rgb,
+                4,
+                64,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrap32Le => (
+                "gbrap32le",
+                PixelFormatClass::Rgb,
+                4,
+                128,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrap32Be => (
+                "gbrap32be",
+                PixelFormatClass::Rgb,
+                4,
+                128,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::GbrapF16Le => (
+                "gbrapf16le",
+                PixelFormatClass::Rgb,
+                4,
+                64,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::GbrapF16Be => (
+                "gbrapf16be",
+                PixelFormatClass::Rgb,
+                4,
+                64,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::GbrapF32Le => (
+                "gbrapf32le",
+                PixelFormatClass::Rgb,
+                4,
+                128,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
+            Self::GbrapF32Be => (
+                "gbrapf32be",
+                PixelFormatClass::Rgb,
+                4,
+                128,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
             Self::Yuv420p => (
                 "yuv420p",
                 PixelFormatClass::Yuv,
@@ -785,19 +1010,39 @@ impl PixelFormat {
                     | Self::Bgra64Be
                     | Self::Gbrp16Le
                     | Self::Gbrp16Be
+                    | Self::Gbrap16Le
+                    | Self::Gbrap16Be
+                    | Self::GbrapF16Le
+                    | Self::GbrapF16Be
             ) {
                 16
             } else if matches!(self, Self::Gbrp9Le | Self::Gbrp9Be) {
                 9
-            } else if matches!(self, Self::Gbrp10Le | Self::Gbrp10Be) {
+            } else if matches!(
+                self,
+                Self::Gbrp10Le | Self::Gbrp10Be | Self::Gbrap10Le | Self::Gbrap10Be
+            ) {
                 10
-            } else if matches!(self, Self::Gbrp12Le | Self::Gbrp12Be) {
+            } else if matches!(
+                self,
+                Self::Gbrp12Le | Self::Gbrp12Be | Self::Gbrap12Le | Self::Gbrap12Be
+            ) {
                 12
-            } else if matches!(self, Self::Gbrp14Le | Self::Gbrp14Be) {
+            } else if matches!(
+                self,
+                Self::Gbrp14Le | Self::Gbrp14Be | Self::Gbrap14Le | Self::Gbrap14Be
+            ) {
                 14
             } else if matches!(
                 self,
-                Self::Gray32Le | Self::Gray32Be | Self::GrayF32Le | Self::GrayF32Be
+                Self::Gray32Le
+                    | Self::Gray32Be
+                    | Self::GrayF32Le
+                    | Self::GrayF32Be
+                    | Self::Gbrap32Le
+                    | Self::Gbrap32Be
+                    | Self::GbrapF32Le
+                    | Self::GbrapF32Be
             ) {
                 32
             } else {
@@ -809,7 +1054,14 @@ impl PixelFormat {
             has_alpha,
             is_float: matches!(
                 self,
-                Self::GrayF16Le | Self::GrayF16Be | Self::GrayF32Le | Self::GrayF32Be
+                Self::GrayF16Le
+                    | Self::GrayF16Be
+                    | Self::GrayF32Le
+                    | Self::GrayF32Be
+                    | Self::GbrapF16Le
+                    | Self::GbrapF16Be
+                    | Self::GbrapF32Le
+                    | Self::GbrapF32Be
             ),
             packed_bytes_per_pixel,
             log2_chroma_w,
@@ -961,6 +1213,28 @@ impl PixelFormat {
                     "high bit-depth planar GBR pixel format plane size",
                 )?;
                 Ok(vec![plane, plane, plane])
+            }
+            Self::Gbrap => Ok(vec![pixels, pixels, pixels, pixels]),
+            Self::Gbrap10Le
+            | Self::Gbrap10Be
+            | Self::Gbrap12Le
+            | Self::Gbrap12Be
+            | Self::Gbrap14Le
+            | Self::Gbrap14Be
+            | Self::Gbrap16Le
+            | Self::Gbrap16Be
+            | Self::GbrapF16Le
+            | Self::GbrapF16Be => {
+                let plane = checked_mul(
+                    pixels,
+                    2,
+                    "high bit-depth planar GBRA pixel format plane size",
+                )?;
+                Ok(vec![plane, plane, plane, plane])
+            }
+            Self::Gbrap32Le | Self::Gbrap32Be | Self::GbrapF32Le | Self::GbrapF32Be => {
+                let plane = checked_mul(pixels, 4, "32-bit planar GBRA pixel format plane size")?;
+                Ok(vec![plane, plane, plane, plane])
             }
             Self::Yuv420p
             | Self::Yuv422p
@@ -1197,6 +1471,63 @@ mod tests {
             PixelFormat::from_name("gbrp16be"),
             Some(PixelFormat::Gbrp16Be)
         );
+        assert_eq!(PixelFormat::from_name("gbrap"), Some(PixelFormat::Gbrap));
+        assert_eq!(
+            PixelFormat::from_name("gbrap10le"),
+            Some(PixelFormat::Gbrap10Le)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrap10be"),
+            Some(PixelFormat::Gbrap10Be)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrap12le"),
+            Some(PixelFormat::Gbrap12Le)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrap12be"),
+            Some(PixelFormat::Gbrap12Be)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrap14le"),
+            Some(PixelFormat::Gbrap14Le)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrap14be"),
+            Some(PixelFormat::Gbrap14Be)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrap16le"),
+            Some(PixelFormat::Gbrap16Le)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrap16be"),
+            Some(PixelFormat::Gbrap16Be)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrap32le"),
+            Some(PixelFormat::Gbrap32Le)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrap32be"),
+            Some(PixelFormat::Gbrap32Be)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrapf16le"),
+            Some(PixelFormat::GbrapF16Le)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrapf16be"),
+            Some(PixelFormat::GbrapF16Be)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrapf32le"),
+            Some(PixelFormat::GbrapF32Le)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrapf32be"),
+            Some(PixelFormat::GbrapF32Be)
+        );
         assert_eq!(
             PixelFormat::from_name("yuv422p"),
             Some(PixelFormat::Yuv422p)
@@ -1217,7 +1548,7 @@ mod tests {
             PixelFormat::from_name("yuv444p"),
             Some(PixelFormat::Yuv444p)
         );
-        assert_eq!(PixelFormat::ALL.len(), 47);
+        assert_eq!(PixelFormat::ALL.len(), 62);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray16Le.plane_count(), 1);
@@ -1245,6 +1576,21 @@ mod tests {
         assert_eq!(PixelFormat::Gbrp14Be.plane_count(), 3);
         assert_eq!(PixelFormat::Gbrp16Le.plane_count(), 3);
         assert_eq!(PixelFormat::Gbrp16Be.plane_count(), 3);
+        assert_eq!(PixelFormat::Gbrap.plane_count(), 4);
+        assert_eq!(PixelFormat::Gbrap10Le.plane_count(), 4);
+        assert_eq!(PixelFormat::Gbrap10Be.plane_count(), 4);
+        assert_eq!(PixelFormat::Gbrap12Le.plane_count(), 4);
+        assert_eq!(PixelFormat::Gbrap12Be.plane_count(), 4);
+        assert_eq!(PixelFormat::Gbrap14Le.plane_count(), 4);
+        assert_eq!(PixelFormat::Gbrap14Be.plane_count(), 4);
+        assert_eq!(PixelFormat::Gbrap16Le.plane_count(), 4);
+        assert_eq!(PixelFormat::Gbrap16Be.plane_count(), 4);
+        assert_eq!(PixelFormat::Gbrap32Le.plane_count(), 4);
+        assert_eq!(PixelFormat::Gbrap32Be.plane_count(), 4);
+        assert_eq!(PixelFormat::GbrapF16Le.plane_count(), 4);
+        assert_eq!(PixelFormat::GbrapF16Be.plane_count(), 4);
+        assert_eq!(PixelFormat::GbrapF32Le.plane_count(), 4);
+        assert_eq!(PixelFormat::GbrapF32Be.plane_count(), 4);
         assert!(!PixelFormat::Rgb24.is_planar());
         assert!(PixelFormat::Rgb24.is_packed());
         assert!(PixelFormat::Ya8.is_packed());
@@ -1268,6 +1614,11 @@ mod tests {
         assert!(PixelFormat::Gbrp12Le.is_planar());
         assert!(PixelFormat::Gbrp14Le.is_planar());
         assert!(PixelFormat::Gbrp16Le.is_planar());
+        assert!(PixelFormat::Gbrap.is_planar());
+        assert!(PixelFormat::Gbrap16Le.is_planar());
+        assert!(PixelFormat::Gbrap32Le.is_planar());
+        assert!(PixelFormat::GbrapF16Le.is_planar());
+        assert!(PixelFormat::GbrapF32Le.is_planar());
         assert!(!PixelFormat::Yuv420p.is_packed());
         assert!(!PixelFormat::Gbrp.is_packed());
         assert!(!PixelFormat::Gbrp9Le.is_packed());
@@ -1275,15 +1626,26 @@ mod tests {
         assert!(!PixelFormat::Gbrp12Le.is_packed());
         assert!(!PixelFormat::Gbrp14Le.is_packed());
         assert!(!PixelFormat::Gbrp16Le.is_packed());
+        assert!(!PixelFormat::Gbrap.is_packed());
+        assert!(!PixelFormat::Gbrap16Le.is_packed());
+        assert!(!PixelFormat::Gbrap32Le.is_packed());
+        assert!(!PixelFormat::GbrapF16Le.is_packed());
+        assert!(!PixelFormat::GbrapF32Le.is_packed());
         assert!(!PixelFormat::Rgb24.has_alpha());
         assert!(PixelFormat::Ya8.has_alpha());
         assert!(PixelFormat::Ya16Le.has_alpha());
         assert!(PixelFormat::Bgra.has_alpha());
         assert!(PixelFormat::Rgba64Le.has_alpha());
+        assert!(PixelFormat::Gbrap.has_alpha());
+        assert!(PixelFormat::Gbrap16Le.has_alpha());
+        assert!(PixelFormat::GbrapF32Le.has_alpha());
         assert!(!PixelFormat::ZeroRgb.has_alpha());
         assert!(!PixelFormat::Gray16Le.is_float());
         assert!(PixelFormat::GrayF16Le.is_float());
         assert!(PixelFormat::GrayF32Be.is_float());
+        assert!(!PixelFormat::Gbrap16Le.is_float());
+        assert!(PixelFormat::GbrapF16Le.is_float());
+        assert!(PixelFormat::GbrapF32Be.is_float());
         assert_eq!(PixelFormat::Bgr24.packed_bytes_per_pixel(), Some(3));
         assert_eq!(PixelFormat::Ya8.packed_bytes_per_pixel(), Some(2));
         assert_eq!(PixelFormat::Ya16Be.packed_bytes_per_pixel(), Some(4));
@@ -1301,6 +1663,11 @@ mod tests {
         assert_eq!(PixelFormat::Gbrp12Le.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Gbrp14Le.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Gbrp16Le.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::Gbrap.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::Gbrap16Le.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::Gbrap32Le.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::GbrapF16Le.packed_bytes_per_pixel(), None);
+        assert_eq!(PixelFormat::GbrapF32Le.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Yuv420p.packed_bytes_per_pixel(), None);
     }
 
@@ -1523,6 +1890,59 @@ mod tests {
             assert!(!format.has_chroma_subsampling());
         }
 
+        let gbrap = PixelFormat::Gbrap.descriptor();
+        assert_eq!(gbrap.format, PixelFormat::Gbrap);
+        assert_eq!(gbrap.name, "gbrap");
+        assert_eq!(PixelFormat::from_name(gbrap.name), Some(PixelFormat::Gbrap));
+        assert_eq!(gbrap.class, PixelFormatClass::Rgb);
+        assert!(PixelFormat::Gbrap.is_rgb());
+        assert_eq!(gbrap.component_count, 4);
+        assert_eq!(gbrap.bits_per_component, 8);
+        assert_eq!(gbrap.bits_per_pixel, 32);
+        assert_eq!(gbrap.plane_count, 4);
+        assert!(gbrap.is_planar);
+        assert!(gbrap.has_alpha);
+        assert!(!gbrap.is_float);
+        assert_eq!(gbrap.packed_bytes_per_pixel, None);
+        assert_eq!(PixelFormat::Gbrap.log2_chroma(), (0, 0));
+        assert!(!PixelFormat::Gbrap.has_chroma_subsampling());
+
+        for (format, name, expected_bits_per_component, expected_bits_per_pixel, is_float) in [
+            (PixelFormat::Gbrap10Le, "gbrap10le", 10, 40, false),
+            (PixelFormat::Gbrap10Be, "gbrap10be", 10, 40, false),
+            (PixelFormat::Gbrap12Le, "gbrap12le", 12, 48, false),
+            (PixelFormat::Gbrap12Be, "gbrap12be", 12, 48, false),
+            (PixelFormat::Gbrap14Le, "gbrap14le", 14, 56, false),
+            (PixelFormat::Gbrap14Be, "gbrap14be", 14, 56, false),
+            (PixelFormat::Gbrap16Le, "gbrap16le", 16, 64, false),
+            (PixelFormat::Gbrap16Be, "gbrap16be", 16, 64, false),
+            (PixelFormat::Gbrap32Le, "gbrap32le", 32, 128, false),
+            (PixelFormat::Gbrap32Be, "gbrap32be", 32, 128, false),
+            (PixelFormat::GbrapF16Le, "gbrapf16le", 16, 64, true),
+            (PixelFormat::GbrapF16Be, "gbrapf16be", 16, 64, true),
+            (PixelFormat::GbrapF32Le, "gbrapf32le", 32, 128, true),
+            (PixelFormat::GbrapF32Be, "gbrapf32be", 32, 128, true),
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.format, format);
+            assert_eq!(descriptor.name, name);
+            assert_eq!(PixelFormat::from_name(descriptor.name), Some(format));
+            assert_eq!(descriptor.class, PixelFormatClass::Rgb);
+            assert!(format.is_rgb());
+            assert!(!format.is_yuv());
+            assert!(!format.is_gray());
+            assert_eq!(descriptor.component_count, 4);
+            assert_eq!(descriptor.bits_per_component, expected_bits_per_component);
+            assert_eq!(descriptor.bits_per_pixel, expected_bits_per_pixel);
+            assert_eq!(descriptor.plane_count, 4);
+            assert!(descriptor.is_planar);
+            assert!(descriptor.has_alpha);
+            assert_eq!(descriptor.is_float, is_float);
+            assert_eq!(descriptor.packed_bytes_per_pixel, None);
+            assert_eq!(format.log2_chroma(), (0, 0));
+            assert!(!format.has_chroma_subsampling());
+        }
+
         assert_eq!(PixelFormat::Rgb24.component_count(), 3);
         assert_eq!(PixelFormat::Rgb24.bits_per_pixel(), 24);
         assert_eq!(PixelFormat::Gbrp.component_count(), 3);
@@ -1543,6 +1963,30 @@ mod tests {
         assert_eq!(PixelFormat::Gbrp16Le.component_count(), 3);
         assert_eq!(PixelFormat::Gbrp16Le.bits_per_component(), 16);
         assert_eq!(PixelFormat::Gbrp16Le.bits_per_pixel(), 48);
+        assert_eq!(PixelFormat::Gbrap.component_count(), 4);
+        assert_eq!(PixelFormat::Gbrap.bits_per_component(), 8);
+        assert_eq!(PixelFormat::Gbrap.bits_per_pixel(), 32);
+        assert_eq!(PixelFormat::Gbrap10Le.component_count(), 4);
+        assert_eq!(PixelFormat::Gbrap10Le.bits_per_component(), 10);
+        assert_eq!(PixelFormat::Gbrap10Le.bits_per_pixel(), 40);
+        assert_eq!(PixelFormat::Gbrap12Le.component_count(), 4);
+        assert_eq!(PixelFormat::Gbrap12Le.bits_per_component(), 12);
+        assert_eq!(PixelFormat::Gbrap12Le.bits_per_pixel(), 48);
+        assert_eq!(PixelFormat::Gbrap14Le.component_count(), 4);
+        assert_eq!(PixelFormat::Gbrap14Le.bits_per_component(), 14);
+        assert_eq!(PixelFormat::Gbrap14Le.bits_per_pixel(), 56);
+        assert_eq!(PixelFormat::Gbrap16Le.component_count(), 4);
+        assert_eq!(PixelFormat::Gbrap16Le.bits_per_component(), 16);
+        assert_eq!(PixelFormat::Gbrap16Le.bits_per_pixel(), 64);
+        assert_eq!(PixelFormat::Gbrap32Le.component_count(), 4);
+        assert_eq!(PixelFormat::Gbrap32Le.bits_per_component(), 32);
+        assert_eq!(PixelFormat::Gbrap32Le.bits_per_pixel(), 128);
+        assert_eq!(PixelFormat::GbrapF16Le.component_count(), 4);
+        assert_eq!(PixelFormat::GbrapF16Le.bits_per_component(), 16);
+        assert_eq!(PixelFormat::GbrapF16Le.bits_per_pixel(), 64);
+        assert_eq!(PixelFormat::GbrapF32Le.component_count(), 4);
+        assert_eq!(PixelFormat::GbrapF32Le.bits_per_component(), 32);
+        assert_eq!(PixelFormat::GbrapF32Le.bits_per_pixel(), 128);
         assert_eq!(PixelFormat::Ya16Le.component_count(), 2);
         assert_eq!(PixelFormat::Ya16Le.bits_per_component(), 16);
         assert_eq!(PixelFormat::Ya16Le.bits_per_pixel(), 32);
@@ -1692,6 +2136,46 @@ mod tests {
             vec![12, 12, 12]
         );
         assert_eq!(PixelFormat::Gbrp16Le.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(
+            PixelFormat::Gbrap.plane_sizes(3, 2).unwrap(),
+            vec![6, 6, 6, 6]
+        );
+        assert_eq!(PixelFormat::Gbrap.frame_size(3, 2).unwrap(), 24);
+        assert_eq!(
+            PixelFormat::Gbrap10Le.plane_sizes(3, 2).unwrap(),
+            vec![12, 12, 12, 12]
+        );
+        assert_eq!(PixelFormat::Gbrap10Le.frame_size(3, 2).unwrap(), 48);
+        assert_eq!(
+            PixelFormat::Gbrap12Le.plane_sizes(3, 2).unwrap(),
+            vec![12, 12, 12, 12]
+        );
+        assert_eq!(PixelFormat::Gbrap12Le.frame_size(3, 2).unwrap(), 48);
+        assert_eq!(
+            PixelFormat::Gbrap14Le.plane_sizes(3, 2).unwrap(),
+            vec![12, 12, 12, 12]
+        );
+        assert_eq!(PixelFormat::Gbrap14Le.frame_size(3, 2).unwrap(), 48);
+        assert_eq!(
+            PixelFormat::Gbrap16Le.plane_sizes(3, 2).unwrap(),
+            vec![12, 12, 12, 12]
+        );
+        assert_eq!(PixelFormat::Gbrap16Le.frame_size(3, 2).unwrap(), 48);
+        assert_eq!(
+            PixelFormat::Gbrap32Le.plane_sizes(3, 2).unwrap(),
+            vec![24, 24, 24, 24]
+        );
+        assert_eq!(PixelFormat::Gbrap32Le.frame_size(3, 2).unwrap(), 96);
+        assert_eq!(
+            PixelFormat::GbrapF16Le.plane_sizes(3, 2).unwrap(),
+            vec![12, 12, 12, 12]
+        );
+        assert_eq!(PixelFormat::GbrapF16Le.frame_size(3, 2).unwrap(), 48);
+        assert_eq!(
+            PixelFormat::GbrapF32Le.plane_sizes(3, 2).unwrap(),
+            vec![24, 24, 24, 24]
+        );
+        assert_eq!(PixelFormat::GbrapF32Le.frame_size(3, 2).unwrap(), 96);
     }
 
     #[test]
@@ -1791,6 +2275,40 @@ mod tests {
         assert_eq!(
             planes,
             vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]]
+        );
+
+        let planes = PixelFormat::Gbrap
+            .split_planes(&(0..8).collect::<Vec<_>>(), 1, 2)
+            .unwrap();
+
+        assert_eq!(planes, vec![vec![0, 1], vec![2, 3], vec![4, 5], vec![6, 7]]);
+
+        let planes = PixelFormat::Gbrap16Le
+            .split_planes(&(0..16).collect::<Vec<_>>(), 1, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![
+                vec![0, 1, 2, 3],
+                vec![4, 5, 6, 7],
+                vec![8, 9, 10, 11],
+                vec![12, 13, 14, 15]
+            ]
+        );
+
+        let planes = PixelFormat::GbrapF32Le
+            .split_planes(&(0..32).collect::<Vec<_>>(), 1, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![
+                (0..8).collect::<Vec<_>>(),
+                (8..16).collect::<Vec<_>>(),
+                (16..24).collect::<Vec<_>>(),
+                (24..32).collect::<Vec<_>>()
+            ]
         );
 
         let planes = PixelFormat::Rgb48Le

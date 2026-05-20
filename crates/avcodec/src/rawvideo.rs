@@ -316,6 +316,61 @@ mod tests {
     }
 
     #[test]
+    fn decodes_gbrap_packet_to_four_planes() {
+        let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Gbrap).unwrap();
+        let mut packet = Packet::new((0..8).collect(), 0);
+        packet.set_pts(Some(18));
+
+        let frame = decoder.decode_packet(&packet).unwrap();
+
+        assert_eq!(decoder.frame_size(), 8);
+        assert_eq!(frame.pts(), Some(18));
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.width(), 2);
+                assert_eq!(video.height(), 1);
+                assert_eq!(video.pixel_format(), PixelFormat::Gbrap);
+                assert_eq!(video.pixel_format_name(), "gbrap");
+                assert_eq!(
+                    video.planes(),
+                    &[vec![0, 1], vec![2, 3], vec![4, 5], vec![6, 7]]
+                );
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+    }
+
+    #[test]
+    fn decodes_gbrapf32_packet_to_four_planes() {
+        let decoder = RawVideoDecoder::new(1, 1, PixelFormat::GbrapF32Le).unwrap();
+        let mut packet = Packet::new((0..16).collect(), 0);
+        packet.set_pts(Some(19));
+
+        let frame = decoder.decode_packet(&packet).unwrap();
+
+        assert_eq!(decoder.frame_size(), 16);
+        assert_eq!(frame.pts(), Some(19));
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.width(), 1);
+                assert_eq!(video.height(), 1);
+                assert_eq!(video.pixel_format(), PixelFormat::GbrapF32Le);
+                assert_eq!(video.pixel_format_name(), "gbrapf32le");
+                assert_eq!(
+                    video.planes(),
+                    &[
+                        vec![0, 1, 2, 3],
+                        vec![4, 5, 6, 7],
+                        vec![8, 9, 10, 11],
+                        vec![12, 13, 14, 15]
+                    ]
+                );
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+    }
+
+    #[test]
     fn decodes_ya8_packet_to_single_plane_frame() {
         let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Ya8).unwrap();
         let mut packet = Packet::new(vec![0x10, 0xff, 0x80, 0x40], 0);
