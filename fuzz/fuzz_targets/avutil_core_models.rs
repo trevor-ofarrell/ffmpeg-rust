@@ -1265,18 +1265,21 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 PixelFormat::Ya8 => {
                     assert_eq!(pixel_format.component_count(), 2);
                     assert_eq!(pixel_format.bits_per_component(), 8);
-                    assert_eq!(pixel_format.bits_per_pixel(), 16);
+                    assert_eq!(pixel_format.bits_per_pixel(), bpp(16));
                     assert!(pixel_format.has_alpha());
                 }
                 PixelFormat::Ya16Le | PixelFormat::Ya16Be => {
                     assert_eq!(pixel_format.component_count(), 2);
                     assert_eq!(pixel_format.bits_per_component(), 16);
-                    assert_eq!(pixel_format.bits_per_pixel(), 32);
+                    assert_eq!(pixel_format.bits_per_pixel(), bpp(32));
                     assert!(pixel_format.has_alpha());
                 }
                 _ => {
                     assert_eq!(pixel_format.component_count(), 1);
-                    assert_eq!(pixel_format.bits_per_pixel(), pixel_format.bits_per_component());
+                    assert_eq!(
+                        pixel_format.bits_per_pixel(),
+                        bpp(pixel_format.bits_per_component())
+                    );
                     assert!(!pixel_format.has_alpha());
                 }
             }
@@ -1298,7 +1301,23 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert!(!pixel_format.is_rgb());
             assert!(pixel_format.is_yuv());
             assert_eq!(pixel_format.component_count(), 3);
-            assert!(matches!(pixel_format.bits_per_pixel(), 9 | 12 | 16 | 24));
+            assert!(matches!(
+                (
+                    pixel_format.bits_per_pixel().num(),
+                    pixel_format.bits_per_pixel().den()
+                ),
+                (9, 1)
+                    | (12, 1)
+                    | (16, 1)
+                    | (24, 1)
+                    | (27, 2)
+                    | (18, 1)
+                    | (27, 1)
+                    | (15, 1)
+                    | (20, 1)
+                    | (30, 1)
+                    | (36, 1)
+            ));
             assert!(matches!(
                 pixel_format.log2_chroma(),
                 (1, 1) | (1, 0) | (2, 0) | (2, 2) | (0, 1) | (0, 0)
@@ -1329,8 +1348,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                         | PixelFormat::Abgr
                 )
         );
-        assert!(usize::from(pixel_format.bits_per_pixel()) <= bytes_per_pixel * 8);
-        assert!(usize::from(pixel_format.bits_per_pixel()) > bytes_per_pixel.saturating_sub(1) * 8);
+        let bits_per_pixel = usize::from(pixel_format.bits_per_pixel_integer().unwrap());
+        assert!(bits_per_pixel <= bytes_per_pixel * 8);
+        assert!(bits_per_pixel > bytes_per_pixel.saturating_sub(1) * 8);
     } else {
         assert!(matches!(
             pixel_format,
@@ -1345,6 +1365,12 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 | PixelFormat::YuvJ440p
                 | PixelFormat::Yuv444p
                 | PixelFormat::YuvJ444p
+                | PixelFormat::Yuv420p9Le
+                | PixelFormat::Yuv420p9Be
+                | PixelFormat::Yuv422p9Le
+                | PixelFormat::Yuv422p9Be
+                | PixelFormat::Yuv444p9Le
+                | PixelFormat::Yuv444p9Be
                 | PixelFormat::Yuv420p10Le
                 | PixelFormat::Yuv420p10Be
                 | PixelFormat::Yuv422p10Le
@@ -5275,7 +5301,7 @@ fn exercise_fixtures() {
         assert_eq!(format.frame_size(2, 2).unwrap(), 8);
         assert_eq!(format.plane_sizes(2, 2).unwrap(), vec![8]);
         assert_eq!(format.bits_per_component(), bits);
-        assert_eq!(format.bits_per_pixel(), bits);
+        assert_eq!(format.bits_per_pixel(), bpp(bits));
         assert!(format.is_gray());
         assert!(!format.has_alpha());
     }
@@ -5333,7 +5359,7 @@ fn exercise_fixtures() {
         vec![8, 8, 8]
     );
     assert_eq!(PixelFormat::Gbrp9Le.bits_per_component(), 9);
-    assert_eq!(PixelFormat::Gbrp9Le.bits_per_pixel(), 27);
+    assert_eq!(PixelFormat::Gbrp9Le.bits_per_pixel(), bpp(27));
     assert!(PixelFormat::Gbrp9Le.is_rgb());
     assert!(PixelFormat::Gbrp9Le.is_planar());
     assert!(!PixelFormat::Gbrp9Le.has_alpha());
@@ -5351,7 +5377,7 @@ fn exercise_fixtures() {
         vec![8, 8, 8]
     );
     assert_eq!(PixelFormat::Gbrp10Le.bits_per_component(), 10);
-    assert_eq!(PixelFormat::Gbrp10Le.bits_per_pixel(), 30);
+    assert_eq!(PixelFormat::Gbrp10Le.bits_per_pixel(), bpp(30));
     assert!(PixelFormat::Gbrp10Le.is_rgb());
     assert!(PixelFormat::Gbrp10Le.is_planar());
     assert!(!PixelFormat::Gbrp10Le.has_alpha());
@@ -5369,7 +5395,7 @@ fn exercise_fixtures() {
         vec![8, 8, 8]
     );
     assert_eq!(PixelFormat::Gbrp12Le.bits_per_component(), 12);
-    assert_eq!(PixelFormat::Gbrp12Le.bits_per_pixel(), 36);
+    assert_eq!(PixelFormat::Gbrp12Le.bits_per_pixel(), bpp(36));
     assert!(PixelFormat::Gbrp12Le.is_rgb());
     assert!(PixelFormat::Gbrp12Le.is_planar());
     assert!(!PixelFormat::Gbrp12Le.has_alpha());
@@ -5387,7 +5413,7 @@ fn exercise_fixtures() {
         vec![8, 8, 8]
     );
     assert_eq!(PixelFormat::Gbrp14Le.bits_per_component(), 14);
-    assert_eq!(PixelFormat::Gbrp14Le.bits_per_pixel(), 42);
+    assert_eq!(PixelFormat::Gbrp14Le.bits_per_pixel(), bpp(42));
     assert!(PixelFormat::Gbrp14Le.is_rgb());
     assert!(PixelFormat::Gbrp14Le.is_planar());
     assert!(!PixelFormat::Gbrp14Le.has_alpha());
@@ -5405,7 +5431,7 @@ fn exercise_fixtures() {
         vec![8, 8, 8]
     );
     assert_eq!(PixelFormat::Gbrp16Le.bits_per_component(), 16);
-    assert_eq!(PixelFormat::Gbrp16Le.bits_per_pixel(), 48);
+    assert_eq!(PixelFormat::Gbrp16Le.bits_per_pixel(), bpp(48));
     assert!(PixelFormat::Gbrp16Le.is_rgb());
     assert!(PixelFormat::Gbrp16Le.is_planar());
     assert!(!PixelFormat::Gbrp16Le.has_alpha());
@@ -5472,7 +5498,7 @@ fn exercise_fixtures() {
         vec![4, 4, 4, 4]
     );
     assert_eq!(PixelFormat::Gbrap.bits_per_component(), 8);
-    assert_eq!(PixelFormat::Gbrap.bits_per_pixel(), 32);
+    assert_eq!(PixelFormat::Gbrap.bits_per_pixel(), bpp(32));
     assert!(PixelFormat::Gbrap.is_rgb());
     assert!(PixelFormat::Gbrap.is_planar());
     assert!(PixelFormat::Gbrap.has_alpha());
@@ -5483,7 +5509,7 @@ fn exercise_fixtures() {
         vec![8, 8, 8, 8]
     );
     assert_eq!(PixelFormat::Gbrap16Le.bits_per_component(), 16);
-    assert_eq!(PixelFormat::Gbrap16Le.bits_per_pixel(), 64);
+    assert_eq!(PixelFormat::Gbrap16Le.bits_per_pixel(), bpp(64));
     assert!(PixelFormat::Gbrap16Le.has_alpha());
     assert!(!PixelFormat::Gbrap16Le.is_float());
     assert_eq!(PixelFormat::Gbrap32Le.frame_size(2, 2).unwrap(), 64);
@@ -5492,7 +5518,7 @@ fn exercise_fixtures() {
         vec![16, 16, 16, 16]
     );
     assert_eq!(PixelFormat::Gbrap32Le.bits_per_component(), 32);
-    assert_eq!(PixelFormat::Gbrap32Le.bits_per_pixel(), 128);
+    assert_eq!(PixelFormat::Gbrap32Le.bits_per_pixel(), bpp(128));
     assert!(PixelFormat::Gbrap32Le.has_alpha());
     assert!(!PixelFormat::Gbrap32Le.is_float());
     assert!(PixelFormat::GbrapF16Le.is_float());
@@ -5528,7 +5554,7 @@ fn exercise_fixtures() {
         assert_eq!(descriptor.class, PixelFormatClass::Gray);
         assert_eq!(descriptor.component_count, 1);
         assert_eq!(descriptor.bits_per_component, 1);
-        assert_eq!(descriptor.bits_per_pixel, 1);
+        assert_eq!(descriptor.bits_per_pixel, bpp(1));
         assert_eq!(descriptor.packed_bytes_per_pixel, None);
         assert_eq!(format.frame_size(9, 2).unwrap(), 4);
         assert_eq!(format.plane_sizes(9, 2).unwrap(), vec![4]);
@@ -5539,7 +5565,7 @@ fn exercise_fixtures() {
     assert_eq!(pal8.class, PixelFormatClass::Rgb);
     assert_eq!(pal8.component_count, 1);
     assert_eq!(pal8.bits_per_component, 8);
-    assert_eq!(pal8.bits_per_pixel, 8);
+    assert_eq!(pal8.bits_per_pixel, bpp(8));
     assert_eq!(pal8.packed_bytes_per_pixel, Some(1));
     assert!(pal8.has_alpha);
     assert!(pal8.is_paletted);
@@ -5582,7 +5608,7 @@ fn exercise_fixtures() {
         assert_eq!(descriptor.class, PixelFormatClass::Rgb);
         assert_eq!(descriptor.component_count, 3);
         assert_eq!(descriptor.bits_per_component, bits_per_component);
-        assert_eq!(descriptor.bits_per_pixel, bits_per_pixel);
+        assert_eq!(descriptor.bits_per_pixel, bpp(bits_per_pixel));
         assert_eq!(
             descriptor.packed_bytes_per_pixel,
             packed_bytes_per_pixel
@@ -5601,7 +5627,7 @@ fn exercise_fixtures() {
         assert_eq!(descriptor.class, PixelFormatClass::Yuv);
         assert_eq!(descriptor.component_count, 3);
         assert_eq!(descriptor.bits_per_component, 8);
-        assert_eq!(descriptor.bits_per_pixel, 16);
+        assert_eq!(descriptor.bits_per_pixel, bpp(16));
         assert_eq!(descriptor.packed_bytes_per_pixel, Some(2));
         assert_eq!(descriptor.plane_count, 1);
         assert!(!descriptor.is_planar);
@@ -5618,7 +5644,7 @@ fn exercise_fixtures() {
         assert_eq!(descriptor.class, PixelFormatClass::Yuv);
         assert_eq!(descriptor.component_count, 3);
         assert_eq!(descriptor.bits_per_component, 8);
-        assert_eq!(descriptor.bits_per_pixel, 12);
+        assert_eq!(descriptor.bits_per_pixel, bpp(12));
         assert_eq!(descriptor.packed_bytes_per_pixel, None);
         assert_eq!(descriptor.plane_count, 2);
         assert!(descriptor.is_planar);
@@ -5653,6 +5679,14 @@ fn exercise_fixtures() {
         vec![8, 2, 2]
     );
     assert_eq!(
+        PixelFormat::Yuv420p9Le.plane_sizes(2, 2).unwrap(),
+        vec![8, 2, 2]
+    );
+    assert_eq!(
+        PixelFormat::Yuv420p9Le.bits_per_pixel(),
+        Rational::from_raw(27, 2)
+    );
+    assert_eq!(
         PixelFormat::Yuv422p12Be.plane_sizes(2, 3).unwrap(),
         vec![12, 6, 6]
     );
@@ -5664,7 +5698,7 @@ fn exercise_fixtures() {
         (
             "yuvj420p",
             PixelFormat::YuvJ420p,
-            12,
+            bpp(12),
             (1, 1),
             4,
             2,
@@ -5673,7 +5707,7 @@ fn exercise_fixtures() {
         (
             "yuvj422p",
             PixelFormat::YuvJ422p,
-            16,
+            bpp(16),
             (1, 0),
             4,
             3,
@@ -5682,7 +5716,7 @@ fn exercise_fixtures() {
         (
             "yuvj411p",
             PixelFormat::YuvJ411p,
-            12,
+            bpp(12),
             (2, 0),
             4,
             3,
@@ -5691,7 +5725,7 @@ fn exercise_fixtures() {
         (
             "yuvj440p",
             PixelFormat::YuvJ440p,
-            16,
+            bpp(16),
             (0, 1),
             3,
             2,
@@ -5700,7 +5734,7 @@ fn exercise_fixtures() {
         (
             "yuvj444p",
             PixelFormat::YuvJ444p,
-            24,
+            bpp(24),
             (0, 0),
             3,
             2,
@@ -17494,7 +17528,13 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
             let (log2_chroma_w, _) = pixel_format.log2_chroma();
             vec![width, width >> log2_chroma_w, width >> log2_chroma_w]
         }
-        PixelFormat::Yuv420p10Le
+        PixelFormat::Yuv420p9Le
+        | PixelFormat::Yuv420p9Be
+        | PixelFormat::Yuv422p9Le
+        | PixelFormat::Yuv422p9Be
+        | PixelFormat::Yuv444p9Le
+        | PixelFormat::Yuv444p9Be
+        | PixelFormat::Yuv420p10Le
         | PixelFormat::Yuv420p10Be
         | PixelFormat::Yuv422p10Le
         | PixelFormat::Yuv422p10Be
@@ -17644,7 +17684,13 @@ fn expected_video_plane_shapes(
                 (width >> log2_chroma_w, height >> log2_chroma_h),
             ]
         }
-        PixelFormat::Yuv420p10Le
+        PixelFormat::Yuv420p9Le
+        | PixelFormat::Yuv420p9Be
+        | PixelFormat::Yuv422p9Le
+        | PixelFormat::Yuv422p9Be
+        | PixelFormat::Yuv444p9Le
+        | PixelFormat::Yuv444p9Be
+        | PixelFormat::Yuv420p10Le
         | PixelFormat::Yuv420p10Be
         | PixelFormat::Yuv422p10Le
         | PixelFormat::Yuv422p10Be
@@ -17672,6 +17718,10 @@ fn nibble_line_size(width: usize) -> usize {
 
 fn one_bit_line_size(width: usize) -> usize {
     width.div_ceil(8)
+}
+
+fn bpp(bits: u8) -> Rational {
+    Rational::from_raw(i32::from(bits), 1)
 }
 
 fn dimension_from(byte: Option<u8>) -> usize {

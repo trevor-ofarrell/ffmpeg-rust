@@ -902,6 +902,24 @@ fn exercise_fixtures() {
 
     for (format, width, height, payload) in [
         (
+            PixelFormat::Yuv420p9Le,
+            4,
+            2,
+            (0..24).collect::<Vec<_>>(),
+        ),
+        (
+            PixelFormat::Yuv422p9Be,
+            4,
+            3,
+            (0..48).collect::<Vec<_>>(),
+        ),
+        (
+            PixelFormat::Yuv444p9Be,
+            3,
+            2,
+            (0..36).collect::<Vec<_>>(),
+        ),
+        (
             PixelFormat::Yuv420p10Le,
             4,
             2,

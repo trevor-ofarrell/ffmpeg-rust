@@ -1,4 +1,4 @@
-use crate::{AvError, AvResult};
+use crate::{AvError, AvResult, Rational};
 
 pub const AVPALETTE_COUNT: usize = 256;
 pub const AVPALETTE_SIZE: usize = AVPALETTE_COUNT * 4;
@@ -106,6 +106,12 @@ pub enum PixelFormat {
     YuvJ440p,
     Yuv444p,
     YuvJ444p,
+    Yuv420p9Le,
+    Yuv420p9Be,
+    Yuv422p9Le,
+    Yuv422p9Be,
+    Yuv444p9Le,
+    Yuv444p9Be,
     Yuv420p10Le,
     Yuv420p10Be,
     Yuv422p10Le,
@@ -134,7 +140,7 @@ pub struct PixelFormatDescriptor {
     pub class: PixelFormatClass,
     pub component_count: usize,
     pub bits_per_component: u8,
-    pub bits_per_pixel: u8,
+    pub bits_per_pixel: Rational,
     pub plane_count: usize,
     pub is_planar: bool,
     pub has_alpha: bool,
@@ -143,6 +149,16 @@ pub struct PixelFormatDescriptor {
     pub packed_bytes_per_pixel: Option<usize>,
     pub log2_chroma_w: u8,
     pub log2_chroma_h: u8,
+}
+
+impl PixelFormatDescriptor {
+    pub fn bits_per_pixel_integer(self) -> Option<u8> {
+        if self.bits_per_pixel.den() == 1 {
+            u8::try_from(self.bits_per_pixel.num()).ok()
+        } else {
+            None
+        }
+    }
 }
 
 impl PixelFormat {
@@ -248,6 +264,12 @@ impl PixelFormat {
         Self::YuvJ440p,
         Self::Yuv444p,
         Self::YuvJ444p,
+        Self::Yuv420p9Le,
+        Self::Yuv420p9Be,
+        Self::Yuv422p9Le,
+        Self::Yuv422p9Be,
+        Self::Yuv444p9Le,
+        Self::Yuv444p9Be,
         Self::Yuv420p10Le,
         Self::Yuv420p10Be,
         Self::Yuv422p10Le,
@@ -369,6 +391,12 @@ impl PixelFormat {
             "yuvj440p" => Some(Self::YuvJ440p),
             "yuv444p" => Some(Self::Yuv444p),
             "yuvj444p" => Some(Self::YuvJ444p),
+            "yuv420p9le" => Some(Self::Yuv420p9Le),
+            "yuv420p9be" => Some(Self::Yuv420p9Be),
+            "yuv422p9le" => Some(Self::Yuv422p9Le),
+            "yuv422p9be" => Some(Self::Yuv422p9Be),
+            "yuv444p9le" => Some(Self::Yuv444p9Le),
+            "yuv444p9be" => Some(Self::Yuv444p9Be),
             "yuv420p10le" => Some(Self::Yuv420p10Le),
             "yuv420p10be" => Some(Self::Yuv420p10Be),
             "yuv422p10le" => Some(Self::Yuv422p10Le),
@@ -1610,6 +1638,78 @@ impl PixelFormat {
                 0,
                 0,
             ),
+            Self::Yuv420p9Le => (
+                "yuv420p9le",
+                PixelFormatClass::Yuv,
+                3,
+                13,
+                3,
+                true,
+                false,
+                None,
+                1,
+                1,
+            ),
+            Self::Yuv420p9Be => (
+                "yuv420p9be",
+                PixelFormatClass::Yuv,
+                3,
+                13,
+                3,
+                true,
+                false,
+                None,
+                1,
+                1,
+            ),
+            Self::Yuv422p9Le => (
+                "yuv422p9le",
+                PixelFormatClass::Yuv,
+                3,
+                18,
+                3,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
+            Self::Yuv422p9Be => (
+                "yuv422p9be",
+                PixelFormatClass::Yuv,
+                3,
+                18,
+                3,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
+            Self::Yuv444p9Le => (
+                "yuv444p9le",
+                PixelFormatClass::Yuv,
+                3,
+                27,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::Yuv444p9Be => (
+                "yuv444p9be",
+                PixelFormatClass::Yuv,
+                3,
+                27,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
             Self::Yuv420p10Le => (
                 "yuv420p10le",
                 PixelFormatClass::Yuv,
@@ -1811,7 +1911,16 @@ impl PixelFormat {
                 4
             } else if matches!(
                 self,
-                Self::Gray9Le | Self::Gray9Be | Self::Gbrp9Le | Self::Gbrp9Be
+                Self::Gray9Le
+                    | Self::Gray9Be
+                    | Self::Gbrp9Le
+                    | Self::Gbrp9Be
+                    | Self::Yuv420p9Le
+                    | Self::Yuv420p9Be
+                    | Self::Yuv422p9Le
+                    | Self::Yuv422p9Be
+                    | Self::Yuv444p9Le
+                    | Self::Yuv444p9Be
             ) {
                 9
             } else if matches!(
@@ -1871,7 +1980,11 @@ impl PixelFormat {
             } else {
                 8
             },
-            bits_per_pixel,
+            bits_per_pixel: if matches!(self, Self::Yuv420p9Le | Self::Yuv420p9Be) {
+                Rational::from_raw(27, 2)
+            } else {
+                Rational::from_raw(bits_per_pixel, 1)
+            },
             plane_count,
             is_planar,
             has_alpha,
@@ -1917,8 +2030,12 @@ impl PixelFormat {
         self.descriptor().bits_per_component
     }
 
-    pub fn bits_per_pixel(self) -> u8 {
+    pub fn bits_per_pixel(self) -> Rational {
         self.descriptor().bits_per_pixel
+    }
+
+    pub fn bits_per_pixel_integer(self) -> Option<u8> {
+        self.descriptor().bits_per_pixel_integer()
     }
 
     pub fn log2_chroma(self) -> (u8, u8) {
@@ -2149,6 +2266,12 @@ impl PixelFormat {
             | Self::YuvJ440p
             | Self::Yuv444p
             | Self::YuvJ444p
+            | Self::Yuv420p9Le
+            | Self::Yuv420p9Be
+            | Self::Yuv422p9Le
+            | Self::Yuv422p9Be
+            | Self::Yuv444p9Le
+            | Self::Yuv444p9Be
             | Self::Yuv420p10Le
             | Self::Yuv420p10Be
             | Self::Yuv422p10Le
@@ -2185,7 +2308,13 @@ impl PixelFormat {
                 )?;
                 let bytes_per_sample = if matches!(
                     self,
-                    Self::Yuv420p10Le
+                    Self::Yuv420p9Le
+                        | Self::Yuv420p9Be
+                        | Self::Yuv422p9Le
+                        | Self::Yuv422p9Be
+                        | Self::Yuv444p9Le
+                        | Self::Yuv444p9Be
+                        | Self::Yuv420p10Le
                         | Self::Yuv420p10Be
                         | Self::Yuv422p10Le
                         | Self::Yuv422p10Be
@@ -2285,6 +2414,10 @@ fn sum_checked(
 mod tests {
     use super::*;
     use crate::AvErrorKind;
+
+    fn bpp(bits: u8) -> Rational {
+        Rational::from_raw(i32::from(bits), 1)
+    }
 
     #[test]
     fn pixel_formats_report_ffmpeg_names_and_layout() {
@@ -2596,6 +2729,12 @@ mod tests {
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
         for (name, format) in [
+            ("yuv420p9le", PixelFormat::Yuv420p9Le),
+            ("yuv420p9be", PixelFormat::Yuv420p9Be),
+            ("yuv422p9le", PixelFormat::Yuv422p9Le),
+            ("yuv422p9be", PixelFormat::Yuv422p9Be),
+            ("yuv444p9le", PixelFormat::Yuv444p9Le),
+            ("yuv444p9be", PixelFormat::Yuv444p9Be),
             ("yuv420p10le", PixelFormat::Yuv420p10Le),
             ("yuv420p10be", PixelFormat::Yuv420p10Be),
             ("yuv422p10le", PixelFormat::Yuv422p10Le),
@@ -2612,7 +2751,7 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 113);
+        assert_eq!(PixelFormat::ALL.len(), 119);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
@@ -2641,6 +2780,12 @@ mod tests {
             PixelFormat::YuvJ411p,
             PixelFormat::YuvJ440p,
             PixelFormat::YuvJ444p,
+            PixelFormat::Yuv420p9Le,
+            PixelFormat::Yuv420p9Be,
+            PixelFormat::Yuv422p9Le,
+            PixelFormat::Yuv422p9Be,
+            PixelFormat::Yuv444p9Le,
+            PixelFormat::Yuv444p9Be,
             PixelFormat::Yuv420p10Le,
             PixelFormat::Yuv420p10Be,
             PixelFormat::Yuv422p10Le,
@@ -2715,6 +2860,12 @@ mod tests {
             PixelFormat::YuvJ411p,
             PixelFormat::YuvJ440p,
             PixelFormat::YuvJ444p,
+            PixelFormat::Yuv420p9Le,
+            PixelFormat::Yuv420p9Be,
+            PixelFormat::Yuv422p9Le,
+            PixelFormat::Yuv422p9Be,
+            PixelFormat::Yuv444p9Le,
+            PixelFormat::Yuv444p9Be,
             PixelFormat::Yuv420p10Le,
             PixelFormat::Yuv420p10Be,
             PixelFormat::Yuv422p10Le,
@@ -2814,7 +2965,7 @@ mod tests {
         assert_eq!(gray.class, PixelFormatClass::Gray);
         assert_eq!(gray.component_count, 1);
         assert_eq!(gray.bits_per_component, 8);
-        assert_eq!(gray.bits_per_pixel, 8);
+        assert_eq!(gray.bits_per_pixel, bpp(8));
         assert_eq!(gray.plane_count, 1);
         assert!(!gray.is_planar);
         assert!(!gray.has_alpha);
@@ -2831,7 +2982,7 @@ mod tests {
             assert!(format.is_gray());
             assert_eq!(descriptor.component_count, 1);
             assert_eq!(descriptor.bits_per_component, 1);
-            assert_eq!(descriptor.bits_per_pixel, 1);
+            assert_eq!(descriptor.bits_per_pixel, bpp(1));
             assert_eq!(descriptor.plane_count, 1);
             assert!(!descriptor.is_planar);
             assert!(!descriptor.has_alpha);
@@ -2851,7 +3002,7 @@ mod tests {
         assert!(!PixelFormat::Pal8.is_yuv());
         assert_eq!(pal8.component_count, 1);
         assert_eq!(pal8.bits_per_component, 8);
-        assert_eq!(pal8.bits_per_pixel, 8);
+        assert_eq!(pal8.bits_per_pixel, bpp(8));
         assert_eq!(pal8.plane_count, 1);
         assert!(!pal8.is_planar);
         assert!(pal8.has_alpha);
@@ -2873,7 +3024,7 @@ mod tests {
         assert!(!PixelFormat::Ya8.is_yuv());
         assert_eq!(ya8.component_count, 2);
         assert_eq!(ya8.bits_per_component, 8);
-        assert_eq!(ya8.bits_per_pixel, 16);
+        assert_eq!(ya8.bits_per_pixel, bpp(16));
         assert_eq!(ya8.plane_count, 1);
         assert!(!ya8.is_planar);
         assert!(ya8.has_alpha);
@@ -2893,7 +3044,7 @@ mod tests {
             assert!(format.is_gray());
             assert_eq!(descriptor.component_count, 2);
             assert_eq!(descriptor.bits_per_component, 16);
-            assert_eq!(descriptor.bits_per_pixel, 32);
+            assert_eq!(descriptor.bits_per_pixel, bpp(32));
             assert_eq!(descriptor.plane_count, 1);
             assert!(!descriptor.is_planar);
             assert!(descriptor.has_alpha);
@@ -2925,7 +3076,7 @@ mod tests {
             assert!(format.is_gray());
             assert_eq!(descriptor.component_count, 1);
             assert_eq!(descriptor.bits_per_component, expected_bits_per_component);
-            assert_eq!(descriptor.bits_per_pixel, expected_bits_per_component);
+            assert_eq!(descriptor.bits_per_pixel, bpp(expected_bits_per_component));
             assert_eq!(descriptor.plane_count, 1);
             assert!(!descriptor.is_planar);
             assert!(!descriptor.has_alpha);
@@ -2947,7 +3098,7 @@ mod tests {
             assert!(format.is_gray());
             assert_eq!(descriptor.component_count, 1);
             assert_eq!(descriptor.bits_per_component, 32);
-            assert_eq!(descriptor.bits_per_pixel, 32);
+            assert_eq!(descriptor.bits_per_pixel, bpp(32));
             assert_eq!(descriptor.plane_count, 1);
             assert!(!descriptor.is_planar);
             assert!(!descriptor.has_alpha);
@@ -2973,7 +3124,7 @@ mod tests {
             assert!(format.is_gray());
             assert_eq!(descriptor.component_count, 1);
             assert_eq!(descriptor.bits_per_component, expected_bits_per_component);
-            assert_eq!(descriptor.bits_per_pixel, expected_bits_per_component);
+            assert_eq!(descriptor.bits_per_pixel, bpp(expected_bits_per_component));
             assert_eq!(descriptor.plane_count, 1);
             assert!(!descriptor.is_planar);
             assert!(!descriptor.has_alpha);
@@ -3055,7 +3206,7 @@ mod tests {
             assert!(!format.is_yuv());
             assert_eq!(descriptor.component_count, 3);
             assert_eq!(descriptor.bits_per_component, expected_bits_per_component);
-            assert_eq!(descriptor.bits_per_pixel, 16);
+            assert_eq!(descriptor.bits_per_pixel, bpp(16));
             assert_eq!(descriptor.plane_count, 1);
             assert!(!descriptor.is_planar);
             assert!(!descriptor.has_alpha);
@@ -3074,7 +3225,7 @@ mod tests {
         assert!(!PixelFormat::Gbrp.is_yuv());
         assert_eq!(gbrp.component_count, 3);
         assert_eq!(gbrp.bits_per_component, 8);
-        assert_eq!(gbrp.bits_per_pixel, 24);
+        assert_eq!(gbrp.bits_per_pixel, bpp(24));
         assert_eq!(gbrp.plane_count, 3);
         assert!(gbrp.is_planar);
         assert!(!gbrp.has_alpha);
@@ -3105,7 +3256,7 @@ mod tests {
             assert!(!format.is_gray());
             assert_eq!(descriptor.component_count, 3);
             assert_eq!(descriptor.bits_per_component, expected_bits_per_component);
-            assert_eq!(descriptor.bits_per_pixel, expected_bits_per_pixel);
+            assert_eq!(descriptor.bits_per_pixel, bpp(expected_bits_per_pixel));
             assert_eq!(descriptor.plane_count, 3);
             assert!(descriptor.is_planar);
             assert!(!descriptor.has_alpha);
@@ -3123,7 +3274,7 @@ mod tests {
         assert!(PixelFormat::Gbrap.is_rgb());
         assert_eq!(gbrap.component_count, 4);
         assert_eq!(gbrap.bits_per_component, 8);
-        assert_eq!(gbrap.bits_per_pixel, 32);
+        assert_eq!(gbrap.bits_per_pixel, bpp(32));
         assert_eq!(gbrap.plane_count, 4);
         assert!(gbrap.is_planar);
         assert!(gbrap.has_alpha);
@@ -3158,7 +3309,7 @@ mod tests {
             assert!(!format.is_gray());
             assert_eq!(descriptor.component_count, 4);
             assert_eq!(descriptor.bits_per_component, expected_bits_per_component);
-            assert_eq!(descriptor.bits_per_pixel, expected_bits_per_pixel);
+            assert_eq!(descriptor.bits_per_pixel, bpp(expected_bits_per_pixel));
             assert_eq!(descriptor.plane_count, 4);
             assert!(descriptor.is_planar);
             assert!(descriptor.has_alpha);
@@ -3182,7 +3333,7 @@ mod tests {
             assert!(!format.is_gray());
             assert_eq!(descriptor.component_count, 3);
             assert_eq!(descriptor.bits_per_component, 8);
-            assert_eq!(descriptor.bits_per_pixel, 16);
+            assert_eq!(descriptor.bits_per_pixel, bpp(16));
             assert_eq!(descriptor.plane_count, 1);
             assert!(!descriptor.is_planar);
             assert!(!descriptor.has_alpha);
@@ -3202,7 +3353,7 @@ mod tests {
             assert!(!format.is_gray());
             assert_eq!(descriptor.component_count, 3);
             assert_eq!(descriptor.bits_per_component, 8);
-            assert_eq!(descriptor.bits_per_pixel, 12);
+            assert_eq!(descriptor.bits_per_pixel, bpp(12));
             assert_eq!(descriptor.plane_count, 2);
             assert!(descriptor.is_planar);
             assert!(!descriptor.has_alpha);
@@ -3215,91 +3366,93 @@ mod tests {
         assert_eq!(PixelFormat::Rgb24.component_count(), 3);
         assert_eq!(PixelFormat::Pal8.component_count(), 1);
         assert_eq!(PixelFormat::Pal8.bits_per_component(), 8);
-        assert_eq!(PixelFormat::Pal8.bits_per_pixel(), 8);
-        assert_eq!(PixelFormat::Rgb24.bits_per_pixel(), 24);
+        assert_eq!(PixelFormat::Pal8.bits_per_pixel(), bpp(8));
+        assert_eq!(PixelFormat::Rgb24.bits_per_pixel(), bpp(24));
         assert_eq!(PixelFormat::Rgb8.component_count(), 3);
         assert_eq!(PixelFormat::Rgb8.bits_per_component(), 3);
-        assert_eq!(PixelFormat::Bgr8.bits_per_pixel(), 8);
+        assert_eq!(PixelFormat::Bgr8.bits_per_pixel(), bpp(8));
         assert_eq!(PixelFormat::Rgb4.bits_per_component(), 2);
-        assert_eq!(PixelFormat::Bgr4.bits_per_pixel(), 4);
+        assert_eq!(PixelFormat::Bgr4.bits_per_pixel(), bpp(4));
         assert_eq!(PixelFormat::Rgb4Byte.bits_per_component(), 2);
-        assert_eq!(PixelFormat::Bgr4Byte.bits_per_pixel(), 8);
+        assert_eq!(PixelFormat::Bgr4Byte.bits_per_pixel(), bpp(8));
         assert_eq!(PixelFormat::Gbrp.component_count(), 3);
         assert_eq!(PixelFormat::Gbrp.bits_per_component(), 8);
-        assert_eq!(PixelFormat::Gbrp.bits_per_pixel(), 24);
+        assert_eq!(PixelFormat::Gbrp.bits_per_pixel(), bpp(24));
         assert_eq!(PixelFormat::Gbrp9Le.component_count(), 3);
         assert_eq!(PixelFormat::Gbrp9Le.bits_per_component(), 9);
-        assert_eq!(PixelFormat::Gbrp9Le.bits_per_pixel(), 27);
+        assert_eq!(PixelFormat::Gbrp9Le.bits_per_pixel(), bpp(27));
         assert_eq!(PixelFormat::Gbrp10Le.component_count(), 3);
         assert_eq!(PixelFormat::Gbrp10Le.bits_per_component(), 10);
-        assert_eq!(PixelFormat::Gbrp10Le.bits_per_pixel(), 30);
+        assert_eq!(PixelFormat::Gbrp10Le.bits_per_pixel(), bpp(30));
         assert_eq!(PixelFormat::Gbrp12Le.component_count(), 3);
         assert_eq!(PixelFormat::Gbrp12Le.bits_per_component(), 12);
-        assert_eq!(PixelFormat::Gbrp12Le.bits_per_pixel(), 36);
+        assert_eq!(PixelFormat::Gbrp12Le.bits_per_pixel(), bpp(36));
         assert_eq!(PixelFormat::Gbrp14Le.component_count(), 3);
         assert_eq!(PixelFormat::Gbrp14Le.bits_per_component(), 14);
-        assert_eq!(PixelFormat::Gbrp14Le.bits_per_pixel(), 42);
+        assert_eq!(PixelFormat::Gbrp14Le.bits_per_pixel(), bpp(42));
         assert_eq!(PixelFormat::Gbrp16Le.component_count(), 3);
         assert_eq!(PixelFormat::Gbrp16Le.bits_per_component(), 16);
-        assert_eq!(PixelFormat::Gbrp16Le.bits_per_pixel(), 48);
+        assert_eq!(PixelFormat::Gbrp16Le.bits_per_pixel(), bpp(48));
         assert_eq!(PixelFormat::Gbrap.component_count(), 4);
         assert_eq!(PixelFormat::Gbrap.bits_per_component(), 8);
-        assert_eq!(PixelFormat::Gbrap.bits_per_pixel(), 32);
+        assert_eq!(PixelFormat::Gbrap.bits_per_pixel(), bpp(32));
         assert_eq!(PixelFormat::Gbrap10Le.component_count(), 4);
         assert_eq!(PixelFormat::Gbrap10Le.bits_per_component(), 10);
-        assert_eq!(PixelFormat::Gbrap10Le.bits_per_pixel(), 40);
+        assert_eq!(PixelFormat::Gbrap10Le.bits_per_pixel(), bpp(40));
         assert_eq!(PixelFormat::Gbrap12Le.component_count(), 4);
         assert_eq!(PixelFormat::Gbrap12Le.bits_per_component(), 12);
-        assert_eq!(PixelFormat::Gbrap12Le.bits_per_pixel(), 48);
+        assert_eq!(PixelFormat::Gbrap12Le.bits_per_pixel(), bpp(48));
         assert_eq!(PixelFormat::Gbrap14Le.component_count(), 4);
         assert_eq!(PixelFormat::Gbrap14Le.bits_per_component(), 14);
-        assert_eq!(PixelFormat::Gbrap14Le.bits_per_pixel(), 56);
+        assert_eq!(PixelFormat::Gbrap14Le.bits_per_pixel(), bpp(56));
         assert_eq!(PixelFormat::Gbrap16Le.component_count(), 4);
         assert_eq!(PixelFormat::Gbrap16Le.bits_per_component(), 16);
-        assert_eq!(PixelFormat::Gbrap16Le.bits_per_pixel(), 64);
+        assert_eq!(PixelFormat::Gbrap16Le.bits_per_pixel(), bpp(64));
         assert_eq!(PixelFormat::Gbrap32Le.component_count(), 4);
         assert_eq!(PixelFormat::Gbrap32Le.bits_per_component(), 32);
-        assert_eq!(PixelFormat::Gbrap32Le.bits_per_pixel(), 128);
+        assert_eq!(PixelFormat::Gbrap32Le.bits_per_pixel(), bpp(128));
         assert_eq!(PixelFormat::GbrapF16Le.component_count(), 4);
         assert_eq!(PixelFormat::GbrapF16Le.bits_per_component(), 16);
-        assert_eq!(PixelFormat::GbrapF16Le.bits_per_pixel(), 64);
+        assert_eq!(PixelFormat::GbrapF16Le.bits_per_pixel(), bpp(64));
         assert_eq!(PixelFormat::GbrapF32Le.component_count(), 4);
         assert_eq!(PixelFormat::GbrapF32Le.bits_per_component(), 32);
-        assert_eq!(PixelFormat::GbrapF32Le.bits_per_pixel(), 128);
+        assert_eq!(PixelFormat::GbrapF32Le.bits_per_pixel(), bpp(128));
         assert_eq!(PixelFormat::Ya16Le.component_count(), 2);
         assert_eq!(PixelFormat::Ya16Le.bits_per_component(), 16);
-        assert_eq!(PixelFormat::Ya16Le.bits_per_pixel(), 32);
+        assert_eq!(PixelFormat::Ya16Le.bits_per_pixel(), bpp(32));
         assert_eq!(PixelFormat::Gray32Le.component_count(), 1);
         assert_eq!(PixelFormat::Gray32Le.bits_per_component(), 32);
-        assert_eq!(PixelFormat::Gray32Le.bits_per_pixel(), 32);
+        assert_eq!(PixelFormat::Gray32Le.bits_per_pixel(), bpp(32));
         assert_eq!(PixelFormat::GrayF16Le.component_count(), 1);
         assert_eq!(PixelFormat::GrayF16Le.bits_per_component(), 16);
-        assert_eq!(PixelFormat::GrayF16Le.bits_per_pixel(), 16);
+        assert_eq!(PixelFormat::GrayF16Le.bits_per_pixel(), bpp(16));
         assert_eq!(PixelFormat::GrayF32Le.component_count(), 1);
         assert_eq!(PixelFormat::GrayF32Le.bits_per_component(), 32);
-        assert_eq!(PixelFormat::GrayF32Le.bits_per_pixel(), 32);
+        assert_eq!(PixelFormat::GrayF32Le.bits_per_pixel(), bpp(32));
         assert_eq!(PixelFormat::Rgb48Le.component_count(), 3);
         assert_eq!(PixelFormat::Rgb48Le.bits_per_component(), 16);
-        assert_eq!(PixelFormat::Rgb48Le.bits_per_pixel(), 48);
+        assert_eq!(PixelFormat::Rgb48Le.bits_per_pixel(), bpp(48));
         assert_eq!(PixelFormat::Bgr48Be.bits_per_component(), 16);
-        assert_eq!(PixelFormat::Bgr48Be.bits_per_pixel(), 48);
+        assert_eq!(PixelFormat::Bgr48Be.bits_per_pixel(), bpp(48));
         assert_eq!(PixelFormat::Rgb565Le.component_count(), 3);
         assert_eq!(PixelFormat::Rgb565Le.bits_per_component(), 6);
-        assert_eq!(PixelFormat::Rgb565Le.bits_per_pixel(), 16);
+        assert_eq!(PixelFormat::Rgb565Le.bits_per_pixel(), bpp(16));
         assert_eq!(PixelFormat::Bgr555Be.bits_per_component(), 5);
-        assert_eq!(PixelFormat::Bgr555Be.bits_per_pixel(), 16);
+        assert_eq!(PixelFormat::Bgr555Be.bits_per_pixel(), bpp(16));
         assert_eq!(PixelFormat::Rgb444Le.bits_per_component(), 4);
         assert_eq!(PixelFormat::Bgr444Be.bits_per_component(), 4);
         assert_eq!(PixelFormat::Rgba64Le.component_count(), 4);
         assert_eq!(PixelFormat::Rgba64Le.bits_per_component(), 16);
-        assert_eq!(PixelFormat::Rgba64Le.bits_per_pixel(), 64);
+        assert_eq!(PixelFormat::Rgba64Le.bits_per_pixel(), bpp(64));
         assert_eq!(PixelFormat::Bgra64Be.component_count(), 4);
         assert_eq!(PixelFormat::Bgra64Be.bits_per_component(), 16);
-        assert_eq!(PixelFormat::Bgra64Be.bits_per_pixel(), 64);
+        assert_eq!(PixelFormat::Bgra64Be.bits_per_pixel(), bpp(64));
         assert_eq!(PixelFormat::Rgba.component_count(), 4);
-        assert_eq!(PixelFormat::Rgba.bits_per_pixel(), 32);
+        assert_eq!(PixelFormat::Rgba.bits_per_pixel(), bpp(32));
         assert_eq!(PixelFormat::ZeroRgb.component_count(), 3);
-        assert_eq!(PixelFormat::ZeroRgb.bits_per_pixel(), 32);
+        assert_eq!(PixelFormat::ZeroRgb.bits_per_pixel(), bpp(32));
+        assert_eq!(PixelFormat::Yuv420p9Le.bits_per_pixel_integer(), None);
+        assert_eq!(PixelFormat::Yuv422p9Le.bits_per_pixel_integer(), Some(18));
 
         for (
             format,
@@ -3308,29 +3461,47 @@ mod tests {
             expected_bits_per_pixel,
             expected_log2_chroma,
         ) in [
-            (PixelFormat::Yuv420p, "yuv420p", 8, 12, (1, 1)),
-            (PixelFormat::YuvJ420p, "yuvj420p", 8, 12, (1, 1)),
-            (PixelFormat::Yuv422p, "yuv422p", 8, 16, (1, 0)),
-            (PixelFormat::YuvJ422p, "yuvj422p", 8, 16, (1, 0)),
-            (PixelFormat::Yuv410p, "yuv410p", 8, 9, (2, 2)),
-            (PixelFormat::Yuv411p, "yuv411p", 8, 12, (2, 0)),
-            (PixelFormat::YuvJ411p, "yuvj411p", 8, 12, (2, 0)),
-            (PixelFormat::Yuv440p, "yuv440p", 8, 16, (0, 1)),
-            (PixelFormat::YuvJ440p, "yuvj440p", 8, 16, (0, 1)),
-            (PixelFormat::Yuv444p, "yuv444p", 8, 24, (0, 0)),
-            (PixelFormat::YuvJ444p, "yuvj444p", 8, 24, (0, 0)),
-            (PixelFormat::Yuv420p10Le, "yuv420p10le", 10, 15, (1, 1)),
-            (PixelFormat::Yuv420p10Be, "yuv420p10be", 10, 15, (1, 1)),
-            (PixelFormat::Yuv422p10Le, "yuv422p10le", 10, 20, (1, 0)),
-            (PixelFormat::Yuv422p10Be, "yuv422p10be", 10, 20, (1, 0)),
-            (PixelFormat::Yuv444p10Le, "yuv444p10le", 10, 30, (0, 0)),
-            (PixelFormat::Yuv444p10Be, "yuv444p10be", 10, 30, (0, 0)),
-            (PixelFormat::Yuv420p12Le, "yuv420p12le", 12, 18, (1, 1)),
-            (PixelFormat::Yuv420p12Be, "yuv420p12be", 12, 18, (1, 1)),
-            (PixelFormat::Yuv422p12Le, "yuv422p12le", 12, 24, (1, 0)),
-            (PixelFormat::Yuv422p12Be, "yuv422p12be", 12, 24, (1, 0)),
-            (PixelFormat::Yuv444p12Le, "yuv444p12le", 12, 36, (0, 0)),
-            (PixelFormat::Yuv444p12Be, "yuv444p12be", 12, 36, (0, 0)),
+            (PixelFormat::Yuv420p, "yuv420p", 8, bpp(12), (1, 1)),
+            (PixelFormat::YuvJ420p, "yuvj420p", 8, bpp(12), (1, 1)),
+            (PixelFormat::Yuv422p, "yuv422p", 8, bpp(16), (1, 0)),
+            (PixelFormat::YuvJ422p, "yuvj422p", 8, bpp(16), (1, 0)),
+            (PixelFormat::Yuv410p, "yuv410p", 8, bpp(9), (2, 2)),
+            (PixelFormat::Yuv411p, "yuv411p", 8, bpp(12), (2, 0)),
+            (PixelFormat::YuvJ411p, "yuvj411p", 8, bpp(12), (2, 0)),
+            (PixelFormat::Yuv440p, "yuv440p", 8, bpp(16), (0, 1)),
+            (PixelFormat::YuvJ440p, "yuvj440p", 8, bpp(16), (0, 1)),
+            (PixelFormat::Yuv444p, "yuv444p", 8, bpp(24), (0, 0)),
+            (PixelFormat::YuvJ444p, "yuvj444p", 8, bpp(24), (0, 0)),
+            (
+                PixelFormat::Yuv420p9Le,
+                "yuv420p9le",
+                9,
+                Rational::from_raw(27, 2),
+                (1, 1),
+            ),
+            (
+                PixelFormat::Yuv420p9Be,
+                "yuv420p9be",
+                9,
+                Rational::from_raw(27, 2),
+                (1, 1),
+            ),
+            (PixelFormat::Yuv422p9Le, "yuv422p9le", 9, bpp(18), (1, 0)),
+            (PixelFormat::Yuv422p9Be, "yuv422p9be", 9, bpp(18), (1, 0)),
+            (PixelFormat::Yuv444p9Le, "yuv444p9le", 9, bpp(27), (0, 0)),
+            (PixelFormat::Yuv444p9Be, "yuv444p9be", 9, bpp(27), (0, 0)),
+            (PixelFormat::Yuv420p10Le, "yuv420p10le", 10, bpp(15), (1, 1)),
+            (PixelFormat::Yuv420p10Be, "yuv420p10be", 10, bpp(15), (1, 1)),
+            (PixelFormat::Yuv422p10Le, "yuv422p10le", 10, bpp(20), (1, 0)),
+            (PixelFormat::Yuv422p10Be, "yuv422p10be", 10, bpp(20), (1, 0)),
+            (PixelFormat::Yuv444p10Le, "yuv444p10le", 10, bpp(30), (0, 0)),
+            (PixelFormat::Yuv444p10Be, "yuv444p10be", 10, bpp(30), (0, 0)),
+            (PixelFormat::Yuv420p12Le, "yuv420p12le", 12, bpp(18), (1, 1)),
+            (PixelFormat::Yuv420p12Be, "yuv420p12be", 12, bpp(18), (1, 1)),
+            (PixelFormat::Yuv422p12Le, "yuv422p12le", 12, bpp(24), (1, 0)),
+            (PixelFormat::Yuv422p12Be, "yuv422p12be", 12, bpp(24), (1, 0)),
+            (PixelFormat::Yuv444p12Le, "yuv444p12le", 12, bpp(36), (0, 0)),
+            (PixelFormat::Yuv444p12Be, "yuv444p12be", 12, bpp(36), (0, 0)),
         ] {
             let yuv = format.descriptor();
             assert_eq!(yuv.format, format);
@@ -3449,6 +3620,12 @@ mod tests {
         );
         assert_eq!(PixelFormat::Yuv444p.frame_size(3, 2).unwrap(), 18);
         for (format, width, height, expected) in [
+            (PixelFormat::Yuv420p9Le, 4, 2, vec![16, 4, 4]),
+            (PixelFormat::Yuv420p9Be, 4, 2, vec![16, 4, 4]),
+            (PixelFormat::Yuv422p9Le, 4, 3, vec![24, 12, 12]),
+            (PixelFormat::Yuv422p9Be, 4, 3, vec![24, 12, 12]),
+            (PixelFormat::Yuv444p9Le, 3, 2, vec![12, 12, 12]),
+            (PixelFormat::Yuv444p9Be, 3, 2, vec![12, 12, 12]),
             (PixelFormat::Yuv420p10Le, 4, 2, vec![16, 4, 4]),
             (PixelFormat::Yuv420p10Be, 4, 2, vec![16, 4, 4]),
             (PixelFormat::Yuv422p10Le, 4, 3, vec![24, 12, 12]),
@@ -3578,6 +3755,19 @@ mod tests {
         assert_eq!(planes, vec![vec![0, 1, 2, 3], vec![4, 5], vec![6, 7]]);
 
         let planes = PixelFormat::Yuv420p10Le
+            .split_planes(&(0..12).collect::<Vec<_>>(), 2, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![
+                (0..8).collect::<Vec<_>>(),
+                (8..10).collect::<Vec<_>>(),
+                (10..12).collect::<Vec<_>>()
+            ]
+        );
+
+        let planes = PixelFormat::Yuv420p9Le
             .split_planes(&(0..12).collect::<Vec<_>>(), 2, 2)
             .unwrap();
 
@@ -3860,6 +4050,19 @@ mod tests {
                 .kind(),
             AvErrorKind::InvalidArgument
         );
+        assert_eq!(
+            PixelFormat::Yuv420p9Le.frame_size(3, 2).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            PixelFormat::Yuv420p9Be.frame_size(4, 3).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            PixelFormat::Yuv422p9Le.frame_size(3, 2).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(PixelFormat::Yuv444p9Be.frame_size(3, 2).unwrap(), 36);
         assert_eq!(
             PixelFormat::Yuv420p12Be
                 .frame_size(4, 3)

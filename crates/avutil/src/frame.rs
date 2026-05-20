@@ -12607,6 +12607,12 @@ fn video_plane_shapes(
         | PixelFormat::YuvJ440p
         | PixelFormat::Yuv444p
         | PixelFormat::YuvJ444p
+        | PixelFormat::Yuv420p9Le
+        | PixelFormat::Yuv420p9Be
+        | PixelFormat::Yuv422p9Le
+        | PixelFormat::Yuv422p9Be
+        | PixelFormat::Yuv444p9Le
+        | PixelFormat::Yuv444p9Be
         | PixelFormat::Yuv420p10Le
         | PixelFormat::Yuv420p10Be
         | PixelFormat::Yuv422p10Le
@@ -12622,7 +12628,13 @@ fn video_plane_shapes(
             let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
             let bytes_per_sample = if matches!(
                 pixel_format,
-                PixelFormat::Yuv420p10Le
+                PixelFormat::Yuv420p9Le
+                    | PixelFormat::Yuv420p9Be
+                    | PixelFormat::Yuv422p9Le
+                    | PixelFormat::Yuv422p9Be
+                    | PixelFormat::Yuv444p9Le
+                    | PixelFormat::Yuv444p9Be
+                    | PixelFormat::Yuv420p10Le
                     | PixelFormat::Yuv420p10Be
                     | PixelFormat::Yuv422p10Le
                     | PixelFormat::Yuv422p10Be
@@ -16685,6 +16697,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(yuvj.line_sizes(), &[4, 2, 2]);
+
+        let yuv420p9 = VideoFrame::new(
+            4,
+            2,
+            PixelFormat::Yuv420p9Le,
+            vec![vec![0; 16], vec![1; 4], vec![2; 4]],
+        )
+        .unwrap();
+        assert_eq!(yuv420p9.line_sizes(), &[8, 4, 4]);
 
         let yuv422 = VideoFrame::new(
             4,
