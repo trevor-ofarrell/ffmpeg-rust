@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes FFmpeg's planar 12-bit RGB formats `gbrp12le` and `gbrp12be`. The slice was checked against pinned FFmpeg 8.1.1 `libavutil/pixfmt.h` and `libavutil/pixdesc.c`: upstream names the formats `gbrp12le`/`gbrp12be`, marks them planar RGB with three 12-bit components, 36 descriptor bits per pixel, no chroma subsampling, no alpha, no float flag, and storage split across three full-resolution GBR planes with two bytes per stored sample. Rust now exposes `PixelFormat::Gbrp12Le` and `PixelFormat::Gbrp12Be`, descriptor metadata, frame-size and plane-splitting math, `VideoFrame` line sizing, rawvideo decode/demux/mux packet sizing, constrained `ffmpeg-rs -f rawvideo ... -pix_fmt gbrp12le -f null -` execution, and affected fuzz-harness invariants. This remains below `complete` because full `AVPixFmtDescriptor` coverage, full `ffmpeg -pix_fmts` inventory parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
+
 Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes FFmpeg's planar 10-bit RGB formats `gbrp10le` and `gbrp10be`. The slice was checked against pinned FFmpeg 8.1.1 `libavutil/pixfmt.h` and `libavutil/pixdesc.c`: upstream names the formats `gbrp10le`/`gbrp10be`, marks them planar RGB with three 10-bit components, 30 descriptor bits per pixel, no chroma subsampling, no alpha, no float flag, and storage split across three full-resolution GBR planes with two bytes per stored sample. Rust now exposes `PixelFormat::Gbrp10Le` and `PixelFormat::Gbrp10Be`, descriptor metadata, frame-size and plane-splitting math, `VideoFrame` line sizing, rawvideo decode/demux/mux packet sizing, constrained `ffmpeg-rs -f rawvideo ... -pix_fmt gbrp10le -f null -` execution, and affected fuzz-harness invariants. This remains below `complete` because full `AVPixFmtDescriptor` coverage, full `ffmpeg -pix_fmts` inventory parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
 
 Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes FFmpeg's planar 9-bit RGB formats `gbrp9le` and `gbrp9be`. The slice was checked against pinned FFmpeg 8.1.1 `libavutil/pixfmt.h` and `libavutil/pixdesc.c`: upstream names the formats `gbrp9le`/`gbrp9be`, marks them planar RGB with three 9-bit components, 27 descriptor bits per pixel, no chroma subsampling, no alpha, no float flag, and storage split across three full-resolution GBR planes with two bytes per stored sample. Rust now exposes `PixelFormat::Gbrp9Le` and `PixelFormat::Gbrp9Be`, descriptor metadata, frame-size and plane-splitting math, `VideoFrame` line sizing, rawvideo decode/demux/mux packet sizing, constrained `ffmpeg-rs -f rawvideo ... -pix_fmt gbrp9le -f null -` execution, and affected fuzz-harness invariants. This remains below `complete` because full `AVPixFmtDescriptor` coverage, full `ffmpeg -pix_fmts` inventory parity, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
@@ -267,6 +269,26 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `gbrp12le`/`gbrp12be` slice:
+  - `cargo fmt --all`
+  - `cargo test -p avutil pixel`
+  - `cargo test -p avutil frames_report_tightly_packed_line_sizes`
+  - `cargo test -p avcodec rawvideo`
+  - `cargo test -p avformat rawvideo`
+  - `cargo test -p fftools --lib runs_rawvideo_gbrp12le_to_null_stdout`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models --bin avcodec_basic_decoders --bin avformat_rawvideo --bin avformat_basic_muxers`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models --bin avcodec_basic_decoders --bin avformat_rawvideo --bin avformat_basic_muxers -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil -p avcodec -p avformat -p fftools --all-targets -- -D warnings`
+  - `cargo run -p fate-runner -- run --component avutil-pixel-format`
+  - `cargo run -p fate-runner -- run --component avcodec-rawvideo`
+  - `cargo run -p fate-runner -- run --component avformat-rawvideo-demuxer`
+  - `cargo run -p fate-runner -- run --component avformat-rawvideo-muxer`
+  - `cargo run -p fate-runner -- run --component fftools-ffmpeg-rawvideo-framecrc-null`
+  - `cargo fmt --all -- --check`
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  - `git diff --check` (passed with CRLF warnings only)
+  - `cargo run -p fate-runner -- run --changed`
 
 - Current `gbrp10le`/`gbrp10be` slice:
   - `cargo fmt --all`
@@ -3340,6 +3362,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-pixel-format` / rawvideo `gbrp12le`/`gbrp12be` slice: no remaining code/test assertion failures. Focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, affected-crate clippy, local FATE-runner component mappings, workspace format check, workspace clippy, local `run --changed`, and `git diff --check` passed. `git diff --check` reported CRLF warnings only.
+
 - Current `avutil-pixel-format` / rawvideo `gbrp10le`/`gbrp10be` slice: no remaining code/test assertion failures. The first `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil pixel` and retry were blocked by Windows Application Control at the freshly built `target-codex` avutil unit-test executable. The same focused avutil tests passed from the default Cargo target directory, and focused avcodec/avformat/fftools tests, touched fuzz-target check/clippy, affected-crate clippy, local FATE-runner component mappings, workspace format check, workspace clippy, and `git diff --check` passed. `git diff --check` reported CRLF warnings only.
 
 - Current `avutil-pixel-format` / rawvideo `gbrp9le`/`gbrp9be` slice: no remaining code/test assertion failures. Focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, affected-crate clippy, local FATE-runner component mappings, workspace format check, workspace clippy, local `run --changed`, and `git diff --check` passed. `git diff --check` reported CRLF warnings only.
@@ -3583,6 +3607,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-pixel-format` remains the current focus, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The latest concrete change adds planar 12-bit RGB `gbrp12le` and `gbrp12be` to the shared pixel model, modeling them as three full-resolution GBR planes with 12-bit descriptor components, 36 descriptor bits per pixel, and two raw storage bytes per sample in each plane. It does not claim conversion support, full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
+
 `avutil-pixel-format` remains the current focus, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The latest concrete change adds planar 10-bit RGB `gbrp10le` and `gbrp10be` to the shared pixel model, modeling them as three full-resolution GBR planes with 10-bit descriptor components, 30 descriptor bits per pixel, and two raw storage bytes per sample in each plane. It does not claim conversion support, full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
 
 `avutil-pixel-format` is the current focus for this slice, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The concrete change is adding planar 9-bit RGB `gbrp9le` and `gbrp9be` to the current shared pixel model, modeling them as three full-resolution GBR planes with 9-bit descriptor components and two raw storage bytes per sample in each plane. It does not claim conversion support, full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
@@ -3665,12 +3691,13 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 format-model work by adding the next narrow `PixelFormat` inventory slice needed by rawvideo parity, likely the next simple high-bit-depth planar RGB or rawvideo-facing packed format after checking pinned FFmpeg 8.1.1 headers/descriptors.
+1. Continue priority-1 format-model work by adding the next narrow `PixelFormat` inventory slice needed by rawvideo parity, likely `gbrp14le`/`gbrp14be` after re-checking pinned FFmpeg 8.1.1 headers/descriptors.
 2. Add pinned-oracle differential coverage for constrained pixel-format inventory, rawvideo packet sizing, and existing channel-layout/byte/hash behavior once the FFmpeg 8.1.1 oracle binary is available.
 3. Keep local FATE-runner changed-path coverage aligned with ledger selections, especially shared fuzz targets that select multiple muxers or format-model components, while keeping those mappings clearly separate from upstream FATE parity.
 
 ## Known Blockers
 
+- Current `gbrp12le`/`gbrp12be` validation has no remaining code/test failures. `git diff --check` reported CRLF warnings only.
 - Current `gbrp10le`/`gbrp10be` validation hit Windows Application Control only for `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil pixel`; rerunning the same focused avutil test from the default Cargo target directory passed, and the focused gate plus local FATE mappings passed. Historical broad-test executable policy blocks remain relevant for future slices and are kept below.
 - Previous `gbrp` validation hit Windows Application Control when trying to run one broad `run --changed` pass and a single-target full workspace test suite. The focused tests, affected fuzz build checks, workspace clippy, and local component FATE mappings passed through accepted target caches; the broad failures are policy blocks on generated executables, not Rust assertion failures.
 - No pinned FFmpeg 8.1.1 oracle binary exists at `third_party/ffmpeg-oracle/build/bin/ffmpeg`, so oracle snapshots and differential tests have not been generated.
@@ -3680,6 +3707,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added planar 12-bit `gbrp12le` and `gbrp12be` support to the current shared pixel/rawvideo model. `PixelFormat` now reports both names in the inventory with RGB descriptor metadata, three modeled 12-bit components, 36 descriptor bits per pixel, three full-resolution GBR payload planes, no packed byte stride, no alpha flag, no float flag, and no chroma subsampling. The raw storage model uses two bytes per sample in each plane and treats endian as pixel-format naming only until conversion exists. `VideoFrame`, `RawVideoDecoder`, `RawVideoDemuxer`, `RawVideoMuxer`, constrained `ffmpeg-rs` rawvideo-to-null execution, and the affected fuzz harnesses now exercise the formats, including new `gbrp12le` decoder/CLI coverage and `gbrp12be` mux sizing coverage. Validation passed with focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, affected crate clippy, local FATE-runner component mappings, workspace format check, workspace clippy, local `run --changed`, and `git diff --check` with CRLF warnings only. The affected components remain `implemented`, not `complete`, because oracle differentials, upstream FATE media coverage, full pixel inventory coverage, and actual fuzz execution are still absent.
 
 Latest slice: added planar 10-bit `gbrp10le` and `gbrp10be` support to the current shared pixel/rawvideo model. `PixelFormat` now reports both names in the inventory with RGB descriptor metadata, three modeled 10-bit components, 30 descriptor bits per pixel, three full-resolution GBR payload planes, no packed byte stride, no alpha flag, no float flag, and no chroma subsampling. The raw storage model uses two bytes per sample in each plane and treats endian as pixel-format naming only until conversion exists. `VideoFrame`, `RawVideoDecoder`, `RawVideoDemuxer`, `RawVideoMuxer`, constrained `ffmpeg-rs` rawvideo-to-null execution, and the affected fuzz harnesses now exercise the formats, including new `gbrp10le` decoder/CLI coverage and `gbrp10be` mux sizing coverage. Validation passed with focused avutil/avcodec/avformat/fftools tests, touched fuzz-target check/clippy, affected crate clippy, local FATE-runner component mappings, workspace format check, workspace clippy, local `run --changed`, and `git diff --check` with CRLF warnings only. The affected components remain `implemented`, not `complete`, because oracle differentials, upstream FATE media coverage, full pixel inventory coverage, and actual fuzz execution are still absent.
 
