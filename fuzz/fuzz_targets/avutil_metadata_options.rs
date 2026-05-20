@@ -2,7 +2,7 @@
 
 use avutil::{
     Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant, OptionDefinition,
-    OptionFlags, OptionKind, OptionQuery, OptionSet, OptionValue, SetMode,
+    OptionFlags, OptionKind, OptionQuery, OptionSet, OptionValue, Rational, SetMode,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -235,10 +235,15 @@ fn exercise_fixtures() {
     options.set_from_str("threads", "8").unwrap();
     options.set_from_str("bitexact", "yes").unwrap();
     options.set_from_str("quality", "0.75").unwrap();
+    options.set_from_str("aspect_ratio", "4/3").unwrap();
     options.set_from_str("metadata", "title=clip").unwrap();
     options.set_from_str("preset_level", "FAST").unwrap();
     assert_eq!(options.get("threads"), Some(&OptionValue::Int(8)));
     assert_eq!(options.get("BITEXACT"), Some(&OptionValue::Bool(true)));
+    assert_eq!(
+        options.get("aspect_ratio"),
+        Some(&OptionValue::Rational(Rational::new(4, 3).unwrap()))
+    );
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
     options.set_from_str("preset_level", "slow").unwrap();
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(8)));
@@ -247,6 +252,8 @@ fn exercise_fixtures() {
         .is_err());
     assert!(options.set_from_str("threads", "0").is_err());
     assert!(options.set_from_str("bitexact", "maybe").is_err());
+    assert!(options.set_from_str("aspect_ratio", "1/0").is_err());
+    assert!(options.set_from_str("aspect_ratio", "2/1").is_err());
     assert!(options.set_from_str("metadata", "bad\0value").is_err());
     assert!(options.set_from_str("readonly", "yes").is_err());
     assert_eq!(options.get("readonly"), Some(&OptionValue::Bool(false)));
@@ -339,6 +346,11 @@ fn assert_option_set_invariants_at_depth(options: &OptionSet, depth: usize) {
                     assert!(max.is_finite());
                     assert!(min <= max);
                 }
+                (OptionValue::Rational(min), OptionValue::Rational(max)) => {
+                    assert!(min.den() > 0);
+                    assert!(max.den() > 0);
+                    assert!(min <= max);
+                }
                 _ => unreachable!("option ranges are numeric"),
             }
         }
@@ -392,7 +404,7 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
     let name = option_name_from(cursor);
     let help = literal_from(cursor);
     let kind_tag = cursor.next().unwrap_or_default();
-    let kind = match kind_tag % 8 {
+    let kind = match kind_tag % 11 {
         0 => OptionKind::Bool,
         1 => OptionKind::Int { min: 0, max: 64 },
         2 => OptionKind::Int { min: 8, max: 1 },
@@ -402,7 +414,19 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
             min: f64::NAN,
             max: 1.0,
         },
-        6 => OptionKind::String { allow_empty: true },
+        6 => OptionKind::Rational {
+            min: Rational::ONE,
+            max: Rational::new(16, 9).unwrap(),
+        },
+        7 => OptionKind::Rational {
+            min: Rational::ONE,
+            max: Rational::ZERO,
+        },
+        8 => OptionKind::Rational {
+            min: Rational::from_raw(1, 0),
+            max: Rational::ONE,
+        },
+        9 => OptionKind::String { allow_empty: true },
         _ => OptionKind::String { allow_empty: false },
     };
     let default = default_value_for(&kind, cursor);
@@ -502,6 +526,13 @@ fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue 
                 OptionValue::Float(0.0)
             }
         }
+        OptionKind::Rational { min, max } => {
+            if min.den() > 0 && max.den() > 0 && min <= max {
+                OptionValue::Rational(*min)
+            } else {
+                OptionValue::Rational(Rational::ONE)
+            }
+        }
         OptionKind::String { allow_empty } => {
             let value = literal_from(cursor);
             if *allow_empty || !value.is_empty() {
@@ -561,6 +592,20 @@ fn sample_options() -> OptionSet {
         .unwrap();
     options
         .define(
+            OptionDefinition::new(
+                "aspect_ratio",
+                OptionKind::Rational {
+                    min: Rational::ONE,
+                    max: Rational::new(16, 9).unwrap(),
+                },
+                OptionValue::Rational(Rational::ONE),
+                "sample aspect ratio",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
             OptionDefinition::new_with_flags(
                 "readonly",
                 OptionKind::Bool,
@@ -599,7 +644,7 @@ fn sample_options() -> OptionSet {
 }
 
 fn option_name_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 14 {
+    match cursor.next().unwrap_or_default() % 15 {
         0 => "threads".to_owned(),
         1 => "THREADS".to_owned(),
         2 => "bitexact".to_owned(),
@@ -613,12 +658,13 @@ fn option_name_from(cursor: &mut Cursor<'_>) -> String {
         10 => "new-option".to_owned(),
         11 => "new_option".to_owned(),
         12 => "readonly".to_owned(),
+        13 => "aspect_ratio".to_owned(),
         _ => "preset_level".to_owned(),
     }
 }
 
 fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 21 {
+    match cursor.next().unwrap_or_default() % 26 {
         0 => "1".to_owned(),
         1 => "0".to_owned(),
         2 => "yes".to_owned(),
@@ -639,12 +685,17 @@ fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
         17 => "FAST".to_owned(),
         18 => "slow".to_owned(),
         19 => "not_an_int".to_owned(),
+        20 => "4/3".to_owned(),
+        21 => "3/2".to_owned(),
+        22 => "1/0".to_owned(),
+        23 => "1/".to_owned(),
+        24 => "2/1".to_owned(),
         _ => literal_from(cursor),
     }
 }
 
 fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
-    match cursor.next().unwrap_or_default() % 4 {
+    match cursor.next().unwrap_or_default() % 5 {
         0 => OptionValue::Bool(cursor.next().unwrap_or_default().is_multiple_of(2)),
         1 => OptionValue::Int(i64::from(cursor.next().unwrap_or_default()) - 32),
         2 => {
@@ -657,6 +708,16 @@ fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
                 _ => 1.5,
             };
             OptionValue::Float(value)
+        }
+        3 => {
+            let value = match cursor.next().unwrap_or_default() % 5 {
+                0 => Rational::ONE,
+                1 => Rational::new(4, 3).unwrap(),
+                2 => Rational::new(2, 1).unwrap(),
+                3 => Rational::from_raw(1, 0),
+                _ => Rational::ZERO,
+            };
+            OptionValue::Rational(value)
         }
         _ => OptionValue::String(option_value_string_from(cursor)),
     }

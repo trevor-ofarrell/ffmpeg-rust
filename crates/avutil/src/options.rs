@@ -1,10 +1,11 @@
-use crate::{AvError, AvErrorKind, AvResult};
+use crate::{AvError, AvErrorKind, AvResult, Rational};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OptionValue {
     Bool(bool),
     Int(i64),
     Float(f64),
+    Rational(Rational),
     String(String),
 }
 
@@ -13,6 +14,7 @@ pub enum OptionKind {
     Bool,
     Int { min: i64, max: i64 },
     Float { min: f64, max: f64 },
+    Rational { min: Rational, max: Rational },
     String { allow_empty: bool },
 }
 
@@ -41,6 +43,15 @@ impl OptionRange {
                 if min > max {
                     return Err(AvError::invalid_argument(
                         "float option range min must be <= max",
+                    ));
+                }
+            }
+            (OptionValue::Rational(min), OptionValue::Rational(max)) => {
+                validate_rational_bound(*min, "range min")?;
+                validate_rational_bound(*max, "range max")?;
+                if min > max {
+                    return Err(AvError::invalid_argument(
+                        "rational option range min must be <= max",
                     ));
                 }
             }
@@ -379,6 +390,7 @@ impl OptionDefinition {
             OptionKind::Bool => OptionValue::Bool(parse_bool(raw)?),
             OptionKind::Int { .. } => OptionValue::Int(parse_int(raw)?),
             OptionKind::Float { .. } => OptionValue::Float(parse_float(raw)?),
+            OptionKind::Rational { .. } => OptionValue::Rational(parse_rational(raw)?),
             OptionKind::String { .. } => OptionValue::String(raw.to_owned()),
         };
 
@@ -715,6 +727,16 @@ fn validate_kind(kind: &OptionKind) -> AvResult<()> {
             }
             Ok(())
         }
+        OptionKind::Rational { min, max } => {
+            validate_rational_bound(min, "option min")?;
+            validate_rational_bound(max, "option max")?;
+            if min > max {
+                return Err(AvError::invalid_argument(
+                    "rational option min must be <= max",
+                ));
+            }
+            Ok(())
+        }
     }
 }
 
@@ -727,6 +749,10 @@ fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
         OptionKind::Float { min, max } => Some(OptionRange {
             min: OptionValue::Float(min),
             max: OptionValue::Float(max),
+        }),
+        OptionKind::Rational { min, max } => Some(OptionRange {
+            min: OptionValue::Rational(min),
+            max: OptionValue::Rational(max),
         }),
         OptionKind::Bool | OptionKind::String { .. } => None,
     }
@@ -756,6 +782,15 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
             }
             Ok(())
         }
+        (OptionKind::Rational { min, max }, OptionValue::Rational(value)) => {
+            validate_rational_bound(*value, "rational option value")?;
+            if value < min || value > max {
+                return Err(AvError::invalid_argument(format!(
+                    "rational option value {value} outside range {min}..={max}"
+                )));
+            }
+            Ok(())
+        }
         (OptionKind::String { allow_empty }, OptionValue::String(value)) => {
             if !allow_empty && value.is_empty() {
                 return Err(AvError::invalid_argument(
@@ -773,6 +808,15 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
             "option value type does not match option kind",
         )),
     }
+}
+
+fn validate_rational_bound(value: Rational, label: &str) -> AvResult<()> {
+    if value.den() <= 0 {
+        return Err(AvError::invalid_argument(format!(
+            "{label} must have a positive denominator"
+        )));
+    }
+    Ok(())
 }
 
 fn parse_bool(raw: &str) -> AvResult<bool> {
@@ -793,6 +837,31 @@ fn parse_int(raw: &str) -> AvResult<i64> {
 fn parse_float(raw: &str) -> AvResult<f64> {
     raw.parse::<f64>()
         .map_err(|_| AvError::invalid_argument(format!("invalid float option value `{raw}`")))
+}
+
+fn parse_rational(raw: &str) -> AvResult<Rational> {
+    let (num, den) = if let Some((num, den)) = raw.split_once('/') {
+        (
+            parse_rational_part(num, raw)?,
+            parse_rational_part(den, raw)?,
+        )
+    } else {
+        (parse_rational_part(raw, raw)?, 1)
+    };
+
+    Rational::new(num, den)
+        .map_err(|_| AvError::invalid_argument(format!("invalid rational option value `{raw}`")))
+}
+
+fn parse_rational_part(part: &str, raw: &str) -> AvResult<i32> {
+    if part.is_empty() {
+        return Err(AvError::invalid_argument(format!(
+            "invalid rational option value `{raw}`"
+        )));
+    }
+
+    part.parse::<i32>()
+        .map_err(|_| AvError::invalid_argument(format!("invalid rational option value `{raw}`")))
 }
 
 fn ascii_eq_ignore_case(left: &str, right: &str) -> bool {
@@ -836,6 +905,26 @@ mod tests {
             "threads",
             OptionKind::Int { min: 1, max: 8 },
             OptionValue::Int(0),
+            ""
+        )
+        .is_err());
+        assert!(OptionDefinition::new(
+            "aspect_ratio",
+            OptionKind::Rational {
+                min: Rational::ONE,
+                max: Rational::ZERO,
+            },
+            OptionValue::Rational(Rational::ONE),
+            ""
+        )
+        .is_err());
+        assert!(OptionDefinition::new(
+            "aspect_ratio",
+            OptionKind::Rational {
+                min: Rational::ZERO,
+                max: Rational::new(16, 9).unwrap(),
+            },
+            OptionValue::Rational(Rational::from_raw(1, 0)),
             ""
         )
         .is_err());
@@ -923,16 +1012,32 @@ mod tests {
     fn option_ranges_validate_and_expose_numeric_bounds() {
         assert!(OptionRange::new(OptionValue::Int(8), OptionValue::Int(1)).is_err());
         assert!(OptionRange::new(OptionValue::Float(f64::NAN), OptionValue::Float(1.0)).is_err());
+        assert!(OptionRange::new(
+            OptionValue::Rational(Rational::ONE),
+            OptionValue::Rational(Rational::ZERO)
+        )
+        .is_err());
+        assert!(OptionRange::new(
+            OptionValue::Rational(Rational::from_raw(1, 0)),
+            OptionValue::Rational(Rational::ONE)
+        )
+        .is_err());
         assert!(OptionRange::new(OptionValue::Bool(false), OptionValue::Bool(true)).is_err());
 
         let options = sample_options();
         let threads = options.range("threads").unwrap().unwrap();
         let quality = options.range("quality").unwrap().unwrap();
+        let aspect = options.range("aspect_ratio").unwrap().unwrap();
 
         assert_eq!(threads.min(), &OptionValue::Int(1));
         assert_eq!(threads.max(), &OptionValue::Int(64));
         assert_eq!(quality.min(), &OptionValue::Float(0.0));
         assert_eq!(quality.max(), &OptionValue::Float(1.0));
+        assert_eq!(aspect.min(), &OptionValue::Rational(Rational::ONE));
+        assert_eq!(
+            aspect.max(),
+            &OptionValue::Rational(Rational::new(16, 9).unwrap())
+        );
         assert_eq!(options.range("bitexact").unwrap(), None);
         assert_eq!(options.range("metadata").unwrap(), None);
         assert_eq!(
@@ -1033,11 +1138,21 @@ mod tests {
         options.set_from_str("threads", "8").unwrap();
         options.set_from_str("bitexact", "yes").unwrap();
         options.set_from_str("quality", "0.75").unwrap();
+        options.set_from_str("aspect_ratio", "4/3").unwrap();
         options.set_from_str("metadata", "title=clip").unwrap();
 
         assert_eq!(options.get("threads"), Some(&OptionValue::Int(8)));
         assert_eq!(options.get("bitexact"), Some(&OptionValue::Bool(true)));
         assert_eq!(options.get("quality"), Some(&OptionValue::Float(0.75)));
+        assert_eq!(
+            options.get("aspect_ratio"),
+            Some(&OptionValue::Rational(Rational::new(4, 3).unwrap()))
+        );
+        options.set_from_str("aspect_ratio", "1").unwrap();
+        assert_eq!(
+            options.get("aspect_ratio"),
+            Some(&OptionValue::Rational(Rational::ONE))
+        );
         assert_eq!(
             options.get("metadata"),
             Some(&OptionValue::String("title=clip".to_string()))
@@ -1058,8 +1173,21 @@ mod tests {
         assert!(options
             .set("threads", OptionValue::String("8".to_string()))
             .is_err());
+        assert!(options
+            .set("aspect_ratio", OptionValue::Float(1.0))
+            .is_err());
+        assert!(options
+            .set(
+                "aspect_ratio",
+                OptionValue::Rational(Rational::new(2, 1).unwrap())
+            )
+            .is_err());
         assert!(options.set_from_str("threads", "0").is_err());
         assert!(options.set_from_str("quality", "inf").is_err());
+        assert!(options.set_from_str("aspect_ratio", "1/0").is_err());
+        assert!(options.set_from_str("aspect_ratio", "2/1").is_err());
+        assert!(options.set_from_str("aspect_ratio", "bad/1").is_err());
+        assert!(options.set_from_str("aspect_ratio", "1/").is_err());
         assert!(options.set_from_str("bitexact", "maybe").is_err());
     }
 
@@ -1394,6 +1522,20 @@ mod tests {
                     "metadata",
                     OptionKind::String { allow_empty: false },
                     OptionValue::String("default".to_string()),
+                    "",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "aspect_ratio",
+                    OptionKind::Rational {
+                        min: Rational::ONE,
+                        max: Rational::new(16, 9).unwrap(),
+                    },
+                    OptionValue::Rational(Rational::ONE),
                     "",
                 )
                 .unwrap(),
