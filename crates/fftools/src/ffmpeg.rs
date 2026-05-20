@@ -2825,6 +2825,41 @@ mod tests {
     }
 
     #[test]
+    fn runs_rawvideo_yuv444p_to_null_stdout() {
+        let path = write_temp_bytes(
+            "rawvideo-yuv444p-null",
+            "raw",
+            &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        );
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "yuv444p",
+            "-s",
+            "2x1",
+            "-r",
+            "25",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("rawvideo yuv444p command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 12);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
     fn runs_rawvideo_to_rawvideo_file_output() {
         let payload = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
         let input_path = write_temp_bytes("rawvideo-file-input", "raw", &payload);

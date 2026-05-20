@@ -317,6 +317,19 @@ mod tests {
             .frame_size(),
             24
         );
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &[0; 18],
+                3,
+                2,
+                RawVideoPixelFormat::Yuv444p,
+                Rational::new(1, 1).unwrap(),
+            )
+            .unwrap()
+            .info()
+            .frame_size(),
+            18
+        );
     }
 
     #[test]
@@ -360,6 +373,14 @@ mod tests {
             Rational::new(1, 1).unwrap(),
         )
         .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 18],
+            3,
+            2,
+            RawVideoPixelFormat::Yuv444p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
         assert!(RawVideoDemuxer::open(
             &[0; 4],
             2,
@@ -451,6 +472,19 @@ mod tests {
     }
 
     #[test]
+    fn muxer_computes_yuv444p_frame_size() {
+        let muxer = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv444p,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(muxer.info().frame_size(), 18);
+    }
+
+    #[test]
     fn muxer_rejects_invalid_geometry_rate_stream_and_frame_size() {
         assert!(RawVideoMuxer::new(
             0,
@@ -473,6 +507,13 @@ mod tests {
             Rational::new(1, 1).unwrap(),
         )
         .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv444p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
         assert!(RawVideoMuxer::new(
             2,
             2,

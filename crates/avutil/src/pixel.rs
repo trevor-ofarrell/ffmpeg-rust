@@ -11,6 +11,7 @@ pub enum PixelFormat {
     Abgr,
     Yuv420p,
     Yuv422p,
+    Yuv444p,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -47,6 +48,7 @@ impl PixelFormat {
         Self::Abgr,
         Self::Yuv420p,
         Self::Yuv422p,
+        Self::Yuv444p,
     ];
 
     pub fn name(self) -> &'static str {
@@ -64,6 +66,7 @@ impl PixelFormat {
             "abgr" => Some(Self::Abgr),
             "yuv420p" => Some(Self::Yuv420p),
             "yuv422p" => Some(Self::Yuv422p),
+            "yuv444p" => Some(Self::Yuv444p),
             _ => None,
         }
     }
@@ -189,6 +192,18 @@ impl PixelFormat {
                 1,
                 0,
             ),
+            Self::Yuv444p => (
+                "yuv444p",
+                PixelFormatClass::Yuv,
+                3,
+                24,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
         };
 
         PixelFormatDescriptor {
@@ -281,7 +296,7 @@ impl PixelFormat {
                 4,
                 "32-bit packed pixel format frame size",
             )?]),
-            Self::Yuv420p | Self::Yuv422p => {
+            Self::Yuv420p | Self::Yuv422p | Self::Yuv444p => {
                 let descriptor = self.descriptor();
                 let chroma_w = 1_usize << descriptor.log2_chroma_w;
                 let chroma_h = 1_usize << descriptor.log2_chroma_h;
@@ -391,14 +406,20 @@ mod tests {
             PixelFormat::from_name("yuv422p"),
             Some(PixelFormat::Yuv422p)
         );
-        assert_eq!(PixelFormat::ALL.len(), 9);
+        assert_eq!(
+            PixelFormat::from_name("yuv444p"),
+            Some(PixelFormat::Yuv444p)
+        );
+        assert_eq!(PixelFormat::ALL.len(), 10);
         assert_eq!(PixelFormat::Rgba.plane_count(), 1);
         assert_eq!(PixelFormat::Yuv420p.plane_count(), 3);
         assert_eq!(PixelFormat::Yuv422p.plane_count(), 3);
+        assert_eq!(PixelFormat::Yuv444p.plane_count(), 3);
         assert!(!PixelFormat::Rgb24.is_planar());
         assert!(PixelFormat::Rgb24.is_packed());
         assert!(PixelFormat::Yuv420p.is_planar());
         assert!(PixelFormat::Yuv422p.is_planar());
+        assert!(PixelFormat::Yuv444p.is_planar());
         assert!(!PixelFormat::Yuv420p.is_packed());
         assert!(!PixelFormat::Rgb24.has_alpha());
         assert!(PixelFormat::Bgra.has_alpha());
@@ -457,6 +478,7 @@ mod tests {
         for (format, expected_name, expected_bits_per_pixel, expected_log2_chroma) in [
             (PixelFormat::Yuv420p, "yuv420p", 12, (1, 1)),
             (PixelFormat::Yuv422p, "yuv422p", 16, (1, 0)),
+            (PixelFormat::Yuv444p, "yuv444p", 24, (0, 0)),
         ] {
             let yuv = format.descriptor();
             assert_eq!(yuv.format, format);
@@ -472,7 +494,10 @@ mod tests {
             assert!(!yuv.has_alpha);
             assert_eq!(yuv.packed_bytes_per_pixel, None);
             assert_eq!(format.log2_chroma(), expected_log2_chroma);
-            assert!(format.has_chroma_subsampling());
+            assert_eq!(
+                format.has_chroma_subsampling(),
+                expected_log2_chroma != (0, 0)
+            );
         }
         assert_eq!(PixelFormat::Yuv420p.log2_chroma(), (1, 1));
     }
@@ -496,6 +521,11 @@ mod tests {
             vec![12, 6, 6]
         );
         assert_eq!(PixelFormat::Yuv422p.frame_size(4, 3).unwrap(), 24);
+        assert_eq!(
+            PixelFormat::Yuv444p.plane_sizes(3, 2).unwrap(),
+            vec![6, 6, 6]
+        );
+        assert_eq!(PixelFormat::Yuv444p.frame_size(3, 2).unwrap(), 18);
     }
 
     #[test]
@@ -511,6 +541,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(planes, vec![vec![0, 1, 2, 3], vec![4, 5], vec![6, 7]]);
+
+        let planes = PixelFormat::Yuv444p
+            .split_planes(&[0, 1, 2, 3, 4, 5], 1, 2)
+            .unwrap();
+
+        assert_eq!(planes, vec![vec![0, 1], vec![2, 3], vec![4, 5]]);
     }
 
     #[test]
@@ -528,6 +564,7 @@ mod tests {
             AvErrorKind::InvalidArgument
         );
         assert_eq!(PixelFormat::Yuv422p.frame_size(2, 3).unwrap(), 12);
+        assert_eq!(PixelFormat::Yuv444p.frame_size(3, 2).unwrap(), 18);
         assert_eq!(
             PixelFormat::Rgb24
                 .split_planes(&[0; 5], 1, 2)
