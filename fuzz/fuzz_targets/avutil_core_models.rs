@@ -1534,6 +1534,10 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 | PixelFormat::P412Be
                 | PixelFormat::P416Le
                 | PixelFormat::P416Be
+                | PixelFormat::GbrpF16Le
+                | PixelFormat::GbrpF16Be
+                | PixelFormat::GbrpF32Le
+                | PixelFormat::GbrpF32Be
         ));
         assert_eq!(pixel_format.has_alpha(), is_yuva_pixel_format(pixel_format));
     }
@@ -5602,6 +5606,40 @@ fn exercise_fixtures() {
     assert!(PixelFormat::Gbrp16Le.is_rgb());
     assert!(PixelFormat::Gbrp16Le.is_planar());
     assert!(!PixelFormat::Gbrp16Le.has_alpha());
+    assert_eq!(
+        PixelFormat::from_name("gbrpf16le"),
+        Some(PixelFormat::GbrpF16Le)
+    );
+    assert_eq!(
+        PixelFormat::from_name("gbrpf16be"),
+        Some(PixelFormat::GbrpF16Be)
+    );
+    assert_eq!(
+        PixelFormat::from_name("gbrpf32le"),
+        Some(PixelFormat::GbrpF32Le)
+    );
+    assert_eq!(
+        PixelFormat::from_name("gbrpf32be"),
+        Some(PixelFormat::GbrpF32Be)
+    );
+    assert_eq!(PixelFormat::GbrpF16Le.frame_size(2, 2).unwrap(), 24);
+    assert_eq!(
+        PixelFormat::GbrpF16Le.plane_sizes(2, 2).unwrap(),
+        vec![8, 8, 8]
+    );
+    assert_eq!(PixelFormat::GbrpF16Le.bits_per_component(), 16);
+    assert_eq!(PixelFormat::GbrpF16Le.bits_per_pixel(), bpp(48));
+    assert!(PixelFormat::GbrpF16Le.is_float());
+    assert!(!PixelFormat::GbrpF16Le.has_alpha());
+    assert_eq!(PixelFormat::GbrpF32Le.frame_size(2, 2).unwrap(), 48);
+    assert_eq!(
+        PixelFormat::GbrpF32Le.plane_sizes(2, 2).unwrap(),
+        vec![16, 16, 16]
+    );
+    assert_eq!(PixelFormat::GbrpF32Le.bits_per_component(), 32);
+    assert_eq!(PixelFormat::GbrpF32Le.bits_per_pixel(), bpp(96));
+    assert!(PixelFormat::GbrpF32Le.is_float());
+    assert!(!PixelFormat::GbrpF32Le.has_alpha());
     assert_eq!(PixelFormat::from_name("gbrap"), Some(PixelFormat::Gbrap));
     assert_eq!(
         PixelFormat::from_name("gbrap10le"),
@@ -18291,8 +18329,13 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Gbrp14Le
         | PixelFormat::Gbrp14Be
         | PixelFormat::Gbrp16Le
-        | PixelFormat::Gbrp16Be => {
+        | PixelFormat::Gbrp16Be
+        | PixelFormat::GbrpF16Le
+        | PixelFormat::GbrpF16Be => {
             vec![width * 2, width * 2, width * 2]
+        }
+        PixelFormat::GbrpF32Le | PixelFormat::GbrpF32Be => {
+            vec![width * 4, width * 4, width * 4]
         }
         PixelFormat::Gbrap10Le
         | PixelFormat::Gbrap10Be
@@ -18553,10 +18596,17 @@ fn expected_video_plane_shapes(
         | PixelFormat::Gbrp14Le
         | PixelFormat::Gbrp14Be
         | PixelFormat::Gbrp16Le
-        | PixelFormat::Gbrp16Be => vec![
+        | PixelFormat::Gbrp16Be
+        | PixelFormat::GbrpF16Le
+        | PixelFormat::GbrpF16Be => vec![
             (width * 2, height),
             (width * 2, height),
             (width * 2, height),
+        ],
+        PixelFormat::GbrpF32Le | PixelFormat::GbrpF32Be => vec![
+            (width * 4, height),
+            (width * 4, height),
+            (width * 4, height),
         ],
         PixelFormat::Gbrap10Le
         | PixelFormat::Gbrap10Be

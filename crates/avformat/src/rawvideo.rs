@@ -322,6 +322,33 @@ mod tests {
     }
 
     #[test]
+    fn slices_gbrpf_frames_with_format_side_data() {
+        let input = (0_u8..24).collect::<Vec<_>>();
+        let mut demuxer = RawVideoDemuxer::open(
+            &input,
+            1,
+            1,
+            RawVideoPixelFormat::GbrpF32Le,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(demuxer.info().frame_size(), 12);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        assert_eq!(first.side_data()[0].kind(), "rawvideo_pix_fmt");
+        assert_eq!(first.side_data()[0].data(), b"gbrpf32le");
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(
+            second.data(),
+            &[12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+        );
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn slices_bayer_frames_with_format_side_data() {
         let input = (0_u8..12).collect::<Vec<_>>();
         let mut demuxer = RawVideoDemuxer::open(
@@ -894,6 +921,30 @@ mod tests {
             .frame_size(),
             12
         );
+        for format in [
+            RawVideoPixelFormat::GbrpF16Le,
+            RawVideoPixelFormat::GbrpF16Be,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 12], 2, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                12
+            );
+        }
+        for format in [
+            RawVideoPixelFormat::GbrpF32Le,
+            RawVideoPixelFormat::GbrpF32Be,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 24], 2, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                24
+            );
+        }
         assert_eq!(
             RawVideoDemuxer::open(
                 &[0; 8],
@@ -1865,6 +1916,29 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 36);
+    }
+
+    #[test]
+    fn muxer_computes_gbrpf_frame_sizes() {
+        let gbrpf16 = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::GbrpF16Le,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(gbrpf16.info().frame_size(), 36);
+
+        let gbrpf32 = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::GbrpF32Be,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(gbrpf32.info().frame_size(), 72);
     }
 
     #[test]

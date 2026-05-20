@@ -95,6 +95,10 @@ pub enum PixelFormat {
     Gbrp14Be,
     Gbrp16Le,
     Gbrp16Be,
+    GbrpF16Le,
+    GbrpF16Be,
+    GbrpF32Le,
+    GbrpF32Be,
     Gbrap,
     Gbrap10Le,
     Gbrap10Be,
@@ -362,6 +366,10 @@ impl PixelFormat {
         Self::Gbrp14Be,
         Self::Gbrp16Le,
         Self::Gbrp16Be,
+        Self::GbrpF16Le,
+        Self::GbrpF16Be,
+        Self::GbrpF32Le,
+        Self::GbrpF32Be,
         Self::Gbrap,
         Self::Gbrap10Le,
         Self::Gbrap10Be,
@@ -597,6 +605,10 @@ impl PixelFormat {
             "gbrp14be" => Some(Self::Gbrp14Be),
             "gbrp16le" => Some(Self::Gbrp16Le),
             "gbrp16be" => Some(Self::Gbrp16Be),
+            "gbrpf16le" => Some(Self::GbrpF16Le),
+            "gbrpf16be" => Some(Self::GbrpF16Be),
+            "gbrpf32le" => Some(Self::GbrpF32Le),
+            "gbrpf32be" => Some(Self::GbrpF32Be),
             "gbrap" => Some(Self::Gbrap),
             "gbrap10le" => Some(Self::Gbrap10Le),
             "gbrap10be" => Some(Self::Gbrap10Be),
@@ -1824,6 +1836,54 @@ impl PixelFormat {
                 PixelFormatClass::Rgb,
                 3,
                 48,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::GbrpF16Le => (
+                "gbrpf16le",
+                PixelFormatClass::Rgb,
+                3,
+                48,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::GbrpF16Be => (
+                "gbrpf16be",
+                PixelFormatClass::Rgb,
+                3,
+                48,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::GbrpF32Le => (
+                "gbrpf32le",
+                PixelFormatClass::Rgb,
+                3,
+                96,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::GbrpF32Be => (
+                "gbrpf32be",
+                PixelFormatClass::Rgb,
+                3,
+                96,
                 3,
                 true,
                 false,
@@ -3516,6 +3576,8 @@ impl PixelFormat {
                     | Self::Xv48Be
                     | Self::Gbrp16Le
                     | Self::Gbrp16Be
+                    | Self::GbrpF16Le
+                    | Self::GbrpF16Be
                     | Self::Gbrap16Le
                     | Self::Gbrap16Be
                     | Self::GbrapF16Le
@@ -3684,6 +3746,8 @@ impl PixelFormat {
                     | Self::Yaf32Be
                     | Self::GrayF32Le
                     | Self::GrayF32Be
+                    | Self::GbrpF32Le
+                    | Self::GbrpF32Be
                     | Self::Gbrap32Le
                     | Self::Gbrap32Be
                     | Self::GbrapF32Le
@@ -3713,6 +3777,10 @@ impl PixelFormat {
                     | Self::Yaf16Be
                     | Self::Yaf32Le
                     | Self::Yaf32Be
+                    | Self::GbrpF16Le
+                    | Self::GbrpF16Be
+                    | Self::GbrpF32Le
+                    | Self::GbrpF32Be
                     | Self::GbrapF16Le
                     | Self::GbrapF16Be
                     | Self::GbrapF32Le
@@ -3960,12 +4028,18 @@ impl PixelFormat {
             | Self::Gbrp14Le
             | Self::Gbrp14Be
             | Self::Gbrp16Le
-            | Self::Gbrp16Be => {
+            | Self::Gbrp16Be
+            | Self::GbrpF16Le
+            | Self::GbrpF16Be => {
                 let plane = checked_mul(
                     pixels,
                     2,
                     "high bit-depth planar GBR pixel format plane size",
                 )?;
+                Ok(vec![plane, plane, plane])
+            }
+            Self::GbrpF32Le | Self::GbrpF32Be => {
+                let plane = checked_mul(pixels, 4, "32-bit planar GBR pixel format plane size")?;
                 Ok(vec![plane, plane, plane])
             }
             Self::Gbrap => Ok(vec![pixels, pixels, pixels, pixels]),
@@ -4662,6 +4736,22 @@ mod tests {
             PixelFormat::from_name("gbrp16be"),
             Some(PixelFormat::Gbrp16Be)
         );
+        assert_eq!(
+            PixelFormat::from_name("gbrpf16le"),
+            Some(PixelFormat::GbrpF16Le)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrpf16be"),
+            Some(PixelFormat::GbrpF16Be)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrpf32le"),
+            Some(PixelFormat::GbrpF32Le)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrpf32be"),
+            Some(PixelFormat::GbrpF32Be)
+        );
         assert_eq!(PixelFormat::from_name("gbrap"), Some(PixelFormat::Gbrap));
         assert_eq!(
             PixelFormat::from_name("gbrap10le"),
@@ -4928,7 +5018,7 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 227);
+        assert_eq!(PixelFormat::ALL.len(), 231);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Yaf16Le.plane_count(), 1);
@@ -5507,17 +5597,21 @@ mod tests {
         assert_eq!(PixelFormat::Gbrp.log2_chroma(), (0, 0));
         assert!(!PixelFormat::Gbrp.has_chroma_subsampling());
 
-        for (format, name, expected_bits_per_component, expected_bits_per_pixel) in [
-            (PixelFormat::Gbrp9Le, "gbrp9le", 9, 27),
-            (PixelFormat::Gbrp9Be, "gbrp9be", 9, 27),
-            (PixelFormat::Gbrp10Le, "gbrp10le", 10, 30),
-            (PixelFormat::Gbrp10Be, "gbrp10be", 10, 30),
-            (PixelFormat::Gbrp12Le, "gbrp12le", 12, 36),
-            (PixelFormat::Gbrp12Be, "gbrp12be", 12, 36),
-            (PixelFormat::Gbrp14Le, "gbrp14le", 14, 42),
-            (PixelFormat::Gbrp14Be, "gbrp14be", 14, 42),
-            (PixelFormat::Gbrp16Le, "gbrp16le", 16, 48),
-            (PixelFormat::Gbrp16Be, "gbrp16be", 16, 48),
+        for (format, name, expected_bits_per_component, expected_bits_per_pixel, is_float) in [
+            (PixelFormat::Gbrp9Le, "gbrp9le", 9, 27, false),
+            (PixelFormat::Gbrp9Be, "gbrp9be", 9, 27, false),
+            (PixelFormat::Gbrp10Le, "gbrp10le", 10, 30, false),
+            (PixelFormat::Gbrp10Be, "gbrp10be", 10, 30, false),
+            (PixelFormat::Gbrp12Le, "gbrp12le", 12, 36, false),
+            (PixelFormat::Gbrp12Be, "gbrp12be", 12, 36, false),
+            (PixelFormat::Gbrp14Le, "gbrp14le", 14, 42, false),
+            (PixelFormat::Gbrp14Be, "gbrp14be", 14, 42, false),
+            (PixelFormat::Gbrp16Le, "gbrp16le", 16, 48, false),
+            (PixelFormat::Gbrp16Be, "gbrp16be", 16, 48, false),
+            (PixelFormat::GbrpF16Le, "gbrpf16le", 16, 48, true),
+            (PixelFormat::GbrpF16Be, "gbrpf16be", 16, 48, true),
+            (PixelFormat::GbrpF32Le, "gbrpf32le", 32, 96, true),
+            (PixelFormat::GbrpF32Be, "gbrpf32be", 32, 96, true),
         ] {
             let descriptor = format.descriptor();
             assert_eq!(descriptor.format, format);
@@ -5533,7 +5627,7 @@ mod tests {
             assert_eq!(descriptor.plane_count, 3);
             assert!(descriptor.is_planar);
             assert!(!descriptor.has_alpha);
-            assert!(!descriptor.is_float);
+            assert_eq!(descriptor.is_float, is_float);
             assert_eq!(descriptor.packed_bytes_per_pixel, None);
             assert_eq!(format.log2_chroma(), (0, 0));
             assert!(!format.has_chroma_subsampling());
@@ -5829,6 +5923,14 @@ mod tests {
         assert_eq!(PixelFormat::Gbrp16Le.component_count(), 3);
         assert_eq!(PixelFormat::Gbrp16Le.bits_per_component(), 16);
         assert_eq!(PixelFormat::Gbrp16Le.bits_per_pixel(), bpp(48));
+        assert_eq!(PixelFormat::GbrpF16Le.component_count(), 3);
+        assert_eq!(PixelFormat::GbrpF16Le.bits_per_component(), 16);
+        assert_eq!(PixelFormat::GbrpF16Le.bits_per_pixel(), bpp(48));
+        assert!(PixelFormat::GbrpF16Le.is_float());
+        assert_eq!(PixelFormat::GbrpF32Le.component_count(), 3);
+        assert_eq!(PixelFormat::GbrpF32Le.bits_per_component(), 32);
+        assert_eq!(PixelFormat::GbrpF32Le.bits_per_pixel(), bpp(96));
+        assert!(PixelFormat::GbrpF32Le.is_float());
         assert_eq!(PixelFormat::Gbrap.component_count(), 4);
         assert_eq!(PixelFormat::Gbrap.bits_per_component(), 8);
         assert_eq!(PixelFormat::Gbrap.bits_per_pixel(), bpp(32));
@@ -6560,6 +6662,16 @@ mod tests {
         );
         assert_eq!(PixelFormat::Gbrp16Le.frame_size(3, 2).unwrap(), 36);
         assert_eq!(
+            PixelFormat::GbrpF16Le.plane_sizes(3, 2).unwrap(),
+            vec![12, 12, 12]
+        );
+        assert_eq!(PixelFormat::GbrpF16Le.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(
+            PixelFormat::GbrpF32Le.plane_sizes(3, 2).unwrap(),
+            vec![24, 24, 24]
+        );
+        assert_eq!(PixelFormat::GbrpF32Le.frame_size(3, 2).unwrap(), 72);
+        assert_eq!(
             PixelFormat::Gbrap.plane_sizes(3, 2).unwrap(),
             vec![6, 6, 6, 6]
         );
@@ -6817,6 +6929,28 @@ mod tests {
         assert_eq!(
             planes,
             vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]]
+        );
+
+        let planes = PixelFormat::GbrpF16Le
+            .split_planes(&(0..12).collect::<Vec<_>>(), 1, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]]
+        );
+
+        let planes = PixelFormat::GbrpF32Be
+            .split_planes(&(0..24).collect::<Vec<_>>(), 1, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![
+                (0..8).collect::<Vec<_>>(),
+                (8..16).collect::<Vec<_>>(),
+                (16..24).collect::<Vec<_>>()
+            ]
         );
 
         let planes = PixelFormat::Gbrap
