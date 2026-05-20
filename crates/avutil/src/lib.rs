@@ -71,7 +71,7 @@ pub use options::{
 pub use packet::{
     Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription, PacketContentLightMetadata,
     PacketCpbProperties, PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketIccProfile,
-    PacketJpDualMono, PacketJpDualMonoSelection, PacketMasteringDisplayMetadata,
+    PacketJpDualMono, PacketJpDualMonoSelection, PacketLcevc, PacketMasteringDisplayMetadata,
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
     PacketProducerReferenceTime, PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode,
     PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping,

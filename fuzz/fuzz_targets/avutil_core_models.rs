@@ -34,7 +34,7 @@ use avutil::{
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription, PacketContentLightMetadata,
     PacketCpbProperties, PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketIccProfile,
-    PacketJpDualMono, PacketJpDualMonoSelection, PacketMasteringDisplayMetadata,
+    PacketJpDualMono, PacketJpDualMonoSelection, PacketLcevc, PacketMasteringDisplayMetadata,
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
     PacketProducerReferenceTime, PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode,
     PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping,
@@ -3753,6 +3753,17 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_frame_cropping_payload_invalid(&typed_payload));
         }
     }
+    match typed_payload_side_data.lcevc() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::Lcevc);
+            assert_eq!(value.data(), typed_payload.as_slice());
+            assert_eq!(value.len(), typed_payload.len());
+            assert_eq!(value.is_empty(), typed_payload.is_empty());
+            assert_eq!(PacketLcevc::parse(value.data()).unwrap(), value);
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::Lcevc),
+        Err(err) => panic!("raw LCEVC packet side data should not reject payloads: {err}"),
+    }
 
     let side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let side_data_payload = payload_from(cursor, side_data_len);
@@ -4966,6 +4977,25 @@ fn exercise_fixtures() {
         .kind(),
         AvErrorKind::InvalidData
     );
+    let packet_lcevc_payload = vec![0x00, 0x00, 0x03, 0x7e, 0xaa];
+    let packet_lcevc_side_data = SideData::new_lcevc(packet_lcevc_payload.clone()).unwrap();
+    let packet_lcevc = packet_lcevc_side_data.lcevc().unwrap().unwrap();
+    assert_eq!(packet_lcevc.data(), packet_lcevc_payload.as_slice());
+    assert_eq!(packet_lcevc.len(), packet_lcevc_payload.len());
+    assert!(!packet_lcevc.is_empty());
+    assert_eq!(PacketLcevc::parse(packet_lcevc.data()).unwrap(), packet_lcevc);
+    assert!(SideData::new_lcevc(Vec::new())
+        .unwrap()
+        .lcevc()
+        .unwrap()
+        .unwrap()
+        .is_empty());
+    let non_packet_lcevc = SideData::new_with_kind(
+        PacketSideDataKind::FrameCropping,
+        packet_lcevc_payload.clone(),
+    )
+    .unwrap();
+    assert_eq!(non_packet_lcevc.lcevc().unwrap(), None);
     let overflow_line_size = usize::MAX - 1;
     let overflow_alignment = usize::MAX - 2;
     assert_eq!(

@@ -2002,6 +2002,29 @@ impl PacketFrameCropping {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketLcevc<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> PacketLcevc<'a> {
+    pub const fn parse(data: &'a [u8]) -> AvResult<Self> {
+        Ok(Self { data })
+    }
+
+    pub const fn data(self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn len(self) -> usize {
+        self.data.len()
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.data.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SideData {
     kind: PacketSideDataKind,
@@ -2123,6 +2146,10 @@ impl SideData {
 
     pub fn new_frame_cropping(value: PacketFrameCropping) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::FrameCropping, value.to_bytes().to_vec())
+    }
+
+    pub fn new_lcevc(data: Vec<u8>) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::Lcevc, data)
     }
 
     pub fn new_with_kind(kind: PacketSideDataKind, data: Vec<u8>) -> AvResult<Self> {
@@ -2326,6 +2353,14 @@ impl SideData {
         }
 
         PacketFrameCropping::parse(self.data()).map(Some)
+    }
+
+    pub fn lcevc(&self) -> AvResult<Option<PacketLcevc<'_>>> {
+        if self.kind != PacketSideDataKind::Lcevc {
+            return Ok(None);
+        }
+
+        PacketLcevc::parse(self.data()).map(Some)
     }
 
     pub fn shrink(&mut self, len: usize) -> AvResult<()> {
@@ -4636,6 +4671,30 @@ mod tests {
             side_data.frame_cropping().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn packet_side_data_preserves_lcevc_payload() {
+        let payload = vec![0x00, 0x00, 0x03, 0x7e, 0xaa, 0x00, 0x00, 0x03, 0xbb];
+        let parsed = PacketLcevc::parse(&payload).unwrap();
+        assert_eq!(parsed.data(), payload.as_slice());
+        assert_eq!(parsed.len(), payload.len());
+        assert!(!parsed.is_empty());
+
+        let side_data = SideData::new_lcevc(payload.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::Lcevc);
+        assert_eq!(side_data.data(), payload.as_slice());
+        assert_eq!(side_data.lcevc().unwrap(), Some(parsed));
+
+        let empty = SideData::new_lcevc(Vec::new()).unwrap();
+        let empty_lcevc = empty.lcevc().unwrap().unwrap();
+        assert_eq!(empty_lcevc.data(), &[]);
+        assert_eq!(empty_lcevc.len(), 0);
+        assert!(empty_lcevc.is_empty());
+
+        let frame_cropping =
+            SideData::new_with_kind(PacketSideDataKind::FrameCropping, payload).unwrap();
+        assert_eq!(frame_cropping.lcevc().unwrap(), None);
     }
 
     #[test]
