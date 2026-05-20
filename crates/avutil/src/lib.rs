@@ -71,16 +71,16 @@ pub use options::{
 pub use packet::{
     Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
-    PacketCpbProperties, PacketDisplayMatrix, PacketExif, PacketFallbackTrack, PacketFlags,
-    PacketFrameCropping, PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection,
-    PacketLcevc, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
-    PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
-    PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
-    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping,
-    PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags, PacketStereo3dPrimaryEye,
-    PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition, PacketThreeDReferenceDisplay,
-    PacketThreeDReferenceDisplays, PacketWebVttIdentifier, PacketWebVttSettings, SideData,
-    AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
+    PacketExif, PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketIccProfile,
+    PacketJpDualMono, PacketJpDualMonoSelection, PacketLcevc, PacketMasteringDisplayMetadata,
+    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
+    PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport,
+    PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason,
+    PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,
+    PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition,
+    PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
+    PacketWebVttSettings, SideData, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 pub use pixel::PixelFormat;
 pub use rational::Rational;

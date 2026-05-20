@@ -34,14 +34,14 @@ use avutil::{
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
-    PacketCpbProperties, PacketDisplayMatrix, PacketExif, PacketFallbackTrack, PacketFlags,
-    PacketFrameCropping, PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection,
-    PacketLcevc, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
-    PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
-    PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
-    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping,
-    PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags, PacketStereo3dPrimaryEye,
-    PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition,
+    PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
+    PacketExif, PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketIccProfile,
+    PacketJpDualMono, PacketJpDualMonoSelection, PacketLcevc, PacketMasteringDisplayMetadata,
+    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
+    PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport,
+    PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason,
+    PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,
+    PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
     Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
@@ -3319,6 +3319,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             + 1,
     )
     .max(PacketAudioServiceType::DATA_LEN + 1)
+    .max(PacketDolbyVisionConf::DATA_LEN + 1)
     .max(
         PacketExif::TIFF_HEADER_LEN
             + PacketExif::IFD_COUNT_LEN
@@ -3701,6 +3702,39 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::IccProfile);
             assert!(packet_icc_profile_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.dolby_vision_conf() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::DolbyVisionConf);
+            assert_eq!(typed_payload.len(), PacketDolbyVisionConf::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketDolbyVisionConf::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+            assert_eq!(value.rpu_present_flag(), value.rpu_present_flag_raw() != 0);
+            assert_eq!(value.el_present_flag(), value.el_present_flag_raw() != 0);
+            assert_eq!(value.bl_present_flag(), value.bl_present_flag_raw() != 0);
+            assert!(value.rpu_present_flag_raw() <= 1);
+            assert!(value.el_present_flag_raw() <= 1);
+            assert!(value.bl_present_flag_raw() <= 1);
+            assert_eq!(
+                PacketDoviCompression::from_byte(value.dv_md_compression_raw()).unwrap(),
+                value.dv_md_compression()
+            );
+            assert!(value
+                .dv_md_compression()
+                .ffmpeg_constant()
+                .starts_with("AV_DOVI_COMPRESSION_"));
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::DolbyVisionConf),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::DolbyVisionConf);
+            assert!(packet_dolby_vision_conf_payload_invalid(
+                &typed_payload
+            ));
         }
     }
     match typed_payload_side_data.skip_samples() {
@@ -5447,6 +5481,91 @@ fn exercise_fixtures() {
     )
     .unwrap();
     assert_eq!(non_packet_icc.icc_profile().unwrap(), None);
+    let packet_dovi_conf = PacketDolbyVisionConf::new(
+        1,
+        0,
+        8,
+        6,
+        true,
+        false,
+        true,
+        4,
+        PacketDoviCompression::Limited,
+    );
+    let packet_dovi_conf_bytes = [1, 0, 8, 6, 1, 0, 1, 4, 1];
+    assert_eq!(packet_dovi_conf.to_bytes(), packet_dovi_conf_bytes);
+    assert_eq!(
+        PacketDolbyVisionConf::parse(&packet_dovi_conf_bytes).unwrap(),
+        packet_dovi_conf
+    );
+    assert_eq!(PacketDoviCompression::Limited.raw(), 1);
+    assert_eq!(
+        PacketDoviCompression::Limited.ffmpeg_constant(),
+        "AV_DOVI_COMPRESSION_LIMITED"
+    );
+    let packet_dovi_conf_side_data =
+        SideData::new_dolby_vision_conf(packet_dovi_conf).unwrap();
+    assert_eq!(
+        packet_dovi_conf_side_data.kind_id(),
+        &PacketSideDataKind::DolbyVisionConf
+    );
+    assert_eq!(
+        packet_dovi_conf_side_data.data(),
+        packet_dovi_conf_bytes.as_slice()
+    );
+    assert_eq!(
+        packet_dovi_conf_side_data.dolby_vision_conf().unwrap(),
+        Some(packet_dovi_conf)
+    );
+    assert_eq!(
+        PacketDoviCompression::from_byte(4).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    for data in [
+        Vec::new(),
+        vec![0; PacketDolbyVisionConf::DATA_LEN - 1],
+        {
+            let mut data = packet_dovi_conf_bytes.to_vec();
+            data.push(0);
+            data
+        },
+        {
+            let mut data = packet_dovi_conf_bytes.to_vec();
+            data[PacketDolbyVisionConf::RPU_PRESENT_FLAG_OFFSET] = 2;
+            data
+        },
+        {
+            let mut data = packet_dovi_conf_bytes.to_vec();
+            data[PacketDolbyVisionConf::EL_PRESENT_FLAG_OFFSET] = 2;
+            data
+        },
+        {
+            let mut data = packet_dovi_conf_bytes.to_vec();
+            data[PacketDolbyVisionConf::BL_PRESENT_FLAG_OFFSET] = 2;
+            data
+        },
+        {
+            let mut data = packet_dovi_conf_bytes.to_vec();
+            data[PacketDolbyVisionConf::DV_MD_COMPRESSION_OFFSET] = 4;
+            data
+        },
+    ] {
+        assert!(packet_dolby_vision_conf_payload_invalid(&data));
+        assert_eq!(
+            SideData::new_with_kind(PacketSideDataKind::DolbyVisionConf, data)
+                .unwrap()
+                .dolby_vision_conf()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    let non_packet_dovi = SideData::new_with_kind(
+        PacketSideDataKind::ContentLightLevel,
+        packet_dovi_conf_bytes.to_vec(),
+    )
+    .unwrap();
+    assert_eq!(non_packet_dovi.dolby_vision_conf().unwrap(), None);
     let packet_skip_samples = PacketSkipSamples::new(
         1024,
         256,
@@ -15239,6 +15358,20 @@ fn packet_icc_profile_payload_invalid(data: &[u8]) -> bool {
     };
 
     tag_table_len > data.len()
+}
+
+fn packet_dolby_vision_conf_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != PacketDolbyVisionConf::DATA_LEN {
+        return true;
+    }
+
+    data[PacketDolbyVisionConf::RPU_PRESENT_FLAG_OFFSET] > 1
+        || data[PacketDolbyVisionConf::EL_PRESENT_FLAG_OFFSET] > 1
+        || data[PacketDolbyVisionConf::BL_PRESENT_FLAG_OFFSET] > 1
+        || PacketDoviCompression::from_byte(
+            data[PacketDolbyVisionConf::DV_MD_COMPRESSION_OFFSET],
+        )
+        .is_err()
 }
 
 fn read_be_u32(data: &[u8], offset: usize) -> u32 {

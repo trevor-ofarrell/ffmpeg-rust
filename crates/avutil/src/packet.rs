@@ -1463,6 +1463,186 @@ impl<'a> PacketIccProfile<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PacketDoviCompression {
+    None = 0,
+    Limited = 1,
+    Reserved = 2,
+    Extended = 3,
+}
+
+impl PacketDoviCompression {
+    pub fn from_byte(value: u8) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::Limited),
+            2 => Ok(Self::Reserved),
+            3 => Ok(Self::Extended),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid Dolby Vision compression value {value}"
+            ))),
+        }
+    }
+
+    pub const fn raw(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::None => "AV_DOVI_COMPRESSION_NONE",
+            Self::Limited => "AV_DOVI_COMPRESSION_LIMITED",
+            Self::Reserved => "AV_DOVI_COMPRESSION_RESERVED",
+            Self::Extended => "AV_DOVI_COMPRESSION_EXTENDED",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketDolbyVisionConf {
+    dv_version_major: u8,
+    dv_version_minor: u8,
+    dv_profile: u8,
+    dv_level: u8,
+    rpu_present_flag: bool,
+    el_present_flag: bool,
+    bl_present_flag: bool,
+    dv_bl_signal_compatibility_id: u8,
+    dv_md_compression: PacketDoviCompression,
+}
+
+impl PacketDolbyVisionConf {
+    pub const DATA_LEN: usize = 9;
+    pub const DV_VERSION_MAJOR_OFFSET: usize = 0;
+    pub const DV_VERSION_MINOR_OFFSET: usize = 1;
+    pub const DV_PROFILE_OFFSET: usize = 2;
+    pub const DV_LEVEL_OFFSET: usize = 3;
+    pub const RPU_PRESENT_FLAG_OFFSET: usize = 4;
+    pub const EL_PRESENT_FLAG_OFFSET: usize = 5;
+    pub const BL_PRESENT_FLAG_OFFSET: usize = 6;
+    pub const DV_BL_SIGNAL_COMPATIBILITY_ID_OFFSET: usize = 7;
+    pub const DV_MD_COMPRESSION_OFFSET: usize = 8;
+
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
+        dv_version_major: u8,
+        dv_version_minor: u8,
+        dv_profile: u8,
+        dv_level: u8,
+        rpu_present_flag: bool,
+        el_present_flag: bool,
+        bl_present_flag: bool,
+        dv_bl_signal_compatibility_id: u8,
+        dv_md_compression: PacketDoviCompression,
+    ) -> Self {
+        Self {
+            dv_version_major,
+            dv_version_minor,
+            dv_profile,
+            dv_level,
+            rpu_present_flag,
+            el_present_flag,
+            bl_present_flag,
+            dv_bl_signal_compatibility_id,
+            dv_md_compression,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "Dolby Vision configuration packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        Ok(Self {
+            dv_version_major: data[Self::DV_VERSION_MAJOR_OFFSET],
+            dv_version_minor: data[Self::DV_VERSION_MINOR_OFFSET],
+            dv_profile: data[Self::DV_PROFILE_OFFSET],
+            dv_level: data[Self::DV_LEVEL_OFFSET],
+            rpu_present_flag: read_dovi_flag(
+                data[Self::RPU_PRESENT_FLAG_OFFSET],
+                "rpu_present_flag",
+            )?,
+            el_present_flag: read_dovi_flag(data[Self::EL_PRESENT_FLAG_OFFSET], "el_present_flag")?,
+            bl_present_flag: read_dovi_flag(data[Self::BL_PRESENT_FLAG_OFFSET], "bl_present_flag")?,
+            dv_bl_signal_compatibility_id: data[Self::DV_BL_SIGNAL_COMPATIBILITY_ID_OFFSET],
+            dv_md_compression: PacketDoviCompression::from_byte(
+                data[Self::DV_MD_COMPRESSION_OFFSET],
+            )?,
+        })
+    }
+
+    pub const fn dv_version_major(self) -> u8 {
+        self.dv_version_major
+    }
+
+    pub const fn dv_version_minor(self) -> u8 {
+        self.dv_version_minor
+    }
+
+    pub const fn dv_profile(self) -> u8 {
+        self.dv_profile
+    }
+
+    pub const fn dv_level(self) -> u8 {
+        self.dv_level
+    }
+
+    pub const fn rpu_present_flag(self) -> bool {
+        self.rpu_present_flag
+    }
+
+    pub const fn rpu_present_flag_raw(self) -> u8 {
+        self.rpu_present_flag as u8
+    }
+
+    pub const fn el_present_flag(self) -> bool {
+        self.el_present_flag
+    }
+
+    pub const fn el_present_flag_raw(self) -> u8 {
+        self.el_present_flag as u8
+    }
+
+    pub const fn bl_present_flag(self) -> bool {
+        self.bl_present_flag
+    }
+
+    pub const fn bl_present_flag_raw(self) -> u8 {
+        self.bl_present_flag as u8
+    }
+
+    pub const fn dv_bl_signal_compatibility_id(self) -> u8 {
+        self.dv_bl_signal_compatibility_id
+    }
+
+    pub const fn dv_md_compression(self) -> PacketDoviCompression {
+        self.dv_md_compression
+    }
+
+    pub const fn dv_md_compression_raw(self) -> u8 {
+        self.dv_md_compression.raw()
+    }
+
+    pub const fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        [
+            self.dv_version_major,
+            self.dv_version_minor,
+            self.dv_profile,
+            self.dv_level,
+            self.rpu_present_flag_raw(),
+            self.el_present_flag_raw(),
+            self.bl_present_flag_raw(),
+            self.dv_bl_signal_compatibility_id,
+            self.dv_md_compression_raw(),
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketSkipSamples {
     start: u32,
     end: u32,
@@ -2554,6 +2734,13 @@ impl SideData {
         Ok(side_data)
     }
 
+    pub fn new_dolby_vision_conf(value: PacketDolbyVisionConf) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::DolbyVisionConf,
+            value.to_bytes().to_vec(),
+        )
+    }
+
     pub fn new_skip_samples(value: PacketSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -2774,6 +2961,14 @@ impl SideData {
         }
 
         PacketIccProfile::parse(self.data()).map(Some)
+    }
+
+    pub fn dolby_vision_conf(&self) -> AvResult<Option<PacketDolbyVisionConf>> {
+        if self.kind != PacketSideDataKind::DolbyVisionConf {
+            return Ok(None);
+        }
+
+        PacketDolbyVisionConf::parse(self.data()).map(Some)
     }
 
     pub fn skip_samples(&self) -> AvResult<Option<PacketSkipSamples>> {
@@ -3283,6 +3478,16 @@ fn read_fourcc(data: &[u8], offset: usize) -> [u8; 4] {
     let mut raw = [0; 4];
     raw.copy_from_slice(&data[offset..offset + 4]);
     raw
+}
+
+fn read_dovi_flag(value: u8, field: &str) -> AvResult<bool> {
+    match value {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(AvError::invalid_data(format!(
+            "Dolby Vision configuration {field} must be 0 or 1, got {value}"
+        ))),
+    }
 }
 
 fn validate_quality_stats_quality(
@@ -5098,6 +5303,153 @@ mod tests {
             SideData::new_with_kind(PacketSideDataKind::RtcpSenderReport, minimal_icc_profile())
                 .unwrap();
         assert_eq!(non_icc.icc_profile().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_parses_dolby_vision_conf_payload() {
+        let value = PacketDolbyVisionConf::new(
+            1,
+            0,
+            8,
+            6,
+            true,
+            false,
+            true,
+            4,
+            PacketDoviCompression::Limited,
+        );
+        let expected = [1, 0, 8, 6, 1, 0, 1, 4, 1];
+
+        assert_eq!(PacketDolbyVisionConf::DATA_LEN, 9);
+        assert_eq!(PacketDolbyVisionConf::DV_VERSION_MAJOR_OFFSET, 0);
+        assert_eq!(PacketDolbyVisionConf::DV_VERSION_MINOR_OFFSET, 1);
+        assert_eq!(PacketDolbyVisionConf::DV_PROFILE_OFFSET, 2);
+        assert_eq!(PacketDolbyVisionConf::DV_LEVEL_OFFSET, 3);
+        assert_eq!(PacketDolbyVisionConf::RPU_PRESENT_FLAG_OFFSET, 4);
+        assert_eq!(PacketDolbyVisionConf::EL_PRESENT_FLAG_OFFSET, 5);
+        assert_eq!(PacketDolbyVisionConf::BL_PRESENT_FLAG_OFFSET, 6);
+        assert_eq!(
+            PacketDolbyVisionConf::DV_BL_SIGNAL_COMPATIBILITY_ID_OFFSET,
+            7
+        );
+        assert_eq!(PacketDolbyVisionConf::DV_MD_COMPRESSION_OFFSET, 8);
+        assert_eq!(value.to_bytes(), expected);
+        assert_eq!(
+            PacketSideDataKind::DolbyVisionConf
+                .ffmpeg_constant()
+                .unwrap(),
+            "AV_PKT_DATA_DOVI_CONF"
+        );
+        assert_eq!(PacketDoviCompression::None.raw(), 0);
+        assert_eq!(
+            PacketDoviCompression::None.ffmpeg_constant(),
+            "AV_DOVI_COMPRESSION_NONE"
+        );
+        assert_eq!(PacketDoviCompression::Limited.raw(), 1);
+        assert_eq!(
+            PacketDoviCompression::Limited.ffmpeg_constant(),
+            "AV_DOVI_COMPRESSION_LIMITED"
+        );
+        assert_eq!(PacketDoviCompression::Reserved.raw(), 2);
+        assert_eq!(
+            PacketDoviCompression::Reserved.ffmpeg_constant(),
+            "AV_DOVI_COMPRESSION_RESERVED"
+        );
+        assert_eq!(PacketDoviCompression::Extended.raw(), 3);
+        assert_eq!(
+            PacketDoviCompression::Extended.ffmpeg_constant(),
+            "AV_DOVI_COMPRESSION_EXTENDED"
+        );
+        assert_eq!(
+            PacketDoviCompression::from_byte(1).unwrap(),
+            PacketDoviCompression::Limited
+        );
+
+        let parsed = PacketDolbyVisionConf::parse(&expected).unwrap();
+        assert_eq!(parsed, value);
+        assert_eq!(parsed.dv_version_major(), 1);
+        assert_eq!(parsed.dv_version_minor(), 0);
+        assert_eq!(parsed.dv_profile(), 8);
+        assert_eq!(parsed.dv_level(), 6);
+        assert!(parsed.rpu_present_flag());
+        assert_eq!(parsed.rpu_present_flag_raw(), 1);
+        assert!(!parsed.el_present_flag());
+        assert_eq!(parsed.el_present_flag_raw(), 0);
+        assert!(parsed.bl_present_flag());
+        assert_eq!(parsed.bl_present_flag_raw(), 1);
+        assert_eq!(parsed.dv_bl_signal_compatibility_id(), 4);
+        assert_eq!(parsed.dv_md_compression(), PacketDoviCompression::Limited);
+        assert_eq!(parsed.dv_md_compression_raw(), 1);
+
+        let side_data = SideData::new_dolby_vision_conf(value).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::DolbyVisionConf);
+        assert_eq!(side_data.data(), &expected[..]);
+        assert_eq!(side_data.dolby_vision_conf().unwrap(), Some(value));
+
+        let non_dovi =
+            SideData::new_with_kind(PacketSideDataKind::IccProfile, expected.to_vec()).unwrap();
+        assert_eq!(non_dovi.dolby_vision_conf().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_dolby_vision_conf_payload() {
+        let valid = PacketDolbyVisionConf::new(
+            1,
+            0,
+            8,
+            6,
+            true,
+            false,
+            true,
+            4,
+            PacketDoviCompression::Limited,
+        )
+        .to_bytes();
+
+        assert_eq!(
+            PacketDoviCompression::from_byte(4).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let mut invalid_payloads =
+            vec![Vec::new(), vec![0; PacketDolbyVisionConf::DATA_LEN - 1], {
+                let mut data = valid.to_vec();
+                data.push(0);
+                data
+            }];
+        for offset in [
+            PacketDolbyVisionConf::RPU_PRESENT_FLAG_OFFSET,
+            PacketDolbyVisionConf::EL_PRESENT_FLAG_OFFSET,
+            PacketDolbyVisionConf::BL_PRESENT_FLAG_OFFSET,
+        ] {
+            let mut data = valid.to_vec();
+            data[offset] = 2;
+            invalid_payloads.push(data);
+        }
+        for raw_compression in [4, 255] {
+            let mut data = valid.to_vec();
+            data[PacketDolbyVisionConf::DV_MD_COMPRESSION_OFFSET] = raw_compression;
+            invalid_payloads.push(data);
+        }
+
+        for data in invalid_payloads {
+            assert_eq!(
+                PacketDolbyVisionConf::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_with_kind(PacketSideDataKind::DolbyVisionConf, data)
+                    .unwrap()
+                    .dolby_vision_conf()
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let non_dovi =
+            SideData::new_with_kind(PacketSideDataKind::IccProfile, valid.to_vec()).unwrap();
+        assert_eq!(non_dovi.dolby_vision_conf().unwrap(), None);
     }
 
     #[test]
