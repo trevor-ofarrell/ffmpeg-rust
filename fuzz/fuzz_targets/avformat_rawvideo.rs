@@ -170,6 +170,14 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::RgbF32Be,
         Rational::ONE,
     );
+    let rgb96 = (0..12).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &rgb96,
+        1,
+        1,
+        RawVideoPixelFormat::Rgb96Le,
+        Rational::ONE,
+    );
     let rgbaf16 = (0..16).collect::<Vec<_>>();
     exercise_rawvideo(
         &rgbaf16,
@@ -184,6 +192,14 @@ fuzz_target!(|data: &[u8]| {
         1,
         1,
         RawVideoPixelFormat::RgbaF32Be,
+        Rational::ONE,
+    );
+    let rgba128 = (0..16).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &rgba128,
+        1,
+        1,
+        RawVideoPixelFormat::Rgba128Be,
         Rational::ONE,
     );
     let gbrap = (0..8).collect::<Vec<_>>();

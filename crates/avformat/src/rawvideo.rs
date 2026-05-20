@@ -406,6 +406,53 @@ mod tests {
     }
 
     #[test]
+    fn slices_rgb96_and_rgba128_frames_with_format_side_data() {
+        let input = (0_u8..24).collect::<Vec<_>>();
+        let mut demuxer = RawVideoDemuxer::open(
+            &input,
+            1,
+            1,
+            RawVideoPixelFormat::Rgb96Le,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(demuxer.info().frame_size(), 12);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        assert_eq!(first.side_data()[0].kind(), "rawvideo_pix_fmt");
+        assert_eq!(first.side_data()[0].data(), b"rgb96le");
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(
+            second.data(),
+            &[12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+        );
+        assert!(demuxer.read_packet().unwrap().is_none());
+
+        let input = (0_u8..32).collect::<Vec<_>>();
+        let mut demuxer = RawVideoDemuxer::open(
+            &input,
+            1,
+            1,
+            RawVideoPixelFormat::Rgba128Be,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(demuxer.info().frame_size(), 16);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(
+            first.data(),
+            &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        );
+        assert_eq!(first.side_data()[0].kind(), "rawvideo_pix_fmt");
+        assert_eq!(first.side_data()[0].data(), b"rgba128be");
+    }
+
+    #[test]
     fn slices_bayer_frames_with_format_side_data() {
         let input = (0_u8..12).collect::<Vec<_>>();
         let mut demuxer = RawVideoDemuxer::open(
@@ -1065,7 +1112,12 @@ mod tests {
                 6
             );
         }
-        for format in [RawVideoPixelFormat::RgbF32Le, RawVideoPixelFormat::RgbF32Be] {
+        for format in [
+            RawVideoPixelFormat::RgbF32Le,
+            RawVideoPixelFormat::RgbF32Be,
+            RawVideoPixelFormat::Rgb96Le,
+            RawVideoPixelFormat::Rgb96Be,
+        ] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 12], 1, 1, format, Rational::new(1, 1).unwrap(),)
                     .unwrap()
@@ -1089,6 +1141,8 @@ mod tests {
         for format in [
             RawVideoPixelFormat::RgbaF32Le,
             RawVideoPixelFormat::RgbaF32Be,
+            RawVideoPixelFormat::Rgba128Le,
+            RawVideoPixelFormat::Rgba128Be,
         ] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 16], 1, 1, format, Rational::new(1, 1).unwrap(),)
@@ -2155,6 +2209,8 @@ mod tests {
             (RawVideoPixelFormat::RgbF16Be, 1, 2, 12),
             (RawVideoPixelFormat::RgbF32Le, 3, 2, 72),
             (RawVideoPixelFormat::RgbF32Be, 1, 2, 24),
+            (RawVideoPixelFormat::Rgb96Le, 3, 2, 72),
+            (RawVideoPixelFormat::Rgb96Be, 1, 2, 24),
         ] {
             let muxer =
                 RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
@@ -2170,6 +2226,8 @@ mod tests {
             (RawVideoPixelFormat::RgbaF16Be, 1, 2, 16),
             (RawVideoPixelFormat::RgbaF32Le, 3, 2, 96),
             (RawVideoPixelFormat::RgbaF32Be, 1, 2, 32),
+            (RawVideoPixelFormat::Rgba128Le, 3, 2, 96),
+            (RawVideoPixelFormat::Rgba128Be, 1, 2, 32),
         ] {
             let muxer =
                 RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
