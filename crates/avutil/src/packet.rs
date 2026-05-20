@@ -955,6 +955,200 @@ impl PacketMasteringDisplayMetadata {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PacketSphericalProjection {
+    Equirectangular = 0,
+    Cubemap = 1,
+    EquirectangularTile = 2,
+    HalfEquirectangular = 3,
+    Rectilinear = 4,
+    Fisheye = 5,
+    ParametricImmersive = 6,
+}
+
+impl PacketSphericalProjection {
+    pub const KNOWN: [Self; 7] = [
+        Self::Equirectangular,
+        Self::Cubemap,
+        Self::EquirectangularTile,
+        Self::HalfEquirectangular,
+        Self::Rectilinear,
+        Self::Fisheye,
+        Self::ParametricImmersive,
+    ];
+
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Equirectangular),
+            1 => Ok(Self::Cubemap),
+            2 => Ok(Self::EquirectangularTile),
+            3 => Ok(Self::HalfEquirectangular),
+            4 => Ok(Self::Rectilinear),
+            5 => Ok(Self::Fisheye),
+            6 => Ok(Self::ParametricImmersive),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid packet spherical projection value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Equirectangular => "AV_SPHERICAL_EQUIRECTANGULAR",
+            Self::Cubemap => "AV_SPHERICAL_CUBEMAP",
+            Self::EquirectangularTile => "AV_SPHERICAL_EQUIRECTANGULAR_TILE",
+            Self::HalfEquirectangular => "AV_SPHERICAL_HALF_EQUIRECTANGULAR",
+            Self::Rectilinear => "AV_SPHERICAL_RECTILINEAR",
+            Self::Fisheye => "AV_SPHERICAL_FISHEYE",
+            Self::ParametricImmersive => "AV_SPHERICAL_PARAMETRIC_IMMERSIVE",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketSphericalMapping {
+    projection: PacketSphericalProjection,
+    yaw: i32,
+    pitch: i32,
+    roll: i32,
+    bounds: [u32; Self::BOUNDS],
+    padding: u32,
+}
+
+impl PacketSphericalMapping {
+    pub const BOUNDS: usize = 4;
+    pub const DATA_LEN: usize = 36;
+
+    pub const fn new(
+        projection: PacketSphericalProjection,
+        yaw: i32,
+        pitch: i32,
+        roll: i32,
+        bounds: [u32; Self::BOUNDS],
+        padding: u32,
+    ) -> Self {
+        Self {
+            projection,
+            yaw,
+            pitch,
+            roll,
+            bounds,
+            padding,
+        }
+    }
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "spherical mapping packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut offset = 0;
+        let projection = PacketSphericalProjection::from_raw(Self::read_i32(data, &mut offset))?;
+        let yaw = Self::read_i32(data, &mut offset);
+        let pitch = Self::read_i32(data, &mut offset);
+        let roll = Self::read_i32(data, &mut offset);
+        let mut bounds = [0; Self::BOUNDS];
+        for bound in &mut bounds {
+            *bound = Self::read_u32(data, &mut offset);
+        }
+        let padding = Self::read_u32(data, &mut offset);
+
+        Ok(Self {
+            projection,
+            yaw,
+            pitch,
+            roll,
+            bounds,
+            padding,
+        })
+    }
+
+    pub const fn projection(self) -> PacketSphericalProjection {
+        self.projection
+    }
+
+    pub const fn yaw(self) -> i32 {
+        self.yaw
+    }
+
+    pub const fn pitch(self) -> i32 {
+        self.pitch
+    }
+
+    pub const fn roll(self) -> i32 {
+        self.roll
+    }
+
+    pub const fn bounds(self) -> [u32; Self::BOUNDS] {
+        self.bounds
+    }
+
+    pub const fn bound_left(self) -> u32 {
+        self.bounds[0]
+    }
+
+    pub const fn bound_top(self) -> u32 {
+        self.bounds[1]
+    }
+
+    pub const fn bound_right(self) -> u32 {
+        self.bounds[2]
+    }
+
+    pub const fn bound_bottom(self) -> u32 {
+        self.bounds[3]
+    }
+
+    pub const fn padding(self) -> u32 {
+        self.padding
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let mut bytes = [0; Self::DATA_LEN];
+        let mut offset = 0;
+        Self::write_i32(&mut bytes, &mut offset, self.projection.as_raw());
+        Self::write_i32(&mut bytes, &mut offset, self.yaw);
+        Self::write_i32(&mut bytes, &mut offset, self.pitch);
+        Self::write_i32(&mut bytes, &mut offset, self.roll);
+        for bound in self.bounds {
+            Self::write_u32(&mut bytes, &mut offset, bound);
+        }
+        Self::write_u32(&mut bytes, &mut offset, self.padding);
+        bytes
+    }
+
+    fn read_i32(data: &[u8], offset: &mut usize) -> i32 {
+        let value = read_i32_ne(data, *offset);
+        *offset += 4;
+        value
+    }
+
+    fn read_u32(data: &[u8], offset: &mut usize) -> u32 {
+        let value = read_u32_ne(data, *offset);
+        *offset += 4;
+        value
+    }
+
+    fn write_i32(bytes: &mut [u8; Self::DATA_LEN], offset: &mut usize, value: i32) {
+        bytes[*offset..*offset + 4].copy_from_slice(&value.to_ne_bytes());
+        *offset += 4;
+    }
+
+    fn write_u32(bytes: &mut [u8; Self::DATA_LEN], offset: &mut usize, value: u32) {
+        bytes[*offset..*offset + 4].copy_from_slice(&value.to_ne_bytes());
+        *offset += 4;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketContentLightMetadata {
     max_content_light_level: u32,
     max_average_light_level: u32,
@@ -1852,6 +2046,10 @@ impl SideData {
         )
     }
 
+    pub fn new_spherical_mapping(value: PacketSphericalMapping) -> AvResult<Self> {
+        Self::new_with_kind(PacketSideDataKind::Spherical, value.to_bytes().to_vec())
+    }
+
     pub fn new_content_light_metadata(value: PacketContentLightMetadata) -> AvResult<Self> {
         Self::new_with_kind(
             PacketSideDataKind::ContentLightLevel,
@@ -2008,6 +2206,14 @@ impl SideData {
         }
 
         PacketMasteringDisplayMetadata::parse(self.data()).map(Some)
+    }
+
+    pub fn spherical_mapping(&self) -> AvResult<Option<PacketSphericalMapping>> {
+        if self.kind != PacketSideDataKind::Spherical {
+            return Ok(None);
+        }
+
+        PacketSphericalMapping::parse(self.data()).map(Some)
     }
 
     pub fn content_light_metadata(&self) -> AvResult<Option<PacketContentLightMetadata>> {
@@ -3384,6 +3590,164 @@ mod tests {
         let content_light =
             SideData::new_with_kind(PacketSideDataKind::ContentLightLevel, Vec::new()).unwrap();
         assert_eq!(content_light.mastering_display_metadata().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_parses_spherical_mapping_payload() {
+        let expected = PacketSphericalMapping::new(
+            PacketSphericalProjection::Cubemap,
+            90 << 16,
+            -15 << 16,
+            180 << 16,
+            [1, 2, 3, 4],
+            12,
+        );
+        let mut expected_bytes = [0; PacketSphericalMapping::DATA_LEN];
+        expected_bytes[0..4].copy_from_slice(&1i32.to_ne_bytes());
+        expected_bytes[4..8].copy_from_slice(&(90i32 << 16).to_ne_bytes());
+        expected_bytes[8..12].copy_from_slice(&(-15i32 << 16).to_ne_bytes());
+        expected_bytes[12..16].copy_from_slice(&(180i32 << 16).to_ne_bytes());
+        expected_bytes[16..20].copy_from_slice(&1u32.to_ne_bytes());
+        expected_bytes[20..24].copy_from_slice(&2u32.to_ne_bytes());
+        expected_bytes[24..28].copy_from_slice(&3u32.to_ne_bytes());
+        expected_bytes[28..32].copy_from_slice(&4u32.to_ne_bytes());
+        expected_bytes[32..36].copy_from_slice(&12u32.to_ne_bytes());
+
+        assert_eq!(PacketSphericalMapping::DATA_LEN, 36);
+        assert_eq!(PacketSphericalMapping::BOUNDS, 4);
+        assert_eq!(expected.projection(), PacketSphericalProjection::Cubemap);
+        assert_eq!(
+            expected.projection().ffmpeg_constant(),
+            "AV_SPHERICAL_CUBEMAP"
+        );
+        assert_eq!(expected.projection().as_raw(), 1);
+        assert_eq!(expected.yaw(), 90 << 16);
+        assert_eq!(expected.pitch(), -15 << 16);
+        assert_eq!(expected.roll(), 180 << 16);
+        assert_eq!(expected.bounds(), [1, 2, 3, 4]);
+        assert_eq!(expected.bound_left(), 1);
+        assert_eq!(expected.bound_top(), 2);
+        assert_eq!(expected.bound_right(), 3);
+        assert_eq!(expected.bound_bottom(), 4);
+        assert_eq!(expected.padding(), 12);
+        assert_eq!(expected.to_bytes(), expected_bytes);
+        assert_eq!(
+            PacketSphericalMapping::parse(&expected_bytes).unwrap(),
+            expected
+        );
+
+        let projections = [
+            (
+                PacketSphericalProjection::Equirectangular,
+                0,
+                "AV_SPHERICAL_EQUIRECTANGULAR",
+            ),
+            (
+                PacketSphericalProjection::Cubemap,
+                1,
+                "AV_SPHERICAL_CUBEMAP",
+            ),
+            (
+                PacketSphericalProjection::EquirectangularTile,
+                2,
+                "AV_SPHERICAL_EQUIRECTANGULAR_TILE",
+            ),
+            (
+                PacketSphericalProjection::HalfEquirectangular,
+                3,
+                "AV_SPHERICAL_HALF_EQUIRECTANGULAR",
+            ),
+            (
+                PacketSphericalProjection::Rectilinear,
+                4,
+                "AV_SPHERICAL_RECTILINEAR",
+            ),
+            (
+                PacketSphericalProjection::Fisheye,
+                5,
+                "AV_SPHERICAL_FISHEYE",
+            ),
+            (
+                PacketSphericalProjection::ParametricImmersive,
+                6,
+                "AV_SPHERICAL_PARAMETRIC_IMMERSIVE",
+            ),
+        ];
+        assert_eq!(
+            PacketSphericalProjection::KNOWN,
+            projections.map(|(projection, _, _)| projection)
+        );
+        for (projection, raw, ffmpeg_constant) in projections {
+            assert_eq!(
+                PacketSphericalProjection::from_raw(raw).unwrap(),
+                projection
+            );
+            assert_eq!(projection.as_raw(), raw);
+            assert_eq!(projection.ffmpeg_constant(), ffmpeg_constant);
+        }
+
+        let raw_bounds = PacketSphericalMapping::new(
+            PacketSphericalProjection::EquirectangularTile,
+            i32::MIN,
+            0,
+            i32::MAX,
+            [u32::MAX, 0, 0x8000_0000, 42],
+            u32::MAX,
+        );
+        assert_eq!(
+            PacketSphericalMapping::parse(&raw_bounds.to_bytes()).unwrap(),
+            raw_bounds
+        );
+
+        let side_data = SideData::new_spherical_mapping(expected).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::Spherical);
+        assert_eq!(side_data.data(), expected_bytes.as_slice());
+        assert_eq!(side_data.spherical_mapping().unwrap(), Some(expected));
+
+        let content_light = SideData::new_with_kind(
+            PacketSideDataKind::ContentLightLevel,
+            expected_bytes.to_vec(),
+        )
+        .unwrap();
+        assert_eq!(content_light.spherical_mapping().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_spherical_mapping_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; PacketSphericalMapping::DATA_LEN - 1],
+            vec![0; PacketSphericalMapping::DATA_LEN + 1],
+        ] {
+            assert_eq!(
+                PacketSphericalMapping::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data = SideData::new_with_kind(PacketSideDataKind::Spherical, data).unwrap();
+            assert_eq!(
+                side_data.spherical_mapping().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        for raw in [-1, 7, i32::MAX] {
+            assert_eq!(
+                PacketSphericalProjection::from_raw(raw).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let mut data = [0; PacketSphericalMapping::DATA_LEN];
+            data[0..4].copy_from_slice(&raw.to_ne_bytes());
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::Spherical, data.to_vec()).unwrap();
+            assert_eq!(
+                side_data.spherical_mapping().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let content_light =
+            SideData::new_with_kind(PacketSideDataKind::ContentLightLevel, vec![0; 36]).unwrap();
+        assert_eq!(content_light.spherical_mapping().unwrap(), None);
     }
 
     #[test]

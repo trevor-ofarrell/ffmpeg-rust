@@ -37,9 +37,10 @@ use avutil::{
     PacketJpDualMono, PacketJpDualMonoSelection, PacketMasteringDisplayMetadata,
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketParamChange, PacketPictureType,
     PacketProducerReferenceTime, PacketQualityStats, PacketRtcpSenderReport, PacketS12mTimecode,
-    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition,
-    PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping,
+    PacketSphericalProjection, PacketSubtitlePosition, PacketWebVttIdentifier,
+    PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3303,6 +3304,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         + 1)
     .max(PacketCpbProperties::DATA_LEN + 1)
     .max(PacketMasteringDisplayMetadata::DATA_LEN + 1)
+    .max(PacketSphericalMapping::DATA_LEN + 1)
     .max(PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN + 1);
     let typed_payload_len =
         usize::from(cursor.next().unwrap_or_default()) % typed_payload_max_len;
@@ -3444,6 +3446,33 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_mastering_display_metadata_payload_invalid(
                 &typed_payload
             ));
+        }
+    }
+    match typed_payload_side_data.spherical_mapping() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::Spherical);
+            assert_eq!(typed_payload.len(), PacketSphericalMapping::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(
+                PacketSphericalProjection::from_raw(value.projection().as_raw()).unwrap(),
+                value.projection()
+            );
+            assert_eq!(PacketSphericalMapping::parse(&value.to_bytes()).unwrap(), value);
+            assert_eq!(
+                value.bounds(),
+                [
+                    value.bound_left(),
+                    value.bound_top(),
+                    value.bound_right(),
+                    value.bound_bottom(),
+                ]
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::Spherical),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::Spherical);
+            assert!(packet_spherical_mapping_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.content_light_metadata() {
@@ -4583,6 +4612,105 @@ fn exercise_fixtures() {
             .unwrap(),
         None
     );
+    let packet_spherical = PacketSphericalMapping::new(
+        PacketSphericalProjection::EquirectangularTile,
+        45 << 16,
+        -10 << 16,
+        5 << 16,
+        [10, 20, 30, 40],
+        7,
+    );
+    let packet_spherical_side_data = SideData::new_spherical_mapping(packet_spherical).unwrap();
+    assert_eq!(
+        packet_spherical_side_data.kind_id(),
+        &PacketSideDataKind::Spherical
+    );
+    assert_eq!(
+        packet_spherical_side_data.spherical_mapping().unwrap(),
+        Some(packet_spherical)
+    );
+    assert_eq!(
+        packet_spherical_side_data.data(),
+        &packet_spherical.to_bytes()[..]
+    );
+    let packet_spherical_projections = [
+        (
+            PacketSphericalProjection::Equirectangular,
+            0,
+            "AV_SPHERICAL_EQUIRECTANGULAR",
+        ),
+        (
+            PacketSphericalProjection::Cubemap,
+            1,
+            "AV_SPHERICAL_CUBEMAP",
+        ),
+        (
+            PacketSphericalProjection::EquirectangularTile,
+            2,
+            "AV_SPHERICAL_EQUIRECTANGULAR_TILE",
+        ),
+        (
+            PacketSphericalProjection::HalfEquirectangular,
+            3,
+            "AV_SPHERICAL_HALF_EQUIRECTANGULAR",
+        ),
+        (
+            PacketSphericalProjection::Rectilinear,
+            4,
+            "AV_SPHERICAL_RECTILINEAR",
+        ),
+        (
+            PacketSphericalProjection::Fisheye,
+            5,
+            "AV_SPHERICAL_FISHEYE",
+        ),
+        (
+            PacketSphericalProjection::ParametricImmersive,
+            6,
+            "AV_SPHERICAL_PARAMETRIC_IMMERSIVE",
+        ),
+    ];
+    assert_eq!(
+        PacketSphericalProjection::KNOWN,
+        packet_spherical_projections.map(|(projection, _, _)| projection)
+    );
+    for (projection, raw, ffmpeg_constant) in packet_spherical_projections {
+        assert_eq!(
+            PacketSphericalProjection::from_raw(raw).unwrap(),
+            projection
+        );
+        assert_eq!(projection.as_raw(), raw);
+        assert_eq!(projection.ffmpeg_constant(), ffmpeg_constant);
+    }
+    assert_eq!(
+        PacketSphericalProjection::from_raw(6).unwrap(),
+        PacketSphericalProjection::ParametricImmersive
+    );
+    assert_eq!(
+        PacketSphericalProjection::ParametricImmersive.ffmpeg_constant(),
+        "AV_SPHERICAL_PARAMETRIC_IMMERSIVE"
+    );
+    assert_eq!(
+        PacketSphericalProjection::from_raw(7).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        PacketSphericalMapping::parse(&[0; PacketSphericalMapping::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let mut invalid_packet_spherical = [0; PacketSphericalMapping::DATA_LEN];
+    invalid_packet_spherical[0..4].copy_from_slice(&7i32.to_ne_bytes());
+    assert_eq!(
+        PacketSphericalMapping::parse(&invalid_packet_spherical)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_packet_spherical =
+        SideData::new_with_kind(PacketSideDataKind::ContentLightLevel, vec![0; 36]).unwrap();
+    assert_eq!(non_packet_spherical.spherical_mapping().unwrap(), None);
     let packet_s12m_timecode =
         PacketS12mTimecode::new(&[0x0102_0304, 0xA0B0_C0D0]).unwrap();
     let packet_s12m_timecode_bytes = packet_s12m_timecode.to_bytes();
@@ -10534,6 +10662,16 @@ fn packet_rtcp_sender_report_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_mastering_display_metadata_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketMasteringDisplayMetadata::DATA_LEN
+}
+
+fn packet_spherical_mapping_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != PacketSphericalMapping::DATA_LEN {
+        return true;
+    }
+
+    let mut raw_projection = [0; 4];
+    raw_projection.copy_from_slice(&data[..4]);
+    PacketSphericalProjection::from_raw(i32::from_ne_bytes(raw_projection)).is_err()
 }
 
 fn packet_content_light_metadata_payload_invalid(data: &[u8]) -> bool {
