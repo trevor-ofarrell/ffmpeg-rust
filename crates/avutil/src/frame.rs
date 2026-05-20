@@ -12495,7 +12495,11 @@ fn video_plane_shapes(
         | PixelFormat::ZeroRgb
         | PixelFormat::Rgb0
         | PixelFormat::ZeroBgr
-        | PixelFormat::Bgr0 => Ok(vec![VideoPlaneShape {
+        | PixelFormat::Bgr0
+        | PixelFormat::X2Rgb10Le
+        | PixelFormat::X2Rgb10Be
+        | PixelFormat::X2Bgr10Le
+        | PixelFormat::X2Bgr10Be => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 4, "32-bit packed video frame line size")?,
             rows: height,
         }]),
@@ -16773,6 +16777,9 @@ mod tests {
 
         let rgba = VideoFrame::new(3, 2, PixelFormat::Rgba, vec![vec![0; 24]]).unwrap();
         assert_eq!(rgba.line_sizes(), &[12]);
+
+        let x2rgb10 = VideoFrame::new(3, 2, PixelFormat::X2Rgb10Le, vec![vec![0; 24]]).unwrap();
+        assert_eq!(x2rgb10.line_sizes(), &[12]);
 
         let gray16 = VideoFrame::new(3, 2, PixelFormat::Gray16Le, vec![vec![0; 12]]).unwrap();
         assert_eq!(gray16.line_sizes(), &[6]);

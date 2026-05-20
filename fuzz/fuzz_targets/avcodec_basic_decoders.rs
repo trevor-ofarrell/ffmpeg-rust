@@ -471,9 +471,22 @@ fn exercise_fixtures() {
         (PixelFormat::Ayuv64Be, 8, 7),
         (PixelFormat::Xyz12Le, 6, 5),
         (PixelFormat::Xyz12Be, 6, 5),
+        (PixelFormat::X2Rgb10Le, 4, 3),
+        (PixelFormat::X2Rgb10Be, 4, 3),
+        (PixelFormat::X2Bgr10Le, 4, 3),
+        (PixelFormat::X2Bgr10Be, 4, 3),
     ] {
-        let (width, height) =
-            if matches!(format, PixelFormat::Ayuv64Le | PixelFormat::Ayuv64Be | PixelFormat::Xyz12Le | PixelFormat::Xyz12Be) {
+        let (width, height) = if matches!(
+            format,
+            PixelFormat::Ayuv64Le
+                | PixelFormat::Ayuv64Be
+                | PixelFormat::Xyz12Le
+                | PixelFormat::Xyz12Be
+                | PixelFormat::X2Rgb10Le
+                | PixelFormat::X2Rgb10Be
+                | PixelFormat::X2Bgr10Le
+                | PixelFormat::X2Bgr10Be
+        ) {
                 (1, 1)
             } else {
                 (2, 2)

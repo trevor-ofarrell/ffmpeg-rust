@@ -1442,6 +1442,61 @@ mod tests {
     }
 
     #[test]
+    fn decodes_x2rgb10_packets_to_single_plane_frames() {
+        for (pixel_format, expected_name, payload) in [
+            (
+                PixelFormat::X2Rgb10Le,
+                "x2rgb10le",
+                (0..16).collect::<Vec<_>>(),
+            ),
+            (
+                PixelFormat::X2Rgb10Be,
+                "x2rgb10be",
+                (16..32).collect::<Vec<_>>(),
+            ),
+            (
+                PixelFormat::X2Bgr10Le,
+                "x2bgr10le",
+                (32..48).collect::<Vec<_>>(),
+            ),
+            (
+                PixelFormat::X2Bgr10Be,
+                "x2bgr10be",
+                (48..64).collect::<Vec<_>>(),
+            ),
+        ] {
+            let decoder = RawVideoDecoder::new(2, 2, pixel_format).unwrap();
+            let mut packet = Packet::new(payload.clone(), 0);
+            packet.set_pts(Some(23));
+
+            let frame = decoder.decode_packet(&packet).unwrap();
+
+            assert_eq!(decoder.frame_size(), 16);
+            assert_eq!(frame.pts(), Some(23));
+            match frame.data() {
+                FrameData::Video(video) => {
+                    assert_eq!(video.width(), 2);
+                    assert_eq!(video.height(), 2);
+                    assert_eq!(video.pixel_format(), pixel_format);
+                    assert_eq!(video.pixel_format_name(), expected_name);
+                    assert_eq!(video.line_sizes(), &[8]);
+                    assert_eq!(video.planes(), &[payload]);
+                }
+                FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+            }
+        }
+
+        let decoder = RawVideoDecoder::new(1, 1, PixelFormat::X2Rgb10Le).unwrap();
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; 3], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn packed_rgb_and_rgba_use_single_payload_plane() {
         let rgb = RawVideoDecoder::new(1, 2, PixelFormat::Rgb24).unwrap();
         let bgr = RawVideoDecoder::new(1, 2, PixelFormat::Bgr24).unwrap();

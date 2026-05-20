@@ -789,6 +789,33 @@ fn exercise_fixtures() {
         assert!(raw_xyz12_demuxer.read_packet().unwrap().is_none());
     }
 
+    for (format, payload) in [
+        (PixelFormat::X2Rgb10Le, (76..80).collect::<Vec<_>>()),
+        (PixelFormat::X2Rgb10Be, (80..84).collect::<Vec<_>>()),
+        (PixelFormat::X2Bgr10Le, (84..88).collect::<Vec<_>>()),
+        (PixelFormat::X2Bgr10Be, (88..92).collect::<Vec<_>>()),
+    ] {
+        let mut raw_x2rgb10 =
+            RawVideoMuxer::new(1, 1, format, Rational::new(24, 1).unwrap()).unwrap();
+        raw_x2rgb10
+            .write_packet(&Packet::new(payload.clone(), 0))
+            .unwrap();
+        let raw_x2rgb10_output = raw_x2rgb10.finish();
+        let mut raw_x2rgb10_demuxer = RawVideoDemuxer::open(
+            &raw_x2rgb10_output,
+            1,
+            1,
+            format,
+            Rational::new(24, 1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            raw_x2rgb10_demuxer.read_packet().unwrap().unwrap().data(),
+            payload.as_slice()
+        );
+        assert!(raw_x2rgb10_demuxer.read_packet().unwrap().is_none());
+    }
+
     let mut raw_nv12 =
         RawVideoMuxer::new(4, 2, PixelFormat::Nv12, Rational::new(24, 1).unwrap()).unwrap();
     raw_nv12

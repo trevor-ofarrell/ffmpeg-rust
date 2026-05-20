@@ -5705,6 +5705,10 @@ fn exercise_fixtures() {
         ("rgb444be", PixelFormat::Rgb444Be, 4, 16, Some(2), 8),
         ("bgr444le", PixelFormat::Bgr444Le, 4, 16, Some(2), 8),
         ("bgr444be", PixelFormat::Bgr444Be, 4, 16, Some(2), 8),
+        ("x2rgb10le", PixelFormat::X2Rgb10Le, 10, 30, Some(4), 16),
+        ("x2rgb10be", PixelFormat::X2Rgb10Be, 10, 30, Some(4), 16),
+        ("x2bgr10le", PixelFormat::X2Bgr10Le, 10, 30, Some(4), 16),
+        ("x2bgr10be", PixelFormat::X2Bgr10Be, 10, 30, Some(4), 16),
     ] {
         let descriptor = format.descriptor();
         assert_eq!(PixelFormat::from_name(name), Some(format));
@@ -6240,6 +6244,19 @@ fn exercise_fixtures() {
     assert_eq!(PixelFormat::Xyz12Le.log2_chroma(), (0, 0));
     assert_eq!(PixelFormat::Xyz12Le.plane_sizes(2, 2).unwrap(), vec![24]);
     assert_eq!(PixelFormat::Xyz12Be.frame_size(1, 2).unwrap(), 12);
+    assert_eq!(
+        PixelFormat::from_name("x2rgb10le"),
+        Some(PixelFormat::X2Rgb10Le)
+    );
+    assert_eq!(PixelFormat::X2Rgb10Le.class(), PixelFormatClass::Rgb);
+    assert!(PixelFormat::X2Rgb10Le.is_rgb());
+    assert_eq!(PixelFormat::X2Rgb10Le.component_count(), 3);
+    assert_eq!(PixelFormat::X2Rgb10Le.bits_per_component(), 10);
+    assert_eq!(PixelFormat::X2Rgb10Le.bits_per_pixel(), bpp(30));
+    assert_eq!(PixelFormat::X2Rgb10Le.packed_bytes_per_pixel(), Some(4));
+    assert_eq!(PixelFormat::X2Rgb10Le.log2_chroma(), (0, 0));
+    assert_eq!(PixelFormat::X2Rgb10Le.plane_sizes(2, 2).unwrap(), vec![16]);
+    assert_eq!(PixelFormat::X2Bgr10Be.frame_size(3, 2).unwrap(), 24);
     assert_eq!(SampleFormat::U8.plane_sizes(2, 2).unwrap(), vec![4]);
     assert_eq!(SampleFormat::S16.plane_sizes(2, 2).unwrap(), vec![8]);
     assert_eq!(SampleFormat::S32.plane_sizes(2, 2).unwrap(), vec![16]);
@@ -17984,7 +18001,11 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::ZeroRgb
         | PixelFormat::Rgb0
         | PixelFormat::ZeroBgr
-        | PixelFormat::Bgr0 => {
+        | PixelFormat::Bgr0
+        | PixelFormat::X2Rgb10Le
+        | PixelFormat::X2Rgb10Be
+        | PixelFormat::X2Bgr10Le
+        | PixelFormat::X2Bgr10Be => {
             vec![width * 4]
         }
         PixelFormat::Gbrp => vec![width, width, width],
@@ -18206,7 +18227,11 @@ fn expected_video_plane_shapes(
         | PixelFormat::ZeroRgb
         | PixelFormat::Rgb0
         | PixelFormat::ZeroBgr
-        | PixelFormat::Bgr0 => {
+        | PixelFormat::Bgr0
+        | PixelFormat::X2Rgb10Le
+        | PixelFormat::X2Rgb10Be
+        | PixelFormat::X2Bgr10Le
+        | PixelFormat::X2Bgr10Be => {
             vec![(width * 4, height)]
         }
         PixelFormat::Gbrp => vec![(width, height), (width, height), (width, height)],

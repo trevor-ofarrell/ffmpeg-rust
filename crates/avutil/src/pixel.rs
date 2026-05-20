@@ -64,6 +64,10 @@ pub enum PixelFormat {
     Rgb0,
     ZeroBgr,
     Bgr0,
+    X2Rgb10Le,
+    X2Rgb10Be,
+    X2Bgr10Le,
+    X2Bgr10Be,
     Gbrp,
     Gbrp9Le,
     Gbrp9Be,
@@ -297,6 +301,10 @@ impl PixelFormat {
         Self::Rgb0,
         Self::ZeroBgr,
         Self::Bgr0,
+        Self::X2Rgb10Le,
+        Self::X2Rgb10Be,
+        Self::X2Bgr10Le,
+        Self::X2Bgr10Be,
         Self::Gbrp,
         Self::Gbrp9Le,
         Self::Gbrp9Be,
@@ -498,6 +506,10 @@ impl PixelFormat {
             "rgb0" => Some(Self::Rgb0),
             "0bgr" => Some(Self::ZeroBgr),
             "bgr0" => Some(Self::Bgr0),
+            "x2rgb10le" => Some(Self::X2Rgb10Le),
+            "x2rgb10be" => Some(Self::X2Rgb10Be),
+            "x2bgr10le" => Some(Self::X2Bgr10Le),
+            "x2bgr10be" => Some(Self::X2Bgr10Be),
             "gbrp" => Some(Self::Gbrp),
             "gbrp9le" => Some(Self::Gbrp9Le),
             "gbrp9be" => Some(Self::Gbrp9Be),
@@ -1350,6 +1362,54 @@ impl PixelFormat {
                 PixelFormatClass::Rgb,
                 3,
                 32,
+                1,
+                false,
+                false,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::X2Rgb10Le => (
+                "x2rgb10le",
+                PixelFormatClass::Rgb,
+                3,
+                30,
+                1,
+                false,
+                false,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::X2Rgb10Be => (
+                "x2rgb10be",
+                PixelFormatClass::Rgb,
+                3,
+                30,
+                1,
+                false,
+                false,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::X2Bgr10Le => (
+                "x2bgr10le",
+                PixelFormatClass::Rgb,
+                3,
+                30,
+                1,
+                false,
+                false,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::X2Bgr10Be => (
+                "x2bgr10be",
+                PixelFormatClass::Rgb,
+                3,
+                30,
                 1,
                 false,
                 false,
@@ -3066,6 +3126,10 @@ impl PixelFormat {
                 self,
                 Self::Gray10Le
                     | Self::Gray10Be
+                    | Self::X2Rgb10Le
+                    | Self::X2Rgb10Be
+                    | Self::X2Bgr10Le
+                    | Self::X2Bgr10Be
                     | Self::Gbrp10Le
                     | Self::Gbrp10Be
                     | Self::Gbrap10Le
@@ -3362,7 +3426,11 @@ impl PixelFormat {
             | Self::ZeroRgb
             | Self::Rgb0
             | Self::ZeroBgr
-            | Self::Bgr0 => Ok(vec![checked_mul(
+            | Self::Bgr0
+            | Self::X2Rgb10Le
+            | Self::X2Rgb10Be
+            | Self::X2Bgr10Le
+            | Self::X2Bgr10Be => Ok(vec![checked_mul(
                 pixels,
                 4,
                 "32-bit packed pixel format frame size",
@@ -3961,6 +4029,20 @@ mod tests {
         assert_eq!(PixelFormat::from_name("rgb0"), Some(PixelFormat::Rgb0));
         assert_eq!(PixelFormat::from_name("0bgr"), Some(PixelFormat::ZeroBgr));
         assert_eq!(PixelFormat::from_name("bgr0"), Some(PixelFormat::Bgr0));
+        for (name, format) in [
+            ("x2rgb10le", PixelFormat::X2Rgb10Le),
+            ("x2rgb10be", PixelFormat::X2Rgb10Be),
+            ("x2bgr10le", PixelFormat::X2Bgr10Le),
+            ("x2bgr10be", PixelFormat::X2Bgr10Be),
+        ] {
+            assert_eq!(format.name(), name);
+            assert_eq!(PixelFormat::from_name(name), Some(format));
+            assert_eq!(format.plane_count(), 1);
+            assert!(format.is_rgb());
+            assert!(format.is_packed());
+            assert!(!format.has_alpha());
+            assert_eq!(format.packed_bytes_per_pixel(), Some(4));
+        }
         assert_eq!(PixelFormat::from_name("gbrp"), Some(PixelFormat::Gbrp));
         assert_eq!(
             PixelFormat::from_name("gbrp9le"),
@@ -4225,7 +4307,7 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 193);
+        assert_eq!(PixelFormat::ALL.len(), 197);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
@@ -5106,6 +5188,26 @@ mod tests {
         assert_eq!(PixelFormat::Xyz12Le.bits_per_pixel(), bpp(36));
         assert_eq!(PixelFormat::Xyz12Le.packed_bytes_per_pixel(), Some(6));
         assert!(PixelFormat::Xyz12Le.is_xyz());
+        for (format, name) in [
+            (PixelFormat::X2Rgb10Le, "x2rgb10le"),
+            (PixelFormat::X2Rgb10Be, "x2rgb10be"),
+            (PixelFormat::X2Bgr10Le, "x2bgr10le"),
+            (PixelFormat::X2Bgr10Be, "x2bgr10be"),
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.name, name);
+            assert_eq!(descriptor.class, PixelFormatClass::Rgb);
+            assert_eq!(descriptor.component_count, 3);
+            assert_eq!(descriptor.bits_per_component, 10);
+            assert_eq!(descriptor.bits_per_pixel, bpp(30));
+            assert_eq!(descriptor.plane_count, 1);
+            assert!(!descriptor.is_planar);
+            assert!(!descriptor.has_alpha);
+            assert!(!descriptor.is_float);
+            assert_eq!(descriptor.packed_bytes_per_pixel, Some(4));
+            assert_eq!(format.log2_chroma(), (0, 0));
+            assert!(!format.has_chroma_subsampling());
+        }
         assert_eq!(PixelFormat::Rgba.component_count(), 4);
         assert_eq!(PixelFormat::Rgba.bits_per_pixel(), bpp(32));
         assert_eq!(PixelFormat::ZeroRgb.component_count(), 3);
@@ -5452,6 +5554,8 @@ mod tests {
         assert_eq!(PixelFormat::Rgb0.frame_size(2, 2).unwrap(), 16);
         assert_eq!(PixelFormat::ZeroBgr.frame_size(2, 2).unwrap(), 16);
         assert_eq!(PixelFormat::Bgr0.frame_size(2, 2).unwrap(), 16);
+        assert_eq!(PixelFormat::X2Rgb10Le.plane_sizes(3, 2).unwrap(), vec![24]);
+        assert_eq!(PixelFormat::X2Bgr10Be.frame_size(3, 2).unwrap(), 24);
         assert_eq!(PixelFormat::Yuyv422.plane_sizes(2, 2).unwrap(), vec![8]);
         assert_eq!(PixelFormat::Uyvy422.frame_size(2, 2).unwrap(), 8);
         assert_eq!(PixelFormat::Yvyu422.frame_size(4, 1).unwrap(), 8);
@@ -5953,6 +6057,12 @@ mod tests {
 
         assert_eq!(planes, vec![vec![0, 1, 2, 3, 4, 5]]);
 
+        let planes = PixelFormat::X2Rgb10Le
+            .split_planes(&(52..60).collect::<Vec<_>>(), 2, 1)
+            .unwrap();
+
+        assert_eq!(planes, vec![(52..60).collect::<Vec<_>>()]);
+
         let planes = PixelFormat::Rgb565Le
             .split_planes(&[0, 1, 2, 3], 2, 1)
             .unwrap();
@@ -6339,6 +6449,13 @@ mod tests {
         assert_eq!(
             PixelFormat::Xyz12Le
                 .split_planes(&[0; 5], 1, 1)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PixelFormat::X2Bgr10Le
+                .split_planes(&[0; 3], 1, 1)
                 .unwrap_err()
                 .kind(),
             AvErrorKind::InvalidData
