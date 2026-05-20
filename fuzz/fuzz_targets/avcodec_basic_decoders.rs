@@ -157,6 +157,16 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    let yuv440 = RawVideoDecoder::new(3, 2, PixelFormat::Yuv440p).unwrap();
+    assert!(yuv440.decode_packet(&Packet::new(vec![0; 12], 0)).is_ok());
+    assert_eq!(
+        yuv440
+            .decode_packet(&Packet::new(vec![0; 11], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let yuv444 = RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p).unwrap();
     assert!(yuv444.decode_packet(&Packet::new(vec![0; 18], 0)).is_ok());
     assert_eq!(

@@ -264,6 +264,26 @@ fn exercise_fixtures() {
     );
     assert!(raw_yuv410_demuxer.read_packet().unwrap().is_none());
 
+    let mut raw_yuv440 =
+        RawVideoMuxer::new(3, 2, PixelFormat::Yuv440p, Rational::new(25, 1).unwrap()).unwrap();
+    raw_yuv440
+        .write_packet(&Packet::new((0..12).collect(), 0))
+        .unwrap();
+    let raw_yuv440_output = raw_yuv440.finish();
+    let mut raw_yuv440_demuxer = RawVideoDemuxer::open(
+        &raw_yuv440_output,
+        3,
+        2,
+        PixelFormat::Yuv440p,
+        Rational::new(25, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_yuv440_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..12).collect::<Vec<_>>()
+    );
+    assert!(raw_yuv440_demuxer.read_packet().unwrap().is_none());
+
     let mut y4m = Yuv4MpegMuxer::new(2, 2, Rational::new(25, 1).unwrap(), None).unwrap();
     y4m.write_packet(&Packet::new(vec![0, 1, 2, 3, 4, 5], 0))
         .unwrap();

@@ -12395,6 +12395,7 @@ fn video_plane_shapes(
         | PixelFormat::Yuv422p
         | PixelFormat::Yuv410p
         | PixelFormat::Yuv411p
+        | PixelFormat::Yuv440p
         | PixelFormat::Yuv444p => {
             let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
             Ok(vec![
@@ -16265,6 +16266,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(yuv410.line_sizes(), &[4, 1, 1]);
+
+        let yuv440 = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::Yuv440p,
+            vec![vec![0; 6], vec![1; 3], vec![2; 3]],
+        )
+        .unwrap();
+        assert_eq!(yuv440.line_sizes(), &[3, 3, 3]);
 
         let yuv444 = VideoFrame::new(
             3,

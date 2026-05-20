@@ -345,6 +345,19 @@ mod tests {
         );
         assert_eq!(
             RawVideoDemuxer::open(
+                &[0; 12],
+                3,
+                2,
+                RawVideoPixelFormat::Yuv440p,
+                Rational::new(1, 1).unwrap(),
+            )
+            .unwrap()
+            .info()
+            .frame_size(),
+            12
+        );
+        assert_eq!(
+            RawVideoDemuxer::open(
                 &[0; 18],
                 3,
                 2,
@@ -436,6 +449,22 @@ mod tests {
             4,
             4,
             RawVideoPixelFormat::Yuv410p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoDemuxer::open(
+            &[0; 18],
+            3,
+            3,
+            RawVideoPixelFormat::Yuv440p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 12],
+            3,
+            2,
+            RawVideoPixelFormat::Yuv440p,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());
@@ -564,6 +593,19 @@ mod tests {
     }
 
     #[test]
+    fn muxer_computes_yuv440p_frame_size() {
+        let muxer = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv440p,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(muxer.info().frame_size(), 12);
+    }
+
+    #[test]
     fn muxer_computes_yuv444p_frame_size() {
         let muxer = RawVideoMuxer::new(
             3,
@@ -631,6 +673,20 @@ mod tests {
             4,
             4,
             RawVideoPixelFormat::Yuv410p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            3,
+            RawVideoPixelFormat::Yuv440p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv440p,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());
