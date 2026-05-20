@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -161,13 +162,23 @@ pub const AV_LOG_FORCE_NOCOLOR_ENV: &str = "AV_LOG_FORCE_NOCOLOR";
 
 impl LogColorMode {
     pub fn from_ffmpeg_env() -> Self {
-        Self::from_ffmpeg_env_vars(|name| std::env::var_os(name).is_some())
+        Self::from_ffmpeg_env_vars_and_stderr(
+            |name| std::env::var_os(name).is_some(),
+            std::io::stderr().is_terminal(),
+        )
     }
 
-    pub fn from_ffmpeg_env_vars(mut is_set: impl FnMut(&str) -> bool) -> Self {
+    pub fn from_ffmpeg_env_vars(is_set: impl FnMut(&str) -> bool) -> Self {
+        Self::from_ffmpeg_env_vars_and_stderr(is_set, false)
+    }
+
+    pub fn from_ffmpeg_env_vars_and_stderr(
+        mut is_set: impl FnMut(&str) -> bool,
+        stderr_is_terminal: bool,
+    ) -> Self {
         if is_set(AV_LOG_FORCE_NOCOLOR_ENV) {
             Self::Never
-        } else if is_set(AV_LOG_FORCE_COLOR_ENV) {
+        } else if is_set(AV_LOG_FORCE_COLOR_ENV) || stderr_is_terminal {
             Self::Always
         } else {
             Self::Never
@@ -208,6 +219,17 @@ impl LogFormatOptions {
 
     pub fn with_ffmpeg_env_color_vars(self, is_set: impl FnMut(&str) -> bool) -> Self {
         self.with_color_mode(LogColorMode::from_ffmpeg_env_vars(is_set))
+    }
+
+    pub fn with_ffmpeg_env_color_vars_and_stderr(
+        self,
+        is_set: impl FnMut(&str) -> bool,
+        stderr_is_terminal: bool,
+    ) -> Self {
+        self.with_color_mode(LogColorMode::from_ffmpeg_env_vars_and_stderr(
+            is_set,
+            stderr_is_terminal,
+        ))
     }
 
     pub const fn flags(self) -> LogFlags {
@@ -1020,12 +1042,36 @@ mod tests {
     }
 
     #[test]
+    fn color_mode_enables_color_for_terminal_stderr() {
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars_and_stderr(|_| false, true),
+            LogColorMode::Always
+        );
+        assert_eq!(
+            LogColorMode::from_ffmpeg_env_vars_and_stderr(|_| false, false),
+            LogColorMode::Never
+        );
+
+        let options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
+            .with_ffmpeg_env_color_vars_and_stderr(|_| false, true);
+        assert_eq!(options.color_mode(), LogColorMode::Always);
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+                .format_line_with_options(options),
+            "\x1b[33m[warning] decoder: damaged packet\x1b[0m"
+        );
+    }
+
+    #[test]
     fn color_mode_force_nocolor_env_wins_over_force_color() {
         let mut checked = Vec::new();
-        let mode = LogColorMode::from_ffmpeg_env_vars(|name| {
-            checked.push(name.to_owned());
-            name == AV_LOG_FORCE_NOCOLOR_ENV || name == AV_LOG_FORCE_COLOR_ENV
-        });
+        let mode = LogColorMode::from_ffmpeg_env_vars_and_stderr(
+            |name| {
+                checked.push(name.to_owned());
+                name == AV_LOG_FORCE_NOCOLOR_ENV || name == AV_LOG_FORCE_COLOR_ENV
+            },
+            true,
+        );
 
         assert_eq!(mode, LogColorMode::Never);
         assert_eq!(checked, [AV_LOG_FORCE_NOCOLOR_ENV.to_owned()]);

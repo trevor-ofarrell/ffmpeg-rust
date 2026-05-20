@@ -933,12 +933,34 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         }),
         LogColorMode::Never
     );
+    assert_eq!(
+        LogColorMode::from_ffmpeg_env_vars_and_stderr(|_| false, true),
+        LogColorMode::Always
+    );
+    assert_eq!(
+        LogColorMode::from_ffmpeg_env_vars_and_stderr(
+            |name| name == AV_LOG_FORCE_NOCOLOR_ENV,
+            true,
+        ),
+        LogColorMode::Never
+    );
     let env_color_options = LogFormatOptions::new(LogFlags::PRINT_LEVEL)
         .with_ffmpeg_env_color_vars(|name| name == AV_LOG_FORCE_COLOR_ENV);
     assert_eq!(env_color_options.color_mode(), LogColorMode::Always);
     assert_eq!(
         timestamped.format_line_with_options(env_color_options),
         "\x1b[31m[error] demuxer: bad header\x1b[0m"
+    );
+    let terminal_color_options =
+        LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_ffmpeg_env_color_vars_and_stderr(
+            |_| false,
+            true,
+        );
+    assert_eq!(terminal_color_options.color_mode(), LogColorMode::Always);
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+            .format_line_with_options(terminal_color_options),
+        "\x1b[33m[warning] decoder: damaged packet\x1b[0m"
     );
     let mut color_flags = LogFlags::PRINT_LEVEL;
     color_flags.insert(LogFlags::SKIP_REPEATED);
