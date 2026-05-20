@@ -81,7 +81,7 @@ pub use packet::{
     PacketIamfParamDefinitionType, PacketIamfReconGainInfoParam, PacketIamfReconGainSubblock,
     PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection, PacketLcevc,
     PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
-    PacketNewExtradata, PacketPalette, PacketParamChange, PacketPictureType,
+    PacketNewExtradata, PacketOpaque, PacketPalette, PacketParamChange, PacketPictureType,
     PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport,
     PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason,
     PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,

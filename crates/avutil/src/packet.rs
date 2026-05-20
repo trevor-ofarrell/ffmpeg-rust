@@ -5,6 +5,7 @@ use crate::frame::{
     FrameStereo3dView, FrameThreeDReferenceDisplay, FrameThreeDReferenceDisplays,
 };
 use crate::{rescale_q, AvError, AvResult, BufferRef, Rational};
+use std::num::NonZeroUsize;
 
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
 pub const AV_PACKET_POS_UNKNOWN: i64 = -1;
@@ -4567,6 +4568,39 @@ impl SideData {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PacketOpaque {
+    address: NonZeroUsize,
+}
+
+impl PacketOpaque {
+    pub fn new(address: usize) -> AvResult<Self> {
+        let Some(address) = NonZeroUsize::new(address) else {
+            return Err(AvError::invalid_argument(
+                "packet opaque pointer address must not be zero",
+            ));
+        };
+
+        Ok(Self { address })
+    }
+
+    pub const fn from_nonzero(address: NonZeroUsize) -> Self {
+        Self { address }
+    }
+
+    pub fn from_address(address: usize) -> Option<Self> {
+        NonZeroUsize::new(address).map(Self::from_nonzero)
+    }
+
+    pub const fn address(self) -> usize {
+        self.address.get()
+    }
+
+    pub const fn nonzero_address(self) -> NonZeroUsize {
+        self.address
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Packet {
     data: BufferRef,
@@ -4577,6 +4611,7 @@ pub struct Packet {
     stream_index: usize,
     flags: PacketFlags,
     side_data: Vec<SideData>,
+    opaque: Option<PacketOpaque>,
     opaque_ref: Option<BufferRef>,
     time_base: Rational,
 }
@@ -4596,6 +4631,7 @@ impl Packet {
             stream_index,
             flags: PacketFlags::empty(),
             side_data: Vec::new(),
+            opaque: None,
             opaque_ref: None,
             time_base: Rational::ZERO,
         }
@@ -4655,6 +4691,14 @@ impl Packet {
 
     pub fn side_data(&self) -> &[SideData] {
         &self.side_data
+    }
+
+    pub fn opaque(&self) -> Option<PacketOpaque> {
+        self.opaque
+    }
+
+    pub fn opaque_address(&self) -> Option<usize> {
+        self.opaque.map(PacketOpaque::address)
     }
 
     pub fn opaque_ref(&self) -> Option<&BufferRef> {
@@ -4772,6 +4816,22 @@ impl Packet {
         self.side_data.clear();
     }
 
+    pub fn set_opaque(&mut self, opaque: Option<PacketOpaque>) {
+        self.opaque = opaque;
+    }
+
+    pub fn set_opaque_address(&mut self, address: usize) {
+        self.opaque = PacketOpaque::from_address(address);
+    }
+
+    pub fn take_opaque(&mut self) -> Option<PacketOpaque> {
+        self.opaque.take()
+    }
+
+    pub fn clear_opaque(&mut self) {
+        self.opaque = None;
+    }
+
     pub fn set_opaque_ref(&mut self, opaque_ref: Option<BufferRef>) {
         self.opaque_ref = opaque_ref;
     }
@@ -4804,6 +4864,7 @@ impl Packet {
         self.stream_index = src.stream_index;
         self.flags = src.flags;
         self.side_data = src.side_data.clone();
+        self.opaque = src.opaque;
         self.opaque_ref = src.opaque_ref.clone();
         self.time_base = src.time_base;
     }
@@ -5344,6 +5405,8 @@ mod tests {
         assert_eq!(packet.pos(), None);
         assert_eq!(packet.len(), 3);
         assert!(!packet.is_empty());
+        assert!(packet.opaque().is_none());
+        assert_eq!(packet.opaque_address(), None);
         assert!(packet.opaque_ref().is_none());
         assert_eq!(packet.time_base(), Rational::ZERO);
     }
@@ -9176,6 +9239,7 @@ mod tests {
             .unwrap();
         src.set_key(true);
         src.push_side_data(SideData::new("palette", vec![5, 6]).unwrap());
+        src.set_opaque_address(0xfeed_cafe);
         src.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
 
         let mut dst = Packet::new(vec![9], 99);
@@ -9192,6 +9256,7 @@ mod tests {
         assert_eq!(dst.time_base(), Rational::new(1, 90_000).unwrap());
         assert!(dst.flags().contains(PacketFlags::KEY));
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+        assert_eq!(dst.opaque_address(), Some(0xfeed_cafe));
         assert_eq!(dst.opaque_ref().unwrap().as_slice(), &[0xde, 0xad]);
         assert!(dst
             .opaque_ref()
@@ -9199,9 +9264,12 @@ mod tests {
             .shares_storage(src.opaque_ref().unwrap()));
 
         dst.shrink_side_data("palette", 1).unwrap();
+        dst.clear_opaque();
         dst.clear_opaque_ref();
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5]);
         assert_eq!(src.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+        assert!(dst.opaque().is_none());
+        assert_eq!(src.opaque_address(), Some(0xfeed_cafe));
         assert!(dst.opaque_ref().is_none());
         assert!(src.opaque_ref().is_some());
     }
@@ -9236,6 +9304,7 @@ mod tests {
             8,
         );
         dst.push_side_data(SideData::new("old", vec![0]).unwrap());
+        dst.set_opaque_address(0x1111);
 
         let capture_src = Arc::clone(&released);
         let mut src = Packet::with_buffer(
@@ -9249,6 +9318,7 @@ mod tests {
         src.set_time_base(Rational::new(1, 48_000).unwrap())
             .unwrap();
         src.push_side_data(SideData::new("palette", vec![4]).unwrap());
+        src.set_opaque_address(0x2222);
 
         dst.move_ref_from(&mut src);
 
@@ -9256,6 +9326,7 @@ mod tests {
         assert!(src.is_empty());
         assert_eq!(src.stream_index(), 0);
         assert_eq!(src.pts(), None);
+        assert!(src.opaque().is_none());
         assert!(src.side_data().is_empty());
         assert_eq!(dst.data(), &[1, 2]);
         assert_eq!(dst.stream_index(), 3);
@@ -9263,6 +9334,7 @@ mod tests {
         assert_eq!(dst.duration(), 5);
         assert_eq!(dst.time_base(), Rational::new(1, 48_000).unwrap());
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[4]);
+        assert_eq!(dst.opaque_address(), Some(0x2222));
 
         dst.unref();
 
@@ -9274,6 +9346,7 @@ mod tests {
         assert_eq!(dst.duration(), 0);
         assert_eq!(dst.pos(), None);
         assert_eq!(dst.time_base(), Rational::ZERO);
+        assert!(dst.opaque().is_none());
         assert!(dst.flags().is_empty());
         assert!(dst.side_data().is_empty());
     }
@@ -9290,6 +9363,7 @@ mod tests {
         src.set_key(true);
         src.set_flag(PacketFlags::CORRUPT, true);
         src.push_side_data(SideData::new("palette", vec![5, 6]).unwrap());
+        src.set_opaque(Some(PacketOpaque::new(0x3333).unwrap()));
 
         let mut dst = Packet::new(vec![9, 8], 99);
         dst.set_pts(Some(99));
@@ -9311,6 +9385,7 @@ mod tests {
         assert!(dst.flags().contains(PacketFlags::CORRUPT));
         assert!(dst.side_data_by_kind("old").is_none());
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+        assert_eq!(dst.opaque_address(), Some(0x3333));
     }
 
     #[test]
@@ -9324,6 +9399,41 @@ mod tests {
 
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5]);
         assert_eq!(src.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+    }
+
+    #[test]
+    fn packet_opaque_address_tracks_nullable_raw_pointer_metadata() {
+        assert_eq!(
+            PacketOpaque::new(0).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(PacketOpaque::from_address(0), None);
+
+        let opaque = PacketOpaque::new(0x1234).unwrap();
+        assert_eq!(opaque.address(), 0x1234);
+        assert_eq!(opaque.nonzero_address().get(), 0x1234);
+        assert_eq!(PacketOpaque::from_address(0x1234), Some(opaque));
+        assert_eq!(PacketOpaque::from_nonzero(opaque.nonzero_address()), opaque);
+
+        let mut src = Packet::new(vec![1], 0);
+        src.set_opaque(Some(opaque));
+        assert_eq!(src.opaque(), Some(opaque));
+        assert_eq!(src.opaque_address(), Some(0x1234));
+
+        let mut dst = Packet::new(vec![9], 1);
+        dst.copy_props_from(&src);
+        assert_eq!(dst.data(), &[9]);
+        assert_eq!(dst.opaque(), Some(opaque));
+
+        dst.set_opaque_address(0);
+        assert!(dst.opaque().is_none());
+        dst.set_opaque_address(0xabcd);
+        assert_eq!(dst.opaque_address(), Some(0xabcd));
+
+        let taken = dst.take_opaque().unwrap();
+        assert_eq!(taken.address(), 0xabcd);
+        assert!(dst.opaque().is_none());
+        assert_eq!(src.opaque(), Some(opaque));
     }
 
     #[test]
