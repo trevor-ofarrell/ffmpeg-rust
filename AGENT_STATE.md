@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-rational` update: `Rational::reduce_i64` now models max-bounded `av_reduce`-style reduction over signed i64 numerators/denominators, including exactness reporting, sign normalization, zero and infinity raw-rational sentinels, invalid-limit rejection, and continued-fraction approximation when either output side exceeds the caller max. `Rational::from_f64_limited` adds an `av_d2q`-style conversion path with finite max-bounded output, NaN as `0/0`, and infinity or overlarge values as `+/-1/0`; `Rational::to_f64` provides the matching `av_q2d`-style conversion. Focused unit tests cover exact reduction, approximation under tight limits, invalid limits, finite f64 conversion, bounded approximation, and NaN/infinity sentinels; `avutil_core_models` build-checks reduction bounds, exactness cross-products, and f64 sentinel invariants. This remains below `complete` because pinned FFmpeg differential vectors, upstream FATE parity, broader rational helper coverage, and actual fuzz execution are still absent.
+
 Latest `avutil-error` update: `AvErrorCode` now models the documented FFmpeg tag-based `libavutil/error.h` constants through an exact `FFERRTAG` helper plus raw-code preservation. `AvError` carries optional code metadata, preserves caller-supplied custom codes, and attaches unambiguous FFmpeg codes for invalid-data, EOF, external, and bug constructors while leaving platform errno-derived invalid-argument/not-found/unsupported cases code-less until a pinned oracle or platform profile defines exact `AVERROR(errno)` behavior. Focused unit tests cover `AV_ERROR_MAX_STRING_SIZE`, tag constants, raw-code round trips, custom-code preservation, constructor code metadata, IO-code mapping, and EOF predicates; `avutil_core_models` build-checks the same code invariants. This remains below `complete` because pinned `av_strerror`/`AVERROR(errno)` differential coverage and upstream FATE parity are still absent.
 
 Latest `avutil-packet` update: `PacketOpaque` now models the raw `AVPacket.opaque` field as nullable, non-dereferenceable address metadata. Null addresses map to `None`; nonzero values copy through `ref_from` and `copy_props_from`, transfer through `move_ref_from`, reset through `unref`, and have explicit set/take/clear helpers without Rust-side pointer ownership or dereference. Focused packet unit tests cover zero-address rejection, nullable clearing, copy-props payload preservation, ref/move/unref propagation, and source/destination independence; `avutil_core_models` build-checks the same packet raw-opaque invariants alongside `opaque_ref` ownership. This remains below `complete` because full AVPacket ABI parity, pinned-oracle/FATE parity, and actual local fuzz execution are still open.
@@ -184,6 +186,15 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo test -p avutil rational`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo clippy -p avutil --all-targets -- -D warnings`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+- `cargo fmt --all -- --check`
+- `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo run -p fate-runner -- run --component avutil-rational`
+- `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo run -p fate-runner -- run --changed`
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-avutil-timebase-test'; cargo test -p avutil error`
 - `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
@@ -2921,6 +2932,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-rational` is the current focus for this slice. The concrete change is limited rational reduction and double conversion parity scaffolding: `reduce_i64`, `from_f64_limited`, and `to_f64`, with unit and fuzz-harness invariant coverage. It does not claim exact pinned `av_reduce`/`av_d2q` differential parity yet.
+
 `avutil-error` is the current focus for this slice. The concrete change is FFmpeg-style error-code metadata for documented tag-based `AVERROR_*` constants and constructor/accessor coverage; it does not claim full platform `AVERROR(errno)` or `av_strerror` parity.
 
 `avutil-packet` remains the current focus. This slice tightened AVPacket field parity by adding raw `opaque` address metadata alongside the existing owned `opaque_ref` storage; the packet side-data parser inventory is unchanged from the previous IAMF update.
@@ -2931,8 +2944,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 primitive work by tightening the next unblocked avutil primitive gap, likely rational `av_reduce`/`av_d2q`-style coverage or timebase oracle-vector scaffolding.
-2. Add pinned-oracle differential coverage for error strings/codes and constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
+1. Continue priority-1 primitive work by tightening `avutil-timebase` edge behavior or adding an oracle-vector scaffold for future pinned `av_rescale_q` comparisons.
+2. Add pinned-oracle differential coverage for rational reduction/double-conversion, error strings/codes, and constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
 3. Add upstream FATE sample-backed media mappings for constrained `ffmpeg-rs` null/framecrc/hash-style command paths once samples and the pinned oracle are available.
 
 ## Known Blockers
@@ -2944,6 +2957,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added `Rational::reduce_i64`, `Rational::from_f64_limited`, and `Rational::to_f64`. The reduction path reports whether the bounded result is exact, preserves raw zero/infinity sentinel shapes where FFmpeg's rational API permits them, approximates oversized finite fractions within caller limits, and rejects invalid max bounds. The f64 conversion path preserves finite bounded conversion plus NaN and infinity/overlarge sentinels. Unit and fuzz-harness coverage now checks exact reductions, approximation under tight limits, invalid limits, finite f64 conversions, bounded approximations, sentinel handling, reduction bounds, and exactness cross-products. Validation passed with focused rational tests, fuzz target check/clippy, avutil clippy, format check, workspace clippy, and FATE-runner rational plus changed avutil mappings. The component remains `implemented`, not `complete`.
 
 Latest slice: added `AvErrorCode`, `AV_ERROR_MAX_STRING_SIZE`, documented tag-based FFmpeg `AVERROR_*` constants, `AvError::with_code`, and `AvError::code`. Constructors now attach unambiguous FFmpeg code metadata for invalid data, EOF, external, and bug errors; IO-derived UnexpectedEof and InvalidData errors preserve the corresponding FFmpeg code while platform errno-shaped cases remain code-less. Unit and fuzz-harness coverage now checks FFERRTAG values, raw-code round trips, custom-code preservation, constructor code metadata, IO-code mapping, and EOF predicates. Validation passed with focused error tests, fuzz target check/clippy, avutil clippy, format check, workspace clippy, and FATE-runner avutil-error plus changed avutil mappings. The component remains `implemented`, not `complete`.
 

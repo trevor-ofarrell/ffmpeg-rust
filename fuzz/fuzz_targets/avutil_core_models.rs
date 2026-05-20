@@ -859,6 +859,35 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
         rational
     );
 
+    let reduce_num = small_i64_from(cursor.next(), cursor.next());
+    let reduce_den = small_i64_from(cursor.next(), cursor.next());
+    let reduce_max = i32::from(cursor.next().unwrap_or_default() % 31) + 1;
+    let (reduced, exact) = Rational::reduce_i64(reduce_num, reduce_den, reduce_max).unwrap();
+    assert!(i64::from(reduced.num()).abs() <= i64::from(reduce_max));
+    assert!(i64::from(reduced.den()).abs() <= i64::from(reduce_max));
+    assert!(reduced.den() >= 0);
+    assert_eq!(
+        exact,
+        rational_exactly_matches_i64(reduce_num, reduce_den, reduced)
+    );
+
+    let converted_value =
+        small_i64_from(cursor.next(), cursor.next()) as f64 / f64::from(reduce_max);
+    let converted = Rational::from_f64_limited(converted_value, reduce_max).unwrap();
+    if converted.den() != 0 {
+        assert!(i64::from(converted.num()).abs() <= i64::from(reduce_max));
+        assert!(i64::from(converted.den()).abs() <= i64::from(reduce_max));
+        assert!(converted.to_f64().is_finite());
+    }
+    assert_eq!(
+        Rational::from_f64_limited(f64::NAN, reduce_max).unwrap(),
+        Rational::from_raw(0, 0)
+    );
+    assert_eq!(
+        Rational::from_f64_limited(f64::INFINITY, reduce_max).unwrap(),
+        Rational::from_raw(1, 0)
+    );
+
     let src = positive_rational_from(cursor.next(), cursor.next());
     let dst = positive_rational_from(cursor.next(), cursor.next());
     let value = small_i64_from(cursor.next(), cursor.next());
@@ -16510,6 +16539,10 @@ fn expected_av_error_code_for_io(kind: io::ErrorKind) -> Option<AvErrorCode> {
         io::ErrorKind::InvalidData => Some(AvErrorCode::INVALIDDATA),
         _ => None,
     }
+}
+
+fn rational_exactly_matches_i64(num: i64, den: i64, rational: Rational) -> bool {
+    i128::from(num) * i128::from(rational.den()) == i128::from(den) * i128::from(rational.num())
 }
 
 fn payload_from(cursor: &mut Cursor<'_>, len: usize) -> Vec<u8> {
