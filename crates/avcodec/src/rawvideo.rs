@@ -788,6 +788,69 @@ mod tests {
     }
 
     #[test]
+    fn decodes_yuva_packets_to_four_planes() {
+        for (format, name, width, height, payload_len, expected_planes, expected_lines) in [
+            (
+                PixelFormat::Yuva420p,
+                "yuva420p",
+                4,
+                2,
+                20,
+                vec![
+                    (0..8).collect::<Vec<_>>(),
+                    (8..10).collect::<Vec<_>>(),
+                    (10..12).collect::<Vec<_>>(),
+                    (12..20).collect::<Vec<_>>(),
+                ],
+                vec![4, 2, 2, 4],
+            ),
+            (
+                PixelFormat::Yuva422p,
+                "yuva422p",
+                4,
+                3,
+                36,
+                vec![
+                    (0..12).collect::<Vec<_>>(),
+                    (12..18).collect::<Vec<_>>(),
+                    (18..24).collect::<Vec<_>>(),
+                    (24..36).collect::<Vec<_>>(),
+                ],
+                vec![4, 2, 2, 4],
+            ),
+            (
+                PixelFormat::Yuva444p,
+                "yuva444p",
+                3,
+                2,
+                24,
+                vec![
+                    (0..6).collect::<Vec<_>>(),
+                    (6..12).collect::<Vec<_>>(),
+                    (12..18).collect::<Vec<_>>(),
+                    (18..24).collect::<Vec<_>>(),
+                ],
+                vec![3, 3, 3, 3],
+            ),
+        ] {
+            let decoder = RawVideoDecoder::new(width, height, format).unwrap();
+            let packet = Packet::new((0_u8..payload_len).collect::<Vec<_>>(), 0);
+            let frame = decoder.decode_packet(&packet).unwrap();
+
+            assert_eq!(decoder.frame_size(), usize::from(payload_len));
+            match frame.data() {
+                FrameData::Video(video) => {
+                    assert_eq!(video.pixel_format(), format);
+                    assert_eq!(video.pixel_format_name(), name);
+                    assert_eq!(video.line_sizes(), expected_lines.as_slice());
+                    assert_eq!(video.planes(), expected_planes.as_slice());
+                }
+                FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+            }
+        }
+    }
+
+    #[test]
     fn decodes_yuvj_packets_to_three_planes() {
         for (format, name, width, height, payload_len, expected_planes) in [
             (
@@ -905,6 +968,11 @@ mod tests {
         assert!(RawVideoDecoder::new(3, 3, PixelFormat::Yuv440p12Be).is_err());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv440p12Be).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva420p).is_err());
+        assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuva420p).is_err());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva422p).is_err());
+        assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuva422p).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuva444p).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::YuvJ444p).is_ok());
 
         let decoder = RawVideoDecoder::new(2, 2, PixelFormat::Rgb24).unwrap();

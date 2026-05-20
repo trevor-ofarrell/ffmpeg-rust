@@ -106,6 +106,9 @@ pub enum PixelFormat {
     YuvJ440p,
     Yuv444p,
     YuvJ444p,
+    Yuva420p,
+    Yuva422p,
+    Yuva444p,
     Yuv440p10Le,
     Yuv440p10Be,
     Yuv440p12Le,
@@ -280,6 +283,9 @@ impl PixelFormat {
         Self::YuvJ440p,
         Self::Yuv444p,
         Self::YuvJ444p,
+        Self::Yuva420p,
+        Self::Yuva422p,
+        Self::Yuva444p,
         Self::Yuv440p10Le,
         Self::Yuv440p10Be,
         Self::Yuv440p12Le,
@@ -423,6 +429,9 @@ impl PixelFormat {
             "yuvj440p" => Some(Self::YuvJ440p),
             "yuv444p" => Some(Self::Yuv444p),
             "yuvj444p" => Some(Self::YuvJ444p),
+            "yuva420p" => Some(Self::Yuva420p),
+            "yuva422p" => Some(Self::Yuva422p),
+            "yuva444p" => Some(Self::Yuva444p),
             "yuv440p10le" => Some(Self::Yuv440p10Le),
             "yuv440p10be" => Some(Self::Yuv440p10Be),
             "yuv440p12le" => Some(Self::Yuv440p12Le),
@@ -1686,6 +1695,42 @@ impl PixelFormat {
                 0,
                 0,
             ),
+            Self::Yuva420p => (
+                "yuva420p",
+                PixelFormatClass::Yuv,
+                4,
+                20,
+                4,
+                true,
+                true,
+                None,
+                1,
+                1,
+            ),
+            Self::Yuva422p => (
+                "yuva422p",
+                PixelFormatClass::Yuv,
+                4,
+                24,
+                4,
+                true,
+                true,
+                None,
+                1,
+                0,
+            ),
+            Self::Yuva444p => (
+                "yuva444p",
+                PixelFormatClass::Yuv,
+                4,
+                32,
+                4,
+                true,
+                true,
+                None,
+                0,
+                0,
+            ),
             Self::Yuv440p10Le => (
                 "yuv440p10le",
                 PixelFormatClass::Yuv,
@@ -2623,6 +2668,31 @@ impl PixelFormat {
                 let chroma = checked_mul(chroma, bytes_per_sample, "planar YUV chroma plane size")?;
                 Ok(vec![luma, chroma, chroma])
             }
+            Self::Yuva420p | Self::Yuva422p | Self::Yuva444p => {
+                let descriptor = self.descriptor();
+                let chroma_w = 1_usize << descriptor.log2_chroma_w;
+                let chroma_h = 1_usize << descriptor.log2_chroma_h;
+                if descriptor.log2_chroma_w != 0 && width % chroma_w != 0 {
+                    return Err(AvError::invalid_argument(format!(
+                        "{} pixel format width must be divisible by {}",
+                        self.name(),
+                        chroma_w
+                    )));
+                }
+                if descriptor.log2_chroma_h != 0 && height % chroma_h != 0 {
+                    return Err(AvError::invalid_argument(format!(
+                        "{} pixel format height must be divisible by {}",
+                        self.name(),
+                        chroma_h
+                    )));
+                }
+                let chroma = checked_area(
+                    width >> descriptor.log2_chroma_w,
+                    height >> descriptor.log2_chroma_h,
+                    "planar YUVA chroma plane area",
+                )?;
+                Ok(vec![pixels, chroma, chroma, pixels])
+            }
         }
     }
 
@@ -3012,6 +3082,9 @@ mod tests {
             ("yuvj411p", PixelFormat::YuvJ411p),
             ("yuvj440p", PixelFormat::YuvJ440p),
             ("yuvj444p", PixelFormat::YuvJ444p),
+            ("yuva420p", PixelFormat::Yuva420p),
+            ("yuva422p", PixelFormat::Yuva422p),
+            ("yuva444p", PixelFormat::Yuva444p),
         ] {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
@@ -3055,7 +3128,7 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 135);
+        assert_eq!(PixelFormat::ALL.len(), 138);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
@@ -3239,6 +3312,8 @@ mod tests {
         assert!(PixelFormat::Gbrap.has_alpha());
         assert!(PixelFormat::Gbrap16Le.has_alpha());
         assert!(PixelFormat::GbrapF32Le.has_alpha());
+        assert!(PixelFormat::Yuva420p.has_alpha());
+        assert!(PixelFormat::Yuva444p.has_alpha());
         assert!(!PixelFormat::ZeroRgb.has_alpha());
         assert!(!PixelFormat::Gray16Le.is_float());
         assert!(PixelFormat::GrayF16Le.is_float());
@@ -3867,6 +3942,32 @@ mod tests {
                 expected_log2_chroma != (0, 0)
             );
         }
+        for (format, expected_name, expected_bits_per_pixel, expected_log2_chroma) in [
+            (PixelFormat::Yuva420p, "yuva420p", bpp(20), (1, 1)),
+            (PixelFormat::Yuva422p, "yuva422p", bpp(24), (1, 0)),
+            (PixelFormat::Yuva444p, "yuva444p", bpp(32), (0, 0)),
+        ] {
+            let yuva = format.descriptor();
+            assert_eq!(yuva.format, format);
+            assert_eq!(yuva.name, expected_name);
+            assert_eq!(yuva.class, PixelFormatClass::Yuv);
+            assert!(format.is_yuv());
+            assert!(!format.is_rgb());
+            assert!(!format.is_gray());
+            assert_eq!(yuva.component_count, 4);
+            assert_eq!(yuva.bits_per_component, 8);
+            assert_eq!(yuva.bits_per_pixel, expected_bits_per_pixel);
+            assert_eq!(yuva.plane_count, 4);
+            assert!(yuva.is_planar);
+            assert!(yuva.has_alpha);
+            assert!(!yuva.is_float);
+            assert_eq!(yuva.packed_bytes_per_pixel, None);
+            assert_eq!(format.log2_chroma(), expected_log2_chroma);
+            assert_eq!(
+                format.has_chroma_subsampling(),
+                expected_log2_chroma != (0, 0)
+            );
+        }
         assert_eq!(PixelFormat::Yuv420p.log2_chroma(), (1, 1));
     }
 
@@ -3963,6 +4064,21 @@ mod tests {
             vec![6, 6, 6]
         );
         assert_eq!(PixelFormat::Yuv444p.frame_size(3, 2).unwrap(), 18);
+        assert_eq!(
+            PixelFormat::Yuva420p.plane_sizes(4, 2).unwrap(),
+            vec![8, 2, 2, 8]
+        );
+        assert_eq!(PixelFormat::Yuva420p.frame_size(4, 2).unwrap(), 20);
+        assert_eq!(
+            PixelFormat::Yuva422p.plane_sizes(4, 3).unwrap(),
+            vec![12, 6, 6, 12]
+        );
+        assert_eq!(PixelFormat::Yuva422p.frame_size(4, 3).unwrap(), 36);
+        assert_eq!(
+            PixelFormat::Yuva444p.plane_sizes(3, 2).unwrap(),
+            vec![6, 6, 6, 6]
+        );
+        assert_eq!(PixelFormat::Yuva444p.frame_size(3, 2).unwrap(), 24);
         for (format, width, height, expected) in [
             (PixelFormat::Yuv420p9Le, 4, 2, vec![16, 4, 4]),
             (PixelFormat::Yuv420p9Be, 4, 2, vec![16, 4, 4]),
@@ -4225,6 +4341,20 @@ mod tests {
             .unwrap();
 
         assert_eq!(planes, vec![vec![0, 1], vec![2, 3], vec![4, 5]]);
+
+        let planes = PixelFormat::Yuva420p
+            .split_planes(&(0..20).collect::<Vec<_>>(), 4, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![
+                (0..8).collect::<Vec<_>>(),
+                (8..10).collect::<Vec<_>>(),
+                (10..12).collect::<Vec<_>>(),
+                (12..20).collect::<Vec<_>>()
+            ]
+        );
 
         let planes = PixelFormat::Gbrp
             .split_planes(&[0, 1, 2, 3, 4, 5], 1, 2)
@@ -4535,6 +4665,20 @@ mod tests {
         );
         assert_eq!(PixelFormat::Yuv440p12Be.frame_size(3, 2).unwrap(), 24);
         assert_eq!(PixelFormat::Yuv444p.frame_size(3, 2).unwrap(), 18);
+        assert_eq!(
+            PixelFormat::Yuva420p.frame_size(3, 2).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            PixelFormat::Yuva420p.frame_size(4, 3).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            PixelFormat::Yuva422p.frame_size(3, 2).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(PixelFormat::Yuva422p.frame_size(4, 3).unwrap(), 36);
+        assert_eq!(PixelFormat::Yuva444p.frame_size(3, 2).unwrap(), 24);
         assert_eq!(
             PixelFormat::YuvJ420p.frame_size(3, 2).unwrap_err().kind(),
             AvErrorKind::InvalidArgument

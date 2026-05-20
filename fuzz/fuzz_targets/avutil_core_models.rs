@@ -1300,7 +1300,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert!(!pixel_format.is_gray());
             assert!(!pixel_format.is_rgb());
             assert!(pixel_format.is_yuv());
-            assert_eq!(pixel_format.component_count(), 3);
+            assert!(matches!(pixel_format.component_count(), 3 | 4));
             assert!(matches!(
                 (
                     pixel_format.bits_per_pixel().num(),
@@ -1323,6 +1323,13 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                     | (48, 1)
                     | (36, 1)
             ));
+            assert_eq!(
+                pixel_format.has_alpha(),
+                matches!(
+                    pixel_format,
+                    PixelFormat::Yuva420p | PixelFormat::Yuva422p | PixelFormat::Yuva444p
+                )
+            );
             assert!(matches!(
                 pixel_format.log2_chroma(),
                 (1, 1) | (1, 0) | (2, 0) | (2, 2) | (0, 1) | (0, 0)
@@ -1370,6 +1377,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 | PixelFormat::YuvJ440p
                 | PixelFormat::Yuv444p
                 | PixelFormat::YuvJ444p
+                | PixelFormat::Yuva420p
+                | PixelFormat::Yuva422p
+                | PixelFormat::Yuva444p
                 | PixelFormat::Yuv440p10Le
                 | PixelFormat::Yuv440p10Be
                 | PixelFormat::Yuv440p12Le
@@ -1407,7 +1417,13 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 | PixelFormat::Nv12
                 | PixelFormat::Nv21
         ));
-        assert!(!pixel_format.has_alpha());
+        assert_eq!(
+            pixel_format.has_alpha(),
+            matches!(
+                pixel_format,
+                PixelFormat::Yuva420p | PixelFormat::Yuva422p | PixelFormat::Yuva444p
+            )
+        );
     }
 
     let Ok(plane_sizes) = pixel_format.plane_sizes(width, height) else {
@@ -5821,6 +5837,24 @@ fn exercise_fixtures() {
     assert_eq!(
         PixelFormat::Yuv444p.plane_sizes(3, 2).unwrap(),
         vec![6, 6, 6]
+    );
+    assert_eq!(
+        PixelFormat::from_name("yuva420p"),
+        Some(PixelFormat::Yuva420p)
+    );
+    assert_eq!(
+        PixelFormat::Yuva420p.plane_sizes(4, 2).unwrap(),
+        vec![8, 2, 2, 8]
+    );
+    assert_eq!(PixelFormat::Yuva420p.bits_per_pixel(), bpp(20));
+    assert!(PixelFormat::Yuva420p.has_alpha());
+    assert_eq!(
+        PixelFormat::Yuva422p.plane_sizes(4, 3).unwrap(),
+        vec![12, 6, 6, 12]
+    );
+    assert_eq!(
+        PixelFormat::Yuva444p.plane_sizes(3, 2).unwrap(),
+        vec![6, 6, 6, 6]
     );
     assert_eq!(
         PixelFormat::Yuv444p10Be.plane_sizes(3, 2).unwrap(),
@@ -17589,6 +17623,15 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
             let (log2_chroma_w, _) = pixel_format.log2_chroma();
             vec![width, width >> log2_chroma_w, width >> log2_chroma_w]
         }
+        PixelFormat::Yuva420p | PixelFormat::Yuva422p | PixelFormat::Yuva444p => {
+            let (log2_chroma_w, _) = pixel_format.log2_chroma();
+            vec![
+                width,
+                width >> log2_chroma_w,
+                width >> log2_chroma_w,
+                width,
+            ]
+        }
         PixelFormat::Yuv420p9Le
         | PixelFormat::Yuv420p9Be
         | PixelFormat::Yuv422p9Le
@@ -17759,6 +17802,15 @@ fn expected_video_plane_shapes(
                 (width, height),
                 (width >> log2_chroma_w, height >> log2_chroma_h),
                 (width >> log2_chroma_w, height >> log2_chroma_h),
+            ]
+        }
+        PixelFormat::Yuva420p | PixelFormat::Yuva422p | PixelFormat::Yuva444p => {
+            let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
+            vec![
+                (width, height),
+                (width >> log2_chroma_w, height >> log2_chroma_h),
+                (width >> log2_chroma_w, height >> log2_chroma_h),
+                (width, height),
             ]
         }
         PixelFormat::Yuv420p9Le

@@ -12596,6 +12596,28 @@ fn video_plane_shapes(
                 },
             ])
         }
+        PixelFormat::Yuva420p | PixelFormat::Yuva422p | PixelFormat::Yuva444p => {
+            let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
+            let chroma_row_bytes = width >> log2_chroma_w;
+            Ok(vec![
+                VideoPlaneShape {
+                    row_bytes: width,
+                    rows: height,
+                },
+                VideoPlaneShape {
+                    row_bytes: chroma_row_bytes,
+                    rows: height >> log2_chroma_h,
+                },
+                VideoPlaneShape {
+                    row_bytes: chroma_row_bytes,
+                    rows: height >> log2_chroma_h,
+                },
+                VideoPlaneShape {
+                    row_bytes: width,
+                    rows: height,
+                },
+            ])
+        }
         PixelFormat::Yuv420p
         | PixelFormat::YuvJ420p
         | PixelFormat::Yuv422p
@@ -16828,6 +16850,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(yuv444.line_sizes(), &[3, 3, 3]);
+
+        let yuva420 = VideoFrame::new(
+            4,
+            2,
+            PixelFormat::Yuva420p,
+            vec![vec![0; 8], vec![1; 2], vec![2; 2], vec![3; 8]],
+        )
+        .unwrap();
+        assert_eq!(yuva420.line_sizes(), &[4, 2, 2, 4]);
 
         let audio = AudioFrame::new(48_000, 2, SampleFormat::S16, 3, vec![vec![0; 12]]).unwrap();
         assert_eq!(audio.line_sizes(), &[12]);
