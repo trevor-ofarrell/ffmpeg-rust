@@ -2,9 +2,10 @@
 
 use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
-    sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorKind, BufferPool,
-    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32, Frame, FrameA53ClosedCaptions,
-    FrameActiveFormatDescription, FrameAmbientViewingEnvironment, FrameAudioServiceType,
+    sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind,
+    BufferPool, BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32,
+    Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
+    FrameAudioServiceType,
     FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
@@ -50,7 +51,7 @@ use avutil::{
     PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -738,33 +739,73 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
 }
 
 fn exercise_errors(cursor: &mut Cursor<'_>) {
+    assert_eq!(AV_ERROR_MAX_STRING_SIZE, 64);
+    assert_eq!(
+        AvErrorCode::INVALIDDATA,
+        AvErrorCode::fferrtag(b'I', b'N', b'D', b'A')
+    );
+    assert_eq!(
+        AvErrorCode::EOF,
+        AvErrorCode::fferrtag(b'E', b'O', b'F', b' ')
+    );
+    assert_eq!(
+        AvErrorCode::EXTERNAL,
+        AvErrorCode::fferrtag(b'E', b'X', b'T', b' ')
+    );
+    assert_eq!(
+        AvErrorCode::BSF_NOT_FOUND,
+        AvErrorCode::fferrtag(0xf8, b'B', b'S', b'F')
+    );
+    assert_eq!(AvErrorCode::EXPERIMENTAL.raw(), -0x2bb2_afa8);
+    assert_eq!(AvErrorCode::INPUT_CHANGED.raw(), -0x636e_6701);
+    assert_eq!(AvErrorCode::OUTPUT_CHANGED.raw(), -0x636e_6702);
+
     let io_kind = io_error_kind_from(cursor.next());
     let err = AvError::from_io_error("fuzz io", io::Error::new(io_kind, "source failure"));
     assert_eq!(err.kind(), expected_av_error_kind_for_io(io_kind));
+    assert_eq!(err.code(), expected_av_error_code_for_io(io_kind));
     assert_eq!(err.io_kind(), Some(io_kind));
     assert_eq!(err.is_eof(), err.kind() == AvErrorKind::EndOfFile);
     assert!(err.message().contains("fuzz io"));
     assert!(err.message().contains("source failure"));
 
-    for (err, kind) in [
+    let custom_code = AvErrorCode::from_raw(-i32::from(cursor.next().unwrap_or_default()) - 1);
+    let custom = AvError::with_code(AvErrorKind::NotFound, custom_code, "custom code");
+    assert_eq!(custom.kind(), AvErrorKind::NotFound);
+    assert_eq!(custom.code(), Some(custom_code));
+    assert_eq!(custom.io_kind(), None);
+
+    for (err, kind, code) in [
         (
             AvError::invalid_argument("invalid argument"),
             AvErrorKind::InvalidArgument,
+            None,
         ),
         (
             AvError::invalid_data("invalid data"),
             AvErrorKind::InvalidData,
+            Some(AvErrorCode::INVALIDDATA),
         ),
-        (AvError::not_found("not found"), AvErrorKind::NotFound),
-        (AvError::end_of_file("end of file"), AvErrorKind::EndOfFile),
+        (AvError::not_found("not found"), AvErrorKind::NotFound, None),
+        (
+            AvError::end_of_file("end of file"),
+            AvErrorKind::EndOfFile,
+            Some(AvErrorCode::EOF),
+        ),
         (
             AvError::unsupported("unsupported"),
             AvErrorKind::Unsupported,
+            None,
         ),
-        (AvError::external("external"), AvErrorKind::External),
-        (AvError::bug("bug"), AvErrorKind::Bug),
+        (
+            AvError::external("external"),
+            AvErrorKind::External,
+            Some(AvErrorCode::EXTERNAL),
+        ),
+        (AvError::bug("bug"), AvErrorKind::Bug, Some(AvErrorCode::BUG)),
     ] {
         assert_eq!(err.kind(), kind);
+        assert_eq!(err.code(), code);
         assert_eq!(err.io_kind(), None);
         assert_eq!(err.is_eof(), kind == AvErrorKind::EndOfFile);
         assert!(!err.message().is_empty());
@@ -16460,6 +16501,14 @@ fn expected_av_error_kind_for_io(kind: io::ErrorKind) -> AvErrorKind {
         io::ErrorKind::InvalidInput => AvErrorKind::InvalidArgument,
         io::ErrorKind::Unsupported => AvErrorKind::Unsupported,
         _ => AvErrorKind::External,
+    }
+}
+
+fn expected_av_error_code_for_io(kind: io::ErrorKind) -> Option<AvErrorCode> {
+    match kind {
+        io::ErrorKind::UnexpectedEof => Some(AvErrorCode::EOF),
+        io::ErrorKind::InvalidData => Some(AvErrorCode::INVALIDDATA),
+        _ => None,
     }
 }
 

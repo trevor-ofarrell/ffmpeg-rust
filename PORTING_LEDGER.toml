@@ -13,6 +13,8 @@ oracle_command = ""
 rust_command = "cargo test -p avutil error"
 unit_tests = [
   "error::tests::error_exposes_kind_and_message",
+  "error::tests::error_codes_match_ffmpeg_tag_constants",
+  "error::tests::custom_error_codes_are_preserved",
   "error::tests::constructors_cover_common_error_kinds",
   "error::tests::io_errors_map_to_stable_av_error_kinds",
   "error::tests::eof_predicate_tracks_error_kind",
@@ -20,7 +22,8 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-error|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Typed Rust error model implemented with stable kind/message accessors, common constructors, IO ErrorKind classification, optional preserved io::ErrorKind metadata, and an EOF predicate. Build-checked cargo-fuzz target avutil_core_models covers constructor invariants, IO mapping, preserved IO kind metadata, and EOF classification, but actual local fuzz execution is blocked until cargo-fuzz is installed. No differential or FATE oracle applies yet. The local FATE-runner smoke mapping executes the error unit filter only and does not count as upstream FATE parity."
+# Latest update: AvErrorCode models documented FFmpeg tag-based AVERROR constants and unambiguous constructors preserve code metadata.
+notes = "Typed Rust error model implemented with stable kind/message accessors, common constructors, FFmpeg-style AvErrorCode metadata for documented tag-based libavutil/error.h constants, custom code preservation, IO ErrorKind classification, optional preserved io::ErrorKind metadata, and an EOF predicate. The unambiguous invalid-data, EOF, external, and bug constructors attach AVERROR_INVALIDDATA, AVERROR_EOF, AVERROR_EXTERNAL, and AVERROR_BUG code metadata; platform errno-derived argument/not-found/unsupported cases intentionally remain code-less until a pinned oracle or platform profile defines exact AVERROR(errno) behavior. Build-checked cargo-fuzz target avutil_core_models covers constructor invariants, FFERRTAG-style code values, custom code preservation, IO mapping, preserved IO kind metadata, and EOF classification, but actual local fuzz execution is blocked until cargo-fuzz is installed. No differential or upstream FATE oracle applies yet. The local FATE-runner smoke mapping executes the error unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

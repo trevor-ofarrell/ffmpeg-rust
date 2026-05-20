@@ -23,7 +23,7 @@ pub use buffer::{BufferPool, BufferPoolCallbacks, BufferRef, BufferSlice};
 pub use byteio::{ByteReader, ByteWriter};
 pub use channel_layout::{Channel, ChannelLayout};
 pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};
-pub use error::{AvError, AvErrorKind, AvResult};
+pub use error::{AvError, AvErrorCode, AvErrorKind, AvResult, AV_ERROR_MAX_STRING_SIZE};
 pub use frame::{
     AudioFrame, Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription,
     FrameAmbientViewingEnvironment, FrameAudioServiceType, FrameContentLightMetadata, FrameData,
