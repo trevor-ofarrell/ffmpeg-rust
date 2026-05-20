@@ -396,6 +396,24 @@ mod tests {
             (RawVideoPixelFormat::Nv20Be, 4, 3, 48, 48),
             (RawVideoPixelFormat::Nv24, 3, 2, 18, 18),
             (RawVideoPixelFormat::Nv42, 3, 2, 18, 18),
+            (RawVideoPixelFormat::P010Le, 4, 2, 24, 24),
+            (RawVideoPixelFormat::P010Be, 4, 2, 24, 24),
+            (RawVideoPixelFormat::P012Le, 4, 2, 24, 24),
+            (RawVideoPixelFormat::P012Be, 4, 2, 24, 24),
+            (RawVideoPixelFormat::P016Le, 4, 2, 24, 24),
+            (RawVideoPixelFormat::P016Be, 4, 2, 24, 24),
+            (RawVideoPixelFormat::P210Le, 4, 3, 48, 48),
+            (RawVideoPixelFormat::P210Be, 4, 3, 48, 48),
+            (RawVideoPixelFormat::P212Le, 4, 3, 48, 48),
+            (RawVideoPixelFormat::P212Be, 4, 3, 48, 48),
+            (RawVideoPixelFormat::P216Le, 4, 3, 48, 48),
+            (RawVideoPixelFormat::P216Be, 4, 3, 48, 48),
+            (RawVideoPixelFormat::P410Le, 3, 2, 36, 36),
+            (RawVideoPixelFormat::P410Be, 3, 2, 36, 36),
+            (RawVideoPixelFormat::P412Le, 3, 2, 36, 36),
+            (RawVideoPixelFormat::P412Be, 3, 2, 36, 36),
+            (RawVideoPixelFormat::P416Le, 3, 2, 36, 36),
+            (RawVideoPixelFormat::P416Be, 3, 2, 36, 36),
         ] {
             assert_eq!(
                 RawVideoDemuxer::open(
@@ -1025,6 +1043,38 @@ mod tests {
         )
         .is_ok());
         assert!(RawVideoDemuxer::open(
+            &[0; 24],
+            3,
+            2,
+            RawVideoPixelFormat::P010Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 24],
+            4,
+            3,
+            RawVideoPixelFormat::P010Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 48],
+            3,
+            2,
+            RawVideoPixelFormat::P210Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 36],
+            3,
+            2,
+            RawVideoPixelFormat::P410Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoDemuxer::open(
             &[0; 18],
             3,
             2,
@@ -1349,6 +1399,24 @@ mod tests {
             (RawVideoPixelFormat::Nv20Be, 4, 3, 48),
             (RawVideoPixelFormat::Nv24, 3, 2, 18),
             (RawVideoPixelFormat::Nv42, 3, 2, 18),
+            (RawVideoPixelFormat::P010Le, 4, 2, 24),
+            (RawVideoPixelFormat::P010Be, 4, 2, 24),
+            (RawVideoPixelFormat::P012Le, 4, 2, 24),
+            (RawVideoPixelFormat::P012Be, 4, 2, 24),
+            (RawVideoPixelFormat::P016Le, 4, 2, 24),
+            (RawVideoPixelFormat::P016Be, 4, 2, 24),
+            (RawVideoPixelFormat::P210Le, 4, 3, 48),
+            (RawVideoPixelFormat::P210Be, 4, 3, 48),
+            (RawVideoPixelFormat::P212Le, 4, 3, 48),
+            (RawVideoPixelFormat::P212Be, 4, 3, 48),
+            (RawVideoPixelFormat::P216Le, 4, 3, 48),
+            (RawVideoPixelFormat::P216Be, 4, 3, 48),
+            (RawVideoPixelFormat::P410Le, 3, 2, 36),
+            (RawVideoPixelFormat::P410Be, 3, 2, 36),
+            (RawVideoPixelFormat::P412Le, 3, 2, 36),
+            (RawVideoPixelFormat::P412Be, 3, 2, 36),
+            (RawVideoPixelFormat::P416Le, 3, 2, 36),
+            (RawVideoPixelFormat::P416Be, 3, 2, 36),
         ] {
             let muxer =
                 RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
@@ -1957,6 +2025,34 @@ mod tests {
             3,
             2,
             RawVideoPixelFormat::Nv24,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::P010Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            4,
+            3,
+            RawVideoPixelFormat::P010Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::P210Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::P410Le,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());

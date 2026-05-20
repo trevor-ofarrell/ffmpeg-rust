@@ -100,6 +100,24 @@ pub enum PixelFormat {
     Nv20Be,
     Nv24,
     Nv42,
+    P010Le,
+    P010Be,
+    P012Le,
+    P012Be,
+    P016Le,
+    P016Be,
+    P210Le,
+    P210Be,
+    P212Le,
+    P212Be,
+    P216Le,
+    P216Be,
+    P410Le,
+    P410Be,
+    P412Le,
+    P412Be,
+    P416Le,
+    P416Be,
     Yuv420p,
     YuvJ420p,
     Yuv422p,
@@ -304,6 +322,24 @@ impl PixelFormat {
         Self::Nv20Be,
         Self::Nv24,
         Self::Nv42,
+        Self::P010Le,
+        Self::P010Be,
+        Self::P012Le,
+        Self::P012Be,
+        Self::P016Le,
+        Self::P016Be,
+        Self::P210Le,
+        Self::P210Be,
+        Self::P212Le,
+        Self::P212Be,
+        Self::P216Le,
+        Self::P216Be,
+        Self::P410Le,
+        Self::P410Be,
+        Self::P412Le,
+        Self::P412Be,
+        Self::P416Le,
+        Self::P416Be,
         Self::Yuv420p,
         Self::YuvJ420p,
         Self::Yuv422p,
@@ -477,6 +513,24 @@ impl PixelFormat {
             "nv20be" => Some(Self::Nv20Be),
             "nv24" => Some(Self::Nv24),
             "nv42" => Some(Self::Nv42),
+            "p010le" => Some(Self::P010Le),
+            "p010be" => Some(Self::P010Be),
+            "p012le" => Some(Self::P012Le),
+            "p012be" => Some(Self::P012Be),
+            "p016le" => Some(Self::P016Le),
+            "p016be" => Some(Self::P016Be),
+            "p210le" => Some(Self::P210Le),
+            "p210be" => Some(Self::P210Be),
+            "p212le" => Some(Self::P212Le),
+            "p212be" => Some(Self::P212Be),
+            "p216le" => Some(Self::P216Le),
+            "p216be" => Some(Self::P216Be),
+            "p410le" => Some(Self::P410Le),
+            "p410be" => Some(Self::P410Be),
+            "p412le" => Some(Self::P412Le),
+            "p412be" => Some(Self::P412Be),
+            "p416le" => Some(Self::P416Le),
+            "p416be" => Some(Self::P416Be),
             "yuv420p" => Some(Self::Yuv420p),
             "yuvj420p" => Some(Self::YuvJ420p),
             "yuv422p" => Some(Self::Yuv422p),
@@ -1704,6 +1758,222 @@ impl PixelFormat {
                 0,
                 0,
             ),
+            Self::P010Le => (
+                "p010le",
+                PixelFormatClass::Yuv,
+                3,
+                15,
+                2,
+                true,
+                false,
+                None,
+                1,
+                1,
+            ),
+            Self::P010Be => (
+                "p010be",
+                PixelFormatClass::Yuv,
+                3,
+                15,
+                2,
+                true,
+                false,
+                None,
+                1,
+                1,
+            ),
+            Self::P012Le => (
+                "p012le",
+                PixelFormatClass::Yuv,
+                3,
+                18,
+                2,
+                true,
+                false,
+                None,
+                1,
+                1,
+            ),
+            Self::P012Be => (
+                "p012be",
+                PixelFormatClass::Yuv,
+                3,
+                18,
+                2,
+                true,
+                false,
+                None,
+                1,
+                1,
+            ),
+            Self::P016Le => (
+                "p016le",
+                PixelFormatClass::Yuv,
+                3,
+                24,
+                2,
+                true,
+                false,
+                None,
+                1,
+                1,
+            ),
+            Self::P016Be => (
+                "p016be",
+                PixelFormatClass::Yuv,
+                3,
+                24,
+                2,
+                true,
+                false,
+                None,
+                1,
+                1,
+            ),
+            Self::P210Le => (
+                "p210le",
+                PixelFormatClass::Yuv,
+                3,
+                20,
+                2,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
+            Self::P210Be => (
+                "p210be",
+                PixelFormatClass::Yuv,
+                3,
+                20,
+                2,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
+            Self::P212Le => (
+                "p212le",
+                PixelFormatClass::Yuv,
+                3,
+                24,
+                2,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
+            Self::P212Be => (
+                "p212be",
+                PixelFormatClass::Yuv,
+                3,
+                24,
+                2,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
+            Self::P216Le => (
+                "p216le",
+                PixelFormatClass::Yuv,
+                3,
+                32,
+                2,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
+            Self::P216Be => (
+                "p216be",
+                PixelFormatClass::Yuv,
+                3,
+                32,
+                2,
+                true,
+                false,
+                None,
+                1,
+                0,
+            ),
+            Self::P410Le => (
+                "p410le",
+                PixelFormatClass::Yuv,
+                3,
+                30,
+                2,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::P410Be => (
+                "p410be",
+                PixelFormatClass::Yuv,
+                3,
+                30,
+                2,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::P412Le => (
+                "p412le",
+                PixelFormatClass::Yuv,
+                3,
+                36,
+                2,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::P412Be => (
+                "p412be",
+                PixelFormatClass::Yuv,
+                3,
+                36,
+                2,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::P416Le => (
+                "p416le",
+                PixelFormatClass::Yuv,
+                3,
+                48,
+                2,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::P416Be => (
+                "p416be",
+                PixelFormatClass::Yuv,
+                3,
+                48,
+                2,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
             Self::Yuv420p => (
                 "yuv420p",
                 PixelFormatClass::Yuv,
@@ -2575,6 +2845,12 @@ impl PixelFormat {
                     | Self::Gbrap16Be
                     | Self::GbrapF16Le
                     | Self::GbrapF16Be
+                    | Self::P016Le
+                    | Self::P016Be
+                    | Self::P216Le
+                    | Self::P216Be
+                    | Self::P416Le
+                    | Self::P416Be
                     | Self::Yuva420p16Le
                     | Self::Yuva420p16Be
                     | Self::Yuva422p16Le
@@ -2641,6 +2917,12 @@ impl PixelFormat {
                     | Self::Gbrap10Be
                     | Self::Nv20Le
                     | Self::Nv20Be
+                    | Self::P010Le
+                    | Self::P010Be
+                    | Self::P210Le
+                    | Self::P210Be
+                    | Self::P410Le
+                    | Self::P410Be
                     | Self::Yuva420p10Le
                     | Self::Yuva420p10Be
                     | Self::Yuva422p10Le
@@ -2665,6 +2947,12 @@ impl PixelFormat {
                     | Self::Gbrp12Be
                     | Self::Gbrap12Le
                     | Self::Gbrap12Be
+                    | Self::P012Le
+                    | Self::P012Be
+                    | Self::P212Le
+                    | Self::P212Be
+                    | Self::P412Le
+                    | Self::P412Be
                     | Self::Yuva422p12Le
                     | Self::Yuva422p12Be
                     | Self::Yuva444p12Le
@@ -3013,6 +3301,59 @@ impl PixelFormat {
             Self::Nv24 | Self::Nv42 => {
                 let chroma = checked_mul(pixels, 2, "semi-planar 4:4:4 YUV chroma plane size")?;
                 Ok(vec![pixels, chroma])
+            }
+            Self::P010Le
+            | Self::P010Be
+            | Self::P012Le
+            | Self::P012Be
+            | Self::P016Le
+            | Self::P016Be
+            | Self::P210Le
+            | Self::P210Be
+            | Self::P212Le
+            | Self::P212Be
+            | Self::P216Le
+            | Self::P216Be
+            | Self::P410Le
+            | Self::P410Be
+            | Self::P412Le
+            | Self::P412Be
+            | Self::P416Le
+            | Self::P416Be => {
+                let descriptor = self.descriptor();
+                let chroma_w = 1_usize << descriptor.log2_chroma_w;
+                let chroma_h = 1_usize << descriptor.log2_chroma_h;
+                if descriptor.log2_chroma_w != 0 && width % chroma_w != 0 {
+                    return Err(AvError::invalid_argument(format!(
+                        "{} pixel format width must be divisible by {}",
+                        self.name(),
+                        chroma_w
+                    )));
+                }
+                if descriptor.log2_chroma_h != 0 && height % chroma_h != 0 {
+                    return Err(AvError::invalid_argument(format!(
+                        "{} pixel format height must be divisible by {}",
+                        self.name(),
+                        chroma_h
+                    )));
+                }
+                let luma = checked_mul(pixels, 2, "semi-planar high-bit YUV luma plane size")?;
+                let chroma_samples = checked_area(
+                    width >> descriptor.log2_chroma_w,
+                    height >> descriptor.log2_chroma_h,
+                    "semi-planar high-bit YUV chroma sample area",
+                )?;
+                let chroma_components = checked_mul(
+                    chroma_samples,
+                    2,
+                    "semi-planar high-bit YUV chroma component count",
+                )?;
+                let chroma = checked_mul(
+                    chroma_components,
+                    2,
+                    "semi-planar high-bit YUV chroma plane size",
+                )?;
+                Ok(vec![luma, chroma])
             }
             Self::Yuv420p
             | Self::YuvJ420p
@@ -3546,6 +3887,24 @@ mod tests {
             ("nv20be", PixelFormat::Nv20Be),
             ("nv24", PixelFormat::Nv24),
             ("nv42", PixelFormat::Nv42),
+            ("p010le", PixelFormat::P010Le),
+            ("p010be", PixelFormat::P010Be),
+            ("p012le", PixelFormat::P012Le),
+            ("p012be", PixelFormat::P012Be),
+            ("p016le", PixelFormat::P016Le),
+            ("p016be", PixelFormat::P016Be),
+            ("p210le", PixelFormat::P210Le),
+            ("p210be", PixelFormat::P210Be),
+            ("p212le", PixelFormat::P212Le),
+            ("p212be", PixelFormat::P212Be),
+            ("p216le", PixelFormat::P216Le),
+            ("p216be", PixelFormat::P216Be),
+            ("p410le", PixelFormat::P410Le),
+            ("p410be", PixelFormat::P410Be),
+            ("p412le", PixelFormat::P412Le),
+            ("p412be", PixelFormat::P412Be),
+            ("p416le", PixelFormat::P416Le),
+            ("p416be", PixelFormat::P416Be),
         ] {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
@@ -3649,7 +4008,7 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 165);
+        assert_eq!(PixelFormat::ALL.len(), 183);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
@@ -4313,6 +4672,24 @@ mod tests {
             (PixelFormat::Nv20Be, "nv20be", 10, bpp(20), (1, 0)),
             (PixelFormat::Nv24, "nv24", 8, bpp(24), (0, 0)),
             (PixelFormat::Nv42, "nv42", 8, bpp(24), (0, 0)),
+            (PixelFormat::P010Le, "p010le", 10, bpp(15), (1, 1)),
+            (PixelFormat::P010Be, "p010be", 10, bpp(15), (1, 1)),
+            (PixelFormat::P012Le, "p012le", 12, bpp(18), (1, 1)),
+            (PixelFormat::P012Be, "p012be", 12, bpp(18), (1, 1)),
+            (PixelFormat::P016Le, "p016le", 16, bpp(24), (1, 1)),
+            (PixelFormat::P016Be, "p016be", 16, bpp(24), (1, 1)),
+            (PixelFormat::P210Le, "p210le", 10, bpp(20), (1, 0)),
+            (PixelFormat::P210Be, "p210be", 10, bpp(20), (1, 0)),
+            (PixelFormat::P212Le, "p212le", 12, bpp(24), (1, 0)),
+            (PixelFormat::P212Be, "p212be", 12, bpp(24), (1, 0)),
+            (PixelFormat::P216Le, "p216le", 16, bpp(32), (1, 0)),
+            (PixelFormat::P216Be, "p216be", 16, bpp(32), (1, 0)),
+            (PixelFormat::P410Le, "p410le", 10, bpp(30), (0, 0)),
+            (PixelFormat::P410Be, "p410be", 10, bpp(30), (0, 0)),
+            (PixelFormat::P412Le, "p412le", 12, bpp(36), (0, 0)),
+            (PixelFormat::P412Be, "p412be", 12, bpp(36), (0, 0)),
+            (PixelFormat::P416Le, "p416le", 16, bpp(48), (0, 0)),
+            (PixelFormat::P416Be, "p416be", 16, bpp(48), (0, 0)),
         ] {
             let descriptor = format.descriptor();
             assert_eq!(descriptor.format, format);
@@ -4778,6 +5155,29 @@ mod tests {
         assert_eq!(PixelFormat::Nv24.plane_sizes(3, 2).unwrap(), vec![6, 12]);
         assert_eq!(PixelFormat::Nv24.frame_size(3, 2).unwrap(), 18);
         assert_eq!(PixelFormat::Nv42.frame_size(3, 2).unwrap(), 18);
+        assert_eq!(PixelFormat::P010Le.plane_sizes(4, 2).unwrap(), vec![16, 8]);
+        assert_eq!(PixelFormat::P010Le.frame_size(4, 2).unwrap(), 24);
+        assert_eq!(PixelFormat::P010Be.frame_size(4, 2).unwrap(), 24);
+        assert_eq!(PixelFormat::P012Le.plane_sizes(4, 2).unwrap(), vec![16, 8]);
+        assert_eq!(PixelFormat::P012Le.frame_size(4, 2).unwrap(), 24);
+        assert_eq!(PixelFormat::P012Be.frame_size(4, 2).unwrap(), 24);
+        assert_eq!(PixelFormat::P016Le.plane_sizes(4, 2).unwrap(), vec![16, 8]);
+        assert_eq!(PixelFormat::P016Le.frame_size(4, 2).unwrap(), 24);
+        assert_eq!(PixelFormat::P016Be.frame_size(4, 2).unwrap(), 24);
+        assert_eq!(PixelFormat::P210Le.plane_sizes(4, 3).unwrap(), vec![24, 24]);
+        assert_eq!(PixelFormat::P210Le.frame_size(4, 3).unwrap(), 48);
+        assert_eq!(PixelFormat::P210Be.frame_size(4, 3).unwrap(), 48);
+        assert_eq!(PixelFormat::P212Le.frame_size(4, 3).unwrap(), 48);
+        assert_eq!(PixelFormat::P212Be.frame_size(4, 3).unwrap(), 48);
+        assert_eq!(PixelFormat::P216Le.frame_size(4, 3).unwrap(), 48);
+        assert_eq!(PixelFormat::P216Be.frame_size(4, 3).unwrap(), 48);
+        assert_eq!(PixelFormat::P410Le.plane_sizes(3, 2).unwrap(), vec![12, 24]);
+        assert_eq!(PixelFormat::P410Le.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(PixelFormat::P410Be.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(PixelFormat::P412Le.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(PixelFormat::P412Be.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(PixelFormat::P416Le.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(PixelFormat::P416Be.frame_size(3, 2).unwrap(), 36);
         assert_eq!(
             PixelFormat::Yuv420p.plane_sizes(4, 2).unwrap(),
             vec![8, 2, 2]
@@ -5330,6 +5730,33 @@ mod tests {
 
         assert_eq!(planes, vec![(0..6).collect::<Vec<_>>(), (6..18).collect()]);
 
+        let planes = PixelFormat::P010Le
+            .split_planes(&(0..24).collect::<Vec<_>>(), 4, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![(0..16).collect::<Vec<_>>(), (16..24).collect()]
+        );
+
+        let planes = PixelFormat::P212Be
+            .split_planes(&(0..48).collect::<Vec<_>>(), 4, 3)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![(0..24).collect::<Vec<_>>(), (24..48).collect()]
+        );
+
+        let planes = PixelFormat::P416Le
+            .split_planes(&(0..36).collect::<Vec<_>>(), 3, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![(0..12).collect::<Vec<_>>(), (12..36).collect()]
+        );
+
         let planes = PixelFormat::Rgba64Le
             .split_planes(&[0, 1, 2, 3, 4, 5, 6, 7], 1, 1)
             .unwrap();
@@ -5559,6 +5986,19 @@ mod tests {
             AvErrorKind::InvalidArgument
         );
         assert_eq!(PixelFormat::Nv24.frame_size(3, 2).unwrap(), 18);
+        assert_eq!(
+            PixelFormat::P010Le.frame_size(3, 2).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            PixelFormat::P010Be.frame_size(4, 3).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            PixelFormat::P210Be.frame_size(3, 2).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(PixelFormat::P410Le.frame_size(3, 2).unwrap(), 36);
         assert_eq!(
             PixelFormat::Nv12
                 .split_planes(&[0; 11], 4, 2)

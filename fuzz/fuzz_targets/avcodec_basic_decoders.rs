@@ -435,6 +435,34 @@ fn exercise_fixtures() {
     assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv16).is_err());
     assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv20Be).is_err());
 
+    for (format, width, height, valid_len, invalid_len) in [
+        (PixelFormat::P010Le, 4, 2, 24, 23),
+        (PixelFormat::P012Be, 4, 2, 24, 23),
+        (PixelFormat::P016Le, 4, 2, 24, 23),
+        (PixelFormat::P210Le, 4, 3, 48, 47),
+        (PixelFormat::P212Be, 4, 3, 48, 47),
+        (PixelFormat::P216Le, 4, 3, 48, 47),
+        (PixelFormat::P410Le, 3, 2, 36, 35),
+        (PixelFormat::P412Be, 3, 2, 36, 35),
+        (PixelFormat::P416Le, 3, 2, 36, 35),
+    ] {
+        let decoder = RawVideoDecoder::new(width, height, format).unwrap();
+        assert!(decoder
+            .decode_packet(&Packet::new(vec![0; valid_len], 0))
+            .is_ok());
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; invalid_len], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    assert!(RawVideoDecoder::new(3, 2, PixelFormat::P010Le).is_err());
+    assert!(RawVideoDecoder::new(4, 3, PixelFormat::P010Be).is_err());
+    assert!(RawVideoDecoder::new(3, 2, PixelFormat::P210Le).is_err());
+    assert!(RawVideoDecoder::new(3, 2, PixelFormat::P410Be).is_ok());
+
     let rgb48 = RawVideoDecoder::new(1, 1, PixelFormat::Rgb48Le).unwrap();
     assert!(rgb48.decode_packet(&Packet::new(vec![0; 6], 0)).is_ok());
     assert_eq!(

@@ -733,6 +733,9 @@ fn exercise_fixtures() {
         (PixelFormat::Nv16, 4, 3, (0..24).collect::<Vec<_>>()),
         (PixelFormat::Nv20Le, 4, 3, (0..48).collect::<Vec<_>>()),
         (PixelFormat::Nv42, 3, 2, (0..18).collect::<Vec<_>>()),
+        (PixelFormat::P010Le, 4, 2, (0..24).collect::<Vec<_>>()),
+        (PixelFormat::P212Be, 4, 3, (0..48).collect::<Vec<_>>()),
+        (PixelFormat::P416Le, 3, 2, (0..36).collect::<Vec<_>>()),
     ] {
         let mut raw_nv =
             RawVideoMuxer::new(width, height, format, Rational::new(24, 1).unwrap()).unwrap();

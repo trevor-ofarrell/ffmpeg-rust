@@ -1441,6 +1441,24 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 | PixelFormat::Nv20Be
                 | PixelFormat::Nv24
                 | PixelFormat::Nv42
+                | PixelFormat::P010Le
+                | PixelFormat::P010Be
+                | PixelFormat::P012Le
+                | PixelFormat::P012Be
+                | PixelFormat::P016Le
+                | PixelFormat::P016Be
+                | PixelFormat::P210Le
+                | PixelFormat::P210Be
+                | PixelFormat::P212Le
+                | PixelFormat::P212Be
+                | PixelFormat::P216Le
+                | PixelFormat::P216Be
+                | PixelFormat::P410Le
+                | PixelFormat::P410Be
+                | PixelFormat::P412Le
+                | PixelFormat::P412Be
+                | PixelFormat::P416Le
+                | PixelFormat::P416Be
         ));
         assert_eq!(pixel_format.has_alpha(), is_yuva_pixel_format(pixel_format));
     }
@@ -5895,6 +5913,186 @@ fn exercise_fixtures() {
             3,
             2,
             vec![6, 12],
+        ),
+        (
+            "p010le",
+            PixelFormat::P010Le,
+            10,
+            bpp(15),
+            (1, 1),
+            4,
+            2,
+            vec![16, 8],
+        ),
+        (
+            "p010be",
+            PixelFormat::P010Be,
+            10,
+            bpp(15),
+            (1, 1),
+            4,
+            2,
+            vec![16, 8],
+        ),
+        (
+            "p012le",
+            PixelFormat::P012Le,
+            12,
+            bpp(18),
+            (1, 1),
+            4,
+            2,
+            vec![16, 8],
+        ),
+        (
+            "p012be",
+            PixelFormat::P012Be,
+            12,
+            bpp(18),
+            (1, 1),
+            4,
+            2,
+            vec![16, 8],
+        ),
+        (
+            "p016le",
+            PixelFormat::P016Le,
+            16,
+            bpp(24),
+            (1, 1),
+            4,
+            2,
+            vec![16, 8],
+        ),
+        (
+            "p016be",
+            PixelFormat::P016Be,
+            16,
+            bpp(24),
+            (1, 1),
+            4,
+            2,
+            vec![16, 8],
+        ),
+        (
+            "p210le",
+            PixelFormat::P210Le,
+            10,
+            bpp(20),
+            (1, 0),
+            4,
+            3,
+            vec![24, 24],
+        ),
+        (
+            "p210be",
+            PixelFormat::P210Be,
+            10,
+            bpp(20),
+            (1, 0),
+            4,
+            3,
+            vec![24, 24],
+        ),
+        (
+            "p212le",
+            PixelFormat::P212Le,
+            12,
+            bpp(24),
+            (1, 0),
+            4,
+            3,
+            vec![24, 24],
+        ),
+        (
+            "p212be",
+            PixelFormat::P212Be,
+            12,
+            bpp(24),
+            (1, 0),
+            4,
+            3,
+            vec![24, 24],
+        ),
+        (
+            "p216le",
+            PixelFormat::P216Le,
+            16,
+            bpp(32),
+            (1, 0),
+            4,
+            3,
+            vec![24, 24],
+        ),
+        (
+            "p216be",
+            PixelFormat::P216Be,
+            16,
+            bpp(32),
+            (1, 0),
+            4,
+            3,
+            vec![24, 24],
+        ),
+        (
+            "p410le",
+            PixelFormat::P410Le,
+            10,
+            bpp(30),
+            (0, 0),
+            3,
+            2,
+            vec![12, 24],
+        ),
+        (
+            "p410be",
+            PixelFormat::P410Be,
+            10,
+            bpp(30),
+            (0, 0),
+            3,
+            2,
+            vec![12, 24],
+        ),
+        (
+            "p412le",
+            PixelFormat::P412Le,
+            12,
+            bpp(36),
+            (0, 0),
+            3,
+            2,
+            vec![12, 24],
+        ),
+        (
+            "p412be",
+            PixelFormat::P412Be,
+            12,
+            bpp(36),
+            (0, 0),
+            3,
+            2,
+            vec![12, 24],
+        ),
+        (
+            "p416le",
+            PixelFormat::P416Le,
+            16,
+            bpp(48),
+            (0, 0),
+            3,
+            2,
+            vec![12, 24],
+        ),
+        (
+            "p416be",
+            PixelFormat::P416Be,
+            16,
+            bpp(48),
+            (0, 0),
+            3,
+            2,
+            vec![12, 24],
         ),
     ] {
         assert_eq!(format.name(), name);
@@ -17676,6 +17874,24 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         PixelFormat::Nv12 | PixelFormat::Nv21 | PixelFormat::Nv16 => vec![width, width],
         PixelFormat::Nv20Le | PixelFormat::Nv20Be => vec![width * 2, width * 2],
         PixelFormat::Nv24 | PixelFormat::Nv42 => vec![width, width * 2],
+        PixelFormat::P010Le
+        | PixelFormat::P010Be
+        | PixelFormat::P012Le
+        | PixelFormat::P012Be
+        | PixelFormat::P016Le
+        | PixelFormat::P016Be
+        | PixelFormat::P210Le
+        | PixelFormat::P210Be
+        | PixelFormat::P212Le
+        | PixelFormat::P212Be
+        | PixelFormat::P216Le
+        | PixelFormat::P216Be => vec![width * 2, width * 2],
+        PixelFormat::P410Le
+        | PixelFormat::P410Be
+        | PixelFormat::P412Le
+        | PixelFormat::P412Be
+        | PixelFormat::P416Le
+        | PixelFormat::P416Be => vec![width * 2, width * 4],
         PixelFormat::Rgb48Le
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le
@@ -17870,6 +18086,24 @@ fn expected_video_plane_shapes(
             vec![(width * 2, height), (width * 2, height)]
         }
         PixelFormat::Nv24 | PixelFormat::Nv42 => vec![(width, height), (width * 2, height)],
+        PixelFormat::P010Le
+        | PixelFormat::P010Be
+        | PixelFormat::P012Le
+        | PixelFormat::P012Be
+        | PixelFormat::P016Le
+        | PixelFormat::P016Be => vec![(width * 2, height), (width * 2, height / 2)],
+        PixelFormat::P210Le
+        | PixelFormat::P210Be
+        | PixelFormat::P212Le
+        | PixelFormat::P212Be
+        | PixelFormat::P216Le
+        | PixelFormat::P216Be => vec![(width * 2, height), (width * 2, height)],
+        PixelFormat::P410Le
+        | PixelFormat::P410Be
+        | PixelFormat::P412Le
+        | PixelFormat::P412Be
+        | PixelFormat::P416Le
+        | PixelFormat::P416Be => vec![(width * 2, height), (width * 4, height)],
         PixelFormat::Rgb48Le
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le

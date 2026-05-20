@@ -282,6 +282,30 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::Nv42,
         Rational::new(25, 1).unwrap(),
     );
+    let p010le = (0..24).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &p010le,
+        4,
+        2,
+        RawVideoPixelFormat::P010Le,
+        Rational::new(25, 1).unwrap(),
+    );
+    let p212be = (0..48).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &p212be,
+        4,
+        3,
+        RawVideoPixelFormat::P212Be,
+        Rational::new(25, 1).unwrap(),
+    );
+    let p416le = (0..36).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &p416le,
+        3,
+        2,
+        RawVideoPixelFormat::P416Le,
+        Rational::new(25, 1).unwrap(),
+    );
     exercise_rawvideo(
         b"abcdefgh",
         2,

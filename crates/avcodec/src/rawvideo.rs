@@ -745,6 +745,42 @@ mod tests {
                 vec![3, 6],
                 vec![(18_u8..24).collect::<Vec<_>>(), (24_u8..36).collect()],
             ),
+            (
+                PixelFormat::P010Le,
+                "p010le",
+                4,
+                2,
+                (0_u8..24).collect::<Vec<_>>(),
+                vec![8, 8],
+                vec![(0_u8..16).collect::<Vec<_>>(), (16_u8..24).collect()],
+            ),
+            (
+                PixelFormat::P012Be,
+                "p012be",
+                4,
+                2,
+                (24_u8..48).collect::<Vec<_>>(),
+                vec![8, 8],
+                vec![(24_u8..40).collect::<Vec<_>>(), (40_u8..48).collect()],
+            ),
+            (
+                PixelFormat::P216Le,
+                "p216le",
+                4,
+                3,
+                (0_u8..48).collect::<Vec<_>>(),
+                vec![8, 8],
+                vec![(0_u8..24).collect::<Vec<_>>(), (24_u8..48).collect()],
+            ),
+            (
+                PixelFormat::P412Be,
+                "p412be",
+                3,
+                2,
+                (0_u8..36).collect::<Vec<_>>(),
+                vec![6, 12],
+                vec![(0_u8..12).collect::<Vec<_>>(), (12_u8..36).collect()],
+            ),
         ] {
             let decoder = RawVideoDecoder::new(width, height, pixel_format).unwrap();
             let mut packet = Packet::new(payload.clone(), 0);
@@ -1072,6 +1108,15 @@ mod tests {
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv20Be).is_err());
         assert!(RawVideoDecoder::new(4, 3, PixelFormat::Nv20Be).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv24).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::P010Le).is_err());
+        assert!(RawVideoDecoder::new(4, 3, PixelFormat::P010Be).is_err());
+        assert!(RawVideoDecoder::new(4, 2, PixelFormat::P012Le).is_ok());
+        assert!(RawVideoDecoder::new(4, 2, PixelFormat::P016Be).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::P210Le).is_err());
+        assert!(RawVideoDecoder::new(4, 3, PixelFormat::P212Be).is_ok());
+        assert!(RawVideoDecoder::new(4, 3, PixelFormat::P216Le).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::P410Be).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::P416Le).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv411p).is_err());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::YuvJ411p).is_err());
         assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuv411p).is_ok());
