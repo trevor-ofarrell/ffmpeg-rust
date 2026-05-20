@@ -262,6 +262,8 @@ Both rawvideo packet paths also accept FFmpeg's paletted `pal8` name as one byte
 
 Both rawvideo packet paths also accept FFmpeg's packed YUV 4:2:2 names `yuyv422`, `uyvy422`, and `yvyu422` as one two-byte-per-pixel payload plane with even-width validation through the shared `PixelFormat` model.
 
+Both rawvideo packet paths also accept FFmpeg's packed UYYVYY411 name `uyyvyy411` as one payload plane with three 8-bit YUV components, log2 chroma `(2,0)`, 12 logical bits per pixel, width-divisible-by-4 validation, and 6 stored bytes per 4-pixel row group. Because this format is not scalar byte-per-pixel addressable, `packed_bytes_per_pixel` remains `None`.
+
 Both rawvideo packet paths also accept FFmpeg's high-bit packed YUV 4:2:2 names `y210le`/`y210be`, `y212le`/`y212be`, and `y216le`/`y216be` as one four-byte-per-pixel payload plane with even-width validation through the shared `PixelFormat` model. Their descriptors preserve FFmpeg's logical average bpp values of 20, 24, and 32 while storage sizing uses four bytes per pixel.
 
 Both rawvideo packet paths also accept FFmpeg's packed 10-bit RGB/BGR names `x2rgb10le`/`x2rgb10be` and `x2bgr10le`/`x2bgr10be` as one four-byte-per-pixel payload plane through the shared `PixelFormat` model. Their descriptors preserve FFmpeg's logical 30 bpp and no-alpha semantics while storage sizing keeps the unused two-bit lane.

@@ -835,6 +835,39 @@ mod tests {
     }
 
     #[test]
+    fn decodes_uyyvyy411_packet_to_single_plane_frame() {
+        let decoder = RawVideoDecoder::new(4, 2, PixelFormat::Uyyvyy411).unwrap();
+        let payload = (0_u8..12).collect::<Vec<_>>();
+        let mut packet = Packet::new(payload.clone(), 0);
+        packet.set_pts(Some(22));
+
+        let frame = decoder.decode_packet(&packet).unwrap();
+
+        assert_eq!(decoder.frame_size(), 12);
+        assert_eq!(frame.pts(), Some(22));
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.width(), 4);
+                assert_eq!(video.height(), 2);
+                assert_eq!(video.pixel_format(), PixelFormat::Uyyvyy411);
+                assert_eq!(video.pixel_format_name(), "uyyvyy411");
+                assert_eq!(video.line_sizes(), &[6]);
+                assert_eq!(video.planes(), &[payload]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+
+        assert!(RawVideoDecoder::new(6, 1, PixelFormat::Uyyvyy411).is_err());
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; 11], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn decodes_semiplanar_yuv_packets_to_two_plane_frames() {
         for (
             pixel_format,

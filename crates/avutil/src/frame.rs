@@ -12477,6 +12477,10 @@ fn video_plane_shapes(
                 rows: height,
             }])
         }
+        PixelFormat::Uyyvyy411 => Ok(vec![VideoPlaneShape {
+            row_bytes: checked_mul(width / 4, 6, "packed YUV 4:1:1 video frame line size")?,
+            rows: height,
+        }]),
         PixelFormat::Y210Le
         | PixelFormat::Y210Be
         | PixelFormat::Y212Le
@@ -16774,6 +16778,9 @@ mod tests {
 
         let uyvy422 = VideoFrame::new(4, 1, PixelFormat::Uyvy422, vec![vec![0; 8]]).unwrap();
         assert_eq!(uyvy422.line_sizes(), &[8]);
+
+        let uyyvyy411 = VideoFrame::new(4, 2, PixelFormat::Uyyvyy411, vec![vec![0; 12]]).unwrap();
+        assert_eq!(uyyvyy411.line_sizes(), &[6]);
 
         let y210 = VideoFrame::new(2, 2, PixelFormat::Y210Le, vec![vec![0; 16]]).unwrap();
         assert_eq!(y210.line_sizes(), &[8]);
