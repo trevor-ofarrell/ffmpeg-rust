@@ -1290,7 +1290,13 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     }
     if let Some(bytes_per_pixel) = pixel_format.packed_bytes_per_pixel() {
         assert_eq!(pixel_format.plane_count(), 1);
-        assert_eq!(pixel_format.has_alpha(), bytes_per_pixel == 4);
+        assert!(
+            !pixel_format.has_alpha()
+                || matches!(
+                    pixel_format,
+                    PixelFormat::Rgba | PixelFormat::Bgra | PixelFormat::Argb | PixelFormat::Abgr
+                )
+        );
         assert_eq!(usize::from(pixel_format.bits_per_pixel()), bytes_per_pixel * 8);
     } else {
         assert!(matches!(
@@ -5198,6 +5204,8 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
 fn exercise_fixtures() {
     assert_eq!(PixelFormat::from_name("gray8"), Some(PixelFormat::Gray8));
+    assert_eq!(PixelFormat::from_name("0rgb"), Some(PixelFormat::ZeroRgb));
+    assert_eq!(PixelFormat::Rgb0.frame_size(2, 2).unwrap(), 16);
     assert_eq!(
         PixelFormat::Yuv420p.plane_sizes(2, 2).unwrap(),
         vec![4, 1, 1]
@@ -16884,7 +16892,14 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
     match pixel_format {
         PixelFormat::Gray8 => vec![width],
         PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![width * 3],
-        PixelFormat::Rgba | PixelFormat::Bgra | PixelFormat::Argb | PixelFormat::Abgr => {
+        PixelFormat::Rgba
+        | PixelFormat::Bgra
+        | PixelFormat::Argb
+        | PixelFormat::Abgr
+        | PixelFormat::ZeroRgb
+        | PixelFormat::Rgb0
+        | PixelFormat::ZeroBgr
+        | PixelFormat::Bgr0 => {
             vec![width * 4]
         }
         PixelFormat::Yuv420p
@@ -16907,7 +16922,14 @@ fn expected_video_plane_shapes(
     match pixel_format {
         PixelFormat::Gray8 => vec![(width, height)],
         PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![(width * 3, height)],
-        PixelFormat::Rgba | PixelFormat::Bgra | PixelFormat::Argb | PixelFormat::Abgr => {
+        PixelFormat::Rgba
+        | PixelFormat::Bgra
+        | PixelFormat::Argb
+        | PixelFormat::Abgr
+        | PixelFormat::ZeroRgb
+        | PixelFormat::Rgb0
+        | PixelFormat::ZeroBgr
+        | PixelFormat::Bgr0 => {
             vec![(width * 4, height)]
         }
         PixelFormat::Yuv420p

@@ -282,6 +282,10 @@ mod tests {
             RawVideoPixelFormat::Bgra,
             RawVideoPixelFormat::Argb,
             RawVideoPixelFormat::Abgr,
+            RawVideoPixelFormat::ZeroRgb,
+            RawVideoPixelFormat::Rgb0,
+            RawVideoPixelFormat::ZeroBgr,
+            RawVideoPixelFormat::Bgr0,
         ] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 4], 1, 1, format, Rational::new(1, 1).unwrap(),)
@@ -551,6 +555,19 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 12);
+    }
+
+    #[test]
+    fn muxer_computes_rgb0_frame_size() {
+        let muxer = RawVideoMuxer::new(
+            2,
+            2,
+            RawVideoPixelFormat::Rgb0,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(muxer.info().frame_size(), 16);
     }
 
     #[test]

@@ -2794,6 +2794,37 @@ mod tests {
     }
 
     #[test]
+    fn runs_rawvideo_rgb0_to_null_stdout() {
+        let path = write_temp_bytes("rawvideo-rgb0-null", "raw", &[0, 1, 2, 3, 4, 5, 6, 7]);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb0",
+            "-s",
+            "1x1",
+            "-r",
+            "25",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "null",
+            "-",
+        ]))
+        .expect("rawvideo rgb0 command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("null"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 8);
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+    }
+
+    #[test]
     fn runs_rawvideo_yuv422p_to_null_stdout() {
         let path = write_temp_bytes("rawvideo-yuv422p-null", "raw", &[0, 1, 2, 3, 4, 5, 6, 7]);
         let path_arg = path.to_string_lossy().into_owned();
