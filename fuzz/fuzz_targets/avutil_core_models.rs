@@ -1345,6 +1345,18 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 | PixelFormat::YuvJ440p
                 | PixelFormat::Yuv444p
                 | PixelFormat::YuvJ444p
+                | PixelFormat::Yuv420p10Le
+                | PixelFormat::Yuv420p10Be
+                | PixelFormat::Yuv422p10Le
+                | PixelFormat::Yuv422p10Be
+                | PixelFormat::Yuv444p10Le
+                | PixelFormat::Yuv444p10Be
+                | PixelFormat::Yuv420p12Le
+                | PixelFormat::Yuv420p12Be
+                | PixelFormat::Yuv422p12Le
+                | PixelFormat::Yuv422p12Be
+                | PixelFormat::Yuv444p12Le
+                | PixelFormat::Yuv444p12Be
                 | PixelFormat::Nv12
                 | PixelFormat::Nv21
         ));
@@ -5637,6 +5649,14 @@ fn exercise_fixtures() {
         vec![6, 3, 3]
     );
     assert_eq!(
+        PixelFormat::Yuv420p10Le.plane_sizes(2, 2).unwrap(),
+        vec![8, 2, 2]
+    );
+    assert_eq!(
+        PixelFormat::Yuv422p12Be.plane_sizes(2, 3).unwrap(),
+        vec![12, 6, 6]
+    );
+    assert_eq!(
         PixelFormat::Yuv411p.plane_sizes(4, 3).unwrap(),
         vec![12, 3, 3]
     );
@@ -5706,6 +5726,10 @@ fn exercise_fixtures() {
     assert_eq!(
         PixelFormat::Yuv444p.plane_sizes(3, 2).unwrap(),
         vec![6, 6, 6]
+    );
+    assert_eq!(
+        PixelFormat::Yuv444p10Be.plane_sizes(3, 2).unwrap(),
+        vec![12, 12, 12]
     );
     assert_eq!(SampleFormat::U8.plane_sizes(2, 2).unwrap(), vec![4]);
     assert_eq!(SampleFormat::S16.plane_sizes(2, 2).unwrap(), vec![8]);
@@ -17470,6 +17494,25 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
             let (log2_chroma_w, _) = pixel_format.log2_chroma();
             vec![width, width >> log2_chroma_w, width >> log2_chroma_w]
         }
+        PixelFormat::Yuv420p10Le
+        | PixelFormat::Yuv420p10Be
+        | PixelFormat::Yuv422p10Le
+        | PixelFormat::Yuv422p10Be
+        | PixelFormat::Yuv444p10Le
+        | PixelFormat::Yuv444p10Be
+        | PixelFormat::Yuv420p12Le
+        | PixelFormat::Yuv420p12Be
+        | PixelFormat::Yuv422p12Le
+        | PixelFormat::Yuv422p12Be
+        | PixelFormat::Yuv444p12Le
+        | PixelFormat::Yuv444p12Be => {
+            let (log2_chroma_w, _) = pixel_format.log2_chroma();
+            vec![
+                width * 2,
+                (width >> log2_chroma_w) * 2,
+                (width >> log2_chroma_w) * 2,
+            ]
+        }
     }
 }
 
@@ -17599,6 +17642,25 @@ fn expected_video_plane_shapes(
                 (width, height),
                 (width >> log2_chroma_w, height >> log2_chroma_h),
                 (width >> log2_chroma_w, height >> log2_chroma_h),
+            ]
+        }
+        PixelFormat::Yuv420p10Le
+        | PixelFormat::Yuv420p10Be
+        | PixelFormat::Yuv422p10Le
+        | PixelFormat::Yuv422p10Be
+        | PixelFormat::Yuv444p10Le
+        | PixelFormat::Yuv444p10Be
+        | PixelFormat::Yuv420p12Le
+        | PixelFormat::Yuv420p12Be
+        | PixelFormat::Yuv422p12Le
+        | PixelFormat::Yuv422p12Be
+        | PixelFormat::Yuv444p12Le
+        | PixelFormat::Yuv444p12Be => {
+            let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
+            vec![
+                (width * 2, height),
+                ((width >> log2_chroma_w) * 2, height >> log2_chroma_h),
+                ((width >> log2_chroma_w) * 2, height >> log2_chroma_h),
             ]
         }
     }

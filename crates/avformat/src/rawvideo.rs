@@ -390,6 +390,34 @@ mod tests {
                 12
             );
         }
+        for (format, width, height, payload_len, expected_size) in [
+            (RawVideoPixelFormat::Yuv420p10Le, 4, 2, 24, 24),
+            (RawVideoPixelFormat::Yuv420p10Be, 4, 2, 24, 24),
+            (RawVideoPixelFormat::Yuv422p10Le, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Yuv422p10Be, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Yuv444p10Le, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Yuv444p10Be, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Yuv420p12Le, 4, 2, 24, 24),
+            (RawVideoPixelFormat::Yuv420p12Be, 4, 2, 24, 24),
+            (RawVideoPixelFormat::Yuv422p12Le, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Yuv422p12Be, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Yuv444p12Le, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Yuv444p12Be, 3, 2, 36, 36),
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(
+                    &vec![0; payload_len],
+                    width,
+                    height,
+                    format,
+                    Rational::new(1, 1).unwrap(),
+                )
+                .unwrap()
+                .info()
+                .frame_size(),
+                expected_size
+            );
+        }
         for format in [RawVideoPixelFormat::Gray16Le, RawVideoPixelFormat::Gray16Be] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 4], 2, 1, format, Rational::new(1, 1).unwrap(),)
@@ -1421,6 +1449,29 @@ mod tests {
     }
 
     #[test]
+    fn muxer_computes_high_bit_depth_planar_yuv_frame_sizes() {
+        for (format, width, height, expected_size) in [
+            (RawVideoPixelFormat::Yuv420p10Le, 4, 2, 24),
+            (RawVideoPixelFormat::Yuv420p10Be, 4, 2, 24),
+            (RawVideoPixelFormat::Yuv422p10Le, 4, 3, 48),
+            (RawVideoPixelFormat::Yuv422p10Be, 4, 3, 48),
+            (RawVideoPixelFormat::Yuv444p10Le, 3, 2, 36),
+            (RawVideoPixelFormat::Yuv444p10Be, 3, 2, 36),
+            (RawVideoPixelFormat::Yuv420p12Le, 4, 2, 24),
+            (RawVideoPixelFormat::Yuv420p12Be, 4, 2, 24),
+            (RawVideoPixelFormat::Yuv422p12Le, 4, 3, 48),
+            (RawVideoPixelFormat::Yuv422p12Be, 4, 3, 48),
+            (RawVideoPixelFormat::Yuv444p12Le, 3, 2, 36),
+            (RawVideoPixelFormat::Yuv444p12Be, 3, 2, 36),
+        ] {
+            let muxer =
+                RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), expected_size);
+        }
+    }
+
+    #[test]
     fn muxer_rejects_invalid_geometry_rate_stream_and_frame_size() {
         assert!(RawVideoMuxer::new(
             0,
@@ -1457,6 +1508,41 @@ mod tests {
             Rational::new(1, 1).unwrap(),
         )
         .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv420p10Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            4,
+            3,
+            RawVideoPixelFormat::Yuv420p12Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv422p10Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            4,
+            3,
+            RawVideoPixelFormat::Yuv422p12Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv444p10Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
         assert!(RawVideoMuxer::new(
             3,
             2,
