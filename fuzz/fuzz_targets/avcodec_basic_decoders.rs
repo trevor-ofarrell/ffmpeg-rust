@@ -172,6 +172,26 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    let yaf16 = RawVideoDecoder::new(2, 1, PixelFormat::Yaf16Le).unwrap();
+    assert!(yaf16.decode_packet(&Packet::new(vec![0; 8], 0)).is_ok());
+    assert_eq!(
+        yaf16
+            .decode_packet(&Packet::new(vec![0; 7], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
+    let yaf32 = RawVideoDecoder::new(1, 1, PixelFormat::Yaf32Be).unwrap();
+    assert!(yaf32.decode_packet(&Packet::new(vec![0; 8], 0)).is_ok());
+    assert_eq!(
+        yaf32
+            .decode_packet(&Packet::new(vec![0; 7], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let gbrp = RawVideoDecoder::new(2, 1, PixelFormat::Gbrp).unwrap();
     assert!(gbrp.decode_packet(&Packet::new(vec![0; 6], 0)).is_ok());
     assert_eq!(

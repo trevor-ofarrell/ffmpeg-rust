@@ -349,6 +349,29 @@ fn exercise_fixtures() {
     );
     assert!(raw_grayf32_demuxer.read_packet().unwrap().is_none());
 
+    for (format, width, height, payload) in [
+        (PixelFormat::Yaf16Le, 2, 1, (0..8).collect::<Vec<_>>()),
+        (PixelFormat::Yaf32Be, 1, 1, (8..16).collect::<Vec<_>>()),
+    ] {
+        let mut raw_yaf =
+            RawVideoMuxer::new(width, height, format, Rational::new(24, 1).unwrap()).unwrap();
+        raw_yaf.write_packet(&Packet::new(payload.clone(), 0)).unwrap();
+        let raw_yaf_output = raw_yaf.finish();
+        let mut raw_yaf_demuxer = RawVideoDemuxer::open(
+            &raw_yaf_output,
+            width,
+            height,
+            format,
+            Rational::new(24, 1).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            raw_yaf_demuxer.read_packet().unwrap().unwrap().data(),
+            payload.as_slice()
+        );
+        assert!(raw_yaf_demuxer.read_packet().unwrap().is_none());
+    }
+
     let mut raw_gbrp =
         RawVideoMuxer::new(2, 1, PixelFormat::Gbrp, Rational::new(24, 1).unwrap()).unwrap();
     raw_gbrp

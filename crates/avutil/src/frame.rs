@@ -12389,10 +12389,12 @@ fn video_plane_shapes(
             row_bytes: checked_mul(width, 2, "8-bit gray-alpha video frame line size")?,
             rows: height,
         }]),
-        PixelFormat::Ya16Le | PixelFormat::Ya16Be => Ok(vec![VideoPlaneShape {
-            row_bytes: checked_mul(width, 4, "16-bit gray-alpha video frame line size")?,
-            rows: height,
-        }]),
+        PixelFormat::Ya16Le | PixelFormat::Ya16Be | PixelFormat::Yaf16Le | PixelFormat::Yaf16Be => {
+            Ok(vec![VideoPlaneShape {
+                row_bytes: checked_mul(width, 4, "16-bit gray-alpha video frame line size")?,
+                rows: height,
+            }])
+        }
         PixelFormat::Gray9Le
         | PixelFormat::Gray9Be
         | PixelFormat::Gray10Le
@@ -12418,6 +12420,10 @@ fn video_plane_shapes(
         }]),
         PixelFormat::GrayF32Le | PixelFormat::GrayF32Be => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 4, "32-bit floating gray video frame line size")?,
+            rows: height,
+        }]),
+        PixelFormat::Yaf32Le | PixelFormat::Yaf32Be => Ok(vec![VideoPlaneShape {
+            row_bytes: checked_mul(width, 8, "32-bit floating gray-alpha video frame line size")?,
             rows: height,
         }]),
         PixelFormat::Rgb24 | PixelFormat::Bgr24 | PixelFormat::Vyu444 => {
@@ -16804,6 +16810,12 @@ mod tests {
 
         let grayf32 = VideoFrame::new(3, 2, PixelFormat::GrayF32Le, vec![vec![0; 24]]).unwrap();
         assert_eq!(grayf32.line_sizes(), &[12]);
+
+        let yaf16 = VideoFrame::new(3, 2, PixelFormat::Yaf16Le, vec![vec![0; 24]]).unwrap();
+        assert_eq!(yaf16.line_sizes(), &[12]);
+
+        let yaf32 = VideoFrame::new(3, 2, PixelFormat::Yaf32Be, vec![vec![0; 48]]).unwrap();
+        assert_eq!(yaf32.line_sizes(), &[24]);
 
         let gbrp = VideoFrame::new(
             3,

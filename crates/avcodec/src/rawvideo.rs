@@ -440,6 +440,48 @@ mod tests {
     }
 
     #[test]
+    fn decodes_yaf_packets_to_single_plane_frames() {
+        let yaf16 = RawVideoDecoder::new(2, 1, PixelFormat::Yaf16Le).unwrap();
+        let mut packet = Packet::new((0..8).collect(), 0);
+        packet.set_pts(Some(25));
+
+        let frame = yaf16.decode_packet(&packet).unwrap();
+
+        assert_eq!(yaf16.frame_size(), 8);
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.pixel_format(), PixelFormat::Yaf16Le);
+                assert_eq!(video.line_sizes(), &[8]);
+                assert_eq!(video.planes(), &[vec![0, 1, 2, 3, 4, 5, 6, 7]]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+
+        let yaf32 = RawVideoDecoder::new(1, 1, PixelFormat::Yaf32Be).unwrap();
+        let frame = yaf32
+            .decode_packet(&Packet::new((8..16).collect(), 0))
+            .unwrap();
+
+        assert_eq!(yaf32.frame_size(), 8);
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.pixel_format(), PixelFormat::Yaf32Be);
+                assert_eq!(video.line_sizes(), &[8]);
+                assert_eq!(video.planes(), &[vec![8, 9, 10, 11, 12, 13, 14, 15]]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+
+        assert_eq!(
+            yaf32
+                .decode_packet(&Packet::new(vec![0; 7], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn decodes_rgba64_packet_to_single_plane_frame() {
         let decoder = RawVideoDecoder::new(1, 1, PixelFormat::Rgba64Le).unwrap();
         let mut packet = Packet::new(vec![0, 1, 2, 3, 4, 5, 6, 7], 0);

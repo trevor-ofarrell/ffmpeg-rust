@@ -643,6 +643,26 @@ mod tests {
                 8
             );
         }
+        for (format, width, height, frame_size) in [
+            (RawVideoPixelFormat::Yaf16Le, 2, 2, 16),
+            (RawVideoPixelFormat::Yaf16Be, 1, 2, 8),
+            (RawVideoPixelFormat::Yaf32Le, 2, 2, 32),
+            (RawVideoPixelFormat::Yaf32Be, 1, 2, 16),
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(
+                    &vec![0; frame_size],
+                    width,
+                    height,
+                    format,
+                    Rational::new(1, 1).unwrap(),
+                )
+                .unwrap()
+                .info()
+                .frame_size(),
+                frame_size
+            );
+        }
         for format in [
             RawVideoPixelFormat::Bgra,
             RawVideoPixelFormat::Argb,
@@ -1568,6 +1588,21 @@ mod tests {
         .unwrap();
 
         assert_eq!(grayf32.info().frame_size(), 24);
+    }
+
+    #[test]
+    fn muxer_computes_yaf_frame_sizes() {
+        for (format, width, height, expected_size) in [
+            (RawVideoPixelFormat::Yaf16Le, 3, 2, 24),
+            (RawVideoPixelFormat::Yaf16Be, 1, 2, 8),
+            (RawVideoPixelFormat::Yaf32Le, 3, 2, 48),
+            (RawVideoPixelFormat::Yaf32Be, 1, 2, 16),
+        ] {
+            let muxer =
+                RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), expected_size);
+        }
     }
 
     #[test]

@@ -262,6 +262,8 @@ Both rawvideo packet paths also accept FFmpeg's packed 10-bit RGB/BGR names `x2r
 
 Both rawvideo packet paths also accept FFmpeg's packed 8-bit YUV/YUVA names `vuya`, `vuyx`, `ayuv`, `uyva`, and `vyu444` through the shared `PixelFormat` model. `vuya`/`ayuv`/`uyva` use one four-byte-per-pixel payload plane with alpha metadata, `vuyx` uses one four-byte-per-pixel payload plane while preserving FFmpeg's three-component/no-alpha descriptor semantics, and `vyu444` uses one three-byte-per-pixel payload plane.
 
+Both rawvideo packet paths also accept FFmpeg's packed floating gray+alpha names `yaf16le`, `yaf16be`, `yaf32le`, and `yaf32be` through the shared `PixelFormat` model. They are modeled as one plane with two components, alpha and float descriptor metadata, 32 or 64 logical bits per pixel, and four or eight stored bytes per pixel.
+
 Both rawvideo packet paths also accept FFmpeg's semi-planar YUV 4:2:0 names `nv12` and `nv21` as one full luma plane plus one interleaved chroma plane with even-width and even-height validation through the shared `PixelFormat` model.
 
 Both rawvideo packet paths also accept FFmpeg's semi-planar NV YUV 4:2:2 names `nv16`, `nv20le`, and `nv20be` plus 4:4:4 names `nv24` and `nv42` through the shared `PixelFormat` model, with even-width validation for the 4:2:2 formats and no chroma-parity requirement for 4:4:4.

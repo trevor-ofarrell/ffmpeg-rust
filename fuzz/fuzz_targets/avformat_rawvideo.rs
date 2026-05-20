@@ -78,6 +78,20 @@ fuzz_target!(|data: &[u8]| {
         Rational::ONE,
     );
     exercise_rawvideo(
+        b"abcdefgh",
+        2,
+        1,
+        RawVideoPixelFormat::Yaf16Le,
+        Rational::ONE,
+    );
+    exercise_rawvideo(
+        b"abcdefghijklmnop",
+        2,
+        1,
+        RawVideoPixelFormat::Yaf32Be,
+        Rational::ONE,
+    );
+    exercise_rawvideo(
         b"abcdef",
         2,
         1,
