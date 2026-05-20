@@ -12624,7 +12624,19 @@ fn video_plane_shapes(
         | PixelFormat::Yuv422p12Le
         | PixelFormat::Yuv422p12Be
         | PixelFormat::Yuv444p12Le
-        | PixelFormat::Yuv444p12Be => {
+        | PixelFormat::Yuv444p12Be
+        | PixelFormat::Yuv420p14Le
+        | PixelFormat::Yuv420p14Be
+        | PixelFormat::Yuv422p14Le
+        | PixelFormat::Yuv422p14Be
+        | PixelFormat::Yuv444p14Le
+        | PixelFormat::Yuv444p14Be
+        | PixelFormat::Yuv420p16Le
+        | PixelFormat::Yuv420p16Be
+        | PixelFormat::Yuv422p16Le
+        | PixelFormat::Yuv422p16Be
+        | PixelFormat::Yuv444p16Le
+        | PixelFormat::Yuv444p16Be => {
             let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
             let bytes_per_sample = if matches!(
                 pixel_format,
@@ -12646,6 +12658,18 @@ fn video_plane_shapes(
                     | PixelFormat::Yuv422p12Be
                     | PixelFormat::Yuv444p12Le
                     | PixelFormat::Yuv444p12Be
+                    | PixelFormat::Yuv420p14Le
+                    | PixelFormat::Yuv420p14Be
+                    | PixelFormat::Yuv422p14Le
+                    | PixelFormat::Yuv422p14Be
+                    | PixelFormat::Yuv444p14Le
+                    | PixelFormat::Yuv444p14Be
+                    | PixelFormat::Yuv420p16Le
+                    | PixelFormat::Yuv420p16Be
+                    | PixelFormat::Yuv422p16Le
+                    | PixelFormat::Yuv422p16Be
+                    | PixelFormat::Yuv444p16Le
+                    | PixelFormat::Yuv444p16Be
             ) {
                 2
             } else {
@@ -16706,6 +16730,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(yuv420p9.line_sizes(), &[8, 4, 4]);
+
+        let yuv420p16 = VideoFrame::new(
+            4,
+            2,
+            PixelFormat::Yuv420p16Le,
+            vec![vec![0; 16], vec![1; 4], vec![2; 4]],
+        )
+        .unwrap();
+        assert_eq!(yuv420p16.line_sizes(), &[8, 4, 4]);
 
         let yuv422 = VideoFrame::new(
             4,

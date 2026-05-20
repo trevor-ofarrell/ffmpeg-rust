@@ -937,6 +937,24 @@ fn exercise_fixtures() {
             2,
             (0..36).collect::<Vec<_>>(),
         ),
+        (
+            PixelFormat::Yuv420p14Le,
+            4,
+            2,
+            (0..24).collect::<Vec<_>>(),
+        ),
+        (
+            PixelFormat::Yuv422p16Be,
+            4,
+            3,
+            (0..48).collect::<Vec<_>>(),
+        ),
+        (
+            PixelFormat::Yuv444p16Be,
+            3,
+            2,
+            (0..36).collect::<Vec<_>>(),
+        ),
     ] {
         let mut raw_yuv =
             RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();

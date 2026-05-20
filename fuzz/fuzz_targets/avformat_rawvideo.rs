@@ -316,11 +316,27 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::Yuv420p10Le,
         Rational::new(25, 1).unwrap(),
     );
+    let yuv420p14 = (0..24).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &yuv420p14,
+        4,
+        2,
+        RawVideoPixelFormat::Yuv420p14Le,
+        Rational::new(25, 1).unwrap(),
+    );
     exercise_rawvideo(
         b"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv",
         4,
         3,
         RawVideoPixelFormat::Yuv422p12Be,
+        Rational::new(25, 1).unwrap(),
+    );
+    let yuv422p16 = (0..48).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &yuv422p16,
+        4,
+        3,
+        RawVideoPixelFormat::Yuv422p16Be,
         Rational::new(25, 1).unwrap(),
     );
     exercise_rawvideo(

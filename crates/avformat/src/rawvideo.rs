@@ -409,6 +409,18 @@ mod tests {
             (RawVideoPixelFormat::Yuv422p12Be, 4, 3, 48, 48),
             (RawVideoPixelFormat::Yuv444p12Le, 3, 2, 36, 36),
             (RawVideoPixelFormat::Yuv444p12Be, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Yuv420p14Le, 4, 2, 24, 24),
+            (RawVideoPixelFormat::Yuv420p14Be, 4, 2, 24, 24),
+            (RawVideoPixelFormat::Yuv422p14Le, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Yuv422p14Be, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Yuv444p14Le, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Yuv444p14Be, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Yuv420p16Le, 4, 2, 24, 24),
+            (RawVideoPixelFormat::Yuv420p16Be, 4, 2, 24, 24),
+            (RawVideoPixelFormat::Yuv422p16Le, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Yuv422p16Be, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Yuv444p16Le, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Yuv444p16Be, 3, 2, 36, 36),
         ] {
             assert_eq!(
                 RawVideoDemuxer::open(
@@ -863,6 +875,38 @@ mod tests {
             3,
             2,
             RawVideoPixelFormat::Yuv444p9Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoDemuxer::open(
+            &[0; 24],
+            3,
+            2,
+            RawVideoPixelFormat::Yuv420p14Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 24],
+            4,
+            3,
+            RawVideoPixelFormat::Yuv420p16Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 48],
+            3,
+            2,
+            RawVideoPixelFormat::Yuv422p14Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 36],
+            3,
+            2,
+            RawVideoPixelFormat::Yuv444p16Be,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());
@@ -1507,6 +1551,18 @@ mod tests {
             (RawVideoPixelFormat::Yuv422p12Be, 4, 3, 48),
             (RawVideoPixelFormat::Yuv444p12Le, 3, 2, 36),
             (RawVideoPixelFormat::Yuv444p12Be, 3, 2, 36),
+            (RawVideoPixelFormat::Yuv420p14Le, 4, 2, 24),
+            (RawVideoPixelFormat::Yuv420p14Be, 4, 2, 24),
+            (RawVideoPixelFormat::Yuv422p14Le, 4, 3, 48),
+            (RawVideoPixelFormat::Yuv422p14Be, 4, 3, 48),
+            (RawVideoPixelFormat::Yuv444p14Le, 3, 2, 36),
+            (RawVideoPixelFormat::Yuv444p14Be, 3, 2, 36),
+            (RawVideoPixelFormat::Yuv420p16Le, 4, 2, 24),
+            (RawVideoPixelFormat::Yuv420p16Be, 4, 2, 24),
+            (RawVideoPixelFormat::Yuv422p16Le, 4, 3, 48),
+            (RawVideoPixelFormat::Yuv422p16Be, 4, 3, 48),
+            (RawVideoPixelFormat::Yuv444p16Le, 3, 2, 36),
+            (RawVideoPixelFormat::Yuv444p16Be, 3, 2, 36),
         ] {
             let muxer =
                 RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
@@ -1612,6 +1668,34 @@ mod tests {
             3,
             2,
             RawVideoPixelFormat::Yuv444p10Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv420p14Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            4,
+            3,
+            RawVideoPixelFormat::Yuv420p16Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv422p14Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv444p16Be,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());

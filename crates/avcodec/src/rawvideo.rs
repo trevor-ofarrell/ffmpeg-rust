@@ -581,6 +581,45 @@ mod tests {
                 ],
                 vec![6, 6, 6],
             ),
+            (
+                PixelFormat::Yuv420p14Le,
+                "yuv420p14le",
+                4,
+                2,
+                24,
+                vec![
+                    (0..16).collect::<Vec<_>>(),
+                    (16..20).collect::<Vec<_>>(),
+                    (20..24).collect::<Vec<_>>(),
+                ],
+                vec![8, 4, 4],
+            ),
+            (
+                PixelFormat::Yuv422p16Be,
+                "yuv422p16be",
+                4,
+                3,
+                48,
+                vec![
+                    (0..24).collect::<Vec<_>>(),
+                    (24..36).collect::<Vec<_>>(),
+                    (36..48).collect::<Vec<_>>(),
+                ],
+                vec![8, 4, 4],
+            ),
+            (
+                PixelFormat::Yuv444p16Be,
+                "yuv444p16be",
+                3,
+                2,
+                36,
+                vec![
+                    (0..12).collect::<Vec<_>>(),
+                    (12..24).collect::<Vec<_>>(),
+                    (24..36).collect::<Vec<_>>(),
+                ],
+                vec![6, 6, 6],
+            ),
         ] {
             let decoder = RawVideoDecoder::new(width, height, format).unwrap();
             let packet = Packet::new((0_u8..payload_len).collect(), 0);
@@ -830,6 +869,10 @@ mod tests {
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv422p10Be).is_err());
         assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuv422p12Be).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p10Le).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv420p14Le).is_err());
+        assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuv420p16Be).is_err());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv422p14Le).is_err());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p16Be).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuyv422).is_err());
         assert!(RawVideoDecoder::new(2, 3, PixelFormat::Yuyv422).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv12).is_err());
