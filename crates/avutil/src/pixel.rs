@@ -32,6 +32,7 @@ pub enum PixelFormat {
     Rgb0,
     ZeroBgr,
     Bgr0,
+    Gbrp,
     Yuv420p,
     Yuv422p,
     Yuv410p,
@@ -96,6 +97,7 @@ impl PixelFormat {
         Self::Rgb0,
         Self::ZeroBgr,
         Self::Bgr0,
+        Self::Gbrp,
         Self::Yuv420p,
         Self::Yuv422p,
         Self::Yuv410p,
@@ -140,6 +142,7 @@ impl PixelFormat {
             "rgb0" => Some(Self::Rgb0),
             "0bgr" => Some(Self::ZeroBgr),
             "bgr0" => Some(Self::Bgr0),
+            "gbrp" => Some(Self::Gbrp),
             "yuv420p" => Some(Self::Yuv420p),
             "yuv422p" => Some(Self::Yuv422p),
             "yuv410p" => Some(Self::Yuv410p),
@@ -523,6 +526,18 @@ impl PixelFormat {
                 0,
                 0,
             ),
+            Self::Gbrp => (
+                "gbrp",
+                PixelFormatClass::Rgb,
+                3,
+                24,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
             Self::Yuv420p => (
                 "yuv420p",
                 PixelFormatClass::Yuv,
@@ -769,6 +784,7 @@ impl PixelFormat {
                 4,
                 "32-bit packed pixel format frame size",
             )?]),
+            Self::Gbrp => Ok(vec![pixels, pixels, pixels]),
             Self::Yuv420p
             | Self::Yuv422p
             | Self::Yuv410p
@@ -963,6 +979,7 @@ mod tests {
         assert_eq!(PixelFormat::from_name("rgb0"), Some(PixelFormat::Rgb0));
         assert_eq!(PixelFormat::from_name("0bgr"), Some(PixelFormat::ZeroBgr));
         assert_eq!(PixelFormat::from_name("bgr0"), Some(PixelFormat::Bgr0));
+        assert_eq!(PixelFormat::from_name("gbrp"), Some(PixelFormat::Gbrp));
         assert_eq!(
             PixelFormat::from_name("yuv422p"),
             Some(PixelFormat::Yuv422p)
@@ -983,7 +1000,7 @@ mod tests {
             PixelFormat::from_name("yuv444p"),
             Some(PixelFormat::Yuv444p)
         );
-        assert_eq!(PixelFormat::ALL.len(), 36);
+        assert_eq!(PixelFormat::ALL.len(), 37);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray16Le.plane_count(), 1);
@@ -1000,6 +1017,7 @@ mod tests {
         assert_eq!(PixelFormat::Yuv411p.plane_count(), 3);
         assert_eq!(PixelFormat::Yuv440p.plane_count(), 3);
         assert_eq!(PixelFormat::Yuv444p.plane_count(), 3);
+        assert_eq!(PixelFormat::Gbrp.plane_count(), 3);
         assert!(!PixelFormat::Rgb24.is_planar());
         assert!(PixelFormat::Rgb24.is_packed());
         assert!(PixelFormat::Ya8.is_packed());
@@ -1017,7 +1035,9 @@ mod tests {
         assert!(PixelFormat::Yuv411p.is_planar());
         assert!(PixelFormat::Yuv440p.is_planar());
         assert!(PixelFormat::Yuv444p.is_planar());
+        assert!(PixelFormat::Gbrp.is_planar());
         assert!(!PixelFormat::Yuv420p.is_packed());
+        assert!(!PixelFormat::Gbrp.is_packed());
         assert!(!PixelFormat::Rgb24.has_alpha());
         assert!(PixelFormat::Ya8.has_alpha());
         assert!(PixelFormat::Ya16Le.has_alpha());
@@ -1038,6 +1058,7 @@ mod tests {
         assert_eq!(PixelFormat::Bgra64Be.packed_bytes_per_pixel(), Some(8));
         assert_eq!(PixelFormat::Argb.packed_bytes_per_pixel(), Some(4));
         assert_eq!(PixelFormat::Bgr0.packed_bytes_per_pixel(), Some(4));
+        assert_eq!(PixelFormat::Gbrp.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Yuv420p.packed_bytes_per_pixel(), None);
     }
 
@@ -1210,8 +1231,29 @@ mod tests {
             assert!(!format.has_chroma_subsampling());
         }
 
+        let gbrp = PixelFormat::Gbrp.descriptor();
+        assert_eq!(gbrp.format, PixelFormat::Gbrp);
+        assert_eq!(gbrp.name, "gbrp");
+        assert_eq!(PixelFormat::from_name(gbrp.name), Some(PixelFormat::Gbrp));
+        assert_eq!(gbrp.class, PixelFormatClass::Rgb);
+        assert!(PixelFormat::Gbrp.is_rgb());
+        assert!(!PixelFormat::Gbrp.is_yuv());
+        assert_eq!(gbrp.component_count, 3);
+        assert_eq!(gbrp.bits_per_component, 8);
+        assert_eq!(gbrp.bits_per_pixel, 24);
+        assert_eq!(gbrp.plane_count, 3);
+        assert!(gbrp.is_planar);
+        assert!(!gbrp.has_alpha);
+        assert!(!gbrp.is_float);
+        assert_eq!(gbrp.packed_bytes_per_pixel, None);
+        assert_eq!(PixelFormat::Gbrp.log2_chroma(), (0, 0));
+        assert!(!PixelFormat::Gbrp.has_chroma_subsampling());
+
         assert_eq!(PixelFormat::Rgb24.component_count(), 3);
         assert_eq!(PixelFormat::Rgb24.bits_per_pixel(), 24);
+        assert_eq!(PixelFormat::Gbrp.component_count(), 3);
+        assert_eq!(PixelFormat::Gbrp.bits_per_component(), 8);
+        assert_eq!(PixelFormat::Gbrp.bits_per_pixel(), 24);
         assert_eq!(PixelFormat::Ya16Le.component_count(), 2);
         assert_eq!(PixelFormat::Ya16Le.bits_per_component(), 16);
         assert_eq!(PixelFormat::Ya16Le.bits_per_pixel(), 32);
@@ -1334,6 +1376,8 @@ mod tests {
             vec![6, 6, 6]
         );
         assert_eq!(PixelFormat::Yuv444p.frame_size(3, 2).unwrap(), 18);
+        assert_eq!(PixelFormat::Gbrp.plane_sizes(3, 2).unwrap(), vec![6, 6, 6]);
+        assert_eq!(PixelFormat::Gbrp.frame_size(3, 2).unwrap(), 18);
     }
 
     #[test]
@@ -1379,6 +1423,12 @@ mod tests {
         );
 
         let planes = PixelFormat::Yuv444p
+            .split_planes(&[0, 1, 2, 3, 4, 5], 1, 2)
+            .unwrap();
+
+        assert_eq!(planes, vec![vec![0, 1], vec![2, 3], vec![4, 5]]);
+
+        let planes = PixelFormat::Gbrp
             .split_planes(&[0, 1, 2, 3, 4, 5], 1, 2)
             .unwrap();
 

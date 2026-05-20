@@ -359,6 +359,19 @@ mod tests {
                 4
             );
         }
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &[0; 6],
+                2,
+                1,
+                RawVideoPixelFormat::Gbrp,
+                Rational::new(1, 1).unwrap(),
+            )
+            .unwrap()
+            .info()
+            .frame_size(),
+            6
+        );
         for format in [
             RawVideoPixelFormat::Rgb48Le,
             RawVideoPixelFormat::Rgb48Be,
@@ -709,6 +722,19 @@ mod tests {
         .unwrap();
 
         assert_eq!(grayf32.info().frame_size(), 24);
+    }
+
+    #[test]
+    fn muxer_computes_gbrp_frame_size() {
+        let muxer = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Gbrp,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(muxer.info().frame_size(), 18);
     }
 
     #[test]

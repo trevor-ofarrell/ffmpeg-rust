@@ -169,6 +169,28 @@ mod tests {
     }
 
     #[test]
+    fn decodes_gbrp_packet_to_three_planes() {
+        let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Gbrp).unwrap();
+        let mut packet = Packet::new(vec![0, 1, 2, 3, 4, 5], 0);
+        packet.set_pts(Some(12));
+
+        let frame = decoder.decode_packet(&packet).unwrap();
+
+        assert_eq!(decoder.frame_size(), 6);
+        assert_eq!(frame.pts(), Some(12));
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.width(), 2);
+                assert_eq!(video.height(), 1);
+                assert_eq!(video.pixel_format(), PixelFormat::Gbrp);
+                assert_eq!(video.pixel_format_name(), "gbrp");
+                assert_eq!(video.planes(), &[vec![0, 1], vec![2, 3], vec![4, 5]]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+    }
+
+    #[test]
     fn decodes_ya8_packet_to_single_plane_frame() {
         let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Ya8).unwrap();
         let mut packet = Packet::new(vec![0x10, 0xff, 0x80, 0x40], 0);

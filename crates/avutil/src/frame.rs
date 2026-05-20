@@ -12434,6 +12434,20 @@ fn video_plane_shapes(
             row_bytes: checked_mul(width, 4, "32-bit packed video frame line size")?,
             rows: height,
         }]),
+        PixelFormat::Gbrp => Ok(vec![
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height,
+            },
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height,
+            },
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height,
+            },
+        ]),
         PixelFormat::Yuv420p
         | PixelFormat::Yuv422p
         | PixelFormat::Yuv410p
@@ -16285,6 +16299,15 @@ mod tests {
 
         let grayf32 = VideoFrame::new(3, 2, PixelFormat::GrayF32Le, vec![vec![0; 24]]).unwrap();
         assert_eq!(grayf32.line_sizes(), &[12]);
+
+        let gbrp = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::Gbrp,
+            vec![vec![0; 6], vec![0; 6], vec![0; 6]],
+        )
+        .unwrap();
+        assert_eq!(gbrp.line_sizes(), &[3, 3, 3]);
 
         let ya8 = VideoFrame::new(3, 2, PixelFormat::Ya8, vec![vec![0; 12]]).unwrap();
         assert_eq!(ya8.line_sizes(), &[6]);

@@ -160,6 +160,15 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    let gbrp = RawVideoDecoder::new(2, 1, PixelFormat::Gbrp).unwrap();
+    assert!(gbrp.decode_packet(&Packet::new(vec![0; 6], 0)).is_ok());
+    assert_eq!(
+        gbrp.decode_packet(&Packet::new(vec![0; 5], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let ya8 = RawVideoDecoder::new(2, 1, PixelFormat::Ya8).unwrap();
     assert!(ya8
         .decode_packet(&Packet::new(vec![0x10, 0xff, 0x80, 0x40], 0))
