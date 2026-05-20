@@ -287,6 +287,24 @@ mod tests {
                 4
             );
         }
+        for format in [
+            RawVideoPixelFormat::Gray9Le,
+            RawVideoPixelFormat::Gray9Be,
+            RawVideoPixelFormat::Gray10Le,
+            RawVideoPixelFormat::Gray10Be,
+            RawVideoPixelFormat::Gray12Le,
+            RawVideoPixelFormat::Gray12Be,
+            RawVideoPixelFormat::Gray14Le,
+            RawVideoPixelFormat::Gray14Be,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 4], 2, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                4
+            );
+        }
         for format in [RawVideoPixelFormat::Gray32Le, RawVideoPixelFormat::Gray32Be] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 8], 2, 1, format, Rational::new(1, 1).unwrap(),)
@@ -798,6 +816,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 12);
+    }
+
+    #[test]
+    fn muxer_computes_high_bit_depth_gray_frame_sizes() {
+        for format in [
+            RawVideoPixelFormat::Gray9Le,
+            RawVideoPixelFormat::Gray10Be,
+            RawVideoPixelFormat::Gray12Le,
+            RawVideoPixelFormat::Gray14Be,
+        ] {
+            let muxer = RawVideoMuxer::new(3, 2, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), 12);
+        }
     }
 
     #[test]

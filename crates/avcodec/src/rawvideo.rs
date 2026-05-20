@@ -111,15 +111,37 @@ mod tests {
     }
 
     #[test]
-    fn decodes_gray32_packet_to_single_plane_frame() {
-        let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Gray32Be).unwrap();
-        let mut packet = Packet::new(vec![0, 1, 2, 3, 4, 5, 6, 7], 0);
+    fn decodes_high_bit_depth_gray_packet_to_single_plane_frame() {
+        let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Gray10Le).unwrap();
+        let mut packet = Packet::new(vec![0x01, 0x02, 0x03, 0x04], 0);
         packet.set_pts(Some(8));
 
         let frame = decoder.decode_packet(&packet).unwrap();
 
-        assert_eq!(decoder.frame_size(), 8);
+        assert_eq!(decoder.frame_size(), 4);
         assert_eq!(frame.pts(), Some(8));
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.width(), 2);
+                assert_eq!(video.height(), 1);
+                assert_eq!(video.pixel_format(), PixelFormat::Gray10Le);
+                assert_eq!(video.pixel_format_name(), "gray10le");
+                assert_eq!(video.planes(), &[vec![0x01, 0x02, 0x03, 0x04]]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+    }
+
+    #[test]
+    fn decodes_gray32_packet_to_single_plane_frame() {
+        let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Gray32Be).unwrap();
+        let mut packet = Packet::new(vec![0, 1, 2, 3, 4, 5, 6, 7], 0);
+        packet.set_pts(Some(9));
+
+        let frame = decoder.decode_packet(&packet).unwrap();
+
+        assert_eq!(decoder.frame_size(), 8);
+        assert_eq!(frame.pts(), Some(9));
         match frame.data() {
             FrameData::Video(video) => {
                 assert_eq!(video.width(), 2);
@@ -136,12 +158,12 @@ mod tests {
     fn decodes_gray_float_packets_to_single_plane_frames() {
         let grayf16 = RawVideoDecoder::new(2, 1, PixelFormat::GrayF16Le).unwrap();
         let mut packet = Packet::new(vec![0, 1, 2, 3], 0);
-        packet.set_pts(Some(9));
+        packet.set_pts(Some(10));
 
         let frame = grayf16.decode_packet(&packet).unwrap();
 
         assert_eq!(grayf16.frame_size(), 4);
-        assert_eq!(frame.pts(), Some(9));
+        assert_eq!(frame.pts(), Some(10));
         match frame.data() {
             FrameData::Video(video) => {
                 assert_eq!(video.width(), 2);

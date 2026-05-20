@@ -130,6 +130,18 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    let gray10 = RawVideoDecoder::new(2, 1, PixelFormat::Gray10Le).unwrap();
+    assert!(gray10
+        .decode_packet(&Packet::new(vec![0, 1, 2, 3], 0))
+        .is_ok());
+    assert_eq!(
+        gray10
+            .decode_packet(&Packet::new(vec![0, 1, 2], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let gray32 = RawVideoDecoder::new(2, 1, PixelFormat::Gray32Be).unwrap();
     assert!(gray32.decode_packet(&Packet::new(vec![0; 8], 0)).is_ok());
     assert_eq!(

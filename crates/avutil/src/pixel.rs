@@ -6,6 +6,14 @@ pub enum PixelFormat {
     Ya8,
     Ya16Le,
     Ya16Be,
+    Gray9Le,
+    Gray9Be,
+    Gray10Le,
+    Gray10Be,
+    Gray12Le,
+    Gray12Be,
+    Gray14Le,
+    Gray14Be,
     Gray16Le,
     Gray16Be,
     Gray32Le,
@@ -96,6 +104,14 @@ impl PixelFormat {
         Self::Ya8,
         Self::Ya16Le,
         Self::Ya16Be,
+        Self::Gray9Le,
+        Self::Gray9Be,
+        Self::Gray10Le,
+        Self::Gray10Be,
+        Self::Gray12Le,
+        Self::Gray12Be,
+        Self::Gray14Le,
+        Self::Gray14Be,
         Self::Gray16Le,
         Self::Gray16Be,
         Self::Gray32Le,
@@ -166,6 +182,14 @@ impl PixelFormat {
             "ya8" | "gray8a" | "y400a" => Some(Self::Ya8),
             "ya16le" => Some(Self::Ya16Le),
             "ya16be" => Some(Self::Ya16Be),
+            "gray9le" | "y9le" => Some(Self::Gray9Le),
+            "gray9be" | "y9be" => Some(Self::Gray9Be),
+            "gray10le" | "y10le" => Some(Self::Gray10Le),
+            "gray10be" | "y10be" => Some(Self::Gray10Be),
+            "gray12le" | "y12le" => Some(Self::Gray12Le),
+            "gray12be" | "y12be" => Some(Self::Gray12Be),
+            "gray14le" | "y14le" => Some(Self::Gray14Le),
+            "gray14be" | "y14be" => Some(Self::Gray14Be),
             "gray16le" => Some(Self::Gray16Le),
             "gray16be" => Some(Self::Gray16Be),
             "gray32le" | "y32le" => Some(Self::Gray32Le),
@@ -286,6 +310,102 @@ impl PixelFormat {
                 false,
                 true,
                 Some(4),
+                0,
+                0,
+            ),
+            Self::Gray9Le => (
+                "gray9le",
+                PixelFormatClass::Gray,
+                1,
+                9,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Gray9Be => (
+                "gray9be",
+                PixelFormatClass::Gray,
+                1,
+                9,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Gray10Le => (
+                "gray10le",
+                PixelFormatClass::Gray,
+                1,
+                10,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Gray10Be => (
+                "gray10be",
+                PixelFormatClass::Gray,
+                1,
+                10,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Gray12Le => (
+                "gray12le",
+                PixelFormatClass::Gray,
+                1,
+                12,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Gray12Be => (
+                "gray12be",
+                PixelFormatClass::Gray,
+                1,
+                12,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Gray14Le => (
+                "gray14le",
+                PixelFormatClass::Gray,
+                1,
+                14,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Gray14Be => (
+                "gray14be",
+                PixelFormatClass::Gray,
+                1,
+                14,
+                1,
+                false,
+                false,
+                Some(2),
                 0,
                 0,
             ),
@@ -1016,21 +1136,39 @@ impl PixelFormat {
                     | Self::GbrapF16Be
             ) {
                 16
-            } else if matches!(self, Self::Gbrp9Le | Self::Gbrp9Be) {
+            } else if matches!(
+                self,
+                Self::Gray9Le | Self::Gray9Be | Self::Gbrp9Le | Self::Gbrp9Be
+            ) {
                 9
             } else if matches!(
                 self,
-                Self::Gbrp10Le | Self::Gbrp10Be | Self::Gbrap10Le | Self::Gbrap10Be
+                Self::Gray10Le
+                    | Self::Gray10Be
+                    | Self::Gbrp10Le
+                    | Self::Gbrp10Be
+                    | Self::Gbrap10Le
+                    | Self::Gbrap10Be
             ) {
                 10
             } else if matches!(
                 self,
-                Self::Gbrp12Le | Self::Gbrp12Be | Self::Gbrap12Le | Self::Gbrap12Be
+                Self::Gray12Le
+                    | Self::Gray12Be
+                    | Self::Gbrp12Le
+                    | Self::Gbrp12Be
+                    | Self::Gbrap12Le
+                    | Self::Gbrap12Be
             ) {
                 12
             } else if matches!(
                 self,
-                Self::Gbrp14Le | Self::Gbrp14Be | Self::Gbrap14Le | Self::Gbrap14Be
+                Self::Gray14Le
+                    | Self::Gray14Be
+                    | Self::Gbrp14Le
+                    | Self::Gbrp14Be
+                    | Self::Gbrap14Le
+                    | Self::Gbrap14Be
             ) {
                 14
             } else if matches!(
@@ -1146,6 +1284,18 @@ impl PixelFormat {
                 pixels,
                 4,
                 "16-bit gray-alpha pixel format frame size",
+            )?]),
+            Self::Gray9Le
+            | Self::Gray9Be
+            | Self::Gray10Le
+            | Self::Gray10Be
+            | Self::Gray12Le
+            | Self::Gray12Be
+            | Self::Gray14Le
+            | Self::Gray14Be => Ok(vec![checked_mul(
+                pixels,
+                2,
+                "high bit-depth gray pixel format frame size",
             )?]),
             Self::Gray16Le | Self::Gray16Be => Ok(vec![checked_mul(
                 pixels,
@@ -1548,9 +1698,10 @@ mod tests {
             PixelFormat::from_name("yuv444p"),
             Some(PixelFormat::Yuv444p)
         );
-        assert_eq!(PixelFormat::ALL.len(), 62);
+        assert_eq!(PixelFormat::ALL.len(), 70);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
+        assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray32Le.plane_count(), 1);
         assert_eq!(PixelFormat::GrayF16Le.plane_count(), 1);
@@ -1728,19 +1879,30 @@ mod tests {
             assert_eq!(format.log2_chroma(), (0, 0));
         }
 
-        for (format, expected_name) in [
-            (PixelFormat::Gray16Le, "gray16le"),
-            (PixelFormat::Gray16Be, "gray16be"),
+        for (format, expected_name, expected_alias, expected_bits_per_component) in [
+            (PixelFormat::Gray9Le, "gray9le", Some("y9le"), 9),
+            (PixelFormat::Gray9Be, "gray9be", Some("y9be"), 9),
+            (PixelFormat::Gray10Le, "gray10le", Some("y10le"), 10),
+            (PixelFormat::Gray10Be, "gray10be", Some("y10be"), 10),
+            (PixelFormat::Gray12Le, "gray12le", Some("y12le"), 12),
+            (PixelFormat::Gray12Be, "gray12be", Some("y12be"), 12),
+            (PixelFormat::Gray14Le, "gray14le", Some("y14le"), 14),
+            (PixelFormat::Gray14Be, "gray14be", Some("y14be"), 14),
+            (PixelFormat::Gray16Le, "gray16le", None, 16),
+            (PixelFormat::Gray16Be, "gray16be", None, 16),
         ] {
             let descriptor = format.descriptor();
             assert_eq!(descriptor.format, format);
             assert_eq!(descriptor.name, expected_name);
             assert_eq!(PixelFormat::from_name(descriptor.name), Some(format));
+            if let Some(alias) = expected_alias {
+                assert_eq!(PixelFormat::from_name(alias), Some(format));
+            }
             assert_eq!(descriptor.class, PixelFormatClass::Gray);
             assert!(format.is_gray());
             assert_eq!(descriptor.component_count, 1);
-            assert_eq!(descriptor.bits_per_component, 16);
-            assert_eq!(descriptor.bits_per_pixel, 16);
+            assert_eq!(descriptor.bits_per_component, expected_bits_per_component);
+            assert_eq!(descriptor.bits_per_pixel, expected_bits_per_component);
             assert_eq!(descriptor.plane_count, 1);
             assert!(!descriptor.is_planar);
             assert!(!descriptor.has_alpha);
@@ -2053,6 +2215,14 @@ mod tests {
         assert_eq!(PixelFormat::Ya8.frame_size(2, 2).unwrap(), 8);
         assert_eq!(PixelFormat::Ya16Le.plane_sizes(2, 2).unwrap(), vec![16]);
         assert_eq!(PixelFormat::Ya16Be.frame_size(2, 2).unwrap(), 16);
+        assert_eq!(PixelFormat::Gray9Le.plane_sizes(2, 2).unwrap(), vec![8]);
+        assert_eq!(PixelFormat::Gray9Be.frame_size(2, 2).unwrap(), 8);
+        assert_eq!(PixelFormat::Gray10Le.plane_sizes(2, 2).unwrap(), vec![8]);
+        assert_eq!(PixelFormat::Gray10Be.frame_size(2, 2).unwrap(), 8);
+        assert_eq!(PixelFormat::Gray12Le.plane_sizes(2, 2).unwrap(), vec![8]);
+        assert_eq!(PixelFormat::Gray12Be.frame_size(2, 2).unwrap(), 8);
+        assert_eq!(PixelFormat::Gray14Le.plane_sizes(2, 2).unwrap(), vec![8]);
+        assert_eq!(PixelFormat::Gray14Be.frame_size(2, 2).unwrap(), 8);
         assert_eq!(PixelFormat::Gray16Le.plane_sizes(2, 2).unwrap(), vec![8]);
         assert_eq!(PixelFormat::Gray16Be.frame_size(2, 2).unwrap(), 8);
         assert_eq!(PixelFormat::Gray32Le.plane_sizes(2, 2).unwrap(), vec![16]);
@@ -2332,6 +2502,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(planes, vec![vec![0, 1, 255, 254]]);
+
+        let planes = PixelFormat::Gray10Le
+            .split_planes(&[0x01, 0x02, 0x03, 0x04], 2, 1)
+            .unwrap();
+
+        assert_eq!(planes, vec![vec![0x01, 0x02, 0x03, 0x04]]);
 
         let planes = PixelFormat::Gray32Le
             .split_planes(&[0, 1, 2, 3], 1, 1)
