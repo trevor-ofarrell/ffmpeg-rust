@@ -226,6 +226,42 @@ mod tests {
     }
 
     #[test]
+    fn decodes_rgba_float_packets_to_single_plane_frames() {
+        let rgbaf16 = RawVideoDecoder::new(2, 1, PixelFormat::RgbaF16Le).unwrap();
+        let mut packet = Packet::new((0..16).collect(), 0);
+        packet.set_pts(Some(112));
+
+        let frame = rgbaf16.decode_packet(&packet).unwrap();
+
+        assert_eq!(rgbaf16.frame_size(), 16);
+        assert_eq!(frame.pts(), Some(112));
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.width(), 2);
+                assert_eq!(video.height(), 1);
+                assert_eq!(video.pixel_format(), PixelFormat::RgbaF16Le);
+                assert_eq!(video.pixel_format_name(), "rgbaf16le");
+                assert!(video.pixel_format().has_alpha());
+                assert_eq!(video.planes(), &[(0..16).collect::<Vec<_>>()]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+
+        let rgbaf32 = RawVideoDecoder::new(1, 1, PixelFormat::RgbaF32Be).unwrap();
+        assert_eq!(rgbaf32.frame_size(), 16);
+        assert!(rgbaf32
+            .decode_packet(&Packet::new((0..16).collect(), 0))
+            .is_ok());
+        assert_eq!(
+            rgbaf32
+                .decode_packet(&Packet::new((0..15).collect(), 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn decodes_gbrp_packet_to_three_planes() {
         let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Gbrp).unwrap();
         let mut packet = Packet::new(vec![0, 1, 2, 3, 4, 5], 0);
