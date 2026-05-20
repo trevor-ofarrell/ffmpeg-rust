@@ -1303,6 +1303,10 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 || matches!(
                     pixel_format,
                     PixelFormat::Ya8
+                        | PixelFormat::Rgba64Le
+                        | PixelFormat::Rgba64Be
+                        | PixelFormat::Bgra64Le
+                        | PixelFormat::Bgra64Be
                         | PixelFormat::Rgba
                         | PixelFormat::Bgra
                         | PixelFormat::Argb
@@ -5233,6 +5237,12 @@ fn exercise_fixtures() {
         Some(PixelFormat::Rgb48Le)
     );
     assert_eq!(PixelFormat::Bgr48Be.frame_size(2, 2).unwrap(), 24);
+    assert_eq!(
+        PixelFormat::from_name("rgba64le"),
+        Some(PixelFormat::Rgba64Le)
+    );
+    assert_eq!(PixelFormat::Bgra64Be.frame_size(2, 2).unwrap(), 32);
+    assert!(PixelFormat::Rgba64Le.has_alpha());
     assert_eq!(
         PixelFormat::Yuv420p.plane_sizes(2, 2).unwrap(),
         vec![4, 1, 1]
@@ -16925,6 +16935,10 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le
         | PixelFormat::Bgr48Be => vec![width * 6],
+        PixelFormat::Rgba64Le
+        | PixelFormat::Rgba64Be
+        | PixelFormat::Bgra64Le
+        | PixelFormat::Bgra64Be => vec![width * 8],
         PixelFormat::Rgba
         | PixelFormat::Bgra
         | PixelFormat::Argb
@@ -16961,6 +16975,10 @@ fn expected_video_plane_shapes(
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le
         | PixelFormat::Bgr48Be => vec![(width * 6, height)],
+        PixelFormat::Rgba64Le
+        | PixelFormat::Rgba64Be
+        | PixelFormat::Bgra64Le
+        | PixelFormat::Bgra64Be => vec![(width * 8, height)],
         PixelFormat::Rgba
         | PixelFormat::Bgra
         | PixelFormat::Argb

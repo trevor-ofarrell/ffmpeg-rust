@@ -133,6 +133,28 @@ mod tests {
     }
 
     #[test]
+    fn decodes_rgba64_packet_to_single_plane_frame() {
+        let decoder = RawVideoDecoder::new(1, 1, PixelFormat::Rgba64Le).unwrap();
+        let mut packet = Packet::new(vec![0, 1, 2, 3, 4, 5, 6, 7], 0);
+        packet.set_pts(Some(11));
+
+        let frame = decoder.decode_packet(&packet).unwrap();
+
+        assert_eq!(decoder.frame_size(), 8);
+        assert_eq!(frame.pts(), Some(11));
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.width(), 1);
+                assert_eq!(video.height(), 1);
+                assert_eq!(video.pixel_format(), PixelFormat::Rgba64Le);
+                assert_eq!(video.pixel_format_name(), "rgba64le");
+                assert_eq!(video.planes(), &[vec![0, 1, 2, 3, 4, 5, 6, 7]]);
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+    }
+
+    #[test]
     fn decodes_yuv420p_packet_to_three_planes() {
         let decoder = RawVideoDecoder::new(4, 2, PixelFormat::Yuv420p).unwrap();
         let packet = Packet::new(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], 0);
@@ -284,6 +306,10 @@ mod tests {
         let rgb48be = RawVideoDecoder::new(1, 1, PixelFormat::Rgb48Be).unwrap();
         let bgr48le = RawVideoDecoder::new(1, 1, PixelFormat::Bgr48Le).unwrap();
         let bgr48be = RawVideoDecoder::new(1, 1, PixelFormat::Bgr48Be).unwrap();
+        let rgba64le = RawVideoDecoder::new(1, 1, PixelFormat::Rgba64Le).unwrap();
+        let rgba64be = RawVideoDecoder::new(1, 1, PixelFormat::Rgba64Be).unwrap();
+        let bgra64le = RawVideoDecoder::new(1, 1, PixelFormat::Bgra64Le).unwrap();
+        let bgra64be = RawVideoDecoder::new(1, 1, PixelFormat::Bgra64Be).unwrap();
         let rgba = RawVideoDecoder::new(1, 1, PixelFormat::Rgba).unwrap();
         let bgra = RawVideoDecoder::new(1, 1, PixelFormat::Bgra).unwrap();
         let argb = RawVideoDecoder::new(1, 1, PixelFormat::Argb).unwrap();
@@ -299,6 +325,10 @@ mod tests {
         assert_eq!(rgb48be.frame_size(), 6);
         assert_eq!(bgr48le.frame_size(), 6);
         assert_eq!(bgr48be.frame_size(), 6);
+        assert_eq!(rgba64le.frame_size(), 8);
+        assert_eq!(rgba64be.frame_size(), 8);
+        assert_eq!(bgra64le.frame_size(), 8);
+        assert_eq!(bgra64be.frame_size(), 8);
         assert_eq!(rgba.frame_size(), 4);
         assert_eq!(bgra.frame_size(), 4);
         assert_eq!(argb.frame_size(), 4);
@@ -324,6 +354,18 @@ mod tests {
             .is_ok());
         assert!(bgr48be
             .decode_packet(&Packet::new(vec![1, 2, 3, 4, 5, 6], 0))
+            .is_ok());
+        assert!(rgba64le
+            .decode_packet(&Packet::new(vec![1, 2, 3, 4, 5, 6, 7, 8], 0))
+            .is_ok());
+        assert!(rgba64be
+            .decode_packet(&Packet::new(vec![1, 2, 3, 4, 5, 6, 7, 8], 0))
+            .is_ok());
+        assert!(bgra64le
+            .decode_packet(&Packet::new(vec![1, 2, 3, 4, 5, 6, 7, 8], 0))
+            .is_ok());
+        assert!(bgra64be
+            .decode_packet(&Packet::new(vec![1, 2, 3, 4, 5, 6, 7, 8], 0))
             .is_ok());
         assert!(rgba
             .decode_packet(&Packet::new(vec![1, 2, 3, 4], 0))

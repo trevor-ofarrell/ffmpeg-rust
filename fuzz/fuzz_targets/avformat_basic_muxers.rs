@@ -309,6 +309,26 @@ fn exercise_fixtures() {
     );
     assert!(raw_rgb48_demuxer.read_packet().unwrap().is_none());
 
+    let mut raw_rgba64 =
+        RawVideoMuxer::new(1, 1, PixelFormat::Bgra64Be, Rational::new(24, 1).unwrap()).unwrap();
+    raw_rgba64
+        .write_packet(&Packet::new((0..8).collect(), 0))
+        .unwrap();
+    let raw_rgba64_output = raw_rgba64.finish();
+    let mut raw_rgba64_demuxer = RawVideoDemuxer::open(
+        &raw_rgba64_output,
+        1,
+        1,
+        PixelFormat::Bgra64Be,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_rgba64_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..8).collect::<Vec<_>>()
+    );
+    assert!(raw_rgba64_demuxer.read_packet().unwrap().is_none());
+
     let mut raw_yuv411 =
         RawVideoMuxer::new(4, 3, PixelFormat::Yuv411p, Rational::new(25, 1).unwrap()).unwrap();
     raw_yuv411

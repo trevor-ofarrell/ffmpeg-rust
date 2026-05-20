@@ -331,6 +331,20 @@ mod tests {
                 6
             );
         }
+        for format in [
+            RawVideoPixelFormat::Rgba64Le,
+            RawVideoPixelFormat::Rgba64Be,
+            RawVideoPixelFormat::Bgra64Le,
+            RawVideoPixelFormat::Bgra64Be,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 8], 1, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                8
+            );
+        }
         assert_eq!(
             RawVideoDemuxer::open(
                 &[0; 12],
@@ -643,6 +657,19 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 24);
+    }
+
+    #[test]
+    fn muxer_computes_rgba64_frame_size() {
+        let muxer = RawVideoMuxer::new(
+            2,
+            2,
+            RawVideoPixelFormat::Rgba64Le,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(muxer.info().frame_size(), 32);
     }
 
     #[test]
