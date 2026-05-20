@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
     Quiet,
@@ -329,12 +331,45 @@ struct RepeatedLogState {
     count: usize,
 }
 
+#[derive(Clone)]
+struct LogCallback {
+    callback: Arc<dyn Fn(&LogRecord) + Send + Sync + 'static>,
+}
+
+impl LogCallback {
+    fn new<F>(callback: F) -> Self
+    where
+        F: Fn(&LogRecord) + Send + Sync + 'static,
+    {
+        Self {
+            callback: Arc::new(callback),
+        }
+    }
+
+    fn call(&self, record: &LogRecord) {
+        (self.callback)(record);
+    }
+}
+
+impl core::fmt::Debug for LogCallback {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("LogCallback { .. }")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EmitResult {
+    first_index: usize,
+    submitted_index: Option<usize>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Logger {
     level: LogLevel,
     flags: LogFlags,
     records: Vec<LogRecord>,
     repeated: Option<RepeatedLogState>,
+    callback: Option<LogCallback>,
 }
 
 impl Default for Logger {
@@ -354,6 +389,7 @@ impl Logger {
             flags,
             records: Vec::new(),
             repeated: None,
+            callback: None,
         }
     }
 
@@ -388,9 +424,25 @@ impl Logger {
         self.level != LogLevel::Quiet && level != LogLevel::Quiet && level <= self.level
     }
 
+    pub fn set_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&LogRecord) + Send + Sync + 'static,
+    {
+        self.callback = Some(LogCallback::new(callback));
+    }
+
+    pub fn clear_callback(&mut self) -> bool {
+        self.callback.take().is_some()
+    }
+
+    pub fn has_callback(&self) -> bool {
+        self.callback.is_some()
+    }
+
     pub fn log(&mut self, record: LogRecord) -> bool {
         if self.enabled(record.level()) {
-            self.emit_record(record);
+            let emitted = self.emit_record(record);
+            self.dispatch_emitted(emitted.first_index);
             true
         } else {
             false
@@ -402,7 +454,9 @@ impl Logger {
         F: FnOnce(&LogRecord),
     {
         if self.enabled(record.level()) {
-            if let Some(record_index) = self.emit_record(record) {
+            let emitted = self.emit_record(record);
+            self.dispatch_emitted(emitted.first_index);
+            if let Some(record_index) = emitted.submitted_index {
                 callback(&self.records[record_index]);
             }
             true
@@ -428,14 +482,12 @@ impl Logger {
     }
 
     pub fn flush_repeated(&mut self) -> bool {
-        if let Some(repeated) = self.repeated.take() {
-            if repeated.count > 0 {
-                self.records
-                    .push(LogRecord::repetition_summary(repeated.count));
-                return true;
-            }
+        if let Some(index) = self.flush_repeated_internal() {
+            self.dispatch_record(index);
+            true
+        } else {
+            false
         }
-        false
     }
 
     pub fn clear(&mut self) {
@@ -448,16 +500,20 @@ impl Logger {
         core::mem::take(&mut self.records)
     }
 
-    fn emit_record(&mut self, record: LogRecord) -> Option<usize> {
+    fn emit_record(&mut self, record: LogRecord) -> EmitResult {
+        let first_index = self.records.len();
         if self.flags.contains(LogFlags::SKIP_REPEATED) {
             if let Some(repeated) = &mut self.repeated {
                 if repeated.record.same_message_as(&record, self.flags) {
                     repeated.count = repeated.count.saturating_add(1);
-                    return None;
+                    return EmitResult {
+                        first_index,
+                        submitted_index: None,
+                    };
                 }
             }
 
-            self.flush_repeated();
+            self.flush_repeated_internal();
             self.repeated = Some(RepeatedLogState {
                 record: record.clone(),
                 count: 0,
@@ -465,7 +521,35 @@ impl Logger {
         }
 
         self.records.push(record);
-        Some(self.records.len() - 1)
+        EmitResult {
+            first_index,
+            submitted_index: Some(self.records.len() - 1),
+        }
+    }
+
+    fn flush_repeated_internal(&mut self) -> Option<usize> {
+        if let Some(repeated) = self.repeated.take() {
+            if repeated.count > 0 {
+                self.records
+                    .push(LogRecord::repetition_summary(repeated.count));
+                return Some(self.records.len() - 1);
+            }
+        }
+        None
+    }
+
+    fn dispatch_emitted(&self, first_index: usize) {
+        if self.callback.is_some() {
+            for index in first_index..self.records.len() {
+                self.dispatch_record(index);
+            }
+        }
+    }
+
+    fn dispatch_record(&self, index: usize) {
+        if let Some(callback) = &self.callback {
+            callback.call(&self.records[index]);
+        }
     }
 
     fn pending_repetition_summary(&self) -> Option<LogRecord> {
@@ -478,6 +562,7 @@ impl Logger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn logger_filters_by_level() {
@@ -801,6 +886,68 @@ mod tests {
 
         assert_eq!(seen, ["[error] ffmpeg: kept"]);
         assert_eq!(logger.records().len(), 1);
+    }
+
+    #[test]
+    fn installed_callback_receives_emitted_records_until_cleared() {
+        let mut logger = Logger::new(LogLevel::Warning);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let callback_seen = Arc::clone(&seen);
+
+        assert!(!logger.has_callback());
+        logger.set_callback(move |record| {
+            callback_seen.lock().unwrap().push(record.format_line());
+        });
+        assert!(logger.has_callback());
+
+        assert!(!logger.log(LogRecord::new(LogLevel::Info, "ffmpeg", "ignored")));
+        assert!(logger.log(LogRecord::new(LogLevel::Warning, "ffmpeg", "kept")));
+        assert_eq!(seen.lock().unwrap().as_slice(), ["[warning] ffmpeg: kept"]);
+
+        assert!(logger.clear_callback());
+        assert!(!logger.has_callback());
+        assert!(!logger.clear_callback());
+        assert!(logger.log(LogRecord::new(LogLevel::Error, "ffmpeg", "not callbacked")));
+        assert_eq!(seen.lock().unwrap().as_slice(), ["[warning] ffmpeg: kept"]);
+        assert_eq!(logger.records().len(), 2);
+    }
+
+    #[test]
+    fn installed_callback_observes_repeat_summary_when_materialized() {
+        let mut flags = LogFlags::PRINT_LEVEL;
+        flags.insert(LogFlags::SKIP_REPEATED);
+        let mut logger = Logger::new_with_flags(LogLevel::Info, flags);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let callback_seen = Arc::clone(&seen);
+        logger.set_callback(move |record| {
+            callback_seen.lock().unwrap().push(record.format_line());
+        });
+        let repeated = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet");
+
+        assert!(logger.log(repeated.clone()));
+        assert!(logger.log(repeated));
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            ["[warning] decoder: damaged packet"]
+        );
+
+        assert!(logger.log(LogRecord::new(LogLevel::Error, "demuxer", "bad header")));
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            [
+                "[warning] decoder: damaged packet",
+                "Last message repeated 1 times",
+                "[error] demuxer: bad header",
+            ]
+        );
+
+        assert!(logger.log(LogRecord::new(LogLevel::Info, "muxer", "flushable")));
+        assert!(logger.log(LogRecord::new(LogLevel::Info, "muxer", "flushable")));
+        assert!(logger.flush_repeated());
+        assert_eq!(
+            seen.lock().unwrap().last().map(String::as_str),
+            Some("Last message repeated 1 times")
+        );
     }
 
     #[test]

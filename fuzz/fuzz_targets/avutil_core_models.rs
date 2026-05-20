@@ -880,6 +880,45 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         "[2024-01-01 12:38:25.123456] [error] demuxer: bad header"
     );
 
+    let mut callback_flags = LogFlags::PRINT_LEVEL;
+    callback_flags.insert(LogFlags::SKIP_REPEATED);
+    let mut callback_logger = Logger::new_with_flags(LogLevel::Info, callback_flags);
+    let callback_seen = Arc::new(Mutex::new(Vec::new()));
+    let seen_by_callback = Arc::clone(&callback_seen);
+    callback_logger.set_callback(move |record| {
+        seen_by_callback.lock().unwrap().push(record.format_line());
+    });
+    assert!(callback_logger.has_callback());
+    assert!(!callback_logger.log(LogRecord::new(LogLevel::Debug, "decoder", "hidden")));
+    assert!(callback_logger.log(repeated.clone()));
+    assert_eq!(
+        callback_seen.lock().unwrap().as_slice(),
+        ["[warning] decoder: damaged packet"]
+    );
+    assert!(callback_logger.log(repeated));
+    assert_eq!(callback_seen.lock().unwrap().len(), 1);
+    assert!(callback_logger.log(LogRecord::new(
+        LogLevel::Error,
+        "demuxer",
+        "bad header"
+    )));
+    assert_eq!(
+        callback_seen.lock().unwrap().as_slice(),
+        [
+            "[warning] decoder: damaged packet",
+            "Last message repeated 1 times",
+            "[error] demuxer: bad header"
+        ]
+    );
+    assert!(callback_logger.clear_callback());
+    assert!(!callback_logger.has_callback());
+    assert!(callback_logger.log(LogRecord::new(
+        LogLevel::Error,
+        "demuxer",
+        "after clear"
+    )));
+    assert_eq!(callback_seen.lock().unwrap().len(), 3);
+
     let mut time_flags = LogFlags::PRINT_LEVEL;
     time_flags.insert(LogFlags::PRINT_TIME);
     time_flags.insert(LogFlags::SKIP_REPEATED);

@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-logging` update: `Logger` now supports an installed per-instance callback hook in addition to the existing one-shot callback helper. Installed callbacks receive every accepted emitted record and any materialized repeated-message summary, while filtered records and suppressed repeated duplicates do not dispatch. `set_callback`, `clear_callback`, and `has_callback` expose the lifecycle, and focused unit tests plus the build-checked `avutil_core_models` fuzz target cover accepted-record delivery, repeat-summary dispatch, and callback clearing. This remains below `complete` because byte-identical `av_log` formatting, process-global `av_log_set_callback` parity, real system-clock capture, local-time formatting parity, color handling, CLI stderr/repeat/time/datetime parity, pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
+
 Latest `avutil-logging` update: `LogTimestamp` now carries Unix-microsecond timestamps for deterministic UTC `PRINT_TIME` and `PRINT_DATETIME` rendering on timestamped `LogRecord` values. `PRINT_DATETIME` takes precedence when both timestamp flags are selected, records without timestamps keep the previous deterministic format, and repeated-record comparison includes timestamp equality whenever time or datetime prefixes are printed. Focused unit tests and the build-checked `avutil_core_models` fuzz target cover UTC time/datetime formatting, pre-epoch microsecond handling, timestamped record formatting, absent-timestamp behavior, and timestamp-aware repeat suppression. This remains below `complete` because byte-identical `av_log` formatting, global callback installation, real system-clock capture, local-time formatting parity, color handling, CLI stderr/repeat/time/datetime parity, pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
 
 Latest `avutil-logging` update: `Logger` now implements deterministic `AV_LOG_SKIP_REPEATED`-style compression for consecutive identical accepted records. With `LogFlags::SKIP_REPEATED`, duplicates are suppressed, `formatted_records()` exposes a pending `Last message repeated n times` summary without mutating the buffer, `flush_repeated()` and `take_records()` materialize the summary, `clear()` drops pending repeated state, disabling `SKIP_REPEATED` flushes pending state, and per-call callbacks run only for emitted records. Focused unit tests and the build-checked `avutil_core_models` fuzz target cover repeat suppression, pending summary formatting, explicit flushing, non-skip retention, flag-change flushing, clear behavior, and callback dispatch. This remains below `complete` because byte-identical `av_log` formatting, global callback installation, time/datetime rendering, color handling, CLI stderr/repeat-flag parity, pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
@@ -198,6 +200,16 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-avutil-logging-repeat-test'; cargo test -p avutil logging`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-avutil-logging-repeat-test'; cargo clippy -p avutil --all-targets -- -D warnings`
+- `cargo fmt --all -- --check`
+- `$env:CARGO_TARGET_DIR='target-avutil-logging-repeat-test'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-avutil-logging-repeat-test'; cargo run -p fate-runner -- run --component avutil-logging`
+- `$env:CARGO_TARGET_DIR='target-avutil-logging-repeat-test'; cargo run -p fate-runner -- run --changed`
+- `git diff --check`
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-avutil-logging-repeat-test'; cargo test -p avutil logging`
 - `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
@@ -2794,6 +2806,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-logging` callback slice: no remaining failing commands. Formatting, focused logging tests, fuzz-target check/clippy, avutil clippy, workspace clippy, local FATE-runner logging/changed mappings, and `git diff --check` all passed; `git diff --check` reported CRLF warnings only.
 - Current `avutil-logging` timestamp-formatting slice: `$env:CARGO_TARGET_DIR='target-avutil-logging-repeat-test'; cargo test -p avutil logging` initially failed the new `logging::tests::repeated_comparison_respects_printed_timestamp_flags` assertion because the repeat-comparison flag check required both `PRINT_TIME` and `PRINT_DATETIME` instead of either timestamp flag. Adding `LogFlags::intersects` and using it for timestamp-aware repeat comparison fixed the bug; all rerun validation passed. `git diff --check` reported CRLF warnings only.
 - Current `avutil-logging` repeat-compression slice: no remaining failing commands. Formatting, focused logging tests, fuzz-target check/clippy, avutil clippy, workspace clippy, local FATE-runner logging/changed mappings, and `git diff --check` all passed; `git diff --check` reported CRLF warnings only.
 - Current `avutil-options` rational slice: `cargo fmt --all -- --check` initially failed only because rustfmt wanted to wrap the new `parse_rational` tuple expression; `cargo fmt --all` fixed it, and the rerun passed. No remaining failing commands in the final validation.
@@ -2986,7 +2999,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-logging` is the current focus for this slice. The concrete change is deterministic timestamp formatting for timestamped records under `LogFlags::PRINT_TIME` and `LogFlags::PRINT_DATETIME`, plus timestamp-aware repeat comparison when those prefixes are printed. It does not claim byte-identical `av_log`, CLI stderr, global callback, real system-clock capture, local-time parity, color, pinned oracle parity, or upstream FATE parity yet.
+`avutil-logging` is the current focus for this slice. The concrete change is an installed per-`Logger` callback hook that dispatches accepted emitted records and materialized repeat summaries while preserving filtering and repeat suppression semantics. It does not claim byte-identical `av_log`, CLI stderr, process-global callback parity, real system-clock capture, local-time parity, color, pinned oracle parity, or upstream FATE parity yet.
 
 `avutil-options` is the current focus for this slice. The concrete change is rational option kind/value support with positive-denominator range validation, parsed `num/den` and integer text support, and unit/fuzz-harness invariant coverage. It does not claim full `AVOption` API parity, CLI option-ordering parity, pinned oracle parity, or upstream FATE parity yet.
 
@@ -3022,7 +3035,7 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added deterministic timestamp rendering to the in-memory logging primitive. `LogTimestamp` stores Unix microseconds, renders UTC `HH:MM:SS.ffffff` and `YYYY-MM-DD HH:MM:SS.ffffff` prefixes, and `LogRecord::with_timestamp` lets `PRINT_TIME`/`PRINT_DATETIME` produce timestamped lines while records without timestamps retain the previous format. Repeat comparison now treats timestamped records with different timestamps as distinct when time or datetime prefixes are printed. Unit coverage checks UTC formatting, pre-epoch microsecond formatting, time/datetime flag precedence, absent timestamp behavior, and timestamp-aware repeat suppression; `avutil_core_models` now build-checks those timestamp invariants. Validation passed with focused logging tests, fuzz-target check/clippy, avutil clippy, format check, workspace clippy, local FATE-runner logging and changed avutil mappings, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`.
+Latest slice: added an installed per-instance callback hook to the in-memory logging primitive. `Logger::set_callback`, `clear_callback`, and `has_callback` manage a persistent callback that receives accepted emitted records plus materialized repeated-message summaries, while filtered records and suppressed duplicates stay silent. Unit coverage checks callback lifecycle, filtering, post-clear behavior, and summary dispatch; `avutil_core_models` now build-checks those callback invariants alongside repeat and timestamp logging invariants. Validation passed with focused logging tests, fuzz-target check/clippy, avutil clippy, format check, workspace clippy, local FATE-runner logging and changed avutil mappings, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`.
 
 Latest slice: added deterministic repeated-message compression to the in-memory logging primitive. `Logger` now suppresses consecutive identical accepted records under `LogFlags::SKIP_REPEATED`, exposes pending repeat summaries through `formatted_records()`, materializes summaries through `flush_repeated()` and `take_records()`, flushes pending summaries when repeat suppression is disabled, drops pending state on `clear()`, and only invokes per-call callbacks for emitted records. Unit coverage now exercises suppression, summary ordering, take/clear/flag-change behavior, non-skip retention, callback behavior, and summary formatting; `avutil_core_models` now build-checks repeat compression invariants. Validation passed with focused logging tests, fuzz-target check/clippy, avutil clippy, format check, workspace clippy, local FATE-runner logging and changed avutil mappings, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`.
 
