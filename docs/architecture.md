@@ -146,13 +146,13 @@ GPS common-tag range validation currently rejects `GPSLatitude`/`GPSDestLatitude
 
 `NullMuxer` implements the first muxer-shaped sink: it discards packet payload bytes while preserving observable accounting for packets, bytes, stream indexes, durations, and last timestamps.
 
-`HashMuxer` implements an initial packet-data hash sink over write order, using `avutil` checksum/digest state for Adler-32, IEEE CRC-32, MD5, SHA-224, SHA-256, SHA-384, and SHA-512 while tracking packet and byte counts.
+`HashMuxer` implements an initial packet-data hash sink over write order, using `avutil` checksum/digest state for Adler-32, IEEE CRC-32, MD5, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512 while tracking packet and byte counts.
 
 `FrameCrcMuxer` records one CRC-32 line per packet with stream index, timestamps, duration, payload size, and checksum in write order.
 
-`FrameHashMuxer` records one digest line per packet with stream index, timestamps, duration, payload size, and Adler-32, CRC-32, MD5, SHA-224, SHA-256, SHA-384, or SHA-512 digest output in write order.
+`FrameHashMuxer` records one digest line per packet with stream index, timestamps, duration, payload size, and Adler-32, CRC-32, MD5, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, or SHA-512 digest output in write order.
 
-`StreamHashMuxer` records one digest line per stream, accumulating packet payload bytes independently for each stream index with an explicit single-character stream type and Adler-32, CRC-32, MD5, SHA-224, SHA-256, SHA-384, or SHA-512 digest output.
+`StreamHashMuxer` records one digest line per stream, accumulating packet payload bytes independently for each stream index with an explicit single-character stream type and Adler-32, CRC-32, MD5, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, or SHA-512 digest output.
 
 `RawVideoDecoder` implements the first codec-shaped decoder path for fixed-size raw video packets and emits `avutil::Frame` values with validated shared pixel format geometry.
 

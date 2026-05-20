@@ -1047,6 +1047,7 @@ fn parse_hash_algorithm(output: &PlannedFile) -> Result<HashAlgorithm, FfmpegErr
         "adler32" => Ok(HashAlgorithm::Adler32),
         "crc32" => Ok(HashAlgorithm::Crc32),
         "md5" => Ok(HashAlgorithm::Md5),
+        "sha1" | "sha160" => Ok(HashAlgorithm::Sha160),
         "sha224" => Ok(HashAlgorithm::Sha224),
         "sha256" => Ok(HashAlgorithm::Sha256),
         "sha384" => Ok(HashAlgorithm::Sha384),
@@ -2352,6 +2353,44 @@ mod tests {
         assert_eq!(
             output.stdout(),
             format!("MD5={}\n", avutil::digest_to_hex(&avutil::md5(&payload)))
+        );
+    }
+
+    #[test]
+    fn runs_s16le_to_hash_stdout_with_sha160_option() {
+        let payload = [0, 0, 1, 0, 2, 0, 3, 0];
+        let path = write_temp_bytes("raw-pcm-hash-sha160", "raw", &payload);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "s16le",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "hash",
+            "-hash",
+            "sha-160",
+            "-",
+        ]))
+        .expect("raw PCM SHA-160 hash command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("hash"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), u64::try_from(payload.len()).unwrap());
+        assert!(output.stderr().is_empty());
+        assert_eq!(
+            output.stdout(),
+            format!(
+                "SHA160={}\n",
+                avutil::digest_to_hex(&avutil::sha1(&payload))
+            )
         );
     }
 

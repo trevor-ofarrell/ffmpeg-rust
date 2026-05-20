@@ -1,5 +1,6 @@
 use avutil::{
-    digest_to_hex, Adler32, AvError, AvResult, Crc32, Md5, Packet, Sha224, Sha256, Sha384, Sha512,
+    digest_to_hex, Adler32, AvError, AvResult, Crc32, Md5, Packet, Sha1, Sha224, Sha256, Sha384,
+    Sha512,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7,6 +8,7 @@ pub enum HashAlgorithm {
     Adler32,
     Crc32,
     Md5,
+    Sha160,
     Sha224,
     Sha256,
     Sha384,
@@ -19,6 +21,7 @@ impl HashAlgorithm {
             Self::Adler32 => "ADLER32",
             Self::Crc32 => "CRC32",
             Self::Md5 => "MD5",
+            Self::Sha160 => "SHA160",
             Self::Sha224 => "SHA224",
             Self::Sha256 => "SHA256",
             Self::Sha384 => "SHA384",
@@ -157,6 +160,7 @@ enum HashState {
     Adler32(Adler32),
     Crc32(Crc32),
     Md5(Md5),
+    Sha160(Sha1),
     Sha224(Sha224),
     Sha256(Sha256),
     Sha384(Sha384),
@@ -169,6 +173,7 @@ impl HashState {
             HashAlgorithm::Adler32 => Self::Adler32(Adler32::new()),
             HashAlgorithm::Crc32 => Self::Crc32(Crc32::new()),
             HashAlgorithm::Md5 => Self::Md5(Md5::new()),
+            HashAlgorithm::Sha160 => Self::Sha160(Sha1::new()),
             HashAlgorithm::Sha224 => Self::Sha224(Sha224::new()),
             HashAlgorithm::Sha256 => Self::Sha256(Sha256::new()),
             HashAlgorithm::Sha384 => Self::Sha384(Sha384::new()),
@@ -181,6 +186,7 @@ impl HashState {
             Self::Adler32(_) => HashAlgorithm::Adler32,
             Self::Crc32(_) => HashAlgorithm::Crc32,
             Self::Md5(_) => HashAlgorithm::Md5,
+            Self::Sha160(_) => HashAlgorithm::Sha160,
             Self::Sha224(_) => HashAlgorithm::Sha224,
             Self::Sha256(_) => HashAlgorithm::Sha256,
             Self::Sha384(_) => HashAlgorithm::Sha384,
@@ -193,6 +199,7 @@ impl HashState {
             Self::Adler32(state) => state.update(data),
             Self::Crc32(state) => state.update(data),
             Self::Md5(state) => state.update(data),
+            Self::Sha160(state) => state.update(data),
             Self::Sha224(state) => state.update(data),
             Self::Sha256(state) => state.update(data),
             Self::Sha384(state) => state.update(data),
@@ -205,6 +212,7 @@ impl HashState {
             Self::Adler32(state) => HashDigest::U32(state.finalize()),
             Self::Crc32(state) => HashDigest::U32(state.finalize()),
             Self::Md5(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
+            Self::Sha160(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
             Self::Sha224(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
             Self::Sha256(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
             Self::Sha384(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
@@ -216,7 +224,7 @@ impl HashState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use avutil::{adler32, crc32_ieee, md5, sha224, sha256, sha384, sha512, AvErrorKind};
+    use avutil::{adler32, crc32_ieee, md5, sha1, sha224, sha256, sha384, sha512, AvErrorKind};
 
     #[test]
     fn crc32_hashes_packet_data_in_write_order() {
@@ -278,6 +286,30 @@ mod tests {
         assert_eq!(report.packets(), 2);
         assert_eq!(report.bytes(), 3);
         assert_eq!(report.line(), "MD5=900150983cd24fb0d6963f7d28e17f72\n");
+    }
+
+    #[test]
+    fn sha160_hashes_packet_data_in_write_order() {
+        let mut muxer = HashMuxer::new(HashAlgorithm::Sha160);
+
+        muxer.write_packet(&Packet::new(b"ab".to_vec(), 0)).unwrap();
+        muxer.write_packet(&Packet::new(b"c".to_vec(), 0)).unwrap();
+        let report = muxer.finish();
+        let expected = sha1(b"abc");
+
+        assert_eq!(report.algorithm(), HashAlgorithm::Sha160);
+        assert_eq!(report.digest(), &HashDigest::Bytes(expected.to_vec()));
+        assert_eq!(report.digest().as_bytes(), Some(expected.as_slice()));
+        assert_eq!(
+            report.digest_hex(),
+            "a9993e364706816aba3e25717850c26c9cd0d89d"
+        );
+        assert_eq!(report.packets(), 2);
+        assert_eq!(report.bytes(), 3);
+        assert_eq!(
+            report.line(),
+            "SHA160=a9993e364706816aba3e25717850c26c9cd0d89d\n"
+        );
     }
 
     #[test]

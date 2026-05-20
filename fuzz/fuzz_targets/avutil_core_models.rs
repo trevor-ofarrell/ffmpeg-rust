@@ -2,8 +2,8 @@
 
 use avutil::{
     adler32, crc32_ieee, digest_to_hex, md5, rescale, rescale_q, rescale_q_rnd,
-    rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha224, sha256, sha384,
-    sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
+    rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1, sha224, sha256,
+    sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32,
     Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
     FrameAudioServiceType,
@@ -57,7 +57,7 @@ use avutil::{
     PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE,
+    Sha1, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE,
     AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE, AV_TIME_BASE_Q,
 };
 use libfuzzer_sys::fuzz_target;
@@ -5037,6 +5037,15 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
     let third_split = second_split
         + (usize::from(cursor.next().unwrap_or_default()) % (payload.len() - second_split + 1));
+    let mut sha1_state = Sha1::new();
+    sha1_state.update(&payload[..split]);
+    sha1_state.update(&payload[split..second_split]);
+    sha1_state.update(&payload[second_split..third_split]);
+    sha1_state.update(&payload[third_split..]);
+    let sha1_digest = sha1_state.finalize();
+    assert_eq!(sha1_digest, sha1(&payload));
+    assert_eq!(digest_to_hex(&sha1_digest).len(), 40);
+
     let mut sha256_state = Sha256::new();
     sha256_state.update(&payload[..split]);
     sha256_state.update(&payload[split..second_split]);
@@ -7161,6 +7170,10 @@ fn exercise_fixtures() {
     assert_eq!(
         digest_to_hex(&md5(b"abc")),
         "900150983cd24fb0d6963f7d28e17f72"
+    );
+    assert_eq!(
+        digest_to_hex(&sha1(b"abc")),
+        "a9993e364706816aba3e25717850c26c9cd0d89d"
     );
     assert_eq!(
         digest_to_hex(&sha256(b"abc")),

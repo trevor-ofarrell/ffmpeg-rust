@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-hash` / hash-muxer update: `avutil` now has a Rust-native SHA-1 implementation with one-shot and streaming APIs, standard known-vector tests, and fuzz-harness streaming equivalence coverage. `avformat::HashAlgorithm` now exposes SHA-160/SHA-1 as `SHA160` for hash, framehash, and streamhash muxers, and `ffmpeg-rs -f hash -hash sha-160 -` accepts the normalized CLI spelling without invoking FFmpeg at runtime. Local FATE-runner mappings now include the avformat null/hash/framecrc/framehash/streamhash unit filters so packet-muxer and shared fuzz-target changes are measurable by `run --changed`. This remains below `complete` because the SHA-160 behavior has no pinned FFmpeg 8.1.1 oracle differential vectors, no upstream FATE media coverage, and no actual local fuzz execution.
+
 Latest `fftools-option-parser`/logging integration update: process-level CLI diagnostic formatting now routes through `avutil::Logger` instead of formatting a single `LogRecord` directly. This preserves existing quiet, level, time/datetime, and color behavior while adding deterministic repeat-summary compression for consecutive identical diagnostics when the parsed `repeat` flag enables `LogFlags::SKIP_REPEATED`; without the flag, repeated diagnostics remain separate lines. This remains below `complete` because byte-identical upstream repeat behavior, media progress logs, pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
 
 Latest `fftools-option-parser`/logging integration update: process-level `ffmpeg-rs` and `ffprobe-rs` error formatting now has deterministic terminal-color coverage through the same `LogFormatOptions::with_ffmpeg_env_color_vars_and_stderr` path used by runtime `with_ffmpeg_env_color()`. Tests now prove terminal stderr enables ANSI error coloring when no force env vars are present, non-terminal stderr stays plain, and `AV_LOG_FORCE_NOCOLOR` still wins over terminal detection. This remains below `complete` because byte-identical upstream color policy/formatting, media progress logs, repeat-summary stderr, pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
@@ -219,6 +221,22 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avutil hash`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avformat hash_muxer`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p fftools --lib runs_s16le_to_hash_stdout_with_sha160_option`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p fftools --lib ffmpeg`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo clippy -p avutil -p avformat -p fftools --all-targets -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo check --manifest-path fuzz\Cargo.toml --bins`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo clippy --manifest-path fuzz\Cargo.toml --bins -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo run -p fate-runner -- run --component avutil-hash`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo run -p fate-runner -- run --changed`
+- `cargo fmt --all -- --check`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test --workspace --all-features --lib --no-run`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test --workspace --all-features --lib`
+- `git diff --check`
 
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p fftools --lib cli_logging`
@@ -2919,6 +2937,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-hash` / SHA-160 hash-muxer slice: initial `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo run -p fate-runner -- run --changed` failed because the changed packet-muxer fuzz target selected `avformat-null-muxer`, `avformat-hash-muxer`, `avformat-framecrc-muxer`, `avformat-framehash-muxer`, and `avformat-streamhash-muxer`, but those ledger components had no local mappings. Added local avformat packet-muxer unit mappings and reran the same command successfully. No code-related failing validation remains; `git diff --check` reported CRLF warnings only.
+
 - Current `fftools-option-parser`/CLI repeat-summary logging slice: `$env:CARGO_TARGET_DIR='target-fftools-cli-repeat-test'; cargo test -p fftools --lib cli_logging` compiled but Windows Application Control blocked the freshly built `fftools` unit-test executable before tests ran with `os error 4551`; rerunning the same focused test through the previously allowed `target-fftools-cli-color-test` target passed. No code-related failing validation remains. Full `fftools` library tests, `fftools` clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library compile check, full workspace library tests, and `git diff --check` all passed; `git diff --check` reported CRLF warnings only.
 
 - Current `fftools-option-parser`/CLI terminal-color logging slice: no remaining failing commands. Focused `cli_logging` tests, full `fftools` library tests, `fftools` clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library compile check, full workspace library tests, and `git diff --check` all passed; `git diff --check` reported CRLF warnings only.
@@ -3124,6 +3144,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-hash` is the current focus for this slice, with linked `avformat-hash-muxer` and `fftools-ffmpeg-hash-output` coverage. The concrete change is SHA-1/SHA-160 digest support across the shared hash primitive, hash muxer state, CLI `-hash` algorithm parsing, and packet-muxer fuzz invariants. It does not claim exact FFmpeg hash muxer output semantics, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
+
 `fftools-option-parser` is the current focus for this slice. The concrete change is repeat-summary compression for process-level CLI diagnostics by routing the formatter through the shared `avutil::Logger`, with tests proving repeated diagnostics compress only when the parsed `repeat` flag is active. It does not claim media-progress stderr, byte-identical upstream repeat/timestamp/color formatting, pinned oracle parity, or upstream FATE parity.
 
 `fftools-option-parser` is the current focus for this slice. The concrete change is deterministic terminal/non-terminal color coverage for process-level `ffmpeg-rs`/`ffprobe-rs` error stderr, proving that the runtime shared color resolver applies terminal-derived ANSI coloring and preserves forced no-color precedence. It does not claim media-progress stderr, repeat-summary stderr, byte-identical upstream timestamp/color formatting, pinned oracle parity, or upstream FATE parity.
@@ -3160,9 +3182,9 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 logging/CLI integration with the next unblocked slice, likely successful/media diagnostics routed through the shared logger, byte-identical color/repeat policy investigation, or C ABI callback shape if it can be constrained without inventing media-progress parity.
-2. Add pinned-oracle differential coverage for `-loglevel quiet`, `-loglevel level+error`, `-loglevel repeat+level+error`, `-loglevel time+error`, `-loglevel datetime+error`, terminal/forced color behavior, malformed loglevel usage, and constrained hash/framehash/streamhash CLI paths once the FFmpeg 8.1.1 oracle binary is available.
-3. Continue priority-1 primitive work that unlocks parity tests, likely deeper bit I/O vectors, option API integration, or C ABI logging callback shape if CLI stderr has no oracle available.
+1. Continue priority-1 primitive work that unlocks parity tests, likely deeper bit I/O vectors, option API integration, or another documented hash/checksum algorithm if it can be implemented from public specs with local vectors.
+2. Add pinned-oracle differential coverage for constrained hash/framehash/streamhash algorithms, including SHA-160/SHA-1, once the FFmpeg 8.1.1 oracle binary is available.
+3. Keep improving local FATE-runner changed-path coverage where selected implemented components still lack a runnable local mapping, while keeping those mappings clearly separate from upstream FATE parity.
 
 ## Known Blockers
 
@@ -3173,6 +3195,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added SHA-1/SHA-160 hash support. `avutil::Sha1` and `avutil::sha1` implement SHA-1 with standard vectors and streaming-boundary tests; `avformat::HashAlgorithm::Sha160` renders `SHA160` and routes through the shared hash, framehash, and streamhash muxer state; `ffmpeg-rs` accepts `-hash sha1`, `-hash sha160`, and normalized `-hash sha-160` for constrained hash output; and the avutil/avformat fuzz harnesses now build-check SHA-1/SHA-160 invariants. Local avformat packet-muxer FATE mappings were added so `run --changed` can exercise null/hash/framecrc/framehash/streamhash unit filters. Validation passed with focused hash/muxer/ffmpeg tests, affected-crate clippy, fuzz package check/clippy, local FATE-runner avutil-hash and changed mappings, workspace format check, workspace clippy, workspace library compile check, full workspace library tests, and `git diff --check` with CRLF warnings only. The affected components remain `implemented`, not `complete`.
 
 Latest slice: routed process-level CLI diagnostics through the shared logger. `fftools::cli_logging` now formats diagnostics with `avutil::Logger`, preserving the existing one-error runtime path while enabling repeat-summary compression for consecutive identical diagnostics when `-loglevel repeat+...` sets `LogFlags::SKIP_REPEATED`. New tests cover compression under `repeat+level+error` and preservation of repeated lines without `repeat`; the ledger and docs now record this as local coverage, not upstream parity. Validation passed with focused `cli_logging` tests, full `fftools` library tests, `fftools` clippy, local FATE-runner option-parser and changed mappings, workspace format check, workspace clippy, workspace library compile check, full workspace library tests, and `git diff --check` with CRLF warnings only. One fresh target-dir test launch was blocked by Windows Application Control and passed through the already allowed target dir. The component remains `implemented`, not `complete`.
 

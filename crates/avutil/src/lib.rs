@@ -60,8 +60,8 @@ pub use frame::{
     VideoFrame,
 };
 pub use hash::{
-    adler32, crc32_ieee, digest_to_hex, md5, sha224, sha256, sha384, sha512, Adler32, Crc32, Md5,
-    Sha224, Sha256, Sha384, Sha512,
+    adler32, crc32_ieee, digest_to_hex, md5, sha1, sha224, sha256, sha384, sha512, Adler32, Crc32,
+    Md5, Sha1, Sha224, Sha256, Sha384, Sha512,
 };
 pub use logging::{
     clear_global_log_callback, clear_global_log_records, flush_global_log_repeated,

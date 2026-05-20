@@ -5,7 +5,7 @@ use avformat::{
     StreamHashMuxer, StreamHashStreamType,
 };
 use avutil::{
-    adler32, crc32_ieee, md5, sha224, sha256, sha384, sha512, AvErrorKind, Packet, SideData,
+    adler32, crc32_ieee, md5, sha1, sha224, sha256, sha384, sha512, AvErrorKind, Packet, SideData,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -85,6 +85,7 @@ fn exercise_hash_muxers(packets: &[Packet]) {
         HashAlgorithm::Adler32,
         HashAlgorithm::Crc32,
         HashAlgorithm::Md5,
+        HashAlgorithm::Sha160,
         HashAlgorithm::Sha224,
         HashAlgorithm::Sha256,
         HashAlgorithm::Sha384,
@@ -166,6 +167,7 @@ fn exercise_framehash_muxers(packets: &[Packet]) {
         HashAlgorithm::Adler32,
         HashAlgorithm::Crc32,
         HashAlgorithm::Md5,
+        HashAlgorithm::Sha160,
         HashAlgorithm::Sha224,
         HashAlgorithm::Sha256,
         HashAlgorithm::Sha384,
@@ -215,6 +217,7 @@ fn exercise_streamhash_muxers(packets: &[Packet]) {
         HashAlgorithm::Adler32,
         HashAlgorithm::Crc32,
         HashAlgorithm::Md5,
+        HashAlgorithm::Sha160,
         HashAlgorithm::Sha224,
         HashAlgorithm::Sha256,
         HashAlgorithm::Sha384,
@@ -341,6 +344,7 @@ fn digest_for(algorithm: HashAlgorithm, data: &[u8]) -> HashDigest {
         HashAlgorithm::Adler32 => HashDigest::U32(adler32(data)),
         HashAlgorithm::Crc32 => HashDigest::U32(crc32_ieee(data)),
         HashAlgorithm::Md5 => HashDigest::Bytes(md5(data).to_vec()),
+        HashAlgorithm::Sha160 => HashDigest::Bytes(sha1(data).to_vec()),
         HashAlgorithm::Sha224 => HashDigest::Bytes(sha224(data).to_vec()),
         HashAlgorithm::Sha256 => HashDigest::Bytes(sha256(data).to_vec()),
         HashAlgorithm::Sha384 => HashDigest::Bytes(sha384(data).to_vec()),
