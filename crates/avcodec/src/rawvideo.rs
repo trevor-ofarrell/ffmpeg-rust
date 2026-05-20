@@ -729,6 +729,44 @@ mod tests {
     }
 
     #[test]
+    fn decodes_mono_bitstream_packets_to_single_plane_frames() {
+        for (pixel_format, expected_name, payload) in [
+            (
+                PixelFormat::MonoWhite,
+                "monow",
+                vec![0x80, 0x01, 0xff, 0x00],
+            ),
+            (PixelFormat::MonoBlack, "monob", vec![0xaa, 0x55]),
+        ] {
+            let (width, height, expected_size, expected_line_size) =
+                if pixel_format == PixelFormat::MonoWhite {
+                    (9, 2, 4, 2)
+                } else {
+                    (16, 1, 2, 2)
+                };
+            let decoder = RawVideoDecoder::new(width, height, pixel_format).unwrap();
+            let mut packet = Packet::new(payload.clone(), 0);
+            packet.set_pts(Some(19));
+
+            let frame = decoder.decode_packet(&packet).unwrap();
+
+            assert_eq!(decoder.frame_size(), expected_size);
+            assert_eq!(frame.pts(), Some(19));
+            match frame.data() {
+                FrameData::Video(video) => {
+                    assert_eq!(video.width(), width);
+                    assert_eq!(video.height(), height);
+                    assert_eq!(video.pixel_format(), pixel_format);
+                    assert_eq!(video.pixel_format_name(), expected_name);
+                    assert_eq!(video.line_sizes(), &[expected_line_size]);
+                    assert_eq!(video.planes(), &[payload]);
+                }
+                FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+            }
+        }
+    }
+
+    #[test]
     fn decodes_packed_16bit_rgb_packets_to_single_plane_frames() {
         for (pixel_format, expected_name, payload) in [
             (PixelFormat::Rgb565Le, "rgb565le", vec![1, 2, 3, 4]),

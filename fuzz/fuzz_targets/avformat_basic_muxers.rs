@@ -649,6 +649,26 @@ fn exercise_fixtures() {
     );
     assert!(raw_rgb4_demuxer.read_packet().unwrap().is_none());
 
+    let mut raw_monow =
+        RawVideoMuxer::new(9, 2, PixelFormat::MonoWhite, Rational::new(24, 1).unwrap()).unwrap();
+    raw_monow
+        .write_packet(&Packet::new((0..4).collect(), 0))
+        .unwrap();
+    let raw_monow_output = raw_monow.finish();
+    let mut raw_monow_demuxer = RawVideoDemuxer::open(
+        &raw_monow_output,
+        9,
+        2,
+        PixelFormat::MonoWhite,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_monow_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..4).collect::<Vec<_>>()
+    );
+    assert!(raw_monow_demuxer.read_packet().unwrap().is_none());
+
     let mut raw_yuyv422 =
         RawVideoMuxer::new(2, 1, PixelFormat::Yuyv422, Rational::new(24, 1).unwrap()).unwrap();
     raw_yuyv422

@@ -12381,6 +12381,10 @@ fn video_plane_shapes(
             row_bytes: width,
             rows: height,
         }]),
+        PixelFormat::MonoWhite | PixelFormat::MonoBlack => Ok(vec![VideoPlaneShape {
+            row_bytes: one_bit_line_size(width),
+            rows: height,
+        }]),
         PixelFormat::Ya8 => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 2, "8-bit gray-alpha video frame line size")?,
             rows: height,
@@ -12672,6 +12676,10 @@ fn checked_mul(value: usize, factor: usize, context: &'static str) -> AvResult<u
 
 fn nibble_line_size(width: usize) -> usize {
     (width / 2) + (width % 2)
+}
+
+fn one_bit_line_size(width: usize) -> usize {
+    width.div_ceil(8)
 }
 
 #[cfg(test)]
@@ -16452,6 +16460,12 @@ mod tests {
 
         let bgr4 = VideoFrame::new(4, 1, PixelFormat::Bgr4, vec![vec![0; 2]]).unwrap();
         assert_eq!(bgr4.line_sizes(), &[2]);
+
+        let monow = VideoFrame::new(9, 2, PixelFormat::MonoWhite, vec![vec![0; 4]]).unwrap();
+        assert_eq!(monow.line_sizes(), &[2]);
+
+        let monob = VideoFrame::new(16, 1, PixelFormat::MonoBlack, vec![vec![0; 2]]).unwrap();
+        assert_eq!(monob.line_sizes(), &[2]);
 
         let rgb565 = VideoFrame::new(3, 2, PixelFormat::Rgb565Le, vec![vec![0; 12]]).unwrap();
         assert_eq!(rgb565.line_sizes(), &[6]);

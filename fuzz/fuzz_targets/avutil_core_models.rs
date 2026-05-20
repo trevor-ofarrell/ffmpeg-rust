@@ -5496,6 +5496,21 @@ fn exercise_fixtures() {
     assert!(PixelFormat::Ya16Le.has_alpha());
     assert_eq!(PixelFormat::from_name("0rgb"), Some(PixelFormat::ZeroRgb));
     assert_eq!(PixelFormat::Rgb0.frame_size(2, 2).unwrap(), 16);
+    for (name, format) in [
+        ("monow", PixelFormat::MonoWhite),
+        ("monob", PixelFormat::MonoBlack),
+    ] {
+        let descriptor = format.descriptor();
+        assert_eq!(PixelFormat::from_name(name), Some(format));
+        assert_eq!(descriptor.name, name);
+        assert_eq!(descriptor.class, PixelFormatClass::Gray);
+        assert_eq!(descriptor.component_count, 1);
+        assert_eq!(descriptor.bits_per_component, 1);
+        assert_eq!(descriptor.bits_per_pixel, 1);
+        assert_eq!(descriptor.packed_bytes_per_pixel, None);
+        assert_eq!(format.frame_size(9, 2).unwrap(), 4);
+        assert_eq!(format.plane_sizes(9, 2).unwrap(), vec![4]);
+    }
     for (
         name,
         format,
@@ -17272,6 +17287,7 @@ fn write_fixed_bytes(data: &mut [u8], offset: usize, len: usize, value: &[u8]) {
 fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usize> {
     match pixel_format {
         PixelFormat::Gray8 => vec![width],
+        PixelFormat::MonoWhite | PixelFormat::MonoBlack => vec![one_bit_line_size(width)],
         PixelFormat::Ya8 => vec![width * 2],
         PixelFormat::Ya16Le | PixelFormat::Ya16Be => vec![width * 4],
         PixelFormat::Gray9Le
@@ -17377,6 +17393,9 @@ fn expected_video_plane_shapes(
 ) -> Vec<(usize, usize)> {
     match pixel_format {
         PixelFormat::Gray8 => vec![(width, height)],
+        PixelFormat::MonoWhite | PixelFormat::MonoBlack => {
+            vec![(one_bit_line_size(width), height)]
+        }
         PixelFormat::Ya8 => vec![(width * 2, height)],
         PixelFormat::Ya16Le | PixelFormat::Ya16Be => vec![(width * 4, height)],
         PixelFormat::Gray9Le
@@ -17494,6 +17513,10 @@ fn expected_video_plane_shapes(
 
 fn nibble_line_size(width: usize) -> usize {
     (width / 2) + (width % 2)
+}
+
+fn one_bit_line_size(width: usize) -> usize {
+    width.div_ceil(8)
 }
 
 fn dimension_from(byte: Option<u8>) -> usize {

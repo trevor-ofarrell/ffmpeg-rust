@@ -335,6 +335,23 @@ fn exercise_fixtures() {
         );
     }
 
+    for (format, width, height, valid_len, invalid_len) in [
+        (PixelFormat::MonoWhite, 9, 2, 4, 3),
+        (PixelFormat::MonoBlack, 16, 1, 2, 1),
+    ] {
+        let decoder = RawVideoDecoder::new(width, height, format).unwrap();
+        assert!(decoder
+            .decode_packet(&Packet::new(vec![0; valid_len], 0))
+            .is_ok());
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; invalid_len], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
     for format in [
         PixelFormat::Rgb565Le,
         PixelFormat::Rgb555Be,

@@ -301,6 +301,24 @@ mod tests {
                 4
             );
         }
+        for (format, width, height, payload_len, expected_size) in [
+            (RawVideoPixelFormat::MonoWhite, 9, 2, 4, 4),
+            (RawVideoPixelFormat::MonoBlack, 16, 1, 2, 2),
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(
+                    &vec![0; payload_len],
+                    width,
+                    height,
+                    format,
+                    Rational::new(1, 1).unwrap(),
+                )
+                .unwrap()
+                .info()
+                .frame_size(),
+                expected_size
+            );
+        }
         for format in [
             RawVideoPixelFormat::Rgb565Be,
             RawVideoPixelFormat::Rgb565Le,
@@ -932,6 +950,19 @@ mod tests {
             let muxer = RawVideoMuxer::new(3, 2, format, Rational::new(25, 1).unwrap()).unwrap();
 
             assert_eq!(muxer.info().frame_size(), 4);
+        }
+    }
+
+    #[test]
+    fn muxer_computes_mono_bitstream_frame_sizes() {
+        for (format, width, height, expected_size) in [
+            (RawVideoPixelFormat::MonoWhite, 9, 2, 4),
+            (RawVideoPixelFormat::MonoBlack, 16, 1, 2),
+        ] {
+            let muxer =
+                RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), expected_size);
         }
     }
 

@@ -3,6 +3,8 @@ use crate::{AvError, AvResult};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PixelFormat {
     Gray8,
+    MonoWhite,
+    MonoBlack,
     Ya8,
     Ya16Le,
     Ya16Be,
@@ -124,6 +126,8 @@ pub struct PixelFormatDescriptor {
 impl PixelFormat {
     pub const ALL: &'static [Self] = &[
         Self::Gray8,
+        Self::MonoWhite,
+        Self::MonoBlack,
         Self::Ya8,
         Self::Ya16Le,
         Self::Ya16Be,
@@ -225,6 +229,8 @@ impl PixelFormat {
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "gray" | "gray8" => Some(Self::Gray8),
+            "monow" => Some(Self::MonoWhite),
+            "monob" => Some(Self::MonoBlack),
             "ya8" | "gray8a" | "y400a" => Some(Self::Ya8),
             "ya16le" => Some(Self::Ya16Le),
             "ya16be" => Some(Self::Ya16Be),
@@ -343,6 +349,30 @@ impl PixelFormat {
                 false,
                 false,
                 Some(1),
+                0,
+                0,
+            ),
+            Self::MonoWhite => (
+                "monow",
+                PixelFormatClass::Gray,
+                1,
+                1,
+                1,
+                false,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::MonoBlack => (
+                "monob",
+                PixelFormatClass::Gray,
+                1,
+                1,
+                1,
+                false,
+                false,
+                None,
                 0,
                 0,
             ),
@@ -1457,7 +1487,9 @@ impl PixelFormat {
             name,
             class,
             component_count,
-            bits_per_component: if matches!(
+            bits_per_component: if matches!(self, Self::MonoWhite | Self::MonoBlack) {
+                1
+            } else if matches!(
                 self,
                 Self::Ya16Le
                     | Self::Ya16Be
@@ -1642,6 +1674,11 @@ impl PixelFormat {
 
         match self {
             Self::Gray8 => Ok(vec![pixels]),
+            Self::MonoWhite | Self::MonoBlack => Ok(vec![checked_mul(
+                one_bit_line_size(width),
+                height,
+                "1-bit monochrome bitstream pixel format frame size",
+            )?]),
             Self::Ya8 => Ok(vec![checked_mul(
                 pixels,
                 2,
@@ -1898,6 +1935,10 @@ fn nibble_line_size(width: usize) -> usize {
     (width / 2) + (width % 2)
 }
 
+fn one_bit_line_size(width: usize) -> usize {
+    width.div_ceil(8)
+}
+
 fn sum_checked(
     values: impl IntoIterator<Item = usize>,
     overflow_message: &'static str,
@@ -1918,6 +1959,18 @@ mod tests {
     fn pixel_formats_report_ffmpeg_names_and_layout() {
         assert_eq!(PixelFormat::from_name("gray"), Some(PixelFormat::Gray8));
         assert_eq!(PixelFormat::from_name("gray8"), Some(PixelFormat::Gray8));
+        for (name, format) in [
+            ("monow", PixelFormat::MonoWhite),
+            ("monob", PixelFormat::MonoBlack),
+        ] {
+            assert_eq!(format.name(), name);
+            assert_eq!(PixelFormat::from_name(name), Some(format));
+            assert_eq!(format.plane_count(), 1);
+            assert!(format.is_gray());
+            assert!(format.is_packed());
+            assert!(!format.has_alpha());
+            assert_eq!(format.packed_bytes_per_pixel(), None);
+        }
         assert_eq!(PixelFormat::from_name("ya8"), Some(PixelFormat::Ya8));
         assert_eq!(PixelFormat::from_name("gray8a"), Some(PixelFormat::Ya8));
         assert_eq!(PixelFormat::from_name("y400a"), Some(PixelFormat::Ya8));
@@ -2190,7 +2243,7 @@ mod tests {
             PixelFormat::from_name("yuv444p"),
             Some(PixelFormat::Yuv444p)
         );
-        assert_eq!(PixelFormat::ALL.len(), 93);
+        assert_eq!(PixelFormat::ALL.len(), 95);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
@@ -2241,6 +2294,7 @@ mod tests {
         assert_eq!(PixelFormat::GbrapF32Be.plane_count(), 4);
         assert!(!PixelFormat::Rgb24.is_planar());
         assert!(PixelFormat::Rgb24.is_packed());
+        assert!(PixelFormat::MonoWhite.is_packed());
         assert!(PixelFormat::Rgb8.is_packed());
         assert!(PixelFormat::Rgb4.is_packed());
         assert!(PixelFormat::Bgr4Byte.is_packed());
@@ -2302,6 +2356,7 @@ mod tests {
         assert!(!PixelFormat::Gbrap16Le.is_float());
         assert!(PixelFormat::GbrapF16Le.is_float());
         assert!(PixelFormat::GbrapF32Be.is_float());
+        assert_eq!(PixelFormat::MonoWhite.packed_bytes_per_pixel(), None);
         assert_eq!(PixelFormat::Bgr24.packed_bytes_per_pixel(), Some(3));
         assert_eq!(PixelFormat::Rgb8.packed_bytes_per_pixel(), Some(1));
         assert_eq!(PixelFormat::Rgb4.packed_bytes_per_pixel(), None);
@@ -2350,6 +2405,23 @@ mod tests {
         assert!(!gray.is_float);
         assert_eq!(gray.packed_bytes_per_pixel, Some(1));
         assert_eq!((gray.log2_chroma_w, gray.log2_chroma_h), (0, 0));
+
+        for format in [PixelFormat::MonoWhite, PixelFormat::MonoBlack] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.format, format);
+            assert_eq!(PixelFormat::from_name(descriptor.name), Some(format));
+            assert_eq!(descriptor.class, PixelFormatClass::Gray);
+            assert!(format.is_gray());
+            assert_eq!(descriptor.component_count, 1);
+            assert_eq!(descriptor.bits_per_component, 1);
+            assert_eq!(descriptor.bits_per_pixel, 1);
+            assert_eq!(descriptor.plane_count, 1);
+            assert!(!descriptor.is_planar);
+            assert!(!descriptor.has_alpha);
+            assert!(!descriptor.is_float);
+            assert_eq!(descriptor.packed_bytes_per_pixel, None);
+            assert_eq!(format.log2_chroma(), (0, 0));
+        }
 
         let ya8 = PixelFormat::Ya8.descriptor();
         assert_eq!(ya8.format, PixelFormat::Ya8);
@@ -2842,6 +2914,8 @@ mod tests {
         assert_eq!(PixelFormat::GrayF16Be.frame_size(2, 2).unwrap(), 8);
         assert_eq!(PixelFormat::GrayF32Le.plane_sizes(2, 2).unwrap(), vec![16]);
         assert_eq!(PixelFormat::GrayF32Be.frame_size(2, 2).unwrap(), 16);
+        assert_eq!(PixelFormat::MonoWhite.plane_sizes(9, 2).unwrap(), vec![4]);
+        assert_eq!(PixelFormat::MonoBlack.frame_size(16, 2).unwrap(), 4);
         assert_eq!(PixelFormat::Rgb24.frame_size(2, 2).unwrap(), 12);
         assert_eq!(PixelFormat::Bgr24.frame_size(2, 2).unwrap(), 12);
         assert_eq!(PixelFormat::Rgb8.plane_sizes(2, 2).unwrap(), vec![4]);
@@ -3133,6 +3207,18 @@ mod tests {
         let planes = PixelFormat::Bgr4.split_planes(&[4, 5], 4, 1).unwrap();
 
         assert_eq!(planes, vec![vec![4, 5]]);
+
+        let planes = PixelFormat::MonoWhite
+            .split_planes(&[0x80, 0x01, 0xff, 0x00], 9, 2)
+            .unwrap();
+
+        assert_eq!(planes, vec![vec![0x80, 0x01, 0xff, 0x00]]);
+
+        let planes = PixelFormat::MonoBlack
+            .split_planes(&[0xaa, 0x55], 16, 1)
+            .unwrap();
+
+        assert_eq!(planes, vec![vec![0xaa, 0x55]]);
 
         let planes = PixelFormat::Bgr4Byte
             .split_planes(&[4, 5, 6, 7], 2, 2)

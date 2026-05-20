@@ -36,6 +36,8 @@ The current rawvideo-facing `PixelFormat` subset also includes packed gray+alpha
 
 The rawvideo-facing packed grayscale subset now also includes FFmpeg's `gray9le`, `gray9be`, `gray10le`, `gray10be`, `gray12le`, `gray12be`, `gray14le`, and `gray14be` names plus `y9le`/`y9be`, `y10le`/`y10be`, `y12le`/`y12be`, and `y14le`/`y14be` aliases. They are modeled as one-component grayscale formats with 9, 10, 12, or 14 descriptor bits per pixel and two stored bytes per sample; byte order is preserved as pixel-format naming only until conversion code exists.
 
+The rawvideo-facing monochrome bitstream subset now also includes FFmpeg's `monow` and `monob` names. They are modeled as one 1bpp grayscale bitstream plane with MSB-first pixel storage and `ceil(width / 8)` bytes per row; white/black polarity is preserved as pixel-format naming only until conversion code exists.
+
 The rawvideo-facing planar RGB subset now also includes FFmpeg's `gbrp9le`, `gbrp9be`, `gbrp10le`, `gbrp10be`, `gbrp12le`, `gbrp12be`, `gbrp14le`, `gbrp14be`, `gbrp16le`, and `gbrp16be` names. They are modeled as three full-resolution GBR planes with 9, 10, 12, 14, or 16 bits per component, 27, 30, 36, 42, or 48 descriptor bits per pixel, and two raw storage bytes per sample in each plane; byte order is preserved as pixel-format naming only until conversion code exists.
 
 The rawvideo-facing planar RGB+alpha subset now also includes FFmpeg's `gbrap`, `gbrap10le`, `gbrap10be`, `gbrap12le`, `gbrap12be`, `gbrap14le`, `gbrap14be`, `gbrap16le`, `gbrap16be`, `gbrap32le`, `gbrap32be`, `gbrapf16le`, `gbrapf16be`, `gbrapf32le`, and `gbrapf32be` names. They are modeled as four full-resolution GBRA planes with alpha metadata, no chroma subsampling, integer 8/10/12/14/16/32-bit or floating 16/32-bit components, and one, two, or four storage bytes per sample according to FFmpeg's pinned descriptors.
@@ -219,6 +221,8 @@ Both rawvideo packet paths use the shared `PixelFormat` model for planar 9-bit, 
 Both rawvideo packet paths also use the shared `PixelFormat` model for planar GBRA packet sizing, so `gbrap`, `gbrap10le`/`gbrap10be`, `gbrap12le`/`gbrap12be`, `gbrap14le`/`gbrap14be`, `gbrap16le`/`gbrap16be`, `gbrap32le`/`gbrap32be`, `gbrapf16le`/`gbrapf16be`, and `gbrapf32le`/`gbrapf32be` frames are accepted as four full-resolution planes with one, two, or four bytes per sample.
 
 Both rawvideo packet paths also accept FFmpeg's packed high-bit-depth grayscale names `gray9le`/`gray9be`, `gray10le`/`gray10be`, `gray12le`/`gray12be`, and `gray14le`/`gray14be`, including the `y9*`/`y10*`/`y12*`/`y14*` aliases, as one two-byte-per-sample grayscale plane.
+
+Both rawvideo packet paths also accept FFmpeg's 1bpp monochrome bitstream names `monow` and `monob` as one row-padded plane with `ceil(width / 8) * height` bytes.
 
 Both rawvideo packet paths also accept FFmpeg's packed 4bpp RGB bitstream names `rgb4` and `bgr4` as one row-padded plane with `ceil(width / 2) * height` bytes.
 
