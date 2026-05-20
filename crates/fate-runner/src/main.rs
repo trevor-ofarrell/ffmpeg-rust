@@ -359,6 +359,15 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &["fftools-ffmpeg-"],
     },
     PathRule {
+        path: "crates/fftools/tests/rawvideo_oracle.rs",
+        exact_ids: &[
+            "fftools-ffmpeg-rawvideo-file-output",
+            "avformat-rawvideo-demuxer",
+            "avformat-rawvideo-muxer",
+        ],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/fftools/src/ffprobe.rs",
         exact_ids: &["fftools-basic-io"],
         id_prefixes: &["fftools-ffprobe-"],
@@ -1195,6 +1204,25 @@ mod tests {
     }
 
     #[test]
+    fn changed_selection_maps_rawvideo_oracle_test_to_covered_components() {
+        let component_ids = component_ids_from_ledger(&ledger(&[
+            "fftools-ffmpeg-rawvideo-file-output",
+            "avformat-rawvideo-demuxer",
+            "avformat-rawvideo-muxer",
+        ]));
+        let paths = vec!["crates/fftools/tests/rawvideo_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec![
+                "fftools-ffmpeg-rawvideo-file-output".to_string(),
+                "avformat-rawvideo-demuxer".to_string(),
+                "avformat-rawvideo-muxer".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn default_mappings_cover_current_fftools_smoke_selections() {
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let ledger_contents = fs::read_to_string(repo_root.join("PORTING_LEDGER.toml")).unwrap();
@@ -1211,6 +1239,7 @@ mod tests {
                 "crates/fftools/src/cli_logging.rs".to_string(),
                 "crates/fftools/src/io_plan.rs".to_string(),
                 "crates/fftools/src/ffmpeg.rs".to_string(),
+                "crates/fftools/tests/rawvideo_oracle.rs".to_string(),
                 "crates/fftools/src/ffprobe.rs".to_string(),
                 "fuzz/fuzz_targets/fftools_option_parser.rs".to_string(),
             ],

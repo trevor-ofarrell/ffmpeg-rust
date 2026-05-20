@@ -49,7 +49,7 @@ Each command is written as a text snapshot under `compat/ffmpeg-8.1.1/`, with `i
 
 FATE samples are expected to be obtained using upstream FFmpeg's documented `make fate-rsync` flow against a local samples directory. This repository does not yet contain samples or an upstream media FATE target mapping.
 
-`cargo run -p fate-runner -- list` reads `PORTING_LEDGER.toml` and lists known components. `cargo run -p fate-runner -- mappings` reads `tests/fate/mappings.txt` and lists configured component-target commands; add `--check-prereqs` with `--samples <path>` and `--oracle-ffmpeg <path>` to resolve placeholders and validate all configured mapping prerequisites without executing commands. `cargo run -p fate-runner -- run --changed` inspects git changed paths, maps currently covered Rust modules, dependency manifests and lockfile, and cargo-fuzz target files to ledger component IDs, and runs explicit command mappings from `tests/fate/mappings.txt` for selected components. Add `--dry-run` to resolve and print selected mappings, including prerequisite validation, without executing them. The mapping format is documented in `tests/fate/README.md` as `component_id|target|workdir|program|arg1|arg2|...`.
+`cargo run -p fate-runner -- list` reads `PORTING_LEDGER.toml` and lists known components. `cargo run -p fate-runner -- mappings` reads `tests/fate/mappings.txt` and lists configured component-target commands; add `--check-prereqs` with `--samples <path>` and `--oracle-ffmpeg <path>` to resolve placeholders and validate all configured mapping prerequisites without executing commands. `cargo run -p fate-runner -- run --changed` inspects git changed paths, maps currently covered Rust modules, dependency manifests and lockfile, cargo-fuzz target files, and the rawvideo oracle integration harness to ledger component IDs, and runs explicit command mappings from `tests/fate/mappings.txt` for selected components. Add `--dry-run` to resolve and print selected mappings, including prerequisite validation, without executing them. The mapping format is documented in `tests/fate/README.md` as `component_id|target|workdir|program|arg1|arg2|...`.
 
 Mappings may reference `{samples}` and `{oracle_ffmpeg}` in the workdir, program, or args fields. When a selected mapping uses those placeholders, pass `--samples <path>` and/or `--oracle-ffmpeg <path>` to `fate-runner`; the runner validates that the samples path is an existing directory and the oracle path is an existing file before executing the mapped command.
 
@@ -60,6 +60,21 @@ Local `avformat-*muxer|local-avformat-*-unit` rows validate the current WAV, raw
 ## Differential Tests
 
 Differential tests must compare Rust outputs to the pinned FFmpeg oracle. FFmpeg may be invoked from tests and oracle tooling only, never as runtime implementation.
+
+The first rawvideo oracle harness lives at `crates/fftools/tests/rawvideo_oracle.rs` and is ignored by default so ordinary local test runs do not claim oracle parity without an oracle binary. Run it with a pinned FFmpeg 8.1.1 binary:
+
+```sh
+FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p fftools --test rawvideo_oracle -- --ignored
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:FFMPEG_ORACLE = ".\third_party\ffmpeg-oracle\build\bin\ffmpeg.exe"
+cargo test -p fftools --test rawvideo_oracle -- --ignored
+```
+
+The harness currently compares Rust constrained `-f rawvideo ... -f rawvideo <file>` output bytes against pinned FFmpeg `-c:v copy -f rawvideo` output for `rgb24` and `gbrp10msble`. If `FFMPEG_ORACLE` is unset and `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` is absent, the ignored tests fail before comparison instead of silently passing.
 
 ## Source-Checked Notes
 

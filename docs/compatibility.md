@@ -14,6 +14,7 @@
 - `ffmpeg-rs` can packet-copy explicit raw `pcm_s16le` input to a local raw `-f s16le` output file through the Rust PCM demuxer and muxer.
 - `ffmpeg-rs` can packet-copy explicit raw `pcm_s16le` input to a local RIFF/WAVE `-f wav` output file through the Rust PCM demuxer and WAV muxer.
 - `ffmpeg-rs` can packet-copy explicit rawvideo input to a local raw `-f rawvideo` output file through the Rust rawvideo demuxer and muxer.
+- An ignored rawvideo oracle harness now compares `ffmpeg-rs` local rawvideo file-output bytes against pinned FFmpeg 8.1.1 `-c:v copy -f rawvideo` output for `rgb24` and `gbrp10msble`; it is blocked locally until `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` is available and does not yet count as `differential_pass`.
 - `ffmpeg-rs` can packet-copy explicit raw `yuv420p` input to a local `-f yuv4mpegpipe` output file through the Rust rawvideo demuxer and YUV4MPEG2 muxer.
 - `ffmpeg-rs` can packet-copy explicit raw `rgb24` input to a local `-f avi` output file through the Rust rawvideo demuxer and AVI muxer.
 - `ffmpeg-rs` can packet-copy explicit image2 single-file or contiguous numbered-sequence input to local `-f image2` file or numbered-pattern outputs through the Rust image2 demuxer and muxer.
