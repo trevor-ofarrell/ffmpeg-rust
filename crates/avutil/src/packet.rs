@@ -2058,6 +2058,88 @@ impl PacketDisplayMatrix {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum PacketAudioServiceType {
+    Main = 0,
+    Effects = 1,
+    VisuallyImpaired = 2,
+    HearingImpaired = 3,
+    Dialogue = 4,
+    Commentary = 5,
+    Emergency = 6,
+    VoiceOver = 7,
+    Karaoke = 8,
+}
+
+impl PacketAudioServiceType {
+    pub const DATA_LEN: usize = 4;
+    pub const KNOWN: [Self; 9] = [
+        Self::Main,
+        Self::Effects,
+        Self::VisuallyImpaired,
+        Self::HearingImpaired,
+        Self::Dialogue,
+        Self::Commentary,
+        Self::Emergency,
+        Self::VoiceOver,
+        Self::Karaoke,
+    ];
+
+    pub fn parse(data: &[u8]) -> AvResult<Self> {
+        if data.len() != Self::DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "audio service type packet side data requires exactly {} bytes, got {}",
+                Self::DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let mut raw = [0; Self::DATA_LEN];
+        raw.copy_from_slice(data);
+        Self::from_raw(i32::from_ne_bytes(raw))
+    }
+
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Main),
+            1 => Ok(Self::Effects),
+            2 => Ok(Self::VisuallyImpaired),
+            3 => Ok(Self::HearingImpaired),
+            4 => Ok(Self::Dialogue),
+            5 => Ok(Self::Commentary),
+            6 => Ok(Self::Emergency),
+            7 => Ok(Self::VoiceOver),
+            8 => Ok(Self::Karaoke),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid audio service type packet side data value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        self.as_raw().to_ne_bytes()
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Main => "AV_AUDIO_SERVICE_TYPE_MAIN",
+            Self::Effects => "AV_AUDIO_SERVICE_TYPE_EFFECTS",
+            Self::VisuallyImpaired => "AV_AUDIO_SERVICE_TYPE_VISUALLY_IMPAIRED",
+            Self::HearingImpaired => "AV_AUDIO_SERVICE_TYPE_HEARING_IMPAIRED",
+            Self::Dialogue => "AV_AUDIO_SERVICE_TYPE_DIALOGUE",
+            Self::Commentary => "AV_AUDIO_SERVICE_TYPE_COMMENTARY",
+            Self::Emergency => "AV_AUDIO_SERVICE_TYPE_EMERGENCY",
+            Self::VoiceOver => "AV_AUDIO_SERVICE_TYPE_VOICE_OVER",
+            Self::Karaoke => "AV_AUDIO_SERVICE_TYPE_KARAOKE",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketLcevc<'a> {
     data: &'a [u8],
 }
@@ -2205,6 +2287,13 @@ impl SideData {
 
     pub fn new_display_matrix(value: PacketDisplayMatrix) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::DisplayMatrix, value.to_bytes().to_vec())
+    }
+
+    pub fn new_audio_service_type(value: PacketAudioServiceType) -> AvResult<Self> {
+        Self::new_with_kind(
+            PacketSideDataKind::AudioServiceType,
+            value.to_bytes().to_vec(),
+        )
     }
 
     pub fn new_lcevc(data: Vec<u8>) -> AvResult<Self> {
@@ -2420,6 +2509,14 @@ impl SideData {
         }
 
         PacketDisplayMatrix::parse(self.data()).map(Some)
+    }
+
+    pub fn audio_service_type(&self) -> AvResult<Option<PacketAudioServiceType>> {
+        if self.kind != PacketSideDataKind::AudioServiceType {
+            return Ok(None);
+        }
+
+        PacketAudioServiceType::parse(self.data()).map(Some)
     }
 
     pub fn lcevc(&self) -> AvResult<Option<PacketLcevc<'_>>> {
@@ -4811,6 +4908,107 @@ mod tests {
         let frame_cropping =
             SideData::new_with_kind(PacketSideDataKind::FrameCropping, vec![0; 36]).unwrap();
         assert_eq!(frame_cropping.display_matrix().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_parses_audio_service_type_payload() {
+        let expected = [
+            (
+                PacketAudioServiceType::Main,
+                0,
+                "AV_AUDIO_SERVICE_TYPE_MAIN",
+            ),
+            (
+                PacketAudioServiceType::Effects,
+                1,
+                "AV_AUDIO_SERVICE_TYPE_EFFECTS",
+            ),
+            (
+                PacketAudioServiceType::VisuallyImpaired,
+                2,
+                "AV_AUDIO_SERVICE_TYPE_VISUALLY_IMPAIRED",
+            ),
+            (
+                PacketAudioServiceType::HearingImpaired,
+                3,
+                "AV_AUDIO_SERVICE_TYPE_HEARING_IMPAIRED",
+            ),
+            (
+                PacketAudioServiceType::Dialogue,
+                4,
+                "AV_AUDIO_SERVICE_TYPE_DIALOGUE",
+            ),
+            (
+                PacketAudioServiceType::Commentary,
+                5,
+                "AV_AUDIO_SERVICE_TYPE_COMMENTARY",
+            ),
+            (
+                PacketAudioServiceType::Emergency,
+                6,
+                "AV_AUDIO_SERVICE_TYPE_EMERGENCY",
+            ),
+            (
+                PacketAudioServiceType::VoiceOver,
+                7,
+                "AV_AUDIO_SERVICE_TYPE_VOICE_OVER",
+            ),
+            (
+                PacketAudioServiceType::Karaoke,
+                8,
+                "AV_AUDIO_SERVICE_TYPE_KARAOKE",
+            ),
+        ];
+
+        assert_eq!(PacketAudioServiceType::KNOWN.len(), expected.len());
+        for ((value, raw, constant), known) in
+            expected.into_iter().zip(PacketAudioServiceType::KNOWN)
+        {
+            assert_eq!(known, value);
+            assert_eq!(value.as_raw(), raw);
+            assert_eq!(value.ffmpeg_constant(), constant);
+            assert_eq!(value.to_bytes(), raw.to_ne_bytes());
+            assert_eq!(PacketAudioServiceType::from_raw(raw).unwrap(), value);
+            assert_eq!(
+                PacketAudioServiceType::parse(&value.to_bytes()).unwrap(),
+                value
+            );
+
+            let side_data = SideData::new_audio_service_type(value).unwrap();
+            assert_eq!(side_data.kind_id(), &PacketSideDataKind::AudioServiceType);
+            assert_eq!(side_data.data(), value.to_bytes().as_slice());
+            assert_eq!(side_data.audio_service_type().unwrap(), Some(value));
+        }
+
+        let display_matrix =
+            SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, vec![0; 4]).unwrap();
+        assert_eq!(display_matrix.audio_service_type().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_audio_service_type_payload() {
+        for data in [
+            Vec::new(),
+            vec![0; PacketAudioServiceType::DATA_LEN - 1],
+            vec![0; PacketAudioServiceType::DATA_LEN + 1],
+            (-1_i32).to_ne_bytes().to_vec(),
+            9_i32.to_ne_bytes().to_vec(),
+            i32::MAX.to_ne_bytes().to_vec(),
+        ] {
+            assert_eq!(
+                PacketAudioServiceType::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::AudioServiceType, data).unwrap();
+            assert_eq!(
+                side_data.audio_service_type().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        let lcevc = SideData::new_lcevc(vec![0; PacketAudioServiceType::DATA_LEN]).unwrap();
+        assert_eq!(lcevc.audio_service_type().unwrap(), None);
     }
 
     #[test]

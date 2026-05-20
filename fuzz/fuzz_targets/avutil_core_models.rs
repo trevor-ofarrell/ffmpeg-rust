@@ -32,8 +32,8 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
-    Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription, PacketContentLightMetadata,
-    PacketCpbProperties, PacketDisplayMatrix, PacketFallbackTrack, PacketFlags,
+    Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription, PacketAudioServiceType,
+    PacketContentLightMetadata, PacketCpbProperties, PacketDisplayMatrix, PacketFallbackTrack, PacketFlags,
     PacketFrameCropping, PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection,
     PacketLcevc, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
     PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
@@ -3307,6 +3307,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     .max(PacketMasteringDisplayMetadata::DATA_LEN + 1)
     .max(PacketSphericalMapping::DATA_LEN + 1)
     .max(PacketDisplayMatrix::DATA_LEN + 1)
+    .max(PacketAudioServiceType::DATA_LEN + 1)
     .max(PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN + 1);
     let typed_payload_len =
         usize::from(cursor.next().unwrap_or_default()) % typed_payload_max_len;
@@ -3771,6 +3772,26 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::DisplayMatrix);
             assert!(packet_display_matrix_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.audio_service_type() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::AudioServiceType);
+            assert_eq!(typed_payload.len(), PacketAudioServiceType::DATA_LEN);
+            assert_eq!(value.to_bytes().as_slice(), typed_payload.as_slice());
+            assert_eq!(PacketAudioServiceType::from_raw(value.as_raw()).unwrap(), value);
+            assert_eq!(
+                PacketAudioServiceType::parse(value.to_bytes().as_slice()).unwrap(),
+                value
+            );
+            assert!(PacketAudioServiceType::KNOWN.contains(&value));
+            assert!(value.ffmpeg_constant().starts_with("AV_AUDIO_SERVICE_TYPE_"));
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::AudioServiceType),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::AudioServiceType);
+            assert!(packet_audio_service_type_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.lcevc() {
@@ -5049,6 +5070,91 @@ fn exercise_fixtures() {
         SideData::new_with_kind(PacketSideDataKind::Lcevc, packet_display_matrix_bytes.to_vec())
             .unwrap();
     assert_eq!(non_packet_display_matrix.display_matrix().unwrap(), None);
+    assert_eq!(PacketAudioServiceType::KNOWN.len(), 9);
+    for (value, raw, constant) in [
+        (
+            PacketAudioServiceType::Main,
+            0,
+            "AV_AUDIO_SERVICE_TYPE_MAIN",
+        ),
+        (
+            PacketAudioServiceType::Effects,
+            1,
+            "AV_AUDIO_SERVICE_TYPE_EFFECTS",
+        ),
+        (
+            PacketAudioServiceType::VisuallyImpaired,
+            2,
+            "AV_AUDIO_SERVICE_TYPE_VISUALLY_IMPAIRED",
+        ),
+        (
+            PacketAudioServiceType::HearingImpaired,
+            3,
+            "AV_AUDIO_SERVICE_TYPE_HEARING_IMPAIRED",
+        ),
+        (
+            PacketAudioServiceType::Dialogue,
+            4,
+            "AV_AUDIO_SERVICE_TYPE_DIALOGUE",
+        ),
+        (
+            PacketAudioServiceType::Commentary,
+            5,
+            "AV_AUDIO_SERVICE_TYPE_COMMENTARY",
+        ),
+        (
+            PacketAudioServiceType::Emergency,
+            6,
+            "AV_AUDIO_SERVICE_TYPE_EMERGENCY",
+        ),
+        (
+            PacketAudioServiceType::VoiceOver,
+            7,
+            "AV_AUDIO_SERVICE_TYPE_VOICE_OVER",
+        ),
+        (
+            PacketAudioServiceType::Karaoke,
+            8,
+            "AV_AUDIO_SERVICE_TYPE_KARAOKE",
+        ),
+    ] {
+        assert_eq!(value.as_raw(), raw);
+        assert_eq!(value.ffmpeg_constant(), constant);
+        assert_eq!(PacketAudioServiceType::from_raw(raw).unwrap(), value);
+        assert_eq!(PacketAudioServiceType::parse(&value.to_bytes()).unwrap(), value);
+        assert_eq!(
+            SideData::new_audio_service_type(value)
+                .unwrap()
+                .audio_service_type()
+                .unwrap(),
+            Some(value)
+        );
+    }
+    assert_eq!(
+        PacketAudioServiceType::parse(&[0; PacketAudioServiceType::DATA_LEN - 1])
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        PacketAudioServiceType::from_raw(9).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        SideData::new_with_kind(
+            PacketSideDataKind::AudioServiceType,
+            vec![0; PacketAudioServiceType::DATA_LEN + 1]
+        )
+        .unwrap()
+        .audio_service_type()
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidData
+    );
+    let non_packet_audio_service =
+        SideData::new_with_kind(PacketSideDataKind::Lcevc, vec![0; PacketAudioServiceType::DATA_LEN])
+            .unwrap();
+    assert_eq!(non_packet_audio_service.audio_service_type().unwrap(), None);
     let packet_lcevc_payload = vec![0x00, 0x00, 0x03, 0x7e, 0xaa];
     let packet_lcevc_side_data = SideData::new_lcevc(packet_lcevc_payload.clone()).unwrap();
     let packet_lcevc = packet_lcevc_side_data.lcevc().unwrap().unwrap();
@@ -10811,6 +10917,16 @@ fn packet_frame_cropping_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_display_matrix_payload_invalid(data: &[u8]) -> bool {
     data.len() != PacketDisplayMatrix::DATA_LEN
+}
+
+fn packet_audio_service_type_payload_invalid(data: &[u8]) -> bool {
+    if data.len() != PacketAudioServiceType::DATA_LEN {
+        return true;
+    }
+
+    let mut raw = [0; PacketAudioServiceType::DATA_LEN];
+    raw.copy_from_slice(data);
+    PacketAudioServiceType::from_raw(i32::from_ne_bytes(raw)).is_err()
 }
 
 fn minimal_dynamic_hdr_plus_fixture() -> Vec<u8> {
