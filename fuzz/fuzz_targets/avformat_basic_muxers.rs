@@ -926,10 +926,22 @@ fn exercise_fixtures() {
             (0..24).collect::<Vec<_>>(),
         ),
         (
+            PixelFormat::Yuv440p10Le,
+            3,
+            2,
+            (0..24).collect::<Vec<_>>(),
+        ),
+        (
             PixelFormat::Yuv422p12Be,
             4,
             3,
             (0..48).collect::<Vec<_>>(),
+        ),
+        (
+            PixelFormat::Yuv440p12Be,
+            3,
+            2,
+            (0..24).collect::<Vec<_>>(),
         ),
         (
             PixelFormat::Yuv444p10Be,

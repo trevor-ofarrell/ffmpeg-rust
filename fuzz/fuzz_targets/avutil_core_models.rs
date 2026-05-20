@@ -1370,6 +1370,10 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 | PixelFormat::YuvJ440p
                 | PixelFormat::Yuv444p
                 | PixelFormat::YuvJ444p
+                | PixelFormat::Yuv440p10Le
+                | PixelFormat::Yuv440p10Be
+                | PixelFormat::Yuv440p12Le
+                | PixelFormat::Yuv440p12Be
                 | PixelFormat::Yuv420p9Le
                 | PixelFormat::Yuv420p9Be
                 | PixelFormat::Yuv422p9Le
@@ -5695,6 +5699,26 @@ fn exercise_fixtures() {
         PixelFormat::Yuv420p10Le.plane_sizes(2, 2).unwrap(),
         vec![8, 2, 2]
     );
+    assert_eq!(
+        PixelFormat::from_name("yuv440p10le"),
+        Some(PixelFormat::Yuv440p10Le)
+    );
+    assert_eq!(
+        PixelFormat::Yuv440p10Le.plane_sizes(3, 2).unwrap(),
+        vec![12, 6, 6]
+    );
+    assert_eq!(PixelFormat::Yuv440p10Le.bits_per_component(), 10);
+    assert_eq!(PixelFormat::Yuv440p10Le.bits_per_pixel(), bpp(20));
+    assert_eq!(
+        PixelFormat::from_name("yuv440p12be"),
+        Some(PixelFormat::Yuv440p12Be)
+    );
+    assert_eq!(
+        PixelFormat::Yuv440p12Be.plane_sizes(3, 2).unwrap(),
+        vec![12, 6, 6]
+    );
+    assert_eq!(PixelFormat::Yuv440p12Be.bits_per_component(), 12);
+    assert_eq!(PixelFormat::Yuv440p12Be.bits_per_pixel(), bpp(24));
     assert_eq!(
         PixelFormat::Yuv420p9Le.plane_sizes(2, 2).unwrap(),
         vec![8, 2, 2]
@@ -17575,12 +17599,16 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Yuv420p10Be
         | PixelFormat::Yuv422p10Le
         | PixelFormat::Yuv422p10Be
+        | PixelFormat::Yuv440p10Le
+        | PixelFormat::Yuv440p10Be
         | PixelFormat::Yuv444p10Le
         | PixelFormat::Yuv444p10Be
         | PixelFormat::Yuv420p12Le
         | PixelFormat::Yuv420p12Be
         | PixelFormat::Yuv422p12Le
         | PixelFormat::Yuv422p12Be
+        | PixelFormat::Yuv440p12Le
+        | PixelFormat::Yuv440p12Be
         | PixelFormat::Yuv444p12Le
         | PixelFormat::Yuv444p12Be
         | PixelFormat::Yuv420p14Le
@@ -17743,12 +17771,16 @@ fn expected_video_plane_shapes(
         | PixelFormat::Yuv420p10Be
         | PixelFormat::Yuv422p10Le
         | PixelFormat::Yuv422p10Be
+        | PixelFormat::Yuv440p10Le
+        | PixelFormat::Yuv440p10Be
         | PixelFormat::Yuv444p10Le
         | PixelFormat::Yuv444p10Be
         | PixelFormat::Yuv420p12Le
         | PixelFormat::Yuv420p12Be
         | PixelFormat::Yuv422p12Le
         | PixelFormat::Yuv422p12Be
+        | PixelFormat::Yuv440p12Le
+        | PixelFormat::Yuv440p12Be
         | PixelFormat::Yuv444p12Le
         | PixelFormat::Yuv444p12Be
         | PixelFormat::Yuv420p14Le

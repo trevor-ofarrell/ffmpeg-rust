@@ -401,12 +401,16 @@ mod tests {
             (RawVideoPixelFormat::Yuv420p10Be, 4, 2, 24, 24),
             (RawVideoPixelFormat::Yuv422p10Le, 4, 3, 48, 48),
             (RawVideoPixelFormat::Yuv422p10Be, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Yuv440p10Le, 3, 2, 24, 24),
+            (RawVideoPixelFormat::Yuv440p10Be, 3, 2, 24, 24),
             (RawVideoPixelFormat::Yuv444p10Le, 3, 2, 36, 36),
             (RawVideoPixelFormat::Yuv444p10Be, 3, 2, 36, 36),
             (RawVideoPixelFormat::Yuv420p12Le, 4, 2, 24, 24),
             (RawVideoPixelFormat::Yuv420p12Be, 4, 2, 24, 24),
             (RawVideoPixelFormat::Yuv422p12Le, 4, 3, 48, 48),
             (RawVideoPixelFormat::Yuv422p12Be, 4, 3, 48, 48),
+            (RawVideoPixelFormat::Yuv440p12Le, 3, 2, 24, 24),
+            (RawVideoPixelFormat::Yuv440p12Be, 3, 2, 24, 24),
             (RawVideoPixelFormat::Yuv444p12Le, 3, 2, 36, 36),
             (RawVideoPixelFormat::Yuv444p12Be, 3, 2, 36, 36),
             (RawVideoPixelFormat::Yuv420p14Le, 4, 2, 24, 24),
@@ -1023,6 +1027,38 @@ mod tests {
         )
         .is_ok());
         assert!(RawVideoDemuxer::open(
+            &[0; 24],
+            3,
+            3,
+            RawVideoPixelFormat::Yuv440p10Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 24],
+            3,
+            2,
+            RawVideoPixelFormat::Yuv440p10Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoDemuxer::open(
+            &[0; 24],
+            3,
+            3,
+            RawVideoPixelFormat::Yuv440p12Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoDemuxer::open(
+            &[0; 24],
+            3,
+            2,
+            RawVideoPixelFormat::Yuv440p12Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoDemuxer::open(
             &[0; 18],
             3,
             2,
@@ -1543,12 +1579,16 @@ mod tests {
             (RawVideoPixelFormat::Yuv420p10Be, 4, 2, 24),
             (RawVideoPixelFormat::Yuv422p10Le, 4, 3, 48),
             (RawVideoPixelFormat::Yuv422p10Be, 4, 3, 48),
+            (RawVideoPixelFormat::Yuv440p10Le, 3, 2, 24),
+            (RawVideoPixelFormat::Yuv440p10Be, 3, 2, 24),
             (RawVideoPixelFormat::Yuv444p10Le, 3, 2, 36),
             (RawVideoPixelFormat::Yuv444p10Be, 3, 2, 36),
             (RawVideoPixelFormat::Yuv420p12Le, 4, 2, 24),
             (RawVideoPixelFormat::Yuv420p12Be, 4, 2, 24),
             (RawVideoPixelFormat::Yuv422p12Le, 4, 3, 48),
             (RawVideoPixelFormat::Yuv422p12Be, 4, 3, 48),
+            (RawVideoPixelFormat::Yuv440p12Le, 3, 2, 24),
+            (RawVideoPixelFormat::Yuv440p12Be, 3, 2, 24),
             (RawVideoPixelFormat::Yuv444p12Le, 3, 2, 36),
             (RawVideoPixelFormat::Yuv444p12Be, 3, 2, 36),
             (RawVideoPixelFormat::Yuv420p14Le, 4, 2, 24),
@@ -1794,6 +1834,34 @@ mod tests {
             3,
             2,
             RawVideoPixelFormat::Yuv440p,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            3,
+            RawVideoPixelFormat::Yuv440p10Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv440p10Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            3,
+            RawVideoPixelFormat::Yuv440p12Be,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_err());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv440p12Be,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());

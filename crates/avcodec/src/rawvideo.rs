@@ -556,6 +556,19 @@ mod tests {
                 vec![8, 4, 4],
             ),
             (
+                PixelFormat::Yuv440p10Le,
+                "yuv440p10le",
+                3,
+                2,
+                24,
+                vec![
+                    (0..12).collect::<Vec<_>>(),
+                    (12..18).collect::<Vec<_>>(),
+                    (18..24).collect::<Vec<_>>(),
+                ],
+                vec![6, 6, 6],
+            ),
+            (
                 PixelFormat::Yuv422p12Be,
                 "yuv422p12be",
                 4,
@@ -887,6 +900,10 @@ mod tests {
         assert!(RawVideoDecoder::new(3, 3, PixelFormat::Yuv440p).is_err());
         assert!(RawVideoDecoder::new(3, 3, PixelFormat::YuvJ440p).is_err());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv440p).is_ok());
+        assert!(RawVideoDecoder::new(3, 3, PixelFormat::Yuv440p10Le).is_err());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv440p10Le).is_ok());
+        assert!(RawVideoDecoder::new(3, 3, PixelFormat::Yuv440p12Be).is_err());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv440p12Be).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::YuvJ444p).is_ok());
 
