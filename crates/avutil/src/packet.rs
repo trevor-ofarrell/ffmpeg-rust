@@ -2638,6 +2638,603 @@ impl<'a> PacketEncryptionInitInfo<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum PacketIamfAnimationType {
+    Step = 0,
+    Linear = 1,
+    Bezier = 2,
+}
+
+impl PacketIamfAnimationType {
+    pub fn from_raw(value: u32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Step),
+            1 => Ok(Self::Linear),
+            2 => Ok(Self::Bezier),
+            _ => Err(AvError::invalid_data(format!(
+                "IAMF mix gain animation type {value} is invalid"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Step => "AV_IAMF_ANIMATION_TYPE_STEP",
+            Self::Linear => "AV_IAMF_ANIMATION_TYPE_LINEAR",
+            Self::Bezier => "AV_IAMF_ANIMATION_TYPE_BEZIER",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum PacketIamfParamDefinitionType {
+    MixGain = 0,
+    Demixing = 1,
+    ReconGain = 2,
+}
+
+impl PacketIamfParamDefinitionType {
+    pub fn from_raw(value: u32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::MixGain),
+            1 => Ok(Self::Demixing),
+            2 => Ok(Self::ReconGain),
+            _ => Err(AvError::invalid_data(format!(
+                "IAMF parameter definition type {value} is invalid"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> u32 {
+        self as u32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::MixGain => "AV_IAMF_PARAMETER_DEFINITION_MIX_GAIN",
+            Self::Demixing => "AV_IAMF_PARAMETER_DEFINITION_DEMIXING",
+            Self::ReconGain => "AV_IAMF_PARAMETER_DEFINITION_RECON_GAIN",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketIamfParamDefinition<'a> {
+    data: &'a [u8],
+    parsed_len: usize,
+    av_class_address: usize,
+    subblocks_offset: usize,
+    subblock_size: usize,
+    subblock_count: usize,
+    definition_type: PacketIamfParamDefinitionType,
+    parameter_id: u32,
+    parameter_rate: u32,
+    duration: u32,
+    constant_subblock_duration: u32,
+}
+
+impl<'a> PacketIamfParamDefinition<'a> {
+    const NATIVE_WORD_LEN: usize = core::mem::size_of::<usize>();
+    pub const AV_CLASS_OFFSET: usize = 0;
+    pub const SUBBLOCKS_OFFSET_OFFSET: usize = Self::NATIVE_WORD_LEN;
+    pub const SUBBLOCK_SIZE_OFFSET: usize = Self::NATIVE_WORD_LEN * 2;
+    pub const SUBBLOCK_COUNT_OFFSET: usize = Self::NATIVE_WORD_LEN * 3;
+    pub const TYPE_OFFSET: usize = Self::SUBBLOCK_COUNT_OFFSET + 4;
+    pub const PARAMETER_ID_OFFSET: usize = Self::SUBBLOCK_COUNT_OFFSET + 8;
+    pub const PARAMETER_RATE_OFFSET: usize = Self::SUBBLOCK_COUNT_OFFSET + 12;
+    pub const DURATION_OFFSET: usize = Self::SUBBLOCK_COUNT_OFFSET + 16;
+    pub const CONSTANT_SUBBLOCK_DURATION_OFFSET: usize = Self::SUBBLOCK_COUNT_OFFSET + 20;
+    pub const HEADER_LEN: usize = align_native(Self::SUBBLOCK_COUNT_OFFSET + 24);
+
+    fn parse(
+        data: &'a [u8],
+        expected_type: PacketIamfParamDefinitionType,
+        min_subblock_size: usize,
+    ) -> AvResult<Self> {
+        if data.len() < Self::HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "IAMF parameter definition packet side data requires at least {} bytes, got {}",
+                Self::HEADER_LEN,
+                data.len()
+            )));
+        }
+
+        let definition_type =
+            PacketIamfParamDefinitionType::from_raw(read_u32_ne(data, Self::TYPE_OFFSET))?;
+        if definition_type != expected_type {
+            return Err(AvError::invalid_data(format!(
+                "IAMF parameter definition type {} does not match expected {}",
+                definition_type.ffmpeg_constant(),
+                expected_type.ffmpeg_constant()
+            )));
+        }
+
+        let subblocks_offset = read_usize_ne(data, Self::SUBBLOCKS_OFFSET_OFFSET)?;
+        if subblocks_offset < Self::HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "IAMF parameter definition subblocks offset {subblocks_offset} is before header length {}",
+                Self::HEADER_LEN
+            )));
+        }
+        if subblocks_offset > data.len() {
+            return Err(AvError::invalid_data(format!(
+                "IAMF parameter definition subblocks offset {subblocks_offset} exceeds payload length {}",
+                data.len()
+            )));
+        }
+
+        let subblock_size = read_usize_ne(data, Self::SUBBLOCK_SIZE_OFFSET)?;
+        if subblock_size < min_subblock_size {
+            return Err(AvError::invalid_data(format!(
+                "IAMF parameter definition subblock size {subblock_size} is smaller than required {min_subblock_size}"
+            )));
+        }
+
+        let subblock_count = usize::try_from(read_u32_ne(data, Self::SUBBLOCK_COUNT_OFFSET))
+            .map_err(|_| AvError::invalid_data("IAMF subblock count does not fit in usize"))?;
+        let subblocks_len = subblock_count.checked_mul(subblock_size).ok_or_else(|| {
+            AvError::invalid_data("IAMF parameter definition subblock byte length overflows usize")
+        })?;
+        let parsed_len = subblocks_offset.checked_add(subblocks_len).ok_or_else(|| {
+            AvError::invalid_data("IAMF parameter definition parsed byte length overflows usize")
+        })?;
+        if parsed_len > data.len() {
+            return Err(AvError::invalid_data(format!(
+                "IAMF parameter definition requires at least {parsed_len} bytes, got {}",
+                data.len()
+            )));
+        }
+
+        let parameter_rate = read_u32_ne(data, Self::PARAMETER_RATE_OFFSET);
+        if parameter_rate == 0 {
+            return Err(AvError::invalid_data(
+                "IAMF parameter definition parameter_rate must not be zero",
+            ));
+        }
+
+        for index in 0..subblock_count {
+            let offset = subblocks_offset + index * subblock_size;
+            let duration = read_u32_ne(data, offset + Self::NATIVE_WORD_LEN);
+            if duration == 0 {
+                return Err(AvError::invalid_data(format!(
+                    "IAMF parameter definition subblock {index} duration must not be zero"
+                )));
+            }
+        }
+
+        Ok(Self {
+            data,
+            parsed_len,
+            av_class_address: read_usize_ne(data, Self::AV_CLASS_OFFSET)?,
+            subblocks_offset,
+            subblock_size,
+            subblock_count,
+            definition_type,
+            parameter_id: read_u32_ne(data, Self::PARAMETER_ID_OFFSET),
+            parameter_rate,
+            duration: read_u32_ne(data, Self::DURATION_OFFSET),
+            constant_subblock_duration: read_u32_ne(data, Self::CONSTANT_SUBBLOCK_DURATION_OFFSET),
+        })
+    }
+
+    pub const fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn parsed_len(&self) -> usize {
+        self.parsed_len
+    }
+
+    pub fn trailing_data(&self) -> &'a [u8] {
+        &self.data[self.parsed_len..]
+    }
+
+    pub const fn av_class_address(&self) -> usize {
+        self.av_class_address
+    }
+
+    pub const fn subblocks_offset(&self) -> usize {
+        self.subblocks_offset
+    }
+
+    pub const fn subblock_size(&self) -> usize {
+        self.subblock_size
+    }
+
+    pub const fn subblock_count(&self) -> usize {
+        self.subblock_count
+    }
+
+    pub const fn definition_type(&self) -> PacketIamfParamDefinitionType {
+        self.definition_type
+    }
+
+    pub const fn parameter_id(&self) -> u32 {
+        self.parameter_id
+    }
+
+    pub const fn parameter_rate(&self) -> u32 {
+        self.parameter_rate
+    }
+
+    pub const fn duration(&self) -> u32 {
+        self.duration
+    }
+
+    pub const fn constant_subblock_duration(&self) -> u32 {
+        self.constant_subblock_duration
+    }
+
+    pub fn subblock_bytes(&self, index: usize) -> Option<&'a [u8]> {
+        if index >= self.subblock_count {
+            return None;
+        }
+
+        let offset = self.subblocks_offset + index * self.subblock_size;
+        Some(&self.data[offset..offset + self.subblock_size])
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketIamfMixGainSubblock<'a> {
+    data: &'a [u8],
+    av_class_address: usize,
+    subblock_duration: u32,
+    animation_type: PacketIamfAnimationType,
+    start_point_value: Rational,
+    end_point_value: Rational,
+    control_point_value: Rational,
+    control_point_relative_time: Rational,
+}
+
+impl<'a> PacketIamfMixGainSubblock<'a> {
+    const NATIVE_WORD_LEN: usize = core::mem::size_of::<usize>();
+    pub const AV_CLASS_OFFSET: usize = 0;
+    pub const SUBBLOCK_DURATION_OFFSET: usize = Self::NATIVE_WORD_LEN;
+    pub const ANIMATION_TYPE_OFFSET: usize = Self::NATIVE_WORD_LEN + 4;
+    pub const START_POINT_VALUE_OFFSET: usize = Self::NATIVE_WORD_LEN + 8;
+    pub const END_POINT_VALUE_OFFSET: usize = Self::START_POINT_VALUE_OFFSET + 8;
+    pub const CONTROL_POINT_VALUE_OFFSET: usize = Self::END_POINT_VALUE_OFFSET + 8;
+    pub const CONTROL_POINT_RELATIVE_TIME_OFFSET: usize = Self::CONTROL_POINT_VALUE_OFFSET + 8;
+    pub const MIN_DATA_LEN: usize = align_native(Self::CONTROL_POINT_RELATIVE_TIME_OFFSET + 8);
+
+    fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() < Self::MIN_DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "IAMF mix gain subblock requires at least {} bytes, got {}",
+                Self::MIN_DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let subblock_duration = read_u32_ne(data, Self::SUBBLOCK_DURATION_OFFSET);
+        if subblock_duration == 0 {
+            return Err(AvError::invalid_data(
+                "IAMF mix gain subblock duration must not be zero",
+            ));
+        }
+
+        Ok(Self {
+            data,
+            av_class_address: read_usize_ne(data, Self::AV_CLASS_OFFSET)?,
+            subblock_duration,
+            animation_type: PacketIamfAnimationType::from_raw(read_u32_ne(
+                data,
+                Self::ANIMATION_TYPE_OFFSET,
+            ))?,
+            start_point_value: read_rational_ne(data, Self::START_POINT_VALUE_OFFSET),
+            end_point_value: read_rational_ne(data, Self::END_POINT_VALUE_OFFSET),
+            control_point_value: read_rational_ne(data, Self::CONTROL_POINT_VALUE_OFFSET),
+            control_point_relative_time: read_rational_ne(
+                data,
+                Self::CONTROL_POINT_RELATIVE_TIME_OFFSET,
+            ),
+        })
+    }
+
+    pub const fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn av_class_address(self) -> usize {
+        self.av_class_address
+    }
+
+    pub const fn subblock_duration(self) -> u32 {
+        self.subblock_duration
+    }
+
+    pub const fn animation_type(self) -> PacketIamfAnimationType {
+        self.animation_type
+    }
+
+    pub const fn start_point_value(self) -> Rational {
+        self.start_point_value
+    }
+
+    pub const fn end_point_value(self) -> Rational {
+        self.end_point_value
+    }
+
+    pub const fn control_point_value(self) -> Rational {
+        self.control_point_value
+    }
+
+    pub const fn control_point_relative_time(self) -> Rational {
+        self.control_point_relative_time
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketIamfMixGainParam<'a> {
+    definition: PacketIamfParamDefinition<'a>,
+    subblocks: Vec<PacketIamfMixGainSubblock<'a>>,
+}
+
+impl<'a> PacketIamfMixGainParam<'a> {
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        let definition = PacketIamfParamDefinition::parse(
+            data,
+            PacketIamfParamDefinitionType::MixGain,
+            PacketIamfMixGainSubblock::MIN_DATA_LEN,
+        )?;
+        let mut subblocks = Vec::with_capacity(definition.subblock_count());
+        for index in 0..definition.subblock_count() {
+            let data = definition.subblock_bytes(index).ok_or_else(|| {
+                AvError::invalid_data("IAMF mix gain subblock is missing after validation")
+            })?;
+            subblocks.push(PacketIamfMixGainSubblock::parse(data)?);
+        }
+
+        Ok(Self {
+            definition,
+            subblocks,
+        })
+    }
+
+    pub const fn definition(&self) -> &PacketIamfParamDefinition<'a> {
+        &self.definition
+    }
+
+    pub fn subblocks(&self) -> &[PacketIamfMixGainSubblock<'a>] {
+        &self.subblocks
+    }
+
+    pub fn subblock_count(&self) -> usize {
+        self.subblocks.len()
+    }
+
+    pub fn subblock(&self, index: usize) -> Option<PacketIamfMixGainSubblock<'a>> {
+        self.subblocks.get(index).copied()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketIamfDemixingInfoSubblock<'a> {
+    data: &'a [u8],
+    av_class_address: usize,
+    subblock_duration: u32,
+    dmixp_mode: u32,
+}
+
+impl<'a> PacketIamfDemixingInfoSubblock<'a> {
+    const NATIVE_WORD_LEN: usize = core::mem::size_of::<usize>();
+    pub const AV_CLASS_OFFSET: usize = 0;
+    pub const SUBBLOCK_DURATION_OFFSET: usize = Self::NATIVE_WORD_LEN;
+    pub const DMIXP_MODE_OFFSET: usize = Self::NATIVE_WORD_LEN + 4;
+    pub const MIN_DATA_LEN: usize = align_native(Self::DMIXP_MODE_OFFSET + 4);
+
+    fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() < Self::MIN_DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "IAMF demixing info subblock requires at least {} bytes, got {}",
+                Self::MIN_DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let subblock_duration = read_u32_ne(data, Self::SUBBLOCK_DURATION_OFFSET);
+        if subblock_duration == 0 {
+            return Err(AvError::invalid_data(
+                "IAMF demixing info subblock duration must not be zero",
+            ));
+        }
+
+        Ok(Self {
+            data,
+            av_class_address: read_usize_ne(data, Self::AV_CLASS_OFFSET)?,
+            subblock_duration,
+            dmixp_mode: read_u32_ne(data, Self::DMIXP_MODE_OFFSET),
+        })
+    }
+
+    pub const fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn av_class_address(self) -> usize {
+        self.av_class_address
+    }
+
+    pub const fn subblock_duration(self) -> u32 {
+        self.subblock_duration
+    }
+
+    pub const fn dmixp_mode(self) -> u32 {
+        self.dmixp_mode
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketIamfDemixingInfoParam<'a> {
+    definition: PacketIamfParamDefinition<'a>,
+    subblocks: Vec<PacketIamfDemixingInfoSubblock<'a>>,
+}
+
+impl<'a> PacketIamfDemixingInfoParam<'a> {
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        let definition = PacketIamfParamDefinition::parse(
+            data,
+            PacketIamfParamDefinitionType::Demixing,
+            PacketIamfDemixingInfoSubblock::MIN_DATA_LEN,
+        )?;
+        let mut subblocks = Vec::with_capacity(definition.subblock_count());
+        for index in 0..definition.subblock_count() {
+            let data = definition.subblock_bytes(index).ok_or_else(|| {
+                AvError::invalid_data("IAMF demixing info subblock is missing after validation")
+            })?;
+            subblocks.push(PacketIamfDemixingInfoSubblock::parse(data)?);
+        }
+
+        Ok(Self {
+            definition,
+            subblocks,
+        })
+    }
+
+    pub const fn definition(&self) -> &PacketIamfParamDefinition<'a> {
+        &self.definition
+    }
+
+    pub fn subblocks(&self) -> &[PacketIamfDemixingInfoSubblock<'a>] {
+        &self.subblocks
+    }
+
+    pub fn subblock_count(&self) -> usize {
+        self.subblocks.len()
+    }
+
+    pub fn subblock(&self, index: usize) -> Option<PacketIamfDemixingInfoSubblock<'a>> {
+        self.subblocks.get(index).copied()
+    }
+}
+
+const IAMF_RECON_GAIN_LAYERS: usize = 6;
+const IAMF_RECON_GAIN_CHANNELS: usize = 12;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketIamfReconGainSubblock<'a> {
+    data: &'a [u8],
+    av_class_address: usize,
+    subblock_duration: u32,
+    recon_gain: [[u8; IAMF_RECON_GAIN_CHANNELS]; IAMF_RECON_GAIN_LAYERS],
+}
+
+impl<'a> PacketIamfReconGainSubblock<'a> {
+    const NATIVE_WORD_LEN: usize = core::mem::size_of::<usize>();
+    pub const LAYERS: usize = IAMF_RECON_GAIN_LAYERS;
+    pub const CHANNELS: usize = IAMF_RECON_GAIN_CHANNELS;
+    pub const AV_CLASS_OFFSET: usize = 0;
+    pub const SUBBLOCK_DURATION_OFFSET: usize = Self::NATIVE_WORD_LEN;
+    pub const RECON_GAIN_OFFSET: usize = Self::NATIVE_WORD_LEN + 4;
+    pub const MIN_DATA_LEN: usize =
+        align_native(Self::RECON_GAIN_OFFSET + Self::LAYERS * Self::CHANNELS);
+
+    fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() < Self::MIN_DATA_LEN {
+            return Err(AvError::invalid_data(format!(
+                "IAMF recon gain subblock requires at least {} bytes, got {}",
+                Self::MIN_DATA_LEN,
+                data.len()
+            )));
+        }
+
+        let subblock_duration = read_u32_ne(data, Self::SUBBLOCK_DURATION_OFFSET);
+        if subblock_duration == 0 {
+            return Err(AvError::invalid_data(
+                "IAMF recon gain subblock duration must not be zero",
+            ));
+        }
+
+        let mut recon_gain = [[0; Self::CHANNELS]; Self::LAYERS];
+        for (layer_index, layer) in recon_gain.iter_mut().enumerate() {
+            let offset = Self::RECON_GAIN_OFFSET + layer_index * Self::CHANNELS;
+            layer.copy_from_slice(&data[offset..offset + Self::CHANNELS]);
+        }
+
+        Ok(Self {
+            data,
+            av_class_address: read_usize_ne(data, Self::AV_CLASS_OFFSET)?,
+            subblock_duration,
+            recon_gain,
+        })
+    }
+
+    pub const fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn av_class_address(self) -> usize {
+        self.av_class_address
+    }
+
+    pub const fn subblock_duration(self) -> u32 {
+        self.subblock_duration
+    }
+
+    pub const fn recon_gain(self) -> [[u8; IAMF_RECON_GAIN_CHANNELS]; IAMF_RECON_GAIN_LAYERS] {
+        self.recon_gain
+    }
+
+    pub fn recon_gain_value(self, layer: usize, channel: usize) -> Option<u8> {
+        if layer >= Self::LAYERS || channel >= Self::CHANNELS {
+            return None;
+        }
+
+        Some(self.recon_gain[layer][channel])
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketIamfReconGainInfoParam<'a> {
+    definition: PacketIamfParamDefinition<'a>,
+    subblocks: Vec<PacketIamfReconGainSubblock<'a>>,
+}
+
+impl<'a> PacketIamfReconGainInfoParam<'a> {
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        let definition = PacketIamfParamDefinition::parse(
+            data,
+            PacketIamfParamDefinitionType::ReconGain,
+            PacketIamfReconGainSubblock::MIN_DATA_LEN,
+        )?;
+        let mut subblocks = Vec::with_capacity(definition.subblock_count());
+        for index in 0..definition.subblock_count() {
+            let data = definition.subblock_bytes(index).ok_or_else(|| {
+                AvError::invalid_data("IAMF recon gain subblock is missing after validation")
+            })?;
+            subblocks.push(PacketIamfReconGainSubblock::parse(data)?);
+        }
+
+        Ok(Self {
+            definition,
+            subblocks,
+        })
+    }
+
+    pub const fn definition(&self) -> &PacketIamfParamDefinition<'a> {
+        &self.definition
+    }
+
+    pub fn subblocks(&self) -> &[PacketIamfReconGainSubblock<'a>] {
+        &self.subblocks
+    }
+
+    pub fn subblock_count(&self) -> usize {
+        self.subblocks.len()
+    }
+
+    pub fn subblock(&self, index: usize) -> Option<PacketIamfReconGainSubblock<'a>> {
+        self.subblocks.get(index).copied()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketReplayGain {
     track_gain: i32,
     track_peak: u32,
@@ -3484,6 +4081,24 @@ impl SideData {
         Ok(side_data)
     }
 
+    pub fn new_iamf_mix_gain_param(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::IamfMixGainParam, data)?;
+        PacketIamfMixGainParam::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
+    pub fn new_iamf_demixing_info_param(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::IamfDemixingInfoParam, data)?;
+        PacketIamfDemixingInfoParam::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
+    pub fn new_iamf_recon_gain_info_param(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::IamfReconGainInfoParam, data)?;
+        PacketIamfReconGainInfoParam::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_skip_samples(value: PacketSkipSamples) -> AvResult<Self> {
         Self::new_with_kind(PacketSideDataKind::SkipSamples, value.to_bytes().to_vec())
     }
@@ -3770,6 +4385,30 @@ impl SideData {
         }
 
         PacketDynamicHdr10Plus::parse(self.data()).map(Some)
+    }
+
+    pub fn iamf_mix_gain_param(&self) -> AvResult<Option<PacketIamfMixGainParam<'_>>> {
+        if self.kind != PacketSideDataKind::IamfMixGainParam {
+            return Ok(None);
+        }
+
+        PacketIamfMixGainParam::parse(self.data()).map(Some)
+    }
+
+    pub fn iamf_demixing_info_param(&self) -> AvResult<Option<PacketIamfDemixingInfoParam<'_>>> {
+        if self.kind != PacketSideDataKind::IamfDemixingInfoParam {
+            return Ok(None);
+        }
+
+        PacketIamfDemixingInfoParam::parse(self.data()).map(Some)
+    }
+
+    pub fn iamf_recon_gain_info_param(&self) -> AvResult<Option<PacketIamfReconGainInfoParam<'_>>> {
+        if self.kind != PacketSideDataKind::IamfReconGainInfoParam {
+            return Ok(None);
+        }
+
+        PacketIamfReconGainInfoParam::parse(self.data()).map(Some)
     }
 
     pub fn skip_samples(&self) -> AvResult<Option<PacketSkipSamples>> {
@@ -4282,6 +4921,18 @@ fn read_u32_ne(data: &[u8], offset: usize) -> u32 {
     u32::from_ne_bytes(bytes)
 }
 
+fn read_usize_ne(data: &[u8], offset: usize) -> AvResult<usize> {
+    let end = offset
+        .checked_add(core::mem::size_of::<usize>())
+        .ok_or_else(|| AvError::invalid_data("native usize offset overflows usize"))?;
+    let bytes = data
+        .get(offset..end)
+        .ok_or_else(|| AvError::invalid_data("native usize payload is truncated"))?;
+    let mut raw = [0; core::mem::size_of::<usize>()];
+    raw.copy_from_slice(bytes);
+    Ok(usize::from_ne_bytes(raw))
+}
+
 fn read_u64_ne(data: &[u8], offset: usize) -> u64 {
     let mut bytes = [0; 8];
     bytes.copy_from_slice(&data[offset..offset + 8]);
@@ -4298,6 +4949,10 @@ fn read_i32_ne(data: &[u8], offset: usize) -> i32 {
     let mut bytes = [0; 4];
     bytes.copy_from_slice(&data[offset..offset + 4]);
     i32::from_ne_bytes(bytes)
+}
+
+fn read_rational_ne(data: &[u8], offset: usize) -> Rational {
+    Rational::from_raw(read_i32_ne(data, offset), read_i32_ne(data, offset + 4))
 }
 
 fn read_u32_be(data: &[u8], offset: usize) -> u32 {
@@ -4321,6 +4976,16 @@ fn read_fourcc(data: &[u8], offset: usize) -> [u8; 4] {
     let mut raw = [0; 4];
     raw.copy_from_slice(&data[offset..offset + 4]);
     raw
+}
+
+const fn align_native(size: usize) -> usize {
+    let align = core::mem::align_of::<usize>();
+    let remainder = size % align;
+    if remainder == 0 {
+        size
+    } else {
+        size + align - remainder
+    }
 }
 
 fn read_dovi_flag(value: u8, field: &str) -> AvResult<bool> {
@@ -4482,6 +5147,189 @@ mod tests {
 
     fn write_packet_three_d_usize(data: &mut [u8], offset: usize, value: usize) {
         data[offset..offset + core::mem::size_of::<usize>()].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_packet_iamf_usize(data: &mut [u8], offset: usize, value: usize) {
+        data[offset..offset + core::mem::size_of::<usize>()].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_packet_iamf_u32(data: &mut [u8], offset: usize, value: u32) {
+        data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_packet_iamf_i32(data: &mut [u8], offset: usize, value: i32) {
+        data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+    }
+
+    fn write_packet_iamf_rational(data: &mut [u8], offset: usize, value: Rational) {
+        write_packet_iamf_i32(data, offset, value.num());
+        write_packet_iamf_i32(data, offset + 4, value.den());
+    }
+
+    fn packet_iamf_param_definition_payload(
+        definition_type: PacketIamfParamDefinitionType,
+        subblock_size: usize,
+        subblocks: &[Vec<u8>],
+    ) -> Vec<u8> {
+        let subblocks_offset = PacketIamfParamDefinition::HEADER_LEN;
+        let mut data = vec![0; subblocks_offset + subblock_size * subblocks.len()];
+        write_packet_iamf_usize(
+            &mut data,
+            PacketIamfParamDefinition::AV_CLASS_OFFSET,
+            0x1111,
+        );
+        write_packet_iamf_usize(
+            &mut data,
+            PacketIamfParamDefinition::SUBBLOCKS_OFFSET_OFFSET,
+            subblocks_offset,
+        );
+        write_packet_iamf_usize(
+            &mut data,
+            PacketIamfParamDefinition::SUBBLOCK_SIZE_OFFSET,
+            subblock_size,
+        );
+        write_packet_iamf_u32(
+            &mut data,
+            PacketIamfParamDefinition::SUBBLOCK_COUNT_OFFSET,
+            subblocks.len() as u32,
+        );
+        write_packet_iamf_u32(
+            &mut data,
+            PacketIamfParamDefinition::TYPE_OFFSET,
+            definition_type.as_raw(),
+        );
+        write_packet_iamf_u32(&mut data, PacketIamfParamDefinition::PARAMETER_ID_OFFSET, 7);
+        write_packet_iamf_u32(
+            &mut data,
+            PacketIamfParamDefinition::PARAMETER_RATE_OFFSET,
+            48_000,
+        );
+        write_packet_iamf_u32(&mut data, PacketIamfParamDefinition::DURATION_OFFSET, 960);
+        write_packet_iamf_u32(
+            &mut data,
+            PacketIamfParamDefinition::CONSTANT_SUBBLOCK_DURATION_OFFSET,
+            480,
+        );
+
+        for (index, subblock) in subblocks.iter().enumerate() {
+            assert_eq!(subblock.len(), subblock_size);
+            let offset = subblocks_offset + index * subblock_size;
+            data[offset..offset + subblock_size].copy_from_slice(subblock);
+        }
+
+        data
+    }
+
+    fn packet_iamf_mix_gain_subblock(duration: u32, animation_type: u32) -> Vec<u8> {
+        let mut data = vec![0; PacketIamfMixGainSubblock::MIN_DATA_LEN];
+        write_packet_iamf_usize(
+            &mut data,
+            PacketIamfMixGainSubblock::AV_CLASS_OFFSET,
+            0x2222,
+        );
+        write_packet_iamf_u32(
+            &mut data,
+            PacketIamfMixGainSubblock::SUBBLOCK_DURATION_OFFSET,
+            duration,
+        );
+        write_packet_iamf_u32(
+            &mut data,
+            PacketIamfMixGainSubblock::ANIMATION_TYPE_OFFSET,
+            animation_type,
+        );
+        write_packet_iamf_rational(
+            &mut data,
+            PacketIamfMixGainSubblock::START_POINT_VALUE_OFFSET,
+            Rational::from_raw(-1, 2),
+        );
+        write_packet_iamf_rational(
+            &mut data,
+            PacketIamfMixGainSubblock::END_POINT_VALUE_OFFSET,
+            Rational::from_raw(3, 4),
+        );
+        write_packet_iamf_rational(
+            &mut data,
+            PacketIamfMixGainSubblock::CONTROL_POINT_VALUE_OFFSET,
+            Rational::from_raw(1, 3),
+        );
+        write_packet_iamf_rational(
+            &mut data,
+            PacketIamfMixGainSubblock::CONTROL_POINT_RELATIVE_TIME_OFFSET,
+            Rational::from_raw(1, 2),
+        );
+        data
+    }
+
+    fn minimal_packet_iamf_mix_gain_param() -> Vec<u8> {
+        let subblocks = [
+            packet_iamf_mix_gain_subblock(480, PacketIamfAnimationType::Linear.as_raw()),
+            packet_iamf_mix_gain_subblock(480, PacketIamfAnimationType::Bezier.as_raw()),
+        ];
+        let mut data = packet_iamf_param_definition_payload(
+            PacketIamfParamDefinitionType::MixGain,
+            PacketIamfMixGainSubblock::MIN_DATA_LEN,
+            &subblocks,
+        );
+        data.push(0xaa);
+        data
+    }
+
+    fn packet_iamf_demixing_info_subblock(duration: u32, dmixp_mode: u32) -> Vec<u8> {
+        let mut data = vec![0; PacketIamfDemixingInfoSubblock::MIN_DATA_LEN];
+        write_packet_iamf_usize(
+            &mut data,
+            PacketIamfDemixingInfoSubblock::AV_CLASS_OFFSET,
+            0x3333,
+        );
+        write_packet_iamf_u32(
+            &mut data,
+            PacketIamfDemixingInfoSubblock::SUBBLOCK_DURATION_OFFSET,
+            duration,
+        );
+        write_packet_iamf_u32(
+            &mut data,
+            PacketIamfDemixingInfoSubblock::DMIXP_MODE_OFFSET,
+            dmixp_mode,
+        );
+        data
+    }
+
+    fn minimal_packet_iamf_demixing_info_param() -> Vec<u8> {
+        packet_iamf_param_definition_payload(
+            PacketIamfParamDefinitionType::Demixing,
+            PacketIamfDemixingInfoSubblock::MIN_DATA_LEN,
+            &[packet_iamf_demixing_info_subblock(960, 7)],
+        )
+    }
+
+    fn packet_iamf_recon_gain_subblock(duration: u32) -> Vec<u8> {
+        let mut data = vec![0; PacketIamfReconGainSubblock::MIN_DATA_LEN];
+        write_packet_iamf_usize(
+            &mut data,
+            PacketIamfReconGainSubblock::AV_CLASS_OFFSET,
+            0x4444,
+        );
+        write_packet_iamf_u32(
+            &mut data,
+            PacketIamfReconGainSubblock::SUBBLOCK_DURATION_OFFSET,
+            duration,
+        );
+        for layer in 0..PacketIamfReconGainSubblock::LAYERS {
+            for channel in 0..PacketIamfReconGainSubblock::CHANNELS {
+                data[PacketIamfReconGainSubblock::RECON_GAIN_OFFSET
+                    + layer * PacketIamfReconGainSubblock::CHANNELS
+                    + channel] = (layer * 16 + channel) as u8;
+            }
+        }
+        data
+    }
+
+    fn minimal_packet_iamf_recon_gain_info_param() -> Vec<u8> {
+        packet_iamf_param_definition_payload(
+            PacketIamfParamDefinitionType::ReconGain,
+            PacketIamfReconGainSubblock::MIN_DATA_LEN,
+            &[packet_iamf_recon_gain_subblock(960)],
+        )
     }
 
     #[test]
@@ -7082,6 +7930,246 @@ mod tests {
                 SideData::new_with_kind(PacketSideDataKind::EncryptionInitInfo, data).unwrap();
             assert_eq!(
                 side_data.encryption_init_info().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+    }
+
+    #[test]
+    fn packet_side_data_parses_iamf_mix_gain_param_payload() {
+        let data = minimal_packet_iamf_mix_gain_param();
+        let parsed = PacketIamfMixGainParam::parse(&data).unwrap();
+        let definition = parsed.definition();
+        let parsed_len = PacketIamfParamDefinition::HEADER_LEN
+            + PacketIamfMixGainSubblock::MIN_DATA_LEN * parsed.subblock_count();
+
+        assert_eq!(definition.data(), data.as_slice());
+        assert_eq!(definition.parsed_len(), parsed_len);
+        assert_eq!(definition.trailing_data(), &[0xaa]);
+        assert_eq!(definition.av_class_address(), 0x1111);
+        assert_eq!(
+            definition.definition_type(),
+            PacketIamfParamDefinitionType::MixGain
+        );
+        assert_eq!(definition.parameter_id(), 7);
+        assert_eq!(definition.parameter_rate(), 48_000);
+        assert_eq!(definition.duration(), 960);
+        assert_eq!(definition.constant_subblock_duration(), 480);
+        assert_eq!(
+            definition.subblocks_offset(),
+            PacketIamfParamDefinition::HEADER_LEN
+        );
+        assert_eq!(
+            definition.subblock_size(),
+            PacketIamfMixGainSubblock::MIN_DATA_LEN
+        );
+        assert_eq!(definition.subblock_count(), 2);
+        assert_eq!(parsed.subblocks().len(), 2);
+
+        let first = parsed.subblock(0).unwrap();
+        assert_eq!(first.av_class_address(), 0x2222);
+        assert_eq!(first.subblock_duration(), 480);
+        assert_eq!(first.animation_type(), PacketIamfAnimationType::Linear);
+        assert_eq!(
+            first.animation_type().ffmpeg_constant(),
+            "AV_IAMF_ANIMATION_TYPE_LINEAR"
+        );
+        assert_eq!(first.start_point_value(), Rational::from_raw(-1, 2));
+        assert_eq!(first.end_point_value(), Rational::from_raw(3, 4));
+        assert_eq!(first.control_point_value(), Rational::from_raw(1, 3));
+        assert_eq!(
+            first.control_point_relative_time(),
+            Rational::from_raw(1, 2)
+        );
+        assert_eq!(
+            parsed.subblock(1).unwrap().animation_type(),
+            PacketIamfAnimationType::Bezier
+        );
+        assert_eq!(parsed.subblock(2), None);
+        assert_eq!(
+            PacketIamfParamDefinitionType::MixGain.ffmpeg_constant(),
+            "AV_IAMF_PARAMETER_DEFINITION_MIX_GAIN"
+        );
+
+        let side_data = SideData::new_iamf_mix_gain_param(data.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::IamfMixGainParam);
+        assert_eq!(side_data.data(), data.as_slice());
+        assert_eq!(
+            side_data
+                .iamf_mix_gain_param()
+                .unwrap()
+                .unwrap()
+                .definition(),
+            parsed.definition()
+        );
+
+        let non_iamf = SideData::new_with_kind(PacketSideDataKind::DynamicHdr10Plus, data).unwrap();
+        assert_eq!(non_iamf.iamf_mix_gain_param().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_parses_iamf_demixing_info_param_payload() {
+        let data = minimal_packet_iamf_demixing_info_param();
+        let parsed = PacketIamfDemixingInfoParam::parse(&data).unwrap();
+        let definition = parsed.definition();
+
+        assert_eq!(
+            definition.definition_type(),
+            PacketIamfParamDefinitionType::Demixing
+        );
+        assert_eq!(
+            definition.subblock_size(),
+            PacketIamfDemixingInfoSubblock::MIN_DATA_LEN
+        );
+        assert_eq!(definition.subblock_count(), 1);
+        assert!(definition.trailing_data().is_empty());
+
+        let subblock = parsed.subblock(0).unwrap();
+        assert_eq!(
+            subblock.data().len(),
+            PacketIamfDemixingInfoSubblock::MIN_DATA_LEN
+        );
+        assert_eq!(subblock.av_class_address(), 0x3333);
+        assert_eq!(subblock.subblock_duration(), 960);
+        assert_eq!(subblock.dmixp_mode(), 7);
+        assert_eq!(parsed.subblock(1), None);
+
+        let side_data = SideData::new_iamf_demixing_info_param(data.clone()).unwrap();
+        assert_eq!(
+            side_data.kind_id(),
+            &PacketSideDataKind::IamfDemixingInfoParam
+        );
+        assert_eq!(
+            side_data
+                .iamf_demixing_info_param()
+                .unwrap()
+                .unwrap()
+                .subblock(0),
+            Some(subblock)
+        );
+
+        let non_iamf = SideData::new_with_kind(PacketSideDataKind::Lcevc, data).unwrap();
+        assert_eq!(non_iamf.iamf_demixing_info_param().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_parses_iamf_recon_gain_info_param_payload() {
+        let data = minimal_packet_iamf_recon_gain_info_param();
+        let parsed = PacketIamfReconGainInfoParam::parse(&data).unwrap();
+        let definition = parsed.definition();
+
+        assert_eq!(
+            definition.definition_type(),
+            PacketIamfParamDefinitionType::ReconGain
+        );
+        assert_eq!(
+            definition.subblock_size(),
+            PacketIamfReconGainSubblock::MIN_DATA_LEN
+        );
+        assert_eq!(definition.subblock_count(), 1);
+
+        let subblock = parsed.subblock(0).unwrap();
+        assert_eq!(
+            subblock.data().len(),
+            PacketIamfReconGainSubblock::MIN_DATA_LEN
+        );
+        assert_eq!(subblock.av_class_address(), 0x4444);
+        assert_eq!(subblock.subblock_duration(), 960);
+        assert_eq!(subblock.recon_gain_value(0, 0), Some(0));
+        assert_eq!(subblock.recon_gain_value(5, 11), Some(91));
+        assert_eq!(subblock.recon_gain_value(6, 0), None);
+        assert_eq!(subblock.recon_gain_value(0, 12), None);
+        assert_eq!(subblock.recon_gain()[5][11], 91);
+
+        let side_data = SideData::new_iamf_recon_gain_info_param(data.clone()).unwrap();
+        assert_eq!(
+            side_data.kind_id(),
+            &PacketSideDataKind::IamfReconGainInfoParam
+        );
+        assert_eq!(
+            side_data
+                .iamf_recon_gain_info_param()
+                .unwrap()
+                .unwrap()
+                .subblock(0),
+            Some(subblock)
+        );
+
+        let non_iamf = SideData::new_with_kind(PacketSideDataKind::Lcevc, data).unwrap();
+        assert_eq!(non_iamf.iamf_recon_gain_info_param().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_iamf_param_payloads() {
+        let valid = minimal_packet_iamf_mix_gain_param();
+
+        let mut wrong_type = valid.clone();
+        write_packet_iamf_u32(
+            &mut wrong_type,
+            PacketIamfParamDefinition::TYPE_OFFSET,
+            PacketIamfParamDefinitionType::Demixing.as_raw(),
+        );
+
+        let mut zero_parameter_rate = valid.clone();
+        write_packet_iamf_u32(
+            &mut zero_parameter_rate,
+            PacketIamfParamDefinition::PARAMETER_RATE_OFFSET,
+            0,
+        );
+
+        let mut bad_offset = valid.clone();
+        write_packet_iamf_usize(
+            &mut bad_offset,
+            PacketIamfParamDefinition::SUBBLOCKS_OFFSET_OFFSET,
+            PacketIamfParamDefinition::HEADER_LEN - 1,
+        );
+
+        let mut bad_size = valid.clone();
+        write_packet_iamf_usize(
+            &mut bad_size,
+            PacketIamfParamDefinition::SUBBLOCK_SIZE_OFFSET,
+            PacketIamfMixGainSubblock::MIN_DATA_LEN - 1,
+        );
+
+        let mut truncated = valid.clone();
+        truncated.truncate(PacketIamfParamDefinition::HEADER_LEN);
+
+        let mut zero_subblock_duration = valid.clone();
+        let duration_offset = PacketIamfParamDefinition::HEADER_LEN
+            + PacketIamfMixGainSubblock::SUBBLOCK_DURATION_OFFSET;
+        write_packet_iamf_u32(&mut zero_subblock_duration, duration_offset, 0);
+
+        let mut bad_animation = valid.clone();
+        let animation_offset = PacketIamfParamDefinition::HEADER_LEN
+            + PacketIamfMixGainSubblock::ANIMATION_TYPE_OFFSET;
+        write_packet_iamf_u32(&mut bad_animation, animation_offset, 99);
+
+        for data in [
+            Vec::new(),
+            valid[..PacketIamfParamDefinition::HEADER_LEN - 1].to_vec(),
+            wrong_type,
+            zero_parameter_rate,
+            bad_offset,
+            bad_size,
+            truncated,
+            zero_subblock_duration,
+            bad_animation,
+        ] {
+            assert_eq!(
+                PacketIamfMixGainParam::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_iamf_mix_gain_param(data.clone())
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::IamfMixGainParam, data).unwrap();
+            assert_eq!(
+                side_data.iamf_mix_gain_param().unwrap_err().kind(),
                 crate::AvErrorKind::InvalidData
             );
         }

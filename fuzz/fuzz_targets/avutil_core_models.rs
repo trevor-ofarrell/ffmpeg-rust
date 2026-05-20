@@ -38,6 +38,8 @@ use avutil::{
     PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
     PacketEncryptionSubsample, PacketExif, PacketFallbackTrack, PacketFlags, PacketFrameCropping,
     PacketH263MbInfo, PacketH263MbInfoEntry, PacketHdrPlusColorTransformParams, PacketIccProfile,
+    PacketIamfAnimationType, PacketIamfDemixingInfoParam, PacketIamfMixGainParam,
+    PacketIamfParamDefinitionType, PacketIamfReconGainInfoParam, PacketIamfReconGainSubblock,
     PacketJpDualMono, PacketJpDualMonoSelection, PacketLcevc, PacketMasteringDisplayMetadata,
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketNewExtradata, PacketPalette,
     PacketParamChange, PacketPictureType, PacketProducerReferenceTime, PacketQualityStats,
@@ -3888,6 +3890,141 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert_eq!(err.kind(), AvErrorKind::InvalidData);
             assert_eq!(typed_payload_kind, PacketSideDataKind::DynamicHdr10Plus);
             assert!(packet_dynamic_hdr10_plus_payload_invalid(
+                &typed_payload
+            ));
+        }
+    }
+    match typed_payload_side_data.iamf_mix_gain_param() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::IamfMixGainParam);
+            let definition = value.definition();
+            assert_eq!(definition.data(), typed_payload.as_slice());
+            assert!(definition.parsed_len() <= typed_payload.len());
+            assert_eq!(
+                definition.trailing_data(),
+                &typed_payload[definition.parsed_len()..]
+            );
+            assert_eq!(
+                definition.definition_type(),
+                PacketIamfParamDefinitionType::MixGain
+            );
+            assert!(definition.parameter_rate() != 0);
+            assert_eq!(definition.subblock_count(), value.subblock_count());
+            assert_eq!(value.subblocks().len(), value.subblock_count());
+            for (index, subblock) in value.subblocks().iter().copied().enumerate() {
+                assert_eq!(value.subblock(index), Some(subblock));
+                assert_eq!(definition.subblock_bytes(index), Some(subblock.data()));
+                assert!(subblock.subblock_duration() != 0);
+                assert_eq!(
+                    PacketIamfAnimationType::from_raw(subblock.animation_type().as_raw()).unwrap(),
+                    subblock.animation_type()
+                );
+            }
+            assert_eq!(value.subblock(value.subblock_count()), None);
+            assert_eq!(
+                definition.subblock_bytes(definition.subblock_count()),
+                None
+            );
+            assert_eq!(
+                PacketIamfMixGainParam::parse(definition.data()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::IamfMixGainParam),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::IamfMixGainParam);
+            assert!(packet_iamf_mix_gain_param_payload_invalid(
+                &typed_payload
+            ));
+        }
+    }
+    match typed_payload_side_data.iamf_demixing_info_param() {
+        Ok(Some(value)) => {
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::IamfDemixingInfoParam
+            );
+            let definition = value.definition();
+            assert_eq!(definition.data(), typed_payload.as_slice());
+            assert!(definition.parsed_len() <= typed_payload.len());
+            assert_eq!(
+                definition.definition_type(),
+                PacketIamfParamDefinitionType::Demixing
+            );
+            assert!(definition.parameter_rate() != 0);
+            assert_eq!(definition.subblock_count(), value.subblock_count());
+            for (index, subblock) in value.subblocks().iter().copied().enumerate() {
+                assert_eq!(value.subblock(index), Some(subblock));
+                assert_eq!(definition.subblock_bytes(index), Some(subblock.data()));
+                assert!(subblock.subblock_duration() != 0);
+            }
+            assert_eq!(value.subblock(value.subblock_count()), None);
+            assert_eq!(
+                PacketIamfDemixingInfoParam::parse(definition.data()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(
+            typed_payload_kind,
+            PacketSideDataKind::IamfDemixingInfoParam
+        ),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::IamfDemixingInfoParam
+            );
+            assert!(packet_iamf_demixing_info_param_payload_invalid(
+                &typed_payload
+            ));
+        }
+    }
+    match typed_payload_side_data.iamf_recon_gain_info_param() {
+        Ok(Some(value)) => {
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::IamfReconGainInfoParam
+            );
+            let definition = value.definition();
+            assert_eq!(definition.data(), typed_payload.as_slice());
+            assert!(definition.parsed_len() <= typed_payload.len());
+            assert_eq!(
+                definition.definition_type(),
+                PacketIamfParamDefinitionType::ReconGain
+            );
+            assert!(definition.parameter_rate() != 0);
+            assert_eq!(definition.subblock_count(), value.subblock_count());
+            for (index, subblock) in value.subblocks().iter().copied().enumerate() {
+                assert_eq!(value.subblock(index), Some(subblock));
+                assert_eq!(definition.subblock_bytes(index), Some(subblock.data()));
+                assert!(subblock.subblock_duration() != 0);
+                assert_eq!(
+                    subblock.recon_gain().len(),
+                    PacketIamfReconGainSubblock::LAYERS
+                );
+                assert_eq!(
+                    subblock.recon_gain()[0].len(),
+                    PacketIamfReconGainSubblock::CHANNELS
+                );
+            }
+            assert_eq!(value.subblock(value.subblock_count()), None);
+            assert_eq!(
+                PacketIamfReconGainInfoParam::parse(definition.data()).unwrap(),
+                value
+            );
+        }
+        Ok(None) => assert_ne!(
+            typed_payload_kind,
+            PacketSideDataKind::IamfReconGainInfoParam
+        ),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(
+                typed_payload_kind,
+                PacketSideDataKind::IamfReconGainInfoParam
+            );
+            assert!(packet_iamf_recon_gain_info_param_payload_invalid(
                 &typed_payload
             ));
         }
@@ -12212,6 +12349,18 @@ fn packet_encryption_info_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_encryption_init_info_payload_invalid(data: &[u8]) -> bool {
     PacketEncryptionInitInfo::parse(data).is_err()
+}
+
+fn packet_iamf_mix_gain_param_payload_invalid(data: &[u8]) -> bool {
+    PacketIamfMixGainParam::parse(data).is_err()
+}
+
+fn packet_iamf_demixing_info_param_payload_invalid(data: &[u8]) -> bool {
+    PacketIamfDemixingInfoParam::parse(data).is_err()
+}
+
+fn packet_iamf_recon_gain_info_param_payload_invalid(data: &[u8]) -> bool {
+    PacketIamfReconGainInfoParam::parse(data).is_err()
 }
 
 fn packet_mpegts_stream_id_payload_invalid(data: &[u8]) -> bool {
