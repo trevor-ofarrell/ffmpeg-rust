@@ -63,7 +63,7 @@ pub use hash::{
     adler32, crc32_ieee, digest_to_hex, md5, sha224, sha256, sha384, sha512, Adler32, Crc32, Md5,
     Sha224, Sha256, Sha384, Sha512,
 };
-pub use logging::{LogFlags, LogLevel, LogRecord, Logger};
+pub use logging::{LogFlags, LogLevel, LogRecord, LogTimestamp, Logger};
 pub use options::{
     OptionChild, OptionConstant, OptionDefinition, OptionFlags, OptionKind, OptionMatch,
     OptionQuery, OptionRange, OptionSet, OptionValue,

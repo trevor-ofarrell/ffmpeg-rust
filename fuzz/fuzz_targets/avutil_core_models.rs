@@ -34,7 +34,7 @@ use avutil::{
     FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId,
-    LogFlags, LogLevel, LogRecord, Logger, Md5, Packet, PacketA53ClosedCaptions,
+    LogFlags, LogLevel, LogRecord, LogTimestamp, Logger, Md5, Packet, PacketA53ClosedCaptions,
     PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
@@ -862,6 +862,34 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     logger.clear();
     assert!(logger.records().is_empty());
     assert!(logger.formatted_records().is_empty());
+
+    let timestamp = LogTimestamp::from_unix_micros(1_704_112_705_123_456);
+    assert_eq!(timestamp.format_time_utc(), "12:38:25.123456");
+    assert_eq!(
+        timestamp.format_datetime_utc(),
+        "2024-01-01 12:38:25.123456"
+    );
+    let timestamped =
+        LogRecord::new(LogLevel::Error, "demuxer", "bad header").with_timestamp(timestamp);
+    assert_eq!(
+        timestamped.format_line_with_flags(LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL),
+        "[12:38:25.123456] [error] demuxer: bad header"
+    );
+    assert_eq!(
+        timestamped.format_line_with_flags(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL),
+        "[2024-01-01 12:38:25.123456] [error] demuxer: bad header"
+    );
+
+    let mut time_flags = LogFlags::PRINT_LEVEL;
+    time_flags.insert(LogFlags::PRINT_TIME);
+    time_flags.insert(LogFlags::SKIP_REPEATED);
+    let mut logger = Logger::new_with_flags(LogLevel::Warning, time_flags);
+    assert!(logger.log(LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+        .with_timestamp(LogTimestamp::from_unix_micros(1_704_112_705_000_000))));
+    assert!(logger.log(LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+        .with_timestamp(LogTimestamp::from_unix_micros(1_704_112_706_000_000))));
+    assert_eq!(logger.records().len(), 2);
+    assert!(!logger.flush_repeated());
 }
 
 fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {

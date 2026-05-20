@@ -124,6 +124,10 @@ impl LogFlags {
         (self.bits & other.bits) == other.bits
     }
 
+    pub const fn intersects(self, other: Self) -> bool {
+        (self.bits & other.bits) != 0
+    }
+
     pub fn insert(&mut self, other: Self) {
         self.bits |= other.bits;
         self.bits &= Self::KNOWN_BITS;
@@ -142,11 +146,69 @@ impl LogFlags {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LogTimestamp {
+    unix_micros: i64,
+}
+
+impl LogTimestamp {
+    pub const fn from_unix_micros(unix_micros: i64) -> Self {
+        Self { unix_micros }
+    }
+
+    pub const fn unix_micros(self) -> i64 {
+        self.unix_micros
+    }
+
+    pub fn format_time_utc(self) -> String {
+        let (_, _, _, hour, minute, second, micros) = self.parts_utc();
+        format!("{hour:02}:{minute:02}:{second:02}.{micros:06}")
+    }
+
+    pub fn format_datetime_utc(self) -> String {
+        let (year, month, day, hour, minute, second, micros) = self.parts_utc();
+        format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}.{micros:06}")
+    }
+
+    fn parts_utc(self) -> (i64, i64, i64, i64, i64, i64, i64) {
+        const MICROS_PER_SECOND: i64 = 1_000_000;
+        const SECONDS_PER_DAY: i64 = 86_400;
+
+        let seconds = self.unix_micros.div_euclid(MICROS_PER_SECOND);
+        let micros = self.unix_micros.rem_euclid(MICROS_PER_SECOND);
+        let days = seconds.div_euclid(SECONDS_PER_DAY);
+        let seconds_of_day = seconds.rem_euclid(SECONDS_PER_DAY);
+        let hour = seconds_of_day / 3_600;
+        let minute = (seconds_of_day % 3_600) / 60;
+        let second = seconds_of_day % 60;
+        let (year, month, day) = civil_from_unix_days(days);
+
+        (year, month, day, hour, minute, second, micros)
+    }
+}
+
+fn civil_from_unix_days(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }).div_euclid(146_097);
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_param = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_param + 2) / 5 + 1;
+    let month = month_param + if month_param < 10 { 3 } else { -9 };
+    let year = year + if month <= 2 { 1 } else { 0 };
+
+    (year, month, day)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogRecord {
     level: LogLevel,
     target: String,
     message: String,
+    timestamp: Option<LogTimestamp>,
     kind: LogRecordKind,
 }
 
@@ -162,8 +224,14 @@ impl LogRecord {
             level,
             target: target.into(),
             message: message.into(),
+            timestamp: None,
             kind: LogRecordKind::Message,
         }
+    }
+
+    pub fn with_timestamp(mut self, timestamp: LogTimestamp) -> Self {
+        self.timestamp = Some(timestamp);
+        self
     }
 
     fn repetition_summary(count: usize) -> Self {
@@ -171,6 +239,7 @@ impl LogRecord {
             level: LogLevel::Info,
             target: String::new(),
             message: format!("Last message repeated {count} times"),
+            timestamp: None,
             kind: LogRecordKind::RepetitionSummary { count },
         }
     }
@@ -185,6 +254,10 @@ impl LogRecord {
 
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    pub fn timestamp(&self) -> Option<LogTimestamp> {
+        self.timestamp
     }
 
     pub fn is_repetition_summary(&self) -> bool {
@@ -207,6 +280,17 @@ impl LogRecord {
             return self.message.clone();
         }
 
+        let time_prefix = if flags.contains(LogFlags::PRINT_DATETIME) {
+            self.timestamp
+                .map(|timestamp| format!("[{}] ", timestamp.format_datetime_utc()))
+                .unwrap_or_default()
+        } else if flags.contains(LogFlags::PRINT_TIME) {
+            self.timestamp
+                .map(|timestamp| format!("[{}] ", timestamp.format_time_utc()))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         let prefix = if flags.contains(LogFlags::PRINT_LEVEL) {
             format!("[{}] ", self.level.name())
         } else {
@@ -214,18 +298,28 @@ impl LogRecord {
         };
 
         if self.target.is_empty() {
-            format!("{}{}", prefix, self.message)
+            format!("{}{}{}", time_prefix, prefix, self.message)
         } else {
-            format!("{}{}: {}", prefix, self.target, self.message)
+            format!("{}{}{}: {}", time_prefix, prefix, self.target, self.message)
         }
     }
 
-    fn same_message_as(&self, other: &Self) -> bool {
+    fn same_message_as(&self, other: &Self, flags: LogFlags) -> bool {
         self.kind == LogRecordKind::Message
             && other.kind == LogRecordKind::Message
             && self.level == other.level
             && self.target == other.target
             && self.message == other.message
+            && (!flags.intersects(LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME)
+                || self.timestamp == other.timestamp)
+    }
+}
+
+impl core::ops::BitOr for LogFlags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self::from_bits_truncate(self.bits | rhs.bits)
     }
 }
 
@@ -357,7 +451,7 @@ impl Logger {
     fn emit_record(&mut self, record: LogRecord) -> Option<usize> {
         if self.flags.contains(LogFlags::SKIP_REPEATED) {
             if let Some(repeated) = &mut self.repeated {
-                if repeated.record.same_message_as(&record) {
+                if repeated.record.same_message_as(&record, self.flags) {
                     repeated.count = repeated.count.saturating_add(1);
                     return None;
                 }
@@ -447,6 +541,26 @@ mod tests {
         assert!(truncated.contains(LogFlags::PRINT_LEVEL));
         assert!(truncated.contains(LogFlags::PRINT_TIME));
         assert!(truncated.contains(LogFlags::PRINT_DATETIME));
+        assert!(LogFlags::PRINT_TIME.intersects(LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME));
+        assert!(!LogFlags::PRINT_LEVEL.intersects(LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME));
+    }
+
+    #[test]
+    fn log_timestamps_format_utc_time_and_datetime() {
+        let timestamp = LogTimestamp::from_unix_micros(1_704_112_705_123_456);
+
+        assert_eq!(timestamp.unix_micros(), 1_704_112_705_123_456);
+        assert_eq!(timestamp.format_time_utc(), "12:38:25.123456");
+        assert_eq!(
+            timestamp.format_datetime_utc(),
+            "2024-01-01 12:38:25.123456"
+        );
+
+        let before_epoch = LogTimestamp::from_unix_micros(-1);
+        assert_eq!(
+            before_epoch.format_datetime_utc(),
+            "1969-12-31 23:59:59.999999"
+        );
     }
 
     #[test]
@@ -458,6 +572,34 @@ mod tests {
         assert_eq!(
             LogRecord::new(LogLevel::Info, "", "ready").format_line(),
             "[info] ready"
+        );
+    }
+
+    #[test]
+    fn record_formatting_respects_time_and_datetime_flags() {
+        let timestamp = LogTimestamp::from_unix_micros(1_704_112_705_123_456);
+        let record =
+            LogRecord::new(LogLevel::Error, "demuxer", "bad header").with_timestamp(timestamp);
+
+        assert_eq!(record.timestamp(), Some(timestamp));
+        assert_eq!(
+            record.format_line_with_flags(LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL),
+            "[12:38:25.123456] [error] demuxer: bad header"
+        );
+        assert_eq!(
+            record.format_line_with_flags(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL),
+            "[2024-01-01 12:38:25.123456] [error] demuxer: bad header"
+        );
+        assert_eq!(
+            record.format_line_with_flags(
+                LogFlags::PRINT_TIME | LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL
+            ),
+            "[2024-01-01 12:38:25.123456] [error] demuxer: bad header"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Info, "ffmpeg", "ready")
+                .format_line_with_flags(LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL),
+            "[info] ffmpeg: ready"
         );
     }
 
@@ -603,6 +745,42 @@ mod tests {
             [
                 "[warning] decoder: damaged packet".to_owned(),
                 "[warning] decoder: damaged packet".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn repeated_comparison_respects_printed_timestamp_flags() {
+        let first = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+            .with_timestamp(LogTimestamp::from_unix_micros(1_704_112_705_000_000));
+        let second = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+            .with_timestamp(LogTimestamp::from_unix_micros(1_704_112_706_000_000));
+
+        let mut flags = LogFlags::PRINT_LEVEL;
+        flags.insert(LogFlags::SKIP_REPEATED);
+        let mut logger = Logger::new_with_flags(LogLevel::Warning, flags);
+        assert!(logger.log(first.clone()));
+        assert!(logger.log(second.clone()));
+        assert_eq!(logger.records().len(), 1);
+        assert_eq!(
+            logger.formatted_records(),
+            [
+                "[warning] decoder: damaged packet".to_owned(),
+                "Last message repeated 1 times".to_owned()
+            ]
+        );
+
+        let mut flags_with_time = flags;
+        flags_with_time.insert(LogFlags::PRINT_TIME);
+        let mut logger = Logger::new_with_flags(LogLevel::Warning, flags_with_time);
+        assert!(logger.log(first));
+        assert!(logger.log(second));
+        assert_eq!(logger.records().len(), 2);
+        assert_eq!(
+            logger.formatted_records(),
+            [
+                "[12:38:25.000000] [warning] decoder: damaged packet".to_owned(),
+                "[12:38:26.000000] [warning] decoder: damaged packet".to_owned()
             ]
         );
     }
