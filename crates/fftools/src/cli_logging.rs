@@ -10,7 +10,8 @@ pub(crate) fn tool_error_stderr(
 ) -> String {
     let log_config = log_config_from_args(args);
     let timestamp = timestamp_for_flags(log_config.flags());
-    format_tool_error_stderr(tool_name, error, log_config, timestamp)
+    let format_options = LogFormatOptions::new(log_config.flags()).with_ffmpeg_env_color();
+    format_tool_error_stderr(tool_name, error, log_config, timestamp, format_options)
 }
 
 #[cfg(test)]
@@ -20,7 +21,23 @@ fn tool_error_stderr_with_timestamp(
     error: impl fmt::Display,
     timestamp: Option<LogTimestamp>,
 ) -> String {
-    format_tool_error_stderr(tool_name, error, log_config_from_args(args), timestamp)
+    let log_config = log_config_from_args(args);
+    let format_options = LogFormatOptions::new(log_config.flags());
+    format_tool_error_stderr(tool_name, error, log_config, timestamp, format_options)
+}
+
+#[cfg(test)]
+fn tool_error_stderr_with_timestamp_and_color_env(
+    tool_name: &str,
+    args: &[String],
+    error: impl fmt::Display,
+    timestamp: Option<LogTimestamp>,
+    color_env_is_set: impl FnMut(&str) -> bool,
+) -> String {
+    let log_config = log_config_from_args(args);
+    let format_options =
+        LogFormatOptions::new(log_config.flags()).with_ffmpeg_env_color_vars(color_env_is_set);
+    format_tool_error_stderr(tool_name, error, log_config, timestamp, format_options)
 }
 
 fn format_tool_error_stderr(
@@ -28,6 +45,7 @@ fn format_tool_error_stderr(
     error: impl fmt::Display,
     log_config: CliLogConfig,
     timestamp: Option<LogTimestamp>,
+    format_options: LogFormatOptions,
 ) -> String {
     if log_config.level() == LogLevel::Quiet {
         return String::new();
@@ -37,10 +55,7 @@ fn format_tool_error_stderr(
     if let Some(timestamp) = timestamp {
         record = record.with_timestamp(timestamp);
     }
-    format!(
-        "{}\n",
-        record.format_line_with_options(LogFormatOptions::new(log_config.flags()))
-    )
+    format!("{}\n", record.format_line_with_options(format_options))
 }
 
 fn timestamp_for_flags(flags: LogFlags) -> Option<LogTimestamp> {
@@ -77,6 +92,7 @@ fn log_config_from_args(args: &[String]) -> CliLogConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use avutil::{AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV};
 
     #[test]
     fn formats_tool_error_without_level_by_default() {
@@ -98,6 +114,16 @@ mod tests {
         );
         assert_eq!(
             tool_error_stderr("ffmpeg", &strings(&["-v", "-8"]), "missing command"),
+            ""
+        );
+        assert_eq!(
+            tool_error_stderr_with_timestamp_and_color_env(
+                "ffmpeg",
+                &strings(&["-loglevel", "quiet"]),
+                "missing command",
+                None,
+                |name| name == AV_LOG_FORCE_COLOR_ENV,
+            ),
             ""
         );
     }
@@ -149,6 +175,38 @@ mod tests {
             ),
             "[error] ffmpeg: missing command\n"
         );
+    }
+
+    #[test]
+    fn force_color_env_colors_tool_errors() {
+        assert_eq!(
+            tool_error_stderr_with_timestamp_and_color_env(
+                "ffmpeg",
+                &strings(&["-loglevel", "level+error"]),
+                "missing command",
+                None,
+                |name| name == AV_LOG_FORCE_COLOR_ENV,
+            ),
+            "\x1b[31m[error] ffmpeg: missing command\x1b[0m\n"
+        );
+    }
+
+    #[test]
+    fn force_nocolor_env_wins_over_force_color_for_tool_errors() {
+        let mut checked = Vec::new();
+        let stderr = tool_error_stderr_with_timestamp_and_color_env(
+            "ffprobe",
+            &strings(&["-loglevel", "level+error"]),
+            "missing command",
+            None,
+            |name| {
+                checked.push(name.to_owned());
+                name == AV_LOG_FORCE_NOCOLOR_ENV || name == AV_LOG_FORCE_COLOR_ENV
+            },
+        );
+
+        assert_eq!(stderr, "[error] ffprobe: missing command\n");
+        assert_eq!(checked, [AV_LOG_FORCE_NOCOLOR_ENV.to_owned()]);
     }
 
     #[test]
