@@ -42,6 +42,27 @@ impl BitWriter {
         self.data
     }
 
+    pub fn write_aligned_bytes(&mut self, bytes: &[u8]) -> AvResult<()> {
+        if !self.is_aligned() {
+            return Err(AvError::invalid_argument(
+                "cannot write whole bytes at unaligned bit offset",
+            ));
+        }
+
+        let additional_bits = bytes
+            .len()
+            .checked_mul(8)
+            .ok_or_else(|| AvError::invalid_argument("byte write length overflows bit count"))?;
+        let bit_position = self
+            .bit_position
+            .checked_add(additional_bits)
+            .ok_or_else(|| AvError::invalid_argument("byte write position overflows bit count"))?;
+
+        self.data.extend_from_slice(bytes);
+        self.bit_position = bit_position;
+        Ok(())
+    }
+
     pub fn write_bit(&mut self, value: bool) {
         if self.is_aligned() {
             self.data.push(0);
@@ -199,6 +220,50 @@ mod tests {
         assert_eq!(writer.as_slice(), &[0b1011_0010, 0b0110_0001]);
         assert_eq!(writer.bits_written(), 16);
         assert!(writer.is_aligned());
+    }
+
+    #[test]
+    fn write_aligned_bytes_appends_without_bit_iteration() {
+        let mut writer = BitWriter::new();
+
+        writer.write_bits(0b1011_0010, 8).unwrap();
+        writer
+            .write_aligned_bytes(&[0b0110_0001, 0b1111_0000])
+            .unwrap();
+        writer.write_bits(0b101, 3).unwrap();
+
+        assert_eq!(
+            bits_from_bytes(writer.as_slice(), writer.bits_written()),
+            "101100100110000111110000101"
+        );
+        assert_eq!(writer.bits_written(), 27);
+        assert!(!writer.is_aligned());
+
+        let bytes = writer.into_inner();
+        let mut reader = BitReader::new(&bytes);
+        assert_eq!(reader.read_bits(8).unwrap(), 0b1011_0010);
+        assert_eq!(reader.read_bits(8).unwrap(), 0b0110_0001);
+        assert_eq!(reader.read_bits(8).unwrap(), 0b1111_0000);
+        assert_eq!(reader.read_bits(3).unwrap(), 0b101);
+    }
+
+    #[test]
+    fn write_aligned_bytes_rejects_unaligned_without_mutation() {
+        let mut writer = BitWriter::new();
+        writer.write_bits(0b101, 3).unwrap();
+
+        let before = writer.as_slice().to_vec();
+        let before_position = writer.bit_position();
+        let err = writer.write_aligned_bytes(&[0xff]).unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(writer.as_slice(), before.as_slice());
+        assert_eq!(writer.bit_position(), before_position);
+
+        writer.byte_align_zero();
+        writer.write_aligned_bytes(&[]).unwrap();
+        assert_eq!(writer.as_slice(), &[0b1010_0000]);
+        assert_eq!(writer.bit_position(), 8);
     }
 
     #[test]

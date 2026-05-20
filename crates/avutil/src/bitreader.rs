@@ -22,6 +22,41 @@ impl<'a> BitReader<'a> {
         self.bit_position
     }
 
+    pub fn set_bit_position(&mut self, bit_position: usize) -> AvResult<()> {
+        if bit_position > self.len_bits() {
+            return Err(AvError::new(
+                AvErrorKind::EndOfFile,
+                format!(
+                    "bit seek out of range: bit offset {bit_position}, length {} bits",
+                    self.len_bits()
+                ),
+            ));
+        }
+
+        self.bit_position = bit_position;
+        Ok(())
+    }
+
+    pub fn seek_bits(&mut self, offset: isize) -> AvResult<()> {
+        let bit_position = if offset >= 0 {
+            self.bit_position
+                .checked_add(offset as usize)
+                .ok_or_else(|| {
+                    AvError::invalid_argument("bit seek offset overflows addressable memory")
+                })?
+        } else {
+            self.bit_position
+                .checked_sub(offset.unsigned_abs())
+                .ok_or_else(|| AvError::invalid_argument("bit seek before start of stream"))?
+        };
+
+        self.set_bit_position(bit_position)
+    }
+
+    pub fn rewind(&mut self) {
+        self.bit_position = 0;
+    }
+
     pub fn bits_remaining(&self) -> usize {
         self.len_bits().saturating_sub(self.bit_position)
     }
@@ -36,6 +71,10 @@ impl<'a> BitReader<'a> {
 
     pub fn read_bit(&mut self) -> AvResult<bool> {
         Ok(self.read_bits(1)? != 0)
+    }
+
+    pub fn peek_bit(&self) -> AvResult<bool> {
+        Ok(self.peek_bits(1)? != 0)
     }
 
     pub fn read_bits(&mut self, count: u8) -> AvResult<u64> {
@@ -249,8 +288,15 @@ mod tests {
     fn peek_does_not_advance_cursor() {
         let mut reader = BitReader::new(&[0b1100_0000]);
 
+        assert!(reader.peek_bit().unwrap());
+        assert_eq!(reader.bit_position(), 0);
         assert_eq!(reader.peek_bits(4).unwrap(), 0b1100);
         assert_eq!(reader.bit_position(), 0);
+        assert!(reader.read_bit().unwrap());
+        assert_eq!(reader.bit_position(), 1);
+        assert!(reader.peek_bit().unwrap());
+        assert_eq!(reader.bit_position(), 1);
+        reader.rewind();
         assert_eq!(reader.read_bits(4).unwrap(), 0b1100);
         assert_eq!(reader.bit_position(), 4);
     }
@@ -265,6 +311,38 @@ mod tests {
         assert!(reader.is_aligned());
         assert_eq!(reader.bit_position(), 8);
         assert!(reader.read_bit().unwrap());
+    }
+
+    #[test]
+    fn set_position_seek_bits_and_rewind_are_checked() {
+        let mut reader = BitReader::new(&[0b1011_0010, 0b0110_0001]);
+
+        reader.set_bit_position(5).unwrap();
+        assert_eq!(reader.read_bits(4).unwrap(), 0b0100);
+
+        reader.seek_bits(-6).unwrap();
+        assert_eq!(reader.bit_position(), 3);
+        assert_eq!(reader.peek_bits(5).unwrap(), 0b1_0010);
+
+        reader.seek_bits(13).unwrap();
+        assert_eq!(reader.bit_position(), 16);
+        assert!(reader.is_eof());
+
+        let beyond = reader.seek_bits(1).unwrap_err();
+        assert_eq!(beyond.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(reader.bit_position(), 16);
+
+        let before_start = reader.seek_bits(-17).unwrap_err();
+        assert_eq!(before_start.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(reader.bit_position(), 16);
+
+        let absolute_beyond = reader.set_bit_position(17).unwrap_err();
+        assert_eq!(absolute_beyond.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(reader.bit_position(), 16);
+
+        reader.rewind();
+        assert_eq!(reader.bit_position(), 0);
+        assert_eq!(reader.read_bits(3).unwrap(), 0b101);
     }
 
     #[test]

@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-bitreader`/`avutil-bitwriter` update: `BitReader` now supports single-bit peeks, checked absolute bit positioning, checked relative bit seeking, and rewind for bounded MSB-first bitstreams, preserving the cursor on invalid seeks. `BitWriter` now supports aligned byte-slice appends that validate byte alignment and bit-count overflow before mutating state. Local unit tests and the build-checked `avutil_bitreader` fuzz target cover seek/cursor invariants and aligned-byte no-mutation invariants. These components remain below `complete` because pinned FFmpeg GetBitContext/PutBitContext differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
+
 Latest `avutil-byteio` update: `ByteReader` now supports checked absolute positioning, relative seek, and rewind for bounded in-memory byte streams, preserving the cursor on invalid seeks. `ByteWriter` now exposes append-position, clear, checked truncate, raw patching, and endian-aware signed/unsigned patch helpers for existing bytes; invalid bounds and constrained-width failures preserve the existing buffer. Local unit tests and the build-checked `avutil_byteio` fuzz target cover seek/cursor invariants and patch/truncate mutation invariants. This remains below `complete` because pinned FFmpeg AVIO/GetByte differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
 
 Latest `avutil-hash` / hash-muxer update: `avutil` now has a Rust-native SHA-1 implementation with one-shot and streaming APIs, standard known-vector tests, and fuzz-harness streaming equivalence coverage. `avformat::HashAlgorithm` now exposes SHA-160/SHA-1 as `SHA160` for hash, framehash, and streamhash muxers, and `ffmpeg-rs -f hash -hash sha-160 -` accepts the normalized CLI spelling without invoking FFmpeg at runtime. Local FATE-runner mappings now include the avformat null/hash/framecrc/framehash/streamhash unit filters so packet-muxer and shared fuzz-target changes are measurable by `run --changed`. This remains below `complete` because the SHA-160 behavior has no pinned FFmpeg 8.1.1 oracle differential vectors, no upstream FATE media coverage, and no actual local fuzz execution.
@@ -223,6 +225,20 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avutil bitreader`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avutil bitwriter`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo check --manifest-path fuzz\Cargo.toml --bin avutil_bitreader`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo clippy -p avutil --all-targets -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_bitreader -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo run -p fate-runner -- run --component avutil-bitreader`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo run -p fate-runner -- run --component avutil-bitwriter`
+- `cargo fmt --all -- --check`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo run -p fate-runner -- run --changed`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test --workspace --all-features --lib`
+- `git diff --check`
 
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avutil byteio`
@@ -3158,6 +3174,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-bitreader` and `avutil-bitwriter` are the current focus for this slice. The concrete change is checked reader bit-position seeking plus writer aligned-byte appends, with local unit and fuzz-harness invariant coverage. It does not claim pinned GetBitContext/PutBitContext differential parity, upstream FATE media parity, or actual fuzz execution.
+
 `avutil-byteio` is the current focus for this slice. The concrete change is checked reader repositioning plus writer patch/truncate support for bounded byte streams, with local unit and fuzz-harness invariant coverage. It does not claim pinned AVIO/GetByte differential parity, upstream FATE media parity, or actual fuzz execution.
 
 `avutil-hash` is the current focus for this slice, with linked `avformat-hash-muxer` and `fftools-ffmpeg-hash-output` coverage. The concrete change is SHA-1/SHA-160 digest support across the shared hash primitive, hash muxer state, CLI `-hash` algorithm parsing, and packet-muxer fuzz invariants. It does not claim exact FFmpeg hash muxer output semantics, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
@@ -3198,7 +3216,7 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 primitive work that unlocks parser and muxer parity, likely deeper bit I/O vectors or byte I/O compatibility vectors around FFmpeg-style seek/read/write semantics.
+1. Continue priority-1 primitive work that unlocks parser and muxer parity, likely bit/byte I/O compatibility vectors around FFmpeg-style read/write semantics or option API integration.
 2. Add pinned-oracle differential coverage for constrained byte/hash/framehash/streamhash behavior once the FFmpeg 8.1.1 oracle binary is available.
 3. Keep improving local FATE-runner changed-path coverage where selected implemented components still lack a runnable local mapping, while keeping those mappings clearly separate from upstream FATE parity.
 
@@ -3211,6 +3229,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added bit I/O cursor seeking and aligned-byte writer support. `BitReader` now has `peek_bit`, `set_bit_position`, `seek_bits`, and `rewind` with invalid-seek cursor preservation; `BitWriter::write_aligned_bytes` appends raw bytes only when byte-aligned and validates bit-count overflow before mutation. Unit coverage now includes single-bit peeks, checked bit seeks, aligned-byte append round trips, and unaligned no-mutation behavior; `avutil_bitreader` build-checks generated seek, rewind, peek, aligned-byte write, cursor, and buffer-mutation invariants. Validation passed with focused bitreader/bitwriter tests, fuzz-target build/clippy, avutil clippy, local FATE-runner bitreader/bitwriter and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` with CRLF warnings only. The components remain `implemented`, not `complete`.
 
 Latest slice: added checked byte I/O random-access and patching support. `ByteReader` now has `set_position`, `seek_relative`, and `rewind` with invalid-seek cursor preservation; `ByteWriter` now has append-position, clear, checked truncate, raw `patch_all`, and endian-aware patch helpers for signed/unsigned 8/16/24/32/48/64-bit values with constrained-width validation before mutation. Unit coverage now includes checked reader seeking, writer patch/truncate round trips, and no-mutation error cases; `avutil_byteio` build-checks generated seek, patch, truncate, cursor, and buffer-mutation invariants. Validation passed with focused byteio tests, fuzz-target build/clippy, avutil clippy, local FATE-runner avutil-byteio and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`.
 

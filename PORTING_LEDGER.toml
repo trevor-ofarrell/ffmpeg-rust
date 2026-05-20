@@ -890,6 +890,7 @@ unit_tests = [
   "bitreader::tests::reads_msb_first_bits_across_byte_boundaries",
   "bitreader::tests::peek_does_not_advance_cursor",
   "bitreader::tests::skip_and_align_update_cursor",
+  "bitreader::tests::set_position_seek_bits_and_rewind_are_checked",
   "bitreader::tests::zero_bit_reads_are_valid_noops",
   "bitreader::tests::signed_reads_sign_extend_and_peek_without_advancing",
   "bitreader::tests::reads_unsigned_exp_golomb_codes",
@@ -901,7 +902,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-bitreader|local-avutil-unit"]
 fuzz_targets = ["avutil_bitreader"]
-notes = "Bounded MSB-first bit reader implemented with unsigned and signed read/peek helpers, unsigned and signed Exp-Golomb decoding, sign extension, and no-advance failure invariants. Exp-Golomb coverage includes exact small-code vectors, malformed EOF/range rejection, signed overflow rejection, and cursor preservation on failed reads. Build-checked cargo-fuzz target avutil_bitreader exercises unsigned reads/peeks, signed reads/peeks, Exp-Golomb reads, skips, alignment, and cursor invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper GetBitContext compatibility vectors and oracle/FATE parity are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the bitreader unit filter only and does not count as upstream FATE parity."
+notes = "Bounded MSB-first bit reader implemented with unsigned and signed read/peek helpers, single-bit peek, checked absolute bit positioning, checked relative bit seeking, rewind, unsigned and signed Exp-Golomb decoding, sign extension, and no-advance failure invariants. Exp-Golomb coverage includes exact small-code vectors, malformed EOF/range rejection, signed overflow rejection, and cursor preservation on failed reads. Build-checked cargo-fuzz target avutil_bitreader exercises unsigned reads/peeks, signed reads/peeks, single-bit peek, checked seeks, rewind, Exp-Golomb reads, skips, alignment, and cursor invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper GetBitContext compatibility vectors and oracle/FATE parity are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the bitreader unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -915,6 +916,8 @@ oracle_command = ""
 rust_command = "cargo test -p avutil bitwriter"
 unit_tests = [
   "bitwriter::tests::writes_msb_first_bits_across_byte_boundaries",
+  "bitwriter::tests::write_aligned_bytes_appends_without_bit_iteration",
+  "bitwriter::tests::write_aligned_bytes_rejects_unaligned_without_mutation",
   "bitwriter::tests::round_trips_with_bitreader",
   "bitwriter::tests::byte_align_zero_pads_partial_byte",
   "bitwriter::tests::zero_bit_zero_value_write_is_noop",
@@ -931,7 +934,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-bitwriter|local-avutil-unit"]
 fuzz_targets = ["avutil_bitreader"]
-notes = "Bounded MSB-first bit writer implemented with unsigned writes, signed writes, unsigned and signed Exp-Golomb writes, signed fit validation, and no-mutation failure invariants. Exp-Golomb coverage includes exact small-code vectors, signed round trips, u64::MAX unsigned round trips, and i64::MIN signed rejection without mutation. Build-checked cargo-fuzz target avutil_bitreader also exercises unsigned write validation, signed write validation, Exp-Golomb writes, cursor invariants, and byte alignment, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper PutBitContext compatibility vectors and oracle/FATE parity are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the bitwriter unit filter only and does not count as upstream FATE parity."
+notes = "Bounded MSB-first bit writer implemented with unsigned writes, signed writes, aligned byte-slice appends, unsigned and signed Exp-Golomb writes, signed fit validation, and no-mutation failure invariants. Aligned byte writes validate byte alignment and bit-count overflow before mutation. Exp-Golomb coverage includes exact small-code vectors, signed round trips, u64::MAX unsigned round trips, and i64::MIN signed rejection without mutation. Build-checked cargo-fuzz target avutil_bitreader also exercises unsigned write validation, signed write validation, aligned byte writes, Exp-Golomb writes, cursor invariants, and byte alignment, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper PutBitContext compatibility vectors and oracle/FATE parity are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the bitwriter unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
