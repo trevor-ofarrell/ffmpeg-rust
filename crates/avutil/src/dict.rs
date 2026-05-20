@@ -146,6 +146,90 @@ impl Dictionary {
             .map(|index| self.entries.remove(index))
     }
 
+    pub fn parse_pairs(
+        raw: &str,
+        key_value_separators: &str,
+        pair_separators: &str,
+        match_mode: MatchMode,
+        set_mode: SetMode,
+    ) -> AvResult<Self> {
+        let mut dict = Self::new();
+        dict.parse_pairs_into(
+            raw,
+            key_value_separators,
+            pair_separators,
+            match_mode,
+            set_mode,
+        )?;
+        Ok(dict)
+    }
+
+    pub fn parse_pairs_into(
+        &mut self,
+        raw: &str,
+        key_value_separators: &str,
+        pair_separators: &str,
+        match_mode: MatchMode,
+        set_mode: SetMode,
+    ) -> AvResult<Vec<DictionarySet>> {
+        validate_separator_set(key_value_separators, "key/value separators")?;
+        validate_separator_set(pair_separators, "pair separators")?;
+        validate_disjoint_separator_sets(key_value_separators, pair_separators)?;
+
+        let mut chars = raw.chars().peekable();
+        let mut results = Vec::new();
+
+        while chars.peek().is_some() {
+            let (key, key_separator) = parse_escaped_token(&mut chars, key_value_separators)?;
+            if key_separator.is_none() {
+                return Err(AvError::invalid_argument(
+                    "dictionary pair is missing a key/value separator",
+                ));
+            }
+
+            let (value, _) = parse_escaped_token(&mut chars, pair_separators)?;
+            let result = self.set_with_mode(key, value, match_mode, set_mode)?;
+            results.push(result);
+        }
+
+        Ok(results)
+    }
+
+    pub fn to_pairs_string(
+        &self,
+        key_value_separator: char,
+        pair_separator: char,
+    ) -> AvResult<String> {
+        validate_output_separator(key_value_separator, "key/value separator")?;
+        validate_output_separator(pair_separator, "pair separator")?;
+        if key_value_separator == pair_separator {
+            return Err(AvError::invalid_argument(
+                "dictionary separators must be distinct",
+            ));
+        }
+
+        let mut output = String::new();
+        for (index, entry) in self.entries.iter().enumerate() {
+            if index > 0 {
+                output.push(pair_separator);
+            }
+            push_escaped(
+                &mut output,
+                entry.key(),
+                key_value_separator,
+                pair_separator,
+            );
+            output.push(key_value_separator);
+            push_escaped(
+                &mut output,
+                entry.value(),
+                key_value_separator,
+                pair_separator,
+            );
+        }
+        Ok(output)
+    }
+
     pub fn clear(&mut self) {
         self.entries.clear();
     }
@@ -181,6 +265,78 @@ fn validate_value(value: String) -> AvResult<String> {
     }
 
     Ok(value)
+}
+
+fn validate_separator_set(separators: &str, label: &str) -> AvResult<()> {
+    if separators.is_empty() {
+        return Err(AvError::invalid_argument(format!(
+            "{label} must not be empty"
+        )));
+    }
+    for separator in separators.chars() {
+        validate_output_separator(separator, label)?;
+    }
+    Ok(())
+}
+
+fn validate_disjoint_separator_sets(left: &str, right: &str) -> AvResult<()> {
+    if left.chars().any(|separator| right.contains(separator)) {
+        return Err(AvError::invalid_argument(
+            "dictionary separator sets must be distinct",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_output_separator(separator: char, label: &str) -> AvResult<()> {
+    if separator == '\0' {
+        return Err(AvError::invalid_argument(format!(
+            "{label} must not be NUL"
+        )));
+    }
+    if separator == '\\' {
+        return Err(AvError::invalid_argument(
+            "dictionary separators must not be backslash",
+        ));
+    }
+    Ok(())
+}
+
+fn parse_escaped_token<I>(
+    chars: &mut std::iter::Peekable<I>,
+    separators: &str,
+) -> AvResult<(String, Option<char>)>
+where
+    I: Iterator<Item = char>,
+{
+    let mut token = String::new();
+
+    while let Some(ch) = chars.next() {
+        if separators.contains(ch) {
+            return Ok((token, Some(ch)));
+        }
+
+        if ch == '\\' {
+            let escaped = chars.next().ok_or_else(|| {
+                AvError::invalid_argument("dictionary token ends with a dangling escape")
+            })?;
+            token.push(escaped);
+            continue;
+        }
+
+        token.push(ch);
+    }
+
+    Ok((token, None))
+}
+
+fn push_escaped(output: &mut String, value: &str, key_value_separator: char, pair_separator: char) {
+    for ch in value.chars() {
+        if ch == '\\' || ch == key_value_separator || ch == pair_separator {
+            output.push('\\');
+        }
+        output.push(ch);
+    }
 }
 
 fn key_matches(candidate: &str, key: &str, match_mode: MatchMode) -> bool {
@@ -444,6 +600,132 @@ mod tests {
 
         assert_eq!(removed.key(), "language");
         assert!(dict.is_empty());
+    }
+
+    #[test]
+    fn pairs_string_escapes_separators_and_round_trips_duplicate_entries() {
+        let mut dict = Dictionary::new();
+        dict.set_with_mode(
+            "title=name",
+            "one;two\\three",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "TITLE=NAME",
+            "second",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set("artist", "Alice").unwrap();
+
+        let encoded = dict.to_pairs_string('=', ';').unwrap();
+        assert_eq!(
+            encoded,
+            "title\\=name=one\\;two\\\\three;TITLE\\=NAME=second;artist=Alice"
+        );
+
+        let reparsed = Dictionary::parse_pairs(
+            &encoded,
+            "=",
+            ";",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+
+        assert_eq!(reparsed, dict);
+    }
+
+    #[test]
+    fn parse_pairs_applies_modes_and_returns_per_entry_results() {
+        let mut dict = Dictionary::new();
+        dict.set("artist", "old").unwrap();
+
+        let results = dict
+            .parse_pairs_into(
+                "ARTIST=new;comment=ok;comment=!",
+                "=",
+                ";",
+                MatchMode::CaseInsensitive,
+                SetMode::Append,
+            )
+            .unwrap();
+
+        assert_eq!(
+            results,
+            vec![
+                DictionarySet::Appended,
+                DictionarySet::Inserted,
+                DictionarySet::Appended
+            ]
+        );
+        assert_eq!(dict.get("artist"), Some("oldnew"));
+        assert_eq!(dict.get("comment"), Some("ok!"));
+        assert_eq!(dict.entries()[0].key(), "artist");
+        assert_eq!(dict.entries()[1].key(), "comment");
+    }
+
+    #[test]
+    fn parse_pairs_preserves_successful_entries_on_later_error() {
+        let mut dict = Dictionary::new();
+
+        let err = dict
+            .parse_pairs_into(
+                "ok=value;bad",
+                "=",
+                ";",
+                MatchMode::CaseInsensitive,
+                SetMode::Overwrite,
+            )
+            .unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(dict.len(), 1);
+        assert_eq!(dict.get("ok"), Some("value"));
+    }
+
+    #[test]
+    fn pair_serialization_and_parsing_reject_invalid_separators_and_tokens() {
+        let mut dict = Dictionary::new();
+        dict.set("title", "value").unwrap();
+
+        assert!(dict.to_pairs_string('\\', ';').is_err());
+        assert!(dict.to_pairs_string('=', '=').is_err());
+        assert!(Dictionary::parse_pairs(
+            "a=b",
+            "",
+            ";",
+            MatchMode::CaseInsensitive,
+            SetMode::Overwrite
+        )
+        .is_err());
+        assert!(Dictionary::parse_pairs(
+            "a=b",
+            "=",
+            "=",
+            MatchMode::CaseInsensitive,
+            SetMode::Overwrite
+        )
+        .is_err());
+        assert!(Dictionary::parse_pairs(
+            "a=trailing\\",
+            "=",
+            ";",
+            MatchMode::CaseInsensitive,
+            SetMode::Overwrite
+        )
+        .is_err());
+        assert!(Dictionary::parse_pairs(
+            "=value",
+            "=",
+            ";",
+            MatchMode::CaseInsensitive,
+            SetMode::Overwrite
+        )
+        .is_err());
     }
 
     #[test]

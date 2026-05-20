@@ -92,6 +92,41 @@ fn exercise_dictionary(cursor: &mut Cursor<'_>) {
                     assert!(dict.get_prefixed(&prefix, match_mode).is_none());
                 }
             }
+            7 => {
+                let key_value_separator = separator_char_from(cursor.next());
+                let pair_separator = separator_char_from(cursor.next());
+                if let Ok(encoded) = dict.to_pairs_string(key_value_separator, pair_separator) {
+                    let key_value_separator = key_value_separator.to_string();
+                    let pair_separator = pair_separator.to_string();
+                    let decoded = Dictionary::parse_pairs(
+                        &encoded,
+                        &key_value_separator,
+                        &pair_separator,
+                        MatchMode::CaseInsensitive,
+                        SetMode::AllowMultiple,
+                    )
+                    .unwrap();
+                    assert_eq!(decoded, dict);
+                }
+            }
+            8 => {
+                let raw = dictionary_pairs_string_from(cursor);
+                let key_value_separators = separator_set_from(cursor);
+                let pair_separators = separator_set_from(cursor);
+                let match_mode = match_mode_from(cursor.next());
+                let set_mode = set_mode_from(cursor.next());
+                let result = dict.parse_pairs_into(
+                    &raw,
+                    &key_value_separators,
+                    &pair_separators,
+                    match_mode,
+                    set_mode,
+                );
+                assert_valid_dictionary(&dict);
+                if let Ok(results) = result {
+                    assert!(results.len() <= dict.len().saturating_add(MAX_OPS));
+                }
+            }
             _ => {
                 dict.clear();
                 assert!(dict.is_empty());
@@ -251,6 +286,25 @@ fn exercise_fixtures() {
         .map(|entry| entry.key())
         .collect();
     assert_eq!(all_keys, vec!["title", "TITLE"]);
+    let encoded = dict.to_pairs_string('=', ';').unwrap();
+    assert_eq!(encoded, "title=Second;TITLE=Third");
+    let decoded = Dictionary::parse_pairs(
+        &encoded,
+        "=",
+        ";",
+        MatchMode::CaseInsensitive,
+        SetMode::AllowMultiple,
+    )
+    .unwrap();
+    assert_eq!(decoded, dict);
+    assert!(Dictionary::parse_pairs(
+        "ok=value;bad",
+        "=",
+        ";",
+        MatchMode::CaseInsensitive,
+        SetMode::Overwrite,
+    )
+    .is_err());
     assert!(dict.set("", "value").is_err());
     assert!(dict.set("bad\0key", "value").is_err());
     assert!(dict.set("key", "bad\0value").is_err());
@@ -859,6 +913,46 @@ fn set_mode_from(byte: Option<u8>) -> SetMode {
         1 => SetMode::KeepExisting,
         2 => SetMode::Append,
         _ => SetMode::AllowMultiple,
+    }
+}
+
+fn separator_char_from(byte: Option<u8>) -> char {
+    match byte.unwrap_or_default() % 7 {
+        0 => '=',
+        1 => ';',
+        2 => ':',
+        3 => '|',
+        4 => ',',
+        5 => '\\',
+        _ => '\0',
+    }
+}
+
+fn separator_set_from(cursor: &mut Cursor<'_>) -> String {
+    match cursor.next().unwrap_or_default() % 8 {
+        0 => "=".to_owned(),
+        1 => ";".to_owned(),
+        2 => ":".to_owned(),
+        3 => "|,".to_owned(),
+        4 => String::new(),
+        5 => "\\".to_owned(),
+        6 => "=\0".to_owned(),
+        _ => literal_from(cursor),
+    }
+}
+
+fn dictionary_pairs_string_from(cursor: &mut Cursor<'_>) -> String {
+    match cursor.next().unwrap_or_default() % 10 {
+        0 => "artist=Alice;title=Clip".to_owned(),
+        1 => "artist=old;artist=new".to_owned(),
+        2 => "a\\=b=v\\;x".to_owned(),
+        3 => "ok=value;bad".to_owned(),
+        4 => "dangling=escape\\".to_owned(),
+        5 => "=empty-key".to_owned(),
+        6 => "nul=bad\0value".to_owned(),
+        7 => "a:b|c:d".to_owned(),
+        8 => "key=value,".to_owned(),
+        _ => literal_from(cursor),
     }
 }
 
