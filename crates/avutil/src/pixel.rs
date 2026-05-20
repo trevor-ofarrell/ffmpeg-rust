@@ -12,6 +12,29 @@ pub enum PixelFormat {
     Yuv420p,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PixelFormatClass {
+    Gray,
+    Rgb,
+    Yuv,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PixelFormatDescriptor {
+    pub format: PixelFormat,
+    pub name: &'static str,
+    pub class: PixelFormatClass,
+    pub component_count: usize,
+    pub bits_per_component: u8,
+    pub bits_per_pixel: u8,
+    pub plane_count: usize,
+    pub is_planar: bool,
+    pub has_alpha: bool,
+    pub packed_bytes_per_pixel: Option<usize>,
+    pub log2_chroma_w: u8,
+    pub log2_chroma_h: u8,
+}
+
 impl PixelFormat {
     pub const ALL: &'static [Self] = &[
         Self::Gray8,
@@ -25,16 +48,7 @@ impl PixelFormat {
     ];
 
     pub fn name(self) -> &'static str {
-        match self {
-            Self::Gray8 => "gray",
-            Self::Rgb24 => "rgb24",
-            Self::Bgr24 => "bgr24",
-            Self::Rgba => "rgba",
-            Self::Bgra => "bgra",
-            Self::Argb => "argb",
-            Self::Abgr => "abgr",
-            Self::Yuv420p => "yuv420p",
-        }
+        self.descriptor().name
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
@@ -51,21 +65,177 @@ impl PixelFormat {
         }
     }
 
-    pub fn plane_count(self) -> usize {
-        match self {
-            Self::Gray8
-            | Self::Rgb24
-            | Self::Bgr24
-            | Self::Rgba
-            | Self::Bgra
-            | Self::Argb
-            | Self::Abgr => 1,
-            Self::Yuv420p => 3,
+    pub fn descriptor(self) -> PixelFormatDescriptor {
+        let (
+            name,
+            class,
+            component_count,
+            bits_per_pixel,
+            plane_count,
+            is_planar,
+            has_alpha,
+            packed_bytes_per_pixel,
+            log2_chroma_w,
+            log2_chroma_h,
+        ) = match self {
+            Self::Gray8 => (
+                "gray",
+                PixelFormatClass::Gray,
+                1,
+                8,
+                1,
+                false,
+                false,
+                Some(1),
+                0,
+                0,
+            ),
+            Self::Rgb24 => (
+                "rgb24",
+                PixelFormatClass::Rgb,
+                3,
+                24,
+                1,
+                false,
+                false,
+                Some(3),
+                0,
+                0,
+            ),
+            Self::Bgr24 => (
+                "bgr24",
+                PixelFormatClass::Rgb,
+                3,
+                24,
+                1,
+                false,
+                false,
+                Some(3),
+                0,
+                0,
+            ),
+            Self::Rgba => (
+                "rgba",
+                PixelFormatClass::Rgb,
+                4,
+                32,
+                1,
+                false,
+                true,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Bgra => (
+                "bgra",
+                PixelFormatClass::Rgb,
+                4,
+                32,
+                1,
+                false,
+                true,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Argb => (
+                "argb",
+                PixelFormatClass::Rgb,
+                4,
+                32,
+                1,
+                false,
+                true,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Abgr => (
+                "abgr",
+                PixelFormatClass::Rgb,
+                4,
+                32,
+                1,
+                false,
+                true,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Yuv420p => (
+                "yuv420p",
+                PixelFormatClass::Yuv,
+                3,
+                12,
+                3,
+                true,
+                false,
+                None,
+                1,
+                1,
+            ),
+        };
+
+        PixelFormatDescriptor {
+            format: self,
+            name,
+            class,
+            component_count,
+            bits_per_component: 8,
+            bits_per_pixel,
+            plane_count,
+            is_planar,
+            has_alpha,
+            packed_bytes_per_pixel,
+            log2_chroma_w,
+            log2_chroma_h,
         }
     }
 
+    pub fn class(self) -> PixelFormatClass {
+        self.descriptor().class
+    }
+
+    pub fn is_gray(self) -> bool {
+        self.class() == PixelFormatClass::Gray
+    }
+
+    pub fn is_rgb(self) -> bool {
+        self.class() == PixelFormatClass::Rgb
+    }
+
+    pub fn is_yuv(self) -> bool {
+        self.class() == PixelFormatClass::Yuv
+    }
+
+    pub fn component_count(self) -> usize {
+        self.descriptor().component_count
+    }
+
+    pub fn bits_per_component(self) -> u8 {
+        self.descriptor().bits_per_component
+    }
+
+    pub fn bits_per_pixel(self) -> u8 {
+        self.descriptor().bits_per_pixel
+    }
+
+    pub fn log2_chroma(self) -> (u8, u8) {
+        let descriptor = self.descriptor();
+        (descriptor.log2_chroma_w, descriptor.log2_chroma_h)
+    }
+
+    pub fn has_chroma_subsampling(self) -> bool {
+        let (log2_chroma_w, log2_chroma_h) = self.log2_chroma();
+        log2_chroma_w != 0 || log2_chroma_h != 0
+    }
+
+    pub fn plane_count(self) -> usize {
+        self.descriptor().plane_count
+    }
+
     pub fn is_planar(self) -> bool {
-        self.plane_count() > 1
+        self.descriptor().is_planar
     }
 
     pub fn is_packed(self) -> bool {
@@ -73,16 +243,11 @@ impl PixelFormat {
     }
 
     pub fn has_alpha(self) -> bool {
-        matches!(self, Self::Rgba | Self::Bgra | Self::Argb | Self::Abgr)
+        self.descriptor().has_alpha
     }
 
     pub fn packed_bytes_per_pixel(self) -> Option<usize> {
-        match self {
-            Self::Gray8 => Some(1),
-            Self::Rgb24 | Self::Bgr24 => Some(3),
-            Self::Rgba | Self::Bgra | Self::Argb | Self::Abgr => Some(4),
-            Self::Yuv420p => None,
-        }
+        self.descriptor().packed_bytes_per_pixel
     }
 
     pub fn plane_sizes(self, width: usize, height: usize) -> AvResult<Vec<usize>> {
@@ -203,6 +368,70 @@ mod tests {
         assert_eq!(PixelFormat::Bgr24.packed_bytes_per_pixel(), Some(3));
         assert_eq!(PixelFormat::Argb.packed_bytes_per_pixel(), Some(4));
         assert_eq!(PixelFormat::Yuv420p.packed_bytes_per_pixel(), None);
+    }
+
+    #[test]
+    fn pixel_formats_report_descriptor_metadata() {
+        let gray = PixelFormat::Gray8.descriptor();
+        assert_eq!(gray.format, PixelFormat::Gray8);
+        assert_eq!(gray.name, "gray");
+        assert_eq!(gray.class, PixelFormatClass::Gray);
+        assert_eq!(gray.component_count, 1);
+        assert_eq!(gray.bits_per_component, 8);
+        assert_eq!(gray.bits_per_pixel, 8);
+        assert_eq!(gray.plane_count, 1);
+        assert!(!gray.is_planar);
+        assert!(!gray.has_alpha);
+        assert_eq!(gray.packed_bytes_per_pixel, Some(1));
+        assert_eq!((gray.log2_chroma_w, gray.log2_chroma_h), (0, 0));
+
+        for format in [
+            PixelFormat::Rgb24,
+            PixelFormat::Bgr24,
+            PixelFormat::Rgba,
+            PixelFormat::Bgra,
+            PixelFormat::Argb,
+            PixelFormat::Abgr,
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.format, format);
+            assert_eq!(PixelFormat::from_name(descriptor.name), Some(format));
+            assert_eq!(descriptor.class, PixelFormatClass::Rgb);
+            assert!(format.is_rgb());
+            assert!(!format.is_gray());
+            assert!(!format.is_yuv());
+            assert_eq!(descriptor.bits_per_component, 8);
+            assert_eq!(descriptor.plane_count, 1);
+            assert!(!descriptor.is_planar);
+            assert_eq!(descriptor.has_alpha, format.has_alpha());
+            assert_eq!(
+                descriptor.packed_bytes_per_pixel,
+                format.packed_bytes_per_pixel()
+            );
+            assert_eq!(format.log2_chroma(), (0, 0));
+            assert!(!format.has_chroma_subsampling());
+        }
+
+        assert_eq!(PixelFormat::Rgb24.component_count(), 3);
+        assert_eq!(PixelFormat::Rgb24.bits_per_pixel(), 24);
+        assert_eq!(PixelFormat::Rgba.component_count(), 4);
+        assert_eq!(PixelFormat::Rgba.bits_per_pixel(), 32);
+
+        let yuv = PixelFormat::Yuv420p.descriptor();
+        assert_eq!(yuv.format, PixelFormat::Yuv420p);
+        assert_eq!(yuv.name, "yuv420p");
+        assert_eq!(yuv.class, PixelFormatClass::Yuv);
+        assert!(PixelFormat::Yuv420p.is_yuv());
+        assert!(!PixelFormat::Yuv420p.is_rgb());
+        assert_eq!(yuv.component_count, 3);
+        assert_eq!(yuv.bits_per_component, 8);
+        assert_eq!(yuv.bits_per_pixel, 12);
+        assert_eq!(yuv.plane_count, 3);
+        assert!(yuv.is_planar);
+        assert!(!yuv.has_alpha);
+        assert_eq!(yuv.packed_bytes_per_pixel, None);
+        assert_eq!(PixelFormat::Yuv420p.log2_chroma(), (1, 1));
+        assert!(PixelFormat::Yuv420p.has_chroma_subsampling());
     }
 
     #[test]

@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-pixel-format` update: the shared pixel format model now exposes descriptor-style metadata for the current `gray`/`gray8`, `rgb24`, `bgr24`, `rgba`, `bgra`, `argb`, `abgr`, and `yuv420p` subset. `PixelFormatDescriptor` records FFmpeg-style name, class, component count, bits per component, average bits per pixel, plane count, packed/planar status, alpha status, packed bytes per pixel, and log2 chroma subsampling; `PixelFormat` exposes convenience helpers for those fields. Unit tests and the build-checked `avutil_core_models` fuzz target cover descriptor/name/class/component/bit-depth/chroma invariants alongside existing frame-size and plane-splitting checks. This remains below `complete` because full `AVPixFmtDescriptor` parity, the full `ffmpeg -pix_fmts` inventory, pinned oracle differential vectors, upstream FATE parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
+
 Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now covers `bgr24`, `bgra`, `argb`, and `abgr` in addition to the existing `gray`/`gray8`, `rgb24`, `rgba`, and `yuv420p` subset. `PixelFormat::ALL`, packed/planar metadata, alpha metadata, and packed bytes-per-pixel metadata are wired through video frame line sizing, the rawvideo decoder, rawvideo demuxer/muxer frame sizing, relevant fuzz harnesses, and constrained `ffmpeg-rs` rawvideo input parsing. A new CLI test covers uppercase `BGRA` rawvideo input to `-f null -`. Local FATE-runner mappings now cover rawvideo demuxer/muxer plus the shared basic muxer components selected by `avformat_basic_muxers` changes. This remains below `complete` because full `AVPixFmtDescriptor` coverage, many FFmpeg pixel formats, pinned `ffmpeg -pix_fmts` differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
 
 Latest `avutil-channel-layout` update: the current channel model now exposes FFmpeg-native mask bits for modeled common channels, canonical layout masks, canonical `FL+FR`-style channel strings, and a narrow `ChannelLayout::parse` path for current named layouts or `+`-separated channel expressions that resolve exactly to one modeled layout. Empty, NUL-containing, unknown-channel, duplicate-channel, and unsupported custom expressions return typed invalid-argument errors. Focused unit tests and the build-checked `avutil_core_models` fuzz target cover name/mask/expression round trips and invalid expression rejection. This remains below `complete` because full `AVChannelLayout` order/native/custom/ambisonic semantics, all `ffmpeg -layouts` entries, pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
@@ -233,6 +235,18 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- `cargo fmt --all`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil pixel`
+- `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+- `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil --all-targets -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-pixel-format`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed`
+- `cargo fmt --all -- --check`
+- `git diff --check` (passed with CRLF warnings only)
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `$env:CARGO_TARGET_DIR='target-codex'; cargo test --workspace --all-features --lib`
 
 - `cargo fmt --all`
 - `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avutil pixel`
@@ -3028,6 +3042,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-pixel-format` descriptor metadata slice: no remaining failing validation. Focused pixel tests, fuzz-target check/clippy, `avutil` clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` passed; `git diff --check` reported CRLF warnings only.
+
 - Current `avutil-pixel-format` / rawvideo packed-RGB slice: `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo test -p avformat rawvideo` compiled but Windows Application Control blocked the freshly built avformat unit-test executable with `os error 4551`; rerunning the same focused test through `target-codex` passed. The first `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --changed` failed because changed `avformat_basic_muxers` coverage selected `avformat-wav-muxer`, `avformat-pcm-s16le-muxer`, and `avformat-yuv4mpegpipe-muxer` without local mappings. Added local smoke mappings for those muxers, plus rawvideo demuxer/muxer mappings, updated the ledger/docs, and reran `run --changed` successfully. No code-related failing validation remains; `git diff --check` reported CRLF warnings only.
 
 - Current `avutil-hash` / SHA-160 hash-muxer slice: initial `$env:CARGO_TARGET_DIR='target-fftools-cli-color-test'; cargo run -p fate-runner -- run --changed` failed because the changed packet-muxer fuzz target selected `avformat-null-muxer`, `avformat-hash-muxer`, `avformat-framecrc-muxer`, `avformat-framehash-muxer`, and `avformat-streamhash-muxer`, but those ledger components had no local mappings. Added local avformat packet-muxer unit mappings and reran the same command successfully. No code-related failing validation remains; `git diff --check` reported CRLF warnings only.
@@ -3237,6 +3253,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-pixel-format` is the current focus for this slice. The concrete change is descriptor-style metadata for the already modeled pixel formats: class, component count, bits per component, average bits per pixel, packed bytes per pixel, alpha flag, plane count, and log2 chroma subsampling, with unit and fuzz-harness invariant coverage. It does not claim full `AVPixFmtDescriptor` parity, complete `ffmpeg -pix_fmts` inventory, pixel conversion, pinned oracle parity, upstream FATE parity, hardware formats, or actual fuzz execution.
+
 `avutil-pixel-format` is the current focus for this slice, with linked rawvideo decoder, demuxer, muxer, and constrained `ffmpeg-rs` input parsing coverage. The concrete change is expanding the current packed RGB-family subset to include `bgr24`, `bgra`, `argb`, and `abgr`, adding shared inventory and packed/alpha metadata, and build-checking the touched fuzz harnesses against the expanded inventory. It does not claim full `AVPixFmtDescriptor` parity, full `ffmpeg -pix_fmts` inventory, pixel conversion, pinned oracle parity, upstream FATE parity, or actual fuzz execution.
 
 `avutil-channel-layout` is the current focus for this slice. The concrete change is native mask helpers for the modeled common channels, canonical layout masks and channel-expression serialization, narrow named/expression parsing for the six modeled layouts, and unit/fuzz-harness coverage for successful round trips plus invalid expression rejection. It does not claim full `AVChannelLayout` parsing, custom/ambisonic/downmix layouts, pinned `ffmpeg -layouts` differential parity, upstream FATE parity, or actual fuzz execution.
@@ -3287,7 +3305,7 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue priority-1 format-model work by adding the next narrow `PixelFormat` inventory slice or descriptor metadata needed by rawvideo/AVI/YUV4MPEG2 without claiming conversion support.
+1. Continue priority-1 format-model work by adding the next narrow `PixelFormat` inventory slice needed by rawvideo/AVI/YUV4MPEG2, such as another simple packed or planar format, without claiming conversion support.
 2. Add pinned-oracle differential coverage for constrained pixel-format inventory, rawvideo packet sizing, and existing channel-layout/byte/hash behavior once the FFmpeg 8.1.1 oracle binary is available.
 3. Keep local FATE-runner changed-path coverage aligned with ledger selections, especially shared fuzz targets that select multiple muxers or format-model components, while keeping those mappings clearly separate from upstream FATE parity.
 
@@ -3300,6 +3318,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added descriptor-style pixel format metadata for the current `avutil::PixelFormat` subset. `PixelFormatDescriptor` and `PixelFormatClass` are exported from `avutil`; `PixelFormat` now reports class, component count, bits per component, average bits per pixel, packed bytes per pixel, alpha status, plane count, and log2 chroma subsampling. Unit coverage now includes `pixel_formats_report_descriptor_metadata`, and `avutil_core_models` build-checks descriptor/name/class/component/bit-depth/chroma invariants against frame-size and plane-splitting behavior. Validation passed with focused pixel tests, fuzz target check/clippy, `avutil` clippy, local FATE-runner component and changed mappings, workspace format check, workspace clippy, workspace library tests, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`.
 
 Latest slice: added packed RGB-family pixel formats to the current shared model. `PixelFormat` now includes `bgr24`, `bgra`, `argb`, and `abgr` alongside `gray`/`gray8`, `rgb24`, `rgba`, and `yuv420p`, exposes `ALL`, packed/planar metadata, alpha metadata, and packed bytes-per-pixel metadata, and feeds updated frame line-size and frame-size math through rawvideo decode/demux/mux paths. `ffmpeg-rs` rawvideo parsing now uses the shared lookup, so uppercase `BGRA` rawvideo input is accepted by the constrained `-f null -` path covered by a new unit test. The touched avutil, avcodec, avformat, fftools, and fuzz harness coverage passed; local FATE mappings were added for rawvideo demuxer/muxer plus WAV, raw PCM, and yuv4mpegpipe muxer smoke coverage selected by the shared basic-muxer fuzz target. The affected components remain `implemented`, not `complete`.
 

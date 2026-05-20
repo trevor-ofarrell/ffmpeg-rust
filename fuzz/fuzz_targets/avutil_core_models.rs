@@ -56,9 +56,10 @@ use avutil::{
     PacketStereo3dType,
     PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
-    PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
-    Sha1, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE,
-    AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE, AV_TIME_BASE_Q,
+    PacketWebVttSettings, PixelFormat, PixelFormatClass, Rational, Rounding, SampleFormat,
+    SampleFormatNumericKind, Sha1, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    AV_ERROR_MAX_STRING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE,
+    AV_TIME_BASE_Q,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -1230,11 +1231,62 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     let width = dimension_from(cursor.next());
     let height = dimension_from(cursor.next());
 
+    let descriptor = pixel_format.descriptor();
+    assert_eq!(descriptor.format, pixel_format);
+    assert_eq!(descriptor.name, pixel_format.name());
+    assert_eq!(descriptor.class, pixel_format.class());
+    assert_eq!(descriptor.component_count, pixel_format.component_count());
+    assert_eq!(descriptor.bits_per_component, pixel_format.bits_per_component());
+    assert_eq!(descriptor.bits_per_pixel, pixel_format.bits_per_pixel());
+    assert_eq!(descriptor.plane_count, pixel_format.plane_count());
+    assert_eq!(descriptor.is_planar, pixel_format.is_planar());
+    assert_eq!(descriptor.has_alpha, pixel_format.has_alpha());
+    assert_eq!(
+        descriptor.packed_bytes_per_pixel,
+        pixel_format.packed_bytes_per_pixel()
+    );
+    assert_eq!(
+        (descriptor.log2_chroma_w, descriptor.log2_chroma_h),
+        pixel_format.log2_chroma()
+    );
+    assert_eq!(
+        pixel_format.has_chroma_subsampling(),
+        pixel_format.log2_chroma() != (0, 0)
+    );
     assert_eq!(PixelFormat::from_name(pixel_format.name()), Some(pixel_format));
     assert_eq!(pixel_format.is_packed(), !pixel_format.is_planar());
+    match pixel_format.class() {
+        PixelFormatClass::Gray => {
+            assert!(pixel_format.is_gray());
+            assert!(!pixel_format.is_rgb());
+            assert!(!pixel_format.is_yuv());
+            assert_eq!(pixel_format.component_count(), 1);
+            assert_eq!(pixel_format.bits_per_pixel(), pixel_format.bits_per_component());
+            assert_eq!(pixel_format.log2_chroma(), (0, 0));
+        }
+        PixelFormatClass::Rgb => {
+            assert!(!pixel_format.is_gray());
+            assert!(pixel_format.is_rgb());
+            assert!(!pixel_format.is_yuv());
+            assert!(matches!(pixel_format.component_count(), 3 | 4));
+            assert_eq!(pixel_format.log2_chroma(), (0, 0));
+            assert!(!pixel_format.has_chroma_subsampling());
+        }
+        PixelFormatClass::Yuv => {
+            assert!(!pixel_format.is_gray());
+            assert!(!pixel_format.is_rgb());
+            assert!(pixel_format.is_yuv());
+            assert_eq!(pixel_format, PixelFormat::Yuv420p);
+            assert_eq!(pixel_format.component_count(), 3);
+            assert_eq!(pixel_format.bits_per_pixel(), 12);
+            assert_eq!(pixel_format.log2_chroma(), (1, 1));
+            assert!(pixel_format.has_chroma_subsampling());
+        }
+    }
     if let Some(bytes_per_pixel) = pixel_format.packed_bytes_per_pixel() {
         assert_eq!(pixel_format.plane_count(), 1);
         assert_eq!(pixel_format.has_alpha(), bytes_per_pixel == 4);
+        assert_eq!(usize::from(pixel_format.bits_per_pixel()), bytes_per_pixel * 8);
     } else {
         assert_eq!(pixel_format, PixelFormat::Yuv420p);
         assert!(!pixel_format.has_alpha());

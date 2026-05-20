@@ -1018,6 +1018,7 @@ oracle_command = "ffmpeg -pix_fmts"
 rust_command = "cargo test -p avutil pixel"
 unit_tests = [
   "pixel::tests::pixel_formats_report_ffmpeg_names_and_layout",
+  "pixel::tests::pixel_formats_report_descriptor_metadata",
   "pixel::tests::pixel_formats_compute_plane_and_frame_sizes",
   "pixel::tests::pixel_formats_split_frame_payloads_by_plane",
   "pixel::tests::pixel_formats_reject_invalid_dimensions_and_payload_sizes",
@@ -1025,7 +1026,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-pixel-format|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-notes = "Initial shared pixel format model covers gray/gray8, rgb24, bgr24, rgba, bgra, argb, abgr, and yuv420p with FFmpeg-style names, an ALL inventory, plane counts, packed/planar and alpha metadata, packed bytes-per-pixel metadata, frame-size math, yuv420p even-dimension validation, and plane splitting. It is wired into avutil::VideoFrame plus the rawvideo decoder and demuxer/muxer type alias. Build-checked cargo-fuzz target avutil_core_models covers pixel format lookup across the current inventory, plane/frame-size invariants, packed/alpha metadata, payload splitting, invalid dimensions, and invalid payload lengths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVPixFmtDescriptor coverage, bit depths, endian flags beyond packed byte order naming, chroma subsampling descriptors beyond yuv420p, hardware formats, oracle inventory comparison, upstream FATE, and broader fuzzing are pending. The local FATE-runner smoke mapping executes the pixel unit filter only and does not count as upstream FATE parity."
+notes = "Initial shared pixel format model covers gray/gray8, rgb24, bgr24, rgba, bgra, argb, abgr, and yuv420p with FFmpeg-style names, an ALL inventory, descriptor-style class/component/bit-depth/chroma metadata for the current subset, plane counts, packed/planar and alpha metadata, packed bytes-per-pixel metadata, frame-size math, yuv420p even-dimension validation, and plane splitting. It is wired into avutil::VideoFrame plus the rawvideo decoder and demuxer/muxer type alias. Build-checked cargo-fuzz target avutil_core_models covers pixel format lookup across the current inventory, descriptor/name/class/component/bit-depth/chroma invariants, plane/frame-size invariants, packed/alpha metadata, payload splitting, invalid dimensions, and invalid payload lengths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Full AVPixFmtDescriptor coverage, additional pixel formats, endian flags beyond packed byte order naming, chroma subsampling descriptors beyond yuv420p, hardware formats, oracle inventory comparison, upstream FATE, and broader fuzzing are pending. The local FATE-runner smoke mapping executes the pixel unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
