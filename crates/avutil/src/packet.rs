@@ -2214,6 +2214,109 @@ impl PacketMpegTsStreamId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketStringMetadataEntry<'a> {
+    key: &'a [u8],
+    value: &'a [u8],
+}
+
+impl<'a> PacketStringMetadataEntry<'a> {
+    pub const fn key_bytes(self) -> &'a [u8] {
+        self.key
+    }
+
+    pub const fn value_bytes(self) -> &'a [u8] {
+        self.value
+    }
+
+    pub fn key_str(self) -> AvResult<&'a str> {
+        std::str::from_utf8(self.key)
+            .map_err(|_| AvError::invalid_data("packet string metadata key is not valid UTF-8"))
+    }
+
+    pub fn value_str(self) -> AvResult<&'a str> {
+        std::str::from_utf8(self.value)
+            .map_err(|_| AvError::invalid_data("packet string metadata value is not valid UTF-8"))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketStringMetadata<'a> {
+    data: &'a [u8],
+    entries: Vec<PacketStringMetadataEntry<'a>>,
+}
+
+impl<'a> PacketStringMetadata<'a> {
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.is_empty() {
+            return Ok(Self {
+                data,
+                entries: Vec::new(),
+            });
+        }
+
+        if data.last() != Some(&0) {
+            return Err(AvError::invalid_data(
+                "packet string metadata must end with a NUL terminator",
+            ));
+        }
+
+        let mut entries = Vec::new();
+        let mut offset = 0;
+        while offset < data.len() {
+            let key_end = find_nul(data, offset).ok_or_else(|| {
+                AvError::invalid_data("packet string metadata key is not NUL terminated")
+            })?;
+            let key = &data[offset..key_end];
+            if key.is_empty() {
+                return Err(AvError::invalid_data(
+                    "packet string metadata key must not be empty",
+                ));
+            }
+
+            offset = key_end + 1;
+            if offset >= data.len() {
+                return Err(AvError::invalid_data(
+                    "packet string metadata key is missing a value",
+                ));
+            }
+
+            let value_end = find_nul(data, offset).ok_or_else(|| {
+                AvError::invalid_data("packet string metadata value is not NUL terminated")
+            })?;
+            let value = &data[offset..value_end];
+            entries.push(PacketStringMetadataEntry { key, value });
+            offset = value_end + 1;
+        }
+
+        Ok(Self { data, entries })
+    }
+
+    pub const fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn entries(&self) -> &[PacketStringMetadataEntry<'a>] {
+        &self.entries
+    }
+
+    pub fn entry(&self, index: usize) -> Option<PacketStringMetadataEntry<'a>> {
+        self.entries.get(index).copied()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketReplayGain {
     track_gain: i32,
     track_peak: u32,
@@ -3066,6 +3169,18 @@ impl SideData {
         Self::new_with_kind(PacketSideDataKind::JpDualMono, value.to_bytes().to_vec())
     }
 
+    pub fn new_strings_metadata(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::StringsMetadata, data)?;
+        PacketStringMetadata::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
+    pub fn new_metadata_update(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::MetadataUpdate, data)?;
+        PacketStringMetadata::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_mpegts_stream_id(value: PacketMpegTsStreamId) -> AvResult<Self> {
         Self::new_with_kind(
             PacketSideDataKind::MpegTsStreamId,
@@ -3338,6 +3453,22 @@ impl SideData {
         }
 
         PacketJpDualMono::parse(self.data()).map(Some)
+    }
+
+    pub fn strings_metadata(&self) -> AvResult<Option<PacketStringMetadata<'_>>> {
+        if self.kind != PacketSideDataKind::StringsMetadata {
+            return Ok(None);
+        }
+
+        PacketStringMetadata::parse(self.data()).map(Some)
+    }
+
+    pub fn metadata_update(&self) -> AvResult<Option<PacketStringMetadata<'_>>> {
+        if self.kind != PacketSideDataKind::MetadataUpdate {
+            return Ok(None);
+        }
+
+        PacketStringMetadata::parse(self.data()).map(Some)
     }
 
     pub fn mpegts_stream_id(&self) -> AvResult<Option<PacketMpegTsStreamId>> {
@@ -3763,6 +3894,13 @@ fn pos_option(value: i64) -> Option<i64> {
     } else {
         Some(value)
     }
+}
+
+fn find_nul(data: &[u8], offset: usize) -> Option<usize> {
+    data.get(offset..)?
+        .iter()
+        .position(|byte| *byte == 0)
+        .map(|position| offset + position)
 }
 
 fn read_u32_le(data: &[u8], offset: usize) -> u32 {
@@ -6283,6 +6421,114 @@ mod tests {
             side_data.jp_dualmono().unwrap_err().kind(),
             crate::AvErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn packet_side_data_parses_string_metadata_payloads() {
+        let data = b"title\0Clip\0language\0eng\0empty\0\0bin\0\xff\xfe\0".to_vec();
+        let parsed = PacketStringMetadata::parse(&data).unwrap();
+
+        assert_eq!(parsed.data(), data.as_slice());
+        assert_eq!(parsed.len(), data.len());
+        assert!(!parsed.is_empty());
+        assert_eq!(parsed.entry_count(), 4);
+        assert_eq!(parsed.entries().len(), 4);
+        assert_eq!(parsed.entry(0).unwrap().key_bytes(), b"title");
+        assert_eq!(parsed.entry(0).unwrap().value_bytes(), b"Clip");
+        assert_eq!(parsed.entry(0).unwrap().key_str().unwrap(), "title");
+        assert_eq!(parsed.entry(0).unwrap().value_str().unwrap(), "Clip");
+        assert_eq!(parsed.entry(1).unwrap().key_str().unwrap(), "language");
+        assert_eq!(parsed.entry(1).unwrap().value_str().unwrap(), "eng");
+        assert_eq!(parsed.entry(2).unwrap().key_bytes(), b"empty");
+        assert_eq!(parsed.entry(2).unwrap().value_bytes(), b"");
+        assert_eq!(parsed.entry(2).unwrap().value_str().unwrap(), "");
+        assert_eq!(parsed.entry(3).unwrap().key_bytes(), b"bin");
+        assert_eq!(parsed.entry(3).unwrap().value_bytes(), &[0xff, 0xfe]);
+        assert_eq!(
+            parsed.entry(3).unwrap().value_str().unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+        assert_eq!(parsed.entry(4), None);
+
+        let empty = PacketStringMetadata::parse(&[]).unwrap();
+        assert!(empty.is_empty());
+        assert_eq!(empty.entry_count(), 0);
+        assert_eq!(empty.entries(), &[]);
+
+        let strings_side_data = SideData::new_strings_metadata(data.clone()).unwrap();
+        assert_eq!(
+            strings_side_data.kind_id(),
+            &PacketSideDataKind::StringsMetadata
+        );
+        assert_eq!(strings_side_data.data(), data.as_slice());
+        assert_eq!(
+            strings_side_data
+                .strings_metadata()
+                .unwrap()
+                .unwrap()
+                .entries(),
+            parsed.entries()
+        );
+
+        let update_side_data = SideData::new_metadata_update(data.clone()).unwrap();
+        assert_eq!(
+            update_side_data.kind_id(),
+            &PacketSideDataKind::MetadataUpdate
+        );
+        assert_eq!(update_side_data.data(), data.as_slice());
+        assert_eq!(
+            update_side_data
+                .metadata_update()
+                .unwrap()
+                .unwrap()
+                .entries(),
+            parsed.entries()
+        );
+
+        let non_strings =
+            SideData::new_with_kind(PacketSideDataKind::MpegTsStreamId, data).unwrap();
+        assert_eq!(non_strings.strings_metadata().unwrap(), None);
+        assert_eq!(non_strings.metadata_update().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_string_metadata_payloads() {
+        for data in [
+            b"title\0Clip".to_vec(),
+            b"\0Clip\0".to_vec(),
+            b"title\0".to_vec(),
+            b"title\0Clip\0\0".to_vec(),
+        ] {
+            assert_eq!(
+                PacketStringMetadata::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_strings_metadata(data.clone())
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_metadata_update(data.clone())
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+
+            let strings_side_data =
+                SideData::new_with_kind(PacketSideDataKind::StringsMetadata, data.clone()).unwrap();
+            assert_eq!(
+                strings_side_data.strings_metadata().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            let update_side_data =
+                SideData::new_with_kind(PacketSideDataKind::MetadataUpdate, data).unwrap();
+            assert_eq!(
+                update_side_data.metadata_update().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
     }
 
     #[test]

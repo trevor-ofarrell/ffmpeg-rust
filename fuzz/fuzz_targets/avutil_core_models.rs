@@ -43,10 +43,10 @@ use avutil::{
     PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind,
     PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection,
     PacketStereo3d, PacketStereo3dFlags, PacketStereo3dPrimaryEye, PacketStereo3dType,
-    PacketStereo3dView, PacketSubtitlePosition, PacketThreeDReferenceDisplay,
-    PacketThreeDReferenceDisplays, PacketWebVttIdentifier, PacketWebVttSettings, PixelFormat,
-    Rational, Rounding, SampleFormat, SampleFormatNumericKind, Sha224, Sha256, Sha384, Sha512,
-    SideData, VideoFrame,
+    PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
+    PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
+    PacketWebVttSettings, PixelFormat, Rational, Rounding, SampleFormat, SampleFormatNumericKind,
+    Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
 };
 use libfuzzer_sys::fuzz_target;
 use std::io;
@@ -3950,6 +3950,51 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_jp_dualmono_payload_invalid(&typed_payload));
         }
     }
+    match typed_payload_side_data.strings_metadata() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::StringsMetadata);
+            assert_eq!(value.data(), typed_payload.as_slice());
+            assert_eq!(value.len(), typed_payload.len());
+            assert_eq!(value.is_empty(), typed_payload.is_empty());
+            assert_eq!(value.entries().len(), value.entry_count());
+            for entry in value.entries() {
+                assert!(!entry.key_bytes().is_empty());
+                assert!(!entry.key_bytes().contains(&0));
+                assert!(!entry.value_bytes().contains(&0));
+                let _ = entry.key_str();
+                let _ = entry.value_str();
+            }
+            assert_eq!(value.entry(value.entry_count()), None);
+            assert_eq!(
+                PacketStringMetadata::parse(value.data()).unwrap().entries(),
+                value.entries()
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::StringsMetadata),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::StringsMetadata);
+            assert!(packet_string_metadata_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.metadata_update() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::MetadataUpdate);
+            assert_eq!(value.data(), typed_payload.as_slice());
+            assert_eq!(value.len(), typed_payload.len());
+            assert_eq!(value.entries().len(), value.entry_count());
+            assert_eq!(
+                PacketStringMetadata::parse(value.data()).unwrap().entries(),
+                value.entries()
+            );
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::MetadataUpdate),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::MetadataUpdate);
+            assert!(packet_string_metadata_payload_invalid(&typed_payload));
+        }
+    }
     match typed_payload_side_data.mpegts_stream_id() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::MpegTsStreamId);
@@ -4653,6 +4698,102 @@ fn exercise_fixtures() {
     assert_eq!(
         PacketJpDualMono::parse(&[]).unwrap_err().kind(),
         AvErrorKind::InvalidData
+    );
+    let packet_string_metadata = b"title\0Clip\0language\0eng\0empty\0\0bin\0\xff\xfe\0".to_vec();
+    let parsed_packet_string_metadata =
+        PacketStringMetadata::parse(&packet_string_metadata).unwrap();
+    assert_eq!(
+        parsed_packet_string_metadata.data(),
+        packet_string_metadata.as_slice()
+    );
+    assert_eq!(parsed_packet_string_metadata.entry_count(), 4);
+    assert_eq!(
+        parsed_packet_string_metadata
+            .entry(0)
+            .unwrap()
+            .key_str()
+            .unwrap(),
+        "title"
+    );
+    assert_eq!(
+        parsed_packet_string_metadata
+            .entry(0)
+            .unwrap()
+            .value_str()
+            .unwrap(),
+        "Clip"
+    );
+    assert_eq!(
+        parsed_packet_string_metadata
+            .entry(2)
+            .unwrap()
+            .value_bytes(),
+        b""
+    );
+    assert_eq!(
+        parsed_packet_string_metadata
+            .entry(3)
+            .unwrap()
+            .value_str()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(parsed_packet_string_metadata.entry(4), None);
+    assert_eq!(
+        SideData::new_strings_metadata(packet_string_metadata.clone())
+            .unwrap()
+            .strings_metadata()
+            .unwrap()
+            .unwrap()
+            .entries(),
+        parsed_packet_string_metadata.entries()
+    );
+    assert_eq!(
+        SideData::new_metadata_update(packet_string_metadata.clone())
+            .unwrap()
+            .metadata_update()
+            .unwrap()
+            .unwrap()
+            .entries(),
+        parsed_packet_string_metadata.entries()
+    );
+    assert!(SideData::new_strings_metadata(Vec::new())
+        .unwrap()
+        .strings_metadata()
+        .unwrap()
+        .unwrap()
+        .is_empty());
+    for data in [
+        b"title\0Clip".to_vec(),
+        b"\0Clip\0".to_vec(),
+        b"title\0".to_vec(),
+        b"title\0Clip\0\0".to_vec(),
+    ] {
+        assert!(packet_string_metadata_payload_invalid(&data));
+        assert_eq!(
+            SideData::new_with_kind(PacketSideDataKind::StringsMetadata, data.clone())
+                .unwrap()
+                .strings_metadata()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            SideData::new_with_kind(PacketSideDataKind::MetadataUpdate, data)
+                .unwrap()
+                .metadata_update()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    assert_eq!(
+        SideData::new_with_kind(PacketSideDataKind::MpegTsStreamId, packet_string_metadata)
+            .unwrap()
+            .strings_metadata()
+            .unwrap(),
+        None
     );
     for stream_id in [0, 0x47, u8::MAX] {
         let mpegts_stream_id = PacketMpegTsStreamId::new(stream_id);
@@ -11884,6 +12025,10 @@ fn packet_jp_dualmono_payload_invalid(data: &[u8]) -> bool {
     }
 
     PacketJpDualMonoSelection::from_byte(data[0]).is_err()
+}
+
+fn packet_string_metadata_payload_invalid(data: &[u8]) -> bool {
+    PacketStringMetadata::parse(data).is_err()
 }
 
 fn packet_mpegts_stream_id_payload_invalid(data: &[u8]) -> bool {
