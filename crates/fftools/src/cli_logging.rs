@@ -40,6 +40,21 @@ fn tool_error_stderr_with_timestamp_and_color_env(
     format_tool_error_stderr(tool_name, error, log_config, timestamp, format_options)
 }
 
+#[cfg(test)]
+fn tool_error_stderr_with_timestamp_color_env_and_terminal(
+    tool_name: &str,
+    args: &[String],
+    error: impl fmt::Display,
+    timestamp: Option<LogTimestamp>,
+    color_env_is_set: impl FnMut(&str) -> bool,
+    stderr_is_terminal: bool,
+) -> String {
+    let log_config = log_config_from_args(args);
+    let format_options = LogFormatOptions::new(log_config.flags())
+        .with_ffmpeg_env_color_vars_and_stderr(color_env_is_set, stderr_is_terminal);
+    format_tool_error_stderr(tool_name, error, log_config, timestamp, format_options)
+}
+
 fn format_tool_error_stderr(
     tool_name: &str,
     error: impl fmt::Display,
@@ -189,6 +204,51 @@ mod tests {
             ),
             "\x1b[31m[error] ffmpeg: missing command\x1b[0m\n"
         );
+    }
+
+    #[test]
+    fn terminal_stderr_colors_tool_errors_without_force_env() {
+        assert_eq!(
+            tool_error_stderr_with_timestamp_color_env_and_terminal(
+                "ffmpeg",
+                &strings(&["-loglevel", "level+error"]),
+                "missing command",
+                None,
+                |_| false,
+                true,
+            ),
+            "\x1b[31m[error] ffmpeg: missing command\x1b[0m\n"
+        );
+        assert_eq!(
+            tool_error_stderr_with_timestamp_color_env_and_terminal(
+                "ffprobe",
+                &strings(&["-loglevel", "level+error"]),
+                "missing command",
+                None,
+                |_| false,
+                false,
+            ),
+            "[error] ffprobe: missing command\n"
+        );
+    }
+
+    #[test]
+    fn force_nocolor_env_wins_over_terminal_for_tool_errors() {
+        let mut checked = Vec::new();
+        let stderr = tool_error_stderr_with_timestamp_color_env_and_terminal(
+            "ffmpeg",
+            &strings(&["-loglevel", "level+error"]),
+            "missing command",
+            None,
+            |name| {
+                checked.push(name.to_owned());
+                name == AV_LOG_FORCE_NOCOLOR_ENV
+            },
+            true,
+        );
+
+        assert_eq!(stderr, "[error] ffmpeg: missing command\n");
+        assert_eq!(checked, [AV_LOG_FORCE_NOCOLOR_ENV.to_owned()]);
     }
 
     #[test]
