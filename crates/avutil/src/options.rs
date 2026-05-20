@@ -467,6 +467,10 @@ impl OptionChild {
     pub fn options(&self) -> &OptionSet {
         &self.options
     }
+
+    pub fn options_mut(&mut self) -> &mut OptionSet {
+        &mut self.options
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -587,13 +591,33 @@ impl OptionSet {
             .map(|index| &self.children[index])
     }
 
+    pub fn child_mut(&mut self, name: &str) -> Option<&mut OptionChild> {
+        self.find_child_index(name)
+            .map(|index| &mut self.children[index])
+    }
+
     pub fn get(&self, name: &str) -> Option<&OptionValue> {
         self.find_index(name).map(|index| &self.values[index])
+    }
+
+    pub fn get_child_option(&self, child_name: &str, option_name: &str) -> AvResult<&OptionValue> {
+        let child = self.child_by_name(child_name)?;
+        let index = child.options.option_index(option_name)?;
+        Ok(&child.options.values[index])
     }
 
     pub fn range(&self, name: &str) -> AvResult<Option<OptionRange>> {
         let index = self.option_index(name)?;
         Ok(self.definitions[index].range())
+    }
+
+    pub fn child_range(
+        &self,
+        child_name: &str,
+        option_name: &str,
+    ) -> AvResult<Option<OptionRange>> {
+        let child = self.child_by_name(child_name)?;
+        child.options.range(option_name)
     }
 
     pub fn set(&mut self, name: &str, value: OptionValue) -> AvResult<()> {
@@ -612,6 +636,26 @@ impl OptionSet {
         Ok(())
     }
 
+    pub fn set_child(
+        &mut self,
+        child_name: &str,
+        option_name: &str,
+        value: OptionValue,
+    ) -> AvResult<()> {
+        let child = self.child_by_name_mut(child_name)?;
+        child.options.set(option_name, value)
+    }
+
+    pub fn set_child_from_str(
+        &mut self,
+        child_name: &str,
+        option_name: &str,
+        raw: &str,
+    ) -> AvResult<()> {
+        let child = self.child_by_name_mut(child_name)?;
+        child.options.set_from_str(option_name, raw)
+    }
+
     fn parse_value(&self, index: usize, raw: &str) -> AvResult<OptionValue> {
         if let Some(unit) = self.definitions[index].unit() {
             if let Some(constant) = self.find_constant(unit, raw) {
@@ -626,6 +670,24 @@ impl OptionSet {
     fn option_index(&self, name: &str) -> AvResult<usize> {
         self.find_index(name)
             .ok_or_else(|| AvError::new(AvErrorKind::NotFound, format!("unknown option `{name}`")))
+    }
+
+    fn child_by_name(&self, name: &str) -> AvResult<&OptionChild> {
+        self.child(name).ok_or_else(|| {
+            AvError::new(
+                AvErrorKind::NotFound,
+                format!("unknown option child `{name}`"),
+            )
+        })
+    }
+
+    fn child_by_name_mut(&mut self, name: &str) -> AvResult<&mut OptionChild> {
+        self.child_mut(name).ok_or_else(|| {
+            AvError::new(
+                AvErrorKind::NotFound,
+                format!("unknown option child `{name}`"),
+            )
+        })
     }
 
     fn find_index(&self, name: &str) -> Option<usize> {
@@ -1302,6 +1364,141 @@ mod tests {
         assert_eq!(
             child.options().definition("THREADS").unwrap().help(),
             "child worker count"
+        );
+    }
+
+    #[test]
+    fn child_option_values_can_be_mutated_through_parent_without_touching_root() {
+        let mut parent = sample_options();
+        let mut child_options = OptionSet::new();
+        child_options
+            .define(
+                OptionDefinition::new(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 16 },
+                    OptionValue::Int(2),
+                    "child worker count",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        child_options
+            .define(
+                OptionDefinition::new_with_unit(
+                    "preset_level",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(0),
+                    "child preset level",
+                    "preset",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        child_options
+            .define_constant(
+                OptionConstant::new("preset", "fast", OptionValue::Int(3), "child fast").unwrap(),
+            )
+            .unwrap();
+
+        parent
+            .define_child(OptionChild::new("encoder", child_options, "encoder options").unwrap())
+            .unwrap();
+
+        parent
+            .set_child("ENCODER", "THREADS", OptionValue::Int(4))
+            .unwrap();
+        parent
+            .set_child_from_str("encoder", "preset_level", "FAST")
+            .unwrap();
+        parent
+            .child_mut("encoder")
+            .unwrap()
+            .options_mut()
+            .set("threads", OptionValue::Int(6))
+            .unwrap();
+
+        assert_eq!(parent.get("threads"), Some(&OptionValue::Int(1)));
+        assert_eq!(
+            parent.get_child_option("encoder", "threads").unwrap(),
+            &OptionValue::Int(6)
+        );
+        assert_eq!(
+            parent.get_child_option("encoder", "preset_level").unwrap(),
+            &OptionValue::Int(3)
+        );
+        let range = parent.child_range("encoder", "threads").unwrap().unwrap();
+        assert_eq!(range.min(), &OptionValue::Int(1));
+        assert_eq!(range.max(), &OptionValue::Int(16));
+    }
+
+    #[test]
+    fn child_option_mutation_errors_preserve_existing_values() {
+        let mut parent = sample_options();
+        let mut child_options = OptionSet::new();
+        child_options
+            .define(
+                OptionDefinition::new(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 16 },
+                    OptionValue::Int(2),
+                    "child worker count",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "readonly",
+                    OptionKind::Bool,
+                    OptionValue::Bool(false),
+                    "read-only child flag",
+                    OptionFlags::READONLY,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        parent
+            .define_child(OptionChild::new("decoder", child_options, "").unwrap())
+            .unwrap();
+
+        let before = parent.clone();
+
+        assert_eq!(
+            parent
+                .set_child("missing", "threads", OptionValue::Int(4))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::NotFound
+        );
+        assert_eq!(
+            parent
+                .set_child("decoder", "missing", OptionValue::Int(4))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::NotFound
+        );
+        assert_eq!(
+            parent
+                .get_child_option("missing", "threads")
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::NotFound
+        );
+        assert!(parent
+            .set_child("decoder", "threads", OptionValue::Int(99))
+            .is_err());
+        assert!(parent
+            .set_child_from_str("decoder", "threads", "not_an_int")
+            .is_err());
+        assert!(parent
+            .set_child_from_str("decoder", "readonly", "yes")
+            .is_err());
+
+        assert_eq!(parent, before);
+        assert_eq!(
+            parent.get_child_option("decoder", "threads").unwrap(),
+            &OptionValue::Int(2)
         );
     }
 

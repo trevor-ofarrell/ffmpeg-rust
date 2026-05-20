@@ -21,7 +21,7 @@ fn exercise_dictionary(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 8 {
+        match cursor.next().unwrap_or_default() % 10 {
             0 => {
                 let key = literal_from(cursor);
                 let value = literal_from(cursor);
@@ -184,8 +184,32 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
             6 => {
                 let _ = options.get(&option_name_from(cursor));
             }
-            _ => {
+            7 => {
                 let _ = options.definition(&option_name_from(cursor));
+            }
+            8 => {
+                let child_name = option_child_name_from(cursor);
+                let option_name = option_name_from(cursor);
+                let value = option_value_from(cursor);
+                let before = options.clone();
+                let result = options.set_child(&child_name, &option_name, value);
+                if result.is_ok() {
+                    assert_child_option_value_is_valid(&options, &child_name, &option_name);
+                } else {
+                    assert_eq!(options, before);
+                }
+            }
+            _ => {
+                let child_name = option_child_name_from(cursor);
+                let option_name = option_name_from(cursor);
+                let raw = option_value_string_from(cursor);
+                let before = options.clone();
+                let result = options.set_child_from_str(&child_name, &option_name, &raw);
+                if result.is_ok() {
+                    assert_child_option_value_is_valid(&options, &child_name, &option_name);
+                } else {
+                    assert_eq!(options, before);
+                }
             }
         }
     }
@@ -281,6 +305,20 @@ fn exercise_fixtures() {
     assert_eq!(
         options.child("ENCODER").unwrap().options().get("THREADS"),
         Some(&OptionValue::Int(2))
+    );
+    options
+        .set_child_from_str("encoder", "threads", "8")
+        .unwrap();
+    assert_eq!(
+        options.get_child_option("ENCODER", "THREADS").unwrap(),
+        &OptionValue::Int(8)
+    );
+    assert!(options
+        .set_child("encoder", "threads", OptionValue::Int(99))
+        .is_err());
+    assert_eq!(
+        options.get_child_option("encoder", "threads").unwrap(),
+        &OptionValue::Int(8)
     );
     assert!(options
         .define_child(OptionChild::new("ENCODER", OptionSet::new(), "").unwrap())
@@ -378,6 +416,13 @@ fn assert_option_set_invariants_at_depth(options: &OptionSet, depth: usize) {
 fn assert_option_value_is_valid(options: &OptionSet, name: &str) {
     let definition = options.definition(name).unwrap();
     let value = options.get(name).unwrap();
+    definition.validate_value(value).unwrap();
+}
+
+fn assert_child_option_value_is_valid(options: &OptionSet, child_name: &str, option_name: &str) {
+    let child = options.child(child_name).unwrap();
+    let definition = child.options().definition(option_name).unwrap();
+    let value = options.get_child_option(child_name, option_name).unwrap();
     definition.validate_value(value).unwrap();
 }
 
