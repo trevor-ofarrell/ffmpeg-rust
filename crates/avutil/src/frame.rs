@@ -12385,6 +12385,10 @@ fn video_plane_shapes(
             row_bytes: checked_mul(width, 2, "8-bit gray-alpha video frame line size")?,
             rows: height,
         }]),
+        PixelFormat::Ya16Le | PixelFormat::Ya16Be => Ok(vec![VideoPlaneShape {
+            row_bytes: checked_mul(width, 4, "16-bit gray-alpha video frame line size")?,
+            rows: height,
+        }]),
         PixelFormat::Gray16Le | PixelFormat::Gray16Be => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 2, "16-bit gray video frame line size")?,
             rows: height,
@@ -16263,6 +16267,9 @@ mod tests {
 
         let ya8 = VideoFrame::new(3, 2, PixelFormat::Ya8, vec![vec![0; 12]]).unwrap();
         assert_eq!(ya8.line_sizes(), &[6]);
+
+        let ya16 = VideoFrame::new(3, 2, PixelFormat::Ya16Be, vec![vec![0; 24]]).unwrap();
+        assert_eq!(ya16.line_sizes(), &[12]);
 
         let rgb48 = VideoFrame::new(3, 2, PixelFormat::Rgb48Le, vec![vec![0; 36]]).unwrap();
         assert_eq!(rgb48.line_sizes(), &[18]);

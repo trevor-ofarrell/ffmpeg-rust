@@ -300,6 +300,15 @@ mod tests {
             .frame_size(),
             8
         );
+        for format in [RawVideoPixelFormat::Ya16Le, RawVideoPixelFormat::Ya16Be] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 8], 2, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                8
+            );
+        }
         for format in [
             RawVideoPixelFormat::Bgra,
             RawVideoPixelFormat::Argb,
@@ -644,6 +653,19 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 12);
+    }
+
+    #[test]
+    fn muxer_computes_ya16_frame_size() {
+        let muxer = RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Ya16Le,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(muxer.info().frame_size(), 24);
     }
 
     #[test]

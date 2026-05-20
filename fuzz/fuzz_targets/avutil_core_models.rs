@@ -1260,15 +1260,24 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             assert!(pixel_format.is_gray());
             assert!(!pixel_format.is_rgb());
             assert!(!pixel_format.is_yuv());
-            if pixel_format == PixelFormat::Ya8 {
-                assert_eq!(pixel_format.component_count(), 2);
-                assert_eq!(pixel_format.bits_per_component(), 8);
-                assert_eq!(pixel_format.bits_per_pixel(), 16);
-                assert!(pixel_format.has_alpha());
-            } else {
-                assert_eq!(pixel_format.component_count(), 1);
-                assert_eq!(pixel_format.bits_per_pixel(), pixel_format.bits_per_component());
-                assert!(!pixel_format.has_alpha());
+            match pixel_format {
+                PixelFormat::Ya8 => {
+                    assert_eq!(pixel_format.component_count(), 2);
+                    assert_eq!(pixel_format.bits_per_component(), 8);
+                    assert_eq!(pixel_format.bits_per_pixel(), 16);
+                    assert!(pixel_format.has_alpha());
+                }
+                PixelFormat::Ya16Le | PixelFormat::Ya16Be => {
+                    assert_eq!(pixel_format.component_count(), 2);
+                    assert_eq!(pixel_format.bits_per_component(), 16);
+                    assert_eq!(pixel_format.bits_per_pixel(), 32);
+                    assert!(pixel_format.has_alpha());
+                }
+                _ => {
+                    assert_eq!(pixel_format.component_count(), 1);
+                    assert_eq!(pixel_format.bits_per_pixel(), pixel_format.bits_per_component());
+                    assert!(!pixel_format.has_alpha());
+                }
             }
             assert_eq!(pixel_format.log2_chroma(), (0, 0));
         }
@@ -1303,6 +1312,8 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 || matches!(
                     pixel_format,
                     PixelFormat::Ya8
+                        | PixelFormat::Ya16Le
+                        | PixelFormat::Ya16Be
                         | PixelFormat::Rgba64Le
                         | PixelFormat::Rgba64Be
                         | PixelFormat::Bgra64Le
@@ -5230,6 +5241,17 @@ fn exercise_fixtures() {
     assert_eq!(PixelFormat::from_name("y400a"), Some(PixelFormat::Ya8));
     assert_eq!(PixelFormat::Ya8.frame_size(2, 2).unwrap(), 8);
     assert!(PixelFormat::Ya8.has_alpha());
+    assert_eq!(
+        PixelFormat::from_name("ya16le"),
+        Some(PixelFormat::Ya16Le)
+    );
+    assert_eq!(
+        PixelFormat::from_name("ya16be"),
+        Some(PixelFormat::Ya16Be)
+    );
+    assert_eq!(PixelFormat::Ya16Be.frame_size(2, 2).unwrap(), 16);
+    assert_eq!(PixelFormat::Ya16Le.bits_per_component(), 16);
+    assert!(PixelFormat::Ya16Le.has_alpha());
     assert_eq!(PixelFormat::from_name("0rgb"), Some(PixelFormat::ZeroRgb));
     assert_eq!(PixelFormat::Rgb0.frame_size(2, 2).unwrap(), 16);
     assert_eq!(
@@ -16929,6 +16951,7 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
     match pixel_format {
         PixelFormat::Gray8 => vec![width],
         PixelFormat::Ya8 => vec![width * 2],
+        PixelFormat::Ya16Le | PixelFormat::Ya16Be => vec![width * 4],
         PixelFormat::Gray16Le | PixelFormat::Gray16Be => vec![width * 2],
         PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![width * 3],
         PixelFormat::Rgb48Le
@@ -16969,6 +16992,7 @@ fn expected_video_plane_shapes(
     match pixel_format {
         PixelFormat::Gray8 => vec![(width, height)],
         PixelFormat::Ya8 => vec![(width * 2, height)],
+        PixelFormat::Ya16Le | PixelFormat::Ya16Be => vec![(width * 4, height)],
         PixelFormat::Gray16Le | PixelFormat::Gray16Be => vec![(width * 2, height)],
         PixelFormat::Rgb24 | PixelFormat::Bgr24 => vec![(width * 3, height)],
         PixelFormat::Rgb48Le

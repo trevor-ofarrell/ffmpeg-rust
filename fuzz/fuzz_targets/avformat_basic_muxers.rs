@@ -269,6 +269,26 @@ fn exercise_fixtures() {
     );
     assert!(raw_ya8_demuxer.read_packet().unwrap().is_none());
 
+    let mut raw_ya16 =
+        RawVideoMuxer::new(2, 1, PixelFormat::Ya16Le, Rational::new(24, 1).unwrap()).unwrap();
+    raw_ya16
+        .write_packet(&Packet::new((0..8).collect(), 0))
+        .unwrap();
+    let raw_ya16_output = raw_ya16.finish();
+    let mut raw_ya16_demuxer = RawVideoDemuxer::open(
+        &raw_ya16_output,
+        2,
+        1,
+        PixelFormat::Ya16Le,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_ya16_demuxer.read_packet().unwrap().unwrap().data(),
+        &(0..8).collect::<Vec<_>>()
+    );
+    assert!(raw_ya16_demuxer.read_packet().unwrap().is_none());
+
     let mut raw_rgb0 =
         RawVideoMuxer::new(2, 1, PixelFormat::Rgb0, Rational::new(24, 1).unwrap()).unwrap();
     raw_rgb0

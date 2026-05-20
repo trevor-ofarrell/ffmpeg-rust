@@ -133,6 +133,31 @@ mod tests {
     }
 
     #[test]
+    fn decodes_ya16_packet_to_single_plane_frame() {
+        let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Ya16Be).unwrap();
+        let mut packet = Packet::new(vec![0x00, 0x10, 0xff, 0xff, 0x80, 0x00, 0x40, 0x00], 0);
+        packet.set_pts(Some(10));
+
+        let frame = decoder.decode_packet(&packet).unwrap();
+
+        assert_eq!(decoder.frame_size(), 8);
+        assert_eq!(frame.pts(), Some(10));
+        match frame.data() {
+            FrameData::Video(video) => {
+                assert_eq!(video.width(), 2);
+                assert_eq!(video.height(), 1);
+                assert_eq!(video.pixel_format(), PixelFormat::Ya16Be);
+                assert_eq!(video.pixel_format_name(), "ya16be");
+                assert_eq!(
+                    video.planes(),
+                    &[vec![0x00, 0x10, 0xff, 0xff, 0x80, 0x00, 0x40, 0x00]]
+                );
+            }
+            FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+        }
+    }
+
+    #[test]
     fn decodes_rgba64_packet_to_single_plane_frame() {
         let decoder = RawVideoDecoder::new(1, 1, PixelFormat::Rgba64Le).unwrap();
         let mut packet = Packet::new(vec![0, 1, 2, 3, 4, 5, 6, 7], 0);

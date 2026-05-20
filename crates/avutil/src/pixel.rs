@@ -4,6 +4,8 @@ use crate::{AvError, AvResult};
 pub enum PixelFormat {
     Gray8,
     Ya8,
+    Ya16Le,
+    Ya16Be,
     Gray16Le,
     Gray16Be,
     Rgb24,
@@ -59,6 +61,8 @@ impl PixelFormat {
     pub const ALL: &'static [Self] = &[
         Self::Gray8,
         Self::Ya8,
+        Self::Ya16Le,
+        Self::Ya16Be,
         Self::Gray16Le,
         Self::Gray16Be,
         Self::Rgb24,
@@ -95,6 +99,8 @@ impl PixelFormat {
         match name {
             "gray" | "gray8" => Some(Self::Gray8),
             "ya8" | "gray8a" | "y400a" => Some(Self::Ya8),
+            "ya16le" => Some(Self::Ya16Le),
+            "ya16be" => Some(Self::Ya16Be),
             "gray16le" => Some(Self::Gray16Le),
             "gray16be" => Some(Self::Gray16Be),
             "rgb24" => Some(Self::Rgb24),
@@ -159,6 +165,30 @@ impl PixelFormat {
                 false,
                 true,
                 Some(2),
+                0,
+                0,
+            ),
+            Self::Ya16Le => (
+                "ya16le",
+                PixelFormatClass::Gray,
+                2,
+                32,
+                1,
+                false,
+                true,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Ya16Be => (
+                "ya16be",
+                PixelFormatClass::Gray,
+                2,
+                32,
+                1,
+                false,
+                true,
+                Some(4),
                 0,
                 0,
             ),
@@ -483,7 +513,9 @@ impl PixelFormat {
             component_count,
             bits_per_component: if matches!(
                 self,
-                Self::Gray16Le
+                Self::Ya16Le
+                    | Self::Ya16Be
+                    | Self::Gray16Le
                     | Self::Gray16Be
                     | Self::Rgb48Le
                     | Self::Rgb48Be
@@ -576,6 +608,11 @@ impl PixelFormat {
                 pixels,
                 2,
                 "8-bit gray-alpha pixel format frame size",
+            )?]),
+            Self::Ya16Le | Self::Ya16Be => Ok(vec![checked_mul(
+                pixels,
+                4,
+                "16-bit gray-alpha pixel format frame size",
             )?]),
             Self::Gray16Le | Self::Gray16Be => Ok(vec![checked_mul(
                 pixels,
@@ -720,6 +757,8 @@ mod tests {
         assert_eq!(PixelFormat::from_name("ya8"), Some(PixelFormat::Ya8));
         assert_eq!(PixelFormat::from_name("gray8a"), Some(PixelFormat::Ya8));
         assert_eq!(PixelFormat::from_name("y400a"), Some(PixelFormat::Ya8));
+        assert_eq!(PixelFormat::from_name("ya16le"), Some(PixelFormat::Ya16Le));
+        assert_eq!(PixelFormat::from_name("ya16be"), Some(PixelFormat::Ya16Be));
         assert_eq!(
             PixelFormat::from_name("gray16le"),
             Some(PixelFormat::Gray16Le)
@@ -789,8 +828,9 @@ mod tests {
             PixelFormat::from_name("yuv444p"),
             Some(PixelFormat::Yuv444p)
         );
-        assert_eq!(PixelFormat::ALL.len(), 28);
+        assert_eq!(PixelFormat::ALL.len(), 30);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
+        assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Rgba.plane_count(), 1);
         assert_eq!(PixelFormat::Rgb48Le.plane_count(), 1);
@@ -805,6 +845,7 @@ mod tests {
         assert!(!PixelFormat::Rgb24.is_planar());
         assert!(PixelFormat::Rgb24.is_packed());
         assert!(PixelFormat::Ya8.is_packed());
+        assert!(PixelFormat::Ya16Be.is_packed());
         assert!(PixelFormat::Gray16Be.is_packed());
         assert!(PixelFormat::Bgr48Be.is_packed());
         assert!(PixelFormat::Bgra64Be.is_packed());
@@ -818,11 +859,13 @@ mod tests {
         assert!(!PixelFormat::Yuv420p.is_packed());
         assert!(!PixelFormat::Rgb24.has_alpha());
         assert!(PixelFormat::Ya8.has_alpha());
+        assert!(PixelFormat::Ya16Le.has_alpha());
         assert!(PixelFormat::Bgra.has_alpha());
         assert!(PixelFormat::Rgba64Le.has_alpha());
         assert!(!PixelFormat::ZeroRgb.has_alpha());
         assert_eq!(PixelFormat::Bgr24.packed_bytes_per_pixel(), Some(3));
         assert_eq!(PixelFormat::Ya8.packed_bytes_per_pixel(), Some(2));
+        assert_eq!(PixelFormat::Ya16Be.packed_bytes_per_pixel(), Some(4));
         assert_eq!(PixelFormat::Gray16Le.packed_bytes_per_pixel(), Some(2));
         assert_eq!(PixelFormat::Rgb48Le.packed_bytes_per_pixel(), Some(6));
         assert_eq!(PixelFormat::Bgra64Be.packed_bytes_per_pixel(), Some(8));
@@ -864,6 +907,26 @@ mod tests {
         assert!(ya8.has_alpha);
         assert_eq!(ya8.packed_bytes_per_pixel, Some(2));
         assert_eq!(PixelFormat::Ya8.log2_chroma(), (0, 0));
+
+        for (format, expected_name) in [
+            (PixelFormat::Ya16Le, "ya16le"),
+            (PixelFormat::Ya16Be, "ya16be"),
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.format, format);
+            assert_eq!(descriptor.name, expected_name);
+            assert_eq!(PixelFormat::from_name(descriptor.name), Some(format));
+            assert_eq!(descriptor.class, PixelFormatClass::Gray);
+            assert!(format.is_gray());
+            assert_eq!(descriptor.component_count, 2);
+            assert_eq!(descriptor.bits_per_component, 16);
+            assert_eq!(descriptor.bits_per_pixel, 32);
+            assert_eq!(descriptor.plane_count, 1);
+            assert!(!descriptor.is_planar);
+            assert!(descriptor.has_alpha);
+            assert_eq!(descriptor.packed_bytes_per_pixel, Some(4));
+            assert_eq!(format.log2_chroma(), (0, 0));
+        }
 
         for (format, expected_name) in [
             (PixelFormat::Gray16Le, "gray16le"),
@@ -926,6 +989,9 @@ mod tests {
 
         assert_eq!(PixelFormat::Rgb24.component_count(), 3);
         assert_eq!(PixelFormat::Rgb24.bits_per_pixel(), 24);
+        assert_eq!(PixelFormat::Ya16Le.component_count(), 2);
+        assert_eq!(PixelFormat::Ya16Le.bits_per_component(), 16);
+        assert_eq!(PixelFormat::Ya16Le.bits_per_pixel(), 32);
         assert_eq!(PixelFormat::Rgb48Le.component_count(), 3);
         assert_eq!(PixelFormat::Rgb48Le.bits_per_component(), 16);
         assert_eq!(PixelFormat::Rgb48Le.bits_per_pixel(), 48);
@@ -977,6 +1043,8 @@ mod tests {
         assert_eq!(PixelFormat::Gray8.plane_sizes(2, 2).unwrap(), vec![4]);
         assert_eq!(PixelFormat::Ya8.plane_sizes(2, 2).unwrap(), vec![8]);
         assert_eq!(PixelFormat::Ya8.frame_size(2, 2).unwrap(), 8);
+        assert_eq!(PixelFormat::Ya16Le.plane_sizes(2, 2).unwrap(), vec![16]);
+        assert_eq!(PixelFormat::Ya16Be.frame_size(2, 2).unwrap(), 16);
         assert_eq!(PixelFormat::Gray16Le.plane_sizes(2, 2).unwrap(), vec![8]);
         assert_eq!(PixelFormat::Gray16Be.frame_size(2, 2).unwrap(), 8);
         assert_eq!(PixelFormat::Rgb24.frame_size(2, 2).unwrap(), 12);
@@ -1092,6 +1160,12 @@ mod tests {
         let planes = PixelFormat::Ya8.split_planes(&[0, 255], 1, 1).unwrap();
 
         assert_eq!(planes, vec![vec![0, 255]]);
+
+        let planes = PixelFormat::Ya16Le
+            .split_planes(&[0, 1, 255, 254], 1, 1)
+            .unwrap();
+
+        assert_eq!(planes, vec![vec![0, 1, 255, 254]]);
     }
 
     #[test]
