@@ -23,16 +23,18 @@ Use `--dry-run` to audit selected mappings without executing them:
 
 ```sh
 cargo run -p fate-runner -- run --dry-run --component fate-runner
+cargo run -p fate-runner -- run --dry-run --component avformat-rawvideo-demuxer --component avformat-rawvideo-muxer
 cargo run -p fate-runner -- run --dry-run --changed
 ```
 
-Dry-run mode still resolves placeholders and validates any required `--samples` or `--oracle-ffmpeg` paths for the selected mappings.
+Dry-run mode still resolves placeholders and validates any required `--samples` or `--oracle-ffmpeg` paths for the selected mappings. Repeated `--component <id>` flags select multiple explicit components in one invocation; duplicate component IDs are deduplicated before mappings run.
 
 Run local smoke mappings:
 
 ```sh
 cargo run -p fate-runner -- run --component avformat-mov-demuxer
 cargo run -p fate-runner -- run --component avutil-buffer
+cargo run -p fate-runner -- run --component avformat-rawvideo-demuxer --component avformat-rawvideo-muxer
 cargo run -p fate-runner -- run --component fftools-option-parser
 cargo run -p fate-runner -- run --component fftools-basic-io
 cargo run -p fate-runner -- run --component fftools-ffmpeg-mov-framecrc-null

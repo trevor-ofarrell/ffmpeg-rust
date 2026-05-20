@@ -812,7 +812,7 @@ upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "scaffolded"
 priority = 2
 oracle_command = "make fate"
-rust_command = "cargo run -p fate-runner -- list; cargo run -p fate-runner -- mappings; cargo run -p fate-runner -- mappings --check-prereqs --samples . --oracle-ffmpeg Cargo.toml; cargo run -p fate-runner -- run --dry-run --component fate-runner; cargo run -p fate-runner -- run --component fate-runner"
+rust_command = "cargo run -p fate-runner -- list; cargo run -p fate-runner -- mappings; cargo run -p fate-runner -- mappings --check-prereqs --samples . --oracle-ffmpeg Cargo.toml; cargo run -p fate-runner -- run --dry-run --component fate-runner; cargo run -p fate-runner -- run --dry-run --component avformat-rawvideo-demuxer --component avformat-rawvideo-muxer --component avformat-rawvideo-demuxer; cargo run -p fate-runner -- run --component fate-runner"
 unit_tests = [
   "tests::parses_component_ids_from_ledger",
   "tests::changed_selection_maps_paths_and_preserves_ledger_order",
@@ -842,7 +842,8 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:fate-runner|local-self-test"]
 fuzz_targets = []
-notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules, dependency manifests and lockfile, xtask runtime guard, cargo-fuzz target files, and the rawvideo oracle integration harness, parse the explicit tests/fate/mappings.txt format, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus repo runtime guard, local avutil unit-test, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
+notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules, dependency manifests and lockfile, xtask runtime guard, cargo-fuzz target files, and the rawvideo oracle integration harness, parse the explicit tests/fate/mappings.txt format, accept repeated --component flags with duplicate component IDs coalesced before execution, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus repo runtime guard, local avutil unit-test, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
+# Latest update: repeated --component flags are now accepted for explicit multi-component runs, duplicate component IDs are deduplicated while preserving first occurrence order, and a real dry-run confirms rawvideo demuxer/muxer mappings can be selected together.
 blocked_reason = "No upstream FATE samples path or media component mapping has been configured."
 
 [[component]]

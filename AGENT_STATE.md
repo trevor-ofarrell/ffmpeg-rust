@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `fate-runner` update: explicit FATE runs now accept repeated `--component <id>` flags for multi-component execution, deduplicate duplicate component IDs while preserving first occurrence order, and still reject mixed `--changed` plus `--component` mode selection. A real dry-run verified that `avformat-rawvideo-demuxer` and `avformat-rawvideo-muxer` can be selected together in one command. This removes the prior repeated-`--component` local runner blocker; upstream FATE media mappings and samples remain absent.
+
 Latest rawvideo oracle update: added an ignored `fftools` integration harness that compares Rust rawvideo file-output bytes against a pinned FFmpeg 8.1.1 oracle using streamcopy rawvideo output. The harness currently covers `rgb24` and `gbrp10msble`, exercises the constrained `ffmpeg-rs -f rawvideo ... -f rawvideo <file>` path through the Rust rawvideo demuxer and muxer, and records the tests in the rawvideo CLI/demuxer/muxer ledger entries. `fate-runner` now maps changes to that harness back to `fftools-ffmpeg-rawvideo-file-output`, `avformat-rawvideo-demuxer`, and `avformat-rawvideo-muxer`, so changed-path FATE dry-runs and local smoke runs no longer treat the test file as unmapped implementation work. Default compilation passes with the tests ignored; explicit `--ignored` execution fails locally because neither `FFMPEG_ORACLE` nor `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` is present. This is a measurable differential-test slot, not completed parity.
 
 Latest `avutil-pixel-format` / rawvideo update: the shared pixel format model now includes FFmpeg's MSB-aligned planar 10/12-bit YUV444 and GBR formats `yuv444p10msble`, `yuv444p10msbbe`, `yuv444p12msble`, `yuv444p12msbbe`, `gbrp10msble`, `gbrp10msbbe`, `gbrp12msble`, and `gbrp12msbbe`. The slice was checked against pinned FFmpeg 8.1.1 `libavutil/pixfmt.h` and `libavutil/pixdesc.c`: upstream models these as three full-resolution planes with two stored bytes per component sample, 10 or 12 valid high bits, low bits reserved as zero, 30 or 36 logical bpp, YUV or RGB descriptor class, and big-endian flags on the `be` variants. Rust now exposes the variants, descriptor metadata, frame sizing and plane splitting, `VideoFrame` line sizes, rawvideo decode/demux/mux packet sizing, constrained `ffmpeg-rs -f rawvideo ... -pix_fmt gbrp10msble -f null -` execution, and affected fuzz-harness invariants. A descriptor-name comparison against the pinned FFmpeg 8.1.1 descriptor table now leaves only hardware-only descriptor names unmatched. Validation passed with focused avutil, avcodec, avformat, and fftools tests, main and fuzz-package clippy, main and fuzz-package check, changed-path FATE dry-run, and directly affected single-component FATE dry-runs. This remains below `complete` because pinned oracle differential vectors, upstream FATE media parity, pixel conversion, hardware formats, and actual fuzz execution are still absent.
@@ -335,6 +337,17 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `fate-runner` repeated-component slice:
+  - `cargo fmt --all`
+  - `cargo fmt --all -- --check`
+  - `cargo test -p fate-runner parses_run_options --target-dir target-codex`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --dry-run --component avformat-rawvideo-demuxer --component avformat-rawvideo-muxer --component avformat-rawvideo-demuxer`
+  - `cargo test -p fate-runner --target-dir target-codex`
+  - `cargo clippy -p fate-runner --target-dir target-codex -- -D warnings`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `git diff --check`
 
 - Current rawvideo oracle harness slice:
   - `cargo fmt --all`
@@ -4049,6 +4062,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `fate-runner` repeated-component slice: no assertion failure remains. The prior repeated-`--component` rejection is resolved by accepting multiple explicit component IDs and deduplicating duplicate IDs before executing mappings.
+
 - Current rawvideo oracle harness slice:
   - `cargo test -p fftools --test rawvideo_oracle --target-dir target-codex -- --ignored` failed as expected before parity comparison because no pinned FFmpeg oracle binary is available at `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)`.
   - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run` initially failed because `crates/fftools/tests/rawvideo_oracle.rs` had no changed-path component selection rule; adding the rawvideo oracle harness path rule fixed it, and the same dry-run plus actual changed-path local smoke run now pass.
@@ -4354,6 +4369,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`fate-runner` was the active infrastructure focus for this turn. The latest change makes explicit multi-component local FATE runs usable through repeated `--component` flags, which is useful for running coupled demuxer/muxer or CLI/component smoke mappings together. The component remains `scaffolded` because upstream FFmpeg FATE media sample execution and real sample-backed mappings are still not present.
+
 `fftools-ffmpeg-rawvideo-file-output`, `avformat-rawvideo-demuxer`, and `avformat-rawvideo-muxer` are the current focus for turning rawvideo local coverage into oracle-backed differential coverage. The latest concrete change adds ignored `rgb24` and `gbrp10msble` rawvideo file-output oracle tests. The component status remains `implemented`, not `differential_pass` or `complete`, until the pinned FFmpeg 8.1.1 oracle binary is installed and those tests pass.
 
 `avutil-pixel-format` remains the current focus, with linked rawvideo decoder, demuxer, muxer, constrained `ffmpeg-rs` input parsing, and fuzz-harness invariant coverage. The latest concrete change adds FFmpeg's MSB-aligned planar 10/12-bit YUV444 and GBR names `yuv444p10msble`, `yuv444p10msbbe`, `yuv444p12msble`, `yuv444p12msbbe`, `gbrp10msble`, `gbrp10msbbe`, `gbrp12msble`, and `gbrp12msbbe` as three full-resolution two-byte-per-sample payload planes with 10 or 12 valid high bits and 30 or 36 logical bpp. It does not claim conversion support, pinned oracle parity, upstream FATE media parity, hardware formats, or actual fuzz execution.
@@ -4503,14 +4520,14 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 ## Next 3 Concrete Actions
 
 1. Install or build the pinned FFmpeg 8.1.1 default-native oracle binary, or set `FFMPEG_ORACLE`, then run `cargo test -p fftools --test rawvideo_oracle --target-dir target-codex -- --ignored`.
-2. If the `rgb24` and `gbrp10msble` oracle cases pass, expand the rawvideo oracle harness to additional representative packed, planar, endian, row-padded, and chroma-subsampled formats.
-3. Record passing oracle commands in `PORTING_LEDGER.toml` and only then advance rawvideo file-output, demuxer, and muxer status toward `differential_pass`.
+2. Add sample-backed FATE mapping rows once a local samples root and pinned oracle binary are available, using repeated `--component` invocations for related component groups.
+3. If the `rgb24` and `gbrp10msble` oracle cases pass, expand the rawvideo oracle harness to additional representative packed, planar, endian, row-padded, and chroma-subsampled formats, then record passing commands before advancing any rawvideo status toward `differential_pass`.
 
 ## Known Blockers
 
 - Rawvideo oracle differentials are now wired but cannot run to parity in this workspace because the pinned FFmpeg 8.1.1 oracle binary is missing. `cargo test -p fftools --test rawvideo_oracle --target-dir target-codex -- --ignored` fails before comparison until `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` is available.
 
-- Current MSB-aligned planar YUV444/GBR validation has no remaining code/test assertion failures. Focused avutil, avcodec, avformat, and fftools tests passed through `target-codex`; main and fuzz-package clippy passed; main and fuzz-package check passed; changed-path and single-component FATE dry-runs passed. The direct repeated-`--component` FATE dry-run form is rejected by the current runner CLI and should be invoked one component at a time. The remaining blockers are pinned oracle differentials, upstream FATE media parity, pixel conversion, hardware formats, and actual fuzz execution.
+- Current MSB-aligned planar YUV444/GBR validation has no remaining code/test assertion failures. Focused avutil, avcodec, avformat, and fftools tests passed through `target-codex`; main and fuzz-package clippy passed; main and fuzz-package check passed; changed-path and single-component FATE dry-runs passed. The prior direct repeated-`--component` FATE dry-run limitation is resolved in the current runner. The remaining blockers are pinned oracle differentials, upstream FATE media parity, pixel conversion, hardware formats, and actual fuzz execution.
 
 - Current packed 32-bit integer RGB/RGBA validation has no remaining code/test assertion failures. Focused avutil, avformat, avcodec FATE, and fftools target-cache tests passed; format check, workspace clippy, fuzz-package check/clippy, changed-path FATE dry-run, and directly affected local FATE component mappings for avutil-frame, avcodec-rawvideo, and avformat rawvideo also passed. Fresh target-dir avcodec unit-test launches and the broad default-target fftools FATE mapping were blocked before execution by Windows Application Control. Cargo commands reported only the usual `could not canonicalize path C:\Users\trevo` warning. The remaining blockers are oracle differentials, upstream FATE media parity, full `AVPixFmtDescriptor` parity, pixel conversion, hardware formats, and actual fuzz execution.
 
@@ -4569,6 +4586,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: updated `fate-runner` explicit run parsing so repeated `--component <id>` flags select multiple components in a single invocation, with duplicate component IDs deduplicated before mapping execution. Parser coverage now checks multi-component parsing, duplicate removal, dry-run preservation, and unchanged `--changed`/`--component` ambiguity rejection. A real dry-run verified that `avformat-rawvideo-demuxer` and `avformat-rawvideo-muxer` mappings resolve together. The ledger and FATE/oracle/architecture docs record the new behavior. `fate-runner` remains `scaffolded`, not complete, because upstream sample-backed FATE execution is still absent.
 
 Latest slice: added ignored rawvideo oracle integration tests in `crates/fftools/tests/rawvideo_oracle.rs`. The tests create deterministic raw `rgb24` and `gbrp10msble` inputs, run the Rust constrained rawvideo file-output path, run the pinned FFmpeg oracle with `-c:v copy -f rawvideo`, and compare output bytes plus Rust command accounting. `fate-runner` now maps this test path back to the rawvideo file-output, demuxer, and muxer ledger components, with unit coverage for the selection rule. `tests/differential/README.md`, the rawvideo CLI/demuxer/muxer and `fate-runner` ledger entries, and oracle/compatibility/architecture docs now describe the harness and the missing-oracle blocker. Default test compilation passes with the tests ignored; explicit ignored execution fails locally before parity comparison until a pinned oracle binary is configured.
 

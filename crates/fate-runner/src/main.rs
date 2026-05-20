@@ -37,7 +37,7 @@ struct MappingOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum RunMode {
-    Component(String),
+    Components(Vec<String>),
     Changed,
 }
 
@@ -590,12 +590,14 @@ fn run_component(args: Vec<String>) -> Result<(), String> {
     } = options;
 
     match mode {
-        RunMode::Component(component) => {
+        RunMode::Components(components) => {
             let ids = load_component_ids()?;
-            if !ids.iter().any(|id| id == &component) {
-                return Err(format!("unknown ledger component `{component}`"));
+            for component in &components {
+                if !ids.iter().any(|id| id == component) {
+                    return Err(format!("unknown ledger component `{component}`"));
+                }
             }
-            run_mapped_components(&ids, &[component], &mappings_path, &context, execution_mode)
+            run_mapped_components(&ids, &components, &mappings_path, &context, execution_mode)
         }
         RunMode::Changed => run_changed_components(&mappings_path, &context, execution_mode),
     }
@@ -616,7 +618,7 @@ fn parse_run_options(args: &[String]) -> Result<RunOptions, String> {
                 let component = iter
                     .next()
                     .ok_or_else(|| "missing value for --component".to_string())?;
-                set_run_mode(&mut mode, RunMode::Component(component.clone()))?;
+                add_run_component(&mut mode, component.clone())?;
             }
             "--mappings" => {
                 mappings_path = iter
@@ -656,6 +658,24 @@ fn set_run_mode(mode: &mut Option<RunMode>, new_mode: RunMode) -> Result<(), Str
     }
     *mode = Some(new_mode);
     Ok(())
+}
+
+fn add_run_component(mode: &mut Option<RunMode>, component: String) -> Result<(), String> {
+    match mode {
+        Some(RunMode::Components(components)) => {
+            if !components.iter().any(|existing| existing == &component) {
+                components.push(component);
+            }
+            Ok(())
+        }
+        Some(RunMode::Changed) => {
+            Err("choose either --component <id> or --changed, not both".to_string())
+        }
+        None => {
+            *mode = Some(RunMode::Components(vec![component]));
+            Ok(())
+        }
+    }
 }
 
 fn run_changed_components(
@@ -1096,7 +1116,7 @@ fn normalize_path(path: &str) -> String {
 
 fn print_help() {
     eprintln!(
-        "usage: fate-runner list | mappings [--check-prereqs] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] | run [--dry-run] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --component <id> | run [--dry-run] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --changed"
+        "usage: fate-runner list | mappings [--check-prereqs] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] | run [--dry-run] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --component <id> [--component <id> ...] | run [--dry-run] [--mappings <path>] [--samples <path>] [--oracle-ffmpeg <path>] --changed"
     );
 }
 
@@ -1371,7 +1391,7 @@ mod tests {
             ])
             .unwrap(),
             RunOptions {
-                mode: RunMode::Component("fate-runner".to_string()),
+                mode: RunMode::Components(vec!["fate-runner".to_string()]),
                 mappings_path: "custom.map".to_string(),
                 context: FateContext::default(),
                 execution_mode: ExecutionMode::Execute,
@@ -1412,6 +1432,28 @@ mod tests {
             parse_run_options(&["--dry-run".to_string(), "--changed".to_string()]).unwrap(),
             RunOptions {
                 mode: RunMode::Changed,
+                mappings_path: DEFAULT_FATE_MAPPINGS_PATH.to_string(),
+                context: FateContext::default(),
+                execution_mode: ExecutionMode::DryRun,
+            }
+        );
+
+        assert_eq!(
+            parse_run_options(&[
+                "--component".to_string(),
+                "avformat-rawvideo-demuxer".to_string(),
+                "--component".to_string(),
+                "avformat-rawvideo-muxer".to_string(),
+                "--component".to_string(),
+                "avformat-rawvideo-demuxer".to_string(),
+                "--dry-run".to_string(),
+            ])
+            .unwrap(),
+            RunOptions {
+                mode: RunMode::Components(vec![
+                    "avformat-rawvideo-demuxer".to_string(),
+                    "avformat-rawvideo-muxer".to_string(),
+                ]),
                 mappings_path: DEFAULT_FATE_MAPPINGS_PATH.to_string(),
                 context: FateContext::default(),
                 execution_mode: ExecutionMode::DryRun,
