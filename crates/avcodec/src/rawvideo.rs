@@ -530,6 +530,37 @@ mod tests {
     }
 
     #[test]
+    fn decodes_semiplanar_yuv420_packets_to_two_plane_frames() {
+        for (pixel_format, expected_name, payload) in [
+            (PixelFormat::Nv12, "nv12", (0..12).collect::<Vec<_>>()),
+            (PixelFormat::Nv21, "nv21", (12..24).collect::<Vec<_>>()),
+        ] {
+            let decoder = RawVideoDecoder::new(4, 2, pixel_format).unwrap();
+            let mut packet = Packet::new(payload.clone(), 0);
+            packet.set_pts(Some(22));
+
+            let frame = decoder.decode_packet(&packet).unwrap();
+
+            assert_eq!(decoder.frame_size(), 12);
+            assert_eq!(frame.pts(), Some(22));
+            match frame.data() {
+                FrameData::Video(video) => {
+                    assert_eq!(video.width(), 4);
+                    assert_eq!(video.height(), 2);
+                    assert_eq!(video.pixel_format(), pixel_format);
+                    assert_eq!(video.pixel_format_name(), expected_name);
+                    assert_eq!(video.line_sizes(), &[4, 4]);
+                    assert_eq!(
+                        video.planes(),
+                        &[payload[..8].to_vec(), payload[8..].to_vec()]
+                    );
+                }
+                FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+            }
+        }
+    }
+
+    #[test]
     fn decodes_yuv411p_packet_to_three_planes() {
         let decoder = RawVideoDecoder::new(4, 3, PixelFormat::Yuv411p).unwrap();
         let packet = Packet::new((0..18).collect(), 0);
@@ -612,6 +643,9 @@ mod tests {
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv422p).is_err());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuyv422).is_err());
         assert!(RawVideoDecoder::new(2, 3, PixelFormat::Yuyv422).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Nv12).is_err());
+        assert!(RawVideoDecoder::new(2, 3, PixelFormat::Nv12).is_err());
+        assert!(RawVideoDecoder::new(2, 2, PixelFormat::Nv12).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv411p).is_err());
         assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuv411p).is_ok());
         assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuv410p).is_err());

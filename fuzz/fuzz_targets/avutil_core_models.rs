@@ -1335,6 +1335,8 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
                 | PixelFormat::Yuv411p
                 | PixelFormat::Yuv440p
                 | PixelFormat::Yuv444p
+                | PixelFormat::Nv12
+                | PixelFormat::Nv21
         ));
         assert!(!pixel_format.has_alpha());
     }
@@ -5539,6 +5541,24 @@ fn exercise_fixtures() {
         assert_eq!(format.frame_size(2, 2).unwrap(), 8);
         assert_eq!(format.plane_sizes(2, 2).unwrap(), vec![8]);
         assert!(format.frame_size(3, 2).is_err());
+    }
+    for (name, format) in [("nv12", PixelFormat::Nv12), ("nv21", PixelFormat::Nv21)] {
+        let descriptor = format.descriptor();
+        assert_eq!(PixelFormat::from_name(name), Some(format));
+        assert_eq!(descriptor.name, name);
+        assert_eq!(descriptor.class, PixelFormatClass::Yuv);
+        assert_eq!(descriptor.component_count, 3);
+        assert_eq!(descriptor.bits_per_component, 8);
+        assert_eq!(descriptor.bits_per_pixel, 12);
+        assert_eq!(descriptor.packed_bytes_per_pixel, None);
+        assert_eq!(descriptor.plane_count, 2);
+        assert!(descriptor.is_planar);
+        assert_eq!(format.log2_chroma(), (1, 1));
+        assert!(format.has_chroma_subsampling());
+        assert_eq!(format.frame_size(4, 2).unwrap(), 12);
+        assert_eq!(format.plane_sizes(4, 2).unwrap(), vec![8, 4]);
+        assert!(format.frame_size(3, 2).is_err());
+        assert!(format.frame_size(4, 3).is_err());
     }
     assert_eq!(
         PixelFormat::from_name("rgb48le"),
@@ -17266,6 +17286,7 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Yuyv422
         | PixelFormat::Uyvy422
         | PixelFormat::Yvyu422 => vec![width * 2],
+        PixelFormat::Nv12 | PixelFormat::Nv21 => vec![width, width],
         PixelFormat::Rgb48Le
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le
@@ -17365,6 +17386,7 @@ fn expected_video_plane_shapes(
         | PixelFormat::Yuyv422
         | PixelFormat::Uyvy422
         | PixelFormat::Yvyu422 => vec![(width * 2, height)],
+        PixelFormat::Nv12 | PixelFormat::Nv21 => vec![(width, height), (width, height / 2)],
         PixelFormat::Rgb48Le
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le

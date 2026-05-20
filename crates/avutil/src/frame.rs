@@ -12602,6 +12602,16 @@ fn video_plane_shapes(
                 },
             ])
         }
+        PixelFormat::Nv12 | PixelFormat::Nv21 => Ok(vec![
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height,
+            },
+            VideoPlaneShape {
+                row_bytes: width,
+                rows: height >> 1,
+            },
+        ]),
     }
 }
 
@@ -16428,6 +16438,12 @@ mod tests {
 
         let uyvy422 = VideoFrame::new(4, 1, PixelFormat::Uyvy422, vec![vec![0; 8]]).unwrap();
         assert_eq!(uyvy422.line_sizes(), &[8]);
+
+        let nv12 = VideoFrame::new(4, 2, PixelFormat::Nv12, vec![vec![0; 8], vec![1; 4]]).unwrap();
+        assert_eq!(nv12.line_sizes(), &[4, 4]);
+
+        let nv21 = VideoFrame::new(2, 4, PixelFormat::Nv21, vec![vec![0; 8], vec![1; 4]]).unwrap();
+        assert_eq!(nv21.line_sizes(), &[2, 2]);
 
         let rgba = VideoFrame::new(3, 2, PixelFormat::Rgba, vec![vec![0; 24]]).unwrap();
         assert_eq!(rgba.line_sizes(), &[12]);
