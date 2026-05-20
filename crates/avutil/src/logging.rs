@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
@@ -158,6 +159,18 @@ impl LogTimestamp {
         Self { unix_micros }
     }
 
+    pub fn from_system_time(time: SystemTime) -> Option<Self> {
+        match time.duration_since(UNIX_EPOCH) {
+            Ok(duration) => duration_to_unix_micros(duration),
+            Err(error) => duration_before_epoch_to_unix_micros(error.duration()),
+        }
+        .map(Self::from_unix_micros)
+    }
+
+    pub fn now_utc() -> Option<Self> {
+        Self::from_system_time(SystemTime::now())
+    }
+
     pub const fn unix_micros(self) -> i64 {
         self.unix_micros
     }
@@ -187,6 +200,25 @@ impl LogTimestamp {
 
         (year, month, day, hour, minute, second, micros)
     }
+}
+
+fn duration_to_unix_micros(duration: Duration) -> Option<i64> {
+    let micros = i128::from(duration.as_secs())
+        .checked_mul(1_000_000)?
+        .checked_add(i128::from(duration.subsec_micros()))?;
+    i64::try_from(micros).ok()
+}
+
+fn duration_before_epoch_to_unix_micros(duration: Duration) -> Option<i64> {
+    let fractional_micros = if duration.subsec_nanos() == 0 {
+        0
+    } else {
+        (i128::from(duration.subsec_nanos()) + 999) / 1_000
+    };
+    let micros = i128::from(duration.as_secs())
+        .checked_mul(1_000_000)?
+        .checked_add(fractional_micros)?;
+    i64::try_from(-micros).ok()
 }
 
 fn civil_from_unix_days(days: i64) -> (i64, i64, i64) {
@@ -234,6 +266,10 @@ impl LogRecord {
     pub fn with_timestamp(mut self, timestamp: LogTimestamp) -> Self {
         self.timestamp = Some(timestamp);
         self
+    }
+
+    pub fn with_current_timestamp(self) -> Option<Self> {
+        LogTimestamp::now_utc().map(|timestamp| self.with_timestamp(timestamp))
     }
 
     fn repetition_summary(count: usize) -> Self {
@@ -710,6 +746,47 @@ mod tests {
             before_epoch.format_datetime_utc(),
             "1969-12-31 23:59:59.999999"
         );
+    }
+
+    #[test]
+    fn log_timestamps_convert_system_time_to_unix_micros() {
+        let after_epoch = UNIX_EPOCH + Duration::new(1, 234_567_000);
+        assert_eq!(
+            LogTimestamp::from_system_time(after_epoch).map(LogTimestamp::unix_micros),
+            Some(1_234_567)
+        );
+
+        let positive_submicro = UNIX_EPOCH + Duration::from_nanos(999);
+        assert_eq!(
+            LogTimestamp::from_system_time(positive_submicro).map(LogTimestamp::unix_micros),
+            Some(0)
+        );
+
+        let before_epoch = UNIX_EPOCH - Duration::new(1, 234_567_000);
+        assert_eq!(
+            LogTimestamp::from_system_time(before_epoch).map(LogTimestamp::unix_micros),
+            Some(-1_234_567)
+        );
+
+        assert_eq!(
+            duration_before_epoch_to_unix_micros(Duration::from_nanos(1)),
+            Some(-1)
+        );
+    }
+
+    #[test]
+    fn log_timestamps_capture_current_system_time() {
+        let before = LogTimestamp::from_system_time(SystemTime::now()).unwrap();
+        let timestamp = LogTimestamp::now_utc().unwrap();
+        let after = LogTimestamp::from_system_time(SystemTime::now()).unwrap();
+
+        assert!(before <= timestamp);
+        assert!(timestamp <= after);
+
+        let record = LogRecord::new(LogLevel::Info, "ffmpeg", "ready")
+            .with_current_timestamp()
+            .unwrap();
+        assert!(record.timestamp().is_some());
     }
 
     #[test]

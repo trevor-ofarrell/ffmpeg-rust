@@ -63,6 +63,7 @@ use avutil::{
 use libfuzzer_sys::fuzz_target;
 use std::io;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, UNIX_EPOCH};
 
 const MAX_PAYLOAD: usize = 128;
 const MAX_SAMPLES: usize = 64;
@@ -873,8 +874,25 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
         timestamp.format_datetime_utc(),
         "2024-01-01 12:38:25.123456"
     );
+    let positive_system_micros = u64::from(cursor.next().unwrap_or_default()) * 1_000
+        + u64::from(cursor.next().unwrap_or_default());
+    let positive_system_time = UNIX_EPOCH + Duration::from_micros(positive_system_micros);
+    assert_eq!(
+        LogTimestamp::from_system_time(positive_system_time).map(LogTimestamp::unix_micros),
+        Some(i64::try_from(positive_system_micros).unwrap())
+    );
+    let negative_system_micros = i64::from(cursor.next().unwrap_or_default()) + 1;
+    let negative_system_time = UNIX_EPOCH - Duration::from_micros(negative_system_micros as u64);
+    assert_eq!(
+        LogTimestamp::from_system_time(negative_system_time).map(LogTimestamp::unix_micros),
+        Some(-negative_system_micros)
+    );
     let timestamped =
         LogRecord::new(LogLevel::Error, "demuxer", "bad header").with_timestamp(timestamp);
+    let current_timestamped = LogRecord::new(LogLevel::Info, "ffmpeg", "ready")
+        .with_current_timestamp()
+        .unwrap();
+    assert!(current_timestamped.timestamp().is_some());
     assert_eq!(
         timestamped.format_line_with_flags(LogFlags::PRINT_TIME | LogFlags::PRINT_LEVEL),
         "[12:38:25.123456] [error] demuxer: bad header"
