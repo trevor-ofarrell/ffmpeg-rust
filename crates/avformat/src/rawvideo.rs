@@ -264,6 +264,32 @@ mod tests {
     }
 
     #[test]
+    fn slices_xv_packed_yuv_frames_with_format_side_data() {
+        let input = (0_u8..16).collect::<Vec<_>>();
+        let mut demuxer = RawVideoDemuxer::open(
+            &input,
+            2,
+            1,
+            RawVideoPixelFormat::Xv30Le,
+            Rational::new(24, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(demuxer.info().pixel_format(), RawVideoPixelFormat::Xv30Le);
+        assert_eq!(demuxer.info().frame_size(), 8);
+        assert_eq!(demuxer.info().frame_count(), 2);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), &[0, 1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(first.side_data()[0].kind(), "rawvideo_pix_fmt");
+        assert_eq!(first.side_data()[0].data(), b"xv30le");
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second.data(), &[8, 9, 10, 11, 12, 13, 14, 15]);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn computes_frame_sizes_for_supported_pixel_formats() {
         assert_eq!(
             RawVideoDemuxer::open(
@@ -303,6 +329,30 @@ mod tests {
                     .info()
                     .frame_size(),
                 24
+            );
+        }
+        for (format, width, height, payload_len, expected_size) in [
+            (RawVideoPixelFormat::Xv30Le, 3, 2, 24, 24),
+            (RawVideoPixelFormat::Xv30Be, 3, 2, 24, 24),
+            (RawVideoPixelFormat::Xv36Le, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Xv36Be, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Xv48Le, 3, 2, 48, 48),
+            (RawVideoPixelFormat::Xv48Be, 3, 2, 48, 48),
+            (RawVideoPixelFormat::V30xLe, 3, 2, 24, 24),
+            (RawVideoPixelFormat::V30xBe, 3, 2, 24, 24),
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(
+                    &vec![0; payload_len],
+                    width,
+                    height,
+                    format,
+                    Rational::new(1, 1).unwrap(),
+                )
+                .unwrap()
+                .info()
+                .frame_size(),
+                expected_size
             );
         }
         for format in [
@@ -1468,6 +1518,25 @@ mod tests {
             let muxer = RawVideoMuxer::new(3, 2, format, Rational::new(25, 1).unwrap()).unwrap();
 
             assert_eq!(muxer.info().frame_size(), 24);
+        }
+    }
+
+    #[test]
+    fn muxer_computes_xv_packed_yuv_frame_sizes() {
+        for (format, width, height, expected_size) in [
+            (RawVideoPixelFormat::Xv30Le, 3, 2, 24),
+            (RawVideoPixelFormat::Xv30Be, 3, 2, 24),
+            (RawVideoPixelFormat::Xv36Le, 3, 2, 36),
+            (RawVideoPixelFormat::Xv36Be, 3, 2, 36),
+            (RawVideoPixelFormat::Xv48Le, 3, 2, 48),
+            (RawVideoPixelFormat::Xv48Be, 3, 2, 48),
+            (RawVideoPixelFormat::V30xLe, 3, 2, 24),
+            (RawVideoPixelFormat::V30xBe, 3, 2, 24),
+        ] {
+            let muxer =
+                RawVideoMuxer::new(width, height, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), expected_size);
         }
     }
 

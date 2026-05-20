@@ -308,7 +308,39 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::X2Rgb10Le,
         Rational::new(25, 1).unwrap(),
     );
-    let vuya = (84..92).collect::<Vec<_>>();
+    let xv30le = (84..92).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &xv30le,
+        2,
+        1,
+        RawVideoPixelFormat::Xv30Le,
+        Rational::new(25, 1).unwrap(),
+    );
+    let xv36be = (92..104).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &xv36be,
+        2,
+        1,
+        RawVideoPixelFormat::Xv36Be,
+        Rational::new(25, 1).unwrap(),
+    );
+    let xv48le = (104..120).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &xv48le,
+        1,
+        2,
+        RawVideoPixelFormat::Xv48Le,
+        Rational::new(25, 1).unwrap(),
+    );
+    let v30xbe = (120..128).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &v30xbe,
+        2,
+        1,
+        RawVideoPixelFormat::V30xBe,
+        Rational::new(25, 1).unwrap(),
+    );
+    let vuya = (128..136).collect::<Vec<_>>();
     exercise_rawvideo(
         &vuya,
         2,
@@ -316,7 +348,7 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::Vuya,
         Rational::new(25, 1).unwrap(),
     );
-    let vyu444 = (92..98).collect::<Vec<_>>();
+    let vyu444 = (136..142).collect::<Vec<_>>();
     exercise_rawvideo(
         &vyu444,
         2,

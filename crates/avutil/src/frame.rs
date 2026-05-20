@@ -12483,7 +12483,9 @@ fn video_plane_shapes(
         | PixelFormat::Bgr48Le
         | PixelFormat::Bgr48Be
         | PixelFormat::Xyz12Le
-        | PixelFormat::Xyz12Be => Ok(vec![VideoPlaneShape {
+        | PixelFormat::Xyz12Be
+        | PixelFormat::Xv36Le
+        | PixelFormat::Xv36Be => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 6, "six-byte packed video frame line size")?,
             rows: height,
         }]),
@@ -12492,7 +12494,9 @@ fn video_plane_shapes(
         | PixelFormat::Bgra64Le
         | PixelFormat::Bgra64Be
         | PixelFormat::Ayuv64Le
-        | PixelFormat::Ayuv64Be => Ok(vec![VideoPlaneShape {
+        | PixelFormat::Ayuv64Be
+        | PixelFormat::Xv48Le
+        | PixelFormat::Xv48Be => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 8, "64-bit packed video frame line size")?,
             rows: height,
         }]),
@@ -12510,6 +12514,10 @@ fn video_plane_shapes(
         | PixelFormat::X2Bgr10Be
         | PixelFormat::Vuya
         | PixelFormat::Vuyx
+        | PixelFormat::Xv30Le
+        | PixelFormat::Xv30Be
+        | PixelFormat::V30xLe
+        | PixelFormat::V30xBe
         | PixelFormat::Ayuv
         | PixelFormat::Uyva => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 4, "32-bit packed video frame line size")?,
@@ -16796,6 +16804,12 @@ mod tests {
         let vuya = VideoFrame::new(3, 2, PixelFormat::Vuya, vec![vec![0; 24]]).unwrap();
         assert_eq!(vuya.line_sizes(), &[12]);
 
+        let xv30 = VideoFrame::new(3, 2, PixelFormat::Xv30Le, vec![vec![0; 24]]).unwrap();
+        assert_eq!(xv30.line_sizes(), &[12]);
+
+        let v30x = VideoFrame::new(3, 2, PixelFormat::V30xBe, vec![vec![0; 24]]).unwrap();
+        assert_eq!(v30x.line_sizes(), &[12]);
+
         let vyu444 = VideoFrame::new(3, 2, PixelFormat::Vyu444, vec![vec![0; 18]]).unwrap();
         assert_eq!(vyu444.line_sizes(), &[9]);
 
@@ -16936,6 +16950,12 @@ mod tests {
 
         let xyz12 = VideoFrame::new(3, 2, PixelFormat::Xyz12Le, vec![vec![0; 36]]).unwrap();
         assert_eq!(xyz12.line_sizes(), &[18]);
+
+        let xv36 = VideoFrame::new(3, 2, PixelFormat::Xv36Le, vec![vec![0; 36]]).unwrap();
+        assert_eq!(xv36.line_sizes(), &[18]);
+
+        let xv48 = VideoFrame::new(3, 2, PixelFormat::Xv48Be, vec![vec![0; 48]]).unwrap();
+        assert_eq!(xv48.line_sizes(), &[24]);
 
         let rgb0 = VideoFrame::new(3, 2, PixelFormat::Rgb0, vec![vec![0; 24]]).unwrap();
         assert_eq!(rgb0.line_sizes(), &[12]);

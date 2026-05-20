@@ -495,6 +495,14 @@ fn exercise_fixtures() {
         (PixelFormat::X2Rgb10Be, 4, 3),
         (PixelFormat::X2Bgr10Le, 4, 3),
         (PixelFormat::X2Bgr10Be, 4, 3),
+        (PixelFormat::Xv30Le, 4, 3),
+        (PixelFormat::Xv30Be, 4, 3),
+        (PixelFormat::Xv36Le, 6, 5),
+        (PixelFormat::Xv36Be, 6, 5),
+        (PixelFormat::Xv48Le, 8, 7),
+        (PixelFormat::Xv48Be, 8, 7),
+        (PixelFormat::V30xLe, 4, 3),
+        (PixelFormat::V30xBe, 4, 3),
     ] {
         let (width, height) = if matches!(
             format,
@@ -506,6 +514,14 @@ fn exercise_fixtures() {
                 | PixelFormat::X2Rgb10Be
                 | PixelFormat::X2Bgr10Le
                 | PixelFormat::X2Bgr10Be
+                | PixelFormat::Xv30Le
+                | PixelFormat::Xv30Be
+                | PixelFormat::Xv36Le
+                | PixelFormat::Xv36Be
+                | PixelFormat::Xv48Le
+                | PixelFormat::Xv48Be
+                | PixelFormat::V30xLe
+                | PixelFormat::V30xBe
         ) {
                 (1, 1)
             } else {

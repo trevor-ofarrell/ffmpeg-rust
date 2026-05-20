@@ -482,6 +482,73 @@ mod tests {
     }
 
     #[test]
+    fn decodes_xv_packed_yuv_packets_to_single_plane_frames() {
+        for (pixel_format, expected_name, width, height, payload, expected_line_size) in [
+            (
+                PixelFormat::Xv30Le,
+                "xv30le",
+                2,
+                1,
+                (0..8).collect::<Vec<_>>(),
+                8,
+            ),
+            (
+                PixelFormat::Xv36Be,
+                "xv36be",
+                2,
+                1,
+                (8..20).collect::<Vec<_>>(),
+                12,
+            ),
+            (
+                PixelFormat::Xv48Le,
+                "xv48le",
+                1,
+                2,
+                (20..36).collect::<Vec<_>>(),
+                8,
+            ),
+            (
+                PixelFormat::V30xBe,
+                "v30xbe",
+                2,
+                1,
+                (36..44).collect::<Vec<_>>(),
+                8,
+            ),
+        ] {
+            let decoder = RawVideoDecoder::new(width, height, pixel_format).unwrap();
+            let mut packet = Packet::new(payload.clone(), 0);
+            packet.set_pts(Some(29));
+
+            let frame = decoder.decode_packet(&packet).unwrap();
+
+            assert_eq!(decoder.frame_size(), payload.len());
+            assert_eq!(frame.pts(), Some(29));
+            match frame.data() {
+                FrameData::Video(video) => {
+                    assert_eq!(video.width(), width);
+                    assert_eq!(video.height(), height);
+                    assert_eq!(video.pixel_format(), pixel_format);
+                    assert_eq!(video.pixel_format_name(), expected_name);
+                    assert_eq!(video.line_sizes(), &[expected_line_size]);
+                    assert_eq!(video.planes(), &[payload]);
+                }
+                FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+            }
+        }
+
+        let decoder = RawVideoDecoder::new(1, 1, PixelFormat::Xv48Le).unwrap();
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; 7], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    #[test]
     fn decodes_rgba64_packet_to_single_plane_frame() {
         let decoder = RawVideoDecoder::new(1, 1, PixelFormat::Rgba64Le).unwrap();
         let mut packet = Packet::new(vec![0, 1, 2, 3, 4, 5, 6, 7], 0);

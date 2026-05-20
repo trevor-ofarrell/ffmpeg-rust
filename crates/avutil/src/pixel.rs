@@ -102,6 +102,14 @@ pub enum PixelFormat {
     Ayuv64Be,
     Vuya,
     Vuyx,
+    Xv30Le,
+    Xv30Be,
+    Xv36Le,
+    Xv36Be,
+    Xv48Le,
+    Xv48Be,
+    V30xLe,
+    V30xBe,
     Ayuv,
     Uyva,
     Vyu444,
@@ -348,6 +356,14 @@ impl PixelFormat {
         Self::Ayuv64Be,
         Self::Vuya,
         Self::Vuyx,
+        Self::Xv30Le,
+        Self::Xv30Be,
+        Self::Xv36Le,
+        Self::Xv36Be,
+        Self::Xv48Le,
+        Self::Xv48Be,
+        Self::V30xLe,
+        Self::V30xBe,
         Self::Ayuv,
         Self::Uyva,
         Self::Vyu444,
@@ -562,6 +578,14 @@ impl PixelFormat {
             "ayuv64be" => Some(Self::Ayuv64Be),
             "vuya" => Some(Self::Vuya),
             "vuyx" => Some(Self::Vuyx),
+            "xv30le" => Some(Self::Xv30Le),
+            "xv30be" => Some(Self::Xv30Be),
+            "xv36le" => Some(Self::Xv36Le),
+            "xv36be" => Some(Self::Xv36Be),
+            "xv48le" => Some(Self::Xv48Le),
+            "xv48be" => Some(Self::Xv48Be),
+            "v30xle" => Some(Self::V30xLe),
+            "v30xbe" => Some(Self::V30xBe),
             "ayuv" => Some(Self::Ayuv),
             "uyva" => Some(Self::Uyva),
             "vyu444" => Some(Self::Vyu444),
@@ -1845,6 +1869,102 @@ impl PixelFormat {
                 PixelFormatClass::Yuv,
                 3,
                 24,
+                1,
+                false,
+                false,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Xv30Le => (
+                "xv30le",
+                PixelFormatClass::Yuv,
+                3,
+                30,
+                1,
+                false,
+                false,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Xv30Be => (
+                "xv30be",
+                PixelFormatClass::Yuv,
+                3,
+                30,
+                1,
+                false,
+                false,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::Xv36Le => (
+                "xv36le",
+                PixelFormatClass::Yuv,
+                3,
+                36,
+                1,
+                false,
+                false,
+                Some(6),
+                0,
+                0,
+            ),
+            Self::Xv36Be => (
+                "xv36be",
+                PixelFormatClass::Yuv,
+                3,
+                36,
+                1,
+                false,
+                false,
+                Some(6),
+                0,
+                0,
+            ),
+            Self::Xv48Le => (
+                "xv48le",
+                PixelFormatClass::Yuv,
+                3,
+                48,
+                1,
+                false,
+                false,
+                Some(8),
+                0,
+                0,
+            ),
+            Self::Xv48Be => (
+                "xv48be",
+                PixelFormatClass::Yuv,
+                3,
+                48,
+                1,
+                false,
+                false,
+                Some(8),
+                0,
+                0,
+            ),
+            Self::V30xLe => (
+                "v30xle",
+                PixelFormatClass::Yuv,
+                3,
+                30,
+                1,
+                false,
+                false,
+                Some(4),
+                0,
+                0,
+            ),
+            Self::V30xBe => (
+                "v30xbe",
+                PixelFormatClass::Yuv,
+                3,
+                30,
                 1,
                 false,
                 false,
@@ -3189,6 +3309,8 @@ impl PixelFormat {
                     | Self::Bgra64Be
                     | Self::Ayuv64Le
                     | Self::Ayuv64Be
+                    | Self::Xv48Le
+                    | Self::Xv48Be
                     | Self::Gbrp16Le
                     | Self::Gbrp16Be
                     | Self::Gbrap16Le
@@ -3267,6 +3389,10 @@ impl PixelFormat {
                     | Self::X2Rgb10Be
                     | Self::X2Bgr10Le
                     | Self::X2Bgr10Be
+                    | Self::Xv30Le
+                    | Self::Xv30Be
+                    | Self::V30xLe
+                    | Self::V30xBe
                     | Self::Gbrp10Le
                     | Self::Gbrp10Be
                     | Self::Gbrap10Le
@@ -3307,6 +3433,8 @@ impl PixelFormat {
                     | Self::Gbrap12Be
                     | Self::Xyz12Le
                     | Self::Xyz12Be
+                    | Self::Xv36Le
+                    | Self::Xv36Be
                     | Self::Y212Le
                     | Self::Y212Be
                     | Self::P012Le
@@ -3578,7 +3706,11 @@ impl PixelFormat {
             | Self::X2Rgb10Le
             | Self::X2Rgb10Be
             | Self::X2Bgr10Le
-            | Self::X2Bgr10Be => Ok(vec![checked_mul(
+            | Self::X2Bgr10Be
+            | Self::Xv30Le
+            | Self::Xv30Be
+            | Self::V30xLe
+            | Self::V30xBe => Ok(vec![checked_mul(
                 pixels,
                 4,
                 "32-bit packed pixel format frame size",
@@ -3623,10 +3755,10 @@ impl PixelFormat {
                 let plane = checked_mul(pixels, 4, "32-bit planar GBRA pixel format plane size")?;
                 Ok(vec![plane, plane, plane, plane])
             }
-            Self::Ayuv64Le | Self::Ayuv64Be => Ok(vec![checked_mul(
+            Self::Ayuv64Le | Self::Ayuv64Be | Self::Xv48Le | Self::Xv48Be => Ok(vec![checked_mul(
                 pixels,
                 8,
-                "packed 64-bit AYUV pixel format frame size",
+                "packed 64-bit YUV pixel format frame size",
             )?]),
             Self::Vuya | Self::Vuyx | Self::Ayuv | Self::Uyva => Ok(vec![checked_mul(
                 pixels,
@@ -3638,10 +3770,10 @@ impl PixelFormat {
                 3,
                 "packed 8-bit VYU 4:4:4 pixel format frame size",
             )?]),
-            Self::Xyz12Le | Self::Xyz12Be => Ok(vec![checked_mul(
+            Self::Xyz12Le | Self::Xyz12Be | Self::Xv36Le | Self::Xv36Be => Ok(vec![checked_mul(
                 pixels,
                 6,
-                "packed XYZ12 pixel format frame size",
+                "packed six-byte pixel format frame size",
             )?]),
             Self::Yuyv422 | Self::Uyvy422 | Self::Yvyu422 => {
                 if width % 2 != 0 {
@@ -4342,6 +4474,24 @@ mod tests {
             assert_eq!(format.has_alpha(), has_alpha);
             assert_eq!(format.packed_bytes_per_pixel(), Some(bytes_per_pixel));
         }
+        for (name, format, bytes_per_pixel) in [
+            ("xv30le", PixelFormat::Xv30Le, 4),
+            ("xv30be", PixelFormat::Xv30Be, 4),
+            ("xv36le", PixelFormat::Xv36Le, 6),
+            ("xv36be", PixelFormat::Xv36Be, 6),
+            ("xv48le", PixelFormat::Xv48Le, 8),
+            ("xv48be", PixelFormat::Xv48Be, 8),
+            ("v30xle", PixelFormat::V30xLe, 4),
+            ("v30xbe", PixelFormat::V30xBe, 4),
+        ] {
+            assert_eq!(format.name(), name);
+            assert_eq!(PixelFormat::from_name(name), Some(format));
+            assert_eq!(format.plane_count(), 1);
+            assert!(format.is_yuv());
+            assert!(format.is_packed());
+            assert!(!format.has_alpha());
+            assert_eq!(format.packed_bytes_per_pixel(), Some(bytes_per_pixel));
+        }
         for (name, format) in [
             ("xyz12le", PixelFormat::Xyz12Le),
             ("xyz12be", PixelFormat::Xyz12Be),
@@ -4496,7 +4646,7 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 206);
+        assert_eq!(PixelFormat::ALL.len(), 214);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Yaf16Le.plane_count(), 1);
@@ -5466,6 +5616,30 @@ mod tests {
             assert_eq!(format.log2_chroma(), (0, 0));
             assert!(!format.has_chroma_subsampling());
         }
+        for (format, name, bits_per_component, bits_per_pixel, bytes_per_pixel) in [
+            (PixelFormat::Xv30Le, "xv30le", 10, bpp(30), 4),
+            (PixelFormat::Xv30Be, "xv30be", 10, bpp(30), 4),
+            (PixelFormat::Xv36Le, "xv36le", 12, bpp(36), 6),
+            (PixelFormat::Xv36Be, "xv36be", 12, bpp(36), 6),
+            (PixelFormat::Xv48Le, "xv48le", 16, bpp(48), 8),
+            (PixelFormat::Xv48Be, "xv48be", 16, bpp(48), 8),
+            (PixelFormat::V30xLe, "v30xle", 10, bpp(30), 4),
+            (PixelFormat::V30xBe, "v30xbe", 10, bpp(30), 4),
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.name, name);
+            assert_eq!(descriptor.class, PixelFormatClass::Yuv);
+            assert_eq!(descriptor.component_count, 3);
+            assert_eq!(descriptor.bits_per_component, bits_per_component);
+            assert_eq!(descriptor.bits_per_pixel, bits_per_pixel);
+            assert_eq!(descriptor.plane_count, 1);
+            assert!(!descriptor.is_planar);
+            assert!(!descriptor.has_alpha);
+            assert!(!descriptor.is_float);
+            assert_eq!(descriptor.packed_bytes_per_pixel, Some(bytes_per_pixel));
+            assert_eq!(format.log2_chroma(), (0, 0));
+            assert!(!format.has_chroma_subsampling());
+        }
         assert_eq!(PixelFormat::Rgba.component_count(), 4);
         assert_eq!(PixelFormat::Rgba.bits_per_pixel(), bpp(32));
         assert_eq!(PixelFormat::ZeroRgb.component_count(), 3);
@@ -5820,6 +5994,10 @@ mod tests {
         assert_eq!(PixelFormat::X2Bgr10Be.frame_size(3, 2).unwrap(), 24);
         assert_eq!(PixelFormat::Vuya.plane_sizes(2, 2).unwrap(), vec![16]);
         assert_eq!(PixelFormat::Vuyx.frame_size(3, 2).unwrap(), 24);
+        assert_eq!(PixelFormat::Xv30Le.plane_sizes(3, 2).unwrap(), vec![24]);
+        assert_eq!(PixelFormat::Xv36Be.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(PixelFormat::Xv48Le.frame_size(2, 2).unwrap(), 32);
+        assert_eq!(PixelFormat::V30xBe.frame_size(3, 2).unwrap(), 24);
         assert_eq!(PixelFormat::Ayuv.frame_size(2, 2).unwrap(), 16);
         assert_eq!(PixelFormat::Uyva.frame_size(2, 2).unwrap(), 16);
         assert_eq!(PixelFormat::Vyu444.frame_size(3, 2).unwrap(), 18);
@@ -6336,11 +6514,23 @@ mod tests {
 
         assert_eq!(planes, vec![(60..68).collect::<Vec<_>>()]);
 
-        let planes = PixelFormat::Vyu444
-            .split_planes(&(68..74).collect::<Vec<_>>(), 2, 1)
+        let planes = PixelFormat::Xv36Le
+            .split_planes(&(68..80).collect::<Vec<_>>(), 2, 1)
             .unwrap();
 
-        assert_eq!(planes, vec![(68..74).collect::<Vec<_>>()]);
+        assert_eq!(planes, vec![(68..80).collect::<Vec<_>>()]);
+
+        let planes = PixelFormat::V30xBe
+            .split_planes(&(80..88).collect::<Vec<_>>(), 2, 1)
+            .unwrap();
+
+        assert_eq!(planes, vec![(80..88).collect::<Vec<_>>()]);
+
+        let planes = PixelFormat::Vyu444
+            .split_planes(&(88..94).collect::<Vec<_>>(), 2, 1)
+            .unwrap();
+
+        assert_eq!(planes, vec![(88..94).collect::<Vec<_>>()]);
 
         let planes = PixelFormat::Rgb565Le
             .split_planes(&[0, 1, 2, 3], 2, 1)
@@ -6747,6 +6937,13 @@ mod tests {
         assert_eq!(
             PixelFormat::X2Bgr10Le
                 .split_planes(&[0; 3], 1, 1)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            PixelFormat::Xv48Le
+                .split_planes(&[0; 7], 1, 1)
                 .unwrap_err()
                 .kind(),
             AvErrorKind::InvalidData
