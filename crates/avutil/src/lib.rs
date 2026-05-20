@@ -71,7 +71,7 @@ pub use options::{
 pub use packet::{
     Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
-    PacketCpbProperties, PacketDisplayMatrix, PacketFallbackTrack, PacketFlags,
+    PacketCpbProperties, PacketDisplayMatrix, PacketExif, PacketFallbackTrack, PacketFlags,
     PacketFrameCropping, PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection,
     PacketLcevc, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
     PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,

@@ -34,7 +34,7 @@ use avutil::{
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId, Md5,
     Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
-    PacketCpbProperties, PacketDisplayMatrix, PacketFallbackTrack, PacketFlags,
+    PacketCpbProperties, PacketDisplayMatrix, PacketExif, PacketFallbackTrack, PacketFlags,
     PacketFrameCropping, PacketIccProfile, PacketJpDualMono, PacketJpDualMonoSelection,
     PacketLcevc, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
     PacketMpegTsStreamId, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
@@ -3319,6 +3319,13 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             + 1,
     )
     .max(PacketAudioServiceType::DATA_LEN + 1)
+    .max(
+        PacketExif::TIFF_HEADER_LEN
+            + PacketExif::IFD_COUNT_LEN
+            + PacketExif::IFD_ENTRY_LEN
+            + 4
+            + 1,
+    )
     .max(PacketIccProfile::MIN_DATA_LEN + PacketIccProfile::TAG_RECORD_LEN + 1);
     let typed_payload_len =
         usize::from(cursor.next().unwrap_or_default()) % typed_payload_max_len;
@@ -3623,6 +3630,27 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_three_d_reference_displays_payload_invalid(
                 &typed_payload
             ));
+        }
+    }
+    match typed_payload_side_data.exif() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::Exif);
+            assert_eq!(value.data(), typed_payload.as_slice());
+            assert!(!packet_exif_payload_invalid(&typed_payload));
+            assert!(value.first_ifd_offset() >= PacketExif::TIFF_HEADER_LEN);
+            assert!(value.ifd_count() <= PacketExif::MAX_IFDS);
+            assert!(value.linked_ifd_count() <= PacketExif::MAX_LINKED_IFDS);
+            for ifd in value.ifds() {
+                assert!(ifd.offset() >= PacketExif::TIFF_HEADER_LEN);
+                assert!(ifd.entry_count() <= PacketExif::MAX_IFD_ENTRIES);
+            }
+            assert_eq!(PacketExif::parse(value.data()).unwrap(), value);
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::Exif),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::Exif);
+            assert!(packet_exif_payload_invalid(&typed_payload));
         }
     }
     match typed_payload_side_data.a53_closed_captions() {
@@ -5224,6 +5252,67 @@ fn exercise_fixtures() {
     )
     .unwrap();
     assert_eq!(non_packet_tdrdi.three_d_reference_displays().unwrap(), None);
+    let packet_exif_payload = minimal_little_exif_fixture();
+    let packet_exif_side_data = SideData::new_exif(packet_exif_payload.clone()).unwrap();
+    assert_eq!(packet_exif_side_data.kind_id(), &PacketSideDataKind::Exif);
+    let parsed_packet_exif = packet_exif_side_data.exif().unwrap().unwrap();
+    assert_eq!(parsed_packet_exif.data(), packet_exif_payload.as_slice());
+    assert_eq!(parsed_packet_exif.endian(), FrameExifEndian::Little);
+    assert_eq!(parsed_packet_exif.first_ifd_offset(), 8);
+    assert_eq!(parsed_packet_exif.ifd_count(), 1);
+    let packet_exif_ifd = parsed_packet_exif.ifd(0).unwrap();
+    assert_eq!(packet_exif_ifd.entry_count(), 1);
+    let packet_exif_entry = packet_exif_ifd.entry(0).unwrap();
+    assert_eq!(packet_exif_entry.tag(), 0x010F);
+    assert_eq!(packet_exif_entry.tiff_type(), FrameExifTiffType::Ascii);
+    assert_eq!(packet_exif_entry.count(), 6);
+    assert_eq!(packet_exif_entry.data_len(), 6);
+    assert_eq!(packet_exif_entry.data_range(), Some((26, 32)));
+    assert_eq!(packet_exif_entry.value_data(), b"Rusty\0");
+    assert_eq!(
+        packet_exif_entry.ascii_strings().unwrap().unwrap(),
+        ["Rusty"]
+    );
+    assert_eq!(
+        PacketExif::parse(parsed_packet_exif.data()).unwrap(),
+        parsed_packet_exif
+    );
+    for data in [
+        Vec::new(),
+        vec![0; PacketExif::TIFF_HEADER_LEN - 1],
+        vec![0x45, 0x78, 0x69, 0x66, 8, 0, 0, 0],
+        {
+            let mut bad = packet_exif_payload.clone();
+            bad[4..8].copy_from_slice(&6u32.to_le_bytes());
+            bad
+        },
+        {
+            let mut bad = packet_exif_payload.clone();
+            bad[12..14].copy_from_slice(&0u16.to_le_bytes());
+            bad
+        },
+        {
+            let mut bad = packet_exif_payload.clone();
+            bad[18..22].copy_from_slice(&250u32.to_le_bytes());
+            bad
+        },
+    ] {
+        assert!(packet_exif_payload_invalid(&data));
+        assert_eq!(
+            SideData::new_with_kind(PacketSideDataKind::Exif, data)
+                .unwrap()
+                .exif()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+    let non_packet_exif = SideData::new_with_kind(
+        PacketSideDataKind::ContentLightLevel,
+        packet_exif_payload.clone(),
+    )
+    .unwrap();
+    assert_eq!(non_packet_exif.exif().unwrap(), None);
     let packet_a53_payload = vec![0xfc, 0x80, 0x41, 0xfd, 0x80, 0x42];
     let packet_a53_side_data =
         SideData::new_a53_closed_captions(packet_a53_payload.clone()).unwrap();
@@ -11406,6 +11495,10 @@ fn packet_ambient_viewing_environment_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_three_d_reference_displays_payload_invalid(data: &[u8]) -> bool {
     PacketThreeDReferenceDisplays::parse(data).is_err()
+}
+
+fn packet_exif_payload_invalid(data: &[u8]) -> bool {
+    PacketExif::parse(data).is_err()
 }
 
 fn packet_a53_closed_captions_payload_invalid(data: &[u8]) -> bool {

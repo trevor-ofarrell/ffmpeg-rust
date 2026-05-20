@@ -1,6 +1,6 @@
 use crate::frame::{
-    FrameAmbientViewingEnvironment, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
-    FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
+    FrameAmbientViewingEnvironment, FrameExif, FrameStereo3d, FrameStereo3dFlags,
+    FrameStereo3dPrimaryEye, FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays,
 };
 use crate::{rescale_q, AvError, AvResult, BufferRef, Rational};
@@ -1320,6 +1320,8 @@ impl PacketThreeDReferenceDisplays {
     }
 }
 
+pub type PacketExif<'a> = FrameExif<'a>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketA53ClosedCaptions<'a> {
     data: &'a [u8],
@@ -2534,6 +2536,12 @@ impl SideData {
         )
     }
 
+    pub fn new_exif(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::Exif, data)?;
+        PacketExif::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_a53_closed_captions(data: Vec<u8>) -> AvResult<Self> {
         let side_data = Self::new_with_kind(PacketSideDataKind::A53ClosedCaptions, data)?;
         PacketA53ClosedCaptions::parse(side_data.data())?;
@@ -2742,6 +2750,14 @@ impl SideData {
         }
 
         PacketThreeDReferenceDisplays::parse(self.data()).map(Some)
+    }
+
+    pub fn exif(&self) -> AvResult<Option<PacketExif<'_>>> {
+        if self.kind != PacketSideDataKind::Exif {
+            return Ok(None);
+        }
+
+        PacketExif::parse(self.data()).map(Some)
     }
 
     pub fn a53_closed_captions(&self) -> AvResult<Option<PacketA53ClosedCaptions<'_>>> {
@@ -3339,6 +3355,7 @@ fn validate_webvtt_identifier_payload(data: &[u8]) -> AvResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frame::{FrameExifEndian, FrameExifTiffType};
     use std::sync::{Arc, Mutex};
 
     fn minimal_icc_profile() -> Vec<u8> {
@@ -3351,6 +3368,29 @@ mod tests {
         data[36..40].copy_from_slice(&PacketIccProfile::ICC_SIGNATURE);
         data[PacketIccProfile::TAG_COUNT_OFFSET..PacketIccProfile::TAG_COUNT_OFFSET + 4]
             .copy_from_slice(&0u32.to_be_bytes());
+        data
+    }
+
+    fn minimal_little_exif_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+        data.extend_from_slice(&8u32.to_le_bytes());
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend_from_slice(&0x010Fu16.to_le_bytes());
+        data.extend_from_slice(&FrameExifTiffType::Ascii.raw().to_le_bytes());
+        data.extend_from_slice(&6u32.to_le_bytes());
+        data.extend_from_slice(&26u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes());
+        data.extend_from_slice(b"Rusty\0");
+        data
+    }
+
+    fn minimal_big_exif_fixture() -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x4D, 0x4D, 0x00, 0x2A]);
+        data.extend_from_slice(&8u32.to_be_bytes());
+        data.extend_from_slice(&0u16.to_be_bytes());
+        data.extend_from_slice(&0u32.to_be_bytes());
         data
     }
 
@@ -4786,6 +4826,127 @@ mod tests {
         let non_tdrdi =
             SideData::new_with_kind(PacketSideDataKind::AmbientViewingEnvironment, valid).unwrap();
         assert_eq!(non_tdrdi.three_d_reference_displays().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_parses_exif_payload() {
+        let exif_bytes = minimal_little_exif_fixture();
+        let side_data = SideData::new_exif(exif_bytes.clone()).unwrap();
+
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::Exif);
+        assert_eq!(side_data.data(), exif_bytes.as_slice());
+        assert_eq!(
+            PacketSideDataKind::Exif.ffmpeg_constant().unwrap(),
+            "AV_PKT_DATA_EXIF"
+        );
+        let parsed = side_data.exif().unwrap().unwrap();
+        assert_eq!(parsed.data(), exif_bytes.as_slice());
+        assert_eq!(parsed.endian(), FrameExifEndian::Little);
+        assert_eq!(parsed.first_ifd_offset(), 8);
+        assert_eq!(parsed.ifd_count(), 1);
+
+        let ifd = parsed.ifd(0).unwrap();
+        assert_eq!(ifd.offset(), 8);
+        assert_eq!(ifd.entry_count(), 1);
+        assert_eq!(ifd.next_ifd_offset(), None);
+        let entry = ifd.entry(0).unwrap();
+        assert_eq!(entry.tag(), 0x010F);
+        assert_eq!(entry.tiff_type(), FrameExifTiffType::Ascii);
+        assert_eq!(entry.endian(), FrameExifEndian::Little);
+        assert_eq!(entry.count(), 6);
+        assert_eq!(entry.value_offset(), 26);
+        assert_eq!(entry.data_len(), 6);
+        assert!(!entry.is_inline());
+        assert_eq!(entry.value_or_offset_bytes(), &26u32.to_le_bytes());
+        assert_eq!(entry.data_range(), Some((26, 32)));
+        assert_eq!(entry.value_data(), b"Rusty\0");
+        assert_eq!(entry.ascii_strings().unwrap().unwrap(), ["Rusty"]);
+        assert_eq!(PacketExif::parse(parsed.data()).unwrap(), parsed);
+
+        let big = SideData::new_exif(minimal_big_exif_fixture()).unwrap();
+        let parsed_big = big.exif().unwrap().unwrap();
+        assert_eq!(parsed_big.endian(), FrameExifEndian::Big);
+        assert_eq!(parsed_big.first_ifd_offset(), 8);
+        assert_eq!(parsed_big.ifd_count(), 1);
+        assert!(parsed_big.ifd(0).unwrap().is_empty());
+        assert_eq!(parsed_big.ifd(0).unwrap().next_ifd_offset(), None);
+
+        let non_exif =
+            SideData::new_with_kind(PacketSideDataKind::AmbientViewingEnvironment, exif_bytes)
+                .unwrap();
+        assert_eq!(non_exif.exif().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_exif_payload() {
+        let exif_bytes = minimal_little_exif_fixture();
+        let mut invalid_payloads = vec![
+            Vec::new(),
+            vec![0; PacketExif::TIFF_HEADER_LEN - 1],
+            vec![0x45, 0x78, 0x69, 0x66, 8, 0, 0, 0],
+        ];
+
+        invalid_payloads.push({
+            let mut bad = exif_bytes.clone();
+            bad[4..8].copy_from_slice(&6u32.to_le_bytes());
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = exif_bytes.clone();
+            bad[4..8].copy_from_slice(&31u32.to_le_bytes());
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = Vec::new();
+            bad.extend_from_slice(&[0x49, 0x49, 0x2A, 0x00]);
+            bad.extend_from_slice(&8u32.to_le_bytes());
+            bad.extend_from_slice(
+                &u16::try_from(PacketExif::MAX_IFD_ENTRIES + 1)
+                    .unwrap()
+                    .to_le_bytes(),
+            );
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = exif_bytes.clone();
+            bad.truncate(21);
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = exif_bytes.clone();
+            bad[12..14].copy_from_slice(&0u16.to_le_bytes());
+            bad
+        });
+        invalid_payloads.push({
+            let mut bad = exif_bytes.clone();
+            bad[18..22].copy_from_slice(&250u32.to_le_bytes());
+            bad
+        });
+
+        for data in invalid_payloads {
+            assert_eq!(
+                PacketExif::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_with_kind(PacketSideDataKind::Exif, data)
+                    .unwrap()
+                    .exif()
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            SideData::new_exif(Vec::new()).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidData
+        );
+
+        let non_exif =
+            SideData::new_with_kind(PacketSideDataKind::AmbientViewingEnvironment, exif_bytes)
+                .unwrap();
+        assert_eq!(non_exif.exif().unwrap(), None);
     }
 
     #[test]
