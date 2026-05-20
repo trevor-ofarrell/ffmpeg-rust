@@ -349,6 +349,32 @@ mod tests {
     }
 
     #[test]
+    fn slices_msb_planar_frames_with_format_side_data() {
+        let input = (0_u8..72).collect::<Vec<_>>();
+        let mut demuxer = RawVideoDemuxer::open(
+            &input,
+            3,
+            2,
+            RawVideoPixelFormat::Gbrp10MsbLe,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(demuxer.info().frame_size(), 36);
+        assert_eq!(demuxer.info().frame_count(), 2);
+
+        let first = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(first.data(), &(0..36).collect::<Vec<_>>());
+        assert_eq!(first.side_data()[0].kind(), "rawvideo_pix_fmt");
+        assert_eq!(first.side_data()[0].data(), b"gbrp10msble");
+
+        let second = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(second.data(), &(36..72).collect::<Vec<_>>());
+        assert_eq!(second.side_data()[0].data(), b"gbrp10msble");
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn slices_rgbf_frames_with_format_side_data() {
         let input = (0_u8..24).collect::<Vec<_>>();
         let mut demuxer = RawVideoDemuxer::open(
@@ -768,6 +794,8 @@ mod tests {
             (RawVideoPixelFormat::Yuv440p10Be, 3, 2, 24, 24),
             (RawVideoPixelFormat::Yuv444p10Le, 3, 2, 36, 36),
             (RawVideoPixelFormat::Yuv444p10Be, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Yuv444p10MsbLe, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Yuv444p10MsbBe, 3, 2, 36, 36),
             (RawVideoPixelFormat::Yuv420p12Le, 4, 2, 24, 24),
             (RawVideoPixelFormat::Yuv420p12Be, 4, 2, 24, 24),
             (RawVideoPixelFormat::Yuv422p12Le, 4, 3, 48, 48),
@@ -776,6 +804,8 @@ mod tests {
             (RawVideoPixelFormat::Yuv440p12Be, 3, 2, 24, 24),
             (RawVideoPixelFormat::Yuv444p12Le, 3, 2, 36, 36),
             (RawVideoPixelFormat::Yuv444p12Be, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Yuv444p12MsbLe, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Yuv444p12MsbBe, 3, 2, 36, 36),
             (RawVideoPixelFormat::Yuv420p14Le, 4, 2, 24, 24),
             (RawVideoPixelFormat::Yuv420p14Be, 4, 2, 24, 24),
             (RawVideoPixelFormat::Yuv422p14Le, 4, 3, 48, 48),
@@ -991,7 +1021,33 @@ mod tests {
                 &[0; 12],
                 2,
                 1,
+                RawVideoPixelFormat::Gbrp10MsbLe,
+                Rational::new(1, 1).unwrap(),
+            )
+            .unwrap()
+            .info()
+            .frame_size(),
+            12
+        );
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &[0; 12],
+                2,
+                1,
                 RawVideoPixelFormat::Gbrp12Le,
+                Rational::new(1, 1).unwrap(),
+            )
+            .unwrap()
+            .info()
+            .frame_size(),
+            12
+        );
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &[0; 12],
+                2,
+                1,
+                RawVideoPixelFormat::Gbrp12MsbBe,
                 Rational::new(1, 1).unwrap(),
             )
             .unwrap()
@@ -2428,6 +2484,8 @@ mod tests {
             (RawVideoPixelFormat::Yuv440p10Be, 3, 2, 24),
             (RawVideoPixelFormat::Yuv444p10Le, 3, 2, 36),
             (RawVideoPixelFormat::Yuv444p10Be, 3, 2, 36),
+            (RawVideoPixelFormat::Yuv444p10MsbLe, 3, 2, 36),
+            (RawVideoPixelFormat::Yuv444p10MsbBe, 3, 2, 36),
             (RawVideoPixelFormat::Yuv420p12Le, 4, 2, 24),
             (RawVideoPixelFormat::Yuv420p12Be, 4, 2, 24),
             (RawVideoPixelFormat::Yuv422p12Le, 4, 3, 48),
@@ -2436,6 +2494,8 @@ mod tests {
             (RawVideoPixelFormat::Yuv440p12Be, 3, 2, 24),
             (RawVideoPixelFormat::Yuv444p12Le, 3, 2, 36),
             (RawVideoPixelFormat::Yuv444p12Be, 3, 2, 36),
+            (RawVideoPixelFormat::Yuv444p12MsbLe, 3, 2, 36),
+            (RawVideoPixelFormat::Yuv444p12MsbBe, 3, 2, 36),
             (RawVideoPixelFormat::Yuv420p14Le, 4, 2, 24),
             (RawVideoPixelFormat::Yuv420p14Be, 4, 2, 24),
             (RawVideoPixelFormat::Yuv422p14Le, 4, 3, 48),
@@ -2553,6 +2613,20 @@ mod tests {
             3,
             2,
             RawVideoPixelFormat::Yuv444p10Le,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv444p10MsbLe,
+            Rational::new(1, 1).unwrap(),
+        )
+        .is_ok());
+        assert!(RawVideoMuxer::new(
+            3,
+            2,
+            RawVideoPixelFormat::Yuv444p12MsbBe,
             Rational::new(1, 1).unwrap(),
         )
         .is_ok());

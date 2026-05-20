@@ -12593,8 +12593,12 @@ fn video_plane_shapes(
         | PixelFormat::Gbrp9Be
         | PixelFormat::Gbrp10Le
         | PixelFormat::Gbrp10Be
+        | PixelFormat::Gbrp10MsbLe
+        | PixelFormat::Gbrp10MsbBe
         | PixelFormat::Gbrp12Le
         | PixelFormat::Gbrp12Be
+        | PixelFormat::Gbrp12MsbLe
+        | PixelFormat::Gbrp12MsbBe
         | PixelFormat::Gbrp14Le
         | PixelFormat::Gbrp14Be
         | PixelFormat::Gbrp16Le
@@ -12774,12 +12778,16 @@ fn video_plane_shapes(
         | PixelFormat::Yuv422p10Be
         | PixelFormat::Yuv444p10Le
         | PixelFormat::Yuv444p10Be
+        | PixelFormat::Yuv444p10MsbLe
+        | PixelFormat::Yuv444p10MsbBe
         | PixelFormat::Yuv420p12Le
         | PixelFormat::Yuv420p12Be
         | PixelFormat::Yuv422p12Le
         | PixelFormat::Yuv422p12Be
         | PixelFormat::Yuv444p12Le
         | PixelFormat::Yuv444p12Be
+        | PixelFormat::Yuv444p12MsbLe
+        | PixelFormat::Yuv444p12MsbBe
         | PixelFormat::Yuv420p14Le
         | PixelFormat::Yuv420p14Be
         | PixelFormat::Yuv422p14Le
@@ -12809,6 +12817,8 @@ fn video_plane_shapes(
                     | PixelFormat::Yuv440p10Be
                     | PixelFormat::Yuv444p10Le
                     | PixelFormat::Yuv444p10Be
+                    | PixelFormat::Yuv444p10MsbLe
+                    | PixelFormat::Yuv444p10MsbBe
                     | PixelFormat::Yuv420p12Le
                     | PixelFormat::Yuv420p12Be
                     | PixelFormat::Yuv422p12Le
@@ -12817,6 +12827,8 @@ fn video_plane_shapes(
                     | PixelFormat::Yuv440p12Be
                     | PixelFormat::Yuv444p12Le
                     | PixelFormat::Yuv444p12Be
+                    | PixelFormat::Yuv444p12MsbLe
+                    | PixelFormat::Yuv444p12MsbBe
                     | PixelFormat::Yuv420p14Le
                     | PixelFormat::Yuv420p14Be
                     | PixelFormat::Yuv422p14Le
@@ -16920,6 +16932,15 @@ mod tests {
         .unwrap();
         assert_eq!(gbrp10.line_sizes(), &[6, 6, 6]);
 
+        let gbrp10_msb = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::Gbrp10MsbLe,
+            vec![vec![0; 12], vec![0; 12], vec![0; 12]],
+        )
+        .unwrap();
+        assert_eq!(gbrp10_msb.line_sizes(), &[6, 6, 6]);
+
         let gbrp12 = VideoFrame::new(
             3,
             2,
@@ -16928,6 +16949,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(gbrp12.line_sizes(), &[6, 6, 6]);
+
+        let gbrp12_msb = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::Gbrp12MsbBe,
+            vec![vec![0; 12], vec![0; 12], vec![0; 12]],
+        )
+        .unwrap();
+        assert_eq!(gbrp12_msb.line_sizes(), &[6, 6, 6]);
 
         let gbrp14 = VideoFrame::new(
             3,
@@ -17120,6 +17150,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(yuv444p12.line_sizes(), &[6, 6, 6]);
+
+        let yuv444p10_msb = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::Yuv444p10MsbLe,
+            vec![vec![0; 12], vec![1; 12], vec![2; 12]],
+        )
+        .unwrap();
+        assert_eq!(yuv444p10_msb.line_sizes(), &[6, 6, 6]);
+
+        let yuv444p12_msb = VideoFrame::new(
+            3,
+            2,
+            PixelFormat::Yuv444p12MsbBe,
+            vec![vec![0; 12], vec![1; 12], vec![2; 12]],
+        )
+        .unwrap();
+        assert_eq!(yuv444p12_msb.line_sizes(), &[6, 6, 6]);
 
         let yuvj440 = VideoFrame::new(
             3,

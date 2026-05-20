@@ -5559,6 +5559,24 @@ fn exercise_fixtures() {
     assert!(PixelFormat::Gbrp10Le.is_planar());
     assert!(!PixelFormat::Gbrp10Le.has_alpha());
     assert_eq!(
+        PixelFormat::from_name("gbrp10msble"),
+        Some(PixelFormat::Gbrp10MsbLe)
+    );
+    assert_eq!(
+        PixelFormat::from_name("gbrp10msbbe"),
+        Some(PixelFormat::Gbrp10MsbBe)
+    );
+    assert_eq!(PixelFormat::Gbrp10MsbLe.frame_size(2, 2).unwrap(), 24);
+    assert_eq!(
+        PixelFormat::Gbrp10MsbLe.plane_sizes(2, 2).unwrap(),
+        vec![8, 8, 8]
+    );
+    assert_eq!(PixelFormat::Gbrp10MsbLe.bits_per_component(), 10);
+    assert_eq!(PixelFormat::Gbrp10MsbLe.bits_per_pixel(), bpp(30));
+    assert!(PixelFormat::Gbrp10MsbLe.is_rgb());
+    assert!(PixelFormat::Gbrp10MsbLe.is_planar());
+    assert!(!PixelFormat::Gbrp10MsbLe.has_alpha());
+    assert_eq!(
         PixelFormat::from_name("gbrp12le"),
         Some(PixelFormat::Gbrp12Le)
     );
@@ -5576,6 +5594,24 @@ fn exercise_fixtures() {
     assert!(PixelFormat::Gbrp12Le.is_rgb());
     assert!(PixelFormat::Gbrp12Le.is_planar());
     assert!(!PixelFormat::Gbrp12Le.has_alpha());
+    assert_eq!(
+        PixelFormat::from_name("gbrp12msble"),
+        Some(PixelFormat::Gbrp12MsbLe)
+    );
+    assert_eq!(
+        PixelFormat::from_name("gbrp12msbbe"),
+        Some(PixelFormat::Gbrp12MsbBe)
+    );
+    assert_eq!(PixelFormat::Gbrp12MsbLe.frame_size(2, 2).unwrap(), 24);
+    assert_eq!(
+        PixelFormat::Gbrp12MsbLe.plane_sizes(2, 2).unwrap(),
+        vec![8, 8, 8]
+    );
+    assert_eq!(PixelFormat::Gbrp12MsbLe.bits_per_component(), 12);
+    assert_eq!(PixelFormat::Gbrp12MsbLe.bits_per_pixel(), bpp(36));
+    assert!(PixelFormat::Gbrp12MsbLe.is_rgb());
+    assert!(PixelFormat::Gbrp12MsbLe.is_planar());
+    assert!(!PixelFormat::Gbrp12MsbLe.has_alpha());
     assert_eq!(
         PixelFormat::from_name("gbrp14le"),
         Some(PixelFormat::Gbrp14Le)
@@ -6574,6 +6610,28 @@ fn exercise_fixtures() {
     assert!(PixelFormat::Yuva444p16Be.has_alpha());
     assert_eq!(
         PixelFormat::Yuv444p10Be.plane_sizes(3, 2).unwrap(),
+        vec![12, 12, 12]
+    );
+    assert_eq!(
+        PixelFormat::from_name("yuv444p10msble"),
+        Some(PixelFormat::Yuv444p10MsbLe)
+    );
+    assert_eq!(PixelFormat::Yuv444p10MsbLe.bits_per_component(), 10);
+    assert_eq!(PixelFormat::Yuv444p10MsbLe.bits_per_pixel(), bpp(30));
+    assert_eq!(PixelFormat::Yuv444p10MsbLe.log2_chroma(), (0, 0));
+    assert_eq!(
+        PixelFormat::Yuv444p10MsbLe.plane_sizes(3, 2).unwrap(),
+        vec![12, 12, 12]
+    );
+    assert_eq!(
+        PixelFormat::from_name("yuv444p12msbbe"),
+        Some(PixelFormat::Yuv444p12MsbBe)
+    );
+    assert_eq!(PixelFormat::Yuv444p12MsbBe.bits_per_component(), 12);
+    assert_eq!(PixelFormat::Yuv444p12MsbBe.bits_per_pixel(), bpp(36));
+    assert_eq!(PixelFormat::Yuv444p12MsbBe.log2_chroma(), (0, 0));
+    assert_eq!(
+        PixelFormat::Yuv444p12MsbBe.plane_sizes(3, 2).unwrap(),
         vec![12, 12, 12]
     );
     assert_eq!(
@@ -18458,8 +18516,12 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Gbrp9Be
         | PixelFormat::Gbrp10Le
         | PixelFormat::Gbrp10Be
+        | PixelFormat::Gbrp10MsbLe
+        | PixelFormat::Gbrp10MsbBe
         | PixelFormat::Gbrp12Le
         | PixelFormat::Gbrp12Be
+        | PixelFormat::Gbrp12MsbLe
+        | PixelFormat::Gbrp12MsbBe
         | PixelFormat::Gbrp14Le
         | PixelFormat::Gbrp14Be
         | PixelFormat::Gbrp16Le
@@ -18551,6 +18613,8 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Yuv440p10Be
         | PixelFormat::Yuv444p10Le
         | PixelFormat::Yuv444p10Be
+        | PixelFormat::Yuv444p10MsbLe
+        | PixelFormat::Yuv444p10MsbBe
         | PixelFormat::Yuv420p12Le
         | PixelFormat::Yuv420p12Be
         | PixelFormat::Yuv422p12Le
@@ -18559,6 +18623,8 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Yuv440p12Be
         | PixelFormat::Yuv444p12Le
         | PixelFormat::Yuv444p12Be
+        | PixelFormat::Yuv444p12MsbLe
+        | PixelFormat::Yuv444p12MsbBe
         | PixelFormat::Yuv420p14Le
         | PixelFormat::Yuv420p14Be
         | PixelFormat::Yuv422p14Le
@@ -18737,8 +18803,12 @@ fn expected_video_plane_shapes(
         | PixelFormat::Gbrp9Be
         | PixelFormat::Gbrp10Le
         | PixelFormat::Gbrp10Be
+        | PixelFormat::Gbrp10MsbLe
+        | PixelFormat::Gbrp10MsbBe
         | PixelFormat::Gbrp12Le
         | PixelFormat::Gbrp12Be
+        | PixelFormat::Gbrp12MsbLe
+        | PixelFormat::Gbrp12MsbBe
         | PixelFormat::Gbrp14Le
         | PixelFormat::Gbrp14Be
         | PixelFormat::Gbrp16Le
@@ -18850,6 +18920,8 @@ fn expected_video_plane_shapes(
         | PixelFormat::Yuv440p10Be
         | PixelFormat::Yuv444p10Le
         | PixelFormat::Yuv444p10Be
+        | PixelFormat::Yuv444p10MsbLe
+        | PixelFormat::Yuv444p10MsbBe
         | PixelFormat::Yuv420p12Le
         | PixelFormat::Yuv420p12Be
         | PixelFormat::Yuv422p12Le
@@ -18858,6 +18930,8 @@ fn expected_video_plane_shapes(
         | PixelFormat::Yuv440p12Be
         | PixelFormat::Yuv444p12Le
         | PixelFormat::Yuv444p12Be
+        | PixelFormat::Yuv444p12MsbLe
+        | PixelFormat::Yuv444p12MsbBe
         | PixelFormat::Yuv420p14Le
         | PixelFormat::Yuv420p14Be
         | PixelFormat::Yuv422p14Le

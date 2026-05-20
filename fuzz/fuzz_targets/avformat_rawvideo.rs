@@ -114,12 +114,28 @@ fuzz_target!(|data: &[u8]| {
         RawVideoPixelFormat::Gbrp10Le,
         Rational::ONE,
     );
+    let gbrp10_msb = (0..12).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &gbrp10_msb,
+        2,
+        1,
+        RawVideoPixelFormat::Gbrp10MsbLe,
+        Rational::ONE,
+    );
     let gbrp12 = (0..12).collect::<Vec<_>>();
     exercise_rawvideo(
         &gbrp12,
         2,
         1,
         RawVideoPixelFormat::Gbrp12Le,
+        Rational::ONE,
+    );
+    let gbrp12_msb = (0..12).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &gbrp12_msb,
+        2,
+        1,
+        RawVideoPixelFormat::Gbrp12MsbBe,
         Rational::ONE,
     );
     let gbrp14 = (0..12).collect::<Vec<_>>();
@@ -556,6 +572,22 @@ fuzz_target!(|data: &[u8]| {
         4,
         2,
         RawVideoPixelFormat::Yuv420p10Le,
+        Rational::new(25, 1).unwrap(),
+    );
+    let yuv444p10_msb = (0..36).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &yuv444p10_msb,
+        3,
+        2,
+        RawVideoPixelFormat::Yuv444p10MsbLe,
+        Rational::new(25, 1).unwrap(),
+    );
+    let yuv444p12_msb = (0..36).collect::<Vec<_>>();
+    exercise_rawvideo(
+        &yuv444p12_msb,
+        3,
+        2,
+        RawVideoPixelFormat::Yuv444p12MsbBe,
         Rational::new(25, 1).unwrap(),
     );
     let yuv420p14 = (0..24).collect::<Vec<_>>();

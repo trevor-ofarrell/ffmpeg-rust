@@ -101,8 +101,12 @@ pub enum PixelFormat {
     Gbrp9Be,
     Gbrp10Le,
     Gbrp10Be,
+    Gbrp10MsbLe,
+    Gbrp10MsbBe,
     Gbrp12Le,
     Gbrp12Be,
+    Gbrp12MsbLe,
+    Gbrp12MsbBe,
     Gbrp14Le,
     Gbrp14Be,
     Gbrp16Le,
@@ -230,12 +234,16 @@ pub enum PixelFormat {
     Yuv422p10Be,
     Yuv444p10Le,
     Yuv444p10Be,
+    Yuv444p10MsbLe,
+    Yuv444p10MsbBe,
     Yuv420p12Le,
     Yuv420p12Be,
     Yuv422p12Le,
     Yuv422p12Be,
     Yuv444p12Le,
     Yuv444p12Be,
+    Yuv444p12MsbLe,
+    Yuv444p12MsbBe,
     Yuv420p14Le,
     Yuv420p14Be,
     Yuv422p14Le,
@@ -384,8 +392,12 @@ impl PixelFormat {
         Self::Gbrp9Be,
         Self::Gbrp10Le,
         Self::Gbrp10Be,
+        Self::Gbrp10MsbLe,
+        Self::Gbrp10MsbBe,
         Self::Gbrp12Le,
         Self::Gbrp12Be,
+        Self::Gbrp12MsbLe,
+        Self::Gbrp12MsbBe,
         Self::Gbrp14Le,
         Self::Gbrp14Be,
         Self::Gbrp16Le,
@@ -513,12 +525,16 @@ impl PixelFormat {
         Self::Yuv422p10Be,
         Self::Yuv444p10Le,
         Self::Yuv444p10Be,
+        Self::Yuv444p10MsbLe,
+        Self::Yuv444p10MsbBe,
         Self::Yuv420p12Le,
         Self::Yuv420p12Be,
         Self::Yuv422p12Le,
         Self::Yuv422p12Be,
         Self::Yuv444p12Le,
         Self::Yuv444p12Be,
+        Self::Yuv444p12MsbLe,
+        Self::Yuv444p12MsbBe,
         Self::Yuv420p14Le,
         Self::Yuv420p14Be,
         Self::Yuv422p14Le,
@@ -635,8 +651,12 @@ impl PixelFormat {
             "gbrp9be" => Some(Self::Gbrp9Be),
             "gbrp10le" => Some(Self::Gbrp10Le),
             "gbrp10be" => Some(Self::Gbrp10Be),
+            "gbrp10msble" => Some(Self::Gbrp10MsbLe),
+            "gbrp10msbbe" => Some(Self::Gbrp10MsbBe),
             "gbrp12le" => Some(Self::Gbrp12Le),
             "gbrp12be" => Some(Self::Gbrp12Be),
+            "gbrp12msble" => Some(Self::Gbrp12MsbLe),
+            "gbrp12msbbe" => Some(Self::Gbrp12MsbBe),
             "gbrp14le" => Some(Self::Gbrp14Le),
             "gbrp14be" => Some(Self::Gbrp14Be),
             "gbrp16le" => Some(Self::Gbrp16Le),
@@ -764,12 +784,16 @@ impl PixelFormat {
             "yuv422p10be" => Some(Self::Yuv422p10Be),
             "yuv444p10le" => Some(Self::Yuv444p10Le),
             "yuv444p10be" => Some(Self::Yuv444p10Be),
+            "yuv444p10msble" => Some(Self::Yuv444p10MsbLe),
+            "yuv444p10msbbe" => Some(Self::Yuv444p10MsbBe),
             "yuv420p12le" => Some(Self::Yuv420p12Le),
             "yuv420p12be" => Some(Self::Yuv420p12Be),
             "yuv422p12le" => Some(Self::Yuv422p12Le),
             "yuv422p12be" => Some(Self::Yuv422p12Be),
             "yuv444p12le" => Some(Self::Yuv444p12Le),
             "yuv444p12be" => Some(Self::Yuv444p12Be),
+            "yuv444p12msble" => Some(Self::Yuv444p12MsbLe),
+            "yuv444p12msbbe" => Some(Self::Yuv444p12MsbBe),
             "yuv420p14le" => Some(Self::Yuv420p14Le),
             "yuv420p14be" => Some(Self::Yuv420p14Be),
             "yuv422p14le" => Some(Self::Yuv422p14Le),
@@ -1951,6 +1975,30 @@ impl PixelFormat {
                 0,
                 0,
             ),
+            Self::Gbrp10MsbLe => (
+                "gbrp10msble",
+                PixelFormatClass::Rgb,
+                3,
+                30,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrp10MsbBe => (
+                "gbrp10msbbe",
+                PixelFormatClass::Rgb,
+                3,
+                30,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
             Self::Gbrp12Le => (
                 "gbrp12le",
                 PixelFormatClass::Rgb,
@@ -1965,6 +2013,30 @@ impl PixelFormat {
             ),
             Self::Gbrp12Be => (
                 "gbrp12be",
+                PixelFormatClass::Rgb,
+                3,
+                36,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrp12MsbLe => (
+                "gbrp12msble",
+                PixelFormatClass::Rgb,
+                3,
+                36,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::Gbrp12MsbBe => (
+                "gbrp12msbbe",
                 PixelFormatClass::Rgb,
                 3,
                 36,
@@ -3499,6 +3571,30 @@ impl PixelFormat {
                 0,
                 0,
             ),
+            Self::Yuv444p10MsbLe => (
+                "yuv444p10msble",
+                PixelFormatClass::Yuv,
+                3,
+                30,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::Yuv444p10MsbBe => (
+                "yuv444p10msbbe",
+                PixelFormatClass::Yuv,
+                3,
+                30,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
             Self::Yuv420p12Le => (
                 "yuv420p12le",
                 PixelFormatClass::Yuv,
@@ -3561,6 +3657,30 @@ impl PixelFormat {
             ),
             Self::Yuv444p12Be => (
                 "yuv444p12be",
+                PixelFormatClass::Yuv,
+                3,
+                36,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::Yuv444p12MsbLe => (
+                "yuv444p12msble",
+                PixelFormatClass::Yuv,
+                3,
+                36,
+                3,
+                true,
+                false,
+                None,
+                0,
+                0,
+            ),
+            Self::Yuv444p12MsbBe => (
+                "yuv444p12msbbe",
                 PixelFormatClass::Yuv,
                 3,
                 36,
@@ -3844,6 +3964,8 @@ impl PixelFormat {
                     | Self::V30xBe
                     | Self::Gbrp10Le
                     | Self::Gbrp10Be
+                    | Self::Gbrp10MsbLe
+                    | Self::Gbrp10MsbBe
                     | Self::Gbrap10Le
                     | Self::Gbrap10Be
                     | Self::Nv20Le
@@ -3870,6 +3992,8 @@ impl PixelFormat {
                     | Self::Yuv440p10Be
                     | Self::Yuv444p10Le
                     | Self::Yuv444p10Be
+                    | Self::Yuv444p10MsbLe
+                    | Self::Yuv444p10MsbBe
             ) {
                 10
             } else if matches!(
@@ -3878,6 +4002,8 @@ impl PixelFormat {
                     | Self::Gray12Be
                     | Self::Gbrp12Le
                     | Self::Gbrp12Be
+                    | Self::Gbrp12MsbLe
+                    | Self::Gbrp12MsbBe
                     | Self::Gbrap12Le
                     | Self::Gbrap12Be
                     | Self::Xyz12Le
@@ -3904,6 +4030,8 @@ impl PixelFormat {
                     | Self::Yuv440p12Be
                     | Self::Yuv444p12Le
                     | Self::Yuv444p12Be
+                    | Self::Yuv444p12MsbLe
+                    | Self::Yuv444p12MsbBe
             ) {
                 12
             } else if matches!(
@@ -4245,8 +4373,12 @@ impl PixelFormat {
             | Self::Gbrp9Be
             | Self::Gbrp10Le
             | Self::Gbrp10Be
+            | Self::Gbrp10MsbLe
+            | Self::Gbrp10MsbBe
             | Self::Gbrp12Le
             | Self::Gbrp12Be
+            | Self::Gbrp12MsbLe
+            | Self::Gbrp12MsbBe
             | Self::Gbrp14Le
             | Self::Gbrp14Be
             | Self::Gbrp16Le
@@ -4478,12 +4610,16 @@ impl PixelFormat {
             | Self::Yuv422p10Be
             | Self::Yuv444p10Le
             | Self::Yuv444p10Be
+            | Self::Yuv444p10MsbLe
+            | Self::Yuv444p10MsbBe
             | Self::Yuv420p12Le
             | Self::Yuv420p12Be
             | Self::Yuv422p12Le
             | Self::Yuv422p12Be
             | Self::Yuv444p12Le
             | Self::Yuv444p12Be
+            | Self::Yuv444p12MsbLe
+            | Self::Yuv444p12MsbBe
             | Self::Yuv420p14Le
             | Self::Yuv420p14Be
             | Self::Yuv422p14Le
@@ -4534,6 +4670,8 @@ impl PixelFormat {
                         | Self::Yuv440p10Be
                         | Self::Yuv444p10Le
                         | Self::Yuv444p10Be
+                        | Self::Yuv444p10MsbLe
+                        | Self::Yuv444p10MsbBe
                         | Self::Yuv420p12Le
                         | Self::Yuv420p12Be
                         | Self::Yuv422p12Le
@@ -4542,6 +4680,8 @@ impl PixelFormat {
                         | Self::Yuv440p12Be
                         | Self::Yuv444p12Le
                         | Self::Yuv444p12Be
+                        | Self::Yuv444p12MsbLe
+                        | Self::Yuv444p12MsbBe
                         | Self::Yuv420p14Le
                         | Self::Yuv420p14Be
                         | Self::Yuv422p14Le
@@ -4967,12 +5107,28 @@ mod tests {
             Some(PixelFormat::Gbrp10Be)
         );
         assert_eq!(
+            PixelFormat::from_name("gbrp10msble"),
+            Some(PixelFormat::Gbrp10MsbLe)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrp10msbbe"),
+            Some(PixelFormat::Gbrp10MsbBe)
+        );
+        assert_eq!(
             PixelFormat::from_name("gbrp12le"),
             Some(PixelFormat::Gbrp12Le)
         );
         assert_eq!(
             PixelFormat::from_name("gbrp12be"),
             Some(PixelFormat::Gbrp12Be)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrp12msble"),
+            Some(PixelFormat::Gbrp12MsbLe)
+        );
+        assert_eq!(
+            PixelFormat::from_name("gbrp12msbbe"),
+            Some(PixelFormat::Gbrp12MsbBe)
         );
         assert_eq!(
             PixelFormat::from_name("gbrp14le"),
@@ -5250,12 +5406,16 @@ mod tests {
             ("yuv422p10be", PixelFormat::Yuv422p10Be),
             ("yuv444p10le", PixelFormat::Yuv444p10Le),
             ("yuv444p10be", PixelFormat::Yuv444p10Be),
+            ("yuv444p10msble", PixelFormat::Yuv444p10MsbLe),
+            ("yuv444p10msbbe", PixelFormat::Yuv444p10MsbBe),
             ("yuv420p12le", PixelFormat::Yuv420p12Le),
             ("yuv420p12be", PixelFormat::Yuv420p12Be),
             ("yuv422p12le", PixelFormat::Yuv422p12Le),
             ("yuv422p12be", PixelFormat::Yuv422p12Be),
             ("yuv444p12le", PixelFormat::Yuv444p12Le),
             ("yuv444p12be", PixelFormat::Yuv444p12Be),
+            ("yuv444p12msble", PixelFormat::Yuv444p12MsbLe),
+            ("yuv444p12msbbe", PixelFormat::Yuv444p12MsbBe),
             ("yuv420p14le", PixelFormat::Yuv420p14Le),
             ("yuv420p14be", PixelFormat::Yuv420p14Be),
             ("yuv422p14le", PixelFormat::Yuv422p14Le),
@@ -5272,7 +5432,7 @@ mod tests {
             assert_eq!(format.name(), name);
             assert_eq!(PixelFormat::from_name(name), Some(format));
         }
-        assert_eq!(PixelFormat::ALL.len(), 243);
+        assert_eq!(PixelFormat::ALL.len(), 251);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Yaf16Le.plane_count(), 1);
@@ -5329,12 +5489,16 @@ mod tests {
             PixelFormat::Yuv422p10Be,
             PixelFormat::Yuv444p10Le,
             PixelFormat::Yuv444p10Be,
+            PixelFormat::Yuv444p10MsbLe,
+            PixelFormat::Yuv444p10MsbBe,
             PixelFormat::Yuv420p12Le,
             PixelFormat::Yuv420p12Be,
             PixelFormat::Yuv422p12Le,
             PixelFormat::Yuv422p12Be,
             PixelFormat::Yuv444p12Le,
             PixelFormat::Yuv444p12Be,
+            PixelFormat::Yuv444p12MsbLe,
+            PixelFormat::Yuv444p12MsbBe,
             PixelFormat::Yuv420p14Le,
             PixelFormat::Yuv420p14Be,
             PixelFormat::Yuv422p14Le,
@@ -5355,8 +5519,12 @@ mod tests {
         assert_eq!(PixelFormat::Gbrp9Be.plane_count(), 3);
         assert_eq!(PixelFormat::Gbrp10Le.plane_count(), 3);
         assert_eq!(PixelFormat::Gbrp10Be.plane_count(), 3);
+        assert_eq!(PixelFormat::Gbrp10MsbLe.plane_count(), 3);
+        assert_eq!(PixelFormat::Gbrp10MsbBe.plane_count(), 3);
         assert_eq!(PixelFormat::Gbrp12Le.plane_count(), 3);
         assert_eq!(PixelFormat::Gbrp12Be.plane_count(), 3);
+        assert_eq!(PixelFormat::Gbrp12MsbLe.plane_count(), 3);
+        assert_eq!(PixelFormat::Gbrp12MsbBe.plane_count(), 3);
         assert_eq!(PixelFormat::Gbrp14Le.plane_count(), 3);
         assert_eq!(PixelFormat::Gbrp14Be.plane_count(), 3);
         assert_eq!(PixelFormat::Gbrp16Le.plane_count(), 3);
@@ -5435,12 +5603,16 @@ mod tests {
             PixelFormat::Yuv422p10Be,
             PixelFormat::Yuv444p10Le,
             PixelFormat::Yuv444p10Be,
+            PixelFormat::Yuv444p10MsbLe,
+            PixelFormat::Yuv444p10MsbBe,
             PixelFormat::Yuv420p12Le,
             PixelFormat::Yuv420p12Be,
             PixelFormat::Yuv422p12Le,
             PixelFormat::Yuv422p12Be,
             PixelFormat::Yuv444p12Le,
             PixelFormat::Yuv444p12Be,
+            PixelFormat::Yuv444p12MsbLe,
+            PixelFormat::Yuv444p12MsbBe,
         ] {
             assert!(format.is_planar());
             assert!(!format.is_packed());
@@ -5449,7 +5621,9 @@ mod tests {
         assert!(PixelFormat::Gbrp.is_planar());
         assert!(PixelFormat::Gbrp9Le.is_planar());
         assert!(PixelFormat::Gbrp10Le.is_planar());
+        assert!(PixelFormat::Gbrp10MsbLe.is_planar());
         assert!(PixelFormat::Gbrp12Le.is_planar());
+        assert!(PixelFormat::Gbrp12MsbLe.is_planar());
         assert!(PixelFormat::Gbrp14Le.is_planar());
         assert!(PixelFormat::Gbrp16Le.is_planar());
         assert!(PixelFormat::Gbrap.is_planar());
@@ -5461,7 +5635,9 @@ mod tests {
         assert!(!PixelFormat::Gbrp.is_packed());
         assert!(!PixelFormat::Gbrp9Le.is_packed());
         assert!(!PixelFormat::Gbrp10Le.is_packed());
+        assert!(!PixelFormat::Gbrp10MsbLe.is_packed());
         assert!(!PixelFormat::Gbrp12Le.is_packed());
+        assert!(!PixelFormat::Gbrp12MsbLe.is_packed());
         assert!(!PixelFormat::Gbrp14Le.is_packed());
         assert!(!PixelFormat::Gbrp16Le.is_packed());
         assert!(!PixelFormat::Gbrap.is_packed());
@@ -5870,8 +6046,12 @@ mod tests {
             (PixelFormat::Gbrp9Be, "gbrp9be", 9, 27, false),
             (PixelFormat::Gbrp10Le, "gbrp10le", 10, 30, false),
             (PixelFormat::Gbrp10Be, "gbrp10be", 10, 30, false),
+            (PixelFormat::Gbrp10MsbLe, "gbrp10msble", 10, 30, false),
+            (PixelFormat::Gbrp10MsbBe, "gbrp10msbbe", 10, 30, false),
             (PixelFormat::Gbrp12Le, "gbrp12le", 12, 36, false),
             (PixelFormat::Gbrp12Be, "gbrp12be", 12, 36, false),
+            (PixelFormat::Gbrp12MsbLe, "gbrp12msble", 12, 36, false),
+            (PixelFormat::Gbrp12MsbBe, "gbrp12msbbe", 12, 36, false),
             (PixelFormat::Gbrp14Le, "gbrp14le", 14, 42, false),
             (PixelFormat::Gbrp14Be, "gbrp14be", 14, 42, false),
             (PixelFormat::Gbrp16Le, "gbrp16le", 16, 48, false),
@@ -6451,12 +6631,40 @@ mod tests {
             (PixelFormat::Yuv422p10Be, "yuv422p10be", 10, bpp(20), (1, 0)),
             (PixelFormat::Yuv444p10Le, "yuv444p10le", 10, bpp(30), (0, 0)),
             (PixelFormat::Yuv444p10Be, "yuv444p10be", 10, bpp(30), (0, 0)),
+            (
+                PixelFormat::Yuv444p10MsbLe,
+                "yuv444p10msble",
+                10,
+                bpp(30),
+                (0, 0),
+            ),
+            (
+                PixelFormat::Yuv444p10MsbBe,
+                "yuv444p10msbbe",
+                10,
+                bpp(30),
+                (0, 0),
+            ),
             (PixelFormat::Yuv420p12Le, "yuv420p12le", 12, bpp(18), (1, 1)),
             (PixelFormat::Yuv420p12Be, "yuv420p12be", 12, bpp(18), (1, 1)),
             (PixelFormat::Yuv422p12Le, "yuv422p12le", 12, bpp(24), (1, 0)),
             (PixelFormat::Yuv422p12Be, "yuv422p12be", 12, bpp(24), (1, 0)),
             (PixelFormat::Yuv444p12Le, "yuv444p12le", 12, bpp(36), (0, 0)),
             (PixelFormat::Yuv444p12Be, "yuv444p12be", 12, bpp(36), (0, 0)),
+            (
+                PixelFormat::Yuv444p12MsbLe,
+                "yuv444p12msble",
+                12,
+                bpp(36),
+                (0, 0),
+            ),
+            (
+                PixelFormat::Yuv444p12MsbBe,
+                "yuv444p12msbbe",
+                12,
+                bpp(36),
+                (0, 0),
+            ),
             (PixelFormat::Yuv420p14Le, "yuv420p14le", 14, bpp(21), (1, 1)),
             (PixelFormat::Yuv420p14Be, "yuv420p14be", 14, bpp(21), (1, 1)),
             (PixelFormat::Yuv422p14Le, "yuv422p14le", 14, bpp(28), (1, 0)),
@@ -6908,6 +7116,8 @@ mod tests {
             (PixelFormat::Yuv440p10Be, 3, 2, vec![12, 6, 6]),
             (PixelFormat::Yuv444p10Le, 3, 2, vec![12, 12, 12]),
             (PixelFormat::Yuv444p10Be, 3, 2, vec![12, 12, 12]),
+            (PixelFormat::Yuv444p10MsbLe, 3, 2, vec![12, 12, 12]),
+            (PixelFormat::Yuv444p10MsbBe, 3, 2, vec![12, 12, 12]),
             (PixelFormat::Yuv420p12Le, 4, 2, vec![16, 4, 4]),
             (PixelFormat::Yuv420p12Be, 4, 2, vec![16, 4, 4]),
             (PixelFormat::Yuv422p12Le, 4, 3, vec![24, 12, 12]),
@@ -6916,6 +7126,8 @@ mod tests {
             (PixelFormat::Yuv440p12Be, 3, 2, vec![12, 6, 6]),
             (PixelFormat::Yuv444p12Le, 3, 2, vec![12, 12, 12]),
             (PixelFormat::Yuv444p12Be, 3, 2, vec![12, 12, 12]),
+            (PixelFormat::Yuv444p12MsbLe, 3, 2, vec![12, 12, 12]),
+            (PixelFormat::Yuv444p12MsbBe, 3, 2, vec![12, 12, 12]),
             (PixelFormat::Yuv420p14Le, 4, 2, vec![16, 4, 4]),
             (PixelFormat::Yuv420p14Be, 4, 2, vec![16, 4, 4]),
             (PixelFormat::Yuv422p14Le, 4, 3, vec![24, 12, 12]),
@@ -6961,10 +7173,20 @@ mod tests {
         );
         assert_eq!(PixelFormat::Gbrp10Le.frame_size(3, 2).unwrap(), 36);
         assert_eq!(
+            PixelFormat::Gbrp10MsbLe.plane_sizes(3, 2).unwrap(),
+            vec![12, 12, 12]
+        );
+        assert_eq!(PixelFormat::Gbrp10MsbLe.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(
             PixelFormat::Gbrp12Le.plane_sizes(3, 2).unwrap(),
             vec![12, 12, 12]
         );
         assert_eq!(PixelFormat::Gbrp12Le.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(
+            PixelFormat::Gbrp12MsbLe.plane_sizes(3, 2).unwrap(),
+            vec![12, 12, 12]
+        );
+        assert_eq!(PixelFormat::Gbrp12MsbLe.frame_size(3, 2).unwrap(), 36);
         assert_eq!(
             PixelFormat::Gbrp14Le.plane_sizes(3, 2).unwrap(),
             vec![12, 12, 12]
@@ -7218,7 +7440,25 @@ mod tests {
             vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]]
         );
 
+        let planes = PixelFormat::Gbrp10MsbLe
+            .split_planes(&(0..12).collect::<Vec<_>>(), 1, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]]
+        );
+
         let planes = PixelFormat::Gbrp12Le
+            .split_planes(&(0..12).collect::<Vec<_>>(), 1, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes,
+            vec![vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]]
+        );
+
+        let planes = PixelFormat::Gbrp12MsbLe
             .split_planes(&(0..12).collect::<Vec<_>>(), 1, 2)
             .unwrap();
 

@@ -225,6 +225,18 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    let gbrp10_msb = RawVideoDecoder::new(2, 1, PixelFormat::Gbrp10MsbLe).unwrap();
+    assert!(gbrp10_msb
+        .decode_packet(&Packet::new((0..12).collect(), 0))
+        .is_ok());
+    assert_eq!(
+        gbrp10_msb
+            .decode_packet(&Packet::new((0..11).collect(), 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
     let gbrp12 = RawVideoDecoder::new(2, 1, PixelFormat::Gbrp12Le).unwrap();
     assert!(gbrp12
         .decode_packet(&Packet::new((0..12).collect(), 0))
@@ -905,6 +917,30 @@ fn exercise_fixtures() {
     assert_eq!(
         yuv444
             .decode_packet(&Packet::new(vec![0; 17], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
+    let yuv444p10_msb = RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p10MsbLe).unwrap();
+    assert!(yuv444p10_msb
+        .decode_packet(&Packet::new(vec![0; 36], 0))
+        .is_ok());
+    assert_eq!(
+        yuv444p10_msb
+            .decode_packet(&Packet::new(vec![0; 35], 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+
+    let yuv444p12_msb = RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p12MsbBe).unwrap();
+    assert!(yuv444p12_msb
+        .decode_packet(&Packet::new(vec![0; 36], 0))
+        .is_ok());
+    assert_eq!(
+        yuv444p12_msb
+            .decode_packet(&Packet::new(vec![0; 35], 0))
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidData

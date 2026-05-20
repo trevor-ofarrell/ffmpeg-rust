@@ -462,6 +462,38 @@ fn exercise_fixtures() {
     );
     assert!(raw_gbrp10_demuxer.read_packet().unwrap().is_none());
 
+    let mut raw_gbrp10_msb = RawVideoMuxer::new(
+        2,
+        1,
+        PixelFormat::Gbrp10MsbLe,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    raw_gbrp10_msb
+        .write_packet(&Packet::new((0..12).collect(), 0))
+        .unwrap();
+    let raw_gbrp10_msb_output = raw_gbrp10_msb.finish();
+    let mut raw_gbrp10_msb_demuxer = RawVideoDemuxer::open(
+        &raw_gbrp10_msb_output,
+        2,
+        1,
+        PixelFormat::Gbrp10MsbLe,
+        Rational::new(24, 1).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        raw_gbrp10_msb_demuxer
+            .read_packet()
+            .unwrap()
+            .unwrap()
+            .data(),
+        &(0..12).collect::<Vec<_>>()
+    );
+    assert!(raw_gbrp10_msb_demuxer
+        .read_packet()
+        .unwrap()
+        .is_none());
+
     let mut raw_gbrp12 =
         RawVideoMuxer::new(2, 1, PixelFormat::Gbrp12Le, Rational::new(24, 1).unwrap()).unwrap();
     raw_gbrp12
@@ -1369,6 +1401,18 @@ fn exercise_fixtures() {
         ),
         (
             PixelFormat::Yuv444p10Be,
+            3,
+            2,
+            (0..36).collect::<Vec<_>>(),
+        ),
+        (
+            PixelFormat::Yuv444p10MsbLe,
+            3,
+            2,
+            (0..36).collect::<Vec<_>>(),
+        ),
+        (
+            PixelFormat::Yuv444p12MsbBe,
             3,
             2,
             (0..36).collect::<Vec<_>>(),

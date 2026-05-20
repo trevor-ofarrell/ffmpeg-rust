@@ -395,6 +395,39 @@ mod tests {
     }
 
     #[test]
+    fn decodes_msb_planar_gbr_packets_to_three_planes() {
+        for (format, name, pts) in [
+            (PixelFormat::Gbrp10MsbLe, "gbrp10msble", 114),
+            (PixelFormat::Gbrp10MsbBe, "gbrp10msbbe", 115),
+            (PixelFormat::Gbrp12MsbLe, "gbrp12msble", 116),
+            (PixelFormat::Gbrp12MsbBe, "gbrp12msbbe", 117),
+        ] {
+            let decoder = RawVideoDecoder::new(2, 1, format).unwrap();
+            let mut packet = Packet::new((0..12).collect(), 0);
+            packet.set_pts(Some(pts));
+
+            let frame = decoder.decode_packet(&packet).unwrap();
+
+            assert_eq!(decoder.frame_size(), 12);
+            assert_eq!(frame.pts(), Some(pts));
+            match frame.data() {
+                FrameData::Video(video) => {
+                    assert_eq!(video.width(), 2);
+                    assert_eq!(video.height(), 1);
+                    assert_eq!(video.pixel_format(), format);
+                    assert_eq!(video.pixel_format_name(), name);
+                    assert_eq!(video.line_sizes(), &[4, 4, 4]);
+                    assert_eq!(
+                        video.planes(),
+                        &[vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]]
+                    );
+                }
+                FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
+            }
+        }
+    }
+
+    #[test]
     fn decodes_gbrp14_packet_to_three_planes() {
         let decoder = RawVideoDecoder::new(2, 1, PixelFormat::Gbrp14Le).unwrap();
         let mut packet = Packet::new((0..12).collect(), 0);
@@ -883,6 +916,32 @@ mod tests {
             (
                 PixelFormat::Yuv444p10Be,
                 "yuv444p10be",
+                3,
+                2,
+                36,
+                vec![
+                    (0..12).collect::<Vec<_>>(),
+                    (12..24).collect::<Vec<_>>(),
+                    (24..36).collect::<Vec<_>>(),
+                ],
+                vec![6, 6, 6],
+            ),
+            (
+                PixelFormat::Yuv444p10MsbLe,
+                "yuv444p10msble",
+                3,
+                2,
+                36,
+                vec![
+                    (0..12).collect::<Vec<_>>(),
+                    (12..24).collect::<Vec<_>>(),
+                    (24..36).collect::<Vec<_>>(),
+                ],
+                vec![6, 6, 6],
+            ),
+            (
+                PixelFormat::Yuv444p12MsbBe,
+                "yuv444p12msbbe",
                 3,
                 2,
                 36,
@@ -1426,6 +1485,8 @@ mod tests {
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv422p10Be).is_err());
         assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuv422p12Be).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p10Le).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p10MsbLe).is_ok());
+        assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv444p12MsbBe).is_ok());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv420p14Le).is_err());
         assert!(RawVideoDecoder::new(4, 3, PixelFormat::Yuv420p16Be).is_err());
         assert!(RawVideoDecoder::new(3, 2, PixelFormat::Yuv422p14Le).is_err());
