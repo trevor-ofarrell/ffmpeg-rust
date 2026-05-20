@@ -149,6 +149,55 @@ impl LogFlags {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LogColorMode {
+    #[default]
+    Never,
+    Always,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LogFormatOptions {
+    flags: LogFlags,
+    color_mode: LogColorMode,
+}
+
+impl Default for LogFormatOptions {
+    fn default() -> Self {
+        Self::new(LogFlags::PRINT_LEVEL)
+    }
+}
+
+impl LogFormatOptions {
+    pub const fn new(flags: LogFlags) -> Self {
+        Self {
+            flags,
+            color_mode: LogColorMode::Never,
+        }
+    }
+
+    pub const fn with_color_mode(self, color_mode: LogColorMode) -> Self {
+        Self {
+            flags: self.flags,
+            color_mode,
+        }
+    }
+
+    pub const fn flags(self) -> LogFlags {
+        self.flags
+    }
+
+    pub const fn color_mode(self) -> LogColorMode {
+        self.color_mode
+    }
+}
+
+impl From<LogFlags> for LogFormatOptions {
+    fn from(flags: LogFlags) -> Self {
+        Self::new(flags)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LogTimestamp {
     unix_micros: i64,
@@ -314,6 +363,20 @@ impl LogRecord {
     }
 
     pub fn format_line_with_flags(&self, flags: LogFlags) -> String {
+        self.format_line_with_options(LogFormatOptions::new(flags))
+    }
+
+    pub fn format_line_with_options(&self, options: LogFormatOptions) -> String {
+        let line = self.format_plain_line_with_flags(options.flags());
+        if matches!(options.color_mode(), LogColorMode::Always) {
+            if let Some(color_code) = self.ansi_color_code() {
+                return format!("{color_code}{line}\x1b[0m");
+            }
+        }
+        line
+    }
+
+    fn format_plain_line_with_flags(&self, flags: LogFlags) -> String {
         if self.is_repetition_summary() {
             return self.message.clone();
         }
@@ -339,6 +402,18 @@ impl LogRecord {
             format!("{}{}{}", time_prefix, prefix, self.message)
         } else {
             format!("{}{}{}: {}", time_prefix, prefix, self.target, self.message)
+        }
+    }
+
+    fn ansi_color_code(&self) -> Option<&'static str> {
+        match self.level {
+            LogLevel::Panic | LogLevel::Fatal | LogLevel::Error => Some("\x1b[31m"),
+            LogLevel::Warning => Some("\x1b[33m"),
+            LogLevel::Quiet
+            | LogLevel::Info
+            | LogLevel::Verbose
+            | LogLevel::Debug
+            | LogLevel::Trace => None,
         }
     }
 
@@ -506,13 +581,17 @@ impl Logger {
     }
 
     pub fn formatted_records(&self) -> Vec<String> {
+        self.formatted_records_with_options(LogFormatOptions::new(self.flags))
+    }
+
+    pub fn formatted_records_with_options(&self, options: LogFormatOptions) -> Vec<String> {
         let mut formatted: Vec<_> = self
             .records
             .iter()
-            .map(|record| record.format_line_with_flags(self.flags))
+            .map(|record| record.format_line_with_options(options))
             .collect();
         if let Some(summary) = self.pending_repetition_summary() {
-            formatted.push(summary.format_line_with_flags(self.flags));
+            formatted.push(summary.format_line_with_options(options));
         }
         formatted
     }
@@ -642,6 +721,13 @@ pub fn flush_global_log_repeated() -> bool {
 
 pub fn global_formatted_log_records() -> Vec<String> {
     global_logger().lock().unwrap().formatted_records()
+}
+
+pub fn global_formatted_log_records_with_options(options: LogFormatOptions) -> Vec<String> {
+    global_logger()
+        .lock()
+        .unwrap()
+        .formatted_records_with_options(options)
 }
 
 pub fn clear_global_log_records() {
@@ -848,6 +934,44 @@ mod tests {
     }
 
     #[test]
+    fn record_formatting_supports_explicit_color_options() {
+        let color_options =
+            LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);
+        let plain_options =
+            LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Never);
+
+        assert_eq!(
+            LogRecord::new(LogLevel::Error, "demuxer", "bad header")
+                .format_line_with_options(color_options),
+            "\x1b[31m[error] demuxer: bad header\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Fatal, "decoder", "unrecoverable")
+                .format_line_with_options(color_options),
+            "\x1b[31m[fatal] decoder: unrecoverable\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+                .format_line_with_options(color_options),
+            "\x1b[33m[warning] decoder: damaged packet\x1b[0m"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Info, "ffmpeg", "ready")
+                .format_line_with_options(color_options),
+            "[info] ffmpeg: ready"
+        );
+        assert_eq!(
+            LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+                .format_line_with_options(plain_options),
+            "[warning] decoder: damaged packet"
+        );
+        assert_eq!(
+            LogRecord::repetition_summary(2).format_line_with_options(color_options),
+            "Last message repeated 2 times"
+        );
+    }
+
+    #[test]
     fn logger_formats_records_with_configured_flags() {
         let mut logger = Logger::new_with_flags(LogLevel::Info, LogFlags::empty());
 
@@ -865,6 +989,35 @@ mod tests {
         logger.set_flag(LogFlags::PRINT_LEVEL, false);
         assert!(!logger.flags().contains(LogFlags::PRINT_LEVEL));
         assert_eq!(logger.formatted_records(), ["ffmpeg: ready"]);
+    }
+
+    #[test]
+    fn logger_formats_records_with_explicit_color_options() {
+        let mut flags = LogFlags::PRINT_LEVEL;
+        flags.insert(LogFlags::SKIP_REPEATED);
+        let mut logger = Logger::new_with_flags(LogLevel::Warning, flags);
+        let repeated = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet");
+        let options = LogFormatOptions::new(logger.flags()).with_color_mode(LogColorMode::Always);
+
+        assert!(logger.log(repeated.clone()));
+        assert!(logger.log(repeated));
+        assert_eq!(
+            logger.formatted_records_with_options(options),
+            [
+                "\x1b[33m[warning] decoder: damaged packet\x1b[0m".to_owned(),
+                "Last message repeated 1 times".to_owned()
+            ]
+        );
+
+        assert!(logger.log(LogRecord::new(LogLevel::Error, "demuxer", "bad header")));
+        assert_eq!(
+            logger.formatted_records_with_options(options),
+            [
+                "\x1b[33m[warning] decoder: damaged packet\x1b[0m".to_owned(),
+                "Last message repeated 1 times".to_owned(),
+                "\x1b[31m[error] demuxer: bad header\x1b[0m".to_owned()
+            ]
+        );
     }
 
     #[test]
@@ -1124,6 +1277,12 @@ mod tests {
             "kept"
         )));
         assert_eq!(global_formatted_log_records(), ["[error] ffmpeg: kept"]);
+        assert_eq!(
+            global_formatted_log_records_with_options(
+                LogFormatOptions::new(global_log_flags()).with_color_mode(LogColorMode::Always)
+            ),
+            ["\x1b[31m[error] ffmpeg: kept\x1b[0m"]
+        );
 
         let records = take_global_log_records();
         assert_eq!(records.len(), 1);

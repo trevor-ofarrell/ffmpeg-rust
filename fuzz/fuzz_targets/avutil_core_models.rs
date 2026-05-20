@@ -37,8 +37,8 @@ use avutil::{
     clear_global_log_callback, clear_global_log_records, flush_global_log_repeated,
     global_formatted_log_records, global_log, global_log_flags, global_log_level,
     set_global_log_callback, set_global_log_flag, set_global_log_flags, set_global_log_level,
-    take_global_log_records, LogFlags, LogLevel, LogRecord, LogTimestamp, Logger, Md5, Packet,
-    PacketA53ClosedCaptions,
+    take_global_log_records, LogColorMode, LogFlags, LogFormatOptions, LogLevel, LogRecord,
+    LogTimestamp, Logger, Md5, Packet, PacketA53ClosedCaptions,
     PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
@@ -900,6 +900,43 @@ fn exercise_logging(cursor: &mut Cursor<'_>) {
     assert_eq!(
         timestamped.format_line_with_flags(LogFlags::PRINT_DATETIME | LogFlags::PRINT_LEVEL),
         "[2024-01-01 12:38:25.123456] [error] demuxer: bad header"
+    );
+    let color_options =
+        LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Always);
+    let plain_options =
+        LogFormatOptions::new(LogFlags::PRINT_LEVEL).with_color_mode(LogColorMode::Never);
+    assert_eq!(
+        timestamped.format_line_with_options(color_options),
+        "\x1b[31m[error] demuxer: bad header\x1b[0m"
+    );
+    assert_eq!(
+        LogRecord::new(LogLevel::Warning, "decoder", "damaged packet")
+            .format_line_with_options(color_options),
+        "\x1b[33m[warning] decoder: damaged packet\x1b[0m"
+    );
+    assert_eq!(
+        LogRecord::new(LogLevel::Info, "ffmpeg", "ready")
+            .format_line_with_options(color_options),
+        "[info] ffmpeg: ready"
+    );
+    assert_eq!(
+        timestamped.format_line_with_options(plain_options),
+        "[error] demuxer: bad header"
+    );
+    let mut color_flags = LogFlags::PRINT_LEVEL;
+    color_flags.insert(LogFlags::SKIP_REPEATED);
+    let mut color_logger = Logger::new_with_flags(LogLevel::Warning, color_flags);
+    let colored_repeated = LogRecord::new(LogLevel::Warning, "decoder", "damaged packet");
+    assert!(color_logger.log(colored_repeated.clone()));
+    assert!(color_logger.log(colored_repeated));
+    assert_eq!(
+        color_logger.formatted_records_with_options(
+            LogFormatOptions::new(color_logger.flags()).with_color_mode(LogColorMode::Always)
+        ),
+        [
+            "\x1b[33m[warning] decoder: damaged packet\x1b[0m".to_owned(),
+            "Last message repeated 1 times".to_owned()
+        ]
     );
 
     let mut callback_flags = LogFlags::PRINT_LEVEL;
