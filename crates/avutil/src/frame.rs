@@ -12420,6 +12420,21 @@ fn video_plane_shapes(
             row_bytes: checked_mul(width, 3, "24-bit packed video frame line size")?,
             rows: height,
         }]),
+        PixelFormat::Rgb565Be
+        | PixelFormat::Rgb565Le
+        | PixelFormat::Rgb555Be
+        | PixelFormat::Rgb555Le
+        | PixelFormat::Bgr565Be
+        | PixelFormat::Bgr565Le
+        | PixelFormat::Bgr555Be
+        | PixelFormat::Bgr555Le
+        | PixelFormat::Rgb444Le
+        | PixelFormat::Rgb444Be
+        | PixelFormat::Bgr444Le
+        | PixelFormat::Bgr444Be => Ok(vec![VideoPlaneShape {
+            row_bytes: checked_mul(width, 2, "16-bit packed RGB video frame line size")?,
+            rows: height,
+        }]),
         PixelFormat::Rgb48Le
         | PixelFormat::Rgb48Be
         | PixelFormat::Bgr48Le
@@ -16395,6 +16410,12 @@ mod tests {
     fn frames_report_tightly_packed_line_sizes() {
         let rgb = VideoFrame::new(3, 2, PixelFormat::Rgb24, vec![vec![0; 18]]).unwrap();
         assert_eq!(rgb.line_sizes(), &[9]);
+
+        let rgb565 = VideoFrame::new(3, 2, PixelFormat::Rgb565Le, vec![vec![0; 12]]).unwrap();
+        assert_eq!(rgb565.line_sizes(), &[6]);
+
+        let bgr444 = VideoFrame::new(3, 2, PixelFormat::Bgr444Be, vec![vec![0; 12]]).unwrap();
+        assert_eq!(bgr444.line_sizes(), &[6]);
 
         let rgba = VideoFrame::new(3, 2, PixelFormat::Rgba, vec![vec![0; 24]]).unwrap();
         assert_eq!(rgba.line_sizes(), &[12]);

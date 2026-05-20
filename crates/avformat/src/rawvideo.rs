@@ -278,6 +278,28 @@ mod tests {
             .frame_size(),
             6
         );
+        for format in [
+            RawVideoPixelFormat::Rgb565Be,
+            RawVideoPixelFormat::Rgb565Le,
+            RawVideoPixelFormat::Rgb555Be,
+            RawVideoPixelFormat::Rgb555Le,
+            RawVideoPixelFormat::Bgr565Be,
+            RawVideoPixelFormat::Bgr565Le,
+            RawVideoPixelFormat::Bgr555Be,
+            RawVideoPixelFormat::Bgr555Le,
+            RawVideoPixelFormat::Rgb444Le,
+            RawVideoPixelFormat::Rgb444Be,
+            RawVideoPixelFormat::Bgr444Le,
+            RawVideoPixelFormat::Bgr444Be,
+        ] {
+            assert_eq!(
+                RawVideoDemuxer::open(&[0; 4], 2, 1, format, Rational::new(1, 1).unwrap(),)
+                    .unwrap()
+                    .info()
+                    .frame_size(),
+                4
+            );
+        }
         for format in [RawVideoPixelFormat::Gray16Le, RawVideoPixelFormat::Gray16Be] {
             assert_eq!(
                 RawVideoDemuxer::open(&[0; 4], 2, 1, format, Rational::new(1, 1).unwrap(),)
@@ -803,6 +825,22 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 16);
+    }
+
+    #[test]
+    fn muxer_computes_packed_16bit_rgb_frame_sizes() {
+        for format in [
+            RawVideoPixelFormat::Rgb565Le,
+            RawVideoPixelFormat::Rgb555Be,
+            RawVideoPixelFormat::Bgr565Le,
+            RawVideoPixelFormat::Bgr555Be,
+            RawVideoPixelFormat::Rgb444Le,
+            RawVideoPixelFormat::Bgr444Be,
+        ] {
+            let muxer = RawVideoMuxer::new(3, 2, format, Rational::new(25, 1).unwrap()).unwrap();
+
+            assert_eq!(muxer.info().frame_size(), 12);
+        }
     }
 
     #[test]

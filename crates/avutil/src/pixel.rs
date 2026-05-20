@@ -24,6 +24,18 @@ pub enum PixelFormat {
     GrayF32Be,
     Rgb24,
     Bgr24,
+    Rgb565Be,
+    Rgb565Le,
+    Rgb555Be,
+    Rgb555Le,
+    Bgr565Be,
+    Bgr565Le,
+    Bgr555Be,
+    Bgr555Le,
+    Rgb444Le,
+    Rgb444Be,
+    Bgr444Le,
+    Bgr444Be,
     Rgb48Le,
     Rgb48Be,
     Bgr48Le,
@@ -122,6 +134,18 @@ impl PixelFormat {
         Self::GrayF32Be,
         Self::Rgb24,
         Self::Bgr24,
+        Self::Rgb565Be,
+        Self::Rgb565Le,
+        Self::Rgb555Be,
+        Self::Rgb555Le,
+        Self::Bgr565Be,
+        Self::Bgr565Le,
+        Self::Bgr555Be,
+        Self::Bgr555Le,
+        Self::Rgb444Le,
+        Self::Rgb444Be,
+        Self::Bgr444Le,
+        Self::Bgr444Be,
         Self::Rgb48Le,
         Self::Rgb48Be,
         Self::Bgr48Le,
@@ -200,6 +224,18 @@ impl PixelFormat {
             "grayf32be" | "yf32be" => Some(Self::GrayF32Be),
             "rgb24" => Some(Self::Rgb24),
             "bgr24" => Some(Self::Bgr24),
+            "rgb565be" => Some(Self::Rgb565Be),
+            "rgb565le" => Some(Self::Rgb565Le),
+            "rgb555be" => Some(Self::Rgb555Be),
+            "rgb555le" => Some(Self::Rgb555Le),
+            "bgr565be" => Some(Self::Bgr565Be),
+            "bgr565le" => Some(Self::Bgr565Le),
+            "bgr555be" => Some(Self::Bgr555Be),
+            "bgr555le" => Some(Self::Bgr555Le),
+            "rgb444le" => Some(Self::Rgb444Le),
+            "rgb444be" => Some(Self::Rgb444Be),
+            "bgr444le" => Some(Self::Bgr444Le),
+            "bgr444be" => Some(Self::Bgr444Be),
             "rgb48le" => Some(Self::Rgb48Le),
             "rgb48be" => Some(Self::Rgb48Be),
             "bgr48le" => Some(Self::Bgr48Le),
@@ -526,6 +562,150 @@ impl PixelFormat {
                 false,
                 false,
                 Some(3),
+                0,
+                0,
+            ),
+            Self::Rgb565Be => (
+                "rgb565be",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Rgb565Le => (
+                "rgb565le",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Rgb555Be => (
+                "rgb555be",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Rgb555Le => (
+                "rgb555le",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Bgr565Be => (
+                "bgr565be",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Bgr565Le => (
+                "bgr565le",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Bgr555Be => (
+                "bgr555be",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Bgr555Le => (
+                "bgr555le",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Rgb444Le => (
+                "rgb444le",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Rgb444Be => (
+                "rgb444be",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Bgr444Le => (
+                "bgr444le",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
+                0,
+                0,
+            ),
+            Self::Bgr444Be => (
+                "bgr444be",
+                PixelFormatClass::Rgb,
+                3,
+                16,
+                1,
+                false,
+                false,
+                Some(2),
                 0,
                 0,
             ),
@@ -1138,6 +1318,21 @@ impl PixelFormat {
                 16
             } else if matches!(
                 self,
+                Self::Rgb565Be | Self::Rgb565Le | Self::Bgr565Be | Self::Bgr565Le
+            ) {
+                6
+            } else if matches!(
+                self,
+                Self::Rgb555Be | Self::Rgb555Le | Self::Bgr555Be | Self::Bgr555Le
+            ) {
+                5
+            } else if matches!(
+                self,
+                Self::Rgb444Le | Self::Rgb444Be | Self::Bgr444Le | Self::Bgr444Be
+            ) {
+                4
+            } else if matches!(
+                self,
                 Self::Gray9Le | Self::Gray9Be | Self::Gbrp9Le | Self::Gbrp9Be
             ) {
                 9
@@ -1321,6 +1516,22 @@ impl PixelFormat {
                 pixels,
                 3,
                 "24-bit packed pixel format frame size",
+            )?]),
+            Self::Rgb565Be
+            | Self::Rgb565Le
+            | Self::Rgb555Be
+            | Self::Rgb555Le
+            | Self::Bgr565Be
+            | Self::Bgr565Le
+            | Self::Bgr555Be
+            | Self::Bgr555Le
+            | Self::Rgb444Le
+            | Self::Rgb444Be
+            | Self::Bgr444Le
+            | Self::Bgr444Be => Ok(vec![checked_mul(
+                pixels,
+                2,
+                "16-bit packed RGB pixel format frame size",
             )?]),
             Self::Rgb48Le | Self::Rgb48Be | Self::Bgr48Le | Self::Bgr48Be => Ok(vec![checked_mul(
                 pixels,
@@ -1541,6 +1752,27 @@ mod tests {
         );
         assert_eq!(PixelFormat::Rgb24.name(), "rgb24");
         assert_eq!(PixelFormat::from_name("bgr24"), Some(PixelFormat::Bgr24));
+        for (name, format) in [
+            ("rgb565be", PixelFormat::Rgb565Be),
+            ("rgb565le", PixelFormat::Rgb565Le),
+            ("rgb555be", PixelFormat::Rgb555Be),
+            ("rgb555le", PixelFormat::Rgb555Le),
+            ("bgr565be", PixelFormat::Bgr565Be),
+            ("bgr565le", PixelFormat::Bgr565Le),
+            ("bgr555be", PixelFormat::Bgr555Be),
+            ("bgr555le", PixelFormat::Bgr555Le),
+            ("rgb444le", PixelFormat::Rgb444Le),
+            ("rgb444be", PixelFormat::Rgb444Be),
+            ("bgr444le", PixelFormat::Bgr444Le),
+            ("bgr444be", PixelFormat::Bgr444Be),
+        ] {
+            assert_eq!(format.name(), name);
+            assert_eq!(PixelFormat::from_name(name), Some(format));
+            assert_eq!(format.plane_count(), 1);
+            assert!(format.is_packed());
+            assert!(!format.has_alpha());
+            assert_eq!(format.packed_bytes_per_pixel(), Some(2));
+        }
         assert_eq!(
             PixelFormat::from_name("rgb48le"),
             Some(PixelFormat::Rgb48Le)
@@ -1698,7 +1930,7 @@ mod tests {
             PixelFormat::from_name("yuv444p"),
             Some(PixelFormat::Yuv444p)
         );
-        assert_eq!(PixelFormat::ALL.len(), 70);
+        assert_eq!(PixelFormat::ALL.len(), 82);
         assert_eq!(PixelFormat::Ya8.plane_count(), 1);
         assert_eq!(PixelFormat::Ya16Le.plane_count(), 1);
         assert_eq!(PixelFormat::Gray10Le.plane_count(), 1);
@@ -2002,6 +2234,40 @@ mod tests {
             assert!(!format.has_chroma_subsampling());
         }
 
+        for (format, expected_name, expected_bits_per_component) in [
+            (PixelFormat::Rgb565Be, "rgb565be", 6),
+            (PixelFormat::Rgb565Le, "rgb565le", 6),
+            (PixelFormat::Rgb555Be, "rgb555be", 5),
+            (PixelFormat::Rgb555Le, "rgb555le", 5),
+            (PixelFormat::Bgr565Be, "bgr565be", 6),
+            (PixelFormat::Bgr565Le, "bgr565le", 6),
+            (PixelFormat::Bgr555Be, "bgr555be", 5),
+            (PixelFormat::Bgr555Le, "bgr555le", 5),
+            (PixelFormat::Rgb444Le, "rgb444le", 4),
+            (PixelFormat::Rgb444Be, "rgb444be", 4),
+            (PixelFormat::Bgr444Le, "bgr444le", 4),
+            (PixelFormat::Bgr444Be, "bgr444be", 4),
+        ] {
+            let descriptor = format.descriptor();
+            assert_eq!(descriptor.format, format);
+            assert_eq!(descriptor.name, expected_name);
+            assert_eq!(PixelFormat::from_name(descriptor.name), Some(format));
+            assert_eq!(descriptor.class, PixelFormatClass::Rgb);
+            assert!(format.is_rgb());
+            assert!(!format.is_gray());
+            assert!(!format.is_yuv());
+            assert_eq!(descriptor.component_count, 3);
+            assert_eq!(descriptor.bits_per_component, expected_bits_per_component);
+            assert_eq!(descriptor.bits_per_pixel, 16);
+            assert_eq!(descriptor.plane_count, 1);
+            assert!(!descriptor.is_planar);
+            assert!(!descriptor.has_alpha);
+            assert!(!descriptor.is_float);
+            assert_eq!(descriptor.packed_bytes_per_pixel, Some(2));
+            assert_eq!(format.log2_chroma(), (0, 0));
+            assert!(!format.has_chroma_subsampling());
+        }
+
         let gbrp = PixelFormat::Gbrp.descriptor();
         assert_eq!(gbrp.format, PixelFormat::Gbrp);
         assert_eq!(gbrp.name, "gbrp");
@@ -2166,6 +2432,13 @@ mod tests {
         assert_eq!(PixelFormat::Rgb48Le.bits_per_pixel(), 48);
         assert_eq!(PixelFormat::Bgr48Be.bits_per_component(), 16);
         assert_eq!(PixelFormat::Bgr48Be.bits_per_pixel(), 48);
+        assert_eq!(PixelFormat::Rgb565Le.component_count(), 3);
+        assert_eq!(PixelFormat::Rgb565Le.bits_per_component(), 6);
+        assert_eq!(PixelFormat::Rgb565Le.bits_per_pixel(), 16);
+        assert_eq!(PixelFormat::Bgr555Be.bits_per_component(), 5);
+        assert_eq!(PixelFormat::Bgr555Be.bits_per_pixel(), 16);
+        assert_eq!(PixelFormat::Rgb444Le.bits_per_component(), 4);
+        assert_eq!(PixelFormat::Bgr444Be.bits_per_component(), 4);
         assert_eq!(PixelFormat::Rgba64Le.component_count(), 4);
         assert_eq!(PixelFormat::Rgba64Le.bits_per_component(), 16);
         assert_eq!(PixelFormat::Rgba64Le.bits_per_pixel(), 64);
@@ -2233,6 +2506,11 @@ mod tests {
         assert_eq!(PixelFormat::GrayF32Be.frame_size(2, 2).unwrap(), 16);
         assert_eq!(PixelFormat::Rgb24.frame_size(2, 2).unwrap(), 12);
         assert_eq!(PixelFormat::Bgr24.frame_size(2, 2).unwrap(), 12);
+        assert_eq!(PixelFormat::Rgb565Le.plane_sizes(2, 2).unwrap(), vec![8]);
+        assert_eq!(PixelFormat::Rgb565Be.frame_size(2, 2).unwrap(), 8);
+        assert_eq!(PixelFormat::Bgr555Be.frame_size(2, 2).unwrap(), 8);
+        assert_eq!(PixelFormat::Rgb444Le.frame_size(2, 2).unwrap(), 8);
+        assert_eq!(PixelFormat::Bgr444Be.frame_size(2, 2).unwrap(), 8);
         assert_eq!(PixelFormat::Rgb48Le.frame_size(2, 2).unwrap(), 24);
         assert_eq!(PixelFormat::Rgb48Be.frame_size(2, 2).unwrap(), 24);
         assert_eq!(PixelFormat::Bgr48Le.frame_size(2, 2).unwrap(), 24);
@@ -2486,6 +2764,16 @@ mod tests {
             .unwrap();
 
         assert_eq!(planes, vec![vec![0, 1, 2, 3, 4, 5]]);
+
+        let planes = PixelFormat::Rgb565Le
+            .split_planes(&[0, 1, 2, 3], 2, 1)
+            .unwrap();
+
+        assert_eq!(planes, vec![vec![0, 1, 2, 3]]);
+
+        let planes = PixelFormat::Bgr444Be.split_planes(&[0, 1], 1, 1).unwrap();
+
+        assert_eq!(planes, vec![vec![0, 1]]);
 
         let planes = PixelFormat::Rgba64Le
             .split_planes(&[0, 1, 2, 3, 4, 5, 6, 7], 1, 1)

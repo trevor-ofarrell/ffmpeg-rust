@@ -306,6 +306,25 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidData
     );
 
+    for format in [
+        PixelFormat::Rgb565Le,
+        PixelFormat::Rgb555Be,
+        PixelFormat::Bgr565Le,
+        PixelFormat::Bgr555Be,
+        PixelFormat::Rgb444Le,
+        PixelFormat::Bgr444Be,
+    ] {
+        let decoder = RawVideoDecoder::new(2, 1, format).unwrap();
+        assert!(decoder.decode_packet(&Packet::new(vec![0; 4], 0)).is_ok());
+        assert_eq!(
+            decoder
+                .decode_packet(&Packet::new(vec![0; 3], 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
     let rgb48 = RawVideoDecoder::new(1, 1, PixelFormat::Rgb48Le).unwrap();
     assert!(rgb48.decode_packet(&Packet::new(vec![0; 6], 0)).is_ok());
     assert_eq!(
