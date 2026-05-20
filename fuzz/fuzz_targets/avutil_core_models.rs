@@ -35,7 +35,8 @@ use avutil::{
     Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
-    PacketDynamicHdr10Plus, PacketExif, PacketFallbackTrack, PacketFlags, PacketFrameCropping,
+    PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
+    PacketEncryptionSubsample, PacketExif, PacketFallbackTrack, PacketFlags, PacketFrameCropping,
     PacketH263MbInfo, PacketH263MbInfoEntry, PacketHdrPlusColorTransformParams, PacketIccProfile,
     PacketJpDualMono, PacketJpDualMonoSelection, PacketLcevc, PacketMasteringDisplayMetadata,
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketNewExtradata, PacketPalette,
@@ -3995,6 +3996,68 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_string_metadata_payload_invalid(&typed_payload));
         }
     }
+    match typed_payload_side_data.encryption_info() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::EncryptionInfo);
+            assert_eq!(value.data(), typed_payload.as_slice());
+            assert!(value.parsed_len() <= typed_payload.len());
+            assert_eq!(value.trailing_data(), &typed_payload[value.parsed_len()..]);
+            assert_eq!(value.scheme_fourcc(), value.scheme().to_be_bytes());
+            assert_eq!(value.key_id_size(), value.key_id().len());
+            assert_eq!(value.iv_size(), value.iv().len());
+            assert_eq!(value.subsamples().len(), value.subsample_count());
+            for (index, subsample) in value.subsamples().iter().copied().enumerate() {
+                assert_eq!(value.subsample(index), Some(subsample));
+                assert_eq!(
+                    PacketEncryptionSubsample::new(
+                        subsample.bytes_of_clear_data(),
+                        subsample.bytes_of_protected_data()
+                    )
+                    .to_bytes(),
+                    subsample.to_bytes()
+                );
+            }
+            assert_eq!(value.subsample(value.subsample_count()), None);
+            assert_eq!(PacketEncryptionInfo::parse(value.data()).unwrap(), value);
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::EncryptionInfo),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::EncryptionInfo);
+            assert!(packet_encryption_info_payload_invalid(&typed_payload));
+        }
+    }
+    match typed_payload_side_data.encryption_init_info() {
+        Ok(Some(value)) => {
+            assert_eq!(typed_payload_kind, PacketSideDataKind::EncryptionInitInfo);
+            assert_eq!(value.data(), typed_payload.as_slice());
+            assert!(value.parsed_len() <= typed_payload.len());
+            assert_eq!(value.trailing_data(), &typed_payload[value.parsed_len()..]);
+            assert_eq!(value.entries().len(), value.entry_count());
+            for (index, entry) in value.entries().iter().enumerate() {
+                assert_eq!(value.entry(index), Some(entry));
+                assert_eq!(entry.system_id_size(), entry.system_id().len());
+                assert_eq!(entry.key_ids().len(), entry.key_id_count());
+                for key_index in 0..entry.key_id_count() {
+                    let key_id = entry.key_id(key_index).unwrap();
+                    assert_eq!(key_id.len(), entry.key_id_size());
+                    assert_eq!(entry.key_ids()[key_index], key_id);
+                }
+                assert_eq!(entry.key_id(entry.key_id_count()), None);
+                assert_eq!(entry.data_size(), entry.data().len());
+            }
+            assert_eq!(value.entry(value.entry_count()), None);
+            assert_eq!(PacketEncryptionInitInfo::parse(value.data()).unwrap(), value);
+        }
+        Ok(None) => assert_ne!(typed_payload_kind, PacketSideDataKind::EncryptionInitInfo),
+        Err(err) => {
+            assert_eq!(err.kind(), AvErrorKind::InvalidData);
+            assert_eq!(typed_payload_kind, PacketSideDataKind::EncryptionInitInfo);
+            assert!(packet_encryption_init_info_payload_invalid(
+                &typed_payload
+            ));
+        }
+    }
     match typed_payload_side_data.mpegts_stream_id() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::MpegTsStreamId);
@@ -4795,6 +4858,118 @@ fn exercise_fixtures() {
             .unwrap(),
         None
     );
+    let packet_encryption_scheme = u32::from_be_bytes(*b"cenc");
+    let packet_encryption_key_id = [0x10, 0x11, 0x12, 0x13];
+    let packet_encryption_iv = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27];
+    let packet_encryption_subsamples = [
+        PacketEncryptionSubsample::new(3, 100),
+        PacketEncryptionSubsample::new(0, 55),
+    ];
+    let mut packet_encryption_info = Vec::new();
+    for value in [
+        packet_encryption_scheme,
+        1_u32,
+        9_u32,
+        packet_encryption_key_id.len() as u32,
+        packet_encryption_iv.len() as u32,
+        packet_encryption_subsamples.len() as u32,
+    ] {
+        packet_encryption_info.extend_from_slice(&value.to_be_bytes());
+    }
+    packet_encryption_info.extend_from_slice(&packet_encryption_key_id);
+    packet_encryption_info.extend_from_slice(&packet_encryption_iv);
+    for subsample in packet_encryption_subsamples {
+        packet_encryption_info.extend_from_slice(&subsample.to_bytes());
+    }
+    let packet_encryption_parsed_len = packet_encryption_info.len();
+    packet_encryption_info.push(0xaa);
+    let parsed_packet_encryption_info =
+        PacketEncryptionInfo::parse(&packet_encryption_info).unwrap();
+    assert_eq!(
+        parsed_packet_encryption_info.data(),
+        packet_encryption_info.as_slice()
+    );
+    assert_eq!(
+        parsed_packet_encryption_info.parsed_len(),
+        packet_encryption_parsed_len
+    );
+    assert_eq!(parsed_packet_encryption_info.trailing_data(), &[0xaa]);
+    assert_eq!(parsed_packet_encryption_info.scheme_fourcc(), *b"cenc");
+    assert_eq!(
+        parsed_packet_encryption_info.key_id(),
+        packet_encryption_key_id.as_slice()
+    );
+    assert_eq!(
+        parsed_packet_encryption_info.iv(),
+        packet_encryption_iv.as_slice()
+    );
+    assert_eq!(parsed_packet_encryption_info.subsample_count(), 2);
+    assert_eq!(
+        parsed_packet_encryption_info.subsample(1).unwrap(),
+        PacketEncryptionSubsample::new(0, 55)
+    );
+    assert_eq!(
+        SideData::new_encryption_info(packet_encryption_info.clone())
+            .unwrap()
+            .encryption_info()
+            .unwrap()
+            .unwrap(),
+        parsed_packet_encryption_info
+    );
+    for data in [
+        Vec::new(),
+        vec![0; PacketEncryptionInfo::HEADER_LEN - 1],
+        packet_encryption_info[..PacketEncryptionInfo::HEADER_LEN + 3].to_vec(),
+    ] {
+        assert!(packet_encryption_info_payload_invalid(&data));
+    }
+
+    let mut packet_encryption_init_info = Vec::new();
+    packet_encryption_init_info.extend_from_slice(&1_u32.to_be_bytes());
+    for value in [4_u32, 2, 3, 5] {
+        packet_encryption_init_info.extend_from_slice(&value.to_be_bytes());
+    }
+    packet_encryption_init_info.extend_from_slice(b"sys1");
+    packet_encryption_init_info.extend_from_slice(b"abc");
+    packet_encryption_init_info.extend_from_slice(b"def");
+    packet_encryption_init_info.extend_from_slice(b"hello");
+    let packet_encryption_init_parsed_len = packet_encryption_init_info.len();
+    packet_encryption_init_info.push(0xff);
+    let parsed_packet_encryption_init_info =
+        PacketEncryptionInitInfo::parse(&packet_encryption_init_info).unwrap();
+    assert_eq!(
+        parsed_packet_encryption_init_info.parsed_len(),
+        packet_encryption_init_parsed_len
+    );
+    assert_eq!(parsed_packet_encryption_init_info.trailing_data(), &[0xff]);
+    assert_eq!(parsed_packet_encryption_init_info.entry_count(), 1);
+    let init_entry = parsed_packet_encryption_init_info.entry(0).unwrap();
+    assert_eq!(init_entry.system_id(), b"sys1");
+    assert_eq!(init_entry.key_id_size(), 3);
+    assert_eq!(init_entry.key_ids(), &[b"abc".as_slice(), b"def".as_slice()]);
+    assert_eq!(init_entry.data(), b"hello");
+    assert_eq!(
+        SideData::new_encryption_init_info(packet_encryption_init_info.clone())
+            .unwrap()
+            .encryption_init_info()
+            .unwrap()
+            .unwrap(),
+        parsed_packet_encryption_init_info
+    );
+    assert_eq!(
+        PacketEncryptionInitInfo::parse(&0_u32.to_be_bytes()).unwrap().entry_count(),
+        0
+    );
+    for data in [
+        Vec::new(),
+        1_u32.to_be_bytes().to_vec(),
+        packet_encryption_init_info[..PacketEncryptionInitInfo::COUNT_LEN
+            + PacketEncryptionInitInfo::ENTRY_HEADER_LEN
+            + 1]
+            .to_vec(),
+    ] {
+        assert!(packet_encryption_init_info_payload_invalid(&data));
+    }
     for stream_id in [0, 0x47, u8::MAX] {
         let mpegts_stream_id = PacketMpegTsStreamId::new(stream_id);
         assert_eq!(mpegts_stream_id.stream_id(), stream_id);
@@ -12029,6 +12204,14 @@ fn packet_jp_dualmono_payload_invalid(data: &[u8]) -> bool {
 
 fn packet_string_metadata_payload_invalid(data: &[u8]) -> bool {
     PacketStringMetadata::parse(data).is_err()
+}
+
+fn packet_encryption_info_payload_invalid(data: &[u8]) -> bool {
+    PacketEncryptionInfo::parse(data).is_err()
+}
+
+fn packet_encryption_init_info_payload_invalid(data: &[u8]) -> bool {
+    PacketEncryptionInitInfo::parse(data).is_err()
 }
 
 fn packet_mpegts_stream_id_payload_invalid(data: &[u8]) -> bool {

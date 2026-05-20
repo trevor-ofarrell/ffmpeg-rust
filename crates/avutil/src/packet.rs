@@ -2317,6 +2317,327 @@ impl<'a> PacketStringMetadata<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketEncryptionSubsample {
+    bytes_of_clear_data: u32,
+    bytes_of_protected_data: u32,
+}
+
+impl PacketEncryptionSubsample {
+    pub const DATA_LEN: usize = 8;
+
+    pub const fn new(bytes_of_clear_data: u32, bytes_of_protected_data: u32) -> Self {
+        Self {
+            bytes_of_clear_data,
+            bytes_of_protected_data,
+        }
+    }
+
+    pub const fn bytes_of_clear_data(self) -> u32 {
+        self.bytes_of_clear_data
+    }
+
+    pub const fn bytes_of_protected_data(self) -> u32 {
+        self.bytes_of_protected_data
+    }
+
+    pub fn to_bytes(self) -> [u8; Self::DATA_LEN] {
+        let clear = self.bytes_of_clear_data.to_be_bytes();
+        let protected = self.bytes_of_protected_data.to_be_bytes();
+        [
+            clear[0],
+            clear[1],
+            clear[2],
+            clear[3],
+            protected[0],
+            protected[1],
+            protected[2],
+            protected[3],
+        ]
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketEncryptionInfo<'a> {
+    data: &'a [u8],
+    parsed_len: usize,
+    scheme: u32,
+    crypt_byte_block: u32,
+    skip_byte_block: u32,
+    key_id: &'a [u8],
+    iv: &'a [u8],
+    subsamples: Vec<PacketEncryptionSubsample>,
+}
+
+impl<'a> PacketEncryptionInfo<'a> {
+    pub const HEADER_LEN: usize = 24;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() < Self::HEADER_LEN {
+            return Err(AvError::invalid_data(format!(
+                "encryption info packet side data requires at least {} bytes, got {}",
+                Self::HEADER_LEN,
+                data.len()
+            )));
+        }
+
+        let key_id_size = usize_from_u32_be(data, 12, "encryption info key ID size")?;
+        let iv_size = usize_from_u32_be(data, 16, "encryption info IV size")?;
+        let subsample_count = usize_from_u32_be(data, 20, "encryption info subsample count")?;
+        let subsamples_len = subsample_count
+            .checked_mul(PacketEncryptionSubsample::DATA_LEN)
+            .ok_or_else(|| {
+                AvError::invalid_data("encryption info subsample byte length overflows usize")
+            })?;
+        let parsed_len = Self::HEADER_LEN
+            .checked_add(key_id_size)
+            .and_then(|value| value.checked_add(iv_size))
+            .and_then(|value| value.checked_add(subsamples_len))
+            .ok_or_else(|| AvError::invalid_data("encryption info byte length overflows usize"))?;
+
+        if data.len() < parsed_len {
+            return Err(AvError::invalid_data(format!(
+                "encryption info packet side data requires at least {parsed_len} bytes, got {}",
+                data.len()
+            )));
+        }
+
+        let key_id_start = Self::HEADER_LEN;
+        let key_id_end = key_id_start + key_id_size;
+        let iv_end = key_id_end + iv_size;
+        let mut offset = iv_end;
+        let mut subsamples = Vec::new();
+        for _ in 0..subsample_count {
+            subsamples.push(PacketEncryptionSubsample::new(
+                read_u32_be(data, offset),
+                read_u32_be(data, offset + 4),
+            ));
+            offset += PacketEncryptionSubsample::DATA_LEN;
+        }
+
+        Ok(Self {
+            data,
+            parsed_len,
+            scheme: read_u32_be(data, 0),
+            crypt_byte_block: read_u32_be(data, 4),
+            skip_byte_block: read_u32_be(data, 8),
+            key_id: &data[key_id_start..key_id_end],
+            iv: &data[key_id_end..iv_end],
+            subsamples,
+        })
+    }
+
+    pub const fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn parsed_len(&self) -> usize {
+        self.parsed_len
+    }
+
+    pub fn trailing_data(&self) -> &'a [u8] {
+        &self.data[self.parsed_len..]
+    }
+
+    pub const fn scheme(&self) -> u32 {
+        self.scheme
+    }
+
+    pub const fn scheme_fourcc(&self) -> [u8; 4] {
+        self.scheme.to_be_bytes()
+    }
+
+    pub const fn crypt_byte_block(&self) -> u32 {
+        self.crypt_byte_block
+    }
+
+    pub const fn skip_byte_block(&self) -> u32 {
+        self.skip_byte_block
+    }
+
+    pub const fn key_id(&self) -> &'a [u8] {
+        self.key_id
+    }
+
+    pub const fn key_id_size(&self) -> usize {
+        self.key_id.len()
+    }
+
+    pub const fn iv(&self) -> &'a [u8] {
+        self.iv
+    }
+
+    pub const fn iv_size(&self) -> usize {
+        self.iv.len()
+    }
+
+    pub fn subsample_count(&self) -> usize {
+        self.subsamples.len()
+    }
+
+    pub fn subsamples(&self) -> &[PacketEncryptionSubsample] {
+        &self.subsamples
+    }
+
+    pub fn subsample(&self, index: usize) -> Option<PacketEncryptionSubsample> {
+        self.subsamples.get(index).copied()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketEncryptionInitInfoEntry<'a> {
+    system_id: &'a [u8],
+    key_id_size: usize,
+    key_ids: Vec<&'a [u8]>,
+    data: &'a [u8],
+}
+
+impl<'a> PacketEncryptionInitInfoEntry<'a> {
+    pub const fn system_id(&self) -> &'a [u8] {
+        self.system_id
+    }
+
+    pub const fn system_id_size(&self) -> usize {
+        self.system_id.len()
+    }
+
+    pub const fn key_id_size(&self) -> usize {
+        self.key_id_size
+    }
+
+    pub fn key_id_count(&self) -> usize {
+        self.key_ids.len()
+    }
+
+    pub fn key_ids(&self) -> &[&'a [u8]] {
+        &self.key_ids
+    }
+
+    pub fn key_id(&self, index: usize) -> Option<&'a [u8]> {
+        self.key_ids.get(index).copied()
+    }
+
+    pub const fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn data_size(&self) -> usize {
+        self.data.len()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PacketEncryptionInitInfo<'a> {
+    data: &'a [u8],
+    parsed_len: usize,
+    entries: Vec<PacketEncryptionInitInfoEntry<'a>>,
+}
+
+impl<'a> PacketEncryptionInitInfo<'a> {
+    pub const COUNT_LEN: usize = 4;
+    pub const ENTRY_HEADER_LEN: usize = 16;
+
+    pub fn parse(data: &'a [u8]) -> AvResult<Self> {
+        if data.len() < Self::COUNT_LEN {
+            return Err(AvError::invalid_data(format!(
+                "encryption init info packet side data requires at least {} bytes, got {}",
+                Self::COUNT_LEN,
+                data.len()
+            )));
+        }
+
+        let entry_count = usize_from_u32_be(data, 0, "encryption init info entry count")?;
+        let mut entries = Vec::new();
+        let mut offset = Self::COUNT_LEN;
+        for _ in 0..entry_count {
+            if data.len().saturating_sub(offset) < Self::ENTRY_HEADER_LEN {
+                return Err(AvError::invalid_data(
+                    "encryption init info entry header is truncated",
+                ));
+            }
+
+            let system_id_size =
+                usize_from_u32_be(data, offset, "encryption init info system ID size")?;
+            let key_id_count =
+                usize_from_u32_be(data, offset + 4, "encryption init info key ID count")?;
+            let key_id_size =
+                usize_from_u32_be(data, offset + 8, "encryption init info key ID size")?;
+            let data_size = usize_from_u32_be(data, offset + 12, "encryption init info data size")?;
+            if key_id_count != 0 && key_id_size == 0 {
+                return Err(AvError::invalid_data(
+                    "encryption init info key ID count requires nonzero key ID size",
+                ));
+            }
+
+            let key_ids_len = key_id_count.checked_mul(key_id_size).ok_or_else(|| {
+                AvError::invalid_data("encryption init info key ID byte length overflows usize")
+            })?;
+            let entry_body_len = system_id_size
+                .checked_add(key_ids_len)
+                .and_then(|value| value.checked_add(data_size))
+                .ok_or_else(|| {
+                    AvError::invalid_data("encryption init info entry byte length overflows usize")
+                })?;
+
+            offset += Self::ENTRY_HEADER_LEN;
+            if data.len().saturating_sub(offset) < entry_body_len {
+                return Err(AvError::invalid_data(
+                    "encryption init info entry payload is truncated",
+                ));
+            }
+
+            let system_id = &data[offset..offset + system_id_size];
+            offset += system_id_size;
+
+            let mut key_ids = Vec::new();
+            for _ in 0..key_id_count {
+                key_ids.push(&data[offset..offset + key_id_size]);
+                offset += key_id_size;
+            }
+
+            let entry_data = &data[offset..offset + data_size];
+            offset += data_size;
+
+            entries.push(PacketEncryptionInitInfoEntry {
+                system_id,
+                key_id_size,
+                key_ids,
+                data: entry_data,
+            });
+        }
+
+        Ok(Self {
+            data,
+            parsed_len: offset,
+            entries,
+        })
+    }
+
+    pub const fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    pub const fn parsed_len(&self) -> usize {
+        self.parsed_len
+    }
+
+    pub fn trailing_data(&self) -> &'a [u8] {
+        &self.data[self.parsed_len..]
+    }
+
+    pub fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn entries(&self) -> &[PacketEncryptionInitInfoEntry<'a>] {
+        &self.entries
+    }
+
+    pub fn entry(&self, index: usize) -> Option<&PacketEncryptionInitInfoEntry<'a>> {
+        self.entries.get(index)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketReplayGain {
     track_gain: i32,
     track_peak: u32,
@@ -3132,6 +3453,18 @@ impl SideData {
         Ok(side_data)
     }
 
+    pub fn new_encryption_init_info(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::EncryptionInitInfo, data)?;
+        PacketEncryptionInitInfo::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
+    pub fn new_encryption_info(data: Vec<u8>) -> AvResult<Self> {
+        let side_data = Self::new_with_kind(PacketSideDataKind::EncryptionInfo, data)?;
+        PacketEncryptionInfo::parse(side_data.data())?;
+        Ok(side_data)
+    }
+
     pub fn new_icc_profile(data: Vec<u8>) -> AvResult<Self> {
         let side_data = Self::new_with_kind(PacketSideDataKind::IccProfile, data)?;
         PacketIccProfile::parse(side_data.data())?;
@@ -3397,6 +3730,22 @@ impl SideData {
         }
 
         PacketA53ClosedCaptions::parse(self.data()).map(Some)
+    }
+
+    pub fn encryption_init_info(&self) -> AvResult<Option<PacketEncryptionInitInfo<'_>>> {
+        if self.kind != PacketSideDataKind::EncryptionInitInfo {
+            return Ok(None);
+        }
+
+        PacketEncryptionInitInfo::parse(self.data()).map(Some)
+    }
+
+    pub fn encryption_info(&self) -> AvResult<Option<PacketEncryptionInfo<'_>>> {
+        if self.kind != PacketSideDataKind::EncryptionInfo {
+            return Ok(None);
+        }
+
+        PacketEncryptionInfo::parse(self.data()).map(Some)
     }
 
     pub fn icc_profile(&self) -> AvResult<Option<PacketIccProfile<'_>>> {
@@ -3955,6 +4304,11 @@ fn read_u32_be(data: &[u8], offset: usize) -> u32 {
     let mut bytes = [0; 4];
     bytes.copy_from_slice(&data[offset..offset + 4]);
     u32::from_be_bytes(bytes)
+}
+
+fn usize_from_u32_be(data: &[u8], offset: usize, label: &str) -> AvResult<usize> {
+    usize::try_from(read_u32_be(data, offset))
+        .map_err(|_| AvError::invalid_data(format!("{label} does not fit in usize")))
 }
 
 fn read_u64_be(data: &[u8], offset: usize) -> u64 {
@@ -6526,6 +6880,208 @@ mod tests {
                 SideData::new_with_kind(PacketSideDataKind::MetadataUpdate, data).unwrap();
             assert_eq!(
                 update_side_data.metadata_update().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+    }
+
+    #[test]
+    fn packet_side_data_parses_encryption_info_payload() {
+        let scheme = u32::from_be_bytes(*b"cenc");
+        let key_id = [0x10, 0x11, 0x12, 0x13];
+        let iv = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27];
+        let subsamples = [
+            PacketEncryptionSubsample::new(3, 100),
+            PacketEncryptionSubsample::new(0, 55),
+        ];
+        let mut data = Vec::new();
+        for value in [
+            scheme,
+            1_u32,
+            9_u32,
+            key_id.len() as u32,
+            iv.len() as u32,
+            subsamples.len() as u32,
+        ] {
+            data.extend_from_slice(&value.to_be_bytes());
+        }
+        data.extend_from_slice(&key_id);
+        data.extend_from_slice(&iv);
+        for subsample in subsamples {
+            data.extend_from_slice(&subsample.to_bytes());
+        }
+        let parsed_len = data.len();
+        data.extend_from_slice(&[0xaa, 0xbb]);
+
+        let parsed = PacketEncryptionInfo::parse(&data).unwrap();
+        assert_eq!(parsed.data(), data.as_slice());
+        assert_eq!(parsed.parsed_len(), parsed_len);
+        assert_eq!(parsed.trailing_data(), &[0xaa, 0xbb]);
+        assert_eq!(parsed.scheme(), scheme);
+        assert_eq!(parsed.scheme_fourcc(), *b"cenc");
+        assert_eq!(parsed.crypt_byte_block(), 1);
+        assert_eq!(parsed.skip_byte_block(), 9);
+        assert_eq!(parsed.key_id(), key_id.as_slice());
+        assert_eq!(parsed.key_id_size(), key_id.len());
+        assert_eq!(parsed.iv(), iv.as_slice());
+        assert_eq!(parsed.iv_size(), iv.len());
+        assert_eq!(parsed.subsample_count(), 2);
+        assert_eq!(parsed.subsamples(), &subsamples);
+        assert_eq!(parsed.subsample(0), Some(subsamples[0]));
+        assert_eq!(parsed.subsample(1), Some(subsamples[1]));
+        assert_eq!(parsed.subsample(2), None);
+
+        let side_data = SideData::new_encryption_info(data.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::EncryptionInfo);
+        assert_eq!(side_data.data(), data.as_slice());
+        assert_eq!(side_data.encryption_info().unwrap(), Some(parsed));
+
+        let non_encryption =
+            SideData::new_with_kind(PacketSideDataKind::MpegTsStreamId, data).unwrap();
+        assert_eq!(non_encryption.encryption_info().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_encryption_info_payload() {
+        let mut truncated_subsamples = Vec::new();
+        for value in [u32::from_be_bytes(*b"cenc"), 0, 0, 4, 8, 2] {
+            truncated_subsamples.extend_from_slice(&value.to_be_bytes());
+        }
+        truncated_subsamples.extend_from_slice(&[0x10; 4]);
+        truncated_subsamples.extend_from_slice(&[0x20; 8]);
+        truncated_subsamples.extend_from_slice(&PacketEncryptionSubsample::new(3, 100).to_bytes());
+
+        let mut impossible_key_size = vec![0; PacketEncryptionInfo::HEADER_LEN];
+        impossible_key_size[12..16].copy_from_slice(&u32::MAX.to_be_bytes());
+
+        for data in [
+            Vec::new(),
+            vec![0; PacketEncryptionInfo::HEADER_LEN - 1],
+            truncated_subsamples,
+            impossible_key_size,
+        ] {
+            assert_eq!(
+                PacketEncryptionInfo::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_encryption_info(data.clone())
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::EncryptionInfo, data).unwrap();
+            assert_eq!(
+                side_data.encryption_info().unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+    }
+
+    #[test]
+    fn packet_side_data_parses_encryption_init_info_payload() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&2_u32.to_be_bytes());
+
+        for value in [4_u32, 2, 3, 5] {
+            data.extend_from_slice(&value.to_be_bytes());
+        }
+        data.extend_from_slice(b"sys1");
+        data.extend_from_slice(b"abc");
+        data.extend_from_slice(b"def");
+        data.extend_from_slice(b"hello");
+
+        for value in [0_u32, 0, 16, 3] {
+            data.extend_from_slice(&value.to_be_bytes());
+        }
+        data.extend_from_slice(b"pss");
+
+        let parsed_len = data.len();
+        data.push(0xff);
+
+        let parsed = PacketEncryptionInitInfo::parse(&data).unwrap();
+        assert_eq!(parsed.data(), data.as_slice());
+        assert_eq!(parsed.parsed_len(), parsed_len);
+        assert_eq!(parsed.trailing_data(), &[0xff]);
+        assert_eq!(parsed.entry_count(), 2);
+        assert_eq!(parsed.entries().len(), 2);
+
+        let first = parsed.entry(0).unwrap();
+        assert_eq!(first.system_id(), b"sys1");
+        assert_eq!(first.system_id_size(), 4);
+        assert_eq!(first.key_id_size(), 3);
+        assert_eq!(first.key_id_count(), 2);
+        assert_eq!(first.key_ids(), &[b"abc".as_slice(), b"def".as_slice()]);
+        assert_eq!(first.key_id(0), Some(b"abc".as_slice()));
+        assert_eq!(first.key_id(1), Some(b"def".as_slice()));
+        assert_eq!(first.key_id(2), None);
+        assert_eq!(first.data(), b"hello");
+        assert_eq!(first.data_size(), 5);
+
+        let second = parsed.entry(1).unwrap();
+        assert_eq!(second.system_id(), b"");
+        assert_eq!(second.system_id_size(), 0);
+        assert_eq!(second.key_id_size(), 16);
+        assert_eq!(second.key_id_count(), 0);
+        assert!(second.key_ids().is_empty());
+        assert_eq!(second.data(), b"pss");
+        assert_eq!(second.data_size(), 3);
+        assert_eq!(parsed.entry(2), None);
+
+        let side_data = SideData::new_encryption_init_info(data.clone()).unwrap();
+        assert_eq!(side_data.kind_id(), &PacketSideDataKind::EncryptionInitInfo);
+        assert_eq!(side_data.data(), data.as_slice());
+        assert_eq!(side_data.encryption_init_info().unwrap(), Some(parsed));
+
+        let empty_bytes = 0_u32.to_be_bytes();
+        let empty = PacketEncryptionInitInfo::parse(&empty_bytes).unwrap();
+        assert_eq!(empty.entry_count(), 0);
+        assert_eq!(empty.parsed_len(), PacketEncryptionInitInfo::COUNT_LEN);
+
+        let non_encryption =
+            SideData::new_with_kind(PacketSideDataKind::MpegTsStreamId, data).unwrap();
+        assert_eq!(non_encryption.encryption_init_info().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_side_data_rejects_malformed_encryption_init_info_payload() {
+        let mut truncated_body = Vec::new();
+        truncated_body.extend_from_slice(&1_u32.to_be_bytes());
+        for value in [4_u32, 1, 3, 5] {
+            truncated_body.extend_from_slice(&value.to_be_bytes());
+        }
+        truncated_body.extend_from_slice(b"sys");
+
+        let mut zero_key_size_with_keys = Vec::new();
+        zero_key_size_with_keys.extend_from_slice(&1_u32.to_be_bytes());
+        for value in [0_u32, 1, 0, 0] {
+            zero_key_size_with_keys.extend_from_slice(&value.to_be_bytes());
+        }
+
+        for data in [
+            Vec::new(),
+            vec![0; PacketEncryptionInitInfo::COUNT_LEN - 1],
+            1_u32.to_be_bytes().to_vec(),
+            truncated_body,
+            zero_key_size_with_keys,
+        ] {
+            assert_eq!(
+                PacketEncryptionInitInfo::parse(&data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                SideData::new_encryption_init_info(data.clone())
+                    .unwrap_err()
+                    .kind(),
+                crate::AvErrorKind::InvalidData
+            );
+
+            let side_data =
+                SideData::new_with_kind(PacketSideDataKind::EncryptionInitInfo, data).unwrap();
+            assert_eq!(
+                side_data.encryption_init_info().unwrap_err().kind(),
                 crate::AvErrorKind::InvalidData
             );
         }
