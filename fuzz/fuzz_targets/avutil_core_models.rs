@@ -9552,6 +9552,35 @@ fn exercise_fixtures() {
         custom_layout.describe(),
         "4 channels (FL@Left+UNK+AMBI1@Y+FL@SecondLeft)"
     );
+    assert!(custom_layout.has_custom_names());
+    assert!(custom_layout.canonical_native_mask().is_err());
+    assert_eq!(custom_layout.canonical_native_layout(), None);
+    let canonical_custom = CustomChannelLayout::new(vec![
+        ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+        ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+    ])
+    .unwrap();
+    assert_eq!(
+        canonical_custom.canonical_native_mask().unwrap(),
+        ChannelLayout::stereo().channel_mask()
+    );
+    assert_eq!(
+        canonical_custom.canonical_native_layout(),
+        Some(ChannelLayout::stereo())
+    );
+    assert_eq!(canonical_custom.describe(), "stereo");
+    let out_of_order_custom = CustomChannelLayout::new(vec![
+        ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+        ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+    ])
+    .unwrap();
+    assert_eq!(
+        out_of_order_custom
+            .canonical_native_mask()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
     assert_eq!(
         custom_layout.index_from_string("FR@Left").unwrap_err().kind(),
         AvErrorKind::InvalidArgument

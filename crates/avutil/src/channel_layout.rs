@@ -503,6 +503,35 @@ impl CustomChannelLayout {
         self.channels.get(index).map(ChannelCustom::id)
     }
 
+    pub fn has_custom_names(&self) -> bool {
+        self.channels.iter().any(ChannelCustom::has_name)
+    }
+
+    pub fn canonical_native_mask(&self) -> AvResult<u64> {
+        let mut mask = 0u64;
+        for channel in &self.channels {
+            let native = channel.id().native().ok_or_else(|| {
+                AvError::invalid_argument("custom layout cannot be represented as native mask")
+            })?;
+            let channel_mask = native.mask();
+            if mask >= channel_mask {
+                return Err(AvError::invalid_argument(
+                    "custom layout native channels are not in canonical order",
+                ));
+            }
+            mask |= channel_mask;
+        }
+        Ok(mask)
+    }
+
+    pub fn canonical_native_layout(&self) -> Option<ChannelLayout> {
+        if self.has_custom_names() {
+            return None;
+        }
+        let mask = self.canonical_native_mask().ok()?;
+        ChannelLayout::from_channel_mask(mask)
+    }
+
     pub fn index_from_channel(&self, id: ChannelId) -> AvResult<usize> {
         if id == ChannelId::None || !id.is_valid_raw_id() {
             return Err(AvError::invalid_argument("invalid channel id lookup"));
@@ -553,6 +582,10 @@ impl CustomChannelLayout {
     }
 
     pub fn describe(&self) -> String {
+        if let Some(layout) = self.canonical_native_layout() {
+            return layout.name().to_owned();
+        }
+
         let mut description = format!("{} channels (", self.channel_count());
         for (index, channel) in self.channels.iter().enumerate() {
             if index != 0 {
@@ -1550,6 +1583,9 @@ mod tests {
         assert_eq!(unknown.channel_from_index(2), Some(ChannelId::Unknown));
         assert_eq!(unknown.channel_from_index(3), None);
         assert_eq!(unknown.index_from_channel(ChannelId::Unknown).unwrap(), 0);
+        assert!(!unknown.has_custom_names());
+        assert!(unknown.canonical_native_mask().is_err());
+        assert_eq!(unknown.canonical_native_layout(), None);
         assert_eq!(unknown.describe(), "3 channels (UNK+UNK+UNK)");
 
         let layout = CustomChannelLayout::new(vec![
@@ -1565,6 +1601,7 @@ mod tests {
         assert_eq!(ChannelCustom::NAME_STORAGE_BYTES, 16);
         assert_eq!(ChannelCustom::MAX_NAME_BYTES, 15);
         assert_eq!(layout.channel_count(), 6);
+        assert!(layout.has_custom_names());
         assert_eq!(
             layout.channels()[0].id(),
             ChannelId::Native(Channel::FrontLeft)
@@ -1595,6 +1632,8 @@ mod tests {
         assert_eq!(layout.index_from_string("@SecondLeft").unwrap(), 3);
         assert_eq!(layout.index_from_string("UNSD@Gap").unwrap(), 4);
         assert_eq!(layout.index_from_string("USR2048@Vendor").unwrap(), 5);
+        assert!(layout.canonical_native_mask().is_err());
+        assert_eq!(layout.canonical_native_layout(), None);
         assert_eq!(
             layout.describe(),
             "6 channels (FL@Left+UNK+AMBI2@W+FL@SecondLeft+UNSD@Gap+USR2048@Vendor)"
@@ -1612,6 +1651,64 @@ mod tests {
             let err = layout.index_from_channel(id).unwrap_err();
             assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         }
+    }
+
+    #[test]
+    fn custom_channel_layouts_retype_to_native_only_when_lossless() {
+        let stereo = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+        ])
+        .unwrap();
+        assert!(!stereo.has_custom_names());
+        assert_eq!(
+            stereo.canonical_native_mask().unwrap(),
+            ChannelLayout::stereo().channel_mask()
+        );
+        assert_eq!(
+            stereo.canonical_native_layout(),
+            Some(ChannelLayout::stereo())
+        );
+        assert_eq!(stereo.describe(), "stereo");
+
+        let named_stereo = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "Left").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "Right").unwrap(),
+        ])
+        .unwrap();
+        assert!(named_stereo.has_custom_names());
+        assert_eq!(
+            named_stereo.canonical_native_mask().unwrap(),
+            ChannelLayout::stereo().channel_mask()
+        );
+        assert_eq!(named_stereo.canonical_native_layout(), None);
+        assert_eq!(named_stereo.describe(), "2 channels (FL@Left+FR@Right)");
+
+        let out_of_order = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+        ])
+        .unwrap();
+        let err = out_of_order.canonical_native_mask().unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(out_of_order.canonical_native_layout(), None);
+        assert_eq!(out_of_order.describe(), "2 channels (FR+FL)");
+
+        let duplicate = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+        ])
+        .unwrap();
+        let err = duplicate.canonical_native_mask().unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+
+        let non_native = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+            ChannelCustom::new(ChannelId::Unknown, "").unwrap(),
+        ])
+        .unwrap();
+        let err = non_native.canonical_native_mask().unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
     }
 
     #[test]
