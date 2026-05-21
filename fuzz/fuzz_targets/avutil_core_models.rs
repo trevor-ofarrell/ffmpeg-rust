@@ -4698,6 +4698,33 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert!(parsed_ambisonic.is_equivalent_to_custom(
         &CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap()
     ));
+    let native_custom = ChannelLayoutSpec::Native(layout).to_custom_layout().unwrap();
+    assert!(layout.is_equivalent_to_custom(&native_custom));
+    assert_eq!(native_custom.channel_count(), layout.channel_count());
+    assert_eq!(native_custom.channel_from_index(0), layout.channel_from_index(0));
+    let arbitrary_custom = arbitrary_spec.to_custom_layout().unwrap();
+    assert_eq!(
+        arbitrary_custom,
+        CustomChannelLayout::parse_channel_list("FL+FC").unwrap()
+    );
+    assert!(arbitrary_layout.is_equivalent_to_custom(&arbitrary_custom));
+    let parsed_ambisonic_custom = parsed_ambisonic.to_custom_layout().unwrap();
+    assert_eq!(
+        parsed_ambisonic_custom,
+        CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap()
+    );
+    assert!(parsed_ambisonic.is_equivalent_to_custom(&parsed_ambisonic_custom));
+    assert_eq!(
+        ChannelLayoutSpec::unspecified(3)
+            .unwrap()
+            .to_custom_layout()
+            .unwrap(),
+        CustomChannelLayout::unknown(3).unwrap()
+    );
+    assert_eq!(
+        custom_spec.to_custom_layout().unwrap(),
+        CustomChannelLayout::parse_channel_list("FL@Left+FR@Right").unwrap()
+    );
     let parsed_ambisonic_channel_list =
         ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap();
     assert_eq!(
@@ -10164,6 +10191,34 @@ fn exercise_fixtures() {
     assert_eq!(
         explicit_ambisonic.channel_from_string("AMBI3"),
         Some(ChannelId::Ambisonic(3))
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+            .to_custom_layout()
+            .unwrap(),
+        canonical_custom
+    );
+    assert_eq!(
+        ChannelLayoutSpec::NativeMask(
+            NativeChannelMaskLayout::new(Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
+                .unwrap()
+        )
+        .to_custom_layout()
+        .unwrap(),
+        CustomChannelLayout::parse_channel_list("FL+FC").unwrap()
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Ambisonic(explicit_ambisonic)
+            .to_custom_layout()
+            .unwrap(),
+        ambisonic_custom
+    );
+    assert_eq!(
+        ChannelLayoutSpec::unspecified(2)
+            .unwrap()
+            .to_custom_layout()
+            .unwrap(),
+        CustomChannelLayout::unknown(2).unwrap()
     );
     assert!(ambisonic_custom.is_equivalent_to_custom(
         &CustomChannelLayout::new(vec![

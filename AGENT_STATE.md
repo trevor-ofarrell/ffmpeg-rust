@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-channel-layout` update: source checking against pinned FFmpeg 8.1.1 `av_channel_layout_retype(..., AV_CHANNEL_ORDER_CUSTOM, ...)` shaped the next bounded retype slice. `ChannelLayoutSpec::to_custom_layout` now expands native, arbitrary native-mask, and explicit ambisonic specs through their source-shaped `channel_from_index` order into nameless `CustomChannelLayout` maps, clones existing custom maps without dropping names, and turns count-only unspecified specs into `UNK` custom maps instead of inventing channel identities. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, and formatting passed. The component remains `implemented`, not `complete`, because byte-level/non-UTF-8 tokenizer calibration, broader lossy and unspecified/custom/native/ambisonic retyping, oracle inventory parity, upstream FATE parity, and actual fuzz execution remain absent.
+
 Latest `avutil-channel-layout` update: source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.c` confirmed `canonical_order` and `av_channel_layout_retype(..., AV_CHANNEL_ORDER_AMBISONIC, CANONICAL)` can losslessly retype nameless custom maps with a complete standard-order `AMBI0..AMBI<N>` prefix and strictly ordered native extra channels into `AV_CHANNEL_ORDER_AMBISONIC`, while names, unknown extras, incomplete prefixes, or out-of-order native extras remain custom/non-lossless. `CustomChannelLayout::canonical_ambisonic_layout` now exposes that bounded lossless helper, and `ChannelLayoutSpec::parse` retypes nameless lists such as `AMBI0+AMBI1+AMBI2+AMBI3` and `AMBI0+AMBI1+AMBI2+AMBI3+FL+FR` to explicit `AmbisonicChannelLayout` specs while preserving named, unknown-extra, and out-of-order forms as Custom. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, formatting, and diff checks passed. The component remains `implemented`, not `complete`, because byte-level/non-UTF-8 tokenizer calibration, broader lossy and unspecified/custom/native/ambisonic retyping, oracle inventory parity, upstream FATE parity, and actual fuzz execution remain absent.
 
 Latest `avutil-channel-layout` update: source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.c` confirmed explicit `AV_CHANNEL_ORDER_AMBISONIC` lookup indexes AMBI channels before native extra-mask channels, uses native mask-bit order for extras, and routes string lookup through canonical `av_channel_from_string` before returning the channel at that index. `AmbisonicChannelLayout`, `NativeChannelMaskLayout`, `UnspecifiedChannelLayout`, and `ChannelLayoutSpec` now expose source-shaped `index_from_channel`, `index_from_string`, and `channel_from_string` where applicable, with absent or invalid lookups returning typed invalid-argument errors or `None`. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, and formatting passed. The component remains `implemented`, not `complete`, because byte-level/non-UTF-8 tokenizer calibration, broad native/custom/ambisonic/unspecified retyping, oracle inventory parity, upstream FATE parity, and actual fuzz execution remain absent.
@@ -413,6 +415,17 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-channel-layout` custom-target retype slice:
+  - `cargo test -p avutil channel_layout` (23 tests passed through Cargo's default target directory after correcting the new test's expected custom-unknown description)
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo fmt --all`
+  - `cargo clippy -p avutil --all-targets -- -D warnings`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo fmt --all -- --check`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-channel-layout`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
 
 - Current `avutil-channel-layout` ambisonic retype slice:
   - `Select-String -Path $env:TEMP\ffmpeg-channel-layout-8.1.1.c -Pattern 'canonical_order|masked_description|av_channel_layout_ambisonic_order|AV_CHANNEL_ORDER_AMBISONIC' -Context 0,80` (source-check only)
@@ -4587,6 +4600,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-channel-layout` custom-target retype slice:
+  - First `cargo test -p avutil channel_layout` run failed because the new unit test expected a count-only unspecified description for `ChannelLayoutSpec::unspecified(2).to_custom_layout()`. The implementation correctly produced a custom map with two `UNK` entries, so the test expectation was fixed to `2 channels (UNK+UNK)` and the same focused test then passed.
+
 - Current `avutil-channel-layout` count-suffix parser slice:
   - `cargo test -p avutil channel_layout --target-dir target-codex` failed before running tests because Windows Application Control blocked the generated `target-codex\debug\deps\avutil-*.exe` test binary with OS error 4551.
   - The same focused avutil channel-layout test passed with `cargo test -p avutil channel_layout` through Cargo's default `target` directory, so this is recorded as an environment/artifact policy issue, not a Rust test failure.
@@ -4975,6 +4991,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds a bounded lossless target-CUSTOM conversion helper on `ChannelLayoutSpec`, using existing channel-index order for native, arbitrary native-mask, and explicit ambisonic layouts, cloning custom maps unchanged, and representing unspecified layouts as UNKNOWN custom maps. It deliberately does not claim byte-level/non-UTF-8 parser parity, broader lossy/custom/native/ambisonic/unspecified retyping, oracle inventory parity, upstream FATE parity, or actual fuzz execution.
+
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds lossless canonical ambisonic retyping for nameless custom channel-list maps whose leading AMBI channels form a complete standard-order prefix and whose extra channels are native IDs in strict mask-bit order. It deliberately does not claim byte-level/non-UTF-8 parser parity, broad lossy/custom/native/unspecified retyping, oracle inventory parity, upstream FATE parity, or actual fuzz execution.
 
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change completes the current explicit ambisonic lookup surface by adding `index_from_channel`, `index_from_string`, and `channel_from_string` for `AmbisonicChannelLayout` and delegating those through `ChannelLayoutSpec`; native-mask and count-only unspecified specs now expose the same lookup API shape. It deliberately does not claim byte-level/non-UTF-8 parser parity, broad retyping, oracle inventory parity, upstream FATE parity, or actual fuzz execution.
@@ -5179,11 +5197,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Continue `avutil-channel-layout` with the next source-checked parser gap: byte-level/non-UTF-8 tokenizer calibration, broader lossy/custom/native/unspecified retyping, or explicit oracle-vector generation for the current parser/retype/lookup surface.
-2. Add oracle-backed differential vectors for channel-layout default, describe, compare, subset, and string parsing once a pinned FFmpeg binary is available locally.
+1. Continue `avutil-channel-layout` with the next source-checked retype/parser gap: lossless target-NATIVE/UNSPECIFIED helpers, byte-level/non-UTF-8 tokenizer calibration, or explicit oracle-vector generation for the current parser/retype/lookup surface.
+2. Add oracle-backed differential vectors for channel-layout custom-target retyping, default, describe, compare, subset, and string parsing once a pinned FFmpeg binary is available locally.
 3. Keep `avutil-channel-layout` below `complete` until full parsing, broad retyping, ambisonic order semantics, oracle inventory, upstream FATE, and fuzz parity are proven.
 
 ## Known Blockers
+
+- Latest `avutil-channel-layout` custom-target retype coverage now covers the bounded lossless path from native, arbitrary native-mask, explicit ambisonic, custom, and count-only unspecified specs into custom maps. Remaining blockers are lossless/lossy target-NATIVE, target-UNSPECIFIED, and target-AMBISONIC retype API coverage beyond the current parser path, byte-level/non-UTF-8 tokenizer calibration, oracle-vector calibration, full `ffmpeg -layouts` inventory comparison, upstream FATE parity, and actual fuzz execution.
 
 - Latest `avutil-channel-layout` ambisonic retype coverage now covers the bounded lossless canonical path for nameless complete AMBI-prefix custom maps with strictly ordered native extras. Remaining blockers are byte-level/non-UTF-8 tokenizer calibration, broader lossy and unspecified/custom/native/ambisonic retyping, oracle-vector calibration, full `ffmpeg -layouts` inventory comparison, upstream FATE parity, and actual fuzz execution.
 
@@ -5284,6 +5304,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added `ChannelLayoutSpec::to_custom_layout` as a bounded source-shaped target-CUSTOM retype helper. Native, arbitrary native-mask, and explicit ambisonic layouts expand through `channel_from_index` into nameless `CustomChannelLayout` entries; custom maps clone without losing names; and count-only unspecified specs produce `UNK` custom maps. Unit tests and deterministic `avutil_core_models` fuzz fixtures now cover native, native-mask, high-bit native-mask, explicit ambisonic, custom, and unspecified conversions; docs and the ledger record this as local coverage only. Validation passed with focused avutil channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run and execution, and formatting.
 
 Latest slice: added lossless custom-to-ambisonic retyping for the bounded channel-list parser surface. `CustomChannelLayout::canonical_ambisonic_layout` now rejects named maps, requires a complete `AMBI0..AMBI<N>` prefix, accepts only strictly ordered native trailing extras, and returns `AmbisonicChannelLayout` order/native-extra-mask values. `ChannelLayoutSpec::parse` now stores nameless `AMBI0+AMBI1+AMBI2+AMBI3` and `AMBI0+AMBI1+AMBI2+AMBI3+FL+FR` lists as explicit ambisonic specs while keeping named, unknown-extra, and out-of-order cases custom. Unit tests, deterministic `avutil_core_models` fuzz fixtures, docs, and ledger comments were updated; the ledger remains `implemented`, not `complete`, because byte-level parser parity, broader retyping, oracle vectors, upstream FATE, and actual fuzz execution remain pending. Validation passed with focused avutil channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run and execution, formatting, and `git diff --check` with CRLF warnings only.
 
