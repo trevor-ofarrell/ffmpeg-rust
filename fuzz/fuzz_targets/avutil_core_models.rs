@@ -4644,12 +4644,12 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         ChannelLayoutSpec::parse("UNK+UNK").unwrap(),
         ChannelLayoutSpec::unspecified(2).unwrap()
     );
+    let parsed_ambisonic_list = ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3").unwrap();
     assert_eq!(
-        ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3")
-            .unwrap()
-            .describe(),
-        "ambisonic 1"
+        parsed_ambisonic_list.as_ambisonic(),
+        Some(AmbisonicChannelLayout::new(1, 0).unwrap())
     );
+    assert_eq!(parsed_ambisonic_list.describe(), "ambisonic 1");
     let parsed_ambisonic = ChannelLayoutSpec::parse("ambisonic 1+stereo").unwrap();
     assert_eq!(
         parsed_ambisonic.as_ambisonic(),
@@ -4698,6 +4698,32 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert!(parsed_ambisonic.is_equivalent_to_custom(
         &CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap()
     ));
+    let parsed_ambisonic_channel_list =
+        ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap();
+    assert_eq!(
+        parsed_ambisonic_channel_list.as_ambisonic(),
+        parsed_ambisonic.as_ambisonic()
+    );
+    let parsed_ambisonic_sparse_extra =
+        ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+FL+FC").unwrap();
+    assert_eq!(
+        parsed_ambisonic_sparse_extra.as_ambisonic(),
+        Some(
+            AmbisonicChannelLayout::new(
+                1,
+                Channel::FrontLeft.mask() | Channel::FrontCenter.mask()
+            )
+            .unwrap()
+        )
+    );
+    assert!(ChannelLayoutSpec::parse("AMBI0@W+AMBI1+AMBI2+AMBI3")
+        .unwrap()
+        .as_custom()
+        .is_some());
+    assert!(ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+FR+FL")
+        .unwrap()
+        .as_custom()
+        .is_some());
     let parsed_named_ambisonic =
         ChannelLayoutSpec::parse("ambisonic 0x1+FL@Left+FR@Right").unwrap();
     assert_eq!(parsed_named_ambisonic.as_ambisonic(), None);
@@ -10122,6 +10148,10 @@ fn exercise_fixtures() {
     .unwrap();
     assert_eq!(ambisonic_custom.ambisonic_order().unwrap(), 1);
     assert_eq!(ambisonic_custom.describe(), "ambisonic 1+stereo");
+    assert_eq!(
+        ambisonic_custom.canonical_ambisonic_layout().unwrap(),
+        AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap()
+    );
     let explicit_ambisonic =
         AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap();
     assert_eq!(
@@ -10154,6 +10184,13 @@ fn exercise_fixtures() {
     assert_eq!(
         incomplete_ambisonic_custom
             .ambisonic_order()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        incomplete_ambisonic_custom
+            .canonical_ambisonic_layout()
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidArgument

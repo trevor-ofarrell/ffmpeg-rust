@@ -674,6 +674,34 @@ impl CustomChannelLayout {
         ChannelLayout::from_channel_mask(mask)
     }
 
+    pub fn canonical_ambisonic_layout(&self) -> AvResult<AmbisonicChannelLayout> {
+        if self.has_custom_names() {
+            return Err(AvError::invalid_argument(
+                "custom layout with names cannot be represented losslessly as ambisonic",
+            ));
+        }
+
+        let order = self.ambisonic_order()?;
+        let ambisonic_channel_count = usize::from(
+            AmbisonicChannelLayout::ambisonic_channel_count_for_order(order)?,
+        );
+        let mut extra_native_mask = 0u64;
+        for channel in &self.channels[ambisonic_channel_count..] {
+            let native = channel.id().native().ok_or_else(|| {
+                AvError::invalid_argument("custom ambisonic layout extra channels are not native")
+            })?;
+            let channel_mask = native.mask();
+            if extra_native_mask >= channel_mask {
+                return Err(AvError::invalid_argument(
+                    "custom ambisonic layout extra channels are not in canonical order",
+                ));
+            }
+            extra_native_mask |= channel_mask;
+        }
+
+        AmbisonicChannelLayout::new(order, extra_native_mask)
+    }
+
     pub fn subset_native_mask(&self, mask: u64) -> u64 {
         Channel::ALL
             .iter()
@@ -2164,6 +2192,9 @@ impl ChannelLayoutSpec {
             if let Ok(mask) = layout.canonical_native_mask() {
                 return Self::from_native_channel_mask(mask);
             }
+            if let Ok(ambisonic) = layout.canonical_ambisonic_layout() {
+                return Ok(Self::Ambisonic(ambisonic));
+            }
         }
         Ok(Self::Custom(layout))
     }
@@ -3040,6 +3071,10 @@ mod tests {
             .unwrap();
         assert_eq!(zeroth_order.ambisonic_order().unwrap(), 0);
         assert_eq!(zeroth_order.describe(), "ambisonic 0");
+        assert_eq!(
+            zeroth_order.canonical_ambisonic_layout().unwrap(),
+            AmbisonicChannelLayout::new(0, 0).unwrap()
+        );
 
         let named_zeroth_order =
             CustomChannelLayout::new(vec![
@@ -3048,6 +3083,13 @@ mod tests {
             .unwrap();
         assert_eq!(named_zeroth_order.ambisonic_order().unwrap(), 0);
         assert_eq!(named_zeroth_order.describe(), "ambisonic 0");
+        assert_eq!(
+            named_zeroth_order
+                .canonical_ambisonic_layout()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
 
         let first_order = CustomChannelLayout::new(vec![
             ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
@@ -3058,6 +3100,10 @@ mod tests {
         .unwrap();
         assert_eq!(first_order.ambisonic_order().unwrap(), 1);
         assert_eq!(first_order.describe(), "ambisonic 1");
+        assert_eq!(
+            first_order.canonical_ambisonic_layout().unwrap(),
+            AmbisonicChannelLayout::new(1, 0).unwrap()
+        );
 
         let first_order_with_native_extra = CustomChannelLayout::new(vec![
             ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
@@ -3072,6 +3118,12 @@ mod tests {
         assert_eq!(
             first_order_with_native_extra.describe(),
             "ambisonic 1+stereo"
+        );
+        assert_eq!(
+            first_order_with_native_extra
+                .canonical_ambisonic_layout()
+                .unwrap(),
+            AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap()
         );
 
         let first_order_with_named_extra = CustomChannelLayout::new(vec![
@@ -3088,6 +3140,13 @@ mod tests {
             first_order_with_named_extra.describe(),
             "ambisonic 1+2 channels (FL@Left+FR@Right)"
         );
+        assert_eq!(
+            first_order_with_named_extra
+                .canonical_ambisonic_layout()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
 
         let first_order_with_custom_extra = CustomChannelLayout::new(vec![
             ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
@@ -3102,6 +3161,13 @@ mod tests {
         assert_eq!(
             first_order_with_custom_extra.describe(),
             "ambisonic 1+2 channels (FR+FL)"
+        );
+        assert_eq!(
+            first_order_with_custom_extra
+                .canonical_ambisonic_layout()
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
         );
     }
 
@@ -4849,9 +4915,17 @@ mod tests {
         );
 
         let ambisonic = ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3").unwrap();
+        assert_eq!(
+            ambisonic.as_ambisonic(),
+            Some(AmbisonicChannelLayout::new(1, 0).unwrap())
+        );
         assert_eq!(ambisonic.describe(), "ambisonic 1");
-        assert!(ambisonic.as_custom().is_some());
+        assert_eq!(ambisonic.as_custom(), None);
         assert_eq!(ambisonic.channel_count(), 4);
+
+        let named_ambisonic = ChannelLayoutSpec::parse("AMBI0@W+AMBI1+AMBI2+AMBI3").unwrap();
+        assert!(named_ambisonic.as_custom().is_some());
+        assert_eq!(named_ambisonic.describe(), "ambisonic 1");
     }
 
     #[test]
@@ -4956,6 +5030,31 @@ mod tests {
         assert!(hex_order.is_equivalent_to_custom(&equivalent_custom));
         assert!(hex_order.is_equivalent_to(ChannelLayoutSpec::Custom(equivalent_custom.clone())));
         assert!(!hex_order.is_equivalent_to_native(ChannelLayout::stereo()));
+
+        assert_eq!(
+            ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR")
+                .unwrap()
+                .as_ambisonic(),
+            Some(AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+FL+FC")
+                .unwrap()
+                .as_ambisonic(),
+            Some(
+                AmbisonicChannelLayout::new(
+                    1,
+                    Channel::FrontLeft.mask() | Channel::FrontCenter.mask()
+                )
+                .unwrap()
+            )
+        );
+        let out_of_order_extra = ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+FR+FL").unwrap();
+        assert_eq!(out_of_order_extra.as_ambisonic(), None);
+        assert!(out_of_order_extra.as_custom().is_some());
+        let unknown_extra = ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+UNK").unwrap();
+        assert_eq!(unknown_extra.as_ambisonic(), None);
+        assert!(unknown_extra.as_custom().is_some());
 
         let named_extra = ChannelLayoutSpec::parse("ambisonic +1+FL@Left+FR@Right").unwrap();
         assert_eq!(named_extra.as_ambisonic(), None);
