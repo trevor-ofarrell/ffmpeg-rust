@@ -15,6 +15,8 @@ pub enum Channel {
     SideRight,
     TopFrontLeft,
     TopFrontRight,
+    TopBackLeft,
+    TopBackRight,
 }
 
 impl Channel {
@@ -32,6 +34,8 @@ impl Channel {
         Self::SideRight,
         Self::TopFrontLeft,
         Self::TopFrontRight,
+        Self::TopBackLeft,
+        Self::TopBackRight,
     ];
 
     pub fn name(self) -> &'static str {
@@ -49,6 +53,8 @@ impl Channel {
             Self::SideRight => "SR",
             Self::TopFrontLeft => "TFL",
             Self::TopFrontRight => "TFR",
+            Self::TopBackLeft => "TBL",
+            Self::TopBackRight => "TBR",
         }
     }
 
@@ -74,6 +80,8 @@ impl Channel {
             Self::SideRight => 1 << 10,
             Self::TopFrontLeft => 1 << 12,
             Self::TopFrontRight => 1 << 14,
+            Self::TopBackLeft => 1 << 15,
+            Self::TopBackRight => 1 << 17,
         }
     }
 }
@@ -438,7 +446,39 @@ impl ChannelLayout {
         )
     }
 
-    pub fn known_layouts() -> [Self; 27] {
+    pub fn octagonal() -> Self {
+        Self::new_static(
+            "octagonal",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::BackLeft,
+                Channel::BackRight,
+                Channel::BackCenter,
+                Channel::SideLeft,
+                Channel::SideRight,
+            ],
+        )
+    }
+
+    pub fn cube() -> Self {
+        Self::new_static(
+            "cube",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::BackLeft,
+                Channel::BackRight,
+                Channel::TopFrontLeft,
+                Channel::TopFrontRight,
+                Channel::TopBackLeft,
+                Channel::TopBackRight,
+            ],
+        )
+    }
+
+    pub fn known_layouts() -> [Self; 29] {
         [
             Self::mono(),
             Self::stereo(),
@@ -467,6 +507,8 @@ impl ChannelLayout {
             Self::seven_one_wide_side(),
             Self::five_one_two(),
             Self::five_one_two_back(),
+            Self::octagonal(),
+            Self::cube(),
         ]
     }
 
@@ -499,6 +541,8 @@ impl ChannelLayout {
             "7.1(wide-side)" => Some(Self::seven_one_wide_side()),
             "5.1.2" => Some(Self::five_one_two()),
             "5.1.2(back)" => Some(Self::five_one_two_back()),
+            "octagonal" => Some(Self::octagonal()),
+            "cube" => Some(Self::cube()),
             _ => None,
         }
     }
@@ -647,6 +691,8 @@ mod tests {
         assert_eq!(Channel::SideRight.name(), "SR");
         assert_eq!(Channel::TopFrontLeft.name(), "TFL");
         assert_eq!(Channel::TopFrontRight.name(), "TFR");
+        assert_eq!(Channel::TopBackLeft.name(), "TBL");
+        assert_eq!(Channel::TopBackRight.name(), "TBR");
 
         assert_eq!(Channel::from_name("fl"), Some(Channel::FrontLeft));
         assert_eq!(Channel::from_name("LFE"), Some(Channel::LowFrequency));
@@ -655,6 +701,8 @@ mod tests {
         assert_eq!(Channel::from_name("bc"), Some(Channel::BackCenter));
         assert_eq!(Channel::from_name("tfl"), Some(Channel::TopFrontLeft));
         assert_eq!(Channel::from_name("TFR"), Some(Channel::TopFrontRight));
+        assert_eq!(Channel::from_name("tbl"), Some(Channel::TopBackLeft));
+        assert_eq!(Channel::from_name("TBR"), Some(Channel::TopBackRight));
         assert_eq!(Channel::from_name("unknown"), None);
         assert_eq!(Channel::FrontLeft.mask(), 1);
         assert_eq!(Channel::LowFrequency.mask(), 1 << 3);
@@ -664,6 +712,8 @@ mod tests {
         assert_eq!(Channel::SideLeft.mask(), 1 << 9);
         assert_eq!(Channel::TopFrontLeft.mask(), 1 << 12);
         assert_eq!(Channel::TopFrontRight.mask(), 1 << 14);
+        assert_eq!(Channel::TopBackLeft.mask(), 1 << 15);
+        assert_eq!(Channel::TopBackRight.mask(), 1 << 17);
     }
 
     #[test]
@@ -823,6 +873,21 @@ mod tests {
         assert!(five_one_two_back.contains(Channel::TopFrontRight));
         assert!(five_one_two_back.contains(Channel::BackLeft));
         assert!(!five_one_two_back.contains(Channel::SideLeft));
+
+        let octagonal = ChannelLayout::octagonal();
+        assert_eq!(octagonal.name(), "octagonal");
+        assert_eq!(octagonal.channel_count(), 8);
+        assert!(octagonal.contains(Channel::BackCenter));
+        assert!(octagonal.contains(Channel::SideRight));
+        assert!(!octagonal.contains(Channel::LowFrequency));
+
+        let cube = ChannelLayout::cube();
+        assert_eq!(cube.name(), "cube");
+        assert_eq!(cube.channel_count(), 8);
+        assert!(cube.contains(Channel::TopFrontLeft));
+        assert!(cube.contains(Channel::TopBackRight));
+        assert!(cube.contains(Channel::BackLeft));
+        assert!(!cube.contains(Channel::FrontCenter));
     }
 
     #[test]
@@ -944,6 +1009,14 @@ mod tests {
         assert_eq!(
             ChannelLayout::five_one_two_back().channel_string(),
             "FL+FR+FC+LFE+BL+BR+TFL+TFR"
+        );
+        assert_eq!(
+            ChannelLayout::octagonal().channel_string(),
+            "FL+FR+FC+BL+BR+BC+SL+SR"
+        );
+        assert_eq!(
+            ChannelLayout::cube().channel_string(),
+            "FL+FR+BL+BR+TFL+TFR+TBL+TBR"
         );
         assert_eq!(
             ChannelLayout::from_channel_mask(
@@ -1080,6 +1153,32 @@ mod tests {
             Some(ChannelLayout::five_one_two_back())
         );
         assert_eq!(
+            ChannelLayout::from_channel_mask(
+                Channel::FrontLeft.mask()
+                    | Channel::FrontRight.mask()
+                    | Channel::FrontCenter.mask()
+                    | Channel::BackLeft.mask()
+                    | Channel::BackRight.mask()
+                    | Channel::BackCenter.mask()
+                    | Channel::SideLeft.mask()
+                    | Channel::SideRight.mask()
+            ),
+            Some(ChannelLayout::octagonal())
+        );
+        assert_eq!(
+            ChannelLayout::from_channels(&[
+                Channel::TopBackRight,
+                Channel::TopBackLeft,
+                Channel::TopFrontRight,
+                Channel::TopFrontLeft,
+                Channel::BackRight,
+                Channel::BackLeft,
+                Channel::FrontRight,
+                Channel::FrontLeft,
+            ]),
+            Some(ChannelLayout::cube())
+        );
+        assert_eq!(
             ChannelLayout::from_channel_mask(Channel::FrontLeft.mask() | Channel::BackRight.mask()),
             None
         );
@@ -1125,6 +1224,8 @@ mod tests {
                 "7.1(wide-side)",
                 "5.1.2",
                 "5.1.2(back)",
+                "octagonal",
+                "cube",
             ]
         );
 
@@ -1223,6 +1324,14 @@ mod tests {
         assert_eq!(
             ChannelLayout::from_name("5.1.2(back)"),
             Some(ChannelLayout::five_one_two_back())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("octagonal"),
+            Some(ChannelLayout::octagonal())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("cube"),
+            Some(ChannelLayout::cube())
         );
         assert_eq!(ChannelLayout::from_name("unknown"), None);
 
@@ -1375,6 +1484,15 @@ mod tests {
         assert_eq!(
             ChannelLayout::parse("FL+TFR+FR+FC+TFL+LFE+BR+BL").unwrap(),
             ChannelLayout::five_one_two_back()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+BL+BR+BC+SL+SR").unwrap(),
+            ChannelLayout::octagonal()
+        );
+        assert_eq!(ChannelLayout::parse("cube").unwrap(), ChannelLayout::cube());
+        assert_eq!(
+            ChannelLayout::parse("FL+TBR+FR+TFL+BR+TFR+TBL+BL").unwrap(),
+            ChannelLayout::cube()
         );
     }
 

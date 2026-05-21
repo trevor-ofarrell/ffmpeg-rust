@@ -14901,7 +14901,7 @@ fn expected_sample_silence_byte(format: SampleFormat) -> u8 {
 }
 
 fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
-    match byte.unwrap_or_default() % 27 {
+    match byte.unwrap_or_default() % 29 {
         0 => ChannelLayout::mono(),
         1 => ChannelLayout::stereo(),
         2 => ChannelLayout::two_one(),
@@ -14928,7 +14928,9 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
         23 => ChannelLayout::seven_one_wide(),
         24 => ChannelLayout::seven_one_wide_side(),
         25 => ChannelLayout::five_one_two(),
-        _ => ChannelLayout::five_one_two_back(),
+        26 => ChannelLayout::five_one_two_back(),
+        27 => ChannelLayout::octagonal(),
+        _ => ChannelLayout::cube(),
     }
 }
 
