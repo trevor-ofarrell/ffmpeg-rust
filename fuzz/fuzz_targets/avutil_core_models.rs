@@ -4581,7 +4581,30 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         parsed_mixed.channel_from_index(3),
         Some(ChannelId::User(0x800))
     );
-    for invalid_custom in ["", "FL++FR", "NONE", "@Left", "NOPE@Left", "FL@Left@Again"] {
+    let escaped_custom =
+        CustomChannelLayout::parse_channel_list("FL@Left\\+Right+FR").unwrap();
+    assert_eq!(escaped_custom.channels()[0].name(), "Left+Right");
+    let escaped_at = CustomChannelLayout::parse_channel_list("FL@Left\\@Name+FR").unwrap();
+    assert_eq!(escaped_at.channels()[0].name(), "Left@Name");
+    let repeated_at = CustomChannelLayout::parse_channel_list("FL@Left@Again").unwrap();
+    assert_eq!(repeated_at.channels()[0].name(), "Left@Again");
+    let spaced = CustomChannelLayout::parse_channel_list("FL @ Left + FR").unwrap();
+    assert_eq!(spaced.channels()[0].name(), "Left");
+    let quoted = CustomChannelLayout::parse_channel_list("FL@'Left Right'+FR").unwrap();
+    assert_eq!(quoted.channels()[0].name(), "Left Right");
+    assert_eq!(
+        CustomChannelLayout::parse_channel_list("'FL'+FR")
+            .unwrap()
+            .canonical_native_layout(),
+        Some(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        CustomChannelLayout::parse_channel_list("FL+")
+            .unwrap()
+            .channel_count(),
+        1
+    );
+    for invalid_custom in ["", "FL++FR", "NONE", "@Left", "NOPE@Left"] {
         assert_eq!(
             CustomChannelLayout::parse_channel_list(invalid_custom)
                 .unwrap_err()
@@ -4596,6 +4619,20 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(custom_spec.describe(), "2 channels (FL@Left+FR@Right)");
     assert!(custom_spec.is_equivalent_to_native(ChannelLayout::stereo()));
+    assert_eq!(
+        ChannelLayoutSpec::parse("'FL'+FR").unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("FL+").unwrap(),
+        ChannelLayoutSpec::NativeMask(
+            NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
+        )
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("FL@Left\\+Right+FR").unwrap(),
+        ChannelLayoutSpec::Custom(escaped_custom)
+    );
     let duplicate_custom_spec = ChannelLayoutSpec::parse("FL+FL").unwrap();
     assert_eq!(duplicate_custom_spec.describe(), "2 channels (FL+FL)");
     assert_eq!(
@@ -9851,7 +9888,6 @@ fn exercise_fixtures() {
         "0x3g",
         "NONE",
         "NOPE@Left",
-        "FL@Left@Again",
     ] {
         assert_eq!(
             ChannelLayoutSpec::parse(invalid).unwrap_err().kind(),
@@ -9871,6 +9907,16 @@ fn exercise_fixtures() {
     );
     assert_eq!(custom_spec.describe(), "2 channels (FL@Left+FR@Right)");
     assert!(custom_spec.is_equivalent_to_native(ChannelLayout::stereo()));
+    assert_eq!(
+        ChannelLayoutSpec::parse("'FL'+FR").unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("FL+").unwrap(),
+        ChannelLayoutSpec::NativeMask(
+            NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
+        )
+    );
     let duplicate_custom_spec = ChannelLayoutSpec::parse("FL+FL").unwrap();
     assert_eq!(duplicate_custom_spec.describe(), "2 channels (FL+FL)");
     assert_eq!(
@@ -9943,7 +9989,34 @@ fn exercise_fixtures() {
         parsed_mixed.channel_from_index(3),
         Some(ChannelId::User(0x800))
     );
-    for invalid_custom in ["", "FL++FR", "NONE", "@Left", "NOPE@Left", "FL@Left@Again"] {
+    let escaped_custom =
+        CustomChannelLayout::parse_channel_list("FL@Left\\+Right+FR").unwrap();
+    assert_eq!(escaped_custom.channels()[0].name(), "Left+Right");
+    let escaped_at = CustomChannelLayout::parse_channel_list("FL@Left\\@Name+FR").unwrap();
+    assert_eq!(escaped_at.channels()[0].name(), "Left@Name");
+    let repeated_at = CustomChannelLayout::parse_channel_list("FL@Left@Again").unwrap();
+    assert_eq!(repeated_at.channels()[0].name(), "Left@Again");
+    let spaced = CustomChannelLayout::parse_channel_list("FL @ Left + FR").unwrap();
+    assert_eq!(spaced.channels()[0].name(), "Left");
+    let quoted = CustomChannelLayout::parse_channel_list("FL@'Left Right'+FR").unwrap();
+    assert_eq!(quoted.channels()[0].name(), "Left Right");
+    assert_eq!(
+        CustomChannelLayout::parse_channel_list("'FL'+FR")
+            .unwrap()
+            .canonical_native_layout(),
+        Some(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        CustomChannelLayout::parse_channel_list("FL+")
+            .unwrap()
+            .channel_count(),
+        1
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("FL@Left\\+Right+FR").unwrap(),
+        ChannelLayoutSpec::Custom(escaped_custom)
+    );
+    for invalid_custom in ["", "FL++FR", "NONE", "@Left", "NOPE@Left"] {
         assert_eq!(
             CustomChannelLayout::parse_channel_list(invalid_custom)
                 .unwrap_err()

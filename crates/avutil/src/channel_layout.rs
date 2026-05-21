@@ -483,7 +483,7 @@ impl CustomChannelLayout {
     }
 
     pub fn parse_channel_list(value: &str) -> AvResult<Self> {
-        let trimmed = value.trim();
+        let trimmed = Self::trim_ffmpeg_whitespace(value);
         if trimmed.is_empty() {
             return Err(AvError::invalid_argument(
                 "custom channel layout string is empty",
@@ -496,38 +496,127 @@ impl CustomChannelLayout {
         }
 
         let mut channels = Vec::new();
-        for raw_token in trimmed.split('+') {
-            let token = raw_token.trim();
-            if token.is_empty() {
-                return Err(AvError::invalid_argument(format!(
-                    "empty custom channel token in layout {value:?}"
-                )));
-            }
-
-            let (id_name, custom_name) = match token.split_once('@') {
-                Some((id_name, custom_name)) => {
-                    if custom_name.contains('@') {
-                        return Err(AvError::invalid_argument(format!(
-                            "custom channel token {token:?} contains multiple names"
-                        )));
-                    }
-                    (id_name, custom_name)
-                }
-                None => (token, ""),
-            };
+        let mut rest = trimmed;
+        while !rest.is_empty() {
+            let token_start = rest;
+            let (id_name, custom_name, token_rest) = Self::parse_channel_list_token(rest);
             if id_name.is_empty() {
                 return Err(AvError::invalid_argument(format!(
-                    "custom channel token {token:?} has no channel id"
+                    "custom channel token {token_start:?} has no channel id"
                 )));
             }
-
-            let id = ChannelId::from_canonical_name(id_name).ok_or_else(|| {
+            let id = ChannelId::from_canonical_name(&id_name).ok_or_else(|| {
                 AvError::invalid_argument(format!("unknown channel id {id_name:?}"))
             })?;
             channels.push(ChannelCustom::new(id, custom_name)?);
+
+            rest = token_rest;
+            if let Some(after_separator) = rest.strip_prefix('+') {
+                rest = after_separator;
+            }
         }
 
         Self::new(channels)
+    }
+
+    fn parse_channel_list_token(input: &str) -> (String, String, &str) {
+        if let Some((key, value_start)) = Self::parse_av_opt_key(input) {
+            let (value, rest) = Self::av_get_token(value_start, '+');
+            (key, value, rest)
+        } else {
+            let (value, rest) = Self::av_get_token(input, '+');
+            (value, String::new(), rest)
+        }
+    }
+
+    fn parse_av_opt_key(input: &str) -> Option<(String, &str)> {
+        let rest = Self::trim_start_ffmpeg_whitespace(input);
+        let mut key_end = 0usize;
+        for (index, ch) in rest.char_indices() {
+            if Self::is_av_opt_key_char(ch) {
+                key_end = index + ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+
+        let key = &rest[..key_end];
+        let rest = Self::trim_start_ffmpeg_whitespace(&rest[key_end..]);
+        let rest = rest.strip_prefix('@')?;
+        Some((key.to_owned(), rest))
+    }
+
+    fn av_get_token(input: &str, terminator: char) -> (String, &str) {
+        let mut rest = Self::trim_start_ffmpeg_whitespace(input);
+        let mut token = String::new();
+        let mut protected_len = 0usize;
+
+        while let Some(ch) = rest.chars().next() {
+            if ch == terminator {
+                break;
+            }
+
+            rest = &rest[ch.len_utf8()..];
+            match ch {
+                '\\' => {
+                    if let Some(escaped) = rest.chars().next() {
+                        rest = &rest[escaped.len_utf8()..];
+                        token.push(escaped);
+                        protected_len = token.len();
+                    } else {
+                        token.push('\\');
+                    }
+                }
+                '\'' => {
+                    let mut closed_quote = false;
+                    while let Some(quoted) = rest.chars().next() {
+                        rest = &rest[quoted.len_utf8()..];
+                        if quoted == '\'' {
+                            closed_quote = true;
+                            break;
+                        }
+                        token.push(quoted);
+                    }
+                    if closed_quote {
+                        protected_len = token.len();
+                    }
+                }
+                _ => token.push(ch),
+            }
+        }
+
+        while token.len() > protected_len {
+            let Some(ch) = token.chars().next_back() else {
+                break;
+            };
+            if !Self::is_ffmpeg_whitespace(ch) {
+                break;
+            }
+            let new_len = token.len() - ch.len_utf8();
+            token.truncate(new_len);
+        }
+
+        (token, rest)
+    }
+
+    fn trim_ffmpeg_whitespace(value: &str) -> &str {
+        Self::trim_end_ffmpeg_whitespace(Self::trim_start_ffmpeg_whitespace(value))
+    }
+
+    fn trim_start_ffmpeg_whitespace(value: &str) -> &str {
+        value.trim_start_matches(Self::is_ffmpeg_whitespace)
+    }
+
+    fn trim_end_ffmpeg_whitespace(value: &str) -> &str {
+        value.trim_end_matches(Self::is_ffmpeg_whitespace)
+    }
+
+    fn is_ffmpeg_whitespace(ch: char) -> bool {
+        matches!(ch, ' ' | '\n' | '\t' | '\r')
+    }
+
+    fn is_av_opt_key_char(ch: char) -> bool {
+        ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '/' | '.')
     }
 
     pub fn unknown(channel_count: u16) -> AvResult<Self> {
@@ -2126,68 +2215,24 @@ impl ChannelLayoutSpec {
     }
 
     fn parse_channel_list(value: &str) -> AvResult<Option<Self>> {
-        if Self::looks_like_custom_channel_list(value) {
+        if Self::looks_like_channel_list(value) {
             return Self::from_custom_channel_layout(CustomChannelLayout::parse_channel_list(
                 value,
             )?)
             .map(Some);
         }
-        Self::parse_native_channel_list(value)
+        Ok(None)
     }
 
-    fn looks_like_custom_channel_list(value: &str) -> bool {
-        if value.contains('@') {
+    fn looks_like_channel_list(value: &str) -> bool {
+        if value.contains('@')
+            || value.contains('+')
+            || value.contains('\\')
+            || value.contains('\'')
+        {
             return true;
         }
-        let mut saw_channel = false;
-        for token in value.split('+') {
-            let token = token.trim();
-            if token.is_empty() {
-                return value.contains('+');
-            }
-            if ChannelId::from_canonical_name(token).is_none() {
-                return false;
-            }
-            saw_channel = true;
-        }
-        saw_channel
-    }
-
-    fn parse_native_channel_list(value: &str) -> AvResult<Option<Self>> {
-        let mut mask = 0u64;
-        let mut parsed_channel = false;
-
-        for token in value.split('+') {
-            let token = token.trim();
-            if token.is_empty() {
-                return Err(AvError::invalid_argument(format!(
-                    "empty channel name in layout {value:?}"
-                )));
-            }
-            let Some(channel) = Channel::from_name(token) else {
-                if parsed_channel || value.contains('+') {
-                    return Err(AvError::invalid_argument(format!(
-                        "unknown channel name {token:?}"
-                    )));
-                }
-                return Ok(None);
-            };
-            parsed_channel = true;
-            let channel_mask = channel.mask();
-            if mask & channel_mask != 0 {
-                return Err(AvError::invalid_argument(format!(
-                    "duplicate channel name {}",
-                    channel.name()
-                )));
-            }
-            mask |= channel_mask;
-        }
-
-        if parsed_channel {
-            Self::from_native_channel_mask(mask).map(Some)
-        } else {
-            Ok(None)
-        }
+        ChannelId::from_canonical_name(value.trim()).is_some()
     }
 
     pub fn as_native(&self) -> Option<ChannelLayout> {
@@ -2753,15 +2798,50 @@ mod tests {
         assert!(!empty_name.has_custom_names());
         assert_eq!(empty_name.describe(), "1 channels (FL)");
 
+        let escaped_plus = CustomChannelLayout::parse_channel_list("FL@Left\\+Right+FR").unwrap();
+        assert_eq!(escaped_plus.channel_count(), 2);
+        assert_eq!(escaped_plus.channels()[0].name(), "Left+Right");
+        assert_eq!(
+            escaped_plus.channel_from_index(1),
+            Some(ChannelId::Native(Channel::FrontRight))
+        );
+
+        let escaped_at = CustomChannelLayout::parse_channel_list("FL@Left\\@Name+FR").unwrap();
+        assert_eq!(escaped_at.channels()[0].name(), "Left@Name");
+
+        let repeated_at = CustomChannelLayout::parse_channel_list("FL@Left@Again").unwrap();
+        assert_eq!(repeated_at.channels()[0].name(), "Left@Again");
+
+        let spaced = CustomChannelLayout::parse_channel_list("FL @ Left + FR").unwrap();
+        assert_eq!(spaced.channels()[0].name(), "Left");
+        assert_eq!(
+            spaced.channel_from_index(1),
+            Some(ChannelId::Native(Channel::FrontRight))
+        );
+
+        let quoted = CustomChannelLayout::parse_channel_list("FL@'Left Right'+FR").unwrap();
+        assert_eq!(quoted.channels()[0].name(), "Left Right");
+
+        let quoted_id = CustomChannelLayout::parse_channel_list("'FL'+FR").unwrap();
+        assert_eq!(
+            quoted_id.canonical_native_layout(),
+            Some(ChannelLayout::stereo())
+        );
+
+        let trailing_separator = CustomChannelLayout::parse_channel_list("FL+").unwrap();
+        assert_eq!(trailing_separator.channel_count(), 1);
+        assert_eq!(
+            trailing_separator.channel_from_index(0),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+
         for invalid in [
             "",
             "FL++FR",
             "+FL",
-            "FL+",
             "NONE",
             "@Left",
             "NOPE@Left",
-            "FL@Left@Again",
             "FL@custom-name-too-long",
             "FL\0",
         ] {
@@ -4531,7 +4611,6 @@ mod tests {
             "FL\0FR",
             "NONE",
             "NOPE@Left",
-            "FL@Left@Again",
         ] {
             let err = ChannelLayoutSpec::parse(input).unwrap_err();
             assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
@@ -4563,6 +4642,34 @@ mod tests {
         assert_eq!(
             ChannelLayoutSpec::parse("2 channels (FL@Left+FR@Right)").unwrap(),
             ChannelLayoutSpec::Custom(named_custom)
+        );
+
+        assert_eq!(
+            ChannelLayoutSpec::parse("'FL'+FR").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("FL+").unwrap(),
+            ChannelLayoutSpec::NativeMask(
+                NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
+            )
+        );
+
+        let escaped_custom = CustomChannelLayout::parse_channel_list("FL@Left\\+Right+FR").unwrap();
+        assert_eq!(
+            ChannelLayoutSpec::parse("FL@Left\\+Right+FR").unwrap(),
+            ChannelLayoutSpec::Custom(escaped_custom.clone())
+        );
+        assert_eq!(escaped_custom.channels()[0].name(), "Left+Right");
+        assert_eq!(
+            ChannelLayoutSpec::parse("2 channels (FL@Left\\+Right+FR)").unwrap(),
+            ChannelLayoutSpec::Custom(escaped_custom)
+        );
+
+        let repeated_at = CustomChannelLayout::parse_channel_list("FL@Left@Again").unwrap();
+        assert_eq!(
+            ChannelLayoutSpec::parse("FL@Left@Again").unwrap(),
+            ChannelLayoutSpec::Custom(repeated_at)
         );
 
         let duplicate = ChannelLayoutSpec::parse("FL+FL").unwrap();
