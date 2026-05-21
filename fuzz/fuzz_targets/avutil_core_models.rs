@@ -90,6 +90,17 @@ fn assert_raw_channel_layout_retype_fixtures() {
         ChannelId::from_ffmpeg_string("USR"),
         Some(ChannelId::Native(Channel::FrontLeft))
     );
+    assert_eq!(ChannelId::from_ffmpeg_string("fl"), None);
+    assert_eq!(ChannelId::from_ffmpeg_string("ambi0"), None);
+    assert_eq!(ChannelId::from_ffmpeg_string("usr0"), None);
+    assert_eq!(
+        ChannelLayoutSpec::parse("fl+fr").unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("STEREO").unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
     assert_eq!(
         ChannelLayoutSpec::parse("USR+").unwrap(),
         ChannelLayoutSpec::NativeMask(

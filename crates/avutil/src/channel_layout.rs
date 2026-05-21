@@ -328,7 +328,11 @@ impl ChannelId {
                 .contains(&raw_acn)
                 .then_some(Self::Ambisonic(raw_acn as u16));
         }
-        if let Some(channel) = Channel::from_name(name) {
+        if let Some(channel) = Channel::ALL
+            .iter()
+            .copied()
+            .find(|channel| channel.name() == name)
+        {
             return Some(Self::Native(channel));
         }
         if name == "UNK" {
@@ -2277,13 +2281,17 @@ impl ChannelLayoutSpec {
         if trimmed.is_empty() {
             return Err(AvError::invalid_argument("empty channel layout"));
         }
-        if trimmed.contains('\0') {
+        if value.contains('\0') {
             return Err(AvError::invalid_argument(
                 "channel layout contains NUL byte",
             ));
         }
 
-        if let Some(layout) = Self::parse_ambisonic(trimmed)? {
+        if let Some(layout) = ChannelLayout::from_name(value) {
+            return Ok(Self::Native(layout));
+        }
+
+        if let Some(layout) = Self::parse_ambisonic(value)? {
             return Ok(layout);
         }
 
@@ -2314,7 +2322,9 @@ impl ChannelLayoutSpec {
             return Ok(layout);
         }
 
-        Ok(Self::Native(ChannelLayout::parse(trimmed)?))
+        Err(AvError::invalid_argument(format!(
+            "unsupported channel layout expression {value:?}"
+        )))
     }
 
     fn from_native_channel_mask(mask: u64) -> AvResult<Self> {
@@ -3083,6 +3093,7 @@ mod tests {
             ChannelId::from_ffmpeg_string("FL"),
             Some(ChannelId::Native(Channel::FrontLeft))
         );
+        assert_eq!(ChannelId::from_ffmpeg_string("fl"), None);
 
         assert_eq!(ChannelId::from_raw(-1), ChannelId::None);
         assert_eq!(ChannelId::None.name(), "NONE");
@@ -3145,6 +3156,7 @@ mod tests {
             ChannelId::from_ffmpeg_string("AMBI-0tail"),
             Some(ChannelId::Ambisonic(0))
         );
+        assert_eq!(ChannelId::from_ffmpeg_string("ambi0"), None);
         assert_eq!(ChannelId::from_ffmpeg_string("AMBI-1"), None);
         assert_eq!(ChannelId::from_ffmpeg_string("AMBI1024"), None);
 
@@ -3191,6 +3203,9 @@ mod tests {
             ChannelId::from_ffmpeg_string("USR768"),
             Some(ChannelId::Unknown)
         );
+        assert_eq!(ChannelId::from_ffmpeg_string("usr0"), None);
+        assert_eq!(ChannelId::from_ffmpeg_string("unk"), None);
+        assert_eq!(ChannelId::from_ffmpeg_string("unsd"), None);
         assert_eq!(ChannelId::from_ffmpeg_string("USR-1"), None);
         assert_eq!(ChannelId::from_ffmpeg_string("USR-0tail"), None);
         assert_eq!(ChannelId::from_ffmpeg_string("USR45tail"), None);
@@ -5266,6 +5281,11 @@ mod tests {
             "-0x3",
             "09",
             "0x3g",
+            "STEREO",
+            "stereo ",
+            "fl+fr",
+            "unk+unk",
+            "ambi0",
             "FL\0FR",
             "NONE",
             "NOPE@Left",
@@ -6073,6 +6093,7 @@ mod tests {
             "ambisonic 1 trailing",
             "ambisonic 1+",
             "ambisonic 1+2C",
+            "ambisonic 1+STEREO",
             "ambisonic 1+AMBI0",
             "ambisonic 1+ambisonic 0",
             "ambisonic 32",
