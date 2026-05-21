@@ -357,6 +357,8 @@ The test hierarchy is unit tests first, followed by golden parser tests, differe
 
 `crates/avutil/tests/timebase_oracle.rs` is an ignored oracle harness for libavutil timebase helpers. It compiles a small test-only C helper against the pinned local FFmpeg 8.1.1 `libavutil.a` and compares `AV_TIME_BASE`, `AV_TIME_BASE_Q`, `av_rescale`, `av_rescale_rnd`, `av_rescale_q`, `av_rescale_q_rnd`, `av_compare_ts`, `av_compare_mod`, `av_rescale_delta`, and `av_add_stable` vectors against the Rust model.
 
+`crates/avutil/tests/packet_oracle.rs` is an ignored oracle harness for libavcodec `AVPacket` core lifecycle helpers. It compiles a small test-only C helper against pinned libavcodec/libavutil and compares allocation defaults, timestamp rescaling, property copy, ref, move-ref, unref, `AV_PKT_DATA_NEW_EXTRADATA` side data, flags, opaque address copying, and packet `time_base` fields against the Rust `Packet` model.
+
 `crates/avutil/tests/byteio_oracle.rs` is an ignored oracle harness for libavutil byte-order helpers. It compiles a small test-only C helper against the pinned local FFmpeg 8.1.1 `libavutil/intreadwrite.h` header and compares `AV_RB*`, `AV_RL*`, `AV_WB*`, and `AV_WL*` 8/16/24/32/48/64-bit read/write byte-order behavior plus signed interpretation vectors against the Rust `ByteReader`/`ByteWriter` model.
 
 `crates/avutil/tests/bitreader_oracle.rs` is an ignored oracle harness for libavcodec `GetBitContext` helpers. It compiles a small test-only C helper against the pinned FFmpeg 8.1.1 source/build cache and links pinned libavcodec/libavutil only for test-time Golomb tables, then compares `show_bits`, `get_bits`, long/signed/64-bit reads, skip/align behavior, and unsigned/signed Exp-Golomb vectors against the Rust `BitReader` model.

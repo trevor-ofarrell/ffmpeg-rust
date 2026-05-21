@@ -117,6 +117,13 @@ cargo test -p avutil --test timebase_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-timebase --target oracle-libavutil-timebase --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
+`crates/avutil/tests/packet_oracle.rs` is an ignored oracle harness for libavcodec `AVPacket` core lifecycle helpers. It compiles a small test-only C helper against `third_party/ffmpeg-oracle/wsl/lib/libavcodec.a` and `libavutil.a`, then compares `av_packet_alloc`, `av_packet_rescale_ts`, `av_packet_copy_props`, `av_packet_ref`, `av_packet_move_ref`, and `av_packet_unref` behavior against the Rust `Packet` model, including one `AV_PKT_DATA_NEW_EXTRADATA` side-data entry, flags, opaque address copying, payload preservation, and packet `time_base` fields. It is wired into `tests/differential/mappings.txt` as `avutil-packet|oracle-libavcodec-packet-core`:
+
+```sh
+cargo test -p avutil --test packet_oracle -- --ignored
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+```
+
 `crates/avutil/tests/byteio_oracle.rs` is an ignored oracle harness for libavutil byte-order helpers. It compiles a small test-only C helper against the pinned `third_party/ffmpeg-oracle/wsl/include/libavutil/intreadwrite.h` header and compares `AV_RB*`, `AV_RL*`, `AV_WB*`, and `AV_WL*` 8/16/24/32/48/64-bit read/write byte-order behavior plus signed interpretation vectors against the Rust `ByteReader`/`ByteWriter` model. It is wired into `tests/differential/mappings.txt` as `avutil-byteio|oracle-libavutil-byteio`:
 
 ```sh

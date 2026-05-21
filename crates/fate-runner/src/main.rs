@@ -213,6 +213,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/packet_oracle.rs",
+        exact_ids: &["avutil-packet"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/buffer.rs",
         exact_ids: &["avutil-buffer"],
         id_prefixes: &[],
@@ -1776,6 +1781,17 @@ mod tests {
         assert_eq!(
             changed_components(&component_ids, &paths),
             vec!["avutil-bitwriter".to_string()]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_packet_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-packet"]));
+        let paths = vec!["crates/avutil/tests/packet_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-packet".to_string()]
         );
     }
 

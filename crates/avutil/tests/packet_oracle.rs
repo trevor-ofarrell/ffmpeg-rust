@@ -1,0 +1,466 @@
+use std::{
+    collections::BTreeMap,
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
+
+use avutil::{
+    Packet, PacketFlags, PacketOpaque, PacketSideDataKind, Rational, SideData, AV_NOPTS_VALUE,
+    AV_PACKET_POS_UNKNOWN,
+};
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 libavcodec/libavutil oracle under third_party/ffmpeg-oracle/wsl"]
+fn libavcodec_packet_core_lifecycle_matches_packet_model() {
+    let repo_root = repo_root();
+    let oracle_root = oracle_root(&repo_root);
+    let include_dir = oracle_root.join("wsl/include");
+    let libavcodec = oracle_root.join("wsl/lib/libavcodec.a");
+    let libavutil = oracle_root.join("wsl/lib/libavutil.a");
+
+    assert!(
+        include_dir.join("libavcodec/packet.h").is_file(),
+        "missing pinned FFmpeg libavcodec packet headers under `{}`",
+        include_dir.display()
+    );
+    assert!(
+        libavcodec.is_file(),
+        "missing pinned FFmpeg libavcodec static library `{}`",
+        libavcodec.display()
+    );
+    assert!(
+        libavutil.is_file(),
+        "missing pinned FFmpeg libavutil static library `{}`",
+        libavutil.display()
+    );
+
+    let work_dir = repo_root.join("target/oracle/avutil-packet");
+    fs::create_dir_all(&work_dir).expect("create avutil-packet oracle work dir");
+    let source = work_dir.join("packet_oracle.c");
+    let executable = work_dir.join("packet_oracle");
+    fs::write(&source, oracle_c_source()).expect("write avutil-packet oracle C source");
+
+    let stdout =
+        compile_and_run_oracle(&include_dir, &libavcodec, &libavutil, &source, &executable);
+    let oracle = parse_oracle_output(&stdout);
+    let expected = expected_rows();
+
+    assert_eq!(
+        oracle.keys().collect::<Vec<_>>(),
+        expected.keys().collect::<Vec<_>>(),
+        "oracle row set diverged"
+    );
+
+    for (name, expected_fields) in expected {
+        assert_eq!(
+            row_fields(&oracle, &name),
+            expected_fields.as_slice(),
+            "{name} diverged"
+        );
+    }
+}
+
+fn expected_rows() -> BTreeMap<String, Vec<String>> {
+    let mut rows = BTreeMap::new();
+    rows.insert(
+        "packet:default".to_string(),
+        packet_fields(&Packet::default()),
+    );
+
+    let mut rescaled = packet_with_common_props();
+    rescaled
+        .rescale_ts(
+            Rational::new(1, 90_000).unwrap(),
+            Rational::new(1, 1_000).unwrap(),
+        )
+        .unwrap();
+    rows.insert("packet:rescale".to_string(), packet_fields(&rescaled));
+
+    let mut rescaled_unknown = Packet::new(vec![0xaa, 0xbb], 3);
+    rescaled_unknown
+        .rescale_ts(
+            Rational::new(1, 90_000).unwrap(),
+            Rational::new(1, 1_000).unwrap(),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:rescale-unknown".to_string(),
+        packet_fields(&rescaled_unknown),
+    );
+
+    let src = packet_with_common_props();
+    let mut copied = Packet::new(vec![0x99, 0x88], 1);
+    copied.copy_props_from(&src);
+    rows.insert("packet:copy-props".to_string(), packet_fields(&copied));
+
+    let mut referenced = Packet::default();
+    referenced.ref_from(&src);
+    rows.insert("packet:ref".to_string(), packet_fields(&referenced));
+
+    let mut move_src = packet_with_common_props();
+    let mut move_dst = Packet::new(vec![0x44], 9);
+    move_dst.move_ref_from(&mut move_src);
+    rows.insert("packet:move-dst".to_string(), packet_fields(&move_dst));
+    rows.insert("packet:move-src".to_string(), packet_fields(&move_src));
+
+    let mut unref = packet_with_common_props();
+    unref.unref();
+    rows.insert("packet:unref".to_string(), packet_fields(&unref));
+
+    rows
+}
+
+fn packet_with_common_props() -> Packet {
+    let mut packet = Packet::new(vec![0xaa, 0xbb, 0xcc], 7);
+    packet.set_pts(Some(90_000));
+    packet.set_dts(Some(45_000));
+    packet.set_duration(180_000).unwrap();
+    packet.set_pos(Some(1_234)).unwrap();
+    packet.set_flag(PacketFlags::KEY, true);
+    packet.set_flag(PacketFlags::CORRUPT, true);
+    packet
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    packet.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
+    packet.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    packet
+}
+
+fn packet_fields(packet: &Packet) -> Vec<String> {
+    let (side_type, side_size, side_hex) = first_side_data_fields(packet);
+    vec![
+        raw_ts(packet.pts()).to_string(),
+        raw_ts(packet.dts()).to_string(),
+        packet.duration().to_string(),
+        raw_pos(packet.pos()).to_string(),
+        packet.stream_index().to_string(),
+        packet.flags().bits().to_string(),
+        packet.len().to_string(),
+        hex_or_dash(packet.data()),
+        packet.side_data().len().to_string(),
+        side_type,
+        side_size,
+        side_hex,
+        packet.opaque_address().unwrap_or(0).to_string(),
+        format!("{}/{}", packet.time_base().num(), packet.time_base().den()),
+    ]
+}
+
+fn first_side_data_fields(packet: &Packet) -> (String, String, String) {
+    let Some(side_data) = packet.side_data().first() else {
+        return ("-".to_string(), "0".to_string(), "-".to_string());
+    };
+
+    (
+        packet_side_data_type(side_data.kind_id()).to_string(),
+        side_data.len().to_string(),
+        hex_or_dash(side_data.data()),
+    )
+}
+
+fn packet_side_data_type(kind: &PacketSideDataKind) -> &'static str {
+    match kind {
+        PacketSideDataKind::NewExtradata => "1",
+        _ => panic!("unexpected packet side data kind in oracle test: {kind:?}"),
+    }
+}
+
+fn raw_ts(value: Option<i64>) -> i64 {
+    value.unwrap_or(AV_NOPTS_VALUE)
+}
+
+fn raw_pos(value: Option<i64>) -> i64 {
+    value.unwrap_or(AV_PACKET_POS_UNKNOWN)
+}
+
+fn parse_oracle_output(stdout: &str) -> BTreeMap<String, Vec<String>> {
+    let mut rows = BTreeMap::new();
+    for line in stdout.lines().filter(|line| !line.trim().is_empty()) {
+        let mut parts = line.split('|');
+        let name = parts
+            .next()
+            .unwrap_or_else(|| panic!("missing oracle row name in `{line}`"))
+            .to_string();
+        let fields = parts.map(ToOwned::to_owned).collect::<Vec<_>>();
+        assert!(
+            rows.insert(name.clone(), fields).is_none(),
+            "duplicate oracle row `{name}`"
+        );
+    }
+    rows
+}
+
+fn row_fields<'a>(rows: &'a BTreeMap<String, Vec<String>>, name: &str) -> &'a [String] {
+    rows.get(name)
+        .unwrap_or_else(|| panic!("missing oracle row `{name}`"))
+        .as_slice()
+}
+
+fn compile_and_run_oracle(
+    include_dir: &Path,
+    libavcodec: &Path,
+    libavutil: &Path,
+    source: &Path,
+    executable: &Path,
+) -> String {
+    let output = if cfg!(windows) {
+        let script = format!(
+            "gcc -I {} {} {} {} -lm -pthread -ldl -o {} && {}",
+            shell_quote(&to_wsl_path(include_dir)),
+            shell_quote(&to_wsl_path(source)),
+            shell_quote(&to_wsl_path(libavcodec)),
+            shell_quote(&to_wsl_path(libavutil)),
+            shell_quote(&to_wsl_path(executable)),
+            shell_quote(&to_wsl_path(executable))
+        );
+        Command::new("wsl")
+            .args(["-d", "Ubuntu", "--exec", "bash", "-lc", &script])
+            .output()
+            .expect("run WSL libavcodec packet oracle")
+    } else {
+        Command::new("sh")
+            .arg("-c")
+            .arg(format!(
+                "gcc -I {} {} {} {} -lm -pthread -ldl -o {} && {}",
+                shell_quote(&include_dir.display().to_string()),
+                shell_quote(&source.display().to_string()),
+                shell_quote(&libavcodec.display().to_string()),
+                shell_quote(&libavutil.display().to_string()),
+                shell_quote(&executable.display().to_string()),
+                shell_quote(&executable.display().to_string())
+            ))
+            .output()
+            .expect("run libavcodec packet oracle")
+    };
+
+    assert!(
+        output.status.success(),
+        "libavcodec packet oracle failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8(output.stdout).expect("oracle stdout should be UTF-8")
+}
+
+fn oracle_c_source() -> &'static str {
+    r#"#include <inttypes.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include "libavcodec/packet.h"
+
+static void fail_if(int condition, const char *message) {
+    if (condition) {
+        fprintf(stderr, "%s\n", message);
+        exit(1);
+    }
+}
+
+static void print_hex_or_dash(const uint8_t *data, int size) {
+    if (!data || size <= 0) {
+        printf("-");
+        return;
+    }
+    for (int i = 0; i < size; i++)
+        printf("%02x", data[i]);
+}
+
+static void print_side_data(const AVPacket *pkt) {
+    if (pkt->side_data_elems <= 0 || !pkt->side_data) {
+        printf("|0|-|0|-");
+        return;
+    }
+    const AVPacketSideData *sd = &pkt->side_data[0];
+    printf("|%d|%d|%zu|", pkt->side_data_elems, (int)sd->type, sd->size);
+    print_hex_or_dash(sd->data, (int)sd->size);
+}
+
+static void print_packet(const char *name, const AVPacket *pkt) {
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d|%d|%d|",
+           name, pkt->pts, pkt->dts, pkt->duration, pkt->pos,
+           pkt->stream_index, pkt->flags, pkt->size);
+    print_hex_or_dash(pkt->data, pkt->size);
+    print_side_data(pkt);
+    printf("|%" PRIuPTR "|%d/%d\n", (uintptr_t)pkt->opaque,
+           pkt->time_base.num, pkt->time_base.den);
+}
+
+static AVPacket *new_packet(void) {
+    AVPacket *pkt = av_packet_alloc();
+    fail_if(!pkt, "av_packet_alloc failed");
+    return pkt;
+}
+
+static AVPacket *packet_with_common_props(void) {
+    AVPacket *pkt = new_packet();
+    int ret = av_new_packet(pkt, 3);
+    fail_if(ret < 0, "av_new_packet failed");
+    pkt->data[0] = 0xaa;
+    pkt->data[1] = 0xbb;
+    pkt->data[2] = 0xcc;
+    pkt->pts = 90000;
+    pkt->dts = 45000;
+    pkt->duration = 180000;
+    pkt->pos = 1234;
+    pkt->stream_index = 7;
+    pkt->flags = AV_PKT_FLAG_KEY | AV_PKT_FLAG_CORRUPT;
+    pkt->time_base = (AVRational){ 1, 90000 };
+    pkt->opaque = (void *)(uintptr_t)0x1234;
+
+    uint8_t *sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 3);
+    fail_if(!sd, "av_packet_new_side_data failed");
+    sd[0] = 0x11;
+    sd[1] = 0x22;
+    sd[2] = 0x33;
+    return pkt;
+}
+
+int main(void) {
+    AVPacket *pkt = new_packet();
+    print_packet("packet:default", pkt);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props();
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
+    print_packet("packet:rescale", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet unknown failed");
+    pkt->data[0] = 0xaa;
+    pkt->data[1] = 0xbb;
+    pkt->stream_index = 3;
+    av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
+    print_packet("packet:rescale-unknown", pkt);
+    av_packet_free(&pkt);
+
+    AVPacket *src = packet_with_common_props();
+    AVPacket *dst = new_packet();
+    fail_if(av_new_packet(dst, 2) < 0, "av_new_packet copy dst failed");
+    dst->data[0] = 0x99;
+    dst->data[1] = 0x88;
+    dst->stream_index = 1;
+    fail_if(av_packet_copy_props(dst, src) < 0, "av_packet_copy_props failed");
+    print_packet("packet:copy-props", dst);
+    av_packet_free(&dst);
+
+    dst = new_packet();
+    fail_if(av_packet_ref(dst, src) < 0, "av_packet_ref failed");
+    print_packet("packet:ref", dst);
+    av_packet_free(&dst);
+    av_packet_free(&src);
+
+    src = packet_with_common_props();
+    dst = new_packet();
+    fail_if(av_new_packet(dst, 1) < 0, "av_new_packet move dst failed");
+    dst->data[0] = 0x44;
+    dst->stream_index = 9;
+    av_packet_move_ref(dst, src);
+    print_packet("packet:move-dst", dst);
+    print_packet("packet:move-src", src);
+    av_packet_free(&dst);
+    av_packet_free(&src);
+
+    pkt = packet_with_common_props();
+    av_packet_unref(pkt);
+    print_packet("packet:unref", pkt);
+    av_packet_free(&pkt);
+
+    return 0;
+}
+"#
+}
+
+fn hex_or_dash(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return "-".to_string();
+    }
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("crates/avutil should have a repo root grandparent")
+        .to_path_buf()
+}
+
+fn oracle_root(repo_root: &Path) -> PathBuf {
+    let default_root = repo_root.join("third_party/ffmpeg-oracle");
+    if let Ok(ffmpeg) = env::var("FFMPEG_ORACLE") {
+        let ffmpeg = PathBuf::from(ffmpeg);
+        let ffmpeg = if ffmpeg.is_absolute() {
+            ffmpeg
+        } else {
+            repo_root.join(ffmpeg)
+        };
+        if let Some(root) = ffmpeg.ancestors().find(|ancestor| {
+            ancestor
+                .file_name()
+                .is_some_and(|name| name == "ffmpeg-oracle")
+        }) {
+            return root.to_path_buf();
+        }
+    }
+    default_root
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(windows)]
+fn to_wsl_path(path: &Path) -> String {
+    let absolute = absolute_path(path);
+    let mut text = absolute.to_string_lossy().replace('\\', "/");
+    if let Some(stripped) = text.strip_prefix("//?/") {
+        text = stripped.to_string();
+    }
+    let bytes = text.as_bytes();
+    if bytes.len() >= 3 && bytes[1] == b':' && bytes[2] == b'/' {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        text.replace_range(0..3, &format!("/mnt/{drive}/"));
+    }
+    text
+}
+
+#[cfg(windows)]
+fn absolute_path(path: &Path) -> PathBuf {
+    if path.exists() {
+        return path.canonicalize().unwrap_or_else(|err| {
+            panic!(
+                "failed to canonicalize existing path `{}`: {err}",
+                path.display()
+            )
+        });
+    }
+    let parent = path
+        .parent()
+        .unwrap_or_else(|| panic!("path `{}` has no parent", path.display()))
+        .canonicalize()
+        .unwrap_or_else(|err| {
+            panic!(
+                "failed to canonicalize parent of `{}`: {err}",
+                path.display()
+            )
+        });
+    parent.join(
+        path.file_name()
+            .unwrap_or_else(|| panic!("path `{}` has no file name", path.display())),
+    )
+}
+
+#[cfg(not(windows))]
+fn to_wsl_path(path: &Path) -> String {
+    path.display().to_string()
+}
