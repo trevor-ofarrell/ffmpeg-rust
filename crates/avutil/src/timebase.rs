@@ -88,6 +88,34 @@ pub fn compare_mod(a: u64, b: u64, modulus: u64) -> AvResult<i64> {
         .map_err(|_| AvError::invalid_argument("modular timestamp difference out of range"))
 }
 
+pub fn rescale_delta(
+    in_tb: Rational,
+    in_ts: i64,
+    fs_tb: Rational,
+    duration: i64,
+    last: &mut i64,
+    out_tb: Rational,
+) -> AvResult<i64> {
+    ensure_positive_time_base(in_tb, "input timestamp time base")?;
+    ensure_positive_time_base(fs_tb, "frame/sample time base")?;
+    ensure_positive_time_base(out_tb, "output timestamp time base")?;
+    if in_ts == i64::MIN {
+        return Err(AvError::invalid_argument(
+            "rescale delta input timestamp must not be AV_NOPTS_VALUE",
+        ));
+    }
+    if duration < 0 || duration > i64::from(i32::MAX) {
+        return Err(AvError::invalid_argument(
+            "rescale delta duration must be a nonnegative FFmpeg int",
+        ));
+    }
+
+    let (output, next_last) =
+        rescale_delta_with_last(in_tb, in_ts, fs_tb, duration, *last, out_tb)?;
+    *last = next_last;
+    Ok(output)
+}
+
 pub fn add_stable(ts_tb: Rational, ts: i64, inc_tb: Rational, inc: i64) -> AvResult<i64> {
     ensure_positive_time_base(ts_tb, "timestamp time base")?;
     ensure_positive_time_base(inc_tb, "increment time base")?;
@@ -132,6 +160,79 @@ pub fn add_stable(ts_tb: Rational, ts: i64, inc_tb: Rational, inc: i64) -> AvRes
         .checked_sub(old_ts)
         .ok_or_else(|| AvError::invalid_argument("stable timestamp residual out of range"))?;
     Ok(next_ts.saturating_add(residual))
+}
+
+fn rescale_delta_with_last(
+    in_tb: Rational,
+    in_ts: i64,
+    fs_tb: Rational,
+    duration: i64,
+    last: i64,
+    out_tb: Rational,
+) -> AvResult<(i64, i64)> {
+    if rescale_delta_uses_simple_round(in_tb, duration, last, out_tb) {
+        return rescale_delta_simple_round(in_tb, in_ts, fs_tb, duration, out_tb);
+    }
+
+    let start = in_ts
+        .checked_mul(2)
+        .and_then(|ts| ts.checked_sub(1))
+        .ok_or_else(|| AvError::invalid_argument("rescale delta timestamp out of range"))?;
+    let end = in_ts
+        .checked_mul(2)
+        .and_then(|ts| ts.checked_add(1))
+        .ok_or_else(|| AvError::invalid_argument("rescale delta timestamp out of range"))?;
+    let a = rescale_q_rnd(start, in_tb, fs_tb, Rounding::Down)? >> 1;
+    let b = rescale_q_rnd(end, in_tb, fs_tb, Rounding::Up)?
+        .checked_add(1)
+        .ok_or_else(|| AvError::invalid_argument("rescale delta bounds out of range"))?
+        >> 1;
+    if a > b {
+        return Err(AvError::invalid_argument(
+            "rescale delta timestamp bounds are inconsistent",
+        ));
+    }
+
+    let lower = 2_i128 * i128::from(a) - i128::from(b);
+    let upper = 2_i128 * i128::from(b) - i128::from(a);
+    let last_wide = i128::from(last);
+    if last_wide < lower || last_wide > upper {
+        return rescale_delta_simple_round(in_tb, in_ts, fs_tb, duration, out_tb);
+    }
+
+    let this = last.clamp(a, b);
+    let next_last = this
+        .checked_add(duration)
+        .ok_or_else(|| AvError::invalid_argument("rescale delta duration out of range"))?;
+    let output = rescale_q(this, fs_tb, out_tb)?;
+    Ok((output, next_last))
+}
+
+fn rescale_delta_uses_simple_round(
+    in_tb: Rational,
+    duration: i64,
+    last: i64,
+    out_tb: Rational,
+) -> bool {
+    last == i64::MIN
+        || duration == 0
+        || i128::from(in_tb.num()) * i128::from(out_tb.den())
+            <= i128::from(out_tb.num()) * i128::from(in_tb.den())
+}
+
+fn rescale_delta_simple_round(
+    in_tb: Rational,
+    in_ts: i64,
+    fs_tb: Rational,
+    duration: i64,
+    out_tb: Rational,
+) -> AvResult<(i64, i64)> {
+    let scaled = rescale_q(in_ts, in_tb, fs_tb)?;
+    let next_last = scaled
+        .checked_add(duration)
+        .ok_or_else(|| AvError::invalid_argument("rescale delta duration out of range"))?;
+    let output = rescale_q(in_ts, in_tb, out_tb)?;
+    Ok((output, next_last))
 }
 
 fn rescale_q_terms(src: Rational, dst: Rational) -> AvResult<(i64, i64)> {
@@ -359,6 +460,182 @@ mod tests {
             compare_mod(1, 0, 3).unwrap_err().kind(),
             crate::AvErrorKind::InvalidArgument
         );
+    }
+
+    #[test]
+    fn rescale_delta_initializes_last_on_first_call() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+        let samples_48k = Rational::new(1, 48_000).unwrap();
+        let ninety_khz = Rational::new(1, 90_000).unwrap();
+        let mut last = i64::MIN;
+
+        assert_eq!(
+            rescale_delta(milliseconds, 100, samples_48k, 1_024, &mut last, ninety_khz).unwrap(),
+            9_000
+        );
+        assert_eq!(last, 5_824);
+    }
+
+    #[test]
+    fn rescale_delta_zero_duration_uses_simple_rounding() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+        let samples_48k = Rational::new(1, 48_000).unwrap();
+        let ninety_khz = Rational::new(1, 90_000).unwrap();
+        let mut last = 123;
+
+        assert_eq!(
+            rescale_delta(milliseconds, 250, samples_48k, 0, &mut last, ninety_khz).unwrap(),
+            22_500
+        );
+        assert_eq!(last, 12_000);
+    }
+
+    #[test]
+    fn rescale_delta_stateful_path_preserves_known_duration() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+        let samples_48k = Rational::new(1, 48_000).unwrap();
+        let mut last = 48_010;
+
+        assert_eq!(
+            rescale_delta(
+                milliseconds,
+                1_000,
+                samples_48k,
+                1_024,
+                &mut last,
+                samples_48k
+            )
+            .unwrap(),
+            48_010
+        );
+        assert_eq!(last, 49_034);
+    }
+
+    #[test]
+    fn rescale_delta_clips_last_inside_input_window() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+        let samples_48k = Rational::new(1, 48_000).unwrap();
+        let mut last = 48_050;
+
+        assert_eq!(
+            rescale_delta(
+                milliseconds,
+                1_000,
+                samples_48k,
+                1_024,
+                &mut last,
+                samples_48k
+            )
+            .unwrap(),
+            48_024
+        );
+        assert_eq!(last, 49_048);
+    }
+
+    #[test]
+    fn rescale_delta_out_of_window_falls_back_to_input_timestamp() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+        let samples_48k = Rational::new(1, 48_000).unwrap();
+        let mut last = 47_000;
+
+        assert_eq!(
+            rescale_delta(
+                milliseconds,
+                1_000,
+                samples_48k,
+                1_024,
+                &mut last,
+                samples_48k
+            )
+            .unwrap(),
+            48_000
+        );
+        assert_eq!(last, 49_024);
+    }
+
+    #[test]
+    fn rescale_delta_rejects_invalid_inputs_without_mutating_last() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+        let samples_48k = Rational::new(1, 48_000).unwrap();
+        let mut last = 321;
+
+        assert_eq!(
+            rescale_delta(
+                Rational::from_raw(0, 1),
+                1,
+                samples_48k,
+                1,
+                &mut last,
+                samples_48k
+            )
+            .unwrap_err()
+            .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(last, 321);
+        assert_eq!(
+            rescale_delta(
+                milliseconds,
+                i64::MIN,
+                samples_48k,
+                1,
+                &mut last,
+                samples_48k
+            )
+            .unwrap_err()
+            .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(last, 321);
+        assert_eq!(
+            rescale_delta(
+                milliseconds,
+                1,
+                Rational::from_raw(1, 0),
+                1,
+                &mut last,
+                samples_48k
+            )
+            .unwrap_err()
+            .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(last, 321);
+        assert_eq!(
+            rescale_delta(milliseconds, 1, samples_48k, -1, &mut last, samples_48k)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(last, 321);
+        assert_eq!(
+            rescale_delta(
+                milliseconds,
+                1,
+                samples_48k,
+                i64::from(i32::MAX) + 1,
+                &mut last,
+                samples_48k
+            )
+            .unwrap_err()
+            .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(last, 321);
+        assert_eq!(
+            rescale_delta(
+                milliseconds,
+                i64::MAX,
+                samples_48k,
+                1,
+                &mut last,
+                samples_48k
+            )
+            .unwrap_err()
+            .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(last, 321);
     }
 
     #[test]

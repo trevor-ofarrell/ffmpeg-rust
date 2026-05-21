@@ -2,7 +2,7 @@
 
 use avutil::{
     adler32, add_stable, av_error_description, av_make_error_string, av_strerror, compare_mod,
-    compare_ts, crc32_ieee, digest_to_hex, md5, rescale, rescale_q, rescale_q_rnd,
+    compare_ts, crc32_ieee, digest_to_hex, md5, rescale, rescale_delta, rescale_q, rescale_q_rnd,
     rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1, sha224, sha256,
     sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32,
@@ -1368,6 +1368,55 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
     assert!(add_stable(Rational::from_raw(0, 1), stable_ts, dst, stable_inc).is_err());
     assert!(add_stable(src, stable_ts, Rational::from_raw(1, 0), stable_inc).is_err());
     assert!(add_stable(src, stable_ts, dst, -1).is_err());
+
+    let fs_tb = positive_rational_from(cursor.next(), cursor.next());
+    let delta_in_ts = small_i64_from(cursor.next(), cursor.next());
+    let delta_duration = i64::from(cursor.next().unwrap_or_default() % 16);
+    let mut delta_last = if cursor.next().unwrap_or_default().is_multiple_of(2) {
+        i64::MIN
+    } else {
+        small_i64_from(cursor.next(), cursor.next())
+    };
+    let mut expected_delta_last = delta_last;
+    let delta_result = rescale_delta(
+        src,
+        delta_in_ts,
+        fs_tb,
+        delta_duration,
+        &mut delta_last,
+        dst,
+    )
+    .unwrap();
+    let expected_delta_result = expected_rescale_delta(
+        src,
+        delta_in_ts,
+        fs_tb,
+        delta_duration,
+        &mut expected_delta_last,
+        dst,
+    )
+    .unwrap();
+    assert_eq!(delta_result, expected_delta_result);
+    assert_eq!(delta_last, expected_delta_last);
+
+    let mut unchanged_delta_last = delta_last;
+    assert!(
+        rescale_delta(src, i64::MIN, fs_tb, delta_duration, &mut unchanged_delta_last, dst)
+            .is_err()
+    );
+    assert_eq!(unchanged_delta_last, delta_last);
+    assert!(rescale_delta(
+        Rational::from_raw(0, 1),
+        delta_in_ts,
+        fs_tb,
+        delta_duration,
+        &mut unchanged_delta_last,
+        dst
+    )
+    .is_err());
+    assert_eq!(unchanged_delta_last, delta_last);
+    assert!(rescale_delta(src, delta_in_ts, fs_tb, -1, &mut unchanged_delta_last, dst).is_err());
+    assert_eq!(unchanged_delta_last, delta_last);
 }
 
 fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
@@ -14141,6 +14190,101 @@ fn expected_compare_mod(a: u64, b: u64, modulus: u64) -> i64 {
     } else {
         diff as i64
     }
+}
+
+fn expected_rescale_delta(
+    in_tb: Rational,
+    in_ts: i64,
+    fs_tb: Rational,
+    duration: i64,
+    last: &mut i64,
+    out_tb: Rational,
+) -> Result<i64, ()> {
+    if !expected_positive_time_base(in_tb)
+        || !expected_positive_time_base(fs_tb)
+        || !expected_positive_time_base(out_tb)
+        || in_ts == i64::MIN
+        || duration < 0
+        || duration > i64::from(i32::MAX)
+    {
+        return Err(());
+    }
+
+    let (output, next_last) =
+        expected_rescale_delta_with_last(in_tb, in_ts, fs_tb, duration, *last, out_tb)?;
+    *last = next_last;
+    Ok(output)
+}
+
+fn expected_rescale_delta_with_last(
+    in_tb: Rational,
+    in_ts: i64,
+    fs_tb: Rational,
+    duration: i64,
+    last: i64,
+    out_tb: Rational,
+) -> Result<(i64, i64), ()> {
+    if expected_rescale_delta_uses_simple_round(in_tb, duration, last, out_tb) {
+        return expected_rescale_delta_simple_round(in_tb, in_ts, fs_tb, duration, out_tb);
+    }
+
+    let start = in_ts
+        .checked_mul(2)
+        .and_then(|ts| ts.checked_sub(1))
+        .ok_or(())?;
+    let end = in_ts
+        .checked_mul(2)
+        .and_then(|ts| ts.checked_add(1))
+        .ok_or(())?;
+    let a = expected_rescale(start, in_tb, fs_tb, Rounding::Down)? >> 1;
+    let b = expected_rescale(end, in_tb, fs_tb, Rounding::Up)?
+        .checked_add(1)
+        .ok_or(())?
+        >> 1;
+    if a > b {
+        return Err(());
+    }
+
+    let lower = 2_i128 * i128::from(a) - i128::from(b);
+    let upper = 2_i128 * i128::from(b) - i128::from(a);
+    let last_wide = i128::from(last);
+    if last_wide < lower || last_wide > upper {
+        return expected_rescale_delta_simple_round(in_tb, in_ts, fs_tb, duration, out_tb);
+    }
+
+    let this = last.clamp(a, b);
+    let next_last = this.checked_add(duration).ok_or(())?;
+    let output = expected_rescale(this, fs_tb, out_tb, Rounding::NearInf)?;
+    Ok((output, next_last))
+}
+
+fn expected_rescale_delta_uses_simple_round(
+    in_tb: Rational,
+    duration: i64,
+    last: i64,
+    out_tb: Rational,
+) -> bool {
+    last == i64::MIN
+        || duration == 0
+        || i128::from(in_tb.num()) * i128::from(out_tb.den())
+            <= i128::from(out_tb.num()) * i128::from(in_tb.den())
+}
+
+fn expected_rescale_delta_simple_round(
+    in_tb: Rational,
+    in_ts: i64,
+    fs_tb: Rational,
+    duration: i64,
+    out_tb: Rational,
+) -> Result<(i64, i64), ()> {
+    let scaled = expected_rescale(in_ts, in_tb, fs_tb, Rounding::NearInf)?;
+    let next_last = scaled.checked_add(duration).ok_or(())?;
+    let output = expected_rescale(in_ts, in_tb, out_tb, Rounding::NearInf)?;
+    Ok((output, next_last))
+}
+
+fn expected_positive_time_base(time_base: Rational) -> bool {
+    time_base.num() > 0 && time_base.den() > 0
 }
 
 fn expected_add_stable(ts_tb: Rational, ts: i64, inc_tb: Rational, inc: i64) -> Result<i64, ()> {
