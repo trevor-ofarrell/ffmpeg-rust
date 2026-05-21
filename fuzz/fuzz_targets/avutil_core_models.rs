@@ -4714,6 +4714,32 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap()
     );
     assert!(parsed_ambisonic.is_equivalent_to_custom(&parsed_ambisonic_custom));
+    let retyped_parsed_ambisonic = ChannelLayoutSpec::Custom(parsed_ambisonic_custom.clone())
+        .retype_to_ambisonic_order(false)
+        .unwrap();
+    assert!(!retyped_parsed_ambisonic.is_lossy());
+    assert_eq!(
+        retyped_parsed_ambisonic.into_layout(),
+        ChannelLayoutSpec::Ambisonic(parsed_ambisonic.as_ambisonic().unwrap())
+    );
+    let named_ambisonic_custom =
+        CustomChannelLayout::parse_channel_list("AMBI0@W+AMBI1+AMBI2+AMBI3+FL@Left+FR")
+            .unwrap();
+    assert_eq!(
+        ChannelLayoutSpec::Custom(named_ambisonic_custom.clone())
+            .retype_to_ambisonic_order(false)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    let lossy_ambisonic = ChannelLayoutSpec::Custom(named_ambisonic_custom)
+        .retype_to_ambisonic_order(true)
+        .unwrap();
+    assert!(lossy_ambisonic.is_lossy());
+    assert_eq!(
+        lossy_ambisonic.into_layout(),
+        ChannelLayoutSpec::Ambisonic(parsed_ambisonic.as_ambisonic().unwrap())
+    );
     assert_eq!(
         ChannelLayoutSpec::unspecified(3)
             .unwrap()
@@ -4724,6 +4750,26 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(
         custom_spec.to_custom_layout().unwrap(),
         CustomChannelLayout::parse_channel_list("FL@Left+FR@Right").unwrap()
+    );
+    let canonical_named_custom = custom_spec.retype_to_canonical_order(true).unwrap();
+    assert!(!canonical_named_custom.is_lossy());
+    assert_eq!(canonical_named_custom.into_layout(), custom_spec);
+    let canonical_sparse_custom =
+        ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("FL+FC").unwrap())
+            .retype_to_canonical_order(false)
+            .unwrap();
+    assert!(!canonical_sparse_custom.is_lossy());
+    assert_eq!(
+        canonical_sparse_custom.into_layout(),
+        ChannelLayoutSpec::NativeMask(arbitrary_layout)
+    );
+    let canonical_unknown_custom = ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(3).unwrap())
+        .retype_to_canonical_order(false)
+        .unwrap();
+    assert!(!canonical_unknown_custom.is_lossy());
+    assert_eq!(
+        canonical_unknown_custom.into_layout(),
+        ChannelLayoutSpec::unspecified(3).unwrap()
     );
     assert_eq!(
         ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("FL+FR").unwrap())
@@ -10239,6 +10285,16 @@ fn exercise_fixtures() {
         ambisonic_custom.canonical_ambisonic_layout().unwrap(),
         AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap()
     );
+    let canonical_ambisonic_result = ChannelLayoutSpec::Custom(ambisonic_custom.clone())
+        .retype_to_ambisonic_order(false)
+        .unwrap();
+    assert!(!canonical_ambisonic_result.is_lossy());
+    assert_eq!(
+        canonical_ambisonic_result.into_layout(),
+        ChannelLayoutSpec::Ambisonic(
+            AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap()
+        )
+    );
     let explicit_ambisonic =
         AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap();
     assert_eq!(
@@ -10303,6 +10359,22 @@ fn exercise_fixtures() {
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidArgument
+    );
+    let canonical_named_native = ChannelLayoutSpec::Custom(custom_layout.clone())
+        .retype_to_canonical_order(true)
+        .unwrap();
+    assert!(!canonical_named_native.is_lossy());
+    assert_eq!(
+        canonical_named_native.into_layout(),
+        ChannelLayoutSpec::Custom(custom_layout.clone())
+    );
+    let canonical_ambisonic = ChannelLayoutSpec::Custom(ambisonic_custom.clone())
+        .retype_to_canonical_order(false)
+        .unwrap();
+    assert!(!canonical_ambisonic.is_lossy());
+    assert_eq!(
+        canonical_ambisonic.into_layout(),
+        ChannelLayoutSpec::Ambisonic(explicit_ambisonic)
     );
     assert_eq!(
         ChannelLayoutSpec::Custom(canonical_custom.clone())

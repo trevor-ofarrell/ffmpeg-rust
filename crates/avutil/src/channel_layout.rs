@@ -674,13 +674,7 @@ impl CustomChannelLayout {
         ChannelLayout::from_channel_mask(mask)
     }
 
-    pub fn canonical_ambisonic_layout(&self) -> AvResult<AmbisonicChannelLayout> {
-        if self.has_custom_names() {
-            return Err(AvError::invalid_argument(
-                "custom layout with names cannot be represented losslessly as ambisonic",
-            ));
-        }
-
+    fn ambisonic_layout_for_retype(&self) -> AvResult<(AmbisonicChannelLayout, bool)> {
         let order = self.ambisonic_order()?;
         let ambisonic_channel_count = usize::from(
             AmbisonicChannelLayout::ambisonic_channel_count_for_order(order)?,
@@ -699,7 +693,21 @@ impl CustomChannelLayout {
             extra_native_mask |= channel_mask;
         }
 
-        AmbisonicChannelLayout::new(order, extra_native_mask)
+        Ok((
+            AmbisonicChannelLayout::new(order, extra_native_mask)?,
+            self.has_custom_names(),
+        ))
+    }
+
+    pub fn canonical_ambisonic_layout(&self) -> AvResult<AmbisonicChannelLayout> {
+        if self.has_custom_names() {
+            return Err(AvError::invalid_argument(
+                "custom layout with names cannot be represented losslessly as ambisonic",
+            ));
+        }
+
+        let (layout, _lossy) = self.ambisonic_layout_for_retype()?;
+        Ok(layout)
     }
 
     pub fn subset_native_mask(&self, mask: u64) -> u64 {
@@ -2479,6 +2487,37 @@ impl ChannelLayoutSpec {
         Ok(self.retype_to_native_order(false)?.into_layout())
     }
 
+    pub fn retype_to_ambisonic_order(
+        &self,
+        allow_lossy: bool,
+    ) -> AvResult<ChannelLayoutRetypeResult> {
+        match self {
+            Self::Ambisonic(layout) => Ok(ChannelLayoutRetypeResult::new(
+                Self::Ambisonic(*layout),
+                false,
+            )),
+            Self::Custom(layout) => {
+                let (ambisonic, lossy) = layout.ambisonic_layout_for_retype()?;
+                if lossy && !allow_lossy {
+                    return Err(AvError::invalid_argument(
+                        "custom layout with names cannot be represented losslessly as ambisonic",
+                    ));
+                }
+                Ok(ChannelLayoutRetypeResult::new(
+                    Self::Ambisonic(ambisonic),
+                    lossy,
+                ))
+            }
+            Self::Native(_) | Self::NativeMask(_) | Self::Unspecified(_) => Err(
+                AvError::invalid_argument("channel layout cannot be represented as ambisonic"),
+            ),
+        }
+    }
+
+    pub fn to_ambisonic_order_lossless(&self) -> AvResult<Self> {
+        Ok(self.retype_to_ambisonic_order(false)?.into_layout())
+    }
+
     pub fn retype_to_unspecified_order(
         &self,
         allow_lossy: bool,
@@ -2520,6 +2559,63 @@ impl ChannelLayoutSpec {
 
     pub fn to_unspecified_order_lossless(&self) -> AvResult<Self> {
         Ok(self.retype_to_unspecified_order(false)?.into_layout())
+    }
+
+    pub fn retype_to_canonical_order(
+        &self,
+        _allow_lossy: bool,
+    ) -> AvResult<ChannelLayoutRetypeResult> {
+        match self {
+            Self::Native(layout) => {
+                Ok(ChannelLayoutRetypeResult::new(Self::Native(*layout), false))
+            }
+            Self::NativeMask(layout) => Ok(ChannelLayoutRetypeResult::new(
+                Self::NativeMask(*layout),
+                false,
+            )),
+            Self::Ambisonic(layout) => Ok(ChannelLayoutRetypeResult::new(
+                Self::Ambisonic(*layout),
+                false,
+            )),
+            Self::Unspecified(layout) => Ok(ChannelLayoutRetypeResult::new(
+                Self::Unspecified(*layout),
+                false,
+            )),
+            Self::Custom(layout) => {
+                if layout.has_custom_names() {
+                    return Ok(ChannelLayoutRetypeResult::new(
+                        Self::Custom(layout.clone()),
+                        false,
+                    ));
+                }
+                if layout
+                    .channels()
+                    .iter()
+                    .all(|channel| channel.id() == ChannelId::Unknown)
+                {
+                    return Ok(ChannelLayoutRetypeResult::new(
+                        Self::Unspecified(UnspecifiedChannelLayout::new(layout.channel_count())?),
+                        false,
+                    ));
+                }
+                if let Ok(mask) = layout.canonical_native_mask() {
+                    return Ok(ChannelLayoutRetypeResult::new(
+                        Self::from_native_channel_mask(mask)?,
+                        false,
+                    ));
+                }
+                if let Ok((ambisonic, _lossy)) = layout.ambisonic_layout_for_retype() {
+                    return Ok(ChannelLayoutRetypeResult::new(
+                        Self::Ambisonic(ambisonic),
+                        false,
+                    ));
+                }
+                Ok(ChannelLayoutRetypeResult::new(
+                    Self::Custom(layout.clone()),
+                    false,
+                ))
+            }
+        }
     }
 
     pub fn as_unspecified(&self) -> Option<UnspecifiedChannelLayout> {
@@ -5214,6 +5310,66 @@ mod tests {
     }
 
     #[test]
+    fn layout_specs_retype_to_ambisonic_order_reports_lossy_names() {
+        let explicit = ChannelLayoutSpec::Ambisonic(AmbisonicChannelLayout::new(1, 0).unwrap());
+        let explicit_result = explicit.retype_to_ambisonic_order(false).unwrap();
+        assert!(!explicit_result.is_lossy());
+        assert_eq!(explicit_result.into_layout(), explicit);
+
+        let custom_ambisonic = ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap(),
+        );
+        let custom_result = custom_ambisonic.retype_to_ambisonic_order(false).unwrap();
+        assert!(!custom_result.is_lossy());
+        assert_eq!(
+            custom_result.into_layout(),
+            ChannelLayoutSpec::Ambisonic(
+                AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap()
+            )
+        );
+
+        let named_ambisonic = ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("AMBI0@W+AMBI1@Y+AMBI2@Z+AMBI3@X+FL@Left+FR")
+                .unwrap(),
+        );
+        assert_eq!(
+            named_ambisonic
+                .retype_to_ambisonic_order(false)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        let named_result = named_ambisonic.retype_to_ambisonic_order(true).unwrap();
+        assert!(named_result.is_lossy());
+        assert_eq!(
+            named_result.into_layout(),
+            ChannelLayoutSpec::Ambisonic(
+                AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap()
+            )
+        );
+
+        for layout in [
+            ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("FL+FR").unwrap()),
+            ChannelLayoutSpec::Custom(
+                CustomChannelLayout::parse_channel_list("AMBI0+AMBI1").unwrap(),
+            ),
+            ChannelLayoutSpec::Custom(
+                CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+FR+FL").unwrap(),
+            ),
+            ChannelLayoutSpec::Custom(
+                CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+UNK").unwrap(),
+            ),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo()),
+            ChannelLayoutSpec::unspecified(2).unwrap(),
+        ] {
+            assert_eq!(
+                layout.retype_to_ambisonic_order(true).unwrap_err().kind(),
+                AvErrorKind::InvalidArgument
+            );
+        }
+    }
+
+    #[test]
     fn layout_specs_retype_to_unspecified_order_losslessly() {
         let unspecified = ChannelLayoutSpec::unspecified(2).unwrap();
         assert_eq!(
@@ -5296,6 +5452,81 @@ mod tests {
             result.into_layout(),
             ChannelLayoutSpec::unspecified(2).unwrap()
         );
+    }
+
+    #[test]
+    fn layout_specs_retype_to_canonical_order_matches_current_subset() {
+        let native = ChannelLayoutSpec::Native(ChannelLayout::stereo());
+        let native_result = native.retype_to_canonical_order(true).unwrap();
+        assert!(!native_result.is_lossy());
+        assert_eq!(native_result.into_layout(), native);
+
+        let native_mask = ChannelLayoutSpec::NativeMask(
+            NativeChannelMaskLayout::new(Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
+                .unwrap(),
+        );
+        let native_mask_result = native_mask.retype_to_canonical_order(false).unwrap();
+        assert!(!native_mask_result.is_lossy());
+        assert_eq!(native_mask_result.into_layout(), native_mask);
+
+        let explicit_ambisonic =
+            ChannelLayoutSpec::Ambisonic(AmbisonicChannelLayout::new(1, 0).unwrap());
+        let explicit_ambisonic_result = explicit_ambisonic.retype_to_canonical_order(true).unwrap();
+        assert!(!explicit_ambisonic_result.is_lossy());
+        assert_eq!(explicit_ambisonic_result.into_layout(), explicit_ambisonic);
+
+        let unspecified = ChannelLayoutSpec::unspecified(2).unwrap();
+        let unspecified_result = unspecified.retype_to_canonical_order(false).unwrap();
+        assert!(!unspecified_result.is_lossy());
+        assert_eq!(unspecified_result.into_layout(), unspecified);
+
+        let custom_native =
+            ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("FL+FC").unwrap());
+        let custom_native_result = custom_native.retype_to_canonical_order(false).unwrap();
+        assert!(!custom_native_result.is_lossy());
+        assert_eq!(
+            custom_native_result.into_layout(),
+            ChannelLayoutSpec::NativeMask(
+                NativeChannelMaskLayout::new(
+                    Channel::FrontLeft.mask() | Channel::FrontCenter.mask()
+                )
+                .unwrap()
+            )
+        );
+
+        let custom_unknown = ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(3).unwrap());
+        let custom_unknown_result = custom_unknown.retype_to_canonical_order(false).unwrap();
+        assert!(!custom_unknown_result.is_lossy());
+        assert_eq!(
+            custom_unknown_result.into_layout(),
+            ChannelLayoutSpec::unspecified(3).unwrap()
+        );
+
+        let custom_ambisonic = ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap(),
+        );
+        let custom_ambisonic_result = custom_ambisonic.retype_to_canonical_order(false).unwrap();
+        assert!(!custom_ambisonic_result.is_lossy());
+        assert_eq!(
+            custom_ambisonic_result.into_layout(),
+            ChannelLayoutSpec::Ambisonic(
+                AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap()
+            )
+        );
+
+        for no_op_custom in [
+            ChannelLayoutSpec::Custom(
+                CustomChannelLayout::parse_channel_list("FL@Left+FR").unwrap(),
+            ),
+            ChannelLayoutSpec::Custom(
+                CustomChannelLayout::parse_channel_list("AMBI0@W+AMBI1+AMBI2+AMBI3").unwrap(),
+            ),
+            ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("UNK+UNSD").unwrap()),
+        ] {
+            let result = no_op_custom.retype_to_canonical_order(true).unwrap();
+            assert!(!result.is_lossy());
+            assert_eq!(result.into_layout(), no_op_custom);
+        }
     }
 
     #[test]
