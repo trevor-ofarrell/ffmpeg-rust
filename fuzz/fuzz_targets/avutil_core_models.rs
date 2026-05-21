@@ -73,6 +73,64 @@ use std::time::{Duration, UNIX_EPOCH};
 const MAX_PAYLOAD: usize = 128;
 const MAX_SAMPLES: usize = 64;
 
+fn assert_raw_channel_layout_retype_fixtures() {
+    let raw_mask = (1u64 << 45) | (1u64 << 46);
+    let raw_layout = NativeChannelMaskLayout::new(raw_mask).unwrap();
+    let raw_custom = CustomChannelLayout::parse_channel_list("USR45+USR46").unwrap();
+    assert_eq!(raw_custom.canonical_native_mask().unwrap(), raw_mask);
+    assert_eq!(
+        ChannelLayoutSpec::parse("USR45+USR46").unwrap(),
+        ChannelLayoutSpec::NativeMask(raw_layout)
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(raw_custom)
+            .to_native_order_lossless()
+            .unwrap(),
+        ChannelLayoutSpec::NativeMask(raw_layout)
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("USR46+USR45").unwrap())
+            .retype_to_native_order(true)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("USR63").unwrap())
+            .retype_to_native_order(true)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+
+    let raw_ambisonic_mask = 1u64 << 45;
+    let raw_ambisonic = ChannelLayoutSpec::Ambisonic(
+        AmbisonicChannelLayout::new(1, raw_ambisonic_mask).unwrap(),
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+USR45").unwrap(),
+        raw_ambisonic
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+USR45").unwrap(),
+        )
+        .retype_to_ambisonic_order(false)
+        .unwrap()
+        .into_layout(),
+        raw_ambisonic
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+USR63").unwrap(),
+        )
+        .retype_to_ambisonic_order(true)
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidArgument
+    );
+}
+
 fn exif_two_digits(value: &str, index: usize) -> u8 {
     let bytes = value.as_bytes();
     (bytes[index] - b'0') * 10 + (bytes[index + 1] - b'0')
@@ -3627,6 +3685,8 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
 }
 
 fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
+    assert_raw_channel_layout_retype_fixtures();
+
     let sample_rate = sample_rate_from(cursor.next());
     let channels = channel_count_from(cursor.next());
     let samples_per_channel = usize::from(cursor.next().unwrap_or_default()) % (MAX_SAMPLES + 1);
@@ -6559,6 +6619,8 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 }
 
 fn exercise_fixtures() {
+    assert_raw_channel_layout_retype_fixtures();
+
     assert_eq!(PixelFormat::from_name("gray8"), Some(PixelFormat::Gray8));
     assert_eq!(
         PixelFormat::from_name("gray16le"),

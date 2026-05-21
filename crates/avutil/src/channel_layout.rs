@@ -382,6 +382,17 @@ fn parse_user_channel_id(value: &str) -> Option<i32> {
     value.parse().ok()
 }
 
+fn native_mask_bit_from_channel_id(id: ChannelId) -> AvResult<u64> {
+    let raw_id = id.raw_id();
+    if (0..63).contains(&raw_id) {
+        Ok(1u64 << raw_id)
+    } else {
+        Err(AvError::invalid_argument(
+            "custom layout cannot be represented as native mask",
+        ))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ChannelCustom {
     id: ChannelId,
@@ -652,10 +663,7 @@ impl CustomChannelLayout {
     pub fn canonical_native_mask(&self) -> AvResult<u64> {
         let mut mask = 0u64;
         for channel in &self.channels {
-            let native = channel.id().native().ok_or_else(|| {
-                AvError::invalid_argument("custom layout cannot be represented as native mask")
-            })?;
-            let channel_mask = native.mask();
+            let channel_mask = native_mask_bit_from_channel_id(channel.id())?;
             if mask >= channel_mask {
                 return Err(AvError::invalid_argument(
                     "custom layout native channels are not in canonical order",
@@ -681,10 +689,7 @@ impl CustomChannelLayout {
         );
         let mut extra_native_mask = 0u64;
         for channel in &self.channels[ambisonic_channel_count..] {
-            let native = channel.id().native().ok_or_else(|| {
-                AvError::invalid_argument("custom ambisonic layout extra channels are not native")
-            })?;
-            let channel_mask = native.mask();
+            let channel_mask = native_mask_bit_from_channel_id(channel.id())?;
             if extra_native_mask >= channel_mask {
                 return Err(AvError::invalid_argument(
                     "custom ambisonic layout extra channels are not in canonical order",
@@ -5304,6 +5309,83 @@ mod tests {
         ] {
             assert_eq!(
                 layout.retype_to_native_order(true).unwrap_err().kind(),
+                AvErrorKind::InvalidArgument
+            );
+        }
+    }
+
+    #[test]
+    fn layout_specs_retype_raw_channel_ids_to_native_masks() {
+        let raw_mask = (1u64 << 45) | (1u64 << 46);
+        let raw_layout = NativeChannelMaskLayout::new(raw_mask).unwrap();
+        let raw_custom = CustomChannelLayout::parse_channel_list("USR45+USR46").unwrap();
+
+        assert_eq!(raw_custom.canonical_native_mask().unwrap(), raw_mask);
+        assert_eq!(raw_custom.canonical_native_layout(), None);
+        assert_eq!(
+            ChannelLayoutSpec::parse("USR45+USR46").unwrap(),
+            ChannelLayoutSpec::NativeMask(raw_layout)
+        );
+        assert_eq!(
+            ChannelLayoutSpec::Custom(raw_custom.clone())
+                .to_native_order_lossless()
+                .unwrap(),
+            ChannelLayoutSpec::NativeMask(raw_layout)
+        );
+
+        let named_raw = ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("USR45@Left+USR46").unwrap(),
+        );
+        assert_eq!(
+            named_raw.retype_to_native_order(false).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        let named_result = named_raw.retype_to_native_order(true).unwrap();
+        assert!(named_result.is_lossy());
+        assert_eq!(
+            named_result.into_layout(),
+            ChannelLayoutSpec::NativeMask(raw_layout)
+        );
+
+        let raw_ambisonic_mask = 1u64 << 45;
+        let raw_ambisonic = ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+USR45").unwrap(),
+        );
+        let raw_ambisonic_result = raw_ambisonic.retype_to_ambisonic_order(false).unwrap();
+        assert!(!raw_ambisonic_result.is_lossy());
+        assert_eq!(
+            raw_ambisonic_result.into_layout(),
+            ChannelLayoutSpec::Ambisonic(
+                AmbisonicChannelLayout::new(1, raw_ambisonic_mask).unwrap()
+            )
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+USR45").unwrap(),
+            ChannelLayoutSpec::Ambisonic(
+                AmbisonicChannelLayout::new(1, raw_ambisonic_mask).unwrap()
+            )
+        );
+
+        for layout in ["USR46+USR45", "USR45+USR45", "USR63", "USR2048"] {
+            assert_eq!(
+                ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list(layout).unwrap())
+                    .retype_to_native_order(true)
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidArgument
+            );
+        }
+
+        for layout in [
+            "AMBI0+AMBI1+AMBI2+AMBI3+USR63",
+            "AMBI0+AMBI1+AMBI2+AMBI3+USR2048",
+            "AMBI0+AMBI1+AMBI2+AMBI3+USR46+USR45",
+        ] {
+            assert_eq!(
+                ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list(layout).unwrap())
+                    .retype_to_ambisonic_order(true)
+                    .unwrap_err()
+                    .kind(),
                 AvErrorKind::InvalidArgument
             );
         }
