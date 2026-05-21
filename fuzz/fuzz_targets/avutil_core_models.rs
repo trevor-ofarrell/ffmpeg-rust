@@ -3702,6 +3702,75 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         sample_format.bytes_per_sample_frame(channels).unwrap(),
         usize::from(channels) * sample_format.bytes_per_sample()
     );
+    let buffer_alignment: usize = match cursor.next().unwrap_or_default() % 5 {
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        3 => 8,
+        _ => 16,
+    };
+    let sample_buffer_layout = sample_format.buffer_layout(
+        samples_per_channel,
+        channels,
+        buffer_alignment,
+    );
+    if samples_per_channel == 0 {
+        assert_eq!(
+            sample_buffer_layout.unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            sample_format
+                .aligned_plane_sizes(samples_per_channel, channels, buffer_alignment)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+    } else {
+        let sample_buffer_layout = sample_buffer_layout.unwrap();
+        let expected_alignment = if buffer_alignment == 0 {
+            1
+        } else {
+            buffer_alignment
+        };
+        let expected_samples = if buffer_alignment == 0 {
+            samples_per_channel.div_ceil(32) * 32
+        } else {
+            samples_per_channel
+        };
+        let expected_unaligned_line_size = if sample_format.is_planar() {
+            expected_samples * sample_format.bytes_per_sample()
+        } else {
+            expected_samples * sample_format.bytes_per_sample() * usize::from(channels)
+        };
+        let expected_line_size = if expected_alignment == 1 {
+            expected_unaligned_line_size
+        } else {
+            expected_unaligned_line_size.div_ceil(expected_alignment) * expected_alignment
+        };
+        let expected_plane_count = if sample_format.is_planar() {
+            usize::from(channels)
+        } else {
+            1
+        };
+        assert_eq!(sample_buffer_layout.alignment(), expected_alignment);
+        assert_eq!(
+            sample_buffer_layout.samples_per_channel(),
+            expected_samples
+        );
+        assert_eq!(sample_buffer_layout.line_size(), expected_line_size);
+        assert_eq!(sample_buffer_layout.plane_count(), expected_plane_count);
+        assert_eq!(
+            sample_buffer_layout.buffer_size(),
+            expected_line_size * expected_plane_count
+        );
+        assert_eq!(
+            sample_format
+                .aligned_plane_sizes(samples_per_channel, channels, buffer_alignment)
+                .unwrap(),
+            vec![expected_line_size; expected_plane_count]
+        );
+    }
 
     if sample_rate == 0 {
         assert!(AudioFrame::new(sample_rate, channels, sample_format, 1, vec![vec![0]]).is_err());

@@ -104,7 +104,9 @@ pub use pixel::{
     PixelFormat, PixelFormatClass, PixelFormatDescriptor, AVPALETTE_COUNT, AVPALETTE_SIZE,
 };
 pub use rational::Rational;
-pub use samplefmt::{SampleFormat, SampleFormatFamily, SampleFormatNumericKind};
+pub use samplefmt::{
+    SampleBufferLayout, SampleFormat, SampleFormatFamily, SampleFormatNumericKind,
+};
 pub use timebase::{
     add_stable, compare_mod, compare_ts, rescale, rescale_delta, rescale_q, rescale_q_rnd,
     rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, Rounding, AV_TIME_BASE,

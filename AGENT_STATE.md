@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-sample-format` update: `SampleFormat` now exposes `SampleBufferLayout`, `buffer_layout`, and `aligned_plane_sizes` helpers shaped after pinned FFmpeg 8.1.1 `av_samples_get_buffer_size` arithmetic for Rust callers. The implementation reports per-plane line size, total buffer size, plane count, effective sample count, and effective alignment; preserves FFmpeg's `align=0` behavior by padding sample counts up to a 32-sample boundary with byte alignment 1; and rejects zero samples, zero channels, overlarge alignment, and sizes outside FFmpeg's `int` return range with typed errors. Local unit tests and the shared `avutil_core_models` fuzz harness cover packed/planar layouts, explicit alignment, zero-alignment auto-padding, invalid inputs, overflow rejection, and aligned plane-size vectors. The component remains `implemented`, not `complete`, because pinned `ffmpeg -sample_fmts`/libavutil differential vectors, upstream FATE parity, packed/planar conversion routines, and actual fuzz execution are still absent.
+
 Latest `avutil-bitwriter` update: `BitWriter` now has clear/reset support and checked bit-level truncation. `truncate_bits` rejects attempts to grow past the written bit count without mutation, truncates storage to the retained bit length, masks unused bits in a partial tail byte, and allows later writes to resume exactly at the truncated bit position. Local unit tests and the build-checked `avutil_bitreader` fuzz target cover clear/reset, truncate success, tail masking, truncation no-mutation failures, and continued write behavior. The component remains `implemented`, not `complete`, because pinned PutBitContext differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
 
 Latest `avutil-timebase` update: `add_stable` now models the source-shaped signed `av_add_stable` branch for bounded Rust inputs. Exact negative tick increments subtract from the timestamp, fractional negative increments keep the timestamp unchanged through the same `m < d` branch as pinned FFmpeg 8.1.1 `libavutil/mathematics.c`, and exact-result overflow is reported as a typed Rust error instead of relying on C's bounded/undefined timestamp behavior. Local unit tests and the shared `avutil_core_models` fuzz harness cover signed stable-add inputs against an independent model. The component remains `implemented`, not `complete`, because pinned differential vectors, upstream FATE parity, actual fuzz execution, and out-of-range C behavior calibration are still incomplete.
@@ -357,6 +359,18 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-sample-format` sample-buffer-layout slice:
+  - `cargo fmt --all`
+  - `cargo test -p avutil samplefmt` (passed through the default target cache after `target-codex` was blocked by Windows Application Control)
+  - `cargo clippy -p avutil --all-targets --target-dir target-codex -- -D warnings`
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo fmt --all -- --check`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-sample-format`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `Invoke-WebRequest -Uri https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1.1/libavutil/samplefmt.c -OutFile $env:TEMP\ffmpeg-samplefmt-8.1.1.c` (after escalation)
 
 - Current `avutil-bitwriter` truncate/reset slice:
   - `cargo fmt --all`
@@ -4197,6 +4211,12 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-sample-format` sample-buffer-layout slice:
+  - The first sandboxed `Invoke-WebRequest` attempt for pinned `libavutil/samplefmt.c` failed with `Unable to connect to the remote server`; the download succeeded after escalation.
+  - `cargo test -p avutil samplefmt --target-dir target-codex` compiled successfully, then Windows Application Control blocked the freshly built `avutil` unit-test executable with `os error 4551`; rerunning the same focused filter through the default target cache passed.
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex` initially failed because the new fuzz alignment selector inferred `i32`, so `usize::from(buffer_alignment)` was invalid. The selector is now typed as `usize`, and the fuzz package check passes.
+  - Pinned sample-format oracle vectors, upstream FATE parity, and actual fuzz execution remain blockers rather than completion claims.
+
 - Current `avutil-bitwriter` truncate/reset slice: no Rust assertion, clippy, local FATE, formatting, or diff-hygiene failures were observed. The implementation intentionally records missing pinned PutBitContext oracle vectors, upstream FATE parity, and actual fuzz execution as blockers instead of claiming completion.
 
 - Current `avutil-timebase` signed stable-add slice: no Rust assertion, clippy, local FATE, formatting, or diff-hygiene failures were observed. The implementation intentionally records missing pinned oracle vectors, upstream FATE parity, actual fuzz execution, and out-of-range C behavior calibration as blockers instead of claiming completion.
@@ -4527,6 +4547,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-sample-format` is the active infrastructure focus for this turn. The concrete change adds FFmpeg-shaped sample-buffer layout math for packed and planar audio buffers, including `align=0` 32-sample auto-padding, explicit line-size alignment, total buffer-size accounting, aligned plane-size vectors, and typed invalid/overflow errors. It does not claim pinned libavutil differential parity, upstream FATE parity, packed/planar conversion routines, or actual fuzz execution.
+
 `avutil-bitwriter` is the active infrastructure focus for this turn. The concrete change adds checked bit-level truncation and clear/reset support to the bounded MSB-first writer, with unit and fuzz-harness invariant coverage for no-mutation failure behavior and masked partial-byte tails. It does not claim pinned PutBitContext differential parity, upstream FATE parity, or actual fuzz execution.
 
 `avutil-timebase` is the active infrastructure focus for this turn. The latest change extends source-checked `av_add_stable` behavior from positive increments to bounded signed increments: exact negative tick increments subtract, fractional negative increments keep the current timestamp unchanged, and exact-result overflow becomes a typed Rust error. It does not claim pinned differential parity, upstream FATE parity, actual fuzz execution, or out-of-range C edge parity yet.
@@ -4689,11 +4711,13 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Add pinned FFmpeg rational/timebase/bit I/O differential vectors once an oracle path or source-checked oracle fixture exists.
-2. Move to the next unblocked priority-1 infrastructure slice if oracle-backed differential work remains blocked.
-3. Keep `avutil-bitwriter` below `complete` until pinned differential parity, upstream FATE coverage or documented non-applicability, and actual fuzz execution are available.
+1. Run final diff hygiene for the `avutil-sample-format` sample-buffer-layout slice and inspect the worktree.
+2. Commit the coherent slice if diff hygiene is clean.
+3. Continue to the next unblocked priority-1 infrastructure gap or add pinned sample-format differential vectors once an FFmpeg 8.1.1 oracle is available.
 
 ## Known Blockers
+
+- `avutil-sample-format` now covers local FFmpeg-shaped sample format names, planar/packed metadata, basic payload sizing, and sample-buffer layout math, but it still has no pinned `ffmpeg -sample_fmts`/libavutil differential vector harness, no upstream FATE media parity, no actual cargo-fuzz execution, and no packed/planar sample conversion or silence/copy helper parity.
 
 - `avutil-bitwriter` now covers local checked truncation, clear/reset, aligned-byte appends, signed/unsigned bit writes, and Exp-Golomb writes, but it still has no pinned PutBitContext differential vector harness, no upstream FATE media parity, and no actual cargo-fuzz execution.
 
@@ -4766,6 +4790,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added FFmpeg-shaped sample-buffer layout helpers to `avutil-sample-format`. Source checking against pinned FFmpeg 8.1.1 `libavutil/samplefmt.c` confirmed the `av_samples_get_buffer_size` shape used here: `align=0` pads samples to 32 and uses byte alignment 1, packed line size includes channels, planar line size is per-channel, and total size is one line or one line per channel. `SampleBufferLayout` records line size, total buffer size, plane count, effective sample count, and effective alignment; `SampleFormat::buffer_layout` models packed versus planar line-size math with explicit alignment and FFmpeg's `align=0` 32-sample auto-padding behavior; and `aligned_plane_sizes` exposes the resulting per-plane storage sizes. Unit tests cover packed/planar layouts, explicit alignment, zero-alignment auto-padding, invalid inputs, and FFmpeg-int-range overflow rejection; `avutil_core_models` now build-checks generated buffer-layout invariants. The component remains `implemented`, not `complete`, because oracle differentials, upstream FATE parity, conversion/silence helper parity, and actual fuzz execution are still absent.
 
 Latest slice: added `BitWriter::clear` and `BitWriter::truncate_bits` to support deterministic bitstream rollback. Truncation validates that the requested bit position is already written, preserves the original buffer and cursor on out-of-range requests, truncates byte storage to the retained bit count, masks unused bits in the final partial byte, and lets later writes resume at the truncated position. Unit tests cover partial-tail masking plus rewrite, out-of-range no-mutation errors, and clear/reset behavior; `avutil_bitreader` now build-checks generated truncation, clear, tail-padding, and no-mutation invariants. Pinned PutBitContext differential vectors, upstream FATE parity, and actual fuzz execution remain open.
 

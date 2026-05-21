@@ -1,5 +1,7 @@
 use crate::{AvError, AvResult};
 
+const FFMPEG_INT_MAX: usize = i32::MAX as usize;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SampleFormat {
     U8,
@@ -71,6 +73,37 @@ pub enum SampleFormatNumericKind {
     UnsignedInteger,
     SignedInteger,
     Float,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SampleBufferLayout {
+    line_size: usize,
+    buffer_size: usize,
+    plane_count: usize,
+    samples_per_channel: usize,
+    alignment: usize,
+}
+
+impl SampleBufferLayout {
+    pub fn line_size(self) -> usize {
+        self.line_size
+    }
+
+    pub fn buffer_size(self) -> usize {
+        self.buffer_size
+    }
+
+    pub fn plane_count(self) -> usize {
+        self.plane_count
+    }
+
+    pub fn samples_per_channel(self) -> usize {
+        self.samples_per_channel
+    }
+
+    pub fn alignment(self) -> usize {
+        self.alignment
+    }
 }
 
 impl SampleFormat {
@@ -222,6 +255,90 @@ impl SampleFormat {
             Ok(vec![payload_size])
         }
     }
+
+    pub fn buffer_layout(
+        self,
+        samples_per_channel: usize,
+        channels: u16,
+        alignment: usize,
+    ) -> AvResult<SampleBufferLayout> {
+        validate_channels(channels)?;
+        if samples_per_channel == 0 {
+            return Err(AvError::invalid_argument(
+                "sample buffer sample count must be non-zero",
+            ));
+        }
+
+        let (effective_samples, effective_alignment) = if alignment == 0 {
+            if samples_per_channel > FFMPEG_INT_MAX - 31 {
+                return Err(AvError::invalid_argument(
+                    "sample buffer auto-alignment sample count overflow",
+                ));
+            }
+            (
+                align_size(samples_per_channel, 32, "sample buffer samples")?,
+                1,
+            )
+        } else {
+            if alignment > FFMPEG_INT_MAX {
+                return Err(AvError::invalid_argument(
+                    "sample buffer alignment is out of FFmpeg int range",
+                ));
+            }
+            (samples_per_channel, alignment)
+        };
+
+        let channels = usize::from(channels);
+        let sample_bytes = self.bytes_per_sample();
+        let unaligned_line_size = if self.is_planar() {
+            effective_samples
+                .checked_mul(sample_bytes)
+                .ok_or_else(|| AvError::invalid_argument("sample buffer line size overflow"))?
+        } else {
+            effective_samples
+                .checked_mul(sample_bytes)
+                .and_then(|bytes| bytes.checked_mul(channels))
+                .ok_or_else(|| AvError::invalid_argument("sample buffer line size overflow"))?
+        };
+        let line_size = align_size(
+            unaligned_line_size,
+            effective_alignment,
+            "sample buffer line size",
+        )?;
+        if line_size > FFMPEG_INT_MAX {
+            return Err(AvError::invalid_argument(
+                "sample buffer line size exceeds FFmpeg int range",
+            ));
+        }
+
+        let plane_count = if self.is_planar() { channels } else { 1 };
+        let buffer_size = line_size
+            .checked_mul(plane_count)
+            .ok_or_else(|| AvError::invalid_argument("sample buffer size overflow"))?;
+        if buffer_size > FFMPEG_INT_MAX {
+            return Err(AvError::invalid_argument(
+                "sample buffer size exceeds FFmpeg int range",
+            ));
+        }
+
+        Ok(SampleBufferLayout {
+            line_size,
+            buffer_size,
+            plane_count,
+            samples_per_channel: effective_samples,
+            alignment: effective_alignment,
+        })
+    }
+
+    pub fn aligned_plane_sizes(
+        self,
+        samples_per_channel: usize,
+        channels: u16,
+        alignment: usize,
+    ) -> AvResult<Vec<usize>> {
+        let layout = self.buffer_layout(samples_per_channel, channels, alignment)?;
+        Ok(vec![layout.line_size(); layout.plane_count()])
+    }
 }
 
 fn validate_channels(channels: u16) -> AvResult<()> {
@@ -231,6 +348,23 @@ fn validate_channels(channels: u16) -> AvResult<()> {
         ));
     }
     Ok(())
+}
+
+fn align_size(value: usize, alignment: usize, context: &'static str) -> AvResult<usize> {
+    if alignment == 0 {
+        return Err(AvError::invalid_argument(format!(
+            "{context} alignment must be non-zero"
+        )));
+    }
+
+    let remainder = value % alignment;
+    if remainder == 0 {
+        return Ok(value);
+    }
+
+    value
+        .checked_add(alignment - remainder)
+        .ok_or_else(|| AvError::invalid_argument(format!("{context} alignment overflow")))
 }
 
 #[cfg(test)]
@@ -317,6 +451,96 @@ mod tests {
             );
             assert_eq!(format.plane_sizes(0, 3).unwrap(), vec![0, 0, 0]);
         }
+    }
+
+    #[test]
+    fn sample_formats_compute_ffmpeg_buffer_layouts() {
+        let packed = SampleFormat::S16.buffer_layout(1024, 2, 1).unwrap();
+        assert_eq!(packed.line_size(), 4096);
+        assert_eq!(packed.buffer_size(), 4096);
+        assert_eq!(packed.plane_count(), 1);
+        assert_eq!(packed.samples_per_channel(), 1024);
+        assert_eq!(packed.alignment(), 1);
+        assert_eq!(
+            SampleFormat::S16.aligned_plane_sizes(1024, 2, 1).unwrap(),
+            vec![4096]
+        );
+
+        let planar = SampleFormat::S16P.buffer_layout(1024, 2, 1).unwrap();
+        assert_eq!(planar.line_size(), 2048);
+        assert_eq!(planar.buffer_size(), 4096);
+        assert_eq!(planar.plane_count(), 2);
+        assert_eq!(
+            SampleFormat::S16P.aligned_plane_sizes(1024, 2, 1).unwrap(),
+            vec![2048, 2048]
+        );
+
+        let aligned_planar = SampleFormat::FltP.buffer_layout(3, 2, 16).unwrap();
+        assert_eq!(aligned_planar.line_size(), 16);
+        assert_eq!(aligned_planar.buffer_size(), 32);
+        assert_eq!(aligned_planar.plane_count(), 2);
+        assert_eq!(aligned_planar.samples_per_channel(), 3);
+        assert_eq!(aligned_planar.alignment(), 16);
+
+        let aligned_packed = SampleFormat::S16.buffer_layout(3, 2, 8).unwrap();
+        assert_eq!(aligned_packed.line_size(), 16);
+        assert_eq!(aligned_packed.buffer_size(), 16);
+    }
+
+    #[test]
+    fn sample_buffer_layout_zero_alignment_matches_ffmpeg_auto_sample_padding() {
+        let packed = SampleFormat::S16.buffer_layout(1, 1, 0).unwrap();
+        assert_eq!(packed.samples_per_channel(), 32);
+        assert_eq!(packed.alignment(), 1);
+        assert_eq!(packed.line_size(), 64);
+        assert_eq!(packed.buffer_size(), 64);
+
+        let planar = SampleFormat::U8P.buffer_layout(33, 2, 0).unwrap();
+        assert_eq!(planar.samples_per_channel(), 64);
+        assert_eq!(planar.alignment(), 1);
+        assert_eq!(planar.line_size(), 64);
+        assert_eq!(planar.buffer_size(), 128);
+        assert_eq!(planar.plane_count(), 2);
+    }
+
+    #[test]
+    fn sample_buffer_layout_rejects_invalid_and_overflowing_inputs() {
+        assert_eq!(
+            SampleFormat::S16.buffer_layout(0, 2, 1).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            SampleFormat::S16.buffer_layout(1, 0, 1).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            SampleFormat::S16
+                .buffer_layout(usize::MAX, 2, 1)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            SampleFormat::S16
+                .buffer_layout(1, 2, usize::MAX)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            SampleFormat::S64
+                .buffer_layout(FFMPEG_INT_MAX, 2, 1)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            SampleFormat::S16
+                .buffer_layout(FFMPEG_INT_MAX, 1, 0)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
     }
 
     #[test]
