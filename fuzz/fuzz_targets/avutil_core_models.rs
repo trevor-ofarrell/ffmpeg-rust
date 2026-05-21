@@ -63,6 +63,7 @@ use avutil::{
     AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE,
 };
 use libfuzzer_sys::fuzz_target;
+use std::cmp::Ordering;
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
@@ -1166,6 +1167,45 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
             .unwrap(),
         rational
     );
+    assert!(matches!(
+        rational.av_cmp(other),
+        Some(Ordering::Less | Ordering::Equal | Ordering::Greater)
+    ));
+    assert_eq!(Rational::from_raw(0, 0).av_cmp(other), None);
+
+    let first_candidate = positive_rational_from(cursor.next(), cursor.next());
+    let second_candidate = positive_rational_from(cursor.next(), cursor.next());
+    let nearest_relation = rational
+        .nearer_to(first_candidate, second_candidate)
+        .unwrap();
+    assert_eq!(
+        second_candidate
+            .nearer_to(first_candidate, first_candidate)
+            .unwrap(),
+        Ordering::Equal
+    );
+    assert_eq!(
+        rational
+            .nearer_to(second_candidate, first_candidate)
+            .unwrap(),
+        nearest_relation.reverse()
+    );
+    assert_eq!(
+        rational.find_nearest_index(&[]).unwrap(),
+        None
+    );
+    assert_eq!(
+        rational
+            .find_nearest_index(&[first_candidate, second_candidate])
+            .unwrap(),
+        Some(match nearest_relation {
+            Ordering::Greater | Ordering::Equal => 0,
+            Ordering::Less => 1,
+        })
+    );
+    assert!(rational
+        .find_nearest_index(&[first_candidate, Rational::from_raw(0, 0)])
+        .is_err());
 
     let reduce_num = small_i64_from(cursor.next(), cursor.next());
     let reduce_den = small_i64_from(cursor.next(), cursor.next());

@@ -44,6 +44,10 @@ unit_tests = [
   "rational::tests::rational_compares_without_float_rounding",
   "rational::tests::rational_arithmetic_reduces_results",
   "rational::tests::rational_arithmetic_rejects_invalid_or_out_of_range_results",
+  "rational::tests::rational_av_cmp_matches_ffmpeg_sentinels",
+  "rational::tests::rational_nearer_to_reports_closer_candidate_and_ties",
+  "rational::tests::rational_find_nearest_index_keeps_first_tie",
+  "rational::tests::rational_nearest_helpers_reject_zero_denominators",
   "rational::tests::rational_reduce_i64_reports_exact_limited_results",
   "rational::tests::rational_reduce_i64_approximates_when_limited",
   "rational::tests::rational_reduce_i64_rejects_invalid_limits",
@@ -53,8 +57,8 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-rational|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-# Latest update: av_reduce-style limited i64 reduction and av_d2q-style f64 conversion are implemented with exact/approximation tests.
-notes = "Basic normalized rational behavior implemented with checked add, subtract, negate, multiply, divide, reciprocal, and comparison helpers. Latest addition: Rational::reduce_i64 models av_reduce-style bounded reduction with exactness reporting, finite/infinite/zero raw rational support, sign normalization, invalid-limit rejection, and continued-fraction approximation when numerator or denominator exceeds the caller max; Rational::from_f64_limited models av_d2q-style finite conversion with max-bounded output plus NaN as 0/0 and infinity/overlarge values as +/-1/0; Rational::to_f64 mirrors av_q2d-style conversion. Build-checked cargo-fuzz target avutil_core_models covers normalization, denominator validation, reciprocal/multiplication invariants, arithmetic round trips, negation round trips, reduction bounds, exactness cross-products, f64 conversion bounds/sentinels, and timebase use, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs pinned FFmpeg differential vectors for edge-case av_reduce/av_d2q parity and broader rational helpers. The local FATE-runner smoke mapping executes the rational unit filter only and does not count as upstream FATE parity."
+# Latest update: av_cmp_q-style sentinel comparison plus av_nearer_q/av_find_nearest_q_idx-style nearest selection are implemented.
+notes = "Basic normalized rational behavior implemented with checked add, subtract, negate, multiply, divide, reciprocal, and comparison helpers. Latest addition: Rational::av_cmp models av_cmp_q ordering including raw +/-infinity sentinels and None for 0/0 indeterminate forms; Rational::nearer_to and Rational::find_nearest_index model av_nearer_q and av_find_nearest_q_idx with exact i128 distance comparison, first-candidate tie preservation, empty-slice handling, and typed rejection of zero-denominator nearest inputs. Rational::reduce_i64 models av_reduce-style bounded reduction with exactness reporting, finite/infinite/zero raw rational support, sign normalization, invalid-limit rejection, and continued-fraction approximation when numerator or denominator exceeds the caller max; Rational::from_f64_limited models av_d2q-style finite conversion with max-bounded output plus NaN as 0/0 and infinity/overlarge values as +/-1/0; Rational::to_f64 mirrors av_q2d-style conversion. Build-checked cargo-fuzz target avutil_core_models covers normalization, denominator validation, reciprocal/multiplication invariants, arithmetic round trips, negation round trips, av_cmp sentinel behavior, nearest-candidate relation/index invariants, reduction bounds, exactness cross-products, f64 conversion bounds/sentinels, and timebase use, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs pinned FFmpeg differential vectors for edge-case av_reduce/av_d2q/nearest parity and broader rational helpers. The local FATE-runner smoke mapping executes the rational unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

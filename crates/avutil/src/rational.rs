@@ -57,6 +57,74 @@ impl Rational {
         f64::from(self.num) / f64::from(self.den)
     }
 
+    pub fn av_cmp(self, other: Self) -> Option<Ordering> {
+        let diff = i128::from(self.num) * i128::from(other.den)
+            - i128::from(other.num) * i128::from(self.den);
+
+        if diff != 0 {
+            let denominators_flip_sign = (self.den < 0) ^ (other.den < 0);
+            let self_is_greater = if denominators_flip_sign {
+                diff < 0
+            } else {
+                diff > 0
+            };
+            return Some(if self_is_greater {
+                Ordering::Greater
+            } else {
+                Ordering::Less
+            });
+        }
+
+        if self.den != 0 && other.den != 0 {
+            Some(Ordering::Equal)
+        } else if self.num != 0 && other.num != 0 {
+            Some(self.num.signum().cmp(&other.num.signum()))
+        } else {
+            None
+        }
+    }
+
+    pub fn nearer_to(self, first: Self, second: Self) -> AvResult<Ordering> {
+        self.ensure_finite("reference rational for nearest comparison")?;
+        first.ensure_finite("first rational for nearest comparison")?;
+        second.ensure_finite("second rational for nearest comparison")?;
+
+        let reference_num = i128::from(self.num);
+        let reference_den = i128::from(self.den);
+        let first_num = i128::from(first.num);
+        let first_den = i128::from(first.den);
+        let second_num = i128::from(second.num);
+        let second_den = i128::from(second.den);
+
+        let first_distance_num = (reference_num * first_den - first_num * reference_den).abs();
+        let second_distance_num = (reference_num * second_den - second_num * reference_den).abs();
+        let first_scaled = first_distance_num * second_den.abs();
+        let second_scaled = second_distance_num * first_den.abs();
+
+        Ok(match first_scaled.cmp(&second_scaled) {
+            Ordering::Less => Ordering::Greater,
+            Ordering::Equal => Ordering::Equal,
+            Ordering::Greater => Ordering::Less,
+        })
+    }
+
+    pub fn find_nearest_index(self, candidates: &[Self]) -> AvResult<Option<usize>> {
+        let Some((first, rest)) = candidates.split_first() else {
+            return Ok(None);
+        };
+        first.ensure_finite("first nearest rational candidate")?;
+
+        let mut nearest = 0;
+        for (offset, candidate) in rest.iter().enumerate() {
+            let index = offset + 1;
+            if self.nearer_to(*candidate, candidates[nearest])? == Ordering::Greater {
+                nearest = index;
+            }
+        }
+
+        Ok(Some(nearest))
+    }
+
     pub fn reduce_i64(num: i64, den: i64, max: i32) -> AvResult<(Self, bool)> {
         if max <= 0 {
             return Err(AvError::invalid_argument(
@@ -135,6 +203,15 @@ impl Rational {
 
     pub fn checked_div(self, other: Self) -> AvResult<Self> {
         self.checked_mul(other.reciprocal()?)
+    }
+
+    fn ensure_finite(self, context: &str) -> AvResult<()> {
+        if self.den == 0 {
+            return Err(AvError::invalid_argument(format!(
+                "{context} must have a nonzero denominator"
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -221,9 +298,7 @@ fn is_better_reduction(
 
 impl PartialOrd for Rational {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let left = i64::from(self.num) * i64::from(other.den);
-        let right = i64::from(other.num) * i64::from(self.den);
-        left.partial_cmp(&right)
+        self.av_cmp(*other)
     }
 }
 
@@ -308,6 +383,121 @@ mod tests {
         assert_eq!(
             Rational::new(1001, 30000).unwrap(),
             Rational::new(2002, 60000).unwrap()
+        );
+    }
+
+    #[test]
+    fn rational_av_cmp_matches_ffmpeg_sentinels() {
+        assert_eq!(
+            Rational::new(1, 2)
+                .unwrap()
+                .av_cmp(Rational::new(2, 3).unwrap()),
+            Some(Ordering::Less)
+        );
+        assert_eq!(
+            Rational::from_raw(1, -2).av_cmp(Rational::new(1, 3).unwrap()),
+            Some(Ordering::Less)
+        );
+        assert_eq!(
+            Rational::from_raw(1, 0).av_cmp(Rational::from_raw(2, 0)),
+            Some(Ordering::Equal)
+        );
+        assert_eq!(
+            Rational::from_raw(1, 0).av_cmp(Rational::from_raw(-1, 0)),
+            Some(Ordering::Greater)
+        );
+        assert_eq!(
+            Rational::from_raw(1, 0).av_cmp(Rational::new(24, 1).unwrap()),
+            Some(Ordering::Greater)
+        );
+        assert_eq!(
+            Rational::from_raw(0, 0).av_cmp(Rational::new(1, 1).unwrap()),
+            None
+        );
+    }
+
+    #[test]
+    fn rational_nearer_to_reports_closer_candidate_and_ties() {
+        let reference = Rational::new(25, 1).unwrap();
+
+        assert_eq!(
+            reference
+                .nearer_to(Rational::new(24, 1).unwrap(), Rational::new(30, 1).unwrap())
+                .unwrap(),
+            Ordering::Greater
+        );
+        assert_eq!(
+            reference
+                .nearer_to(Rational::new(20, 1).unwrap(), Rational::new(26, 1).unwrap())
+                .unwrap(),
+            Ordering::Less
+        );
+        assert_eq!(
+            Rational::new(27, 1)
+                .unwrap()
+                .nearer_to(Rational::new(24, 1).unwrap(), Rational::new(30, 1).unwrap())
+                .unwrap(),
+            Ordering::Equal
+        );
+        assert_eq!(
+            Rational::new(1001, 30000)
+                .unwrap()
+                .nearer_to(
+                    Rational::new(1, 30).unwrap(),
+                    Rational::new(1001, 30000).unwrap()
+                )
+                .unwrap(),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn rational_find_nearest_index_keeps_first_tie() {
+        let candidates = [
+            Rational::new(24, 1).unwrap(),
+            Rational::new(30, 1).unwrap(),
+            Rational::new(25, 1).unwrap(),
+        ];
+
+        assert_eq!(
+            Rational::new(26, 1)
+                .unwrap()
+                .find_nearest_index(&candidates)
+                .unwrap(),
+            Some(2)
+        );
+        assert_eq!(
+            Rational::new(27, 1)
+                .unwrap()
+                .find_nearest_index(&candidates[..2])
+                .unwrap(),
+            Some(0)
+        );
+        assert_eq!(
+            Rational::new(27, 1)
+                .unwrap()
+                .find_nearest_index(&[])
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn rational_nearest_helpers_reject_zero_denominators() {
+        assert_eq!(
+            Rational::from_raw(1, 0)
+                .nearer_to(Rational::new(24, 1).unwrap(), Rational::new(30, 1).unwrap())
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            Rational::new(25, 1)
+                .unwrap()
+                .find_nearest_index(&[Rational::new(24, 1).unwrap(), Rational::from_raw(0, 0)])
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
         );
     }
 
