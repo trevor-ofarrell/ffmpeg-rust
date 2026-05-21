@@ -10,8 +10,8 @@ fuzz_target!(|data: &[u8]| {
 
     while let Ok(op) = control.read_u8() {
         let before = reader.position();
-        let opcode = op % 50;
-        let is_peek = (24..=46).contains(&opcode);
+        let opcode = op % 54;
+        let is_peek = (24..=46).contains(&opcode) || matches!(opcode, 51 | 53);
         let may_move_backward = matches!(opcode, 47..=49);
         let result = run_read_operation(&mut reader, opcode, op);
 
@@ -81,10 +81,14 @@ fn run_read_operation(reader: &mut ByteReader<'_>, opcode: u8, op: u8) -> AvResu
         46 => reader.peek_exact(usize::from(op >> 4)).map(|_| ()),
         47 => reader.set_position(usize::from(op)),
         48 => reader.seek_relative(i8::from_ne_bytes([op]) as isize),
-        _ => {
+        49 => {
             reader.rewind();
             Ok(())
         }
+        50 => reader.read_array::<4>().map(|_| ()),
+        51 => reader.peek_array::<4>().map(|_| ()),
+        52 => reader.read_tag().map(|_| ()),
+        _ => reader.peek_tag().map(|_| ()),
     }
 }
 
@@ -95,6 +99,7 @@ fn run_write_operation(writer: &mut ByteWriter, data: &[u8], op: u8) {
     writer.write_u16_be(u16::from(op));
     writer.write_i16_le(i16::from(op));
     writer.write_i16_be(i16::from(op));
+    writer.write_tag(tag_from_data(data, op));
 
     let mut bytes = [0_u8; 4];
     for (index, byte) in data.iter().take(4).enumerate() {
@@ -127,6 +132,14 @@ fn run_write_operation(writer: &mut ByteWriter, data: &[u8], op: u8) {
     run_patch_operations(writer, data, op, value, wide_value);
 }
 
+fn tag_from_data(data: &[u8], fallback: u8) -> [u8; 4] {
+    let mut tag = [fallback; 4];
+    for (index, byte) in data.iter().take(4).enumerate() {
+        tag[index] = *byte;
+    }
+    tag
+}
+
 fn write_i24_and_assert_non_mutation(writer: &mut ByteWriter, value: i32, little_endian: bool) {
     let before = writer.as_slice().to_vec();
     let result = if little_endian {
@@ -153,13 +166,7 @@ fn write_i48_and_assert_non_mutation(writer: &mut ByteWriter, value: i64, little
     }
 }
 
-fn run_patch_operations(
-    writer: &mut ByteWriter,
-    data: &[u8],
-    op: u8,
-    value: u32,
-    wide_value: u64,
-) {
+fn run_patch_operations(writer: &mut ByteWriter, data: &[u8], op: u8, value: u32, wide_value: u64) {
     let offset = usize::from(op);
     let patch_len = data.len().min(4);
     let before_patch_all = writer.as_slice().to_vec();
@@ -170,6 +177,9 @@ fn run_patch_operations(
 
     patch_and_assert_non_mutation(writer, offset, |writer| writer.patch_u8(offset, op));
     patch_and_assert_non_mutation(writer, offset, |writer| writer.patch_i8(offset, op as i8));
+    patch_and_assert_non_mutation(writer, offset, |writer| {
+        writer.patch_tag(offset, tag_from_data(data, op))
+    });
     patch_and_assert_non_mutation(writer, offset, |writer| {
         writer.patch_u16_le(offset, u16::from(op))
     });

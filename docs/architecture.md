@@ -20,7 +20,7 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 ## Type Model
 
-Byte I/O now includes checked random access for bounded in-memory streams. `ByteReader` supports absolute positioning, relative seeks, and rewind without advancing on invalid seek requests; `ByteWriter` supports append-position, clear, checked truncate, raw patching, and endian-aware signed/unsigned integer patch helpers that preserve the existing buffer on failed bounds or range checks.
+Byte I/O now includes checked random access for bounded in-memory streams. `ByteReader` supports absolute positioning, relative seeks, rewind, fixed-size array reads/peeks, and fixed four-byte tag reads/peeks without advancing on invalid seek or short-input requests; `ByteWriter` supports append-position, clear, checked truncate, raw patching, fixed four-byte tag writes/patches, and endian-aware signed/unsigned integer patch helpers that preserve the existing buffer on failed bounds or range checks.
 
 Bit I/O now includes checked random access for bounded MSB-first bitstreams and rollback helpers for writers. `BitReader` supports single-bit peeks, absolute bit positioning, relative bit seeks, and rewind without advancing on invalid seek requests; `BitWriter` can append whole byte slices only when byte-aligned, clear/reset state, and truncate to a checked bit position with unused tail bits masked, while preserving state on unaligned, overflowing, or out-of-range requests.
 

@@ -937,13 +937,13 @@ unit_tests = [
   "byteio::tests::writer_rejects_signed_values_too_wide_for_i24_and_i48_without_mutation",
   "byteio::tests::writer_patches_existing_bytes_and_truncates",
   "byteio::tests::writer_patch_and_truncate_errors_preserve_buffer",
+  "byteio::tests::fixed_arrays_and_tags_are_checked_and_positioned",
+  "byteio::tests::writer_appends_and_patches_tags",
 ]
-differential_tests = [
-  "crates/avutil/tests/sample_format_oracle.rs::ffmpeg_sample_format_inventory_matches_current_sample_format_model",
-]
+differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-byteio|local-avutil-unit"]
 fuzz_targets = ["avutil_byteio"]
-notes = "Endian-aware byte reader/writer implemented for common unsigned and signed 8/16/24/32/48/64-bit integer operations, with non-advancing exact and endian-aware numeric peek helpers using the same EOF/overflow validation as advancing reads. ByteReader now has checked absolute positioning, relative seeking, and rewind support that preserve the cursor on invalid seek requests. ByteWriter now exposes append-position, clear, checked truncate, raw patching, and endian-aware signed/unsigned patch helpers for existing bytes; constrained u24/u48/i24/i48 helpers validate before mutation and patch/truncate failures preserve the existing buffer. MOV hvcC parsing now uses the shared u48 big-endian reader instead of a local helper. Build-checked cargo-fuzz target avutil_byteio exercises bounded reads, bounded peeks, checked seeks, EOF cursor invariants, signed and unsigned 24/48/64-bit paths, patch/truncate no-mutation failure paths, and byte writer helper no-mutation failure paths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper FFmpeg compatibility vectors are still pending, so this is not marked complete. The local FATE-runner smoke mapping executes the byteio unit filter only and does not count as upstream FATE parity."
+notes = "Endian-aware byte reader/writer implemented for common unsigned and signed 8/16/24/32/48/64-bit integer operations, with non-advancing exact, fixed-array, fixed-tag, and endian-aware numeric peek helpers using the same EOF/overflow validation as advancing reads. ByteReader has checked absolute positioning, relative seeking, and rewind support that preserve the cursor on invalid seek requests. ByteWriter exposes append-position, clear, checked truncate, raw patching, fixed-tag write/patch helpers, and endian-aware signed/unsigned patch helpers for existing bytes; constrained u24/u48/i24/i48 helpers validate before mutation and patch/truncate failures preserve the existing buffer. MOV hvcC parsing uses the shared u48 big-endian reader instead of a local helper. Build-checked cargo-fuzz target avutil_byteio exercises bounded reads, bounded peeks, fixed arrays/tags, checked seeks, EOF cursor invariants, signed and unsigned 24/48/64-bit paths, patch/truncate no-mutation failure paths, and byte writer helper no-mutation failure paths, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper FFmpeg compatibility vectors are still pending, so this is not marked complete. The local FATE-runner smoke mapping executes the byteio unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

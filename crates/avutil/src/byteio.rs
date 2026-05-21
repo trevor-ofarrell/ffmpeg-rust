@@ -76,6 +76,26 @@ impl<'a> ByteReader<'a> {
         self.view(count)
     }
 
+    pub fn read_array<const N: usize>(&mut self) -> AvResult<[u8; N]> {
+        let mut array = [0; N];
+        array.copy_from_slice(self.take(N)?);
+        Ok(array)
+    }
+
+    pub fn peek_array<const N: usize>(&self) -> AvResult<[u8; N]> {
+        let mut array = [0; N];
+        array.copy_from_slice(self.view(N)?);
+        Ok(array)
+    }
+
+    pub fn read_tag(&mut self) -> AvResult<[u8; 4]> {
+        self.read_array()
+    }
+
+    pub fn peek_tag(&self) -> AvResult<[u8; 4]> {
+        self.peek_array()
+    }
+
     pub fn read_u8(&mut self) -> AvResult<u8> {
         Ok(self.take(1)?[0])
     }
@@ -415,6 +435,14 @@ impl ByteWriter {
         let end = self.checked_patch_end(offset, bytes.len())?;
         self.data[offset..end].copy_from_slice(bytes);
         Ok(())
+    }
+
+    pub fn write_tag(&mut self, tag: [u8; 4]) {
+        self.write_all(&tag);
+    }
+
+    pub fn patch_tag(&mut self, offset: usize, tag: [u8; 4]) -> AvResult<()> {
+        self.patch_all(offset, &tag)
     }
 
     pub fn write_u8(&mut self, value: u8) {
@@ -793,6 +821,28 @@ mod tests {
     }
 
     #[test]
+    fn fixed_arrays_and_tags_are_checked_and_positioned() {
+        let mut reader = ByteReader::new(b"ftypisom");
+
+        assert_eq!(reader.peek_array::<4>().unwrap(), *b"ftyp");
+        assert_eq!(reader.peek_tag().unwrap(), *b"ftyp");
+        assert_eq!(reader.position(), 0);
+        assert_eq!(reader.read_array::<4>().unwrap(), *b"ftyp");
+        assert_eq!(reader.position(), 4);
+        assert_eq!(reader.read_tag().unwrap(), *b"isom");
+        assert!(reader.is_eof());
+
+        let mut short = ByteReader::new(b"mo");
+        assert_eq!(short.read_tag().unwrap_err().kind(), AvErrorKind::EndOfFile);
+        assert_eq!(short.position(), 0);
+        assert_eq!(
+            short.peek_array::<4>().unwrap_err().kind(),
+            AvErrorKind::EndOfFile
+        );
+        assert_eq!(short.position(), 0);
+    }
+
+    #[test]
     fn set_position_seek_relative_and_rewind_are_checked() {
         let mut reader = ByteReader::new(&[10, 20, 30, 40]);
 
@@ -916,6 +966,27 @@ mod tests {
                 0xef, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
             ]
         );
+    }
+
+    #[test]
+    fn writer_appends_and_patches_tags() {
+        let mut writer = ByteWriter::with_capacity(8);
+
+        writer.write_tag(*b"....");
+        writer.write_tag(*b"isom");
+        writer.patch_tag(0, *b"ftyp").unwrap();
+
+        assert_eq!(writer.as_slice(), b"ftypisom");
+        let mut reader = ByteReader::new(writer.as_slice());
+        assert_eq!(reader.read_tag().unwrap(), *b"ftyp");
+        assert_eq!(reader.read_tag().unwrap(), *b"isom");
+
+        let before = writer.as_slice().to_vec();
+        assert_eq!(
+            writer.patch_tag(5, *b"bad!").unwrap_err().kind(),
+            AvErrorKind::EndOfFile
+        );
+        assert_eq!(writer.as_slice(), before.as_slice());
     }
 
     #[test]
