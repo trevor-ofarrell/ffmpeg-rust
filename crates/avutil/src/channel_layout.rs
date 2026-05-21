@@ -478,7 +478,63 @@ impl ChannelLayout {
         )
     }
 
-    pub fn known_layouts() -> [Self; 29] {
+    pub fn five_one_four() -> Self {
+        Self::new_static(
+            "5.1.4",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::LowFrequency,
+                Channel::SideLeft,
+                Channel::SideRight,
+                Channel::TopFrontLeft,
+                Channel::TopFrontRight,
+                Channel::TopBackLeft,
+                Channel::TopBackRight,
+            ],
+        )
+    }
+
+    pub fn seven_one_two() -> Self {
+        Self::new_static(
+            "7.1.2",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::LowFrequency,
+                Channel::BackLeft,
+                Channel::BackRight,
+                Channel::SideLeft,
+                Channel::SideRight,
+                Channel::TopFrontLeft,
+                Channel::TopFrontRight,
+            ],
+        )
+    }
+
+    pub fn seven_one_four() -> Self {
+        Self::new_static(
+            "7.1.4",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::LowFrequency,
+                Channel::BackLeft,
+                Channel::BackRight,
+                Channel::SideLeft,
+                Channel::SideRight,
+                Channel::TopFrontLeft,
+                Channel::TopFrontRight,
+                Channel::TopBackLeft,
+                Channel::TopBackRight,
+            ],
+        )
+    }
+
+    pub fn known_layouts() -> [Self; 32] {
         [
             Self::mono(),
             Self::stereo(),
@@ -509,6 +565,9 @@ impl ChannelLayout {
             Self::five_one_two_back(),
             Self::octagonal(),
             Self::cube(),
+            Self::five_one_four(),
+            Self::seven_one_two(),
+            Self::seven_one_four(),
         ]
     }
 
@@ -543,6 +602,9 @@ impl ChannelLayout {
             "5.1.2(back)" => Some(Self::five_one_two_back()),
             "octagonal" => Some(Self::octagonal()),
             "cube" => Some(Self::cube()),
+            "5.1.4" => Some(Self::five_one_four()),
+            "7.1.2" => Some(Self::seven_one_two()),
+            "7.1.4" => Some(Self::seven_one_four()),
             _ => None,
         }
     }
@@ -888,6 +950,28 @@ mod tests {
         assert!(cube.contains(Channel::TopBackRight));
         assert!(cube.contains(Channel::BackLeft));
         assert!(!cube.contains(Channel::FrontCenter));
+
+        let five_one_four = ChannelLayout::five_one_four();
+        assert_eq!(five_one_four.name(), "5.1.4");
+        assert_eq!(five_one_four.channel_count(), 10);
+        assert!(five_one_four.contains(Channel::SideRight));
+        assert!(five_one_four.contains(Channel::TopBackLeft));
+        assert!(!five_one_four.contains(Channel::BackLeft));
+
+        let seven_one_two = ChannelLayout::seven_one_two();
+        assert_eq!(seven_one_two.name(), "7.1.2");
+        assert_eq!(seven_one_two.channel_count(), 10);
+        assert!(seven_one_two.contains(Channel::BackLeft));
+        assert!(seven_one_two.contains(Channel::SideLeft));
+        assert!(seven_one_two.contains(Channel::TopFrontRight));
+        assert!(!seven_one_two.contains(Channel::TopBackLeft));
+
+        let seven_one_four = ChannelLayout::seven_one_four();
+        assert_eq!(seven_one_four.name(), "7.1.4");
+        assert_eq!(seven_one_four.channel_count(), 12);
+        assert!(seven_one_four.contains(Channel::BackLeft));
+        assert!(seven_one_four.contains(Channel::SideLeft));
+        assert!(seven_one_four.contains(Channel::TopBackRight));
     }
 
     #[test]
@@ -1017,6 +1101,18 @@ mod tests {
         assert_eq!(
             ChannelLayout::cube().channel_string(),
             "FL+FR+BL+BR+TFL+TFR+TBL+TBR"
+        );
+        assert_eq!(
+            ChannelLayout::five_one_four().channel_string(),
+            "FL+FR+FC+LFE+SL+SR+TFL+TFR+TBL+TBR"
+        );
+        assert_eq!(
+            ChannelLayout::seven_one_two().channel_string(),
+            "FL+FR+FC+LFE+BL+BR+SL+SR+TFL+TFR"
+        );
+        assert_eq!(
+            ChannelLayout::seven_one_four().channel_string(),
+            "FL+FR+FC+LFE+BL+BR+SL+SR+TFL+TFR+TBL+TBR"
         );
         assert_eq!(
             ChannelLayout::from_channel_mask(
@@ -1179,6 +1275,53 @@ mod tests {
             Some(ChannelLayout::cube())
         );
         assert_eq!(
+            ChannelLayout::from_channel_mask(
+                Channel::FrontLeft.mask()
+                    | Channel::FrontRight.mask()
+                    | Channel::FrontCenter.mask()
+                    | Channel::LowFrequency.mask()
+                    | Channel::SideLeft.mask()
+                    | Channel::SideRight.mask()
+                    | Channel::TopFrontLeft.mask()
+                    | Channel::TopFrontRight.mask()
+                    | Channel::TopBackLeft.mask()
+                    | Channel::TopBackRight.mask()
+            ),
+            Some(ChannelLayout::five_one_four())
+        );
+        assert_eq!(
+            ChannelLayout::from_channels(&[
+                Channel::TopFrontRight,
+                Channel::TopFrontLeft,
+                Channel::SideRight,
+                Channel::SideLeft,
+                Channel::BackRight,
+                Channel::BackLeft,
+                Channel::LowFrequency,
+                Channel::FrontCenter,
+                Channel::FrontRight,
+                Channel::FrontLeft,
+            ]),
+            Some(ChannelLayout::seven_one_two())
+        );
+        assert_eq!(
+            ChannelLayout::from_channels(&[
+                Channel::TopBackRight,
+                Channel::TopBackLeft,
+                Channel::TopFrontRight,
+                Channel::TopFrontLeft,
+                Channel::SideRight,
+                Channel::SideLeft,
+                Channel::BackRight,
+                Channel::BackLeft,
+                Channel::LowFrequency,
+                Channel::FrontCenter,
+                Channel::FrontRight,
+                Channel::FrontLeft,
+            ]),
+            Some(ChannelLayout::seven_one_four())
+        );
+        assert_eq!(
             ChannelLayout::from_channel_mask(Channel::FrontLeft.mask() | Channel::BackRight.mask()),
             None
         );
@@ -1226,6 +1369,9 @@ mod tests {
                 "5.1.2(back)",
                 "octagonal",
                 "cube",
+                "5.1.4",
+                "7.1.2",
+                "7.1.4",
             ]
         );
 
@@ -1333,6 +1479,18 @@ mod tests {
             ChannelLayout::from_name("cube"),
             Some(ChannelLayout::cube())
         );
+        assert_eq!(
+            ChannelLayout::from_name("5.1.4"),
+            Some(ChannelLayout::five_one_four())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("7.1.2"),
+            Some(ChannelLayout::seven_one_two())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("7.1.4"),
+            Some(ChannelLayout::seven_one_four())
+        );
         assert_eq!(ChannelLayout::from_name("unknown"), None);
 
         assert_eq!(
@@ -1368,6 +1526,8 @@ mod tests {
             Some(ChannelLayout::seven_one())
         );
         assert_eq!(ChannelLayout::default_for_count(9), None);
+        assert_eq!(ChannelLayout::default_for_count(10), None);
+        assert_eq!(ChannelLayout::default_for_count(12), None);
     }
 
     #[test]
@@ -1493,6 +1653,22 @@ mod tests {
         assert_eq!(
             ChannelLayout::parse("FL+TBR+FR+TFL+BR+TFR+TBL+BL").unwrap(),
             ChannelLayout::cube()
+        );
+        assert_eq!(
+            ChannelLayout::parse("5.1.4").unwrap(),
+            ChannelLayout::five_one_four()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+LFE+SL+SR+TFL+TFR+TBL+TBR").unwrap(),
+            ChannelLayout::five_one_four()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+LFE+BL+BR+SL+SR+TFL+TFR").unwrap(),
+            ChannelLayout::seven_one_two()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+TBR+FR+TFL+BR+TFR+TBL+FC+LFE+BL+SL+SR").unwrap(),
+            ChannelLayout::seven_one_four()
         );
     }
 
