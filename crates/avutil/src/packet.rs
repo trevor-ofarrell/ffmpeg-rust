@@ -4784,6 +4784,19 @@ impl Packet {
         self.side_data.push(side_data);
     }
 
+    pub fn add_side_data(&mut self, side_data: SideData) -> Option<SideData> {
+        if let Some(existing) = self
+            .side_data
+            .iter_mut()
+            .find(|existing| existing.kind_id() == side_data.kind_id())
+        {
+            return Some(std::mem::replace(existing, side_data));
+        }
+
+        self.side_data.push(side_data);
+        None
+    }
+
     pub fn shrink_side_data(&mut self, kind: &str, len: usize) -> AvResult<bool> {
         let Some(side_data) = self.side_data_mut_by_kind(kind) else {
             return Ok(false);
@@ -9226,6 +9239,35 @@ mod tests {
 
         packet.clear_side_data();
         assert!(packet.side_data().is_empty());
+    }
+
+    #[test]
+    fn packet_add_side_data_replaces_first_matching_kind() {
+        let mut packet = Packet::new(Vec::new(), 0);
+        packet.push_side_data(SideData::new("palette", vec![0]).unwrap());
+        packet.push_side_data(SideData::new("skip_samples", vec![1]).unwrap());
+        packet.push_side_data(SideData::new("palette", vec![2]).unwrap());
+
+        let replaced = packet
+            .add_side_data(SideData::new("palette", vec![9, 8]).unwrap())
+            .unwrap();
+
+        assert_eq!(replaced.data(), &[0]);
+        assert_eq!(packet.side_data().len(), 3);
+        assert_eq!(packet.side_data()[0].kind(), "palette");
+        assert_eq!(packet.side_data()[0].data(), &[9, 8]);
+        assert_eq!(packet.side_data()[1].kind(), "skip_samples");
+        assert_eq!(packet.side_data()[2].kind(), "palette");
+        assert_eq!(packet.side_data()[2].data(), &[2]);
+
+        assert!(packet
+            .add_side_data(SideData::new("new_extradata", vec![7]).unwrap())
+            .is_none());
+        assert_eq!(packet.side_data().len(), 4);
+        assert_eq!(
+            packet.side_data_by_kind("new_extradata").unwrap().data(),
+            &[7]
+        );
     }
 
     #[test]

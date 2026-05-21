@@ -146,6 +146,39 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-free".to_string(),
         side_data_summary_fields(&packet),
     );
+
+    let mut packet = Packet::default();
+    packet.add_side_data(SideData::new_extradata(vec![0x11, 0x22]).unwrap());
+    packet.add_side_data(SideData::new_extradata(vec![0xaa, 0xbb, 0xcc]).unwrap());
+    rows.insert(
+        "packet:side-new-replace".to_string(),
+        side_data_summary_fields(&packet),
+    );
+
+    let replaced = packet
+        .add_side_data(SideData::new_extradata(vec![0x55, 0x66]).unwrap())
+        .expect("new_extradata should be replaced");
+    assert_eq!(replaced.data(), &[0xaa, 0xbb, 0xcc]);
+    rows.insert(
+        "packet:side-add-replace-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-add-replace".to_string(),
+        side_data_summary_fields(&packet),
+    );
+
+    let appended = packet
+        .add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x77]).unwrap());
+    assert!(appended.is_none(), "palette side data should append");
+    rows.insert(
+        "packet:side-add-append-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-add-append".to_string(),
+        side_data_summary_fields(&packet),
+    );
 }
 
 fn packet_with_common_props() -> Packet {
@@ -219,6 +252,7 @@ fn side_data_lookup_fields(side_data: Option<&SideData>) -> Vec<String> {
 
 fn packet_side_data_type(kind: &PacketSideDataKind) -> &'static str {
     match kind {
+        PacketSideDataKind::Palette => "0",
         PacketSideDataKind::NewExtradata => "1",
         _ => panic!("unexpected packet side data kind in oracle test: {kind:?}"),
     }
@@ -308,7 +342,9 @@ fn oracle_c_source() -> &'static str {
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "libavcodec/defs.h"
 #include "libavcodec/packet.h"
+#include "libavutil/mem.h"
 
 static void fail_if(int condition, const char *message) {
     if (condition) {
@@ -414,6 +450,34 @@ static void exercise_side_data_api(void) {
 
     av_packet_free_side_data(pkt);
     print_side_data_summary("packet:side-free", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 2);
+    fail_if(!sd, "av_packet_new_side_data replace seed failed");
+    sd[0] = 0x11;
+    sd[1] = 0x22;
+    sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 3);
+    fail_if(!sd, "av_packet_new_side_data replace failed");
+    sd[0] = 0xaa;
+    sd[1] = 0xbb;
+    sd[2] = 0xcc;
+    print_side_data_summary("packet:side-new-replace", pkt);
+
+    uint8_t *owned = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz replace side data failed");
+    owned[0] = 0x55;
+    owned[1] = 0x66;
+    ret = av_packet_add_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, owned, 2);
+    printf("packet:side-add-replace-ret|%d\n", ret);
+    print_side_data_summary("packet:side-add-replace", pkt);
+
+    owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz append side data failed");
+    owned[0] = 0x77;
+    ret = av_packet_add_side_data(pkt, AV_PKT_DATA_PALETTE, owned, 1);
+    printf("packet:side-add-append-ret|%d\n", ret);
+    print_side_data_summary("packet:side-add-append", pkt);
     av_packet_free(&pkt);
 }
 
