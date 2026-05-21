@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-channel-layout` update: `Channel` now includes FFmpeg 8.1.1 native `BC`/back-center mask support, and `ChannelLayout` now exposes source-checked `2.1`, `3.0`, `3.0(back)`, and `4.0` layouts alongside the prior mono/stereo/quad/5.1/5.1(side)/7.1 subset. `ChannelLayout::default_for_count` now follows FFmpeg's first `channel_layout_map` match for modeled 1-, 2-, 3-, 4-, 6-, and 8-channel defaults: mono, stereo, 2.1, 4.0, 5.1, and 7.1. Local unit tests and the shared `avutil_core_models` fuzz harness cover the new channel name/mask, canonical `FL+FR`-style strings, default lookups, name/mask/channel-expression round trips, and unsupported-expression rejection. The component remains `implemented`, not `complete`, because full `ffmpeg -layouts` inventory parity, remaining FFmpeg default-layout count behavior, custom/ambisonic orders, downmix layouts, upstream FATE parity, and actual fuzz execution are still absent.
+
 Latest `avutil-sample-format` update: `SampleFormat` now exposes `sample_fmt_string_header` and `sample_fmt_string` helpers shaped after pinned FFmpeg 8.1.1 `av_get_sample_fmt_string` output for native sample-format table rows. The helper returns the exact `name   depth` header and fixed-width 12-byte row strings (`%-6s   %2d `) for the currently modeled `AVSampleFormat` inventory, giving future `ffmpeg -sample_fmts`-style Rust inventory output a source-checked formatting primitive. Local unit tests and the shared `avutil_core_models` fuzz harness cover the header, row width, name padding, depth alignment, and trailing-space shape. The component remains `implemented`, not `complete`, because pinned `ffmpeg -sample_fmts`/libavutil differential vectors, upstream FATE parity, broader sample-data conversion routines, and actual fuzz execution are still absent.
 
 Latest `avutil-sample-format` update: `SampleFormat` now exposes `SampleAllocation`, `alloc_samples`, and `alloc_array_and_samples` helpers shaped after pinned FFmpeg 8.1.1 `av_samples_alloc` / `av_samples_alloc_array_and_samples` behavior for Rust-owned buffers. The implementation allocates one contiguous writable `BufferRef`, reuses `SampleArrayLayout` for packed or planar plane ranges, records the originally requested sample count separately from `align=0` effective samples, silence-fills requested samples with the existing source-checked `av_samples_set_silence` byte semantics, and keeps alignment padding plus auto-aligned tail bytes deterministically zeroed instead of exposing FFmpeg's uninitialized `av_malloc` tail storage. Local unit tests and the shared `avutil_core_models` fuzz harness cover allocation shape, packed/planar silence initialization, mutable plane access, invalid input rejection, and deterministic padding/tail behavior. The component remains `implemented`, not `complete`, because pinned `ffmpeg -sample_fmts`/libavutil differential vectors, upstream FATE parity, broader sample-data conversion routines, and actual fuzz execution are still absent.
@@ -369,6 +371,20 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-channel-layout` slice:
+  - `Invoke-WebRequest -Uri https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1.1/libavutil/channel_layout.c -OutFile $env:TEMP\ffmpeg-channel-layout-8.1.1.c` (source-check only)
+  - `cargo test -p avutil channel_layout --target-dir target-codex` (passed outside the sandbox after Windows Application Control blocked the sandboxed launch)
+  - `cargo fmt --all`
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo test -p avformat audio --target-dir target-codex`
+  - `cargo clippy -p avutil --all-targets --target-dir target-codex -- -D warnings`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-channel-layout`
+  - `cargo fmt --all -- --check`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `git diff --check`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
 
 - Current `avutil-sample-format` table-string slice:
   - `cargo test -p avutil samplefmt`
@@ -4281,6 +4297,11 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-channel-layout` slice:
+  - `Invoke-WebRequest -Uri https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1.1/libavutil/channel_layout.c -OutFile $env:TEMP\ffmpeg-channel-layout-8.1.1.c` initially failed inside the sandbox with `Unable to connect to the remote server`; the same pinned-source fetch passed outside the sandbox through the approved `Invoke-WebRequest` prefix.
+  - `cargo test -p avutil channel_layout` and `cargo test -p avutil channel_layout --target-dir target-codex` both compiled successfully, then Windows Application Control blocked the freshly built `avutil` unit-test executable with `os error 4551`; the same focused filter passed when rerun outside the sandbox with the approved `cargo test` prefix.
+  - Full `ffmpeg -layouts` oracle inventory comparison, remaining FFmpeg default-layout count behavior beyond the modeled first-map entries for counts 1, 2, 3, 4, 6, and 8, custom/native/ambisonic order semantics, downmix layouts, upstream FATE parity, and actual fuzz execution remain blockers rather than completion claims.
+
 - Current `avutil-sample-format` table-string slice: no command failures have been observed so far. Pinned sample-format oracle vectors, upstream FATE parity, broader sample-data conversion routines, and actual fuzz execution remain blockers rather than completion claims.
 
 - Current `avutil-sample-format` fill-array layout slice:
@@ -4787,19 +4808,19 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 `avutil-error` is the current focus for this slice. The concrete change is FFmpeg-style error-code metadata for documented tag-based `AVERROR_*` constants and constructor/accessor coverage; it does not claim full platform `AVERROR(errno)` or `av_strerror` parity.
 
-`avutil-packet` remains the current focus. This slice tightened AVPacket field parity by adding raw `opaque` address metadata alongside the existing owned `opaque_ref` storage; the packet side-data parser inventory is unchanged from the previous IAMF update.
+`avutil-channel-layout` is the current focus for this slice. The concrete change is a source-checked expansion of the native mask subset: `Channel::BackCenter` exposes FFmpeg's `BC` name and `1 << 8` mask, `ChannelLayout` now models named `2.1`, `3.0`, `3.0(back)`, and `4.0` layouts from the pinned `libavutil/channel_layout.h` macros, and `default_for_count` now follows pinned `channel_layout.c` first-match behavior for modeled counts 1, 2, 3, 4, 6, and 8.
 
-`avutil-packet` is the current focus for this slice. The concrete change is packet side-data payload parsing: `SideData` now exposes typed `AV_PKT_DATA_PALETTE`, `AV_PKT_DATA_NEW_EXTRADATA`, `AV_PKT_DATA_H263_MB_INFO`, `AV_PKT_DATA_QUALITY_STATS`, `AV_PKT_DATA_FALLBACK_TRACK`, `AV_PKT_DATA_CPB_PROPERTIES`, `AV_PKT_DATA_PRFT`, `AV_PKT_DATA_RTCP_SR`, `AV_PKT_DATA_MASTERING_DISPLAY_METADATA`, `AV_PKT_DATA_SPHERICAL`, `AV_PKT_DATA_CONTENT_LIGHT_LEVEL`, `AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT`, `AV_PKT_DATA_3D_REFERENCE_DISPLAYS`, `AV_PKT_DATA_EXIF`, `AV_PKT_DATA_A53_CC`, `AV_PKT_DATA_ENCRYPTION_INIT_INFO`, `AV_PKT_DATA_ENCRYPTION_INFO`, `AV_PKT_DATA_ICC_PROFILE`, `AV_PKT_DATA_DOVI_CONF`, `AV_PKT_DATA_DYNAMIC_HDR10_PLUS`, `AV_PKT_DATA_IAMF_MIX_GAIN_PARAM`, `AV_PKT_DATA_IAMF_DEMIXING_INFO_PARAM`, `AV_PKT_DATA_IAMF_RECON_GAIN_INFO_PARAM`, `AV_PKT_DATA_PARAM_CHANGE`, `AV_PKT_DATA_JP_DUALMONO`, `AV_PKT_DATA_STRINGS_METADATA`, `AV_PKT_DATA_METADATA_UPDATE`, `AV_PKT_DATA_SKIP_SAMPLES`, `AV_PKT_DATA_MPEGTS_STREAM_ID`, `AV_PKT_DATA_SUBTITLE_POSITION`, `AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL`, `AV_PKT_DATA_WEBVTT_IDENTIFIER`, `AV_PKT_DATA_WEBVTT_SETTINGS`, `AV_PKT_DATA_AFD`, `AV_PKT_DATA_S12M_TIMECODE`, `AV_PKT_DATA_FRAME_CROPPING`, `AV_PKT_DATA_DISPLAYMATRIX`, `AV_PKT_DATA_STEREO3D`, `AV_PKT_DATA_REPLAYGAIN`, `AV_PKT_DATA_AUDIO_SERVICE_TYPE`, and `AV_PKT_DATA_LCEVC` constructors/accessors with counted-array, fixed-layout, native-int/native-struct, native-word-array, palette entry preservation, replacement-extradata preservation, H.263 macroblock-info record preservation, alternating string-metadata key/value preservation, encryption scheme/key/IV/subsample and init-info preservation, IAMF parameter-definition/subblock preservation, HDR metadata, mastering-display rational/flag preservation, spherical projection/orientation/bounds/padding preservation, display-matrix transform preservation, ambient illuminance/chromaticity rational preservation, 3D reference display native allocation-envelope preservation, EXIF/TIFF IFD envelope preservation, Dolby Vision decoder configuration preservation, dynamic HDR10+ envelope preservation, stereo3d layout/view/rational metadata preservation, replaygain gain/peak preservation, audio-service enum preservation, ICC profile envelope, A53 three-byte CC entry validation, raw LCEVC byte preservation, single-byte enum, or single-line parsing and malformed-input rejection where the FFmpeg payload shape defines malformed inputs.
-
-This slice does not mark packet handling complete. The broader goal remains blocked on missing pinned-oracle snapshots, upstream FATE media mappings/samples, actual local fuzz execution, and many incomplete FFmpeg surfaces.
+This slice does not mark channel layout handling complete. The broader goal remains blocked on missing pinned `ffmpeg -layouts` inventory comparison, remaining FFmpeg default-layout count table modeling beyond the currently modeled first-map entries for counts 1, 2, 3, 4, 6, and 8, custom/native/ambisonic order semantics, downmix layouts, upstream FATE media mappings/samples, actual local fuzz execution, and many incomplete FFmpeg surfaces.
 
 ## Next 3 Concrete Actions
 
-1. Commit the coherent `avutil-sample-format` table-string slice.
-2. Inspect remaining sample-format gaps against pinned FFmpeg source and local oracle availability.
-3. Continue to the next unblocked priority-1 infrastructure gap, likely additional sample-data conversion helpers or pinned sample-format differential vectors once an FFmpeg 8.1.1 oracle is available.
+1. Commit the coherent `avutil-channel-layout` back-center, small standard-layout, and modeled default-count expansion.
+2. Inspect remaining pinned FFmpeg `channel_layout.c` map entries for the next small channel-layout coverage slice.
+3. Continue the next unblocked priority-1 infrastructure gap, likely more channel-layout inventory coverage or another small source-checked avutil primitive.
 
 ## Known Blockers
+
+- `avutil-channel-layout` now covers local FFmpeg-shaped channel names and native mask helpers for the current subset, including `BC`, plus named `mono`, `stereo`, `2.1`, `3.0`, `3.0(back)`, `4.0`, `quad`, `5.1`, `5.1(side)`, and `7.1` layouts. It models FFmpeg default-layout count selection for currently covered first-map entries for counts 1, 2, 3, 4, 6, and 8, but still has no full pinned `ffmpeg -layouts` inventory comparison, no remaining default-layout count table coverage, no custom/native/ambisonic order semantics, no downmix-layout coverage, no upstream FATE parity, and no actual cargo-fuzz execution.
 
 - `avutil-sample-format` now covers local FFmpeg-shaped sample format names, `av_get_sample_fmt_string`-style table row formatting, planar/packed metadata, basic payload sizing, sample-buffer layout math, fill-array plane layout/splitting, owned contiguous allocation, silence-fill byte/range behavior, and copy byte-range behavior, but it still has no pinned `ffmpeg -sample_fmts`/libavutil differential vector harness, no upstream FATE media parity, no actual cargo-fuzz execution, and no broader sample-data conversion routine parity.
 
@@ -4874,6 +4895,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added source-checked back-center, small standard-layout coverage, and modeled first-match default counts to `avutil-channel-layout`. Source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.h` and `libavutil/channel_layout.c` confirmed `AV_CHAN_BACK_CENTER`, `AV_CH_BACK_CENTER`, `AV_CH_LAYOUT_2POINT1`, `AV_CH_LAYOUT_SURROUND`, `AV_CH_LAYOUT_2_1`, `AV_CH_LAYOUT_4POINT0`, the public map names `2.1`, `3.0`, `3.0(back)`, and `4.0`, and `av_channel_layout_default` first-map-entry behavior. The Rust model now exposes these as `Channel::BackCenter`, named layouts, and modeled defaults for counts 1, 2, 3, 4, 6, and 8: mono, stereo, 2.1, 4.0, 5.1, and 7.1. Unit tests cover the new channel short name/mask, layout names/counts/channels, canonical channel strings, mask/channel lookups, default lookups, parser round trips, and unsupported expressions; `avutil_core_models` now build-checks the expanded layout generator. The component remains `implemented`, not `complete`, because full oracle inventory parity, remaining FFmpeg default layout count behavior, custom/ambisonic orders, downmix layouts, upstream FATE, and actual fuzz execution remain absent.
 
 Latest slice: added FFmpeg-shaped sample-format table strings to `avutil-sample-format`. Source checking against pinned FFmpeg 8.1.1 `libavutil/samplefmt.c` confirmed the `av_get_sample_fmt_string` shape used here: negative sample format values print `name   depth`, and valid native rows use a left-aligned 6-column name, three spaces, a 2-column bit depth, and a trailing space. `SampleFormat::sample_fmt_string_header` and `SampleFormat::sample_fmt_string` expose that Rust-native table formatting for the current native sample-format inventory. Unit tests cover all current row strings, and `avutil_core_models` build-checks generated header/name-padding/depth/trailing-space invariants. The component remains `implemented`, not `complete`, because oracle differentials, upstream FATE parity, broader sample-data conversion routines, and actual fuzz execution are still absent.
 
