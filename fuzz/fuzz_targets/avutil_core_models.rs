@@ -9581,6 +9581,20 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidArgument
     );
+    assert!(canonical_custom.is_equivalent_to_native(ChannelLayout::stereo()));
+    assert!(ChannelLayout::stereo().is_equivalent_to_custom(&canonical_custom));
+    assert!(!out_of_order_custom.is_equivalent_to_native(ChannelLayout::stereo()));
+    assert!(!out_of_order_custom.is_equivalent_to_custom(&canonical_custom));
+    assert!(CustomChannelLayout::unknown(2)
+        .unwrap()
+        .is_equivalent_to_custom(&CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Unknown, "A").unwrap(),
+            ChannelCustom::new(ChannelId::Unknown, "B").unwrap(),
+        ])
+        .unwrap()));
+    assert!(!CustomChannelLayout::unknown(2)
+        .unwrap()
+        .is_equivalent_to_native(ChannelLayout::stereo()));
     let ambisonic_custom = CustomChannelLayout::new(vec![
         ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
         ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap(),
@@ -9592,6 +9606,17 @@ fn exercise_fixtures() {
     .unwrap();
     assert_eq!(ambisonic_custom.ambisonic_order().unwrap(), 1);
     assert_eq!(ambisonic_custom.describe(), "ambisonic 1+stereo");
+    assert!(ambisonic_custom.is_equivalent_to_custom(
+        &CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Ambisonic(0), "W").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(1), "Y").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(2), "Z").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(3), "X").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "Left").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "Right").unwrap(),
+        ])
+        .unwrap()
+    ));
     let incomplete_ambisonic_custom = CustomChannelLayout::new(vec![
         ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
         ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap(),

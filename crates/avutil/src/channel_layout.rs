@@ -532,6 +532,24 @@ impl CustomChannelLayout {
         ChannelLayout::from_channel_mask(mask)
     }
 
+    pub fn is_equivalent_to_custom(&self, other: &Self) -> bool {
+        self.channel_count() == other.channel_count()
+            && self
+                .channels
+                .iter()
+                .zip(other.channels.iter())
+                .all(|(left, right)| left.id() == right.id())
+    }
+
+    pub fn is_equivalent_to_native(&self, other: ChannelLayout) -> bool {
+        self.channel_count() == other.channel_count()
+            && self
+                .channels
+                .iter()
+                .zip(other.channels())
+                .all(|(left, right)| left.id() == ChannelId::Native(*right))
+    }
+
     pub fn ambisonic_order(&self) -> AvResult<u16> {
         let mut highest_ambi_index = None;
         let mut previous_was_non_ambisonic = false;
@@ -1421,6 +1439,14 @@ impl ChannelLayout {
             .fold(0u64, |mask, channel| mask | channel.mask())
     }
 
+    pub fn is_equivalent_to(self, other: Self) -> bool {
+        self.channel_count() == other.channel_count() && self.channel_mask() == other.channel_mask()
+    }
+
+    pub fn is_equivalent_to_custom(self, other: &CustomChannelLayout) -> bool {
+        other.is_equivalent_to_native(self)
+    }
+
     pub fn channel_string(self) -> String {
         let mut output = String::new();
         for (index, channel) in self.channels.iter().enumerate() {
@@ -1882,6 +1908,62 @@ mod tests {
             assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
             assert!(layout.describe().contains("channels ("));
         }
+    }
+
+    #[test]
+    fn channel_layouts_compare_current_native_and_custom_subset() {
+        let stereo = ChannelLayout::stereo();
+        assert!(stereo.is_equivalent_to(ChannelLayout::stereo()));
+        assert!(!stereo.is_equivalent_to(ChannelLayout::downmix()));
+        assert!(!ChannelLayout::five_one().is_equivalent_to(ChannelLayout::five_one_side()));
+
+        let custom_stereo = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+        ])
+        .unwrap();
+        let named_custom_stereo = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "Left").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "Right").unwrap(),
+        ])
+        .unwrap();
+        assert!(custom_stereo.is_equivalent_to_native(stereo));
+        assert!(stereo.is_equivalent_to_custom(&named_custom_stereo));
+        assert!(named_custom_stereo.is_equivalent_to_custom(&custom_stereo));
+
+        let reversed_custom_stereo = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+        ])
+        .unwrap();
+        assert!(!reversed_custom_stereo.is_equivalent_to_native(stereo));
+        assert!(!reversed_custom_stereo.is_equivalent_to_custom(&custom_stereo));
+
+        let unknown_pair = CustomChannelLayout::unknown(2).unwrap();
+        let named_unknown_pair = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Unknown, "A").unwrap(),
+            ChannelCustom::new(ChannelId::Unknown, "B").unwrap(),
+        ])
+        .unwrap();
+        assert!(unknown_pair.is_equivalent_to_custom(&named_unknown_pair));
+        assert!(!unknown_pair.is_equivalent_to_native(stereo));
+
+        let ambisonic = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(2), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(3), "").unwrap(),
+        ])
+        .unwrap();
+        let named_ambisonic = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Ambisonic(0), "W").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(1), "Y").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(2), "Z").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(3), "X").unwrap(),
+        ])
+        .unwrap();
+        assert!(ambisonic.is_equivalent_to_custom(&named_ambisonic));
+        assert!(!ambisonic.is_equivalent_to_native(ChannelLayout::four_zero()));
     }
 
     #[test]
