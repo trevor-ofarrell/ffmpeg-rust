@@ -124,6 +124,13 @@ fuzz_target!(|data: &[u8]| {
             assert!(writer.is_empty());
             assert!(writer.as_slice().is_empty());
         }
+
+        let align_before = writer.bit_position();
+        let fill = chunk.get(2).copied().unwrap_or_default() & 1 != 0;
+        let expected_padding = usize::from(writer.bits_to_align());
+        writer.byte_align_with(fill);
+        assert!(writer.is_aligned());
+        assert_eq!(writer.bit_position(), align_before + expected_padding);
     }
     writer.byte_align_zero();
     assert!(writer.is_aligned());

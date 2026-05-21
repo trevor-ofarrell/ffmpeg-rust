@@ -143,10 +143,23 @@ impl BitWriter {
         self.write_ue_golomb(code_num)
     }
 
-    pub fn byte_align_zero(&mut self) {
-        while !self.is_aligned() {
-            self.write_bit(false);
+    pub fn bits_to_align(&self) -> u8 {
+        let extra = (self.bit_position % 8) as u8;
+        if extra == 0 {
+            0
+        } else {
+            8 - extra
         }
+    }
+
+    pub fn byte_align_with(&mut self, value: bool) {
+        for _ in 0..self.bits_to_align() {
+            self.write_bit(value);
+        }
+    }
+
+    pub fn byte_align_zero(&mut self) {
+        self.byte_align_with(false);
     }
 }
 
@@ -442,6 +455,29 @@ mod tests {
         assert_eq!(writer.as_slice(), &[0b1010_0000]);
         assert_eq!(writer.bits_written(), 8);
         assert!(writer.is_aligned());
+    }
+
+    #[test]
+    fn byte_align_with_reports_and_pads_partial_byte() {
+        let mut writer = BitWriter::new();
+
+        assert_eq!(writer.bits_to_align(), 0);
+        writer.byte_align_with(true);
+        assert!(writer.is_empty());
+
+        writer.write_bits(0b10, 2).unwrap();
+        assert_eq!(writer.bits_to_align(), 6);
+        writer.byte_align_with(true);
+
+        assert_eq!(writer.as_slice(), &[0b1011_1111]);
+        assert_eq!(writer.bits_written(), 8);
+        assert_eq!(writer.bits_to_align(), 0);
+
+        let bytes = writer.into_inner();
+        let mut reader = BitReader::new(&bytes);
+        assert_eq!(reader.read_bits(2).unwrap(), 0b10);
+        assert_eq!(reader.read_bits(6).unwrap(), 0b11_1111);
+        assert!(reader.is_eof());
     }
 
     #[test]
