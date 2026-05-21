@@ -22,8 +22,8 @@ pub use bitwriter::BitWriter;
 pub use buffer::{BufferPool, BufferPoolCallbacks, BufferRef, BufferSlice};
 pub use byteio::{ByteReader, ByteWriter};
 pub use channel_layout::{
-    Channel, ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec, CustomChannelLayout,
-    NativeChannelMaskLayout, UnspecifiedChannelLayout,
+    AmbisonicChannelLayout, Channel, ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec,
+    CustomChannelLayout, NativeChannelMaskLayout, UnspecifiedChannelLayout,
 };
 pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};
 pub use error::{

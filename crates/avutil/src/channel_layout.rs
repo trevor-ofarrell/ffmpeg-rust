@@ -1702,6 +1702,124 @@ impl From<ChannelLayout> for NativeChannelMaskLayout {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AmbisonicChannelLayout {
+    order: u16,
+    extra_native_mask: u64,
+}
+
+impl AmbisonicChannelLayout {
+    pub fn new(order: u16, extra_native_mask: u64) -> AvResult<Self> {
+        let ambisonic_channel_count = Self::ambisonic_channel_count_for_order(order)?;
+        let total_channels = ambisonic_channel_count
+            .checked_add(
+                u16::try_from(extra_native_mask.count_ones()).expect("u64 popcount fits u16"),
+            )
+            .ok_or_else(|| {
+                AvError::invalid_argument("ambisonic channel layout has too many channels")
+            })?;
+        if total_channels == 0 {
+            return Err(AvError::invalid_argument(
+                "ambisonic channel layout must have at least one channel",
+            ));
+        }
+
+        Ok(Self {
+            order,
+            extra_native_mask,
+        })
+    }
+
+    fn ambisonic_channel_count_for_order(order: u16) -> AvResult<u16> {
+        let side = u32::from(order) + 1;
+        let count = side
+            .checked_mul(side)
+            .ok_or_else(|| AvError::invalid_argument("ambisonic channel count is too large"))?;
+        let highest_acn = count
+            .checked_sub(1)
+            .ok_or_else(|| AvError::invalid_argument("ambisonic channel count is invalid"))?;
+        if highest_acn > u32::from(ChannelId::MAX_AMBISONIC_ACN) {
+            return Err(AvError::invalid_argument(
+                "ambisonic order is outside the current layout range",
+            ));
+        }
+        u16::try_from(count)
+            .map_err(|_| AvError::invalid_argument("ambisonic channel count is too large"))
+    }
+
+    pub fn order(self) -> u16 {
+        self.order
+    }
+
+    pub fn extra_native_mask(self) -> u64 {
+        self.extra_native_mask
+    }
+
+    pub fn ambisonic_channel_count(self) -> u16 {
+        Self::ambisonic_channel_count_for_order(self.order)
+            .expect("AmbisonicChannelLayout validates order on construction")
+    }
+
+    pub fn channel_count(self) -> u16 {
+        self.ambisonic_channel_count()
+            + u16::try_from(self.extra_native_mask.count_ones()).expect("u64 popcount fits u16")
+    }
+
+    pub fn describe(self) -> String {
+        let mut description = format!("ambisonic {}", self.order);
+        if self.extra_native_mask != 0 {
+            description.push('+');
+            description.push_str(
+                &NativeChannelMaskLayout::new(self.extra_native_mask)
+                    .expect("nonzero ambisonic extra native mask is valid")
+                    .describe(),
+            );
+        }
+        description
+    }
+
+    pub fn subset_mask(self, mask: u64) -> u64 {
+        self.extra_native_mask & mask
+    }
+
+    pub fn channel_from_index(self, index: usize) -> Option<ChannelId> {
+        let ambisonic_channel_count = usize::from(self.ambisonic_channel_count());
+        if index < ambisonic_channel_count {
+            return Some(ChannelId::Ambisonic(u16::try_from(index).ok()?));
+        }
+        if self.extra_native_mask == 0 {
+            return None;
+        }
+        NativeChannelMaskLayout::new(self.extra_native_mask)
+            .ok()?
+            .channel_from_index(index.checked_sub(ambisonic_channel_count)?)
+    }
+
+    pub fn validate_channel_count(self, channels: u16) -> AvResult<()> {
+        if self.channel_count() != channels {
+            return Err(AvError::invalid_argument(format!(
+                "ambisonic channel layout has {} channels, got {channels}",
+                self.channel_count()
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn is_equivalent_to_ambisonic(self, other: Self) -> bool {
+        self.order == other.order && self.extra_native_mask == other.extra_native_mask
+    }
+
+    pub fn is_equivalent_to_native(self, _other: ChannelLayout) -> bool {
+        false
+    }
+
+    pub fn is_equivalent_to_custom(self, other: &CustomChannelLayout) -> bool {
+        self.channel_count() == other.channel_count()
+            && (0..usize::from(self.channel_count()))
+                .all(|index| self.channel_from_index(index) == other.channel_from_index(index))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UnspecifiedChannelLayout {
     channels: u16,
 }
@@ -1759,6 +1877,7 @@ impl UnspecifiedChannelLayout {
 pub enum ChannelLayoutSpec {
     Native(ChannelLayout),
     NativeMask(NativeChannelMaskLayout),
+    Ambisonic(AmbisonicChannelLayout),
     Custom(CustomChannelLayout),
     Unspecified(UnspecifiedChannelLayout),
 }
@@ -1770,6 +1889,13 @@ impl ChannelLayoutSpec {
 
     pub fn native_mask(mask: u64) -> AvResult<Self> {
         Ok(Self::NativeMask(NativeChannelMaskLayout::new(mask)?))
+    }
+
+    pub fn ambisonic(order: u16, extra_native_mask: u64) -> AvResult<Self> {
+        Ok(Self::Ambisonic(AmbisonicChannelLayout::new(
+            order,
+            extra_native_mask,
+        )?))
     }
 
     pub fn custom(layout: CustomChannelLayout) -> Self {
@@ -1868,18 +1994,47 @@ impl ChannelLayoutSpec {
             )));
         }
 
-        let mut channels = Self::ambisonic_channels_for_order(order)?;
-        if let Some(extra) = rest.strip_prefix('+') {
-            if extra.is_empty() {
-                return Err(AvError::invalid_argument(
-                    "ambisonic channel layout has empty extra layout",
-                ));
-            }
-            let extra = Self::parse(extra)?;
-            channels.extend(Self::ambisonic_extra_channels(&extra)?);
+        if rest.is_empty() {
+            return Ok(Some(Self::Ambisonic(Self::ambisonic_layout(order, 0)?)));
         }
 
-        Self::from_custom_channel_layout(CustomChannelLayout::new(channels)?).map(Some)
+        let extra = rest
+            .strip_prefix('+')
+            .expect("ambisonic suffix was validated to start with +");
+        if extra.is_empty() {
+            return Err(AvError::invalid_argument(
+                "ambisonic channel layout has empty extra layout",
+            ));
+        }
+        let extra = Self::parse(extra)?;
+        match &extra {
+            Self::Native(layout) => {
+                return Ok(Some(Self::Ambisonic(Self::ambisonic_layout(
+                    order,
+                    layout.channel_mask(),
+                )?)));
+            }
+            Self::NativeMask(layout) => {
+                return Ok(Some(Self::Ambisonic(Self::ambisonic_layout(
+                    order,
+                    layout.channel_mask(),
+                )?)));
+            }
+            Self::Ambisonic(_) | Self::Custom(_) | Self::Unspecified(_) => {}
+        }
+
+        let mut channels = Self::ambisonic_channels_for_order(order)?;
+        channels.extend(Self::ambisonic_extra_channels(&extra)?);
+        Ok(Some(Self::Custom(CustomChannelLayout::new(channels)?)))
+    }
+
+    fn ambisonic_layout(order: u32, extra_native_mask: u64) -> AvResult<AmbisonicChannelLayout> {
+        AmbisonicChannelLayout::new(
+            u16::try_from(order).map_err(|_| {
+                AvError::invalid_argument("ambisonic order is outside supported range")
+            })?,
+            extra_native_mask,
+        )
     }
 
     fn ambisonic_channels_for_order(order: u32) -> AvResult<Vec<ChannelCustom>> {
@@ -1925,6 +2080,11 @@ impl ChannelLayoutSpec {
                     ChannelCustom::new(id, "")
                 })
                 .collect::<AvResult<Vec<_>>>()?,
+            Self::Ambisonic(_) => {
+                return Err(AvError::invalid_argument(
+                    "ambisonic extra layout cannot contain ambisonic channels",
+                ));
+            }
             Self::Custom(layout) => layout.channels().to_vec(),
             Self::Unspecified(_) => {
                 return Err(AvError::invalid_argument(
@@ -2034,6 +2194,7 @@ impl ChannelLayoutSpec {
         match self {
             Self::Native(layout) => Some(*layout),
             Self::NativeMask(_) => None,
+            Self::Ambisonic(_) => None,
             Self::Custom(_) => None,
             Self::Unspecified(_) => None,
         }
@@ -2043,6 +2204,17 @@ impl ChannelLayoutSpec {
         match self {
             Self::Native(layout) => Some(NativeChannelMaskLayout::from(*layout)),
             Self::NativeMask(layout) => Some(*layout),
+            Self::Ambisonic(_) => None,
+            Self::Custom(_) => None,
+            Self::Unspecified(_) => None,
+        }
+    }
+
+    pub fn as_ambisonic(&self) -> Option<AmbisonicChannelLayout> {
+        match self {
+            Self::Native(_) => None,
+            Self::NativeMask(_) => None,
+            Self::Ambisonic(layout) => Some(*layout),
             Self::Custom(_) => None,
             Self::Unspecified(_) => None,
         }
@@ -2052,6 +2224,7 @@ impl ChannelLayoutSpec {
         match self {
             Self::Native(_) => None,
             Self::NativeMask(_) => None,
+            Self::Ambisonic(_) => None,
             Self::Custom(layout) => Some(layout),
             Self::Unspecified(_) => None,
         }
@@ -2061,6 +2234,7 @@ impl ChannelLayoutSpec {
         match self {
             Self::Native(_) => None,
             Self::NativeMask(_) => None,
+            Self::Ambisonic(_) => None,
             Self::Custom(_) => None,
             Self::Unspecified(layout) => Some(*layout),
         }
@@ -2074,6 +2248,7 @@ impl ChannelLayoutSpec {
         match self {
             Self::Native(layout) => layout.channel_count(),
             Self::NativeMask(layout) => layout.channel_count(),
+            Self::Ambisonic(layout) => layout.channel_count(),
             Self::Custom(layout) => layout.channel_count(),
             Self::Unspecified(layout) => layout.channel_count(),
         }
@@ -2083,6 +2258,7 @@ impl ChannelLayoutSpec {
         match self {
             Self::Native(layout) => layout.name().to_owned(),
             Self::NativeMask(layout) => layout.describe(),
+            Self::Ambisonic(layout) => layout.describe(),
             Self::Custom(layout) => layout.describe(),
             Self::Unspecified(layout) => layout.describe(),
         }
@@ -2092,6 +2268,7 @@ impl ChannelLayoutSpec {
         match self {
             Self::Native(layout) => layout.subset_mask(mask),
             Self::NativeMask(layout) => layout.subset_mask(mask),
+            Self::Ambisonic(layout) => layout.subset_mask(mask),
             Self::Custom(layout) => layout.subset_native_mask(mask),
             Self::Unspecified(layout) => layout.subset_mask(mask),
         }
@@ -2101,6 +2278,7 @@ impl ChannelLayoutSpec {
         match self {
             Self::Native(layout) => layout.channel_from_index(index),
             Self::NativeMask(layout) => layout.channel_from_index(index),
+            Self::Ambisonic(layout) => layout.channel_from_index(index),
             Self::Custom(layout) => layout.channel_from_index(index),
             Self::Unspecified(layout) => layout.channel_from_index(index),
         }
@@ -2110,6 +2288,7 @@ impl ChannelLayoutSpec {
         match self {
             Self::Native(layout) => layout.validate_channel_count(channels),
             Self::NativeMask(layout) => layout.validate_channel_count(channels),
+            Self::Ambisonic(layout) => layout.validate_channel_count(channels),
             Self::Custom(layout) => {
                 if layout.channel_count() != channels {
                     return Err(AvError::invalid_argument(format!(
@@ -2133,14 +2312,25 @@ impl ChannelLayoutSpec {
             (Self::Custom(left), Self::Native(right)) => left.is_equivalent_to_native(*right),
             (Self::NativeMask(left), Self::Custom(right)) => left.is_equivalent_to_custom(right),
             (Self::Custom(left), Self::NativeMask(right)) => right.is_equivalent_to_custom(left),
+            (Self::Ambisonic(left), Self::Ambisonic(right)) => {
+                left.is_equivalent_to_ambisonic(*right)
+            }
+            (Self::Ambisonic(left), Self::Custom(right)) => left.is_equivalent_to_custom(right),
+            (Self::Custom(left), Self::Ambisonic(right)) => right.is_equivalent_to_custom(left),
             (Self::Custom(left), Self::Custom(right)) => left.is_equivalent_to_custom(right),
             (Self::Unspecified(left), Self::Unspecified(right)) => {
                 left.is_equivalent_to_unspecified(*right)
             }
-            (Self::Native(_) | Self::NativeMask(_) | Self::Custom(_), Self::Unspecified(_))
-            | (Self::Unspecified(_), Self::Native(_) | Self::NativeMask(_) | Self::Custom(_)) => {
-                false
-            }
+            (
+                Self::Native(_) | Self::NativeMask(_) | Self::Ambisonic(_) | Self::Custom(_),
+                Self::Unspecified(_),
+            )
+            | (
+                Self::Unspecified(_),
+                Self::Native(_) | Self::NativeMask(_) | Self::Ambisonic(_) | Self::Custom(_),
+            )
+            | (Self::Ambisonic(_), Self::Native(_) | Self::NativeMask(_))
+            | (Self::Native(_) | Self::NativeMask(_), Self::Ambisonic(_)) => false,
         }
     }
 
@@ -2148,6 +2338,7 @@ impl ChannelLayoutSpec {
         match self {
             Self::Native(layout) => layout.is_equivalent_to(other),
             Self::NativeMask(layout) => layout.is_equivalent_to_native(other),
+            Self::Ambisonic(layout) => layout.is_equivalent_to_native(other),
             Self::Custom(layout) => layout.is_equivalent_to_native(other),
             Self::Unspecified(layout) => layout.is_equivalent_to_native(other),
         }
@@ -2157,6 +2348,7 @@ impl ChannelLayoutSpec {
         match self {
             Self::Native(layout) => layout.is_equivalent_to_custom(other),
             Self::NativeMask(layout) => layout.is_equivalent_to_custom(other),
+            Self::Ambisonic(layout) => layout.is_equivalent_to_custom(other),
             Self::Custom(layout) => layout.is_equivalent_to_custom(other),
             Self::Unspecified(layout) => layout.is_equivalent_to_custom(other),
         }
@@ -4405,19 +4597,35 @@ mod tests {
     #[test]
     fn layout_spec_parser_models_bounded_ambisonic_branch() {
         let zeroth = ChannelLayoutSpec::parse("ambisonic 0").unwrap();
+        assert_eq!(
+            zeroth.as_ambisonic(),
+            Some(AmbisonicChannelLayout::new(0, 0).unwrap())
+        );
+        assert_eq!(zeroth.as_custom(), None);
         assert_eq!(zeroth.describe(), "ambisonic 0");
         assert_eq!(zeroth.channel_count(), 1);
         assert_eq!(zeroth.channel_from_index(0), Some(ChannelId::Ambisonic(0)));
-        assert!(zeroth.as_custom().is_some());
 
         let first = ChannelLayoutSpec::parse("ambisonic 1").unwrap();
+        assert_eq!(
+            first.as_ambisonic(),
+            Some(AmbisonicChannelLayout::new(1, 0).unwrap())
+        );
         assert_eq!(first.describe(), "ambisonic 1");
         assert_eq!(first.channel_count(), 4);
         assert_eq!(first.channel_from_index(3), Some(ChannelId::Ambisonic(3)));
 
         let hex_order = ChannelLayoutSpec::parse("ambisonic 0x1+stereo").unwrap();
+        assert_eq!(
+            hex_order.as_ambisonic(),
+            Some(AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap())
+        );
         assert_eq!(hex_order.describe(), "ambisonic 1+stereo");
         assert_eq!(hex_order.channel_count(), 6);
+        assert_eq!(
+            hex_order.channel_from_index(0),
+            Some(ChannelId::Ambisonic(0))
+        );
         assert_eq!(
             hex_order.channel_from_index(4),
             Some(ChannelId::Native(Channel::FrontLeft))
@@ -4430,8 +4638,14 @@ mod tests {
             hex_order.subset_mask(ChannelLayout::stereo().channel_mask()),
             ChannelLayout::stereo().channel_mask()
         );
+        let equivalent_custom =
+            CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap();
+        assert!(hex_order.is_equivalent_to_custom(&equivalent_custom));
+        assert!(hex_order.is_equivalent_to(ChannelLayoutSpec::Custom(equivalent_custom.clone())));
+        assert!(!hex_order.is_equivalent_to_native(ChannelLayout::stereo()));
 
         let named_extra = ChannelLayoutSpec::parse("ambisonic +1+FL@Left+FR@Right").unwrap();
+        assert_eq!(named_extra.as_ambisonic(), None);
         assert_eq!(named_extra.channel_count(), 6);
         assert_eq!(
             named_extra.describe(),
@@ -4443,6 +4657,16 @@ mod tests {
         );
 
         let mask_extra = ChannelLayoutSpec::parse("ambisonic 1+0x5").unwrap();
+        assert_eq!(
+            mask_extra.as_ambisonic(),
+            Some(
+                AmbisonicChannelLayout::new(
+                    1,
+                    Channel::FrontLeft.mask() | Channel::FrontCenter.mask()
+                )
+                .unwrap()
+            )
+        );
         assert_eq!(mask_extra.describe(), "ambisonic 1+2 channels (FL+FC)");
         assert_eq!(
             mask_extra.channel_from_index(5),

@@ -5,9 +5,10 @@ use avutil::{
     compare_ts, crc32_ieee, digest_to_hex, md5, rescale, rescale_delta, rescale_q, rescale_q_rnd,
     rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1, sha224, sha256,
     sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
-    BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId, ChannelLayout,
-    ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame, FrameA53ClosedCaptions,
-    FrameActiveFormatDescription, FrameAmbientViewingEnvironment, NativeChannelMaskLayout,
+    AmbisonicChannelLayout, BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId,
+    ChannelLayout, ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame,
+    FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
+    NativeChannelMaskLayout,
     FrameAudioServiceType,
     FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
@@ -4613,8 +4614,16 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         "ambisonic 1"
     );
     let parsed_ambisonic = ChannelLayoutSpec::parse("ambisonic 1+stereo").unwrap();
+    assert_eq!(
+        parsed_ambisonic.as_ambisonic(),
+        Some(AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap())
+    );
     assert_eq!(parsed_ambisonic.describe(), "ambisonic 1+stereo");
     assert_eq!(parsed_ambisonic.channel_count(), 6);
+    assert_eq!(
+        parsed_ambisonic.channel_from_index(0),
+        Some(ChannelId::Ambisonic(0))
+    );
     assert_eq!(
         parsed_ambisonic.channel_from_index(4),
         Some(ChannelId::Native(Channel::FrontLeft))
@@ -4623,8 +4632,12 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         parsed_ambisonic.subset_mask(ChannelLayout::stereo().channel_mask()),
         ChannelLayout::stereo().channel_mask()
     );
+    assert!(parsed_ambisonic.is_equivalent_to_custom(
+        &CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap()
+    ));
     let parsed_named_ambisonic =
         ChannelLayoutSpec::parse("ambisonic 0x1+FL@Left+FR@Right").unwrap();
+    assert_eq!(parsed_named_ambisonic.as_ambisonic(), None);
     assert_eq!(
         parsed_named_ambisonic.describe(),
         "ambisonic 1+2 channels (FL@Left+FR@Right)"
