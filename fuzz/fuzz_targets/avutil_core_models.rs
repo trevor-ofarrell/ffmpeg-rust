@@ -14901,7 +14901,7 @@ fn expected_sample_silence_byte(format: SampleFormat) -> u8 {
 }
 
 fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
-    match byte.unwrap_or_default() % 10 {
+    match byte.unwrap_or_default() % 15 {
         0 => ChannelLayout::mono(),
         1 => ChannelLayout::stereo(),
         2 => ChannelLayout::two_one(),
@@ -14909,8 +14909,13 @@ fn channel_layout_from(byte: Option<u8>) -> ChannelLayout {
         4 => ChannelLayout::three_zero_back(),
         5 => ChannelLayout::four_zero(),
         6 => ChannelLayout::quad(),
-        7 => ChannelLayout::five_one(),
-        8 => ChannelLayout::five_one_side(),
+        7 => ChannelLayout::quad_side(),
+        8 => ChannelLayout::three_one(),
+        9 => ChannelLayout::five_zero(),
+        10 => ChannelLayout::five_zero_side(),
+        11 => ChannelLayout::four_one(),
+        12 => ChannelLayout::five_one(),
+        13 => ChannelLayout::five_one_side(),
         _ => ChannelLayout::seven_one(),
     }
 }
@@ -19873,13 +19878,14 @@ fn sample_rate_from(byte: Option<u8>) -> u32 {
 }
 
 fn channel_count_from(byte: Option<u8>) -> u16 {
-    match byte.unwrap_or_default() % 7 {
+    match byte.unwrap_or_default() % 8 {
         0 => 0,
         1 => 1,
         2 => 2,
         3 => 4,
-        4 => 6,
-        5 => 8,
+        4 => 5,
+        5 => 6,
+        6 => 8,
         _ => u16::from(byte.unwrap_or_default() % 12),
     }
 }

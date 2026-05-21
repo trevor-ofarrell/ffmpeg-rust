@@ -134,6 +134,69 @@ impl ChannelLayout {
         )
     }
 
+    pub fn quad_side() -> Self {
+        Self::new_static(
+            "quad(side)",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::SideLeft,
+                Channel::SideRight,
+            ],
+        )
+    }
+
+    pub fn three_one() -> Self {
+        Self::new_static(
+            "3.1",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::LowFrequency,
+            ],
+        )
+    }
+
+    pub fn five_zero() -> Self {
+        Self::new_static(
+            "5.0",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::BackLeft,
+                Channel::BackRight,
+            ],
+        )
+    }
+
+    pub fn five_zero_side() -> Self {
+        Self::new_static(
+            "5.0(side)",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::SideLeft,
+                Channel::SideRight,
+            ],
+        )
+    }
+
+    pub fn four_one() -> Self {
+        Self::new_static(
+            "4.1",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::LowFrequency,
+                Channel::BackCenter,
+            ],
+        )
+    }
+
     pub fn five_one() -> Self {
         Self::new_static(
             "5.1",
@@ -178,7 +241,7 @@ impl ChannelLayout {
         )
     }
 
-    pub fn known_layouts() -> [Self; 10] {
+    pub fn known_layouts() -> [Self; 15] {
         [
             Self::mono(),
             Self::stereo(),
@@ -187,6 +250,11 @@ impl ChannelLayout {
             Self::three_zero_back(),
             Self::four_zero(),
             Self::quad(),
+            Self::quad_side(),
+            Self::three_one(),
+            Self::five_zero(),
+            Self::five_zero_side(),
+            Self::four_one(),
             Self::five_one(),
             Self::five_one_side(),
             Self::seven_one(),
@@ -202,6 +270,11 @@ impl ChannelLayout {
             "3.0(back)" => Some(Self::three_zero_back()),
             "4.0" => Some(Self::four_zero()),
             "quad" => Some(Self::quad()),
+            "quad(side)" => Some(Self::quad_side()),
+            "3.1" => Some(Self::three_one()),
+            "5.0" => Some(Self::five_zero()),
+            "5.0(side)" => Some(Self::five_zero_side()),
+            "4.1" => Some(Self::four_one()),
             "5.1" => Some(Self::five_one()),
             "5.1(side)" => Some(Self::five_one_side()),
             "7.1" => Some(Self::seven_one()),
@@ -280,6 +353,7 @@ impl ChannelLayout {
             2 => Some(Self::stereo()),
             3 => Some(Self::two_one()),
             4 => Some(Self::four_zero()),
+            5 => Some(Self::five_zero()),
             6 => Some(Self::five_one()),
             8 => Some(Self::seven_one()),
             _ => None,
@@ -394,6 +468,35 @@ mod tests {
         assert!(four_zero.contains(Channel::FrontCenter));
         assert!(four_zero.contains(Channel::BackCenter));
 
+        let quad_side = ChannelLayout::quad_side();
+        assert_eq!(quad_side.name(), "quad(side)");
+        assert_eq!(quad_side.channel_count(), 4);
+        assert!(quad_side.contains(Channel::SideLeft));
+        assert!(!quad_side.contains(Channel::BackLeft));
+
+        let three_one = ChannelLayout::three_one();
+        assert_eq!(three_one.name(), "3.1");
+        assert_eq!(three_one.channel_count(), 4);
+        assert!(three_one.contains(Channel::LowFrequency));
+
+        let five_zero = ChannelLayout::five_zero();
+        assert_eq!(five_zero.name(), "5.0");
+        assert_eq!(five_zero.channel_count(), 5);
+        assert!(five_zero.contains(Channel::BackRight));
+        assert!(!five_zero.contains(Channel::LowFrequency));
+
+        let five_zero_side = ChannelLayout::five_zero_side();
+        assert_eq!(five_zero_side.name(), "5.0(side)");
+        assert_eq!(five_zero_side.channel_count(), 5);
+        assert!(five_zero_side.contains(Channel::SideRight));
+        assert!(!five_zero_side.contains(Channel::BackRight));
+
+        let four_one = ChannelLayout::four_one();
+        assert_eq!(four_one.name(), "4.1");
+        assert_eq!(four_one.channel_count(), 5);
+        assert!(four_one.contains(Channel::LowFrequency));
+        assert!(four_one.contains(Channel::BackCenter));
+
         let surround = ChannelLayout::five_one();
         assert_eq!(surround.name(), "5.1");
         assert_eq!(surround.channel_count(), 6);
@@ -421,6 +524,20 @@ mod tests {
             "FL+FR+BC"
         );
         assert_eq!(ChannelLayout::four_zero().channel_string(), "FL+FR+FC+BC");
+        assert_eq!(ChannelLayout::quad_side().channel_string(), "FL+FR+SL+SR");
+        assert_eq!(ChannelLayout::three_one().channel_string(), "FL+FR+FC+LFE");
+        assert_eq!(
+            ChannelLayout::five_zero().channel_string(),
+            "FL+FR+FC+BL+BR"
+        );
+        assert_eq!(
+            ChannelLayout::five_zero_side().channel_string(),
+            "FL+FR+FC+SL+SR"
+        );
+        assert_eq!(
+            ChannelLayout::four_one().channel_string(),
+            "FL+FR+FC+LFE+BC"
+        );
         assert_eq!(
             ChannelLayout::from_channel_mask(
                 Channel::FrontLeft.mask() | Channel::FrontRight.mask() | Channel::BackCenter.mask()
@@ -434,6 +551,26 @@ mod tests {
                 Channel::FrontLeft,
             ]),
             Some(ChannelLayout::three_zero_back())
+        );
+        assert_eq!(
+            ChannelLayout::from_channel_mask(
+                Channel::FrontLeft.mask()
+                    | Channel::FrontRight.mask()
+                    | Channel::FrontCenter.mask()
+                    | Channel::SideLeft.mask()
+                    | Channel::SideRight.mask()
+            ),
+            Some(ChannelLayout::five_zero_side())
+        );
+        assert_eq!(
+            ChannelLayout::from_channels(&[
+                Channel::SideRight,
+                Channel::FrontCenter,
+                Channel::SideLeft,
+                Channel::FrontRight,
+                Channel::FrontLeft,
+            ]),
+            Some(ChannelLayout::five_zero_side())
         );
         assert_eq!(
             ChannelLayout::five_one_side().channel_string(),
@@ -451,6 +588,31 @@ mod tests {
 
     #[test]
     fn layout_name_and_default_count_lookup_are_narrow_and_explicit() {
+        let known_names: Vec<_> = ChannelLayout::known_layouts()
+            .into_iter()
+            .map(ChannelLayout::name)
+            .collect();
+        assert_eq!(
+            known_names,
+            [
+                "mono",
+                "stereo",
+                "2.1",
+                "3.0",
+                "3.0(back)",
+                "4.0",
+                "quad",
+                "quad(side)",
+                "3.1",
+                "5.0",
+                "5.0(side)",
+                "4.1",
+                "5.1",
+                "5.1(side)",
+                "7.1",
+            ]
+        );
+
         assert_eq!(
             ChannelLayout::from_name("mono"),
             Some(ChannelLayout::mono())
@@ -470,6 +632,26 @@ mod tests {
         assert_eq!(
             ChannelLayout::from_name("4.0"),
             Some(ChannelLayout::four_zero())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("quad(side)"),
+            Some(ChannelLayout::quad_side())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("3.1"),
+            Some(ChannelLayout::three_one())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("5.0"),
+            Some(ChannelLayout::five_zero())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("5.0(side)"),
+            Some(ChannelLayout::five_zero_side())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("4.1"),
+            Some(ChannelLayout::four_one())
         );
         assert_eq!(
             ChannelLayout::from_name("5.1(side)"),
@@ -498,6 +680,10 @@ mod tests {
             Some(ChannelLayout::four_zero())
         );
         assert_eq!(
+            ChannelLayout::default_for_count(5),
+            Some(ChannelLayout::five_zero())
+        );
+        assert_eq!(
             ChannelLayout::default_for_count(6),
             Some(ChannelLayout::five_one())
         );
@@ -505,7 +691,6 @@ mod tests {
             ChannelLayout::default_for_count(8),
             Some(ChannelLayout::seven_one())
         );
-        assert_eq!(ChannelLayout::default_for_count(5), None);
         assert_eq!(ChannelLayout::default_for_count(7), None);
     }
 
@@ -539,6 +724,26 @@ mod tests {
         assert_eq!(
             ChannelLayout::parse("FL+FR+FC+BC").unwrap(),
             ChannelLayout::four_zero()
+        );
+        assert_eq!(
+            ChannelLayout::parse("SL+FR+SR+FL").unwrap(),
+            ChannelLayout::quad_side()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+LFE").unwrap(),
+            ChannelLayout::three_one()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+BL+BR").unwrap(),
+            ChannelLayout::five_zero()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+SL+SR").unwrap(),
+            ChannelLayout::five_zero_side()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+LFE+BC").unwrap(),
+            ChannelLayout::four_one()
         );
         assert_eq!(
             ChannelLayout::parse("FL+FR+FC+LFE+BL+BR").unwrap(),
