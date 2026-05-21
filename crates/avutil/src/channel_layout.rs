@@ -532,6 +532,66 @@ impl CustomChannelLayout {
         ChannelLayout::from_channel_mask(mask)
     }
 
+    pub fn ambisonic_order(&self) -> AvResult<u16> {
+        let mut highest_ambi_index = None;
+        let mut previous_was_non_ambisonic = false;
+
+        for (index, channel) in self.channels.iter().enumerate() {
+            match channel.id() {
+                ChannelId::Ambisonic(acn) => {
+                    if previous_was_non_ambisonic {
+                        return Err(AvError::invalid_argument(
+                            "ambisonic channel follows non-ambisonic channel",
+                        ));
+                    }
+                    if usize::from(acn) != index {
+                        return Err(AvError::invalid_argument(
+                            "ambisonic channel is not in default ACN order",
+                        ));
+                    }
+                    highest_ambi_index = Some(index);
+                }
+                _ => {
+                    previous_was_non_ambisonic = true;
+                }
+            }
+        }
+
+        let highest_ambi_index = highest_ambi_index
+            .ok_or_else(|| AvError::invalid_argument("custom layout has no ambisonic channels"))?;
+        let mut order = 0usize;
+        while (order + 1) * (order + 1) <= highest_ambi_index {
+            order += 1;
+        }
+        if (order + 1) * (order + 1) != highest_ambi_index + 1 {
+            return Err(AvError::invalid_argument(
+                "custom layout has incomplete ambisonic order",
+            ));
+        }
+        u16::try_from(order)
+            .map_err(|_| AvError::invalid_argument("ambisonic order is outside supported range"))
+    }
+
+    fn ambisonic_channel_count(order: u16) -> usize {
+        let side = usize::from(order) + 1;
+        side * side
+    }
+
+    fn describe_ambisonic(&self) -> AvResult<String> {
+        let order = self.ambisonic_order()?;
+        let mut description = format!("ambisonic {order}");
+        let ambisonic_channel_count = Self::ambisonic_channel_count(order);
+
+        if ambisonic_channel_count < self.channels.len() {
+            let extra =
+                CustomChannelLayout::new(self.channels[ambisonic_channel_count..].to_vec())?;
+            description.push('+');
+            description.push_str(&extra.describe());
+        }
+
+        Ok(description)
+    }
+
     pub fn index_from_channel(&self, id: ChannelId) -> AvResult<usize> {
         if id == ChannelId::None || !id.is_valid_raw_id() {
             return Err(AvError::invalid_argument("invalid channel id lookup"));
@@ -582,6 +642,9 @@ impl CustomChannelLayout {
     }
 
     pub fn describe(&self) -> String {
+        if let Ok(description) = self.describe_ambisonic() {
+            return description;
+        }
         if let Some(layout) = self.canonical_native_layout() {
             return layout.name().to_owned();
         }
@@ -1709,6 +1772,116 @@ mod tests {
         .unwrap();
         let err = non_native.canonical_native_mask().unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+    }
+
+    #[test]
+    fn custom_channel_layouts_detect_ambisonic_order() {
+        let zeroth_order =
+            CustomChannelLayout::new(vec![
+                ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap()
+            ])
+            .unwrap();
+        assert_eq!(zeroth_order.ambisonic_order().unwrap(), 0);
+        assert_eq!(zeroth_order.describe(), "ambisonic 0");
+
+        let named_zeroth_order =
+            CustomChannelLayout::new(vec![
+                ChannelCustom::new(ChannelId::Ambisonic(0), "W").unwrap()
+            ])
+            .unwrap();
+        assert_eq!(named_zeroth_order.ambisonic_order().unwrap(), 0);
+        assert_eq!(named_zeroth_order.describe(), "ambisonic 0");
+
+        let first_order = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(2), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(3), "").unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(first_order.ambisonic_order().unwrap(), 1);
+        assert_eq!(first_order.describe(), "ambisonic 1");
+
+        let first_order_with_native_extra = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(2), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(3), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(first_order_with_native_extra.ambisonic_order().unwrap(), 1);
+        assert_eq!(
+            first_order_with_native_extra.describe(),
+            "ambisonic 1+stereo"
+        );
+
+        let first_order_with_named_extra = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(2), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(3), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "Left").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "Right").unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(first_order_with_named_extra.ambisonic_order().unwrap(), 1);
+        assert_eq!(
+            first_order_with_named_extra.describe(),
+            "ambisonic 1+2 channels (FL@Left+FR@Right)"
+        );
+
+        let first_order_with_custom_extra = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(2), "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(3), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(first_order_with_custom_extra.ambisonic_order().unwrap(), 1);
+        assert_eq!(
+            first_order_with_custom_extra.describe(),
+            "ambisonic 1+2 channels (FR+FL)"
+        );
+    }
+
+    #[test]
+    fn custom_channel_layouts_reject_invalid_ambisonic_orders() {
+        let native_only = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(
+            native_only.ambisonic_order().unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(native_only.describe(), "stereo");
+
+        for invalid in [
+            vec![
+                ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
+                ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap(),
+            ],
+            vec![ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap()],
+            vec![
+                ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+                ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap(),
+            ],
+            vec![
+                ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
+                ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+                ChannelCustom::new(ChannelId::Ambisonic(2), "").unwrap(),
+            ],
+        ] {
+            let layout = CustomChannelLayout::new(invalid).unwrap();
+            let err = layout.ambisonic_order().unwrap_err();
+            assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+            assert!(layout.describe().contains("channels ("));
+        }
     }
 
     #[test]

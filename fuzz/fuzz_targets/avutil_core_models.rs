@@ -9581,6 +9581,33 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidArgument
     );
+    let ambisonic_custom = CustomChannelLayout::new(vec![
+        ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
+        ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap(),
+        ChannelCustom::new(ChannelId::Ambisonic(2), "").unwrap(),
+        ChannelCustom::new(ChannelId::Ambisonic(3), "").unwrap(),
+        ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+        ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+    ])
+    .unwrap();
+    assert_eq!(ambisonic_custom.ambisonic_order().unwrap(), 1);
+    assert_eq!(ambisonic_custom.describe(), "ambisonic 1+stereo");
+    let incomplete_ambisonic_custom = CustomChannelLayout::new(vec![
+        ChannelCustom::new(ChannelId::Ambisonic(0), "").unwrap(),
+        ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap(),
+    ])
+    .unwrap();
+    assert_eq!(
+        incomplete_ambisonic_custom
+            .ambisonic_order()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        incomplete_ambisonic_custom.describe(),
+        "2 channels (AMBI0+AMBI1)"
+    );
     assert_eq!(
         custom_layout.index_from_string("FR@Left").unwrap_err().kind(),
         AvErrorKind::InvalidArgument
