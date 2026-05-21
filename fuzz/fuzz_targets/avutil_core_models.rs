@@ -9566,6 +9566,29 @@ fn exercise_fixtures() {
     );
     assert_eq!(ChannelId::from_canonical_name("AMBI1024"), None);
     assert_eq!(ChannelId::from_canonical_name("USR512"), None);
+    for (count, expected) in [
+        (1, Some(ChannelLayout::mono())),
+        (2, Some(ChannelLayout::stereo())),
+        (3, Some(ChannelLayout::two_one())),
+        (4, Some(ChannelLayout::four_zero())),
+        (5, Some(ChannelLayout::five_zero())),
+        (6, Some(ChannelLayout::five_one())),
+        (7, Some(ChannelLayout::six_one())),
+        (8, Some(ChannelLayout::seven_one())),
+        (9, None),
+        (10, Some(ChannelLayout::five_one_four())),
+        (11, None),
+        (12, Some(ChannelLayout::seven_one_four())),
+        (13, None),
+        (14, Some(ChannelLayout::nine_one_four())),
+        (15, None),
+        (16, Some(ChannelLayout::nine_one_six())),
+        (17, None),
+        (23, None),
+        (24, Some(ChannelLayout::twenty_two_two())),
+    ] {
+        assert_eq!(ChannelLayout::default_for_count(count), expected);
+    }
     let custom_layout = CustomChannelLayout::new(vec![
         ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "Left").unwrap(),
         ChannelCustom::new(ChannelId::Unknown, "").unwrap(),

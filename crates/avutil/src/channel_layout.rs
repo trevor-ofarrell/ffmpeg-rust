@@ -1430,17 +1430,9 @@ impl ChannelLayout {
     }
 
     pub fn default_for_count(channels: u16) -> Option<Self> {
-        match channels {
-            1 => Some(Self::mono()),
-            2 => Some(Self::stereo()),
-            3 => Some(Self::two_one()),
-            4 => Some(Self::four_zero()),
-            5 => Some(Self::five_zero()),
-            6 => Some(Self::five_one()),
-            7 => Some(Self::six_one()),
-            8 => Some(Self::seven_one()),
-            _ => None,
-        }
+        Self::known_layouts()
+            .into_iter()
+            .find(|layout| layout.channel_count() == channels)
     }
 
     pub fn name(self) -> &'static str {
@@ -3312,11 +3304,31 @@ mod tests {
             Some(ChannelLayout::seven_one())
         );
         assert_eq!(ChannelLayout::default_for_count(9), None);
-        assert_eq!(ChannelLayout::default_for_count(10), None);
-        assert_eq!(ChannelLayout::default_for_count(12), None);
-        assert_eq!(ChannelLayout::default_for_count(14), None);
-        assert_eq!(ChannelLayout::default_for_count(16), None);
-        assert_eq!(ChannelLayout::default_for_count(24), None);
+        assert_eq!(
+            ChannelLayout::default_for_count(10),
+            Some(ChannelLayout::five_one_four())
+        );
+        assert_eq!(ChannelLayout::default_for_count(11), None);
+        assert_eq!(
+            ChannelLayout::default_for_count(12),
+            Some(ChannelLayout::seven_one_four())
+        );
+        assert_eq!(ChannelLayout::default_for_count(13), None);
+        assert_eq!(
+            ChannelLayout::default_for_count(14),
+            Some(ChannelLayout::nine_one_four())
+        );
+        assert_eq!(ChannelLayout::default_for_count(15), None);
+        assert_eq!(
+            ChannelLayout::default_for_count(16),
+            Some(ChannelLayout::nine_one_six())
+        );
+        assert_eq!(ChannelLayout::default_for_count(17), None);
+        assert_eq!(ChannelLayout::default_for_count(23), None);
+        assert_eq!(
+            ChannelLayout::default_for_count(24),
+            Some(ChannelLayout::twenty_two_two())
+        );
     }
 
     #[test]
