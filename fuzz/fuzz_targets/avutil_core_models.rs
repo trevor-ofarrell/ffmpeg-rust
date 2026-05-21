@@ -83,6 +83,14 @@ fn assert_raw_channel_layout_retype_fixtures() {
         ChannelLayoutSpec::NativeMask(raw_layout)
     );
     assert_eq!(
+        ChannelLayoutSpec::parse("USR0x2d+USR056").unwrap(),
+        ChannelLayoutSpec::NativeMask(raw_layout)
+    );
+    assert_eq!(
+        ChannelId::from_ffmpeg_string("AMBI0x1tail"),
+        Some(ChannelId::Ambisonic(1))
+    );
+    assert_eq!(
         ChannelLayoutSpec::Custom(raw_custom)
             .to_native_order_lossless()
             .unwrap(),
@@ -112,6 +120,7 @@ fn assert_raw_channel_layout_retype_fixtures() {
         4
     );
     assert_eq!(raw_ambisonic.index_from_string("USR45").unwrap(), 4);
+    assert_eq!(raw_ambisonic.index_from_string("USR055").unwrap(), 4);
     assert_eq!(
         raw_ambisonic.channel_from_index(4),
         Some(ChannelId::User(45))
@@ -10094,6 +10103,18 @@ fn exercise_fixtures() {
     );
     assert_eq!(ChannelId::from_canonical_name("AMBI1024"), None);
     assert_eq!(ChannelId::from_canonical_name("USR512"), None);
+    assert_eq!(
+        ChannelId::from_ffmpeg_string("AMBI0x1tail"),
+        Some(ChannelId::Ambisonic(1))
+    );
+    assert_eq!(
+        ChannelId::from_ffmpeg_string("USR0x2d"),
+        Some(ChannelId::User(45))
+    );
+    assert_eq!(
+        ChannelId::from_ffmpeg_string("USR055"),
+        Some(ChannelId::User(45))
+    );
     for (count, expected) in [
         (1, Some(ChannelLayout::mono())),
         (2, Some(ChannelLayout::stereo())),

@@ -319,6 +319,33 @@ impl ChannelId {
             .map(Self::Native)
     }
 
+    pub fn from_ffmpeg_string(name: &str) -> Option<Self> {
+        if let Some(raw_acn) = name
+            .strip_prefix("AMBI")
+            .and_then(parse_ffmpeg_i32_base0_prefix)
+        {
+            return (0..=i32::from(Self::MAX_AMBISONIC_ACN))
+                .contains(&raw_acn)
+                .then_some(Self::Ambisonic(raw_acn as u16));
+        }
+        if let Some(channel) = Channel::from_name(name) {
+            return Some(Self::Native(channel));
+        }
+        if name == "UNK" {
+            return Some(Self::Unknown);
+        }
+        if name == "UNSD" {
+            return Some(Self::Unused);
+        }
+        if let Some(raw_id) = name
+            .strip_prefix("USR")
+            .and_then(parse_ffmpeg_i32_base0_full)
+        {
+            return (raw_id >= 0).then_some(Self::from_raw(raw_id));
+        }
+        None
+    }
+
     pub fn raw_id(self) -> i32 {
         match self {
             Self::None => Self::NONE_RAW,
@@ -380,6 +407,66 @@ fn parse_user_channel_id(value: &str) -> Option<i32> {
         return None;
     }
     value.parse().ok()
+}
+
+fn parse_ffmpeg_i32_base0_prefix(value: &str) -> Option<i32> {
+    let (parsed, _consumed) = parse_ffmpeg_i32_base0(value, false)?;
+    Some(parsed)
+}
+
+fn parse_ffmpeg_i32_base0_full(value: &str) -> Option<i32> {
+    let (parsed, consumed) = parse_ffmpeg_i32_base0(value, true)?;
+    (consumed == value.len()).then_some(parsed)
+}
+
+fn parse_ffmpeg_i32_base0(value: &str, require_digit: bool) -> Option<(i32, usize)> {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() {
+        return (!require_digit).then_some((0, 0));
+    }
+
+    let mut index = 0usize;
+    let mut negative = false;
+    if matches!(bytes[index], b'+' | b'-') {
+        negative = bytes[index] == b'-';
+        index += 1;
+    }
+
+    let mut radix = 10u32;
+    if bytes.get(index) == Some(&b'0') {
+        radix = 8;
+        if matches!(bytes.get(index + 1), Some(b'x' | b'X'))
+            && bytes
+                .get(index + 2)
+                .is_some_and(|byte| byte.is_ascii_hexdigit())
+        {
+            radix = 16;
+            index += 2;
+        }
+    }
+
+    let digit_start = index;
+    let mut value_acc = 0i64;
+    while let Some(byte) = bytes.get(index).copied() {
+        let Some(digit) = (byte as char).to_digit(radix) else {
+            break;
+        };
+        value_acc = value_acc
+            .checked_mul(i64::from(radix))?
+            .checked_add(i64::from(digit))?;
+        index += 1;
+    }
+
+    if index == digit_start {
+        if require_digit {
+            return None;
+        }
+        return Some((0, 0));
+    }
+
+    let signed = if negative { -value_acc } else { value_acc };
+    let parsed = i32::try_from(signed).ok()?;
+    Some((parsed, index))
 }
 
 fn native_mask_bit_from_channel_id(id: ChannelId) -> AvResult<u64> {
@@ -526,7 +613,7 @@ impl CustomChannelLayout {
                     "custom channel token {token_start:?} has no channel id"
                 )));
             }
-            let id = ChannelId::from_canonical_name(&id_name).ok_or_else(|| {
+            let id = ChannelId::from_ffmpeg_string(&id_name).ok_or_else(|| {
                 AvError::invalid_argument(format!("unknown channel id {id_name:?}"))
             })?;
             channels.push(ChannelCustom::new(id, custom_name)?);
@@ -841,7 +928,7 @@ impl CustomChannelLayout {
                 let id = if id_part.is_empty() {
                     None
                 } else {
-                    Some(ChannelId::from_canonical_name(id_part).ok_or_else(|| {
+                    Some(ChannelId::from_ffmpeg_string(id_part).ok_or_else(|| {
                         AvError::invalid_argument(format!("unknown channel id {id_part:?}"))
                     })?)
                 };
@@ -860,7 +947,7 @@ impl CustomChannelLayout {
             )));
         }
 
-        let id = ChannelId::from_canonical_name(name)
+        let id = ChannelId::from_ffmpeg_string(name)
             .ok_or_else(|| AvError::invalid_argument(format!("unknown channel id {name:?}")))?;
         self.index_from_channel(id)
     }
@@ -1683,7 +1770,7 @@ impl ChannelLayout {
             ));
         }
 
-        let id = ChannelId::from_canonical_name(name)
+        let id = ChannelId::from_ffmpeg_string(name)
             .ok_or_else(|| AvError::invalid_argument(format!("unknown channel id {name:?}")))?;
         self.index_from_channel(id)
     }
@@ -1818,7 +1905,7 @@ impl NativeChannelMaskLayout {
             ));
         }
 
-        let id = ChannelId::from_canonical_name(name)
+        let id = ChannelId::from_ffmpeg_string(name)
             .ok_or_else(|| AvError::invalid_argument(format!("unknown channel id {name:?}")))?;
         self.index_from_channel(id)
     }
@@ -1996,7 +2083,7 @@ impl AmbisonicChannelLayout {
             ));
         }
 
-        let id = ChannelId::from_canonical_name(name)
+        let id = ChannelId::from_ffmpeg_string(name)
             .ok_or_else(|| AvError::invalid_argument(format!("unknown channel id {name:?}")))?;
         self.index_from_channel(id)
     }
@@ -2080,7 +2167,7 @@ impl UnspecifiedChannelLayout {
                 "channel lookup contains NUL byte",
             ));
         }
-        let id = ChannelId::from_canonical_name(name)
+        let id = ChannelId::from_ffmpeg_string(name)
             .ok_or_else(|| AvError::invalid_argument(format!("unknown channel id {name:?}")))?;
         self.index_from_channel(id)
     }
@@ -2415,7 +2502,7 @@ impl ChannelLayoutSpec {
         {
             return true;
         }
-        ChannelId::from_canonical_name(value.trim()).is_some()
+        ChannelId::from_ffmpeg_string(value.trim()).is_some()
     }
 
     pub fn as_native(&self) -> Option<ChannelLayout> {
@@ -3011,6 +3098,10 @@ mod tests {
             Some(ChannelId::Native(Channel::FrontLeft))
         );
         assert_eq!(ChannelId::from_canonical_name("fl"), None);
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("FL"),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
 
         assert_eq!(ChannelId::from_raw(-1), ChannelId::None);
         assert_eq!(ChannelId::None.name(), "NONE");
@@ -3049,6 +3140,19 @@ mod tests {
         assert_eq!(ChannelId::from_raw(0x7ff), ChannelId::Ambisonic(1023));
         assert_eq!(ChannelId::from_canonical_name("AMBI1024"), None);
         assert_eq!(ChannelId::from_canonical_name("AMBI"), None);
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("AMBI0x1tail"),
+            Some(ChannelId::Ambisonic(1))
+        );
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("AMBI01"),
+            Some(ChannelId::Ambisonic(1))
+        );
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("AMBI"),
+            Some(ChannelId::Ambisonic(0))
+        );
+        assert_eq!(ChannelId::from_ffmpeg_string("AMBI1024"), None);
 
         let user = ChannelId::from_raw(0x800);
         assert_eq!(user, ChannelId::User(0x800));
@@ -3061,6 +3165,32 @@ mod tests {
         );
         assert_eq!(ChannelId::from_raw(-2).name(), "USR-2");
         assert_eq!(ChannelId::from_canonical_name("USR-2"), None);
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("USR0"),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("USR0x2d"),
+            Some(ChannelId::User(45))
+        );
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("USR055"),
+            Some(ChannelId::User(45))
+        );
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("USR+45"),
+            Some(ChannelId::User(45))
+        );
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("USR512"),
+            Some(ChannelId::Unused)
+        );
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("USR768"),
+            Some(ChannelId::Unknown)
+        );
+        assert_eq!(ChannelId::from_ffmpeg_string("USR-1"), None);
+        assert_eq!(ChannelId::from_ffmpeg_string("USR45tail"), None);
     }
 
     #[test]
@@ -5233,6 +5363,49 @@ mod tests {
     }
 
     #[test]
+    fn channel_layout_parsers_accept_ffmpeg_base0_raw_channel_strings() {
+        let raw_mask = (1u64 << 45) | (1u64 << 46);
+        let raw_layout = NativeChannelMaskLayout::new(raw_mask).unwrap();
+        let raw_custom = CustomChannelLayout::parse_channel_list("USR0x2d+USR056").unwrap();
+        assert_eq!(raw_custom.canonical_native_mask().unwrap(), raw_mask);
+        assert_eq!(raw_custom.channel_from_index(0), Some(ChannelId::User(45)));
+        assert_eq!(raw_custom.channel_from_index(1), Some(ChannelId::User(46)));
+        assert_eq!(
+            ChannelLayoutSpec::parse("USR0x2d+USR056").unwrap(),
+            ChannelLayoutSpec::NativeMask(raw_layout)
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("USR0").unwrap(),
+            ChannelLayoutSpec::NativeMask(
+                NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
+            )
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("AMBI0x1tail").unwrap(),
+            ChannelLayoutSpec::Custom(
+                CustomChannelLayout::new(vec![
+                    ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap()
+                ])
+                .unwrap()
+            )
+        );
+        assert_eq!(
+            NativeChannelMaskLayout::new(1u64 << 45)
+                .unwrap()
+                .index_from_string("USR0x2d")
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            AmbisonicChannelLayout::new(1, 1u64 << 45)
+                .unwrap()
+                .index_from_string("USR055")
+                .unwrap(),
+            4
+        );
+    }
+
+    #[test]
     fn layout_specs_retype_to_custom_layouts_losslessly() {
         let native = ChannelLayoutSpec::Native(ChannelLayout::stereo());
         let native_custom = native.to_custom_layout().unwrap();
@@ -5868,6 +6041,7 @@ mod tests {
         assert_eq!(layout.channel_from_index(4), Some(ChannelId::User(45)));
         assert_eq!(layout.index_from_channel(ChannelId::User(45)).unwrap(), 4);
         assert_eq!(layout.index_from_string("USR45").unwrap(), 4);
+        assert_eq!(layout.index_from_string("USR055").unwrap(), 4);
         assert_eq!(
             layout.channel_from_string("USR45"),
             Some(ChannelId::User(45))
@@ -5881,6 +6055,7 @@ mod tests {
         assert_eq!(spec.as_ambisonic(), Some(layout));
         assert_eq!(spec.index_from_channel(ChannelId::User(45)).unwrap(), 4);
         assert_eq!(spec.index_from_string("USR45").unwrap(), 4);
+        assert_eq!(spec.index_from_string("USR0x2d").unwrap(), 4);
         assert_eq!(spec.channel_from_index(4), Some(ChannelId::User(45)));
         assert_eq!(spec.channel_from_string("USR45"), Some(ChannelId::User(45)));
 
