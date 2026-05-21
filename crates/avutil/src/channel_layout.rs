@@ -14,10 +14,13 @@ pub enum Channel {
     SideLeft,
     SideRight,
     TopFrontLeft,
+    TopFrontCenter,
     TopFrontRight,
     TopBackLeft,
     TopBackCenter,
     TopBackRight,
+    WideLeft,
+    WideRight,
     LowFrequency2,
     TopSideLeft,
     TopSideRight,
@@ -37,10 +40,13 @@ impl Channel {
         Self::SideLeft,
         Self::SideRight,
         Self::TopFrontLeft,
+        Self::TopFrontCenter,
         Self::TopFrontRight,
         Self::TopBackLeft,
         Self::TopBackCenter,
         Self::TopBackRight,
+        Self::WideLeft,
+        Self::WideRight,
         Self::LowFrequency2,
         Self::TopSideLeft,
         Self::TopSideRight,
@@ -60,10 +66,13 @@ impl Channel {
             Self::SideLeft => "SL",
             Self::SideRight => "SR",
             Self::TopFrontLeft => "TFL",
+            Self::TopFrontCenter => "TFC",
             Self::TopFrontRight => "TFR",
             Self::TopBackLeft => "TBL",
             Self::TopBackCenter => "TBC",
             Self::TopBackRight => "TBR",
+            Self::WideLeft => "WL",
+            Self::WideRight => "WR",
             Self::LowFrequency2 => "LFE2",
             Self::TopSideLeft => "TSL",
             Self::TopSideRight => "TSR",
@@ -91,10 +100,13 @@ impl Channel {
             Self::SideLeft => 1 << 9,
             Self::SideRight => 1 << 10,
             Self::TopFrontLeft => 1 << 12,
+            Self::TopFrontCenter => 1 << 13,
             Self::TopFrontRight => 1 << 14,
             Self::TopBackLeft => 1 << 15,
             Self::TopBackCenter => 1 << 16,
             Self::TopBackRight => 1 << 17,
+            Self::WideLeft => 1 << 31,
+            Self::WideRight => 1 << 32,
             Self::LowFrequency2 => 1 << 35,
             Self::TopSideLeft => 1 << 36,
             Self::TopSideRight => 1 << 37,
@@ -616,7 +628,31 @@ impl ChannelLayout {
         )
     }
 
-    pub fn known_layouts() -> [Self; 35] {
+    pub fn hexadecagonal() -> Self {
+        Self::new_static(
+            "hexadecagonal",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::BackLeft,
+                Channel::BackRight,
+                Channel::BackCenter,
+                Channel::SideLeft,
+                Channel::SideRight,
+                Channel::WideLeft,
+                Channel::WideRight,
+                Channel::TopBackLeft,
+                Channel::TopBackRight,
+                Channel::TopBackCenter,
+                Channel::TopFrontCenter,
+                Channel::TopFrontLeft,
+                Channel::TopFrontRight,
+            ],
+        )
+    }
+
+    pub fn known_layouts() -> [Self; 36] {
         [
             Self::mono(),
             Self::stereo(),
@@ -653,6 +689,7 @@ impl ChannelLayout {
             Self::seven_two_three(),
             Self::nine_one_four(),
             Self::nine_one_six(),
+            Self::hexadecagonal(),
         ]
     }
 
@@ -693,6 +730,7 @@ impl ChannelLayout {
             "7.2.3" => Some(Self::seven_two_three()),
             "9.1.4" => Some(Self::nine_one_four()),
             "9.1.6" => Some(Self::nine_one_six()),
+            "hexadecagonal" => Some(Self::hexadecagonal()),
             _ => None,
         }
     }
@@ -840,10 +878,13 @@ mod tests {
         assert_eq!(Channel::SideLeft.name(), "SL");
         assert_eq!(Channel::SideRight.name(), "SR");
         assert_eq!(Channel::TopFrontLeft.name(), "TFL");
+        assert_eq!(Channel::TopFrontCenter.name(), "TFC");
         assert_eq!(Channel::TopFrontRight.name(), "TFR");
         assert_eq!(Channel::TopBackLeft.name(), "TBL");
         assert_eq!(Channel::TopBackCenter.name(), "TBC");
         assert_eq!(Channel::TopBackRight.name(), "TBR");
+        assert_eq!(Channel::WideLeft.name(), "WL");
+        assert_eq!(Channel::WideRight.name(), "WR");
         assert_eq!(Channel::LowFrequency2.name(), "LFE2");
         assert_eq!(Channel::TopSideLeft.name(), "TSL");
         assert_eq!(Channel::TopSideRight.name(), "TSR");
@@ -854,10 +895,13 @@ mod tests {
         assert_eq!(Channel::from_name("FRC"), Some(Channel::FrontRightOfCenter));
         assert_eq!(Channel::from_name("bc"), Some(Channel::BackCenter));
         assert_eq!(Channel::from_name("tfl"), Some(Channel::TopFrontLeft));
+        assert_eq!(Channel::from_name("TFC"), Some(Channel::TopFrontCenter));
         assert_eq!(Channel::from_name("TFR"), Some(Channel::TopFrontRight));
         assert_eq!(Channel::from_name("tbl"), Some(Channel::TopBackLeft));
         assert_eq!(Channel::from_name("TBC"), Some(Channel::TopBackCenter));
         assert_eq!(Channel::from_name("TBR"), Some(Channel::TopBackRight));
+        assert_eq!(Channel::from_name("wl"), Some(Channel::WideLeft));
+        assert_eq!(Channel::from_name("WR"), Some(Channel::WideRight));
         assert_eq!(Channel::from_name("lfe2"), Some(Channel::LowFrequency2));
         assert_eq!(Channel::from_name("tsl"), Some(Channel::TopSideLeft));
         assert_eq!(Channel::from_name("TSR"), Some(Channel::TopSideRight));
@@ -869,10 +913,13 @@ mod tests {
         assert_eq!(Channel::BackCenter.mask(), 1 << 8);
         assert_eq!(Channel::SideLeft.mask(), 1 << 9);
         assert_eq!(Channel::TopFrontLeft.mask(), 1 << 12);
+        assert_eq!(Channel::TopFrontCenter.mask(), 1 << 13);
         assert_eq!(Channel::TopFrontRight.mask(), 1 << 14);
         assert_eq!(Channel::TopBackLeft.mask(), 1 << 15);
         assert_eq!(Channel::TopBackCenter.mask(), 1 << 16);
         assert_eq!(Channel::TopBackRight.mask(), 1 << 17);
+        assert_eq!(Channel::WideLeft.mask(), 1 << 31);
+        assert_eq!(Channel::WideRight.mask(), 1 << 32);
         assert_eq!(Channel::LowFrequency2.mask(), 1 << 35);
         assert_eq!(Channel::TopSideLeft.mask(), 1 << 36);
         assert_eq!(Channel::TopSideRight.mask(), 1 << 37);
@@ -1096,6 +1143,15 @@ mod tests {
         assert!(nine_one_six.contains(Channel::TopSideRight));
         assert!(nine_one_six.contains(Channel::TopBackRight));
         assert!(!nine_one_six.contains(Channel::LowFrequency2));
+
+        let hexadecagonal = ChannelLayout::hexadecagonal();
+        assert_eq!(hexadecagonal.name(), "hexadecagonal");
+        assert_eq!(hexadecagonal.channel_count(), 16);
+        assert!(hexadecagonal.contains(Channel::WideLeft));
+        assert!(hexadecagonal.contains(Channel::WideRight));
+        assert!(hexadecagonal.contains(Channel::TopFrontCenter));
+        assert!(!hexadecagonal.contains(Channel::LowFrequency));
+        assert!(!hexadecagonal.contains(Channel::TopSideLeft));
     }
 
     #[test]
@@ -1249,6 +1305,10 @@ mod tests {
         assert_eq!(
             ChannelLayout::nine_one_six().channel_string(),
             "FL+FR+FC+LFE+BL+BR+FLC+FRC+SL+SR+TFL+TFR+TBL+TBR+TSL+TSR"
+        );
+        assert_eq!(
+            ChannelLayout::hexadecagonal().channel_string(),
+            "FL+FR+FC+BL+BR+BC+SL+SR+WL+WR+TBL+TBR+TBC+TFC+TFL+TFR"
         );
         assert_eq!(
             ChannelLayout::from_channel_mask(
@@ -1572,6 +1632,48 @@ mod tests {
             Some(ChannelLayout::nine_one_six())
         );
         assert_eq!(
+            ChannelLayout::from_channel_mask(
+                Channel::FrontLeft.mask()
+                    | Channel::FrontRight.mask()
+                    | Channel::FrontCenter.mask()
+                    | Channel::BackLeft.mask()
+                    | Channel::BackRight.mask()
+                    | Channel::BackCenter.mask()
+                    | Channel::SideLeft.mask()
+                    | Channel::SideRight.mask()
+                    | Channel::WideLeft.mask()
+                    | Channel::WideRight.mask()
+                    | Channel::TopBackLeft.mask()
+                    | Channel::TopBackRight.mask()
+                    | Channel::TopBackCenter.mask()
+                    | Channel::TopFrontCenter.mask()
+                    | Channel::TopFrontLeft.mask()
+                    | Channel::TopFrontRight.mask()
+            ),
+            Some(ChannelLayout::hexadecagonal())
+        );
+        assert_eq!(
+            ChannelLayout::from_channels(&[
+                Channel::TopFrontRight,
+                Channel::TopFrontLeft,
+                Channel::TopFrontCenter,
+                Channel::TopBackCenter,
+                Channel::TopBackRight,
+                Channel::TopBackLeft,
+                Channel::WideRight,
+                Channel::WideLeft,
+                Channel::SideRight,
+                Channel::SideLeft,
+                Channel::BackCenter,
+                Channel::BackRight,
+                Channel::BackLeft,
+                Channel::FrontCenter,
+                Channel::FrontRight,
+                Channel::FrontLeft,
+            ]),
+            Some(ChannelLayout::hexadecagonal())
+        );
+        assert_eq!(
             ChannelLayout::from_channel_mask(Channel::FrontLeft.mask() | Channel::BackRight.mask()),
             None
         );
@@ -1625,6 +1727,7 @@ mod tests {
                 "7.2.3",
                 "9.1.4",
                 "9.1.6",
+                "hexadecagonal",
             ]
         );
 
@@ -1755,6 +1858,10 @@ mod tests {
         assert_eq!(
             ChannelLayout::from_name("9.1.6"),
             Some(ChannelLayout::nine_one_six())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("hexadecagonal"),
+            Some(ChannelLayout::hexadecagonal())
         );
         assert_eq!(ChannelLayout::from_name("unknown"), None);
 
@@ -1974,6 +2081,18 @@ mod tests {
             ChannelLayout::parse("TSR+TBR+FL+TFL+FR+FC+LFE+BL+BR+FLC+FRC+SL+SR+TFR+TBL+TSL",)
                 .unwrap(),
             ChannelLayout::nine_one_six()
+        );
+        assert_eq!(
+            ChannelLayout::parse("hexadecagonal").unwrap(),
+            ChannelLayout::hexadecagonal()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+BL+BR+BC+SL+SR+WL+WR+TBL+TBR+TBC+TFC+TFL+TFR").unwrap(),
+            ChannelLayout::hexadecagonal()
+        );
+        assert_eq!(
+            ChannelLayout::parse("TFR+TFL+TFC+TBC+TBR+TBL+WR+WL+SR+SL+BC+BR+BL+FC+FR+FL").unwrap(),
+            ChannelLayout::hexadecagonal()
         );
     }
 
