@@ -358,6 +358,13 @@ impl ChannelId {
             _ => None,
         }
     }
+
+    pub fn is_valid_raw_id(self) -> bool {
+        match self {
+            Self::Ambisonic(acn) => acn <= Self::MAX_AMBISONIC_ACN,
+            _ => true,
+        }
+    }
 }
 
 fn parse_ambisonic_acn(value: &str) -> Option<u16> {
@@ -373,6 +380,189 @@ fn parse_user_channel_id(value: &str) -> Option<i32> {
         return None;
     }
     value.parse().ok()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ChannelCustom {
+    id: ChannelId,
+    name: String,
+}
+
+impl ChannelCustom {
+    pub const NAME_STORAGE_BYTES: usize = 16;
+    pub const MAX_NAME_BYTES: usize = Self::NAME_STORAGE_BYTES - 1;
+
+    pub fn new(id: ChannelId, name: impl AsRef<str>) -> AvResult<Self> {
+        if id == ChannelId::None {
+            return Err(AvError::invalid_argument(
+                "custom channel id cannot be NONE",
+            ));
+        }
+        if !id.is_valid_raw_id() {
+            return Err(AvError::invalid_argument(
+                "custom channel id is outside FFmpeg's valid raw channel range",
+            ));
+        }
+        let name = name.as_ref();
+        if name.contains('\0') {
+            return Err(AvError::invalid_argument(
+                "custom channel name contains NUL byte",
+            ));
+        }
+        if name.len() > Self::MAX_NAME_BYTES {
+            return Err(AvError::invalid_argument(format!(
+                "custom channel name exceeds {} bytes",
+                Self::MAX_NAME_BYTES
+            )));
+        }
+        Ok(Self {
+            id,
+            name: name.to_owned(),
+        })
+    }
+
+    pub fn unknown() -> Self {
+        Self {
+            id: ChannelId::Unknown,
+            name: String::new(),
+        }
+    }
+
+    pub fn id(&self) -> ChannelId {
+        self.id
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn has_name(&self) -> bool {
+        !self.name.is_empty()
+    }
+
+    fn describe(&self) -> String {
+        let mut described = self.id.name();
+        if self.has_name() {
+            described.push('@');
+            described.push_str(&self.name);
+        }
+        described
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CustomChannelLayout {
+    channels: Vec<ChannelCustom>,
+}
+
+impl CustomChannelLayout {
+    pub fn new(channels: Vec<ChannelCustom>) -> AvResult<Self> {
+        if channels.is_empty() {
+            return Err(AvError::invalid_argument(
+                "custom channel layout must have at least one channel",
+            ));
+        }
+        if channels.len() > usize::from(u16::MAX) {
+            return Err(AvError::invalid_argument(
+                "custom channel layout has too many channels",
+            ));
+        }
+        for channel in &channels {
+            if channel.id() == ChannelId::None {
+                return Err(AvError::invalid_argument(
+                    "custom channel layout contains NONE channel",
+                ));
+            }
+            if !channel.id().is_valid_raw_id() {
+                return Err(AvError::invalid_argument(
+                    "custom channel layout contains invalid raw channel id",
+                ));
+            }
+        }
+        Ok(Self { channels })
+    }
+
+    pub fn unknown(channel_count: u16) -> AvResult<Self> {
+        if channel_count == 0 {
+            return Err(AvError::invalid_argument(
+                "custom channel layout must have at least one channel",
+            ));
+        }
+        Self::new(vec![ChannelCustom::unknown(); usize::from(channel_count)])
+    }
+
+    pub fn channel_count(&self) -> u16 {
+        u16::try_from(self.channels.len()).expect("custom channel layout count fits u16")
+    }
+
+    pub fn channels(&self) -> &[ChannelCustom] {
+        &self.channels
+    }
+
+    pub fn channel_from_index(&self, index: usize) -> Option<ChannelId> {
+        self.channels.get(index).map(ChannelCustom::id)
+    }
+
+    pub fn index_from_channel(&self, id: ChannelId) -> AvResult<usize> {
+        if id == ChannelId::None || !id.is_valid_raw_id() {
+            return Err(AvError::invalid_argument("invalid channel id lookup"));
+        }
+        self.channels
+            .iter()
+            .position(|channel| channel.id() == id)
+            .ok_or_else(|| AvError::invalid_argument("channel is not present in custom layout"))
+    }
+
+    pub fn index_from_string(&self, name: &str) -> AvResult<usize> {
+        if name.is_empty() {
+            return Err(AvError::invalid_argument("empty channel lookup"));
+        }
+        if name.contains('\0') {
+            return Err(AvError::invalid_argument(
+                "channel lookup contains NUL byte",
+            ));
+        }
+
+        if let Some((id_part, custom_name)) = name.split_once('@') {
+            if !custom_name.is_empty() {
+                let id = if id_part.is_empty() {
+                    None
+                } else {
+                    Some(ChannelId::from_canonical_name(id_part).ok_or_else(|| {
+                        AvError::invalid_argument(format!("unknown channel id {id_part:?}"))
+                    })?)
+                };
+                if let Some(index) = self.channels.iter().position(|channel| {
+                    channel.name() == custom_name
+                        && match id {
+                            Some(id) => channel.id() == id,
+                            None => true,
+                        }
+                }) {
+                    return Ok(index);
+                }
+            }
+            return Err(AvError::invalid_argument(format!(
+                "channel name {name:?} is not present in custom layout"
+            )));
+        }
+
+        let id = ChannelId::from_canonical_name(name)
+            .ok_or_else(|| AvError::invalid_argument(format!("unknown channel id {name:?}")))?;
+        self.index_from_channel(id)
+    }
+
+    pub fn describe(&self) -> String {
+        let mut description = format!("{} channels (", self.channel_count());
+        for (index, channel) in self.channels.iter().enumerate() {
+            if index != 0 {
+                description.push('+');
+            }
+            description.push_str(&channel.describe());
+        }
+        description.push(')');
+        description
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1350,6 +1540,106 @@ mod tests {
         );
         assert_eq!(ChannelId::from_raw(-2).name(), "USR-2");
         assert_eq!(ChannelId::from_canonical_name("USR-2"), None);
+    }
+
+    #[test]
+    fn custom_channel_layouts_model_ffmpeg_map_entries() {
+        let unknown = CustomChannelLayout::unknown(3).unwrap();
+        assert_eq!(unknown.channel_count(), 3);
+        assert_eq!(unknown.channel_from_index(0), Some(ChannelId::Unknown));
+        assert_eq!(unknown.channel_from_index(2), Some(ChannelId::Unknown));
+        assert_eq!(unknown.channel_from_index(3), None);
+        assert_eq!(unknown.index_from_channel(ChannelId::Unknown).unwrap(), 0);
+        assert_eq!(unknown.describe(), "3 channels (UNK+UNK+UNK)");
+
+        let layout = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "Left").unwrap(),
+            ChannelCustom::new(ChannelId::Unknown, "").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(2), "W").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "SecondLeft").unwrap(),
+            ChannelCustom::new(ChannelId::Unused, "Gap").unwrap(),
+            ChannelCustom::new(ChannelId::User(0x800), "Vendor").unwrap(),
+        ])
+        .unwrap();
+
+        assert_eq!(ChannelCustom::NAME_STORAGE_BYTES, 16);
+        assert_eq!(ChannelCustom::MAX_NAME_BYTES, 15);
+        assert_eq!(layout.channel_count(), 6);
+        assert_eq!(
+            layout.channels()[0].id(),
+            ChannelId::Native(Channel::FrontLeft)
+        );
+        assert_eq!(layout.channels()[0].name(), "Left");
+        assert!(layout.channels()[0].has_name());
+        assert_eq!(layout.channels()[1].name(), "");
+        assert!(!layout.channels()[1].has_name());
+        assert_eq!(layout.channel_from_index(2), Some(ChannelId::Ambisonic(2)));
+        assert_eq!(
+            layout
+                .index_from_channel(ChannelId::Native(Channel::FrontLeft))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            layout.index_from_channel(ChannelId::Ambisonic(2)).unwrap(),
+            2
+        );
+        assert_eq!(layout.index_from_channel(ChannelId::Unused).unwrap(), 4);
+        assert_eq!(
+            layout.index_from_channel(ChannelId::User(0x800)).unwrap(),
+            5
+        );
+        assert_eq!(layout.index_from_string("FL").unwrap(), 0);
+        assert_eq!(layout.index_from_string("AMBI2").unwrap(), 2);
+        assert_eq!(layout.index_from_string("FL@Left").unwrap(), 0);
+        assert_eq!(layout.index_from_string("@SecondLeft").unwrap(), 3);
+        assert_eq!(layout.index_from_string("UNSD@Gap").unwrap(), 4);
+        assert_eq!(layout.index_from_string("USR2048@Vendor").unwrap(), 5);
+        assert_eq!(
+            layout.describe(),
+            "6 channels (FL@Left+UNK+AMBI2@W+FL@SecondLeft+UNSD@Gap+USR2048@Vendor)"
+        );
+
+        for lookup in ["", "NOPE", "FL@", "FR@Left", "FL@Missing", "FL\0"] {
+            let err = layout.index_from_string(lookup).unwrap_err();
+            assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        }
+        for id in [
+            ChannelId::None,
+            ChannelId::Native(Channel::FrontRight),
+            ChannelId::Ambisonic(1024),
+        ] {
+            let err = layout.index_from_channel(id).unwrap_err();
+            assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        }
+    }
+
+    #[test]
+    fn custom_channel_layouts_reject_invalid_entries() {
+        for invalid in [
+            CustomChannelLayout::unknown(0),
+            CustomChannelLayout::new(Vec::new()),
+        ] {
+            let err = invalid.unwrap_err();
+            assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        }
+
+        let err = ChannelCustom::new(ChannelId::None, "").unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        let err = ChannelCustom::new(ChannelId::Ambisonic(1024), "").unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        let err = ChannelCustom::new(ChannelId::Unknown, "1234567890123456").unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        let err = ChannelCustom::new(ChannelId::Unknown, "bad\0name").unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+
+        let max_name = "123456789012345";
+        assert_eq!(
+            ChannelCustom::new(ChannelId::Unknown, max_name)
+                .unwrap()
+                .name(),
+            max_name
+        );
     }
 
     #[test]

@@ -5,8 +5,8 @@ use avutil::{
     compare_ts, crc32_ieee, digest_to_hex, md5, rescale, rescale_delta, rescale_q, rescale_q_rnd,
     rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1, sha224, sha256,
     sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
-    BufferPoolCallbacks, BufferRef, Channel, ChannelId, ChannelLayout, Crc32,
-    Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
+    BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId, ChannelLayout,
+    CustomChannelLayout, Crc32, Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
     FrameAudioServiceType,
     FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
@@ -9530,6 +9530,44 @@ fn exercise_fixtures() {
     );
     assert_eq!(ChannelId::from_canonical_name("AMBI1024"), None);
     assert_eq!(ChannelId::from_canonical_name("USR512"), None);
+    let custom_layout = CustomChannelLayout::new(vec![
+        ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "Left").unwrap(),
+        ChannelCustom::new(ChannelId::Unknown, "").unwrap(),
+        ChannelCustom::new(ChannelId::Ambisonic(1), "Y").unwrap(),
+        ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "SecondLeft").unwrap(),
+    ])
+    .unwrap();
+    assert_eq!(custom_layout.channel_count(), 4);
+    assert_eq!(custom_layout.channel_from_index(0), Some(ChannelId::Native(Channel::FrontLeft)));
+    assert_eq!(custom_layout.channel_from_index(4), None);
+    assert_eq!(
+        custom_layout
+            .index_from_channel(ChannelId::Native(Channel::FrontLeft))
+            .unwrap(),
+        0
+    );
+    assert_eq!(custom_layout.index_from_string("FL@Left").unwrap(), 0);
+    assert_eq!(custom_layout.index_from_string("@SecondLeft").unwrap(), 3);
+    assert_eq!(
+        custom_layout.describe(),
+        "4 channels (FL@Left+UNK+AMBI1@Y+FL@SecondLeft)"
+    );
+    assert_eq!(
+        custom_layout.index_from_string("FR@Left").unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelCustom::new(ChannelId::None, "")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelCustom::new(ChannelId::Unknown, "1234567890123456")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
     assert_eq!(
         digest_to_hex(&md5(b"abc")),
         "900150983cd24fb0d6963f7d28e17f72"
