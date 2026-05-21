@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-channel-layout` update: source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.c` confirmed the numeric-mask branch initializes `AV_CHANNEL_ORDER_NATIVE` with the exact nonzero mask. `NativeChannelMaskLayout` now preserves arbitrary nonzero native masks that are not modeled named layouts, including `0x5` and high-bit masks, with popcount channel counts, mask-bit-order index lookup, subset intersections, FFmpeg-shaped descriptions such as `2 channels (FL+FC)` and `1 channels (USR63)`, and native/custom equivalence helpers. `ChannelLayoutSpec::parse` still returns named `Native` layouts when a numeric mask maps exactly to the modeled inventory, but otherwise returns `NativeMask` instead of rejecting the mask. Focused unit validation, formatting, fuzz-package build/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, and diff checks passed. The component remains `implemented`, not `complete`, because full custom-map parsing, implicit/broad ambisonic parsing and retyping, oracle inventory parity, upstream FATE parity, and actual fuzz execution remain absent.
+
 Latest `avutil-channel-layout` update: source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.c` confirmed the `av_channel_layout_from_string()` numeric-mask branch uses `strtoull(..., base 0)`, requires a nonzero fully consumed value, rejects any input containing `-`, and initializes a native-order layout with the exact mask. The Rust parser now accepts numeric masks only when they map exactly to the modeled native `ChannelLayout` inventory, covering hex/decimal/octal and plus-prefixed forms such as `0x3`, `3`, `03`, and `+0x3`; arbitrary FFmpeg-valid native masks that do not map to a modeled layout, such as `0x5`, remain explicit invalid inputs until native layouts can carry arbitrary masks. Focused unit validation, formatting, fuzz-package build/clippy, avutil clippy, local component FATE, changed-path FATE, and diff checks passed. The component remains `implemented`, not `complete`, because arbitrary native masks, full custom-map parsing, implicit/broad ambisonic parsing and retyping, oracle inventory parity, upstream FATE parity, and actual fuzz execution remain absent.
 
 Latest `avutil-channel-layout` update: source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.c` confirmed the bounded `av_channel_layout_from_string()` count-suffix behavior used by native defaults and count-only unspecified layouts. `ChannelLayoutSpec::parse` now accepts current native layout names and `FL+FR`-style native expressions, `Nc` only when the modeled default count is native (`2c`, `10c`), `NC`/`N channels` as count-only unspecified layouts (`2C`, `9 channels`), and `N channels (<native channel-list>)` with count validation. Invalid zero counts, `9c`, mismatched or unterminated described lists, empty lists, trailing text, and NUL-containing strings return typed invalid-argument errors. Focused unit validation, formatting, fuzz-package build/clippy, avutil clippy, local component FATE, changed-path FATE, and diff checks passed. The component remains `implemented`, not `complete`, because numeric masks, full custom-map parsing, implicit/broad ambisonic parsing and retyping, oracle inventory parity, upstream FATE parity, and actual fuzz execution remain absent.
@@ -397,6 +399,18 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-channel-layout` arbitrary native-mask slice:
+  - `cargo test -p avutil channel_layout` (19 tests passed through Cargo's default target directory)
+  - `cargo fmt --all`
+  - `cargo fmt --all -- --check`
+  - `cargo clippy -p avutil --all-targets -- -D warnings`
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-channel-layout`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `git diff --check` (passed with CRLF warnings only)
 
 - Current `avutil-channel-layout` numeric-mask parser slice:
   - `Select-String -Path $env:TEMP\ffmpeg-channel-layout-8.1.1.c -Pattern 'av_channel_layout_from_string|av_channel_layout_from_mask|strtoull|parse_channel_list' -Context 0,90` (source-check only)
@@ -4879,7 +4893,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds bounded numeric native-mask parsing to `ChannelLayoutSpec::parse`, matching FFmpeg's branch order and base-0 number handling only when the mask resolves to an existing modeled native layout. It deliberately leaves arbitrary native-mask storage, full custom-map syntax, implicit ambisonic layout parsing, broad retyping, oracle inventory parity, upstream FATE parity, and actual fuzz execution unclaimed.
+`avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds `NativeChannelMaskLayout` and threads it through `ChannelLayoutSpec::parse`, so FFmpeg-valid arbitrary nonzero native masks are preserved by exact bitmask instead of being rejected when they do not map to a modeled named layout. It deliberately leaves full custom-map syntax, implicit ambisonic layout parsing, broad retyping, oracle inventory parity, upstream FATE parity, and actual fuzz execution unclaimed.
 
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds bounded `ChannelLayoutSpec::parse` coverage for source-checked count suffixes in `av_channel_layout_from_string()`: native layout names and current native channel expressions, `Nc` native defaults only, `NC`/`N channels` count-only unspecified layouts, and `N channels (<native channel-list>)` count validation. It does not claim numeric-mask parsing, full custom-map parsing, implicit ambisonic layout parsing, broad retyping, oracle inventory parity, upstream FATE parity, or actual fuzz execution.
 
@@ -5071,15 +5085,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Continue `avutil-channel-layout` with the next source-checked parsing gap: arbitrary native-mask representation, custom-map strings, or the `ambisonic <order>` branch of `av_channel_layout_from_string()`.
+1. Continue `avutil-channel-layout` with the next source-checked parsing gap: custom-map strings or the `ambisonic <order>` branch of `av_channel_layout_from_string()`.
 2. Add oracle-backed differential vectors for channel-layout default, describe, compare, subset, and string parsing once a pinned FFmpeg binary is available locally.
 3. Keep `avutil-channel-layout` below `complete` until full parsing, broad retyping, implicit ambisonic order semantics, oracle inventory, upstream FATE, and fuzz parity are proven.
 
 ## Known Blockers
 
-- Latest `avutil-channel-layout` numeric-mask parser coverage is limited to masks that map exactly to the current modeled native layout enum. FFmpeg's `AV_CHANNEL_ORDER_NATIVE` can carry arbitrary nonzero masks, so arbitrary native-mask representation and oracle calibration remain blockers before claiming full numeric-mask parity.
-
-- Latest `avutil-channel-layout` parser coverage is deliberately limited to current native names/channel expressions, modeled native masks, and count suffixes. Arbitrary numeric masks, full custom-map syntax, implicit/broad ambisonic parsing, broader retyping, full `ffmpeg -layouts` inventory comparison, upstream FATE parity, and actual fuzz execution remain blockers.
+- Latest `avutil-channel-layout` parser coverage now preserves arbitrary nonzero native masks, but remains deliberately limited to current native names/channel expressions, numeric native masks, and count suffixes. Full custom-map syntax, implicit/broad ambisonic parsing, broader retyping, full `ffmpeg -layouts` inventory comparison, upstream FATE parity, and actual fuzz execution remain blockers.
 
 - Latest `avutil-channel-layout` default-count coverage now follows the modeled source-order `channel_layout_map` entries, including counts 10, 12, 14, 16, and 24, and `ChannelLayoutSpec` now preserves unmodeled positive counts as `AV_CHANNEL_ORDER_UNSPEC`-style count-only layouts. Remaining blockers are full string parsing/retyping for unspecified layouts, broad native/custom/ambisonic retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC`, oracle inventory comparison, upstream FATE parity, and actual fuzz execution.
 
@@ -5168,6 +5180,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added `NativeChannelMaskLayout` for arbitrary nonzero FFmpeg native-order channel masks and wired it into `ChannelLayoutSpec`. Modeled numeric masks still return named `Native` layouts, while unmodeled valid masks such as `0x5` and `0x8000000000000000` now preserve exact bitmasks, describe/index in mask-bit order, compute subsets, validate counts, and compare against native, mask, and custom layouts by FFmpeg-style channel IDs. Unit tests and the `avutil_core_models` fuzz target fixtures cover arbitrary low-bit/high-bit masks plus parser behavior; docs and the ledger now record this as implemented but not complete. Validation passed with focused avutil channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run and execution, formatting, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`, because full custom-map syntax, implicit/broad ambisonic parsing and retyping, oracle comparison, upstream FATE, and actual fuzz execution remain absent.
 
 Latest slice: added source-checked numeric-mask parsing to `ChannelLayoutSpec::parse` for the modeled native layout subset. The parser now follows FFmpeg's branch order after described channel lists and before count suffixes, accepting base-0 nonzero masks with no `-` only when `ChannelLayout::from_channel_mask` can resolve them to a modeled layout. Unit tests and the `avutil_core_models` fuzz target fixtures cover hex/decimal/octal/plus-prefixed stereo masks, a generated 5.1 mask, and invalid zero, negative, malformed, and valid-but-unmodeled masks. Validation passed with focused avutil channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE, formatting, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`, because arbitrary native masks, custom-map syntax, implicit/broad ambisonic parsing and retyping, oracle comparison, upstream FATE, and actual fuzz execution remain absent.
 

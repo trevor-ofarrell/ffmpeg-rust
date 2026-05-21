@@ -23,7 +23,7 @@ pub use buffer::{BufferPool, BufferPoolCallbacks, BufferRef, BufferSlice};
 pub use byteio::{ByteReader, ByteWriter};
 pub use channel_layout::{
     Channel, ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec, CustomChannelLayout,
-    UnspecifiedChannelLayout,
+    NativeChannelMaskLayout, UnspecifiedChannelLayout,
 };
 pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};
 pub use error::{

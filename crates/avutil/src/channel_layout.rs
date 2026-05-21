@@ -1545,6 +1545,115 @@ impl ChannelLayout {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NativeChannelMaskLayout {
+    mask: u64,
+}
+
+impl NativeChannelMaskLayout {
+    pub fn new(mask: u64) -> AvResult<Self> {
+        if mask == 0 {
+            return Err(AvError::invalid_argument(
+                "native channel mask layout must have at least one channel",
+            ));
+        }
+        Ok(Self { mask })
+    }
+
+    pub fn channel_mask(self) -> u64 {
+        self.mask
+    }
+
+    pub fn channel_count(self) -> u16 {
+        u16::try_from(self.mask.count_ones()).expect("u64 bit count fits u16")
+    }
+
+    pub fn describe(self) -> String {
+        if let Some(layout) = ChannelLayout::from_channel_mask(self.mask) {
+            return layout.name().to_owned();
+        }
+
+        let mut description = format!("{} channels (", self.channel_count());
+        for index in 0..usize::from(self.channel_count()) {
+            if index != 0 {
+                description.push('+');
+            }
+            if let Some(channel) = self.channel_from_index(index) {
+                description.push_str(&channel.name());
+            }
+        }
+        description.push(')');
+        description
+    }
+
+    pub fn subset_mask(self, mask: u64) -> u64 {
+        self.mask & mask
+    }
+
+    pub fn channel_from_index(self, index: usize) -> Option<ChannelId> {
+        let mut remaining = index;
+        for bit in 0..64 {
+            let channel_mask = 1u64 << bit;
+            if self.mask & channel_mask == 0 {
+                continue;
+            }
+            if remaining == 0 {
+                return Some(ChannelId::from_raw(bit));
+            }
+            remaining -= 1;
+        }
+        None
+    }
+
+    pub fn index_from_channel(self, id: ChannelId) -> AvResult<usize> {
+        let raw_id = id.raw_id();
+        if !(0..64).contains(&raw_id) {
+            return Err(AvError::invalid_argument(
+                "channel is not present in native mask layout",
+            ));
+        }
+        let channel_mask = 1u64 << raw_id;
+        if self.mask & channel_mask == 0 {
+            return Err(AvError::invalid_argument(
+                "channel is not present in native mask layout",
+            ));
+        }
+        Ok((self.mask & (channel_mask - 1)).count_ones() as usize)
+    }
+
+    pub fn validate_channel_count(self, channels: u16) -> AvResult<()> {
+        if self.channel_count() != channels {
+            return Err(AvError::invalid_argument(format!(
+                "native channel mask layout has {} channels, got {channels}",
+                self.channel_count()
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn is_equivalent_to_native(self, other: ChannelLayout) -> bool {
+        self.mask == other.channel_mask()
+    }
+
+    pub fn is_equivalent_to_mask(self, other: Self) -> bool {
+        self.mask == other.mask
+    }
+
+    pub fn is_equivalent_to_custom(self, other: &CustomChannelLayout) -> bool {
+        self.channel_count() == other.channel_count()
+            && (0..usize::from(self.channel_count()))
+                .all(|index| self.channel_from_index(index) == other.channel_from_index(index))
+    }
+}
+
+impl From<ChannelLayout> for NativeChannelMaskLayout {
+    fn from(layout: ChannelLayout) -> Self {
+        Self {
+            mask: layout.channel_mask(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UnspecifiedChannelLayout {
     channels: u16,
 }
@@ -1601,12 +1710,17 @@ impl UnspecifiedChannelLayout {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ChannelLayoutSpec {
     Native(ChannelLayout),
+    NativeMask(NativeChannelMaskLayout),
     Unspecified(UnspecifiedChannelLayout),
 }
 
 impl ChannelLayoutSpec {
     pub fn native(layout: ChannelLayout) -> Self {
         Self::Native(layout)
+    }
+
+    pub fn native_mask(mask: u64) -> AvResult<Self> {
+        Ok(Self::NativeMask(NativeChannelMaskLayout::new(mask)?))
     }
 
     pub fn unspecified(channels: u16) -> AvResult<Self> {
@@ -1636,12 +1750,10 @@ impl ChannelLayoutSpec {
         }
 
         if let Some(mask) = parse_numeric_channel_mask(trimmed) {
-            let Some(layout) = ChannelLayout::from_channel_mask(mask) else {
-                return Err(AvError::invalid_argument(format!(
-                    "native channel mask 0x{mask:x} is not a modeled layout"
-                )));
-            };
-            return Ok(Self::Native(layout));
+            if let Some(layout) = ChannelLayout::from_channel_mask(mask) {
+                return Ok(Self::Native(layout));
+            }
+            return Ok(Self::NativeMask(NativeChannelMaskLayout::new(mask)?));
         }
 
         if let Some(channels) = parse_count_suffix(trimmed, "c") {
@@ -1682,6 +1794,15 @@ impl ChannelLayoutSpec {
     pub fn as_native(self) -> Option<ChannelLayout> {
         match self {
             Self::Native(layout) => Some(layout),
+            Self::NativeMask(_) => None,
+            Self::Unspecified(_) => None,
+        }
+    }
+
+    pub fn as_native_mask(self) -> Option<NativeChannelMaskLayout> {
+        match self {
+            Self::Native(layout) => Some(NativeChannelMaskLayout::from(layout)),
+            Self::NativeMask(layout) => Some(layout),
             Self::Unspecified(_) => None,
         }
     }
@@ -1689,6 +1810,7 @@ impl ChannelLayoutSpec {
     pub fn as_unspecified(self) -> Option<UnspecifiedChannelLayout> {
         match self {
             Self::Native(_) => None,
+            Self::NativeMask(_) => None,
             Self::Unspecified(layout) => Some(layout),
         }
     }
@@ -1700,6 +1822,7 @@ impl ChannelLayoutSpec {
     pub fn channel_count(self) -> u16 {
         match self {
             Self::Native(layout) => layout.channel_count(),
+            Self::NativeMask(layout) => layout.channel_count(),
             Self::Unspecified(layout) => layout.channel_count(),
         }
     }
@@ -1707,6 +1830,7 @@ impl ChannelLayoutSpec {
     pub fn describe(self) -> String {
         match self {
             Self::Native(layout) => layout.name().to_owned(),
+            Self::NativeMask(layout) => layout.describe(),
             Self::Unspecified(layout) => layout.describe(),
         }
     }
@@ -1714,6 +1838,7 @@ impl ChannelLayoutSpec {
     pub fn subset_mask(self, mask: u64) -> u64 {
         match self {
             Self::Native(layout) => layout.subset_mask(mask),
+            Self::NativeMask(layout) => layout.subset_mask(mask),
             Self::Unspecified(layout) => layout.subset_mask(mask),
         }
     }
@@ -1721,6 +1846,7 @@ impl ChannelLayoutSpec {
     pub fn channel_from_index(self, index: usize) -> Option<ChannelId> {
         match self {
             Self::Native(layout) => layout.channel_from_index(index),
+            Self::NativeMask(layout) => layout.channel_from_index(index),
             Self::Unspecified(layout) => layout.channel_from_index(index),
         }
     }
@@ -1728,6 +1854,7 @@ impl ChannelLayoutSpec {
     pub fn validate_channel_count(self, channels: u16) -> AvResult<()> {
         match self {
             Self::Native(layout) => layout.validate_channel_count(channels),
+            Self::NativeMask(layout) => layout.validate_channel_count(channels),
             Self::Unspecified(layout) => layout.validate_channel_count(channels),
         }
     }
@@ -1735,18 +1862,21 @@ impl ChannelLayoutSpec {
     pub fn is_equivalent_to(self, other: Self) -> bool {
         match (self, other) {
             (Self::Native(left), Self::Native(right)) => left.is_equivalent_to(right),
+            (Self::Native(left), Self::NativeMask(right)) => right.is_equivalent_to_native(left),
+            (Self::NativeMask(left), Self::Native(right)) => left.is_equivalent_to_native(right),
+            (Self::NativeMask(left), Self::NativeMask(right)) => left.is_equivalent_to_mask(right),
             (Self::Unspecified(left), Self::Unspecified(right)) => {
                 left.is_equivalent_to_unspecified(right)
             }
-            (Self::Native(_), Self::Unspecified(_)) | (Self::Unspecified(_), Self::Native(_)) => {
-                false
-            }
+            (Self::Native(_) | Self::NativeMask(_), Self::Unspecified(_))
+            | (Self::Unspecified(_), Self::Native(_) | Self::NativeMask(_)) => false,
         }
     }
 
     pub fn is_equivalent_to_native(self, other: ChannelLayout) -> bool {
         match self {
             Self::Native(layout) => layout.is_equivalent_to(other),
+            Self::NativeMask(layout) => layout.is_equivalent_to_native(other),
             Self::Unspecified(layout) => layout.is_equivalent_to_native(other),
         }
     }
@@ -1754,6 +1884,7 @@ impl ChannelLayoutSpec {
     pub fn is_equivalent_to_custom(self, other: &CustomChannelLayout) -> bool {
         match self {
             Self::Native(layout) => layout.is_equivalent_to_custom(other),
+            Self::NativeMask(layout) => layout.is_equivalent_to_custom(other),
             Self::Unspecified(layout) => layout.is_equivalent_to_custom(other),
         }
     }
@@ -3665,6 +3796,67 @@ mod tests {
     }
 
     #[test]
+    fn native_mask_layouts_model_ffmpeg_arbitrary_native_masks() {
+        let mask = Channel::FrontLeft.mask() | Channel::FrontCenter.mask();
+        let layout = NativeChannelMaskLayout::new(mask).unwrap();
+        assert_eq!(layout.channel_mask(), mask);
+        assert_eq!(layout.channel_count(), 2);
+        assert_eq!(layout.describe(), "2 channels (FL+FC)");
+        assert_eq!(
+            layout.subset_mask(Channel::FrontCenter.mask() | Channel::FrontRight.mask()),
+            Channel::FrontCenter.mask()
+        );
+        assert_eq!(
+            layout.channel_from_index(0),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+        assert_eq!(
+            layout.channel_from_index(1),
+            Some(ChannelId::Native(Channel::FrontCenter))
+        );
+        assert_eq!(layout.channel_from_index(2), None);
+        assert_eq!(
+            layout
+                .index_from_channel(ChannelId::Native(Channel::FrontCenter))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            layout
+                .index_from_channel(ChannelId::Native(Channel::FrontRight))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert!(layout.validate_channel_count(2).is_ok());
+        assert_eq!(
+            layout.validate_channel_count(1).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert!(!layout.is_equivalent_to_native(ChannelLayout::stereo()));
+        assert!(layout.is_equivalent_to_mask(
+            NativeChannelMaskLayout::new(Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
+                .unwrap()
+        ));
+
+        let custom_equivalent = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontCenter), "").unwrap(),
+        ])
+        .unwrap();
+        assert!(layout.is_equivalent_to_custom(&custom_equivalent));
+
+        let high_bit = NativeChannelMaskLayout::new(1u64 << 63).unwrap();
+        assert_eq!(high_bit.channel_count(), 1);
+        assert_eq!(high_bit.channel_from_index(0), Some(ChannelId::User(63)));
+        assert_eq!(high_bit.describe(), "1 channels (USR63)");
+        assert_eq!(
+            NativeChannelMaskLayout::new(0).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
+
+    #[test]
     fn layout_spec_parser_models_ffmpeg_count_suffixes() {
         assert_eq!(
             ChannelLayoutSpec::parse("stereo").unwrap(),
@@ -3698,6 +3890,35 @@ mod tests {
             ChannelLayoutSpec::parse(&format!("0x{:x}", ChannelLayout::five_one().channel_mask()))
                 .unwrap(),
             ChannelLayoutSpec::Native(ChannelLayout::five_one())
+        );
+        let arbitrary_mask = Channel::FrontLeft.mask() | Channel::FrontCenter.mask();
+        let arbitrary_layout = NativeChannelMaskLayout::new(arbitrary_mask).unwrap();
+        let arbitrary_spec = ChannelLayoutSpec::parse("0x5").unwrap();
+        assert_eq!(
+            arbitrary_spec,
+            ChannelLayoutSpec::NativeMask(arbitrary_layout)
+        );
+        assert_eq!(arbitrary_spec.as_native(), None);
+        assert_eq!(arbitrary_spec.as_native_mask(), Some(arbitrary_layout));
+        assert_eq!(arbitrary_spec.channel_count(), 2);
+        assert_eq!(arbitrary_spec.describe(), "2 channels (FL+FC)");
+        assert_eq!(
+            arbitrary_spec.subset_mask(Channel::FrontCenter.mask() | Channel::FrontRight.mask()),
+            Channel::FrontCenter.mask()
+        );
+        assert_eq!(
+            arbitrary_spec.channel_from_index(1),
+            Some(ChannelId::Native(Channel::FrontCenter))
+        );
+        assert!(arbitrary_spec.is_equivalent_to(ChannelLayoutSpec::NativeMask(arbitrary_layout)));
+        assert!(
+            !arbitrary_spec.is_equivalent_to(ChannelLayoutSpec::Native(ChannelLayout::stereo()))
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("0x8000000000000000")
+                .unwrap()
+                .describe(),
+            "1 channels (USR63)"
         );
         assert_eq!(
             ChannelLayoutSpec::parse("10c").unwrap(),
@@ -3740,7 +3961,6 @@ mod tests {
             "-0x3",
             "09",
             "0x3g",
-            "0x5",
             "FL\0FR",
         ] {
             let err = ChannelLayoutSpec::parse(input).unwrap_err();

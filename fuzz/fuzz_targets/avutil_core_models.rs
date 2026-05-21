@@ -6,7 +6,8 @@ use avutil::{
     rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1, sha224, sha256,
     sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId, ChannelLayout,
-    ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
+    ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame, FrameA53ClosedCaptions,
+    FrameActiveFormatDescription, FrameAmbientViewingEnvironment, NativeChannelMaskLayout,
     FrameAudioServiceType,
     FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
@@ -4516,6 +4517,34 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(
         ChannelLayoutSpec::parse(&layout.channel_mask().to_string()).unwrap(),
         ChannelLayoutSpec::Native(layout)
+    );
+    let arbitrary_mask = Channel::FrontLeft.mask() | Channel::FrontCenter.mask();
+    let arbitrary_layout = NativeChannelMaskLayout::new(arbitrary_mask).unwrap();
+    let arbitrary_spec = ChannelLayoutSpec::parse("0x5").unwrap();
+    assert_eq!(
+        arbitrary_spec,
+        ChannelLayoutSpec::NativeMask(arbitrary_layout)
+    );
+    assert_eq!(arbitrary_spec.as_native(), None);
+    assert_eq!(arbitrary_spec.as_native_mask(), Some(arbitrary_layout));
+    assert_eq!(arbitrary_spec.channel_count(), 2);
+    assert_eq!(arbitrary_spec.describe(), "2 channels (FL+FC)");
+    assert_eq!(
+        arbitrary_spec.channel_from_index(1),
+        Some(ChannelId::Native(Channel::FrontCenter))
+    );
+    assert_eq!(
+        arbitrary_spec.subset_mask(Channel::FrontCenter.mask() | Channel::FrontRight.mask()),
+        Channel::FrontCenter.mask()
+    );
+    assert!(!arbitrary_spec.is_equivalent_to(ChannelLayoutSpec::Native(
+        ChannelLayout::stereo()
+    )));
+    assert_eq!(
+        ChannelLayoutSpec::parse("0x8000000000000000")
+            .unwrap()
+            .channel_from_index(0),
+        Some(ChannelId::User(63))
     );
     assert_eq!(ChannelLayout::from_channel_mask(layout.channel_mask()), Some(layout));
     assert_eq!(ChannelLayout::from_channels(layout.channels()), Some(layout));
@@ -9643,6 +9672,28 @@ fn exercise_fixtures() {
         ChannelLayoutSpec::parse(&ChannelLayout::five_one().channel_mask().to_string()).unwrap(),
         ChannelLayoutSpec::Native(ChannelLayout::five_one())
     );
+    let arbitrary_layout =
+        NativeChannelMaskLayout::new(Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
+            .unwrap();
+    let arbitrary_spec = ChannelLayoutSpec::parse("0x5").unwrap();
+    assert_eq!(
+        arbitrary_spec,
+        ChannelLayoutSpec::NativeMask(arbitrary_layout)
+    );
+    assert_eq!(arbitrary_spec.as_native(), None);
+    assert_eq!(arbitrary_spec.as_native_mask(), Some(arbitrary_layout));
+    assert_eq!(arbitrary_spec.channel_count(), 2);
+    assert_eq!(arbitrary_spec.describe(), "2 channels (FL+FC)");
+    assert_eq!(
+        arbitrary_spec.channel_from_index(1),
+        Some(ChannelId::Native(Channel::FrontCenter))
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("0x8000000000000000")
+            .unwrap()
+            .describe(),
+        "1 channels (USR63)"
+    );
     assert_eq!(
         ChannelLayoutSpec::parse("10c").unwrap(),
         ChannelLayoutSpec::Native(ChannelLayout::five_one_four())
@@ -9666,7 +9717,6 @@ fn exercise_fixtures() {
         "-0x3",
         "09",
         "0x3g",
-        "0x5",
     ] {
         assert_eq!(
             ChannelLayoutSpec::parse(invalid).unwrap_err().kind(),
