@@ -811,21 +811,28 @@ id = "oracle-inventory"
 kind = "utility"
 ffmpeg_name = "ffmpeg inventory commands"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "complete"
 priority = 2
-oracle_command = "cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg --out compat/ffmpeg-8.1.1"
-rust_command = "cargo run -p oracle -- --help"
+oracle_command = "cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1"
+rust_command = "cargo test -p oracle"
 unit_tests = [
   "tests::inventory_command_list_matches_required_ffmpeg_surface",
   "tests::parse_inventory_args_accepts_required_paths",
   "tests::parse_inventory_args_rejects_missing_or_unknown_arguments",
   "tests::manifest_helpers_record_target_profile_and_command_status",
+  "tests::command_status_must_succeed_for_inventory",
+  "tests::version_output_must_match_pinned_target",
   "tests::write_command_output_keeps_stdout_and_stderr_sections",
 ]
-differential_tests = []
-fate_tests = ["tests/fate/mappings.txt:oracle-inventory|local-oracle-unit"]
+differential_tests = [
+  "not_applicable: oracle-inventory is the pinned oracle snapshot generator; completion is proven by local unit tests plus a real pinned FFmpeg 8.1.1 inventory run",
+]
+fate_tests = [
+  "tests/fate/mappings.txt:oracle-inventory|local-oracle-unit",
+  "not_applicable: upstream FFmpeg FATE has no standalone inventory-generation target; this utility feeds oracle/FATE parity for later components",
+]
 fuzz_targets = []
-notes = "Inventory tool captures required command outputs from the pinned FFmpeg oracle. Local unit coverage pins the exact required ffmpeg inventory command list, inventory argument parsing, target/profile manifest header, per-command manifest status records, and stdout/stderr section wrapping. The pinned FFmpeg 8.1.1 oracle is installed locally through WSL wrappers under ignored third_party/ffmpeg-oracle/, and `cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1` generated the local ignored compat/ffmpeg-8.1.1 snapshots. The local FATE-runner smoke mapping executes the oracle unit tests only and does not count as upstream FATE parity."
+notes = "Complete for the selected ffmpeg-8.1.1-default-native profile. Inventory tooling captures every required command output from the pinned FFmpeg oracle: -version, -buildconf, -formats, -codecs, -decoders, -encoders, -muxers, -demuxers, -protocols, -filters, -bsfs, -pix_fmts, -sample_fmts, -layouts, and -colors. Local unit coverage pins the exact required command list, argument parsing, target/profile manifest header, per-command manifest status records, nonzero command-status rejection, pinned `ffmpeg version 8.1.1` banner validation, and stdout/stderr snapshot wrapping. The pinned FFmpeg 8.1.1 oracle is installed locally through WSL wrappers under ignored third_party/ffmpeg-oracle/, and `cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1` generated the local ignored compat/ffmpeg-8.1.1 snapshots after the pinned-version guard was added. The local FATE-runner smoke mapping executes the oracle unit tests; upstream FFmpeg FATE has no standalone inventory-generation target. This utility does not parse untrusted media byte streams, so fuzz execution is not required for completion."
 blocked_reason = ""
 
 [[component]]

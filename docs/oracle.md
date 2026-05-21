@@ -57,6 +57,8 @@ The inventory tool captures:
 
 Each command is written as a text snapshot under `compat/ffmpeg-8.1.1/`, with `inventory.toml` recording command status.
 
+The inventory tool validates that the supplied oracle reports a first-line `ffmpeg version 8.1.1` banner and fails if any required inventory command exits nonzero. This prevents snapshots from being labeled as the pinned target when the caller accidentally points at another FFmpeg build.
+
 ## FATE Samples
 
 FATE samples are expected to be obtained using upstream FFmpeg's documented `make fate-rsync` flow against a local samples directory. This repository does not yet contain samples or an upstream media FATE target mapping.

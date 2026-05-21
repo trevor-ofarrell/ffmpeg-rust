@@ -83,12 +83,12 @@ fn inventory(args: Vec<OsString>) -> Result<(), String> {
         let file_name = format!("{name}.txt");
         let path = out.join(&file_name);
         write_command_output(&path, &output.stdout, &output.stderr)?;
-        append_manifest_command(
-            &mut manifest,
-            name,
-            &file_name,
-            output.status.code().unwrap_or(-1),
-        );
+        let status = output.status.code().unwrap_or(-1);
+        append_manifest_command(&mut manifest, name, &file_name, status);
+        ensure_command_succeeded(flags, status)?;
+        if *name == "version" {
+            validate_version_output(&output.stdout)?;
+        }
     }
 
     fs::write(out.join("inventory.toml"), manifest)
@@ -132,6 +132,33 @@ fn append_manifest_command(manifest: &mut String, name: &str, file_name: &str, s
     manifest.push_str(&format!(
         "[[commands]]\nname = \"{name}\"\nfile = \"{file_name}\"\nstatus = {status}\n\n"
     ));
+}
+
+fn ensure_command_succeeded(flags: &[&str], status: i32) -> Result<(), String> {
+    if status == 0 {
+        return Ok(());
+    }
+
+    Err(format!(
+        "ffmpeg {} exited with status {status}",
+        flags.join(" ")
+    ))
+}
+
+fn validate_version_output(stdout: &[u8]) -> Result<(), String> {
+    let text = String::from_utf8_lossy(stdout);
+    let first_line = text
+        .lines()
+        .next()
+        .ok_or_else(|| "ffmpeg -version produced no stdout".to_string())?;
+    let expected = format!("ffmpeg version {TARGET_VERSION}");
+    if first_line.starts_with(&expected) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "ffmpeg oracle version mismatch: expected `{expected}`, got `{first_line}`"
+    ))
 }
 
 fn write_command_output(path: &Path, stdout: &[u8], stderr: &[u8]) -> Result<(), String> {
@@ -228,6 +255,35 @@ mod tests {
         assert!(manifest.contains("ffmpeg = \"oracle-ffmpeg\""));
         assert!(manifest.contains("name = \"formats\"\nfile = \"formats.txt\"\nstatus = 0"));
         assert!(manifest.contains("name = \"filters\"\nfile = \"filters.txt\"\nstatus = 1"));
+    }
+
+    #[test]
+    fn command_status_must_succeed_for_inventory() {
+        ensure_command_succeeded(&["-version"], 0).unwrap();
+        assert_eq!(
+            ensure_command_succeeded(&["-badflag"], 1).unwrap_err(),
+            "ffmpeg -badflag exited with status 1"
+        );
+    }
+
+    #[test]
+    fn version_output_must_match_pinned_target() {
+        validate_version_output(
+            b"ffmpeg version 8.1.1 Copyright (c) 2000-2026 the FFmpeg developers\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            validate_version_output(
+                b"ffmpeg version 8.2 Copyright (c) 2000-2026 the FFmpeg developers\n"
+            )
+            .unwrap_err(),
+            "ffmpeg oracle version mismatch: expected `ffmpeg version 8.1.1`, got `ffmpeg version 8.2 Copyright (c) 2000-2026 the FFmpeg developers`"
+        );
+        assert_eq!(
+            validate_version_output(b"").unwrap_err(),
+            "ffmpeg -version produced no stdout"
+        );
     }
 
     #[test]
