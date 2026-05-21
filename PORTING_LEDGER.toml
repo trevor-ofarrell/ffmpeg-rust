@@ -952,6 +952,9 @@ unit_tests = [
   "bitwriter::tests::writes_msb_first_bits_across_byte_boundaries",
   "bitwriter::tests::write_aligned_bytes_appends_without_bit_iteration",
   "bitwriter::tests::write_aligned_bytes_rejects_unaligned_without_mutation",
+  "bitwriter::tests::truncate_bits_masks_partial_tail_and_allows_rewrite",
+  "bitwriter::tests::truncate_bits_rejects_growth_without_mutation",
+  "bitwriter::tests::clear_resets_bits_and_storage",
   "bitwriter::tests::round_trips_with_bitreader",
   "bitwriter::tests::byte_align_zero_pads_partial_byte",
   "bitwriter::tests::zero_bit_zero_value_write_is_noop",
@@ -968,7 +971,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-bitwriter|local-avutil-unit"]
 fuzz_targets = ["avutil_bitreader"]
-notes = "Bounded MSB-first bit writer implemented with unsigned writes, signed writes, aligned byte-slice appends, unsigned and signed Exp-Golomb writes, signed fit validation, and no-mutation failure invariants. Aligned byte writes validate byte alignment and bit-count overflow before mutation. Exp-Golomb coverage includes exact small-code vectors, signed round trips, u64::MAX unsigned round trips, and i64::MIN signed rejection without mutation. Build-checked cargo-fuzz target avutil_bitreader also exercises unsigned write validation, signed write validation, aligned byte writes, Exp-Golomb writes, cursor invariants, and byte alignment, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper PutBitContext compatibility vectors and oracle/FATE parity are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the bitwriter unit filter only and does not count as upstream FATE parity."
+notes = "Bounded MSB-first bit writer implemented with unsigned writes, signed writes, aligned byte-slice appends, checked bit truncation with tail-bit masking, clear/reset support, unsigned and signed Exp-Golomb writes, signed fit validation, and no-mutation failure invariants. Aligned byte writes validate byte alignment and bit-count overflow before mutation. Checked truncation refuses growth without mutating state, masks unused tail bits after partial-byte truncation, and allows later writes to resume at the truncated bit position. Exp-Golomb coverage includes exact small-code vectors, signed round trips, u64::MAX unsigned round trips, and i64::MIN signed rejection without mutation. Build-checked cargo-fuzz target avutil_bitreader also exercises unsigned write validation, signed write validation, aligned byte writes, truncation, clear/reset, Exp-Golomb writes, cursor invariants, and byte alignment, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper PutBitContext compatibility vectors and oracle/FATE parity are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the bitwriter unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

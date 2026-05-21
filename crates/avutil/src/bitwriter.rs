@@ -1,4 +1,4 @@
-use crate::{AvError, AvResult};
+use crate::{AvError, AvErrorKind, AvResult};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BitWriter {
@@ -40,6 +40,37 @@ impl BitWriter {
 
     pub fn into_inner(self) -> Vec<u8> {
         self.data
+    }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
+        self.bit_position = 0;
+    }
+
+    pub fn truncate_bits(&mut self, bit_position: usize) -> AvResult<()> {
+        if bit_position > self.bit_position {
+            return Err(AvError::new(
+                AvErrorKind::EndOfFile,
+                format!(
+                    "bit truncate out of range: offset {bit_position}, length {}",
+                    self.bit_position
+                ),
+            ));
+        }
+
+        let byte_len = bit_position / 8 + usize::from(bit_position % 8 != 0);
+        self.data.truncate(byte_len);
+        self.bit_position = bit_position;
+
+        let retained_bits = bit_position % 8;
+        if retained_bits != 0 {
+            let mask = u8::MAX << (8 - retained_bits);
+            if let Some(last) = self.data.last_mut() {
+                *last &= mask;
+            }
+        }
+
+        Ok(())
     }
 
     pub fn write_aligned_bytes(&mut self, bytes: &[u8]) -> AvResult<()> {
@@ -192,7 +223,7 @@ fn signed_exp_golomb_code_num(value: i64) -> AvResult<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AvErrorKind, BitReader};
+    use crate::BitReader;
 
     fn bits_from_bytes(bytes: &[u8], bit_len: usize) -> String {
         let mut bits = String::with_capacity(bit_len);
@@ -263,6 +294,53 @@ mod tests {
         writer.byte_align_zero();
         writer.write_aligned_bytes(&[]).unwrap();
         assert_eq!(writer.as_slice(), &[0b1010_0000]);
+        assert_eq!(writer.bit_position(), 8);
+    }
+
+    #[test]
+    fn truncate_bits_masks_partial_tail_and_allows_rewrite() {
+        let mut writer = BitWriter::new();
+        writer.write_bits(0xff, 8).unwrap();
+        writer.write_bits(0b1010_1010, 8).unwrap();
+
+        writer.truncate_bits(11).unwrap();
+
+        assert_eq!(writer.bit_position(), 11);
+        assert_eq!(writer.as_slice(), &[0xff, 0b1010_0000]);
+
+        writer.write_bits(0b11, 2).unwrap();
+
+        assert_eq!(writer.bit_position(), 13);
+        assert_eq!(writer.as_slice(), &[0xff, 0b1011_1000]);
+    }
+
+    #[test]
+    fn truncate_bits_rejects_growth_without_mutation() {
+        let mut writer = BitWriter::new();
+        writer.write_bits(0b101, 3).unwrap();
+        let before = writer.as_slice().to_vec();
+        let before_position = writer.bit_position();
+
+        let err = writer.truncate_bits(4).unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(writer.as_slice(), before.as_slice());
+        assert_eq!(writer.bit_position(), before_position);
+    }
+
+    #[test]
+    fn clear_resets_bits_and_storage() {
+        let mut writer = BitWriter::new();
+        writer.write_bits(0b101, 3).unwrap();
+
+        writer.clear();
+
+        assert_eq!(writer.bit_position(), 0);
+        assert!(writer.is_empty());
+        assert!(writer.as_slice().is_empty());
+
+        writer.write_aligned_bytes(&[0xab]).unwrap();
+        assert_eq!(writer.as_slice(), &[0xab]);
         assert_eq!(writer.bit_position(), 8);
     }
 

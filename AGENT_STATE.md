@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-bitwriter` update: `BitWriter` now has clear/reset support and checked bit-level truncation. `truncate_bits` rejects attempts to grow past the written bit count without mutation, truncates storage to the retained bit length, masks unused bits in a partial tail byte, and allows later writes to resume exactly at the truncated bit position. Local unit tests and the build-checked `avutil_bitreader` fuzz target cover clear/reset, truncate success, tail masking, truncation no-mutation failures, and continued write behavior. The component remains `implemented`, not `complete`, because pinned PutBitContext differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
+
 Latest `avutil-timebase` update: `add_stable` now models the source-shaped signed `av_add_stable` branch for bounded Rust inputs. Exact negative tick increments subtract from the timestamp, fractional negative increments keep the timestamp unchanged through the same `m < d` branch as pinned FFmpeg 8.1.1 `libavutil/mathematics.c`, and exact-result overflow is reported as a typed Rust error instead of relying on C's bounded/undefined timestamp behavior. Local unit tests and the shared `avutil_core_models` fuzz harness cover signed stable-add inputs against an independent model. The component remains `implemented`, not `complete`, because pinned differential vectors, upstream FATE parity, actual fuzz execution, and out-of-range C behavior calibration are still incomplete.
 
 Latest `avutil-timebase` update: `rescale_delta` now models FFmpeg 8.1.1 `av_rescale_delta`-style stateful timestamp conversion from `libavutil/mathematics.c`. It covers first-call initialization from `AV_NOPTS_VALUE`, zero-duration/simple-round paths, reuse of an in-window `last` sample/frame timestamp, clipping to the source timestamp window, fallback when state is outside the accepted window, positive time-base validation, FFmpeg-int nonnegative duration validation, and no `last` mutation on typed validation or overflow errors. Local unit tests and the shared `avutil_core_models` fuzz harness cover the helper against an independent model. The component remains `implemented`, not `complete`, because pinned differential vectors, upstream FATE parity, actual fuzz execution, and exact out-of-range C behavior calibration are still incomplete.
@@ -355,6 +357,19 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-bitwriter` truncate/reset slice:
+  - `cargo fmt --all`
+  - `cargo test -p avutil bitwriter --target-dir target-codex`
+  - `cargo test -p avutil bitreader --target-dir target-codex`
+  - `cargo clippy -p avutil --all-targets --target-dir target-codex -- -D warnings`
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo fmt --all -- --check`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-bitwriter`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `git diff --check`
 
 - Current `avutil-timebase` signed stable-add slice:
   - `cargo fmt --all`
@@ -4182,6 +4197,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-bitwriter` truncate/reset slice: no Rust assertion, clippy, local FATE, formatting, or diff-hygiene failures were observed. The implementation intentionally records missing pinned PutBitContext oracle vectors, upstream FATE parity, and actual fuzz execution as blockers instead of claiming completion.
+
 - Current `avutil-timebase` signed stable-add slice: no Rust assertion, clippy, local FATE, formatting, or diff-hygiene failures were observed. The implementation intentionally records missing pinned oracle vectors, upstream FATE parity, actual fuzz execution, and out-of-range C behavior calibration as blockers instead of claiming completion.
 
 - Current `avutil-timebase` rescale-delta slice: no Rust assertion, clippy, local FATE, or formatting failures were observed. The implementation intentionally records missing pinned oracle vectors, upstream FATE parity, actual fuzz execution, and negative `av_add_stable` calibration as blockers instead of claiming completion.
@@ -4510,6 +4527,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-bitwriter` is the active infrastructure focus for this turn. The concrete change adds checked bit-level truncation and clear/reset support to the bounded MSB-first writer, with unit and fuzz-harness invariant coverage for no-mutation failure behavior and masked partial-byte tails. It does not claim pinned PutBitContext differential parity, upstream FATE parity, or actual fuzz execution.
+
 `avutil-timebase` is the active infrastructure focus for this turn. The latest change extends source-checked `av_add_stable` behavior from positive increments to bounded signed increments: exact negative tick increments subtract, fractional negative increments keep the current timestamp unchanged, and exact-result overflow becomes a typed Rust error. It does not claim pinned differential parity, upstream FATE parity, actual fuzz execution, or out-of-range C edge parity yet.
 
 `avutil-timebase` was the active infrastructure focus for the prior turn. That change added source-checked `av_rescale_delta`-style stateful timestamp conversion on top of the existing FFmpeg timebase constants, rescale helpers, `av_compare_ts`, `av_compare_mod`, and `av_add_stable`. It did not claim pinned differential parity, upstream FATE parity, actual fuzz execution, or exact out-of-range C behavior parity.
@@ -4670,11 +4689,13 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Add pinned FFmpeg rational/timebase differential vectors once an oracle path or source-checked oracle fixture exists, starting with `av_rescale_delta` and `av_add_stable` edge cases.
-2. Move to the next unblocked priority-1 infrastructure slice, likely byte I/O or bit I/O edge vectors, if timebase differential work remains blocked by the missing oracle.
-3. Keep `avutil-timebase` below `complete` until pinned differential parity, upstream FATE coverage or documented non-applicability, and actual fuzz execution are available.
+1. Add pinned FFmpeg rational/timebase/bit I/O differential vectors once an oracle path or source-checked oracle fixture exists.
+2. Move to the next unblocked priority-1 infrastructure slice if oracle-backed differential work remains blocked.
+3. Keep `avutil-bitwriter` below `complete` until pinned differential parity, upstream FATE coverage or documented non-applicability, and actual fuzz execution are available.
 
 ## Known Blockers
+
+- `avutil-bitwriter` now covers local checked truncation, clear/reset, aligned-byte appends, signed/unsigned bit writes, and Exp-Golomb writes, but it still has no pinned PutBitContext differential vector harness, no upstream FATE media parity, and no actual cargo-fuzz execution.
 
 - `avutil-timebase` now covers source-checked rescale, compare, `av_rescale_delta`, and bounded signed `av_add_stable` behavior locally, but it still has no pinned FFmpeg differential vector harness, no upstream FATE media parity, no actual cargo-fuzz execution, and no calibration for exact out-of-range C behavior.
 
@@ -4745,6 +4766,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added `BitWriter::clear` and `BitWriter::truncate_bits` to support deterministic bitstream rollback. Truncation validates that the requested bit position is already written, preserves the original buffer and cursor on out-of-range requests, truncates byte storage to the retained bit count, masks unused bits in the final partial byte, and lets later writes resume at the truncated position. Unit tests cover partial-tail masking plus rewrite, out-of-range no-mutation errors, and clear/reset behavior; `avutil_bitreader` now build-checks generated truncation, clear, tail-padding, and no-mutation invariants. Pinned PutBitContext differential vectors, upstream FATE parity, and actual fuzz execution remain open.
 
 Latest slice: extended `add_stable` to source-shaped bounded signed increments. The helper no longer rejects negative increments up front; it scales the increment time base through the existing rational reduction path, subtracts exact negative tick increments, keeps fractional negative increments unchanged through the source-shaped `m < d` branch, and returns typed errors for exact-result overflow. Unit tests cover exact negative subtraction, fractional negative no-op behavior, and exact overflow rejection; `avutil_core_models` now generates signed stable-add increments and checks them against an independent model. Pinned oracle differential vectors, upstream FATE parity, exact out-of-range C behavior, and actual fuzz execution remain open.
 

@@ -91,6 +91,31 @@ fuzz_target!(|data: &[u8]| {
             assert_eq!(writer.bit_position(), aligned_before + chunk.len() * 8);
             assert!(writer.is_aligned());
         }
+
+        let truncate_target = usize::from(chunk.first().copied().unwrap_or_default());
+        let truncate_before = writer.bit_position();
+        let truncate_bytes_before = writer.as_slice().to_vec();
+        let truncate_result = writer.truncate_bits(truncate_target);
+        if truncate_result.is_err() {
+            assert_eq!(writer.bit_position(), truncate_before);
+            assert_eq!(writer.as_slice(), truncate_bytes_before.as_slice());
+        } else {
+            assert_eq!(writer.bit_position(), truncate_target);
+            assert_eq!(
+                writer.as_slice().len(),
+                truncate_target / 8 + usize::from(truncate_target % 8 != 0)
+            );
+            if truncate_target % 8 != 0 {
+                let padding_mask = (1_u8 << (8 - (truncate_target % 8))) - 1;
+                assert_eq!(writer.as_slice().last().copied().unwrap() & padding_mask, 0);
+            }
+        }
+
+        if chunk.get(1).copied().unwrap_or_default() & 0x80 != 0 {
+            writer.clear();
+            assert!(writer.is_empty());
+            assert!(writer.as_slice().is_empty());
+        }
     }
     writer.byte_align_zero();
     assert!(writer.is_aligned());
