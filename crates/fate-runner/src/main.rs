@@ -375,6 +375,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &["fftools-ffmpeg-", "fftools-ffprobe-"],
     },
     PathRule {
+        path: "crates/fftools/tests/version_oracle.rs",
+        exact_ids: &["fftools-version"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/fftools/src/option_parser.rs",
         exact_ids: &["fftools-option-parser"],
         id_prefixes: &[],
@@ -1570,6 +1575,17 @@ mod tests {
     }
 
     #[test]
+    fn changed_selection_maps_version_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["fftools-version"]));
+        let paths = vec!["crates/fftools/tests/version_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["fftools-version".to_string()]
+        );
+    }
+
+    #[test]
     fn changed_selection_maps_channel_layout_oracle_test_to_component() {
         let component_ids = component_ids_from_ledger(&ledger(&["avutil-channel-layout"]));
         let paths = vec!["crates/avutil/tests/channel_layout_oracle.rs".to_string()];
@@ -1703,6 +1719,7 @@ mod tests {
                 "crates/fftools/src/cli_logging.rs".to_string(),
                 "crates/fftools/src/io_plan.rs".to_string(),
                 "crates/fftools/src/ffmpeg.rs".to_string(),
+                "crates/fftools/tests/version_oracle.rs".to_string(),
                 "crates/fftools/tests/rawvideo_oracle.rs".to_string(),
                 "crates/fftools/tests/wav_oracle.rs".to_string(),
                 "crates/fftools/src/ffprobe.rs".to_string(),

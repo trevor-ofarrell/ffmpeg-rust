@@ -10,6 +10,7 @@
 ## Compatible Today
 
 - `ffmpeg-rs -version` and `ffmpeg-rs -hide_banner -version` print a version banner naming the pinned target and ABI versions.
+- Ignored `ffmpeg -version` / `ffprobe -version` oracle tests now verify that the Rust version banner constants match the pinned FFmpeg 8.1.1 tool version prefix and libav* ABI versions. They are blocked locally until `FFMPEG_ORACLE` plus a sibling `ffprobe` or explicit `FFPROBE_ORACLE` is available, so they do not yet count as `differential_pass`.
 - `ffmpeg-rs` can execute one local seekable MOV/MP4, AVI, PCM s16le RIFF/WAVE, raw `pcm_s16le`, explicit `rawvideo`, yuv4mpegpipe, or explicit image2 single-file/numbered-sequence input to stdout with explicit `-f null -`, `-f framecrc -`, `-f hash [-hash <algorithm>] -`, `-f md5 -`, `-f framehash [-hash <algorithm>] -`, `-f framemd5 -`, or `-f streamhash [-hash <algorithm>] -`, using Rust demuxers plus null/framecrc/hash/framehash/streamhash muxers.
 - `ffmpeg-rs` can packet-copy explicit raw `pcm_s16le` input to a local raw `-f s16le` output file through the Rust PCM demuxer and muxer.
 - `ffmpeg-rs` can packet-copy explicit raw `pcm_s16le` input to a local RIFF/WAVE `-f wav` output file through the Rust PCM demuxer and WAV muxer.

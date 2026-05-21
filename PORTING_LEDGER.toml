@@ -827,11 +827,16 @@ unit_tests = [
   "tests::version_banner_names_target_and_libraries",
   "tests::version_request_exits_successfully",
   "ffprobe::tests::ffprobe_output_prints_version_banner",
+  "tests/version_oracle.rs::parses_split_ffmpeg_library_version_lines",
+  "tests/version_oracle.rs::rust_banner_library_versions_are_parseable",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-version|oracle-ffmpeg-version",
+  "tests/differential/mappings.txt:fftools-version|oracle-ffprobe-version",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-version|local-version-unit"]
 fuzz_targets = []
-notes = "Version command support exists but is not byte-identical to upstream. Process-spawn integration tests are blocked by Windows Application Control in this environment, so version output is covered through in-process command helpers. The local FATE-runner smoke mapping executes the version unit filter only and does not count as upstream FATE parity."
+notes = "Version command support exists but is not byte-identical to upstream. Process-spawn integration tests are blocked by Windows Application Control in this environment, so normal version output is covered through in-process command helpers. An ignored oracle harness now runs pinned ffmpeg/ffprobe -version, checks the target 8.1.1 first-line version prefix, and compares the reported libav* ABI versions against the Rust banner constants. It derives ffprobe from FFPROBE_ORACLE, a sibling of FFMPEG_ORACLE, or the standard third_party oracle path. The local FATE-runner smoke mapping executes the version unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -850,6 +855,7 @@ unit_tests = [
   "tests::changed_selection_expands_prefix_rules_against_existing_ledger_ids",
   "tests::changed_selection_maps_rawvideo_oracle_test_to_covered_components",
   "tests::changed_selection_maps_wav_oracle_test_to_covered_components",
+  "tests::changed_selection_maps_version_oracle_test_to_component",
   "tests::changed_selection_maps_channel_layout_oracle_test_to_component",
   "tests::changed_selection_maps_sample_format_oracle_test_to_component",
   "tests::changed_selection_maps_pixel_format_oracle_test_to_component",

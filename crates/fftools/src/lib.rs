@@ -21,7 +21,7 @@ pub use option_parser::{
 pub const TARGET_FFMPEG_VERSION: &str = "8.1.1";
 pub const TARGET_RELEASE_NAME: &str = "Hoare";
 
-const LIBRARY_VERSIONS: &[(&str, &str)] = &[
+pub const TARGET_LIBRARY_VERSIONS: &[(&str, &str)] = &[
     ("libavutil", "60.26.101"),
     ("libavcodec", "62.28.101"),
     ("libavformat", "62.12.101"),
@@ -38,7 +38,7 @@ pub fn version_banner(tool_name: &str) -> String {
     ));
     out.push_str("built with rustc\n");
     out.push_str("configuration: --disable-gpl --disable-nonfree --disable-doc\n");
-    for (name, version) in LIBRARY_VERSIONS {
+    for (name, version) in TARGET_LIBRARY_VERSIONS {
         out.push_str(&format!("{name:>13} {version}\n"));
     }
     out
