@@ -482,6 +482,54 @@ impl CustomChannelLayout {
         Ok(Self { channels })
     }
 
+    pub fn parse_channel_list(value: &str) -> AvResult<Self> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(AvError::invalid_argument(
+                "custom channel layout string is empty",
+            ));
+        }
+        if trimmed.contains('\0') {
+            return Err(AvError::invalid_argument(
+                "custom channel layout string contains NUL byte",
+            ));
+        }
+
+        let mut channels = Vec::new();
+        for raw_token in trimmed.split('+') {
+            let token = raw_token.trim();
+            if token.is_empty() {
+                return Err(AvError::invalid_argument(format!(
+                    "empty custom channel token in layout {value:?}"
+                )));
+            }
+
+            let (id_name, custom_name) = match token.split_once('@') {
+                Some((id_name, custom_name)) => {
+                    if custom_name.contains('@') {
+                        return Err(AvError::invalid_argument(format!(
+                            "custom channel token {token:?} contains multiple names"
+                        )));
+                    }
+                    (id_name, custom_name)
+                }
+                None => (token, ""),
+            };
+            if id_name.is_empty() {
+                return Err(AvError::invalid_argument(format!(
+                    "custom channel token {token:?} has no channel id"
+                )));
+            }
+
+            let id = ChannelId::from_canonical_name(id_name).ok_or_else(|| {
+                AvError::invalid_argument(format!("unknown channel id {id_name:?}"))
+            })?;
+            channels.push(ChannelCustom::new(id, custom_name)?);
+        }
+
+        Self::new(channels)
+    }
+
     pub fn unknown(channel_count: u16) -> AvResult<Self> {
         if channel_count == 0 {
             return Err(AvError::invalid_argument(
@@ -2262,6 +2310,65 @@ mod tests {
             ChannelId::Ambisonic(1024),
         ] {
             let err = layout.index_from_channel(id).unwrap_err();
+            assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        }
+    }
+
+    #[test]
+    fn custom_channel_layouts_parse_ffmpeg_channel_list_syntax() {
+        let named = CustomChannelLayout::parse_channel_list("FL@Left+FR@Right").unwrap();
+        assert_eq!(named.channel_count(), 2);
+        assert!(named.has_custom_names());
+        assert_eq!(
+            named.channel_from_index(0),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+        assert_eq!(named.channels()[0].name(), "Left");
+        assert_eq!(
+            named.channel_from_string("FR@Right"),
+            Some(ChannelId::Native(Channel::FrontRight))
+        );
+        assert_eq!(named.canonical_native_layout(), None);
+        assert_eq!(named.describe(), "2 channels (FL@Left+FR@Right)");
+
+        let native = CustomChannelLayout::parse_channel_list("FL+FR").unwrap();
+        assert!(!native.has_custom_names());
+        assert_eq!(
+            native.canonical_native_layout(),
+            Some(ChannelLayout::stereo())
+        );
+        assert_eq!(native.describe(), "stereo");
+
+        let mixed = CustomChannelLayout::parse_channel_list("UNK+UNSD+AMBI2@Height+USR2048@Vendor")
+            .unwrap();
+        assert_eq!(mixed.channel_count(), 4);
+        assert_eq!(mixed.channel_from_index(0), Some(ChannelId::Unknown));
+        assert_eq!(mixed.channel_from_index(1), Some(ChannelId::Unused));
+        assert_eq!(mixed.channel_from_index(2), Some(ChannelId::Ambisonic(2)));
+        assert_eq!(mixed.channel_from_index(3), Some(ChannelId::User(0x800)));
+        assert_eq!(
+            mixed.describe(),
+            "4 channels (UNK+UNSD+AMBI2@Height+USR2048@Vendor)"
+        );
+
+        let empty_name = CustomChannelLayout::parse_channel_list("FL@").unwrap();
+        assert_eq!(empty_name.channel_count(), 1);
+        assert!(!empty_name.has_custom_names());
+        assert_eq!(empty_name.describe(), "1 channels (FL)");
+
+        for invalid in [
+            "",
+            "FL++FR",
+            "+FL",
+            "FL+",
+            "NONE",
+            "@Left",
+            "NOPE@Left",
+            "FL@Left@Again",
+            "FL@custom-name-too-long",
+            "FL\0",
+        ] {
+            let err = CustomChannelLayout::parse_channel_list(invalid).unwrap_err();
             assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         }
     }

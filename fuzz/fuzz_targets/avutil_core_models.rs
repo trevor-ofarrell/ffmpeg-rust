@@ -4560,6 +4560,34 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             .channel_from_index(0),
         Some(ChannelId::User(63))
     );
+    let parsed_custom = CustomChannelLayout::parse_channel_list("FL@Left+FR@Right").unwrap();
+    assert_eq!(parsed_custom.channel_count(), 2);
+    assert_eq!(parsed_custom.describe(), "2 channels (FL@Left+FR@Right)");
+    assert_eq!(
+        parsed_custom.channel_from_string("FR@Right"),
+        Some(ChannelId::Native(Channel::FrontRight))
+    );
+    assert_eq!(parsed_custom.canonical_native_layout(), None);
+    let parsed_mixed =
+        CustomChannelLayout::parse_channel_list("UNK+UNSD+AMBI2@Height+USR2048@Vendor").unwrap();
+    assert_eq!(parsed_mixed.channel_from_index(0), Some(ChannelId::Unknown));
+    assert_eq!(parsed_mixed.channel_from_index(1), Some(ChannelId::Unused));
+    assert_eq!(
+        parsed_mixed.channel_from_index(2),
+        Some(ChannelId::Ambisonic(2))
+    );
+    assert_eq!(
+        parsed_mixed.channel_from_index(3),
+        Some(ChannelId::User(0x800))
+    );
+    for invalid_custom in ["", "FL++FR", "NONE", "@Left", "NOPE@Left", "FL@Left@Again"] {
+        assert_eq!(
+            CustomChannelLayout::parse_channel_list(invalid_custom)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
     assert_eq!(ChannelLayout::from_channel_mask(layout.channel_mask()), Some(layout));
     assert_eq!(ChannelLayout::from_channels(layout.channels()), Some(layout));
     assert_eq!(
@@ -9792,6 +9820,34 @@ fn exercise_fixtures() {
         custom_layout.describe(),
         "4 channels (FL@Left+UNK+AMBI1@Y+FL@SecondLeft)"
     );
+    let parsed_custom = CustomChannelLayout::parse_channel_list("FL@Left+FR@Right").unwrap();
+    assert_eq!(parsed_custom.channel_count(), 2);
+    assert_eq!(parsed_custom.describe(), "2 channels (FL@Left+FR@Right)");
+    assert_eq!(
+        parsed_custom.channel_from_string("FR@Right"),
+        Some(ChannelId::Native(Channel::FrontRight))
+    );
+    assert_eq!(parsed_custom.canonical_native_layout(), None);
+    let parsed_mixed =
+        CustomChannelLayout::parse_channel_list("UNK+UNSD+AMBI2@Height+USR2048@Vendor").unwrap();
+    assert_eq!(parsed_mixed.channel_from_index(0), Some(ChannelId::Unknown));
+    assert_eq!(parsed_mixed.channel_from_index(1), Some(ChannelId::Unused));
+    assert_eq!(
+        parsed_mixed.channel_from_index(2),
+        Some(ChannelId::Ambisonic(2))
+    );
+    assert_eq!(
+        parsed_mixed.channel_from_index(3),
+        Some(ChannelId::User(0x800))
+    );
+    for invalid_custom in ["", "FL++FR", "NONE", "@Left", "NOPE@Left", "FL@Left@Again"] {
+        assert_eq!(
+            CustomChannelLayout::parse_channel_list(invalid_custom)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
     assert!(custom_layout.has_custom_names());
     assert!(custom_layout.canonical_native_mask().is_err());
     assert_eq!(custom_layout.canonical_native_layout(), None);
