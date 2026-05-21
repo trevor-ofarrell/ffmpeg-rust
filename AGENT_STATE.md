@@ -4,9 +4,9 @@
 
 Latest oracle-install slice: the pinned FFmpeg 8.1.1 oracle is now installed locally through ignored WSL wrappers under `third_party/ffmpeg-oracle/`, and `.gitignore` now excludes `third_party/` so FFmpeg build artifacts such as `.d` dependency files are not tracked. The bootstrap script is `scripts/bootstrap_ffmpeg_oracle_wsl.sh`; it builds tag `n8.1.1`, writes a release-shaped `VERSION` file so banners report `8.1.1`, installs under `third_party/ffmpeg-oracle/wsl/`, and generates Windows `.cmd` plus Unix-style wrappers under `third_party/ffmpeg-oracle/build/bin/`.
 
-Latest parity status: strict completion is now 3/96 components (about `3%`). `avutil-error`, `avutil-rational`, and `avutil-timebase` are the current `complete` rows for the default-native profile. Intermediate measurable parity also includes 3/96 non-complete status rows: `repo-runtime-guard`, `fftools-version`, and `avutil-channel-layout` are still `differential_pass`/validated evidence rows. Current ledger status counts are 89 `implemented`, 1 `scaffolded`, 3 `differential_pass`, and 3 `complete`.
+Latest parity status: strict completion is still 3/96 components (about `3%`). `avutil-error`, `avutil-rational`, and `avutil-timebase` are the current `complete` rows for the default-native profile. Intermediate measurable parity now includes 4/96 non-complete status rows: `repo-runtime-guard`, `fftools-version`, `avutil-channel-layout`, and `avutil-hash` are `differential_pass`/validated evidence rows. Current ledger status counts are 88 `implemented`, 1 `scaffolded`, 4 `differential_pass`, and 3 `complete`.
 
-Latest oracle evidence: `cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1` generated local ignored inventory snapshots. The local oracle passed version, sample-format, color, pixel-format subset, rawvideo generated, WAV generated, channel-layout inventory, libavutil error-string differential checks, libavutil rational helper differential checks, and libavutil timebase helper differential checks. `avutil-channel-layout` now passes `ffmpeg -layouts` after adding `3.1.2` and matching FFmpeg's `22.2` and `hexadecagonal` decomposition order. `avutil-error` now passes a test-only libavutil `av_strerror` oracle for the FFmpeg-defined table, representative POSIX `AVERROR(errno)` values, and unknown-code fallback. `avutil-rational` now passes a test-only libavutil oracle for `av_cmp_q`, `av_q2d`, `av_reduce`, `av_d2q`, `av_nearer_q`, `av_find_nearest_q_idx`, `av_q2intfloat`, `av_gcd_q`, and arithmetic helpers. `avutil-timebase` now passes a test-only libavutil oracle for constants, direct and rational rescale, pass-min/max, compare_ts, compare_mod, rescale_delta, and add_stable vectors. FATE samples and actual `cargo fuzz run` execution are still absent.
+Latest oracle evidence: `cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1` generated local ignored inventory snapshots. The local oracle passed version, sample-format, color, pixel-format subset, rawvideo generated, WAV generated, channel-layout inventory, libavutil error-string differential checks, libavutil rational helper differential checks, libavutil timebase helper differential checks, and libavutil hash helper differential checks for the currently modeled hash subset. `avutil-channel-layout` now passes `ffmpeg -layouts` after adding `3.1.2` and matching FFmpeg's `22.2` and `hexadecagonal` decomposition order. `avutil-error` now passes a test-only libavutil `av_strerror` oracle for the FFmpeg-defined table, representative POSIX `AVERROR(errno)` values, and unknown-code fallback. `avutil-rational` now passes a test-only libavutil oracle for `av_cmp_q`, `av_q2d`, `av_reduce`, `av_d2q`, `av_nearer_q`, `av_find_nearest_q_idx`, `av_q2intfloat`, `av_gcd_q`, and arithmetic helpers. `avutil-timebase` now passes a test-only libavutil oracle for constants, direct and rational rescale, pass-min/max, compare_ts, compare_mod, rescale_delta, and add_stable vectors. `avutil-hash` now passes a test-only libavutil `av_hash_*` oracle for ADLER32, CRC32, MD5, SHA160, SHA224, SHA256, SHA384, and SHA512. FATE samples, `cargo-fuzz`, and actual `cargo fuzz run` execution are still absent.
 
 Latest `avutil-error` completion slice: extended `AvErrorCode` with the default-native POSIX `AVERROR(errno)` subset, mapped representative `io::ErrorKind` values to those codes, extended `crates/avutil/tests/error_oracle.rs` so the pinned libavutil C helper validates errno-backed raw values and `av_strerror` strings, documented upstream FATE inapplicability for this low-level API, and recorded fuzz as build-checked because `avutil-error` does not parse untrusted byte streams. The component moved from `differential_pass` to `complete`.
 
@@ -14,11 +14,13 @@ Latest `avutil-rational` completion slice: added `crates/avutil/tests/rational_o
 
 Latest `avutil-timebase` completion slice: added `crates/avutil/tests/timebase_oracle.rs`, an ignored pinned-libavutil differential harness that compiles a small C helper against the local FFmpeg 8.1.1 oracle install and compares constants, direct and rational rescale helpers, pass-min/max handling, `av_compare_ts`, `av_compare_mod`, `av_rescale_delta`, and `av_add_stable` vectors against the Rust model. The oracle exposed and fixed one real mismatch: exact negative `av_add_stable` increments follow FFmpeg's `m < d` no-op branch instead of subtracting. The component moved from `implemented` to `complete` after unit, differential, local FATE smoke, clippy, and fuzz-target build checks passed, with upstream FATE inapplicability documented for this low-level helper API.
 
+Latest `avutil-hash` parity slice: added `crates/avutil/tests/hash_oracle.rs`, an ignored pinned-libavutil differential harness that compiles a small C helper against the local FFmpeg 8.1.1 oracle install and compares `av_hash_names`, `av_hash_alloc`, `av_hash_update`, `av_hash_get_size`, and `av_hash_final_hex` output for ADLER32, CRC32, MD5, SHA160, SHA224, SHA256, SHA384, and SHA512 against the Rust model. `tests/differential/mappings.txt` exposes the row as `avutil-hash|oracle-libavutil-hash`, and `fate-runner` changed-path selection maps the harness back to `avutil-hash`. The component moved from `implemented` to `differential_pass`, not `complete`, because full libavutil generic hash API breadth plus Murmur3, RIPEMD128/160/256/320, SHA512/224, and SHA512/256 remain pending.
+
 Latest `avutil-channel-layout` parity slice: the known-layout inventory now matches pinned FFmpeg 8.1.1 `ffmpeg -layouts` for the modeled native layout table. The component moved from `implemented` to `differential_pass`, not `complete`, because parser-level oracle vectors, upstream FATE coverage or a documented exception, byte-preserving custom-name parity, and actual fuzz execution remain pending.
 
 Goal resumed after the Codex runtime update: the active objective is now staged. First reach 10% strict parity, defined for the current 96-row ledger as at least 10 components marked `complete` under the normal completion definition, then continue the same ledger loop toward 100% FFmpeg 8.1.1 default-native compatibility and later profiles. `AGENTS.md` and `README.md` now both spell out this 10% milestone and name the first preferred completion candidates: `avutil-error`, `avutil-rational`, `avutil-timebase`, `avutil-byteio`, `avutil-bitreader`, `avutil-bitwriter`, `avutil-dict`, `avutil-options`, `avutil-logging`, and `avutil-hash`.
 
-Latest documentation update: the repository-level `README.md` now reports strict parity completion as about 3% (`3/96`), with 3 additional rows currently carrying non-complete validation status, and still reports practical engineering progress at about 2% of a complete FFmpeg 8.1.1 default-native rewrite.
+Latest documentation update: the repository-level `README.md` now reports strict parity completion as about 3% (`3/96`), with 4 additional rows currently carrying non-complete validation status, and still reports practical engineering progress at about 2% of a complete FFmpeg 8.1.1 default-native rewrite.
 
 Latest `avutil-options` update: added real removal helpers for the AVOption-like registry. `OptionSet::remove_definition` removes a descriptor and its current value together, `remove_constant` removes unit-scoped named constants, and `remove_child` removes child option namespaces, all using the existing case-insensitive lookup semantics and preserving state on misses. Unit coverage verifies successful removal, failed-removal immutability, root/child namespace separation, and remaining constant behavior; `avutil_metadata_options` now build-checks generated removal invariants and reaches previously unreachable child-mutation arms. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, and actual local fuzz execution are still absent.
 
@@ -485,6 +487,19 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-hash` oracle parity slice:
+  - `cmd /c cargo test -p avutil --test hash_oracle -- --ignored`
+  - `cmd /c cargo test -p avutil hash`
+  - `cmd /c cargo test -p fate-runner`
+  - `cmd /c cargo run --target-dir target-codex -p fate-runner -- run --mappings tests\differential\mappings.txt --component avutil-hash --target oracle-libavutil-hash`
+  - `cmd /c cargo run --target-dir target-codex -p fate-runner -- run --component avutil-hash`
+  - `cmd /c cargo fmt --all -- --check`
+  - `cmd /c cargo clippy -p avutil --all-targets -- -D warnings`
+  - `cmd /c cargo clippy -p fate-runner --all-targets -- -D warnings`
+  - `cmd /c cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+  - `cmd /c cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+  - `cmd /c git diff --check` (passed with CRLF warnings only)
 
 - Current `avutil-timebase` completion slice:
   - `cmd /c cargo fmt --all -- --check`
@@ -5020,6 +5035,11 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-hash` oracle parity slice:
+  - The first `cmd /c cargo test -p avutil --test hash_oracle -- --ignored` run failed because FFmpeg's `av_hash_names()` reports `adler32` in lowercase while the Rust hash muxer displays `ADLER32`. The oracle harness now distinguishes the FFmpeg API name from the Rust display name.
+  - The first `cmd /c cargo fmt --all -- --check` run reported rustfmt diffs in `crates/avutil/tests/hash_oracle.rs`; `cmd /c cargo fmt --all` fixed them.
+  - `cmd /c cargo run -p fate-runner -- run --mappings tests\differential\mappings.txt --component avutil-hash --target oracle-libavutil-hash` and `cmd /c cargo run -p fate-runner -- run --component avutil-hash` were blocked by Windows Application Control on a freshly rebuilt default `target` fate-runner binary. The equivalent commands with `--target-dir target-codex` passed.
+
 - Current `avutil-error` oracle parity slice:
   - The first `cmd /c cargo fmt --all -- --check` run reported rustfmt diffs in the new ignored oracle test; `cmd /c cargo fmt --all` fixed it.
   - The first `cmd /c cargo test -p avutil --test error_oracle -- --ignored` run failed because Windows canonical paths were passed to WSL as `//?/C:/...`; `to_wsl_path` now strips the canonical prefix before `/mnt/<drive>/` conversion.
@@ -5495,7 +5515,11 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-byteio` is the next active strict-parity candidate. `avutil-error`, `avutil-rational`, and `avutil-timebase` are now complete for the selected default-native profile after adding pinned libavutil differential evidence, FATE inapplicability documentation, and fuzz-target build evidence for their non-parser models.
+`avutil-byteio` remains the next active strict-parity candidate, but it cannot honestly move to `complete` until the parser-fuzz requirement is satisfied with real `cargo fuzz` execution or a narrower documented exception. `cargo fuzz` is not installed in this workspace yet.
+
+`avutil-hash` is the latest completed slice for this turn. The concrete change added pinned libavutil `av_hash_*` differential evidence for the currently modeled hash subset and moved the ledger row from `implemented` to `differential_pass`, not `complete`. It remains incomplete because full FFmpeg 8.1.1 libavutil hash API breadth still requires Murmur3, RIPEMD128/160/256/320, SHA512/224, SHA512/256, and generic API parity.
+
+`avutil-error`, `avutil-rational`, and `avutil-timebase` are complete for the selected default-native profile after adding pinned libavutil differential evidence, FATE inapplicability documentation, and fuzz-target build evidence for their non-parser models.
 
 `avutil-channel-layout` inventory parity is fixed for its previous slice. The local pinned FFmpeg 8.1.1 oracle now passes the `ffmpeg -layouts` inventory harness after adding `3.1.2` and matching `22.2`/`hexadecagonal` standard-layout decomposition order. It remains below complete because parser-level oracle vectors, upstream FATE coverage or exception documentation, byte-preserving custom-name parity, and actual fuzz execution or documented inapplicability remain pending.
 
@@ -5759,9 +5783,9 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Start `avutil-byteio` completion proof by adding pinned oracle or spec-derived differential evidence for the currently modeled byte I/O helpers and documenting FATE/fuzz applicability.
-2. Repeat the completion-proof pattern for `avutil-bitreader`, `avutil-bitwriter`, `avutil-dict`, `avutil-options`, `avutil-logging`, and `avutil-hash` until at least 10 ledger rows are `complete`.
-3. Keep `avutil-channel-layout` below `complete` until parser-level oracle vectors, upstream FATE decision/coverage, byte-preserving custom-name parity, and actual fuzz execution or documented fuzz blocker satisfy the component completion rules.
+1. Install or enable `cargo-fuzz`, then run the existing `avutil_byteio` target so `avutil-byteio` can continue toward strict completion without weakening the parser-fuzz requirement.
+2. If `cargo-fuzz` remains unavailable, advance the next non-parser completion candidate with zero known limitations; do not mark byte readers, bit readers, metadata parsers, option parsers, or channel/color parsers complete without actual fuzz execution.
+3. Expand `avutil-hash` only if choosing that component again: implement and oracle-check libavutil's remaining generic hash algorithms/API surface before considering `complete`.
 
 ## Known Blockers
 
@@ -5769,6 +5793,7 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - FATE samples are still absent locally, so sample-backed upstream FATE rows such as `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` remain blocked until `third_party/fate-samples`, `FATE_SAMPLES`, or an equivalent sample tree is configured.
 - The `cargo fuzz` subcommand is not installed, so fuzz targets are currently build-checked only; actual fuzz execution is still pending.
 - `avutil-channel-layout` `ffmpeg -layouts` inventory now passes, but the component is not complete because parser-level oracle vectors, upstream FATE decision/coverage, byte-preserving custom-name parity, and actual fuzz execution remain pending.
+- `avutil-hash` now passes the pinned libavutil `av_hash_*` oracle for the modeled algorithms but remains incomplete because Murmur3, RIPEMD128/160/256/320, SHA512/224, SHA512/256, and full generic hash API parity are still pending.
 - `avutil-error` is complete for the selected default-native profile. Long-running `cargo fuzz run avutil_core_models` is still unavailable globally because `cargo-fuzz` is not installed, but this component does not parse untrusted byte streams and its fuzz model is build-checked.
 - `avutil-rational` is complete for the selected default-native profile. Long-running `cargo fuzz run avutil_core_models` is still unavailable globally because `cargo-fuzz` is not installed, but this component does not parse untrusted byte streams and its fuzz model is build-checked.
 - `avutil-timebase` is complete for the selected default-native profile. Long-running `cargo fuzz run avutil_core_models` is still unavailable globally because `cargo-fuzz` is not installed, but this component does not parse untrusted byte streams and its fuzz model is build-checked.

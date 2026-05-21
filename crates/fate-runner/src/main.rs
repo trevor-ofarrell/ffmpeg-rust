@@ -298,6 +298,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/hash_oracle.rs",
+        exact_ids: &["avutil-hash"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avcodec/src/lib.rs",
         exact_ids: &[],
         id_prefixes: &["avcodec-"],
@@ -1766,6 +1771,17 @@ mod tests {
     }
 
     #[test]
+    fn changed_selection_maps_hash_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-hash"]));
+        let paths = vec!["crates/avutil/tests/hash_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-hash".to_string()]
+        );
+    }
+
+    #[test]
     fn changed_selection_maps_differential_files_to_runner() {
         let component_ids = component_ids_from_ledger(&ledger(&["fate-runner"]));
         let paths = vec![
@@ -1804,6 +1820,7 @@ mod tests {
         assert!(pairs.contains(&("avutil-sample-format", "oracle-ffmpeg-sample-fmts")));
         assert!(pairs.contains(&("avutil-pixel-format", "oracle-ffmpeg-pix-fmts-subset")));
         assert!(pairs.contains(&("avutil-color", "oracle-ffmpeg-colors")));
+        assert!(pairs.contains(&("avutil-hash", "oracle-libavutil-hash")));
     }
 
     #[test]

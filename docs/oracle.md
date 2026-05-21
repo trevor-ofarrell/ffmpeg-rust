@@ -105,6 +105,13 @@ cargo test -p avutil --test timebase_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-timebase --target oracle-libavutil-timebase --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
+`crates/avutil/tests/hash_oracle.rs` is an ignored oracle harness for the current low-level hash helper subset. It compiles a small test-only C helper against `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_hash_names`, `av_hash_alloc`, `av_hash_update`, `av_hash_get_size`, and `av_hash_final_hex` output for ADLER32, CRC32, MD5, SHA160, SHA224, SHA256, SHA384, and SHA512 against the Rust hash model. It is wired into `tests/differential/mappings.txt` as `avutil-hash|oracle-libavutil-hash`:
+
+```sh
+cargo test -p avutil --test hash_oracle -- --ignored
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-hash --target oracle-libavutil-hash --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+```
+
 `crates/fftools/tests/version_oracle.rs` is an ignored oracle harness for `ffmpeg -version` and `ffprobe -version`. It checks the pinned tool-version prefix and the libav* ABI versions reported by the oracle against the Rust `ffmpeg-rs`/`ffprobe-rs` banner constants. `FFMPEG_ORACLE` points to the pinned `ffmpeg` binary; `ffprobe` is found through `FFPROBE_ORACLE`, a sibling of `FFMPEG_ORACLE`, or the standard `third_party/ffmpeg-oracle/build/bin/ffprobe(.exe)` path. Run it with:
 
 ```sh

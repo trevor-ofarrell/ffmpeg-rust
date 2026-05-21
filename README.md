@@ -16,7 +16,7 @@ Strict parity status is still low:
 - Rows marked `implemented`: 89
 - Rows marked `scaffolded`: 1
 - Rows marked `complete`: 3
-- Rows marked `differential_pass`, `fate_pass`, or `fuzzed`: 3
+- Rows marked `differential_pass`, `fate_pass`, or `fuzzed`: 4
 - Pinned FFmpeg oracle: installed locally through WSL wrappers under ignored `third_party/ffmpeg-oracle/`
 - Generated FFmpeg inventory snapshot: present locally under ignored `compat/ffmpeg-8.1.1/`
 - Upstream FATE sample execution: not running locally; sample tree is still absent
