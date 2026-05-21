@@ -1750,10 +1750,7 @@ impl ChannelLayoutSpec {
         }
 
         if let Some(mask) = parse_numeric_channel_mask(trimmed) {
-            if let Some(layout) = ChannelLayout::from_channel_mask(mask) {
-                return Ok(Self::Native(layout));
-            }
-            return Ok(Self::NativeMask(NativeChannelMaskLayout::new(mask)?));
+            return Self::from_native_channel_mask(mask);
         }
 
         if let Some(channels) = parse_count_suffix(trimmed, "c") {
@@ -1771,7 +1768,18 @@ impl ChannelLayoutSpec {
             return Self::unspecified(channels);
         }
 
+        if let Some(layout) = Self::parse_native_channel_list(trimmed)? {
+            return Ok(layout);
+        }
+
         Ok(Self::Native(ChannelLayout::parse(trimmed)?))
+    }
+
+    fn from_native_channel_mask(mask: u64) -> AvResult<Self> {
+        if let Some(layout) = ChannelLayout::from_channel_mask(mask) {
+            return Ok(Self::Native(layout));
+        }
+        Ok(Self::NativeMask(NativeChannelMaskLayout::new(mask)?))
     }
 
     fn parse_described_channel_list(value: &str) -> AvResult<Option<Self>> {
@@ -1786,9 +1794,50 @@ impl ChannelLayoutSpec {
         let channels = parse_positive_channel_count(count_text).ok_or_else(|| {
             AvError::invalid_argument(format!("invalid channel count {count_text:?}"))
         })?;
-        let layout = ChannelLayout::parse(channel_list)?;
+        let layout = Self::parse_native_channel_list(channel_list)?.ok_or_else(|| {
+            AvError::invalid_argument(format!(
+                "unsupported channel layout expression {channel_list:?}"
+            ))
+        })?;
         layout.validate_channel_count(channels)?;
-        Ok(Some(Self::Native(layout)))
+        Ok(Some(layout))
+    }
+
+    fn parse_native_channel_list(value: &str) -> AvResult<Option<Self>> {
+        let mut mask = 0u64;
+        let mut parsed_channel = false;
+
+        for token in value.split('+') {
+            let token = token.trim();
+            if token.is_empty() {
+                return Err(AvError::invalid_argument(format!(
+                    "empty channel name in layout {value:?}"
+                )));
+            }
+            let Some(channel) = Channel::from_name(token) else {
+                if parsed_channel || value.contains('+') {
+                    return Err(AvError::invalid_argument(format!(
+                        "unknown channel name {token:?}"
+                    )));
+                }
+                return Ok(None);
+            };
+            parsed_channel = true;
+            let channel_mask = channel.mask();
+            if mask & channel_mask != 0 {
+                return Err(AvError::invalid_argument(format!(
+                    "duplicate channel name {}",
+                    channel.name()
+                )));
+            }
+            mask |= channel_mask;
+        }
+
+        if parsed_channel {
+            Self::from_native_channel_mask(mask).map(Some)
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn as_native(self) -> Option<ChannelLayout> {
@@ -3866,6 +3915,22 @@ mod tests {
             ChannelLayoutSpec::parse("FL+FR").unwrap(),
             ChannelLayoutSpec::Native(ChannelLayout::stereo())
         );
+        let arbitrary_mask = Channel::FrontLeft.mask() | Channel::FrontCenter.mask();
+        let arbitrary_layout = NativeChannelMaskLayout::new(arbitrary_mask).unwrap();
+        assert_eq!(
+            ChannelLayoutSpec::parse("FL+FC").unwrap(),
+            ChannelLayoutSpec::NativeMask(arbitrary_layout)
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("2 channels (FL+FC)").unwrap(),
+            ChannelLayoutSpec::NativeMask(arbitrary_layout)
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("FL").unwrap(),
+            ChannelLayoutSpec::NativeMask(
+                NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
+            )
+        );
         assert_eq!(
             ChannelLayoutSpec::parse("2 channels (FL+FR)").unwrap(),
             ChannelLayoutSpec::Native(ChannelLayout::stereo())
@@ -3891,8 +3956,6 @@ mod tests {
                 .unwrap(),
             ChannelLayoutSpec::Native(ChannelLayout::five_one())
         );
-        let arbitrary_mask = Channel::FrontLeft.mask() | Channel::FrontCenter.mask();
-        let arbitrary_layout = NativeChannelMaskLayout::new(arbitrary_mask).unwrap();
         let arbitrary_spec = ChannelLayoutSpec::parse("0x5").unwrap();
         assert_eq!(
             arbitrary_spec,

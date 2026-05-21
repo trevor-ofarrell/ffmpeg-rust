@@ -4520,6 +4520,20 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     );
     let arbitrary_mask = Channel::FrontLeft.mask() | Channel::FrontCenter.mask();
     let arbitrary_layout = NativeChannelMaskLayout::new(arbitrary_mask).unwrap();
+    assert_eq!(
+        ChannelLayoutSpec::parse("FL+FC").unwrap(),
+        ChannelLayoutSpec::NativeMask(arbitrary_layout)
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("2 channels (FL+FC)").unwrap(),
+        ChannelLayoutSpec::NativeMask(arbitrary_layout)
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("FL").unwrap(),
+        ChannelLayoutSpec::NativeMask(
+            NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
+        )
+    );
     let arbitrary_spec = ChannelLayoutSpec::parse("0x5").unwrap();
     assert_eq!(
         arbitrary_spec,
@@ -9675,6 +9689,20 @@ fn exercise_fixtures() {
     let arbitrary_layout =
         NativeChannelMaskLayout::new(Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
             .unwrap();
+    assert_eq!(
+        ChannelLayoutSpec::parse("FL+FC").unwrap(),
+        ChannelLayoutSpec::NativeMask(arbitrary_layout)
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("2 channels (FL+FC)").unwrap(),
+        ChannelLayoutSpec::NativeMask(arbitrary_layout)
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("FL").unwrap(),
+        ChannelLayoutSpec::NativeMask(
+            NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
+        )
+    );
     let arbitrary_spec = ChannelLayoutSpec::parse("0x5").unwrap();
     assert_eq!(
         arbitrary_spec,
