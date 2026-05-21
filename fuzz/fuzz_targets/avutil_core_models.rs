@@ -2,9 +2,10 @@
 
 use avutil::{
     adler32, add_stable, av_error_description, av_make_error_string, av_strerror, compare_mod,
-    compare_ts, crc32_ieee, digest_to_hex, md5, rescale, rescale_delta, rescale_q, rescale_q_rnd,
-    rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1, sha224, sha256,
-    sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
+    compare_ts, crc32_ieee, digest_to_hex, md5, parse_color, rescale, rescale_delta, rescale_q,
+    rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1,
+    sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind,
+    BufferPool,
     AmbisonicChannelLayout, BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId,
     ChannelLayout, ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame,
     FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
@@ -266,6 +267,54 @@ fn assert_channel_layout_byte_parser_fixtures() {
     );
 }
 
+fn assert_color_parser_fixtures() {
+    assert_eq!(
+        parse_color("red").unwrap().rgba(),
+        [0xFF, 0x00, 0x00, 0xFF]
+    );
+    assert_eq!(
+        parse_color("Darkorange@0x80").unwrap().rgba(),
+        [0xFF, 0x8C, 0x00, 0x80]
+    );
+    assert_eq!(
+        parse_color("#112233").unwrap().rgba(),
+        [0x11, 0x22, 0x33, 0xFF]
+    );
+    assert_eq!(
+        parse_color("0x11223344").unwrap().rgba(),
+        [0x11, 0x22, 0x33, 0x44]
+    );
+    assert_eq!(
+        parse_color("#01020304@0x05").unwrap().rgba(),
+        [0x01, 0x02, 0x03, 0x05]
+    );
+    assert_eq!(
+        parse_color("Blue@0.5").unwrap().rgba(),
+        [0x00, 0x00, 0xFF, 0x80]
+    );
+    assert_eq!(parse_color("white@").unwrap().alpha(), 0x00);
+
+    for invalid in [
+        "",
+        "#12345",
+        "#11223z",
+        "0X112233",
+        "transparent",
+        "red@1.0",
+        "red@0x100",
+        "red@@0.5",
+    ] {
+        assert_eq!(
+            parse_color(invalid).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
+    assert_eq!(
+        parse_color("random").unwrap_err().kind(),
+        AvErrorKind::Unsupported
+    );
+}
+
 fn exif_two_digits(value: &str, index: usize) -> u8 {
     let bytes = value.as_bytes();
     (bytes[index] - b'0') * 10 + (bytes[index + 1] - b'0')
@@ -400,6 +449,7 @@ fuzz_target!(|data: &[u8]| {
 
     exercise_errors(&mut cursor);
     exercise_logging(&mut cursor);
+    exercise_color_parser(&mut cursor);
     exercise_buffers(&mut cursor);
     exercise_rational_and_timebase(&mut cursor);
     exercise_pixel_and_video_frame(&mut cursor);
@@ -407,6 +457,28 @@ fuzz_target!(|data: &[u8]| {
     exercise_packet_and_hashes(&mut cursor);
     exercise_fixtures();
 });
+
+fn exercise_color_parser(cursor: &mut Cursor<'_>) {
+    assert_color_parser_fixtures();
+
+    let input_len = usize::from(cursor.next().unwrap_or_default()) % 32;
+    let input = payload_from(cursor, input_len);
+    if let Ok(text) = std::str::from_utf8(&input) {
+        match parse_color(text) {
+            Ok(color) => {
+                let rgba = color.rgba();
+                assert_eq!(color.rgb(), [rgba[0], rgba[1], rgba[2]]);
+                assert_eq!(color.alpha(), rgba[3]);
+            }
+            Err(error) => {
+                assert!(matches!(
+                    error.kind(),
+                    AvErrorKind::InvalidArgument | AvErrorKind::Unsupported
+                ));
+            }
+        }
+    }
+}
 
 fn exercise_buffers(cursor: &mut Cursor<'_>) {
     let payload_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);

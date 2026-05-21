@@ -26,7 +26,9 @@ pub use channel_layout::{
     AmbisonicChannelLayout, Channel, ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec,
     CustomChannelLayout, NativeChannelMaskLayout, UnspecifiedChannelLayout,
 };
-pub use color::{colors_table_string, find_named_color, known_color, NamedColor};
+pub use color::{
+    colors_table_string, find_named_color, known_color, parse_color, NamedColor, RgbaColor,
+};
 pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};
 pub use error::{
     av_error_description, av_make_error_string, av_strerror, AvError, AvErrorCode, AvErrorKind,

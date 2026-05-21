@@ -2,7 +2,7 @@
 
 ## Current Status
 
-Latest `avutil-color` update: added a source-checked Rust-native `NamedColor` inventory for pinned FFmpeg 8.1.1. The table exposes 140 named colors from `AliceBlue` through `YellowGreen`, preserves FFmpeg's `Darkorange` spelling, supports indexed lookup, ASCII case-insensitive name lookup, and `ffmpeg -colors`-shaped table rendering. An ignored `crates/avutil/tests/color_oracle.rs` harness parses pinned `ffmpeg -colors` output and compares it against `NamedColor::ALL`; `tests/differential/mappings.txt` exposes `avutil-color|oracle-ffmpeg-colors`, and `fate-runner` changed-path selection maps the oracle test back to `avutil-color`. Local avutil tests, oracle-harness compile, local FATE-runner mapping execution, runner tests, clippy, formatting, and diff checks passed. The component remains `implemented`, not `differential_pass` or `complete`, because no pinned FFmpeg oracle binary is installed locally and full `av_parse_color` parser semantics are still pending.
+Latest `avutil-color` update: added a bounded Rust-native `parse_color` model for the deterministic FFmpeg 8.1.1 `av_parse_color` subset. The parser now covers case-insensitive named colors, bare/#/lowercase-0x `RRGGBB` and `RRGGBBAA` hex forms, decimal normalized alpha suffixes, hexadecimal alpha suffixes, embedded-alpha override behavior, empty alpha suffixes, and typed invalid-input rejection. `RgbaColor` exposes RGBA/RGB/alpha accessors and lowercase RGBA hex formatting, and `avutil_core_models` now build-checks color parser fixtures plus arbitrary UTF-8 parser inputs. The component remains `implemented`, not `differential_pass` or `complete`, because no pinned FFmpeg oracle binary is installed locally, `ffmpeg -colors` has not run as a differential harness, and FFmpeg's nondeterministic `random`/`bikeshed` branch plus unusual C `strtod`/`strtoul` edge calibration remain pending.
 
 Latest `fate-runner` mapping-validation update: the runner now rejects unknown or malformed `{...}` placeholders in mapping workdirs, programs, env values, and arguments at parse time, and rejects duplicate `env:NAME=...` assignments within a single mapping row. This keeps oracle/FATE mapping typos from silently turning into wrong child commands. Focused runner tests passed; the component remains `scaffolded` because no pinned FFmpeg oracle binary or FATE samples tree is installed locally.
 
@@ -458,15 +458,14 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
-- Current `avutil-color` inventory slice:
-  - `cargo test -p avutil color` (9 filtered color/logging/frame tests passed; color oracle harness compiled with 1 local parser test passed and 1 oracle test ignored)
+- Current `avutil-color` parser slice:
+  - `cargo test -p avutil color` (13 filtered color/logging/frame tests passed; color oracle harness compiled with 1 local parser test passed and 1 oracle test ignored)
   - `cargo test -p avutil --test color_oracle` (1 parser test passed; 1 oracle test ignored)
-  - `cargo test -p fate-runner` (40 tests passed)
-  - `cargo run -p fate-runner -- mappings --mappings tests/differential/mappings.txt --target oracle-ffmpeg-colors`
-  - `cargo run -p fate-runner -- run --dry-run --component avutil-color`
-  - `cargo run -p fate-runner -- run --component avutil-color`
+  - `cargo check --manifest-path fuzz\Cargo.toml --bins`
   - `cargo clippy -p avutil --all-targets -- -D warnings`
-  - `cargo clippy -p fate-runner --all-targets -- -D warnings`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --bins -- -D warnings`
+  - `cargo run -p fate-runner -- run --component avutil-color`
+  - `cargo test -p fate-runner` (40 tests passed)
   - `cargo fmt --all -- --check`
   - `git diff --check` (exit 0; CRLF warnings only)
 
@@ -4858,6 +4857,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-color` parser slice:
+  - `cargo fmt --manifest-path fuzz\Cargo.toml --all -- --check` and `rustfmt --check fuzz\fuzz_targets\avutil_core_models.rs` both overflowed rustfmt's stack in the separate fuzz package. The package-level check also reported formatting diffs in unrelated existing fuzz targets before the overflow. Workspace `cargo fmt --all -- --check`, focused Rust tests, fuzz package `cargo check`, fuzz package clippy, and diff hygiene passed; no code-related failing validation remains for this slice.
+
 - Current `fate-runner` mapping-validation slice:
   - The first `cargo fmt --all -- --check` reported one rustfmt diff in `crates/fate-runner/src/main.rs`; `cargo fmt --all` fixed it and the rerun passed.
 
@@ -5295,7 +5297,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-color` is the active focus for this turn. The concrete change adds the source-checked FFmpeg 8.1.1 named color table plus a measurable ignored oracle row for `ffmpeg -colors`, while leaving full `av_parse_color` behavior for later. It remains `implemented`, not complete, because the pinned FFmpeg oracle is absent locally and the ignored differential row has not executed.
+`avutil-color` is the active focus for this turn. The concrete change adds the bounded deterministic `av_parse_color` parser subset on top of the source-checked named color table and `ffmpeg -colors` oracle row. It remains `implemented`, not complete, because the pinned FFmpeg oracle is absent locally, the ignored differential row has not executed, and nondeterministic `random`/`bikeshed` plus unusual C parser edge calibration remain pending.
 
 `fate-runner` is the active focus for this turn. The concrete change hardens mapping parsing so only the supported `{samples}` and `{oracle_ffmpeg}` placeholders are accepted and duplicate per-row environment assignments fail before command execution. It remains `scaffolded`, not complete, because upstream FATE media execution is still blocked by the missing pinned oracle and FATE samples.
 
@@ -5542,8 +5544,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 ## Next 3 Concrete Actions
 
 1. Provide a native build toolchain, install a WSL distribution with build tools, or place pinned FFmpeg 8.1.1 oracle binaries at `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` and `ffprobe(.exe)` or set `FFMPEG_ORACLE`/`FFPROBE_ORACLE`, then run `oracle-inventory|local-oracle-unit`, generate the pinned inventory snapshots, and run `fftools-version|oracle-ffmpeg-version` plus `fftools-version|oracle-ffprobe-version`.
-2. With the same oracle, run the current inventory rows: `avutil-pixel-format|oracle-ffmpeg-pix-fmts-subset`, `avutil-sample-format|oracle-ffmpeg-sample-fmts`, `avutil-color|oracle-ffmpeg-colors`, and `avutil-channel-layout|oracle-ffmpeg-layouts`, then run `avformat-wav-demuxer|oracle-wav-generated-md5`.
-3. Configure `third_party/fate-samples` or `FATE_SAMPLES` and run `avformat-wav-demuxer|fate-wav-pcm-s16le-md5`; if local oracle/samples remain unavailable, add the next unblocked high-priority oracle-vector slice that can be represented as an ignored differential row plus local compile/unit coverage.
+2. With the same oracle, run the current inventory rows: `avutil-pixel-format|oracle-ffmpeg-pix-fmts-subset`, `avutil-sample-format|oracle-ffmpeg-sample-fmts`, `avutil-color|oracle-ffmpeg-colors`, and `avutil-channel-layout|oracle-ffmpeg-layouts`, then add parser-level color oracle vectors through an oracle-exposed path such as the FFmpeg color filter.
+3. Configure `third_party/fate-samples` or `FATE_SAMPLES` and run `avformat-wav-demuxer|fate-wav-pcm-s16le-md5`; if local oracle/samples remain unavailable, continue the next unblocked high-priority avutil infrastructure slice with local unit/fuzz-build coverage and an ignored differential row where measurable.
 
 ## Known Blockers
 
@@ -5679,7 +5681,7 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added `avutil-color` named color inventory and oracle coverage. `crates/avutil/src/color.rs` models the pinned FFmpeg 8.1.1 known color table, including indexed lookup, case-insensitive table lookup, and `ffmpeg -colors` table formatting. The ignored `crates/avutil/tests/color_oracle.rs` harness compares `NamedColor::ALL` against pinned `ffmpeg -colors` output, and `fate-runner` maps/list/runs the new local and differential rows. The row is measurable but not complete because the local pinned oracle binary is absent.
+Latest slice: added a bounded `avutil-color` parser model. `crates/avutil/src/color.rs` now exposes `RgbaColor` and `parse_color` for named colors, bare/#/lowercase-0x `RRGGBB` and `RRGGBBAA` hex forms, decimal and hexadecimal alpha suffixes, embedded-alpha overrides, empty alpha suffixes, and typed invalid-input rejection. `fuzz/fuzz_targets/avutil_core_models.rs` now build-checks deterministic parser fixtures and arbitrary UTF-8 parser inputs. The ledger and docs record the remaining gaps: no local pinned oracle execution, no parser oracle vectors yet, and nondeterministic `random`/`bikeshed` still explicitly unsupported.
 
 Latest slice: hardened `fate-runner` mapping validation. Mapping rows now fail parsing for unknown or malformed `{...}` placeholders and for duplicate `env:NAME=...` entries in the same row, with unit coverage and docs/ledger updates. Local runner tests pass; upstream media execution still waits on a pinned oracle and FATE samples.
 
