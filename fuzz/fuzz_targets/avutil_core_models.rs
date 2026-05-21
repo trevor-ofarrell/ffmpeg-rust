@@ -1172,6 +1172,25 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
         Some(Ordering::Less | Ordering::Equal | Ordering::Greater)
     ));
     assert_eq!(Rational::from_raw(0, 0).av_cmp(other), None);
+    assert_eq!(
+        rational.to_int_float_bits().unwrap(),
+        (rational.to_f64() as f32).to_bits()
+    );
+    assert_eq!(
+        Rational::from_raw(0, 0).to_int_float_bits().unwrap(),
+        0xffc0_0000
+    );
+    assert_eq!(
+        Rational::from_raw(1, 0).to_int_float_bits().unwrap(),
+        0x7f80_0000
+    );
+    assert_eq!(
+        Rational::from_raw(-1, 0).to_int_float_bits().unwrap(),
+        0x7f80_0000
+    );
+    assert!(Rational::from_raw(i32::MIN, 1)
+        .to_int_float_bits()
+        .is_err());
 
     let first_candidate = positive_rational_from(cursor.next(), cursor.next());
     let second_candidate = positive_rational_from(cursor.next(), cursor.next());

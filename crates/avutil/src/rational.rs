@@ -57,6 +57,62 @@ impl Rational {
         f64::from(self.num) / f64::from(self.den)
     }
 
+    pub fn to_int_float_bits(self) -> AvResult<u32> {
+        if self.num == i32::MIN || self.den == i32::MIN {
+            return Err(AvError::invalid_argument(
+                "av_q2intfloat is undefined for i32::MIN negation inputs",
+            ));
+        }
+
+        let mut num = i64::from(self.num);
+        let mut den = i64::from(self.den);
+        if den < 0 {
+            den = -den;
+            num = -num;
+        }
+
+        let mut sign = 0_u32;
+        if num < 0 {
+            num = -num;
+            sign = 1;
+        }
+
+        if num == 0 && den == 0 {
+            return Ok(0xffc0_0000);
+        }
+        if num == 0 {
+            return Ok(0);
+        }
+        if den == 0 {
+            return Ok(0x7f80_0000 | ((num as u32) & 0x8000_0000));
+        }
+
+        let mut shift = 23 + floor_log2_positive(den) - floor_log2_positive(num);
+        let mut mantissa = q2intfloat_mantissa(num, den, shift)?;
+        if mantissa >= (1_i128 << 24) {
+            shift -= 1;
+        }
+        if mantissa < (1_i128 << 23) {
+            shift += 1;
+        }
+
+        mantissa = q2intfloat_mantissa(num, den, shift)?;
+        if !((1_i128 << 23)..(1_i128 << 24)).contains(&mantissa) {
+            return Err(AvError::invalid_argument(
+                "rational cannot be represented as FFmpeg int-float bits",
+            ));
+        }
+
+        let exponent = 150 - shift;
+        if !(0..=255).contains(&exponent) {
+            return Err(AvError::invalid_argument(
+                "rational int-float exponent out of range",
+            ));
+        }
+
+        Ok((sign << 31) | ((exponent as u32) << 23) | ((mantissa - (1_i128 << 23)) as u32))
+    }
+
     pub fn av_cmp(self, other: Self) -> Option<Ordering> {
         let diff = i128::from(self.num) * i128::from(other.den)
             - i128::from(other.num) * i128::from(self.den);
@@ -328,6 +384,39 @@ fn is_better_reduction(
     candidate_error * current.1 < current_error * candidate.1
 }
 
+fn floor_log2_positive(value: i64) -> i32 {
+    debug_assert!(value > 0);
+    (63 - (value as u64).leading_zeros()) as i32
+}
+
+fn q2intfloat_mantissa(num: i64, den: i64, shift: i32) -> AvResult<i128> {
+    debug_assert!(num > 0);
+    debug_assert!(den > 0);
+
+    if shift >= 0 {
+        let multiplier = 1_i128
+            .checked_shl(shift as u32)
+            .ok_or_else(|| AvError::invalid_argument("rational int-float shift out of range"))?;
+        Ok(rescale_positive_nearest(
+            i128::from(num),
+            multiplier,
+            i128::from(den),
+        ))
+    } else {
+        let divisor = i128::from(den)
+            .checked_shl((-shift) as u32)
+            .ok_or_else(|| AvError::invalid_argument("rational int-float shift out of range"))?;
+        Ok(rescale_positive_nearest(i128::from(num), 1, divisor))
+    }
+}
+
+fn rescale_positive_nearest(value: i128, multiplier: i128, divisor: i128) -> i128 {
+    debug_assert!(value >= 0);
+    debug_assert!(multiplier >= 0);
+    debug_assert!(divisor > 0);
+    (value * multiplier + divisor / 2) / divisor
+}
+
 impl PartialOrd for Rational {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.av_cmp(*other)
@@ -445,6 +534,70 @@ mod tests {
         assert_eq!(
             Rational::from_raw(0, 0).av_cmp(Rational::new(1, 1).unwrap()),
             None
+        );
+    }
+
+    #[test]
+    fn rational_to_int_float_bits_matches_special_ffmpeg_values() {
+        assert_eq!(
+            Rational::from_raw(0, 0).to_int_float_bits().unwrap(),
+            0xffc0_0000
+        );
+        assert_eq!(Rational::from_raw(0, 1).to_int_float_bits().unwrap(), 0);
+        assert_eq!(Rational::from_raw(0, -1).to_int_float_bits().unwrap(), 0);
+        assert_eq!(
+            Rational::from_raw(1, 0).to_int_float_bits().unwrap(),
+            0x7f80_0000
+        );
+        assert_eq!(
+            Rational::from_raw(-1, 0).to_int_float_bits().unwrap(),
+            0x7f80_0000
+        );
+    }
+
+    #[test]
+    fn rational_to_int_float_bits_matches_finite_ieee_vectors() {
+        assert_eq!(
+            Rational::new(1, 1).unwrap().to_int_float_bits().unwrap(),
+            0x3f80_0000
+        );
+        assert_eq!(
+            Rational::new(1, 2).unwrap().to_int_float_bits().unwrap(),
+            0x3f00_0000
+        );
+        assert_eq!(
+            Rational::new(-1, 2).unwrap().to_int_float_bits().unwrap(),
+            0xbf00_0000
+        );
+        assert_eq!(
+            Rational::new(2, 1).unwrap().to_int_float_bits().unwrap(),
+            0x4000_0000
+        );
+        assert_eq!(
+            Rational::new(1, 3).unwrap().to_int_float_bits().unwrap(),
+            0x3eaa_aaab
+        );
+        assert_eq!(
+            Rational::from_raw(1, -2).to_int_float_bits().unwrap(),
+            0xbf00_0000
+        );
+    }
+
+    #[test]
+    fn rational_to_int_float_bits_rejects_source_undefined_negation_overflow() {
+        assert_eq!(
+            Rational::from_raw(i32::MIN, 1)
+                .to_int_float_bits()
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            Rational::from_raw(1, i32::MIN)
+                .to_int_float_bits()
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
         );
     }
 
