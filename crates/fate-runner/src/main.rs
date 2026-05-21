@@ -253,6 +253,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/bitwriter_oracle.rs",
+        exact_ids: &["avutil-bitwriter"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/dict.rs",
         exact_ids: &["avutil-dict"],
         id_prefixes: &[],
@@ -1760,6 +1765,17 @@ mod tests {
         assert_eq!(
             changed_components(&component_ids, &paths),
             vec!["avutil-bitreader".to_string()]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_bitwriter_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-bitwriter"]));
+        let paths = vec!["crates/avutil/tests/bitwriter_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-bitwriter".to_string()]
         );
     }
 

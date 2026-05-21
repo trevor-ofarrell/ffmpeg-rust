@@ -131,6 +131,13 @@ cargo test -p avutil --test bitreader_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-bitreader --target oracle-libavcodec-get-bits --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
+`crates/avutil/tests/bitwriter_oracle.rs` is an ignored oracle harness for libavcodec `PutBitContext` helpers. It uses the same pinned FFmpeg 8.1.1 source/build cache as the bitreader oracle, includes `libavcodec/put_bits.h` and `libavcodec/put_golomb.h`, and links pinned libavcodec/libavutil only inside the test for Golomb tables. The harness compares `init_put_bits`, `put_bits`, `put_bits32`, `put_bits63`, `put_bits64`, `put_sbits`, `put_sbits63`, `align_put_bits`, `set_ue_golomb`, `set_ue_golomb_long`, `set_se_golomb`, `put_bits_count`, and `put_bytes_count` flushed byte/cursor vectors against the Rust `BitWriter` model. It is wired into `tests/differential/mappings.txt` as `avutil-bitwriter|oracle-libavcodec-put-bits`:
+
+```sh
+cargo test -p avutil --test bitwriter_oracle -- --ignored
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-bitwriter --target oracle-libavcodec-put-bits --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+```
+
 `crates/avutil/tests/hash_oracle.rs` is an ignored oracle harness for libavutil generic hash helpers. It compiles a small test-only C helper against `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_hash_names`, `av_hash_alloc`, `av_hash_get_name`, `av_hash_get_size`, `av_hash_update`, `av_hash_final`, `av_hash_final_bin`, `av_hash_final_hex`, and `av_hash_final_b64` output for the full FFmpeg 8.1.1 default-native generic hash inventory: MD5, murmur3, RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320, SHA160, SHA224, SHA256, SHA512/224, SHA512/256, SHA384, SHA512, CRC32, and adler32. It is wired into `tests/differential/mappings.txt` as `avutil-hash|oracle-libavutil-hash`:
 
 ```sh

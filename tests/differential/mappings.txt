@@ -15,6 +15,7 @@ avutil-rational|oracle-libavutil-rational|.|cargo|env:FFMPEG_ORACLE={oracle_ffmp
 avutil-timebase|oracle-libavutil-timebase|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|timebase_oracle|--|--ignored
 avutil-byteio|oracle-libavutil-byteio|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|byteio_oracle|--|--ignored
 avutil-bitreader|oracle-libavcodec-get-bits|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|bitreader_oracle|--|--ignored
+avutil-bitwriter|oracle-libavcodec-put-bits|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|bitwriter_oracle|--|--ignored
 avutil-hash|oracle-libavutil-hash|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|hash_oracle|--|--ignored
 avutil-dict|oracle-libavutil-dict|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|dict_oracle|--|--ignored
 avutil-channel-layout|oracle-ffmpeg-layouts|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|channel_layout_oracle|--|--ignored

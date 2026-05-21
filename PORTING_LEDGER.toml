@@ -1007,9 +1007,9 @@ id = "avutil-bitwriter"
 kind = "utility"
 ffmpeg_name = "PutBitContext"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "complete"
 priority = 1
-oracle_command = ""
+oracle_command = "cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-bitwriter --target oracle-libavcodec-put-bits --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"
 rust_command = "cargo test -p avutil bitwriter"
 unit_tests = [
   "bitwriter::tests::writes_msb_first_bits_across_byte_boundaries",
@@ -1032,11 +1032,16 @@ unit_tests = [
   "bitwriter::tests::rejects_widths_wider_than_u64",
   "bitwriter::tests::rejects_unrepresentable_signed_exp_golomb_without_advancing",
 ]
-differential_tests = []
-fate_tests = ["tests/fate/mappings.txt:avutil-bitwriter|local-avutil-unit"]
+differential_tests = [
+  "tests/differential/mappings.txt:avutil-bitwriter|oracle-libavcodec-put-bits",
+  "bitwriter_oracle::libavcodec_put_bits_helpers_match_bitwriter_model",
+]
+fate_tests = [
+  "tests/fate/mappings.txt:avutil-bitwriter|local-avutil-unit",
+  "not_applicable: upstream FFmpeg FATE has no standalone PutBitContext helper API target; covered by unit tests plus pinned libavcodec differential oracle",
+]
 fuzz_targets = ["avutil_bitreader"]
-notes = "Bounded MSB-first bit writer implemented with unsigned writes, signed writes, aligned byte-slice appends, configurable byte-alignment padding, checked bit truncation with tail-bit masking, clear/reset support, unsigned and signed Exp-Golomb writes, signed fit validation, and no-mutation failure invariants. Aligned byte writes validate byte alignment and bit-count overflow before mutation. Configurable byte alignment reports the current padding distance and writes either zero or one padding bits until byte-aligned. Checked truncation refuses growth without mutating state, masks unused tail bits after partial-byte truncation, and allows later writes to resume at the truncated bit position. Exp-Golomb coverage includes exact small-code vectors, signed round trips, u64::MAX unsigned round trips, and i64::MIN signed rejection without mutation. Build-checked cargo-fuzz target avutil_bitreader also exercises unsigned write validation, signed write validation, aligned byte writes, configurable alignment padding, truncation, clear/reset, Exp-Golomb writes, cursor invariants, and byte alignment, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper PutBitContext compatibility vectors and oracle/FATE parity are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the bitwriter unit filter only and does not count as upstream FATE parity."
-# Latest fuzz execution: WSL `cargo fuzz run avutil_bitreader -- -runs=1` passes locally and covers current bitwriter invariants; PutBitContext oracle/FATE completion evidence is still pending.
+notes = "Complete for the selected low-level PutBitContext-compatible helper surface. The bounded MSB-first bit writer covers unsigned writes, signed writes, aligned byte-slice appends, configurable byte-alignment padding, checked bit truncation with tail-bit masking, clear/reset support, unsigned and signed Exp-Golomb writes, signed fit validation, and no-mutation failure invariants. Aligned byte writes validate byte alignment and bit-count overflow before mutation. Configurable byte alignment reports the current padding distance and writes either zero or one padding bits until byte-aligned. Checked truncation refuses growth without mutating state, masks unused tail bits after partial-byte truncation, and allows later writes to resume at the truncated bit position. Exp-Golomb coverage includes exact small-code vectors, signed round trips, u64::MAX unsigned round trips, and i64::MIN signed rejection without mutation. The ignored bitwriter_oracle harness compiles a test-only C helper against pinned FFmpeg 8.1.1 source/build-cache `libavcodec/put_bits.h` and `libavcodec/put_golomb.h`, links pinned libavcodec/libavutil only inside the test for Golomb tables, and validates `init_put_bits`, `put_bits`, `put_bits32`, `put_bits63`, `put_bits64`, `put_sbits`, `put_sbits63`, `align_put_bits`, `set_ue_golomb`, `set_ue_golomb_long`, `set_se_golomb`, `put_bits_count`, and `put_bytes_count` flushed byte/cursor vectors against the Rust model. The local FATE-runner smoke mapping executes the bitwriter unit filter, and upstream FFmpeg FATE has no standalone PutBitContext helper API target. WSL `cargo fuzz run avutil_bitreader -- -runs=1` passes locally and covers current bitwriter invariants."
 blocked_reason = ""
 
 [[component]]
