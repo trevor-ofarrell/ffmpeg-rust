@@ -107,6 +107,96 @@ impl SampleBufferLayout {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SamplePlaneRange {
+    plane_index: usize,
+    byte_offset: usize,
+    byte_len: usize,
+}
+
+impl SamplePlaneRange {
+    pub fn plane_index(self) -> usize {
+        self.plane_index
+    }
+
+    pub fn byte_offset(self) -> usize {
+        self.byte_offset
+    }
+
+    pub fn byte_len(self) -> usize {
+        self.byte_len
+    }
+
+    pub fn byte_end(self) -> usize {
+        self.byte_offset + self.byte_len
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.byte_len == 0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SampleArrayLayout {
+    buffer: SampleBufferLayout,
+    planes: Vec<SamplePlaneRange>,
+}
+
+impl SampleArrayLayout {
+    pub fn line_size(&self) -> usize {
+        self.buffer.line_size()
+    }
+
+    pub fn buffer_size(&self) -> usize {
+        self.buffer.buffer_size()
+    }
+
+    pub fn plane_count(&self) -> usize {
+        self.buffer.plane_count()
+    }
+
+    pub fn samples_per_channel(&self) -> usize {
+        self.buffer.samples_per_channel()
+    }
+
+    pub fn alignment(&self) -> usize {
+        self.buffer.alignment()
+    }
+
+    pub fn buffer_layout(&self) -> SampleBufferLayout {
+        self.buffer
+    }
+
+    pub fn plane_ranges(&self) -> &[SamplePlaneRange] {
+        &self.planes
+    }
+
+    pub fn split_buffer<'a>(&self, buffer: &'a [u8]) -> AvResult<Vec<&'a [u8]>> {
+        self.validate_buffer_len(buffer.len())?;
+        Ok(buffer[..self.buffer_size()]
+            .chunks_exact(self.line_size())
+            .take(self.plane_count())
+            .collect())
+    }
+
+    pub fn split_buffer_mut<'a>(&self, buffer: &'a mut [u8]) -> AvResult<Vec<&'a mut [u8]>> {
+        self.validate_buffer_len(buffer.len())?;
+        Ok(buffer[..self.buffer_size()]
+            .chunks_exact_mut(self.line_size())
+            .take(self.plane_count())
+            .collect())
+    }
+
+    fn validate_buffer_len(&self, len: usize) -> AvResult<()> {
+        if len < self.buffer_size() {
+            return Err(AvError::invalid_argument(
+                "sample array buffer is shorter than required layout",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SampleSilenceRange {
     byte_offset: usize,
     byte_len: usize,
@@ -398,6 +488,45 @@ impl SampleFormat {
     ) -> AvResult<Vec<usize>> {
         let layout = self.buffer_layout(samples_per_channel, channels, alignment)?;
         Ok(vec![layout.line_size(); layout.plane_count()])
+    }
+
+    pub fn fill_arrays_layout(
+        self,
+        samples_per_channel: usize,
+        channels: u16,
+        alignment: usize,
+    ) -> AvResult<SampleArrayLayout> {
+        let buffer = self.buffer_layout(samples_per_channel, channels, alignment)?;
+        let planes = (0..buffer.plane_count())
+            .map(|plane_index| SamplePlaneRange {
+                plane_index,
+                byte_offset: plane_index * buffer.line_size(),
+                byte_len: buffer.line_size(),
+            })
+            .collect();
+        Ok(SampleArrayLayout { buffer, planes })
+    }
+
+    pub fn split_buffer(
+        self,
+        buffer: &[u8],
+        samples_per_channel: usize,
+        channels: u16,
+        alignment: usize,
+    ) -> AvResult<Vec<&[u8]>> {
+        self.fill_arrays_layout(samples_per_channel, channels, alignment)?
+            .split_buffer(buffer)
+    }
+
+    pub fn split_buffer_mut(
+        self,
+        buffer: &mut [u8],
+        samples_per_channel: usize,
+        channels: u16,
+        alignment: usize,
+    ) -> AvResult<Vec<&mut [u8]>> {
+        self.fill_arrays_layout(samples_per_channel, channels, alignment)?
+            .split_buffer_mut(buffer)
     }
 
     pub fn silence_byte(self) -> u8 {
@@ -807,6 +936,143 @@ mod tests {
         assert_eq!(
             SampleFormat::S16
                 .buffer_layout(FFMPEG_INT_MAX, 1, 0)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
+
+    #[test]
+    fn sample_formats_compute_fill_array_layouts() {
+        let packed = SampleFormat::S16.fill_arrays_layout(3, 2, 1).unwrap();
+        assert_eq!(packed.line_size(), 12);
+        assert_eq!(packed.buffer_size(), 12);
+        assert_eq!(packed.plane_count(), 1);
+        assert_eq!(packed.samples_per_channel(), 3);
+        assert_eq!(packed.alignment(), 1);
+        assert_eq!(
+            packed.buffer_layout(),
+            SampleFormat::S16.buffer_layout(3, 2, 1).unwrap()
+        );
+        assert_eq!(
+            packed.plane_ranges(),
+            &[SamplePlaneRange {
+                plane_index: 0,
+                byte_offset: 0,
+                byte_len: 12,
+            }]
+        );
+        assert_eq!(packed.plane_ranges()[0].byte_end(), 12);
+        assert!(!packed.plane_ranges()[0].is_empty());
+
+        let planar = SampleFormat::FltP.fill_arrays_layout(3, 2, 16).unwrap();
+        assert_eq!(planar.line_size(), 16);
+        assert_eq!(planar.buffer_size(), 32);
+        assert_eq!(planar.plane_count(), 2);
+        assert_eq!(
+            planar.plane_ranges(),
+            &[
+                SamplePlaneRange {
+                    plane_index: 0,
+                    byte_offset: 0,
+                    byte_len: 16,
+                },
+                SamplePlaneRange {
+                    plane_index: 1,
+                    byte_offset: 16,
+                    byte_len: 16,
+                },
+            ]
+        );
+        assert_eq!(planar.plane_ranges()[1].plane_index(), 1);
+        assert_eq!(planar.plane_ranges()[1].byte_offset(), 16);
+        assert_eq!(planar.plane_ranges()[1].byte_len(), 16);
+
+        let auto_aligned = SampleFormat::U8P.fill_arrays_layout(33, 2, 0).unwrap();
+        assert_eq!(auto_aligned.samples_per_channel(), 64);
+        assert_eq!(auto_aligned.alignment(), 1);
+        assert_eq!(auto_aligned.line_size(), 64);
+        assert_eq!(auto_aligned.buffer_size(), 128);
+    }
+
+    #[test]
+    fn sample_formats_split_contiguous_buffers_like_ffmpeg_fill_arrays() {
+        let packed = SampleFormat::S16.fill_arrays_layout(3, 2, 1).unwrap();
+        let packed_buffer = (0u8..16).collect::<Vec<_>>();
+        let packed_planes = packed.split_buffer(&packed_buffer).unwrap();
+        assert_eq!(packed_planes.len(), 1);
+        assert_eq!(packed_planes[0], &packed_buffer[..12]);
+        assert_eq!(
+            SampleFormat::S16
+                .split_buffer(&packed_buffer, 3, 2, 1)
+                .unwrap(),
+            packed_planes
+        );
+
+        let planar = SampleFormat::U8P.fill_arrays_layout(4, 2, 1).unwrap();
+        let planar_buffer = (0u8..10).collect::<Vec<_>>();
+        let planar_planes = planar.split_buffer(&planar_buffer).unwrap();
+        assert_eq!(planar_planes.len(), 2);
+        assert_eq!(planar_planes[0], &planar_buffer[0..4]);
+        assert_eq!(planar_planes[1], &planar_buffer[4..8]);
+    }
+
+    #[test]
+    fn sample_formats_split_contiguous_buffers_mutably() {
+        let layout = SampleFormat::U8P.fill_arrays_layout(4, 2, 1).unwrap();
+        let mut buffer = vec![0u8; 10];
+        {
+            let mut planes = layout.split_buffer_mut(&mut buffer).unwrap();
+            assert_eq!(planes.len(), 2);
+            planes[0][0] = 0x11;
+            planes[0][3] = 0x12;
+            planes[1][0] = 0x21;
+            planes[1][3] = 0x22;
+        }
+        assert_eq!(&buffer, &[0x11, 0, 0, 0x12, 0x21, 0, 0, 0x22, 0, 0]);
+
+        {
+            let mut planes = SampleFormat::S16
+                .split_buffer_mut(&mut buffer, 3, 1, 1)
+                .unwrap();
+            assert_eq!(planes.len(), 1);
+            planes[0][1] = 0xAA;
+        }
+        assert_eq!(buffer[1], 0xAA);
+    }
+
+    #[test]
+    fn sample_fill_array_layout_rejects_invalid_and_short_buffers() {
+        assert_eq!(
+            SampleFormat::S16
+                .fill_arrays_layout(0, 2, 1)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            SampleFormat::S16
+                .fill_arrays_layout(1, 0, 1)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let layout = SampleFormat::S16P.fill_arrays_layout(4, 2, 1).unwrap();
+        let short = vec![0u8; layout.buffer_size() - 1];
+        assert_eq!(
+            layout.split_buffer(&short).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let mut short_mut = short.clone();
+        assert_eq!(
+            layout.split_buffer_mut(&mut short_mut).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            SampleFormat::S16P
+                .split_buffer(&short, 4, 2, 1)
                 .unwrap_err()
                 .kind(),
             AvErrorKind::InvalidArgument

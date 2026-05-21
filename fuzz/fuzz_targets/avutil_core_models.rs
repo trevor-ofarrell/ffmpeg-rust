@@ -3726,6 +3726,13 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
                 .kind(),
             AvErrorKind::InvalidArgument
         );
+        assert_eq!(
+            sample_format
+                .fill_arrays_layout(samples_per_channel, channels, buffer_alignment)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
     } else {
         let sample_buffer_layout = sample_buffer_layout.unwrap();
         let expected_alignment = if buffer_alignment == 0 {
@@ -3769,6 +3776,83 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
                 .aligned_plane_sizes(samples_per_channel, channels, buffer_alignment)
                 .unwrap(),
             vec![expected_line_size; expected_plane_count]
+        );
+
+        let sample_array_layout = sample_format
+            .fill_arrays_layout(samples_per_channel, channels, buffer_alignment)
+            .unwrap();
+        assert_eq!(sample_array_layout.line_size(), expected_line_size);
+        assert_eq!(
+            sample_array_layout.buffer_size(),
+            expected_line_size * expected_plane_count
+        );
+        assert_eq!(sample_array_layout.plane_count(), expected_plane_count);
+        assert_eq!(
+            sample_array_layout.samples_per_channel(),
+            expected_samples
+        );
+        assert_eq!(sample_array_layout.alignment(), expected_alignment);
+        assert_eq!(sample_array_layout.buffer_layout(), sample_buffer_layout);
+        assert_eq!(sample_array_layout.plane_ranges().len(), expected_plane_count);
+        for (plane_index, range) in sample_array_layout.plane_ranges().iter().enumerate() {
+            assert_eq!(range.plane_index(), plane_index);
+            assert_eq!(range.byte_offset(), plane_index * expected_line_size);
+            assert_eq!(range.byte_len(), expected_line_size);
+            assert_eq!(range.byte_end(), (plane_index + 1) * expected_line_size);
+            assert_eq!(range.is_empty(), expected_line_size == 0);
+        }
+
+        let contiguous = (0..sample_array_layout.buffer_size())
+            .map(|index| index as u8)
+            .collect::<Vec<_>>();
+        let split_planes = sample_array_layout.split_buffer(&contiguous).unwrap();
+        assert_eq!(split_planes.len(), expected_plane_count);
+        for (range, plane) in sample_array_layout.plane_ranges().iter().zip(&split_planes) {
+            assert_eq!(
+                *plane,
+                &contiguous[range.byte_offset()..range.byte_end()]
+            );
+        }
+        assert_eq!(
+            sample_format
+                .split_buffer(&contiguous, samples_per_channel, channels, buffer_alignment)
+                .unwrap(),
+            split_planes
+        );
+
+        let mut mutable_contiguous = contiguous.clone();
+        {
+            let mut split_mut_planes = sample_array_layout
+                .split_buffer_mut(&mut mutable_contiguous)
+                .unwrap();
+            assert_eq!(split_mut_planes.len(), expected_plane_count);
+            for (plane_index, plane) in split_mut_planes.iter_mut().enumerate() {
+                plane[0] = 0xD0u8.wrapping_add(plane_index as u8);
+            }
+        }
+        for range in sample_array_layout.plane_ranges() {
+            assert_eq!(
+                mutable_contiguous[range.byte_offset()],
+                0xD0u8.wrapping_add(range.plane_index() as u8)
+            );
+        }
+
+        let short_len = sample_array_layout.buffer_size() - 1;
+        let short = vec![0; short_len];
+        assert_eq!(
+            sample_array_layout
+                .split_buffer(&short)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        let mut short_mut = short;
+        assert_eq!(
+            sample_array_layout
+                .split_buffer_mut(&mut short_mut)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
         );
     }
 
