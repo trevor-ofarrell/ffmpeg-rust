@@ -21,7 +21,7 @@ fn exercise_dictionary(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 10 {
+        match cursor.next().unwrap_or_default() % 11 {
             0 => {
                 let key = literal_from(cursor);
                 let value = literal_from(cursor);
@@ -126,6 +126,21 @@ fn exercise_dictionary(cursor: &mut Cursor<'_>) {
                 if let Ok(results) = result {
                     assert!(results.len() <= dict.len().saturating_add(MAX_OPS));
                 }
+            }
+            9 => {
+                let key = literal_from(cursor);
+                let match_mode = match_mode_from(cursor.next());
+                let before_len = dict.len();
+                let removed = dict.remove_all(&key, match_mode);
+                assert_eq!(dict.len() + removed.len(), before_len);
+                for entry in &removed {
+                    assert!(dictionary_key_matches(entry.key(), &key, match_mode));
+                    assert!(!entry.key().is_empty());
+                    assert!(!entry.key().as_bytes().contains(&0));
+                    assert!(!entry.value().as_bytes().contains(&0));
+                }
+                assert!(dict.matching_entries(&key, match_mode).next().is_none());
+                assert_valid_dictionary(&dict);
             }
             _ => {
                 dict.clear();
@@ -308,6 +323,18 @@ fn exercise_fixtures() {
     assert!(dict.set("", "value").is_err());
     assert!(dict.set("bad\0key", "value").is_err());
     assert!(dict.set("key", "bad\0value").is_err());
+    let removed = dict.remove_all("TITLE", MatchMode::CaseInsensitive);
+    assert_eq!(
+        removed
+            .iter()
+            .map(|entry| entry.value())
+            .collect::<Vec<_>>(),
+        vec!["Second", "Third"]
+    );
+    assert!(dict
+        .matching_entries("title", MatchMode::CaseInsensitive)
+        .next()
+        .is_none());
 
     let mut options = sample_options();
     options.set_from_str("threads", "8").unwrap();

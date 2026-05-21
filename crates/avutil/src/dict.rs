@@ -146,6 +146,21 @@ impl Dictionary {
             .map(|index| self.entries.remove(index))
     }
 
+    pub fn remove_all(&mut self, key: &str, match_mode: MatchMode) -> Vec<DictionaryEntry> {
+        let mut removed = Vec::new();
+        let mut index = 0;
+
+        while index < self.entries.len() {
+            if key_matches(self.entries[index].key(), key, match_mode) {
+                removed.push(self.entries.remove(index));
+            } else {
+                index += 1;
+            }
+        }
+
+        removed
+    }
+
     pub fn parse_pairs(
         raw: &str,
         key_value_separators: &str,
@@ -600,6 +615,75 @@ mod tests {
 
         assert_eq!(removed.key(), "language");
         assert!(dict.is_empty());
+    }
+
+    #[test]
+    fn remove_all_preserves_removed_order_and_remaining_entries() {
+        let mut dict = Dictionary::new();
+        dict.set_with_mode(
+            "artist",
+            "first",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "album",
+            "record",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "ARTIST",
+            "second",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "artist-sort",
+            "name",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+
+        let sensitive_removed = dict.remove_all("artist", MatchMode::CaseSensitive);
+        assert_eq!(
+            sensitive_removed
+                .iter()
+                .map(|entry| (entry.key(), entry.value()))
+                .collect::<Vec<_>>(),
+            vec![("artist", "first")]
+        );
+        assert_eq!(
+            dict.entries()
+                .iter()
+                .map(|entry| entry.key())
+                .collect::<Vec<_>>(),
+            vec!["album", "ARTIST", "artist-sort"]
+        );
+
+        let insensitive_removed = dict.remove_all("artist", MatchMode::CaseInsensitive);
+        assert_eq!(
+            insensitive_removed
+                .iter()
+                .map(|entry| (entry.key(), entry.value()))
+                .collect::<Vec<_>>(),
+            vec![("ARTIST", "second")]
+        );
+        assert_eq!(
+            dict.entries()
+                .iter()
+                .map(|entry| (entry.key(), entry.value()))
+                .collect::<Vec<_>>(),
+            vec![("album", "record"), ("artist-sort", "name")]
+        );
+
+        assert!(dict
+            .remove_all("missing", MatchMode::CaseInsensitive)
+            .is_empty());
     }
 
     #[test]

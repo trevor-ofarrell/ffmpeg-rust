@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-dict` update: added ordered bulk removal for duplicate metadata keys. `Dictionary::remove_all` removes every entry matching the requested key under caller-selected case sensitivity, returns removed entries in original insertion order, and leaves nonmatching entry order intact. Unit coverage verifies case-sensitive and case-insensitive removal across duplicate keys and remaining-order preservation, while `avutil_metadata_options` now build-checks generated bulk-removal invariants plus the deterministic duplicate-key fixture. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, and actual local fuzz execution are still absent.
+
 Latest `avutil-bitwriter` update: added configurable byte-alignment padding to the bounded MSB-first bit writer. `BitWriter::bits_to_align` reports the remaining padding distance to the next byte boundary, `byte_align_with` pads with caller-selected zero or one bits, and `byte_align_zero` now routes through the same helper. Unit coverage verifies no-op behavior when already aligned, one-bit padding shape, reader round trips, and the shared fuzz target now build-checks configurable alignment invariants. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, and actual local fuzz execution are still absent.
 
 Latest `avutil-bitreader` update: added checked byte-aligned slice reads and peeks to the bounded MSB-first bitstream model. `BitReader::read_aligned_bytes` and `peek_aligned_bytes` require byte alignment, validate requested byte counts and bit-count overflow before cursor mutation, return borrowed source slices without bit iteration, and preserve cursor position on unaligned, short-input, and overflow failures. The `avutil_bitreader` fuzz target now build-checks aligned byte read/peek paths. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, and actual local fuzz execution are still absent.
@@ -463,6 +465,17 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-dict` bulk-removal slice:
+  - `cargo test -p avutil dict` (16 dict-filtered unit tests passed)
+  - `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_metadata_options`
+  - `cargo run -p fate-runner -- run --component avutil-dict`
+  - `cargo run -p fate-runner -- run --changed` (selected `avutil-dict` and `avutil-options`; both local mappings passed)
+  - `cargo clippy -p avutil --all-targets -- -D warnings`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_metadata_options -- -D warnings`
+  - `cargo fmt --all -- --check`
+  - `rustfmt --check fuzz\fuzz_targets\avutil_metadata_options.rs`
+  - `git diff --check` (exit 0; CRLF warnings only)
 
 - Current `avutil-bitwriter` configurable alignment slice:
   - `cargo test -p avutil bitwriter` (19 bitwriter-filtered unit tests passed)
@@ -4896,6 +4909,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-dict` bulk-removal slice:
+  - The first standalone `rustfmt --check fuzz\fuzz_targets\avutil_metadata_options.rs` reported formatting diffs after the fuzz-harness update. `rustfmt fuzz\fuzz_targets\avutil_metadata_options.rs` fixed them; the rerun passed. No failing validation remains for this slice.
+
 - Current `avutil-bitwriter` configurable alignment slice:
   - No failing validation remains for this slice. The first focused tests, fuzz binary check, clippy, workspace formatting, standalone fuzz rustfmt check, local FATE mapping, and runner tests all passed.
 
@@ -5347,6 +5363,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-dict` is the active focus for this turn. The concrete change adds `Dictionary::remove_all` for ordered bulk removal of duplicate metadata keys, extends dictionary unit coverage, and extends `avutil_metadata_options` fuzz-build invariants. It remains `implemented`, not complete, because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
+
 `avutil-bitwriter` is the active focus for this turn. The concrete change adds `bits_to_align` and configurable zero/one byte-alignment padding through `byte_align_with`, keeps `byte_align_zero` as the zero-fill wrapper, and extends the shared `avutil_bitreader` fuzz harness to cover the new alignment invariant. It remains `implemented`, not complete, because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
 
 `avutil-bitreader` is the active focus for this turn. The concrete change adds checked byte-aligned slice reads/peeks with no-advance validation failures and extends the `avutil_bitreader` fuzz harness to cover those paths. It remains `implemented`, not complete, because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
@@ -5736,6 +5754,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added ordered bulk removal to the metadata dictionary model. `crates/avutil/src/dict.rs` now exposes `Dictionary::remove_all`, returning every matching entry in insertion order while preserving the order of retained entries. Unit tests cover duplicate-key removal under case-sensitive and case-insensitive matching, no-match behavior, and retained-entry ordering. `fuzz/fuzz_targets/avutil_metadata_options.rs` now build-checks generated bulk-removal invariants and a deterministic duplicate-key removal fixture. The component remains below `complete` because pinned oracle vectors, upstream FATE parity, and actual fuzz execution remain absent.
 
 Latest slice: added configurable byte-alignment padding to `avutil` bit writing. `crates/avutil/src/bitwriter.rs` now exposes `BitWriter::bits_to_align` and `byte_align_with`, and `byte_align_zero` uses the same implementation. Unit tests cover already-aligned no-op behavior, one-bit padding shape, reported padding distance, and readback through `BitReader`. `fuzz/fuzz_targets/avutil_bitreader.rs` now build-checks configurable alignment padding invariants. The component remains below `complete` because pinned oracle vectors, upstream FATE parity, and actual fuzz execution remain absent.
 
