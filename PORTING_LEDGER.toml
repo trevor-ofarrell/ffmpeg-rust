@@ -807,11 +807,17 @@ status = "implemented"
 priority = 2
 oracle_command = "cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg --out compat/ffmpeg-8.1.1"
 rust_command = "cargo run -p oracle -- --help"
-unit_tests = []
+unit_tests = [
+  "tests::inventory_command_list_matches_required_ffmpeg_surface",
+  "tests::parse_inventory_args_accepts_required_paths",
+  "tests::parse_inventory_args_rejects_missing_or_unknown_arguments",
+  "tests::manifest_helpers_record_target_profile_and_command_status",
+  "tests::write_command_output_keeps_stdout_and_stderr_sections",
+]
 differential_tests = []
-fate_tests = []
+fate_tests = ["tests/fate/mappings.txt:oracle-inventory|local-oracle-unit"]
 fuzz_targets = []
-notes = "Inventory tool captures required command outputs when a pinned oracle binary is present."
+notes = "Inventory tool captures required command outputs when a pinned oracle binary is present. Local unit coverage now pins the exact required ffmpeg inventory command list, inventory argument parsing, target/profile manifest header, per-command manifest status records, and stdout/stderr section wrapping. The local FATE-runner smoke mapping executes the oracle unit tests only and does not count as generated upstream inventory snapshots."
 blocked_reason = "No pinned FFmpeg oracle binary is present in this workspace, so snapshots have not been generated."
 
 [[component]]
