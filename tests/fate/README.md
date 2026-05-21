@@ -1,6 +1,7 @@
 # FATE Tests
 
 `mappings.txt` is the default local mapping file consumed by `cargo run -p fate-runner -- run`.
+`upstream-mappings.txt` contains sample-backed oracle/FATE-style rows that must be selected explicitly with `--mappings tests/fate/upstream-mappings.txt`.
 
 Each non-comment row is pipe-separated:
 
@@ -46,3 +47,10 @@ cargo run -p fate-runner -- run --component fftools-ffprobe-mov-show-format
 ```
 
 The current mapping file contains local runner smoke coverage, focused local `avutil` unit-test mappings, a local MOV demuxer unit-test smoke mapping, local `fftools` version, hide-banner, option-parser, and I/O-plan mappings, shared local `ffmpeg` unit-test mappings for current `fftools-ffmpeg-*` ledger components, and shared local `ffprobe` unit-test mappings for current `fftools-ffprobe-*` ledger components. These rows prove the FATE runner's mapping and command execution path for selected components; they are not a replacement for upstream FFmpeg FATE sample parity.
+
+Run the first sample-backed mapping only when a pinned oracle and FATE samples tree are available:
+
+```sh
+cargo run -p fate-runner -- mappings --mappings tests/fate/upstream-mappings.txt --target fate-wav-pcm-s16le-md5
+cargo run -p fate-runner -- run --mappings tests/fate/upstream-mappings.txt --component avformat-wav-demuxer --target fate-wav-pcm-s16le-md5 --samples <fate-samples> --oracle-ffmpeg <ffmpeg>
+```

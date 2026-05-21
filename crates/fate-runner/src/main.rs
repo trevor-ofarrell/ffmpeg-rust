@@ -4,6 +4,8 @@ use std::path::Path;
 use std::process::Command;
 
 const DEFAULT_FATE_MAPPINGS_PATH: &str = "tests/fate/mappings.txt";
+#[cfg(test)]
+const UPSTREAM_FATE_MAPPINGS_PATH: &str = "tests/fate/upstream-mappings.txt";
 const SAMPLES_ENV_VARS: &[&str] = &["FATE_SAMPLES", "SAMPLES"];
 const DEFAULT_SAMPLES_ROOT_CANDIDATES: &[&str] = &[
     "third_party/fate-samples",
@@ -1575,6 +1577,49 @@ mod tests {
         assert!(pairs.contains(&("avformat-rawvideo-demuxer", "oracle-rawvideo-file-output")));
         assert!(pairs.contains(&("avformat-rawvideo-muxer", "oracle-rawvideo-file-output")));
         assert!(pairs.contains(&("avutil-channel-layout", "oracle-ffmpeg-layouts")));
+    }
+
+    #[test]
+    fn upstream_fate_mappings_parse_against_current_ledger() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let ledger_contents = fs::read_to_string(repo_root.join("PORTING_LEDGER.toml")).unwrap();
+        let component_ids = component_ids_from_ledger(&ledger_contents);
+        let mapping_contents =
+            fs::read_to_string(repo_root.join(UPSTREAM_FATE_MAPPINGS_PATH)).unwrap();
+
+        let mappings = parse_fate_mappings(&mapping_contents, &component_ids).unwrap();
+        let mapping = mappings
+            .iter()
+            .find(|mapping| {
+                mapping.component_id == "avformat-wav-demuxer"
+                    && mapping.target == "fate-wav-pcm-s16le-md5"
+            })
+            .expect("sample-backed WAV FATE mapping should exist");
+
+        assert_eq!(mapping.workdir, ".");
+        assert_eq!(mapping.program, "cargo");
+        assert_eq!(
+            mapping.env,
+            vec![
+                ("FFMPEG_ORACLE".to_string(), "{oracle_ffmpeg}".to_string()),
+                (
+                    "FATE_WAV_SAMPLE".to_string(),
+                    "{samples}/audio-reference/luckynight_2ch_44kHz_s16.wav".to_string(),
+                ),
+            ]
+        );
+        assert_eq!(
+            mapping.args,
+            vec![
+                "test".to_string(),
+                "-p".to_string(),
+                "fftools".to_string(),
+                "--test".to_string(),
+                "wav_oracle".to_string(),
+                "--".to_string(),
+                "--ignored".to_string(),
+            ]
+        );
     }
 
     #[test]
