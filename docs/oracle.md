@@ -105,7 +105,7 @@ cargo test -p avutil --test timebase_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-timebase --target oracle-libavutil-timebase --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
-`crates/avutil/tests/hash_oracle.rs` is an ignored oracle harness for the current low-level hash helper subset. It compiles a small test-only C helper against `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_hash_names`, `av_hash_alloc`, `av_hash_update`, `av_hash_get_size`, and `av_hash_final_hex` output for ADLER32, CRC32, murmur3, MD5, SHA160, SHA224, SHA256, SHA384, SHA512, SHA512/224, and SHA512/256 against the Rust hash model. It is wired into `tests/differential/mappings.txt` as `avutil-hash|oracle-libavutil-hash`:
+`crates/avutil/tests/hash_oracle.rs` is an ignored oracle harness for the current low-level hash helper subset. It compiles a small test-only C helper against `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_hash_names`, `av_hash_alloc`, `av_hash_update`, `av_hash_get_size`, and `av_hash_final_hex` output for ADLER32, CRC32, murmur3, MD5, RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320, SHA160, SHA224, SHA256, SHA384, SHA512, SHA512/224, and SHA512/256 against the Rust hash model. It is wired into `tests/differential/mappings.txt` as `avutil-hash|oracle-libavutil-hash`:
 
 ```sh
 cargo test -p avutil --test hash_oracle -- --ignored

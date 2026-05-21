@@ -6,8 +6,8 @@ use std::{
 };
 
 use avutil::{
-    adler32, crc32_ieee, digest_to_hex, md5, murmur3, sha1, sha224, sha256, sha384, sha512,
-    sha512_224, sha512_256,
+    adler32, crc32_ieee, digest_to_hex, md5, murmur3, ripemd128, ripemd160, ripemd256, ripemd320,
+    sha1, sha224, sha256, sha384, sha512, sha512_224, sha512_256,
 };
 
 const ALGORITHMS: &[(&str, &str, usize)] = &[
@@ -15,6 +15,10 @@ const ALGORITHMS: &[(&str, &str, usize)] = &[
     ("CRC32", "CRC32", 4),
     ("murmur3", "murmur3", 16),
     ("MD5", "MD5", 16),
+    ("RIPEMD128", "RIPEMD128", 16),
+    ("RIPEMD160", "RIPEMD160", 20),
+    ("RIPEMD256", "RIPEMD256", 32),
+    ("RIPEMD320", "RIPEMD320", 40),
     ("SHA160", "SHA160", 20),
     ("SHA224", "SHA224", 28),
     ("SHA256", "SHA256", 32),
@@ -93,6 +97,10 @@ fn expected_digest_hex(algorithm: &str, data: &[u8]) -> String {
         "CRC32" => format!("{:08x}", crc32_ieee(data)),
         "murmur3" => digest_to_hex(&murmur3(data)),
         "MD5" => digest_to_hex(&md5(data)),
+        "RIPEMD128" => digest_to_hex(&ripemd128(data)),
+        "RIPEMD160" => digest_to_hex(&ripemd160(data)),
+        "RIPEMD256" => digest_to_hex(&ripemd256(data)),
+        "RIPEMD320" => digest_to_hex(&ripemd320(data)),
         "SHA160" => digest_to_hex(&sha1(data)),
         "SHA224" => digest_to_hex(&sha224(data)),
         "SHA256" => digest_to_hex(&sha256(data)),
@@ -220,8 +228,9 @@ int main(void) {
         'g', 0x10, 0x20, 0x40, 0x55, 0xaa,
     };
     static const char *algorithms[] = {
-        "ADLER32", "CRC32", "murmur3", "MD5", "SHA160", "SHA224", "SHA256", "SHA384", "SHA512",
-        "SHA512/224", "SHA512/256",
+        "ADLER32", "CRC32", "murmur3", "MD5", "RIPEMD128", "RIPEMD160", "RIPEMD256",
+        "RIPEMD320", "SHA160", "SHA224", "SHA256", "SHA384", "SHA512", "SHA512/224",
+        "SHA512/256",
     };
 
     print_names();

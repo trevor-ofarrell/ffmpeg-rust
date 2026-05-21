@@ -244,7 +244,7 @@ GPS common-tag range validation currently rejects `GPSLatitude`/`GPSDestLatitude
 
 `NullMuxer` implements the first muxer-shaped sink: it discards packet payload bytes while preserving observable accounting for packets, bytes, stream indexes, durations, and last timestamps.
 
-`HashMuxer` implements an initial packet-data hash sink over write order, using `avutil` checksum/digest state for Adler-32, IEEE CRC-32, MD5, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512 while tracking packet and byte counts.
+`HashMuxer` implements an initial packet-data hash sink over write order, using `avutil` checksum/digest state for Adler-32, IEEE CRC-32, Murmur3, MD5, RIPEMD-128/160/256/320, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256 while tracking packet and byte counts.
 
 `FrameCrcMuxer` records one CRC-32 line per packet with stream index, timestamps, duration, payload size, and checksum in write order.
 
@@ -358,7 +358,7 @@ The test hierarchy is unit tests first, followed by golden parser tests, differe
 
 `crates/avutil/tests/timebase_oracle.rs` is an ignored oracle harness for libavutil timebase helpers. It compiles a small test-only C helper against the pinned local FFmpeg 8.1.1 `libavutil.a` and compares `AV_TIME_BASE`, `AV_TIME_BASE_Q`, `av_rescale`, `av_rescale_rnd`, `av_rescale_q`, `av_rescale_q_rnd`, `av_compare_ts`, `av_compare_mod`, `av_rescale_delta`, and `av_add_stable` vectors against the Rust model.
 
-`crates/avutil/tests/hash_oracle.rs` is an ignored oracle harness for the current low-level hash helper subset. It compiles a small test-only C helper against the pinned local FFmpeg 8.1.1 `libavutil.a` and compares `av_hash_names`, `av_hash_alloc`, `av_hash_update`, `av_hash_get_size`, and `av_hash_final_hex` output for ADLER32, CRC32, murmur3, MD5, SHA160, SHA224, SHA256, SHA384, SHA512, SHA512/224, and SHA512/256 against the Rust model. This proves differential parity for the modeled subset only; libavutil's RIPEMD128/160/256/320 and generic hash API parity are still tracked as incomplete in the ledger.
+`crates/avutil/tests/hash_oracle.rs` is an ignored oracle harness for the current low-level hash helper subset. It compiles a small test-only C helper against the pinned local FFmpeg 8.1.1 `libavutil.a` and compares `av_hash_names`, `av_hash_alloc`, `av_hash_update`, `av_hash_get_size`, and `av_hash_final_hex` output for ADLER32, CRC32, murmur3, MD5, RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320, SHA160, SHA224, SHA256, SHA384, SHA512, SHA512/224, and SHA512/256 against the Rust model. This proves differential parity for the modeled algorithm subset only; libavutil's full generic hash API parity is still tracked as incomplete in the ledger.
 
 `crates/fftools/tests/rawvideo_oracle.rs` is the first ignored oracle integration harness. It requires `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` and compares Rust rawvideo file-output bytes against pinned FFmpeg streamcopy rawvideo output for selected pixel formats.
 

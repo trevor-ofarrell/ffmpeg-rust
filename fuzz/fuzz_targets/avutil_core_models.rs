@@ -4,8 +4,8 @@ use avutil::{
     adler32, add_stable, av_error_description, av_make_error_string, av_strerror, compare_mod,
     compare_ts, crc32_ieee, digest_to_hex, md5, murmur3, parse_color, rescale, rescale_delta,
     rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax,
-    sha1, sha224, sha256, sha384, sha512, sha512_224, sha512_256, Adler32, AudioFrame,
-    AvError, AvErrorCode, AvErrorKind,
+    ripemd128, ripemd160, ripemd256, ripemd320, sha1, sha224, sha256, sha384, sha512,
+    sha512_224, sha512_256, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind,
     BufferPool,
     AmbisonicChannelLayout, BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId,
     ChannelLayout, ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame,
@@ -62,8 +62,8 @@ use avutil::{
     PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, PixelFormatClass, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, Murmur3, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
-    Sha512Trunc256, SideData, VideoFrame,
+    SampleFormatNumericKind, Murmur3, Ripemd128, Ripemd160, Ripemd256, Ripemd320, Sha1, Sha224,
+    Sha256, Sha384, Sha512, Sha512Trunc224, Sha512Trunc256, SideData, VideoFrame,
     AV_ERROR_MAX_STRING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE,
     AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE,
 };
@@ -6804,6 +6804,45 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
     let second_split =
         split + (usize::from(cursor.next().unwrap_or_default()) % (payload.len() - split + 1));
+    let third_split = second_split
+        + (usize::from(cursor.next().unwrap_or_default()) % (payload.len() - second_split + 1));
+
+    let mut ripemd128_state = Ripemd128::new();
+    ripemd128_state.update(&payload[..split]);
+    ripemd128_state.update(&payload[split..second_split]);
+    ripemd128_state.update(&payload[second_split..third_split]);
+    ripemd128_state.update(&payload[third_split..]);
+    let ripemd128_digest = ripemd128_state.finalize();
+    assert_eq!(ripemd128_digest, ripemd128(&payload));
+    assert_eq!(digest_to_hex(&ripemd128_digest).len(), 32);
+
+    let mut ripemd160_state = Ripemd160::new();
+    ripemd160_state.update(&payload[..split]);
+    ripemd160_state.update(&payload[split..second_split]);
+    ripemd160_state.update(&payload[second_split..third_split]);
+    ripemd160_state.update(&payload[third_split..]);
+    let ripemd160_digest = ripemd160_state.finalize();
+    assert_eq!(ripemd160_digest, ripemd160(&payload));
+    assert_eq!(digest_to_hex(&ripemd160_digest).len(), 40);
+
+    let mut ripemd256_state = Ripemd256::new();
+    ripemd256_state.update(&payload[..split]);
+    ripemd256_state.update(&payload[split..second_split]);
+    ripemd256_state.update(&payload[second_split..third_split]);
+    ripemd256_state.update(&payload[third_split..]);
+    let ripemd256_digest = ripemd256_state.finalize();
+    assert_eq!(ripemd256_digest, ripemd256(&payload));
+    assert_eq!(digest_to_hex(&ripemd256_digest).len(), 64);
+
+    let mut ripemd320_state = Ripemd320::new();
+    ripemd320_state.update(&payload[..split]);
+    ripemd320_state.update(&payload[split..second_split]);
+    ripemd320_state.update(&payload[second_split..third_split]);
+    ripemd320_state.update(&payload[third_split..]);
+    let ripemd320_digest = ripemd320_state.finalize();
+    assert_eq!(ripemd320_digest, ripemd320(&payload));
+    assert_eq!(digest_to_hex(&ripemd320_digest).len(), 80);
+
     let mut md5_state = Md5::new();
     md5_state.update(&payload[..split]);
     md5_state.update(&payload[split..second_split]);
@@ -6812,8 +6851,6 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(md5_digest, md5(&payload));
     assert_eq!(digest_to_hex(&md5_digest).len(), 32);
 
-    let third_split = second_split
-        + (usize::from(cursor.next().unwrap_or_default()) % (payload.len() - second_split + 1));
     let mut sha1_state = Sha1::new();
     sha1_state.update(&payload[..split]);
     sha1_state.update(&payload[split..second_split]);
@@ -10859,6 +10896,22 @@ fn exercise_fixtures() {
     assert_eq!(
         digest_to_hex(&murmur3(b"abc")),
         "24f8c0b6239d906515c11aef9def41d2"
+    );
+    assert_eq!(
+        digest_to_hex(&ripemd128(b"abc")),
+        "c14a12199c66e4ba84636b0f69144c77"
+    );
+    assert_eq!(
+        digest_to_hex(&ripemd160(b"abc")),
+        "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc"
+    );
+    assert_eq!(
+        digest_to_hex(&ripemd256(b"abc")),
+        "afbd6e228b9d8cbbcef5ca2d03e6dba10ac0bc7dcbe4680e1e42d2e975459b65"
+    );
+    assert_eq!(
+        digest_to_hex(&ripemd320(b"abc")),
+        "de4c01b3054f8930a79d09ae738e92301e5a17085beffdc1b8d116713e74f82fa942d64cdbc4682d"
     );
     assert_eq!(
         digest_to_hex(&sha256(b"abc")),

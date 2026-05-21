@@ -1197,6 +1197,553 @@ pub fn murmur3(data: &[u8]) -> [u8; 16] {
     state.finalize()
 }
 
+const RIPEMD_R_LEFT: [usize; 80] = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 7, 4, 13, 1, 10, 6, 15, 3, 12, 0, 9, 5,
+    2, 14, 11, 8, 3, 10, 14, 4, 9, 15, 8, 1, 2, 7, 0, 6, 13, 11, 5, 12, 1, 9, 11, 10, 0, 8, 12, 4,
+    13, 3, 7, 15, 14, 5, 6, 2, 4, 0, 5, 9, 7, 12, 2, 10, 14, 1, 3, 8, 11, 6, 15, 13,
+];
+
+const RIPEMD_R_RIGHT: [usize; 80] = [
+    5, 14, 7, 0, 9, 2, 11, 4, 13, 6, 15, 8, 1, 10, 3, 12, 6, 11, 3, 7, 0, 13, 5, 10, 14, 15, 8, 12,
+    4, 9, 1, 2, 15, 5, 1, 3, 7, 14, 6, 9, 11, 8, 12, 2, 10, 0, 4, 13, 8, 6, 4, 1, 3, 11, 15, 0, 5,
+    12, 2, 13, 9, 7, 10, 14, 12, 15, 10, 4, 1, 5, 8, 7, 6, 2, 13, 14, 0, 3, 9, 11,
+];
+
+const RIPEMD_S_LEFT: [u32; 80] = [
+    11, 14, 15, 12, 5, 8, 7, 9, 11, 13, 14, 15, 6, 7, 9, 8, 7, 6, 8, 13, 11, 9, 7, 15, 7, 12, 15,
+    9, 11, 7, 13, 12, 11, 13, 6, 7, 14, 9, 13, 15, 14, 8, 13, 6, 5, 12, 7, 5, 11, 12, 14, 15, 14,
+    15, 9, 8, 9, 14, 5, 6, 8, 6, 5, 12, 9, 15, 5, 11, 6, 8, 13, 12, 5, 12, 13, 14, 11, 8, 5, 6,
+];
+
+const RIPEMD_S_RIGHT: [u32; 80] = [
+    8, 9, 9, 11, 13, 15, 15, 5, 7, 7, 8, 11, 14, 14, 12, 6, 9, 13, 15, 7, 12, 8, 9, 11, 7, 7, 12,
+    7, 6, 15, 13, 11, 9, 7, 15, 11, 8, 6, 6, 14, 12, 13, 5, 14, 13, 13, 7, 5, 15, 5, 8, 11, 14, 14,
+    6, 14, 6, 9, 12, 9, 12, 5, 15, 8, 8, 5, 12, 9, 12, 5, 14, 6, 8, 13, 6, 5, 15, 13, 11, 11,
+];
+
+const RIPEMD_K_LEFT_4: [u32; 4] = [0x0000_0000, 0x5a82_7999, 0x6ed9_eba1, 0x8f1b_bcdc];
+const RIPEMD_K_RIGHT_4: [u32; 4] = [0x50a2_8be6, 0x5c4d_d124, 0x6d70_3ef3, 0x0000_0000];
+const RIPEMD_K_LEFT_5: [u32; 5] = [
+    0x0000_0000,
+    0x5a82_7999,
+    0x6ed9_eba1,
+    0x8f1b_bcdc,
+    0xa953_fd4e,
+];
+const RIPEMD_K_RIGHT_5: [u32; 5] = [
+    0x50a2_8be6,
+    0x5c4d_d124,
+    0x6d70_3ef3,
+    0x7a6d_76e9,
+    0x0000_0000,
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ripemd128 {
+    state: [u32; 4],
+    len_bytes: u64,
+    buffer: [u8; 64],
+    buffer_len: usize,
+}
+
+impl Default for Ripemd128 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Ripemd128 {
+    pub fn new() -> Self {
+        Self {
+            state: [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476],
+            len_bytes: 0,
+            buffer: [0; 64],
+            buffer_len: 0,
+        }
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        ripemd_update(
+            &mut self.state,
+            &mut self.len_bytes,
+            &mut self.buffer,
+            &mut self.buffer_len,
+            data,
+            ripemd128_compress,
+        );
+    }
+
+    pub fn finalize(mut self) -> [u8; 16] {
+        ripemd_finalize(
+            &mut self.state,
+            self.len_bytes,
+            &mut self.buffer,
+            &mut self.buffer_len,
+            ripemd128_compress,
+        );
+        ripemd_words_to_digest::<4, 16>(&self.state)
+    }
+}
+
+pub fn ripemd128(data: &[u8]) -> [u8; 16] {
+    let mut state = Ripemd128::new();
+    state.update(data);
+    state.finalize()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ripemd160 {
+    state: [u32; 5],
+    len_bytes: u64,
+    buffer: [u8; 64],
+    buffer_len: usize,
+}
+
+impl Default for Ripemd160 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Ripemd160 {
+    pub fn new() -> Self {
+        Self {
+            state: [
+                0x6745_2301,
+                0xefcd_ab89,
+                0x98ba_dcfe,
+                0x1032_5476,
+                0xc3d2_e1f0,
+            ],
+            len_bytes: 0,
+            buffer: [0; 64],
+            buffer_len: 0,
+        }
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        ripemd_update(
+            &mut self.state,
+            &mut self.len_bytes,
+            &mut self.buffer,
+            &mut self.buffer_len,
+            data,
+            ripemd160_compress,
+        );
+    }
+
+    pub fn finalize(mut self) -> [u8; 20] {
+        ripemd_finalize(
+            &mut self.state,
+            self.len_bytes,
+            &mut self.buffer,
+            &mut self.buffer_len,
+            ripemd160_compress,
+        );
+        ripemd_words_to_digest::<5, 20>(&self.state)
+    }
+}
+
+pub fn ripemd160(data: &[u8]) -> [u8; 20] {
+    let mut state = Ripemd160::new();
+    state.update(data);
+    state.finalize()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ripemd256 {
+    state: [u32; 8],
+    len_bytes: u64,
+    buffer: [u8; 64],
+    buffer_len: usize,
+}
+
+impl Default for Ripemd256 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Ripemd256 {
+    pub fn new() -> Self {
+        Self {
+            state: [
+                0x6745_2301,
+                0xefcd_ab89,
+                0x98ba_dcfe,
+                0x1032_5476,
+                0x7654_3210,
+                0xfedc_ba98,
+                0x89ab_cdef,
+                0x0123_4567,
+            ],
+            len_bytes: 0,
+            buffer: [0; 64],
+            buffer_len: 0,
+        }
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        ripemd_update(
+            &mut self.state,
+            &mut self.len_bytes,
+            &mut self.buffer,
+            &mut self.buffer_len,
+            data,
+            ripemd256_compress,
+        );
+    }
+
+    pub fn finalize(mut self) -> [u8; 32] {
+        ripemd_finalize(
+            &mut self.state,
+            self.len_bytes,
+            &mut self.buffer,
+            &mut self.buffer_len,
+            ripemd256_compress,
+        );
+        ripemd_words_to_digest::<8, 32>(&self.state)
+    }
+}
+
+pub fn ripemd256(data: &[u8]) -> [u8; 32] {
+    let mut state = Ripemd256::new();
+    state.update(data);
+    state.finalize()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ripemd320 {
+    state: [u32; 10],
+    len_bytes: u64,
+    buffer: [u8; 64],
+    buffer_len: usize,
+}
+
+impl Default for Ripemd320 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Ripemd320 {
+    pub fn new() -> Self {
+        Self {
+            state: [
+                0x6745_2301,
+                0xefcd_ab89,
+                0x98ba_dcfe,
+                0x1032_5476,
+                0xc3d2_e1f0,
+                0x7654_3210,
+                0xfedc_ba98,
+                0x89ab_cdef,
+                0x0123_4567,
+                0x3c2d_1e0f,
+            ],
+            len_bytes: 0,
+            buffer: [0; 64],
+            buffer_len: 0,
+        }
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        ripemd_update(
+            &mut self.state,
+            &mut self.len_bytes,
+            &mut self.buffer,
+            &mut self.buffer_len,
+            data,
+            ripemd320_compress,
+        );
+    }
+
+    pub fn finalize(mut self) -> [u8; 40] {
+        ripemd_finalize(
+            &mut self.state,
+            self.len_bytes,
+            &mut self.buffer,
+            &mut self.buffer_len,
+            ripemd320_compress,
+        );
+        ripemd_words_to_digest::<10, 40>(&self.state)
+    }
+}
+
+pub fn ripemd320(data: &[u8]) -> [u8; 40] {
+    let mut state = Ripemd320::new();
+    state.update(data);
+    state.finalize()
+}
+
+fn ripemd_update<const N: usize>(
+    state: &mut [u32; N],
+    len_bytes: &mut u64,
+    buffer: &mut [u8; 64],
+    buffer_len: &mut usize,
+    mut data: &[u8],
+    compress: fn(&mut [u32; N], &[u8; 64]),
+) {
+    *len_bytes = len_bytes.wrapping_add(data.len() as u64);
+
+    if *buffer_len != 0 {
+        let needed = 64 - *buffer_len;
+        let take = needed.min(data.len());
+        buffer[*buffer_len..*buffer_len + take].copy_from_slice(&data[..take]);
+        *buffer_len += take;
+        data = &data[take..];
+
+        if *buffer_len == 64 {
+            let block = *buffer;
+            compress(state, &block);
+            *buffer_len = 0;
+        }
+    }
+
+    for block in data.chunks_exact(64) {
+        let block = <&[u8; 64]>::try_from(block).expect("chunks_exact produced 64 bytes");
+        compress(state, block);
+    }
+
+    let remainder = data.len() % 64;
+    if remainder != 0 {
+        let tail = &data[data.len() - remainder..];
+        buffer[..remainder].copy_from_slice(tail);
+        *buffer_len = remainder;
+    }
+}
+
+fn ripemd_finalize<const N: usize>(
+    state: &mut [u32; N],
+    len_bytes: u64,
+    buffer: &mut [u8; 64],
+    buffer_len: &mut usize,
+    compress: fn(&mut [u32; N], &[u8; 64]),
+) {
+    let bit_len = len_bytes.wrapping_mul(8);
+    buffer[*buffer_len] = 0x80;
+    *buffer_len += 1;
+
+    if *buffer_len > 56 {
+        buffer[*buffer_len..].fill(0);
+        let block = *buffer;
+        compress(state, &block);
+        *buffer_len = 0;
+    }
+
+    buffer[*buffer_len..56].fill(0);
+    buffer[56..64].copy_from_slice(&bit_len.to_le_bytes());
+    let block = *buffer;
+    compress(state, &block);
+}
+
+fn ripemd_words_to_digest<const WORDS: usize, const BYTES: usize>(
+    state: &[u32; WORDS],
+) -> [u8; BYTES] {
+    let mut digest = [0_u8; BYTES];
+    for (chunk, word) in digest.chunks_exact_mut(4).zip(state.iter()) {
+        chunk.copy_from_slice(&word.to_le_bytes());
+    }
+    digest
+}
+
+fn ripemd_block_words(block: &[u8; 64]) -> [u32; 16] {
+    let mut words = [0_u32; 16];
+    for (word, chunk) in words.iter_mut().zip(block.chunks_exact(4)) {
+        *word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+    }
+    words
+}
+
+fn ripemd_f(round: usize, x: u32, y: u32, z: u32) -> u32 {
+    match round {
+        0 => x ^ y ^ z,
+        1 => (x & y) | (!x & z),
+        2 => (x | !y) ^ z,
+        3 => (x & z) | (y & !z),
+        4 => x ^ (y | !z),
+        _ => unreachable!("RIPEMD round index is bounded"),
+    }
+}
+
+fn ripemd128_compress(state: &mut [u32; 4], block: &[u8; 64]) {
+    let words = ripemd_block_words(block);
+    let [mut al, mut bl, mut cl, mut dl] = *state;
+    let [mut ar, mut br, mut cr, mut dr] = *state;
+
+    for step in 0..64 {
+        let round = step / 16;
+        let next_l = al
+            .wrapping_add(ripemd_f(round, bl, cl, dl))
+            .wrapping_add(words[RIPEMD_R_LEFT[step]])
+            .wrapping_add(RIPEMD_K_LEFT_4[round])
+            .rotate_left(RIPEMD_S_LEFT[step]);
+        al = dl;
+        dl = cl;
+        cl = bl;
+        bl = next_l;
+
+        let right_round = 3 - round;
+        let next_r = ar
+            .wrapping_add(ripemd_f(right_round, br, cr, dr))
+            .wrapping_add(words[RIPEMD_R_RIGHT[step]])
+            .wrapping_add(RIPEMD_K_RIGHT_4[round])
+            .rotate_left(RIPEMD_S_RIGHT[step]);
+        ar = dr;
+        dr = cr;
+        cr = br;
+        br = next_r;
+    }
+
+    let h0 = state[0];
+    let t = state[1].wrapping_add(cl).wrapping_add(dr);
+    state[1] = state[2].wrapping_add(dl).wrapping_add(ar);
+    state[2] = state[3].wrapping_add(al).wrapping_add(br);
+    state[3] = h0.wrapping_add(bl).wrapping_add(cr);
+    state[0] = t;
+}
+
+fn ripemd160_compress(state: &mut [u32; 5], block: &[u8; 64]) {
+    let words = ripemd_block_words(block);
+    let [mut al, mut bl, mut cl, mut dl, mut el] = *state;
+    let [mut ar, mut br, mut cr, mut dr, mut er] = *state;
+
+    for step in 0..80 {
+        let round = step / 16;
+        let next_l = al
+            .wrapping_add(ripemd_f(round, bl, cl, dl))
+            .wrapping_add(words[RIPEMD_R_LEFT[step]])
+            .wrapping_add(RIPEMD_K_LEFT_5[round])
+            .rotate_left(RIPEMD_S_LEFT[step])
+            .wrapping_add(el);
+        al = el;
+        el = dl;
+        dl = cl.rotate_left(10);
+        cl = bl;
+        bl = next_l;
+
+        let right_round = 4 - round;
+        let next_r = ar
+            .wrapping_add(ripemd_f(right_round, br, cr, dr))
+            .wrapping_add(words[RIPEMD_R_RIGHT[step]])
+            .wrapping_add(RIPEMD_K_RIGHT_5[round])
+            .rotate_left(RIPEMD_S_RIGHT[step])
+            .wrapping_add(er);
+        ar = er;
+        er = dr;
+        dr = cr.rotate_left(10);
+        cr = br;
+        br = next_r;
+    }
+
+    let h0 = state[0];
+    let t = state[1].wrapping_add(cl).wrapping_add(dr);
+    state[1] = state[2].wrapping_add(dl).wrapping_add(er);
+    state[2] = state[3].wrapping_add(el).wrapping_add(ar);
+    state[3] = state[4].wrapping_add(al).wrapping_add(br);
+    state[4] = h0.wrapping_add(bl).wrapping_add(cr);
+    state[0] = t;
+}
+
+fn ripemd256_compress(state: &mut [u32; 8], block: &[u8; 64]) {
+    let words = ripemd_block_words(block);
+    let [mut al, mut bl, mut cl, mut dl, mut ar, mut br, mut cr, mut dr] = *state;
+
+    for step in 0..64 {
+        let round = step / 16;
+        let next_l = al
+            .wrapping_add(ripemd_f(round, bl, cl, dl))
+            .wrapping_add(words[RIPEMD_R_LEFT[step]])
+            .wrapping_add(RIPEMD_K_LEFT_4[round])
+            .rotate_left(RIPEMD_S_LEFT[step]);
+        al = dl;
+        dl = cl;
+        cl = bl;
+        bl = next_l;
+
+        let right_round = 3 - round;
+        let next_r = ar
+            .wrapping_add(ripemd_f(right_round, br, cr, dr))
+            .wrapping_add(words[RIPEMD_R_RIGHT[step]])
+            .wrapping_add(RIPEMD_K_RIGHT_4[round])
+            .rotate_left(RIPEMD_S_RIGHT[step]);
+        ar = dr;
+        dr = cr;
+        cr = br;
+        br = next_r;
+
+        match step {
+            15 => std::mem::swap(&mut al, &mut ar),
+            31 => std::mem::swap(&mut bl, &mut br),
+            47 => std::mem::swap(&mut cl, &mut cr),
+            63 => std::mem::swap(&mut dl, &mut dr),
+            _ => {}
+        }
+    }
+
+    state[0] = state[0].wrapping_add(al);
+    state[1] = state[1].wrapping_add(bl);
+    state[2] = state[2].wrapping_add(cl);
+    state[3] = state[3].wrapping_add(dl);
+    state[4] = state[4].wrapping_add(ar);
+    state[5] = state[5].wrapping_add(br);
+    state[6] = state[6].wrapping_add(cr);
+    state[7] = state[7].wrapping_add(dr);
+}
+
+fn ripemd320_compress(state: &mut [u32; 10], block: &[u8; 64]) {
+    let words = ripemd_block_words(block);
+    let [mut al, mut bl, mut cl, mut dl, mut el, mut ar, mut br, mut cr, mut dr, mut er] = *state;
+
+    for step in 0..80 {
+        let round = step / 16;
+        let next_l = al
+            .wrapping_add(ripemd_f(round, bl, cl, dl))
+            .wrapping_add(words[RIPEMD_R_LEFT[step]])
+            .wrapping_add(RIPEMD_K_LEFT_5[round])
+            .rotate_left(RIPEMD_S_LEFT[step])
+            .wrapping_add(el);
+        al = el;
+        el = dl;
+        dl = cl.rotate_left(10);
+        cl = bl;
+        bl = next_l;
+
+        let right_round = 4 - round;
+        let next_r = ar
+            .wrapping_add(ripemd_f(right_round, br, cr, dr))
+            .wrapping_add(words[RIPEMD_R_RIGHT[step]])
+            .wrapping_add(RIPEMD_K_RIGHT_5[round])
+            .rotate_left(RIPEMD_S_RIGHT[step])
+            .wrapping_add(er);
+        ar = er;
+        er = dr;
+        dr = cr.rotate_left(10);
+        cr = br;
+        br = next_r;
+
+        match step {
+            15 => std::mem::swap(&mut bl, &mut br),
+            31 => std::mem::swap(&mut dl, &mut dr),
+            47 => std::mem::swap(&mut al, &mut ar),
+            63 => std::mem::swap(&mut cl, &mut cr),
+            79 => std::mem::swap(&mut el, &mut er),
+            _ => {}
+        }
+    }
+
+    state[0] = state[0].wrapping_add(al);
+    state[1] = state[1].wrapping_add(bl);
+    state[2] = state[2].wrapping_add(cl);
+    state[3] = state[3].wrapping_add(dl);
+    state[4] = state[4].wrapping_add(el);
+    state[5] = state[5].wrapping_add(ar);
+    state[6] = state[6].wrapping_add(br);
+    state[7] = state[7].wrapping_add(cr);
+    state[8] = state[8].wrapping_add(dr);
+    state[9] = state[9].wrapping_add(er);
+}
+
 pub fn digest_to_hex(digest: &[u8]) -> String {
     let mut output = String::with_capacity(digest.len() * 2);
     for byte in digest {
@@ -1547,6 +2094,76 @@ mod tests {
             state.update(&payload[second_split..]);
             assert_eq!(state.finalize(), murmur3(payload), "split {split}");
         }
+    }
+
+    #[test]
+    fn ripemd_matches_standard_vectors() {
+        assert_eq!(
+            digest_to_hex(&ripemd128(b"")),
+            "cdf26213a150dc3ecb610f18f6b38b46"
+        );
+        assert_eq!(
+            digest_to_hex(&ripemd128(b"abc")),
+            "c14a12199c66e4ba84636b0f69144c77"
+        );
+        assert_eq!(
+            digest_to_hex(&ripemd160(b"")),
+            "9c1185a5c5e9fc54612808977ee8f548b2258d31"
+        );
+        assert_eq!(
+            digest_to_hex(&ripemd160(b"abc")),
+            "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc"
+        );
+        assert_eq!(
+            digest_to_hex(&ripemd256(b"")),
+            "02ba4c4e5f8ecd1877fc52d64d30e37a2d9774fb1e5d026380ae0168e3c5522d"
+        );
+        assert_eq!(
+            digest_to_hex(&ripemd256(b"abc")),
+            "afbd6e228b9d8cbbcef5ca2d03e6dba10ac0bc7dcbe4680e1e42d2e975459b65"
+        );
+        assert_eq!(
+            digest_to_hex(&ripemd320(b"")),
+            "22d65d5661536cdc75c1fdf5c6de7b41b9f27325ebc61e8557177d705a0ec880151c3a32a00899b8"
+        );
+        assert_eq!(
+            digest_to_hex(&ripemd320(b"abc")),
+            "de4c01b3054f8930a79d09ae738e92301e5a17085beffdc1b8d116713e74f82fa942d64cdbc4682d"
+        );
+    }
+
+    #[test]
+    fn ripemd_streaming_matches_single_shot_across_block_boundaries() {
+        let payload =
+            b"abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789tail";
+
+        let mut ripemd128_state = Ripemd128::new();
+        ripemd128_state.update(&payload[..1]);
+        ripemd128_state.update(&payload[1..55]);
+        ripemd128_state.update(&payload[55..64]);
+        ripemd128_state.update(&payload[64..]);
+        assert_eq!(ripemd128_state.finalize(), ripemd128(payload));
+
+        let mut ripemd160_state = Ripemd160::new();
+        ripemd160_state.update(&payload[..1]);
+        ripemd160_state.update(&payload[1..55]);
+        ripemd160_state.update(&payload[55..64]);
+        ripemd160_state.update(&payload[64..]);
+        assert_eq!(ripemd160_state.finalize(), ripemd160(payload));
+
+        let mut ripemd256_state = Ripemd256::new();
+        ripemd256_state.update(&payload[..1]);
+        ripemd256_state.update(&payload[1..55]);
+        ripemd256_state.update(&payload[55..64]);
+        ripemd256_state.update(&payload[64..]);
+        assert_eq!(ripemd256_state.finalize(), ripemd256(payload));
+
+        let mut ripemd320_state = Ripemd320::new();
+        ripemd320_state.update(&payload[..1]);
+        ripemd320_state.update(&payload[1..55]);
+        ripemd320_state.update(&payload[55..64]);
+        ripemd320_state.update(&payload[64..]);
+        assert_eq!(ripemd320_state.finalize(), ripemd320(payload));
     }
 
     #[test]

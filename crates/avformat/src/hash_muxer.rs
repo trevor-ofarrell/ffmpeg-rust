@@ -1,6 +1,6 @@
 use avutil::{
-    digest_to_hex, Adler32, AvError, AvResult, Crc32, Md5, Murmur3, Packet, Sha1, Sha224, Sha256,
-    Sha384, Sha512, Sha512Trunc224, Sha512Trunc256,
+    digest_to_hex, Adler32, AvError, AvResult, Crc32, Md5, Murmur3, Packet, Ripemd128, Ripemd160,
+    Ripemd256, Ripemd320, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224, Sha512Trunc256,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,6 +9,10 @@ pub enum HashAlgorithm {
     Crc32,
     Murmur3,
     Md5,
+    Ripemd128,
+    Ripemd160,
+    Ripemd256,
+    Ripemd320,
     Sha160,
     Sha224,
     Sha256,
@@ -25,6 +29,10 @@ impl HashAlgorithm {
             Self::Crc32 => "CRC32",
             Self::Murmur3 => "murmur3",
             Self::Md5 => "MD5",
+            Self::Ripemd128 => "RIPEMD128",
+            Self::Ripemd160 => "RIPEMD160",
+            Self::Ripemd256 => "RIPEMD256",
+            Self::Ripemd320 => "RIPEMD320",
             Self::Sha160 => "SHA160",
             Self::Sha224 => "SHA224",
             Self::Sha256 => "SHA256",
@@ -167,6 +175,10 @@ enum HashState {
     Crc32(Crc32),
     Murmur3(Murmur3),
     Md5(Md5),
+    Ripemd128(Ripemd128),
+    Ripemd160(Ripemd160),
+    Ripemd256(Ripemd256),
+    Ripemd320(Ripemd320),
     Sha160(Sha1),
     Sha224(Sha224),
     Sha256(Sha256),
@@ -183,6 +195,10 @@ impl HashState {
             HashAlgorithm::Crc32 => Self::Crc32(Crc32::new()),
             HashAlgorithm::Murmur3 => Self::Murmur3(Murmur3::new()),
             HashAlgorithm::Md5 => Self::Md5(Md5::new()),
+            HashAlgorithm::Ripemd128 => Self::Ripemd128(Ripemd128::new()),
+            HashAlgorithm::Ripemd160 => Self::Ripemd160(Ripemd160::new()),
+            HashAlgorithm::Ripemd256 => Self::Ripemd256(Ripemd256::new()),
+            HashAlgorithm::Ripemd320 => Self::Ripemd320(Ripemd320::new()),
             HashAlgorithm::Sha160 => Self::Sha160(Sha1::new()),
             HashAlgorithm::Sha224 => Self::Sha224(Sha224::new()),
             HashAlgorithm::Sha256 => Self::Sha256(Sha256::new()),
@@ -199,6 +215,10 @@ impl HashState {
             Self::Crc32(_) => HashAlgorithm::Crc32,
             Self::Murmur3(_) => HashAlgorithm::Murmur3,
             Self::Md5(_) => HashAlgorithm::Md5,
+            Self::Ripemd128(_) => HashAlgorithm::Ripemd128,
+            Self::Ripemd160(_) => HashAlgorithm::Ripemd160,
+            Self::Ripemd256(_) => HashAlgorithm::Ripemd256,
+            Self::Ripemd320(_) => HashAlgorithm::Ripemd320,
             Self::Sha160(_) => HashAlgorithm::Sha160,
             Self::Sha224(_) => HashAlgorithm::Sha224,
             Self::Sha256(_) => HashAlgorithm::Sha256,
@@ -215,6 +235,10 @@ impl HashState {
             Self::Crc32(state) => state.update(data),
             Self::Murmur3(state) => state.update(data),
             Self::Md5(state) => state.update(data),
+            Self::Ripemd128(state) => state.update(data),
+            Self::Ripemd160(state) => state.update(data),
+            Self::Ripemd256(state) => state.update(data),
+            Self::Ripemd320(state) => state.update(data),
             Self::Sha160(state) => state.update(data),
             Self::Sha224(state) => state.update(data),
             Self::Sha256(state) => state.update(data),
@@ -231,6 +255,10 @@ impl HashState {
             Self::Crc32(state) => HashDigest::U32(state.finalize()),
             Self::Murmur3(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
             Self::Md5(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
+            Self::Ripemd128(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
+            Self::Ripemd160(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
+            Self::Ripemd256(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
+            Self::Ripemd320(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
             Self::Sha160(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
             Self::Sha224(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
             Self::Sha256(state) => HashDigest::Bytes(state.clone().finalize().to_vec()),
@@ -246,8 +274,8 @@ impl HashState {
 mod tests {
     use super::*;
     use avutil::{
-        adler32, crc32_ieee, md5, murmur3, sha1, sha224, sha256, sha384, sha512, sha512_224,
-        sha512_256, AvErrorKind,
+        adler32, crc32_ieee, md5, murmur3, ripemd128, ripemd160, ripemd256, ripemd320, sha1,
+        sha224, sha256, sha384, sha512, sha512_224, sha512_256, AvErrorKind,
     };
 
     #[test]
@@ -310,6 +338,30 @@ mod tests {
         assert_eq!(report.packets(), 2);
         assert_eq!(report.bytes(), 3);
         assert_eq!(report.line(), "murmur3=24f8c0b6239d906515c11aef9def41d2\n");
+    }
+
+    #[test]
+    fn ripemd_hashes_packet_data_in_write_order() {
+        for (algorithm, expected_hex) in [
+            (HashAlgorithm::Ripemd128, digest_to_hex(&ripemd128(b"abc"))),
+            (HashAlgorithm::Ripemd160, digest_to_hex(&ripemd160(b"abc"))),
+            (HashAlgorithm::Ripemd256, digest_to_hex(&ripemd256(b"abc"))),
+            (HashAlgorithm::Ripemd320, digest_to_hex(&ripemd320(b"abc"))),
+        ] {
+            let mut muxer = HashMuxer::new(algorithm);
+            muxer.write_packet(&Packet::new(b"ab".to_vec(), 0)).unwrap();
+            muxer.write_packet(&Packet::new(b"c".to_vec(), 0)).unwrap();
+            let report = muxer.finish();
+
+            assert_eq!(report.algorithm(), algorithm);
+            assert_eq!(report.digest_hex(), expected_hex);
+            assert_eq!(report.packets(), 2);
+            assert_eq!(report.bytes(), 3);
+            assert_eq!(
+                report.line(),
+                format!("{}={expected_hex}\n", algorithm.name())
+            );
+        }
     }
 
     #[test]
