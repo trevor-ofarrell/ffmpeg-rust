@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-channel-layout` update: source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.c` confirmed the bounded `av_channel_layout_from_string()` count-suffix behavior used by native defaults and count-only unspecified layouts. `ChannelLayoutSpec::parse` now accepts current native layout names and `FL+FR`-style native expressions, `Nc` only when the modeled default count is native (`2c`, `10c`), `NC`/`N channels` as count-only unspecified layouts (`2C`, `9 channels`), and `N channels (<native channel-list>)` with count validation. Invalid zero counts, `9c`, mismatched or unterminated described lists, empty lists, trailing text, and NUL-containing strings return typed invalid-argument errors. Focused unit validation, formatting, fuzz-package build/clippy, avutil clippy, local component FATE, changed-path FATE, and diff checks passed. The component remains `implemented`, not `complete`, because numeric masks, full custom-map parsing, implicit/broad ambisonic parsing and retyping, oracle inventory parity, upstream FATE parity, and actual fuzz execution remain absent.
+
 Latest `avutil-channel-layout` update: source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.c` confirmed the `AV_CHANNEL_ORDER_UNSPEC` count-only contract used by `av_channel_layout_default` fallback layouts. The Rust model now has `UnspecifiedChannelLayout` and `ChannelLayoutSpec`: default channel-count paths return modeled native layouts for known source-order defaults or a count-only unspecified layout for other positive counts, unspecified descriptions render as `<n> channels`, same-count unspecified layouts compare equal, unspecified-vs-native/custom layouts compare unequal, unspecified subset masks are zero, and unsupported index lookup returns no channel. `AudioFrame` and `avformat::AudioStreamParameters` now store `ChannelLayoutSpec`, expose `channel_layout_spec()`, and keep legacy `channel_layout()` accessors native-only. Focused unit validation, formatting, fuzz-package build/clippy, avutil/avformat clippy, local changed-path FATE, FATE listing, and diff checks passed. The component remains `implemented`, not `complete`, because full `av_channel_layout_from_string()` grammar, broad native/custom/ambisonic/unspecified retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC`, oracle inventory parity, upstream FATE parity, and actual fuzz execution remain absent.
 
 Previous `avutil-channel-layout` default-count update: source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.c` confirmed `av_channel_layout_default` scans `channel_layout_map` in source order and falls back to `AV_CHANNEL_ORDER_UNSPEC` when no exact count match exists. `ChannelLayout::default_for_count` now uses the modeled source-order layout inventory instead of a short hard-coded table, covering FFmpeg's first modeled native defaults for counts 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, and 24: mono, stereo, 2.1, 4.0, 5.0, 5.1, 6.1, 7.1, 5.1.4, 7.1.4, 9.1.4, 9.1.6, and 22.2. Focused unit validation, formatting, fuzz-package build/clippy, avutil clippy, local FATE, changed-path FATE, downstream `avformat` audio tests, FATE listing, and final diff checks passed. That slice remained `implemented`, not `complete`, because count-only fallback threading, full `av_channel_layout_from_string()` grammar, broad native/custom/ambisonic retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC`, oracle inventory parity, upstream FATE parity, and actual fuzz execution were still absent.
@@ -393,6 +395,19 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-channel-layout` count-suffix parser slice:
+  - `Select-String -Path $env:TEMP\ffmpeg-channel-layout-8.1.1.c -Pattern 'av_channel_layout_from_string|strtol| channels|strcmp(end' -Context 0,80` (source-check only)
+  - `cargo test -p avutil channel_layout` (18 tests passed through Cargo's default target directory)
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo fmt --all`
+  - `cargo fmt --all -- --check`
+  - `cargo clippy -p avutil --all-targets -- -D warnings`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-channel-layout`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `git diff --check`
 
 - Current `avutil-channel-layout` unspecified-layout slice:
   - `Select-String -Path $env:TEMP\ffmpeg-channel-layout-8.1.1.h -Pattern 'AV_CHANNEL_ORDER_UNSPEC|av_channel_layout_compare|av_channel_layout_check' -Context 0,12` (source-check only)
@@ -4462,6 +4477,10 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-channel-layout` count-suffix parser slice:
+  - `cargo test -p avutil channel_layout --target-dir target-codex` failed before running tests because Windows Application Control blocked the generated `target-codex\debug\deps\avutil-*.exe` test binary with OS error 4551.
+  - The same focused avutil channel-layout test passed with `cargo test -p avutil channel_layout` through Cargo's default `target` directory, so this is recorded as an environment/artifact policy issue, not a Rust test failure.
+
 - Current `avutil-channel-layout` unspecified-layout slice:
   - `cargo test -p avformat audio --target-dir target-codex` failed to execute the generated `target-codex\debug\deps\avformat-*.exe` test binary because Windows Application Control blocked that file before test execution. The same failure reproduced once with escalation and once with a fresh `target-codex-avformat` directory.
   - The focused avformat audio test passed with `cargo test -p avformat audio` using Cargo's default `target` directory, and the changed-path FATE-runner mapping also passed using its mapped default-target cargo commands. This is recorded as an environment/artifact policy issue, not a Rust test failure.
@@ -4846,6 +4865,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds bounded `ChannelLayoutSpec::parse` coverage for source-checked count suffixes in `av_channel_layout_from_string()`: native layout names and current native channel expressions, `Nc` native defaults only, `NC`/`N channels` count-only unspecified layouts, and `N channels (<native channel-list>)` count validation. It does not claim numeric-mask parsing, full custom-map parsing, implicit ambisonic layout parsing, broad retyping, oracle inventory parity, upstream FATE parity, or actual fuzz execution.
+
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds a bounded Rust representation for FFmpeg's count-only `AV_CHANNEL_ORDER_UNSPEC` layouts through `UnspecifiedChannelLayout` and `ChannelLayoutSpec`, then threads that spec through `AudioFrame` and avformat audio stream parameters. It covers default-count fallback, validation, description, comparison, subset, and index-lookup behavior for count-only layouts without claiming full string parsing, retyping, implicit ambisonic layout semantics, oracle inventory parity, upstream FATE parity, or actual fuzz execution.
 
 Previous `avutil-channel-layout` default-count focus: expanded default layout derivation to follow `av_channel_layout_default` for the modeled source-order `channel_layout_map` subset, returning mono, stereo, 2.1, 4.0, 5.0, 5.1, 6.1, 7.1, 5.1.4, 7.1.4, 9.1.4, 9.1.6, and 22.2 for counts 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, and 24. That slice did not claim full parsing, retyping, implicit ambisonic layout semantics, oracle inventory parity, upstream FATE parity, or actual fuzz execution.
@@ -5034,11 +5055,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Continue `avutil-channel-layout` with the next source-checked parsing/retyping gap, likely `av_channel_layout_from_string()` coverage for native names, `N channels` unspecified strings, and current custom-map forms.
+1. Continue `avutil-channel-layout` with the next source-checked parsing gap: numeric native masks, custom-map strings, or the `ambisonic <order>` branch of `av_channel_layout_from_string()`.
 2. Add oracle-backed differential vectors for channel-layout default, describe, compare, subset, and string parsing once a pinned FFmpeg binary is available locally.
-3. Keep `avutil-channel-layout` below `complete` until parsing, broad retyping, implicit ambisonic order semantics, oracle inventory, upstream FATE, and fuzz parity are proven.
+3. Keep `avutil-channel-layout` below `complete` until full parsing, broad retyping, implicit ambisonic order semantics, oracle inventory, upstream FATE, and fuzz parity are proven.
 
 ## Known Blockers
+
+- Latest `avutil-channel-layout` parser coverage is deliberately limited to current native names/channel expressions and count suffixes. Numeric masks, full custom-map syntax, implicit/broad ambisonic parsing, broader retyping, full `ffmpeg -layouts` inventory comparison, upstream FATE parity, and actual fuzz execution remain blockers.
 
 - Latest `avutil-channel-layout` default-count coverage now follows the modeled source-order `channel_layout_map` entries, including counts 10, 12, 14, 16, and 24, and `ChannelLayoutSpec` now preserves unmodeled positive counts as `AV_CHANNEL_ORDER_UNSPEC`-style count-only layouts. Remaining blockers are full string parsing/retyping for unspecified layouts, broad native/custom/ambisonic retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC`, oracle inventory comparison, upstream FATE parity, and actual fuzz execution.
 
@@ -5127,6 +5150,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added source-checked `ChannelLayoutSpec::parse` count-suffix coverage. The parser now accepts current native layout names, current `FL+FR`-style native expressions, `Nc` when FFmpeg's default layout for that count is modeled as native, `NC`/`N channels` as count-only unspecified layouts, and `N channels (<native channel-list>)` with count validation. Unit tests and the `avutil_core_models` fuzz target fixtures cover valid `2c`, `10c`, `2C`, `9 channels`, and described-list forms plus invalid zero counts, `9c`, mismatches, unterminated lists, empty lists, trailing text, and NUL-containing strings. Validation passed with focused avutil channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE, formatting, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`, because numeric masks, full custom-map parsing, implicit/broad ambisonic parsing and retyping, oracle comparison, upstream FATE, and actual fuzz execution remain absent.
 
 Latest slice: added source-checked count-only unspecified channel-layout support. `UnspecifiedChannelLayout` and `ChannelLayoutSpec` now model FFmpeg's `AV_CHANNEL_ORDER_UNSPEC` fallback for positive unmodeled channel counts, including description, validation, comparison, subset, and index behavior. `AudioFrame` and avformat `AudioStreamParameters` store `ChannelLayoutSpec`, expose `channel_layout_spec()`, and preserve native-only legacy `channel_layout()` accessors. The fuzz fixture now checks unspecified default-count invariants, and local FATE mappings now cover avformat audio, WAV, and raw PCM unit filters when those components are selected. Validation passed with focused avutil channel-layout/audio-frame tests, avformat audio tests through the default target dir, fuzz-package check/clippy, avutil/avformat clippy, changed-path FATE dry-run and execution, FATE listing, formatting, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`, because full parser/retyping/implicit-ambisonic/oracle/FATE/fuzz parity remains absent.
 

@@ -1620,6 +1620,56 @@ impl ChannelLayoutSpec {
         Self::unspecified(channels)
     }
 
+    pub fn parse(value: &str) -> AvResult<Self> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(AvError::invalid_argument("empty channel layout"));
+        }
+        if trimmed.contains('\0') {
+            return Err(AvError::invalid_argument(
+                "channel layout contains NUL byte",
+            ));
+        }
+
+        if let Some(layout) = Self::parse_described_channel_list(trimmed)? {
+            return Ok(layout);
+        }
+
+        if let Some(channels) = parse_count_suffix(trimmed, "c") {
+            let Some(layout) = ChannelLayout::default_for_count(channels) else {
+                return Err(AvError::invalid_argument(format!(
+                    "channel count {channels} has no native default layout"
+                )));
+            };
+            return Ok(Self::Native(layout));
+        }
+
+        if let Some(channels) =
+            parse_count_suffix(trimmed, "C").or_else(|| parse_count_suffix(trimmed, " channels"))
+        {
+            return Self::unspecified(channels);
+        }
+
+        Ok(Self::Native(ChannelLayout::parse(trimmed)?))
+    }
+
+    fn parse_described_channel_list(value: &str) -> AvResult<Option<Self>> {
+        let Some((count_text, rest)) = value.split_once(" channels (") else {
+            return Ok(None);
+        };
+        let Some(channel_list) = rest.strip_suffix(')') else {
+            return Err(AvError::invalid_argument(format!(
+                "unterminated channel layout list {value:?}"
+            )));
+        };
+        let channels = parse_positive_channel_count(count_text).ok_or_else(|| {
+            AvError::invalid_argument(format!("invalid channel count {count_text:?}"))
+        })?;
+        let layout = ChannelLayout::parse(channel_list)?;
+        layout.validate_channel_count(channels)?;
+        Ok(Some(Self::Native(layout)))
+    }
+
     pub fn as_native(self) -> Option<ChannelLayout> {
         match self {
             Self::Native(layout) => Some(layout),
@@ -1704,6 +1754,19 @@ impl From<ChannelLayout> for ChannelLayoutSpec {
     fn from(layout: ChannelLayout) -> Self {
         Self::Native(layout)
     }
+}
+
+fn parse_count_suffix(value: &str, suffix: &str) -> Option<u16> {
+    let count = value.strip_suffix(suffix)?;
+    parse_positive_channel_count(count)
+}
+
+fn parse_positive_channel_count(value: &str) -> Option<u16> {
+    if value.is_empty() {
+        return None;
+    }
+    let channels = value.parse::<u16>().ok()?;
+    (channels > 0).then_some(channels)
 }
 
 #[cfg(test)]
@@ -3564,6 +3627,63 @@ mod tests {
         assert!(!ChannelLayoutSpec::unspecified(2)
             .unwrap()
             .is_equivalent_to_custom(&CustomChannelLayout::unknown(2).unwrap()));
+    }
+
+    #[test]
+    fn layout_spec_parser_models_ffmpeg_count_suffixes() {
+        assert_eq!(
+            ChannelLayoutSpec::parse("stereo").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("FL+FR").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("2 channels (FL+FR)").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("10c").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::five_one_four())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("2c").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("2C").unwrap(),
+            ChannelLayoutSpec::unspecified(2).unwrap()
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("2 channels").unwrap(),
+            ChannelLayoutSpec::unspecified(2).unwrap()
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("9C").unwrap(),
+            ChannelLayoutSpec::unspecified(9).unwrap()
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("9 channels").unwrap(),
+            ChannelLayoutSpec::unspecified(9).unwrap()
+        );
+
+        for input in [
+            "",
+            "0C",
+            "0 channels",
+            "9c",
+            "3 channels (FL+FR)",
+            "2 channels (FL+FR",
+            "2 channels ()",
+            "2channels",
+            "2 channels trailing",
+            "2 channels (FL+FR) trailing",
+            "FL\0FR",
+        ] {
+            let err = ChannelLayoutSpec::parse(input).unwrap_err();
+            assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        }
     }
 
     #[test]

@@ -4494,8 +4494,20 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(ChannelLayout::from_name(layout.name()), Some(layout));
     assert_eq!(ChannelLayout::parse(layout.name()).unwrap(), layout);
     assert_eq!(
+        ChannelLayoutSpec::parse(layout.name()).unwrap(),
+        ChannelLayoutSpec::Native(layout)
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse(&format!("{}c", layout.channel_count())).unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::default_for_count(layout.channel_count()).unwrap())
+    );
+    assert_eq!(
         ChannelLayout::parse(&layout.channel_string()).unwrap(),
         layout
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse(&layout.channel_string()).unwrap(),
+        ChannelLayoutSpec::Native(layout)
     );
     assert_eq!(ChannelLayout::from_channel_mask(layout.channel_mask()), Some(layout));
     assert_eq!(ChannelLayout::from_channels(layout.channels()), Some(layout));
@@ -9607,6 +9619,34 @@ fn exercise_fixtures() {
         ChannelLayoutSpec::default_for_count(10).unwrap(),
         ChannelLayoutSpec::Native(ChannelLayout::five_one_four())
     );
+    assert_eq!(
+        ChannelLayoutSpec::parse("2 channels (FL+FR)").unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("10c").unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::five_one_four())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("2C").unwrap(),
+        ChannelLayoutSpec::unspecified(2).unwrap()
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("9 channels").unwrap(),
+        ChannelLayoutSpec::unspecified(9).unwrap()
+    );
+    for invalid in [
+        "0C",
+        "9c",
+        "3 channels (FL+FR)",
+        "2 channels (FL+FR",
+        "2 channels ()",
+    ] {
+        assert_eq!(
+            ChannelLayoutSpec::parse(invalid).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
     assert_eq!(
         ChannelLayoutSpec::default_for_count(0)
             .unwrap_err()
