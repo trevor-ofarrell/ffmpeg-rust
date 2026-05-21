@@ -1360,14 +1360,14 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
     assert!(compare_mod(mod_a, mod_b, 3).is_err());
 
     let stable_ts = small_i64_from(cursor.next(), cursor.next());
-    let stable_inc = i64::from(cursor.next().unwrap_or_default() % 16);
+    let stable_inc = i64::from(cursor.next().unwrap_or_default() % 31) - 15;
     assert_eq!(
         add_stable(src, stable_ts, dst, stable_inc).unwrap(),
         expected_add_stable(src, stable_ts, dst, stable_inc).unwrap()
     );
     assert!(add_stable(Rational::from_raw(0, 1), stable_ts, dst, stable_inc).is_err());
     assert!(add_stable(src, stable_ts, Rational::from_raw(1, 0), stable_inc).is_err());
-    assert!(add_stable(src, stable_ts, dst, -1).is_err());
+    assert!(add_stable(src, i64::MAX, src, 1).is_err());
 
     let fs_tb = positive_rational_from(cursor.next(), cursor.next());
     let delta_in_ts = small_i64_from(cursor.next(), cursor.next());
@@ -14294,9 +14294,7 @@ fn expected_add_stable(ts_tb: Rational, ts: i64, inc_tb: Rational, inc: i64) -> 
 
     if m % d == 0 {
         let delta = i64::try_from(m / d).map_err(|_| ())?;
-        if let Some(result) = ts.checked_add(delta) {
-            return Ok(result);
-        }
+        return ts.checked_add(delta).ok_or(());
     }
     if m < d {
         return Ok(ts);

@@ -119,11 +119,6 @@ pub fn rescale_delta(
 pub fn add_stable(ts_tb: Rational, ts: i64, inc_tb: Rational, inc: i64) -> AvResult<i64> {
     ensure_positive_time_base(ts_tb, "timestamp time base")?;
     ensure_positive_time_base(inc_tb, "increment time base")?;
-    if inc < 0 {
-        return Err(AvError::invalid_argument(
-            "stable timestamp increment must be nonnegative",
-        ));
-    }
 
     let scaled_inc = scaled_increment_time_base(inc_tb, inc)?;
     let m = i128::from(scaled_inc.num()) * i128::from(ts_tb.den());
@@ -135,12 +130,11 @@ pub fn add_stable(ts_tb: Rational, ts: i64, inc_tb: Rational, inc: i64) -> AvRes
     }
 
     if m % d == 0 {
-        let delta = m / d;
-        if let Ok(delta) = i64::try_from(delta) {
-            if let Some(result) = ts.checked_add(delta) {
-                return Ok(result);
-            }
-        }
+        let delta = i64::try_from(m / d)
+            .map_err(|_| AvError::invalid_argument("stable timestamp increment out of range"))?;
+        return ts
+            .checked_add(delta)
+            .ok_or_else(|| AvError::invalid_argument("stable timestamp result out of range"));
     }
     if m < d {
         return Ok(ts);
@@ -651,6 +645,17 @@ mod tests {
     }
 
     #[test]
+    fn add_stable_subtracts_exact_negative_tick_increments() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+
+        assert_eq!(
+            add_stable(milliseconds, 1_000, milliseconds, -40).unwrap(),
+            960
+        );
+        assert_eq!(add_stable(milliseconds, 10, milliseconds, -10).unwrap(), 0);
+    }
+
+    #[test]
     fn add_stable_avoids_repeated_fractional_drift() {
         let milliseconds = Rational::new(1, 1_000).unwrap();
         let thirtieth = Rational::new(1, 30).unwrap();
@@ -681,6 +686,19 @@ mod tests {
     }
 
     #[test]
+    fn add_stable_keeps_fractional_negative_increments_unchanged() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+        let thirtieth = Rational::new(1, 30).unwrap();
+        let samples_48k = Rational::new(1, 48_000).unwrap();
+
+        assert_eq!(
+            add_stable(milliseconds, 1_000, thirtieth, -1).unwrap(),
+            1_000
+        );
+        assert_eq!(add_stable(milliseconds, 123, samples_48k, -1).unwrap(), 123);
+    }
+
+    #[test]
     fn add_stable_rejects_invalid_inputs() {
         let milliseconds = Rational::new(1, 1_000).unwrap();
 
@@ -697,7 +715,13 @@ mod tests {
             crate::AvErrorKind::InvalidArgument
         );
         assert_eq!(
-            add_stable(milliseconds, 0, milliseconds, -1)
+            add_stable(milliseconds, i64::MAX, milliseconds, 1)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            add_stable(milliseconds, i64::MIN, milliseconds, -1)
                 .unwrap_err()
                 .kind(),
             crate::AvErrorKind::InvalidArgument
