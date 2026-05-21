@@ -141,6 +141,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "tests/differential/",
+        exact_ids: &["fate-runner"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "xtask/",
         exact_ids: &["repo-runtime-guard"],
         id_prefixes: &[],
@@ -1142,6 +1147,7 @@ fn is_relevant_implementation_path(path: &str) -> bool {
         || path == "xtask/Cargo.toml"
         || path.starts_with("crates/")
         || path.starts_with("tests/fate/")
+        || path.starts_with("tests/differential/")
         || path.starts_with("fuzz/fuzz_targets/")
 }
 
@@ -1297,6 +1303,43 @@ mod tests {
             changed_components(&component_ids, &paths),
             vec!["avutil-channel-layout".to_string()]
         );
+    }
+
+    #[test]
+    fn changed_selection_maps_differential_files_to_runner() {
+        let component_ids = component_ids_from_ledger(&ledger(&["fate-runner"]));
+        let paths = vec![
+            "tests/differential/mappings.txt".to_string(),
+            "tests/differential/README.md".to_string(),
+        ];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["fate-runner".to_string()]
+        );
+    }
+
+    #[test]
+    fn differential_mappings_parse_against_current_ledger() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let ledger_contents = fs::read_to_string(repo_root.join("PORTING_LEDGER.toml")).unwrap();
+        let component_ids = component_ids_from_ledger(&ledger_contents);
+        let mapping_contents =
+            fs::read_to_string(repo_root.join("tests/differential/mappings.txt")).unwrap();
+
+        let mappings = parse_fate_mappings(&mapping_contents, &component_ids).unwrap();
+        let pairs: Vec<_> = mappings
+            .iter()
+            .map(|mapping| (mapping.component_id.as_str(), mapping.target.as_str()))
+            .collect();
+
+        assert!(pairs.contains(&(
+            "fftools-ffmpeg-rawvideo-file-output",
+            "oracle-rawvideo-file-output"
+        )));
+        assert!(pairs.contains(&("avformat-rawvideo-demuxer", "oracle-rawvideo-file-output")));
+        assert!(pairs.contains(&("avformat-rawvideo-muxer", "oracle-rawvideo-file-output")));
+        assert!(pairs.contains(&("avutil-channel-layout", "oracle-ffmpeg-layouts")));
     }
 
     #[test]

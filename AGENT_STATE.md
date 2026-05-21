@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `fate-runner` update: changes under `tests/differential/` now select the `fate-runner` component during changed-path analysis, and unit coverage parses the live `tests/differential/mappings.txt` file against the live ledger IDs. The parser check covers the current rawvideo oracle rows plus the `avutil-channel-layout|oracle-ffmpeg-layouts` row without requiring a pinned oracle binary. Validation passed with focused `fate-runner` tests through `target-fate-runner-diff-test`, differential mapping listing and changed dry-run through `target-fate-runner-diff-bin`, a differential channel-layout dry-run with an existing placeholder oracle path, `fate-runner` clippy, formatting, and diff checks. The component remains `scaffolded`, not complete, because upstream FATE sample-based media mappings are still absent.
+
 Correction for the latest `avutil-channel-layout` oracle-harness slice: after adding the `fate-runner` regression test, full `run --changed` execution is blocked in this Windows environment by Application Control on conflicting rebuilt test executables. The direct equivalent checks pass: `cargo test -p fate-runner --target-dir target-codex`, `cargo test -p avutil --test channel_layout_oracle`, and `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-channel-layout`. `run --changed --dry-run` also passes and selects `fate-runner` plus `avutil-channel-layout`.
 
 Latest `avutil-channel-layout` update: added an ignored `ffmpeg -layouts` oracle harness at `crates/avutil/tests/channel_layout_oracle.rs`. The harness runs the pinned FFmpeg oracle with `-hide_banner -layouts`, parses the individual-channel and standard-layout tables, and compares them to `Channel::ALL` and `ChannelLayout::known_layouts()`. It is wired into `tests/differential/mappings.txt` as `avutil-channel-layout|oracle-ffmpeg-layouts`, and `fate-runner` now maps changes to that integration test back to `avutil-channel-layout`. The default ignored test compile, focused channel-layout tests, differential mapping listing, local component FATE, changed-path FATE dry-run/execution, avutil and fate-runner clippy, formatting, and diff checks passed; `git diff --check` reported CRLF warnings only. The component remains `implemented`, not `complete`, because the pinned FFmpeg oracle binary is absent locally, so the new ignored differential has not executed, and byte-preserving non-UTF-8 custom-name parity, upstream FATE parity, and actual fuzz execution remain pending.
@@ -435,6 +437,16 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `fate-runner` differential-mapping coverage slice:
+  - `cargo test -p fate-runner --target-dir target-codex` (28 tests passed before rustfmt)
+  - `cargo test -p fate-runner --target-dir target-fate-runner-diff-test` (28 tests passed after rustfmt)
+  - `cargo run --target-dir target-fate-runner-diff-bin -p fate-runner -- mappings --mappings tests/differential/mappings.txt`
+  - `cargo run --target-dir target-fate-runner-diff-bin -p fate-runner -- run --changed --dry-run`
+  - `cargo run --target-dir target-fate-runner-diff-bin -p fate-runner -- run --dry-run --mappings tests/differential/mappings.txt --oracle-ffmpeg Cargo.toml --component avutil-channel-layout`
+  - `cargo clippy -p fate-runner --all-targets -- -D warnings`
+  - `cargo fmt --all -- --check`
+  - `git diff --check` (CRLF warnings only)
 
 - Current `avutil-channel-layout` oracle-harness slice after adding the fate-runner regression test:
   - `cargo test -p fate-runner --target-dir target-codex` (26 tests passed)
@@ -4725,6 +4737,11 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `fate-runner` differential-mapping coverage slice:
+  - `cargo run --target-dir target-codex -p fate-runner -- mappings --mappings tests/differential/mappings.txt` was blocked by Windows Application Control on `target-codex\debug\fate-runner.exe`.
+  - `cargo run -p fate-runner -- mappings --mappings tests/differential/mappings.txt` was blocked by Windows Application Control on `target\debug\fate-runner.exe`.
+  - After rustfmt rebuilt the test binary, `cargo test -p fate-runner --target-dir target-codex` was blocked by Windows Application Control on `target-codex\debug\deps\fate_runner-*.exe`. The same focused test passed through `target-fate-runner-diff-test`, and the CLI dry-runs passed through `target-fate-runner-diff-bin`.
+
 - Current `avutil-channel-layout` oracle-harness slice after adding the fate-runner regression test:
   - `cargo test -p fate-runner` through the default `target` directory is blocked by Windows Application Control on `target\debug\deps\fate_runner-*.exe` after the rebuilt test executable is created. `cargo test -p fate-runner --target-dir target-codex` passes.
   - `$env:CARGO_TARGET_DIR='target-codex'; cargo run --target-dir target-codex -p fate-runner -- run --changed` passes the `fate-runner` self-test but is blocked by Windows Application Control on `target-codex\debug\deps\channel_layout_oracle-*.exe`. The same avutil component mapping passes through the default target directory.
@@ -5136,6 +5153,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`fate-runner` is the active infrastructure focus for this turn. The concrete change makes `tests/differential/` files relevant to changed-path selection and adds unit coverage that parses the live differential mapping file against current ledger IDs, including rawvideo oracle mappings and the channel-layout `ffmpeg -layouts` oracle mapping. It deliberately does not claim upstream FATE parity because no sample-based FATE mappings exist yet.
+
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds an ignored oracle inventory test for `ffmpeg -layouts`, comparing the pinned oracle's channel names/descriptions and standard-layout decompositions to the current Rust inventories, and wires that test into the differential mappings plus changed-path component selection. It deliberately does not claim `differential_pass` because the pinned oracle binary is absent locally.
 
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change aligns the parser's numeric-mask, count-suffix, and described-list branches with the pinned FFmpeg `strtoull`/`strtol` shape: leading C whitespace and leading `+` are accepted where the C parsers accept them, and trailing junk after masks, count suffixes, or described lists is no longer hidden by whole-expression trimming. It deliberately does not claim byte-preserving FFmpeg custom-name parity, oracle-vector parity, full `ffmpeg -layouts` inventory coverage, upstream FATE parity, or actual fuzz execution.
@@ -5360,11 +5379,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Configure or build the pinned FFmpeg 8.1.1 oracle binary, then run `cargo test -p avutil --test channel_layout_oracle -- --ignored` and the matching differential `fate-runner` mapping.
-2. If the oracle inventory differs, use the failing `ffmpeg -layouts` comparison to add the next missing channel/layout inventory slice without weakening the oracle assertions.
-3. If no oracle is available, continue `avutil-channel-layout` with the next source-checked parser/retype gap: deeper `AV_CHANNEL_ORDER_AMBISONIC` semantics or byte-preserving non-UTF-8 custom-name parity.
+1. Configure or build the pinned FFmpeg 8.1.1 oracle binary, then run the rawvideo and channel-layout rows from `tests/differential/mappings.txt` through `fate-runner`.
+2. If no oracle is available, continue `fate-runner` by adding the next FATE infrastructure slice: sample-root discovery/reporting or a real sample-backed mapping scaffold that remains skipped/blocked until samples exist.
+3. Continue `avutil-channel-layout` only after the oracle/FATE infrastructure path is exhausted, focusing on deeper `AV_CHANNEL_ORDER_AMBISONIC` semantics or byte-preserving non-UTF-8 custom-name parity.
 
 ## Known Blockers
+
+- `fate-runner` remains `scaffolded` because upstream FATE sample-based media mappings are not configured and no local FATE samples path exists. The current update only strengthens changed-path and mapping-file validation for local/differential runner wiring.
 
 - Latest `avutil-channel-layout` oracle coverage now has an ignored `ffmpeg -layouts` differential harness and mapping, but real execution is blocked because no pinned FFmpeg 8.1.1 binary exists at `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)`. The harness compiles by default and fails explicitly when run without the oracle instead of silently passing.
 
@@ -5481,6 +5502,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: strengthened `fate-runner` coverage for differential mappings. `tests/differential/` files now map to `fate-runner` in changed-path analysis, and new unit tests verify both that selection rule and that the live `tests/differential/mappings.txt` file parses against current ledger IDs, including rawvideo oracle rows and the channel-layout `ffmpeg -layouts` oracle row. Docs and the ledger record this as runner infrastructure coverage only. Validation passed with focused `fate-runner` tests, mapping listing, changed dry-run, differential mapping dry-run, `fate-runner` clippy, formatting, and diff checks; some freshly rebuilt default/target-codex executables were blocked by Windows Application Control and passed through fresh target directories.
 
 Correction for latest slice after adding `fate-runner` regression coverage: full `run --changed` execution is blocked by Windows Application Control on rebuilt test executables in this environment, but the direct equivalent checks pass (`fate-runner` self-test through `target-codex`, default-target avutil channel-layout component mapping, and the ignored oracle-test compile). `run --changed --dry-run` also passes and selects the expected components.
 
