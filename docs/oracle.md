@@ -147,11 +147,11 @@ FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p avutil 
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-pixel-format --target oracle-ffmpeg-pix-fmts-subset --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
-`crates/avutil/tests/sample_format_oracle.rs` is an ignored oracle harness for `ffmpeg -sample_fmts`. It compares the oracle name/depth table against `SampleFormat::ALL` and is wired into `tests/differential/mappings.txt` as `avutil-sample-format|oracle-ffmpeg-sample-fmts`. Run it with:
+`crates/avutil/tests/sample_format_oracle.rs` contains ignored oracle harnesses for sample-format parity. The inventory test compares `ffmpeg -sample_fmts` name/depth output against `SampleFormat::ALL`; the libavutil test compiles a small C helper against the pinned local `libavutil.a` and validates native sample-format metadata, table strings, `av_samples_get_buffer_size`, `av_samples_fill_arrays`, `av_samples_alloc`, `av_samples_set_silence`, and `av_samples_copy` vectors. They are wired into `tests/differential/mappings.txt` as `avutil-sample-format|oracle-ffmpeg-sample-fmts` and `avutil-sample-format|oracle-libavutil-sample-format`. Run them with:
 
 ```sh
 FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p avutil --test sample_format_oracle -- --ignored
-cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-sample-format --target oracle-ffmpeg-sample-fmts --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-sample-format --target oracle-ffmpeg-sample-fmts --target oracle-libavutil-sample-format --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
 `crates/avutil/tests/color_oracle.rs` is an ignored oracle harness for `ffmpeg -colors`. It compares the oracle color-name/RGB table against `NamedColor::ALL` and is wired into `tests/differential/mappings.txt` as `avutil-color|oracle-ffmpeg-colors`. Run it with:
