@@ -2927,31 +2927,9 @@ fn parse_numeric_channel_mask(value: &str) -> Option<u64> {
 
 fn parse_ambisonic_order_prefix(value: &str) -> Option<(u32, &str)> {
     let value = value.trim_start();
-    if value.starts_with('-') {
-        return None;
-    }
-    let value = value.strip_prefix('+').unwrap_or(value);
-    let (digits, radix) = if let Some(hex) = value
-        .strip_prefix("0x")
-        .or_else(|| value.strip_prefix("0X"))
-    {
-        (hex, 16)
-    } else if value.len() > 1 && value.starts_with('0') {
-        (value, 8)
-    } else {
-        (value, 10)
-    };
-
-    let digit_len = digits
-        .bytes()
-        .take_while(|byte| (*byte as char).is_digit(radix))
-        .count();
-    if digit_len == 0 {
-        return None;
-    }
-
-    let order = u32::from_str_radix(&digits[..digit_len], radix).ok()?;
-    Some((order, &digits[digit_len..]))
+    let (order, consumed) = parse_ffmpeg_i32_base0(value, false)?;
+    let order = u32::try_from(order).ok()?;
+    Some((order, &value[consumed..]))
 }
 
 fn parse_count_suffix(value: &str, suffix: &str) -> Option<u16> {
@@ -5923,6 +5901,12 @@ mod tests {
         assert_eq!(zeroth.channel_count(), 1);
         assert_eq!(zeroth.channel_from_index(0), Some(ChannelId::Ambisonic(0)));
 
+        let signed_zero = ChannelLayoutSpec::parse("ambisonic -0").unwrap();
+        assert_eq!(
+            signed_zero.as_ambisonic(),
+            Some(AmbisonicChannelLayout::new(0, 0).unwrap())
+        );
+
         let first = ChannelLayoutSpec::parse("ambisonic 1").unwrap();
         assert_eq!(
             first.as_ambisonic(),
@@ -6013,6 +5997,18 @@ mod tests {
         assert!(hex_order.is_equivalent_to_custom(&equivalent_custom));
         assert!(hex_order.is_equivalent_to(ChannelLayoutSpec::Custom(equivalent_custom.clone())));
         assert!(!hex_order.is_equivalent_to_native(ChannelLayout::stereo()));
+
+        for zero_order_extra in ["ambisonic +stereo", "ambisonic -0+stereo"] {
+            let parsed = ChannelLayoutSpec::parse(zero_order_extra).unwrap();
+            assert_eq!(
+                parsed.as_ambisonic(),
+                Some(
+                    AmbisonicChannelLayout::new(0, ChannelLayout::stereo().channel_mask()).unwrap()
+                )
+            );
+            assert_eq!(parsed.describe(), "ambisonic 0+stereo");
+            assert_eq!(parsed.channel_count(), 3);
+        }
 
         assert_eq!(
             ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR")

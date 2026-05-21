@@ -4861,6 +4861,18 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert!(parsed_ambisonic.is_equivalent_to_custom(
         &CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap()
     ));
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic -0").unwrap(),
+        ChannelLayoutSpec::Ambisonic(AmbisonicChannelLayout::new(0, 0).unwrap())
+    );
+    for zero_order_extra in ["ambisonic +stereo", "ambisonic -0+stereo"] {
+        assert_eq!(
+            ChannelLayoutSpec::parse(zero_order_extra).unwrap(),
+            ChannelLayoutSpec::Ambisonic(
+                AmbisonicChannelLayout::new(0, ChannelLayout::stereo().channel_mask()).unwrap()
+            )
+        );
+    }
     let native_custom = ChannelLayoutSpec::Native(layout).to_custom_layout().unwrap();
     assert!(layout.is_equivalent_to_custom(&native_custom));
     assert_eq!(native_custom.channel_count(), layout.channel_count());
