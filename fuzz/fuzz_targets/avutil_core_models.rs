@@ -9485,6 +9485,24 @@ fn exercise_fixtures() {
     );
     assert!(ChannelLayout::stereo().contains(Channel::FrontLeft));
     assert!(!ChannelLayout::stereo().contains(Channel::LowFrequency));
+    for (channel, name, mask) in [
+        (Channel::SurroundDirectLeft, "SDL", 1 << 33),
+        (Channel::SurroundDirectRight, "SDR", 1 << 34),
+        (Channel::SideSurroundLeft, "SSL", 1 << 41),
+        (Channel::SideSurroundRight, "SSR", 1 << 42),
+        (Channel::TopSurroundLeft, "TTL", 1 << 43),
+        (Channel::TopSurroundRight, "TTR", 1 << 44),
+    ] {
+        assert_eq!(channel.name(), name);
+        assert_eq!(Channel::from_name(name), Some(channel));
+        assert_eq!(channel.mask(), mask);
+    }
+    for input in ["SDL+SDR", "SSL+SSR", "TTL+TTR"] {
+        assert_eq!(
+            ChannelLayout::parse(input).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
     assert_eq!(
         digest_to_hex(&md5(b"abc")),
         "900150983cd24fb0d6963f7d28e17f72"

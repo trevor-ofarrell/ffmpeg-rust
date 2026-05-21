@@ -24,12 +24,18 @@ pub enum Channel {
     StereoRight,
     WideLeft,
     WideRight,
+    SurroundDirectLeft,
+    SurroundDirectRight,
     LowFrequency2,
     TopSideLeft,
     TopSideRight,
     BottomFrontCenter,
     BottomFrontLeft,
     BottomFrontRight,
+    SideSurroundLeft,
+    SideSurroundRight,
+    TopSurroundLeft,
+    TopSurroundRight,
     BinauralLeft,
     BinauralRight,
 }
@@ -58,12 +64,18 @@ impl Channel {
         Self::StereoRight,
         Self::WideLeft,
         Self::WideRight,
+        Self::SurroundDirectLeft,
+        Self::SurroundDirectRight,
         Self::LowFrequency2,
         Self::TopSideLeft,
         Self::TopSideRight,
         Self::BottomFrontCenter,
         Self::BottomFrontLeft,
         Self::BottomFrontRight,
+        Self::SideSurroundLeft,
+        Self::SideSurroundRight,
+        Self::TopSurroundLeft,
+        Self::TopSurroundRight,
         Self::BinauralLeft,
         Self::BinauralRight,
     ];
@@ -92,12 +104,18 @@ impl Channel {
             Self::StereoRight => "DR",
             Self::WideLeft => "WL",
             Self::WideRight => "WR",
+            Self::SurroundDirectLeft => "SDL",
+            Self::SurroundDirectRight => "SDR",
             Self::LowFrequency2 => "LFE2",
             Self::TopSideLeft => "TSL",
             Self::TopSideRight => "TSR",
             Self::BottomFrontCenter => "BFC",
             Self::BottomFrontLeft => "BFL",
             Self::BottomFrontRight => "BFR",
+            Self::SideSurroundLeft => "SSL",
+            Self::SideSurroundRight => "SSR",
+            Self::TopSurroundLeft => "TTL",
+            Self::TopSurroundRight => "TTR",
             Self::BinauralLeft => "BIL",
             Self::BinauralRight => "BIR",
         }
@@ -134,12 +152,18 @@ impl Channel {
             Self::StereoRight => 1 << 30,
             Self::WideLeft => 1 << 31,
             Self::WideRight => 1 << 32,
+            Self::SurroundDirectLeft => 1 << 33,
+            Self::SurroundDirectRight => 1 << 34,
             Self::LowFrequency2 => 1 << 35,
             Self::TopSideLeft => 1 << 36,
             Self::TopSideRight => 1 << 37,
             Self::BottomFrontCenter => 1 << 38,
             Self::BottomFrontLeft => 1 << 39,
             Self::BottomFrontRight => 1 << 40,
+            Self::SideSurroundLeft => 1 << 41,
+            Self::SideSurroundRight => 1 << 42,
+            Self::TopSurroundLeft => 1 << 43,
+            Self::TopSurroundRight => 1 << 44,
             Self::BinauralLeft => 1 << 61,
             Self::BinauralRight => 1 << 62,
         }
@@ -966,12 +990,18 @@ mod tests {
         assert_eq!(Channel::StereoRight.name(), "DR");
         assert_eq!(Channel::WideLeft.name(), "WL");
         assert_eq!(Channel::WideRight.name(), "WR");
+        assert_eq!(Channel::SurroundDirectLeft.name(), "SDL");
+        assert_eq!(Channel::SurroundDirectRight.name(), "SDR");
         assert_eq!(Channel::LowFrequency2.name(), "LFE2");
         assert_eq!(Channel::TopSideLeft.name(), "TSL");
         assert_eq!(Channel::TopSideRight.name(), "TSR");
         assert_eq!(Channel::BottomFrontCenter.name(), "BFC");
         assert_eq!(Channel::BottomFrontLeft.name(), "BFL");
         assert_eq!(Channel::BottomFrontRight.name(), "BFR");
+        assert_eq!(Channel::SideSurroundLeft.name(), "SSL");
+        assert_eq!(Channel::SideSurroundRight.name(), "SSR");
+        assert_eq!(Channel::TopSurroundLeft.name(), "TTL");
+        assert_eq!(Channel::TopSurroundRight.name(), "TTR");
         assert_eq!(Channel::BinauralLeft.name(), "BIL");
         assert_eq!(Channel::BinauralRight.name(), "BIR");
 
@@ -991,12 +1021,21 @@ mod tests {
         assert_eq!(Channel::from_name("DR"), Some(Channel::StereoRight));
         assert_eq!(Channel::from_name("wl"), Some(Channel::WideLeft));
         assert_eq!(Channel::from_name("WR"), Some(Channel::WideRight));
+        assert_eq!(Channel::from_name("sdl"), Some(Channel::SurroundDirectLeft));
+        assert_eq!(
+            Channel::from_name("SDR"),
+            Some(Channel::SurroundDirectRight)
+        );
         assert_eq!(Channel::from_name("lfe2"), Some(Channel::LowFrequency2));
         assert_eq!(Channel::from_name("tsl"), Some(Channel::TopSideLeft));
         assert_eq!(Channel::from_name("TSR"), Some(Channel::TopSideRight));
         assert_eq!(Channel::from_name("bfc"), Some(Channel::BottomFrontCenter));
         assert_eq!(Channel::from_name("BFL"), Some(Channel::BottomFrontLeft));
         assert_eq!(Channel::from_name("bfr"), Some(Channel::BottomFrontRight));
+        assert_eq!(Channel::from_name("ssl"), Some(Channel::SideSurroundLeft));
+        assert_eq!(Channel::from_name("SSR"), Some(Channel::SideSurroundRight));
+        assert_eq!(Channel::from_name("ttl"), Some(Channel::TopSurroundLeft));
+        assert_eq!(Channel::from_name("TTR"), Some(Channel::TopSurroundRight));
         assert_eq!(Channel::from_name("bil"), Some(Channel::BinauralLeft));
         assert_eq!(Channel::from_name("BIR"), Some(Channel::BinauralRight));
         assert_eq!(Channel::from_name("unknown"), None);
@@ -1018,12 +1057,18 @@ mod tests {
         assert_eq!(Channel::StereoRight.mask(), 1 << 30);
         assert_eq!(Channel::WideLeft.mask(), 1 << 31);
         assert_eq!(Channel::WideRight.mask(), 1 << 32);
+        assert_eq!(Channel::SurroundDirectLeft.mask(), 1 << 33);
+        assert_eq!(Channel::SurroundDirectRight.mask(), 1 << 34);
         assert_eq!(Channel::LowFrequency2.mask(), 1 << 35);
         assert_eq!(Channel::TopSideLeft.mask(), 1 << 36);
         assert_eq!(Channel::TopSideRight.mask(), 1 << 37);
         assert_eq!(Channel::BottomFrontCenter.mask(), 1 << 38);
         assert_eq!(Channel::BottomFrontLeft.mask(), 1 << 39);
         assert_eq!(Channel::BottomFrontRight.mask(), 1 << 40);
+        assert_eq!(Channel::SideSurroundLeft.mask(), 1 << 41);
+        assert_eq!(Channel::SideSurroundRight.mask(), 1 << 42);
+        assert_eq!(Channel::TopSurroundLeft.mask(), 1 << 43);
+        assert_eq!(Channel::TopSurroundRight.mask(), 1 << 44);
         assert_eq!(Channel::BinauralLeft.mask(), 1 << 61);
         assert_eq!(Channel::BinauralRight.mask(), 1 << 62);
     }
@@ -2371,7 +2416,20 @@ mod tests {
 
     #[test]
     fn layout_parser_rejects_invalid_or_unsupported_expressions() {
-        for input in ["", "   ", "+", "FL+", "FL++FR", "FL\0FR", "FL+FL", "FL+BR"] {
+        for input in [
+            "",
+            "   ",
+            "+",
+            "FL+",
+            "FL++FR",
+            "FL\0FR",
+            "FL+FL",
+            "FL+BR",
+            "SDL+SDR",
+            "SSL+SSR",
+            "TTL+TTR",
+            "SDL+SDR+SSL+SSR+TTL+TTR",
+        ] {
             let err = ChannelLayout::parse(input).unwrap_err();
             assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         }
