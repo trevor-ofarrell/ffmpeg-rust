@@ -532,6 +532,19 @@ impl CustomChannelLayout {
         ChannelLayout::from_channel_mask(mask)
     }
 
+    pub fn subset_native_mask(&self, mask: u64) -> u64 {
+        Channel::ALL
+            .iter()
+            .copied()
+            .filter(|channel| mask & channel.mask() != 0)
+            .filter(|channel| {
+                self.channels
+                    .iter()
+                    .any(|custom| custom.id() == ChannelId::Native(*channel))
+            })
+            .fold(0u64, |subset, channel| subset | channel.mask())
+    }
+
     pub fn is_equivalent_to_custom(&self, other: &Self) -> bool {
         self.channel_count() == other.channel_count()
             && self
@@ -1439,6 +1452,10 @@ impl ChannelLayout {
             .fold(0u64, |mask, channel| mask | channel.mask())
     }
 
+    pub fn subset_mask(self, mask: u64) -> u64 {
+        self.channel_mask() & mask
+    }
+
     pub fn is_equivalent_to(self, other: Self) -> bool {
         self.channel_count() == other.channel_count() && self.channel_mask() == other.channel_mask()
     }
@@ -1964,6 +1981,55 @@ mod tests {
         .unwrap();
         assert!(ambisonic.is_equivalent_to_custom(&named_ambisonic));
         assert!(!ambisonic.is_equivalent_to_native(ChannelLayout::four_zero()));
+    }
+
+    #[test]
+    fn channel_layouts_report_source_shaped_native_subsets() {
+        let stereo_mask = ChannelLayout::stereo().channel_mask();
+        assert_eq!(
+            ChannelLayout::five_one().subset_mask(stereo_mask),
+            stereo_mask
+        );
+        assert_eq!(
+            ChannelLayout::stereo()
+                .subset_mask(Channel::FrontLeft.mask() | Channel::BackLeft.mask()),
+            Channel::FrontLeft.mask()
+        );
+        assert_eq!(ChannelLayout::stereo().subset_mask(0), 0);
+
+        let mixed_custom = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "Left").unwrap(),
+            ChannelCustom::new(ChannelId::Unknown, "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "SecondLeft").unwrap(),
+            ChannelCustom::new(ChannelId::Ambisonic(0), "W").unwrap(),
+            ChannelCustom::new(ChannelId::User(2048), "Vendor").unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(
+            mixed_custom.subset_native_mask(
+                Channel::FrontLeft.mask()
+                    | Channel::FrontRight.mask()
+                    | Channel::FrontCenter.mask()
+            ),
+            ChannelLayout::stereo().channel_mask()
+        );
+
+        let out_of_order_custom = CustomChannelLayout::new(vec![
+            ChannelCustom::new(ChannelId::Native(Channel::FrontRight), "").unwrap(),
+            ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "").unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(
+            out_of_order_custom.subset_native_mask(stereo_mask),
+            stereo_mask
+        );
+        assert_eq!(
+            CustomChannelLayout::unknown(2)
+                .unwrap()
+                .subset_native_mask(stereo_mask),
+            0
+        );
     }
 
     #[test]

@@ -9585,6 +9585,24 @@ fn exercise_fixtures() {
     assert!(ChannelLayout::stereo().is_equivalent_to_custom(&canonical_custom));
     assert!(!out_of_order_custom.is_equivalent_to_native(ChannelLayout::stereo()));
     assert!(!out_of_order_custom.is_equivalent_to_custom(&canonical_custom));
+    assert_eq!(
+        ChannelLayout::stereo().subset_mask(Channel::FrontLeft.mask() | Channel::BackLeft.mask()),
+        Channel::FrontLeft.mask()
+    );
+    assert_eq!(
+        canonical_custom.subset_native_mask(ChannelLayout::stereo().channel_mask()),
+        ChannelLayout::stereo().channel_mask()
+    );
+    assert_eq!(
+        out_of_order_custom.subset_native_mask(ChannelLayout::stereo().channel_mask()),
+        ChannelLayout::stereo().channel_mask()
+    );
+    assert_eq!(
+        CustomChannelLayout::unknown(2)
+            .unwrap()
+            .subset_native_mask(ChannelLayout::stereo().channel_mask()),
+        0
+    );
     assert!(CustomChannelLayout::unknown(2)
         .unwrap()
         .is_equivalent_to_custom(&CustomChannelLayout::new(vec![
