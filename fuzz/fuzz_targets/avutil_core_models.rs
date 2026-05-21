@@ -4612,6 +4612,45 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             .describe(),
         "ambisonic 1"
     );
+    let parsed_ambisonic = ChannelLayoutSpec::parse("ambisonic 1+stereo").unwrap();
+    assert_eq!(parsed_ambisonic.describe(), "ambisonic 1+stereo");
+    assert_eq!(parsed_ambisonic.channel_count(), 6);
+    assert_eq!(
+        parsed_ambisonic.channel_from_index(4),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
+    assert_eq!(
+        parsed_ambisonic.subset_mask(ChannelLayout::stereo().channel_mask()),
+        ChannelLayout::stereo().channel_mask()
+    );
+    let parsed_named_ambisonic =
+        ChannelLayoutSpec::parse("ambisonic 0x1+FL@Left+FR@Right").unwrap();
+    assert_eq!(
+        parsed_named_ambisonic.describe(),
+        "ambisonic 1+2 channels (FL@Left+FR@Right)"
+    );
+    assert_eq!(
+        parsed_named_ambisonic
+            .as_custom()
+            .unwrap()
+            .channels()[4]
+            .name(),
+        "Left"
+    );
+    for invalid_ambisonic in [
+        "ambisonic -1",
+        "ambisonic 1 trailing",
+        "ambisonic 1+2C",
+        "ambisonic 1+AMBI0",
+        "ambisonic 32",
+    ] {
+        assert_eq!(
+            ChannelLayoutSpec::parse(invalid_ambisonic)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
     assert_eq!(ChannelLayout::from_channel_mask(layout.channel_mask()), Some(layout));
     assert_eq!(ChannelLayout::from_channels(layout.channels()), Some(layout));
     assert_eq!(

@@ -1798,6 +1798,10 @@ impl ChannelLayoutSpec {
             ));
         }
 
+        if let Some(layout) = Self::parse_ambisonic(trimmed)? {
+            return Ok(layout);
+        }
+
         if let Some(layout) = Self::parse_described_channel_list(trimmed)? {
             return Ok(layout);
         }
@@ -1849,6 +1853,95 @@ impl ChannelLayoutSpec {
             }
         }
         Ok(Self::Custom(layout))
+    }
+
+    fn parse_ambisonic(value: &str) -> AvResult<Option<Self>> {
+        let Some(rest) = value.strip_prefix("ambisonic ") else {
+            return Ok(None);
+        };
+        let (order, rest) = parse_ambisonic_order_prefix(rest).ok_or_else(|| {
+            AvError::invalid_argument(format!("invalid ambisonic channel layout {value:?}"))
+        })?;
+        if !rest.is_empty() && !rest.starts_with('+') {
+            return Err(AvError::invalid_argument(format!(
+                "invalid ambisonic channel layout suffix {rest:?}"
+            )));
+        }
+
+        let mut channels = Self::ambisonic_channels_for_order(order)?;
+        if let Some(extra) = rest.strip_prefix('+') {
+            if extra.is_empty() {
+                return Err(AvError::invalid_argument(
+                    "ambisonic channel layout has empty extra layout",
+                ));
+            }
+            let extra = Self::parse(extra)?;
+            channels.extend(Self::ambisonic_extra_channels(&extra)?);
+        }
+
+        Self::from_custom_channel_layout(CustomChannelLayout::new(channels)?).map(Some)
+    }
+
+    fn ambisonic_channels_for_order(order: u32) -> AvResult<Vec<ChannelCustom>> {
+        let side = order
+            .checked_add(1)
+            .ok_or_else(|| AvError::invalid_argument("ambisonic order is too large"))?;
+        let count = side
+            .checked_mul(side)
+            .ok_or_else(|| AvError::invalid_argument("ambisonic channel count is too large"))?;
+        let highest_acn = count
+            .checked_sub(1)
+            .ok_or_else(|| AvError::invalid_argument("ambisonic channel count is invalid"))?;
+        if highest_acn > u32::from(ChannelId::MAX_AMBISONIC_ACN) {
+            return Err(AvError::invalid_argument(
+                "ambisonic order is outside the current custom-layout range",
+            ));
+        }
+
+        let mut channels = Vec::with_capacity(count as usize);
+        for acn in 0..count {
+            channels.push(ChannelCustom::new(
+                ChannelId::Ambisonic(u16::try_from(acn).map_err(|_| {
+                    AvError::invalid_argument("ambisonic ACN is outside supported range")
+                })?),
+                "",
+            )?);
+        }
+        Ok(channels)
+    }
+
+    fn ambisonic_extra_channels(extra: &Self) -> AvResult<Vec<ChannelCustom>> {
+        let channels = match extra {
+            Self::Native(layout) => layout
+                .channels()
+                .iter()
+                .map(|channel| ChannelCustom::new(ChannelId::Native(*channel), ""))
+                .collect::<AvResult<Vec<_>>>()?,
+            Self::NativeMask(layout) => (0..usize::from(layout.channel_count()))
+                .map(|index| {
+                    let id = layout.channel_from_index(index).ok_or_else(|| {
+                        AvError::invalid_argument("native extra channel index is out of range")
+                    })?;
+                    ChannelCustom::new(id, "")
+                })
+                .collect::<AvResult<Vec<_>>>()?,
+            Self::Custom(layout) => layout.channels().to_vec(),
+            Self::Unspecified(_) => {
+                return Err(AvError::invalid_argument(
+                    "ambisonic extra layout must use explicit channel ids",
+                ));
+            }
+        };
+
+        if channels
+            .iter()
+            .any(|channel| matches!(channel.id(), ChannelId::Ambisonic(_)))
+        {
+            return Err(AvError::invalid_argument(
+                "ambisonic extra layout cannot contain ambisonic channels",
+            ));
+        }
+        Ok(channels)
     }
 
     fn parse_described_channel_list(value: &str) -> AvResult<Option<Self>> {
@@ -2100,6 +2193,35 @@ fn parse_numeric_channel_mask(value: &str) -> Option<u64> {
     }
     let mask = u64::from_str_radix(digits, radix).ok()?;
     (mask != 0).then_some(mask)
+}
+
+fn parse_ambisonic_order_prefix(value: &str) -> Option<(u32, &str)> {
+    let value = value.trim_start();
+    if value.starts_with('-') {
+        return None;
+    }
+    let value = value.strip_prefix('+').unwrap_or(value);
+    let (digits, radix) = if let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        (hex, 16)
+    } else if value.len() > 1 && value.starts_with('0') {
+        (value, 8)
+    } else {
+        (value, 10)
+    };
+
+    let digit_len = digits
+        .bytes()
+        .take_while(|byte| (*byte as char).is_digit(radix))
+        .count();
+    if digit_len == 0 {
+        return None;
+    }
+
+    let order = u32::from_str_radix(&digits[..digit_len], radix).ok()?;
+    Some((order, &digits[digit_len..]))
 }
 
 fn parse_count_suffix(value: &str, suffix: &str) -> Option<u16> {
@@ -4278,6 +4400,69 @@ mod tests {
         assert_eq!(ambisonic.describe(), "ambisonic 1");
         assert!(ambisonic.as_custom().is_some());
         assert_eq!(ambisonic.channel_count(), 4);
+    }
+
+    #[test]
+    fn layout_spec_parser_models_bounded_ambisonic_branch() {
+        let zeroth = ChannelLayoutSpec::parse("ambisonic 0").unwrap();
+        assert_eq!(zeroth.describe(), "ambisonic 0");
+        assert_eq!(zeroth.channel_count(), 1);
+        assert_eq!(zeroth.channel_from_index(0), Some(ChannelId::Ambisonic(0)));
+        assert!(zeroth.as_custom().is_some());
+
+        let first = ChannelLayoutSpec::parse("ambisonic 1").unwrap();
+        assert_eq!(first.describe(), "ambisonic 1");
+        assert_eq!(first.channel_count(), 4);
+        assert_eq!(first.channel_from_index(3), Some(ChannelId::Ambisonic(3)));
+
+        let hex_order = ChannelLayoutSpec::parse("ambisonic 0x1+stereo").unwrap();
+        assert_eq!(hex_order.describe(), "ambisonic 1+stereo");
+        assert_eq!(hex_order.channel_count(), 6);
+        assert_eq!(
+            hex_order.channel_from_index(4),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+        assert_eq!(
+            hex_order.channel_from_index(5),
+            Some(ChannelId::Native(Channel::FrontRight))
+        );
+        assert_eq!(
+            hex_order.subset_mask(ChannelLayout::stereo().channel_mask()),
+            ChannelLayout::stereo().channel_mask()
+        );
+
+        let named_extra = ChannelLayoutSpec::parse("ambisonic +1+FL@Left+FR@Right").unwrap();
+        assert_eq!(named_extra.channel_count(), 6);
+        assert_eq!(
+            named_extra.describe(),
+            "ambisonic 1+2 channels (FL@Left+FR@Right)"
+        );
+        assert_eq!(
+            named_extra.as_custom().unwrap().channels()[4].name(),
+            "Left"
+        );
+
+        let mask_extra = ChannelLayoutSpec::parse("ambisonic 1+0x5").unwrap();
+        assert_eq!(mask_extra.describe(), "ambisonic 1+2 channels (FL+FC)");
+        assert_eq!(
+            mask_extra.channel_from_index(5),
+            Some(ChannelId::Native(Channel::FrontCenter))
+        );
+
+        for input in [
+            "ambisonic",
+            "ambisonic -1",
+            "ambisonic 1 trailing",
+            "ambisonic 1+",
+            "ambisonic 1+2C",
+            "ambisonic 1+AMBI0",
+            "ambisonic 1+ambisonic 0",
+            "ambisonic 32",
+            "ambisonic 09",
+        ] {
+            let err = ChannelLayoutSpec::parse(input).unwrap_err();
+            assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        }
     }
 
     #[test]
