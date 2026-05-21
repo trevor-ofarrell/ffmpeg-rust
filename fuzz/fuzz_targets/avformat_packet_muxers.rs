@@ -5,7 +5,8 @@ use avformat::{
     StreamHashMuxer, StreamHashStreamType,
 };
 use avutil::{
-    adler32, crc32_ieee, md5, sha1, sha224, sha256, sha384, sha512, AvErrorKind, Packet, SideData,
+    adler32, crc32_ieee, md5, sha1, sha224, sha256, sha384, sha512, sha512_224, sha512_256,
+    AvErrorKind, Packet, SideData,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -90,6 +91,8 @@ fn exercise_hash_muxers(packets: &[Packet]) {
         HashAlgorithm::Sha256,
         HashAlgorithm::Sha384,
         HashAlgorithm::Sha512,
+        HashAlgorithm::Sha512Trunc224,
+        HashAlgorithm::Sha512Trunc256,
     ] {
         let mut muxer = HashMuxer::new(algorithm);
         let mut payload = Vec::new();
@@ -172,6 +175,8 @@ fn exercise_framehash_muxers(packets: &[Packet]) {
         HashAlgorithm::Sha256,
         HashAlgorithm::Sha384,
         HashAlgorithm::Sha512,
+        HashAlgorithm::Sha512Trunc224,
+        HashAlgorithm::Sha512Trunc256,
     ] {
         let mut muxer = FrameHashMuxer::new(algorithm);
 
@@ -222,6 +227,8 @@ fn exercise_streamhash_muxers(packets: &[Packet]) {
         HashAlgorithm::Sha256,
         HashAlgorithm::Sha384,
         HashAlgorithm::Sha512,
+        HashAlgorithm::Sha512Trunc224,
+        HashAlgorithm::Sha512Trunc256,
     ] {
         let mut muxer = StreamHashMuxer::new(algorithm);
         let mut streams = Vec::<ExpectedStreamHash>::new();
@@ -349,6 +356,8 @@ fn digest_for(algorithm: HashAlgorithm, data: &[u8]) -> HashDigest {
         HashAlgorithm::Sha256 => HashDigest::Bytes(sha256(data).to_vec()),
         HashAlgorithm::Sha384 => HashDigest::Bytes(sha384(data).to_vec()),
         HashAlgorithm::Sha512 => HashDigest::Bytes(sha512(data).to_vec()),
+        HashAlgorithm::Sha512Trunc224 => HashDigest::Bytes(sha512_224(data).to_vec()),
+        HashAlgorithm::Sha512Trunc256 => HashDigest::Bytes(sha512_256(data).to_vec()),
     }
 }
 

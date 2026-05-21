@@ -5,7 +5,10 @@ use std::{
     process::Command,
 };
 
-use avutil::{adler32, crc32_ieee, digest_to_hex, md5, sha1, sha224, sha256, sha384, sha512};
+use avutil::{
+    adler32, crc32_ieee, digest_to_hex, md5, sha1, sha224, sha256, sha384, sha512, sha512_224,
+    sha512_256,
+};
 
 const ALGORITHMS: &[(&str, &str, usize)] = &[
     ("ADLER32", "adler32", 4),
@@ -16,6 +19,8 @@ const ALGORITHMS: &[(&str, &str, usize)] = &[
     ("SHA256", "SHA256", 32),
     ("SHA384", "SHA384", 48),
     ("SHA512", "SHA512", 64),
+    ("SHA512/224", "SHA512/224", 28),
+    ("SHA512/256", "SHA512/256", 32),
 ];
 
 const CASES: &[(&str, &[u8])] = &[
@@ -91,6 +96,8 @@ fn expected_digest_hex(algorithm: &str, data: &[u8]) -> String {
         "SHA256" => digest_to_hex(&sha256(data)),
         "SHA384" => digest_to_hex(&sha384(data)),
         "SHA512" => digest_to_hex(&sha512(data)),
+        "SHA512/224" => digest_to_hex(&sha512_224(data)),
+        "SHA512/256" => digest_to_hex(&sha512_256(data)),
         other => panic!("unexpected hash algorithm `{other}`"),
     }
 }
@@ -212,6 +219,7 @@ int main(void) {
     };
     static const char *algorithms[] = {
         "ADLER32", "CRC32", "MD5", "SHA160", "SHA224", "SHA256", "SHA384", "SHA512",
+        "SHA512/224", "SHA512/256",
     };
 
     print_names();

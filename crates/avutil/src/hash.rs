@@ -891,6 +891,106 @@ pub fn sha512(data: &[u8]) -> [u8; 64] {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sha512Trunc224 {
+    state: Sha512,
+}
+
+impl Default for Sha512Trunc224 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Sha512Trunc224 {
+    const INIT: [u64; 8] = [
+        0x8c3d_37c8_1954_4da2,
+        0x73e1_9966_89dc_d4d6,
+        0x1dfa_b7ae_32ff_9c82,
+        0x679d_d514_582f_9fcf,
+        0x0f6d_2b69_7bd4_4da8,
+        0x77e3_6f73_04c4_8942,
+        0x3f9d_85a8_6a1d_36c8,
+        0x1112_e6ad_91d6_92a1,
+    ];
+
+    pub fn new() -> Self {
+        Self {
+            state: Sha512::with_init(Self::INIT),
+        }
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        self.state.update(data);
+    }
+
+    pub fn finalize(self) -> [u8; 28] {
+        let words = self.state.finalize_words();
+        let mut full_digest = [0_u8; 64];
+        for (chunk, word) in full_digest.chunks_exact_mut(8).zip(words) {
+            chunk.copy_from_slice(&word.to_be_bytes());
+        }
+        let mut digest = [0_u8; 28];
+        digest.copy_from_slice(&full_digest[..28]);
+        digest
+    }
+}
+
+pub fn sha512_224(data: &[u8]) -> [u8; 28] {
+    let mut state = Sha512Trunc224::new();
+    state.update(data);
+    state.finalize()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sha512Trunc256 {
+    state: Sha512,
+}
+
+impl Default for Sha512Trunc256 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Sha512Trunc256 {
+    const INIT: [u64; 8] = [
+        0x2231_2194_fc2b_f72c,
+        0x9f55_5fa3_c84c_64c2,
+        0x2393_b86b_6f53_b151,
+        0x9638_7719_5940_eabd,
+        0x9628_3ee2_a88e_ffe3,
+        0xbe5e_1e25_5386_3992,
+        0x2b01_99fc_2c85_b8aa,
+        0x0eb7_2ddc_81c5_2ca2,
+    ];
+
+    pub fn new() -> Self {
+        Self {
+            state: Sha512::with_init(Self::INIT),
+        }
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        self.state.update(data);
+    }
+
+    pub fn finalize(self) -> [u8; 32] {
+        let words = self.state.finalize_words();
+        let mut digest = [0_u8; 32];
+        for (chunk, word) in digest.chunks_exact_mut(8).zip(words) {
+            chunk.copy_from_slice(&word.to_be_bytes());
+        }
+        digest
+    }
+}
+
+pub fn sha512_256(data: &[u8]) -> [u8; 32] {
+    let mut state = Sha512Trunc256::new();
+    state.update(data);
+    state.finalize()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sha384 {
     state: Sha512,
 }
@@ -1162,6 +1262,68 @@ mod tests {
         state.update(&payload[128..]);
 
         assert_eq!(state.finalize(), sha512(&payload));
+    }
+
+    #[test]
+    fn sha512_224_matches_standard_vectors() {
+        assert_eq!(
+            digest_to_hex(&sha512_224(b"")),
+            "6ed0dd02806fa89e25de060c19d3ac86cabb87d6a0ddd05c333b84f4"
+        );
+        assert_eq!(
+            digest_to_hex(&sha512_224(b"abc")),
+            "4634270f707b6a54daae7530460842e20e37ed265ceee9a43e8924aa"
+        );
+        assert_eq!(
+            digest_to_hex(&sha512_224(
+                b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+            )),
+            "e5302d6d54bb242275d1e7622d68df6eb02dedd13f564c13dbda2174"
+        );
+    }
+
+    #[test]
+    fn sha512_224_streaming_matches_single_shot_across_block_boundaries() {
+        let payload = (0_u8..=199).collect::<Vec<_>>();
+        let mut state = Sha512Trunc224::new();
+
+        state.update(&payload[..1]);
+        state.update(&payload[1..111]);
+        state.update(&payload[111..128]);
+        state.update(&payload[128..]);
+
+        assert_eq!(state.finalize(), sha512_224(&payload));
+    }
+
+    #[test]
+    fn sha512_256_matches_standard_vectors() {
+        assert_eq!(
+            digest_to_hex(&sha512_256(b"")),
+            "c672b8d1ef56ed28ab87c3622c5114069bdd3ad7b8f9737498d0c01ecef0967a"
+        );
+        assert_eq!(
+            digest_to_hex(&sha512_256(b"abc")),
+            "53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23"
+        );
+        assert_eq!(
+            digest_to_hex(&sha512_256(
+                b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+            )),
+            "bde8e1f9f19bb9fd3406c90ec6bc47bd36d8ada9f11880dbc8a22a7078b6a461"
+        );
+    }
+
+    #[test]
+    fn sha512_256_streaming_matches_single_shot_across_block_boundaries() {
+        let payload = (0_u8..=199).collect::<Vec<_>>();
+        let mut state = Sha512Trunc256::new();
+
+        state.update(&payload[..1]);
+        state.update(&payload[1..111]);
+        state.update(&payload[111..128]);
+        state.update(&payload[128..]);
+
+        assert_eq!(state.finalize(), sha512_256(&payload));
     }
 
     #[test]

@@ -4,7 +4,8 @@ use avutil::{
     adler32, add_stable, av_error_description, av_make_error_string, av_strerror, compare_mod,
     compare_ts, crc32_ieee, digest_to_hex, md5, parse_color, rescale, rescale_delta, rescale_q,
     rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1,
-    sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind,
+    sha224, sha256, sha384, sha512, sha512_224, sha512_256, Adler32, AudioFrame, AvError,
+    AvErrorCode, AvErrorKind,
     BufferPool,
     AmbisonicChannelLayout, BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId,
     ChannelLayout, ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame,
@@ -61,7 +62,8 @@ use avutil::{
     PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, PixelFormatClass, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, Sha1, Sha224, Sha256, Sha384, Sha512, SideData, VideoFrame,
+    SampleFormatNumericKind, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
+    Sha512Trunc256, SideData, VideoFrame,
     AV_ERROR_MAX_STRING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE,
     AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE,
 };
@@ -6849,6 +6851,24 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let sha512_digest = sha512_state.finalize();
     assert_eq!(sha512_digest, sha512(&payload));
     assert_eq!(digest_to_hex(&sha512_digest).len(), 128);
+
+    let mut sha512_224_state = Sha512Trunc224::new();
+    sha512_224_state.update(&payload[..split]);
+    sha512_224_state.update(&payload[split..second_split]);
+    sha512_224_state.update(&payload[second_split..third_split]);
+    sha512_224_state.update(&payload[third_split..]);
+    let sha512_224_digest = sha512_224_state.finalize();
+    assert_eq!(sha512_224_digest, sha512_224(&payload));
+    assert_eq!(digest_to_hex(&sha512_224_digest).len(), 56);
+
+    let mut sha512_256_state = Sha512Trunc256::new();
+    sha512_256_state.update(&payload[..split]);
+    sha512_256_state.update(&payload[split..second_split]);
+    sha512_256_state.update(&payload[second_split..third_split]);
+    sha512_256_state.update(&payload[third_split..]);
+    let sha512_256_digest = sha512_256_state.finalize();
+    assert_eq!(sha512_256_digest, sha512_256(&payload));
+    assert_eq!(digest_to_hex(&sha512_256_digest).len(), 64);
 }
 
 fn exercise_fixtures() {
@@ -10844,6 +10864,14 @@ fn exercise_fixtures() {
     assert_eq!(
         digest_to_hex(&sha512(b"abc")),
         "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"
+    );
+    assert_eq!(
+        digest_to_hex(&sha512_224(b"abc")),
+        "4634270f707b6a54daae7530460842e20e37ed265ceee9a43e8924aa"
+    );
+    assert_eq!(
+        digest_to_hex(&sha512_256(b"abc")),
+        "53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23"
     );
 
     let video = VideoFrame::new(1, 1, PixelFormat::Rgb24, vec![vec![1, 2, 3]]).unwrap();
