@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-bitreader` update: added checked byte-aligned slice reads and peeks to the bounded MSB-first bitstream model. `BitReader::read_aligned_bytes` and `peek_aligned_bytes` require byte alignment, validate requested byte counts and bit-count overflow before cursor mutation, return borrowed source slices without bit iteration, and preserve cursor position on unaligned, short-input, and overflow failures. The `avutil_bitreader` fuzz target now build-checks aligned byte read/peek paths. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, and actual local fuzz execution are still absent.
+
 Latest `avutil-byteio` update: added checked fixed-size array and four-byte tag helpers to the bounded in-memory byte I/O model. `ByteReader` now exposes `read_array`, `peek_array`, `read_tag`, and `peek_tag` with no-advance EOF behavior; `ByteWriter` now exposes `write_tag` and `patch_tag` with existing-buffer preservation on failed patch bounds. The `avutil_byteio` fuzz target now build-checks those helpers through read/peek/write/patch paths. The component remains `implemented`, not `complete`, because there are still no pinned FFmpeg differential vectors, no upstream FATE parity, and no actual local fuzz execution.
 
 Latest `avutil-color` update: added a bounded Rust-native `parse_color` model for the deterministic FFmpeg 8.1.1 `av_parse_color` subset. The parser now covers case-insensitive named colors, bare/#/lowercase-0x `RRGGBB` and `RRGGBBAA` hex forms, decimal normalized alpha suffixes, hexadecimal alpha suffixes, embedded-alpha override behavior, empty alpha suffixes, and typed invalid-input rejection. `RgbaColor` exposes RGBA/RGB/alpha accessors and lowercase RGBA hex formatting, and `avutil_core_models` now build-checks color parser fixtures plus arbitrary UTF-8 parser inputs. The component remains `implemented`, not `differential_pass` or `complete`, because no pinned FFmpeg oracle binary is installed locally, `ffmpeg -colors` has not run as a differential harness, and FFmpeg's nondeterministic `random`/`bikeshed` branch plus unusual C `strtod`/`strtoul` edge calibration remain pending.
@@ -459,6 +461,17 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-bitreader` aligned-byte slice:
+  - `cargo test -p avutil bitreader` (14 bitreader-filtered unit tests passed)
+  - `cargo check --manifest-path fuzz\Cargo.toml --bin avutil_bitreader`
+  - `cargo clippy -p avutil --all-targets -- -D warnings`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_bitreader -- -D warnings`
+  - `cargo run -p fate-runner -- run --component avutil-bitreader`
+  - `cargo test -p fate-runner` (40 tests passed)
+  - `cargo fmt --all -- --check`
+  - `rustfmt --check fuzz\fuzz_targets\avutil_bitreader.rs`
+  - `git diff --check` (exit 0; CRLF warnings only)
 
 - Current `avutil-byteio` fixed-array/tag slice:
   - `cargo test -p avutil byteio` (18 byteio-filtered unit tests passed)
@@ -4870,6 +4883,10 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-bitreader` aligned-byte slice:
+  - The first `cargo fmt --all -- --check` reported one helper-expression formatting diff in `crates/avutil/src/bitreader.rs`; `cargo fmt --all` fixed it and the rerun passed.
+  - The first `rustfmt --check fuzz\fuzz_targets\avutil_bitreader.rs` reported one match-arm formatting diff; `rustfmt fuzz\fuzz_targets\avutil_bitreader.rs` fixed it and the rerun passed.
+
 - Current `avutil-byteio` fixed-array/tag slice:
   - The first `cargo fmt --all -- --check` reported two long assertion formatting diffs in `crates/avutil/src/byteio.rs`; `cargo fmt --all` fixed them and the rerun passed.
   - The first `rustfmt --check fuzz\fuzz_targets\avutil_byteio.rs` reported one function-signature formatting diff; `rustfmt fuzz\fuzz_targets\avutil_byteio.rs` fixed it and the rerun passed.
@@ -5314,6 +5331,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-bitreader` is the active focus for this turn. The concrete change adds checked byte-aligned slice reads/peeks with no-advance validation failures and extends the `avutil_bitreader` fuzz harness to cover those paths. It remains `implemented`, not complete, because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
+
 `avutil-byteio` is the active focus for this turn. The concrete change adds checked fixed-size array and four-byte tag helpers to the shared bounded byte reader/writer and extends the `avutil_byteio` fuzz harness to cover those paths. It remains `implemented`, not complete, because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
 
 `avutil-color` is the active focus for this turn. The concrete change adds the bounded deterministic `av_parse_color` parser subset on top of the source-checked named color table and `ffmpeg -colors` oracle row. It remains `implemented`, not complete, because the pinned FFmpeg oracle is absent locally, the ignored differential row has not executed, and nondeterministic `random`/`bikeshed` plus unusual C parser edge calibration remain pending.
@@ -5699,6 +5718,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added byte-aligned slice access to `avutil` bit I/O. `crates/avutil/src/bitreader.rs` now provides `BitReader::read_aligned_bytes` and `peek_aligned_bytes`, returning borrowed byte slices only from byte-aligned positions after validating length and overflow without advancing on failure. Unit tests cover successful read/peek sequencing, EOF, unaligned access, and overflow no-advance cases. `fuzz/fuzz_targets/avutil_bitreader.rs` now build-checks aligned byte read/peek operations and their cursor invariants. The component stays below `complete` because pinned oracle vectors, upstream FATE parity, and actual fuzz execution remain absent.
 
 Latest slice: added bounded fixed-array and four-byte tag helpers to `avutil` byte I/O. `crates/avutil/src/byteio.rs` now provides `ByteReader::read_array`, `peek_array`, `read_tag`, and `peek_tag`, plus `ByteWriter::write_tag` and `patch_tag`; the unit tests cover cursor preservation and no-mutation failure behavior. `fuzz/fuzz_targets/avutil_byteio.rs` now build-checks array/tag read, peek, write, and patch paths. The ledger was corrected to remove an unrelated sample-format oracle row from `avutil-byteio` differential evidence.
 

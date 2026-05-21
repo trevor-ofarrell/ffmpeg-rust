@@ -9,7 +9,7 @@ fuzz_target!(|data: &[u8]| {
     for &op in data {
         let before = reader.bit_position();
         let requested = op & 0x7f;
-        let opcode = op % 12;
+        let opcode = op % 14;
         let result = match opcode {
             0 => reader.read_bits(requested),
             1 => reader.peek_bits(requested),
@@ -21,18 +21,26 @@ fuzz_target!(|data: &[u8]| {
             7 => reader.read_se_golomb().map(|value| value as u64),
             8 => reader.peek_bit().map(u64::from),
             9 => reader.set_bit_position(usize::from(op)).map(|_| 0),
-            10 => reader.seek_bits(i8::from_ne_bytes([op]) as isize).map(|_| 0),
-            _ => {
+            10 => reader
+                .seek_bits(i8::from_ne_bytes([op]) as isize)
+                .map(|_| 0),
+            11 => {
                 reader.rewind();
                 Ok(0)
             }
+            12 => reader
+                .read_aligned_bytes(usize::from(op >> 3))
+                .map(|bytes| bytes.len() as u64),
+            _ => reader
+                .peek_aligned_bytes(usize::from(op >> 3))
+                .map(|bytes| bytes.len() as u64),
         };
 
         assert!(reader.bit_position() <= reader.len_bits());
         if result.is_err() {
             assert_eq!(reader.bit_position(), before);
         }
-        if matches!(opcode, 1 | 3 | 8) {
+        if matches!(opcode, 1 | 3 | 8 | 13) {
             assert_eq!(reader.bit_position(), before);
         }
     }

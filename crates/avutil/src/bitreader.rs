@@ -77,6 +77,17 @@ impl<'a> BitReader<'a> {
         Ok(self.peek_bits(1)? != 0)
     }
 
+    pub fn read_aligned_bytes(&mut self, count: usize) -> AvResult<&'a [u8]> {
+        let (start, end, requested_bits) = self.aligned_byte_range(count)?;
+        self.bit_position += requested_bits;
+        Ok(&self.data[start..end])
+    }
+
+    pub fn peek_aligned_bytes(&self, count: usize) -> AvResult<&'a [u8]> {
+        let (start, end, _) = self.aligned_byte_range(count)?;
+        Ok(&self.data[start..end])
+    }
+
     pub fn read_bits(&mut self, count: u8) -> AvResult<u64> {
         self.validate_read(count)?;
 
@@ -151,6 +162,28 @@ impl<'a> BitReader<'a> {
             return Ok(());
         }
         self.skip_bits(8 - extra)
+    }
+
+    fn aligned_byte_range(&self, count: usize) -> AvResult<(usize, usize, usize)> {
+        if !self.is_aligned() {
+            return Err(AvError::invalid_argument(
+                "cannot read whole bytes at unaligned bit offset",
+            ));
+        }
+
+        let requested_bits = count
+            .checked_mul(8)
+            .ok_or_else(|| AvError::invalid_argument("byte read length overflows bit count"))?;
+
+        if requested_bits > self.bits_remaining() {
+            return Err(self.eof_error(requested_bits));
+        }
+
+        let start = self.bit_position / 8;
+        let end = start.checked_add(count).ok_or_else(|| {
+            AvError::invalid_argument("byte read end overflows addressable memory")
+        })?;
+        Ok((start, end, requested_bits))
     }
 
     fn validate_read(&self, count: u8) -> AvResult<()> {
@@ -299,6 +332,49 @@ mod tests {
         reader.rewind();
         assert_eq!(reader.read_bits(4).unwrap(), 0b1100);
         assert_eq!(reader.bit_position(), 4);
+    }
+
+    #[test]
+    fn aligned_bytes_read_and_peek_without_bit_iteration() {
+        let mut reader = BitReader::new(&[0xab, 0xcd, 0xef]);
+
+        assert_eq!(reader.peek_aligned_bytes(2).unwrap(), &[0xab, 0xcd]);
+        assert_eq!(reader.bit_position(), 0);
+        assert_eq!(reader.read_aligned_bytes(1).unwrap(), &[0xab]);
+        assert_eq!(reader.bit_position(), 8);
+        assert_eq!(reader.peek_aligned_bytes(2).unwrap(), &[0xcd, 0xef]);
+        assert_eq!(reader.bit_position(), 8);
+        assert_eq!(reader.read_aligned_bytes(2).unwrap(), &[0xcd, 0xef]);
+        assert!(reader.is_eof());
+
+        assert_eq!(reader.read_aligned_bytes(0).unwrap(), &[]);
+        assert_eq!(reader.bit_position(), 24);
+    }
+
+    #[test]
+    fn aligned_bytes_errors_do_not_advance_cursor() {
+        let mut unaligned = BitReader::new(&[0xff, 0x00]);
+        unaligned.skip_bits(3).unwrap();
+
+        let err = unaligned.read_aligned_bytes(1).unwrap_err();
+        let peek_err = unaligned.peek_aligned_bytes(1).unwrap_err();
+
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(peek_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(unaligned.bit_position(), 3);
+
+        let mut short = BitReader::new(&[0xab]);
+        short.skip_bits(8).unwrap();
+        let eof = short.read_aligned_bytes(1).unwrap_err();
+        let peek_eof = short.peek_aligned_bytes(1).unwrap_err();
+
+        assert_eq!(eof.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(peek_eof.kind(), AvErrorKind::EndOfFile);
+        assert_eq!(short.bit_position(), 8);
+
+        let overflow = short.peek_aligned_bytes(usize::MAX).unwrap_err();
+        assert_eq!(overflow.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(short.bit_position(), 8);
     }
 
     #[test]
