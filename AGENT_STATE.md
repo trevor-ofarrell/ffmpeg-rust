@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `fate-runner` mapping-validation update: the runner now rejects unknown or malformed `{...}` placeholders in mapping workdirs, programs, env values, and arguments at parse time, and rejects duplicate `env:NAME=...` assignments within a single mapping row. This keeps oracle/FATE mapping typos from silently turning into wrong child commands. Focused runner tests passed; the component remains `scaffolded` because no pinned FFmpeg oracle binary or FATE samples tree is installed locally.
+
 Latest `oracle-inventory` update: added local unit coverage for the pinned inventory command surface in `crates/oracle/src/main.rs`. Tests now assert the exact required `ffmpeg` command list, inventory argument parsing, target/profile manifest header, per-command manifest status rows, and stdout/stderr snapshot section wrapping. `tests/fate/mappings.txt` exposes the component as `oracle-inventory|local-oracle-unit` so changed-path runs have a local smoke target. Focused oracle tests, local FATE-runner mapping listing/dry-run/execution, mapping parser checks, clippy, formatting, and diff checks passed after a rustfmt correction; real snapshot generation remains blocked because no pinned oracle binary exists locally.
 
 Latest `fftools-version` oracle update: added an ignored `ffmpeg -version` / `ffprobe -version` oracle harness at `crates/fftools/tests/version_oracle.rs`. The harness resolves pinned tools through `FFMPEG_ORACLE`, optional `FFPROBE_ORACLE`, sibling `ffprobe`, or the standard `third_party/ffmpeg-oracle/build/bin/` paths, parses FFmpeg's split libav* ABI version lines, and compares the oracle target version/ABI surface with the Rust `ffmpeg-rs` and `ffprobe-rs` banner constants. `tests/differential/mappings.txt` exposes `fftools-version|oracle-ffmpeg-version` and `fftools-version|oracle-ffprobe-version`, and `fate-runner` changed-path selection maps the harness back to `fftools-version`. Focused compile, local parser tests, runner mapping tests, dry-run mapping resolution, clippy, formatting, and diff checks passed; this still does not count as `differential_pass` because no pinned oracle is installed locally.
@@ -453,6 +455,14 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `fate-runner` mapping-validation slice:
+  - `cargo test -p fate-runner` (39 tests passed)
+  - `cargo fmt --all -- --check`
+  - `cargo clippy -p fate-runner --all-targets -- -D warnings`
+  - `cargo run -p fate-runner -- mappings --mappings tests/differential/mappings.txt`
+  - `cargo run -p fate-runner -- run --component fate-runner`
+  - `git diff --check` (CRLF warnings only)
 
 - Current `oracle-inventory` local coverage slice:
   - `cargo test -p oracle` (5 tests passed)
@@ -4834,6 +4844,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `fate-runner` mapping-validation slice:
+  - The first `cargo fmt --all -- --check` reported one rustfmt diff in `crates/fate-runner/src/main.rs`; `cargo fmt --all` fixed it and the rerun passed.
+
 - Current `oracle-inventory` local coverage slice:
   - The first `cargo fmt --all -- --check` reported formatting diffs in `crates/oracle/src/main.rs`; `cargo fmt --all` fixed them.
 
@@ -5268,6 +5281,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`fate-runner` is the active focus for this turn. The concrete change hardens mapping parsing so only the supported `{samples}` and `{oracle_ffmpeg}` placeholders are accepted and duplicate per-row environment assignments fail before command execution. It remains `scaffolded`, not complete, because upstream FATE media execution is still blocked by the missing pinned oracle and FATE samples.
+
 `oracle-inventory` is the active focus for this turn. The concrete change adds local unit coverage for the required inventory command list and manifest/output helpers and maps the component into local FATE-runner smoke coverage. It remains `implemented`, not snapshot-complete, because no pinned FFmpeg oracle exists locally.
 
 `fftools-version` is the active focus for this turn. The concrete change adds ignored oracle rows for pinned `ffmpeg -version` and `ffprobe -version`, plus local parser coverage for FFmpeg's split ABI version-line shape, without moving the ledger past `implemented` because the oracle has not run locally.
@@ -5510,11 +5525,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Configure or build the pinned FFmpeg 8.1.1 oracle binaries at `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` and `ffprobe(.exe)` or set `FFMPEG_ORACLE`/`FFPROBE_ORACLE`, then run `oracle-inventory|local-oracle-unit`, generate the pinned inventory snapshots, and run `fftools-version|oracle-ffmpeg-version` plus `fftools-version|oracle-ffprobe-version`.
+1. Provide a native build toolchain, install a WSL distribution with build tools, or place pinned FFmpeg 8.1.1 oracle binaries at `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` and `ffprobe(.exe)` or set `FFMPEG_ORACLE`/`FFPROBE_ORACLE`, then run `oracle-inventory|local-oracle-unit`, generate the pinned inventory snapshots, and run `fftools-version|oracle-ffmpeg-version` plus `fftools-version|oracle-ffprobe-version`.
 2. With the same oracle, run the current inventory rows: `avutil-pixel-format|oracle-ffmpeg-pix-fmts-subset`, `avutil-sample-format|oracle-ffmpeg-sample-fmts`, and `avutil-channel-layout|oracle-ffmpeg-layouts`, then run `avformat-wav-demuxer|oracle-wav-generated-md5`.
 3. Configure `third_party/fate-samples` or `FATE_SAMPLES` and run `avformat-wav-demuxer|fate-wav-pcm-s16le-md5`; if local oracle/samples remain unavailable, add the next unblocked high-priority oracle-vector slice that can be represented as an ignored differential row plus local compile/unit coverage.
 
 ## Known Blockers
+
+- Attempted local oracle build discovery found Git and `wsl.exe`, but no installed WSL distribution and no native `gcc`, `make`, `cl`, `clang`, `cmake`, `winget`, `choco`, or `pacman` on PATH. A source build of pinned FFmpeg 8.1.1 is therefore blocked in this environment unless a toolchain/oracle binary is provided.
 
 - `oracle-inventory` has local unit and FATE smoke coverage for command-list and manifest behavior, but no pinned FFmpeg oracle exists locally, so `compat/ffmpeg-8.1.1` snapshots have not been generated.
 
@@ -5643,6 +5660,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: hardened `fate-runner` mapping validation. Mapping rows now fail parsing for unknown or malformed `{...}` placeholders and for duplicate `env:NAME=...` entries in the same row, with unit coverage and docs/ledger updates. Local runner tests pass; upstream media execution still waits on a pinned oracle and FATE samples.
 
 Latest slice: added local verification for `oracle-inventory`. The oracle crate now unit-tests the exact required FFmpeg inventory command list, accepted and rejected inventory arguments, manifest target/profile plus per-command status records, and stdout/stderr snapshot wrapping. `tests/fate/mappings.txt` now includes `oracle-inventory|local-oracle-unit`, and docs/ledger/state record that this proves local tooling only; actual inventory snapshot generation still waits on the pinned oracle binary.
 

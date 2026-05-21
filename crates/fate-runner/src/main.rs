@@ -17,6 +17,7 @@ const DEFAULT_ORACLE_FFMPEG_CANDIDATES: &[&str] = &[
     "third_party/ffmpeg-oracle/build/bin/ffmpeg.exe",
     "third_party/ffmpeg-oracle/build/bin/ffmpeg",
 ];
+const SUPPORTED_PLACEHOLDERS: &[&str] = &["samples", "oracle_ffmpeg"];
 
 struct PathRule {
     path: &'static str,
@@ -964,6 +965,8 @@ fn parse_fate_mappings(
                 "invalid FATE mapping at line {line_number}: unknown ledger component `{component_id}`"
             ));
         }
+        validate_mapping_field_placeholders(line_number, "workdir", workdir)?;
+        validate_mapping_field_placeholders(line_number, "program", program)?;
 
         let key = (component_id.to_string(), target.to_string());
         if seen_targets.iter().any(|seen| seen == &key) {
@@ -979,8 +982,15 @@ fn parse_fate_mappings(
             if let Some(assignment) = field.strip_prefix("env:") {
                 let (name, value) = parse_env_assignment(assignment)
                     .map_err(|err| format!("invalid FATE mapping at line {line_number}: {err}"))?;
+                if env.iter().any(|(existing, _)| existing == name) {
+                    return Err(format!(
+                        "invalid FATE mapping at line {line_number}: duplicate environment assignment for `{name}`"
+                    ));
+                }
+                validate_mapping_field_placeholders(line_number, "environment value", value)?;
                 env.push((name.to_string(), value.to_string()));
             } else {
+                validate_mapping_field_placeholders(line_number, "argument", field)?;
                 args.push((*field).to_string());
             }
         }
@@ -1011,6 +1021,61 @@ fn parse_env_assignment(assignment: &str) -> Result<(&str, &str), String> {
         ));
     }
     Ok((name, value))
+}
+
+fn validate_mapping_field_placeholders(
+    line_number: usize,
+    field_kind: &str,
+    value: &str,
+) -> Result<(), String> {
+    validate_placeholders(value).map_err(|err| {
+        format!("invalid FATE mapping at line {line_number}: {err} in {field_kind} `{value}`")
+    })
+}
+
+fn validate_placeholders(value: &str) -> Result<(), String> {
+    let mut search_start = 0;
+    while search_start < value.len() {
+        let next_open = value[search_start..]
+            .find('{')
+            .map(|index| search_start + index);
+        let next_close = value[search_start..]
+            .find('}')
+            .map(|index| search_start + index);
+
+        match (next_open, next_close) {
+            (None, None) => return Ok(()),
+            (None, Some(_)) => {
+                return Err("unmatched `}` placeholder delimiter".to_string());
+            }
+            (Some(open), Some(close)) if close < open => {
+                return Err("unmatched `}` placeholder delimiter".to_string());
+            }
+            (Some(open), _) => {
+                let Some(close_offset) = value[open + 1..].find('}') else {
+                    return Err("unclosed `{` placeholder delimiter".to_string());
+                };
+                let close = open + 1 + close_offset;
+                let placeholder = &value[open + 1..close];
+                if !SUPPORTED_PLACEHOLDERS
+                    .iter()
+                    .any(|supported| supported == &placeholder)
+                {
+                    return Err(format!(
+                        "unknown placeholder `{{{placeholder}}}`; supported placeholders are: {}",
+                        SUPPORTED_PLACEHOLDERS
+                            .iter()
+                            .map(|placeholder| format!("{{{placeholder}}}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+                search_start = close + 1;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn run_fate_mapping(
@@ -2136,6 +2201,40 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             parse_fate_mappings("fate-runner|target|.|cargo|env:=value|test", &component_ids,)
                 .unwrap_err()
                 .contains("non-empty env:NAME=value")
+        );
+        assert!(parse_fate_mappings(
+            "fate-runner|target|.|cargo|env:FOO=one|env:FOO=two|test",
+            &component_ids,
+        )
+        .unwrap_err()
+        .contains("duplicate environment assignment for `FOO`"));
+    }
+
+    #[test]
+    fn rejects_unknown_or_malformed_mapping_placeholders() {
+        let component_ids = component_ids_from_ledger(&ledger(&["fate-runner"]));
+
+        assert!(
+            parse_fate_mappings("fate-runner|target|{sample}|cargo|test", &component_ids)
+                .unwrap_err()
+                .contains(
+                    "unknown placeholder `{sample}`; supported placeholders are: {samples}, {oracle_ffmpeg}"
+                )
+        );
+        assert!(
+            parse_fate_mappings("fate-runner|target|.|{oracle}|test", &component_ids)
+                .unwrap_err()
+                .contains("unknown placeholder `{oracle}`")
+        );
+        assert!(
+            parse_fate_mappings("fate-runner|target|.|cargo|{samples", &component_ids)
+                .unwrap_err()
+                .contains("unclosed `{` placeholder delimiter")
+        );
+        assert!(
+            parse_fate_mappings("fate-runner|target|.|cargo|samples}", &component_ids)
+                .unwrap_err()
+                .contains("unmatched `}` placeholder delimiter")
         );
     }
 
