@@ -350,6 +350,8 @@ The test hierarchy is unit tests first, followed by golden parser tests, differe
 
 `crates/fftools/tests/rawvideo_oracle.rs` is the first ignored oracle integration harness. It requires `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` and compares Rust rawvideo file-output bytes against pinned FFmpeg streamcopy rawvideo output for selected pixel formats.
 
+`crates/avutil/tests/channel_layout_oracle.rs` is an ignored oracle inventory harness for `ffmpeg -layouts`. It compares the pinned oracle's individual channel table and standard layout decomposition table against the current Rust channel/layout inventories without invoking FFmpeg from runtime implementation code.
+
 ## FFI And Export Policy
 
 The runtime implementation must not link against FFmpeg/libav*. FFI is reserved for platform APIs, hardware APIs, SIMD support, and eventual C ABI compatibility layers. No unsafe Rust is present in the initial slice.

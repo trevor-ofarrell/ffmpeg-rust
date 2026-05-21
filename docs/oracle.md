@@ -80,6 +80,8 @@ The harness currently compares Rust constrained `-f rawvideo ... -f rawvideo <fi
 
 The same harness is wired into `tests/differential/mappings.txt`, which can be executed through `fate-runner` with `--mappings tests/differential/mappings.txt --oracle-ffmpeg <path> --component fftools-ffmpeg-rawvideo-file-output` once the pinned oracle binary exists.
 
+`crates/avutil/tests/channel_layout_oracle.rs` is an ignored oracle harness for `ffmpeg -layouts`. It compares individual-channel names/descriptions and standard-layout decompositions against the current Rust `Channel::ALL` and `ChannelLayout::known_layouts()` inventories. It is wired into `tests/differential/mappings.txt` as `avutil-channel-layout|oracle-ffmpeg-layouts`, but local execution is blocked until the pinned oracle binary exists.
+
 ## Source-Checked Notes
 
 The `avutil-error` string slice was checked against FFmpeg 8.1.1 `libavutil/error.h` and `libavutil/error.c`. The pinned header defines the tag-based `AVERROR_*` constants and `AV_ERROR_MAX_STRING_SIZE`; the pinned C implementation maps the `AVERROR_LIST` entries to user-facing strings and falls back to `Error number <n> occurred` when no description is found. The Rust model covers the FFmpeg-defined table but still leaves platform `AVERROR(errno)` string parity to a later platform profile.

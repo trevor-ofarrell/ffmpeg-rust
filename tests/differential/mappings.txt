@@ -8,3 +8,4 @@
 fftools-ffmpeg-rawvideo-file-output|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
 avformat-rawvideo-demuxer|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
 avformat-rawvideo-muxer|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
+avutil-channel-layout|oracle-ffmpeg-layouts|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|channel_layout_oracle|--|--ignored

@@ -231,6 +231,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/channel_layout_oracle.rs",
+        exact_ids: &["avutil-channel-layout"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/hash.rs",
         exact_ids: &["avutil-hash"],
         id_prefixes: &[],
@@ -1284,6 +1289,17 @@ mod tests {
     }
 
     #[test]
+    fn changed_selection_maps_channel_layout_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-channel-layout"]));
+        let paths = vec!["crates/avutil/tests/channel_layout_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-channel-layout".to_string()]
+        );
+    }
+
+    #[test]
     fn default_mappings_cover_current_fftools_smoke_selections() {
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let ledger_contents = fs::read_to_string(repo_root.join("PORTING_LEDGER.toml")).unwrap();
@@ -1328,6 +1344,7 @@ mod tests {
             &[
                 "crates/avutil/src/lib.rs".to_string(),
                 "crates/avutil/src/buffer.rs".to_string(),
+                "crates/avutil/tests/channel_layout_oracle.rs".to_string(),
                 "fuzz/fuzz_targets/avutil_core_models.rs".to_string(),
             ],
         );

@@ -2,6 +2,10 @@
 
 ## Current Status
 
+Correction for the latest `avutil-channel-layout` oracle-harness slice: after adding the `fate-runner` regression test, full `run --changed` execution is blocked in this Windows environment by Application Control on conflicting rebuilt test executables. The direct equivalent checks pass: `cargo test -p fate-runner --target-dir target-codex`, `cargo test -p avutil --test channel_layout_oracle`, and `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-channel-layout`. `run --changed --dry-run` also passes and selects `fate-runner` plus `avutil-channel-layout`.
+
+Latest `avutil-channel-layout` update: added an ignored `ffmpeg -layouts` oracle harness at `crates/avutil/tests/channel_layout_oracle.rs`. The harness runs the pinned FFmpeg oracle with `-hide_banner -layouts`, parses the individual-channel and standard-layout tables, and compares them to `Channel::ALL` and `ChannelLayout::known_layouts()`. It is wired into `tests/differential/mappings.txt` as `avutil-channel-layout|oracle-ffmpeg-layouts`, and `fate-runner` now maps changes to that integration test back to `avutil-channel-layout`. The default ignored test compile, focused channel-layout tests, differential mapping listing, local component FATE, changed-path FATE dry-run/execution, avutil and fate-runner clippy, formatting, and diff checks passed; `git diff --check` reported CRLF warnings only. The component remains `implemented`, not `complete`, because the pinned FFmpeg oracle binary is absent locally, so the new ignored differential has not executed, and byte-preserving non-UTF-8 custom-name parity, upstream FATE parity, and actual fuzz execution remain pending.
+
 Latest `avutil-channel-layout` update: parser-facing numeric-mask, count-suffix, and described-list parsing now follows pinned FFmpeg 8.1.1 `strtoull`/`strtol` leading-whitespace and full-consumption behavior more closely. `ChannelLayoutSpec::parse` accepts leading C whitespace and leading `+` where FFmpeg's C parsers accept them, such as ` 0x3`, ` 2c`, `+2C`, ` +2 channels`, and ` +2 channels (FL+FR)`, while trailing-junk forms such as `0x3 `, `3 `, `2c `, `2C `, `2 channels `, and `2 channels (FL+FR) ` reject with typed invalid-argument errors. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, formatting, and diff checks passed; `git diff --check` reported CRLF warnings only. The component remains `implemented`, not `complete`, because byte-preserving non-UTF-8 custom-name parity, oracle vectors, full `ffmpeg -layouts` inventory comparison, upstream FATE parity, and actual fuzz execution remain absent.
 
 Latest `avutil-channel-layout` update: parser-facing channel/layout string matching now follows pinned FFmpeg 8.1.1 case-sensitive `strcmp` behavior for native channel names, `UNK`/`UNSD`, uppercase `AMBI`/`USR` prefixes, and exact layout names. `ChannelLayoutSpec::parse` no longer falls through to the ergonomic case-insensitive `ChannelLayout::parse` helper, so case-mismatched forms such as `fl+fr`, `unk+unk`, `ambi0`, `usr0`, `STEREO`, `stereo `, and `ambisonic 1+STEREO` reject with typed invalid-argument errors while canonical uppercase channel IDs and exact lowercase layout names such as `stereo` remain supported. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, formatting, and diff checks passed; `git diff --check` reported CRLF warnings only. The component remains `implemented`, not `complete`, because byte-preserving non-UTF-8 custom-name parity, oracle vectors, full `ffmpeg -layouts` inventory comparison, upstream FATE parity, and actual fuzz execution remain absent.
@@ -431,6 +435,27 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-channel-layout` oracle-harness slice after adding the fate-runner regression test:
+  - `cargo test -p fate-runner --target-dir target-codex` (26 tests passed)
+  - `cargo test -p avutil --test channel_layout_oracle` (ignored test compiled, 1 ignored)
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-channel-layout`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo clippy -p fate-runner --all-targets -- -D warnings`
+  - `cargo clippy -p avutil --all-targets -- -D warnings`
+
+- Current `avutil-channel-layout` `ffmpeg -layouts` oracle-harness slice:
+  - `cargo test -p avutil --test channel_layout_oracle` (ignored test compiled, 1 ignored)
+  - `cargo run --target-dir target-codex -p fate-runner -- mappings --mappings tests/differential/mappings.txt`
+  - `cargo test -p avutil channel_layout` (33 tests passed; ignored oracle integration test compiled)
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-channel-layout`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo test -p fate-runner`
+  - `cargo fmt --all -- --check`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `cargo clippy -p avutil --all-targets -- -D warnings`
+  - `cargo clippy -p fate-runner --all-targets -- -D warnings`
+  - `git diff --check` (CRLF warnings only)
 
 - Current `avutil-channel-layout` whitespace/full-consumption parser slice:
   - `cargo test -p avutil channel_layout` (33 tests passed)
@@ -4700,6 +4725,12 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-channel-layout` oracle-harness slice after adding the fate-runner regression test:
+  - `cargo test -p fate-runner` through the default `target` directory is blocked by Windows Application Control on `target\debug\deps\fate_runner-*.exe` after the rebuilt test executable is created. `cargo test -p fate-runner --target-dir target-codex` passes.
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run --target-dir target-codex -p fate-runner -- run --changed` passes the `fate-runner` self-test but is blocked by Windows Application Control on `target-codex\debug\deps\channel_layout_oracle-*.exe`. The same avutil component mapping passes through the default target directory.
+
+- Current `avutil-channel-layout` `ffmpeg -layouts` oracle-harness slice: the first `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run` failed because `crates/avutil/tests/channel_layout_oracle.rs` had no changed-path selection rule. A `fate-runner` path rule now maps that test to `avutil-channel-layout`, and the dry-run plus real changed-path run pass. The ignored oracle test has not been executed because no pinned FFmpeg binary exists locally.
+
 - Current `avutil-channel-layout` whitespace/full-consumption parser slice: no remaining failing commands. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, formatting, and `git diff --check` all passed; `git diff --check` reported CRLF warnings only.
 
 - Current `avutil-channel-layout` case-sensitive parser-string slice: no remaining failing commands. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, formatting, and `git diff --check` all passed; `git diff --check` reported CRLF warnings only.
@@ -5105,6 +5136,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds an ignored oracle inventory test for `ffmpeg -layouts`, comparing the pinned oracle's channel names/descriptions and standard-layout decompositions to the current Rust inventories, and wires that test into the differential mappings plus changed-path component selection. It deliberately does not claim `differential_pass` because the pinned oracle binary is absent locally.
+
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change aligns the parser's numeric-mask, count-suffix, and described-list branches with the pinned FFmpeg `strtoull`/`strtol` shape: leading C whitespace and leading `+` are accepted where the C parsers accept them, and trailing junk after masks, count suffixes, or described lists is no longer hidden by whole-expression trimming. It deliberately does not claim byte-preserving FFmpeg custom-name parity, oracle-vector parity, full `ffmpeg -layouts` inventory coverage, upstream FATE parity, or actual fuzz execution.
 
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change aligns FFmpeg-facing channel/layout string parsing with pinned `strcmp` behavior: native channel IDs and `UNK`/`UNSD` require exact uppercase names, `AMBI`/`USR` parser prefixes stay uppercase-only, exact layout names use `ChannelLayout::from_name`, and `ChannelLayoutSpec::parse` stops falling through to the more permissive `ChannelLayout::parse` helper. It deliberately does not claim byte-preserving FFmpeg custom-name parity, oracle-vector parity, full `ffmpeg -layouts` inventory coverage, upstream FATE parity, or actual fuzz execution.
@@ -5327,11 +5360,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Continue `avutil-channel-layout` with the next source-checked parser/retype gap: explicit oracle-vector generation for the current parser/retype/lookup surface once a pinned local FFmpeg binary is available, deeper `AV_CHANNEL_ORDER_AMBISONIC` semantics beyond the current bounded lookup/retype subset, or byte-preserving non-UTF-8 custom-name parity if the Rust type model is expanded beyond UTF-8 names.
-2. Add oracle-backed differential vectors for channel-layout native/ambisonic/unspecified/custom/canonical retyping, default, describe, compare, subset, and string parsing once a pinned FFmpeg binary is available locally.
-3. Keep `avutil-channel-layout` below `complete` until full parsing, broad retyping, ambisonic order semantics, oracle inventory, upstream FATE, and fuzz parity are proven.
+1. Configure or build the pinned FFmpeg 8.1.1 oracle binary, then run `cargo test -p avutil --test channel_layout_oracle -- --ignored` and the matching differential `fate-runner` mapping.
+2. If the oracle inventory differs, use the failing `ffmpeg -layouts` comparison to add the next missing channel/layout inventory slice without weakening the oracle assertions.
+3. If no oracle is available, continue `avutil-channel-layout` with the next source-checked parser/retype gap: deeper `AV_CHANNEL_ORDER_AMBISONIC` semantics or byte-preserving non-UTF-8 custom-name parity.
 
 ## Known Blockers
+
+- Latest `avutil-channel-layout` oracle coverage now has an ignored `ffmpeg -layouts` differential harness and mapping, but real execution is blocked because no pinned FFmpeg 8.1.1 binary exists at `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)`. The harness compiles by default and fails explicitly when run without the oracle instead of silently passing.
 
 - Latest `avutil-channel-layout` parser-facing whitespace coverage now matches the source-checked leading-whitespace/full-consumption shape for numeric masks, `Nc`/`NC`, `N channels`, and described channel lists, while preserving channel-list tokenizer whitespace trimming. Remaining blockers are byte-preserving non-UTF-8 custom-name parity if required by the selected API surface, oracle-vector calibration, full `ffmpeg -layouts` inventory comparison, deeper `AV_CHANNEL_ORDER_AMBISONIC` semantics beyond the current bounded lookup/retype surface, upstream FATE parity, and actual fuzz execution.
 
@@ -5446,6 +5481,10 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Correction for latest slice after adding `fate-runner` regression coverage: full `run --changed` execution is blocked by Windows Application Control on rebuilt test executables in this environment, but the direct equivalent checks pass (`fate-runner` self-test through `target-codex`, default-target avutil channel-layout component mapping, and the ignored oracle-test compile). `run --changed --dry-run` also passes and selects the expected components.
+
+Latest slice: added an ignored `ffmpeg -layouts` oracle harness for `avutil-channel-layout`. `crates/avutil/tests/channel_layout_oracle.rs` resolves `FFMPEG_ORACLE` or the standard `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` path, runs `-hide_banner -layouts`, parses the oracle's individual-channel and standard-layout tables, and compares them exactly against the current Rust `Channel::ALL` and `ChannelLayout::known_layouts()` inventories. The harness is wired into `tests/differential/mappings.txt`, documented in the differential/oracle docs, and `fate-runner` now maps changes to that integration test back to `avutil-channel-layout`. Validation passed with the ignored test compile, focused channel-layout tests, differential mapping listing, local and changed FATE-runner mappings, `fate-runner` tests, avutil/fate-runner clippy, format check, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`, because the pinned oracle binary is absent and the new ignored oracle test has not run.
 
 Latest slice: tightened FFmpeg-facing channel-layout parsing for numeric/count/described-list whitespace. `ChannelLayoutSpec::parse` now passes raw input into the numeric-mask, count-suffix, described-list, and channel-list branches instead of trimming the whole expression first; `parse_numeric_channel_mask` skips only leading C numeric whitespace; and count parsing now uses a bounded `strtol`-shaped decimal prefix helper with optional leading `+`. Unit tests and `avutil_core_models` fixtures cover accepted leading-whitespace forms (` 0x3`, ` 2c`, `+2C`, ` +2 channels (FL+FR)`) and rejected trailing-junk forms (`0x3 `, `3 `, `2c `, `2C `, `2 channels `, `2 channels (FL+FR) `). Docs and the ledger record this as bounded source-checked parser parity only. Validation passed with focused avutil channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run and execution, formatting, and `git diff --check` with CRLF warnings only.
 
