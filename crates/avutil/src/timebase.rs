@@ -1,4 +1,5 @@
 use crate::{AvError, AvResult, Rational};
+use core::cmp::Ordering;
 
 pub const AV_TIME_BASE: i64 = 1_000_000;
 pub const AV_TIME_BASE_Q: Rational = Rational::from_raw(1, AV_TIME_BASE as i32);
@@ -61,6 +62,32 @@ pub fn rescale_q_rnd_pass_minmax(
     rescale_rnd_inner(value, multiplier, divisor, rounding)
 }
 
+pub fn compare_ts(ts_a: i64, tb_a: Rational, ts_b: i64, tb_b: Rational) -> AvResult<Ordering> {
+    ensure_positive_time_base(tb_a, "first timestamp time base")?;
+    ensure_positive_time_base(tb_b, "second timestamp time base")?;
+
+    let lhs = i128::from(ts_a) * i128::from(tb_a.num()) * i128::from(tb_b.den());
+    let rhs = i128::from(ts_b) * i128::from(tb_b.num()) * i128::from(tb_a.den());
+    Ok(lhs.cmp(&rhs))
+}
+
+pub fn compare_mod(a: u64, b: u64, modulus: u64) -> AvResult<i64> {
+    if !modulus.is_power_of_two() {
+        return Err(AvError::invalid_argument(
+            "timestamp comparison modulus must be a nonzero power of two",
+        ));
+    }
+
+    let diff = a.wrapping_sub(b) & (modulus - 1);
+    let centered = if diff > (modulus >> 1) {
+        i128::from(diff) - i128::from(modulus)
+    } else {
+        i128::from(diff)
+    };
+    i64::try_from(centered)
+        .map_err(|_| AvError::invalid_argument("modular timestamp difference out of range"))
+}
+
 fn rescale_q_terms(src: Rational, dst: Rational) -> AvResult<(i64, i64)> {
     if src.num() < 0 || src.den() <= 0 || dst.num() <= 0 || dst.den() <= 0 {
         return Err(AvError::invalid_argument("invalid time base for rescale"));
@@ -86,6 +113,15 @@ fn rescale_rnd_inner(
     let numerator = i128::from(value) * i128::from(multiplier);
     let result = div_round(numerator, i128::from(divisor), rounding);
     i64::try_from(result).map_err(|_| AvError::invalid_argument("rescaled timestamp out of range"))
+}
+
+fn ensure_positive_time_base(time_base: Rational, context: &str) -> AvResult<()> {
+    if time_base.num() <= 0 || time_base.den() <= 0 {
+        return Err(AvError::invalid_argument(format!(
+            "{context} must be a positive rational"
+        )));
+    }
+    Ok(())
 }
 
 fn div_round(numerator: i128, denominator: i128, rounding: Rounding) -> i128 {
@@ -198,6 +234,74 @@ mod tests {
 
         assert_eq!(rescale_q(90_000, ninety_khz, milliseconds).unwrap(), 1_000);
         assert_eq!(rescale_q(3_003, ninety_khz, milliseconds).unwrap(), 33);
+    }
+
+    #[test]
+    fn compares_timestamps_across_timebases() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+        let seconds = Rational::ONE;
+        let ninety_khz = Rational::new(1, 90_000).unwrap();
+
+        assert_eq!(
+            compare_ts(1_000, milliseconds, 1, seconds).unwrap(),
+            Ordering::Equal
+        );
+        assert_eq!(
+            compare_ts(3_003, ninety_khz, 33, milliseconds).unwrap(),
+            Ordering::Greater
+        );
+        assert_eq!(
+            compare_ts(-500, milliseconds, 0, seconds).unwrap(),
+            Ordering::Less
+        );
+        assert_eq!(
+            compare_ts(
+                i64::MAX / 4,
+                Rational::new(1, 3).unwrap(),
+                i64::MAX / 2,
+                Rational::new(1, 2).unwrap()
+            )
+            .unwrap(),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn compare_ts_rejects_invalid_timebases() {
+        assert_eq!(
+            compare_ts(1, Rational::from_raw(0, 1), 1, Rational::ONE)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            compare_ts(1, Rational::ONE, 1, Rational::from_raw(1, -1))
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+    }
+
+    #[test]
+    fn compares_power_of_two_modular_timestamps() {
+        assert_eq!(compare_mod(0x11, 0x02, 0x10).unwrap(), -1);
+        assert_eq!(compare_mod(0x11, 0x02, 0x20).unwrap(), 15);
+        assert_eq!(compare_mod(0x02, 0x11, 0x10).unwrap(), 1);
+        assert_eq!(compare_mod(0x12, 0x02, 0x10).unwrap(), 0);
+        assert_eq!(compare_mod(u64::MAX, 0, 1 << 4).unwrap(), -1);
+        assert_eq!(compare_mod(0, 0, 1).unwrap(), 0);
+    }
+
+    #[test]
+    fn compare_mod_rejects_invalid_moduli() {
+        assert_eq!(
+            compare_mod(1, 0, 0).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            compare_mod(1, 0, 3).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
     }
 
     #[test]

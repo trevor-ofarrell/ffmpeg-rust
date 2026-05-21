@@ -106,6 +106,6 @@ pub use pixel::{
 pub use rational::Rational;
 pub use samplefmt::{SampleFormat, SampleFormatFamily, SampleFormatNumericKind};
 pub use timebase::{
-    rescale, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd,
-    rescale_rnd_pass_minmax, Rounding, AV_TIME_BASE, AV_TIME_BASE_Q,
+    compare_mod, compare_ts, rescale, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
+    rescale_rnd, rescale_rnd_pass_minmax, Rounding, AV_TIME_BASE, AV_TIME_BASE_Q,
 };

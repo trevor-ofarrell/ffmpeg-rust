@@ -85,12 +85,16 @@ unit_tests = [
   "timebase::tests::supports_explicit_rounding_modes",
   "timebase::tests::pass_minmax_preserves_timestamp_sentinels",
   "timebase::tests::rejects_invalid_time_bases_and_out_of_range_results",
+  "timebase::tests::compares_timestamps_across_timebases",
+  "timebase::tests::compare_ts_rejects_invalid_timebases",
+  "timebase::tests::compares_power_of_two_modular_timestamps",
+  "timebase::tests::compare_mod_rejects_invalid_moduli",
 ]
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avutil-timebase|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-# Latest update: direct av_rescale-style helpers and AV_TIME_BASE constants share the same checked rounding core as rescale_q.
-notes = "Initial timestamp rescaling implemented with AV_TIME_BASE/AV_TIME_BASE_Q constants, direct av_rescale-style rescale/rescale_rnd/rescale_rnd_pass_minmax helpers, and rescale_q/rescale_q_rnd/rescale_q_rnd_pass_minmax helpers routed through the same checked multiplier/divisor core. Current rounding modes cover explicit zero, away-from-zero, down, up, and nearest-away-from-zero behavior plus pass-min/max sentinel preservation for direct integer-term and rational time-base rescaling. Invalid negative multipliers, nonpositive divisors, malformed time bases, and out-of-range results return typed errors. Build-checked cargo-fuzz target avutil_core_models compares direct rescale and rational rescale helpers against an independent small-range i128 rounding model, including constants, invalid terms, and sentinel preservation, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs pinned FFmpeg edge-case differential vectors for wider av_rescale/av_rescale_q parity. The local FATE-runner smoke mapping executes the timebase unit filter only and does not count as upstream FATE parity."
+# Latest update: av_compare_ts-style and av_compare_mod-style helpers are source-checked against pinned libavutil/mathematics.c.
+notes = "Timestamp rescaling implemented with AV_TIME_BASE/AV_TIME_BASE_Q constants, direct av_rescale-style rescale/rescale_rnd/rescale_rnd_pass_minmax helpers, and rescale_q/rescale_q_rnd/rescale_q_rnd_pass_minmax helpers routed through the same checked multiplier/divisor core. Current rounding modes cover explicit zero, away-from-zero, down, up, and nearest-away-from-zero behavior plus pass-min/max sentinel preservation for direct integer-term and rational time-base rescaling. Latest addition: compare_ts models av_compare_ts-style timestamp ordering across positive time bases with exact i128 cross-products, and compare_mod models av_compare_mod-style centered comparison for power-of-two timestamp moduli. Invalid negative multipliers, nonpositive divisors, malformed time bases, invalid compare time bases, non-power-of-two moduli, and out-of-range results return typed errors. Build-checked cargo-fuzz target avutil_core_models compares direct rescale, rational rescale, compare_ts, and compare_mod helpers against independent small-range i128/u64 models, including constants, invalid terms, invalid compare inputs, and sentinel preservation, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs pinned FFmpeg edge-case differential vectors for wider av_rescale/av_rescale_q/av_compare_ts/av_compare_mod parity, plus av_rescale_delta and av_add_stable coverage. The local FATE-runner smoke mapping executes the timebase unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

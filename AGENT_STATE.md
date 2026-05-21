@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-timebase` update: `compare_ts` and `compare_mod` now model FFmpeg 8.1.1 `av_compare_ts` and `av_compare_mod` behavior from `libavutil/mathematics.c`. `compare_ts` orders timestamps across positive time bases with exact integer cross-products, while `compare_mod` performs centered modular timestamp comparison for nonzero power-of-two moduli. Local unit tests cover cross-timebase ordering, negative timestamps, invalid time bases, modular wraparound, and invalid moduli; the shared `avutil_core_models` fuzz harness build-checks both helpers against independent models. The component remains `implemented`, not `complete`, because pinned differential vectors, upstream FATE parity, actual fuzz execution, `av_rescale_delta`, and `av_add_stable` are still incomplete.
+
 Latest `avutil-rational` update: `Rational::to_int_float_bits` now models FFmpeg 8.1.1 `av_q2intfloat`-style platform-independent IEEE-754 single-precision bit conversion. It covers FFmpeg's special `0/0` NaN bits, zero numerator, zero denominator, finite signed rationals, negative denominators, and typed rejection for raw `i32::MIN` negation cases where the C implementation would rely on signed-overflow behavior. Local unit tests and the shared `avutil_core_models` fuzz harness cover finite bit vectors, special-value bits, and invalid raw inputs. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still incomplete.
 
 Latest `avutil-rational` update: `Rational::gcd_with_limit` now models FFmpeg 8.1.1 `av_gcd_q` for finite positive-denominator inputs. It preserves the raw non-reduced `gcd(num)/lcm(den)` result shape, uses FFmpeg's strict `lcm < max_den` selection before returning that result, returns the caller default when the limit is not met, and rejects zero/negative denominators or nonpositive limits with typed errors instead of inventing behavior for invalid Rust inputs. Local unit tests and the shared `avutil_core_models` fuzz harness cover direct results, non-reduced raw shape, zero numerators, strict limit/default behavior, and invalid inputs. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still incomplete.
@@ -347,6 +349,20 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-timebase` compare helper slice:
+  - `Invoke-WebRequest -Uri https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1.1/libavutil/mathematics.h -OutFile $env:TEMP\ffmpeg-mathematics-8.1.1.h` (after escalation)
+  - `Invoke-WebRequest -Uri https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1.1/libavutil/mathematics.c -OutFile $env:TEMP\ffmpeg-mathematics-8.1.1.c` (after escalation)
+  - `cargo fmt --all`
+  - `cargo test -p avutil timebase --target-dir target-codex`
+  - `cargo fmt --all -- --check`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-timebase`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `cargo clippy -p avutil --all-targets --target-dir target-codex -- -D warnings`
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `git diff --check`
 
 - Current `avutil-rational` int-float slice:
   - `cargo fmt --all`
@@ -4124,6 +4140,10 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-timebase` compare helper slice:
+  - The first sandboxed `Invoke-WebRequest` attempts for pinned `libavutil/mathematics.h` and `libavutil/mathematics.c` failed with `Unable to connect to the remote server`; both downloads succeeded after escalation.
+  - The first focused `cargo test -p avutil timebase --target-dir target-codex` failed because the large timestamp comparison vector expected `Less` while the exact cross-product was `Greater`; the test vector was corrected to exercise a true large-value `Less` case. No remaining Rust assertion, clippy, local FATE, or diff-hygiene failures remain for this slice.
+
 - Current `avutil-rational` int-float slice: no Rust assertion, clippy, local FATE, or diff-hygiene failures were observed.
 
 - Current `avutil-rational` comparison/nearest slice:
@@ -4584,7 +4604,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 `avutil-byteio` is the current focus for this slice. The concrete change is non-advancing byte lookahead for exact slices and endian-aware signed/unsigned integer widths, with local unit and fuzz-harness invariant coverage. It does not claim pinned AVIO/GetByte compatibility vectors or upstream FATE parity yet.
 
-`avutil-timebase` is the current focus for this slice. The concrete change is direct `av_rescale`-style integer-term helpers plus FFmpeg timebase constants, with the existing rational rescale helpers routed through the same checked core. It does not claim pinned `av_rescale_rnd` differential parity yet.
+`avutil-timebase` is the current focus for this slice. The concrete change adds source-checked `av_compare_ts`-style timestamp ordering and `av_compare_mod`-style power-of-two modular comparison on top of the existing FFmpeg timebase constants and rescale helpers. It does not claim pinned differential parity, upstream FATE parity, `av_rescale_delta`, or `av_add_stable` yet.
 
 `avutil-rational` is the current focus for this slice. The concrete change is limited rational reduction and double conversion parity scaffolding: `reduce_i64`, `from_f64_limited`, and `to_f64`, with unit and fuzz-harness invariant coverage. It does not claim exact pinned `av_reduce`/`av_d2q` differential parity yet.
 
@@ -4598,11 +4618,13 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Add pinned FFmpeg rational differential vectors once an oracle path or a small source-checked oracle fixture is available, covering `av_reduce`, `av_d2q`, `av_q2intfloat`, `av_cmp_q`, `av_nearer_q`, `av_find_nearest_q_idx`, and `av_gcd_q`.
-2. Move to `avutil-timebase` edge helpers if rational differential vectors remain blocked by oracle availability.
-3. Keep local FATE mappings green for changed avutil work while continuing through priority-1 infrastructure.
+1. Continue `avutil-timebase` with `av_rescale_delta` or `av_add_stable` if the source-checked scope stays bounded, or add pinned differential vectors if an oracle binary becomes available.
+2. Add pinned FFmpeg rational/timebase differential vectors once an oracle path or source-checked oracle fixture exists.
+3. Move to the next unblocked priority-1 infrastructure slice, likely byte I/O or bit I/O edge vectors, if timebase differential work remains blocked.
 
 ## Known Blockers
+
+- `avutil-timebase` now covers source-checked `av_compare_ts` and `av_compare_mod` behavior locally, but it still has no pinned FFmpeg differential vector harness, no upstream FATE media parity, no actual cargo-fuzz execution, and no `av_rescale_delta`/`av_add_stable` implementation.
 
 - `avutil-rational` now covers source-checked `av_q2intfloat` and `av_gcd_q`-style behavior locally, but it still has no pinned FFmpeg differential vector harness. Actual cargo-fuzz execution is still unavailable, and upstream FATE has no media-backed rational coverage mapping in this workspace.
 
@@ -4671,6 +4693,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added `compare_ts` and `compare_mod` to the shared `avutil-timebase` model. `compare_ts` validates positive rational time bases and orders timestamps with exact cross-products; `compare_mod` validates power-of-two moduli and returns the centered modular difference matching FFmpeg's `av_compare_mod` shape. The slice was source-checked against pinned FFmpeg 8.1.1 `libavutil/mathematics.h`/`.c`, exports the helpers from `avutil`, adds focused timebase tests for cross-timebase ordering, invalid inputs, modular wraparound, and invalid moduli, and extends `avutil_core_models` with independent compare-model invariants. Pinned oracle differential vectors, upstream FATE parity, `av_rescale_delta`, `av_add_stable`, and actual fuzz execution remain open.
 
 Latest slice: added `Rational::to_int_float_bits` for FFmpeg 8.1.1 `av_q2intfloat`-style platform-independent IEEE-754 single-precision bit conversion. It preserves the pinned special values for `0/0`, zero numerator, and zero denominator, handles finite signed rationals and negative denominators through integer rescaling, and rejects raw `i32::MIN` negation cases with typed errors instead of modeling C signed-overflow behavior. Unit tests cover finite IEEE vectors, special values, and invalid raw inputs; `avutil_core_models` build-checks the generated invariant against Rust `f32` bits for small finite values plus the pinned special cases. Pinned oracle differential vectors, upstream FATE parity, and actual fuzz execution remain open.
 

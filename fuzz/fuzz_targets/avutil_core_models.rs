@@ -1,10 +1,10 @@
 #![no_main]
 
 use avutil::{
-    adler32, av_error_description, av_make_error_string, av_strerror, crc32_ieee, digest_to_hex,
-    md5, rescale, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd,
-    rescale_rnd_pass_minmax, sha1, sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError,
-    AvErrorCode, AvErrorKind, BufferPool,
+    adler32, av_error_description, av_make_error_string, av_strerror, compare_mod, compare_ts,
+    crc32_ieee, digest_to_hex, md5, rescale, rescale_q, rescale_q_rnd,
+    rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1, sha224, sha256,
+    sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32,
     Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
     FrameAudioServiceType,
@@ -1337,6 +1337,27 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
         rescale_q_rnd_pass_minmax(value, src, dst, Rounding::NearInf).unwrap(),
         expected_rescale(value, src, dst, Rounding::NearInf).unwrap()
     );
+
+    let compare_a = small_i64_from(cursor.next(), cursor.next());
+    let compare_b = small_i64_from(cursor.next(), cursor.next());
+    assert_eq!(
+        compare_ts(compare_a, src, compare_b, dst).unwrap(),
+        expected_compare_ts(compare_a, src, compare_b, dst)
+    );
+    assert!(compare_ts(compare_a, Rational::from_raw(0, 1), compare_b, dst).is_err());
+
+    let mod_shift = u32::from(cursor.next().unwrap_or_default() % 16);
+    let modulus = 1_u64 << mod_shift;
+    let mod_a = u64::from(cursor.next().unwrap_or_default()) << 8
+        | u64::from(cursor.next().unwrap_or_default());
+    let mod_b = u64::from(cursor.next().unwrap_or_default()) << 8
+        | u64::from(cursor.next().unwrap_or_default());
+    assert_eq!(
+        compare_mod(mod_a, mod_b, modulus).unwrap(),
+        expected_compare_mod(mod_a, mod_b, modulus)
+    );
+    assert!(compare_mod(mod_a, mod_b, 0).is_err());
+    assert!(compare_mod(mod_a, mod_b, 3).is_err());
 }
 
 fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
@@ -14095,6 +14116,21 @@ fn expected_rescale_terms(
 ) -> Result<i64, ()> {
     let numerator = i128::from(value) * i128::from(multiplier);
     i64::try_from(div_round(numerator, i128::from(divisor), rounding)).map_err(|_| ())
+}
+
+fn expected_compare_ts(ts_a: i64, tb_a: Rational, ts_b: i64, tb_b: Rational) -> Ordering {
+    let lhs = i128::from(ts_a) * i128::from(tb_a.num()) * i128::from(tb_b.den());
+    let rhs = i128::from(ts_b) * i128::from(tb_b.num()) * i128::from(tb_a.den());
+    lhs.cmp(&rhs)
+}
+
+fn expected_compare_mod(a: u64, b: u64, modulus: u64) -> i64 {
+    let diff = a.wrapping_sub(b) & (modulus - 1);
+    if diff > (modulus >> 1) {
+        (i128::from(diff) - i128::from(modulus)) as i64
+    } else {
+        diff as i64
+    }
 }
 
 fn div_round(numerator: i128, denominator: i128, rounding: Rounding) -> i128 {
