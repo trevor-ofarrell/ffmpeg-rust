@@ -415,6 +415,9 @@ fn parse_ffmpeg_i32_base0_prefix(value: &str) -> Option<i32> {
 }
 
 fn parse_ffmpeg_i32_base0_full(value: &str) -> Option<i32> {
+    if value.is_empty() {
+        return Some(0);
+    }
     let (parsed, consumed) = parse_ffmpeg_i32_base0(value, true)?;
     (consumed == value.len()).then_some(parsed)
 }
@@ -3170,6 +3173,10 @@ mod tests {
             Some(ChannelId::Native(Channel::FrontLeft))
         );
         assert_eq!(
+            ChannelId::from_ffmpeg_string("USR"),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+        assert_eq!(
             ChannelId::from_ffmpeg_string("USR0x2d"),
             Some(ChannelId::User(45))
         );
@@ -3191,6 +3198,8 @@ mod tests {
         );
         assert_eq!(ChannelId::from_ffmpeg_string("USR-1"), None);
         assert_eq!(ChannelId::from_ffmpeg_string("USR45tail"), None);
+        assert_eq!(ChannelId::from_ffmpeg_string("USR+"), None);
+        assert_eq!(ChannelId::from_ffmpeg_string("USRx"), None);
     }
 
     #[test]
@@ -5376,6 +5385,18 @@ mod tests {
         );
         assert_eq!(
             ChannelLayoutSpec::parse("USR0").unwrap(),
+            ChannelLayoutSpec::NativeMask(
+                NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
+            )
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("USR").unwrap(),
+            ChannelLayoutSpec::NativeMask(
+                NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
+            )
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("USR+").unwrap(),
             ChannelLayoutSpec::NativeMask(
                 NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
             )

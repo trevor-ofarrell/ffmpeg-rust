@@ -87,6 +87,16 @@ fn assert_raw_channel_layout_retype_fixtures() {
         ChannelLayoutSpec::NativeMask(raw_layout)
     );
     assert_eq!(
+        ChannelId::from_ffmpeg_string("USR"),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("USR+").unwrap(),
+        ChannelLayoutSpec::NativeMask(
+            NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
+        )
+    );
+    assert_eq!(
         ChannelId::from_ffmpeg_string("AMBI0x1tail"),
         Some(ChannelId::Ambisonic(1))
     );
@@ -10115,6 +10125,11 @@ fn exercise_fixtures() {
         ChannelId::from_ffmpeg_string("USR055"),
         Some(ChannelId::User(45))
     );
+    assert_eq!(
+        ChannelId::from_ffmpeg_string("USR"),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
+    assert_eq!(ChannelId::from_ffmpeg_string("USR+"), None);
     for (count, expected) in [
         (1, Some(ChannelLayout::mono())),
         (2, Some(ChannelLayout::stereo())),
