@@ -1174,6 +1174,28 @@ notes = "Initial shared sample format model covers the FFmpeg native u8/s16/s32/
 blocked_reason = "Pinned FFmpeg oracle binary is absent locally, so the ignored ffmpeg -sample_fmts differential harness cannot execute until FFMPEG_ORACLE or third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe) is available."
 
 [[component]]
+id = "avutil-color"
+kind = "utility"
+ffmpeg_name = "av_get_known_color_name / ffmpeg -colors"
+upstream_profile = "ffmpeg-8.1.1-default-native"
+status = "implemented"
+priority = 2
+oracle_command = "ffmpeg -colors"
+rust_command = "cargo test -p avutil color"
+unit_tests = [
+  "color::tests::color_table_matches_source_checked_inventory_boundaries",
+  "color::tests::named_color_lookup_is_ascii_case_insensitive",
+  "color::tests::color_inventory_table_uses_ffmpeg_colors_shape",
+]
+differential_tests = [
+  "crates/avutil/tests/color_oracle.rs::ffmpeg_colors_inventory_matches_named_color_model",
+]
+fate_tests = ["tests/fate/mappings.txt:avutil-color|local-avutil-unit"]
+fuzz_targets = []
+notes = "Source-checked against pinned FFmpeg 8.1.1 libavutil/parseutils.c color_table and fftools/opt_common.c show_colors. The Rust model exposes av_get_known_color_name-style indexed lookup, ASCII case-insensitive named lookup for the color table, and ffmpeg -colors-shaped table rendering for the 140 pinned named colors from AliceBlue through YellowGreen, including FFmpeg's Darkorange spelling. The ignored crates/avutil/tests/color_oracle.rs harness compares the current named color inventory against pinned ffmpeg -colors output through tests/differential/mappings.txt. Full av_parse_color hex/alpha/random parser semantics are not implemented in this slice."
+blocked_reason = "Pinned FFmpeg oracle binary is not present locally, so the ignored ffmpeg -colors differential harness has not executed and does not count as differential_pass."
+
+[[component]]
 id = "avutil-channel-layout"
 kind = "channel_layout"
 ffmpeg_name = "AVChannelLayout"

@@ -267,6 +267,16 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/src/color.rs",
+        exact_ids: &["avutil-color"],
+        id_prefixes: &[],
+    },
+    PathRule {
+        path: "crates/avutil/tests/color_oracle.rs",
+        exact_ids: &["avutil-color"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/hash.rs",
         exact_ids: &["avutil-hash"],
         id_prefixes: &[],
@@ -455,6 +465,7 @@ const PATH_RULES: &[PathRule] = &[
             "avutil-pixel-format",
             "avutil-sample-format",
             "avutil-channel-layout",
+            "avutil-color",
             "avutil-hash",
         ],
         id_prefixes: &[],
@@ -1684,6 +1695,17 @@ mod tests {
     }
 
     #[test]
+    fn changed_selection_maps_color_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-color"]));
+        let paths = vec!["crates/avutil/tests/color_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-color".to_string()]
+        );
+    }
+
+    #[test]
     fn changed_selection_maps_differential_files_to_runner() {
         let component_ids = component_ids_from_ledger(&ledger(&["fate-runner"]));
         let paths = vec![
@@ -1721,6 +1743,7 @@ mod tests {
         assert!(pairs.contains(&("avformat-wav-demuxer", "oracle-wav-generated-md5")));
         assert!(pairs.contains(&("avutil-sample-format", "oracle-ffmpeg-sample-fmts")));
         assert!(pairs.contains(&("avutil-pixel-format", "oracle-ffmpeg-pix-fmts-subset")));
+        assert!(pairs.contains(&("avutil-color", "oracle-ffmpeg-colors")));
     }
 
     #[test]
@@ -1817,6 +1840,7 @@ mod tests {
                 "crates/avutil/tests/pixel_format_oracle.rs".to_string(),
                 "crates/avutil/tests/sample_format_oracle.rs".to_string(),
                 "crates/avutil/tests/channel_layout_oracle.rs".to_string(),
+                "crates/avutil/tests/color_oracle.rs".to_string(),
                 "fuzz/fuzz_targets/avutil_core_models.rs".to_string(),
             ],
         );

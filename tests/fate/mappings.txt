@@ -37,6 +37,7 @@ avutil-options|local-avutil-unit|.|cargo|test|-p|avutil|options
 avutil-pixel-format|local-avutil-unit|.|cargo|test|-p|avutil|pixel
 avutil-sample-format|local-avutil-unit|.|cargo|test|-p|avutil|samplefmt
 avutil-channel-layout|local-avutil-unit|.|cargo|test|-p|avutil|channel_layout
+avutil-color|local-avutil-unit|.|cargo|test|-p|avutil|color
 avutil-hash|local-avutil-unit|.|cargo|test|-p|avutil|hash
 avcodec-rawvideo|local-avcodec-unit|.|cargo|test|-p|avcodec|rawvideo
 avcodec-pcm-s16le|local-avcodec-unit|.|cargo|test|-p|avcodec|pcm
