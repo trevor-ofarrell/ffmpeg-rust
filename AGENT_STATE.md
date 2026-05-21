@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-sample-format` update: `SampleFormat` now exposes `SampleAllocation`, `alloc_samples`, and `alloc_array_and_samples` helpers shaped after pinned FFmpeg 8.1.1 `av_samples_alloc` / `av_samples_alloc_array_and_samples` behavior for Rust-owned buffers. The implementation allocates one contiguous writable `BufferRef`, reuses `SampleArrayLayout` for packed or planar plane ranges, records the originally requested sample count separately from `align=0` effective samples, silence-fills requested samples with the existing source-checked `av_samples_set_silence` byte semantics, and keeps alignment padding plus auto-aligned tail bytes deterministically zeroed instead of exposing FFmpeg's uninitialized `av_malloc` tail storage. Local unit tests and the shared `avutil_core_models` fuzz harness cover allocation shape, packed/planar silence initialization, mutable plane access, invalid input rejection, and deterministic padding/tail behavior. The component remains `implemented`, not `complete`, because pinned `ffmpeg -sample_fmts`/libavutil differential vectors, upstream FATE parity, broader sample-data conversion routines, and actual fuzz execution are still absent.
+
 Latest `avutil-sample-format` update: `SampleFormat` now exposes `SampleArrayLayout`, `SamplePlaneRange`, `fill_arrays_layout`, `split_buffer`, and `split_buffer_mut` helpers shaped after pinned FFmpeg 8.1.1 `av_samples_fill_arrays` behavior for bounded Rust buffers. The implementation reuses the source-checked buffer-size arithmetic, reports one packed plane or line-size-spaced planar channel planes, supports immutable and mutable contiguous-buffer splitting, ignores caller trailing bytes, and rejects short buffers before exposing slices. Local unit tests and the shared `avutil_core_models` fuzz harness cover packed/planar plane offsets, `align=0` layouts, extra/short buffer behavior, mutable split behavior, and invalid input rejection. The component remains `implemented`, not `complete`, because pinned `ffmpeg -sample_fmts`/libavutil differential vectors, upstream FATE parity, `av_samples_alloc`-style owned allocation parity, broader sample-data conversion routines, and actual fuzz execution are still absent.
 
 Latest `avutil-sample-format` update: `SampleFormat` now exposes `SampleCopyRange`, `copy_range`, `copy_samples`, and `copy_samples_within` helpers shaped after pinned FFmpeg 8.1.1 `av_samples_copy` behavior for bounded Rust planes. The implementation computes packed copy spans across all channels and planar copy spans per channel plane, validates every selected source and destination range before mutation, supports zero-length copies, and uses Rust's memmove-like `copy_within` for overlapping in-place copies. Local unit tests and the shared `avutil_core_models` fuzz harness cover packed/planar range math, cross-buffer copy behavior, overlap handling, invalid input rejection, and no-mutation failure paths. The component remains `implemented`, not `complete`, because pinned `ffmpeg -sample_fmts`/libavutil differential vectors, upstream FATE parity, `av_samples_alloc`-style owned allocation parity, broader sample-data conversion routines, and actual fuzz execution are still absent.
@@ -365,6 +367,18 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-sample-format` owned allocation slice:
+  - `cargo fmt --all`
+  - `cargo test -p avutil samplefmt`
+  - `cargo clippy -p avutil --all-targets --target-dir target-codex -- -D warnings`
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-sample-format`
+  - `cargo fmt --all -- --check`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `git diff --check`
 
 - Current `avutil-sample-format` fill-array layout slice:
   - `cargo fmt --all`
@@ -4597,6 +4611,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-sample-format` is the active infrastructure focus for this turn. The concrete change adds FFmpeg-shaped `av_samples_alloc` / `av_samples_alloc_array_and_samples` owned allocation helpers for contiguous Rust audio buffers, including `BufferRef` ownership, reuse of fill-array plane ranges, requested-versus-effective sample count reporting, source-shaped silence initialization for requested samples, deterministic zeroed padding/tail bytes, mutable plane access, and typed invalid-input errors. It does not claim pinned libavutil differential parity, upstream FATE parity, broader sample-data conversion routines, or actual fuzz execution.
+
 `avutil-sample-format` is the active infrastructure focus for this turn. The concrete change adds FFmpeg-shaped `av_samples_fill_arrays` layout helpers for contiguous Rust audio buffers, including packed one-plane layout, planar line-size-spaced channel ranges, immutable and mutable safe splitting, extra trailing-buffer tolerance, and typed short-buffer errors. It does not claim pinned libavutil differential parity, upstream FATE parity, `av_samples_alloc`-style owned allocation parity, broader sample-data conversion routines, or actual fuzz execution.
 
 `avutil-bitwriter` is the active infrastructure focus for this turn. The concrete change adds checked bit-level truncation and clear/reset support to the bounded MSB-first writer, with unit and fuzz-harness invariant coverage for no-mutation failure behavior and masked partial-byte tails. It does not claim pinned PutBitContext differential parity, upstream FATE parity, or actual fuzz execution.
@@ -4761,13 +4777,13 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Run final format/FATE/diff hygiene for the `avutil-sample-format` fill-array layout slice and inspect the worktree.
+1. Run final format/FATE/diff hygiene for the `avutil-sample-format` owned allocation slice and inspect the worktree.
 2. Commit the coherent slice if diff hygiene is clean.
-3. Continue to the next unblocked priority-1 infrastructure gap, likely `av_samples_alloc`-style owned allocation helpers or pinned sample-format differential vectors once an FFmpeg 8.1.1 oracle is available.
+3. Continue to the next unblocked priority-1 infrastructure gap, likely additional sample-data conversion helpers or pinned sample-format differential vectors once an FFmpeg 8.1.1 oracle is available.
 
 ## Known Blockers
 
-- `avutil-sample-format` now covers local FFmpeg-shaped sample format names, planar/packed metadata, basic payload sizing, sample-buffer layout math, fill-array plane layout/splitting, silence-fill byte/range behavior, and copy byte-range behavior, but it still has no pinned `ffmpeg -sample_fmts`/libavutil differential vector harness, no upstream FATE media parity, no actual cargo-fuzz execution, no `av_samples_alloc`-style owned allocation parity, and no broader sample-data conversion routine parity.
+- `avutil-sample-format` now covers local FFmpeg-shaped sample format names, planar/packed metadata, basic payload sizing, sample-buffer layout math, fill-array plane layout/splitting, owned contiguous allocation, silence-fill byte/range behavior, and copy byte-range behavior, but it still has no pinned `ffmpeg -sample_fmts`/libavutil differential vector harness, no upstream FATE media parity, no actual cargo-fuzz execution, and no broader sample-data conversion routine parity.
 
 - `avutil-bitwriter` now covers local checked truncation, clear/reset, aligned-byte appends, signed/unsigned bit writes, and Exp-Golomb writes, but it still has no pinned PutBitContext differential vector harness, no upstream FATE media parity, and no actual cargo-fuzz execution.
 
@@ -4840,6 +4856,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added FFmpeg-shaped owned allocation helpers to `avutil-sample-format`. Source checking against pinned FFmpeg 8.1.1 `libavutil/samplefmt.c` confirmed the `av_samples_alloc` / `av_samples_alloc_array_and_samples` shape used here: compute the same buffer size, allocate one contiguous buffer, fill array pointers through the fill-array helper, and silence-fill only the originally requested sample count. `SampleAllocation` records the `SampleArrayLayout`, owns a writable `BufferRef`, reports requested versus effective sample counts, exposes immutable and mutable plane slices, and intentionally keeps Rust-visible padding/tail bytes zeroed rather than exposing FFmpeg's uninitialized allocation tail. Unit tests cover packed and planar allocation shape, `u8` silence initialization, deterministic auto-aligned tail bytes, mutable plane writes, invalid inputs, and `into_buffer`; `avutil_core_models` now build-checks generated allocation invariants. The component remains `implemented`, not `complete`, because oracle differentials, upstream FATE parity, broader sample-data conversion routines, and actual fuzz execution are still absent.
 
 Latest slice: added FFmpeg-shaped fill-array layout helpers to `avutil-sample-format`. Source checking against pinned FFmpeg 8.1.1 `libavutil/samplefmt.c` confirmed the `av_samples_fill_arrays` shape used here: it calls the same buffer-size helper, reports a line size, assigns one packed data pointer or line-size-spaced planar channel pointers, and returns the total required buffer size. `SampleArrayLayout` records the computed buffer layout plus per-plane `SamplePlaneRange` offsets; `fill_arrays_layout` models the pointer layout without raw pointers; and `split_buffer`/`split_buffer_mut` expose safe immutable and mutable Rust slices from caller-owned contiguous buffers. Unit tests cover packed and planar layouts, `align=0` auto padding, extra trailing buffer tolerance, mutable split behavior, invalid sample/channel inputs, and short-buffer rejection; `avutil_core_models` now build-checks generated fill-array split invariants. The component remains `implemented`, not `complete`, because oracle differentials, upstream FATE parity, `av_samples_alloc`-style owned allocation parity, broader sample-data conversion routines, and actual fuzz execution are still absent.
 

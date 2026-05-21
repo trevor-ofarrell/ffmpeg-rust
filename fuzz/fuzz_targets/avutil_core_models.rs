@@ -3733,6 +3733,20 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
                 .kind(),
             AvErrorKind::InvalidArgument
         );
+        assert_eq!(
+            sample_format
+                .alloc_samples(samples_per_channel, channels, buffer_alignment)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            sample_format
+                .alloc_array_and_samples(samples_per_channel, channels, buffer_alignment)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
     } else {
         let sample_buffer_layout = sample_buffer_layout.unwrap();
         let expected_alignment = if buffer_alignment == 0 {
@@ -3853,6 +3867,69 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
                 .unwrap_err()
                 .kind(),
             AvErrorKind::InvalidArgument
+        );
+
+        let mut allocation = sample_format
+            .alloc_samples(samples_per_channel, channels, buffer_alignment)
+            .unwrap();
+        assert_eq!(allocation.layout(), &sample_array_layout);
+        assert_eq!(allocation.line_size(), expected_line_size);
+        assert_eq!(allocation.buffer_size(), sample_array_layout.buffer_size());
+        assert_eq!(allocation.plane_count(), expected_plane_count);
+        assert_eq!(
+            allocation.requested_samples_per_channel(),
+            samples_per_channel
+        );
+        assert_eq!(
+            allocation.effective_samples_per_channel(),
+            expected_samples
+        );
+        assert_eq!(allocation.alignment(), expected_alignment);
+        assert_eq!(allocation.buffer().len(), sample_array_layout.buffer_size());
+        assert_eq!(
+            allocation.buffer().allocated_len(),
+            sample_array_layout.buffer_size()
+        );
+        assert_eq!(allocation.plane_ranges(), sample_array_layout.plane_ranges());
+        let allocation_planes = allocation.planes().unwrap();
+        assert_eq!(allocation_planes.len(), expected_plane_count);
+        let allocation_silence = sample_format
+            .silence_range(0, samples_per_channel, channels)
+            .unwrap();
+        for (range, plane) in sample_array_layout
+            .plane_ranges()
+            .iter()
+            .zip(&allocation_planes)
+        {
+            assert_eq!(plane.len(), range.byte_len());
+            assert!(plane[..allocation_silence.byte_len()]
+                .iter()
+                .all(|byte| *byte == allocation_silence.fill_byte()));
+            assert!(plane[allocation_silence.byte_len()..]
+                .iter()
+                .all(|byte| *byte == 0));
+        }
+        {
+            let mut allocation_planes_mut = allocation.planes_mut().unwrap();
+            for (plane_index, plane) in allocation_planes_mut.iter_mut().enumerate() {
+                plane[0] = 0xE0u8.wrapping_add(plane_index as u8);
+            }
+        }
+        for range in allocation.plane_ranges() {
+            assert_eq!(
+                allocation.buffer().as_slice()[range.byte_offset()],
+                0xE0u8.wrapping_add(range.plane_index() as u8)
+            );
+        }
+        let allocation_buffer = allocation.into_buffer();
+        assert_eq!(allocation_buffer.len(), sample_array_layout.buffer_size());
+        let allocation_from_array = sample_format
+            .alloc_array_and_samples(samples_per_channel, channels, buffer_alignment)
+            .unwrap();
+        assert_eq!(allocation_from_array.layout(), &sample_array_layout);
+        assert_eq!(
+            allocation_from_array.requested_samples_per_channel(),
+            samples_per_channel
         );
     }
 

@@ -105,8 +105,8 @@ pub use pixel::{
 };
 pub use rational::Rational;
 pub use samplefmt::{
-    SampleArrayLayout, SampleBufferLayout, SampleCopyRange, SampleFormat, SampleFormatFamily,
-    SampleFormatNumericKind, SamplePlaneRange, SampleSilenceRange,
+    SampleAllocation, SampleArrayLayout, SampleBufferLayout, SampleCopyRange, SampleFormat,
+    SampleFormatFamily, SampleFormatNumericKind, SamplePlaneRange, SampleSilenceRange,
 };
 pub use timebase::{
     add_stable, compare_mod, compare_ts, rescale, rescale_delta, rescale_q, rescale_q_rnd,

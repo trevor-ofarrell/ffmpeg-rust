@@ -1,4 +1,6 @@
+use crate::buffer::BufferRef;
 use crate::{AvError, AvResult};
+use std::fmt;
 
 const FFMPEG_INT_MAX: usize = i32::MAX as usize;
 
@@ -193,6 +195,77 @@ impl SampleArrayLayout {
             ));
         }
         Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub struct SampleAllocation {
+    layout: SampleArrayLayout,
+    buffer: BufferRef,
+    requested_samples_per_channel: usize,
+}
+
+impl SampleAllocation {
+    pub fn line_size(&self) -> usize {
+        self.layout.line_size()
+    }
+
+    pub fn buffer_size(&self) -> usize {
+        self.layout.buffer_size()
+    }
+
+    pub fn plane_count(&self) -> usize {
+        self.layout.plane_count()
+    }
+
+    pub fn requested_samples_per_channel(&self) -> usize {
+        self.requested_samples_per_channel
+    }
+
+    pub fn effective_samples_per_channel(&self) -> usize {
+        self.layout.samples_per_channel()
+    }
+
+    pub fn alignment(&self) -> usize {
+        self.layout.alignment()
+    }
+
+    pub fn layout(&self) -> &SampleArrayLayout {
+        &self.layout
+    }
+
+    pub fn plane_ranges(&self) -> &[SamplePlaneRange] {
+        self.layout.plane_ranges()
+    }
+
+    pub fn buffer(&self) -> &BufferRef {
+        &self.buffer
+    }
+
+    pub fn into_buffer(self) -> BufferRef {
+        self.buffer
+    }
+
+    pub fn planes(&self) -> AvResult<Vec<&[u8]>> {
+        self.layout.split_buffer(self.buffer.as_slice())
+    }
+
+    pub fn planes_mut(&mut self) -> AvResult<Vec<&mut [u8]>> {
+        self.layout.split_buffer_mut(self.buffer.make_mut())
+    }
+}
+
+impl fmt::Debug for SampleAllocation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SampleAllocation")
+            .field("layout", &self.layout)
+            .field("buffer_len", &self.buffer.len())
+            .field("allocated_len", &self.buffer.allocated_len())
+            .field(
+                "requested_samples_per_channel",
+                &self.requested_samples_per_channel,
+            )
+            .finish()
     }
 }
 
@@ -527,6 +600,35 @@ impl SampleFormat {
     ) -> AvResult<Vec<&mut [u8]>> {
         self.fill_arrays_layout(samples_per_channel, channels, alignment)?
             .split_buffer_mut(buffer)
+    }
+
+    pub fn alloc_samples(
+        self,
+        samples_per_channel: usize,
+        channels: u16,
+        alignment: usize,
+    ) -> AvResult<SampleAllocation> {
+        let layout = self.fill_arrays_layout(samples_per_channel, channels, alignment)?;
+        let buffer = BufferRef::zeroed(layout.buffer_size())?;
+        let mut allocation = SampleAllocation {
+            layout,
+            buffer,
+            requested_samples_per_channel: samples_per_channel,
+        };
+        {
+            let mut planes = allocation.planes_mut()?;
+            self.fill_silence(&mut planes, 0, samples_per_channel, channels)?;
+        }
+        Ok(allocation)
+    }
+
+    pub fn alloc_array_and_samples(
+        self,
+        samples_per_channel: usize,
+        channels: u16,
+        alignment: usize,
+    ) -> AvResult<SampleAllocation> {
+        self.alloc_samples(samples_per_channel, channels, alignment)
     }
 
     pub fn silence_byte(self) -> u8 {
@@ -1073,6 +1175,94 @@ mod tests {
         assert_eq!(
             SampleFormat::S16P
                 .split_buffer(&short, 4, 2, 1)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
+
+    #[test]
+    fn sample_formats_allocate_owned_silenced_buffers_like_ffmpeg() {
+        let packed = SampleFormat::S16.alloc_samples(3, 2, 1).unwrap();
+        assert_eq!(packed.line_size(), 12);
+        assert_eq!(packed.buffer_size(), 12);
+        assert_eq!(packed.plane_count(), 1);
+        assert_eq!(packed.requested_samples_per_channel(), 3);
+        assert_eq!(packed.effective_samples_per_channel(), 3);
+        assert_eq!(packed.alignment(), 1);
+        assert_eq!(packed.layout().plane_ranges(), packed.plane_ranges());
+        assert_eq!(packed.buffer().len(), 12);
+        assert_eq!(packed.buffer().allocated_len(), 12);
+        assert!(packed.buffer().is_writable());
+        assert_eq!(packed.planes().unwrap(), vec![&[0u8; 12][..]]);
+
+        let planar = SampleFormat::U8P.alloc_samples(3, 2, 8).unwrap();
+        assert_eq!(planar.line_size(), 8);
+        assert_eq!(planar.buffer_size(), 16);
+        assert_eq!(planar.plane_count(), 2);
+        assert_eq!(planar.requested_samples_per_channel(), 3);
+        assert_eq!(planar.effective_samples_per_channel(), 3);
+        assert_eq!(
+            planar.plane_ranges(),
+            &[
+                SamplePlaneRange {
+                    plane_index: 0,
+                    byte_offset: 0,
+                    byte_len: 8,
+                },
+                SamplePlaneRange {
+                    plane_index: 1,
+                    byte_offset: 8,
+                    byte_len: 8,
+                },
+            ]
+        );
+        let planes = planar.planes().unwrap();
+        assert_eq!(planes[0], &[0x80, 0x80, 0x80, 0, 0, 0, 0, 0]);
+        assert_eq!(planes[1], &[0x80, 0x80, 0x80, 0, 0, 0, 0, 0]);
+
+        let auto_aligned = SampleFormat::U8.alloc_samples(1, 1, 0).unwrap();
+        assert_eq!(auto_aligned.requested_samples_per_channel(), 1);
+        assert_eq!(auto_aligned.effective_samples_per_channel(), 32);
+        assert_eq!(auto_aligned.buffer_size(), 32);
+        assert_eq!(auto_aligned.planes().unwrap()[0][0], 0x80);
+        assert!(auto_aligned.planes().unwrap()[0][1..]
+            .iter()
+            .all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn sample_alloc_array_and_samples_exposes_mutable_planes() {
+        let mut allocation = SampleFormat::U8P.alloc_array_and_samples(4, 2, 1).unwrap();
+        {
+            let mut planes = allocation.planes_mut().unwrap();
+            assert_eq!(planes.len(), 2);
+            planes[0][0] = 0x11;
+            planes[0][3] = 0x12;
+            planes[1][0] = 0x21;
+            planes[1][3] = 0x22;
+        }
+        assert_eq!(
+            allocation.buffer().as_slice(),
+            &[0x11, 0x80, 0x80, 0x12, 0x21, 0x80, 0x80, 0x22]
+        );
+
+        let buffer = allocation.clone().into_buffer();
+        assert_eq!(
+            buffer.as_slice(),
+            &[0x11, 0x80, 0x80, 0x12, 0x21, 0x80, 0x80, 0x22]
+        );
+    }
+
+    #[test]
+    fn sample_alloc_rejects_invalid_inputs() {
+        assert_eq!(
+            SampleFormat::S16.alloc_samples(0, 2, 1).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            SampleFormat::S16
+                .alloc_array_and_samples(1, 0, 1)
                 .unwrap_err()
                 .kind(),
             AvErrorKind::InvalidArgument
