@@ -1,10 +1,10 @@
-use avutil::{AvError, AvErrorKind, AvResult, ChannelLayout, SampleFormat};
+use avutil::{AvError, AvErrorKind, AvResult, ChannelLayout, ChannelLayoutSpec, SampleFormat};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AudioStreamParameters {
     sample_rate: u32,
     channels: u16,
-    channel_layout: Option<ChannelLayout>,
+    channel_layout: Option<ChannelLayoutSpec>,
     sample_format: SampleFormat,
     bytes_per_sample_frame: usize,
 }
@@ -59,6 +59,10 @@ impl AudioStreamParameters {
     }
 
     pub fn channel_layout(self) -> Option<ChannelLayout> {
+        self.channel_layout.and_then(ChannelLayoutSpec::as_native)
+    }
+
+    pub fn channel_layout_spec(self) -> Option<ChannelLayoutSpec> {
         self.channel_layout
     }
 
@@ -122,7 +126,7 @@ impl AudioStreamParameters {
         Ok(Self {
             sample_rate,
             channels,
-            channel_layout: ChannelLayout::default_for_count(channels),
+            channel_layout: Some(ChannelLayoutSpec::default_for_count(channels)?),
             sample_format,
             bytes_per_sample_frame,
         })
@@ -144,9 +148,26 @@ mod tests {
         assert_eq!(params.sample_rate(), 48_000);
         assert_eq!(params.channels(), 2);
         assert_eq!(params.channel_layout(), Some(ChannelLayout::stereo()));
+        assert_eq!(
+            params.channel_layout_spec(),
+            Some(ChannelLayoutSpec::Native(ChannelLayout::stereo()))
+        );
         assert_eq!(params.sample_format(), SampleFormat::S16);
         assert_eq!(params.bytes_per_sample_frame(), 4);
         assert_eq!(params.bits_per_sample().unwrap(), 16);
+
+        let unspecified = AudioStreamParameters::new(48_000, 9, SampleFormat::S16).unwrap();
+        assert_eq!(unspecified.channels(), 9);
+        assert_eq!(unspecified.channel_layout(), None);
+        assert_eq!(
+            unspecified.channel_layout_spec(),
+            Some(ChannelLayoutSpec::unspecified(9).unwrap())
+        );
+        assert_eq!(
+            unspecified.channel_layout_spec().unwrap().describe(),
+            "9 channels"
+        );
+        assert_eq!(unspecified.bytes_per_sample_frame(), 18);
     }
 
     #[test]

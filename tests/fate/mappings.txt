@@ -8,9 +8,12 @@
 fate-runner|local-self-test|.|cargo|test|-p|fate-runner
 repo-runtime-guard|local-runtime-guard|.|cargo|run|-p|xtask|--|guard-runtime
 avformat-mov-demuxer|local-mov-unit|.|cargo|test|-p|avformat|mov::tests
+avformat-audio-parameters|local-avformat-audio-unit|.|cargo|test|-p|avformat|audio
 avformat-rawvideo-demuxer|local-avformat-rawvideo-unit|.|cargo|test|-p|avformat|rawvideo
 avformat-rawvideo-muxer|local-avformat-rawvideo-unit|.|cargo|test|-p|avformat|rawvideo
+avformat-wav-demuxer|local-avformat-wav-unit|.|cargo|test|-p|avformat|wav
 avformat-wav-muxer|local-avformat-wav-unit|.|cargo|test|-p|avformat|wav
+avformat-pcm-s16le-demuxer|local-avformat-pcm-unit|.|cargo|test|-p|avformat|pcm::tests
 avformat-pcm-s16le-muxer|local-avformat-pcm-unit|.|cargo|test|-p|avformat|pcm::tests
 avformat-yuv4mpegpipe-muxer|local-avformat-yuv4mpegpipe-unit|.|cargo|test|-p|avformat|yuv4mpegpipe
 avformat-null-muxer|local-avformat-null-unit|.|cargo|test|-p|avformat|null_muxer

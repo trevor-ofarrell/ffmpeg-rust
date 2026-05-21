@@ -1,5 +1,6 @@
 use crate::{
-    AvError, AvResult, BufferRef, ChannelLayout, Dictionary, PixelFormat, Rational, SampleFormat,
+    AvError, AvResult, BufferRef, ChannelLayout, ChannelLayoutSpec, Dictionary, PixelFormat,
+    Rational, SampleFormat,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -11883,7 +11884,7 @@ impl VideoFrame {
 pub struct AudioFrame {
     sample_rate: u32,
     channels: u16,
-    channel_layout: Option<ChannelLayout>,
+    channel_layout: Option<ChannelLayoutSpec>,
     sample_format: SampleFormat,
     samples_per_channel: usize,
     line_sizes: Vec<usize>,
@@ -12010,7 +12011,7 @@ impl AudioFrame {
         Self::new_inner(
             sample_rate,
             channels,
-            ChannelLayout::default_for_count(channels),
+            Some(ChannelLayoutSpec::default_for_count(channels)?),
             sample_format,
             samples_per_channel,
             plane_buffers,
@@ -12133,7 +12134,7 @@ impl AudioFrame {
         Self::new_inner(
             sample_rate,
             channels,
-            Some(channel_layout),
+            Some(ChannelLayoutSpec::from(channel_layout)),
             sample_format,
             samples_per_channel,
             plane_buffers,
@@ -12144,7 +12145,7 @@ impl AudioFrame {
     fn new_inner(
         sample_rate: u32,
         channels: u16,
-        channel_layout: Option<ChannelLayout>,
+        channel_layout: Option<ChannelLayoutSpec>,
         sample_format: SampleFormat,
         samples_per_channel: usize,
         plane_buffers: Vec<BufferRef>,
@@ -12195,6 +12196,10 @@ impl AudioFrame {
     }
 
     pub fn channel_layout(&self) -> Option<ChannelLayout> {
+        self.channel_layout.and_then(ChannelLayoutSpec::as_native)
+    }
+
+    pub fn channel_layout_spec(&self) -> Option<ChannelLayoutSpec> {
         self.channel_layout
     }
 
@@ -16088,10 +16093,27 @@ mod tests {
         assert_eq!(frame.sample_rate(), 48_000);
         assert_eq!(frame.channels(), 2);
         assert_eq!(frame.channel_layout(), Some(ChannelLayout::stereo()));
+        assert_eq!(
+            frame.channel_layout_spec(),
+            Some(ChannelLayoutSpec::Native(ChannelLayout::stereo()))
+        );
         assert_eq!(frame.sample_format(), SampleFormat::S16);
         assert_eq!(frame.sample_format_name(), "s16");
         assert_eq!(frame.samples_per_channel(), 1024);
         assert_eq!(frame.line_sizes(), &[4096]);
+
+        let unspecified =
+            AudioFrame::new(48_000, 9, SampleFormat::S16, 1, vec![vec![0; 18]]).unwrap();
+        assert_eq!(unspecified.channels(), 9);
+        assert_eq!(unspecified.channel_layout(), None);
+        assert_eq!(
+            unspecified.channel_layout_spec(),
+            Some(ChannelLayoutSpec::unspecified(9).unwrap())
+        );
+        assert_eq!(
+            unspecified.channel_layout_spec().unwrap().describe(),
+            "9 channels"
+        );
 
         let mono = AudioFrame::new_with_channel_layout(
             44_100,

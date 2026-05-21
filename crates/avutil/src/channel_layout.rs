@@ -1544,6 +1544,168 @@ impl ChannelLayout {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct UnspecifiedChannelLayout {
+    channels: u16,
+}
+
+impl UnspecifiedChannelLayout {
+    pub fn new(channels: u16) -> AvResult<Self> {
+        if channels == 0 {
+            return Err(AvError::invalid_argument(
+                "unspecified channel layout must have at least one channel",
+            ));
+        }
+        Ok(Self { channels })
+    }
+
+    pub fn channel_count(self) -> u16 {
+        self.channels
+    }
+
+    pub fn describe(self) -> String {
+        format!("{} channels", self.channels)
+    }
+
+    pub fn subset_mask(self, _mask: u64) -> u64 {
+        0
+    }
+
+    pub fn channel_from_index(self, _index: usize) -> Option<ChannelId> {
+        None
+    }
+
+    pub fn validate_channel_count(self, channels: u16) -> AvResult<()> {
+        if self.channels != channels {
+            return Err(AvError::invalid_argument(format!(
+                "unspecified channel layout has {} channels, got {channels}",
+                self.channels
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn is_equivalent_to_unspecified(self, other: Self) -> bool {
+        self.channels == other.channels
+    }
+
+    pub fn is_equivalent_to_native(self, _other: ChannelLayout) -> bool {
+        false
+    }
+
+    pub fn is_equivalent_to_custom(self, _other: &CustomChannelLayout) -> bool {
+        false
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ChannelLayoutSpec {
+    Native(ChannelLayout),
+    Unspecified(UnspecifiedChannelLayout),
+}
+
+impl ChannelLayoutSpec {
+    pub fn native(layout: ChannelLayout) -> Self {
+        Self::Native(layout)
+    }
+
+    pub fn unspecified(channels: u16) -> AvResult<Self> {
+        Ok(Self::Unspecified(UnspecifiedChannelLayout::new(channels)?))
+    }
+
+    pub fn default_for_count(channels: u16) -> AvResult<Self> {
+        if let Some(layout) = ChannelLayout::default_for_count(channels) {
+            return Ok(Self::Native(layout));
+        }
+        Self::unspecified(channels)
+    }
+
+    pub fn as_native(self) -> Option<ChannelLayout> {
+        match self {
+            Self::Native(layout) => Some(layout),
+            Self::Unspecified(_) => None,
+        }
+    }
+
+    pub fn as_unspecified(self) -> Option<UnspecifiedChannelLayout> {
+        match self {
+            Self::Native(_) => None,
+            Self::Unspecified(layout) => Some(layout),
+        }
+    }
+
+    pub fn is_unspecified(self) -> bool {
+        matches!(self, Self::Unspecified(_))
+    }
+
+    pub fn channel_count(self) -> u16 {
+        match self {
+            Self::Native(layout) => layout.channel_count(),
+            Self::Unspecified(layout) => layout.channel_count(),
+        }
+    }
+
+    pub fn describe(self) -> String {
+        match self {
+            Self::Native(layout) => layout.name().to_owned(),
+            Self::Unspecified(layout) => layout.describe(),
+        }
+    }
+
+    pub fn subset_mask(self, mask: u64) -> u64 {
+        match self {
+            Self::Native(layout) => layout.subset_mask(mask),
+            Self::Unspecified(layout) => layout.subset_mask(mask),
+        }
+    }
+
+    pub fn channel_from_index(self, index: usize) -> Option<ChannelId> {
+        match self {
+            Self::Native(layout) => layout.channel_from_index(index),
+            Self::Unspecified(layout) => layout.channel_from_index(index),
+        }
+    }
+
+    pub fn validate_channel_count(self, channels: u16) -> AvResult<()> {
+        match self {
+            Self::Native(layout) => layout.validate_channel_count(channels),
+            Self::Unspecified(layout) => layout.validate_channel_count(channels),
+        }
+    }
+
+    pub fn is_equivalent_to(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Native(left), Self::Native(right)) => left.is_equivalent_to(right),
+            (Self::Unspecified(left), Self::Unspecified(right)) => {
+                left.is_equivalent_to_unspecified(right)
+            }
+            (Self::Native(_), Self::Unspecified(_)) | (Self::Unspecified(_), Self::Native(_)) => {
+                false
+            }
+        }
+    }
+
+    pub fn is_equivalent_to_native(self, other: ChannelLayout) -> bool {
+        match self {
+            Self::Native(layout) => layout.is_equivalent_to(other),
+            Self::Unspecified(layout) => layout.is_equivalent_to_native(other),
+        }
+    }
+
+    pub fn is_equivalent_to_custom(self, other: &CustomChannelLayout) -> bool {
+        match self {
+            Self::Native(layout) => layout.is_equivalent_to_custom(other),
+            Self::Unspecified(layout) => layout.is_equivalent_to_custom(other),
+        }
+    }
+}
+
+impl From<ChannelLayout> for ChannelLayoutSpec {
+    fn from(layout: ChannelLayout) -> Self {
+        Self::Native(layout)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3329,6 +3491,79 @@ mod tests {
             ChannelLayout::default_for_count(24),
             Some(ChannelLayout::twenty_two_two())
         );
+    }
+
+    #[test]
+    fn unspecified_layouts_model_ffmpeg_count_only_order() {
+        let unspecified = UnspecifiedChannelLayout::new(9).unwrap();
+        assert_eq!(unspecified.channel_count(), 9);
+        assert_eq!(unspecified.describe(), "9 channels");
+        assert_eq!(
+            unspecified.subset_mask(ChannelLayout::stereo().channel_mask()),
+            0
+        );
+        assert_eq!(unspecified.channel_from_index(0), None);
+        assert!(unspecified.validate_channel_count(9).is_ok());
+        assert_eq!(
+            unspecified.validate_channel_count(8).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            UnspecifiedChannelLayout::new(0).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let default_unspecified = ChannelLayoutSpec::default_for_count(9).unwrap();
+        assert_eq!(
+            default_unspecified,
+            ChannelLayoutSpec::Unspecified(unspecified)
+        );
+        assert!(default_unspecified.is_unspecified());
+        assert_eq!(default_unspecified.as_native(), None);
+        assert_eq!(default_unspecified.as_unspecified(), Some(unspecified));
+        assert_eq!(default_unspecified.channel_count(), 9);
+        assert_eq!(default_unspecified.describe(), "9 channels");
+        assert_eq!(
+            default_unspecified.subset_mask(ChannelLayout::stereo().channel_mask()),
+            0
+        );
+        assert_eq!(default_unspecified.channel_from_index(0), None);
+        assert!(default_unspecified.validate_channel_count(9).is_ok());
+        assert_eq!(
+            ChannelLayoutSpec::default_for_count(0).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let default_native = ChannelLayoutSpec::default_for_count(10).unwrap();
+        assert_eq!(
+            default_native,
+            ChannelLayoutSpec::Native(ChannelLayout::five_one_four())
+        );
+        assert_eq!(
+            default_native.as_native(),
+            Some(ChannelLayout::five_one_four())
+        );
+        assert_eq!(default_native.describe(), "5.1.4");
+        assert_eq!(default_native.channel_count(), 10);
+        assert!(!default_native.is_unspecified());
+
+        assert!(ChannelLayoutSpec::unspecified(9)
+            .unwrap()
+            .is_equivalent_to(ChannelLayoutSpec::unspecified(9).unwrap()));
+        assert!(!ChannelLayoutSpec::unspecified(9)
+            .unwrap()
+            .is_equivalent_to(ChannelLayoutSpec::unspecified(8).unwrap()));
+        assert!(!ChannelLayoutSpec::unspecified(2)
+            .unwrap()
+            .is_equivalent_to(ChannelLayoutSpec::Native(ChannelLayout::stereo())));
+        assert!(ChannelLayoutSpec::Native(ChannelLayout::stereo())
+            .is_equivalent_to_native(ChannelLayout::stereo()));
+        assert!(!ChannelLayoutSpec::unspecified(2)
+            .unwrap()
+            .is_equivalent_to_native(ChannelLayout::stereo()));
+        assert!(!ChannelLayoutSpec::unspecified(2)
+            .unwrap()
+            .is_equivalent_to_custom(&CustomChannelLayout::unknown(2).unwrap()));
     }
 
     #[test]

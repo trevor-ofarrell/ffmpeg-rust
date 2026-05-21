@@ -21,7 +21,10 @@ pub use bitreader::BitReader;
 pub use bitwriter::BitWriter;
 pub use buffer::{BufferPool, BufferPoolCallbacks, BufferRef, BufferSlice};
 pub use byteio::{ByteReader, ByteWriter};
-pub use channel_layout::{Channel, ChannelCustom, ChannelId, ChannelLayout, CustomChannelLayout};
+pub use channel_layout::{
+    Channel, ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec, CustomChannelLayout,
+    UnspecifiedChannelLayout,
+};
 pub use dict::{Dictionary, DictionaryEntry, DictionarySet, MatchMode, SetMode};
 pub use error::{
     av_error_description, av_make_error_string, av_strerror, AvError, AvErrorCode, AvErrorKind,

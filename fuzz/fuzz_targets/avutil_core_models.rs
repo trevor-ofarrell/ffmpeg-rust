@@ -6,7 +6,7 @@ use avutil::{
     rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1, sha224, sha256,
     sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId, ChannelLayout,
-    CustomChannelLayout, Crc32, Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
+    ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
     FrameAudioServiceType,
     FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
@@ -4458,6 +4458,10 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(
         audio.channel_layout(),
         ChannelLayout::default_for_count(channels)
+    );
+    assert_eq!(
+        audio.channel_layout_spec(),
+        Some(ChannelLayoutSpec::default_for_count(channels).unwrap())
     );
 
     let mut frame = Frame::audio(audio);
@@ -9589,6 +9593,26 @@ fn exercise_fixtures() {
     ] {
         assert_eq!(ChannelLayout::default_for_count(count), expected);
     }
+    let unspecified = ChannelLayoutSpec::default_for_count(9).unwrap();
+    assert!(unspecified.is_unspecified());
+    assert_eq!(unspecified.as_native(), None);
+    assert_eq!(unspecified.channel_count(), 9);
+    assert_eq!(unspecified.describe(), "9 channels");
+    assert_eq!(unspecified.subset_mask(ChannelLayout::stereo().channel_mask()), 0);
+    assert_eq!(unspecified.channel_from_index(0), None);
+    assert!(unspecified.is_equivalent_to(ChannelLayoutSpec::unspecified(9).unwrap()));
+    assert!(!unspecified.is_equivalent_to(ChannelLayoutSpec::unspecified(8).unwrap()));
+    assert!(!unspecified.is_equivalent_to(ChannelLayoutSpec::Native(ChannelLayout::stereo())));
+    assert_eq!(
+        ChannelLayoutSpec::default_for_count(10).unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::five_one_four())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::default_for_count(0)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
     let custom_layout = CustomChannelLayout::new(vec![
         ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "Left").unwrap(),
         ChannelCustom::new(ChannelId::Unknown, "").unwrap(),
