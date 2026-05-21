@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `fate-runner` update: mapping listing and execution now accept repeated `--target <name>` filters. Target filters match exact mapping target names, preserve mapping file order, deduplicate duplicate filter values, and still fail selected component runs whose mappings are filtered out instead of silently reporting success. This prepares the runner for future sample-backed upstream/FATE rows to coexist with local smoke rows without making every component run execute every target. Focused `cargo test -p fate-runner`, target-filter mapping listing, target-filter dry-run, the expected unmatched-target failure, `fate-runner` clippy, formatting, and diff checks passed; the component remains `scaffolded`, not complete, because no upstream FATE sample-backed media mappings or local samples/oracle tree exist yet.
+
 Latest `fate-runner` update: `{samples}` and `{oracle_ffmpeg}` placeholder resolution now discovers standard prerequisite paths when explicit CLI flags are omitted. Explicit `--samples` / `--oracle-ffmpeg` still take precedence; otherwise the runner checks `FATE_SAMPLES`/`SAMPLES` and `FFMPEG_ORACLE`, then standard local candidates under `third_party/fate-*` and `third_party/ffmpeg-oracle/build/bin/`. Invalid explicit or environment paths still fail before command execution, and missing-prerequisite unit tests now inject empty environment/path predicates so they remain deterministic once real local samples or oracle binaries are added. Focused `cargo test -p fate-runner`, env-discovered differential dry-runs, the expected missing-oracle failure, `fate-runner` clippy, formatting, and diff checks passed; custom target-dir test executables were blocked by Windows Application Control after rebuild, so equivalent checks used Cargo's default target cache. The component remains `scaffolded`, not complete, because upstream FATE sample-based media mappings and a real local oracle/samples tree are still absent.
 
 Latest `fate-runner` update: changes under `tests/differential/` now select the `fate-runner` component during changed-path analysis, and unit coverage parses the live `tests/differential/mappings.txt` file against the live ledger IDs. The parser check covers the current rawvideo oracle rows plus the `avutil-channel-layout|oracle-ffmpeg-layouts` row without requiring a pinned oracle binary. Validation passed with focused `fate-runner` tests through `target-fate-runner-diff-test`, differential mapping listing and changed dry-run through `target-fate-runner-diff-bin`, a differential channel-layout dry-run with an existing placeholder oracle path, `fate-runner` clippy, formatting, and diff checks. The component remains `scaffolded`, not complete, because upstream FATE sample-based media mappings are still absent.
@@ -439,6 +441,15 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `fate-runner` target-filter slice:
+  - `cargo test -p fate-runner` (33 tests passed)
+  - `cargo run -p fate-runner -- mappings --target local-self-test`
+  - `cargo run -p fate-runner -- run --dry-run --component fate-runner --target local-self-test`
+  - `cargo run -p fate-runner -- run --changed --dry-run --target local-self-test`
+  - `cargo clippy -p fate-runner --all-targets -- -D warnings`
+  - `cargo fmt --all -- --check`
+  - `git diff --check` (CRLF warnings only)
 
 - Current `fate-runner` prerequisite-discovery slice:
   - `cargo test -p fate-runner` (31 tests passed)
@@ -4747,6 +4758,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `fate-runner` target-filter slice:
+  - `cargo run -p fate-runner -- run --dry-run --component fate-runner --target missing-target` failed as expected with `no runnable FATE mappings exist for components: fate-runner`, proving target filters do not silently skip selected components.
+
 - Current `fate-runner` prerequisite-discovery slice:
   - `cargo test -p fate-runner --target-dir target-fate-runner-prereq-test` was blocked by Windows Application Control on the freshly built `target-fate-runner-prereq-test\debug\deps\fate_runner-*.exe`; the same focused suite passed through Cargo's default `target` directory.
   - After the test-only resolver cleanup rebuilt the binary, `cargo test -p fate-runner --target-dir target-codex` was blocked by Windows Application Control on `target-codex\debug\deps\fate_runner-*.exe`; the same focused suite passed through Cargo's default `target` directory.
@@ -5169,6 +5183,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`fate-runner` is the active infrastructure focus for this turn. The concrete change adds exact `--target` filtering to `mappings` and `run` while preserving hard failure for selected components whose filtered mappings are absent. It deliberately does not claim upstream FATE parity because no sample-backed media mappings or local FATE samples exist yet.
+
 `fate-runner` is the active infrastructure focus for this turn. The concrete change lets selected mappings resolve `{samples}` and `{oracle_ffmpeg}` through explicit flags, environment variables, or standard local candidate paths while preserving hard prerequisite validation. It deliberately does not claim upstream FATE parity because no sample-backed media mappings or local FATE samples exist yet.
 
 `fate-runner` is the active infrastructure focus for this turn. The concrete change makes `tests/differential/` files relevant to changed-path selection and adds unit coverage that parses the live differential mapping file against current ledger IDs, including rawvideo oracle mappings and the channel-layout `ffmpeg -layouts` oracle mapping. It deliberately does not claim upstream FATE parity because no sample-based FATE mappings exist yet.
@@ -5397,9 +5413,9 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Configure or build the pinned FFmpeg 8.1.1 oracle binary at `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` or set `FFMPEG_ORACLE`, then run the rawvideo and channel-layout rows from `tests/differential/mappings.txt` through `fate-runner`.
-2. Configure a local FATE samples directory at `third_party/fate-samples` or set `FATE_SAMPLES`, then add the first real sample-backed mapping scaffold for one existing simple media component.
-3. If oracle/samples remain unavailable, continue `fate-runner` with sample-backed mapping reporting or move back to `avutil-channel-layout` for deeper `AV_CHANNEL_ORDER_AMBISONIC` semantics.
+1. Use the new `--target` filtering to add the first explicitly named sample-backed upstream/FATE mapping row for one existing simple media component without replacing local smoke rows.
+2. Configure or build the pinned FFmpeg 8.1.1 oracle binary at `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` or set `FFMPEG_ORACLE`, then run the rawvideo and channel-layout rows from `tests/differential/mappings.txt` through `fate-runner`.
+3. Configure a local FATE samples directory at `third_party/fate-samples` or set `FATE_SAMPLES`, then run the new sample-backed mapping target; if samples remain unavailable, record the blocker and move to the next unblocked infrastructure or `avutil-channel-layout` parity slice.
 
 ## Known Blockers
 
@@ -5520,6 +5536,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added exact target filtering to `fate-runner`. Both `mappings` and `run` accept repeated `--target <name>` filters; duplicate filter values are deduplicated, listing/runs preserve mapping file order, and selected components whose rows are filtered out still fail as unmapped. Unit tests cover run/list option parsing, filter order, unmatched-target behavior, and missing target values. CLI checks confirmed `mappings --target local-self-test` and `run --dry-run --component fate-runner --target local-self-test` resolve one row, while `--target missing-target` fails instead of silently passing. Docs and the ledger record this as runner infrastructure only.
 
 Latest slice: added deterministic prerequisite discovery to `fate-runner`. Mapping placeholders now resolve `{samples}` and `{oracle_ffmpeg}` from explicit flags first, then from `FATE_SAMPLES`/`SAMPLES` or `FFMPEG_ORACLE`, then from standard local candidate paths when present. Unit tests cover environment resolution, default candidate fallback, invalid environment-path rejection, and injected empty env/path predicates for missing-prerequisite assertions; docs and the ledger record that this is runner infrastructure only. Validation passed with default-target focused `fate-runner` tests, env-discovered differential dry-runs, `fate-runner` clippy, formatting, and diff checks. Fresh custom target-dir test binaries were blocked by Windows Application Control, while a no-oracle `--check-prereqs` run failed with the intended missing-oracle diagnostic.
 

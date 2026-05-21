@@ -16,20 +16,22 @@ List configured mappings without selecting a component:
 
 ```sh
 cargo run -p fate-runner -- mappings
+cargo run -p fate-runner -- mappings --target local-self-test
 cargo run -p fate-runner -- mappings --check-prereqs --samples <path> --oracle-ffmpeg <path>
 ```
 
-The first command reports configured commands without resolving placeholders. The second command resolves placeholders and validates prerequisites for every configured mapping, but does not execute the mapped commands.
+The first command reports configured commands without resolving placeholders. Repeated `--target <name>` filters listing to exact target names. The `--check-prereqs` command resolves placeholders and validates prerequisites for every listed mapping, but does not execute the mapped commands.
 
 Use `--dry-run` to audit selected mappings without executing them:
 
 ```sh
 cargo run -p fate-runner -- run --dry-run --component fate-runner
+cargo run -p fate-runner -- run --dry-run --component fate-runner --target local-self-test
 cargo run -p fate-runner -- run --dry-run --component avformat-rawvideo-demuxer --component avformat-rawvideo-muxer
 cargo run -p fate-runner -- run --dry-run --changed
 ```
 
-Dry-run mode still resolves placeholders and validates any required `--samples` or `--oracle-ffmpeg` paths for the selected mappings. Repeated `--component <id>` flags select multiple explicit components in one invocation; duplicate component IDs are deduplicated before mappings run.
+Dry-run mode still resolves placeholders and validates any required `--samples` or `--oracle-ffmpeg` paths for the selected mappings. Repeated `--component <id>` flags select multiple explicit components in one invocation; duplicate component IDs are deduplicated before mappings run. Repeated `--target <name>` flags narrow selected mappings to exact target names and do not silently pass unmatched components; a selected component with no matching filtered row fails as unmapped.
 
 Run local smoke mappings:
 
