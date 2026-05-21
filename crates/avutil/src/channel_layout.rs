@@ -128,6 +128,95 @@ impl Channel {
             .find(|channel| channel.name().eq_ignore_ascii_case(name))
     }
 
+    pub fn from_raw_id(raw_id: i32) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|channel| channel.raw_id() == raw_id)
+    }
+
+    pub fn raw_id(self) -> i32 {
+        match self {
+            Self::FrontLeft => 0,
+            Self::FrontRight => 1,
+            Self::FrontCenter => 2,
+            Self::LowFrequency => 3,
+            Self::BackLeft => 4,
+            Self::BackRight => 5,
+            Self::FrontLeftOfCenter => 6,
+            Self::FrontRightOfCenter => 7,
+            Self::BackCenter => 8,
+            Self::SideLeft => 9,
+            Self::SideRight => 10,
+            Self::TopCenter => 11,
+            Self::TopFrontLeft => 12,
+            Self::TopFrontCenter => 13,
+            Self::TopFrontRight => 14,
+            Self::TopBackLeft => 15,
+            Self::TopBackCenter => 16,
+            Self::TopBackRight => 17,
+            Self::StereoLeft => 29,
+            Self::StereoRight => 30,
+            Self::WideLeft => 31,
+            Self::WideRight => 32,
+            Self::SurroundDirectLeft => 33,
+            Self::SurroundDirectRight => 34,
+            Self::LowFrequency2 => 35,
+            Self::TopSideLeft => 36,
+            Self::TopSideRight => 37,
+            Self::BottomFrontCenter => 38,
+            Self::BottomFrontLeft => 39,
+            Self::BottomFrontRight => 40,
+            Self::SideSurroundLeft => 41,
+            Self::SideSurroundRight => 42,
+            Self::TopSurroundLeft => 43,
+            Self::TopSurroundRight => 44,
+            Self::BinauralLeft => 61,
+            Self::BinauralRight => 62,
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::FrontLeft => "front left",
+            Self::FrontRight => "front right",
+            Self::FrontCenter => "front center",
+            Self::LowFrequency => "low frequency",
+            Self::BackLeft => "back left",
+            Self::BackRight => "back right",
+            Self::FrontLeftOfCenter => "front left-of-center",
+            Self::FrontRightOfCenter => "front right-of-center",
+            Self::BackCenter => "back center",
+            Self::SideLeft => "side left",
+            Self::SideRight => "side right",
+            Self::TopCenter => "top center",
+            Self::TopFrontLeft => "top front left",
+            Self::TopFrontCenter => "top front center",
+            Self::TopFrontRight => "top front right",
+            Self::TopBackLeft => "top back left",
+            Self::TopBackCenter => "top back center",
+            Self::TopBackRight => "top back right",
+            Self::StereoLeft => "downmix left",
+            Self::StereoRight => "downmix right",
+            Self::WideLeft => "wide left",
+            Self::WideRight => "wide right",
+            Self::SurroundDirectLeft => "surround direct left",
+            Self::SurroundDirectRight => "surround direct right",
+            Self::LowFrequency2 => "low frequency 2",
+            Self::TopSideLeft => "top side left",
+            Self::TopSideRight => "top side right",
+            Self::BottomFrontCenter => "bottom front center",
+            Self::BottomFrontLeft => "bottom front left",
+            Self::BottomFrontRight => "bottom front right",
+            Self::SideSurroundLeft => "side surround left",
+            Self::SideSurroundRight => "side surround right",
+            Self::TopSurroundLeft => "top surround left",
+            Self::TopSurroundRight => "top surround right",
+            Self::BinauralLeft => "binaural left",
+            Self::BinauralRight => "binaural right",
+        }
+    }
+
     pub fn mask(self) -> u64 {
         match self {
             Self::FrontLeft => 1 << 0,
@@ -168,6 +257,122 @@ impl Channel {
             Self::BinauralRight => 1 << 62,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ChannelId {
+    None,
+    Native(Channel),
+    Unused,
+    Unknown,
+    Ambisonic(u16),
+    User(i32),
+}
+
+impl ChannelId {
+    pub const NONE_RAW: i32 = -1;
+    pub const UNUSED_RAW: i32 = 0x200;
+    pub const UNKNOWN_RAW: i32 = 0x300;
+    pub const AMBISONIC_BASE_RAW: i32 = 0x400;
+    pub const AMBISONIC_END_RAW: i32 = 0x7ff;
+    pub const MAX_AMBISONIC_ACN: u16 = 1023;
+
+    pub fn from_raw(raw_id: i32) -> Self {
+        if raw_id == Self::NONE_RAW {
+            Self::None
+        } else if let Some(channel) = Channel::from_raw_id(raw_id) {
+            Self::Native(channel)
+        } else if raw_id == Self::UNUSED_RAW {
+            Self::Unused
+        } else if raw_id == Self::UNKNOWN_RAW {
+            Self::Unknown
+        } else if (Self::AMBISONIC_BASE_RAW..=Self::AMBISONIC_END_RAW).contains(&raw_id) {
+            Self::Ambisonic((raw_id - Self::AMBISONIC_BASE_RAW) as u16)
+        } else {
+            Self::User(raw_id)
+        }
+    }
+
+    pub fn from_canonical_name(name: &str) -> Option<Self> {
+        if name == "NONE" {
+            return Some(Self::None);
+        }
+        if name == "UNSD" {
+            return Some(Self::Unused);
+        }
+        if name == "UNK" {
+            return Some(Self::Unknown);
+        }
+        if let Some(acn) = name.strip_prefix("AMBI").and_then(parse_ambisonic_acn) {
+            return Some(Self::Ambisonic(acn));
+        }
+        if let Some(raw_id) = name.strip_prefix("USR").and_then(parse_user_channel_id) {
+            return match Self::from_raw(raw_id) {
+                Self::User(raw_id) => Some(Self::User(raw_id)),
+                _ => None,
+            };
+        }
+        Channel::ALL
+            .iter()
+            .copied()
+            .find(|channel| channel.name() == name)
+            .map(Self::Native)
+    }
+
+    pub fn raw_id(self) -> i32 {
+        match self {
+            Self::None => Self::NONE_RAW,
+            Self::Native(channel) => channel.raw_id(),
+            Self::Unused => Self::UNUSED_RAW,
+            Self::Unknown => Self::UNKNOWN_RAW,
+            Self::Ambisonic(acn) => Self::AMBISONIC_BASE_RAW + i32::from(acn),
+            Self::User(raw_id) => raw_id,
+        }
+    }
+
+    pub fn name(self) -> String {
+        match self {
+            Self::None => String::from("NONE"),
+            Self::Native(channel) => String::from(channel.name()),
+            Self::Unused => String::from("UNSD"),
+            Self::Unknown => String::from("UNK"),
+            Self::Ambisonic(acn) => format!("AMBI{acn}"),
+            Self::User(raw_id) => format!("USR{raw_id}"),
+        }
+    }
+
+    pub fn description(self) -> String {
+        match self {
+            Self::None => String::from("none"),
+            Self::Native(channel) => String::from(channel.description()),
+            Self::Unused => String::from("unused"),
+            Self::Unknown => String::from("unknown"),
+            Self::Ambisonic(acn) => format!("ambisonic ACN {acn}"),
+            Self::User(raw_id) => format!("user {raw_id}"),
+        }
+    }
+
+    pub fn native(self) -> Option<Channel> {
+        match self {
+            Self::Native(channel) => Some(channel),
+            _ => None,
+        }
+    }
+}
+
+fn parse_ambisonic_acn(value: &str) -> Option<u16> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let acn = value.parse::<u16>().ok()?;
+    (acn <= ChannelId::MAX_AMBISONIC_ACN).then_some(acn)
+}
+
+fn parse_user_channel_id(value: &str) -> Option<i32> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    value.parse().ok()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -1071,6 +1276,80 @@ mod tests {
         assert_eq!(Channel::TopSurroundRight.mask(), 1 << 44);
         assert_eq!(Channel::BinauralLeft.mask(), 1 << 61);
         assert_eq!(Channel::BinauralRight.mask(), 1 << 62);
+    }
+
+    #[test]
+    fn channel_ids_report_ffmpeg_raw_names_and_descriptions() {
+        assert_eq!(Channel::FrontLeft.raw_id(), 0);
+        assert_eq!(Channel::BinauralRight.raw_id(), 62);
+        assert_eq!(Channel::from_raw_id(33), Some(Channel::SurroundDirectLeft));
+        assert_eq!(Channel::from_raw_id(45), None);
+        assert_eq!(
+            Channel::TopSurroundRight.description(),
+            "top surround right"
+        );
+
+        let front_left = ChannelId::from_raw(0);
+        assert_eq!(front_left, ChannelId::Native(Channel::FrontLeft));
+        assert_eq!(front_left.raw_id(), 0);
+        assert_eq!(front_left.name(), "FL");
+        assert_eq!(front_left.description(), "front left");
+        assert_eq!(front_left.native(), Some(Channel::FrontLeft));
+        assert_eq!(
+            ChannelId::from_canonical_name("FL"),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+        assert_eq!(ChannelId::from_canonical_name("fl"), None);
+
+        assert_eq!(ChannelId::from_raw(-1), ChannelId::None);
+        assert_eq!(ChannelId::None.name(), "NONE");
+        assert_eq!(ChannelId::None.description(), "none");
+        assert_eq!(
+            ChannelId::from_canonical_name("NONE"),
+            Some(ChannelId::None)
+        );
+
+        assert_eq!(ChannelId::from_raw(0x200), ChannelId::Unused);
+        assert_eq!(ChannelId::Unused.name(), "UNSD");
+        assert_eq!(ChannelId::Unused.description(), "unused");
+        assert_eq!(
+            ChannelId::from_canonical_name("UNSD"),
+            Some(ChannelId::Unused)
+        );
+        assert_eq!(ChannelId::from_canonical_name("USR512"), None);
+
+        assert_eq!(ChannelId::from_raw(0x300), ChannelId::Unknown);
+        assert_eq!(ChannelId::Unknown.name(), "UNK");
+        assert_eq!(ChannelId::Unknown.description(), "unknown");
+        assert_eq!(
+            ChannelId::from_canonical_name("UNK"),
+            Some(ChannelId::Unknown)
+        );
+
+        let ambisonic = ChannelId::from_raw(0x400);
+        assert_eq!(ambisonic, ChannelId::Ambisonic(0));
+        assert_eq!(ambisonic.name(), "AMBI0");
+        assert_eq!(ambisonic.description(), "ambisonic ACN 0");
+        assert_eq!(ambisonic.raw_id(), 0x400);
+        assert_eq!(
+            ChannelId::from_canonical_name("AMBI1023"),
+            Some(ChannelId::Ambisonic(1023))
+        );
+        assert_eq!(ChannelId::from_raw(0x7ff), ChannelId::Ambisonic(1023));
+        assert_eq!(ChannelId::from_canonical_name("AMBI1024"), None);
+        assert_eq!(ChannelId::from_canonical_name("AMBI"), None);
+
+        let user = ChannelId::from_raw(0x800);
+        assert_eq!(user, ChannelId::User(0x800));
+        assert_eq!(user.name(), "USR2048");
+        assert_eq!(user.description(), "user 2048");
+        assert_eq!(user.raw_id(), 0x800);
+        assert_eq!(
+            ChannelId::from_canonical_name("USR2048"),
+            Some(ChannelId::User(0x800))
+        );
+        assert_eq!(ChannelId::from_raw(-2).name(), "USR-2");
+        assert_eq!(ChannelId::from_canonical_name("USR-2"), None);
     }
 
     #[test]

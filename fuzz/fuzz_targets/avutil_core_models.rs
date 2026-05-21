@@ -5,7 +5,7 @@ use avutil::{
     compare_ts, crc32_ieee, digest_to_hex, md5, rescale, rescale_delta, rescale_q, rescale_q_rnd,
     rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1, sha224, sha256,
     sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
-    BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32,
+    BufferPoolCallbacks, BufferRef, Channel, ChannelId, ChannelLayout, Crc32,
     Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
     FrameAudioServiceType,
     FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
@@ -9503,6 +9503,33 @@ fn exercise_fixtures() {
             AvErrorKind::InvalidArgument
         );
     }
+    for (channel_id, raw_id, name, description) in [
+        (ChannelId::None, -1, "NONE", "none"),
+        (ChannelId::Unused, 0x200, "UNSD", "unused"),
+        (ChannelId::Unknown, 0x300, "UNK", "unknown"),
+        (
+            ChannelId::Ambisonic(1023),
+            0x7ff,
+            "AMBI1023",
+            "ambisonic ACN 1023",
+        ),
+        (ChannelId::User(0x800), 0x800, "USR2048", "user 2048"),
+    ] {
+        assert_eq!(channel_id.raw_id(), raw_id);
+        assert_eq!(ChannelId::from_raw(raw_id), channel_id);
+        assert_eq!(channel_id.name(), name);
+        assert_eq!(channel_id.description(), description);
+    }
+    assert_eq!(
+        ChannelId::from_canonical_name("TTR"),
+        Some(ChannelId::Native(Channel::TopSurroundRight))
+    );
+    assert_eq!(
+        ChannelId::from_canonical_name("AMBI0"),
+        Some(ChannelId::Ambisonic(0))
+    );
+    assert_eq!(ChannelId::from_canonical_name("AMBI1024"), None);
+    assert_eq!(ChannelId::from_canonical_name("USR512"), None);
     assert_eq!(
         digest_to_hex(&md5(b"abc")),
         "900150983cd24fb0d6963f7d28e17f72"
