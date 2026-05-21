@@ -354,6 +354,8 @@ The test hierarchy is unit tests first, followed by golden parser tests, differe
 
 `crates/avutil/tests/error_oracle.rs` is an ignored oracle harness for libavutil error strings. It compiles a small test-only C helper against the pinned local FFmpeg 8.1.1 `libavutil.a`, calls `av_strerror`, and compares the returned raw codes, `AV_ERROR_MAX_STRING_SIZE`, and user-facing messages against the Rust `AvErrorCode` and `av_make_error_string` model. This is test-only oracle linkage; runtime crates still do not link to FFmpeg.
 
+`crates/avutil/tests/rational_oracle.rs` is an ignored oracle harness for libavutil rational helpers. It compiles a small test-only C helper against the pinned local FFmpeg 8.1.1 `libavutil.a` and compares `av_cmp_q`, `av_q2d`, `av_reduce`, `av_d2q`, `av_nearer_q`, `av_find_nearest_q_idx`, `av_q2intfloat`, `av_gcd_q`, and arithmetic helper vectors against the Rust `Rational` model.
+
 `crates/fftools/tests/rawvideo_oracle.rs` is the first ignored oracle integration harness. It requires `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` and compares Rust rawvideo file-output bytes against pinned FFmpeg streamcopy rawvideo output for selected pixel formats.
 
 `crates/avutil/tests/pixel_format_oracle.rs` is an ignored oracle inventory harness for `ffmpeg -pix_fmts`. It requires `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` and checks that the current `PixelFormat::ALL` subset appears in the oracle table with matching component counts, integer bits-per-pixel values where the Rust descriptor is exact, and paletted flags. This is a subset check, not full pixel-format inventory parity.

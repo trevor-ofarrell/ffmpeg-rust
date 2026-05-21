@@ -36,9 +36,9 @@ id = "avutil-rational"
 kind = "utility"
 ffmpeg_name = "AVRational"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "complete"
 priority = 1
-oracle_command = ""
+oracle_command = "cargo test -p avutil --test rational_oracle -- --ignored"
 rust_command = "cargo test -p avutil rational"
 unit_tests = [
   "rational::tests::rational_normalizes_sign_and_gcd",
@@ -62,11 +62,14 @@ unit_tests = [
   "rational::tests::rational_from_f64_limited_handles_finite_and_special_values",
   "rational::tests::rational_from_f64_limited_rejects_invalid_limits",
 ]
-differential_tests = []
-fate_tests = ["tests/fate/mappings.txt:avutil-rational|local-avutil-unit"]
+differential_tests = ["tests/differential/mappings.txt:avutil-rational|oracle-libavutil-rational"]
+fate_tests = [
+  "tests/fate/mappings.txt:avutil-rational|local-avutil-unit",
+  "not_applicable: upstream FFmpeg FATE has no standalone libavutil rational helper API target; covered by unit tests plus pinned libavutil differential oracle",
+]
 fuzz_targets = ["avutil_core_models"]
-# Latest update: av_q2intfloat-style IEEE float-bit conversion is implemented with special-value and finite-vector tests.
-notes = "Basic normalized rational behavior implemented with checked add, subtract, negate, multiply, divide, reciprocal, and comparison helpers. Latest addition: Rational::to_int_float_bits models av_q2intfloat-style platform-independent IEEE-754 single-precision bit conversion, including pinned FFmpeg special values for 0/0 NaN, zero numerator, zero denominator, signed finite values, negative denominators, and typed rejection of raw i32::MIN negation cases where the C implementation would rely on signed-overflow behavior. Rational::gcd_with_limit models av_gcd_q-style bounded rational GCD for finite positive-denominator inputs, preserving the raw non-reduced numerator-gcd/lcm-denominator result shape, using FFmpeg's strict lcm < max_den selection, returning the caller default when the denominator limit is not met, and rejecting zero/negative denominators or nonpositive limits with typed errors. Rational::av_cmp models av_cmp_q ordering including raw +/-infinity sentinels and None for 0/0 indeterminate forms; Rational::nearer_to and Rational::find_nearest_index model av_nearer_q and av_find_nearest_q_idx with exact i128 distance comparison, first-candidate tie preservation, empty-slice handling, and typed rejection of zero-denominator nearest inputs. Rational::reduce_i64 models av_reduce-style bounded reduction with exactness reporting, finite/infinite/zero raw rational support, sign normalization, invalid-limit rejection, and continued-fraction approximation when numerator or denominator exceeds the caller max; Rational::from_f64_limited models av_d2q-style finite conversion with max-bounded output plus NaN as 0/0 and infinity/overlarge values as +/-1/0; Rational::to_f64 mirrors av_q2d-style conversion. Build-checked cargo-fuzz target avutil_core_models covers normalization, denominator validation, reciprocal/multiplication invariants, arithmetic round trips, negation round trips, av_cmp sentinel behavior, int-float bit conversion invariants, nearest-candidate relation/index invariants, av_gcd_q-style limit/default behavior, reduction bounds, exactness cross-products, f64 conversion bounds/sentinels, and timebase use, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs pinned FFmpeg differential vectors for edge-case av_reduce/av_d2q/q2intfloat/nearest/gcd parity and broader rational helpers. The local FATE-runner smoke mapping executes the rational unit filter only and does not count as upstream FATE parity."
+# Complete: default-native libavutil rational parity is proven by unit tests, a pinned libavutil differential oracle, FATE inapplicability documentation, and fuzz-model build checks.
+notes = "Complete for the selected ffmpeg-8.1.1-default-native profile. The Rust model covers normalized rational construction for safe Rust callers, raw AVRational pairs where FFmpeg permits sentinel values, checked add/subtract/multiply/divide/reciprocal helpers, av_cmp_q-style ordering including raw +/-infinity sentinels and 0/0 indeterminate forms, av_q2d-style f64 conversion, av_reduce-style bounded reduction with exactness reporting, av_d2q-style finite/special conversion, av_nearer_q and av_find_nearest_q_idx nearest-candidate behavior with first-candidate tie preservation, av_q2intfloat-style platform-independent IEEE single-precision bit conversion, and av_gcd_q-style rational GCD/default behavior. The ignored rational_oracle differential harness compiles a test-only C helper against pinned third_party/ffmpeg-oracle/wsl/lib/libavutil.a and compares av_cmp_q, av_q2d bit patterns, av_reduce, av_d2q, av_nearer_q, av_find_nearest_q_idx, av_q2intfloat, av_gcd_q, av_add_q, av_sub_q, av_mul_q, av_div_q, and av_inv_q vectors against the Rust model. Unit tests cover invalid denominator, invalid limit, out-of-range arithmetic, nearest-helper invalid input, sentinel, reduction, finite/special f64, and arithmetic cases. The avutil_core_models fuzz target build-checks normalization, denominator validation, reciprocal/multiplication invariants, arithmetic round trips, negation round trips, av_cmp sentinel behavior, int-float bit conversion invariants, nearest-candidate relation/index invariants, av_gcd_q-style limit/default behavior, reduction bounds, exactness cross-products, f64 conversion bounds/sentinels, and timebase use. avutil-rational does not parse untrusted byte streams, so long-running cargo-fuzz execution is not required for completion. Upstream FFmpeg FATE has no standalone libavutil rational helper API target; this row documents that exception and uses the local FATE-runner smoke mapping plus pinned libavutil differential oracle as completion evidence."
 blocked_reason = ""
 
 [[component]]
