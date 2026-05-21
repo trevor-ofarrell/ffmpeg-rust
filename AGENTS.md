@@ -8,9 +8,9 @@ The end state is a one-to-one compatible Rust implementation of the FFmpeg 8.1.1
 
 ## Active Milestone
 
-The immediate goal is to reach 10% strict parity before broadening back out toward 100% parity.
+The first milestone, 10% strict parity, has been reached. Continue the same strict parity-ledger loop toward 100% FFmpeg 8.1.1 default-native compatibility, then expand to later GPL/version3/nonfree/external-library/platform profiles.
 
-For the current 96-row `PORTING_LEDGER.toml`, 10% strict parity means at least 10 components marked `complete` under the normal completion definition below. Prefer small, high-confidence infrastructure components first, especially:
+For the current 96-row `PORTING_LEDGER.toml`, 10% strict parity meant at least 10 components marked `complete` under the normal completion definition below. The initial high-confidence infrastructure push covered or prioritized:
 - `avutil-error`
 - `avutil-rational`
 - `avutil-timebase`
@@ -22,9 +22,7 @@ For the current 96-row `PORTING_LEDGER.toml`, 10% strict parity means at least 1
 - `avutil-logging`
 - `avutil-hash`
 
-Work should prioritize completion evidence over new surface area until this milestone is reached. That means installing or using a pinned FFmpeg 8.1.1 oracle where available, generating inventory snapshots, adding/running differential tests, adding/running FATE mappings or documenting why FATE is not applicable, running fuzz targets where relevant, closing known limitations for the selected component, and only then changing ledger status to `complete`.
-
-After at least 10 components are complete, continue the same parity-ledger loop toward 100% FFmpeg 8.1.1 default-native compatibility, then expand to later GPL/version3/nonfree/external-library/platform profiles.
+Work should continue to prioritize completion evidence over optimistic surface area. That means installing or using a pinned FFmpeg 8.1.1 oracle where available, generating inventory snapshots, adding/running differential tests, adding/running FATE mappings or documenting why FATE is not applicable, running fuzz targets where relevant, closing known limitations for the selected component, and only then changing ledger status to `complete`.
 
 Pinned upstream target:
 - FFmpeg version: 8.1.1

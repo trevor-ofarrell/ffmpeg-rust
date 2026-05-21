@@ -971,9 +971,9 @@ id = "avutil-bitreader"
 kind = "utility"
 ffmpeg_name = "GetBitContext"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "complete"
 priority = 1
-oracle_command = ""
+oracle_command = "cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-bitreader --target oracle-libavcodec-get-bits --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"
 rust_command = "cargo test -p avutil bitreader"
 unit_tests = [
   "bitreader::tests::reads_msb_first_bits_across_byte_boundaries",
@@ -990,11 +990,16 @@ unit_tests = [
   "bitreader::tests::exp_golomb_errors_do_not_advance_cursor",
   "bitreader::tests::rejects_reads_wider_than_u64",
 ]
-differential_tests = []
-fate_tests = ["tests/fate/mappings.txt:avutil-bitreader|local-avutil-unit"]
+differential_tests = [
+  "tests/differential/mappings.txt:avutil-bitreader|oracle-libavcodec-get-bits",
+  "bitreader_oracle::libavcodec_get_bits_helpers_match_bitreader_model",
+]
+fate_tests = [
+  "tests/fate/mappings.txt:avutil-bitreader|local-avutil-unit",
+  "not_applicable: upstream FFmpeg FATE has no standalone GetBitContext helper API target; covered by unit tests plus pinned libavcodec differential oracle",
+]
 fuzz_targets = ["avutil_bitreader"]
-notes = "Bounded MSB-first bit reader implemented with unsigned and signed read/peek helpers, single-bit peek, aligned byte-slice read/peek helpers, checked absolute bit positioning, checked relative bit seeking, rewind, unsigned and signed Exp-Golomb decoding, sign extension, and no-advance failure invariants. Aligned byte-slice reads require byte alignment, validate length/overflow before cursor mutation, and preserve the cursor on unaligned, short-input, and overflow failures. Exp-Golomb coverage includes exact small-code vectors, malformed EOF/range rejection, signed overflow rejection, and cursor preservation on failed reads. Build-checked cargo-fuzz target avutil_bitreader exercises unsigned reads/peeks, signed reads/peeks, single-bit peek, aligned byte reads/peeks, checked seeks, rewind, Exp-Golomb reads, skips, alignment, and cursor invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Deeper GetBitContext compatibility vectors and oracle/FATE parity are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the bitreader unit filter only and does not count as upstream FATE parity."
-# Latest fuzz execution: WSL `cargo fuzz run avutil_bitreader -- -runs=1` passes locally; GetBitContext oracle/FATE completion evidence is still pending.
+notes = "Complete for the selected low-level GetBitContext-compatible helper surface. The bounded MSB-first bit reader covers unsigned and signed read/peek helpers, single-bit peek, aligned byte-slice read/peek helpers, checked absolute bit positioning, checked relative bit seeking, rewind, byte alignment, unsigned and signed Exp-Golomb decoding, sign extension, and no-advance failure invariants. Aligned byte-slice reads require byte alignment, validate length/overflow before cursor mutation, and preserve the cursor on unaligned, short-input, and overflow failures. Exp-Golomb coverage includes exact small-code vectors, malformed EOF/range rejection, signed overflow rejection, and cursor preservation on failed reads. The ignored bitreader_oracle harness compiles a test-only C helper against pinned FFmpeg 8.1.1 source/build-cache `libavcodec/get_bits.h` and `libavcodec/golomb.h`, links pinned libavcodec/libavutil only inside the test for Golomb tables, and validates `init_get_bits8`, `show_bits`, `get_bits`, `get_bits1`, `get_bits_long`, `get_bits64`, `get_sbits`, `get_sbits64`, `skip_bits`, `skip_bits_long`, `align_get_bits`, `get_ue_golomb`, and `get_se_golomb` value/cursor vectors against the Rust model. The local FATE-runner smoke mapping executes the bitreader unit filter, and upstream FFmpeg FATE has no standalone GetBitContext helper API target. WSL `cargo fuzz run avutil_bitreader -- -runs=1` passes locally."
 blocked_reason = ""
 
 [[component]]

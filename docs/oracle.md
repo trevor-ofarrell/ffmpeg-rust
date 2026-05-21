@@ -124,6 +124,13 @@ cargo test -p avutil --test byteio_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-byteio --target oracle-libavutil-byteio --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
+`crates/avutil/tests/bitreader_oracle.rs` is an ignored oracle harness for libavcodec `GetBitContext` helpers. It compiles a small test-only C helper against the pinned FFmpeg 8.1.1 source/build cache created by `scripts/bootstrap_ffmpeg_oracle_wsl.sh`, using `libavcodec/get_bits.h`, `libavcodec/golomb.h`, and the matching generated `config.h`; it links pinned libavcodec/libavutil only inside the test for Golomb tables. The harness compares `init_get_bits8`, `show_bits`, `get_bits`, `get_bits1`, `get_bits_long`, `get_bits64`, `get_sbits`, `get_sbits64`, `skip_bits`, `skip_bits_long`, `align_get_bits`, `get_ue_golomb`, and `get_se_golomb` value/cursor vectors against the Rust `BitReader` model. On Windows the default source/build cache paths are `$HOME/.cache/ffmpegrust/ffmpeg-oracle-n8.1.1/src` and `$HOME/.cache/ffmpegrust/ffmpeg-oracle-n8.1.1/build` inside WSL; override them with `FFMPEGRUST_FFMPEG_SOURCE` and `FFMPEGRUST_FFMPEG_BUILD` if needed. It is wired into `tests/differential/mappings.txt` as `avutil-bitreader|oracle-libavcodec-get-bits`:
+
+```sh
+cargo test -p avutil --test bitreader_oracle -- --ignored
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-bitreader --target oracle-libavcodec-get-bits --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+```
+
 `crates/avutil/tests/hash_oracle.rs` is an ignored oracle harness for libavutil generic hash helpers. It compiles a small test-only C helper against `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_hash_names`, `av_hash_alloc`, `av_hash_get_name`, `av_hash_get_size`, `av_hash_update`, `av_hash_final`, `av_hash_final_bin`, `av_hash_final_hex`, and `av_hash_final_b64` output for the full FFmpeg 8.1.1 default-native generic hash inventory: MD5, murmur3, RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320, SHA160, SHA224, SHA256, SHA512/224, SHA512/256, SHA384, SHA512, CRC32, and adler32. It is wired into `tests/differential/mappings.txt` as `avutil-hash|oracle-libavutil-hash`:
 
 ```sh

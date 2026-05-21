@@ -13,9 +13,9 @@ The current code has meaningful local coverage for shared `avutil` primitives, i
 Strict parity status is still low:
 
 - Ledger rows currently tracked: 96
-- Rows marked `implemented`: 84
+- Rows marked `implemented`: 83
 - Rows marked `scaffolded`: 1
-- Rows marked `complete`: 9
+- Rows marked `complete`: 10
 - Rows marked `differential_pass`, `fate_pass`, or `fuzzed`: 2
 - Pinned FFmpeg oracle: installed locally through WSL wrappers under ignored `third_party/ffmpeg-oracle/`
 - Generated FFmpeg inventory snapshot: present locally under ignored `compat/ffmpeg-8.1.1/`
@@ -24,18 +24,18 @@ Strict parity status is still low:
 
 Estimated completion:
 
-- Strict parity completion: about 9% (`9/96`)
+- Strict parity completion: about 10% (`10/96`)
 - Practical engineering-progress estimate: about 2% of a complete FFmpeg 8.1.1 default-native rewrite
 
 The practical estimate is intentionally conservative. A lot of reusable foundation exists, but the full target includes the FFmpeg command-line tools, all core libraries, codecs, demuxers, muxers, protocols, filters, devices, scaling, resampling, hardware profiles, FATE parity, differential oracle coverage, and fuzz coverage. Most of that surface is not implemented yet.
 
 ## Current Operating Milestone
 
-The active milestone is to reach 10% strict parity before broadening back out toward 100%.
+The 10% strict-parity milestone has been reached. The active goal now broadens back out toward 100% FFmpeg 8.1.1 default-native compatibility while keeping the same strict ledger rules.
 
-For the current 96-row ledger, that means at least 10 components must be marked `complete`. The first completion push should focus on small, high-confidence infrastructure components such as `avutil-error`, `avutil-rational`, `avutil-timebase`, `avutil-byteio`, `avutil-bitreader`, `avutil-bitwriter`, `avutil-dict`, `avutil-options`, `avutil-logging`, and `avutil-hash`.
+For the current 96-row ledger, the first milestone meant at least 10 components marked `complete`; that threshold is now satisfied by low-level infrastructure and oracle tooling. The next completion push should keep prioritizing high-leverage infrastructure and CLI/oracle surfaces such as `avutil-bitwriter`, `avutil-options`, `avutil-logging`, `fftools-version`, `avutil-channel-layout`, and simple muxer/hash paths, but only when strict completion evidence exists.
 
-The work needed for this milestone is mostly proof work, not broad new feature work: install or point to the pinned FFmpeg 8.1.1 oracle, generate inventory snapshots, run or add differential tests, run or justify FATE coverage, run fuzz targets where relevant, close known limitations for each selected component, and update `PORTING_LEDGER.toml` only when the project completion definition is actually satisfied.
+The work remains mostly proof work before broad new surface area: keep the pinned FFmpeg 8.1.1 oracle available, generate or refresh inventory snapshots when needed, run or add differential tests, run or justify FATE coverage, run fuzz targets where relevant, close known limitations for each selected component, and update `PORTING_LEDGER.toml` only when the project completion definition is actually satisfied.
 
 The pinned FFmpeg oracle should remain installed locally for this project. It is intentionally ignored by git because it contains upstream build artifacts, including generated `.d` dependency files, object files, libraries, and binaries.
 
