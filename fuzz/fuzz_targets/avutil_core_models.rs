@@ -3875,6 +3875,157 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         assert_eq!(short_silence_planes, before_short_silence);
     }
 
+    let copy_samples = if samples_per_channel == 0 {
+        0
+    } else {
+        usize::from(cursor.next().unwrap_or_default()) % (samples_per_channel + 1)
+    };
+    let copy_offset_limit = samples_per_channel.saturating_sub(copy_samples);
+    let dst_copy_offset = if copy_offset_limit == 0 {
+        0
+    } else {
+        usize::from(cursor.next().unwrap_or_default()) % (copy_offset_limit + 1)
+    };
+    let src_copy_offset = if copy_offset_limit == 0 {
+        0
+    } else {
+        usize::from(cursor.next().unwrap_or_default()) % (copy_offset_limit + 1)
+    };
+    let copy_range = sample_format
+        .copy_range(dst_copy_offset, src_copy_offset, copy_samples, channels)
+        .unwrap();
+    assert_eq!(
+        copy_range.dst_byte_offset(),
+        dst_copy_offset * expected_block_align
+    );
+    assert_eq!(
+        copy_range.src_byte_offset(),
+        src_copy_offset * expected_block_align
+    );
+    assert_eq!(copy_range.byte_len(), copy_samples * expected_block_align);
+    assert_eq!(copy_range.plane_count(), expected_silence_plane_count);
+    assert_eq!(copy_range.is_empty(), copy_samples == 0);
+
+    let source_planes = plane_sizes
+        .iter()
+        .enumerate()
+        .map(|(plane_index, size)| {
+            (0..*size)
+                .map(|byte_index| {
+                    (plane_index as u8)
+                        .wrapping_mul(17)
+                        .wrapping_add(byte_index as u8)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut copy_dst_planes = plane_sizes
+        .iter()
+        .map(|size| vec![0xA5; *size])
+        .collect::<Vec<_>>();
+    let before_copy = copy_dst_planes.clone();
+    sample_format
+        .copy_samples(
+            &mut copy_dst_planes,
+            &source_planes,
+            dst_copy_offset,
+            src_copy_offset,
+            copy_samples,
+            channels,
+        )
+        .unwrap();
+    let copy_dst_start = copy_range.dst_byte_offset();
+    let copy_dst_end = copy_dst_start + copy_range.byte_len();
+    let copy_src_start = copy_range.src_byte_offset();
+    let copy_src_end = copy_src_start + copy_range.byte_len();
+    for ((dst_plane, before), src_plane) in copy_dst_planes
+        .iter()
+        .zip(&before_copy)
+        .zip(&source_planes)
+    {
+        assert_eq!(&dst_plane[..copy_dst_start], &before[..copy_dst_start]);
+        assert_eq!(
+            &dst_plane[copy_dst_start..copy_dst_end],
+            &src_plane[copy_src_start..copy_src_end]
+        );
+        assert_eq!(&dst_plane[copy_dst_end..], &before[copy_dst_end..]);
+    }
+
+    let mut within_planes = source_planes.clone();
+    let mut expected_within = source_planes.clone();
+    sample_format
+        .copy_samples_within(
+            &mut within_planes,
+            dst_copy_offset,
+            src_copy_offset,
+            copy_samples,
+            channels,
+        )
+        .unwrap();
+    for expected in &mut expected_within {
+        expected.copy_within(copy_src_start..copy_src_end, copy_dst_start);
+    }
+    assert_eq!(within_planes, expected_within);
+
+    let mut wrong_copy_planes = copy_dst_planes.clone();
+    wrong_copy_planes.push(Vec::new());
+    let before_wrong_copy = wrong_copy_planes.clone();
+    assert_eq!(
+        sample_format
+            .copy_samples(
+                &mut wrong_copy_planes,
+                &source_planes,
+                dst_copy_offset,
+                src_copy_offset,
+                copy_samples,
+                channels,
+            )
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(wrong_copy_planes, before_wrong_copy);
+
+    if copy_range.byte_len() > 0 {
+        let mut short_source_planes = source_planes.clone();
+        short_source_planes[0].truncate(copy_src_end - 1);
+        let mut failed_copy_dst = copy_dst_planes.clone();
+        let before_failed_copy_dst = failed_copy_dst.clone();
+        assert_eq!(
+            sample_format
+                .copy_samples(
+                    &mut failed_copy_dst,
+                    &short_source_planes,
+                    dst_copy_offset,
+                    src_copy_offset,
+                    copy_samples,
+                    channels,
+                )
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(failed_copy_dst, before_failed_copy_dst);
+
+        let mut short_within_planes = source_planes.clone();
+        short_within_planes[0].truncate(copy_dst_end.max(copy_src_end) - 1);
+        let before_short_within = short_within_planes.clone();
+        assert_eq!(
+            sample_format
+                .copy_samples_within(
+                    &mut short_within_planes,
+                    dst_copy_offset,
+                    src_copy_offset,
+                    copy_samples,
+                    channels,
+                )
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(short_within_planes, before_short_within);
+    }
+
     if sample_rate == 0 {
         assert!(AudioFrame::new(sample_rate, channels, sample_format, 1, vec![vec![0]]).is_err());
         return;

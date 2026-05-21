@@ -136,6 +136,36 @@ impl SampleSilenceRange {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SampleCopyRange {
+    dst_byte_offset: usize,
+    src_byte_offset: usize,
+    byte_len: usize,
+    plane_count: usize,
+}
+
+impl SampleCopyRange {
+    pub fn dst_byte_offset(self) -> usize {
+        self.dst_byte_offset
+    }
+
+    pub fn src_byte_offset(self) -> usize {
+        self.src_byte_offset
+    }
+
+    pub fn byte_len(self) -> usize {
+        self.byte_len
+    }
+
+    pub fn plane_count(self) -> usize {
+        self.plane_count
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.byte_len == 0
+    }
+}
+
 impl SampleFormat {
     pub const ALL: [Self; 12] = [
         Self::U8,
@@ -449,6 +479,136 @@ impl SampleFormat {
 
         Ok(())
     }
+
+    pub fn copy_range(
+        self,
+        dst_offset_samples: usize,
+        src_offset_samples: usize,
+        samples_per_channel: usize,
+        channels: u16,
+    ) -> AvResult<SampleCopyRange> {
+        validate_channels(channels)?;
+        let channel_count = usize::from(channels);
+        let block_channels = if self.is_planar() { 1 } else { channel_count };
+        let block_align = self
+            .bytes_per_sample()
+            .checked_mul(block_channels)
+            .ok_or_else(|| AvError::invalid_argument("sample copy block alignment overflow"))?;
+        let dst_byte_offset = dst_offset_samples
+            .checked_mul(block_align)
+            .ok_or_else(|| AvError::invalid_argument("sample copy destination offset overflow"))?;
+        let src_byte_offset = src_offset_samples
+            .checked_mul(block_align)
+            .ok_or_else(|| AvError::invalid_argument("sample copy source offset overflow"))?;
+        let byte_len = samples_per_channel
+            .checked_mul(block_align)
+            .ok_or_else(|| AvError::invalid_argument("sample copy length overflow"))?;
+        dst_byte_offset
+            .checked_add(byte_len)
+            .ok_or_else(|| AvError::invalid_argument("sample copy destination range overflow"))?;
+        src_byte_offset
+            .checked_add(byte_len)
+            .ok_or_else(|| AvError::invalid_argument("sample copy source range overflow"))?;
+
+        Ok(SampleCopyRange {
+            dst_byte_offset,
+            src_byte_offset,
+            byte_len,
+            plane_count: if self.is_planar() { channel_count } else { 1 },
+        })
+    }
+
+    pub fn copy_samples<D: AsMut<[u8]>, S: AsRef<[u8]>>(
+        self,
+        dst: &mut [D],
+        src: &[S],
+        dst_offset_samples: usize,
+        src_offset_samples: usize,
+        samples_per_channel: usize,
+        channels: u16,
+    ) -> AvResult<()> {
+        let range = self.copy_range(
+            dst_offset_samples,
+            src_offset_samples,
+            samples_per_channel,
+            channels,
+        )?;
+        if dst.len() != range.plane_count() || src.len() != range.plane_count() {
+            return Err(AvError::invalid_argument(
+                "sample copy plane count does not match format",
+            ));
+        }
+        let dst_byte_end = range
+            .dst_byte_offset()
+            .checked_add(range.byte_len())
+            .ok_or_else(|| AvError::invalid_argument("sample copy destination range overflow"))?;
+        let src_byte_end = range
+            .src_byte_offset()
+            .checked_add(range.byte_len())
+            .ok_or_else(|| AvError::invalid_argument("sample copy source range overflow"))?;
+
+        for (dst_plane, src_plane) in dst.iter_mut().zip(src) {
+            if dst_byte_end > dst_plane.as_mut().len() || src_byte_end > src_plane.as_ref().len() {
+                return Err(AvError::invalid_argument(
+                    "sample copy range exceeds plane length",
+                ));
+            }
+        }
+
+        for (dst_plane, src_plane) in dst.iter_mut().zip(src) {
+            dst_plane.as_mut()[range.dst_byte_offset()..dst_byte_end]
+                .copy_from_slice(&src_plane.as_ref()[range.src_byte_offset()..src_byte_end]);
+        }
+
+        Ok(())
+    }
+
+    pub fn copy_samples_within<P: AsMut<[u8]>>(
+        self,
+        audio_data: &mut [P],
+        dst_offset_samples: usize,
+        src_offset_samples: usize,
+        samples_per_channel: usize,
+        channels: u16,
+    ) -> AvResult<()> {
+        let range = self.copy_range(
+            dst_offset_samples,
+            src_offset_samples,
+            samples_per_channel,
+            channels,
+        )?;
+        if audio_data.len() != range.plane_count() {
+            return Err(AvError::invalid_argument(
+                "sample copy plane count does not match format",
+            ));
+        }
+        let dst_byte_end = range
+            .dst_byte_offset()
+            .checked_add(range.byte_len())
+            .ok_or_else(|| AvError::invalid_argument("sample copy destination range overflow"))?;
+        let src_byte_end = range
+            .src_byte_offset()
+            .checked_add(range.byte_len())
+            .ok_or_else(|| AvError::invalid_argument("sample copy source range overflow"))?;
+
+        for plane in audio_data.iter_mut() {
+            let plane_len = plane.as_mut().len();
+            if dst_byte_end > plane_len || src_byte_end > plane_len {
+                return Err(AvError::invalid_argument(
+                    "sample copy range exceeds plane length",
+                ));
+            }
+        }
+
+        for plane in audio_data {
+            plane.as_mut().copy_within(
+                range.src_byte_offset()..src_byte_end,
+                range.dst_byte_offset(),
+            );
+        }
+
+        Ok(())
+    }
 }
 
 fn validate_channels(channels: u16) -> AvResult<()> {
@@ -753,6 +913,131 @@ mod tests {
             AvErrorKind::InvalidArgument
         );
         assert_eq!(short_planar, before);
+    }
+
+    #[test]
+    fn sample_formats_compute_copy_ranges() {
+        let packed = SampleFormat::S16.copy_range(3, 1, 2, 2).unwrap();
+        assert_eq!(packed.dst_byte_offset(), 12);
+        assert_eq!(packed.src_byte_offset(), 4);
+        assert_eq!(packed.byte_len(), 8);
+        assert_eq!(packed.plane_count(), 1);
+        assert!(!packed.is_empty());
+
+        let planar = SampleFormat::U8P.copy_range(2, 4, 3, 2).unwrap();
+        assert_eq!(planar.dst_byte_offset(), 2);
+        assert_eq!(planar.src_byte_offset(), 4);
+        assert_eq!(planar.byte_len(), 3);
+        assert_eq!(planar.plane_count(), 2);
+
+        let empty = SampleFormat::DblP.copy_range(7, 11, 0, 6).unwrap();
+        assert_eq!(empty.dst_byte_offset(), 56);
+        assert_eq!(empty.src_byte_offset(), 88);
+        assert_eq!(empty.byte_len(), 0);
+        assert_eq!(empty.plane_count(), 6);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn sample_formats_copy_between_packed_planes_like_ffmpeg() {
+        let src = vec![(0u8..24).collect::<Vec<_>>()];
+        let mut dst = vec![vec![0xFF; 24]];
+
+        SampleFormat::S16
+            .copy_samples(&mut dst, &src, 2, 1, 3, 2)
+            .unwrap();
+
+        assert_eq!(&dst[0][..8], &[0xFF; 8]);
+        assert_eq!(&dst[0][8..20], &src[0][4..16]);
+        assert_eq!(&dst[0][20..], &[0xFF; 4]);
+    }
+
+    #[test]
+    fn sample_formats_copy_between_planar_planes_like_ffmpeg() {
+        let src = vec![
+            vec![0, 1, 2, 3, 4, 5, 6, 7],
+            vec![10, 11, 12, 13, 14, 15, 16, 17],
+        ];
+        let mut dst = vec![vec![0xA0; 8], vec![0xB0; 8]];
+
+        SampleFormat::U8P
+            .copy_samples(&mut dst, &src, 3, 1, 3, 2)
+            .unwrap();
+
+        assert_eq!(dst[0], vec![0xA0, 0xA0, 0xA0, 1, 2, 3, 0xA0, 0xA0]);
+        assert_eq!(dst[1], vec![0xB0, 0xB0, 0xB0, 11, 12, 13, 0xB0, 0xB0]);
+    }
+
+    #[test]
+    fn sample_formats_copy_within_handles_overlapping_ranges_like_memmove() {
+        let mut forward_overlap = vec![vec![0, 1, 2, 3, 4, 5, 6]];
+        SampleFormat::U8
+            .copy_samples_within(&mut forward_overlap, 2, 0, 4, 1)
+            .unwrap();
+        assert_eq!(forward_overlap[0], vec![0, 1, 0, 1, 2, 3, 6]);
+
+        let mut backward_overlap = vec![vec![0, 1, 2, 3, 4, 5, 6]];
+        SampleFormat::U8
+            .copy_samples_within(&mut backward_overlap, 0, 2, 4, 1)
+            .unwrap();
+        assert_eq!(backward_overlap[0], vec![2, 3, 4, 5, 4, 5, 6]);
+
+        let mut planar = vec![vec![0, 1, 2, 3, 4], vec![10, 11, 12, 13, 14]];
+        SampleFormat::U8P
+            .copy_samples_within(&mut planar, 1, 0, 3, 2)
+            .unwrap();
+        assert_eq!(planar[0], vec![0, 0, 1, 2, 4]);
+        assert_eq!(planar[1], vec![10, 10, 11, 12, 14]);
+    }
+
+    #[test]
+    fn sample_copy_rejects_invalid_inputs_without_mutation() {
+        assert_eq!(
+            SampleFormat::S16.copy_range(0, 0, 1, 0).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            SampleFormat::S64
+                .copy_range(usize::MAX, 0, 1, 2)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let src = vec![vec![1; 16]];
+        let mut wrong_plane_count = vec![vec![0x55; 16], vec![0x66; 16]];
+        let before = wrong_plane_count.clone();
+        assert_eq!(
+            SampleFormat::S16
+                .copy_samples(&mut wrong_plane_count, &src, 0, 0, 1, 2)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(wrong_plane_count, before);
+
+        let src = vec![vec![1; 8], vec![2; 3]];
+        let mut short_dst = vec![vec![0x55; 8], vec![0x66; 8]];
+        let before = short_dst.clone();
+        assert_eq!(
+            SampleFormat::S16P
+                .copy_samples(&mut short_dst, &src, 1, 1, 2, 2)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(short_dst, before);
+
+        let mut short_in_place = vec![vec![0x55; 8], vec![0x66; 3]];
+        let before = short_in_place.clone();
+        assert_eq!(
+            SampleFormat::S16P
+                .copy_samples_within(&mut short_in_place, 1, 0, 2, 2)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(short_in_place, before);
     }
 
     #[test]

@@ -105,7 +105,7 @@ pub use pixel::{
 };
 pub use rational::Rational;
 pub use samplefmt::{
-    SampleBufferLayout, SampleFormat, SampleFormatFamily, SampleFormatNumericKind,
+    SampleBufferLayout, SampleCopyRange, SampleFormat, SampleFormatFamily, SampleFormatNumericKind,
     SampleSilenceRange,
 };
 pub use timebase::{
