@@ -4666,6 +4666,32 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         Some(ChannelId::Native(Channel::FrontLeft))
     );
     assert_eq!(
+        parsed_ambisonic
+            .index_from_channel(ChannelId::Ambisonic(3))
+            .unwrap(),
+        3
+    );
+    assert_eq!(
+        parsed_ambisonic
+            .index_from_channel(ChannelId::Native(Channel::FrontRight))
+            .unwrap(),
+        5
+    );
+    assert_eq!(parsed_ambisonic.index_from_string("AMBI2").unwrap(), 2);
+    assert_eq!(parsed_ambisonic.index_from_string("FL").unwrap(), 4);
+    assert_eq!(
+        parsed_ambisonic.channel_from_string("FR"),
+        Some(ChannelId::Native(Channel::FrontRight))
+    );
+    assert_eq!(
+        parsed_ambisonic
+            .index_from_string("FC")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(parsed_ambisonic.channel_from_string("AMBI4"), None);
+    assert_eq!(
         parsed_ambisonic.subset_mask(ChannelLayout::stereo().channel_mask()),
         ChannelLayout::stereo().channel_mask()
     );
@@ -10096,6 +10122,19 @@ fn exercise_fixtures() {
     .unwrap();
     assert_eq!(ambisonic_custom.ambisonic_order().unwrap(), 1);
     assert_eq!(ambisonic_custom.describe(), "ambisonic 1+stereo");
+    let explicit_ambisonic =
+        AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap();
+    assert_eq!(
+        explicit_ambisonic
+            .index_from_channel(ChannelId::Ambisonic(2))
+            .unwrap(),
+        2
+    );
+    assert_eq!(explicit_ambisonic.index_from_string("FR").unwrap(), 5);
+    assert_eq!(
+        explicit_ambisonic.channel_from_string("AMBI3"),
+        Some(ChannelId::Ambisonic(3))
+    );
     assert!(ambisonic_custom.is_equivalent_to_custom(
         &CustomChannelLayout::new(vec![
             ChannelCustom::new(ChannelId::Ambisonic(0), "W").unwrap(),

@@ -1757,6 +1757,26 @@ impl NativeChannelMaskLayout {
         Ok((self.mask & (channel_mask - 1)).count_ones() as usize)
     }
 
+    pub fn index_from_string(self, name: &str) -> AvResult<usize> {
+        if name.is_empty() {
+            return Err(AvError::invalid_argument("empty channel lookup"));
+        }
+        if name.contains('\0') {
+            return Err(AvError::invalid_argument(
+                "channel lookup contains NUL byte",
+            ));
+        }
+
+        let id = ChannelId::from_canonical_name(name)
+            .ok_or_else(|| AvError::invalid_argument(format!("unknown channel id {name:?}")))?;
+        self.index_from_channel(id)
+    }
+
+    pub fn channel_from_string(self, name: &str) -> Option<ChannelId> {
+        let index = self.index_from_string(name).ok()?;
+        self.channel_from_index(index)
+    }
+
     pub fn validate_channel_count(self, channels: u16) -> AvResult<()> {
         if self.channel_count() != channels {
             return Err(AvError::invalid_argument(format!(
@@ -1883,6 +1903,56 @@ impl AmbisonicChannelLayout {
             .channel_from_index(index.checked_sub(ambisonic_channel_count)?)
     }
 
+    pub fn index_from_channel(self, id: ChannelId) -> AvResult<usize> {
+        if id == ChannelId::None || !id.is_valid_raw_id() {
+            return Err(AvError::invalid_argument("invalid channel id lookup"));
+        }
+
+        let ambisonic_channel_count = usize::from(self.ambisonic_channel_count());
+        match id {
+            ChannelId::Ambisonic(acn) if usize::from(acn) < ambisonic_channel_count => {
+                Ok(usize::from(acn))
+            }
+            ChannelId::Ambisonic(_) => Err(AvError::invalid_argument(
+                "channel is not present in ambisonic layout",
+            )),
+            ChannelId::Native(channel) => {
+                if self.extra_native_mask == 0 {
+                    return Err(AvError::invalid_argument(
+                        "channel is not present in ambisonic layout",
+                    ));
+                }
+                let native_index = NativeChannelMaskLayout::new(self.extra_native_mask)
+                    .expect("nonzero ambisonic extra native mask is valid")
+                    .index_from_channel(ChannelId::Native(channel))?;
+                Ok(ambisonic_channel_count + native_index)
+            }
+            ChannelId::None | ChannelId::Unused | ChannelId::Unknown | ChannelId::User(_) => Err(
+                AvError::invalid_argument("channel is not present in ambisonic layout"),
+            ),
+        }
+    }
+
+    pub fn index_from_string(self, name: &str) -> AvResult<usize> {
+        if name.is_empty() {
+            return Err(AvError::invalid_argument("empty channel lookup"));
+        }
+        if name.contains('\0') {
+            return Err(AvError::invalid_argument(
+                "channel lookup contains NUL byte",
+            ));
+        }
+
+        let id = ChannelId::from_canonical_name(name)
+            .ok_or_else(|| AvError::invalid_argument(format!("unknown channel id {name:?}")))?;
+        self.index_from_channel(id)
+    }
+
+    pub fn channel_from_string(self, name: &str) -> Option<ChannelId> {
+        let index = self.index_from_string(name).ok()?;
+        self.channel_from_index(index)
+    }
+
     pub fn validate_channel_count(self, channels: u16) -> AvResult<()> {
         if self.channel_count() != channels {
             return Err(AvError::invalid_argument(format!(
@@ -1937,6 +2007,34 @@ impl UnspecifiedChannelLayout {
 
     pub fn channel_from_index(self, _index: usize) -> Option<ChannelId> {
         None
+    }
+
+    pub fn index_from_channel(self, id: ChannelId) -> AvResult<usize> {
+        if id == ChannelId::None || !id.is_valid_raw_id() {
+            return Err(AvError::invalid_argument("invalid channel id lookup"));
+        }
+        Err(AvError::invalid_argument(
+            "channel is not present in unspecified layout",
+        ))
+    }
+
+    pub fn index_from_string(self, name: &str) -> AvResult<usize> {
+        if name.is_empty() {
+            return Err(AvError::invalid_argument("empty channel lookup"));
+        }
+        if name.contains('\0') {
+            return Err(AvError::invalid_argument(
+                "channel lookup contains NUL byte",
+            ));
+        }
+        let id = ChannelId::from_canonical_name(name)
+            .ok_or_else(|| AvError::invalid_argument(format!("unknown channel id {name:?}")))?;
+        self.index_from_channel(id)
+    }
+
+    pub fn channel_from_string(self, name: &str) -> Option<ChannelId> {
+        let index = self.index_from_string(name).ok()?;
+        self.channel_from_index(index)
     }
 
     pub fn validate_channel_count(self, channels: u16) -> AvResult<()> {
@@ -2327,6 +2425,31 @@ impl ChannelLayoutSpec {
             Self::Custom(layout) => layout.channel_from_index(index),
             Self::Unspecified(layout) => layout.channel_from_index(index),
         }
+    }
+
+    pub fn index_from_channel(&self, id: ChannelId) -> AvResult<usize> {
+        match self {
+            Self::Native(layout) => layout.index_from_channel(id),
+            Self::NativeMask(layout) => layout.index_from_channel(id),
+            Self::Ambisonic(layout) => layout.index_from_channel(id),
+            Self::Custom(layout) => layout.index_from_channel(id),
+            Self::Unspecified(layout) => layout.index_from_channel(id),
+        }
+    }
+
+    pub fn index_from_string(&self, name: &str) -> AvResult<usize> {
+        match self {
+            Self::Native(layout) => layout.index_from_string(name),
+            Self::NativeMask(layout) => layout.index_from_string(name),
+            Self::Ambisonic(layout) => layout.index_from_string(name),
+            Self::Custom(layout) => layout.index_from_string(name),
+            Self::Unspecified(layout) => layout.index_from_string(name),
+        }
+    }
+
+    pub fn channel_from_string(&self, name: &str) -> Option<ChannelId> {
+        let index = self.index_from_string(name).ok()?;
+        self.channel_from_index(index)
     }
 
     pub fn validate_channel_count(&self, channels: u16) -> AvResult<()> {
@@ -4365,6 +4488,18 @@ mod tests {
             0
         );
         assert_eq!(unspecified.channel_from_index(0), None);
+        assert_eq!(
+            unspecified
+                .index_from_channel(ChannelId::Native(Channel::FrontLeft))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            unspecified.index_from_string("FL").unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(unspecified.channel_from_string("FL"), None);
         assert!(unspecified.validate_channel_count(9).is_ok());
         assert_eq!(
             unspecified.validate_channel_count(8).unwrap_err().kind(),
@@ -4390,6 +4525,14 @@ mod tests {
             0
         );
         assert_eq!(default_unspecified.channel_from_index(0), None);
+        assert_eq!(
+            default_unspecified
+                .index_from_string("FL")
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(default_unspecified.channel_from_string("FL"), None);
         assert!(default_unspecified.validate_channel_count(9).is_ok());
         assert_eq!(
             ChannelLayoutSpec::default_for_count(0).unwrap_err().kind(),
@@ -4454,6 +4597,11 @@ mod tests {
                 .unwrap(),
             1
         );
+        assert_eq!(layout.index_from_string("FC").unwrap(), 1);
+        assert_eq!(
+            layout.channel_from_string("FC"),
+            Some(ChannelId::Native(Channel::FrontCenter))
+        );
         assert_eq!(
             layout
                 .index_from_channel(ChannelId::Native(Channel::FrontRight))
@@ -4482,6 +4630,11 @@ mod tests {
         let high_bit = NativeChannelMaskLayout::new(1u64 << 63).unwrap();
         assert_eq!(high_bit.channel_count(), 1);
         assert_eq!(high_bit.channel_from_index(0), Some(ChannelId::User(63)));
+        assert_eq!(high_bit.index_from_string("USR63").unwrap(), 0);
+        assert_eq!(
+            high_bit.channel_from_string("USR63"),
+            Some(ChannelId::User(63))
+        );
         assert_eq!(high_bit.describe(), "1 channels (USR63)");
         assert_eq!(
             NativeChannelMaskLayout::new(0).unwrap_err().kind(),
@@ -4742,6 +4895,59 @@ mod tests {
             Some(ChannelId::Native(Channel::FrontRight))
         );
         assert_eq!(
+            hex_order
+                .index_from_channel(ChannelId::Ambisonic(3))
+                .unwrap(),
+            3
+        );
+        assert_eq!(
+            hex_order
+                .index_from_channel(ChannelId::Native(Channel::FrontLeft))
+                .unwrap(),
+            4
+        );
+        assert_eq!(hex_order.index_from_string("AMBI2").unwrap(), 2);
+        assert_eq!(hex_order.index_from_string("FR").unwrap(), 5);
+        assert_eq!(
+            hex_order.channel_from_string("AMBI2"),
+            Some(ChannelId::Ambisonic(2))
+        );
+        assert_eq!(
+            hex_order.channel_from_string("FR"),
+            Some(ChannelId::Native(Channel::FrontRight))
+        );
+        let hex_ambisonic = hex_order.as_ambisonic().unwrap();
+        assert_eq!(
+            hex_ambisonic
+                .index_from_channel(ChannelId::Native(Channel::FrontRight))
+                .unwrap(),
+            5
+        );
+        assert_eq!(hex_ambisonic.index_from_string("FL").unwrap(), 4);
+        assert_eq!(
+            hex_ambisonic.channel_from_string("AMBI3"),
+            Some(ChannelId::Ambisonic(3))
+        );
+        for id in [
+            ChannelId::None,
+            ChannelId::Ambisonic(4),
+            ChannelId::Native(Channel::FrontCenter),
+            ChannelId::Unknown,
+            ChannelId::User(0),
+        ] {
+            assert_eq!(
+                hex_order.index_from_channel(id).unwrap_err().kind(),
+                AvErrorKind::InvalidArgument
+            );
+        }
+        for lookup in ["", "AMBI4", "FC", "FL@Left", "NOPE", "FL\0"] {
+            assert_eq!(
+                hex_order.index_from_string(lookup).unwrap_err().kind(),
+                AvErrorKind::InvalidArgument
+            );
+            assert_eq!(hex_order.channel_from_string(lookup), None);
+        }
+        assert_eq!(
             hex_order.subset_mask(ChannelLayout::stereo().channel_mask()),
             ChannelLayout::stereo().channel_mask()
         );
@@ -4779,6 +4985,9 @@ mod tests {
             mask_extra.channel_from_index(5),
             Some(ChannelId::Native(Channel::FrontCenter))
         );
+        assert_eq!(mask_extra.index_from_string("FL").unwrap(), 4);
+        assert_eq!(mask_extra.index_from_string("FC").unwrap(), 5);
+        assert_eq!(mask_extra.channel_from_string("FR"), None);
 
         for input in [
             "ambisonic",
