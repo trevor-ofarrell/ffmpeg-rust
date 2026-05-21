@@ -275,6 +275,81 @@ impl ChannelLayout {
         )
     }
 
+    pub fn six_one() -> Self {
+        Self::new_static(
+            "6.1",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::LowFrequency,
+                Channel::BackCenter,
+                Channel::SideLeft,
+                Channel::SideRight,
+            ],
+        )
+    }
+
+    pub fn six_one_back() -> Self {
+        Self::new_static(
+            "6.1(back)",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::LowFrequency,
+                Channel::BackLeft,
+                Channel::BackRight,
+                Channel::BackCenter,
+            ],
+        )
+    }
+
+    pub fn six_one_front() -> Self {
+        Self::new_static(
+            "6.1(front)",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::LowFrequency,
+                Channel::FrontLeftOfCenter,
+                Channel::FrontRightOfCenter,
+                Channel::SideLeft,
+                Channel::SideRight,
+            ],
+        )
+    }
+
+    pub fn seven_zero() -> Self {
+        Self::new_static(
+            "7.0",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::BackLeft,
+                Channel::BackRight,
+                Channel::SideLeft,
+                Channel::SideRight,
+            ],
+        )
+    }
+
+    pub fn seven_zero_front() -> Self {
+        Self::new_static(
+            "7.0(front)",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::FrontLeftOfCenter,
+                Channel::FrontRightOfCenter,
+                Channel::SideLeft,
+                Channel::SideRight,
+            ],
+        )
+    }
+
     pub fn seven_one() -> Self {
         Self::new_static(
             "7.1",
@@ -291,7 +366,7 @@ impl ChannelLayout {
         )
     }
 
-    pub fn known_layouts() -> [Self; 18] {
+    pub fn known_layouts() -> [Self; 23] {
         [
             Self::mono(),
             Self::stereo(),
@@ -310,6 +385,11 @@ impl ChannelLayout {
             Self::six_zero(),
             Self::six_zero_front(),
             Self::hexagonal(),
+            Self::six_one(),
+            Self::six_one_back(),
+            Self::six_one_front(),
+            Self::seven_zero(),
+            Self::seven_zero_front(),
             Self::seven_one(),
         ]
     }
@@ -333,6 +413,11 @@ impl ChannelLayout {
             "6.0" => Some(Self::six_zero()),
             "6.0(front)" => Some(Self::six_zero_front()),
             "hexagonal" => Some(Self::hexagonal()),
+            "6.1" => Some(Self::six_one()),
+            "6.1(back)" => Some(Self::six_one_back()),
+            "6.1(front)" => Some(Self::six_one_front()),
+            "7.0" => Some(Self::seven_zero()),
+            "7.0(front)" => Some(Self::seven_zero_front()),
             "7.1" => Some(Self::seven_one()),
             _ => None,
         }
@@ -411,6 +496,7 @@ impl ChannelLayout {
             4 => Some(Self::four_zero()),
             5 => Some(Self::five_zero()),
             6 => Some(Self::five_one()),
+            7 => Some(Self::six_one()),
             8 => Some(Self::seven_one()),
             _ => None,
         }
@@ -585,6 +671,42 @@ mod tests {
         assert!(hexagonal.contains(Channel::BackCenter));
         assert!(hexagonal.contains(Channel::BackLeft));
         assert!(!hexagonal.contains(Channel::SideLeft));
+
+        let six_one = ChannelLayout::six_one();
+        assert_eq!(six_one.name(), "6.1");
+        assert_eq!(six_one.channel_count(), 7);
+        assert!(six_one.contains(Channel::LowFrequency));
+        assert!(six_one.contains(Channel::BackCenter));
+        assert!(six_one.contains(Channel::SideRight));
+        assert!(!six_one.contains(Channel::BackLeft));
+
+        let six_one_back = ChannelLayout::six_one_back();
+        assert_eq!(six_one_back.name(), "6.1(back)");
+        assert_eq!(six_one_back.channel_count(), 7);
+        assert!(six_one_back.contains(Channel::BackLeft));
+        assert!(six_one_back.contains(Channel::BackCenter));
+        assert!(!six_one_back.contains(Channel::SideLeft));
+
+        let six_one_front = ChannelLayout::six_one_front();
+        assert_eq!(six_one_front.name(), "6.1(front)");
+        assert_eq!(six_one_front.channel_count(), 7);
+        assert!(six_one_front.contains(Channel::LowFrequency));
+        assert!(six_one_front.contains(Channel::FrontLeftOfCenter));
+        assert!(!six_one_front.contains(Channel::FrontCenter));
+
+        let seven_zero = ChannelLayout::seven_zero();
+        assert_eq!(seven_zero.name(), "7.0");
+        assert_eq!(seven_zero.channel_count(), 7);
+        assert!(seven_zero.contains(Channel::BackLeft));
+        assert!(seven_zero.contains(Channel::SideRight));
+        assert!(!seven_zero.contains(Channel::LowFrequency));
+
+        let seven_zero_front = ChannelLayout::seven_zero_front();
+        assert_eq!(seven_zero_front.name(), "7.0(front)");
+        assert_eq!(seven_zero_front.channel_count(), 7);
+        assert!(seven_zero_front.contains(Channel::FrontLeftOfCenter));
+        assert!(seven_zero_front.contains(Channel::FrontCenter));
+        assert!(!seven_zero_front.contains(Channel::LowFrequency));
     }
 
     #[test]
@@ -672,6 +794,26 @@ mod tests {
             "FL+FR+FC+BL+BR+BC"
         );
         assert_eq!(
+            ChannelLayout::six_one().channel_string(),
+            "FL+FR+FC+LFE+BC+SL+SR"
+        );
+        assert_eq!(
+            ChannelLayout::six_one_back().channel_string(),
+            "FL+FR+FC+LFE+BL+BR+BC"
+        );
+        assert_eq!(
+            ChannelLayout::six_one_front().channel_string(),
+            "FL+FR+LFE+FLC+FRC+SL+SR"
+        );
+        assert_eq!(
+            ChannelLayout::seven_zero().channel_string(),
+            "FL+FR+FC+BL+BR+SL+SR"
+        );
+        assert_eq!(
+            ChannelLayout::seven_zero_front().channel_string(),
+            "FL+FR+FC+FLC+FRC+SL+SR"
+        );
+        assert_eq!(
             ChannelLayout::from_channel_mask(
                 Channel::FrontLeft.mask()
                     | Channel::FrontRight.mask()
@@ -692,6 +834,66 @@ mod tests {
                 Channel::FrontLeft,
             ]),
             Some(ChannelLayout::hexagonal())
+        );
+        assert_eq!(
+            ChannelLayout::from_channel_mask(
+                Channel::FrontLeft.mask()
+                    | Channel::FrontRight.mask()
+                    | Channel::FrontCenter.mask()
+                    | Channel::LowFrequency.mask()
+                    | Channel::BackCenter.mask()
+                    | Channel::SideLeft.mask()
+                    | Channel::SideRight.mask()
+            ),
+            Some(ChannelLayout::six_one())
+        );
+        assert_eq!(
+            ChannelLayout::from_channel_mask(
+                Channel::FrontLeft.mask()
+                    | Channel::FrontRight.mask()
+                    | Channel::FrontCenter.mask()
+                    | Channel::LowFrequency.mask()
+                    | Channel::BackLeft.mask()
+                    | Channel::BackRight.mask()
+                    | Channel::BackCenter.mask()
+            ),
+            Some(ChannelLayout::six_one_back())
+        );
+        assert_eq!(
+            ChannelLayout::from_channels(&[
+                Channel::SideRight,
+                Channel::FrontRight,
+                Channel::SideLeft,
+                Channel::FrontRightOfCenter,
+                Channel::FrontLeft,
+                Channel::LowFrequency,
+                Channel::FrontLeftOfCenter,
+            ]),
+            Some(ChannelLayout::six_one_front())
+        );
+        assert_eq!(
+            ChannelLayout::from_channels(&[
+                Channel::SideRight,
+                Channel::BackRight,
+                Channel::FrontCenter,
+                Channel::SideLeft,
+                Channel::BackLeft,
+                Channel::FrontRight,
+                Channel::FrontLeft,
+            ]),
+            Some(ChannelLayout::seven_zero())
+        );
+        assert_eq!(
+            ChannelLayout::from_channel_mask(
+                Channel::FrontLeft.mask()
+                    | Channel::FrontRight.mask()
+                    | Channel::FrontCenter.mask()
+                    | Channel::FrontLeftOfCenter.mask()
+                    | Channel::FrontRightOfCenter.mask()
+                    | Channel::SideLeft.mask()
+                    | Channel::SideRight.mask()
+            ),
+            Some(ChannelLayout::seven_zero_front())
         );
         assert_eq!(
             ChannelLayout::from_channel_mask(Channel::FrontLeft.mask() | Channel::BackRight.mask()),
@@ -729,6 +931,11 @@ mod tests {
                 "6.0",
                 "6.0(front)",
                 "hexagonal",
+                "6.1",
+                "6.1(back)",
+                "6.1(front)",
+                "7.0",
+                "7.0(front)",
                 "7.1",
             ]
         );
@@ -790,6 +997,26 @@ mod tests {
             Some(ChannelLayout::hexagonal())
         );
         assert_eq!(
+            ChannelLayout::from_name("6.1"),
+            Some(ChannelLayout::six_one())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("6.1(back)"),
+            Some(ChannelLayout::six_one_back())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("6.1(front)"),
+            Some(ChannelLayout::six_one_front())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("7.0"),
+            Some(ChannelLayout::seven_zero())
+        );
+        assert_eq!(
+            ChannelLayout::from_name("7.0(front)"),
+            Some(ChannelLayout::seven_zero_front())
+        );
+        assert_eq!(
             ChannelLayout::from_name("7.1"),
             Some(ChannelLayout::seven_one())
         );
@@ -820,10 +1047,14 @@ mod tests {
             Some(ChannelLayout::five_one())
         );
         assert_eq!(
+            ChannelLayout::default_for_count(7),
+            Some(ChannelLayout::six_one())
+        );
+        assert_eq!(
             ChannelLayout::default_for_count(8),
             Some(ChannelLayout::seven_one())
         );
-        assert_eq!(ChannelLayout::default_for_count(7), None);
+        assert_eq!(ChannelLayout::default_for_count(9), None);
     }
 
     #[test]
@@ -900,6 +1131,26 @@ mod tests {
         assert_eq!(
             ChannelLayout::parse("FL+FR+FC+BL+BR+BC").unwrap(),
             ChannelLayout::hexagonal()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+LFE+BC+SL+SR").unwrap(),
+            ChannelLayout::six_one()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+LFE+BL+BR+BC").unwrap(),
+            ChannelLayout::six_one_back()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+LFE+FRC+SR+SL+FLC+FR").unwrap(),
+            ChannelLayout::six_one_front()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+BL+BR+SL+SR").unwrap(),
+            ChannelLayout::seven_zero()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+FLC+FRC+SL+SR").unwrap(),
+            ChannelLayout::seven_zero_front()
         );
     }
 
