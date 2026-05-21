@@ -129,15 +129,16 @@ pub fn add_stable(ts_tb: Rational, ts: i64, inc_tb: Rational, inc: i64) -> AvRes
         ));
     }
 
+    if m < d {
+        return Ok(ts);
+    }
+
     if m % d == 0 {
         let delta = i64::try_from(m / d)
             .map_err(|_| AvError::invalid_argument("stable timestamp increment out of range"))?;
         return ts
             .checked_add(delta)
             .ok_or_else(|| AvError::invalid_argument("stable timestamp result out of range"));
-    }
-    if m < d {
-        return Ok(ts);
     }
 
     let old = rescale_q(ts, ts_tb, scaled_inc)?;
@@ -645,14 +646,14 @@ mod tests {
     }
 
     #[test]
-    fn add_stable_subtracts_exact_negative_tick_increments() {
+    fn add_stable_keeps_exact_negative_tick_increments_unchanged() {
         let milliseconds = Rational::new(1, 1_000).unwrap();
 
         assert_eq!(
             add_stable(milliseconds, 1_000, milliseconds, -40).unwrap(),
-            960
+            1_000
         );
-        assert_eq!(add_stable(milliseconds, 10, milliseconds, -10).unwrap(), 0);
+        assert_eq!(add_stable(milliseconds, 10, milliseconds, -10).unwrap(), 10);
     }
 
     #[test]
@@ -721,10 +722,8 @@ mod tests {
             crate::AvErrorKind::InvalidArgument
         );
         assert_eq!(
-            add_stable(milliseconds, i64::MIN, milliseconds, -1)
-                .unwrap_err()
-                .kind(),
-            crate::AvErrorKind::InvalidArgument
+            add_stable(milliseconds, i64::MIN, milliseconds, -1).unwrap(),
+            i64::MIN
         );
     }
 

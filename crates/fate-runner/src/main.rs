@@ -203,6 +203,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/timebase_oracle.rs",
+        exact_ids: &["avutil-timebase"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/packet.rs",
         exact_ids: &["avutil-packet"],
         id_prefixes: &[],
@@ -1702,6 +1707,17 @@ mod tests {
         assert_eq!(
             changed_components(&component_ids, &paths),
             vec!["avutil-rational".to_string()]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_timebase_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-timebase"]));
+        let paths = vec!["crates/avutil/tests/timebase_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-timebase".to_string()]
         );
     }
 

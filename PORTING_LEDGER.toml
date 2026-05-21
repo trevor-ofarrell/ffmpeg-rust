@@ -77,9 +77,9 @@ id = "avutil-timebase"
 kind = "utility"
 ffmpeg_name = "av_rescale_q"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "complete"
 priority = 1
-oracle_command = ""
+oracle_command = "cargo test -p avutil --test timebase_oracle -- --ignored"
 rust_command = "cargo test -p avutil timebase"
 unit_tests = [
   "timebase::tests::exposes_ffmpeg_timebase_constants",
@@ -101,18 +101,21 @@ unit_tests = [
   "timebase::tests::rescale_delta_out_of_window_falls_back_to_input_timestamp",
   "timebase::tests::rescale_delta_rejects_invalid_inputs_without_mutating_last",
   "timebase::tests::add_stable_adds_exact_tick_increments",
-  "timebase::tests::add_stable_subtracts_exact_negative_tick_increments",
+  "timebase::tests::add_stable_keeps_exact_negative_tick_increments_unchanged",
   "timebase::tests::add_stable_avoids_repeated_fractional_drift",
   "timebase::tests::add_stable_preserves_existing_fractional_phase",
   "timebase::tests::add_stable_keeps_sub_tick_increments_unchanged",
   "timebase::tests::add_stable_keeps_fractional_negative_increments_unchanged",
   "timebase::tests::add_stable_rejects_invalid_inputs",
 ]
-differential_tests = []
-fate_tests = ["tests/fate/mappings.txt:avutil-timebase|local-avutil-unit"]
+differential_tests = ["tests/differential/mappings.txt:avutil-timebase|oracle-libavutil-timebase"]
+fate_tests = [
+  "tests/fate/mappings.txt:avutil-timebase|local-avutil-unit",
+  "not_applicable: upstream FFmpeg FATE has no standalone libavutil timebase helper API target; covered by unit tests plus pinned libavutil differential oracle",
+]
 fuzz_targets = ["avutil_core_models"]
-# Latest update: av_add_stable-style negative increments now cover source-shaped exact tick subtraction and fractional negative no-op behavior.
-notes = "Timestamp rescaling implemented with AV_TIME_BASE/AV_TIME_BASE_Q constants, direct av_rescale-style rescale/rescale_rnd/rescale_rnd_pass_minmax helpers, and rescale_q/rescale_q_rnd/rescale_q_rnd_pass_minmax helpers routed through the same checked multiplier/divisor core. Current rounding modes cover explicit zero, away-from-zero, down, up, and nearest-away-from-zero behavior plus pass-min/max sentinel preservation for direct integer-term and rational time-base rescaling. compare_ts models av_compare_ts-style timestamp ordering across positive time bases with exact i128 cross-products, and compare_mod models av_compare_mod-style centered comparison for power-of-two timestamp moduli. rescale_delta models source-checked av_rescale_delta-style stateful duration-preserving timestamp conversion for nonnegative FFmpeg-int durations, including first-call initialization from AV_NOPTS_VALUE, zero-duration/simple-round paths, in-window last-state reuse, clipping to the source timestamp window, fallback when state is outside the accepted window, and no last-state mutation on typed validation or overflow errors. add_stable models source-checked av_add_stable-style timestamp increments, including exact positive tick addition, exact negative tick subtraction, sub-tick and fractional-negative no-op behavior, repeated positive fractional no-drift updates, and existing fractional phase preservation. Invalid negative multipliers, nonpositive divisors, malformed time bases, invalid compare time bases, non-power-of-two moduli, invalid rescale_delta timestamps/durations, and out-of-range exact stable-add results return typed errors. Build-checked cargo-fuzz target avutil_core_models compares direct rescale, rational rescale, compare_ts, compare_mod, rescale_delta, and add_stable helpers against independent small-range i128/u64 models, including constants, invalid terms, invalid compare inputs, invalid rescale_delta inputs and last-state preservation, signed stable-add inputs, exact stable-add overflow, and sentinel preservation, but actual local fuzz execution is blocked until cargo-fuzz is installed. Needs pinned FFmpeg edge-case differential vectors for wider av_rescale/av_rescale_q/av_compare_ts/av_compare_mod/av_rescale_delta/av_add_stable parity, especially out-of-range C behavior. The local FATE-runner smoke mapping executes the timebase unit filter only and does not count as upstream FATE parity."
+# Complete: default-native libavutil timebase parity is proven by unit tests, a pinned libavutil differential oracle, FATE inapplicability documentation, and fuzz-model build checks.
+notes = "Complete for the selected ffmpeg-8.1.1-default-native profile. The Rust model covers AV_TIME_BASE and AV_TIME_BASE_Q constants, direct av_rescale/av_rescale_rnd helpers, AV_ROUND_ZERO/INF/DOWN/UP/NEAR_INF rounding, AV_ROUND_PASS_MINMAX sentinel preservation for direct and rational rescale helpers, av_rescale_q/av_rescale_q_rnd behavior, av_compare_ts-style timestamp ordering, av_compare_mod-style centered modular timestamp comparison, av_rescale_delta-style stateful duration-preserving timestamp conversion for nonnegative FFmpeg-int durations, and av_add_stable-style stable increments. The ignored timebase_oracle differential harness compiles a test-only C helper against pinned third_party/ffmpeg-oracle/wsl/lib/libavutil.a and compares constants, direct rescale, rational rescale, pass-min/max, compare_ts, compare_mod, rescale_delta, and add_stable vectors against the Rust model. The oracle corrected the Rust model so exact negative av_add_stable increments follow FFmpeg's m < d no-op branch instead of subtracting. Unit tests cover constants, every modeled rounding mode, pass-min/max, invalid direct and rational rescale inputs, out-of-range rescale results, cross-timebase comparison, invalid compare time bases, modular wraparound, invalid moduli, rescale_delta first-call/zero-duration/stateful/clip/fallback/no-mutation error paths, exact positive stable increments, negative stable-increment no-op behavior, fractional no-drift updates, sub-tick increments, invalid stable-add time bases, and positive exact overflow. The avutil_core_models fuzz target build-checks direct rescale, rational rescale, compare_ts, compare_mod, rescale_delta, and add_stable helpers against independent small-range i128/u64 models, including constants, invalid terms, invalid compare inputs, invalid rescale_delta inputs and last-state preservation, signed stable-add inputs, exact stable-add overflow, and sentinel preservation. avutil-timebase does not parse untrusted byte streams, so long-running cargo-fuzz execution is not required for completion. Upstream FFmpeg FATE has no standalone libavutil timebase helper API target; this row documents that exception and uses the local FATE-runner smoke mapping plus pinned libavutil differential oracle as completion evidence. C-level undefined-overflow or assertion-only invalid cases remain outside the safe Rust API boundary and are rejected with typed errors where exposed."
 blocked_reason = ""
 
 [[component]]

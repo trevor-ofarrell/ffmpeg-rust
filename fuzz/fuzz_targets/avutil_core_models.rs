@@ -16125,12 +16125,12 @@ fn expected_add_stable(ts_tb: Rational, ts: i64, inc_tb: Rational, inc: i64) -> 
     let m = i128::from(scaled_inc.num()) * i128::from(ts_tb.den());
     let d = i128::from(scaled_inc.den()) * i128::from(ts_tb.num());
 
+    if m < d {
+        return Ok(ts);
+    }
     if m % d == 0 {
         let delta = i64::try_from(m / d).map_err(|_| ())?;
         return ts.checked_add(delta).ok_or(());
-    }
-    if m < d {
-        return Ok(ts);
     }
 
     let old = expected_rescale(ts, ts_tb, scaled_inc, Rounding::NearInf)?;
