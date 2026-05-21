@@ -4725,6 +4725,39 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         custom_spec.to_custom_layout().unwrap(),
         CustomChannelLayout::parse_channel_list("FL@Left+FR@Right").unwrap()
     );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("FL+FR").unwrap())
+            .to_native_order_lossless()
+            .unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("FL+FC").unwrap())
+            .to_native_order_lossless()
+            .unwrap(),
+        ChannelLayoutSpec::NativeMask(arbitrary_layout)
+    );
+    assert_eq!(
+        arbitrary_spec.to_native_order_lossless().unwrap(),
+        ChannelLayoutSpec::NativeMask(arbitrary_layout)
+    );
+    assert_eq!(
+        custom_spec.to_native_order_lossless().unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(3).unwrap())
+            .to_unspecified_order_lossless()
+            .unwrap(),
+        ChannelLayoutSpec::unspecified(3).unwrap()
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Native(layout)
+            .to_unspecified_order_lossless()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
     let parsed_ambisonic_channel_list =
         ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap();
     assert_eq!(
@@ -10219,6 +10252,53 @@ fn exercise_fixtures() {
             .to_custom_layout()
             .unwrap(),
         CustomChannelLayout::unknown(2).unwrap()
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(canonical_custom.clone())
+            .to_native_order_lossless()
+            .unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("FL+FC").unwrap()
+        )
+        .to_native_order_lossless()
+        .unwrap(),
+        ChannelLayoutSpec::NativeMask(
+            NativeChannelMaskLayout::new(Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
+                .unwrap()
+        )
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(custom_layout.clone())
+            .to_native_order_lossless()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(2).unwrap())
+            .to_unspecified_order_lossless()
+            .unwrap(),
+        ChannelLayoutSpec::unspecified(2).unwrap()
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(
+            CustomChannelLayout::new(vec![ChannelCustom::new(ChannelId::Unknown, "A").unwrap()])
+                .unwrap()
+        )
+        .to_unspecified_order_lossless()
+        .unwrap_err()
+        .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Ambisonic(explicit_ambisonic)
+            .to_unspecified_order_lossless()
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
     );
     assert!(ambisonic_custom.is_equivalent_to_custom(
         &CustomChannelLayout::new(vec![
