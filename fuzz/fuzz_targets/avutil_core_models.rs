@@ -4745,6 +4745,19 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         custom_spec.to_native_order_lossless().unwrap_err().kind(),
         AvErrorKind::InvalidArgument
     );
+    let lossy_named_native = custom_spec.retype_to_native_order(true).unwrap();
+    assert!(lossy_named_native.is_lossy());
+    assert_eq!(
+        lossy_named_native.into_layout(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        duplicate_custom_spec
+            .retype_to_native_order(true)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
     assert_eq!(
         ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(3).unwrap())
             .to_unspecified_order_lossless()
@@ -4757,6 +4770,20 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidArgument
+    );
+    let lossy_native_unspecified = ChannelLayoutSpec::Native(layout)
+        .retype_to_unspecified_order(true)
+        .unwrap();
+    assert!(lossy_native_unspecified.is_lossy());
+    assert_eq!(
+        lossy_native_unspecified.into_layout(),
+        ChannelLayoutSpec::unspecified(layout.channel_count()).unwrap()
+    );
+    let lossy_custom_unspecified = custom_spec.retype_to_unspecified_order(true).unwrap();
+    assert!(lossy_custom_unspecified.is_lossy());
+    assert_eq!(
+        lossy_custom_unspecified.into_layout(),
+        ChannelLayoutSpec::unspecified(custom_spec.channel_count()).unwrap()
     );
     let parsed_ambisonic_channel_list =
         ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+FL+FR").unwrap();
@@ -10278,6 +10305,30 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidArgument
     );
     assert_eq!(
+        ChannelLayoutSpec::Custom(canonical_custom.clone())
+            .retype_to_native_order(false)
+            .unwrap()
+            .into_layout(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    let lossy_custom_layout_native = ChannelLayoutSpec::Custom(
+        CustomChannelLayout::parse_channel_list("FL@Left+FR").unwrap(),
+    )
+    .retype_to_native_order(true)
+    .unwrap();
+    assert!(lossy_custom_layout_native.is_lossy());
+    assert_eq!(
+        lossy_custom_layout_native.into_layout(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("FL+FL").unwrap())
+            .retype_to_native_order(true)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
         ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(2).unwrap())
             .to_unspecified_order_lossless()
             .unwrap(),
@@ -10297,8 +10348,25 @@ fn exercise_fixtures() {
         ChannelLayoutSpec::Ambisonic(explicit_ambisonic)
             .to_unspecified_order_lossless()
             .unwrap_err()
-            .kind(),
+        .kind(),
         AvErrorKind::InvalidArgument
+    );
+    let lossy_ambisonic_unspecified = ChannelLayoutSpec::Ambisonic(explicit_ambisonic)
+        .retype_to_unspecified_order(true)
+        .unwrap();
+    assert!(lossy_ambisonic_unspecified.is_lossy());
+    assert_eq!(
+        lossy_ambisonic_unspecified.into_layout(),
+        ChannelLayoutSpec::unspecified(explicit_ambisonic.channel_count()).unwrap()
+    );
+    let lossy_mixed_unspecified =
+        ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("UNK+UNSD").unwrap())
+            .retype_to_unspecified_order(true)
+            .unwrap();
+    assert!(lossy_mixed_unspecified.is_lossy());
+    assert_eq!(
+        lossy_mixed_unspecified.into_layout(),
+        ChannelLayoutSpec::unspecified(2).unwrap()
     );
     assert!(ambisonic_custom.is_equivalent_to_custom(
         &CustomChannelLayout::new(vec![

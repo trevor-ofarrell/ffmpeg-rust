@@ -2097,6 +2097,30 @@ pub enum ChannelLayoutSpec {
     Unspecified(UnspecifiedChannelLayout),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ChannelLayoutRetypeResult {
+    layout: ChannelLayoutSpec,
+    lossy: bool,
+}
+
+impl ChannelLayoutRetypeResult {
+    pub fn new(layout: ChannelLayoutSpec, lossy: bool) -> Self {
+        Self { layout, lossy }
+    }
+
+    pub fn layout(&self) -> &ChannelLayoutSpec {
+        &self.layout
+    }
+
+    pub fn into_layout(self) -> ChannelLayoutSpec {
+        self.layout
+    }
+
+    pub fn is_lossy(&self) -> bool {
+        self.lossy
+    }
+}
+
 impl ChannelLayoutSpec {
     pub fn native(layout: ChannelLayout) -> Self {
         Self::Native(layout)
@@ -2426,52 +2450,76 @@ impl ChannelLayoutSpec {
         }
     }
 
-    pub fn to_native_order_lossless(&self) -> AvResult<Self> {
+    pub fn retype_to_native_order(&self, allow_lossy: bool) -> AvResult<ChannelLayoutRetypeResult> {
         match self {
-            Self::Native(layout) => Ok(Self::Native(*layout)),
-            Self::NativeMask(layout) => Ok(Self::NativeMask(*layout)),
+            Self::Native(layout) => {
+                Ok(ChannelLayoutRetypeResult::new(Self::Native(*layout), false))
+            }
+            Self::NativeMask(layout) => Ok(ChannelLayoutRetypeResult::new(
+                Self::NativeMask(*layout),
+                false,
+            )),
             Self::Custom(layout) => {
-                if layout.has_custom_names() {
+                let native = Self::from_native_channel_mask(layout.canonical_native_mask()?)?;
+                let lossy = layout.has_custom_names();
+                if lossy && !allow_lossy {
                     return Err(AvError::invalid_argument(
                         "custom layout with names cannot be represented losslessly as native",
                     ));
                 }
-                Self::from_native_channel_mask(layout.canonical_native_mask()?)
+                Ok(ChannelLayoutRetypeResult::new(native, lossy))
             }
             Self::Ambisonic(_) | Self::Unspecified(_) => Err(AvError::invalid_argument(
-                "channel layout cannot be represented losslessly as native",
+                "channel layout cannot be represented as native",
             )),
         }
     }
 
-    pub fn to_unspecified_order_lossless(&self) -> AvResult<Self> {
+    pub fn to_native_order_lossless(&self) -> AvResult<Self> {
+        Ok(self.retype_to_native_order(false)?.into_layout())
+    }
+
+    pub fn retype_to_unspecified_order(
+        &self,
+        allow_lossy: bool,
+    ) -> AvResult<ChannelLayoutRetypeResult> {
         match self {
-            Self::Unspecified(layout) => Ok(Self::Unspecified(*layout)),
+            Self::Unspecified(layout) => Ok(ChannelLayoutRetypeResult::new(
+                Self::Unspecified(*layout),
+                false,
+            )),
             Self::Custom(layout) => {
-                if layout.has_custom_names() {
+                let lossless = !layout.has_custom_names()
+                    && layout
+                        .channels()
+                        .iter()
+                        .all(|channel| channel.id() == ChannelId::Unknown);
+                if !lossless && !allow_lossy {
                     return Err(AvError::invalid_argument(
-                        "custom layout with names cannot be represented losslessly as unspecified",
+                        "custom layout cannot be represented losslessly as unspecified",
                     ));
                 }
-                if layout
-                    .channels()
-                    .iter()
-                    .all(|channel| channel.id() == ChannelId::Unknown)
-                {
-                    return Ok(Self::Unspecified(UnspecifiedChannelLayout::new(
-                        layout.channel_count(),
-                    )?));
-                }
-                Err(AvError::invalid_argument(
-                    "custom layout cannot be represented losslessly as unspecified",
+                Ok(ChannelLayoutRetypeResult::new(
+                    Self::Unspecified(UnspecifiedChannelLayout::new(layout.channel_count())?),
+                    !lossless,
                 ))
             }
             Self::Native(_) | Self::NativeMask(_) | Self::Ambisonic(_) => {
-                Err(AvError::invalid_argument(
-                    "channel layout cannot be represented losslessly as unspecified",
+                if !allow_lossy {
+                    return Err(AvError::invalid_argument(
+                        "channel layout cannot be represented losslessly as unspecified",
+                    ));
+                }
+                Ok(ChannelLayoutRetypeResult::new(
+                    Self::Unspecified(UnspecifiedChannelLayout::new(self.channel_count())?),
+                    true,
                 ))
             }
         }
+    }
+
+    pub fn to_unspecified_order_lossless(&self) -> AvResult<Self> {
+        Ok(self.retype_to_unspecified_order(false)?.into_layout())
     }
 
     pub fn as_unspecified(&self) -> Option<UnspecifiedChannelLayout> {
@@ -5114,6 +5162,58 @@ mod tests {
     }
 
     #[test]
+    fn layout_specs_retype_to_native_order_reports_lossy_names() {
+        let named_stereo = ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("FL@Left+FR").unwrap(),
+        );
+        assert_eq!(
+            named_stereo
+                .retype_to_native_order(false)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let named_result = named_stereo.retype_to_native_order(true).unwrap();
+        assert!(named_result.is_lossy());
+        assert_eq!(
+            named_result.layout(),
+            &ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            named_result.into_layout(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+
+        let named_sparse = ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("FL@Left+FC").unwrap(),
+        );
+        let named_sparse_result = named_sparse.retype_to_native_order(true).unwrap();
+        assert!(named_sparse_result.is_lossy());
+        assert_eq!(
+            named_sparse_result.into_layout(),
+            ChannelLayoutSpec::NativeMask(
+                NativeChannelMaskLayout::new(
+                    Channel::FrontLeft.mask() | Channel::FrontCenter.mask()
+                )
+                .unwrap()
+            )
+        );
+
+        for layout in [
+            ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("FL+FL").unwrap()),
+            ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(2).unwrap()),
+            ChannelLayoutSpec::Ambisonic(AmbisonicChannelLayout::new(0, 0).unwrap()),
+            ChannelLayoutSpec::unspecified(2).unwrap(),
+        ] {
+            assert_eq!(
+                layout.retype_to_native_order(true).unwrap_err().kind(),
+                AvErrorKind::InvalidArgument
+            );
+        }
+    }
+
+    #[test]
     fn layout_specs_retype_to_unspecified_order_losslessly() {
         let unspecified = ChannelLayoutSpec::unspecified(2).unwrap();
         assert_eq!(
@@ -5156,6 +5256,46 @@ mod tests {
                 AvErrorKind::InvalidArgument
             );
         }
+    }
+
+    #[test]
+    fn layout_specs_retype_to_unspecified_order_reports_lossy_conversions() {
+        for layout in [
+            ChannelLayoutSpec::Native(ChannelLayout::stereo()),
+            ChannelLayoutSpec::NativeMask(
+                NativeChannelMaskLayout::new(
+                    Channel::FrontLeft.mask() | Channel::FrontCenter.mask(),
+                )
+                .unwrap(),
+            ),
+            ChannelLayoutSpec::Ambisonic(AmbisonicChannelLayout::new(1, 0).unwrap()),
+            ChannelLayoutSpec::Custom(
+                CustomChannelLayout::parse_channel_list("FL@Left+FR").unwrap(),
+            ),
+            ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("UNK+UNSD").unwrap()),
+        ] {
+            assert_eq!(
+                layout
+                    .retype_to_unspecified_order(false)
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidArgument
+            );
+            let result = layout.retype_to_unspecified_order(true).unwrap();
+            assert!(result.is_lossy());
+            assert_eq!(
+                result.into_layout(),
+                ChannelLayoutSpec::unspecified(layout.channel_count()).unwrap()
+            );
+        }
+
+        let lossless_unknown = ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(2).unwrap());
+        let result = lossless_unknown.retype_to_unspecified_order(true).unwrap();
+        assert!(!result.is_lossy());
+        assert_eq!(
+            result.into_layout(),
+            ChannelLayoutSpec::unspecified(2).unwrap()
+        );
     }
 
     #[test]
