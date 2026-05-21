@@ -1,3 +1,7 @@
+use crate::error::{AvError, AvResult};
+
+pub const AV_HASH_MAX_SIZE: usize = 64;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Adler32 {
     a: u32,
@@ -1744,6 +1748,275 @@ fn ripemd320_compress(state: &mut [u32; 10], block: &[u8; 64]) {
     state[9] = state[9].wrapping_add(er);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HashAlgorithm {
+    Md5,
+    Murmur3,
+    Ripemd128,
+    Ripemd160,
+    Ripemd256,
+    Ripemd320,
+    Sha160,
+    Sha224,
+    Sha256,
+    Sha512Trunc224,
+    Sha512Trunc256,
+    Sha384,
+    Sha512,
+    Crc32,
+    Adler32,
+}
+
+impl HashAlgorithm {
+    pub const ALL: [Self; 15] = [
+        Self::Md5,
+        Self::Murmur3,
+        Self::Ripemd128,
+        Self::Ripemd160,
+        Self::Ripemd256,
+        Self::Ripemd320,
+        Self::Sha160,
+        Self::Sha224,
+        Self::Sha256,
+        Self::Sha512Trunc224,
+        Self::Sha512Trunc256,
+        Self::Sha384,
+        Self::Sha512,
+        Self::Crc32,
+        Self::Adler32,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Md5 => "MD5",
+            Self::Murmur3 => "murmur3",
+            Self::Ripemd128 => "RIPEMD128",
+            Self::Ripemd160 => "RIPEMD160",
+            Self::Ripemd256 => "RIPEMD256",
+            Self::Ripemd320 => "RIPEMD320",
+            Self::Sha160 => "SHA160",
+            Self::Sha224 => "SHA224",
+            Self::Sha256 => "SHA256",
+            Self::Sha512Trunc224 => "SHA512/224",
+            Self::Sha512Trunc256 => "SHA512/256",
+            Self::Sha384 => "SHA384",
+            Self::Sha512 => "SHA512",
+            Self::Crc32 => "CRC32",
+            Self::Adler32 => "adler32",
+        }
+    }
+
+    pub fn size(self) -> usize {
+        match self {
+            Self::Md5 | Self::Murmur3 | Self::Ripemd128 => 16,
+            Self::Ripemd160 | Self::Sha160 => 20,
+            Self::Sha224 | Self::Sha512Trunc224 => 28,
+            Self::Ripemd256 | Self::Sha256 | Self::Sha512Trunc256 => 32,
+            Self::Ripemd320 => 40,
+            Self::Sha384 => 48,
+            Self::Sha512 => 64,
+            Self::Crc32 | Self::Adler32 => 4,
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|algorithm| algorithm.name().eq_ignore_ascii_case(name))
+    }
+}
+
+pub fn hash_name(index: usize) -> Option<&'static str> {
+    HashAlgorithm::ALL
+        .get(index)
+        .map(|algorithm| algorithm.name())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HashContext {
+    state: GenericHashState,
+}
+
+impl HashContext {
+    pub fn new(name: &str) -> AvResult<Self> {
+        let algorithm = HashAlgorithm::from_name(name)
+            .ok_or_else(|| AvError::invalid_argument(format!("unknown hash algorithm `{name}`")))?;
+        Ok(Self::from_algorithm(algorithm))
+    }
+
+    pub fn from_algorithm(algorithm: HashAlgorithm) -> Self {
+        Self {
+            state: GenericHashState::new(algorithm),
+        }
+    }
+
+    pub fn algorithm(&self) -> HashAlgorithm {
+        self.state.algorithm()
+    }
+
+    pub fn name(&self) -> &'static str {
+        self.algorithm().name()
+    }
+
+    pub fn size(&self) -> usize {
+        self.algorithm().size()
+    }
+
+    pub fn reset(&mut self) {
+        self.state = GenericHashState::new(self.algorithm());
+    }
+
+    pub fn update(&mut self, data: &[u8]) {
+        self.state.update(data);
+    }
+
+    pub fn finalize(self) -> Vec<u8> {
+        self.state.digest()
+    }
+
+    pub fn finalize_bin(self, size: usize) -> Vec<u8> {
+        let mut output = vec![0; size];
+        self.finalize_bin_into(&mut output);
+        output
+    }
+
+    pub fn finalize_bin_into(self, dst: &mut [u8]) {
+        let digest = self.finalize();
+        dst.fill(0);
+        let copy_len = digest.len().min(dst.len());
+        dst[..copy_len].copy_from_slice(&digest[..copy_len]);
+    }
+
+    pub fn finalize_hex(self) -> String {
+        digest_to_hex(&self.finalize())
+    }
+
+    pub fn finalize_hex_buffer(self, size: usize) -> Vec<u8> {
+        let mut output = vec![0; size];
+        self.finalize_hex_into(&mut output);
+        output
+    }
+
+    pub fn finalize_hex_into(self, dst: &mut [u8]) {
+        write_c_string_buffer(digest_to_hex(&self.finalize()).as_bytes(), dst);
+    }
+
+    pub fn finalize_base64(self) -> String {
+        digest_to_base64(&self.finalize())
+    }
+
+    pub fn finalize_base64_buffer(self, size: usize) -> Vec<u8> {
+        let mut output = vec![0; size];
+        self.finalize_base64_into(&mut output);
+        output
+    }
+
+    pub fn finalize_base64_into(self, dst: &mut [u8]) {
+        write_base64_c_string_buffer(digest_to_base64(&self.finalize()).as_bytes(), dst);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GenericHashState {
+    Adler32(Adler32),
+    Crc32(Crc32),
+    Murmur3(Murmur3),
+    Md5(Md5),
+    Ripemd128(Ripemd128),
+    Ripemd160(Ripemd160),
+    Ripemd256(Ripemd256),
+    Ripemd320(Ripemd320),
+    Sha160(Sha1),
+    Sha224(Sha224),
+    Sha256(Sha256),
+    Sha384(Sha384),
+    Sha512(Sha512),
+    Sha512Trunc224(Sha512Trunc224),
+    Sha512Trunc256(Sha512Trunc256),
+}
+
+impl GenericHashState {
+    fn new(algorithm: HashAlgorithm) -> Self {
+        match algorithm {
+            HashAlgorithm::Adler32 => Self::Adler32(Adler32::new()),
+            HashAlgorithm::Crc32 => Self::Crc32(Crc32::new()),
+            HashAlgorithm::Murmur3 => Self::Murmur3(Murmur3::new()),
+            HashAlgorithm::Md5 => Self::Md5(Md5::new()),
+            HashAlgorithm::Ripemd128 => Self::Ripemd128(Ripemd128::new()),
+            HashAlgorithm::Ripemd160 => Self::Ripemd160(Ripemd160::new()),
+            HashAlgorithm::Ripemd256 => Self::Ripemd256(Ripemd256::new()),
+            HashAlgorithm::Ripemd320 => Self::Ripemd320(Ripemd320::new()),
+            HashAlgorithm::Sha160 => Self::Sha160(Sha1::new()),
+            HashAlgorithm::Sha224 => Self::Sha224(Sha224::new()),
+            HashAlgorithm::Sha256 => Self::Sha256(Sha256::new()),
+            HashAlgorithm::Sha384 => Self::Sha384(Sha384::new()),
+            HashAlgorithm::Sha512 => Self::Sha512(Sha512::new()),
+            HashAlgorithm::Sha512Trunc224 => Self::Sha512Trunc224(Sha512Trunc224::new()),
+            HashAlgorithm::Sha512Trunc256 => Self::Sha512Trunc256(Sha512Trunc256::new()),
+        }
+    }
+
+    fn algorithm(&self) -> HashAlgorithm {
+        match self {
+            Self::Adler32(_) => HashAlgorithm::Adler32,
+            Self::Crc32(_) => HashAlgorithm::Crc32,
+            Self::Murmur3(_) => HashAlgorithm::Murmur3,
+            Self::Md5(_) => HashAlgorithm::Md5,
+            Self::Ripemd128(_) => HashAlgorithm::Ripemd128,
+            Self::Ripemd160(_) => HashAlgorithm::Ripemd160,
+            Self::Ripemd256(_) => HashAlgorithm::Ripemd256,
+            Self::Ripemd320(_) => HashAlgorithm::Ripemd320,
+            Self::Sha160(_) => HashAlgorithm::Sha160,
+            Self::Sha224(_) => HashAlgorithm::Sha224,
+            Self::Sha256(_) => HashAlgorithm::Sha256,
+            Self::Sha384(_) => HashAlgorithm::Sha384,
+            Self::Sha512(_) => HashAlgorithm::Sha512,
+            Self::Sha512Trunc224(_) => HashAlgorithm::Sha512Trunc224,
+            Self::Sha512Trunc256(_) => HashAlgorithm::Sha512Trunc256,
+        }
+    }
+
+    fn update(&mut self, data: &[u8]) {
+        match self {
+            Self::Adler32(state) => state.update(data),
+            Self::Crc32(state) => state.update(data),
+            Self::Murmur3(state) => state.update(data),
+            Self::Md5(state) => state.update(data),
+            Self::Ripemd128(state) => state.update(data),
+            Self::Ripemd160(state) => state.update(data),
+            Self::Ripemd256(state) => state.update(data),
+            Self::Ripemd320(state) => state.update(data),
+            Self::Sha160(state) => state.update(data),
+            Self::Sha224(state) => state.update(data),
+            Self::Sha256(state) => state.update(data),
+            Self::Sha384(state) => state.update(data),
+            Self::Sha512(state) => state.update(data),
+            Self::Sha512Trunc224(state) => state.update(data),
+            Self::Sha512Trunc256(state) => state.update(data),
+        }
+    }
+
+    fn digest(&self) -> Vec<u8> {
+        match self {
+            Self::Adler32(state) => state.finalize().to_be_bytes().to_vec(),
+            Self::Crc32(state) => state.finalize().to_be_bytes().to_vec(),
+            Self::Murmur3(state) => state.clone().finalize().to_vec(),
+            Self::Md5(state) => state.clone().finalize().to_vec(),
+            Self::Ripemd128(state) => state.clone().finalize().to_vec(),
+            Self::Ripemd160(state) => state.clone().finalize().to_vec(),
+            Self::Ripemd256(state) => state.clone().finalize().to_vec(),
+            Self::Ripemd320(state) => state.clone().finalize().to_vec(),
+            Self::Sha160(state) => state.clone().finalize().to_vec(),
+            Self::Sha224(state) => state.clone().finalize().to_vec(),
+            Self::Sha256(state) => state.clone().finalize().to_vec(),
+            Self::Sha384(state) => state.clone().finalize().to_vec(),
+            Self::Sha512(state) => state.clone().finalize().to_vec(),
+            Self::Sha512Trunc224(state) => state.clone().finalize().to_vec(),
+            Self::Sha512Trunc256(state) => state.clone().finalize().to_vec(),
+        }
+    }
+}
+
 pub fn digest_to_hex(digest: &[u8]) -> String {
     let mut output = String::with_capacity(digest.len() * 2);
     for byte in digest {
@@ -1751,6 +2024,57 @@ pub fn digest_to_hex(digest: &[u8]) -> String {
         write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
     }
     output
+}
+
+pub fn digest_to_base64(digest: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity(digest.len().div_ceil(3) * 4);
+
+    for chunk in digest.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = chunk.get(1).copied().unwrap_or(0);
+        let b2 = chunk.get(2).copied().unwrap_or(0);
+        let packed = (u32::from(b0) << 16) | (u32::from(b1) << 8) | u32::from(b2);
+
+        output.push(ALPHABET[((packed >> 18) & 0x3f) as usize] as char);
+        output.push(ALPHABET[((packed >> 12) & 0x3f) as usize] as char);
+        output.push(if chunk.len() >= 2 {
+            ALPHABET[((packed >> 6) & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+        output.push(if chunk.len() == 3 {
+            ALPHABET[(packed & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+    }
+
+    output
+}
+
+fn write_c_string_buffer(content: &[u8], dst: &mut [u8]) {
+    if dst.len() <= 1 {
+        return;
+    }
+
+    let copy_len = content.len().min(dst.len() - 1);
+    dst[..copy_len].copy_from_slice(&content[..copy_len]);
+    dst[copy_len] = 0;
+}
+
+fn write_base64_c_string_buffer(content: &[u8], dst: &mut [u8]) {
+    if dst.is_empty() {
+        return;
+    }
+    if dst.len() == 1 {
+        dst[0] = 0;
+        return;
+    }
+
+    let copy_len = content.len().min(dst.len() - 1);
+    dst[..copy_len].copy_from_slice(&content[..copy_len]);
+    dst[copy_len] = 0;
 }
 
 #[cfg(test)]
@@ -2169,5 +2493,172 @@ mod tests {
     #[test]
     fn digest_to_hex_formats_lowercase_bytes() {
         assert_eq!(digest_to_hex(&[0x00, 0x0f, 0x10, 0xff]), "000f10ff");
+    }
+
+    #[test]
+    fn generic_hash_inventory_matches_ffmpeg_order_and_sizes() {
+        let names = HashAlgorithm::ALL
+            .iter()
+            .map(|algorithm| algorithm.name())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "MD5",
+                "murmur3",
+                "RIPEMD128",
+                "RIPEMD160",
+                "RIPEMD256",
+                "RIPEMD320",
+                "SHA160",
+                "SHA224",
+                "SHA256",
+                "SHA512/224",
+                "SHA512/256",
+                "SHA384",
+                "SHA512",
+                "CRC32",
+                "adler32",
+            ]
+        );
+        for (index, algorithm) in HashAlgorithm::ALL.iter().copied().enumerate() {
+            assert_eq!(hash_name(index), Some(algorithm.name()));
+            assert!(algorithm.size() <= AV_HASH_MAX_SIZE);
+        }
+        assert_eq!(hash_name(HashAlgorithm::ALL.len()), None);
+        assert_eq!(HashAlgorithm::Md5.size(), 16);
+        assert_eq!(HashAlgorithm::Sha512.size(), AV_HASH_MAX_SIZE);
+        assert_eq!(HashAlgorithm::Adler32.size(), 4);
+    }
+
+    #[test]
+    fn generic_hash_name_lookup_is_ascii_case_insensitive() {
+        assert_eq!(HashAlgorithm::from_name("md5"), Some(HashAlgorithm::Md5));
+        assert_eq!(
+            HashAlgorithm::from_name("SHA512/224"),
+            Some(HashAlgorithm::Sha512Trunc224)
+        );
+        assert_eq!(
+            HashAlgorithm::from_name("sha512/256"),
+            Some(HashAlgorithm::Sha512Trunc256)
+        );
+        assert_eq!(
+            HashAlgorithm::from_name("ADLER32"),
+            Some(HashAlgorithm::Adler32)
+        );
+        assert_eq!(HashAlgorithm::from_name("sha512-256"), None);
+        assert_eq!(HashAlgorithm::from_name(""), None);
+
+        let err = HashContext::new("unknown").unwrap_err();
+        assert_eq!(err.kind(), crate::error::AvErrorKind::InvalidArgument);
+    }
+
+    #[test]
+    fn generic_hash_context_streams_resets_and_finalizes() {
+        let mut ctx = HashContext::new("sha256").unwrap();
+        assert_eq!(ctx.algorithm(), HashAlgorithm::Sha256);
+        assert_eq!(ctx.name(), "SHA256");
+        assert_eq!(ctx.size(), 32);
+
+        ctx.update(b"a");
+        ctx.update(b"b");
+        ctx.update(b"c");
+        assert_eq!(ctx.clone().finalize(), sha256(b"abc").to_vec());
+        assert_eq!(
+            ctx.clone().finalize_hex(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            ctx.clone().finalize_base64(),
+            "ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0="
+        );
+
+        ctx.reset();
+        assert_eq!(ctx.finalize(), sha256(b"").to_vec());
+    }
+
+    #[test]
+    fn generic_hash_context_matches_all_direct_helpers() {
+        let payload = b"The quick brown fox jumps over the lazy dog";
+        for (algorithm, expected) in [
+            (HashAlgorithm::Md5, md5(payload).to_vec()),
+            (HashAlgorithm::Murmur3, murmur3(payload).to_vec()),
+            (HashAlgorithm::Ripemd128, ripemd128(payload).to_vec()),
+            (HashAlgorithm::Ripemd160, ripemd160(payload).to_vec()),
+            (HashAlgorithm::Ripemd256, ripemd256(payload).to_vec()),
+            (HashAlgorithm::Ripemd320, ripemd320(payload).to_vec()),
+            (HashAlgorithm::Sha160, sha1(payload).to_vec()),
+            (HashAlgorithm::Sha224, sha224(payload).to_vec()),
+            (HashAlgorithm::Sha256, sha256(payload).to_vec()),
+            (HashAlgorithm::Sha512Trunc224, sha512_224(payload).to_vec()),
+            (HashAlgorithm::Sha512Trunc256, sha512_256(payload).to_vec()),
+            (HashAlgorithm::Sha384, sha384(payload).to_vec()),
+            (HashAlgorithm::Sha512, sha512(payload).to_vec()),
+            (
+                HashAlgorithm::Crc32,
+                crc32_ieee(payload).to_be_bytes().to_vec(),
+            ),
+            (
+                HashAlgorithm::Adler32,
+                adler32(payload).to_be_bytes().to_vec(),
+            ),
+        ] {
+            let mut ctx = HashContext::from_algorithm(algorithm);
+            ctx.update(&payload[..3]);
+            ctx.update(&payload[3..31]);
+            ctx.update(&payload[31..]);
+            assert_eq!(ctx.finalize(), expected, "{}", algorithm.name());
+        }
+    }
+
+    #[test]
+    fn generic_hash_binary_output_truncates_and_zero_pads() {
+        let digest = md5(b"abc");
+
+        let mut short = HashContext::from_algorithm(HashAlgorithm::Md5);
+        short.update(b"abc");
+        assert_eq!(short.finalize_bin(4), digest[..4].to_vec());
+
+        let mut exact = HashContext::from_algorithm(HashAlgorithm::Md5);
+        exact.update(b"abc");
+        assert_eq!(exact.finalize_bin(16), digest.to_vec());
+
+        let mut padded = HashContext::from_algorithm(HashAlgorithm::Md5);
+        padded.update(b"abc");
+        let padded = padded.finalize_bin(19);
+        assert_eq!(&padded[..16], digest.as_slice());
+        assert_eq!(&padded[16..], &[0, 0, 0]);
+    }
+
+    #[test]
+    fn generic_hash_text_buffers_are_nul_terminated_and_truncated() {
+        let mut ctx = HashContext::from_algorithm(HashAlgorithm::Md5);
+        ctx.update(b"abc");
+        assert_eq!(ctx.clone().finalize_hex_buffer(0), Vec::<u8>::new());
+        assert_eq!(ctx.clone().finalize_hex_buffer(1), vec![0]);
+        assert_eq!(ctx.clone().finalize_hex_buffer(6), b"90015\0".to_vec());
+        assert_eq!(
+            ctx.clone().finalize_hex_buffer(33),
+            b"900150983cd24fb0d6963f7d28e17f72\0".to_vec()
+        );
+        let mut caller_hex = [0xcc; 6];
+        ctx.clone().finalize_hex_into(&mut caller_hex);
+        assert_eq!(&caller_hex, b"90015\0");
+        let mut one_byte = [0xcc; 1];
+        ctx.clone().finalize_hex_into(&mut one_byte);
+        assert_eq!(one_byte, [0xcc]);
+
+        assert_eq!(digest_to_base64(&md5(b"abc")), "kAFQmDzST7DWlj99KOF/cg==");
+        assert_eq!(
+            ctx.clone().finalize_base64_buffer(25),
+            b"kAFQmDzST7DWlj99KOF/cg==\0".to_vec()
+        );
+        let mut caller_b64 = [0xcc; 5];
+        ctx.clone().finalize_base64_into(&mut caller_b64);
+        assert_eq!(&caller_b64, b"kAFQ\0");
+        let mut one_byte_b64 = [0xcc; 1];
+        ctx.clone().finalize_base64_into(&mut one_byte_b64);
+        assert_eq!(one_byte_b64, [0]);
+        assert_eq!(ctx.finalize_base64_buffer(5), b"kAFQ\0".to_vec());
     }
 }

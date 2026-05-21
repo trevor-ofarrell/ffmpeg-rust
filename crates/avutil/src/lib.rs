@@ -70,10 +70,11 @@ pub use frame::{
     VideoFrame,
 };
 pub use hash::{
-    adler32, crc32_ieee, digest_to_hex, md5, murmur3, murmur3_seeded, ripemd128, ripemd160,
-    ripemd256, ripemd320, sha1, sha224, sha256, sha384, sha512, sha512_224, sha512_256, Adler32,
-    Crc32, Md5, Murmur3, Ripemd128, Ripemd160, Ripemd256, Ripemd320, Sha1, Sha224, Sha256, Sha384,
-    Sha512, Sha512Trunc224, Sha512Trunc256,
+    adler32, crc32_ieee, digest_to_base64, digest_to_hex, hash_name, md5, murmur3, murmur3_seeded,
+    ripemd128, ripemd160, ripemd256, ripemd320, sha1, sha224, sha256, sha384, sha512, sha512_224,
+    sha512_256, Adler32, Crc32, HashAlgorithm, HashContext, Md5, Murmur3, Ripemd128, Ripemd160,
+    Ripemd256, Ripemd320, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224, Sha512Trunc256,
+    AV_HASH_MAX_SIZE,
 };
 pub use logging::{
     clear_global_log_callback, clear_global_log_records, flush_global_log_repeated,

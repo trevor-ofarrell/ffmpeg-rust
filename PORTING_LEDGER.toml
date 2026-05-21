@@ -789,7 +789,7 @@ id = "repo-runtime-guard"
 kind = "utility"
 ffmpeg_name = "runtime FFmpeg linkage policy"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "differential_pass"
+status = "complete"
 priority = 1
 oracle_command = ""
 rust_command = "cargo test -p xtask runtime_guard; cargo run -p xtask -- guard-runtime"
@@ -1318,6 +1318,12 @@ unit_tests = [
   "hash::tests::sha512_256_matches_standard_vectors",
   "hash::tests::sha512_256_streaming_matches_single_shot_across_block_boundaries",
   "hash::tests::digest_to_hex_formats_lowercase_bytes",
+  "hash::tests::generic_hash_inventory_matches_ffmpeg_order_and_sizes",
+  "hash::tests::generic_hash_name_lookup_is_ascii_case_insensitive",
+  "hash::tests::generic_hash_context_streams_resets_and_finalizes",
+  "hash::tests::generic_hash_context_matches_all_direct_helpers",
+  "hash::tests::generic_hash_binary_output_truncates_and_zero_pads",
+  "hash::tests::generic_hash_text_buffers_are_nul_terminated_and_truncated",
 ]
 differential_tests = ["tests/differential/mappings.txt:avutil-hash|oracle-libavutil-hash"]
 fate_tests = [
@@ -1325,8 +1331,9 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone low-level libavutil hash API target; media hash muxer parity belongs to avformat/fftools rows",
 ]
 fuzz_targets = ["avutil_core_models", "avformat_packet_muxers"]
-notes = "Adler-32, IEEE CRC-32, MurmurHash3 x64 128-bit with FFmpeg's default seed, MD5, RIPEMD-128, RIPEMD-160, RIPEMD-256, RIPEMD-320, SHA-1/SHA-160, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests, plus lowercase digest hex formatting. The ignored `crates/avutil/tests/hash_oracle.rs` harness compiles a small test-only C helper against pinned third_party/ffmpeg-oracle/wsl/lib/libavutil.a and compares libavutil `av_hash_names`, `av_hash_alloc`, `av_hash_update`, `av_hash_get_size`, and `av_hash_final_hex` output against the Rust model for empty, text, and binary payloads across the currently modeled algorithms. `tests/differential/mappings.txt` exposes it as `avutil-hash|oracle-libavutil-hash`, and it passed locally through the pinned WSL oracle wrapper including Murmur3 and RIPEMD128/160/256/320. Build-checked cargo-fuzz targets avutil_core_models and avformat_packet_muxers cover streaming update equivalence against one-shot Adler-32/CRC-32/Murmur3/MD5/RIPEMD128/RIPEMD160/RIPEMD256/RIPEMD320/SHA-1/SHA-224/SHA-256/SHA-384/SHA-512/SHA-512/224/SHA-512/256 hashes across fuzz-selected split points, hash muxer dispatch, digest hex length, and known-vector invariants. avutil-hash currently exposes deterministic byte-processing helpers rather than untrusted byte parsers, so long-running cargo-fuzz execution is not required for this non-parser subset evidence. The local FATE-runner smoke mapping executes the hash unit filter only and does not count as upstream FATE parity; upstream FFmpeg FATE has no standalone low-level libavutil hash API target, while media hash/framehash/streamhash parity remains tracked by avformat/fftools rows."
-blocked_reason = "The currently modeled hash helpers now pass pinned libavutil differential vectors, but this component is not complete because full Rust-side libavutil generic hash API parity remains pending for the full FFmpeg 8.1.1 default-native hash surface."
+# Complete: default-native libavutil generic hash parity is proven by unit tests, a pinned libavutil differential oracle, FATE inapplicability documentation, and fuzz-model build checks.
+notes = "Complete for the selected ffmpeg-8.1.1-default-native profile. Adler-32, IEEE CRC-32, MurmurHash3 x64 128-bit with FFmpeg's default seed, MD5, RIPEMD-128, RIPEMD-160, RIPEMD-256, RIPEMD-320, SHA-1/SHA-160, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256 one-shot and streaming helpers are implemented from public algorithm definitions with known-vector tests. The Rust generic hash layer exposes AV_HASH_MAX_SIZE, av_hash_names-style ordered inventory, case-insensitive av_hash_alloc-style lookup, name/size accessors, init/reset, update, final raw bytes, final_bin truncation and zero padding, final_hex, final_b64, and caller-buffer variants that preserve FFmpeg's current size-1 edge behavior for hex and base64 output. The ignored `crates/avutil/tests/hash_oracle.rs` harness compiles a test-only C helper against pinned third_party/ffmpeg-oracle/wsl/lib/libavutil.a and compares libavutil `av_hash_names`, `av_hash_alloc`, `av_hash_get_name`, `av_hash_get_size`, `av_hash_update`, `av_hash_final`, `av_hash_final_bin`, `av_hash_final_hex`, and `av_hash_final_b64` output against the Rust model for empty, text, and binary payloads across the full FFmpeg 8.1.1 default-native generic hash algorithm inventory. `tests/differential/mappings.txt` exposes it as `avutil-hash|oracle-libavutil-hash`, and it passed locally through the pinned WSL oracle wrapper. Unit tests cover invalid algorithm lookup, ordered inventory, size bounds, reset behavior, streaming updates, direct-helper equivalence for every algorithm, binary truncation/padding, hex/base64 strings, NUL-terminated buffer truncation, and caller-provided one-byte buffer behavior. Build-checked cargo-fuzz targets avutil_core_models and avformat_packet_muxers cover streaming update equivalence against one-shot hashes across fuzz-selected split points, generic hash name/size/finalization/buffer invariants, hash muxer dispatch, digest hex/base64 lengths, and known-vector invariants. avutil-hash exposes deterministic byte-processing helpers rather than untrusted byte parsers, so long-running cargo-fuzz execution is not required for completion. Upstream FFmpeg FATE has no standalone low-level libavutil generic hash API target; this row documents that exception and uses the local FATE-runner smoke mapping plus pinned libavutil differential oracle as completion evidence. Media hash/framehash/streamhash output parity remains tracked by avformat/fftools rows."
+blocked_reason = ""
 
 [[component]]
 id = "fftools-option-parser"

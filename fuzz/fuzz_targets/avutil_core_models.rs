@@ -2,10 +2,11 @@
 
 use avutil::{
     adler32, add_stable, av_error_description, av_make_error_string, av_strerror, compare_mod,
-    compare_ts, crc32_ieee, digest_to_hex, md5, murmur3, parse_color, rescale, rescale_delta,
-    rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax,
-    ripemd128, ripemd160, ripemd256, ripemd320, sha1, sha224, sha256, sha384, sha512,
-    sha512_224, sha512_256, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind,
+    compare_ts, crc32_ieee, digest_to_base64, digest_to_hex, hash_name, md5, murmur3,
+    parse_color, rescale, rescale_delta, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax,
+    rescale_rnd, rescale_rnd_pass_minmax, ripemd128, ripemd160, ripemd256, ripemd320, sha1,
+    sha224, sha256, sha384, sha512, sha512_224, sha512_256, Adler32, AudioFrame, AvError,
+    AvErrorCode, AvErrorKind,
     BufferPool,
     AmbisonicChannelLayout, BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId,
     ChannelLayout, ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame,
@@ -62,10 +63,11 @@ use avutil::{
     PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, PixelFormatClass, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, Murmur3, Ripemd128, Ripemd160, Ripemd256, Ripemd320, Sha1, Sha224,
-    Sha256, Sha384, Sha512, Sha512Trunc224, Sha512Trunc256, SideData, VideoFrame,
-    AV_ERROR_MAX_STRING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE,
-    AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE,
+    SampleFormatNumericKind, HashAlgorithm, HashContext, Murmur3, Ripemd128, Ripemd160,
+    Ripemd256, Ripemd320, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
+    Sha512Trunc256, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE,
+    AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE, AV_TIME_BASE_Q,
+    AVPALETTE_COUNT, AVPALETTE_SIZE,
 };
 use libfuzzer_sys::fuzz_target;
 use std::cmp::Ordering;
@@ -6913,6 +6915,68 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let sha512_256_digest = sha512_256_state.finalize();
     assert_eq!(sha512_256_digest, sha512_256(&payload));
     assert_eq!(digest_to_hex(&sha512_256_digest).len(), 64);
+
+    let algorithm_index =
+        usize::from(cursor.next().unwrap_or_default()) % HashAlgorithm::ALL.len();
+    let algorithm = HashAlgorithm::ALL[algorithm_index];
+    assert_eq!(hash_name(algorithm_index), Some(algorithm.name()));
+    assert_eq!(hash_name(HashAlgorithm::ALL.len()), None);
+    assert_eq!(HashAlgorithm::from_name(algorithm.name()), Some(algorithm));
+    assert_eq!(
+        HashAlgorithm::from_name(&algorithm.name().to_ascii_lowercase()),
+        Some(algorithm)
+    );
+    assert!(algorithm.size() <= AV_HASH_MAX_SIZE);
+
+    let mut generic = HashContext::new(algorithm.name()).unwrap();
+    assert_eq!(generic.algorithm(), algorithm);
+    assert_eq!(generic.name(), algorithm.name());
+    assert_eq!(generic.size(), algorithm.size());
+    generic.update(&payload[..split]);
+    generic.update(&payload[split..second_split]);
+    generic.update(&payload[second_split..third_split]);
+    generic.update(&payload[third_split..]);
+    let generic_digest = generic.clone().finalize();
+    let expected_generic_digest = expected_hash_digest(algorithm, &payload);
+    assert_eq!(generic_digest, expected_generic_digest);
+    assert_eq!(generic_digest.len(), algorithm.size());
+    assert_eq!(digest_to_hex(&generic_digest).len(), algorithm.size() * 2);
+    assert_eq!(digest_to_base64(&generic_digest).len(), algorithm.size().div_ceil(3) * 4);
+
+    let bin_size =
+        usize::from(cursor.next().unwrap_or_default()) % (algorithm.size().saturating_add(3));
+    let generic_bin = generic.clone().finalize_bin(bin_size);
+    assert_eq!(generic_bin.len(), bin_size);
+    assert_eq!(
+        &generic_bin[..generic_digest.len().min(bin_size)],
+        &generic_digest[..generic_digest.len().min(bin_size)]
+    );
+    if bin_size > generic_digest.len() {
+        assert!(generic_bin[generic_digest.len()..].iter().all(|byte| *byte == 0));
+    }
+
+    let hex_buffer_size =
+        usize::from(cursor.next().unwrap_or_default()) % (algorithm.size() * 2 + 4);
+    let hex_buffer = generic.clone().finalize_hex_buffer(hex_buffer_size);
+    assert_eq!(hex_buffer.len(), hex_buffer_size);
+    if hex_buffer_size > 0 {
+        assert_eq!(hex_buffer[hex_buffer_size - 1], 0);
+    }
+
+    let b64_buffer_size =
+        usize::from(cursor.next().unwrap_or_default()) % (algorithm.size().div_ceil(3) * 4 + 4);
+    let b64_buffer = generic.clone().finalize_base64_buffer(b64_buffer_size);
+    assert_eq!(b64_buffer.len(), b64_buffer_size);
+    if b64_buffer_size > 0 {
+        assert_eq!(b64_buffer[b64_buffer_size - 1], 0);
+    }
+
+    generic.reset();
+    assert_eq!(generic.finalize(), expected_hash_digest(algorithm, b""));
+    assert_eq!(
+        HashContext::new("").unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
 }
 
 fn exercise_fixtures() {
@@ -21414,6 +21478,26 @@ fn expected_av_error_code_for_io(kind: io::ErrorKind) -> Option<AvErrorCode> {
         io::ErrorKind::InvalidData => Some(AvErrorCode::INVALIDDATA),
         io::ErrorKind::Unsupported => Some(AvErrorCode::ENOSYS),
         _ => None,
+    }
+}
+
+fn expected_hash_digest(algorithm: HashAlgorithm, payload: &[u8]) -> Vec<u8> {
+    match algorithm {
+        HashAlgorithm::Md5 => md5(payload).to_vec(),
+        HashAlgorithm::Murmur3 => murmur3(payload).to_vec(),
+        HashAlgorithm::Ripemd128 => ripemd128(payload).to_vec(),
+        HashAlgorithm::Ripemd160 => ripemd160(payload).to_vec(),
+        HashAlgorithm::Ripemd256 => ripemd256(payload).to_vec(),
+        HashAlgorithm::Ripemd320 => ripemd320(payload).to_vec(),
+        HashAlgorithm::Sha160 => sha1(payload).to_vec(),
+        HashAlgorithm::Sha224 => sha224(payload).to_vec(),
+        HashAlgorithm::Sha256 => sha256(payload).to_vec(),
+        HashAlgorithm::Sha512Trunc224 => sha512_224(payload).to_vec(),
+        HashAlgorithm::Sha512Trunc256 => sha512_256(payload).to_vec(),
+        HashAlgorithm::Sha384 => sha384(payload).to_vec(),
+        HashAlgorithm::Sha512 => sha512(payload).to_vec(),
+        HashAlgorithm::Crc32 => crc32_ieee(payload).to_be_bytes().to_vec(),
+        HashAlgorithm::Adler32 => adler32(payload).to_be_bytes().to_vec(),
     }
 }
 
