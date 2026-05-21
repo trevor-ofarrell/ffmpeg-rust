@@ -3155,6 +3155,19 @@ mod tests {
             ChannelId::from_ffmpeg_string("AMBI"),
             Some(ChannelId::Ambisonic(0))
         );
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("AMBIx"),
+            Some(ChannelId::Ambisonic(0))
+        );
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("AMBI+"),
+            Some(ChannelId::Ambisonic(0))
+        );
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("AMBI-0tail"),
+            Some(ChannelId::Ambisonic(0))
+        );
+        assert_eq!(ChannelId::from_ffmpeg_string("AMBI-1"), None);
         assert_eq!(ChannelId::from_ffmpeg_string("AMBI1024"), None);
 
         let user = ChannelId::from_raw(0x800);
@@ -3170,6 +3183,10 @@ mod tests {
         assert_eq!(ChannelId::from_canonical_name("USR-2"), None);
         assert_eq!(
             ChannelId::from_ffmpeg_string("USR0"),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+        assert_eq!(
+            ChannelId::from_ffmpeg_string("USR-0"),
             Some(ChannelId::Native(Channel::FrontLeft))
         );
         assert_eq!(
@@ -3197,6 +3214,7 @@ mod tests {
             Some(ChannelId::Unknown)
         );
         assert_eq!(ChannelId::from_ffmpeg_string("USR-1"), None);
+        assert_eq!(ChannelId::from_ffmpeg_string("USR-0tail"), None);
         assert_eq!(ChannelId::from_ffmpeg_string("USR45tail"), None);
         assert_eq!(ChannelId::from_ffmpeg_string("USR+"), None);
         assert_eq!(ChannelId::from_ffmpeg_string("USRx"), None);
@@ -5402,12 +5420,28 @@ mod tests {
             )
         );
         assert_eq!(
+            ChannelLayoutSpec::parse("USR-0").unwrap(),
+            ChannelLayoutSpec::NativeMask(
+                NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()
+            )
+        );
+        assert_eq!(
             ChannelLayoutSpec::parse("AMBI0x1tail").unwrap(),
             ChannelLayoutSpec::Custom(
                 CustomChannelLayout::new(vec![
                     ChannelCustom::new(ChannelId::Ambisonic(1), "").unwrap()
                 ])
                 .unwrap()
+            )
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("AMBIx").unwrap(),
+            ChannelLayoutSpec::Ambisonic(AmbisonicChannelLayout::new(0, 0).unwrap())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("AMBIx+USR-0").unwrap(),
+            ChannelLayoutSpec::Ambisonic(
+                AmbisonicChannelLayout::new(0, Channel::FrontLeft.mask()).unwrap()
             )
         );
         assert_eq!(
