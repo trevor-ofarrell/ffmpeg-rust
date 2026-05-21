@@ -10,3 +10,4 @@ avformat-rawvideo-demuxer|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE=
 avformat-rawvideo-muxer|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
 avutil-channel-layout|oracle-ffmpeg-layouts|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|channel_layout_oracle|--|--ignored
 avformat-wav-demuxer|oracle-wav-generated-md5|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|wav_oracle|wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle|--|--ignored
+avutil-sample-format|oracle-ffmpeg-sample-fmts|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|sample_format_oracle|--|--ignored
