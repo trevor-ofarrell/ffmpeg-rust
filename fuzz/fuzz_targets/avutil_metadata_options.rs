@@ -155,7 +155,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 8 {
+        match cursor.next().unwrap_or_default() % 12 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -249,7 +249,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     assert_eq!(options, before);
                 }
             }
-            _ => {
+            9 => {
                 let child_name = option_child_name_from(cursor);
                 let option_name = option_name_from(cursor);
                 let raw = option_value_string_from(cursor);
@@ -259,6 +259,58 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     assert_child_option_value_is_valid(&options, &child_name, &option_name);
                 } else {
                     assert_eq!(options, before);
+                }
+            }
+            10 => {
+                let name = option_name_from(cursor);
+                let before = options.clone();
+                let result = options.remove_definition(&name);
+                match result {
+                    Ok((definition, value)) => {
+                        assert_eq!(options.len() + 1, before.len());
+                        definition.validate_value(&value).unwrap();
+                        assert!(options.definition(definition.name()).is_none());
+                        assert!(options.get(definition.name()).is_none());
+                        assert_option_set_invariants(&options);
+                    }
+                    Err(_) => {
+                        assert_eq!(options, before);
+                    }
+                }
+            }
+            _ => {
+                let before = options.clone();
+                if cursor.next().unwrap_or_default().is_multiple_of(2) {
+                    let unit = option_unit_from(cursor);
+                    let name = option_constant_name_from(cursor);
+                    let result = options.remove_constant(&unit, &name);
+                    match result {
+                        Ok(constant) => {
+                            assert_eq!(options.constants().len() + 1, before.constants().len());
+                            assert!(options
+                                .constants_for_unit(constant.unit())
+                                .all(|remaining| {
+                                    !ascii_eq_ignore_case(remaining.name(), constant.name())
+                                }));
+                            assert_option_set_invariants(&options);
+                        }
+                        Err(_) => {
+                            assert_eq!(options, before);
+                        }
+                    }
+                } else {
+                    let name = option_child_name_from(cursor);
+                    let result = options.remove_child(&name);
+                    match result {
+                        Ok(child) => {
+                            assert_eq!(options.children().len() + 1, before.children().len());
+                            assert!(options.child(child.name()).is_none());
+                            assert_option_set_invariants(&options);
+                        }
+                        Err(_) => {
+                            assert_eq!(options, before);
+                        }
+                    }
                 }
             }
         }
@@ -428,6 +480,19 @@ fn exercise_fixtures() {
             .len(),
         2
     );
+
+    let (removed_definition, removed_value) = options.remove_definition("THREADS").unwrap();
+    assert_eq!(removed_definition.name(), "threads");
+    assert_eq!(removed_value, OptionValue::Int(8));
+    assert!(options.get("threads").is_none());
+    let removed_constant = options.remove_constant("PRESET", "FAST").unwrap();
+    assert_eq!(removed_constant.name(), "fast");
+    assert!(options.set_from_str("preset_level", "fast").is_err());
+    options.set_from_str("preset_level", "slow").unwrap();
+    let removed_child = options.remove_child("ENCODER").unwrap();
+    assert_eq!(removed_child.name(), "encoder");
+    assert!(options.child("encoder").is_none());
+    assert_option_set_invariants(&options);
 }
 
 fn assert_valid_dictionary(dict: &Dictionary) {

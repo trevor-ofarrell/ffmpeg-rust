@@ -1,4 +1,5 @@
 /target/
+/target-*/
 /fuzz/target/
 /compat/ffmpeg-8.1.1/*.txt
 /compat/ffmpeg-8.1.1/inventory.toml

@@ -556,6 +556,33 @@ impl OptionSet {
         Ok(())
     }
 
+    pub fn remove_definition(&mut self, name: &str) -> AvResult<(OptionDefinition, OptionValue)> {
+        let index = self.option_index(name)?;
+        let definition = self.definitions.remove(index);
+        let value = self.values.remove(index);
+        Ok((definition, value))
+    }
+
+    pub fn remove_constant(&mut self, unit: &str, name: &str) -> AvResult<OptionConstant> {
+        let index = self.find_constant_index(unit, name).ok_or_else(|| {
+            AvError::new(
+                AvErrorKind::NotFound,
+                format!("unknown option constant `{name}` for unit `{unit}`"),
+            )
+        })?;
+        Ok(self.constants.remove(index))
+    }
+
+    pub fn remove_child(&mut self, name: &str) -> AvResult<OptionChild> {
+        let index = self.find_child_index(name).ok_or_else(|| {
+            AvError::new(
+                AvErrorKind::NotFound,
+                format!("unknown option child `{name}`"),
+            )
+        })?;
+        Ok(self.children.remove(index))
+    }
+
     pub fn definition(&self, name: &str) -> Option<&OptionDefinition> {
         self.find_index(name).map(|index| &self.definitions[index])
     }
@@ -1516,6 +1543,89 @@ mod tests {
 
         assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(options, before);
+    }
+
+    #[test]
+    fn option_set_removes_definitions_constants_and_children_case_insensitively() {
+        let mut options = sample_options();
+        options.set("threads", OptionValue::Int(8)).unwrap();
+        let mut child_options = OptionSet::new();
+        child_options
+            .define(
+                OptionDefinition::new(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 16 },
+                    OptionValue::Int(2),
+                    "child worker count",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define_child(OptionChild::new("decoder", child_options, "decoder options").unwrap())
+            .unwrap();
+
+        let before_missing = options.clone();
+        assert_eq!(
+            options.remove_definition("missing").unwrap_err().kind(),
+            AvErrorKind::NotFound
+        );
+        assert_eq!(options, before_missing);
+
+        let (removed_definition, removed_value) = options.remove_definition("THREADS").unwrap();
+        assert_eq!(removed_definition.name(), "threads");
+        assert_eq!(removed_value, OptionValue::Int(8));
+        assert_eq!(options.len(), before_missing.len() - 1);
+        assert_eq!(options.definitions()[0].name(), "bitexact");
+        assert!(options.definition("threads").is_none());
+        assert!(options.get("threads").is_none());
+        assert_eq!(
+            options.get_child_option("decoder", "threads").unwrap(),
+            &OptionValue::Int(2)
+        );
+
+        let before_missing_constant = options.clone();
+        assert_eq!(
+            options
+                .remove_constant("preset", "missing")
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::NotFound
+        );
+        assert_eq!(options, before_missing_constant);
+
+        let removed_constant = options.remove_constant("PRESET", "FAST").unwrap();
+        assert_eq!(removed_constant.unit(), "preset");
+        assert_eq!(removed_constant.name(), "fast");
+        assert_eq!(
+            options
+                .constants_for_unit("preset")
+                .map(OptionConstant::name)
+                .collect::<Vec<_>>(),
+            vec!["slow"]
+        );
+        assert!(options.set_from_str("preset_level", "fast").is_err());
+        assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(0)));
+        options.set_from_str("preset_level", "slow").unwrap();
+        assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(8)));
+
+        let before_missing_child = options.clone();
+        assert_eq!(
+            options.remove_child("encoder").unwrap_err().kind(),
+            AvErrorKind::NotFound
+        );
+        assert_eq!(options, before_missing_child);
+
+        let removed_child = options.remove_child("DECODER").unwrap();
+        assert_eq!(removed_child.name(), "decoder");
+        assert!(options.child("decoder").is_none());
+        assert_eq!(
+            options
+                .get_child_option("decoder", "threads")
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::NotFound
+        );
     }
 
     #[test]
