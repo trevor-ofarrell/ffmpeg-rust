@@ -4503,6 +4503,42 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         }),
         layout.channel_mask()
     );
+    let first_source_order_channel = Channel::ALL
+        .iter()
+        .copied()
+        .find(|channel| layout.contains(*channel))
+        .unwrap();
+    assert_eq!(
+        layout.channel_from_index(0),
+        Some(ChannelId::Native(first_source_order_channel))
+    );
+    assert_eq!(
+        layout
+            .index_from_channel(ChannelId::Native(first_source_order_channel))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        layout
+            .index_from_string(first_source_order_channel.name())
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        layout.channel_from_string(first_source_order_channel.name()),
+        Some(ChannelId::Native(first_source_order_channel))
+    );
+    assert_eq!(
+        layout.channel_from_index(usize::from(layout.channel_count())),
+        None
+    );
+    assert_eq!(
+        layout
+            .index_from_channel(ChannelId::Unknown)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
     let duplicate_layout = format!(
         "{}+{}",
         layout.channels()[0].name(),
@@ -9548,6 +9584,19 @@ fn exercise_fixtures() {
     );
     assert_eq!(custom_layout.index_from_string("FL@Left").unwrap(), 0);
     assert_eq!(custom_layout.index_from_string("@SecondLeft").unwrap(), 3);
+    assert_eq!(
+        custom_layout.channel_from_string("FL@Left"),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
+    assert_eq!(
+        custom_layout.channel_from_string("@SecondLeft"),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
+    assert_eq!(
+        custom_layout.channel_from_string("AMBI1"),
+        Some(ChannelId::Ambisonic(1))
+    );
+    assert_eq!(custom_layout.channel_from_string("FR@Left"), None);
     assert_eq!(
         custom_layout.describe(),
         "4 channels (FL@Left+UNK+AMBI1@Y+FL@SecondLeft)"

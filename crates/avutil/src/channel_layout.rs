@@ -503,6 +503,11 @@ impl CustomChannelLayout {
         self.channels.get(index).map(ChannelCustom::id)
     }
 
+    pub fn channel_from_string(&self, name: &str) -> Option<ChannelId> {
+        let index = self.index_from_string(name).ok()?;
+        self.channel_from_index(index)
+    }
+
     pub fn has_custom_names(&self) -> bool {
         self.channels.iter().any(ChannelCustom::has_name)
     }
@@ -1456,6 +1461,58 @@ impl ChannelLayout {
         self.channel_mask() & mask
     }
 
+    pub fn channel_from_index(self, index: usize) -> Option<ChannelId> {
+        let mut remaining = index;
+        let mask = self.channel_mask();
+        for channel in Channel::ALL.iter().copied() {
+            if mask & channel.mask() == 0 {
+                continue;
+            }
+            if remaining == 0 {
+                return Some(ChannelId::Native(channel));
+            }
+            remaining -= 1;
+        }
+        None
+    }
+
+    pub fn index_from_channel(self, id: ChannelId) -> AvResult<usize> {
+        let ChannelId::Native(channel) = id else {
+            return Err(AvError::invalid_argument(
+                "channel is not present in native layout",
+            ));
+        };
+        let channel_mask = channel.mask();
+        let mask = self.channel_mask();
+        if mask & channel_mask == 0 {
+            return Err(AvError::invalid_argument(
+                "channel is not present in native layout",
+            ));
+        }
+
+        Ok((mask & (channel_mask - 1)).count_ones() as usize)
+    }
+
+    pub fn index_from_string(self, name: &str) -> AvResult<usize> {
+        if name.is_empty() {
+            return Err(AvError::invalid_argument("empty channel lookup"));
+        }
+        if name.contains('\0') {
+            return Err(AvError::invalid_argument(
+                "channel lookup contains NUL byte",
+            ));
+        }
+
+        let id = ChannelId::from_canonical_name(name)
+            .ok_or_else(|| AvError::invalid_argument(format!("unknown channel id {name:?}")))?;
+        self.index_from_channel(id)
+    }
+
+    pub fn channel_from_string(self, name: &str) -> Option<ChannelId> {
+        let index = self.index_from_string(name).ok()?;
+        self.channel_from_index(index)
+    }
+
     pub fn is_equivalent_to(self, other: Self) -> bool {
         self.channel_count() == other.channel_count() && self.channel_mask() == other.channel_mask()
     }
@@ -1738,6 +1795,24 @@ mod tests {
         assert_eq!(layout.index_from_string("@SecondLeft").unwrap(), 3);
         assert_eq!(layout.index_from_string("UNSD@Gap").unwrap(), 4);
         assert_eq!(layout.index_from_string("USR2048@Vendor").unwrap(), 5);
+        assert_eq!(
+            layout.channel_from_string("FL"),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+        assert_eq!(
+            layout.channel_from_string("@SecondLeft"),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+        assert_eq!(
+            layout.channel_from_string("AMBI2"),
+            Some(ChannelId::Ambisonic(2))
+        );
+        assert_eq!(
+            layout.channel_from_string("USR2048@Vendor"),
+            Some(ChannelId::User(0x800))
+        );
+        assert_eq!(layout.channel_from_string("FR@Left"), None);
+        assert_eq!(layout.channel_from_string(""), None);
         assert!(layout.canonical_native_mask().is_err());
         assert_eq!(layout.canonical_native_layout(), None);
         assert_eq!(
@@ -2030,6 +2105,69 @@ mod tests {
                 .subset_native_mask(stereo_mask),
             0
         );
+    }
+
+    #[test]
+    fn channel_layouts_lookup_channels_in_source_order() {
+        let stereo = ChannelLayout::stereo();
+        assert_eq!(
+            stereo.channel_from_index(0),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+        assert_eq!(
+            stereo.channel_from_index(1),
+            Some(ChannelId::Native(Channel::FrontRight))
+        );
+        assert_eq!(stereo.channel_from_index(2), None);
+        assert_eq!(
+            stereo
+                .index_from_channel(ChannelId::Native(Channel::FrontRight))
+                .unwrap(),
+            1
+        );
+        assert_eq!(stereo.index_from_string("FR").unwrap(), 1);
+        assert_eq!(
+            stereo.channel_from_string("FR"),
+            Some(ChannelId::Native(Channel::FrontRight))
+        );
+        assert_eq!(stereo.channel_from_string("BR"), None);
+
+        for id in [
+            ChannelId::None,
+            ChannelId::Unknown,
+            ChannelId::Ambisonic(0),
+            ChannelId::User(0x800),
+            ChannelId::Native(Channel::BackLeft),
+        ] {
+            let err = stereo.index_from_channel(id).unwrap_err();
+            assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        }
+        for lookup in ["", "BR", "AMBI0", "FL@Left", "NOPE", "FL\0"] {
+            let err = stereo.index_from_string(lookup).unwrap_err();
+            assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        }
+
+        let twenty_two_two = ChannelLayout::twenty_two_two();
+        assert_eq!(
+            twenty_two_two.channel_from_index(8),
+            Some(ChannelId::Native(Channel::BackCenter))
+        );
+        assert_eq!(
+            twenty_two_two
+                .index_from_channel(ChannelId::Native(Channel::TopCenter))
+                .unwrap(),
+            11
+        );
+        assert_eq!(twenty_two_two.index_from_string("BFC").unwrap(), 21);
+        assert_eq!(
+            twenty_two_two.channel_from_index(21),
+            Some(ChannelId::Native(Channel::BottomFrontCenter))
+        );
+        assert_eq!(
+            twenty_two_two.channel_from_index(23),
+            Some(ChannelId::Native(Channel::BottomFrontRight))
+        );
+        assert_eq!(twenty_two_two.channel_from_index(24), None);
     }
 
     #[test]

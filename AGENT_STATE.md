@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-channel-layout` update: source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.c` confirmed `av_channel_layout_channel_from_index`, `av_channel_layout_index_from_channel`, `av_channel_layout_index_from_string`, and `av_channel_layout_channel_from_string` behavior for native and custom layouts. The Rust model now exposes current native/custom lookup helpers: native channel lookup by index and string follows mask-bit source order, custom string lookup returns the first matching map entry, invalid lookups return typed invalid-argument errors or `None`, and deterministic fuzz fixtures cover the new lookup contracts. Focused unit validation, formatting, fuzz-package build/clippy, avutil clippy, local FATE, changed-path FATE, downstream `avformat` audio tests, FATE listing, and final diff checks passed. The component remains `implemented`, not `complete`, because full `av_channel_layout_from_string()` grammar, broad native/custom/ambisonic retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC`, unspecified-order comparison, oracle inventory parity, upstream FATE parity, and actual fuzz execution remain absent.
+
 Latest `avutil-channel-layout` update: source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.c` confirmed `av_channel_layout_subset` returns `layout->u.mask & mask` for native or ambisonic layouts and, for custom maps, scans requested native mask bits and includes a bit when `av_channel_layout_index_from_channel()` finds that raw channel ID in the custom map. The Rust model now exposes `ChannelLayout::subset_mask` and `CustomChannelLayout::subset_native_mask` for the current native/custom subset, including name-insensitive custom presence checks, duplicate collapse, out-of-order custom presence, and non-native ID exclusion. Focused unit validation, formatting, fuzz-package build/clippy, avutil clippy, local FATE, changed-path FATE, downstream `avformat` audio tests, FATE listing, and final diff checks passed. The component remains `implemented`, not `complete`, because full `av_channel_layout_from_string()` grammar, broad native/custom/ambisonic retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC`, unspecified-order comparison, oracle inventory parity, upstream FATE parity, and actual fuzz execution remain absent.
 
 Latest `avutil-channel-layout` update: source checking against pinned FFmpeg 8.1.1 `libavutil/channel_layout.c` confirmed `av_channel_layout_compare` rejects different channel counts, treats one unspecified layout as unequal and two unspecified layouts as equal, compares same-order native or ambisonic masks directly, and otherwise compares `av_channel_layout_channel_from_index()` results by position while ignoring custom channel names. The Rust model now exposes current-subset native/custom equivalence helpers on `ChannelLayout` and `CustomChannelLayout`, covering native mask equality, native-vs-custom channel ID equality by index, custom-vs-custom channel ID equality by index, name-insensitive custom equivalence, out-of-order rejection, unknown custom equality, and ambisonic custom ID equality. Focused unit validation passed for this slice so far. The component remains `implemented`, not `complete`, because full `av_channel_layout_from_string()` grammar, broad native/custom/ambisonic retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC`, unspecified-order comparison, oracle inventory parity, upstream FATE parity, and actual fuzz execution remain absent.
@@ -387,6 +389,22 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-channel-layout` lookup slice:
+  - `Select-String -Path $env:TEMP\ffmpeg-channel-layout-8.1.1.c -Pattern 'av_channel_layout_index_from_channel|av_channel_layout_channel_from_index|av_channel_layout_index_from_string|av_channel_layout_channel_from_string' -Context 6,35` (source-check only)
+  - `Select-String -Path $env:TEMP\ffmpeg-channel-layout-8.1.1.h -Pattern 'av_channel_layout_index_from_channel|av_channel_layout_channel_from_index|av_channel_layout_index_from_string|av_channel_layout_channel_from_string' -Context 4,12` (source-check only)
+  - `cargo fmt --all`
+  - `cargo test -p avutil channel_layout --target-dir target-codex`
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo fmt --all -- --check`
+  - `cargo clippy -p avutil --all-targets --target-dir target-codex -- -D warnings`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-channel-layout`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `cargo test -p avformat audio --target-dir target-codex`
+  - `cargo run --target-dir target-codex -p fate-runner -- list`
+  - `git diff --check`
 
 - Current `avutil-channel-layout` subset-mask slice:
   - `Select-String -Path $env:TEMP\ffmpeg-channel-layout-8.1.1.c -Pattern 'av_channel_layout_subset' -Context 0,25` (source-check only)
@@ -4409,6 +4427,10 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-channel-layout` lookup slice:
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex` initially failed because deterministic native lookup assertions were inserted before the fuzz fixture's `layout` variable was declared. The assertions were moved to the existing generated-layout section, and the same command then passed.
+  - Full `av_channel_layout_from_string()` grammar, broad native/custom/ambisonic retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC` layout semantics, unspecified-order comparison, `ffmpeg -layouts` oracle inventory comparison, upstream FATE parity, and actual fuzz execution remain blockers rather than completion claims.
+
 - Current `avutil-channel-layout` subset-mask slice:
   - No command failures were observed while adding current-subset native/custom subset-mask helpers; focused channel-layout unit tests, formatting, fuzz-package build/clippy, avutil clippy, local FATE, changed-path FATE, downstream `avformat` audio tests, FATE listing, and diff checks passed.
   - Full `av_channel_layout_from_string()` grammar, broad native/custom/ambisonic retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC` layout semantics, unspecified-order comparison, `ffmpeg -layouts` oracle inventory comparison, upstream FATE parity, and actual fuzz execution remain blockers rather than completion claims.
@@ -4781,6 +4803,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds source-shaped current native/custom channel lookup helpers by index, raw channel ID, and string. It follows `av_channel_layout_channel_from_index`, `av_channel_layout_index_from_channel`, `av_channel_layout_index_from_string`, and `av_channel_layout_channel_from_string` for the currently modeled native/custom surfaces: native indices use mask-bit order, native strings resolve through canonical channel names, and custom strings support first-match raw ID, `CH@name`, and `@name` lookup through the existing bounded custom-map subset. It does not claim full `av_channel_layout_from_string()` grammar, broad native/custom/ambisonic retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC`, unspecified-order comparison, oracle inventory parity, upstream FATE parity, or actual fuzz execution.
+
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds source-shaped current-subset native mask extraction helpers for native layouts and custom maps. It follows `av_channel_layout_subset` for the currently modeled native/custom surfaces by intersecting native layout masks directly and by checking requested native channel IDs for presence in custom maps while ignoring names, duplicate entries, and non-native IDs. It does not claim full `av_channel_layout_from_string()` grammar, broad native/custom/ambisonic retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC`, unspecified-order comparison, oracle inventory parity, upstream FATE parity, or actual fuzz execution.
 
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change adds source-shaped current-subset layout equivalence helpers for native/native, native/custom, and custom/custom layout pairs. It follows `av_channel_layout_compare` for the currently modeled non-unspecified surfaces by requiring equal channel counts and equal channel IDs at each index, ignoring custom channel names. It does not claim full `av_channel_layout_from_string()` grammar, broad native/custom/ambisonic retyping, implicit `AV_CHANNEL_ORDER_AMBISONIC`, unspecified-order comparison, oracle inventory parity, upstream FATE parity, or actual fuzz execution.
@@ -4969,6 +4993,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Known Blockers
 
+- Latest `avutil-channel-layout` lookup coverage is limited to current native/custom surfaces and deliberately omits implicit `AV_CHANNEL_ORDER_AMBISONIC` index layout behavior and unspecified-order lookup because the Rust model does not yet expose those layout orders as first-class variants.
+
 - Latest `avutil-channel-layout` subset-mask coverage is limited to current native/custom surfaces and deliberately omits implicit `AV_CHANNEL_ORDER_AMBISONIC` mask storage because the Rust model does not yet expose that layout order as a first-class `ChannelLayout` variant.
 
 - Latest `avutil-channel-layout` comparison coverage is limited to current native/custom surfaces and deliberately omits unspecified-order layouts and implicit `AV_CHANNEL_ORDER_AMBISONIC` mask comparison because the Rust model does not yet expose those layout orders.
@@ -5050,6 +5076,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added source-checked current native/custom channel lookup helpers to `avutil-channel-layout`. Source checking against pinned `libavutil/channel_layout.c` confirmed native `channel_from_index` walks mask bits in source order, `index_from_channel` rejects absent and non-native IDs for native layouts, custom lookup returns first matching map entries, and `channel_from_string` is a string-to-index-to-channel wrapper. `ChannelLayout` now exposes `channel_from_index`, `index_from_channel`, `index_from_string`, and `channel_from_string`; `CustomChannelLayout` now exposes `channel_from_string`. Unit tests cover stereo lookup, invalid native IDs/strings, `22.2` mask-order indices, and custom string-to-channel lookup. `avutil_core_models` build-checks generated native source-order lookup and custom lookup fixtures. Validation passed with focused channel-layout tests, fuzz-package build/clippy, avutil clippy, local FATE mapping, changed-path FATE mappings, downstream `avformat` audio tests, format checks, FATE listing, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`, because full parsing/retyping/implicit-ambisonic/unspecified/oracle/FATE/fuzz parity remains absent.
 
 Latest slice: added source-checked current-subset layout subset helpers to `avutil-channel-layout`. Source checking against pinned `libavutil/channel_layout.c` confirmed `av_channel_layout_subset` intersects native or ambisonic masks directly and, for custom maps, scans requested native mask bits and includes those whose raw channel IDs are present. `ChannelLayout::subset_mask` and `CustomChannelLayout::subset_native_mask` now cover the currently modeled native/custom surfaces without introducing implicit ambisonic layout order semantics. Unit tests cover native mask intersection, zero masks, named custom presence, duplicate native IDs collapsing to one bit, out-of-order custom maps, unknown-only custom maps, and exclusion of non-native custom IDs. `avutil_core_models` build-checks the same deterministic subset-mask fixtures. Validation passed with focused channel-layout tests, fuzz-package build/clippy, avutil clippy, local FATE mapping, changed-path FATE mappings, downstream `avformat` audio tests, format checks, FATE listing, and `git diff --check` with CRLF warnings only. The component remains `implemented`, not `complete`, because full parsing/retyping/implicit-ambisonic/unspecified/oracle/FATE/fuzz parity remains absent.
 
