@@ -1,8 +1,8 @@
 #![no_main]
 
 use avutil::{
-    adler32, av_error_description, av_make_error_string, av_strerror, compare_mod, compare_ts,
-    crc32_ieee, digest_to_hex, md5, rescale, rescale_q, rescale_q_rnd,
+    adler32, add_stable, av_error_description, av_make_error_string, av_strerror, compare_mod,
+    compare_ts, crc32_ieee, digest_to_hex, md5, rescale, rescale_q, rescale_q_rnd,
     rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1, sha224, sha256,
     sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32,
@@ -1358,6 +1358,16 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
     );
     assert!(compare_mod(mod_a, mod_b, 0).is_err());
     assert!(compare_mod(mod_a, mod_b, 3).is_err());
+
+    let stable_ts = small_i64_from(cursor.next(), cursor.next());
+    let stable_inc = i64::from(cursor.next().unwrap_or_default() % 16);
+    assert_eq!(
+        add_stable(src, stable_ts, dst, stable_inc).unwrap(),
+        expected_add_stable(src, stable_ts, dst, stable_inc).unwrap()
+    );
+    assert!(add_stable(Rational::from_raw(0, 1), stable_ts, dst, stable_inc).is_err());
+    assert!(add_stable(src, stable_ts, Rational::from_raw(1, 0), stable_inc).is_err());
+    assert!(add_stable(src, stable_ts, dst, -1).is_err());
 }
 
 fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
@@ -14131,6 +14141,44 @@ fn expected_compare_mod(a: u64, b: u64, modulus: u64) -> i64 {
     } else {
         diff as i64
     }
+}
+
+fn expected_add_stable(ts_tb: Rational, ts: i64, inc_tb: Rational, inc: i64) -> Result<i64, ()> {
+    let scaled_inc = expected_scaled_increment_time_base(inc_tb, inc)?;
+    let m = i128::from(scaled_inc.num()) * i128::from(ts_tb.den());
+    let d = i128::from(scaled_inc.den()) * i128::from(ts_tb.num());
+
+    if m % d == 0 {
+        let delta = i64::try_from(m / d).map_err(|_| ())?;
+        if let Some(result) = ts.checked_add(delta) {
+            return Ok(result);
+        }
+    }
+    if m < d {
+        return Ok(ts);
+    }
+
+    let old = expected_rescale(ts, ts_tb, scaled_inc, Rounding::NearInf)?;
+    let old_ts = expected_rescale(old, scaled_inc, ts_tb, Rounding::NearInf)?;
+    if old == i64::MAX || old == i64::MIN || old_ts == i64::MIN {
+        return Ok(ts);
+    }
+
+    let next = old.checked_add(1).ok_or(())?;
+    let next_ts = expected_rescale(next, scaled_inc, ts_tb, Rounding::NearInf)?;
+    let residual = ts.checked_sub(old_ts).ok_or(())?;
+    Ok(next_ts.saturating_add(residual))
+}
+
+fn expected_scaled_increment_time_base(inc_tb: Rational, inc: i64) -> Result<Rational, ()> {
+    if inc == 1 {
+        return Ok(inc_tb);
+    }
+
+    let num = i64::from(inc_tb.num()).checked_mul(inc).ok_or(())?;
+    Rational::reduce_i64(num, i64::from(inc_tb.den()), i32::MAX)
+        .map(|(rational, _)| rational)
+        .map_err(|_| ())
 }
 
 fn div_round(numerator: i128, denominator: i128, rounding: Rounding) -> i128 {

@@ -88,6 +88,52 @@ pub fn compare_mod(a: u64, b: u64, modulus: u64) -> AvResult<i64> {
         .map_err(|_| AvError::invalid_argument("modular timestamp difference out of range"))
 }
 
+pub fn add_stable(ts_tb: Rational, ts: i64, inc_tb: Rational, inc: i64) -> AvResult<i64> {
+    ensure_positive_time_base(ts_tb, "timestamp time base")?;
+    ensure_positive_time_base(inc_tb, "increment time base")?;
+    if inc < 0 {
+        return Err(AvError::invalid_argument(
+            "stable timestamp increment must be nonnegative",
+        ));
+    }
+
+    let scaled_inc = scaled_increment_time_base(inc_tb, inc)?;
+    let m = i128::from(scaled_inc.num()) * i128::from(ts_tb.den());
+    let d = i128::from(scaled_inc.den()) * i128::from(ts_tb.num());
+    if d <= 0 {
+        return Err(AvError::invalid_argument(
+            "invalid stable timestamp time base ratio",
+        ));
+    }
+
+    if m % d == 0 {
+        let delta = m / d;
+        if let Ok(delta) = i64::try_from(delta) {
+            if let Some(result) = ts.checked_add(delta) {
+                return Ok(result);
+            }
+        }
+    }
+    if m < d {
+        return Ok(ts);
+    }
+
+    let old = rescale_q(ts, ts_tb, scaled_inc)?;
+    let old_ts = rescale_q(old, scaled_inc, ts_tb)?;
+    if old == i64::MAX || old == i64::MIN || old_ts == i64::MIN {
+        return Ok(ts);
+    }
+
+    let next = old
+        .checked_add(1)
+        .ok_or_else(|| AvError::invalid_argument("stable timestamp increment overflow"))?;
+    let next_ts = rescale_q(next, scaled_inc, ts_tb)?;
+    let residual = ts
+        .checked_sub(old_ts)
+        .ok_or_else(|| AvError::invalid_argument("stable timestamp residual out of range"))?;
+    Ok(next_ts.saturating_add(residual))
+}
+
 fn rescale_q_terms(src: Rational, dst: Rational) -> AvResult<(i64, i64)> {
     if src.num() < 0 || src.den() <= 0 || dst.num() <= 0 || dst.den() <= 0 {
         return Err(AvError::invalid_argument("invalid time base for rescale"));
@@ -122,6 +168,17 @@ fn ensure_positive_time_base(time_base: Rational, context: &str) -> AvResult<()>
         )));
     }
     Ok(())
+}
+
+fn scaled_increment_time_base(inc_tb: Rational, inc: i64) -> AvResult<Rational> {
+    if inc == 1 {
+        return Ok(inc_tb);
+    }
+
+    let num = i64::from(inc_tb.num())
+        .checked_mul(inc)
+        .ok_or_else(|| AvError::invalid_argument("stable timestamp increment out of range"))?;
+    Rational::reduce_i64(num, i64::from(inc_tb.den()), i32::MAX).map(|(rational, _)| rational)
 }
 
 fn div_round(numerator: i128, denominator: i128, rounding: Rounding) -> i128 {
@@ -300,6 +357,72 @@ mod tests {
         );
         assert_eq!(
             compare_mod(1, 0, 3).unwrap_err().kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+    }
+
+    #[test]
+    fn add_stable_adds_exact_tick_increments() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+
+        assert_eq!(
+            add_stable(milliseconds, 1_000, milliseconds, 40).unwrap(),
+            1_040
+        );
+        assert_eq!(add_stable(milliseconds, -10, milliseconds, 10).unwrap(), 0);
+        assert_eq!(add_stable(milliseconds, 123, milliseconds, 0).unwrap(), 123);
+    }
+
+    #[test]
+    fn add_stable_avoids_repeated_fractional_drift() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+        let thirtieth = Rational::new(1, 30).unwrap();
+        let mut ts = 0;
+        let expected = [33, 67, 100, 133, 167, 200, 233, 267, 300, 333];
+
+        for expected_ts in expected {
+            ts = add_stable(milliseconds, ts, thirtieth, 1).unwrap();
+            assert_eq!(ts, expected_ts);
+        }
+    }
+
+    #[test]
+    fn add_stable_preserves_existing_fractional_phase() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+        let thirtieth = Rational::new(1, 30).unwrap();
+
+        assert_eq!(add_stable(milliseconds, 1, thirtieth, 1).unwrap(), 34);
+        assert_eq!(add_stable(milliseconds, 34, thirtieth, 1).unwrap(), 68);
+    }
+
+    #[test]
+    fn add_stable_keeps_sub_tick_increments_unchanged() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+        let samples_48k = Rational::new(1, 48_000).unwrap();
+
+        assert_eq!(add_stable(milliseconds, 123, samples_48k, 1).unwrap(), 123);
+    }
+
+    #[test]
+    fn add_stable_rejects_invalid_inputs() {
+        let milliseconds = Rational::new(1, 1_000).unwrap();
+
+        assert_eq!(
+            add_stable(Rational::from_raw(0, 1), 0, milliseconds, 1)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            add_stable(milliseconds, 0, Rational::from_raw(1, 0), 1)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            add_stable(milliseconds, 0, milliseconds, -1)
+                .unwrap_err()
+                .kind(),
             crate::AvErrorKind::InvalidArgument
         );
     }
