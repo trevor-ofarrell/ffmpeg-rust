@@ -29,6 +29,8 @@ impl AvErrorCode {
     pub const EXPERIMENTAL: Self = Self::from_raw(-0x2bb2_afa8);
     pub const INPUT_CHANGED: Self = Self::from_raw(-0x636e_6701);
     pub const OUTPUT_CHANGED: Self = Self::from_raw(-0x636e_6702);
+    pub const INPUT_AND_OUTPUT_CHANGED: Self =
+        Self::from_raw(Self::INPUT_CHANGED.raw() | Self::OUTPUT_CHANGED.raw());
     pub const HTTP_BAD_REQUEST: Self = Self::fferrtag(0xf8, b'4', b'0', b'0');
     pub const HTTP_UNAUTHORIZED: Self = Self::fferrtag(0xf8, b'4', b'0', b'1');
     pub const HTTP_FORBIDDEN: Self = Self::fferrtag(0xf8, b'4', b'0', b'3');
@@ -48,6 +50,14 @@ impl AvErrorCode {
 
     pub const fn raw(self) -> i32 {
         self.0
+    }
+
+    pub fn description(self) -> Option<&'static str> {
+        av_error_description(self.raw())
+    }
+
+    pub fn make_error_string(self) -> String {
+        av_make_error_string(self.raw())
     }
 }
 
@@ -147,6 +157,61 @@ impl AvError {
     pub fn is_eof(&self) -> bool {
         self.kind == AvErrorKind::EndOfFile
     }
+
+    pub fn ffmpeg_description(&self) -> Option<&'static str> {
+        self.code.and_then(AvErrorCode::description)
+    }
+
+    pub fn ffmpeg_error_string(&self) -> Option<String> {
+        self.code.map(AvErrorCode::make_error_string)
+    }
+}
+
+pub fn av_error_description(errnum: i32) -> Option<&'static str> {
+    let code = AvErrorCode::from_raw(errnum);
+    Some(match code {
+        AvErrorCode::BSF_NOT_FOUND => "Bitstream filter not found",
+        AvErrorCode::BUG | AvErrorCode::BUG2 => "Internal bug, should not have happened",
+        AvErrorCode::BUFFER_TOO_SMALL => "Buffer too small",
+        AvErrorCode::DECODER_NOT_FOUND => "Decoder not found",
+        AvErrorCode::DEMUXER_NOT_FOUND => "Demuxer not found",
+        AvErrorCode::ENCODER_NOT_FOUND => "Encoder not found",
+        AvErrorCode::EOF => "End of file",
+        AvErrorCode::EXIT => "Immediate exit requested",
+        AvErrorCode::EXTERNAL => "Generic error in an external library",
+        AvErrorCode::FILTER_NOT_FOUND => "Filter not found",
+        AvErrorCode::INPUT_CHANGED => "Input changed",
+        AvErrorCode::INVALIDDATA => "Invalid data found when processing input",
+        AvErrorCode::MUXER_NOT_FOUND => "Muxer not found",
+        AvErrorCode::OPTION_NOT_FOUND => "Option not found",
+        AvErrorCode::OUTPUT_CHANGED => "Output changed",
+        AvErrorCode::PATCHWELCOME => "Not yet implemented in FFmpeg, patches welcome",
+        AvErrorCode::PROTOCOL_NOT_FOUND => "Protocol not found",
+        AvErrorCode::STREAM_NOT_FOUND => "Stream not found",
+        AvErrorCode::UNKNOWN => "Unknown error occurred",
+        AvErrorCode::EXPERIMENTAL => "Experimental feature",
+        AvErrorCode::HTTP_BAD_REQUEST => "Server returned 400 Bad Request",
+        AvErrorCode::HTTP_UNAUTHORIZED => "Server returned 401 Unauthorized (authorization failed)",
+        AvErrorCode::HTTP_FORBIDDEN => "Server returned 403 Forbidden (access denied)",
+        AvErrorCode::HTTP_NOT_FOUND => "Server returned 404 Not Found",
+        AvErrorCode::HTTP_TOO_MANY_REQUESTS => "Server returned 429 Too Many Requests",
+        AvErrorCode::HTTP_OTHER_4XX => {
+            "Server returned 4XX Client Error, but not one of 40{0,1,3,4}"
+        }
+        AvErrorCode::HTTP_SERVER_ERROR => "Server returned 5XX Server Error reply",
+        _ => return None,
+    })
+}
+
+pub fn av_make_error_string(errnum: i32) -> String {
+    match av_strerror(errnum) {
+        Ok(description) => description.to_string(),
+        Err(generic) => generic,
+    }
+}
+
+pub fn av_strerror(errnum: i32) -> Result<&'static str, String> {
+    av_error_description(errnum).ok_or_else(|| format!("Error number {errnum} occurred"))
 }
 
 fn default_code_for_kind(kind: AvErrorKind) -> Option<AvErrorCode> {
@@ -232,6 +297,10 @@ mod tests {
         assert_eq!(AvErrorCode::INPUT_CHANGED.raw(), -0x636e_6701);
         assert_eq!(AvErrorCode::OUTPUT_CHANGED.raw(), -0x636e_6702);
         assert_eq!(
+            AvErrorCode::INPUT_AND_OUTPUT_CHANGED.raw(),
+            AvErrorCode::INPUT_CHANGED.raw() | AvErrorCode::OUTPUT_CHANGED.raw()
+        );
+        assert_eq!(
             AvErrorCode::from_raw(AvErrorCode::HTTP_TOO_MANY_REQUESTS.raw()),
             AvErrorCode::HTTP_TOO_MANY_REQUESTS
         );
@@ -250,6 +319,99 @@ mod tests {
         assert_eq!(err.code(), Some(AvErrorCode::STREAM_NOT_FOUND));
         assert_eq!(err.message(), "missing stream");
         assert_eq!(err.io_kind(), None);
+    }
+
+    #[test]
+    fn error_descriptions_match_ffmpeg_defined_table() {
+        let cases = [
+            (AvErrorCode::BSF_NOT_FOUND, "Bitstream filter not found"),
+            (AvErrorCode::BUG, "Internal bug, should not have happened"),
+            (AvErrorCode::BUFFER_TOO_SMALL, "Buffer too small"),
+            (AvErrorCode::DECODER_NOT_FOUND, "Decoder not found"),
+            (AvErrorCode::DEMUXER_NOT_FOUND, "Demuxer not found"),
+            (AvErrorCode::ENCODER_NOT_FOUND, "Encoder not found"),
+            (AvErrorCode::EOF, "End of file"),
+            (AvErrorCode::EXIT, "Immediate exit requested"),
+            (
+                AvErrorCode::EXTERNAL,
+                "Generic error in an external library",
+            ),
+            (AvErrorCode::FILTER_NOT_FOUND, "Filter not found"),
+            (AvErrorCode::INPUT_CHANGED, "Input changed"),
+            (
+                AvErrorCode::INVALIDDATA,
+                "Invalid data found when processing input",
+            ),
+            (AvErrorCode::MUXER_NOT_FOUND, "Muxer not found"),
+            (AvErrorCode::OPTION_NOT_FOUND, "Option not found"),
+            (AvErrorCode::OUTPUT_CHANGED, "Output changed"),
+            (
+                AvErrorCode::PATCHWELCOME,
+                "Not yet implemented in FFmpeg, patches welcome",
+            ),
+            (AvErrorCode::PROTOCOL_NOT_FOUND, "Protocol not found"),
+            (AvErrorCode::STREAM_NOT_FOUND, "Stream not found"),
+            (AvErrorCode::UNKNOWN, "Unknown error occurred"),
+            (AvErrorCode::EXPERIMENTAL, "Experimental feature"),
+            (
+                AvErrorCode::HTTP_BAD_REQUEST,
+                "Server returned 400 Bad Request",
+            ),
+            (
+                AvErrorCode::HTTP_UNAUTHORIZED,
+                "Server returned 401 Unauthorized (authorization failed)",
+            ),
+            (
+                AvErrorCode::HTTP_FORBIDDEN,
+                "Server returned 403 Forbidden (access denied)",
+            ),
+            (AvErrorCode::HTTP_NOT_FOUND, "Server returned 404 Not Found"),
+            (
+                AvErrorCode::HTTP_TOO_MANY_REQUESTS,
+                "Server returned 429 Too Many Requests",
+            ),
+            (
+                AvErrorCode::HTTP_OTHER_4XX,
+                "Server returned 4XX Client Error, but not one of 40{0,1,3,4}",
+            ),
+            (
+                AvErrorCode::HTTP_SERVER_ERROR,
+                "Server returned 5XX Server Error reply",
+            ),
+        ];
+
+        for (code, description) in cases {
+            assert_eq!(code.description(), Some(description));
+        }
+        assert_eq!(
+            AvErrorCode::BUG2.description(),
+            AvErrorCode::BUG.description()
+        );
+        assert_eq!(
+            AvErrorCode::INPUT_AND_OUTPUT_CHANGED.description(),
+            AvErrorCode::INPUT_CHANGED.description()
+        );
+        assert_eq!(AvErrorCode::from_raw(-123456).description(), None);
+    }
+
+    #[test]
+    fn av_strerror_and_make_error_string_follow_ffmpeg_shape() {
+        assert_eq!(
+            av_strerror(AvErrorCode::OPTION_NOT_FOUND.raw()).unwrap(),
+            "Option not found"
+        );
+        assert_eq!(
+            AvErrorCode::EXTERNAL.make_error_string(),
+            "Generic error in an external library"
+        );
+        assert_eq!(
+            av_strerror(-123456).unwrap_err(),
+            "Error number -123456 occurred"
+        );
+        assert_eq!(
+            av_make_error_string(-123456),
+            "Error number -123456 occurred"
+        );
     }
 
     #[test]
@@ -292,6 +454,17 @@ mod tests {
             assert_eq!(error.code(), code);
             assert_eq!(error.io_kind(), None);
         }
+
+        let invalid = AvError::invalid_data("bad packet");
+        assert_eq!(
+            invalid.ffmpeg_description(),
+            Some("Invalid data found when processing input")
+        );
+        assert_eq!(
+            invalid.ffmpeg_error_string(),
+            Some("Invalid data found when processing input".to_string())
+        );
+        assert_eq!(AvError::not_found("missing").ffmpeg_description(), None);
     }
 
     #[test]

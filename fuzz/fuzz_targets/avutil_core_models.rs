@@ -1,9 +1,10 @@
 #![no_main]
 
 use avutil::{
-    adler32, crc32_ieee, digest_to_hex, md5, rescale, rescale_q, rescale_q_rnd,
-    rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1, sha224, sha256,
-    sha384, sha512, Adler32, AudioFrame, AvError, AvErrorCode, AvErrorKind, BufferPool,
+    adler32, av_error_description, av_make_error_string, av_strerror, crc32_ieee, digest_to_hex,
+    md5, rescale, rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd,
+    rescale_rnd_pass_minmax, sha1, sha224, sha256, sha384, sha512, Adler32, AudioFrame, AvError,
+    AvErrorCode, AvErrorKind, BufferPool,
     BufferPoolCallbacks, BufferRef, Channel, ChannelLayout, Crc32,
     Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
     FrameAudioServiceType,
@@ -769,6 +770,35 @@ fn exercise_errors(cursor: &mut Cursor<'_>) {
     assert_eq!(AvErrorCode::EXPERIMENTAL.raw(), -0x2bb2_afa8);
     assert_eq!(AvErrorCode::INPUT_CHANGED.raw(), -0x636e_6701);
     assert_eq!(AvErrorCode::OUTPUT_CHANGED.raw(), -0x636e_6702);
+    assert_eq!(
+        AvErrorCode::INPUT_AND_OUTPUT_CHANGED.raw(),
+        AvErrorCode::INPUT_CHANGED.raw() | AvErrorCode::OUTPUT_CHANGED.raw()
+    );
+    assert_eq!(
+        av_error_description(AvErrorCode::INVALIDDATA.raw()),
+        Some("Invalid data found when processing input")
+    );
+    assert_eq!(
+        AvErrorCode::BUG2.description(),
+        AvErrorCode::BUG.description()
+    );
+    assert_eq!(
+        av_strerror(AvErrorCode::INPUT_AND_OUTPUT_CHANGED.raw()).unwrap(),
+        "Input changed"
+    );
+    assert_eq!(
+        AvErrorCode::HTTP_TOO_MANY_REQUESTS.make_error_string(),
+        "Server returned 429 Too Many Requests"
+    );
+    assert_eq!(av_error_description(-123_456), None);
+    assert_eq!(
+        av_strerror(-123_456).unwrap_err(),
+        "Error number -123456 occurred"
+    );
+    assert_eq!(
+        av_make_error_string(-123_456),
+        "Error number -123456 occurred"
+    );
 
     let io_kind = io_error_kind_from(cursor.next());
     let err = AvError::from_io_error("fuzz io", io::Error::new(io_kind, "source failure"));
@@ -778,6 +808,10 @@ fn exercise_errors(cursor: &mut Cursor<'_>) {
     assert_eq!(err.is_eof(), err.kind() == AvErrorKind::EndOfFile);
     assert!(err.message().contains("fuzz io"));
     assert!(err.message().contains("source failure"));
+    assert_eq!(
+        err.ffmpeg_description(),
+        err.code().and_then(AvErrorCode::description)
+    );
 
     let custom_code = AvErrorCode::from_raw(-i32::from(cursor.next().unwrap_or_default()) - 1);
     let custom = AvError::with_code(AvErrorKind::NotFound, custom_code, "custom code");

@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-error` update: `AvErrorCode` now exposes Rust-native `av_error_description`, `av_strerror`, and `av_make_error_string` helpers for the pinned FFmpeg 8.1.1 `AVERROR_LIST` table from `libavutil/error.c`, while preserving the FFmpeg-shaped generic `Error number <n> occurred` fallback for unknown codes. The slice also records the upstream duplicate-code behavior where `AVERROR_INPUT_CHANGED | AVERROR_OUTPUT_CHANGED` resolves to the first matching `Input changed` string, not a distinct Rust-only description. Platform `AVERROR(errno)` string parity remains unclaimed.
+
 Latest `fate-runner` update: mapping rows now support `env:NAME=value` fields that are parsed as child-process environment assignments instead of command arguments. Placeholder resolution applies to those environment values, so `tests/differential/mappings.txt` can validate `--oracle-ffmpeg <path>` and inject it as `FFMPEG_ORACLE` for the ignored rawvideo oracle integration harness. Dry-run and prerequisite-check coverage now prove the differential mapping file resolves all three rawvideo components through the same oracle path; real parity execution is still blocked until a pinned FFmpeg 8.1.1 oracle binary is available locally.
 
 Latest `fate-runner` update: explicit FATE runs now accept repeated `--component <id>` flags for multi-component execution, deduplicate duplicate component IDs while preserving first occurrence order, and still reject mixed `--changed` plus `--component` mode selection. A real dry-run verified that `avformat-rawvideo-demuxer` and `avformat-rawvideo-muxer` can be selected together in one command. This removes the prior repeated-`--component` local runner blocker; upstream FATE media mappings and samples remain absent.
@@ -339,6 +341,20 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-error` string-table slice:
+  - `Invoke-WebRequest -Uri https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1.1/libavutil/error.h -OutFile $env:TEMP\ffmpeg-error-8.1.1.h`
+  - `Invoke-WebRequest -Uri https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1.1/libavutil/error.c -OutFile $env:TEMP\ffmpeg-error-8.1.1.c`
+  - `cargo fmt --all`
+  - `cargo fmt --all -- --check`
+  - `cargo test -p avutil error --target-dir target-codex`
+  - `cargo clippy -p avutil --target-dir target-codex -- -D warnings`
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-error`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `git diff --check`
 
 - Current `fate-runner` oracle-env mapping slice:
   - `cargo fmt --all`
@@ -4075,6 +4091,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-error` string-table slice:
+  - The first focused `cargo test -p avutil error --target-dir target-codex` failed because the new test expected a distinct `Input and output changed` description. Source checking and the failure showed `AVERROR_INPUT_CHANGED | AVERROR_OUTPUT_CHANGED` has the same raw value as `AVERROR_INPUT_CHANGED`, and FFmpeg's first table match returns `Input changed`; the test and fuzz invariant were corrected and the focused test passed.
+
 - Current `fate-runner` oracle-env mapping slice:
   - `cargo run --target-dir target-codex -p fate-runner -- mappings --mappings tests/differential/mappings.txt --check-prereqs` failed as expected because the differential mappings reference `{oracle_ffmpeg}` and require `--oracle-ffmpeg <path>` before injecting `FFMPEG_ORACLE`. This confirms the differential mapping file does not silently skip the pinned-oracle prerequisite.
 
@@ -4385,6 +4404,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-error` is the active infrastructure focus for this turn. The latest change adds pinned FFmpeg-defined error-string table helpers and generic unknown-code formatting, with local unit and fuzz-harness invariant coverage. The component remains `implemented`, not `complete`, because platform `AVERROR(errno)` parity, pinned oracle differential vectors, upstream FATE parity, and actual fuzz execution are still incomplete.
+
 `fate-runner` was the active infrastructure focus for this turn. The latest change makes differential mapping rows able to inject mapping-scoped environment variables with placeholder resolution, so rawvideo oracle tests can receive a validated `FFMPEG_ORACLE` path from `--oracle-ffmpeg` instead of manual shell setup. The component remains `scaffolded` because upstream FFmpeg FATE media sample execution and real sample-backed mappings are still not present.
 
 `fftools-ffmpeg-rawvideo-file-output`, `avformat-rawvideo-demuxer`, and `avformat-rawvideo-muxer` are the current focus for turning rawvideo local coverage into oracle-backed differential coverage. The latest concrete change adds ignored `rgb24` and `gbrp10msble` rawvideo file-output oracle tests. The component status remains `implemented`, not `differential_pass` or `complete`, until the pinned FFmpeg 8.1.1 oracle binary is installed and those tests pass.
@@ -4541,6 +4562,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Known Blockers
 
+- `avutil-error` now covers the pinned FFmpeg-defined `AVERROR_LIST` string table, but platform `AVERROR(errno)` descriptions are still unresolved because they depend on platform errno values and C library `strerror_r` behavior. No pinned oracle binary is available for differential checks, and actual cargo-fuzz execution is still unavailable.
+
 - Rawvideo oracle differentials are now wired through `tests/differential/mappings.txt` with `env:FFMPEG_ORACLE={oracle_ffmpeg}`, but cannot run to parity in this workspace because the pinned FFmpeg 8.1.1 oracle binary is missing. The mapping prerequisite check intentionally fails without `--oracle-ffmpeg <path>`, and the ignored test harness fails before comparison until `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` is available.
 
 - Current MSB-aligned planar YUV444/GBR validation has no remaining code/test assertion failures. Focused avutil, avcodec, avformat, and fftools tests passed through `target-codex`; main and fuzz-package clippy passed; main and fuzz-package check passed; changed-path and single-component FATE dry-runs passed. The prior direct repeated-`--component` FATE dry-run limitation is resolved in the current runner. The remaining blockers are pinned oracle differentials, upstream FATE media parity, pixel conversion, hardware formats, and actual fuzz execution.
@@ -4602,6 +4625,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added FFmpeg-shaped error-string helpers for the shared `avutil-error` model. `AvErrorCode::description`, `AvErrorCode::make_error_string`, `AvError::ffmpeg_description`, `AvError::ffmpeg_error_string`, and exported `av_error_description`/`av_strerror`/`av_make_error_string` now cover the pinned FFmpeg 8.1.1 `AVERROR_LIST` descriptions from `libavutil/error.c`, including BUG2 sharing BUG's description, HTTP/RTSP error descriptions, and generic unknown-code fallback strings. Source checking also captured that the combined input/output-changed raw code duplicates `INPUT_CHANGED` under FFmpeg's bitwise behavior, so Rust preserves the first-match `Input changed` result instead of inventing a distinct string. Unit tests and `avutil_core_models` build-check invariants cover the table; platform errno-string parity, oracle/FATE parity, and actual fuzz execution remain open.
 
 Latest slice: updated `fate-runner` mapping parsing and execution so fields with `env:NAME=value` become child-process environment assignments, with the same placeholder resolution and prerequisite validation as command arguments. `tests/differential/mappings.txt` now maps the rawvideo oracle harness to `fftools-ffmpeg-rawvideo-file-output`, `avformat-rawvideo-demuxer`, and `avformat-rawvideo-muxer`, injecting `FFMPEG_ORACLE={oracle_ffmpeg}` from the validated `--oracle-ffmpeg` path. Unit coverage checks env parsing, invalid env rows, placeholder resolution, formatted diagnostics, and prerequisite failures. The docs and ledger record this as differential wiring only; rawvideo is still below `differential_pass` until a pinned FFmpeg 8.1.1 oracle binary runs the ignored tests successfully.
 
