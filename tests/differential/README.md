@@ -47,3 +47,5 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --ora
 ```
 
 `tests/differential/mappings.txt` uses `env:FFMPEG_ORACLE={oracle_ffmpeg}` so `fate-runner` validates the oracle path and injects it into the ignored Rust integration test.
+
+When `--oracle-ffmpeg` is omitted, `fate-runner` also checks `FFMPEG_ORACLE` and the standard `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` paths. Invalid environment paths still fail before execution.

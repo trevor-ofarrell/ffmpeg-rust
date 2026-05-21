@@ -4,6 +4,17 @@ use std::path::Path;
 use std::process::Command;
 
 const DEFAULT_FATE_MAPPINGS_PATH: &str = "tests/fate/mappings.txt";
+const SAMPLES_ENV_VARS: &[&str] = &["FATE_SAMPLES", "SAMPLES"];
+const DEFAULT_SAMPLES_ROOT_CANDIDATES: &[&str] = &[
+    "third_party/fate-samples",
+    "third_party/fate-suite",
+    "fate-suite",
+];
+const ORACLE_FFMPEG_ENV_VARS: &[&str] = &["FFMPEG_ORACLE"];
+const DEFAULT_ORACLE_FFMPEG_CANDIDATES: &[&str] = &[
+    "third_party/ffmpeg-oracle/build/bin/ffmpeg.exe",
+    "third_party/ffmpeg-oracle/build/bin/ffmpeg",
+];
 
 struct PathRule {
     path: &'static str,
@@ -774,11 +785,34 @@ fn fate_mapping_report_lines(
     context: &FateContext,
     check_prerequisites: bool,
 ) -> Result<Vec<String>, String> {
+    fate_mapping_report_lines_with(
+        mappings,
+        context,
+        check_prerequisites,
+        &process_env_var,
+        &path_is_dir,
+        &path_is_file,
+    )
+}
+
+fn fate_mapping_report_lines_with<E, D, F>(
+    mappings: &[FateMapping],
+    context: &FateContext,
+    check_prerequisites: bool,
+    env_var: &E,
+    is_dir: &D,
+    is_file: &F,
+) -> Result<Vec<String>, String>
+where
+    E: Fn(&str) -> Option<String>,
+    D: Fn(&str) -> bool,
+    F: Fn(&str) -> bool,
+{
     mappings
         .iter()
         .map(|mapping| {
             let mapping = if check_prerequisites {
-                resolve_fate_mapping(mapping, context)?
+                resolve_fate_mapping_with(mapping, context, env_var, is_dir, is_file)?
             } else {
                 mapping.clone()
             };
@@ -894,7 +928,30 @@ fn run_fate_mapping(
     context: &FateContext,
     execution_mode: ExecutionMode,
 ) -> Result<(), String> {
-    let mapping = resolve_fate_mapping(mapping, context)?;
+    run_fate_mapping_with(
+        mapping,
+        context,
+        execution_mode,
+        &process_env_var,
+        &path_is_dir,
+        &path_is_file,
+    )
+}
+
+fn run_fate_mapping_with<E, D, F>(
+    mapping: &FateMapping,
+    context: &FateContext,
+    execution_mode: ExecutionMode,
+    env_var: &E,
+    is_dir: &D,
+    is_file: &F,
+) -> Result<(), String>
+where
+    E: Fn(&str) -> Option<String>,
+    D: Fn(&str) -> bool,
+    F: Fn(&str) -> bool,
+{
+    let mapping = resolve_fate_mapping_with(mapping, context, env_var, is_dir, is_file)?;
 
     match execution_mode {
         ExecutionMode::DryRun => {
@@ -938,93 +995,207 @@ fn run_fate_mapping(
     }
 }
 
+#[cfg(test)]
 fn resolve_fate_mapping(
     mapping: &FateMapping,
     context: &FateContext,
 ) -> Result<FateMapping, String> {
+    resolve_fate_mapping_with(
+        mapping,
+        context,
+        &process_env_var,
+        &path_is_dir,
+        &path_is_file,
+    )
+}
+
+fn resolve_fate_mapping_with<E, D, F>(
+    mapping: &FateMapping,
+    context: &FateContext,
+    env_var: &E,
+    is_dir: &D,
+    is_file: &F,
+) -> Result<FateMapping, String>
+where
+    E: Fn(&str) -> Option<String>,
+    D: Fn(&str) -> bool,
+    F: Fn(&str) -> bool,
+{
     Ok(FateMapping {
         component_id: mapping.component_id.clone(),
         target: mapping.target.clone(),
-        workdir: replace_mapping_placeholders(mapping, &mapping.workdir, context)?,
-        program: replace_mapping_placeholders(mapping, &mapping.program, context)?,
+        workdir: replace_mapping_placeholders_with(
+            mapping,
+            &mapping.workdir,
+            context,
+            env_var,
+            is_dir,
+            is_file,
+        )?,
+        program: replace_mapping_placeholders_with(
+            mapping,
+            &mapping.program,
+            context,
+            env_var,
+            is_dir,
+            is_file,
+        )?,
         env: mapping
             .env
             .iter()
             .map(|(name, value)| {
                 Ok((
                     name.clone(),
-                    replace_mapping_placeholders(mapping, value, context)?,
+                    replace_mapping_placeholders_with(
+                        mapping, value, context, env_var, is_dir, is_file,
+                    )?,
                 ))
             })
             .collect::<Result<Vec<_>, String>>()?,
         args: mapping
             .args
             .iter()
-            .map(|arg| replace_mapping_placeholders(mapping, arg, context))
+            .map(|arg| {
+                replace_mapping_placeholders_with(mapping, arg, context, env_var, is_dir, is_file)
+            })
             .collect::<Result<Vec<_>, _>>()?,
     })
 }
 
-fn replace_mapping_placeholders(
+fn replace_mapping_placeholders_with<E, D, F>(
     mapping: &FateMapping,
     value: &str,
     context: &FateContext,
-) -> Result<String, String> {
+    env_var: &E,
+    is_dir: &D,
+    is_file: &F,
+) -> Result<String, String>
+where
+    E: Fn(&str) -> Option<String>,
+    D: Fn(&str) -> bool,
+    F: Fn(&str) -> bool,
+{
     let mut value = value.to_string();
 
     if value.contains("{samples}") {
-        let samples_root = required_samples_root(mapping, context)?;
-        value = value.replace("{samples}", samples_root);
+        let samples_root = required_samples_root_with(mapping, context, env_var, is_dir)?;
+        value = value.replace("{samples}", &samples_root);
     }
 
     if value.contains("{oracle_ffmpeg}") {
-        let oracle_ffmpeg = required_oracle_ffmpeg(mapping, context)?;
-        value = value.replace("{oracle_ffmpeg}", oracle_ffmpeg);
+        let oracle_ffmpeg = required_oracle_ffmpeg_with(mapping, context, env_var, is_file)?;
+        value = value.replace("{oracle_ffmpeg}", &oracle_ffmpeg);
     }
 
     Ok(value)
 }
 
-fn required_samples_root<'a>(
+fn required_samples_root_with<E, D>(
     mapping: &FateMapping,
-    context: &'a FateContext,
-) -> Result<&'a str, String> {
-    let samples_root = context.samples_root.as_deref().ok_or_else(|| {
-        format!(
-            "FATE mapping {}:{} references {{samples}} but --samples <path> was not provided",
-            mapping.component_id, mapping.target
-        )
-    })?;
-
-    if !Path::new(samples_root).is_dir() {
-        return Err(format!(
-            "FATE mapping {}:{} requires --samples `{samples_root}` to be an existing directory",
-            mapping.component_id, mapping.target
-        ));
+    context: &FateContext,
+    env_var: &E,
+    is_dir: &D,
+) -> Result<String, String>
+where
+    E: Fn(&str) -> Option<String>,
+    D: Fn(&str) -> bool,
+{
+    if let Some(samples_root) = context.samples_root.as_deref() {
+        if !is_dir(samples_root) {
+            return Err(format!(
+                "FATE mapping {}:{} requires --samples `{samples_root}` to be an existing directory",
+                mapping.component_id, mapping.target
+            ));
+        }
+        return Ok(samples_root.to_string());
     }
 
-    Ok(samples_root)
+    for env_name in SAMPLES_ENV_VARS {
+        if let Some(samples_root) = env_var(env_name) {
+            if !is_dir(&samples_root) {
+                return Err(format!(
+                    "FATE mapping {}:{} requires {env_name} `{samples_root}` to be an existing directory",
+                    mapping.component_id, mapping.target
+                ));
+            }
+            return Ok(samples_root);
+        }
+    }
+
+    if let Some(samples_root) = DEFAULT_SAMPLES_ROOT_CANDIDATES
+        .iter()
+        .copied()
+        .find(|path| is_dir(path))
+    {
+        return Ok(samples_root.to_string());
+    }
+
+    Err(format!(
+        "FATE mapping {}:{} references {{samples}} but no samples path was provided; pass --samples <path>, set FATE_SAMPLES or SAMPLES, or create one of: {}",
+        mapping.component_id,
+        mapping.target,
+        DEFAULT_SAMPLES_ROOT_CANDIDATES.join(", ")
+    ))
 }
 
-fn required_oracle_ffmpeg<'a>(
+fn required_oracle_ffmpeg_with<E, F>(
     mapping: &FateMapping,
-    context: &'a FateContext,
-) -> Result<&'a str, String> {
-    let oracle_ffmpeg = context.oracle_ffmpeg.as_deref().ok_or_else(|| {
-        format!(
-            "FATE mapping {}:{} references {{oracle_ffmpeg}} but --oracle-ffmpeg <path> was not provided",
-            mapping.component_id, mapping.target
-        )
-    })?;
-
-    if !Path::new(oracle_ffmpeg).is_file() {
-        return Err(format!(
-            "FATE mapping {}:{} requires --oracle-ffmpeg `{oracle_ffmpeg}` to be an existing file",
-            mapping.component_id, mapping.target
-        ));
+    context: &FateContext,
+    env_var: &E,
+    is_file: &F,
+) -> Result<String, String>
+where
+    E: Fn(&str) -> Option<String>,
+    F: Fn(&str) -> bool,
+{
+    if let Some(oracle_ffmpeg) = context.oracle_ffmpeg.as_deref() {
+        if !is_file(oracle_ffmpeg) {
+            return Err(format!(
+                "FATE mapping {}:{} requires --oracle-ffmpeg `{oracle_ffmpeg}` to be an existing file",
+                mapping.component_id, mapping.target
+            ));
+        }
+        return Ok(oracle_ffmpeg.to_string());
     }
 
-    Ok(oracle_ffmpeg)
+    for env_name in ORACLE_FFMPEG_ENV_VARS {
+        if let Some(oracle_ffmpeg) = env_var(env_name) {
+            if !is_file(&oracle_ffmpeg) {
+                return Err(format!(
+                    "FATE mapping {}:{} requires {env_name} `{oracle_ffmpeg}` to be an existing file",
+                    mapping.component_id, mapping.target
+                ));
+            }
+            return Ok(oracle_ffmpeg);
+        }
+    }
+
+    if let Some(oracle_ffmpeg) = DEFAULT_ORACLE_FFMPEG_CANDIDATES
+        .iter()
+        .copied()
+        .find(|path| is_file(path))
+    {
+        return Ok(oracle_ffmpeg.to_string());
+    }
+
+    Err(format!(
+        "FATE mapping {}:{} references {{oracle_ffmpeg}} but no oracle path was provided; pass --oracle-ffmpeg <path>, set FFMPEG_ORACLE, or create one of: {}",
+        mapping.component_id,
+        mapping.target,
+        DEFAULT_ORACLE_FFMPEG_CANDIDATES.join(", ")
+    ))
+}
+
+fn process_env_var(name: &str) -> Option<String> {
+    env::var(name).ok().filter(|value| !value.trim().is_empty())
+}
+
+fn path_is_dir(path: &str) -> bool {
+    Path::new(path).is_dir()
+}
+
+fn path_is_file(path: &str) -> bool {
+    Path::new(path).is_file()
 }
 
 fn format_mapping_command(mapping: &FateMapping) -> String {
@@ -1809,6 +1980,106 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
     }
 
     #[test]
+    fn resolves_mapping_prerequisites_from_environment_without_flags() {
+        let mapping = FateMapping {
+            component_id: "avformat-wav-demuxer".to_string(),
+            target: "sample-framecrc".to_string(),
+            workdir: "{samples}/audio".to_string(),
+            program: "{oracle_ffmpeg}".to_string(),
+            env: vec![("FFMPEG_ORACLE".to_string(), "{oracle_ffmpeg}".to_string())],
+            args: vec!["{samples}/audio/test.wav".to_string()],
+        };
+        let env_var = |name: &str| match name {
+            "FATE_SAMPLES" => Some("env/fate-samples".to_string()),
+            "FFMPEG_ORACLE" => Some("env/ffmpeg".to_string()),
+            _ => None,
+        };
+        let is_dir = |path: &str| path == "env/fate-samples";
+        let is_file = |path: &str| path == "env/ffmpeg";
+
+        assert_eq!(
+            resolve_fate_mapping_with(
+                &mapping,
+                &FateContext::default(),
+                &env_var,
+                &is_dir,
+                &is_file
+            )
+            .unwrap(),
+            FateMapping {
+                component_id: "avformat-wav-demuxer".to_string(),
+                target: "sample-framecrc".to_string(),
+                workdir: "env/fate-samples/audio".to_string(),
+                program: "env/ffmpeg".to_string(),
+                env: vec![("FFMPEG_ORACLE".to_string(), "env/ffmpeg".to_string())],
+                args: vec!["env/fate-samples/audio/test.wav".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn falls_back_to_standard_prerequisite_paths_when_present() {
+        let mapping = FateMapping {
+            component_id: "avformat-wav-demuxer".to_string(),
+            target: "sample-framecrc".to_string(),
+            workdir: "{samples}".to_string(),
+            program: "{oracle_ffmpeg}".to_string(),
+            env: vec![],
+            args: vec!["-version".to_string()],
+        };
+        let env_var = |_name: &str| None;
+        let is_dir = |path: &str| path == "third_party/fate-samples";
+        let is_file = |path: &str| path == "third_party/ffmpeg-oracle/build/bin/ffmpeg.exe";
+
+        assert_eq!(
+            resolve_fate_mapping_with(
+                &mapping,
+                &FateContext::default(),
+                &env_var,
+                &is_dir,
+                &is_file
+            )
+            .unwrap(),
+            FateMapping {
+                component_id: "avformat-wav-demuxer".to_string(),
+                target: "sample-framecrc".to_string(),
+                workdir: "third_party/fate-samples".to_string(),
+                program: "third_party/ffmpeg-oracle/build/bin/ffmpeg.exe".to_string(),
+                env: vec![],
+                args: vec!["-version".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn invalid_environment_prerequisite_paths_are_reported() {
+        let mapping = FateMapping {
+            component_id: "avformat-wav-demuxer".to_string(),
+            target: "sample-framecrc".to_string(),
+            workdir: "{samples}".to_string(),
+            program: "cargo".to_string(),
+            env: vec![],
+            args: vec![],
+        };
+        let env_var = |name: &str| match name {
+            "FATE_SAMPLES" => Some("Cargo.toml".to_string()),
+            _ => None,
+        };
+        let is_dir = |_path: &str| false;
+        let is_file = |_path: &str| false;
+
+        assert!(resolve_fate_mapping_with(
+            &mapping,
+            &FateContext::default(),
+            &env_var,
+            &is_dir,
+            &is_file
+        )
+        .unwrap_err()
+        .contains("requires FATE_SAMPLES `Cargo.toml` to be an existing directory"));
+    }
+
+    #[test]
     fn reports_missing_or_invalid_mapping_prerequisites() {
         let mapping = FateMapping {
             component_id: "avformat-wav-demuxer".to_string(),
@@ -1819,9 +2090,19 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             args: vec!["{samples}/audio/test.wav".to_string()],
         };
 
-        assert!(resolve_fate_mapping(&mapping, &FateContext::default())
-            .unwrap_err()
-            .contains("references {samples} but --samples <path> was not provided"));
+        let no_env = |_name: &str| None;
+        let no_dir = |_path: &str| false;
+        let no_file = |_path: &str| false;
+
+        assert!(resolve_fate_mapping_with(
+            &mapping,
+            &FateContext::default(),
+            &no_env,
+            &no_dir,
+            &no_file
+        )
+        .unwrap_err()
+        .contains("references {samples} but no samples path was provided"));
 
         let context = FateContext {
             samples_root: Some("Cargo.toml".to_string()),
@@ -1908,11 +2189,20 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             args: vec!["-version".to_string()],
         }];
 
-        assert!(
-            fate_mapping_report_lines(&mappings, &FateContext::default(), true)
-                .unwrap_err()
-                .contains("references {samples} but --samples <path> was not provided")
-        );
+        let no_env = |_name: &str| None;
+        let no_dir = |_path: &str| false;
+        let no_file = |_path: &str| false;
+
+        assert!(fate_mapping_report_lines_with(
+            &mappings,
+            &FateContext::default(),
+            true,
+            &no_env,
+            &no_dir,
+            &no_file
+        )
+        .unwrap_err()
+        .contains("references {samples} but no samples path was provided"));
 
         let context = FateContext {
             samples_root: Some(".".to_string()),
@@ -1954,10 +2244,19 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             args: vec!["{samples}/audio/test.wav".to_string()],
         };
 
-        assert!(
-            run_fate_mapping(&mapping, &FateContext::default(), ExecutionMode::DryRun)
-                .unwrap_err()
-                .contains("references {samples} but --samples <path> was not provided")
-        );
+        let no_env = |_name: &str| None;
+        let no_dir = |_path: &str| false;
+        let no_file = |_path: &str| false;
+
+        assert!(run_fate_mapping_with(
+            &mapping,
+            &FateContext::default(),
+            ExecutionMode::DryRun,
+            &no_env,
+            &no_dir,
+            &no_file
+        )
+        .unwrap_err()
+        .contains("references {samples} but no samples path was provided"));
     }
 }
