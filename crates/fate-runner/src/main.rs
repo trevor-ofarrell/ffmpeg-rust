@@ -183,6 +183,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/error_oracle.rs",
+        exact_ids: &["avutil-error"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/rational.rs",
         exact_ids: &["avutil-rational"],
         id_prefixes: &[],
@@ -1670,6 +1675,17 @@ mod tests {
         assert_eq!(
             changed_components(&component_ids, &paths),
             vec!["fftools-version".to_string()]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_error_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-error"]));
+        let paths = vec!["crates/avutil/tests/error_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-error".to_string()]
         );
     }
 

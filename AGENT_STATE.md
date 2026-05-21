@@ -4,15 +4,17 @@
 
 Latest oracle-install slice: the pinned FFmpeg 8.1.1 oracle is now installed locally through ignored WSL wrappers under `third_party/ffmpeg-oracle/`, and `.gitignore` now excludes `third_party/` so FFmpeg build artifacts such as `.d` dependency files are not tracked. The bootstrap script is `scripts/bootstrap_ffmpeg_oracle_wsl.sh`; it builds tag `n8.1.1`, writes a release-shaped `VERSION` file so banners report `8.1.1`, installs under `third_party/ffmpeg-oracle/wsl/`, and generates Windows `.cmd` plus Unix-style wrappers under `third_party/ffmpeg-oracle/build/bin/`.
 
-Latest parity status: strict completion is still 0/96 components (`0%`) because no component is marked `complete` under the project completion rules. Intermediate measurable parity is 3/96 non-complete status rows: `repo-runtime-guard`, `fftools-version`, and `avutil-channel-layout` are now `differential_pass`/validated evidence rows. Current ledger status counts are 92 `implemented`, 1 `scaffolded`, 3 `differential_pass`, and 0 `complete`.
+Latest parity status: strict completion is still 0/96 components (`0%`) because no component is marked `complete` under the project completion rules. Intermediate measurable parity is 4/96 non-complete status rows: `repo-runtime-guard`, `fftools-version`, `avutil-channel-layout`, and `avutil-error` are now `differential_pass`/validated evidence rows. Current ledger status counts are 91 `implemented`, 1 `scaffolded`, 4 `differential_pass`, and 0 `complete`.
 
-Latest oracle evidence: `cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1` generated local ignored inventory snapshots. The local oracle passed version, sample-format, color, pixel-format subset, rawvideo generated, WAV generated, and channel-layout inventory differential checks. `avutil-channel-layout` now passes `ffmpeg -layouts` after adding `3.1.2` and matching FFmpeg's `22.2` and `hexadecagonal` decomposition order. FATE samples and actual `cargo fuzz run` execution are still absent.
+Latest oracle evidence: `cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1` generated local ignored inventory snapshots. The local oracle passed version, sample-format, color, pixel-format subset, rawvideo generated, WAV generated, channel-layout inventory, and libavutil error-string differential checks. `avutil-channel-layout` now passes `ffmpeg -layouts` after adding `3.1.2` and matching FFmpeg's `22.2` and `hexadecagonal` decomposition order. `avutil-error` now passes a test-only libavutil `av_strerror` oracle for FFmpeg-defined error codes. FATE samples and actual `cargo fuzz run` execution are still absent.
+
+Latest `avutil-error` oracle slice: added `crates/avutil/tests/error_oracle.rs`, an ignored differential harness that compiles a small C helper against the pinned local `third_party/ffmpeg-oracle/wsl/lib/libavutil.a`, compares `AV_ERROR_MAX_STRING_SIZE`, FFmpeg-defined `AVERROR_*` raw code values, and `av_strerror` messages against the Rust `AvErrorCode` / `av_make_error_string` model, and wires it through `tests/differential/mappings.txt` plus `fate-runner` changed-path selection. The component moved from `implemented` to `differential_pass`, not `complete`, because platform `AVERROR(errno)` parity, upstream FATE applicability, and actual fuzz execution remain pending.
 
 Latest `avutil-channel-layout` parity slice: the known-layout inventory now matches pinned FFmpeg 8.1.1 `ffmpeg -layouts` for the modeled native layout table. The component moved from `implemented` to `differential_pass`, not `complete`, because parser-level oracle vectors, upstream FATE coverage or a documented exception, byte-preserving custom-name parity, and actual fuzz execution remain pending.
 
 Goal resumed after the Codex runtime update: the active objective is now staged. First reach 10% strict parity, defined for the current 96-row ledger as at least 10 components marked `complete` under the normal completion definition, then continue the same ledger loop toward 100% FFmpeg 8.1.1 default-native compatibility and later profiles. `AGENTS.md` and `README.md` now both spell out this 10% milestone and name the first preferred completion candidates: `avutil-error`, `avutil-rational`, `avutil-timebase`, `avutil-byteio`, `avutil-bitreader`, `avutil-bitwriter`, `avutil-dict`, `avutil-options`, `avutil-logging`, and `avutil-hash`.
 
-Latest documentation update: added the repository-level `README.md` with the project mission, non-wrapper/oracle-only policy, current compatibility boundary, strict ledger counts, conservative completion estimate, workspace layout, useful commands, oracle/FATE workflow, progress-tracking files, and license cautions. The README reports strict parity completion as 0% because no ledger entries are marked `complete`, while 3 rows currently have non-complete validation status, and reports practical engineering progress at about 2% of a complete FFmpeg 8.1.1 default-native rewrite.
+Latest documentation update: added the repository-level `README.md` with the project mission, non-wrapper/oracle-only policy, current compatibility boundary, strict ledger counts, conservative completion estimate, workspace layout, useful commands, oracle/FATE workflow, progress-tracking files, and license cautions. The README reports strict parity completion as 0% because no ledger entries are marked `complete`, while 4 rows currently have non-complete validation status, and reports practical engineering progress at about 2% of a complete FFmpeg 8.1.1 default-native rewrite.
 
 Latest `avutil-options` update: added real removal helpers for the AVOption-like registry. `OptionSet::remove_definition` removes a descriptor and its current value together, `remove_constant` removes unit-scoped named constants, and `remove_child` removes child option namespaces, all using the existing case-insensitive lookup semantics and preserving state on misses. Unit coverage verifies successful removal, failed-removal immutability, root/child namespace separation, and remaining constant behavior; `avutil_metadata_options` now build-checks generated removal invariants and reaches previously unreachable child-mutation arms. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, and actual local fuzz execution are still absent.
 
@@ -26,9 +28,9 @@ Latest `avutil-byteio` update: added checked fixed-size array and four-byte tag 
 
 Latest `avutil-color` update: added a bounded Rust-native `parse_color` model for the deterministic FFmpeg 8.1.1 `av_parse_color` subset. The parser now covers case-insensitive named colors, bare/#/lowercase-0x `RRGGBB` and `RRGGBBAA` hex forms, decimal normalized alpha suffixes, hexadecimal alpha suffixes, embedded-alpha override behavior, empty alpha suffixes, and typed invalid-input rejection. `RgbaColor` exposes RGBA/RGB/alpha accessors and lowercase RGBA hex formatting, and `avutil_core_models` now build-checks color parser fixtures plus arbitrary UTF-8 parser inputs. The `ffmpeg -colors` inventory oracle passes locally, but the component remains `implemented`, not `complete`, because nondeterministic `random`/`bikeshed` behavior, unusual C `strtod`/`strtoul` edge calibration, upstream FATE coverage, and actual fuzz execution remain pending.
 
-Latest `fate-runner` mapping-validation update: the runner now rejects unknown or malformed `{...}` placeholders in mapping workdirs, programs, env values, and arguments at parse time, and rejects duplicate `env:NAME=...` assignments within a single mapping row. This keeps oracle/FATE mapping typos from silently turning into wrong child commands. Focused runner tests passed; the component remains `scaffolded` because no pinned FFmpeg oracle binary or FATE samples tree is installed locally.
+Latest `fate-runner` mapping-validation update: the runner now rejects unknown or malformed `{...}` placeholders in mapping workdirs, programs, env values, and arguments at parse time, and rejects duplicate `env:NAME=...` assignments within a single mapping row. This keeps oracle/FATE mapping typos from silently turning into wrong child commands. Focused runner tests passed; the component remains `scaffolded` because upstream sample-backed FATE execution and broader mapping coverage are still pending.
 
-Latest `oracle-inventory` update: added local unit coverage for the pinned inventory command surface in `crates/oracle/src/main.rs`. Tests now assert the exact required `ffmpeg` command list, inventory argument parsing, target/profile manifest header, per-command manifest status rows, and stdout/stderr snapshot section wrapping. `tests/fate/mappings.txt` exposes the component as `oracle-inventory|local-oracle-unit` so changed-path runs have a local smoke target. Focused oracle tests, local FATE-runner mapping listing/dry-run/execution, mapping parser checks, clippy, formatting, and diff checks passed after a rustfmt correction; real snapshot generation remains blocked because no pinned oracle binary exists locally.
+Latest `oracle-inventory` update: added local unit coverage for the pinned inventory command surface in `crates/oracle/src/main.rs`. Tests now assert the exact required `ffmpeg` command list, inventory argument parsing, target/profile manifest header, per-command manifest status rows, and stdout/stderr snapshot section wrapping. `tests/fate/mappings.txt` exposes the component as `oracle-inventory|local-oracle-unit` so changed-path runs have a local smoke target. Focused oracle tests, local FATE-runner mapping listing/dry-run/execution, mapping parser checks, clippy, formatting, and diff checks passed after a rustfmt correction; local ignored inventory snapshots have since been generated through the pinned WSL oracle wrapper.
 
 Latest `fftools-version` oracle update: added an ignored `ffmpeg -version` / `ffprobe -version` oracle harness at `crates/fftools/tests/version_oracle.rs`. The harness resolves pinned tools through `FFMPEG_ORACLE`, optional `FFPROBE_ORACLE`, sibling `ffprobe`, or the standard `third_party/ffmpeg-oracle/build/bin/` paths, parses FFmpeg's split libav* ABI version lines, and compares the oracle target version/ABI surface with the Rust `ffmpeg-rs` and `ffprobe-rs` banner constants. `tests/differential/mappings.txt` exposes `fftools-version|oracle-ffmpeg-version` and `fftools-version|oracle-ffprobe-version`, and `fate-runner` changed-path selection maps the harness back to `fftools-version`. The pinned local oracle now runs these mappings, so the component is `differential_pass`; it remains below `complete` until remaining completion-rule evidence is closed.
 
@@ -479,6 +481,19 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-error` oracle parity slice:
+  - `cmd /c cargo fmt --all -- --check`
+  - `cmd /c cargo test -p avutil --test error_oracle -- --ignored`
+  - `cmd /c cargo test -p avutil error`
+  - `cmd /c cargo test -p fate-runner`
+  - `cmd /c cargo run --target-dir target-codex -p fate-runner -- run --mappings tests\differential\mappings.txt --component avutil-error --target oracle-libavutil-error-strings`
+  - `cmd /c cargo run --target-dir target-codex -p fate-runner -- run --component avutil-error`
+  - `cmd /c cargo clippy -p avutil --all-targets -- -D warnings`
+  - `cmd /c cargo check --manifest-path fuzz\Cargo.toml --bin avutil_core_models`
+  - `cmd /c cargo clippy --manifest-path fuzz\Cargo.toml --bin avutil_core_models -- -D warnings`
+  - `cmd /c cargo clippy -p fate-runner --all-targets -- -D warnings`
+  - `cmd /c git diff --check` (passed with CRLF warnings only)
 
 - Current `avutil-channel-layout` oracle parity slice:
   - `cmd /c cargo fmt --all -- --check`
@@ -4977,6 +4992,11 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-error` oracle parity slice:
+  - The first `cmd /c cargo fmt --all -- --check` run reported rustfmt diffs in the new ignored oracle test; `cmd /c cargo fmt --all` fixed it.
+  - The first `cmd /c cargo test -p avutil --test error_oracle -- --ignored` run failed because Windows canonical paths were passed to WSL as `//?/C:/...`; `to_wsl_path` now strips the canonical prefix before `/mnt/<drive>/` conversion.
+  - The second ignored oracle run failed because FFmpeg 8.1.1 does not expose an `AVERROR_INPUT_AND_OUTPUT_CHANGED` C macro; the test helper now uses `AVERROR_INPUT_CHANGED | AVERROR_OUTPUT_CHANGED`, matching the Rust model's raw-code alias behavior.
+
 - Current `avutil-channel-layout` oracle parity slice:
   - The first focused `cmd /c cargo test -p avutil channel_layout` run failed because one unit expectation still used the older `22.2` channel order. The expectation was corrected to FFmpeg's `ffmpeg -layouts` order and the rerun passed.
 
@@ -5447,6 +5467,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-error` is the active strict-parity candidate for this turn. The current slice adds local pinned libavutil `av_strerror` differential evidence and moves the component to `differential_pass`. It remains below `complete` because platform `AVERROR(errno)` parity, upstream FATE applicability/exception documentation, and actual fuzz execution remain pending.
+
 `avutil-channel-layout` inventory parity is fixed for this slice. The local pinned FFmpeg 8.1.1 oracle now passes the `ffmpeg -layouts` inventory harness after adding `3.1.2` and matching `22.2`/`hexadecagonal` standard-layout decomposition order. The next focus should move to strict-completion proof work for the 10% candidates, starting with `avutil-error` unless the ledger shows a more urgent failure.
 
 Goal milestone tracking is the active focus for this turn. The concrete change recreates the runtime goal and updates the persistent project instructions so the rewrite loop targets 10% strict parity first, then resumes the full 100% FFmpeg parity objective. No ledger component status changed.
@@ -5709,7 +5731,7 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Audit `avutil-error` against the strict completion definition: add or run oracle vectors where applicable, document any FATE inapplicability, and gather fuzz evidence or record the local `cargo-fuzz` blocker.
+1. Finish `avutil-error` completion proof: decide and document upstream FATE applicability, calibrate or explicitly profile platform `AVERROR(errno)` behavior, and run `cargo fuzz run avutil_core_models` once `cargo-fuzz` is installed.
 2. Repeat the completion-proof pattern for `avutil-rational`, `avutil-timebase`, `avutil-byteio`, `avutil-bitreader`, `avutil-bitwriter`, `avutil-dict`, `avutil-options`, `avutil-logging`, and `avutil-hash`.
 3. Keep `avutil-channel-layout` below `complete` until parser-level oracle vectors, upstream FATE decision/coverage, byte-preserving custom-name parity, and actual fuzz execution or documented fuzz blocker satisfy the component completion rules.
 
@@ -5719,25 +5741,20 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - FATE samples are still absent locally, so sample-backed upstream FATE rows such as `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` remain blocked until `third_party/fate-samples`, `FATE_SAMPLES`, or an equivalent sample tree is configured.
 - The `cargo fuzz` subcommand is not installed, so fuzz targets are currently build-checked only; actual fuzz execution is still pending.
 - `avutil-channel-layout` `ffmpeg -layouts` inventory now passes, but the component is not complete because parser-level oracle vectors, upstream FATE decision/coverage, byte-preserving custom-name parity, and actual fuzz execution remain pending.
+- `avutil-error` libavutil `av_strerror` differential now passes, but the component is not complete because platform `AVERROR(errno)` parity, upstream FATE applicability/exception documentation, and actual fuzz execution remain pending.
 - Windows Application Control intermittently blocks freshly built Cargo test executables. Use already accepted target caches or `target-codex` fallbacks when the same command is blocked before Rust code executes.
 
-- Attempted local oracle build discovery found Git and `wsl.exe`, but no installed WSL distribution and no native `gcc`, `make`, `cl`, `clang`, `cmake`, `winget`, `choco`, or `pacman` on PATH. A source build of pinned FFmpeg 8.1.1 is therefore blocked in this environment unless a toolchain/oracle binary is provided.
+- `oracle-inventory` has local unit and FATE smoke coverage for command-list and manifest behavior, and local ignored snapshots were generated through the pinned WSL oracle wrapper.
 
-- `oracle-inventory` has local unit and FATE smoke coverage for command-list and manifest behavior, but no pinned FFmpeg oracle exists locally, so `compat/ffmpeg-8.1.1` snapshots have not been generated.
+- `fftools-version`, `avutil-channel-layout`, and `avutil-error` have executed pinned-oracle differential rows and are marked `differential_pass`, not `complete`.
 
-- `fftools-version` has ignored `ffmpeg -version` and `ffprobe -version` oracle mappings, but no pinned FFmpeg/FFprobe oracle binaries exist locally, so they have not executed and do not count as `differential_pass`.
+- `avutil-pixel-format`, `avutil-sample-format`, `avutil-color`, rawvideo, and generated WAV oracle rows execute locally with the pinned oracle, but only their ledger entries that meet the current status threshold should be advanced. Pixel/color/sample-format checks remain bounded inventory/subset evidence rather than strict completion.
 
-- `avutil-pixel-format` has an ignored `ffmpeg -pix_fmts` subset inventory harness and differential mapping, but no pinned FFmpeg oracle exists locally, so it has not executed and does not count as `differential_pass`. It checks the current Rust subset only; full FFmpeg pixel inventory and full `AVPixFmtDescriptor` parity remain pending.
-
-- `avutil-sample-format` has an ignored `ffmpeg -sample_fmts` inventory harness and differential mapping, but no pinned FFmpeg oracle exists locally, so it has not executed and does not count as `differential_pass`.
-
-- `avutil-color` has an ignored `ffmpeg -colors` inventory harness and differential mapping, but no pinned FFmpeg oracle exists locally, so it has not executed and does not count as `differential_pass`; full `av_parse_color` hex/alpha/random semantics are still pending.
-
-- `avformat-wav-demuxer` has generated and sample-backed WAV oracle rows, but no pinned FFmpeg oracle exists locally, so the generated differential row has not executed. The FATE sample tree is also absent locally, so the sample-backed WAV oracle/FATE row has not executed.
+- `avformat-wav-demuxer` has generated and sample-backed WAV oracle rows. The generated oracle row has run locally; the FATE sample-backed row remains blocked until a FATE samples tree is configured.
 
 - `fate-runner` remains `scaffolded` because the first sample-backed mapping is configured but has not executed against a real pinned FFmpeg oracle and FATE samples tree. The current update proves mapping parsing and dry-run prerequisite resolution only; it does not add upstream FATE media parity.
 
-- Latest `avutil-channel-layout` oracle coverage now has an ignored `ffmpeg -layouts` differential harness and mapping, but real execution is blocked because no pinned FFmpeg 8.1.1 binary exists at `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)`. The harness compiles by default and fails explicitly when run without the oracle instead of silently passing.
+- Latest `avutil-channel-layout` oracle coverage now has an ignored `ffmpeg -layouts` differential harness and mapping that executes locally through the pinned WSL oracle wrapper.
 
 - Latest `avutil-channel-layout` parser-facing whitespace coverage now matches the source-checked leading-whitespace/full-consumption shape for numeric masks, `Nc`/`NC`, `N channels`, and described channel lists, while preserving channel-list tokenizer whitespace trimming. Remaining blockers are byte-preserving non-UTF-8 custom-name parity if required by the selected API surface, oracle-vector calibration, full `ffmpeg -layouts` inventory comparison, deeper `AV_CHANNEL_ORDER_AMBISONIC` semantics beyond the current bounded lookup/retype surface, upstream FATE parity, and actual fuzz execution.
 
@@ -5852,6 +5869,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added a pinned libavutil error-string oracle for `avutil-error`. `crates/avutil/tests/error_oracle.rs` compiles a test-only C helper against the local FFmpeg 8.1.1 `libavutil.a`, compares `AV_ERROR_MAX_STRING_SIZE`, FFmpeg-defined `AVERROR_*` raw values, and `av_strerror` messages against the Rust model, and is wired through `tests/differential/mappings.txt` plus `fate-runner` changed-path selection. The ledger status moved to `differential_pass`; the component remains below `complete` because platform errno/FATE/fuzz gaps remain.
 
 Latest slice: fixed `avutil-channel-layout` `ffmpeg -layouts` inventory parity by adding `3.1.2` and matching FFmpeg's `22.2` and `hexadecagonal` decomposition order. The ignored oracle mapping now passes locally through the pinned WSL oracle wrapper, and the ledger status moved to `differential_pass`; the component remains below `complete` because parser/FATE/fuzz gaps remain.
 

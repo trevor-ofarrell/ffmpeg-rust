@@ -7,9 +7,9 @@ id = "avutil-error"
 kind = "utility"
 ffmpeg_name = "AVERROR"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 1
-oracle_command = ""
+oracle_command = "compile test-only C helper against pinned third_party/ffmpeg-oracle/wsl/lib/libavutil.a and call av_strerror"
 rust_command = "cargo test -p avutil error"
 unit_tests = [
   "error::tests::error_exposes_kind_and_message",
@@ -21,13 +21,14 @@ unit_tests = [
   "error::tests::io_errors_map_to_stable_av_error_kinds",
   "error::tests::eof_predicate_tracks_error_kind",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:avutil-error|oracle-libavutil-error-strings"]
 fate_tests = ["tests/fate/mappings.txt:avutil-error|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
+# Latest oracle update: crates/avutil/tests/error_oracle.rs compiles a test-only C helper against the pinned local libavutil.a and compares AV_ERROR_MAX_STRING_SIZE, AVERROR_* raw values, and av_strerror strings against the Rust model.
 # Latest update: av_strerror-style descriptions and generic unknown-code strings now cover the pinned FFmpeg-defined AVERROR_LIST table from libavutil/error.c.
 # Prior update: AvErrorCode models documented FFmpeg tag-based AVERROR constants and unambiguous constructors preserve code metadata.
-notes = "Typed Rust error model implemented with stable kind/message accessors, common constructors, FFmpeg-style AvErrorCode metadata for documented tag-based libavutil/error.h constants, custom code preservation, IO ErrorKind classification, optional preserved io::ErrorKind metadata, and an EOF predicate. AvErrorCode now exposes the pinned FFmpeg 8.1.1 AVERROR_LIST descriptions from libavutil/error.c through av_error_description/av_strerror/av_make_error_string helpers, including BUG2 sharing BUG's string and unknown codes rendering the FFmpeg-shaped generic `Error number <n> occurred` message; the INPUT_CHANGED | OUTPUT_CHANGED code intentionally resolves to the first matching INPUT_CHANGED string because the combined raw code duplicates INPUT_CHANGED under FFmpeg's signed bitwise behavior. The unambiguous invalid-data, EOF, external, and bug constructors attach AVERROR_INVALIDDATA, AVERROR_EOF, AVERROR_EXTERNAL, and AVERROR_BUG code metadata. Platform errno-derived argument/not-found/unsupported cases intentionally remain code-less until a pinned oracle or platform profile defines exact AVERROR(errno) behavior. Build-checked cargo-fuzz target avutil_core_models covers constructor invariants, FFERRTAG-style code values, pinned error-string table lookups, generic unknown-code strings, custom code preservation, IO mapping, preserved IO kind metadata, and EOF classification, but actual local fuzz execution is blocked until cargo-fuzz is installed. No differential or upstream FATE oracle applies yet. The local FATE-runner smoke mapping executes the error unit filter only and does not count as upstream FATE parity."
-blocked_reason = ""
+notes = "Typed Rust error model implemented with stable kind/message accessors, common constructors, FFmpeg-style AvErrorCode metadata for documented tag-based libavutil/error.h constants, custom code preservation, IO ErrorKind classification, optional preserved io::ErrorKind metadata, and an EOF predicate. AvErrorCode now exposes the pinned FFmpeg 8.1.1 AVERROR_LIST descriptions from libavutil/error.c through av_error_description/av_strerror/av_make_error_string helpers, including BUG2 sharing BUG's string and unknown codes rendering the FFmpeg-shaped generic `Error number <n> occurred` message; the INPUT_CHANGED | OUTPUT_CHANGED code intentionally resolves to the first matching INPUT_CHANGED string because the combined raw code duplicates INPUT_CHANGED under FFmpeg's signed bitwise behavior. The unambiguous invalid-data, EOF, external, and bug constructors attach AVERROR_INVALIDDATA, AVERROR_EOF, AVERROR_EXTERNAL, and AVERROR_BUG code metadata. The ignored error_oracle differential harness compares the FFmpeg-defined AVERROR table, AV_ERROR_MAX_STRING_SIZE, and generic unknown-code formatting against pinned libavutil.a. Platform errno-derived argument/not-found/unsupported cases intentionally remain code-less until a platform profile defines exact AVERROR(errno) behavior. Build-checked cargo-fuzz target avutil_core_models covers constructor invariants, FFERRTAG-style code values, pinned error-string table lookups, generic unknown-code strings, custom code preservation, IO mapping, preserved IO kind metadata, and EOF classification, but actual local fuzz execution is blocked until cargo-fuzz is installed. Upstream FATE applicability documentation remains pending, so this is differential_pass rather than complete. The local FATE-runner smoke mapping executes the error unit filter only and does not count as upstream FATE parity."
+blocked_reason = "FFmpeg-defined AVERROR table differential now passes, but platform AVERROR(errno) parity, upstream FATE applicability decision, and actual fuzz execution remain pending before completion."
 
 [[component]]
 id = "avutil-rational"
