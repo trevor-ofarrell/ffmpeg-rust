@@ -380,6 +380,14 @@ impl SampleFormat {
         }
     }
 
+    pub fn sample_fmt_string_header() -> &'static str {
+        "name   depth"
+    }
+
+    pub fn sample_fmt_string(self) -> String {
+        format!("{:<6}   {:>2} ", self.name(), self.sample_bits())
+    }
+
     pub fn bytes_per_sample(self) -> usize {
         match self {
             Self::U8 | Self::U8P => 1,
@@ -904,6 +912,31 @@ mod tests {
         }
 
         assert_eq!(SampleFormat::from_name("s24"), None);
+    }
+
+    #[test]
+    fn sample_formats_format_ffmpeg_sample_fmt_table_strings() {
+        assert_eq!(SampleFormat::sample_fmt_string_header(), "name   depth");
+
+        let cases = [
+            (SampleFormat::U8, "u8        8 "),
+            (SampleFormat::S16, "s16      16 "),
+            (SampleFormat::S32, "s32      32 "),
+            (SampleFormat::Flt, "flt      32 "),
+            (SampleFormat::Dbl, "dbl      64 "),
+            (SampleFormat::U8P, "u8p       8 "),
+            (SampleFormat::S16P, "s16p     16 "),
+            (SampleFormat::S32P, "s32p     32 "),
+            (SampleFormat::FltP, "fltp     32 "),
+            (SampleFormat::DblP, "dblp     64 "),
+            (SampleFormat::S64, "s64      64 "),
+            (SampleFormat::S64P, "s64p     64 "),
+        ];
+
+        for (format, expected) in cases {
+            assert_eq!(format.sample_fmt_string(), expected);
+            assert_eq!(format.sample_fmt_string().len(), 12);
+        }
     }
 
     #[test]

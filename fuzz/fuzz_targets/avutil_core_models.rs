@@ -3634,6 +3634,19 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         SampleFormat::from_name(sample_format.name()),
         Some(sample_format)
     );
+    assert_eq!(SampleFormat::sample_fmt_string_header(), "name   depth");
+    let sample_fmt_string = sample_format.sample_fmt_string();
+    assert_eq!(sample_fmt_string.len(), 12);
+    assert_eq!(
+        &sample_fmt_string[..6],
+        format!("{:<6}", sample_format.name())
+    );
+    assert_eq!(&sample_fmt_string[6..9], "   ");
+    assert_eq!(
+        &sample_fmt_string[9..11],
+        format!("{:>2}", sample_format.sample_bits())
+    );
+    assert_eq!(sample_fmt_string.as_bytes()[11], b' ');
     assert_eq!(
         sample_format.is_planar(),
         matches!(
