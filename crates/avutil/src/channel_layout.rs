@@ -1635,6 +1635,15 @@ impl ChannelLayoutSpec {
             return Ok(layout);
         }
 
+        if let Some(mask) = parse_numeric_channel_mask(trimmed) {
+            let Some(layout) = ChannelLayout::from_channel_mask(mask) else {
+                return Err(AvError::invalid_argument(format!(
+                    "native channel mask 0x{mask:x} is not a modeled layout"
+                )));
+            };
+            return Ok(Self::Native(layout));
+        }
+
         if let Some(channels) = parse_count_suffix(trimmed, "c") {
             let Some(layout) = ChannelLayout::default_for_count(channels) else {
                 return Err(AvError::invalid_argument(format!(
@@ -1754,6 +1763,32 @@ impl From<ChannelLayout> for ChannelLayoutSpec {
     fn from(layout: ChannelLayout) -> Self {
         Self::Native(layout)
     }
+}
+
+fn parse_numeric_channel_mask(value: &str) -> Option<u64> {
+    if value.contains('-') {
+        return None;
+    }
+    let unsigned = value.strip_prefix('+').unwrap_or(value);
+    if unsigned.is_empty() {
+        return None;
+    }
+
+    let (digits, radix) = if let Some(hex) = unsigned
+        .strip_prefix("0x")
+        .or_else(|| unsigned.strip_prefix("0X"))
+    {
+        (hex, 16)
+    } else if unsigned.len() > 1 && unsigned.starts_with('0') {
+        (unsigned, 8)
+    } else {
+        (unsigned, 10)
+    };
+    if digits.is_empty() || !digits.chars().all(|digit| digit.is_digit(radix)) {
+        return None;
+    }
+    let mask = u64::from_str_radix(digits, radix).ok()?;
+    (mask != 0).then_some(mask)
 }
 
 fn parse_count_suffix(value: &str, suffix: &str) -> Option<u16> {
@@ -3644,6 +3679,27 @@ mod tests {
             ChannelLayoutSpec::Native(ChannelLayout::stereo())
         );
         assert_eq!(
+            ChannelLayoutSpec::parse("0x3").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("3").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("03").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse("+0x3").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse(&format!("0x{:x}", ChannelLayout::five_one().channel_mask()))
+                .unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::five_one())
+        );
+        assert_eq!(
             ChannelLayoutSpec::parse("10c").unwrap(),
             ChannelLayoutSpec::Native(ChannelLayout::five_one_four())
         );
@@ -3679,6 +3735,12 @@ mod tests {
             "2channels",
             "2 channels trailing",
             "2 channels (FL+FR) trailing",
+            "0",
+            "0x0",
+            "-0x3",
+            "09",
+            "0x3g",
+            "0x5",
             "FL\0FR",
         ] {
             let err = ChannelLayoutSpec::parse(input).unwrap_err();

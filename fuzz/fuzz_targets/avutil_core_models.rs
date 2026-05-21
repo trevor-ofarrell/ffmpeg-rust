@@ -4509,6 +4509,14 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         ChannelLayoutSpec::parse(&layout.channel_string()).unwrap(),
         ChannelLayoutSpec::Native(layout)
     );
+    assert_eq!(
+        ChannelLayoutSpec::parse(&format!("0x{:x}", layout.channel_mask())).unwrap(),
+        ChannelLayoutSpec::Native(layout)
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse(&layout.channel_mask().to_string()).unwrap(),
+        ChannelLayoutSpec::Native(layout)
+    );
     assert_eq!(ChannelLayout::from_channel_mask(layout.channel_mask()), Some(layout));
     assert_eq!(ChannelLayout::from_channels(layout.channels()), Some(layout));
     assert_eq!(
@@ -9624,6 +9632,18 @@ fn exercise_fixtures() {
         ChannelLayoutSpec::Native(ChannelLayout::stereo())
     );
     assert_eq!(
+        ChannelLayoutSpec::parse("0x3").unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("03").unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse(&ChannelLayout::five_one().channel_mask().to_string()).unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::five_one())
+    );
+    assert_eq!(
         ChannelLayoutSpec::parse("10c").unwrap(),
         ChannelLayoutSpec::Native(ChannelLayout::five_one_four())
     );
@@ -9641,6 +9661,12 @@ fn exercise_fixtures() {
         "3 channels (FL+FR)",
         "2 channels (FL+FR",
         "2 channels ()",
+        "0",
+        "0x0",
+        "-0x3",
+        "09",
+        "0x3g",
+        "0x5",
     ] {
         assert_eq!(
             ChannelLayoutSpec::parse(invalid).unwrap_err().kind(),
