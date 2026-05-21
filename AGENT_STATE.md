@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest documentation update: added the repository-level `README.md` with the project mission, non-wrapper/oracle-only policy, current compatibility boundary, strict ledger counts, conservative completion estimate, workspace layout, useful commands, oracle/FATE workflow, progress-tracking files, and license cautions. The README reports strict parity completion as 0% because no ledger entries are marked `complete`, `differential_pass`, `fate_pass`, or `fuzzed`, and reports practical engineering progress at about 2% of a complete FFmpeg 8.1.1 default-native rewrite.
+
 Latest `avutil-options` update: added real removal helpers for the AVOption-like registry. `OptionSet::remove_definition` removes a descriptor and its current value together, `remove_constant` removes unit-scoped named constants, and `remove_child` removes child option namespaces, all using the existing case-insensitive lookup semantics and preserving state on misses. Unit coverage verifies successful removal, failed-removal immutability, root/child namespace separation, and remaining constant behavior; `avutil_metadata_options` now build-checks generated removal invariants and reaches previously unreachable child-mutation arms. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, and actual local fuzz execution are still absent.
 
 Latest `avutil-dict` update: added ordered bulk removal for duplicate metadata keys. `Dictionary::remove_all` removes every entry matching the requested key under caller-selected case sensitivity, returns removed entries in original insertion order, and leaves nonmatching entry order intact. Unit coverage verifies case-sensitive and case-insensitive removal across duplicate keys and remaining-order preservation, while `avutil_metadata_options` now build-checks generated bulk-removal invariants plus the deterministic duplicate-key fixture. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, and actual local fuzz execution are still absent.
@@ -467,6 +469,10 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current README documentation slice:
+  - `git diff --check`
+  - `cargo run -p fate-runner -- list` (parsed and listed all 96 current ledger components)
 
 - Current `avutil-options` removal slice:
   - `cargo test -p avutil options` (25 options-filtered tests passed)
@@ -5380,6 +5386,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+Documentation is the active focus for this turn. The concrete change adds a root `README.md` that summarizes project scope, current status, commands, oracle/FATE setup, and a conservative completion estimate. No ledger component status changed.
+
 `avutil-options` is the active focus for this turn. The concrete change adds `OptionSet` removal helpers for root definitions/current values, unit-scoped constants, and child namespaces, extends unit coverage for case-insensitive removals and no-mutation misses, and extends the shared `avutil_metadata_options` fuzz harness to cover removal invariants plus previously unreachable child mutation arms. It remains `implemented`, not complete, because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
 
 `avutil-dict` is the active focus for this turn. The concrete change adds `Dictionary::remove_all` for ordered bulk removal of duplicate metadata keys, extends dictionary unit coverage, and extends `avutil_metadata_options` fuzz-build invariants. It remains `implemented`, not complete, because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
@@ -5773,6 +5781,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added the project README. `README.md` now states the pinned FFmpeg 8.1.1 target, the no-runtime-FFmpeg policy, current implemented surface, strict ledger-derived status counts, strict parity completion of 0%, practical progress estimate of about 2%, workspace layout, useful commands, oracle/FATE setup, progress tracking files, and license cautions. `AGENT_STATE.md` was updated to record the documentation slice; `PORTING_LEDGER.toml` was not changed because no component status changed.
 
 Latest slice: added real removal operations to the AVOption-like model. `crates/avutil/src/options.rs` now exposes `OptionSet::remove_definition`, `remove_constant`, and `remove_child`, preserving the existing case-insensitive lookup rules and no-mutation behavior on misses. Unit tests cover descriptor/value removal, named-constant removal, child namespace removal, remaining-order behavior, and child/root namespace separation. `fuzz/fuzz_targets/avutil_metadata_options.rs` now build-checks generated removal invariants and reaches the child mutation arms by expanding the operation selector. The ledger and docs were updated to describe the removal surface. The component remains below `complete` because pinned oracle vectors, upstream FATE parity, and actual fuzz execution remain absent.
 
