@@ -108,7 +108,44 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     unref.unref();
     rows.insert("packet:unref".to_string(), packet_fields(&unref));
 
+    insert_side_data_api_rows(&mut rows);
+
     rows
+}
+
+fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let mut packet = Packet::default();
+    packet.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33, 0x44]).unwrap());
+    rows.insert(
+        "packet:side-new".to_string(),
+        side_data_summary_fields(&packet),
+    );
+    rows.insert(
+        "packet:side-get".to_string(),
+        side_data_lookup_fields(packet.side_data_by_kind("new_extradata")),
+    );
+
+    let shrunk = packet.shrink_side_data("new_extradata", 2).unwrap();
+    assert!(shrunk, "expected new_extradata side data to shrink");
+    rows.insert("packet:side-shrink-ret".to_string(), vec!["0".to_string()]);
+    rows.insert(
+        "packet:side-shrink".to_string(),
+        side_data_summary_fields(&packet),
+    );
+    rows.insert(
+        "packet:side-get-shrunk".to_string(),
+        side_data_lookup_fields(packet.side_data_by_kind("new_extradata")),
+    );
+    rows.insert(
+        "packet:side-get-missing".to_string(),
+        side_data_lookup_fields(packet.side_data_by_kind("palette")),
+    );
+
+    packet.clear_side_data();
+    rows.insert(
+        "packet:side-free".to_string(),
+        side_data_summary_fields(&packet),
+    );
 }
 
 fn packet_with_common_props() -> Packet {
@@ -157,6 +194,27 @@ fn first_side_data_fields(packet: &Packet) -> (String, String, String) {
         side_data.len().to_string(),
         hex_or_dash(side_data.data()),
     )
+}
+
+fn side_data_summary_fields(packet: &Packet) -> Vec<String> {
+    let mut fields = vec![packet.side_data().len().to_string()];
+    for side_data in packet.side_data() {
+        fields.push(packet_side_data_type(side_data.kind_id()).to_string());
+        fields.push(side_data.len().to_string());
+        fields.push(hex_or_dash(side_data.data()));
+    }
+    fields
+}
+
+fn side_data_lookup_fields(side_data: Option<&SideData>) -> Vec<String> {
+    match side_data {
+        Some(side_data) => vec![
+            "1".to_string(),
+            side_data.len().to_string(),
+            hex_or_dash(side_data.data()),
+        ],
+        None => vec!["0".to_string(), "0".to_string(), "-".to_string()],
+    }
 }
 
 fn packet_side_data_type(kind: &PacketSideDataKind) -> &'static str {
@@ -288,6 +346,25 @@ static void print_packet(const char *name, const AVPacket *pkt) {
            pkt->time_base.num, pkt->time_base.den);
 }
 
+static void print_side_data_summary(const char *name, const AVPacket *pkt) {
+    printf("%s|%d", name, pkt->side_data_elems);
+    for (int i = 0; i < pkt->side_data_elems; i++) {
+        const AVPacketSideData *sd = &pkt->side_data[i];
+        printf("|%d|%zu|", (int)sd->type, sd->size);
+        print_hex_or_dash(sd->data, (int)sd->size);
+    }
+    printf("\n");
+}
+
+static void print_side_data_lookup(const char *name, const AVPacket *pkt,
+                                   enum AVPacketSideDataType type) {
+    size_t size = 999;
+    uint8_t *data = av_packet_get_side_data(pkt, type, &size);
+    printf("%s|%d|%zu|", name, data != NULL, size);
+    print_hex_or_dash(data, (int)size);
+    printf("\n");
+}
+
 static AVPacket *new_packet(void) {
     AVPacket *pkt = av_packet_alloc();
     fail_if(!pkt, "av_packet_alloc failed");
@@ -316,6 +393,28 @@ static AVPacket *packet_with_common_props(void) {
     sd[1] = 0x22;
     sd[2] = 0x33;
     return pkt;
+}
+
+static void exercise_side_data_api(void) {
+    AVPacket *pkt = new_packet();
+    uint8_t *sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 4);
+    fail_if(!sd, "av_packet_new_side_data side API failed");
+    sd[0] = 0x11;
+    sd[1] = 0x22;
+    sd[2] = 0x33;
+    sd[3] = 0x44;
+    print_side_data_summary("packet:side-new", pkt);
+    print_side_data_lookup("packet:side-get", pkt, AV_PKT_DATA_NEW_EXTRADATA);
+
+    int ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 2);
+    printf("packet:side-shrink-ret|%d\n", ret);
+    print_side_data_summary("packet:side-shrink", pkt);
+    print_side_data_lookup("packet:side-get-shrunk", pkt, AV_PKT_DATA_NEW_EXTRADATA);
+    print_side_data_lookup("packet:side-get-missing", pkt, AV_PKT_DATA_PALETTE);
+
+    av_packet_free_side_data(pkt);
+    print_side_data_summary("packet:side-free", pkt);
+    av_packet_free(&pkt);
 }
 
 int main(void) {
@@ -368,6 +467,8 @@ int main(void) {
     av_packet_unref(pkt);
     print_packet("packet:unref", pkt);
     av_packet_free(&pkt);
+
+    exercise_side_data_api();
 
     return 0;
 }
