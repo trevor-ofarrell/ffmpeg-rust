@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avformat-wav-demuxer` / WAV oracle update: split the WAV oracle coverage into an oracle-only generated fixture row and a sample-backed FATE row. `crates/fftools/tests/wav_oracle.rs` now has `wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle`, which creates a small PCM s16le WAV fixture through the Rust WAV muxer and compares Rust WAV-to-MD5 output with pinned FFmpeg streamcopy MD5 output. `tests/differential/mappings.txt` exposes that row as `avformat-wav-demuxer|oracle-wav-generated-md5`, while `tests/fate/upstream-mappings.txt` now filters its sample-backed row to `wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample`. `fate-runner` changed-path selection maps the WAV oracle harness back to the WAV/CLI components, and unit coverage parses both live mapping files. Focused tests and dry-runs passed so far; this still does not count as `differential_pass` or `fate_pass` because the pinned oracle and FATE sample tree are absent locally.
+
 Latest `fate-runner` / WAV oracle update: added the first separate sample-backed mapping file at `tests/fate/upstream-mappings.txt`. The new `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` row injects a validated `{oracle_ffmpeg}` path as `FFMPEG_ORACLE` and a `{samples}`-relative FATE WAV sample path as `FATE_WAV_SAMPLE`, then runs the ignored `crates/fftools/tests/wav_oracle.rs` harness. That harness compares Rust WAV-to-MD5 output against pinned FFmpeg 8.1.1 streamcopy MD5 output for `audio-reference/luckynight_2ch_44kHz_s16.wav`. Focused `fate-runner` tests, default ignored harness compilation, explicit mapping listing, explicit dry-run placeholder validation, clippy for `fate-runner` and the new `fftools` test, formatting, and diff checks passed. This does not count as `differential_pass` or `fate_pass` because no pinned FFmpeg oracle or FATE sample tree is installed locally.
 
 Latest `fate-runner` update: mapping listing and execution now accept repeated `--target <name>` filters. Target filters match exact mapping target names, preserve mapping file order, deduplicate duplicate filter values, and still fail selected component runs whose mappings are filtered out instead of silently reporting success. This prepares the runner for future sample-backed upstream/FATE rows to coexist with local smoke rows without making every component run execute every target. Focused `cargo test -p fate-runner`, target-filter mapping listing, target-filter dry-run, the expected unmatched-target failure, `fate-runner` clippy, formatting, and diff checks passed; the component remains `scaffolded`, not complete, because no upstream FATE sample-backed media mappings or local samples/oracle tree exist yet.
@@ -443,6 +445,18 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avformat-wav-demuxer` / generated WAV oracle mapping slice:
+  - `cargo test -p fate-runner` (35 tests passed)
+  - `cargo test -p fftools --test wav_oracle` (ignored oracle tests compiled; 2 ignored)
+  - `cargo run -p fate-runner -- mappings --mappings tests/differential/mappings.txt --target oracle-wav-generated-md5`
+  - `cargo run -p fate-runner -- mappings --mappings tests/fate/upstream-mappings.txt --target fate-wav-pcm-s16le-md5`
+  - `cargo run -p fate-runner -- run --dry-run --mappings tests/differential/mappings.txt --component avformat-wav-demuxer --target oracle-wav-generated-md5 --oracle-ffmpeg Cargo.toml`
+  - `cargo run -p fate-runner -- run --dry-run --mappings tests/fate/upstream-mappings.txt --component avformat-wav-demuxer --target fate-wav-pcm-s16le-md5 --samples . --oracle-ffmpeg Cargo.toml`
+  - `cargo clippy -p fftools --test wav_oracle -- -D warnings`
+  - `cargo clippy -p fate-runner --all-targets -- -D warnings`
+  - `cargo fmt --all -- --check`
+  - `git diff --check` (exit 0; CRLF warnings only)
 
 - Current `fate-runner` / WAV sample-backed mapping slice:
   - `cargo test -p fate-runner` (34 tests passed)
@@ -5195,6 +5209,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avformat-wav-demuxer` and `fate-runner` are the active focus for this turn. The concrete change adds a generated PCM s16le WAV oracle test that needs only the pinned FFmpeg binary, wires it into `tests/differential/mappings.txt`, narrows the sample-backed upstream row to the sample-specific test filter, and keeps both rows out of default local smoke runs. The ledger remains below `differential_pass` and `fate_pass` until the rows execute with real prerequisites.
+
 `fate-runner` is the active infrastructure focus for this turn. The concrete change adds the first explicitly sample-backed mapping row in `tests/fate/upstream-mappings.txt` and keeps it out of the default local smoke mapping file. `avformat-wav-demuxer` also now has an ignored sample-backed oracle harness slot, but it is not marked `differential_pass` or `fate_pass` because the pinned oracle and FATE samples are absent locally.
 
 `fate-runner` is the active infrastructure focus for this turn. The concrete change adds exact `--target` filtering to `mappings` and `run` while preserving hard failure for selected components whose filtered mappings are absent. It deliberately does not claim upstream FATE parity because no sample-backed media mappings or local FATE samples exist yet.
@@ -5427,11 +5443,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Configure or build the pinned FFmpeg 8.1.1 oracle binary at `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` or set `FFMPEG_ORACLE`, configure `third_party/fate-samples` or `FATE_SAMPLES`, then run `avformat-wav-demuxer|fate-wav-pcm-s16le-md5`.
-2. If the WAV sample-backed row executes, record the pass/fail output precisely; if it fails, keep the ledger below `differential_pass` and implement the smallest parity fix rather than weakening the oracle.
-3. If local oracle/samples remain unavailable, add the next exact sample-backed mapping only after selecting a concrete supported FATE sample path, or move to the next unblocked high-priority oracle-vector slice.
+1. Configure or build the pinned FFmpeg 8.1.1 oracle binary at `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` or set `FFMPEG_ORACLE`, then run `avformat-wav-demuxer|oracle-wav-generated-md5`.
+2. Configure `third_party/fate-samples` or `FATE_SAMPLES`, then run `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` and record the pass/fail output without weakening the oracle.
+3. If local oracle/samples remain unavailable, move to the next unblocked high-priority oracle-vector slice that can be represented as an ignored differential row plus local compile/unit coverage.
 
 ## Known Blockers
+
+- `avformat-wav-demuxer` has generated and sample-backed WAV oracle rows, but no pinned FFmpeg oracle exists locally, so the generated differential row has not executed. The FATE sample tree is also absent locally, so the sample-backed WAV oracle/FATE row has not executed.
 
 - `fate-runner` remains `scaffolded` because the first sample-backed mapping is configured but has not executed against a real pinned FFmpeg oracle and FATE samples tree. The current update proves mapping parsing and dry-run prerequisite resolution only; it does not add upstream FATE media parity.
 
@@ -5550,6 +5568,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added an oracle-only generated WAV MD5 differential row while preserving the sample-backed FATE row. The new ignored generated test writes a small Rust-produced PCM s16le WAV fixture, compares Rust WAV-to-MD5 output against pinned FFmpeg streamcopy MD5 output, and is exposed through `tests/differential/mappings.txt` as `oracle-wav-generated-md5`. The sample-backed upstream row now filters to only the FATE sample test. `fate-runner` maps the WAV oracle harness back to `avformat-wav-demuxer` and related CLI components and parses both live mapping files against the ledger. The rows are measurable but not complete because the local oracle and sample tree are absent.
 
 Latest slice: added exact target filtering to `fate-runner`. Both `mappings` and `run` accept repeated `--target <name>` filters; duplicate filter values are deduplicated, listing/runs preserve mapping file order, and selected components whose rows are filtered out still fail as unmapped. Unit tests cover run/list option parsing, filter order, unmatched-target behavior, and missing target values. CLI checks confirmed `mappings --target local-self-test` and `run --dry-run --component fate-runner --target local-self-test` resolve one row, while `--target missing-target` fails instead of silently passing. Docs and the ledger record this as runner infrastructure only.
 

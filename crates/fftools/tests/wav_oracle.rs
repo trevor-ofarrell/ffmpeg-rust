@@ -1,11 +1,26 @@
+use avformat::WavMuxer;
+use avutil::Packet;
 use fftools::ffmpeg_output;
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const DEFAULT_FATE_WAV_SAMPLE: &str = "audio-reference/luckynight_2ch_44kHz_s16.wav";
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle() {
+    let payload = [
+        0x00, 0x00, 0x01, 0x00, 0xfe, 0xff, 0x7f, 0x00, 0x80, 0xff, 0x34, 0x12,
+    ];
+    let path = write_generated_wav("generated-pcm-s16le", 2, 44_100, &payload);
+
+    compare_wav_md5(&path);
+    remove_temp_file(&path);
+}
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle plus FATE_WAV_SAMPLE or FATE_SAMPLES"]
@@ -17,7 +32,7 @@ fn wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample() {
 fn compare_wav_md5(sample_path: &Path) {
     assert!(
         sample_path.is_file(),
-        "FATE WAV sample must point to an existing PCM s16le WAV file, got `{}`",
+        "WAV oracle input must point to an existing PCM s16le WAV file, got `{}`",
         sample_path.display()
     );
 
@@ -150,4 +165,31 @@ fn repo_root() -> PathBuf {
 
 fn strings(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| value.to_string()).collect()
+}
+
+fn write_generated_wav(label: &str, channels: u16, sample_rate: u32, payload: &[u8]) -> PathBuf {
+    let path = unique_temp_path(label, "wav");
+    let mut muxer =
+        WavMuxer::new_pcm_s16le(channels, sample_rate).expect("generated WAV parameters are valid");
+    muxer
+        .write_packet(&Packet::new(payload.to_vec(), 0))
+        .expect("generated WAV packet should be valid");
+    let bytes = muxer.finish().expect("generated WAV should finish");
+    fs::write(&path, bytes).expect("generated WAV fixture should be writable");
+    path
+}
+
+fn unique_temp_path(label: &str, extension: &str) -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be after epoch")
+        .as_nanos();
+    env::temp_dir().join(format!(
+        "ffmpegrust-wav-oracle-{}-{label}-{unique}.{extension}",
+        std::process::id()
+    ))
+}
+
+fn remove_temp_file(path: &Path) {
+    let _ = fs::remove_file(path);
 }

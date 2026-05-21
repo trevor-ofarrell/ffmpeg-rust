@@ -59,7 +59,7 @@ The current default mapping file contains `fate-runner|local-self-test`, which v
 
 Local `avformat-*muxer|local-avformat-*-unit` rows validate the current WAV, raw PCM, rawvideo, yuv4mpegpipe, null, hash, framecrc, framehash, and streamhash unit filters when those muxer components or their shared fuzz target change.
 
-`tests/fate/upstream-mappings.txt` is the first non-default sample-backed mapping file. It currently maps `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` to the ignored `crates/fftools/tests/wav_oracle.rs` harness, injecting `FFMPEG_ORACLE={oracle_ffmpeg}` and `FATE_WAV_SAMPLE={samples}/audio-reference/luckynight_2ch_44kHz_s16.wav`. List or dry-run it explicitly:
+`tests/fate/upstream-mappings.txt` is the first non-default sample-backed mapping file. It currently maps `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` to the sample-specific ignored test in `crates/fftools/tests/wav_oracle.rs`, injecting `FFMPEG_ORACLE={oracle_ffmpeg}` and `FATE_WAV_SAMPLE={samples}/audio-reference/luckynight_2ch_44kHz_s16.wav`. List or dry-run it explicitly:
 
 ```sh
 cargo run -p fate-runner -- mappings --mappings tests/fate/upstream-mappings.txt --target fate-wav-pcm-s16le-md5
@@ -91,10 +91,17 @@ The same harness is wired into `tests/differential/mappings.txt`, which can be e
 
 `crates/avutil/tests/channel_layout_oracle.rs` is an ignored oracle harness for `ffmpeg -layouts`. It compares individual-channel names/descriptions and standard-layout decompositions against the current Rust `Channel::ALL` and `ChannelLayout::known_layouts()` inventories. It is wired into `tests/differential/mappings.txt` as `avutil-channel-layout|oracle-ffmpeg-layouts`, but local execution is blocked until the pinned oracle binary exists.
 
-`crates/fftools/tests/wav_oracle.rs` is an ignored sample-backed oracle harness for the current WAV demuxer path. It compares Rust `-i <sample.wav> -f md5 -` output against pinned FFmpeg 8.1.1 `-c:a copy -f md5 -` output for a PCM s16le FATE sample. Run it directly with:
+`crates/fftools/tests/wav_oracle.rs` contains ignored WAV oracle tests for the current demuxer path. `wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle` creates a small PCM s16le WAV fixture through the Rust WAV muxer and compares Rust `-i <generated.wav> -f md5 -` output against pinned FFmpeg 8.1.1 `-c:a copy -f md5 -` output, so it requires only the oracle binary. It is wired into `tests/differential/mappings.txt` as `avformat-wav-demuxer|oracle-wav-generated-md5`:
 
 ```sh
-FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg FATE_WAV_SAMPLE=./third_party/fate-samples/audio-reference/luckynight_2ch_44kHz_s16.wav cargo test -p fftools --test wav_oracle -- --ignored
+FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p fftools --test wav_oracle wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle -- --ignored
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avformat-wav-demuxer --target oracle-wav-generated-md5 --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+```
+
+`wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample` uses the FATE PCM s16le sample and is wired through `tests/fate/upstream-mappings.txt`. Run it directly with:
+
+```sh
+FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg FATE_WAV_SAMPLE=./third_party/fate-samples/audio-reference/luckynight_2ch_44kHz_s16.wav cargo test -p fftools --test wav_oracle wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample -- --ignored
 ```
 
 On Windows PowerShell:
@@ -102,7 +109,7 @@ On Windows PowerShell:
 ```powershell
 $env:FFMPEG_ORACLE = ".\third_party\ffmpeg-oracle\build\bin\ffmpeg.exe"
 $env:FATE_WAV_SAMPLE = ".\third_party\fate-samples\audio-reference\luckynight_2ch_44kHz_s16.wav"
-cargo test -p fftools --test wav_oracle -- --ignored
+cargo test -p fftools --test wav_oracle wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample -- --ignored
 ```
 
 ## Source-Checked Notes

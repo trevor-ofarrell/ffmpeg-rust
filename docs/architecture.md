@@ -350,7 +350,7 @@ The test hierarchy is unit tests first, followed by golden parser tests, differe
 
 `crates/fftools/tests/rawvideo_oracle.rs` is the first ignored oracle integration harness. It requires `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` and compares Rust rawvideo file-output bytes against pinned FFmpeg streamcopy rawvideo output for selected pixel formats.
 
-`crates/fftools/tests/wav_oracle.rs` is an ignored sample-backed oracle integration harness. It requires a pinned FFmpeg oracle and either `FATE_WAV_SAMPLE` or `FATE_SAMPLES` containing `audio-reference/luckynight_2ch_44kHz_s16.wav`, then compares Rust WAV-to-MD5 output against pinned FFmpeg streamcopy MD5 output. It is wired from `tests/fate/upstream-mappings.txt` instead of the default local smoke mapping file.
+`crates/fftools/tests/wav_oracle.rs` contains ignored oracle integration tests for WAV-to-MD5 output. The generated-fixture test requires only a pinned FFmpeg oracle and is wired from `tests/differential/mappings.txt` as `avformat-wav-demuxer|oracle-wav-generated-md5`; the sample-backed test also requires `FATE_WAV_SAMPLE` or `FATE_SAMPLES` containing `audio-reference/luckynight_2ch_44kHz_s16.wav` and is wired from `tests/fate/upstream-mappings.txt`. Neither is in the default local smoke mapping file.
 
 `crates/avutil/tests/channel_layout_oracle.rs` is an ignored oracle inventory harness for `ffmpeg -layouts`. It compares the pinned oracle's individual channel table and standard layout decomposition table against the current Rust channel/layout inventories without invoking FFmpeg from runtime implementation code.
 

@@ -6,4 +6,4 @@
 # These mappings require a pinned FFmpeg oracle plus a local FATE samples tree.
 # They are kept separate from local smoke mappings so default component runs do
 # not require downloaded media samples.
-avformat-wav-demuxer|fate-wav-pcm-s16le-md5|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|env:FATE_WAV_SAMPLE={samples}/audio-reference/luckynight_2ch_44kHz_s16.wav|test|-p|fftools|--test|wav_oracle|--|--ignored
+avformat-wav-demuxer|fate-wav-pcm-s16le-md5|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|env:FATE_WAV_SAMPLE={samples}/audio-reference/luckynight_2ch_44kHz_s16.wav|test|-p|fftools|--test|wav_oracle|wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample|--|--ignored

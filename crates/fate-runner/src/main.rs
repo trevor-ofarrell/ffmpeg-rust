@@ -394,6 +394,15 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/fftools/tests/wav_oracle.rs",
+        exact_ids: &[
+            "avformat-wav-demuxer",
+            "fftools-ffmpeg-md5-output",
+            "fftools-ffmpeg-wav-framecrc-null",
+        ],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/fftools/src/ffprobe.rs",
         exact_ids: &["fftools-basic-io"],
         id_prefixes: &["fftools-ffprobe-"],
@@ -1532,6 +1541,25 @@ mod tests {
     }
 
     #[test]
+    fn changed_selection_maps_wav_oracle_test_to_covered_components() {
+        let component_ids = component_ids_from_ledger(&ledger(&[
+            "avformat-wav-demuxer",
+            "fftools-ffmpeg-md5-output",
+            "fftools-ffmpeg-wav-framecrc-null",
+        ]));
+        let paths = vec!["crates/fftools/tests/wav_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec![
+                "avformat-wav-demuxer".to_string(),
+                "fftools-ffmpeg-md5-output".to_string(),
+                "fftools-ffmpeg-wav-framecrc-null".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn changed_selection_maps_channel_layout_oracle_test_to_component() {
         let component_ids = component_ids_from_ledger(&ledger(&["avutil-channel-layout"]));
         let paths = vec!["crates/avutil/tests/channel_layout_oracle.rs".to_string()];
@@ -1577,6 +1605,7 @@ mod tests {
         assert!(pairs.contains(&("avformat-rawvideo-demuxer", "oracle-rawvideo-file-output")));
         assert!(pairs.contains(&("avformat-rawvideo-muxer", "oracle-rawvideo-file-output")));
         assert!(pairs.contains(&("avutil-channel-layout", "oracle-ffmpeg-layouts")));
+        assert!(pairs.contains(&("avformat-wav-demuxer", "oracle-wav-generated-md5")));
     }
 
     #[test]
@@ -1616,6 +1645,7 @@ mod tests {
                 "fftools".to_string(),
                 "--test".to_string(),
                 "wav_oracle".to_string(),
+                "wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample".to_string(),
                 "--".to_string(),
                 "--ignored".to_string(),
             ]
@@ -1640,6 +1670,7 @@ mod tests {
                 "crates/fftools/src/io_plan.rs".to_string(),
                 "crates/fftools/src/ffmpeg.rs".to_string(),
                 "crates/fftools/tests/rawvideo_oracle.rs".to_string(),
+                "crates/fftools/tests/wav_oracle.rs".to_string(),
                 "crates/fftools/src/ffprobe.rs".to_string(),
                 "fuzz/fuzz_targets/fftools_option_parser.rs".to_string(),
             ],

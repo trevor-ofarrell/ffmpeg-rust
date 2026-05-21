@@ -54,3 +54,5 @@ Run the first sample-backed mapping only when a pinned oracle and FATE samples t
 cargo run -p fate-runner -- mappings --mappings tests/fate/upstream-mappings.txt --target fate-wav-pcm-s16le-md5
 cargo run -p fate-runner -- run --mappings tests/fate/upstream-mappings.txt --component avformat-wav-demuxer --target fate-wav-pcm-s16le-md5 --samples <fate-samples> --oracle-ffmpeg <ffmpeg>
 ```
+
+The oracle-only generated WAV MD5 check lives in `tests/differential/mappings.txt` as `avformat-wav-demuxer|oracle-wav-generated-md5`; use that row when a pinned oracle exists but FATE samples are not installed.
