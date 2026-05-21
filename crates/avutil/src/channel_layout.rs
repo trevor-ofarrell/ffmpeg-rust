@@ -13,6 +13,7 @@ pub enum Channel {
     BackCenter,
     SideLeft,
     SideRight,
+    TopCenter,
     TopFrontLeft,
     TopFrontCenter,
     TopFrontRight,
@@ -26,6 +27,9 @@ pub enum Channel {
     LowFrequency2,
     TopSideLeft,
     TopSideRight,
+    BottomFrontCenter,
+    BottomFrontLeft,
+    BottomFrontRight,
     BinauralLeft,
     BinauralRight,
 }
@@ -43,6 +47,7 @@ impl Channel {
         Self::BackCenter,
         Self::SideLeft,
         Self::SideRight,
+        Self::TopCenter,
         Self::TopFrontLeft,
         Self::TopFrontCenter,
         Self::TopFrontRight,
@@ -56,6 +61,9 @@ impl Channel {
         Self::LowFrequency2,
         Self::TopSideLeft,
         Self::TopSideRight,
+        Self::BottomFrontCenter,
+        Self::BottomFrontLeft,
+        Self::BottomFrontRight,
         Self::BinauralLeft,
         Self::BinauralRight,
     ];
@@ -73,6 +81,7 @@ impl Channel {
             Self::BackCenter => "BC",
             Self::SideLeft => "SL",
             Self::SideRight => "SR",
+            Self::TopCenter => "TC",
             Self::TopFrontLeft => "TFL",
             Self::TopFrontCenter => "TFC",
             Self::TopFrontRight => "TFR",
@@ -86,6 +95,9 @@ impl Channel {
             Self::LowFrequency2 => "LFE2",
             Self::TopSideLeft => "TSL",
             Self::TopSideRight => "TSR",
+            Self::BottomFrontCenter => "BFC",
+            Self::BottomFrontLeft => "BFL",
+            Self::BottomFrontRight => "BFR",
             Self::BinauralLeft => "BIL",
             Self::BinauralRight => "BIR",
         }
@@ -111,6 +123,7 @@ impl Channel {
             Self::BackCenter => 1 << 8,
             Self::SideLeft => 1 << 9,
             Self::SideRight => 1 << 10,
+            Self::TopCenter => 1 << 11,
             Self::TopFrontLeft => 1 << 12,
             Self::TopFrontCenter => 1 << 13,
             Self::TopFrontRight => 1 << 14,
@@ -124,6 +137,9 @@ impl Channel {
             Self::LowFrequency2 => 1 << 35,
             Self::TopSideLeft => 1 << 36,
             Self::TopSideRight => 1 << 37,
+            Self::BottomFrontCenter => 1 << 38,
+            Self::BottomFrontLeft => 1 << 39,
+            Self::BottomFrontRight => 1 << 40,
             Self::BinauralLeft => 1 << 61,
             Self::BinauralRight => 1 << 62,
         }
@@ -644,6 +660,38 @@ impl ChannelLayout {
         )
     }
 
+    pub fn twenty_two_two() -> Self {
+        Self::new_static(
+            "22.2",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::LowFrequency,
+                Channel::BackLeft,
+                Channel::BackRight,
+                Channel::FrontLeftOfCenter,
+                Channel::FrontRightOfCenter,
+                Channel::SideLeft,
+                Channel::SideRight,
+                Channel::TopFrontLeft,
+                Channel::TopFrontRight,
+                Channel::TopBackLeft,
+                Channel::TopBackRight,
+                Channel::TopSideLeft,
+                Channel::TopSideRight,
+                Channel::BackCenter,
+                Channel::LowFrequency2,
+                Channel::TopFrontCenter,
+                Channel::TopCenter,
+                Channel::TopBackCenter,
+                Channel::BottomFrontCenter,
+                Channel::BottomFrontLeft,
+                Channel::BottomFrontRight,
+            ],
+        )
+    }
+
     pub fn hexadecagonal() -> Self {
         Self::new_static(
             "hexadecagonal",
@@ -676,7 +724,7 @@ impl ChannelLayout {
         Self::new_static("downmix", &[Channel::StereoLeft, Channel::StereoRight])
     }
 
-    pub fn known_layouts() -> [Self; 38] {
+    pub fn known_layouts() -> [Self; 39] {
         [
             Self::mono(),
             Self::stereo(),
@@ -716,6 +764,7 @@ impl ChannelLayout {
             Self::hexadecagonal(),
             Self::binaural(),
             Self::downmix(),
+            Self::twenty_two_two(),
         ]
     }
 
@@ -759,6 +808,7 @@ impl ChannelLayout {
             "hexadecagonal" => Some(Self::hexadecagonal()),
             "binaural" => Some(Self::binaural()),
             "downmix" => Some(Self::downmix()),
+            "22.2" => Some(Self::twenty_two_two()),
             _ => None,
         }
     }
@@ -905,6 +955,7 @@ mod tests {
         assert_eq!(Channel::BackCenter.name(), "BC");
         assert_eq!(Channel::SideLeft.name(), "SL");
         assert_eq!(Channel::SideRight.name(), "SR");
+        assert_eq!(Channel::TopCenter.name(), "TC");
         assert_eq!(Channel::TopFrontLeft.name(), "TFL");
         assert_eq!(Channel::TopFrontCenter.name(), "TFC");
         assert_eq!(Channel::TopFrontRight.name(), "TFR");
@@ -918,6 +969,9 @@ mod tests {
         assert_eq!(Channel::LowFrequency2.name(), "LFE2");
         assert_eq!(Channel::TopSideLeft.name(), "TSL");
         assert_eq!(Channel::TopSideRight.name(), "TSR");
+        assert_eq!(Channel::BottomFrontCenter.name(), "BFC");
+        assert_eq!(Channel::BottomFrontLeft.name(), "BFL");
+        assert_eq!(Channel::BottomFrontRight.name(), "BFR");
         assert_eq!(Channel::BinauralLeft.name(), "BIL");
         assert_eq!(Channel::BinauralRight.name(), "BIR");
 
@@ -926,6 +980,7 @@ mod tests {
         assert_eq!(Channel::from_name("flc"), Some(Channel::FrontLeftOfCenter));
         assert_eq!(Channel::from_name("FRC"), Some(Channel::FrontRightOfCenter));
         assert_eq!(Channel::from_name("bc"), Some(Channel::BackCenter));
+        assert_eq!(Channel::from_name("tc"), Some(Channel::TopCenter));
         assert_eq!(Channel::from_name("tfl"), Some(Channel::TopFrontLeft));
         assert_eq!(Channel::from_name("TFC"), Some(Channel::TopFrontCenter));
         assert_eq!(Channel::from_name("TFR"), Some(Channel::TopFrontRight));
@@ -939,6 +994,9 @@ mod tests {
         assert_eq!(Channel::from_name("lfe2"), Some(Channel::LowFrequency2));
         assert_eq!(Channel::from_name("tsl"), Some(Channel::TopSideLeft));
         assert_eq!(Channel::from_name("TSR"), Some(Channel::TopSideRight));
+        assert_eq!(Channel::from_name("bfc"), Some(Channel::BottomFrontCenter));
+        assert_eq!(Channel::from_name("BFL"), Some(Channel::BottomFrontLeft));
+        assert_eq!(Channel::from_name("bfr"), Some(Channel::BottomFrontRight));
         assert_eq!(Channel::from_name("bil"), Some(Channel::BinauralLeft));
         assert_eq!(Channel::from_name("BIR"), Some(Channel::BinauralRight));
         assert_eq!(Channel::from_name("unknown"), None);
@@ -948,6 +1006,8 @@ mod tests {
         assert_eq!(Channel::FrontRightOfCenter.mask(), 1 << 7);
         assert_eq!(Channel::BackCenter.mask(), 1 << 8);
         assert_eq!(Channel::SideLeft.mask(), 1 << 9);
+        assert_eq!(Channel::SideRight.mask(), 1 << 10);
+        assert_eq!(Channel::TopCenter.mask(), 1 << 11);
         assert_eq!(Channel::TopFrontLeft.mask(), 1 << 12);
         assert_eq!(Channel::TopFrontCenter.mask(), 1 << 13);
         assert_eq!(Channel::TopFrontRight.mask(), 1 << 14);
@@ -961,6 +1021,9 @@ mod tests {
         assert_eq!(Channel::LowFrequency2.mask(), 1 << 35);
         assert_eq!(Channel::TopSideLeft.mask(), 1 << 36);
         assert_eq!(Channel::TopSideRight.mask(), 1 << 37);
+        assert_eq!(Channel::BottomFrontCenter.mask(), 1 << 38);
+        assert_eq!(Channel::BottomFrontLeft.mask(), 1 << 39);
+        assert_eq!(Channel::BottomFrontRight.mask(), 1 << 40);
         assert_eq!(Channel::BinauralLeft.mask(), 1 << 61);
         assert_eq!(Channel::BinauralRight.mask(), 1 << 62);
     }
@@ -1210,6 +1273,45 @@ mod tests {
             &[Channel::StereoLeft, Channel::StereoRight]
         );
         assert!(!downmix.contains(Channel::FrontLeft));
+
+        let twenty_two_two = ChannelLayout::twenty_two_two();
+        assert_eq!(twenty_two_two.name(), "22.2");
+        assert_eq!(twenty_two_two.channel_count(), 24);
+        assert_eq!(
+            twenty_two_two.channels(),
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::LowFrequency,
+                Channel::BackLeft,
+                Channel::BackRight,
+                Channel::FrontLeftOfCenter,
+                Channel::FrontRightOfCenter,
+                Channel::SideLeft,
+                Channel::SideRight,
+                Channel::TopFrontLeft,
+                Channel::TopFrontRight,
+                Channel::TopBackLeft,
+                Channel::TopBackRight,
+                Channel::TopSideLeft,
+                Channel::TopSideRight,
+                Channel::BackCenter,
+                Channel::LowFrequency2,
+                Channel::TopFrontCenter,
+                Channel::TopCenter,
+                Channel::TopBackCenter,
+                Channel::BottomFrontCenter,
+                Channel::BottomFrontLeft,
+                Channel::BottomFrontRight,
+            ]
+        );
+        assert!(twenty_two_two.contains(Channel::TopCenter));
+        assert!(twenty_two_two.contains(Channel::BottomFrontCenter));
+        assert!(twenty_two_two.contains(Channel::BottomFrontLeft));
+        assert!(twenty_two_two.contains(Channel::BottomFrontRight));
+        assert!(!twenty_two_two.contains(Channel::BinauralLeft));
+        assert!(!twenty_two_two.contains(Channel::StereoLeft));
     }
 
     #[test]
@@ -1363,6 +1465,10 @@ mod tests {
         assert_eq!(
             ChannelLayout::nine_one_six().channel_string(),
             "FL+FR+FC+LFE+BL+BR+FLC+FRC+SL+SR+TFL+TFR+TBL+TBR+TSL+TSR"
+        );
+        assert_eq!(
+            ChannelLayout::twenty_two_two().channel_string(),
+            "FL+FR+FC+LFE+BL+BR+FLC+FRC+SL+SR+TFL+TFR+TBL+TBR+TSL+TSR+BC+LFE2+TFC+TC+TBC+BFC+BFL+BFR"
         );
         assert_eq!(
             ChannelLayout::hexadecagonal().channel_string(),
@@ -1754,6 +1860,49 @@ mod tests {
             Some(ChannelLayout::downmix())
         );
         assert_eq!(
+            ChannelLayout::from_channel_mask(
+                ChannelLayout::nine_one_six().channel_mask()
+                    | Channel::BackCenter.mask()
+                    | Channel::LowFrequency2.mask()
+                    | Channel::TopFrontCenter.mask()
+                    | Channel::TopCenter.mask()
+                    | Channel::TopBackCenter.mask()
+                    | Channel::BottomFrontCenter.mask()
+                    | Channel::BottomFrontLeft.mask()
+                    | Channel::BottomFrontRight.mask()
+            ),
+            Some(ChannelLayout::twenty_two_two())
+        );
+        assert_eq!(
+            ChannelLayout::from_channels(&[
+                Channel::BottomFrontRight,
+                Channel::BottomFrontLeft,
+                Channel::BottomFrontCenter,
+                Channel::TopBackCenter,
+                Channel::TopCenter,
+                Channel::TopFrontCenter,
+                Channel::LowFrequency2,
+                Channel::BackCenter,
+                Channel::TopSideRight,
+                Channel::TopSideLeft,
+                Channel::TopBackRight,
+                Channel::TopBackLeft,
+                Channel::TopFrontRight,
+                Channel::TopFrontLeft,
+                Channel::SideRight,
+                Channel::SideLeft,
+                Channel::FrontRightOfCenter,
+                Channel::FrontLeftOfCenter,
+                Channel::BackRight,
+                Channel::BackLeft,
+                Channel::LowFrequency,
+                Channel::FrontCenter,
+                Channel::FrontRight,
+                Channel::FrontLeft,
+            ]),
+            Some(ChannelLayout::twenty_two_two())
+        );
+        assert_eq!(
             ChannelLayout::from_channel_mask(Channel::FrontLeft.mask() | Channel::BackRight.mask()),
             None
         );
@@ -1810,6 +1959,7 @@ mod tests {
                 "hexadecagonal",
                 "binaural",
                 "downmix",
+                "22.2",
             ]
         );
 
@@ -1953,6 +2103,10 @@ mod tests {
             ChannelLayout::from_name("downmix"),
             Some(ChannelLayout::downmix())
         );
+        assert_eq!(
+            ChannelLayout::from_name("22.2"),
+            Some(ChannelLayout::twenty_two_two())
+        );
         assert_eq!(ChannelLayout::from_name("unknown"), None);
 
         assert_eq!(
@@ -1992,6 +2146,7 @@ mod tests {
         assert_eq!(ChannelLayout::default_for_count(12), None);
         assert_eq!(ChannelLayout::default_for_count(14), None);
         assert_eq!(ChannelLayout::default_for_count(16), None);
+        assert_eq!(ChannelLayout::default_for_count(24), None);
     }
 
     #[test]
@@ -2171,6 +2326,18 @@ mod tests {
             ChannelLayout::parse("TSR+TBR+FL+TFL+FR+FC+LFE+BL+BR+FLC+FRC+SL+SR+TFR+TBL+TSL",)
                 .unwrap(),
             ChannelLayout::nine_one_six()
+        );
+        assert_eq!(
+            ChannelLayout::parse("22.2").unwrap(),
+            ChannelLayout::twenty_two_two()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+LFE+BL+BR+FLC+FRC+SL+SR+TFL+TFR+TBL+TBR+TSL+TSR+BC+LFE2+TFC+TC+TBC+BFC+BFL+BFR").unwrap(),
+            ChannelLayout::twenty_two_two()
+        );
+        assert_eq!(
+            ChannelLayout::parse("BFR+BFL+BFC+TBC+TC+TFC+LFE2+BC+TSR+TSL+TBR+TBL+TFR+TFL+SR+SL+FRC+FLC+BR+BL+LFE+FC+FR+FL").unwrap(),
+            ChannelLayout::twenty_two_two()
         );
         assert_eq!(
             ChannelLayout::parse("hexadecagonal").unwrap(),
