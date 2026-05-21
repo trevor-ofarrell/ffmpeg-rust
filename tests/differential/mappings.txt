@@ -13,6 +13,7 @@ fftools-version|oracle-ffprobe-version|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}
 avutil-error|oracle-libavutil-error-strings|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|error_oracle|--|--ignored
 avutil-rational|oracle-libavutil-rational|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|rational_oracle|--|--ignored
 avutil-timebase|oracle-libavutil-timebase|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|timebase_oracle|--|--ignored
+avutil-byteio|oracle-libavutil-byteio|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|byteio_oracle|--|--ignored
 avutil-hash|oracle-libavutil-hash|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|hash_oracle|--|--ignored
 avutil-dict|oracle-libavutil-dict|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|dict_oracle|--|--ignored
 avutil-channel-layout|oracle-ffmpeg-layouts|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|channel_layout_oracle|--|--ignored

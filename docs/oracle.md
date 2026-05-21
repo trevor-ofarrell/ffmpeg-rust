@@ -117,6 +117,13 @@ cargo test -p avutil --test timebase_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-timebase --target oracle-libavutil-timebase --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
+`crates/avutil/tests/byteio_oracle.rs` is an ignored oracle harness for libavutil byte-order helpers. It compiles a small test-only C helper against the pinned `third_party/ffmpeg-oracle/wsl/include/libavutil/intreadwrite.h` header and compares `AV_RB*`, `AV_RL*`, `AV_WB*`, and `AV_WL*` 8/16/24/32/48/64-bit read/write byte-order behavior plus signed interpretation vectors against the Rust `ByteReader`/`ByteWriter` model. It is wired into `tests/differential/mappings.txt` as `avutil-byteio|oracle-libavutil-byteio`:
+
+```sh
+cargo test -p avutil --test byteio_oracle -- --ignored
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-byteio --target oracle-libavutil-byteio --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+```
+
 `crates/avutil/tests/hash_oracle.rs` is an ignored oracle harness for libavutil generic hash helpers. It compiles a small test-only C helper against `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_hash_names`, `av_hash_alloc`, `av_hash_get_name`, `av_hash_get_size`, `av_hash_update`, `av_hash_final`, `av_hash_final_bin`, `av_hash_final_hex`, and `av_hash_final_b64` output for the full FFmpeg 8.1.1 default-native generic hash inventory: MD5, murmur3, RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320, SHA160, SHA224, SHA256, SHA512/224, SHA512/256, SHA384, SHA512, CRC32, and adler32. It is wired into `tests/differential/mappings.txt` as `avutil-hash|oracle-libavutil-hash`:
 
 ```sh

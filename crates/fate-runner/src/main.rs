@@ -233,6 +233,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/byteio_oracle.rs",
+        exact_ids: &["avutil-byteio"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/bitreader.rs",
         exact_ids: &["avutil-bitreader"],
         id_prefixes: &[],
@@ -1728,6 +1733,17 @@ mod tests {
         assert_eq!(
             changed_components(&component_ids, &paths),
             vec!["avutil-timebase".to_string()]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_byteio_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-byteio"]));
+        let paths = vec!["crates/avutil/tests/byteio_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-byteio".to_string()]
         );
     }
 
