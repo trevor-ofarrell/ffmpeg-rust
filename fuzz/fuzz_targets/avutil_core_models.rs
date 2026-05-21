@@ -2,10 +2,10 @@
 
 use avutil::{
     adler32, add_stable, av_error_description, av_make_error_string, av_strerror, compare_mod,
-    compare_ts, crc32_ieee, digest_to_hex, md5, parse_color, rescale, rescale_delta, rescale_q,
-    rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax, sha1,
-    sha224, sha256, sha384, sha512, sha512_224, sha512_256, Adler32, AudioFrame, AvError,
-    AvErrorCode, AvErrorKind,
+    compare_ts, crc32_ieee, digest_to_hex, md5, murmur3, parse_color, rescale, rescale_delta,
+    rescale_q, rescale_q_rnd, rescale_q_rnd_pass_minmax, rescale_rnd, rescale_rnd_pass_minmax,
+    sha1, sha224, sha256, sha384, sha512, sha512_224, sha512_256, Adler32, AudioFrame,
+    AvError, AvErrorCode, AvErrorKind,
     BufferPool,
     AmbisonicChannelLayout, BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId,
     ChannelLayout, ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame,
@@ -62,7 +62,7 @@ use avutil::{
     PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, PixelFormatClass, Rational, Rounding, SampleFormat,
-    SampleFormatNumericKind, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
+    SampleFormatNumericKind, Murmur3, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
     Sha512Trunc256, SideData, VideoFrame,
     AV_ERROR_MAX_STRING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE,
     AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE,
@@ -6795,6 +6795,13 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     crc.update(&payload[split..]);
     assert_eq!(crc.finalize(), crc32_ieee(&payload));
 
+    let mut murmur3_state = Murmur3::new();
+    murmur3_state.update(&payload[..split]);
+    murmur3_state.update(&payload[split..]);
+    let murmur3_digest = murmur3_state.finalize();
+    assert_eq!(murmur3_digest, murmur3(&payload));
+    assert_eq!(digest_to_hex(&murmur3_digest).len(), 32);
+
     let second_split =
         split + (usize::from(cursor.next().unwrap_or_default()) % (payload.len() - split + 1));
     let mut md5_state = Md5::new();
@@ -10848,6 +10855,10 @@ fn exercise_fixtures() {
     assert_eq!(
         digest_to_hex(&sha1(b"abc")),
         "a9993e364706816aba3e25717850c26c9cd0d89d"
+    );
+    assert_eq!(
+        digest_to_hex(&murmur3(b"abc")),
+        "24f8c0b6239d906515c11aef9def41d2"
     );
     assert_eq!(
         digest_to_hex(&sha256(b"abc")),

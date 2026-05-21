@@ -6,13 +6,14 @@ use std::{
 };
 
 use avutil::{
-    adler32, crc32_ieee, digest_to_hex, md5, sha1, sha224, sha256, sha384, sha512, sha512_224,
-    sha512_256,
+    adler32, crc32_ieee, digest_to_hex, md5, murmur3, sha1, sha224, sha256, sha384, sha512,
+    sha512_224, sha512_256,
 };
 
 const ALGORITHMS: &[(&str, &str, usize)] = &[
     ("ADLER32", "adler32", 4),
     ("CRC32", "CRC32", 4),
+    ("murmur3", "murmur3", 16),
     ("MD5", "MD5", 16),
     ("SHA160", "SHA160", 20),
     ("SHA224", "SHA224", 28),
@@ -90,6 +91,7 @@ fn expected_digest_hex(algorithm: &str, data: &[u8]) -> String {
     match algorithm {
         "ADLER32" => format!("{:08x}", adler32(data)),
         "CRC32" => format!("{:08x}", crc32_ieee(data)),
+        "murmur3" => digest_to_hex(&murmur3(data)),
         "MD5" => digest_to_hex(&md5(data)),
         "SHA160" => digest_to_hex(&sha1(data)),
         "SHA224" => digest_to_hex(&sha224(data)),
@@ -218,7 +220,7 @@ int main(void) {
         'g', 0x10, 0x20, 0x40, 0x55, 0xaa,
     };
     static const char *algorithms[] = {
-        "ADLER32", "CRC32", "MD5", "SHA160", "SHA224", "SHA256", "SHA384", "SHA512",
+        "ADLER32", "CRC32", "murmur3", "MD5", "SHA160", "SHA224", "SHA256", "SHA384", "SHA512",
         "SHA512/224", "SHA512/256",
     };
 
@@ -247,6 +249,11 @@ fn oracle_root(repo_root: &Path) -> PathBuf {
     let default_root = repo_root.join("third_party/ffmpeg-oracle");
     if let Ok(ffmpeg) = env::var("FFMPEG_ORACLE") {
         let ffmpeg = PathBuf::from(ffmpeg);
+        let ffmpeg = if ffmpeg.is_absolute() {
+            ffmpeg
+        } else {
+            repo_root.join(ffmpeg)
+        };
         if let Some(root) = ffmpeg.ancestors().find(|ancestor| {
             ancestor
                 .file_name()

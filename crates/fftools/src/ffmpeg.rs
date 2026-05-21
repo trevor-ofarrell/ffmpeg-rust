@@ -1042,6 +1042,7 @@ fn parse_hash_algorithm(output: &PlannedFile) -> Result<HashAlgorithm, FfmpegErr
     {
         "adler32" => Ok(HashAlgorithm::Adler32),
         "crc32" => Ok(HashAlgorithm::Crc32),
+        "murmur3" => Ok(HashAlgorithm::Murmur3),
         "md5" => Ok(HashAlgorithm::Md5),
         "sha1" | "sha160" => Ok(HashAlgorithm::Sha160),
         "sha224" => Ok(HashAlgorithm::Sha224),
@@ -2388,6 +2389,44 @@ mod tests {
             format!(
                 "SHA160={}\n",
                 avutil::digest_to_hex(&avutil::sha1(&payload))
+            )
+        );
+    }
+
+    #[test]
+    fn runs_s16le_to_hash_stdout_with_murmur3_option() {
+        let payload = [0, 0, 1, 0, 2, 0, 3, 0];
+        let path = write_temp_bytes("raw-pcm-hash-murmur3", "raw", &payload);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "s16le",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "hash",
+            "-hash",
+            "murmur3",
+            "-",
+        ]))
+        .expect("raw PCM Murmur3 hash command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("hash"));
+        assert_eq!(output.packet_count(), 1);
+        assert_eq!(output.byte_count(), u64::try_from(payload.len()).unwrap());
+        assert!(output.stderr().is_empty());
+        assert_eq!(
+            output.stdout(),
+            format!(
+                "murmur3={}\n",
+                avutil::digest_to_hex(&avutil::murmur3(&payload))
             )
         );
     }

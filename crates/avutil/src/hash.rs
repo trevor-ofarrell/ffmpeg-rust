@@ -1039,6 +1039,164 @@ pub fn sha384(data: &[u8]) -> [u8; 48] {
     state.finalize()
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Murmur3 {
+    h1: u64,
+    h2: u64,
+    len: u64,
+    buffer: [u8; 16],
+    buffer_len: usize,
+}
+
+impl Default for Murmur3 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Murmur3 {
+    pub const FFMPEG_DEFAULT_SEED: u64 = 0x725a_cc55_dadd_ca55;
+
+    const C1: u64 = 0x87c3_7b91_1142_53d5;
+    const C2: u64 = 0x4cf5_ad43_2745_937f;
+
+    pub fn new() -> Self {
+        Self::with_seed(Self::FFMPEG_DEFAULT_SEED)
+    }
+
+    pub fn with_seed(seed: u64) -> Self {
+        Self {
+            h1: seed,
+            h2: seed,
+            len: 0,
+            buffer: [0; 16],
+            buffer_len: 0,
+        }
+    }
+
+    pub fn update(&mut self, mut data: &[u8]) {
+        self.len = self.len.wrapping_add(data.len() as u64);
+
+        if self.buffer_len != 0 {
+            let needed = 16 - self.buffer_len;
+            let take = needed.min(data.len());
+            self.buffer[self.buffer_len..self.buffer_len + take].copy_from_slice(&data[..take]);
+            self.buffer_len += take;
+            data = &data[take..];
+
+            if self.buffer_len == 16 {
+                let block = self.buffer;
+                self.mix_block(&block);
+                self.buffer_len = 0;
+            }
+        }
+
+        for block in data.chunks_exact(16) {
+            let block = <&[u8; 16]>::try_from(block).expect("chunks_exact produced 16 bytes");
+            self.mix_block(block);
+        }
+
+        let remainder = data.len() % 16;
+        if remainder != 0 {
+            let tail = &data[data.len() - remainder..];
+            self.buffer[..remainder].copy_from_slice(tail);
+            self.buffer_len = remainder;
+        }
+    }
+
+    pub fn finalize(self) -> [u8; 16] {
+        let mut h1 = self.h1;
+        let mut h2 = self.h2;
+        let tail = &self.buffer[..self.buffer_len];
+
+        let mut k1 = 0_u64;
+        let mut k2 = 0_u64;
+        for (shift, byte) in tail.iter().take(8).enumerate() {
+            k1 ^= u64::from(*byte) << (shift * 8);
+        }
+        for (shift, byte) in tail.iter().skip(8).enumerate() {
+            k2 ^= u64::from(*byte) << (shift * 8);
+        }
+
+        if tail.len() > 8 {
+            k2 = k2.wrapping_mul(Self::C2);
+            k2 = k2.rotate_left(33);
+            k2 = k2.wrapping_mul(Self::C1);
+            h2 ^= k2;
+        }
+        if !tail.is_empty() {
+            k1 = k1.wrapping_mul(Self::C1);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(Self::C2);
+            h1 ^= k1;
+        }
+
+        h1 ^= self.len;
+        h2 ^= self.len;
+
+        h1 = h1.wrapping_add(h2);
+        h2 = h2.wrapping_add(h1);
+
+        h1 = fmix64(h1);
+        h2 = fmix64(h2);
+
+        h1 = h1.wrapping_add(h2);
+        h2 = h2.wrapping_add(h1);
+
+        let mut digest = [0_u8; 16];
+        digest[..8].copy_from_slice(&h1.to_le_bytes());
+        digest[8..].copy_from_slice(&h2.to_le_bytes());
+        digest
+    }
+
+    fn mix_block(&mut self, block: &[u8; 16]) {
+        let mut k1 = u64::from_le_bytes([
+            block[0], block[1], block[2], block[3], block[4], block[5], block[6], block[7],
+        ]);
+        let mut k2 = u64::from_le_bytes([
+            block[8], block[9], block[10], block[11], block[12], block[13], block[14], block[15],
+        ]);
+
+        k1 = k1.wrapping_mul(Self::C1);
+        k1 = k1.rotate_left(31);
+        k1 = k1.wrapping_mul(Self::C2);
+        self.h1 ^= k1;
+
+        self.h1 = self.h1.rotate_left(27);
+        self.h1 = self.h1.wrapping_add(self.h2);
+        self.h1 = self.h1.wrapping_mul(5).wrapping_add(0x52dc_e729);
+
+        k2 = k2.wrapping_mul(Self::C2);
+        k2 = k2.rotate_left(33);
+        k2 = k2.wrapping_mul(Self::C1);
+        self.h2 ^= k2;
+
+        self.h2 = self.h2.rotate_left(31);
+        self.h2 = self.h2.wrapping_add(self.h1);
+        self.h2 = self.h2.wrapping_mul(5).wrapping_add(0x3849_5ab5);
+    }
+}
+
+fn fmix64(mut value: u64) -> u64 {
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    value ^ (value >> 33)
+}
+
+pub fn murmur3_seeded(data: &[u8], seed: u64) -> [u8; 16] {
+    let mut state = Murmur3::with_seed(seed);
+    state.update(data);
+    state.finalize()
+}
+
+pub fn murmur3(data: &[u8]) -> [u8; 16] {
+    let mut state = Murmur3::new();
+    state.update(data);
+    state.finalize()
+}
+
 pub fn digest_to_hex(digest: &[u8]) -> String {
     let mut output = String::with_capacity(digest.len() * 2);
     for byte in digest {
@@ -1355,6 +1513,40 @@ mod tests {
         state.update(&payload[128..]);
 
         assert_eq!(state.finalize(), sha384(&payload));
+    }
+
+    #[test]
+    fn murmur3_seed_zero_empty_matches_standard_vector() {
+        assert_eq!(murmur3_seeded(b"", 0), [0; 16]);
+    }
+
+    #[test]
+    fn murmur3_matches_ffmpeg_seed_vectors() {
+        assert_eq!(
+            digest_to_hex(&murmur3(b"")),
+            "f172e5acc891f8bf6981a829b5a83a3d"
+        );
+        assert_eq!(
+            digest_to_hex(&murmur3(b"abc")),
+            "24f8c0b6239d906515c11aef9def41d2"
+        );
+        assert_eq!(
+            digest_to_hex(&murmur3(b"The quick brown fox jumps over the lazy dog")),
+            "77eef3ca5d6b43ea9fa737595f9a2954"
+        );
+    }
+
+    #[test]
+    fn murmur3_streaming_matches_single_shot_across_boundaries() {
+        let payload = b"0123456789abcdef0123456789abcdef tail";
+        for split in 0..=payload.len() {
+            let second_split = split + ((payload.len() - split) / 2);
+            let mut state = Murmur3::new();
+            state.update(&payload[..split]);
+            state.update(&payload[split..second_split]);
+            state.update(&payload[second_split..]);
+            assert_eq!(state.finalize(), murmur3(payload), "split {split}");
+        }
     }
 
     #[test]

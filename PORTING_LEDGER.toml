@@ -1296,6 +1296,9 @@ unit_tests = [
   "hash::tests::adler32_streaming_matches_single_shot",
   "hash::tests::crc32_ieee_matches_standard_vectors",
   "hash::tests::crc32_streaming_matches_single_shot",
+  "hash::tests::murmur3_seed_zero_empty_matches_standard_vector",
+  "hash::tests::murmur3_matches_ffmpeg_seed_vectors",
+  "hash::tests::murmur3_streaming_matches_single_shot_across_boundaries",
   "hash::tests::md5_matches_standard_vectors",
   "hash::tests::md5_streaming_matches_single_shot_across_block_boundaries",
   "hash::tests::sha1_matches_standard_vectors",
@@ -1320,8 +1323,8 @@ fate_tests = [
   "not_applicable: upstream FFmpeg FATE has no standalone low-level libavutil hash API target; media hash muxer parity belongs to avformat/fftools rows",
 ]
 fuzz_targets = ["avutil_core_models", "avformat_packet_muxers"]
-notes = "Adler-32, IEEE CRC-32, MD5, SHA-1/SHA-160, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests, plus lowercase digest hex formatting. The ignored `crates/avutil/tests/hash_oracle.rs` harness compiles a small test-only C helper against pinned third_party/ffmpeg-oracle/wsl/lib/libavutil.a and compares libavutil `av_hash_names`, `av_hash_alloc`, `av_hash_update`, `av_hash_get_size`, and `av_hash_final_hex` output against the Rust model for empty, text, and binary payloads across the currently modeled algorithms. `tests/differential/mappings.txt` exposes it as `avutil-hash|oracle-libavutil-hash`, and it passed locally through the pinned WSL oracle wrapper. Build-checked cargo-fuzz targets avutil_core_models and avformat_packet_muxers cover streaming update equivalence against one-shot Adler-32/CRC-32/MD5/SHA-1/SHA-224/SHA-256/SHA-384/SHA-512/SHA-512/224/SHA-512/256 hashes across fuzz-selected split points, hash muxer dispatch, digest hex length, and known-vector invariants. avutil-hash currently exposes deterministic byte-processing helpers rather than untrusted byte parsers, so long-running cargo-fuzz execution is not required for this non-parser subset evidence. The local FATE-runner smoke mapping executes the hash unit filter only and does not count as upstream FATE parity; upstream FFmpeg FATE has no standalone low-level libavutil hash API target, while media hash/framehash/streamhash parity remains tracked by avformat/fftools rows."
-blocked_reason = "The currently modeled hash helpers now pass pinned libavutil differential vectors, but this component is not complete because libavutil generic hash API parity plus Murmur3 and RIPEMD128/160/256/320 remain pending for the full FFmpeg 8.1.1 default-native hash surface."
+notes = "Adler-32, IEEE CRC-32, MurmurHash3 x64 128-bit with FFmpeg's default seed, MD5, SHA-1/SHA-160, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256 one-shot and streaming helpers implemented from public algorithm definitions with known-vector tests, plus lowercase digest hex formatting. The ignored `crates/avutil/tests/hash_oracle.rs` harness compiles a small test-only C helper against pinned third_party/ffmpeg-oracle/wsl/lib/libavutil.a and compares libavutil `av_hash_names`, `av_hash_alloc`, `av_hash_update`, `av_hash_get_size`, and `av_hash_final_hex` output against the Rust model for empty, text, and binary payloads across the currently modeled algorithms. `tests/differential/mappings.txt` exposes it as `avutil-hash|oracle-libavutil-hash`, and it passed locally through the pinned WSL oracle wrapper including Murmur3. Build-checked cargo-fuzz targets avutil_core_models and avformat_packet_muxers cover streaming update equivalence against one-shot Adler-32/CRC-32/Murmur3/MD5/SHA-1/SHA-224/SHA-256/SHA-384/SHA-512/SHA-512/224/SHA-512/256 hashes across fuzz-selected split points, hash muxer dispatch, digest hex length, and known-vector invariants. avutil-hash currently exposes deterministic byte-processing helpers rather than untrusted byte parsers, so long-running cargo-fuzz execution is not required for this non-parser subset evidence. The local FATE-runner smoke mapping executes the hash unit filter only and does not count as upstream FATE parity; upstream FFmpeg FATE has no standalone low-level libavutil hash API target, while media hash/framehash/streamhash parity remains tracked by avformat/fftools rows."
+blocked_reason = "The currently modeled hash helpers now pass pinned libavutil differential vectors, but this component is not complete because libavutil generic hash API parity plus RIPEMD128/160/256/320 remain pending for the full FFmpeg 8.1.1 default-native hash surface."
 
 [[component]]
 id = "fftools-option-parser"
@@ -2014,12 +2017,15 @@ unit_tests = [
   "ffmpeg::tests::runs_mov_to_hash_stdout_with_default_sha256",
   "ffmpeg::tests::runs_s16le_to_hash_stdout_with_md5_option",
   "ffmpeg::tests::runs_s16le_to_hash_stdout_with_sha160_option",
+  "ffmpeg::tests::runs_s16le_to_hash_stdout_with_murmur3_option",
+  "ffmpeg::tests::runs_s16le_to_hash_stdout_with_sha512_224_option",
+  "ffmpeg::tests::runs_s16le_to_hash_stdout_with_sha512_256_option_alias",
   "ffmpeg::tests::rejects_unknown_hash_algorithm",
 ]
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-hash-output|local-ffmpeg-unit"]
 fuzz_targets = ["fftools_option_parser"]
-notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f hash -`, defaults the hash muxer to SHA-256, accepts output-scoped `-hash` for Adler-32, CRC-32, MD5, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, and SHA-512, and rejects unknown hash algorithm names without invoking FFmpeg at runtime. The current tests cover MOV packet concatenation, raw pcm_s16le MD5 output, and raw pcm_s16le `-hash sha-160` output through in-process helpers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential or upstream FATE coverage yet. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f hash -`, defaults the hash muxer to SHA-256, accepts output-scoped `-hash` for Adler-32, CRC-32, Murmur3, MD5, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256, and rejects unknown hash algorithm names without invoking FFmpeg at runtime. The current tests cover MOV packet concatenation, raw pcm_s16le MD5 output, raw pcm_s16le `-hash sha-160`, raw pcm_s16le `-hash murmur3`, and SHA-512/t output through in-process helpers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential or upstream FATE coverage yet. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -2593,7 +2599,7 @@ blocked_reason = ""
 [[component]]
 id = "avformat-hash-muxer"
 kind = "muxer"
-ffmpeg_name = "hash/md5/sha160/sha224/sha256/sha384/sha512"
+ffmpeg_name = "hash/md5/murmur3/sha160/sha224/sha256/sha384/sha512"
 upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "implemented"
 priority = 3
@@ -2602,6 +2608,7 @@ rust_command = "cargo test -p avformat hash_muxer"
 unit_tests = [
   "hash_muxer::tests::crc32_hashes_packet_data_in_write_order",
   "hash_muxer::tests::adler32_hashes_packet_data_in_write_order",
+  "hash_muxer::tests::murmur3_hashes_packet_data_in_write_order",
   "hash_muxer::tests::md5_hashes_packet_data_in_write_order",
   "hash_muxer::tests::sha160_hashes_packet_data_in_write_order",
   "hash_muxer::tests::sha224_hashes_packet_data_in_write_order",
@@ -2614,7 +2621,7 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:avformat-hash-muxer|local-avformat-hash-unit"]
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "Initial internal packet-data hash muxer supports Adler-32, IEEE CRC-32, MD5, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256 with packet/byte accounting and variable-width digest reporting. It is now wired to constrained ffmpeg-rs stdout `-f hash -` execution with default SHA-256 and output-scoped `-hash` selection, plus dedicated `-f md5 -` stdout execution. Build-checked cargo-fuzz target avformat_packet_muxers covers packet/byte accounting, Adler-32/CRC-32/MD5/SHA-160/SHA-224/SHA-256/SHA-384/SHA-512/SHA-512/224/SHA-512/256 digest stability, formatted digest lines, and finish behavior, but actual local fuzz execution is blocked until cargo-fuzz is installed. Murmur3/RIPEMD algorithms, exact FFmpeg hash/md5 muxer output semantics, differential tests, and FATE are pending."
+notes = "Initial internal packet-data hash muxer supports Adler-32, IEEE CRC-32, Murmur3, MD5, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256 with packet/byte accounting and variable-width digest reporting. It is now wired to constrained ffmpeg-rs stdout `-f hash -` execution with default SHA-256 and output-scoped `-hash` selection, plus dedicated `-f md5 -` stdout execution. Build-checked cargo-fuzz target avformat_packet_muxers covers packet/byte accounting, Adler-32/CRC-32/Murmur3/MD5/SHA-160/SHA-224/SHA-256/SHA-384/SHA-512/SHA-512/224/SHA-512/256 digest stability, formatted digest lines, and finish behavior, but actual local fuzz execution is blocked until cargo-fuzz is installed. RIPEMD algorithms, exact FFmpeg hash/md5 muxer output semantics, differential tests, and FATE are pending."
 blocked_reason = ""
 
 [[component]]
