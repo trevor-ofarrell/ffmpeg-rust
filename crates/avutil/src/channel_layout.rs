@@ -562,7 +562,29 @@ impl ChannelLayout {
         )
     }
 
-    pub fn known_layouts() -> [Self; 33] {
+    pub fn nine_one_four() -> Self {
+        Self::new_static(
+            "9.1.4",
+            &[
+                Channel::FrontLeft,
+                Channel::FrontRight,
+                Channel::FrontCenter,
+                Channel::LowFrequency,
+                Channel::BackLeft,
+                Channel::BackRight,
+                Channel::FrontLeftOfCenter,
+                Channel::FrontRightOfCenter,
+                Channel::SideLeft,
+                Channel::SideRight,
+                Channel::TopFrontLeft,
+                Channel::TopFrontRight,
+                Channel::TopBackLeft,
+                Channel::TopBackRight,
+            ],
+        )
+    }
+
+    pub fn known_layouts() -> [Self; 34] {
         [
             Self::mono(),
             Self::stereo(),
@@ -597,6 +619,7 @@ impl ChannelLayout {
             Self::seven_one_two(),
             Self::seven_one_four(),
             Self::seven_two_three(),
+            Self::nine_one_four(),
         ]
     }
 
@@ -635,6 +658,7 @@ impl ChannelLayout {
             "7.1.2" => Some(Self::seven_one_two()),
             "7.1.4" => Some(Self::seven_one_four()),
             "7.2.3" => Some(Self::seven_two_three()),
+            "9.1.4" => Some(Self::nine_one_four()),
             _ => None,
         }
     }
@@ -1016,6 +1040,14 @@ mod tests {
         assert!(seven_two_three.contains(Channel::TopBackCenter));
         assert!(seven_two_three.contains(Channel::LowFrequency2));
         assert!(!seven_two_three.contains(Channel::TopBackLeft));
+
+        let nine_one_four = ChannelLayout::nine_one_four();
+        assert_eq!(nine_one_four.name(), "9.1.4");
+        assert_eq!(nine_one_four.channel_count(), 14);
+        assert!(nine_one_four.contains(Channel::FrontLeftOfCenter));
+        assert!(nine_one_four.contains(Channel::FrontRightOfCenter));
+        assert!(nine_one_four.contains(Channel::TopBackRight));
+        assert!(!nine_one_four.contains(Channel::LowFrequency2));
     }
 
     #[test]
@@ -1161,6 +1193,10 @@ mod tests {
         assert_eq!(
             ChannelLayout::seven_two_three().channel_string(),
             "FL+FR+FC+LFE+BL+BR+SL+SR+TFL+TFR+TBC+LFE2"
+        );
+        assert_eq!(
+            ChannelLayout::nine_one_four().channel_string(),
+            "FL+FR+FC+LFE+BL+BR+FLC+FRC+SL+SR+TFL+TFR+TBL+TBR"
         );
         assert_eq!(
             ChannelLayout::from_channel_mask(
@@ -1404,6 +1440,44 @@ mod tests {
             Some(ChannelLayout::seven_two_three())
         );
         assert_eq!(
+            ChannelLayout::from_channel_mask(
+                Channel::FrontLeft.mask()
+                    | Channel::FrontRight.mask()
+                    | Channel::FrontCenter.mask()
+                    | Channel::LowFrequency.mask()
+                    | Channel::BackLeft.mask()
+                    | Channel::BackRight.mask()
+                    | Channel::FrontLeftOfCenter.mask()
+                    | Channel::FrontRightOfCenter.mask()
+                    | Channel::SideLeft.mask()
+                    | Channel::SideRight.mask()
+                    | Channel::TopFrontLeft.mask()
+                    | Channel::TopFrontRight.mask()
+                    | Channel::TopBackLeft.mask()
+                    | Channel::TopBackRight.mask()
+            ),
+            Some(ChannelLayout::nine_one_four())
+        );
+        assert_eq!(
+            ChannelLayout::from_channels(&[
+                Channel::TopBackRight,
+                Channel::TopBackLeft,
+                Channel::TopFrontRight,
+                Channel::TopFrontLeft,
+                Channel::SideRight,
+                Channel::SideLeft,
+                Channel::FrontRightOfCenter,
+                Channel::FrontLeftOfCenter,
+                Channel::BackRight,
+                Channel::BackLeft,
+                Channel::LowFrequency,
+                Channel::FrontCenter,
+                Channel::FrontRight,
+                Channel::FrontLeft,
+            ]),
+            Some(ChannelLayout::nine_one_four())
+        );
+        assert_eq!(
             ChannelLayout::from_channel_mask(Channel::FrontLeft.mask() | Channel::BackRight.mask()),
             None
         );
@@ -1455,6 +1529,7 @@ mod tests {
                 "7.1.2",
                 "7.1.4",
                 "7.2.3",
+                "9.1.4",
             ]
         );
 
@@ -1578,6 +1653,10 @@ mod tests {
             ChannelLayout::from_name("7.2.3"),
             Some(ChannelLayout::seven_two_three())
         );
+        assert_eq!(
+            ChannelLayout::from_name("9.1.4"),
+            Some(ChannelLayout::nine_one_four())
+        );
         assert_eq!(ChannelLayout::from_name("unknown"), None);
 
         assert_eq!(
@@ -1615,6 +1694,7 @@ mod tests {
         assert_eq!(ChannelLayout::default_for_count(9), None);
         assert_eq!(ChannelLayout::default_for_count(10), None);
         assert_eq!(ChannelLayout::default_for_count(12), None);
+        assert_eq!(ChannelLayout::default_for_count(14), None);
     }
 
     #[test]
@@ -1768,6 +1848,18 @@ mod tests {
         assert_eq!(
             ChannelLayout::parse("LFE2+TFR+FL+TFL+FR+FC+TBC+LFE+BR+BL+SR+SL").unwrap(),
             ChannelLayout::seven_two_three()
+        );
+        assert_eq!(
+            ChannelLayout::parse("9.1.4").unwrap(),
+            ChannelLayout::nine_one_four()
+        );
+        assert_eq!(
+            ChannelLayout::parse("FL+FR+FC+LFE+BL+BR+FLC+FRC+SL+SR+TFL+TFR+TBL+TBR").unwrap(),
+            ChannelLayout::nine_one_four()
+        );
+        assert_eq!(
+            ChannelLayout::parse("TBR+FL+TFL+FR+FC+LFE+BL+BR+FLC+FRC+SL+SR+TFR+TBL").unwrap(),
+            ChannelLayout::nine_one_four()
         );
     }
 
