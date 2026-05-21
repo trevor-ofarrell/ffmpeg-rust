@@ -6,13 +6,15 @@ Latest oracle-install slice: the pinned FFmpeg 8.1.1 oracle is now installed loc
 
 Latest parity status: strict completion is now 7/96 components (about `7%`). `avutil-error`, `avutil-rational`, `avutil-timebase`, `repo-runtime-guard`, `oracle-inventory`, `avutil-hash`, and `avutil-sample-format` are the current `complete` rows for the default-native profile. Intermediate measurable parity still includes 2/96 non-complete status rows: `fftools-version` and `avutil-channel-layout` are `differential_pass`/validated evidence rows. Current ledger status counts are 86 `implemented`, 1 `scaffolded`, 2 `differential_pass`, and 7 `complete`.
 
+Latest fuzz-evidence slice: Windows-side `cargo-fuzz` and nightly Rust are installed, but the MSVC ASan runtime path made Windows fuzz execution unreliable in this environment. WSL Ubuntu now has Rust nightly plus `cargo-fuzz`, and actual smoke executions passed for `cargo fuzz run avutil_core_models -- -runs=1`, `cargo fuzz run avutil_bitreader -- -runs=1`, `cargo fuzz run avutil_byteio -- -runs=1`, and `cargo fuzz run avutil_metadata_options -- -runs=1`. `avutil_core_models` exposed one real buffer invariant bug: same-shape `BufferRef::resize_with_padding` on shared storage returned without detaching while later invariants expected writable unique storage. The fix limits the no-op resize fast path to already resizable unique storage, adds `buffer_resize_same_shape_shared_storage_detaches`, and restores the fuzz invariant that shared resize detaches. The same fuzz smoke also exposed stale harness expectations for low-bit RGB descriptor bpp and film-grain field offsets; those harness tables now match the existing Rust/FFmpeg-shaped model. No additional ledger rows were marked complete because oracle/FATE completion evidence is still missing for the next 10% candidates.
+
 Latest `avutil-sample-format` completion slice: added a pinned libavutil oracle harness to `crates/avutil/tests/sample_format_oracle.rs` that compiles a small C helper against the local FFmpeg 8.1.1 `libavutil.a` and validates sample-format metadata, table strings, `av_samples_get_buffer_size`, `av_samples_fill_arrays`, `av_samples_alloc`, `av_samples_set_silence`, and `av_samples_copy` behavior against the Rust `SampleFormat` model. The existing `ffmpeg -sample_fmts` inventory mapping is now target-filtered separately from the new `oracle-libavutil-sample-format` mapping, and relative `FFMPEG_ORACLE` paths are resolved against the repo root for reliable fate-runner execution. `avutil-sample-format` moved from `implemented` to `complete`; upstream FATE is documented as not applicable for this low-level helper API, and broader sample conversion remains assigned to `swresample`.
 
 Latest `oracle-inventory` completion slice: the inventory tool now rejects nonzero FFmpeg inventory command exits and verifies that the supplied oracle's `-version` stdout starts with the pinned `ffmpeg version 8.1.1` banner before treating snapshots as valid. `cargo test -p oracle` covers the command list, argument parsing, manifest/status helpers, status rejection, version validation, and stdout/stderr wrapping, and `cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1` regenerated the ignored local snapshots through the pinned WSL oracle wrapper. `oracle-inventory` moved from `implemented` to `complete`; upstream FATE and differential media comparison are not applicable to this oracle snapshot generator.
 
 Latest status reconciliation: the pinned local FFmpeg oracle is installed and working under ignored `third_party/ffmpeg-oracle/`, and `third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd -version` reports FFmpeg 8.1.1 with the default-native configure profile. `PORTING_LEDGER.toml` now marks `avutil-hash` as `complete`, matching the existing completion evidence and hash completion notes, so the persistent README/state counts now report 5/96 strict parity.
 
-Latest oracle evidence: `cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1` generated local ignored inventory snapshots. The local oracle passed version, sample-format, color, pixel-format subset, rawvideo generated, WAV generated, channel-layout inventory, libavutil error-string differential checks, libavutil rational helper differential checks, libavutil timebase helper differential checks, and libavutil generic hash API checks. `avutil-channel-layout` now passes `ffmpeg -layouts` after adding `3.1.2` and matching FFmpeg's `22.2` and `hexadecagonal` decomposition order. `avutil-error` now passes a test-only libavutil `av_strerror` oracle for the FFmpeg-defined table, representative POSIX `AVERROR(errno)` values, and unknown-code fallback. `avutil-rational` now passes a test-only libavutil oracle for `av_cmp_q`, `av_q2d`, `av_reduce`, `av_d2q`, `av_nearer_q`, `av_find_nearest_q_idx`, `av_q2intfloat`, `av_gcd_q`, and arithmetic helpers. `avutil-timebase` now passes a test-only libavutil oracle for constants, direct and rational rescale, pass-min/max, compare_ts, compare_mod, rescale_delta, and add_stable vectors. `avutil-hash` now passes a test-only libavutil `av_hash_*` oracle for the full FFmpeg 8.1.1 default-native generic hash inventory: names/order, allocation, get_name, get_size, update, final, final_bin, final_hex, and final_b64 for ADLER32/adler32, CRC32, murmur3, MD5, RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320, SHA160, SHA224, SHA256, SHA384, SHA512, SHA512/224, and SHA512/256. FATE samples, `cargo-fuzz`, and actual `cargo fuzz run` execution are still absent.
+Latest oracle evidence: `cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1` generated local ignored inventory snapshots. The local oracle passed version, sample-format, color, pixel-format subset, rawvideo generated, WAV generated, channel-layout inventory, libavutil error-string differential checks, libavutil rational helper differential checks, libavutil timebase helper differential checks, and libavutil generic hash API checks. `avutil-channel-layout` now passes `ffmpeg -layouts` after adding `3.1.2` and matching FFmpeg's `22.2` and `hexadecagonal` decomposition order. `avutil-error` now passes a test-only libavutil `av_strerror` oracle for the FFmpeg-defined table, representative POSIX `AVERROR(errno)` values, and unknown-code fallback. `avutil-rational` now passes a test-only libavutil oracle for `av_cmp_q`, `av_q2d`, `av_reduce`, `av_d2q`, `av_nearer_q`, `av_find_nearest_q_idx`, `av_q2intfloat`, `av_gcd_q`, and arithmetic helpers. `avutil-timebase` now passes a test-only libavutil oracle for constants, direct and rational rescale, pass-min/max, compare_ts, compare_mod, rescale_delta, and add_stable vectors. `avutil-hash` now passes a test-only libavutil `av_hash_*` oracle for the full FFmpeg 8.1.1 default-native generic hash inventory: names/order, allocation, get_name, get_size, update, final, final_bin, final_hex, and final_b64 for ADLER32/adler32, CRC32, murmur3, MD5, RIPEMD128, RIPEMD160, RIPEMD256, RIPEMD320, SHA160, SHA224, SHA256, SHA384, SHA512, SHA512/224, and SHA512/256. FATE samples are still absent; WSL `cargo-fuzz` is now available and has passed avutil smoke runs.
 
 Latest `avutil-error` completion slice: extended `AvErrorCode` with the default-native POSIX `AVERROR(errno)` subset, mapped representative `io::ErrorKind` values to those codes, extended `crates/avutil/tests/error_oracle.rs` so the pinned libavutil C helper validates errno-backed raw values and `av_strerror` strings, documented upstream FATE inapplicability for this low-level API, and recorded fuzz as build-checked because `avutil-error` does not parse untrusted byte streams. The component moved from `differential_pass` to `complete`.
 
@@ -497,6 +499,19 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current buffer/fuzz-evidence slice:
+  - `cmd /c cargo test -p avutil buffer_resize`
+  - `cmd /c cargo test -p avutil pixel`
+  - `cmd /c cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex\fuzz-check --quiet`
+  - `cmd /c wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && . /home/trevo/.cargo/env && cargo fuzz run avutil_core_models -- -runs=1"`
+  - `cmd /c wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && . /home/trevo/.cargo/env && cargo fuzz run avutil_bitreader -- -runs=1"`
+  - `cmd /c wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && . /home/trevo/.cargo/env && cargo fuzz run avutil_byteio -- -runs=1"`
+  - `cmd /c wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && . /home/trevo/.cargo/env && cargo fuzz run avutil_metadata_options -- -runs=1"`
+  - `cmd /c cargo clippy -p avutil --all-targets --all-features -- -D warnings`
+  - `cmd /c cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex\fuzz-check -- -D warnings`
+  - `cmd /c cargo fmt --all -- --check`
+  - `cmd /c git diff --check` (passed with CRLF warnings only)
 
 - Current `avutil-hash` SHA-512/t parity slice:
   - `cmd /c cargo test -p avutil hash --quiet`
@@ -5045,9 +5060,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 ## Last Failing Commands
 
 - Current environment check:
-  - `cmd /c cargo fuzz --version` failed because the `cargo-fuzz` subcommand is not installed.
-  - `cargo install cargo-fuzz --locked`, including retries with explicit target dirs and debug builds, failed because Windows Application Control blocked build-script executables under Cargo target/temp directories with OS error 4551.
-  - WSL Ubuntu currently has no Rust toolchain (`cargo` and `rustc` are not installed), so it cannot run `cargo-fuzz` as a fallback.
+  - Windows-side `cargo +nightly fuzz run avutil_core_models -- -runs=1` built the ASan fuzz binary but failed at runtime until the MSVC ASan DLL path was injected; the follow-up Windows run then timed out during parallel fuzz execution. WSL is the working local fuzz path for now.
+  - The first WSL `cargo fuzz run avutil_core_models -- -runs=1` timed out while compiling the ASan binary on `/mnt/c`; the build later completed and reruns produced actionable failures.
+  - Early WSL `avutil_core_models` runs failed on an empty input because same-shape buffer resize did not detach shared storage, the low-bit RGB fuzz table confused logical FFmpeg descriptor bpp with storage bytes, and the film-grain fixture offset table drifted from the current native envelope. The current slice fixes those failures and the WSL fuzz smoke now passes.
 
 - Current `avutil-hash` oracle parity slice:
   - The first `cmd /c cargo test -p avutil --test hash_oracle -- --ignored` run failed because FFmpeg's `av_hash_names()` reports `adler32` in lowercase while the Rust hash muxer displays `ADLER32`. The oracle harness now distinguishes the FFmpeg API name from the Rust display name.
@@ -5529,9 +5544,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-hash` is the current non-parser strict-parity candidate. This historical note predates the Murmur3 and RIPEMD additions; the row now remains below `complete` until generic hash API semantics are covered.
+`avutil-buffer` and avutil fuzz evidence are the current focus for this slice. The concrete change fixes same-shape shared-buffer resize detachment, updates the `avutil_core_models` harness to match the existing FFmpeg-shaped pixel descriptor and film-grain offset models, and records real WSL `cargo-fuzz` smoke execution for the avutil core, bitreader, byte I/O, and metadata/options targets.
 
-`avutil-byteio` remains a preferred strict-parity candidate, but it cannot honestly move to `complete` until the parser-fuzz requirement is satisfied with real `cargo fuzz` execution or a narrower documented exception. `cargo-fuzz` installation is currently blocked by Windows Application Control in this workspace, and WSL has no Rust toolchain available as a fallback.
+`avutil-byteio`, `avutil-bitreader`, `avutil-dict`, and `avutil-options` are better positioned for the 10% push now that their WSL fuzz smoke targets execute. They still cannot honestly move to `complete` until the remaining oracle/FATE applicability decisions and stricter differential evidence are closed.
 
 `avutil-error`, `avutil-rational`, and `avutil-timebase` are complete for the selected default-native profile after adding pinned libavutil differential evidence, FATE inapplicability documentation, and fuzz-target build evidence for their non-parser models.
 
@@ -5797,20 +5812,17 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Choose the next 10% strict-parity candidate from the remaining high-confidence infrastructure rows, likely `avutil-logging` or another non-parser component whose FATE inapplicability and fuzz requirements can be honestly documented.
-2. Install or enable `cargo-fuzz` in an environment not blocked by Windows Application Control, then run parser targets such as `avutil_byteio` before considering parser components for strict completion.
-3. If fuzz execution remains unavailable, continue non-parser candidates only when they can meet the strict completion rules with unit, oracle, FATE-inapplicability/coverage, and documented zero-limit evidence.
+1. Add pinned libavutil or source-calibrated differential vectors for the next strict 10% candidate, likely `avutil-byteio`, `avutil-bitreader`, `avutil-dict`, or `avutil-options`.
+2. Decide and document upstream FATE applicability for that selected low-level helper; add a FATE mapping or a defensible inapplicability note before changing status.
+3. Re-run the relevant WSL `cargo fuzz run <target> -- -runs=1` plus focused unit/oracle tests, then mark the ledger row complete only if all strict completion rules are satisfied.
 
 ## Known Blockers
 
 - Local pinned FFmpeg 8.1.1 oracle installation is no longer a blocker. The WSL-backed wrappers exist under ignored `third_party/ffmpeg-oracle/build/bin/`, and local inventory snapshots have been generated under ignored `compat/ffmpeg-8.1.1/`.
 - FATE samples are still absent locally, so sample-backed upstream FATE rows such as `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` remain blocked until `third_party/fate-samples`, `FATE_SAMPLES`, or an equivalent sample tree is configured.
-- The `cargo fuzz` subcommand is not installed, so fuzz targets are currently build-checked only; actual fuzz execution is still pending.
+- Windows-side fuzz execution is still unreliable because of MSVC ASan runtime/path behavior and previous timeouts, but WSL Ubuntu now has Rust nightly plus `cargo-fuzz` and passes avutil smoke fuzz runs.
 - `avutil-channel-layout` `ffmpeg -layouts` inventory now passes, but the component is not complete because parser-level oracle vectors, upstream FATE decision/coverage, byte-preserving custom-name parity, and actual fuzz execution remain pending.
-- `avutil-hash` is complete for the selected default-native profile. Long-running `cargo fuzz run avutil_core_models` is still unavailable globally because `cargo-fuzz` is not installed, but this component exposes deterministic byte-processing helpers rather than untrusted byte parsers and its fuzz models are build-checked.
-- `avutil-error` is complete for the selected default-native profile. Long-running `cargo fuzz run avutil_core_models` is still unavailable globally because `cargo-fuzz` is not installed, but this component does not parse untrusted byte streams and its fuzz model is build-checked.
-- `avutil-rational` is complete for the selected default-native profile. Long-running `cargo fuzz run avutil_core_models` is still unavailable globally because `cargo-fuzz` is not installed, but this component does not parse untrusted byte streams and its fuzz model is build-checked.
-- `avutil-timebase` is complete for the selected default-native profile. Long-running `cargo fuzz run avutil_core_models` is still unavailable globally because `cargo-fuzz` is not installed, but this component does not parse untrusted byte streams and its fuzz model is build-checked.
+- `avutil-hash`, `avutil-error`, `avutil-rational`, and `avutil-timebase` are complete for the selected default-native profile; their completion evidence remains valid, and WSL `avutil_core_models` smoke fuzz now also passes.
 - Windows Application Control intermittently blocks freshly built Cargo test executables. Use already accepted target caches or `target-codex` fallbacks when the same command is blocked before Rust code executes.
 
 - `oracle-inventory` has local unit and FATE smoke coverage for command-list and manifest behavior, and local ignored snapshots were generated through the pinned WSL oracle wrapper.

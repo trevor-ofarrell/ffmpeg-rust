@@ -351,14 +351,16 @@ impl BufferRef {
 
     pub fn resize_with_padding(&mut self, len: usize, padding: usize) -> AvResult<()> {
         let total_len = checked_storage_len(len, padding)?;
+        let can_resize_in_place = self.can_resize_in_place();
         if len == self.len
             && total_len == self.allocated_len()
             && self.padding_slice().iter().all(|byte| *byte == 0)
+            && can_resize_in_place
         {
             return Ok(());
         }
 
-        if self.can_resize_in_place() {
+        if can_resize_in_place {
             let storage =
                 Arc::get_mut(&mut self.data).expect("in-place resize requires unique storage");
             let bytes = storage
@@ -1590,6 +1592,19 @@ mod tests {
         assert!(buffer.is_writable());
         assert_eq!(shared.as_slice(), &[1, 2, 3]);
         assert_eq!(shared.allocated_len(), 3);
+    }
+
+    #[test]
+    fn buffer_resize_same_shape_shared_storage_detaches() {
+        let mut buffer = BufferRef::from_vec(vec![1, 2, 3]);
+        let shared = buffer.clone();
+
+        buffer.resize_with_padding(3, 0).unwrap();
+
+        assert!(!buffer.shares_storage(&shared));
+        assert!(buffer.is_writable());
+        assert_eq!(buffer.as_slice(), &[1, 2, 3]);
+        assert_eq!(shared.as_slice(), &[1, 2, 3]);
     }
 
     #[test]

@@ -63,6 +63,16 @@ The inventory tool validates that the supplied oracle reports a first-line `ffmp
 
 FATE samples are expected to be obtained using upstream FFmpeg's documented `make fate-rsync` flow against a local samples directory. This repository does not yet contain samples or an upstream media FATE target mapping.
 
+## Fuzz Execution
+
+Local fuzz execution currently works through WSL Ubuntu with Rust nightly and `cargo-fuzz` installed:
+
+```sh
+wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && . /home/trevo/.cargo/env && cargo fuzz run avutil_core_models -- -runs=1"
+```
+
+The same form is used for `avutil_bitreader`, `avutil_byteio`, and `avutil_metadata_options`. Windows-side `cargo-fuzz` is installed, but MSVC ASan runtime/path behavior has been unreliable in this workspace, so WSL is the current recorded fuzz-evidence path.
+
 `cargo run -p fate-runner -- list` reads `PORTING_LEDGER.toml` and lists known components. `cargo run -p fate-runner -- mappings` reads `tests/fate/mappings.txt` and lists configured component-target commands; add repeated `--target <name>` filters to narrow the listing to exact target names, or add `--check-prereqs` with `--samples <path>` and `--oracle-ffmpeg <path>` to resolve placeholders and validate all listed mapping prerequisites without executing commands. `cargo run -p fate-runner -- run --changed` inspects git changed paths, maps currently covered Rust modules, dependency manifests and lockfile, cargo-fuzz target files, `tests/differential/` files, and the rawvideo/pixel-format/sample-format/channel-layout/color/WAV oracle integration harnesses to ledger component IDs, and runs explicit command mappings from the selected mapping file for selected components. Explicit runs may pass `--component <id>` more than once to select multiple components in one invocation; duplicate component IDs are coalesced before execution. Repeated `--target <name>` filters narrow run selection to exact target names, and a selected component whose mappings are all filtered out still fails as unmapped rather than silently passing. Add `--dry-run` to resolve and print selected mappings, including prerequisite validation, without executing them. The mapping format is documented in `tests/fate/README.md` as `component_id|target|workdir|program|arg1|arg2|...`.
 
 Mappings may reference `{samples}` and `{oracle_ffmpeg}` in the workdir, program, or args fields. When a selected mapping uses those placeholders, pass `--samples <path>` and/or `--oracle-ffmpeg <path>` to `fate-runner`; the runner validates that the samples path is an existing directory and the oracle path is an existing file before executing the mapped command. If explicit flags are omitted, `fate-runner` tries `FATE_SAMPLES`, `SAMPLES`, and standard local sample directories (`third_party/fate-samples`, `third_party/fate-suite`, `fate-suite`) for `{samples}`, and `FFMPEG_ORACLE` plus the standard local oracle paths under `third_party/ffmpeg-oracle/build/bin/` for `{oracle_ffmpeg}`. Invalid explicit or environment paths fail before execution rather than falling through silently.

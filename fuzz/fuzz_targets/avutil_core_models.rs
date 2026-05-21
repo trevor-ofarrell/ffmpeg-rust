@@ -628,9 +628,7 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         .unwrap();
     assert!(resize_shared.is_writable());
     assert_eq!(resize_original.as_slice(), payload.as_slice());
-    if resize_len != payload.len() || resize_padding != 0 {
-        assert!(!resize_shared.shares_storage(&resize_original));
-    }
+    assert!(!resize_shared.shares_storage(&resize_original));
 
     let mut same_shape_storage = payload.clone();
     same_shape_storage.resize(payload.len() + padding_len, 0x55);
@@ -7377,8 +7375,8 @@ fn exercise_fixtures() {
         ("bgr8", PixelFormat::Bgr8, 3, 8, Some(1), 4),
         ("rgb4", PixelFormat::Rgb4, 2, 4, None, 2),
         ("bgr4", PixelFormat::Bgr4, 2, 4, None, 2),
-        ("rgb4_byte", PixelFormat::Rgb4Byte, 2, 8, Some(1), 4),
-        ("bgr4_byte", PixelFormat::Bgr4Byte, 2, 8, Some(1), 4),
+        ("rgb4_byte", PixelFormat::Rgb4Byte, 2, 4, Some(1), 4),
+        ("bgr4_byte", PixelFormat::Bgr4Byte, 2, 4, Some(1), 4),
         ("bayer_bggr8", PixelFormat::BayerBggr8, 8, 8, Some(1), 4),
         ("bayer_rggb8", PixelFormat::BayerRggb8, 8, 8, Some(1), 4),
         ("bayer_gbrg8", PixelFormat::BayerGbrg8, 8, 8, Some(1), 4),
@@ -7449,16 +7447,16 @@ fn exercise_fixtures() {
         ),
         ("rgb565be", PixelFormat::Rgb565Be, 6, 16, Some(2), 8),
         ("rgb565le", PixelFormat::Rgb565Le, 6, 16, Some(2), 8),
-        ("rgb555be", PixelFormat::Rgb555Be, 5, 16, Some(2), 8),
-        ("rgb555le", PixelFormat::Rgb555Le, 5, 16, Some(2), 8),
+        ("rgb555be", PixelFormat::Rgb555Be, 5, 15, Some(2), 8),
+        ("rgb555le", PixelFormat::Rgb555Le, 5, 15, Some(2), 8),
         ("bgr565be", PixelFormat::Bgr565Be, 6, 16, Some(2), 8),
         ("bgr565le", PixelFormat::Bgr565Le, 6, 16, Some(2), 8),
-        ("bgr555be", PixelFormat::Bgr555Be, 5, 16, Some(2), 8),
-        ("bgr555le", PixelFormat::Bgr555Le, 5, 16, Some(2), 8),
-        ("rgb444le", PixelFormat::Rgb444Le, 4, 16, Some(2), 8),
-        ("rgb444be", PixelFormat::Rgb444Be, 4, 16, Some(2), 8),
-        ("bgr444le", PixelFormat::Bgr444Le, 4, 16, Some(2), 8),
-        ("bgr444be", PixelFormat::Bgr444Be, 4, 16, Some(2), 8),
+        ("bgr555be", PixelFormat::Bgr555Be, 5, 15, Some(2), 8),
+        ("bgr555le", PixelFormat::Bgr555Le, 5, 15, Some(2), 8),
+        ("rgb444le", PixelFormat::Rgb444Le, 4, 12, Some(2), 8),
+        ("rgb444be", PixelFormat::Rgb444Be, 4, 12, Some(2), 8),
+        ("bgr444le", PixelFormat::Bgr444Le, 4, 12, Some(2), 8),
+        ("bgr444be", PixelFormat::Bgr444Be, 4, 12, Some(2), 8),
         ("x2rgb10le", PixelFormat::X2Rgb10Le, 10, 30, Some(4), 16),
         ("x2rgb10be", PixelFormat::X2Rgb10Be, 10, 30, Some(4), 16),
         ("x2bgr10le", PixelFormat::X2Bgr10Le, 10, 30, Some(4), 16),
@@ -20081,7 +20079,7 @@ fn film_grain_subsampling_y_field_offset() -> usize {
 }
 
 fn film_grain_bit_depth_luma_field_offset() -> usize {
-    film_grain_subsampling_y_field_offset() + 24
+    film_grain_subsampling_y_field_offset() + 20
 }
 
 fn film_grain_bit_depth_chroma_field_offset() -> usize {

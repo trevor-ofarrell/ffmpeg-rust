@@ -20,7 +20,7 @@ Strict parity status is still low:
 - Pinned FFmpeg oracle: installed locally through WSL wrappers under ignored `third_party/ffmpeg-oracle/`
 - Generated FFmpeg inventory snapshot: present locally under ignored `compat/ffmpeg-8.1.1/`
 - Upstream FATE sample execution: not running locally; sample tree is still absent
-- Actual local `cargo-fuzz` execution: blocked until `cargo-fuzz` is installed
+- Actual local `cargo-fuzz` execution: available through WSL; avutil smoke targets have run locally
 
 Estimated completion:
 
@@ -36,6 +36,8 @@ The active milestone is to reach 10% strict parity before broadening back out to
 For the current 96-row ledger, that means at least 10 components must be marked `complete`. The first completion push should focus on small, high-confidence infrastructure components such as `avutil-error`, `avutil-rational`, `avutil-timebase`, `avutil-byteio`, `avutil-bitreader`, `avutil-bitwriter`, `avutil-dict`, `avutil-options`, `avutil-logging`, and `avutil-hash`.
 
 The work needed for this milestone is mostly proof work, not broad new feature work: install or point to the pinned FFmpeg 8.1.1 oracle, generate inventory snapshots, run or add differential tests, run or justify FATE coverage, run fuzz targets where relevant, close known limitations for each selected component, and update `PORTING_LEDGER.toml` only when the project completion definition is actually satisfied.
+
+The pinned FFmpeg oracle should remain installed locally for this project. It is intentionally ignored by git because it contains upstream build artifacts, including generated `.d` dependency files, object files, libraries, and binaries.
 
 ## Repository Layout
 
