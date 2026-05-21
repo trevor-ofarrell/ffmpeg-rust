@@ -1,0 +1,202 @@
+use avutil::PixelFormat;
+use std::{
+    collections::BTreeMap,
+    env,
+    path::{Path, PathBuf},
+    process::Command,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PixelFormatRow {
+    flags: String,
+    name: String,
+    component_count: usize,
+    bits_per_pixel: usize,
+}
+
+impl PixelFormatRow {
+    fn is_paletted(&self) -> bool {
+        matches!(self.flags.as_bytes().get(3), Some(b'P'))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ExpectedPixelFormatRow {
+    name: String,
+    component_count: usize,
+    bits_per_pixel: Option<usize>,
+    is_paletted: bool,
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn ffmpeg_pixel_format_inventory_contains_current_pixel_format_subset() {
+    let oracle = oracle_ffmpeg();
+    let output = Command::new(&oracle)
+        .args(["-hide_banner", "-pix_fmts"])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    assert!(
+        output.status.success(),
+        "oracle failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    if !output.stderr.is_empty() {
+        text.push('\n');
+        text.push_str(&String::from_utf8_lossy(&output.stderr));
+    }
+
+    let oracle_rows = parse_pixel_format_inventory(&text);
+    for expected in expected_pixel_format_subset() {
+        let actual = oracle_rows
+            .get(expected.name.as_str())
+            .unwrap_or_else(|| panic!("missing ffmpeg -pix_fmts row for `{}`", expected.name));
+
+        assert_eq!(
+            actual.component_count, expected.component_count,
+            "ffmpeg -pix_fmts component count diverged for `{}`",
+            expected.name
+        );
+        if let Some(expected_bits_per_pixel) = expected.bits_per_pixel {
+            assert_eq!(
+                actual.bits_per_pixel, expected_bits_per_pixel,
+                "ffmpeg -pix_fmts integer bits-per-pixel diverged for `{}`",
+                expected.name
+            );
+        }
+        assert_eq!(
+            actual.is_paletted(),
+            expected.is_paletted,
+            "ffmpeg -pix_fmts paletted flag diverged for `{}`",
+            expected.name
+        );
+    }
+}
+
+#[test]
+fn parses_ffmpeg_pixel_format_inventory_table() {
+    let rows = parse_pixel_format_inventory(
+        r#"
+Pixel formats:
+I.... = Supported Input  format for conversion
+.O... = Supported Output format for conversion
+..H.. = Hardware accelerated format
+...P. = Paletted format
+....B = Bitstream format
+FLAGS NAME            NB_COMPONENTS BITS_PER_PIXEL
+-----
+IO... yuv420p                3            12
+IO..B monow                  1             1
+IO.P. pal8                   1             8
+"#,
+    );
+
+    assert_eq!(
+        rows.get("yuv420p"),
+        Some(&PixelFormatRow {
+            flags: "IO...".to_string(),
+            name: "yuv420p".to_string(),
+            component_count: 3,
+            bits_per_pixel: 12,
+        })
+    );
+    assert!(!rows["monow"].is_paletted());
+    assert!(rows["pal8"].is_paletted());
+}
+
+fn expected_pixel_format_subset() -> Vec<ExpectedPixelFormatRow> {
+    PixelFormat::ALL
+        .iter()
+        .map(|format| {
+            let descriptor = format.descriptor();
+            ExpectedPixelFormatRow {
+                name: descriptor.name.to_string(),
+                component_count: descriptor.component_count,
+                bits_per_pixel: descriptor.bits_per_pixel_integer().map(usize::from),
+                is_paletted: descriptor.is_paletted,
+            }
+        })
+        .collect()
+}
+
+fn parse_pixel_format_inventory(text: &str) -> BTreeMap<String, PixelFormatRow> {
+    let mut rows = BTreeMap::new();
+    let mut found_header = false;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if trimmed.starts_with("FLAGS NAME") {
+            found_header = true;
+            continue;
+        }
+        if !found_header || trimmed.starts_with('-') {
+            continue;
+        }
+
+        let columns = trimmed.split_whitespace().collect::<Vec<_>>();
+        if columns.len() != 4 || columns[0].len() != 5 {
+            continue;
+        }
+
+        let component_count = columns[2].parse().unwrap_or_else(|err| {
+            panic!("invalid ffmpeg -pix_fmts component count in `{trimmed}`: {err}")
+        });
+        let bits_per_pixel = columns[3].parse().unwrap_or_else(|err| {
+            panic!("invalid ffmpeg -pix_fmts bits-per-pixel in `{trimmed}`: {err}")
+        });
+
+        let row = PixelFormatRow {
+            flags: columns[0].to_string(),
+            name: columns[1].to_string(),
+            component_count,
+            bits_per_pixel,
+        };
+        let previous = rows.insert(row.name.clone(), row);
+        assert!(previous.is_none(), "duplicate ffmpeg -pix_fmts row");
+    }
+
+    assert!(found_header, "missing ffmpeg -pix_fmts table header");
+    assert!(!rows.is_empty(), "missing ffmpeg -pix_fmts rows");
+    rows
+}
+
+fn oracle_ffmpeg() -> PathBuf {
+    if let Ok(path) = env::var("FFMPEG_ORACLE") {
+        let path = PathBuf::from(path);
+        assert!(
+            path.is_file(),
+            "FFMPEG_ORACLE must point to the pinned FFmpeg 8.1.1 binary, got `{}`",
+            path.display()
+        );
+        return path;
+    }
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("avutil crate should be under crates/");
+
+    let unix_path = root.join("third_party/ffmpeg-oracle/build/bin/ffmpeg");
+    if unix_path.is_file() {
+        return unix_path;
+    }
+
+    let windows_path = root.join("third_party/ffmpeg-oracle/build/bin/ffmpeg.exe");
+    if windows_path.is_file() {
+        return windows_path;
+    }
+
+    panic!(
+        "missing pinned FFmpeg oracle; set FFMPEG_ORACLE or install `{}`",
+        unix_path.display()
+    );
+}

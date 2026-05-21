@@ -241,6 +241,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/pixel_format_oracle.rs",
+        exact_ids: &["avutil-pixel-format"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/samplefmt.rs",
         exact_ids: &["avutil-sample-format"],
         id_prefixes: &[],
@@ -1587,6 +1592,17 @@ mod tests {
     }
 
     #[test]
+    fn changed_selection_maps_pixel_format_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-pixel-format"]));
+        let paths = vec!["crates/avutil/tests/pixel_format_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-pixel-format".to_string()]
+        );
+    }
+
+    #[test]
     fn changed_selection_maps_differential_files_to_runner() {
         let component_ids = component_ids_from_ledger(&ledger(&["fate-runner"]));
         let paths = vec![
@@ -1623,6 +1639,7 @@ mod tests {
         assert!(pairs.contains(&("avutil-channel-layout", "oracle-ffmpeg-layouts")));
         assert!(pairs.contains(&("avformat-wav-demuxer", "oracle-wav-generated-md5")));
         assert!(pairs.contains(&("avutil-sample-format", "oracle-ffmpeg-sample-fmts")));
+        assert!(pairs.contains(&("avutil-pixel-format", "oracle-ffmpeg-pix-fmts-subset")));
     }
 
     #[test]
@@ -1715,6 +1732,7 @@ mod tests {
             &[
                 "crates/avutil/src/lib.rs".to_string(),
                 "crates/avutil/src/buffer.rs".to_string(),
+                "crates/avutil/tests/pixel_format_oracle.rs".to_string(),
                 "crates/avutil/tests/sample_format_oracle.rs".to_string(),
                 "crates/avutil/tests/channel_layout_oracle.rs".to_string(),
                 "fuzz/fuzz_targets/avutil_core_models.rs".to_string(),

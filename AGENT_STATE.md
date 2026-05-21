@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-pixel-format` oracle update: added an ignored `ffmpeg -pix_fmts` subset inventory harness at `crates/avutil/tests/pixel_format_oracle.rs`. The harness resolves the pinned FFmpeg 8.1.1 oracle through `FFMPEG_ORACLE` or the standard `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` path, parses the oracle pixel-format table, and checks that every current `PixelFormat::ALL` descriptor name exists with matching component count, exact integer bits-per-pixel where modeled, and paletted flag. `tests/differential/mappings.txt` exposes it as `avutil-pixel-format|oracle-ffmpeg-pix-fmts-subset`, and `fate-runner` changed-path selection maps the harness back to `avutil-pixel-format`. Focused compile, runner tests, mapping dry-runs, clippy, formatting, and diff checks passed; this still does not count as `differential_pass` because no pinned oracle is installed locally, and it is a subset check rather than full FFmpeg pixel inventory parity.
+
 Latest `avutil-sample-format` oracle update: added an ignored `ffmpeg -sample_fmts` inventory harness at `crates/avutil/tests/sample_format_oracle.rs`. The harness resolves the pinned FFmpeg 8.1.1 oracle through `FFMPEG_ORACLE` or the standard `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` path, parses the oracle sample-format name/depth table, and compares it against the current `SampleFormat::ALL` inventory. `tests/differential/mappings.txt` exposes it as `avutil-sample-format|oracle-ffmpeg-sample-fmts`, and `fate-runner` changed-path selection maps the harness back to `avutil-sample-format`. Focused compile, runner tests, and mapping dry-runs passed so far; this still does not count as `differential_pass` because no pinned oracle is installed locally.
 
 Latest `avformat-wav-demuxer` / WAV oracle update: split the WAV oracle coverage into an oracle-only generated fixture row and a sample-backed FATE row. `crates/fftools/tests/wav_oracle.rs` now has `wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle`, which creates a small PCM s16le WAV fixture through the Rust WAV muxer and compares Rust WAV-to-MD5 output with pinned FFmpeg streamcopy MD5 output. `tests/differential/mappings.txt` exposes that row as `avformat-wav-demuxer|oracle-wav-generated-md5`, while `tests/fate/upstream-mappings.txt` now filters its sample-backed row to `wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample`. `fate-runner` changed-path selection maps the WAV oracle harness back to the WAV/CLI components, and unit coverage parses both live mapping files. Focused tests and dry-runs passed so far; this still does not count as `differential_pass` or `fate_pass` because the pinned oracle and FATE sample tree are absent locally.
@@ -447,6 +449,17 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-pixel-format` oracle mapping slice:
+  - `cargo test -p avutil --test pixel_format_oracle` (parser unit passed; oracle test compiled and remained ignored)
+  - `cargo test -p fate-runner` (37 tests passed)
+  - `cargo run -p fate-runner -- mappings --mappings tests/differential/mappings.txt --target oracle-ffmpeg-pix-fmts-subset`
+  - `cargo run -p fate-runner -- run --dry-run --mappings tests/differential/mappings.txt --component avutil-pixel-format --target oracle-ffmpeg-pix-fmts-subset --oracle-ffmpeg Cargo.toml`
+  - `cargo clippy -p avutil --test pixel_format_oracle -- -D warnings`
+  - `cargo clippy -p fate-runner --all-targets -- -D warnings`
+  - `cargo fmt --all`
+  - `cargo fmt --all -- --check`
+  - `git diff --check` (exit 0; CRLF warnings only)
 
 - Current `avutil-sample-format` oracle mapping slice:
   - `cargo test -p avutil --test sample_format_oracle` (ignored oracle test compiled; 1 ignored)
@@ -5225,6 +5238,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-pixel-format` is the active focus for this turn. The concrete change adds the first explicit `ffmpeg -pix_fmts` oracle inventory harness and maps it through `tests/differential/mappings.txt`, without moving the ledger past `implemented` because the oracle has not run locally and the harness proves only the current Rust subset against the oracle table.
+
 `avutil-sample-format` is the active focus for this turn. The concrete change adds the first explicit `ffmpeg -sample_fmts` oracle inventory harness and maps it through `tests/differential/mappings.txt`, without moving the ledger past `implemented` because the oracle has not run locally.
 
 `avformat-wav-demuxer` and `fate-runner` are the active focus for this turn. The concrete change adds a generated PCM s16le WAV oracle test that needs only the pinned FFmpeg binary, wires it into `tests/differential/mappings.txt`, narrows the sample-backed upstream row to the sample-specific test filter, and keeps both rows out of default local smoke runs. The ledger remains below `differential_pass` and `fate_pass` until the rows execute with real prerequisites.
@@ -5461,11 +5476,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Configure or build the pinned FFmpeg 8.1.1 oracle binary at `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` or set `FFMPEG_ORACLE`, then run `avutil-sample-format|oracle-ffmpeg-sample-fmts`.
+1. Configure or build the pinned FFmpeg 8.1.1 oracle binary at `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` or set `FFMPEG_ORACLE`, then run the current inventory rows: `avutil-pixel-format|oracle-ffmpeg-pix-fmts-subset`, `avutil-sample-format|oracle-ffmpeg-sample-fmts`, and `avutil-channel-layout|oracle-ffmpeg-layouts`.
 2. With the same oracle, run `avformat-wav-demuxer|oracle-wav-generated-md5`; then configure `third_party/fate-samples` or `FATE_SAMPLES` and run `avformat-wav-demuxer|fate-wav-pcm-s16le-md5`.
 3. If local oracle/samples remain unavailable, add the next unblocked high-priority oracle-vector slice that can be represented as an ignored differential row plus local compile/unit coverage.
 
 ## Known Blockers
+
+- `avutil-pixel-format` has an ignored `ffmpeg -pix_fmts` subset inventory harness and differential mapping, but no pinned FFmpeg oracle exists locally, so it has not executed and does not count as `differential_pass`. It checks the current Rust subset only; full FFmpeg pixel inventory and full `AVPixFmtDescriptor` parity remain pending.
 
 - `avutil-sample-format` has an ignored `ffmpeg -sample_fmts` inventory harness and differential mapping, but no pinned FFmpeg oracle exists locally, so it has not executed and does not count as `differential_pass`.
 
@@ -5588,6 +5605,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added an ignored `ffmpeg -pix_fmts` subset inventory harness for `avutil-pixel-format`. The new test parses the oracle pixel-format table and checks the current Rust `PixelFormat::ALL` names for presence, component-count parity, exact integer bits-per-pixel parity where the Rust descriptor is exact, and paletted-flag parity; `tests/differential/mappings.txt` exposes it as `oracle-ffmpeg-pix-fmts-subset`, and `fate-runner` maps the test path back to the ledger component. The slot is measurable but not complete because the local pinned oracle is absent and the harness intentionally does not claim full FFmpeg pixel inventory parity.
 
 Latest slice: added an ignored `ffmpeg -sample_fmts` inventory harness for `avutil-sample-format`. The new test parses the oracle's sample-format name/depth table and compares it to `SampleFormat::ALL`; `tests/differential/mappings.txt` exposes it as `oracle-ffmpeg-sample-fmts`, and `fate-runner` maps the test path back to the ledger component. The slot is measurable but not complete because the local pinned oracle is absent.
 
