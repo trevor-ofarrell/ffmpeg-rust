@@ -125,6 +125,29 @@ impl Rational {
         Ok(Some(nearest))
     }
 
+    pub fn gcd_with_limit(self, other: Self, max_den: i32, default: Self) -> AvResult<Self> {
+        if max_den <= 0 {
+            return Err(AvError::invalid_argument(
+                "rational gcd maximum denominator must be positive",
+            ));
+        }
+        self.ensure_positive_denominator("first rational for gcd")?;
+        other.ensure_positive_denominator("second rational for gcd")?;
+
+        let den_gcd = gcd_i128(i128::from(self.den), i128::from(other.den));
+        let lcm = (i128::from(self.den) / den_gcd) * i128::from(other.den);
+        if lcm >= i128::from(max_den) {
+            return Ok(default);
+        }
+
+        let num_gcd = gcd_i128(i128::from(self.num), i128::from(other.num));
+        let num = i32::try_from(num_gcd)
+            .map_err(|_| AvError::invalid_argument("rational gcd numerator out of range"))?;
+        let den = i32::try_from(lcm)
+            .map_err(|_| AvError::invalid_argument("rational gcd denominator out of range"))?;
+        Ok(Self::from_raw(num, den))
+    }
+
     pub fn reduce_i64(num: i64, den: i64, max: i32) -> AvResult<(Self, bool)> {
         if max <= 0 {
             return Err(AvError::invalid_argument(
@@ -209,6 +232,15 @@ impl Rational {
         if self.den == 0 {
             return Err(AvError::invalid_argument(format!(
                 "{context} must have a nonzero denominator"
+            )));
+        }
+        Ok(())
+    }
+
+    fn ensure_positive_denominator(self, context: &str) -> AvResult<()> {
+        if self.den <= 0 {
+            return Err(AvError::invalid_argument(format!(
+                "{context} must have a positive denominator"
             )));
         }
         Ok(())
@@ -495,6 +527,82 @@ mod tests {
             Rational::new(25, 1)
                 .unwrap()
                 .find_nearest_index(&[Rational::new(24, 1).unwrap(), Rational::from_raw(0, 0)])
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+    }
+
+    #[test]
+    fn rational_gcd_with_limit_matches_ffmpeg_shape() {
+        assert_eq!(
+            Rational::new(1, 30)
+                .unwrap()
+                .gcd_with_limit(Rational::new(1, 60).unwrap(), 100, Rational::ONE)
+                .unwrap(),
+            Rational::from_raw(1, 60)
+        );
+        assert_eq!(
+            Rational::new(2, 3)
+                .unwrap()
+                .gcd_with_limit(Rational::new(4, 9).unwrap(), 10, Rational::ONE)
+                .unwrap(),
+            Rational::from_raw(2, 9)
+        );
+        assert_eq!(
+            Rational::from_raw(2, 4)
+                .gcd_with_limit(Rational::from_raw(4, 6), 100, Rational::ONE)
+                .unwrap(),
+            Rational::from_raw(2, 12)
+        );
+        assert_eq!(
+            Rational::from_raw(0, 5)
+                .gcd_with_limit(Rational::from_raw(10, 15), 100, Rational::ONE)
+                .unwrap(),
+            Rational::from_raw(10, 15)
+        );
+    }
+
+    #[test]
+    fn rational_gcd_with_limit_uses_strict_max_den_and_default() {
+        let default = Rational::from_raw(30000, 1001);
+
+        assert_eq!(
+            Rational::new(1, 30)
+                .unwrap()
+                .gcd_with_limit(Rational::new(1, 60).unwrap(), 60, default)
+                .unwrap(),
+            default
+        );
+        assert_eq!(
+            Rational::new(1, 30)
+                .unwrap()
+                .gcd_with_limit(Rational::new(1, 60).unwrap(), 59, default)
+                .unwrap(),
+            default
+        );
+    }
+
+    #[test]
+    fn rational_gcd_with_limit_rejects_invalid_inputs() {
+        assert_eq!(
+            Rational::new(1, 30)
+                .unwrap()
+                .gcd_with_limit(Rational::new(1, 60).unwrap(), 0, Rational::ONE)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            Rational::from_raw(1, 0)
+                .gcd_with_limit(Rational::new(1, 60).unwrap(), 100, Rational::ONE)
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            Rational::from_raw(1, -30)
+                .gcd_with_limit(Rational::new(1, 60).unwrap(), 100, Rational::ONE)
                 .unwrap_err()
                 .kind(),
             crate::AvErrorKind::InvalidArgument

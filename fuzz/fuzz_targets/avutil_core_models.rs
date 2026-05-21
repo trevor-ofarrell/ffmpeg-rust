@@ -1206,6 +1206,26 @@ fn exercise_rational_and_timebase(cursor: &mut Cursor<'_>) {
     assert!(rational
         .find_nearest_index(&[first_candidate, Rational::from_raw(0, 0)])
         .is_err());
+    let gcd_max = i32::from(cursor.next().unwrap_or_default() % 31) + 1;
+    let gcd_default = Rational::from_raw(0, 1);
+    let gcd_candidate = first_candidate
+        .gcd_with_limit(second_candidate, gcd_max, gcd_default)
+        .unwrap();
+    let candidate_lcm = lcm_positive_i32(first_candidate.den(), second_candidate.den());
+    if candidate_lcm < gcd_max {
+        assert_eq!(
+            gcd_candidate,
+            Rational::from_raw(
+                gcd_positive_i32(first_candidate.num(), second_candidate.num()),
+                candidate_lcm
+            )
+        );
+    } else {
+        assert_eq!(gcd_candidate, gcd_default);
+    }
+    assert!(first_candidate
+        .gcd_with_limit(Rational::from_raw(1, 0), gcd_max, gcd_default)
+        .is_err());
 
     let reduce_num = small_i64_from(cursor.next(), cursor.next());
     let reduce_den = small_i64_from(cursor.next(), cursor.next());
@@ -19171,6 +19191,22 @@ fn expected_av_error_code_for_io(kind: io::ErrorKind) -> Option<AvErrorCode> {
 
 fn rational_exactly_matches_i64(num: i64, den: i64, rational: Rational) -> bool {
     i128::from(num) * i128::from(rational.den()) == i128::from(den) * i128::from(rational.num())
+}
+
+fn gcd_positive_i32(a: i32, b: i32) -> i32 {
+    let mut a = a.unsigned_abs();
+    let mut b = b.unsigned_abs();
+    while b != 0 {
+        let rem = a % b;
+        a = b;
+        b = rem;
+    }
+    i32::try_from(a).unwrap_or(i32::MAX).max(1)
+}
+
+fn lcm_positive_i32(a: i32, b: i32) -> i32 {
+    let gcd = gcd_positive_i32(a, b);
+    ((i64::from(a) / i64::from(gcd)) * i64::from(b)) as i32
 }
 
 fn payload_from(cursor: &mut Cursor<'_>, len: usize) -> Vec<u8> {

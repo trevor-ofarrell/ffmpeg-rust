@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-rational` update: `Rational::gcd_with_limit` now models FFmpeg 8.1.1 `av_gcd_q` for finite positive-denominator inputs. It preserves the raw non-reduced `gcd(num)/lcm(den)` result shape, uses FFmpeg's strict `lcm < max_den` selection before returning that result, returns the caller default when the limit is not met, and rejects zero/negative denominators or nonpositive limits with typed errors instead of inventing behavior for invalid Rust inputs. Local unit tests and the shared `avutil_core_models` fuzz harness cover direct results, non-reduced raw shape, zero numerators, strict limit/default behavior, and invalid inputs. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, `av_q2intfloat`, and actual fuzz execution are still incomplete.
+
 Latest `avutil-rational` update: `Rational` now exposes `av_cmp_q`-style comparison through `av_cmp` and `PartialOrd`, including FFmpeg-shaped handling for raw positive/negative infinity sentinels and `0/0` indeterminate forms. It also adds exact `av_nearer_q`/`av_find_nearest_q_idx`-style nearest-candidate helpers over Rust slices, preserving first-candidate ties and rejecting zero-denominator nearest inputs with typed errors. The slice was source-checked against pinned FFmpeg 8.1.1 `libavutil/rational.h` and `libavutil/rational.c`, and local unit plus fuzz-harness build checks cover sentinel comparison, nearest relation reversal, nearest index selection, empty lists, and malformed zero-denominator candidates. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, broader rational helper coverage, and actual fuzz execution are still incomplete.
 
 Latest `avutil-error` update: `AvErrorCode` now exposes Rust-native `av_error_description`, `av_strerror`, and `av_make_error_string` helpers for the pinned FFmpeg 8.1.1 `AVERROR_LIST` table from `libavutil/error.c`, while preserving the FFmpeg-shaped generic `Error number <n> occurred` fallback for unknown codes. The slice also records the upstream duplicate-code behavior where `AVERROR_INPUT_CHANGED | AVERROR_OUTPUT_CHANGED` resolves to the first matching `Input changed` string, not a distinct Rust-only description. Platform `AVERROR(errno)` string parity remains unclaimed.
@@ -343,6 +345,18 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-rational` GCD slice:
+  - `cargo fmt --all`
+  - `cargo test -p avutil rational --target-dir target-codex`
+  - `cargo fmt --all -- --check`
+  - `cargo clippy -p avutil --all-targets --target-dir target-codex -- -D warnings`
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-rational`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `git diff --check`
 
 - Current `avutil-rational` comparison/nearest slice:
   - `Invoke-WebRequest -Uri https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1.1/libavutil/rational.h -OutFile $env:TEMP\ffmpeg-rational-8.1.1.h`
@@ -4108,6 +4122,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-rational` GCD slice: no Rust assertion failures have been observed so far.
+
 - Current `avutil-rational` comparison/nearest slice:
   - The first sandboxed `Invoke-WebRequest` attempts for pinned `libavutil/rational.h` and `libavutil/rational.c` failed with `Unable to connect to the remote server`; both downloads succeeded after escalation. No Rust test, clippy, local FATE, or diff-hygiene failures remain for this slice.
 
@@ -4424,6 +4440,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-rational` is the active infrastructure focus for this turn. The latest change adds source-checked `av_gcd_q`-style bounded rational GCD through `Rational::gcd_with_limit`, with local unit tests and fuzz-harness invariants for strict denominator limits, raw non-reduced result shape, default fallback, and invalid-input rejection. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, `av_q2intfloat`, and actual fuzz execution are still incomplete.
+
 `avutil-rational` is the active infrastructure focus for this turn. The latest change adds source-checked `av_cmp_q`-style sentinel comparison plus `av_nearer_q`/`av_find_nearest_q_idx`-style nearest-candidate selection over Rust slices, with local unit tests, fuzz-harness build invariants, and local FATE-runner smoke coverage. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, additional rational helpers such as `av_q2intfloat`/`av_gcd_q`, and actual fuzz execution are still incomplete.
 
 `avutil-error` is the active infrastructure focus for this turn. The latest change adds pinned FFmpeg-defined error-string table helpers and generic unknown-code formatting, with local unit and fuzz-harness invariant coverage. The component remains `implemented`, not `complete`, because platform `AVERROR(errno)` parity, pinned oracle differential vectors, upstream FATE parity, and actual fuzz execution are still incomplete.
@@ -4578,11 +4596,13 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Continue `avutil-rational` with the next source-checked helper from pinned FFmpeg 8.1.1, likely `av_q2intfloat` or `av_gcd_q`, adding unit and fuzz-harness invariants before updating status.
-2. Add pinned FFmpeg rational differential vectors once an oracle path or a small source-checked oracle fixture is available, covering `av_reduce`, `av_d2q`, `av_cmp_q`, `av_nearer_q`, and list-index tie behavior.
-3. If rational helper coverage is paused by oracle availability, move to the next high-priority shared primitive in the ledger, starting with `avutil-timebase` edge helpers and keeping local FATE mappings green.
+1. Continue `avutil-rational` with the remaining source-checked `av_q2intfloat` helper from pinned FFmpeg 8.1.1, adding unit and fuzz-harness invariants before updating status.
+2. Add pinned FFmpeg rational differential vectors once an oracle path or a small source-checked oracle fixture is available, covering `av_reduce`, `av_d2q`, `av_cmp_q`, `av_nearer_q`, `av_find_nearest_q_idx`, and `av_gcd_q`.
+3. If rational helper coverage is paused by oracle availability, move to `avutil-timebase` edge helpers while keeping local FATE mappings green.
 
 ## Known Blockers
+
+- `avutil-rational` now covers source-checked `av_gcd_q`-style behavior for finite positive-denominator inputs locally, but it does not yet model `av_q2intfloat`, and it still has no pinned FFmpeg differential vector harness. Actual cargo-fuzz execution is still unavailable, and upstream FATE has no media-backed rational coverage mapping in this workspace.
 
 - `avutil-rational` now covers source-checked `av_cmp_q`, `av_nearer_q`, and `av_find_nearest_q_idx`-style behavior locally, but has no pinned FFmpeg differential vector harness yet. Actual cargo-fuzz execution is still unavailable, and upstream FATE has no media-backed rational coverage mapping in this workspace.
 
@@ -4649,6 +4669,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added `Rational::gcd_with_limit` for FFmpeg 8.1.1 `av_gcd_q`-style bounded rational GCD. For finite positive-denominator inputs it returns raw `gcd(num)/lcm(den)` without reducing, uses FFmpeg's strict `lcm < max_den` threshold, returns the caller default when the threshold is not met, and rejects zero/negative denominators or nonpositive limits with typed errors. Unit tests cover direct results, non-reduced raw output, zero numerators, strict limit/default behavior, and invalid inputs; `avutil_core_models` build-checks the generated invariant against an independent small-range gcd/lcm model. Pinned oracle differential vectors, upstream FATE parity, `av_q2intfloat`, and actual fuzz execution remain open.
 
 Latest slice: added FFmpeg-shaped rational comparison and nearest-candidate helpers. `Rational::av_cmp` now mirrors `av_cmp_q` for finite values, raw positive/negative infinity sentinels, and `0/0` indeterminate results; `PartialOrd` routes through that comparison. `Rational::nearer_to` and `Rational::find_nearest_index` provide exact Rust-native equivalents for `av_nearer_q` and `av_find_nearest_q_idx` over explicit slices, with first-tie preservation, empty-list handling, and typed zero-denominator rejection. The slice was source-checked against pinned FFmpeg 8.1.1 `libavutil/rational.h`/`.c`, and unit plus `avutil_core_models` fuzz-harness build invariants cover the new behavior. Pinned oracle differential vectors, upstream FATE parity, additional helpers, and actual fuzz execution remain open.
 
