@@ -131,6 +131,56 @@ fn assert_raw_channel_layout_retype_fixtures() {
     );
 }
 
+fn assert_channel_layout_byte_parser_fixtures() {
+    assert_eq!(
+        CustomChannelLayout::parse_channel_list_bytes(b"FL@Left\\+Right+USR45").unwrap(),
+        CustomChannelLayout::parse_channel_list("FL@Left\\+Right+USR45").unwrap()
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse_bytes(b"2 channels (FL+FC)").unwrap(),
+        ChannelLayoutSpec::NativeMask(
+            NativeChannelMaskLayout::new(Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
+                .unwrap()
+        )
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse_bytes(b"AMBI0+AMBI1+AMBI2+AMBI3+USR45").unwrap(),
+        ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+USR45").unwrap()
+    );
+
+    for invalid in [
+        &b"FL@\xff+FR"[..],
+        &b"FL@Left\\\xff+FR"[..],
+        &b"ambisonic \xc3\x28"[..],
+    ] {
+        assert_eq!(
+            CustomChannelLayout::parse_channel_list_bytes(invalid)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse_bytes(invalid)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+    }
+
+    assert_eq!(
+        CustomChannelLayout::parse_channel_list_bytes(b"FL\0+FR")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse_bytes(b"FL\0+FR")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+}
+
 fn exif_two_digits(value: &str, index: usize) -> u8 {
     let bytes = value.as_bytes();
     (bytes[index] - b'0') * 10 + (bytes[index + 1] - b'0')
@@ -3686,6 +3736,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
 
 fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_raw_channel_layout_retype_fixtures();
+    assert_channel_layout_byte_parser_fixtures();
 
     let sample_rate = sample_rate_from(cursor.next());
     let channels = channel_count_from(cursor.next());
@@ -6620,6 +6671,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
 fn exercise_fixtures() {
     assert_raw_channel_layout_retype_fixtures();
+    assert_channel_layout_byte_parser_fixtures();
 
     assert_eq!(PixelFormat::from_name("gray8"), Some(PixelFormat::Gray8));
     assert_eq!(

@@ -393,6 +393,11 @@ fn native_mask_bit_from_channel_id(id: ChannelId) -> AvResult<u64> {
     }
 }
 
+fn utf8_channel_layout_bytes<'a>(value: &'a [u8], context: &str) -> AvResult<&'a str> {
+    std::str::from_utf8(value)
+        .map_err(|_| AvError::invalid_data(format!("{context} is not valid UTF-8")))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ChannelCustom {
     id: ChannelId,
@@ -491,6 +496,11 @@ impl CustomChannelLayout {
             }
         }
         Ok(Self { channels })
+    }
+
+    pub fn parse_channel_list_bytes(value: &[u8]) -> AvResult<Self> {
+        let value = utf8_channel_layout_bytes(value, "custom channel layout byte string")?;
+        Self::parse_channel_list(value)
     }
 
     pub fn parse_channel_list(value: &str) -> AvResult<Self> {
@@ -2165,6 +2175,11 @@ impl ChannelLayoutSpec {
         Self::unspecified(channels)
     }
 
+    pub fn parse_bytes(value: &[u8]) -> AvResult<Self> {
+        let value = utf8_channel_layout_bytes(value, "channel layout byte string")?;
+        Self::parse(value)
+    }
+
     pub fn parse(value: &str) -> AvResult<Self> {
         let trimmed = value.trim();
         if trimmed.is_empty() {
@@ -3234,6 +3249,61 @@ mod tests {
             let err = CustomChannelLayout::parse_channel_list(invalid).unwrap_err();
             assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         }
+    }
+
+    #[test]
+    fn channel_layout_parsers_reject_non_utf8_byte_inputs() {
+        let custom_bytes =
+            CustomChannelLayout::parse_channel_list_bytes(b"FL@Left\\+Right+USR45").unwrap();
+        assert_eq!(
+            custom_bytes,
+            CustomChannelLayout::parse_channel_list("FL@Left\\+Right+USR45").unwrap()
+        );
+
+        let described = ChannelLayoutSpec::parse_bytes(b"2 channels (FL+FC)").unwrap();
+        assert_eq!(
+            described,
+            ChannelLayoutSpec::NativeMask(
+                NativeChannelMaskLayout::new(
+                    Channel::FrontLeft.mask() | Channel::FrontCenter.mask()
+                )
+                .unwrap()
+            )
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse_bytes(b"FL@Left\\@Name+FR").unwrap(),
+            ChannelLayoutSpec::parse("FL@Left\\@Name+FR").unwrap()
+        );
+
+        for invalid in [
+            &b"FL@\xff+FR"[..],
+            &b"FL@Left\\\xff+FR"[..],
+            &b"ambisonic \xc3\x28"[..],
+        ] {
+            assert_eq!(
+                CustomChannelLayout::parse_channel_list_bytes(invalid)
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidData
+            );
+            assert_eq!(
+                ChannelLayoutSpec::parse_bytes(invalid).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            CustomChannelLayout::parse_channel_list_bytes(b"FL\0+FR")
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse_bytes(b"FL\0+FR")
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
     }
 
     #[test]
