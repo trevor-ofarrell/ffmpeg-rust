@@ -13,13 +13,13 @@ The current code has meaningful local coverage for shared `avutil` primitives, i
 Strict parity status is still low:
 
 - Ledger rows currently tracked: 96
-- Rows marked `implemented`: 95
+- Rows marked `implemented`: 94
 - Rows marked `scaffolded`: 1
 - Rows marked `complete`: 0
-- Rows marked `differential_pass`, `fate_pass`, or `fuzzed`: 0
-- Pinned FFmpeg oracle binary: not installed in this workspace
-- Generated FFmpeg inventory snapshot: not present
-- Upstream FATE sample execution: not running locally
+- Rows marked `differential_pass`, `fate_pass`, or `fuzzed`: 1
+- Pinned FFmpeg oracle: installed locally through WSL wrappers under ignored `third_party/ffmpeg-oracle/`
+- Generated FFmpeg inventory snapshot: present locally under ignored `compat/ffmpeg-8.1.1/`
+- Upstream FATE sample execution: not running locally; sample tree is still absent
 - Actual local `cargo-fuzz` execution: blocked until `cargo-fuzz` is installed
 
 Estimated completion:
@@ -105,11 +105,20 @@ The intended oracle is FFmpeg 8.1.1 built from `release/8.1` with the default-na
 make -j
 ```
 
-The expected local binary path is:
+On this Windows workspace, the repeatable no-sudo bootstrap path is WSL:
+
+```sh
+wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && ./scripts/bootstrap_ffmpeg_oracle_wsl.sh"
+```
+
+That script builds the pinned Linux oracle under ignored `third_party/ffmpeg-oracle/wsl/` and generates wrappers under:
 
 ```text
 ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd
 ```
+
+Windows Rust oracle tests prefer `ffmpeg.exe`, then `ffmpeg.cmd`, then the Unix-style `ffmpeg` path. WSL/Linux runs prefer the Unix-style wrapper. The `third_party/` tree is ignored and should not be committed.
 
 FATE samples are expected under a local samples tree obtained through upstream FFmpeg's documented `make fate-rsync` flow. This repository does not check in oracle binaries or media samples.
 

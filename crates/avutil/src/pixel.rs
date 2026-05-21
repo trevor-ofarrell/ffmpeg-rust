@@ -1223,7 +1223,7 @@ impl PixelFormat {
                 "rgb4_byte",
                 PixelFormatClass::Rgb,
                 3,
-                8,
+                4,
                 1,
                 false,
                 false,
@@ -1235,7 +1235,7 @@ impl PixelFormat {
                 "bgr4_byte",
                 PixelFormatClass::Rgb,
                 3,
-                8,
+                4,
                 1,
                 false,
                 false,
@@ -1415,7 +1415,7 @@ impl PixelFormat {
                 "rgb555be",
                 PixelFormatClass::Rgb,
                 3,
-                16,
+                15,
                 1,
                 false,
                 false,
@@ -1427,7 +1427,7 @@ impl PixelFormat {
                 "rgb555le",
                 PixelFormatClass::Rgb,
                 3,
-                16,
+                15,
                 1,
                 false,
                 false,
@@ -1463,7 +1463,7 @@ impl PixelFormat {
                 "bgr555be",
                 PixelFormatClass::Rgb,
                 3,
-                16,
+                15,
                 1,
                 false,
                 false,
@@ -1475,7 +1475,7 @@ impl PixelFormat {
                 "bgr555le",
                 PixelFormatClass::Rgb,
                 3,
-                16,
+                15,
                 1,
                 false,
                 false,
@@ -1487,7 +1487,7 @@ impl PixelFormat {
                 "rgb444le",
                 PixelFormatClass::Rgb,
                 3,
-                16,
+                12,
                 1,
                 false,
                 false,
@@ -1499,7 +1499,7 @@ impl PixelFormat {
                 "rgb444be",
                 PixelFormatClass::Rgb,
                 3,
-                16,
+                12,
                 1,
                 false,
                 false,
@@ -1511,7 +1511,7 @@ impl PixelFormat {
                 "bgr444le",
                 PixelFormatClass::Rgb,
                 3,
-                16,
+                12,
                 1,
                 false,
                 false,
@@ -1523,7 +1523,7 @@ impl PixelFormat {
                 "bgr444be",
                 PixelFormatClass::Rgb,
                 3,
-                16,
+                12,
                 1,
                 false,
                 false,
@@ -1823,7 +1823,7 @@ impl PixelFormat {
                 "0rgb",
                 PixelFormatClass::Rgb,
                 3,
-                32,
+                24,
                 1,
                 false,
                 false,
@@ -1835,7 +1835,7 @@ impl PixelFormat {
                 "rgb0",
                 PixelFormatClass::Rgb,
                 3,
-                32,
+                24,
                 1,
                 false,
                 false,
@@ -1847,7 +1847,7 @@ impl PixelFormat {
                 "0bgr",
                 PixelFormatClass::Rgb,
                 3,
-                32,
+                24,
                 1,
                 false,
                 false,
@@ -1859,7 +1859,7 @@ impl PixelFormat {
                 "bgr0",
                 PixelFormatClass::Rgb,
                 3,
-                32,
+                24,
                 1,
                 false,
                 false,
@@ -5989,19 +5989,19 @@ mod tests {
             assert!(!format.has_chroma_subsampling());
         }
 
-        for (format, expected_name, expected_bits_per_component) in [
-            (PixelFormat::Rgb565Be, "rgb565be", 6),
-            (PixelFormat::Rgb565Le, "rgb565le", 6),
-            (PixelFormat::Rgb555Be, "rgb555be", 5),
-            (PixelFormat::Rgb555Le, "rgb555le", 5),
-            (PixelFormat::Bgr565Be, "bgr565be", 6),
-            (PixelFormat::Bgr565Le, "bgr565le", 6),
-            (PixelFormat::Bgr555Be, "bgr555be", 5),
-            (PixelFormat::Bgr555Le, "bgr555le", 5),
-            (PixelFormat::Rgb444Le, "rgb444le", 4),
-            (PixelFormat::Rgb444Be, "rgb444be", 4),
-            (PixelFormat::Bgr444Le, "bgr444le", 4),
-            (PixelFormat::Bgr444Be, "bgr444be", 4),
+        for (format, expected_name, expected_bits_per_component, expected_bits_per_pixel) in [
+            (PixelFormat::Rgb565Be, "rgb565be", 6, bpp(16)),
+            (PixelFormat::Rgb565Le, "rgb565le", 6, bpp(16)),
+            (PixelFormat::Rgb555Be, "rgb555be", 5, bpp(15)),
+            (PixelFormat::Rgb555Le, "rgb555le", 5, bpp(15)),
+            (PixelFormat::Bgr565Be, "bgr565be", 6, bpp(16)),
+            (PixelFormat::Bgr565Le, "bgr565le", 6, bpp(16)),
+            (PixelFormat::Bgr555Be, "bgr555be", 5, bpp(15)),
+            (PixelFormat::Bgr555Le, "bgr555le", 5, bpp(15)),
+            (PixelFormat::Rgb444Le, "rgb444le", 4, bpp(12)),
+            (PixelFormat::Rgb444Be, "rgb444be", 4, bpp(12)),
+            (PixelFormat::Bgr444Le, "bgr444le", 4, bpp(12)),
+            (PixelFormat::Bgr444Be, "bgr444be", 4, bpp(12)),
         ] {
             let descriptor = format.descriptor();
             assert_eq!(descriptor.format, format);
@@ -6013,7 +6013,7 @@ mod tests {
             assert!(!format.is_yuv());
             assert_eq!(descriptor.component_count, 3);
             assert_eq!(descriptor.bits_per_component, expected_bits_per_component);
-            assert_eq!(descriptor.bits_per_pixel, bpp(16));
+            assert_eq!(descriptor.bits_per_pixel, expected_bits_per_pixel);
             assert_eq!(descriptor.plane_count, 1);
             assert!(!descriptor.is_planar);
             assert!(!descriptor.has_alpha);
@@ -6342,7 +6342,7 @@ mod tests {
         assert_eq!(PixelFormat::Rgb4.bits_per_component(), 2);
         assert_eq!(PixelFormat::Bgr4.bits_per_pixel(), bpp(4));
         assert_eq!(PixelFormat::Rgb4Byte.bits_per_component(), 2);
-        assert_eq!(PixelFormat::Bgr4Byte.bits_per_pixel(), bpp(8));
+        assert_eq!(PixelFormat::Bgr4Byte.bits_per_pixel(), bpp(4));
         assert_eq!(PixelFormat::BayerBggr8.component_count(), 3);
         assert_eq!(PixelFormat::BayerBggr8.bits_per_component(), 8);
         assert_eq!(PixelFormat::BayerBggr8.bits_per_pixel(), bpp(8));
@@ -6464,7 +6464,7 @@ mod tests {
         assert_eq!(PixelFormat::Rgb565Le.bits_per_component(), 6);
         assert_eq!(PixelFormat::Rgb565Le.bits_per_pixel(), bpp(16));
         assert_eq!(PixelFormat::Bgr555Be.bits_per_component(), 5);
-        assert_eq!(PixelFormat::Bgr555Be.bits_per_pixel(), bpp(16));
+        assert_eq!(PixelFormat::Bgr555Be.bits_per_pixel(), bpp(15));
         assert_eq!(PixelFormat::Rgb444Le.bits_per_component(), 4);
         assert_eq!(PixelFormat::Bgr444Be.bits_per_component(), 4);
         assert_eq!(PixelFormat::Rgba64Le.component_count(), 4);
@@ -6575,7 +6575,7 @@ mod tests {
         assert_eq!(PixelFormat::Rgba.component_count(), 4);
         assert_eq!(PixelFormat::Rgba.bits_per_pixel(), bpp(32));
         assert_eq!(PixelFormat::ZeroRgb.component_count(), 3);
-        assert_eq!(PixelFormat::ZeroRgb.bits_per_pixel(), bpp(32));
+        assert_eq!(PixelFormat::ZeroRgb.bits_per_pixel(), bpp(24));
         assert_eq!(PixelFormat::Yuv420p9Le.bits_per_pixel_integer(), None);
         assert_eq!(PixelFormat::Yuva420p9Le.bits_per_pixel_integer(), None);
         assert_eq!(PixelFormat::Yuv422p9Le.bits_per_pixel_integer(), Some(18));

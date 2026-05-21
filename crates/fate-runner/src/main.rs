@@ -15,6 +15,7 @@ const DEFAULT_SAMPLES_ROOT_CANDIDATES: &[&str] = &[
 const ORACLE_FFMPEG_ENV_VARS: &[&str] = &["FFMPEG_ORACLE"];
 const DEFAULT_ORACLE_FFMPEG_CANDIDATES: &[&str] = &[
     "third_party/ffmpeg-oracle/build/bin/ffmpeg.exe",
+    "third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd",
     "third_party/ffmpeg-oracle/build/bin/ffmpeg",
 ];
 const SUPPORTED_PLACEHOLDERS: &[&str] = &["samples", "oracle_ffmpeg"];
@@ -1293,7 +1294,7 @@ where
         .copied()
         .find(|path| is_dir(path))
     {
-        return Ok(samples_root.to_string());
+        return Ok(default_prerequisite_path(samples_root));
     }
 
     Err(format!(
@@ -1341,7 +1342,7 @@ where
         .copied()
         .find(|path| is_file(path))
     {
-        return Ok(oracle_ffmpeg.to_string());
+        return Ok(default_prerequisite_path(oracle_ffmpeg));
     }
 
     Err(format!(
@@ -1362,6 +1363,17 @@ fn path_is_dir(path: &str) -> bool {
 
 fn path_is_file(path: &str) -> bool {
     Path::new(path).is_file()
+}
+
+fn default_prerequisite_path(path: &str) -> String {
+    let path = Path::new(path);
+    if path.is_absolute() {
+        path.display().to_string()
+    } else {
+        env::current_dir()
+            .map(|cwd| cwd.join(path).display().to_string())
+            .unwrap_or_else(|_| path.display().to_string())
+    }
 }
 
 fn format_mapping_command(mapping: &FateMapping) -> String {
@@ -2399,6 +2411,12 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
         let env_var = |_name: &str| None;
         let is_dir = |path: &str| path == "third_party/fate-samples";
         let is_file = |path: &str| path == "third_party/ffmpeg-oracle/build/bin/ffmpeg.exe";
+        let cwd = std::env::current_dir().unwrap();
+        let expected_samples = cwd.join("third_party/fate-samples").display().to_string();
+        let expected_ffmpeg = cwd
+            .join("third_party/ffmpeg-oracle/build/bin/ffmpeg.exe")
+            .display()
+            .to_string();
 
         assert_eq!(
             resolve_fate_mapping_with(
@@ -2412,8 +2430,8 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             FateMapping {
                 component_id: "avformat-wav-demuxer".to_string(),
                 target: "sample-framecrc".to_string(),
-                workdir: "third_party/fate-samples".to_string(),
-                program: "third_party/ffmpeg-oracle/build/bin/ffmpeg.exe".to_string(),
+                workdir: expected_samples,
+                program: expected_ffmpeg,
                 env: vec![],
                 args: vec!["-version".to_string()],
             }

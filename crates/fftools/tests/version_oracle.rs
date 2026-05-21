@@ -200,16 +200,31 @@ fn sibling_tool_candidates(ffmpeg_path: &Path, tool_name: &str) -> Vec<PathBuf> 
     {
         candidates.push(parent.join(format!("{tool_name}.exe")));
     }
+    if ffmpeg_path
+        .extension()
+        .is_some_and(|extension| extension == "cmd")
+    {
+        candidates.push(parent.join(format!("{tool_name}.cmd")));
+    }
     candidates.push(parent.join(tool_name));
     candidates.push(parent.join(format!("{tool_name}.exe")));
+    candidates.push(parent.join(format!("{tool_name}.cmd")));
     candidates
 }
 
-fn default_tool_candidates(root: &Path, tool_name: &str) -> [PathBuf; 2] {
-    [
-        root.join("third_party/ffmpeg-oracle/build/bin")
-            .join(tool_name),
-        root.join("third_party/ffmpeg-oracle/build/bin")
-            .join(format!("{tool_name}.exe")),
-    ]
+fn default_tool_candidates(root: &Path, tool_name: &str) -> Vec<PathBuf> {
+    let bin = root.join("third_party/ffmpeg-oracle/build/bin");
+    if cfg!(windows) {
+        vec![
+            bin.join(format!("{tool_name}.exe")),
+            bin.join(format!("{tool_name}.cmd")),
+            bin.join(tool_name),
+        ]
+    } else {
+        vec![
+            bin.join(tool_name),
+            bin.join(format!("{tool_name}.exe")),
+            bin.join(format!("{tool_name}.cmd")),
+        ]
+    }
 }

@@ -2,6 +2,12 @@
 
 ## Current Status
 
+Latest oracle-install slice: the pinned FFmpeg 8.1.1 oracle is now installed locally through ignored WSL wrappers under `third_party/ffmpeg-oracle/`, and `.gitignore` now excludes `third_party/` so FFmpeg build artifacts such as `.d` dependency files are not tracked. The bootstrap script is `scripts/bootstrap_ffmpeg_oracle_wsl.sh`; it builds tag `n8.1.1`, writes a release-shaped `VERSION` file so banners report `8.1.1`, installs under `third_party/ffmpeg-oracle/wsl/`, and generates Windows `.cmd` plus Unix-style wrappers under `third_party/ffmpeg-oracle/build/bin/`.
+
+Latest parity status: strict completion is still 0/96 components (`0%`) because no component is marked `complete` under the project completion rules. Intermediate measurable parity improved to 1/96 non-complete status rows: `fftools-version` is now `differential_pass` after the pinned `ffmpeg -version` and `ffprobe -version` oracle mappings passed. Current ledger status counts are 94 `implemented`, 1 `scaffolded`, 1 `differential_pass`, and 0 `complete`.
+
+Latest oracle evidence: `cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1` generated local ignored inventory snapshots. The local oracle also passed version, sample-format, color, pixel-format subset, rawvideo generated, and WAV generated differential checks. The `avutil-channel-layout` oracle now runs and exposes real parity gaps instead of an environment blocker: missing `3.1.2`, plus `22.2` and `hexadecagonal` layout-order mismatches. FATE samples and actual `cargo fuzz run` execution are still absent.
+
 Goal resumed after the Codex runtime update: the active objective is now staged. First reach 10% strict parity, defined for the current 96-row ledger as at least 10 components marked `complete` under the normal completion definition, then continue the same ledger loop toward 100% FFmpeg 8.1.1 default-native compatibility and later profiles. `AGENTS.md` and `README.md` now both spell out this 10% milestone and name the first preferred completion candidates: `avutil-error`, `avutil-rational`, `avutil-timebase`, `avutil-byteio`, `avutil-bitreader`, `avutil-bitwriter`, `avutil-dict`, `avutil-options`, `avutil-logging`, and `avutil-hash`.
 
 Latest documentation update: added the repository-level `README.md` with the project mission, non-wrapper/oracle-only policy, current compatibility boundary, strict ledger counts, conservative completion estimate, workspace layout, useful commands, oracle/FATE workflow, progress-tracking files, and license cautions. The README reports strict parity completion as 0% because no ledger entries are marked `complete`, `differential_pass`, `fate_pass`, or `fuzzed`, and reports practical engineering progress at about 2% of a complete FFmpeg 8.1.1 default-native rewrite.
@@ -471,6 +477,27 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current oracle-install slice:
+  - `cmd /c wsl -d Ubuntu --exec bash -lc "git ls-remote --tags https://git.ffmpeg.org/ffmpeg.git n8.1.1"` found the pinned tag.
+  - `cmd /c wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && ./scripts/bootstrap_ffmpeg_oracle_wsl.sh"` installed FFmpeg/ffprobe 8.1.1 wrappers under ignored `third_party/ffmpeg-oracle/build/bin/`.
+  - `cmd /c third_party\ffmpeg-oracle\build\bin\ffmpeg.cmd -version` and `cmd /c third_party\ffmpeg-oracle\build\bin\ffprobe.cmd -version` both reported version `8.1.1`.
+  - `cmd /c cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1`
+  - `cmd /c cargo test -p fftools --test version_oracle -- --ignored`
+  - `cmd /c cargo run --target-dir target-codex -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version`
+  - `cmd /c cargo test -p avutil --test sample_format_oracle -- --ignored`
+  - `cmd /c cargo test -p avutil --test color_oracle -- --ignored`
+  - `cmd /c cargo test -p avutil --test pixel_format_oracle -- --ignored`
+  - `cmd /c cargo test -p fftools --test rawvideo_oracle -- --ignored`
+  - `cmd /c cargo test -p fftools --test wav_oracle wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle -- --ignored`
+  - `cmd /c cargo run --target-dir target-codex -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-ffmpeg-rawvideo-file-output --target oracle-rawvideo-file-output`
+  - `cmd /c cargo run --target-dir target-codex -p fate-runner -- run --mappings tests/differential/mappings.txt --component avformat-wav-demuxer --target oracle-wav-generated-md5`
+  - `cmd /c cargo test --target-dir target-codex -p fate-runner`
+  - `cmd /c cargo test -p avutil --lib pixel`
+  - `cmd /c cargo fmt --all -- --check`
+  - `cmd /c cargo clippy -p avutil --all-targets -- -D warnings`
+  - `cmd /c cargo clippy -p fate-runner --all-targets -- -D warnings`
+  - `cmd /c cargo clippy -p fftools --all-targets -- -D warnings`
 
 - Current goal-resume milestone update:
   - Runtime goal recreated with 10% strict parity as the first objective, then 100% parity after that.
@@ -4937,6 +4964,13 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current oracle-install slice:
+  - `cmd /c cargo test -p avutil --test channel_layout_oracle -- --ignored` was blocked by Windows Application Control before the test body executed. The equivalent `cmd /c cargo test --target-dir target-codex -p avutil --test channel_layout_oracle -- --ignored` executed the pinned oracle and failed on real parity mismatches: missing `3.1.2`, `22.2` layout decomposition order mismatch, and `hexadecagonal` layout decomposition order mismatch.
+  - `cmd /c cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version` was blocked by Windows Application Control on a fresh default `target` fate-runner binary. The equivalent command with `--target-dir target-codex` passed.
+  - `cmd /c cargo test -p avutil pixel` hit Windows Application Control when Cargo tried to launch an unrelated integration-test executable under the broad filter. The relevant focused `cmd /c cargo test -p avutil --lib pixel` passed.
+  - The first `ffmpeg -pix_fmts` oracle run failed because FFmpeg 8.1.1 prints a `BIT_DEPTHS` column; the parser now accepts rows with at least the required columns.
+  - The first pixel oracle comparison exposed descriptor bpp mismatches for `rgb4_byte`/`bgr4_byte`, RGB/BGR 555, RGB/BGR 444, and 0-padding RGB/BGR formats; the Rust descriptor metadata was corrected and the oracle test now passes.
+
 - Current goal-resume milestone update:
   - Some direct PowerShell sandbox spawns failed with `windows sandbox: spawn setup refresh`; retrying through `cmd /c powershell -NoProfile -Command ...` worked for the required file/status reads.
 
@@ -5397,6 +5431,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-channel-layout` is the current focus after oracle installation. The local pinned FFmpeg 8.1.1 oracle now exposes real `ffmpeg -layouts` parity gaps instead of an environment blocker: missing `3.1.2`, plus `22.2` and `hexadecagonal` standard-layout decomposition-order mismatches. This is the next high-priority incomplete component because it is early avutil infrastructure and now has executable oracle evidence.
+
 Goal milestone tracking is the active focus for this turn. The concrete change recreates the runtime goal and updates the persistent project instructions so the rewrite loop targets 10% strict parity first, then resumes the full 100% FFmpeg parity objective. No ledger component status changed.
 
 Documentation is the active focus for this turn. The concrete change adds a root `README.md` that summarizes project scope, current status, commands, oracle/FATE setup, and a conservative completion estimate. No ledger component status changed.
@@ -5657,11 +5693,17 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Provide a native build toolchain, install a WSL distribution with build tools, or place pinned FFmpeg 8.1.1 oracle binaries at `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` and `ffprobe(.exe)` or set `FFMPEG_ORACLE`/`FFPROBE_ORACLE`, then run `oracle-inventory|local-oracle-unit`, generate the pinned inventory snapshots, and run `fftools-version|oracle-ffmpeg-version` plus `fftools-version|oracle-ffprobe-version`.
-2. With the same oracle, run the current inventory rows: `avutil-pixel-format|oracle-ffmpeg-pix-fmts-subset`, `avutil-sample-format|oracle-ffmpeg-sample-fmts`, `avutil-color|oracle-ffmpeg-colors`, and `avutil-channel-layout|oracle-ffmpeg-layouts`, then add parser-level color oracle vectors through an oracle-exposed path such as the FFmpeg color filter.
-3. Configure `third_party/fate-samples` or `FATE_SAMPLES` and run `avformat-wav-demuxer|fate-wav-pcm-s16le-md5`; if local oracle/samples remain unavailable, continue the next unblocked high-priority avutil infrastructure slice with local unit/fuzz-build coverage and an ignored differential row where measurable.
+1. Fix `avutil-channel-layout` known-layout inventory/order parity for `3.1.2`, `22.2`, and `hexadecagonal` without weakening the `ffmpeg -layouts` oracle test.
+2. Rerun `cargo test -p avutil --test channel_layout_oracle -- --ignored`, focused channel-layout unit tests, formatting, and affected clippy gates.
+3. Then move strict-completion proof work for the first 10% candidates: add or justify differential/FATE/fuzz evidence for `avutil-error`, `avutil-rational`, `avutil-timebase`, `avutil-byteio`, `avutil-bitreader`, `avutil-bitwriter`, `avutil-dict`, `avutil-options`, `avutil-logging`, and `avutil-hash`.
 
 ## Known Blockers
+
+- Local pinned FFmpeg 8.1.1 oracle installation is no longer a blocker. The WSL-backed wrappers exist under ignored `third_party/ffmpeg-oracle/build/bin/`, and local inventory snapshots have been generated under ignored `compat/ffmpeg-8.1.1/`.
+- FATE samples are still absent locally, so sample-backed upstream FATE rows such as `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` remain blocked until `third_party/fate-samples`, `FATE_SAMPLES`, or an equivalent sample tree is configured.
+- The `cargo fuzz` subcommand is not installed, so fuzz targets are currently build-checked only; actual fuzz execution is still pending.
+- `avutil-channel-layout` now has oracle execution evidence and fails on real parity gaps: missing `3.1.2`, plus `22.2` and `hexadecagonal` decomposition-order mismatches.
+- Windows Application Control intermittently blocks freshly built Cargo test executables. Use already accepted target caches or `target-codex` fallbacks when the same command is blocked before Rust code executes.
 
 - Attempted local oracle build discovery found Git and `wsl.exe`, but no installed WSL distribution and no native `gcc`, `make`, `cl`, `clang`, `cmake`, `winget`, `choco`, or `pacman` on PATH. A source build of pinned FFmpeg 8.1.1 is therefore blocked in this environment unless a toolchain/oracle binary is provided.
 
@@ -5794,6 +5836,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: installed the pinned FFmpeg 8.1.1 oracle through ignored WSL wrappers, ignored `third_party/` so FFmpeg build `.d` files and other generated build artifacts are not tracked, and generated local ignored oracle inventory snapshots under `compat/ffmpeg-8.1.1/`. Oracle discovery now includes the generated Windows `.cmd` wrappers, default `fate-runner` prerequisite discovery returns absolute default paths, `fftools-version` advanced to `differential_pass`, and rawvideo/WAV/sample-format/color/pixel-format oracle checks run locally. Pixel-format oracle parsing now accepts FFmpeg 8.1.1's extra `BIT_DEPTHS` column and several Rust pixel descriptor logical bpp values were corrected. The channel-layout oracle now runs and exposes the next real parity gap.
 
 Latest slice: resumed and restated the full rewrite goal with a 10% strict-parity milestone first. The runtime goal now targets at least 10 complete ledger components before continuing to full FFmpeg 8.1.1 parity. `AGENTS.md` has a new Active Milestone section, `README.md` has a matching Current Operating Milestone section, and `AGENT_STATE.md` records the resumed objective and shell fallback used for status reads. No component status changed.
 

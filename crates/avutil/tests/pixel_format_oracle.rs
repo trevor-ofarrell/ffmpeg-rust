@@ -143,7 +143,7 @@ fn parse_pixel_format_inventory(text: &str) -> BTreeMap<String, PixelFormatRow> 
         }
 
         let columns = trimmed.split_whitespace().collect::<Vec<_>>();
-        if columns.len() != 4 || columns[0].len() != 5 {
+        if columns.len() < 4 || columns[0].len() != 5 {
             continue;
         }
 
@@ -185,18 +185,32 @@ fn oracle_ffmpeg() -> PathBuf {
         .and_then(Path::parent)
         .expect("avutil crate should be under crates/");
 
-    let unix_path = root.join("third_party/ffmpeg-oracle/build/bin/ffmpeg");
-    if unix_path.is_file() {
-        return unix_path;
-    }
-
-    let windows_path = root.join("third_party/ffmpeg-oracle/build/bin/ffmpeg.exe");
-    if windows_path.is_file() {
-        return windows_path;
+    for candidate in default_ffmpeg_candidates(root) {
+        if candidate.is_file() {
+            return candidate;
+        }
     }
 
     panic!(
         "missing pinned FFmpeg oracle; set FFMPEG_ORACLE or install `{}`",
-        unix_path.display()
+        root.join("third_party/ffmpeg-oracle/build/bin/ffmpeg")
+            .display()
     );
+}
+
+fn default_ffmpeg_candidates(root: &Path) -> Vec<PathBuf> {
+    let bin = root.join("third_party/ffmpeg-oracle/build/bin");
+    if cfg!(windows) {
+        vec![
+            bin.join("ffmpeg.exe"),
+            bin.join("ffmpeg.cmd"),
+            bin.join("ffmpeg"),
+        ]
+    } else {
+        vec![
+            bin.join("ffmpeg"),
+            bin.join("ffmpeg.exe"),
+            bin.join("ffmpeg.cmd"),
+        ]
+    }
 }

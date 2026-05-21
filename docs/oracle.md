@@ -15,7 +15,13 @@ The expected binary path for automated inventory is:
 ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
-That binary is not checked into this repository.
+That binary is not checked into this repository. On this Windows workspace, use the WSL bootstrap script to build the pinned oracle without requiring system package changes:
+
+```sh
+wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && ./scripts/bootstrap_ffmpeg_oracle_wsl.sh"
+```
+
+The script clones tag `n8.1.1`, configures FFmpeg with `--disable-gpl --disable-nonfree --disable-doc --disable-x86asm`, installs the Linux oracle under ignored `third_party/ffmpeg-oracle/wsl/`, and generates wrappers under `third_party/ffmpeg-oracle/build/bin/`. Windows-side tests prefer `ffmpeg.exe`, then the generated `ffmpeg.cmd` WSL wrapper, then the Unix-style `ffmpeg` wrapper; WSL/Linux-side commands use the Unix-style wrapper directly.
 
 ## Inventory Generation
 
@@ -23,6 +29,12 @@ Run:
 
 ```sh
 cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg --out compat/ffmpeg-8.1.1
+```
+
+On Windows, the generated WSL wrapper can be used directly:
+
+```sh
+cargo run -p oracle -- inventory --ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd --out compat/ffmpeg-8.1.1
 ```
 
 The inventory tool captures:
@@ -94,9 +106,9 @@ cargo test -p fftools --test rawvideo_oracle -- --ignored
 
 The harness currently compares Rust constrained `-f rawvideo ... -f rawvideo <file>` output bytes against pinned FFmpeg `-c:v copy -f rawvideo` output for `rgb24` and `gbrp10msble`. If `FFMPEG_ORACLE` is unset and `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` is absent, the ignored tests fail before comparison instead of silently passing.
 
-The same harness is wired into `tests/differential/mappings.txt`, which can be executed through `fate-runner` with `--mappings tests/differential/mappings.txt --oracle-ffmpeg <path> --component fftools-ffmpeg-rawvideo-file-output` once the pinned oracle binary exists.
+The same harness is wired into `tests/differential/mappings.txt`, which can be executed through `fate-runner` with `--mappings tests/differential/mappings.txt --oracle-ffmpeg <path> --component fftools-ffmpeg-rawvideo-file-output`. The current `rgb24` and `gbrp10msble` rows have passed locally through the generated WSL oracle wrapper.
 
-`crates/avutil/tests/channel_layout_oracle.rs` is an ignored oracle harness for `ffmpeg -layouts`. It compares individual-channel names/descriptions and standard-layout decompositions against the current Rust `Channel::ALL` and `ChannelLayout::known_layouts()` inventories. It is wired into `tests/differential/mappings.txt` as `avutil-channel-layout|oracle-ffmpeg-layouts`, but local execution is blocked until the pinned oracle binary exists.
+`crates/avutil/tests/channel_layout_oracle.rs` is an ignored oracle harness for `ffmpeg -layouts`. It compares individual-channel names/descriptions and standard-layout decompositions against the current Rust `Channel::ALL` and `ChannelLayout::known_layouts()` inventories. It is wired into `tests/differential/mappings.txt` as `avutil-channel-layout|oracle-ffmpeg-layouts`; local execution now runs through the pinned WSL oracle wrapper and currently fails on real parity gaps: missing `3.1.2`, plus `22.2` and `hexadecagonal` layout-order mismatches.
 
 `crates/avutil/tests/pixel_format_oracle.rs` is an ignored oracle harness for `ffmpeg -pix_fmts`. It checks that every currently modeled `PixelFormat::ALL` descriptor name appears in the oracle inventory with matching component count, integer bits-per-pixel value where the Rust descriptor is exact, and paletted flag. It intentionally does not claim full FFmpeg pixel inventory parity. It is wired into `tests/differential/mappings.txt` as `avutil-pixel-format|oracle-ffmpeg-pix-fmts-subset`. Run it with:
 
