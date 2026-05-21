@@ -157,13 +157,14 @@ impl WavMuxer {
     pub fn new_pcm_s16le(channels: u16, sample_rate: u32) -> AvResult<Self> {
         let audio =
             AudioStreamParameters::with_context(sample_rate, channels, SampleFormat::S16, "WAV")?;
-        let block_align = block_align_for_audio(audio, AvErrorKind::InvalidArgument)?;
-        let byte_rate = byte_rate_for_audio(audio, block_align, AvErrorKind::InvalidArgument)?;
+        let block_align = block_align_for_audio(&audio, AvErrorKind::InvalidArgument)?;
+        let byte_rate = byte_rate_for_audio(&audio, block_align, AvErrorKind::InvalidArgument)?;
+        let bits_per_sample = audio.bits_per_sample()?;
         let info = WavInfo {
             audio,
             byte_rate,
             block_align,
-            bits_per_sample: audio.bits_per_sample()?,
+            bits_per_sample,
             data_size: 0,
         };
         validate_pcm_s16le(&info)?;
@@ -299,7 +300,7 @@ fn validate_pcm_s16le(info: &WavInfo) -> AvResult<()> {
         )));
     }
 
-    let expected_block_align = block_align_for_audio(info.audio, AvErrorKind::InvalidData)?;
+    let expected_block_align = block_align_for_audio(&info.audio, AvErrorKind::InvalidData)?;
     if info.block_align != expected_block_align {
         return Err(AvError::invalid_data(format!(
             "WAV block align {} does not match expected {expected_block_align}",
@@ -308,7 +309,7 @@ fn validate_pcm_s16le(info: &WavInfo) -> AvResult<()> {
     }
 
     let expected_byte_rate =
-        byte_rate_for_audio(info.audio, info.block_align, AvErrorKind::InvalidData)?;
+        byte_rate_for_audio(&info.audio, info.block_align, AvErrorKind::InvalidData)?;
     if info.byte_rate != expected_byte_rate {
         return Err(AvError::invalid_data(format!(
             "WAV byte rate {} does not match expected {expected_byte_rate}",
@@ -325,13 +326,13 @@ fn validate_pcm_s16le(info: &WavInfo) -> AvResult<()> {
     Ok(())
 }
 
-fn block_align_for_audio(audio: AudioStreamParameters, error_kind: AvErrorKind) -> AvResult<u16> {
+fn block_align_for_audio(audio: &AudioStreamParameters, error_kind: AvErrorKind) -> AvResult<u16> {
     u16::try_from(audio.bytes_per_sample_frame())
         .map_err(|_| AvError::new(error_kind, "WAV block align does not fit u16"))
 }
 
 fn byte_rate_for_audio(
-    audio: AudioStreamParameters,
+    audio: &AudioStreamParameters,
     block_align: u16,
     error_kind: AvErrorKind,
 ) -> AvResult<u32> {

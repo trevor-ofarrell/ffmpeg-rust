@@ -12163,7 +12163,7 @@ impl AudioFrame {
             ));
         }
 
-        if let Some(layout) = channel_layout {
+        if let Some(layout) = &channel_layout {
             layout.validate_channel_count(channels)?;
         }
 
@@ -12196,11 +12196,13 @@ impl AudioFrame {
     }
 
     pub fn channel_layout(&self) -> Option<ChannelLayout> {
-        self.channel_layout.and_then(ChannelLayoutSpec::as_native)
+        self.channel_layout
+            .as_ref()
+            .and_then(ChannelLayoutSpec::as_native)
     }
 
     pub fn channel_layout_spec(&self) -> Option<ChannelLayoutSpec> {
-        self.channel_layout
+        self.channel_layout.clone()
     }
 
     pub fn sample_format(&self) -> SampleFormat {

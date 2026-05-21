@@ -4588,6 +4588,30 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             AvErrorKind::InvalidArgument
         );
     }
+    let custom_spec = ChannelLayoutSpec::parse("FL@Left+FR@Right").unwrap();
+    assert_eq!(
+        custom_spec.as_custom(),
+        Some(&CustomChannelLayout::parse_channel_list("FL@Left+FR@Right").unwrap())
+    );
+    assert_eq!(custom_spec.describe(), "2 channels (FL@Left+FR@Right)");
+    assert!(custom_spec.is_equivalent_to_native(ChannelLayout::stereo()));
+    let duplicate_custom_spec = ChannelLayoutSpec::parse("FL+FL").unwrap();
+    assert_eq!(duplicate_custom_spec.describe(), "2 channels (FL+FL)");
+    assert_eq!(
+        duplicate_custom_spec.channel_from_index(1),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
+    assert!(!duplicate_custom_spec.is_equivalent_to_native(ChannelLayout::stereo()));
+    assert_eq!(
+        ChannelLayoutSpec::parse("UNK+UNK").unwrap(),
+        ChannelLayoutSpec::unspecified(2).unwrap()
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3")
+            .unwrap()
+            .describe(),
+        "ambisonic 1"
+    );
     assert_eq!(ChannelLayout::from_channel_mask(layout.channel_mask()), Some(layout));
     assert_eq!(ChannelLayout::from_channels(layout.channels()), Some(layout));
     assert_eq!(
@@ -9773,6 +9797,9 @@ fn exercise_fixtures() {
         "-0x3",
         "09",
         "0x3g",
+        "NONE",
+        "NOPE@Left",
+        "FL@Left@Again",
     ] {
         assert_eq!(
             ChannelLayoutSpec::parse(invalid).unwrap_err().kind(),
@@ -9784,6 +9811,30 @@ fn exercise_fixtures() {
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidArgument
+    );
+    let custom_spec = ChannelLayoutSpec::parse("FL@Left+FR@Right").unwrap();
+    assert_eq!(
+        custom_spec.as_custom(),
+        Some(&CustomChannelLayout::parse_channel_list("FL@Left+FR@Right").unwrap())
+    );
+    assert_eq!(custom_spec.describe(), "2 channels (FL@Left+FR@Right)");
+    assert!(custom_spec.is_equivalent_to_native(ChannelLayout::stereo()));
+    let duplicate_custom_spec = ChannelLayoutSpec::parse("FL+FL").unwrap();
+    assert_eq!(duplicate_custom_spec.describe(), "2 channels (FL+FL)");
+    assert_eq!(
+        duplicate_custom_spec.channel_from_index(1),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
+    assert!(!duplicate_custom_spec.is_equivalent_to_native(ChannelLayout::stereo()));
+    assert_eq!(
+        ChannelLayoutSpec::parse("UNK+UNK").unwrap(),
+        ChannelLayoutSpec::unspecified(2).unwrap()
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3")
+            .unwrap()
+            .describe(),
+        "ambisonic 1"
     );
     let custom_layout = CustomChannelLayout::new(vec![
         ChannelCustom::new(ChannelId::Native(Channel::FrontLeft), "Left").unwrap(),

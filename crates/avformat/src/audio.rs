@@ -1,6 +1,6 @@
 use avutil::{AvError, AvErrorKind, AvResult, ChannelLayout, ChannelLayoutSpec, SampleFormat};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioStreamParameters {
     sample_rate: u32,
     channels: u16,
@@ -50,31 +50,33 @@ impl AudioStreamParameters {
         )
     }
 
-    pub fn sample_rate(self) -> u32 {
+    pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
-    pub fn channels(self) -> u16 {
+    pub fn channels(&self) -> u16 {
         self.channels
     }
 
-    pub fn channel_layout(self) -> Option<ChannelLayout> {
-        self.channel_layout.and_then(ChannelLayoutSpec::as_native)
-    }
-
-    pub fn channel_layout_spec(self) -> Option<ChannelLayoutSpec> {
+    pub fn channel_layout(&self) -> Option<ChannelLayout> {
         self.channel_layout
+            .as_ref()
+            .and_then(ChannelLayoutSpec::as_native)
     }
 
-    pub fn sample_format(self) -> SampleFormat {
+    pub fn channel_layout_spec(&self) -> Option<ChannelLayoutSpec> {
+        self.channel_layout.clone()
+    }
+
+    pub fn sample_format(&self) -> SampleFormat {
         self.sample_format
     }
 
-    pub fn bytes_per_sample_frame(self) -> usize {
+    pub fn bytes_per_sample_frame(&self) -> usize {
         self.bytes_per_sample_frame
     }
 
-    pub fn bits_per_sample(self) -> AvResult<u16> {
+    pub fn bits_per_sample(&self) -> AvResult<u16> {
         let bits = self
             .sample_format
             .bytes_per_sample()
@@ -85,7 +87,7 @@ impl AudioStreamParameters {
     }
 
     pub fn sample_frames_in_bytes(
-        self,
+        &self,
         byte_len: usize,
         error_kind: AvErrorKind,
         message: impl Into<String>,
