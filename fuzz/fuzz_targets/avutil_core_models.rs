@@ -1038,6 +1038,10 @@ fn exercise_errors(cursor: &mut Cursor<'_>) {
     assert_eq!(AvErrorCode::EXPERIMENTAL.raw(), -0x2bb2_afa8);
     assert_eq!(AvErrorCode::INPUT_CHANGED.raw(), -0x636e_6701);
     assert_eq!(AvErrorCode::OUTPUT_CHANGED.raw(), -0x636e_6702);
+    assert_eq!(AvErrorCode::EINVAL, AvErrorCode::from_posix_errno(22));
+    assert_eq!(AvErrorCode::EINVAL.raw(), -22);
+    assert_eq!(AvErrorCode::ENOENT.raw(), -2);
+    assert_eq!(AvErrorCode::ENOSYS.raw(), -38);
     assert_eq!(
         AvErrorCode::INPUT_AND_OUTPUT_CHANGED.raw(),
         AvErrorCode::INPUT_CHANGED.raw() | AvErrorCode::OUTPUT_CHANGED.raw()
@@ -1057,6 +1061,11 @@ fn exercise_errors(cursor: &mut Cursor<'_>) {
     assert_eq!(
         AvErrorCode::HTTP_TOO_MANY_REQUESTS.make_error_string(),
         "Server returned 429 Too Many Requests"
+    );
+    assert_eq!(AvErrorCode::EINVAL.description(), Some("Invalid argument"));
+    assert_eq!(
+        AvErrorCode::EAGAIN.make_error_string(),
+        "Resource temporarily unavailable"
     );
     assert_eq!(av_error_description(-123_456), None);
     assert_eq!(
@@ -1091,14 +1100,18 @@ fn exercise_errors(cursor: &mut Cursor<'_>) {
         (
             AvError::invalid_argument("invalid argument"),
             AvErrorKind::InvalidArgument,
-            None,
+            Some(AvErrorCode::EINVAL),
         ),
         (
             AvError::invalid_data("invalid data"),
             AvErrorKind::InvalidData,
             Some(AvErrorCode::INVALIDDATA),
         ),
-        (AvError::not_found("not found"), AvErrorKind::NotFound, None),
+        (
+            AvError::not_found("not found"),
+            AvErrorKind::NotFound,
+            Some(AvErrorCode::ENOENT),
+        ),
         (
             AvError::end_of_file("end of file"),
             AvErrorKind::EndOfFile,
@@ -1107,7 +1120,7 @@ fn exercise_errors(cursor: &mut Cursor<'_>) {
         (
             AvError::unsupported("unsupported"),
             AvErrorKind::Unsupported,
-            None,
+            Some(AvErrorCode::ENOSYS),
         ),
         (
             AvError::external("external"),
@@ -21299,8 +21312,15 @@ fn expected_av_error_kind_for_io(kind: io::ErrorKind) -> AvErrorKind {
 
 fn expected_av_error_code_for_io(kind: io::ErrorKind) -> Option<AvErrorCode> {
     match kind {
+        io::ErrorKind::NotFound => Some(AvErrorCode::ENOENT),
+        io::ErrorKind::PermissionDenied => Some(AvErrorCode::EACCES),
+        io::ErrorKind::Interrupted => Some(AvErrorCode::EINTR),
+        io::ErrorKind::WouldBlock => Some(AvErrorCode::EAGAIN),
+        io::ErrorKind::BrokenPipe => Some(AvErrorCode::EPIPE),
+        io::ErrorKind::InvalidInput => Some(AvErrorCode::EINVAL),
         io::ErrorKind::UnexpectedEof => Some(AvErrorCode::EOF),
         io::ErrorKind::InvalidData => Some(AvErrorCode::INVALIDDATA),
+        io::ErrorKind::Unsupported => Some(AvErrorCode::ENOSYS),
         _ => None,
     }
 }

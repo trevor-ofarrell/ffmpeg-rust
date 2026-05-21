@@ -39,8 +39,23 @@ impl AvErrorCode {
     pub const HTTP_OTHER_4XX: Self = Self::fferrtag(0xf8, b'4', b'X', b'X');
     pub const HTTP_SERVER_ERROR: Self = Self::fferrtag(0xf8, b'5', b'X', b'X');
 
+    pub const EPERM: Self = Self::from_posix_errno(1);
+    pub const ENOENT: Self = Self::from_posix_errno(2);
+    pub const EINTR: Self = Self::from_posix_errno(4);
+    pub const EIO: Self = Self::from_posix_errno(5);
+    pub const EAGAIN: Self = Self::from_posix_errno(11);
+    pub const ENOMEM: Self = Self::from_posix_errno(12);
+    pub const EACCES: Self = Self::from_posix_errno(13);
+    pub const EINVAL: Self = Self::from_posix_errno(22);
+    pub const EPIPE: Self = Self::from_posix_errno(32);
+    pub const ENOSYS: Self = Self::from_posix_errno(38);
+
     pub const fn from_raw(value: i32) -> Self {
         Self(value)
+    }
+
+    pub const fn from_posix_errno(errno: i32) -> Self {
+        Self(-errno)
     }
 
     pub const fn fferrtag(a: u8, b: u8, c: u8, d: u8) -> Self {
@@ -199,6 +214,16 @@ pub fn av_error_description(errnum: i32) -> Option<&'static str> {
             "Server returned 4XX Client Error, but not one of 40{0,1,3,4}"
         }
         AvErrorCode::HTTP_SERVER_ERROR => "Server returned 5XX Server Error reply",
+        AvErrorCode::EPERM => "Operation not permitted",
+        AvErrorCode::ENOENT => "No such file or directory",
+        AvErrorCode::EINTR => "Interrupted system call",
+        AvErrorCode::EIO => "Input/output error",
+        AvErrorCode::EAGAIN => "Resource temporarily unavailable",
+        AvErrorCode::ENOMEM => "Cannot allocate memory",
+        AvErrorCode::EACCES => "Permission denied",
+        AvErrorCode::EINVAL => "Invalid argument",
+        AvErrorCode::EPIPE => "Broken pipe",
+        AvErrorCode::ENOSYS => "Function not implemented",
         _ => return None,
     })
 }
@@ -217,17 +242,26 @@ pub fn av_strerror(errnum: i32) -> Result<&'static str, String> {
 fn default_code_for_kind(kind: AvErrorKind) -> Option<AvErrorCode> {
     match kind {
         AvErrorKind::InvalidData => Some(AvErrorCode::INVALIDDATA),
+        AvErrorKind::InvalidArgument => Some(AvErrorCode::EINVAL),
+        AvErrorKind::NotFound => Some(AvErrorCode::ENOENT),
         AvErrorKind::EndOfFile => Some(AvErrorCode::EOF),
+        AvErrorKind::Unsupported => Some(AvErrorCode::ENOSYS),
         AvErrorKind::External => Some(AvErrorCode::EXTERNAL),
         AvErrorKind::Bug => Some(AvErrorCode::BUG),
-        AvErrorKind::InvalidArgument | AvErrorKind::NotFound | AvErrorKind::Unsupported => None,
     }
 }
 
 fn code_from_io_error_kind(kind: io::ErrorKind) -> Option<AvErrorCode> {
     match kind {
+        io::ErrorKind::NotFound => Some(AvErrorCode::ENOENT),
+        io::ErrorKind::PermissionDenied => Some(AvErrorCode::EACCES),
+        io::ErrorKind::Interrupted => Some(AvErrorCode::EINTR),
+        io::ErrorKind::WouldBlock => Some(AvErrorCode::EAGAIN),
+        io::ErrorKind::BrokenPipe => Some(AvErrorCode::EPIPE),
+        io::ErrorKind::InvalidInput => Some(AvErrorCode::EINVAL),
         io::ErrorKind::UnexpectedEof => Some(AvErrorCode::EOF),
         io::ErrorKind::InvalidData => Some(AvErrorCode::INVALIDDATA),
+        io::ErrorKind::Unsupported => Some(AvErrorCode::ENOSYS),
         _ => None,
     }
 }
@@ -296,6 +330,10 @@ mod tests {
         assert_eq!(AvErrorCode::EXPERIMENTAL.raw(), -0x2bb2_afa8);
         assert_eq!(AvErrorCode::INPUT_CHANGED.raw(), -0x636e_6701);
         assert_eq!(AvErrorCode::OUTPUT_CHANGED.raw(), -0x636e_6702);
+        assert_eq!(AvErrorCode::EINVAL, AvErrorCode::from_posix_errno(22));
+        assert_eq!(AvErrorCode::EINVAL.raw(), -22);
+        assert_eq!(AvErrorCode::ENOENT.raw(), -2);
+        assert_eq!(AvErrorCode::ENOSYS.raw(), -38);
         assert_eq!(
             AvErrorCode::INPUT_AND_OUTPUT_CHANGED.raw(),
             AvErrorCode::INPUT_CHANGED.raw() | AvErrorCode::OUTPUT_CHANGED.raw()
@@ -378,6 +416,16 @@ mod tests {
                 AvErrorCode::HTTP_SERVER_ERROR,
                 "Server returned 5XX Server Error reply",
             ),
+            (AvErrorCode::EPERM, "Operation not permitted"),
+            (AvErrorCode::ENOENT, "No such file or directory"),
+            (AvErrorCode::EINTR, "Interrupted system call"),
+            (AvErrorCode::EIO, "Input/output error"),
+            (AvErrorCode::EAGAIN, "Resource temporarily unavailable"),
+            (AvErrorCode::ENOMEM, "Cannot allocate memory"),
+            (AvErrorCode::EACCES, "Permission denied"),
+            (AvErrorCode::EINVAL, "Invalid argument"),
+            (AvErrorCode::EPIPE, "Broken pipe"),
+            (AvErrorCode::ENOSYS, "Function not implemented"),
         ];
 
         for (code, description) in cases {
@@ -405,6 +453,10 @@ mod tests {
             "Generic error in an external library"
         );
         assert_eq!(
+            av_strerror(AvErrorCode::EINVAL.raw()).unwrap(),
+            "Invalid argument"
+        );
+        assert_eq!(
             av_strerror(-123456).unwrap_err(),
             "Error number -123456 occurred"
         );
@@ -420,12 +472,12 @@ mod tests {
             (
                 AvError::invalid_argument("bad option"),
                 AvErrorKind::InvalidArgument,
-                None,
+                Some(AvErrorCode::EINVAL),
             ),
             (
                 AvError::not_found("missing stream"),
                 AvErrorKind::NotFound,
-                None,
+                Some(AvErrorCode::ENOENT),
             ),
             (
                 AvError::end_of_file("truncated"),
@@ -435,7 +487,7 @@ mod tests {
             (
                 AvError::unsupported("codec"),
                 AvErrorKind::Unsupported,
-                None,
+                Some(AvErrorCode::ENOSYS),
             ),
             (
                 AvError::external("system"),
@@ -464,13 +516,20 @@ mod tests {
             invalid.ffmpeg_error_string(),
             Some("Invalid data found when processing input".to_string())
         );
-        assert_eq!(AvError::not_found("missing").ffmpeg_description(), None);
+        assert_eq!(
+            AvError::not_found("missing").ffmpeg_description(),
+            Some("No such file or directory")
+        );
     }
 
     #[test]
     fn io_errors_map_to_stable_av_error_kinds() {
         let cases = [
-            (io::ErrorKind::NotFound, AvErrorKind::NotFound, None),
+            (
+                io::ErrorKind::NotFound,
+                AvErrorKind::NotFound,
+                Some(AvErrorCode::ENOENT),
+            ),
             (
                 io::ErrorKind::UnexpectedEof,
                 AvErrorKind::EndOfFile,
@@ -484,10 +543,33 @@ mod tests {
             (
                 io::ErrorKind::InvalidInput,
                 AvErrorKind::InvalidArgument,
-                None,
+                Some(AvErrorCode::EINVAL),
             ),
-            (io::ErrorKind::Unsupported, AvErrorKind::Unsupported, None),
-            (io::ErrorKind::PermissionDenied, AvErrorKind::External, None),
+            (
+                io::ErrorKind::Interrupted,
+                AvErrorKind::External,
+                Some(AvErrorCode::EINTR),
+            ),
+            (
+                io::ErrorKind::WouldBlock,
+                AvErrorKind::External,
+                Some(AvErrorCode::EAGAIN),
+            ),
+            (
+                io::ErrorKind::BrokenPipe,
+                AvErrorKind::External,
+                Some(AvErrorCode::EPIPE),
+            ),
+            (
+                io::ErrorKind::Unsupported,
+                AvErrorKind::Unsupported,
+                Some(AvErrorCode::ENOSYS),
+            ),
+            (
+                io::ErrorKind::PermissionDenied,
+                AvErrorKind::External,
+                Some(AvErrorCode::EACCES),
+            ),
         ];
 
         for (io_kind, av_kind, code) in cases {

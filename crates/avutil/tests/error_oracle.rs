@@ -131,6 +131,46 @@ const ERROR_CASES: &[ErrorCase] = &[
         rust_code: AvErrorCode::HTTP_SERVER_ERROR,
     },
     ErrorCase {
+        c_name: "AVERROR_EPERM",
+        rust_code: AvErrorCode::EPERM,
+    },
+    ErrorCase {
+        c_name: "AVERROR_ENOENT",
+        rust_code: AvErrorCode::ENOENT,
+    },
+    ErrorCase {
+        c_name: "AVERROR_EINTR",
+        rust_code: AvErrorCode::EINTR,
+    },
+    ErrorCase {
+        c_name: "AVERROR_EIO",
+        rust_code: AvErrorCode::EIO,
+    },
+    ErrorCase {
+        c_name: "AVERROR_EAGAIN",
+        rust_code: AvErrorCode::EAGAIN,
+    },
+    ErrorCase {
+        c_name: "AVERROR_ENOMEM",
+        rust_code: AvErrorCode::ENOMEM,
+    },
+    ErrorCase {
+        c_name: "AVERROR_EACCES",
+        rust_code: AvErrorCode::EACCES,
+    },
+    ErrorCase {
+        c_name: "AVERROR_EINVAL",
+        rust_code: AvErrorCode::EINVAL,
+    },
+    ErrorCase {
+        c_name: "AVERROR_EPIPE",
+        rust_code: AvErrorCode::EPIPE,
+    },
+    ErrorCase {
+        c_name: "AVERROR_ENOSYS",
+        rust_code: AvErrorCode::ENOSYS,
+    },
+    ErrorCase {
         c_name: "UNKNOWN_NEG_123456",
         rust_code: AvErrorCode::from_raw(-123_456),
     },
@@ -263,7 +303,8 @@ fn compile_and_run_oracle(
 }
 
 fn oracle_c_source() -> &'static str {
-    r#"#include <stdio.h>
+    r#"#include <errno.h>
+#include <stdio.h>
 #include <libavutil/error.h>
 
 struct error_case {
@@ -304,6 +345,16 @@ int main(void) {
         CASE(AVERROR_HTTP_TOO_MANY_REQUESTS),
         CASE(AVERROR_HTTP_OTHER_4XX),
         CASE(AVERROR_HTTP_SERVER_ERROR),
+        { "AVERROR_EPERM", AVERROR(EPERM) },
+        { "AVERROR_ENOENT", AVERROR(ENOENT) },
+        { "AVERROR_EINTR", AVERROR(EINTR) },
+        { "AVERROR_EIO", AVERROR(EIO) },
+        { "AVERROR_EAGAIN", AVERROR(EAGAIN) },
+        { "AVERROR_ENOMEM", AVERROR(ENOMEM) },
+        { "AVERROR_EACCES", AVERROR(EACCES) },
+        { "AVERROR_EINVAL", AVERROR(EINVAL) },
+        { "AVERROR_EPIPE", AVERROR(EPIPE) },
+        { "AVERROR_ENOSYS", AVERROR(ENOSYS) },
         { "UNKNOWN_NEG_123456", -123456 },
     };
     char buffer[AV_ERROR_MAX_STRING_SIZE];
