@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Goal resumed after the Codex runtime update: the active objective is now staged. First reach 10% strict parity, defined for the current 96-row ledger as at least 10 components marked `complete` under the normal completion definition, then continue the same ledger loop toward 100% FFmpeg 8.1.1 default-native compatibility and later profiles. `AGENTS.md` and `README.md` now both spell out this 10% milestone and name the first preferred completion candidates: `avutil-error`, `avutil-rational`, `avutil-timebase`, `avutil-byteio`, `avutil-bitreader`, `avutil-bitwriter`, `avutil-dict`, `avutil-options`, `avutil-logging`, and `avutil-hash`.
+
 Latest documentation update: added the repository-level `README.md` with the project mission, non-wrapper/oracle-only policy, current compatibility boundary, strict ledger counts, conservative completion estimate, workspace layout, useful commands, oracle/FATE workflow, progress-tracking files, and license cautions. The README reports strict parity completion as 0% because no ledger entries are marked `complete`, `differential_pass`, `fate_pass`, or `fuzzed`, and reports practical engineering progress at about 2% of a complete FFmpeg 8.1.1 default-native rewrite.
 
 Latest `avutil-options` update: added real removal helpers for the AVOption-like registry. `OptionSet::remove_definition` removes a descriptor and its current value together, `remove_constant` removes unit-scoped named constants, and `remove_child` removes child option namespaces, all using the existing case-insensitive lookup semantics and preserving state on misses. Unit coverage verifies successful removal, failed-removal immutability, root/child namespace separation, and remaining constant behavior; `avutil_metadata_options` now build-checks generated removal invariants and reaches previously unreachable child-mutation arms. The component remains `implemented`, not `complete`, because pinned FFmpeg differential vectors, upstream FATE parity, and actual local fuzz execution are still absent.
@@ -469,6 +471,12 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current goal-resume milestone update:
+  - Runtime goal recreated with 10% strict parity as the first objective, then 100% parity after that.
+  - `cmd /c type AGENTS.md`
+  - `cmd /c powershell -NoProfile -Command "Get-Content AGENT_STATE.md -TotalCount 80"`
+  - `cmd /c powershell -NoProfile -Command "git status --short --branch"` (clean before edits)
 
 - Current README documentation slice:
   - `git diff --check`
@@ -4929,6 +4937,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current goal-resume milestone update:
+  - Some direct PowerShell sandbox spawns failed with `windows sandbox: spawn setup refresh`; retrying through `cmd /c powershell -NoProfile -Command ...` worked for the required file/status reads.
+
 - Current `avutil-options` removal slice:
   - The first standalone `rustfmt --check fuzz\fuzz_targets\avutil_metadata_options.rs` reported a formatting diff after adding generated removal invariants. `rustfmt fuzz\fuzz_targets\avutil_metadata_options.rs` fixed it; the rerun passed. No failing validation remains for this slice.
 
@@ -5386,6 +5397,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+Goal milestone tracking is the active focus for this turn. The concrete change recreates the runtime goal and updates the persistent project instructions so the rewrite loop targets 10% strict parity first, then resumes the full 100% FFmpeg parity objective. No ledger component status changed.
+
 Documentation is the active focus for this turn. The concrete change adds a root `README.md` that summarizes project scope, current status, commands, oracle/FATE setup, and a conservative completion estimate. No ledger component status changed.
 
 `avutil-options` is the active focus for this turn. The concrete change adds `OptionSet` removal helpers for root definitions/current values, unit-scoped constants, and child namespaces, extends unit coverage for case-insensitive removals and no-mutation misses, and extends the shared `avutil_metadata_options` fuzz harness to cover removal invariants plus previously unreachable child mutation arms. It remains `implemented`, not complete, because pinned FFmpeg differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
@@ -5781,6 +5794,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: resumed and restated the full rewrite goal with a 10% strict-parity milestone first. The runtime goal now targets at least 10 complete ledger components before continuing to full FFmpeg 8.1.1 parity. `AGENTS.md` has a new Active Milestone section, `README.md` has a matching Current Operating Milestone section, and `AGENT_STATE.md` records the resumed objective and shell fallback used for status reads. No component status changed.
 
 Latest slice: added the project README. `README.md` now states the pinned FFmpeg 8.1.1 target, the no-runtime-FFmpeg policy, current implemented surface, strict ledger-derived status counts, strict parity completion of 0%, practical progress estimate of about 2%, workspace layout, useful commands, oracle/FATE setup, progress tracking files, and license cautions. `AGENT_STATE.md` was updated to record the documentation slice; `PORTING_LEDGER.toml` was not changed because no component status changed.
 

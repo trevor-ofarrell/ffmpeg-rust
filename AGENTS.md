@@ -6,6 +6,26 @@ Build a complete Rust rewrite of FFmpeg pinned to FFmpeg 8.1.1 "Hoare".
 
 The end state is a one-to-one compatible Rust implementation of the FFmpeg 8.1.1 command-line tools and libraries, including ffmpeg, ffprobe, practical ffplay behavior, libavutil, libavcodec, libavformat, libavfilter, libavdevice, libswresample, libswscale, and the supported codecs, formats, filters, protocols, devices, options, timestamps, side data, metadata, logging, and probe behavior.
 
+## Active Milestone
+
+The immediate goal is to reach 10% strict parity before broadening back out toward 100% parity.
+
+For the current 96-row `PORTING_LEDGER.toml`, 10% strict parity means at least 10 components marked `complete` under the normal completion definition below. Prefer small, high-confidence infrastructure components first, especially:
+- `avutil-error`
+- `avutil-rational`
+- `avutil-timebase`
+- `avutil-byteio`
+- `avutil-bitreader`
+- `avutil-bitwriter`
+- `avutil-dict`
+- `avutil-options`
+- `avutil-logging`
+- `avutil-hash`
+
+Work should prioritize completion evidence over new surface area until this milestone is reached. That means installing or using a pinned FFmpeg 8.1.1 oracle where available, generating inventory snapshots, adding/running differential tests, adding/running FATE mappings or documenting why FATE is not applicable, running fuzz targets where relevant, closing known limitations for the selected component, and only then changing ledger status to `complete`.
+
+After at least 10 components are complete, continue the same parity-ledger loop toward 100% FFmpeg 8.1.1 default-native compatibility, then expand to later GPL/version3/nonfree/external-library/platform profiles.
+
 Pinned upstream target:
 - FFmpeg version: 8.1.1
 - Release branch: release/8.1
@@ -125,4 +145,3 @@ If blocked by missing samples, unclear behavior, unavailable specs, or environme
 3. Record the blocker in `AGENT_STATE.md`.
 4. Move to the next highest-priority unblocked component.
 5. Never invent compatibility behavior without an oracle, spec, or test.
-

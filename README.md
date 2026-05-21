@@ -29,6 +29,14 @@ Estimated completion:
 
 The practical estimate is intentionally conservative. A lot of reusable foundation exists, but the full target includes the FFmpeg command-line tools, all core libraries, codecs, demuxers, muxers, protocols, filters, devices, scaling, resampling, hardware profiles, FATE parity, differential oracle coverage, and fuzz coverage. Most of that surface is not implemented yet.
 
+## Current Operating Milestone
+
+The active milestone is to reach 10% strict parity before broadening back out toward 100%.
+
+For the current 96-row ledger, that means at least 10 components must be marked `complete`. The first completion push should focus on small, high-confidence infrastructure components such as `avutil-error`, `avutil-rational`, `avutil-timebase`, `avutil-byteio`, `avutil-bitreader`, `avutil-bitwriter`, `avutil-dict`, `avutil-options`, `avutil-logging`, and `avutil-hash`.
+
+The work needed for this milestone is mostly proof work, not broad new feature work: install or point to the pinned FFmpeg 8.1.1 oracle, generate inventory snapshots, run or add differential tests, run or justify FATE coverage, run fuzz targets where relevant, close known limitations for each selected component, and update `PORTING_LEDGER.toml` only when the project completion definition is actually satisfied.
+
 ## Repository Layout
 
 - `crates/avutil`: shared utility types and low-level media primitives.
