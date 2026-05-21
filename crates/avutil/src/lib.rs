@@ -106,6 +106,7 @@ pub use pixel::{
 pub use rational::Rational;
 pub use samplefmt::{
     SampleBufferLayout, SampleFormat, SampleFormatFamily, SampleFormatNumericKind,
+    SampleSilenceRange,
 };
 pub use timebase::{
     add_stable, compare_mod, compare_ts, rescale, rescale_delta, rescale_q, rescale_q_rnd,

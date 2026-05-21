@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-sample-format` update: `SampleFormat` now exposes `SampleSilenceRange`, `silence_byte`, `silence_range`, and `fill_silence` helpers shaped after pinned FFmpeg 8.1.1 `av_samples_set_silence` behavior for bounded Rust planes. The implementation fills `u8`/`u8p` silence with `0x80`, fills every other current native sample format with `0x00`, computes packed spans across all channels and planar spans per channel plane, allows zero-length fills, and validates plane count plus byte ranges before mutating any plane. Local unit tests and the shared `avutil_core_models` fuzz harness cover silence bytes, packed/planar range math, fill behavior, invalid input rejection, and no-mutation failure paths. The component remains `implemented`, not `complete`, because pinned `ffmpeg -sample_fmts`/libavutil differential vectors, upstream FATE parity, packed/planar conversion/copy routines, and actual fuzz execution are still absent.
+
 Latest `avutil-sample-format` update: `SampleFormat` now exposes `SampleBufferLayout`, `buffer_layout`, and `aligned_plane_sizes` helpers shaped after pinned FFmpeg 8.1.1 `av_samples_get_buffer_size` arithmetic for Rust callers. The implementation reports per-plane line size, total buffer size, plane count, effective sample count, and effective alignment; preserves FFmpeg's `align=0` behavior by padding sample counts up to a 32-sample boundary with byte alignment 1; and rejects zero samples, zero channels, overlarge alignment, and sizes outside FFmpeg's `int` return range with typed errors. Local unit tests and the shared `avutil_core_models` fuzz harness cover packed/planar layouts, explicit alignment, zero-alignment auto-padding, invalid inputs, overflow rejection, and aligned plane-size vectors. The component remains `implemented`, not `complete`, because pinned `ffmpeg -sample_fmts`/libavutil differential vectors, upstream FATE parity, packed/planar conversion routines, and actual fuzz execution are still absent.
 
 Latest `avutil-bitwriter` update: `BitWriter` now has clear/reset support and checked bit-level truncation. `truncate_bits` rejects attempts to grow past the written bit count without mutation, truncates storage to the retained bit length, masks unused bits in a partial tail byte, and allows later writes to resume exactly at the truncated bit position. Local unit tests and the build-checked `avutil_bitreader` fuzz target cover clear/reset, truncate success, tail masking, truncation no-mutation failures, and continued write behavior. The component remains `implemented`, not `complete`, because pinned PutBitContext differential vectors, upstream FATE parity, and actual fuzz execution are still absent.
@@ -359,6 +361,18 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-sample-format` silence-fill slice:
+  - `cargo fmt --all`
+  - `cargo test -p avutil samplefmt`
+  - `cargo clippy -p avutil --all-targets --target-dir target-codex -- -D warnings`
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo fmt --all -- --check`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-sample-format`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `git diff --check`
 
 - Current `avutil-sample-format` sample-buffer-layout slice:
   - `cargo fmt --all`
@@ -4211,6 +4225,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-sample-format` silence-fill slice: no command failures have been observed so far. Pinned sample-format oracle vectors, upstream FATE parity, sample copy/conversion parity, and actual fuzz execution remain blockers rather than completion claims.
+
 - Current `avutil-sample-format` sample-buffer-layout slice:
   - The first sandboxed `Invoke-WebRequest` attempt for pinned `libavutil/samplefmt.c` failed with `Unable to connect to the remote server`; the download succeeded after escalation.
   - `cargo test -p avutil samplefmt --target-dir target-codex` compiled successfully, then Windows Application Control blocked the freshly built `avutil` unit-test executable with `os error 4551`; rerunning the same focused filter through the default target cache passed.
@@ -4547,7 +4563,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-sample-format` is the active infrastructure focus for this turn. The concrete change adds FFmpeg-shaped sample-buffer layout math for packed and planar audio buffers, including `align=0` 32-sample auto-padding, explicit line-size alignment, total buffer-size accounting, aligned plane-size vectors, and typed invalid/overflow errors. It does not claim pinned libavutil differential parity, upstream FATE parity, packed/planar conversion routines, or actual fuzz execution.
+`avutil-sample-format` is the active infrastructure focus for this turn. The concrete change adds FFmpeg-shaped silence byte/range/fill helpers for packed and planar audio buffers, including `u8`/`u8p` `0x80` silence, zero-filled silence for the other current native sample formats, packed channel-interleaved byte spans, planar per-channel spans, zero-length fill acceptance, and typed no-mutation errors for invalid plane counts or ranges. It does not claim pinned libavutil differential parity, upstream FATE parity, packed/planar copy or conversion routines, or actual fuzz execution.
 
 `avutil-bitwriter` is the active infrastructure focus for this turn. The concrete change adds checked bit-level truncation and clear/reset support to the bounded MSB-first writer, with unit and fuzz-harness invariant coverage for no-mutation failure behavior and masked partial-byte tails. It does not claim pinned PutBitContext differential parity, upstream FATE parity, or actual fuzz execution.
 
@@ -4711,13 +4727,13 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Run final diff hygiene for the `avutil-sample-format` sample-buffer-layout slice and inspect the worktree.
+1. Run final format/FATE/diff hygiene for the `avutil-sample-format` silence-fill slice and inspect the worktree.
 2. Commit the coherent slice if diff hygiene is clean.
-3. Continue to the next unblocked priority-1 infrastructure gap or add pinned sample-format differential vectors once an FFmpeg 8.1.1 oracle is available.
+3. Continue to the next unblocked priority-1 infrastructure gap, likely sample copy/conversion helpers or pinned sample-format differential vectors once an FFmpeg 8.1.1 oracle is available.
 
 ## Known Blockers
 
-- `avutil-sample-format` now covers local FFmpeg-shaped sample format names, planar/packed metadata, basic payload sizing, and sample-buffer layout math, but it still has no pinned `ffmpeg -sample_fmts`/libavutil differential vector harness, no upstream FATE media parity, no actual cargo-fuzz execution, and no packed/planar sample conversion or silence/copy helper parity.
+- `avutil-sample-format` now covers local FFmpeg-shaped sample format names, planar/packed metadata, basic payload sizing, sample-buffer layout math, and silence-fill byte/range behavior, but it still has no pinned `ffmpeg -sample_fmts`/libavutil differential vector harness, no upstream FATE media parity, no actual cargo-fuzz execution, and no packed/planar sample copy or conversion helper parity.
 
 - `avutil-bitwriter` now covers local checked truncation, clear/reset, aligned-byte appends, signed/unsigned bit writes, and Exp-Golomb writes, but it still has no pinned PutBitContext differential vector harness, no upstream FATE media parity, and no actual cargo-fuzz execution.
 
@@ -4790,6 +4806,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added FFmpeg-shaped silence-fill helpers to `avutil-sample-format`. Source checking against pinned FFmpeg 8.1.1 `libavutil/samplefmt.c` confirmed the `av_samples_set_silence` shape used here: packed formats compute one interleaved byte span using all channels, planar formats compute one byte span per channel plane, `u8`/`u8p` fill with `0x80`, and every other current native sample format fills with `0x00`. `SampleSilenceRange` records byte offset, byte length, plane count, and fill byte; `SampleFormat::silence_range` models the range math; and `fill_silence` validates all plane counts and ranges before mutating. Unit tests cover silence byte values, packed/planar range math, packed and planar fill behavior, zero-length ranges, overflow rejection, and no-mutation invalid inputs; `avutil_core_models` now build-checks generated silence invariants. The component remains `implemented`, not `complete`, because oracle differentials, upstream FATE parity, sample copy/conversion helper parity, and actual fuzz execution are still absent.
 
 Latest slice: added FFmpeg-shaped sample-buffer layout helpers to `avutil-sample-format`. Source checking against pinned FFmpeg 8.1.1 `libavutil/samplefmt.c` confirmed the `av_samples_get_buffer_size` shape used here: `align=0` pads samples to 32 and uses byte alignment 1, packed line size includes channels, planar line size is per-channel, and total size is one line or one line per channel. `SampleBufferLayout` records line size, total buffer size, plane count, effective sample count, and effective alignment; `SampleFormat::buffer_layout` models packed versus planar line-size math with explicit alignment and FFmpeg's `align=0` 32-sample auto-padding behavior; and `aligned_plane_sizes` exposes the resulting per-plane storage sizes. Unit tests cover packed/planar layouts, explicit alignment, zero-alignment auto-padding, invalid inputs, and FFmpeg-int-range overflow rejection; `avutil_core_models` now build-checks generated buffer-layout invariants. The component remains `implemented`, not `complete`, because oracle differentials, upstream FATE parity, conversion/silence helper parity, and actual fuzz execution are still absent.
 

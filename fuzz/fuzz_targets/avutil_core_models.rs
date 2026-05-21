@@ -3772,6 +3772,109 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
         );
     }
 
+    assert_eq!(
+        sample_format.silence_byte(),
+        expected_sample_silence_byte(sample_format)
+    );
+    let silence_samples = if samples_per_channel == 0 {
+        0
+    } else {
+        usize::from(cursor.next().unwrap_or_default()) % (samples_per_channel + 1)
+    };
+    let silence_offset_limit = samples_per_channel.saturating_sub(silence_samples);
+    let silence_offset = if silence_offset_limit == 0 {
+        0
+    } else {
+        usize::from(cursor.next().unwrap_or_default()) % (silence_offset_limit + 1)
+    };
+    let silence_range = sample_format
+        .silence_range(silence_offset, silence_samples, channels)
+        .unwrap();
+    let expected_block_align = sample_format.bytes_per_sample()
+        * if sample_format.is_planar() {
+            1
+        } else {
+            usize::from(channels)
+        };
+    let expected_silence_plane_count = if sample_format.is_planar() {
+        usize::from(channels)
+    } else {
+        1
+    };
+    assert_eq!(
+        silence_range.byte_offset(),
+        silence_offset * expected_block_align
+    );
+    assert_eq!(
+        silence_range.byte_len(),
+        silence_samples * expected_block_align
+    );
+    assert_eq!(silence_range.plane_count(), expected_silence_plane_count);
+    assert_eq!(
+        silence_range.fill_byte(),
+        expected_sample_silence_byte(sample_format)
+    );
+    assert_eq!(silence_range.is_empty(), silence_samples == 0);
+
+    let mut silence_planes = plane_sizes
+        .iter()
+        .map(|size| vec![0x55; *size])
+        .collect::<Vec<_>>();
+    let before_silence = silence_planes.clone();
+    sample_format
+        .fill_silence(
+            &mut silence_planes,
+            silence_offset,
+            silence_samples,
+            channels,
+        )
+        .unwrap();
+    let silence_start = silence_range.byte_offset();
+    let silence_end = silence_start + silence_range.byte_len();
+    for (plane, before) in silence_planes.iter().zip(&before_silence) {
+        assert_eq!(&plane[..silence_start], &before[..silence_start]);
+        assert!(plane[silence_start..silence_end]
+            .iter()
+            .all(|byte| *byte == silence_range.fill_byte()));
+        assert_eq!(&plane[silence_end..], &before[silence_end..]);
+    }
+
+    let mut wrong_silence_planes = silence_planes.clone();
+    wrong_silence_planes.push(Vec::new());
+    let before_wrong_silence = wrong_silence_planes.clone();
+    assert_eq!(
+        sample_format
+            .fill_silence(
+                &mut wrong_silence_planes,
+                silence_offset,
+                silence_samples,
+                channels,
+            )
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(wrong_silence_planes, before_wrong_silence);
+
+    if silence_range.byte_len() > 0 {
+        let mut short_silence_planes = silence_planes.clone();
+        short_silence_planes[0].truncate(silence_end - 1);
+        let before_short_silence = short_silence_planes.clone();
+        assert_eq!(
+            sample_format
+                .fill_silence(
+                    &mut short_silence_planes,
+                    silence_offset,
+                    silence_samples,
+                    channels,
+                )
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(short_silence_planes, before_short_silence);
+    }
+
     if sample_rate == 0 {
         assert!(AudioFrame::new(sample_rate, channels, sample_format, 1, vec![vec![0]]).is_err());
         return;
@@ -14453,6 +14556,22 @@ fn expected_sample_bytes(format: SampleFormat) -> usize {
         SampleFormat::S16 | SampleFormat::S16P => 2,
         SampleFormat::S32 | SampleFormat::S32P | SampleFormat::Flt | SampleFormat::FltP => 4,
         SampleFormat::Dbl | SampleFormat::DblP | SampleFormat::S64 | SampleFormat::S64P => 8,
+    }
+}
+
+fn expected_sample_silence_byte(format: SampleFormat) -> u8 {
+    match format {
+        SampleFormat::U8 | SampleFormat::U8P => 0x80,
+        SampleFormat::S16
+        | SampleFormat::S16P
+        | SampleFormat::S32
+        | SampleFormat::S32P
+        | SampleFormat::Flt
+        | SampleFormat::FltP
+        | SampleFormat::Dbl
+        | SampleFormat::DblP
+        | SampleFormat::S64
+        | SampleFormat::S64P => 0x00,
     }
 }
 

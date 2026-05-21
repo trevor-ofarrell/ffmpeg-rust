@@ -106,6 +106,36 @@ impl SampleBufferLayout {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SampleSilenceRange {
+    byte_offset: usize,
+    byte_len: usize,
+    plane_count: usize,
+    fill_byte: u8,
+}
+
+impl SampleSilenceRange {
+    pub fn byte_offset(self) -> usize {
+        self.byte_offset
+    }
+
+    pub fn byte_len(self) -> usize {
+        self.byte_len
+    }
+
+    pub fn plane_count(self) -> usize {
+        self.plane_count
+    }
+
+    pub fn fill_byte(self) -> u8 {
+        self.fill_byte
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.byte_len == 0
+    }
+}
+
 impl SampleFormat {
     pub const ALL: [Self; 12] = [
         Self::U8,
@@ -339,6 +369,86 @@ impl SampleFormat {
         let layout = self.buffer_layout(samples_per_channel, channels, alignment)?;
         Ok(vec![layout.line_size(); layout.plane_count()])
     }
+
+    pub fn silence_byte(self) -> u8 {
+        match self {
+            Self::U8 | Self::U8P => 0x80,
+            Self::S16
+            | Self::S16P
+            | Self::S32
+            | Self::S32P
+            | Self::Flt
+            | Self::FltP
+            | Self::Dbl
+            | Self::DblP
+            | Self::S64
+            | Self::S64P => 0x00,
+        }
+    }
+
+    pub fn silence_range(
+        self,
+        offset_samples: usize,
+        samples_per_channel: usize,
+        channels: u16,
+    ) -> AvResult<SampleSilenceRange> {
+        validate_channels(channels)?;
+        let channel_count = usize::from(channels);
+        let block_channels = if self.is_planar() { 1 } else { channel_count };
+        let block_align = self
+            .bytes_per_sample()
+            .checked_mul(block_channels)
+            .ok_or_else(|| AvError::invalid_argument("sample silence block alignment overflow"))?;
+        let byte_offset = offset_samples
+            .checked_mul(block_align)
+            .ok_or_else(|| AvError::invalid_argument("sample silence offset overflow"))?;
+        let byte_len = samples_per_channel
+            .checked_mul(block_align)
+            .ok_or_else(|| AvError::invalid_argument("sample silence length overflow"))?;
+        byte_offset
+            .checked_add(byte_len)
+            .ok_or_else(|| AvError::invalid_argument("sample silence range overflow"))?;
+
+        Ok(SampleSilenceRange {
+            byte_offset,
+            byte_len,
+            plane_count: if self.is_planar() { channel_count } else { 1 },
+            fill_byte: self.silence_byte(),
+        })
+    }
+
+    pub fn fill_silence<P: AsMut<[u8]>>(
+        self,
+        audio_data: &mut [P],
+        offset_samples: usize,
+        samples_per_channel: usize,
+        channels: u16,
+    ) -> AvResult<()> {
+        let range = self.silence_range(offset_samples, samples_per_channel, channels)?;
+        if audio_data.len() != range.plane_count() {
+            return Err(AvError::invalid_argument(
+                "sample silence plane count does not match format",
+            ));
+        }
+        let byte_end = range
+            .byte_offset()
+            .checked_add(range.byte_len())
+            .ok_or_else(|| AvError::invalid_argument("sample silence range overflow"))?;
+
+        for plane in audio_data.iter_mut() {
+            if byte_end > plane.as_mut().len() {
+                return Err(AvError::invalid_argument(
+                    "sample silence range exceeds plane length",
+                ));
+            }
+        }
+
+        for plane in audio_data {
+            plane.as_mut()[range.byte_offset()..byte_end].fill(range.fill_byte());
+        }
+
+        Ok(())
+    }
 }
 
 fn validate_channels(channels: u16) -> AvResult<()> {
@@ -541,6 +651,108 @@ mod tests {
                 .kind(),
             AvErrorKind::InvalidArgument
         );
+    }
+
+    #[test]
+    fn sample_formats_report_ffmpeg_silence_bytes() {
+        for format in SampleFormat::ALL {
+            let expected = match format {
+                SampleFormat::U8 | SampleFormat::U8P => 0x80,
+                _ => 0x00,
+            };
+            assert_eq!(format.silence_byte(), expected);
+        }
+    }
+
+    #[test]
+    fn sample_formats_compute_silence_ranges() {
+        let packed = SampleFormat::S16.silence_range(3, 2, 2).unwrap();
+        assert_eq!(packed.byte_offset(), 12);
+        assert_eq!(packed.byte_len(), 8);
+        assert_eq!(packed.plane_count(), 1);
+        assert_eq!(packed.fill_byte(), 0);
+        assert!(!packed.is_empty());
+
+        let planar = SampleFormat::U8P.silence_range(2, 3, 2).unwrap();
+        assert_eq!(planar.byte_offset(), 2);
+        assert_eq!(planar.byte_len(), 3);
+        assert_eq!(planar.plane_count(), 2);
+        assert_eq!(planar.fill_byte(), 0x80);
+
+        let empty = SampleFormat::FltP.silence_range(4, 0, 6).unwrap();
+        assert_eq!(empty.byte_offset(), 16);
+        assert_eq!(empty.byte_len(), 0);
+        assert_eq!(empty.plane_count(), 6);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn sample_formats_fill_packed_silence_like_ffmpeg() {
+        let mut planes = vec![vec![0x7F; 24]];
+        SampleFormat::S16
+            .fill_silence(&mut planes, 1, 2, 2)
+            .unwrap();
+        assert_eq!(&planes[0][..4], &[0x7F; 4]);
+        assert_eq!(&planes[0][4..12], &[0; 8]);
+        assert_eq!(&planes[0][12..], &[0x7F; 12]);
+
+        SampleFormat::U8.fill_silence(&mut planes, 0, 3, 2).unwrap();
+        assert_eq!(&planes[0][..6], &[0x80; 6]);
+        assert_eq!(&planes[0][6..12], &[0; 6]);
+    }
+
+    #[test]
+    fn sample_formats_fill_planar_u8_silence_like_ffmpeg() {
+        let mut planes = vec![vec![0x11; 8], vec![0x22; 8]];
+        SampleFormat::U8P
+            .fill_silence(&mut planes, 2, 3, 2)
+            .unwrap();
+
+        assert_eq!(
+            planes[0],
+            vec![0x11, 0x11, 0x80, 0x80, 0x80, 0x11, 0x11, 0x11]
+        );
+        assert_eq!(
+            planes[1],
+            vec![0x22, 0x22, 0x80, 0x80, 0x80, 0x22, 0x22, 0x22]
+        );
+    }
+
+    #[test]
+    fn sample_silence_rejects_invalid_inputs_without_mutation() {
+        assert_eq!(
+            SampleFormat::S16.silence_range(0, 1, 0).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            SampleFormat::S64
+                .silence_range(usize::MAX, 1, 2)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let mut wrong_plane_count = vec![vec![0x55; 16], vec![0x66; 16]];
+        let before = wrong_plane_count.clone();
+        assert_eq!(
+            SampleFormat::S16
+                .fill_silence(&mut wrong_plane_count, 0, 1, 2)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(wrong_plane_count, before);
+
+        let mut short_planar = vec![vec![0x55; 8], vec![0x66; 3]];
+        let before = short_planar.clone();
+        assert_eq!(
+            SampleFormat::S16P
+                .fill_silence(&mut short_planar, 1, 2, 2)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(short_planar, before);
     }
 
     #[test]
