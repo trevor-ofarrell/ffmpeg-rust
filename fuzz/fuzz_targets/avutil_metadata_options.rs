@@ -1000,11 +1000,12 @@ fn match_mode_from(byte: Option<u8>) -> MatchMode {
 }
 
 fn set_mode_from(byte: Option<u8>) -> SetMode {
-    match byte.unwrap_or_default() % 4 {
+    match byte.unwrap_or_default() % 5 {
         0 => SetMode::Overwrite,
         1 => SetMode::KeepExisting,
         2 => SetMode::Append,
-        _ => SetMode::AllowMultiple,
+        3 => SetMode::AllowMultiple,
+        _ => SetMode::AllowMultipleDedup,
     }
 }
 

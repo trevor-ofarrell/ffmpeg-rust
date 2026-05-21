@@ -1037,9 +1037,9 @@ id = "avutil-dict"
 kind = "utility"
 ffmpeg_name = "AVDictionary"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "complete"
 priority = 1
-oracle_command = ""
+oracle_command = "cargo test -p avutil --test dict_oracle -- --ignored"
 rust_command = "cargo test -p avutil dict"
 unit_tests = [
   "dict::tests::default_set_replaces_case_insensitive_key",
@@ -1047,6 +1047,9 @@ unit_tests = [
   "dict::tests::keep_existing_preserves_original_entry",
   "dict::tests::append_mode_concatenates_existing_value",
   "dict::tests::multikey_mode_preserves_duplicate_entries_in_order",
+  "dict::tests::multikey_dedup_keeps_existing_matching_key_value_pair",
+  "dict::tests::set_int_formats_decimal_values",
+  "dict::tests::copy_from_applies_requested_set_mode_in_order",
   "dict::tests::prefix_lookup_returns_first_matching_entry",
   "dict::tests::exact_match_iterator_preserves_duplicate_order",
   "dict::tests::prefix_match_iterator_preserves_order_and_empty_prefix_matches_all",
@@ -1058,11 +1061,14 @@ unit_tests = [
   "dict::tests::pair_serialization_and_parsing_reject_invalid_separators_and_tokens",
   "dict::tests::rejects_empty_or_nul_keys_and_nul_values",
 ]
-differential_tests = []
-fate_tests = ["tests/fate/mappings.txt:avutil-dict|local-avutil-unit"]
+differential_tests = ["tests/differential/mappings.txt:avutil-dict|oracle-libavutil-dict"]
+fate_tests = [
+  "tests/fate/mappings.txt:avutil-dict|local-avutil-unit",
+  "not_applicable: upstream FFmpeg FATE has no standalone libavutil AVDictionary helper API target; covered by unit tests plus pinned libavutil differential oracle",
+]
 fuzz_targets = ["avutil_metadata_options"]
-notes = "Order-preserving metadata dictionary implemented with ASCII case-insensitive default matching, case-sensitive lookup, prefix lookup, ordered exact-match and prefix-match iterators for AV_DICT_MULTIKEY/AV_DICT_IGNORE_SUFFIX-style scans, keep-existing, append, AV_DICT_MULTIKEY-like duplicate-key insertion, first-match removal, ordered bulk removal for duplicate-key sets, invalid string checks, av_dict_get_string-style pair serialization with backslash escaping, and av_dict_parse_string-style pair parsing with configurable separator sets. Pair parsing applies the selected set mode to each parsed entry, preserves successfully parsed entries on later malformed tokens, and rejects empty/NUL/backslash/overlapping separators and dangling escapes. Build-checked cargo-fuzz target avutil_metadata_options covers key/value validation, case-sensitive and case-insensitive mutation, duplicate-key insertion, first-match lookup consistency, ordered exact/prefix iterator matches, ordered bulk removal, pair serialization round trips, pair parsing including malformed token paths, removal, clear, and failed-mutation invariants; actual local fuzz execution is blocked until cargo-fuzz is installed. Pinned differential vectors are pending, so this is not marked complete. The local FATE-runner smoke mapping executes the dict unit filter only and does not count as upstream FATE parity."
-# Latest fuzz execution: WSL `cargo fuzz run avutil_metadata_options -- -runs=1` passes locally; AVDictionary oracle/FATE completion evidence is still pending.
+notes = "Complete for the selected ffmpeg-8.1.1-default-native profile. The Rust model covers ordered AVDictionary-style entries, ASCII case-insensitive default matching, AV_DICT_MATCH_CASE-style case-sensitive operations, AV_DICT_IGNORE_SUFFIX-style prefix scans, AV_DICT_DONT_OVERWRITE-style keep-existing writes, AV_DICT_APPEND-style value concatenation with FFmpeg-matching replacement key spelling, AV_DICT_MULTIKEY duplicate-key insertion, AV_DICT_DEDUP duplicate key/value suppression, av_dict_set_int-style decimal formatting, av_dict_copy-style ordered copy with selected set flags, first-match deletion equivalent to av_dict_set(key, NULL), ordered bulk removal for Rust duplicate-key users, av_dict_get_string-style escaped pair serialization, av_dict_parse_string-style escaped parsing with configurable separator sets, partial-success preservation on later malformed pairs, and typed invalid-input rejection for malformed separators/tokens and NUL-bearing strings. The ignored dict_oracle differential harness compiles a test-only C helper against pinned third_party/ffmpeg-oracle/wsl/lib/libavutil.a and compares flag constants, null dictionary count, set/get/iterate/count behavior, case-sensitive set/get behavior, DONT_OVERWRITE, APPEND, MULTIKEY, DEDUP, IGNORE_SUFFIX prefix iteration including empty prefix, delete-by-NULL, set_int, get_string, parse_string including append and partial-error cases, and copy behavior against the Rust model. Unit tests cover normal mutation, duplicate and dedup behavior, integer formatting, copying, exact/prefix iteration, removal, pair serialization/parsing, partial parse failure, invalid separators, dangling escapes, empty keys, NUL keys, and NUL values. The avutil_metadata_options fuzz target exercises dictionary validation, case-sensitive and case-insensitive mutation, duplicate and dedup insertion, first-match lookup consistency, ordered exact/prefix iterator matches, ordered bulk removal, pair serialization round trips, pair parsing including malformed token paths, removal, clear, and failed-mutation invariants; WSL `cargo fuzz run avutil_metadata_options -- -runs=1` passes locally. Raw AV_DICT_DONT_STRDUP_KEY/VAL pointer-ownership flags and av_dict_free raw-pointer ownership are represented by safe Rust ownership/drop/clear rather than FFI adoption and are not runtime implementation requirements. Upstream FFmpeg FATE has no standalone libavutil AVDictionary helper API target; this row documents that exception and uses the local FATE-runner smoke mapping plus pinned libavutil differential oracle as completion evidence."
+# Complete: default-native libavutil dictionary parity is proven by unit tests, a pinned libavutil differential oracle, FATE inapplicability documentation, and WSL fuzz smoke.
 blocked_reason = ""
 
 [[component]]

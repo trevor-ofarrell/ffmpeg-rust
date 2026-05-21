@@ -14,6 +14,7 @@ avutil-error|oracle-libavutil-error-strings|.|cargo|env:FFMPEG_ORACLE={oracle_ff
 avutil-rational|oracle-libavutil-rational|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|rational_oracle|--|--ignored
 avutil-timebase|oracle-libavutil-timebase|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|timebase_oracle|--|--ignored
 avutil-hash|oracle-libavutil-hash|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|hash_oracle|--|--ignored
+avutil-dict|oracle-libavutil-dict|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|dict_oracle|--|--ignored
 avutil-channel-layout|oracle-ffmpeg-layouts|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|channel_layout_oracle|--|--ignored
 avformat-wav-demuxer|oracle-wav-generated-md5|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|wav_oracle|wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle|--|--ignored
 avutil-sample-format|oracle-ffmpeg-sample-fmts|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|sample_format_oracle|ffmpeg_sample_format_inventory_matches_current_sample_format_model|--|--ignored

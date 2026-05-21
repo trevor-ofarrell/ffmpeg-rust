@@ -12,6 +12,7 @@ pub enum SetMode {
     KeepExisting,
     Append,
     AllowMultiple,
+    AllowMultipleDedup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,7 +79,19 @@ impl Dictionary {
         let key = validate_key(key.into())?;
         let value = validate_value(value.into())?;
 
-        if set_mode == SetMode::AllowMultiple {
+        if set_mode == SetMode::AllowMultipleDedup
+            && self
+                .entries
+                .iter()
+                .any(|entry| key_matches(entry.key(), &key, match_mode) && entry.value() == value)
+        {
+            return Ok(DictionarySet::Kept);
+        }
+
+        if matches!(
+            set_mode,
+            SetMode::AllowMultiple | SetMode::AllowMultipleDedup
+        ) {
             self.entries.push(DictionaryEntry { key, value });
             return Ok(DictionarySet::Inserted);
         }
@@ -93,15 +106,44 @@ impl Dictionary {
                 }
                 SetMode::KeepExisting => Ok(DictionarySet::Kept),
                 SetMode::Append => {
+                    entry.key = key;
                     entry.value.push_str(&value);
                     Ok(DictionarySet::Appended)
                 }
-                SetMode::AllowMultiple => unreachable!(),
+                SetMode::AllowMultiple | SetMode::AllowMultipleDedup => unreachable!(),
             };
         }
 
         self.entries.push(DictionaryEntry { key, value });
         Ok(DictionarySet::Inserted)
+    }
+
+    pub fn set_int(&mut self, key: impl Into<String>, value: i64) -> AvResult<DictionarySet> {
+        self.set_int_with_mode(key, value, MatchMode::CaseInsensitive, SetMode::Overwrite)
+    }
+
+    pub fn set_int_with_mode(
+        &mut self,
+        key: impl Into<String>,
+        value: i64,
+        match_mode: MatchMode,
+        set_mode: SetMode,
+    ) -> AvResult<DictionarySet> {
+        self.set_with_mode(key, value.to_string(), match_mode, set_mode)
+    }
+
+    pub fn copy_from(
+        &mut self,
+        source: &Dictionary,
+        match_mode: MatchMode,
+        set_mode: SetMode,
+    ) -> AvResult<Vec<DictionarySet>> {
+        let mut results = Vec::with_capacity(source.len());
+        for entry in source.entries() {
+            let result = self.set_with_mode(entry.key(), entry.value(), match_mode, set_mode)?;
+            results.push(result);
+        }
+        Ok(results)
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
@@ -471,6 +513,7 @@ mod tests {
 
         assert_eq!(result, DictionarySet::Appended);
         assert_eq!(dict.get("comment"), Some("part1+part2"));
+        assert_eq!(dict.entries()[0].key(), "COMMENT");
     }
 
     #[test]
@@ -504,6 +547,121 @@ mod tests {
         assert_eq!(removed.value(), "first");
         assert_eq!(dict.len(), 1);
         assert_eq!(dict.get("artist"), Some("second"));
+    }
+
+    #[test]
+    fn multikey_dedup_keeps_existing_matching_key_value_pair() {
+        let mut dict = Dictionary::new();
+
+        dict.set_with_mode(
+            "artist",
+            "first",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "ARTIST",
+            "second",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+
+        let kept = dict
+            .set_with_mode(
+                "Artist",
+                "first",
+                MatchMode::CaseInsensitive,
+                SetMode::AllowMultipleDedup,
+            )
+            .unwrap();
+        let inserted = dict
+            .set_with_mode(
+                "Artist",
+                "first",
+                MatchMode::CaseSensitive,
+                SetMode::AllowMultipleDedup,
+            )
+            .unwrap();
+
+        assert_eq!(kept, DictionarySet::Kept);
+        assert_eq!(inserted, DictionarySet::Inserted);
+        assert_eq!(
+            dict.entries()
+                .iter()
+                .map(|entry| (entry.key(), entry.value()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("artist", "first"),
+                ("ARTIST", "second"),
+                ("Artist", "first")
+            ]
+        );
+    }
+
+    #[test]
+    fn set_int_formats_decimal_values() {
+        let mut dict = Dictionary::new();
+
+        assert_eq!(dict.set_int("count", -42).unwrap(), DictionarySet::Inserted);
+        assert_eq!(
+            dict.set_int_with_mode(
+                "COUNT",
+                i64::MAX,
+                MatchMode::CaseInsensitive,
+                SetMode::Overwrite,
+            )
+            .unwrap(),
+            DictionarySet::Replaced
+        );
+
+        assert_eq!(dict.entries()[0].key(), "COUNT");
+        assert_eq!(dict.get("count"), Some("9223372036854775807"));
+    }
+
+    #[test]
+    fn copy_from_applies_requested_set_mode_in_order() {
+        let mut source = Dictionary::new();
+        source
+            .set_with_mode(
+                "artist",
+                "first",
+                MatchMode::CaseInsensitive,
+                SetMode::AllowMultiple,
+            )
+            .unwrap();
+        source
+            .set_with_mode(
+                "ARTIST",
+                "second",
+                MatchMode::CaseInsensitive,
+                SetMode::AllowMultiple,
+            )
+            .unwrap();
+
+        let mut destination = Dictionary::new();
+        destination.set("artist", "old").unwrap();
+        let results = destination
+            .copy_from(
+                &source,
+                MatchMode::CaseInsensitive,
+                SetMode::AllowMultipleDedup,
+            )
+            .unwrap();
+
+        assert_eq!(
+            results,
+            vec![DictionarySet::Inserted, DictionarySet::Inserted]
+        );
+        assert_eq!(
+            destination
+                .entries()
+                .iter()
+                .map(|entry| (entry.key(), entry.value()))
+                .collect::<Vec<_>>(),
+            vec![("artist", "old"), ("artist", "first"), ("ARTIST", "second")]
+        );
     }
 
     #[test]
@@ -748,7 +906,7 @@ mod tests {
         );
         assert_eq!(dict.get("artist"), Some("oldnew"));
         assert_eq!(dict.get("comment"), Some("ok!"));
-        assert_eq!(dict.entries()[0].key(), "artist");
+        assert_eq!(dict.entries()[0].key(), "ARTIST");
         assert_eq!(dict.entries()[1].key(), "comment");
     }
 
