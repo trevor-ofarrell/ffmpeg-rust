@@ -102,6 +102,28 @@ fn assert_raw_channel_layout_retype_fixtures() {
         AvErrorKind::InvalidArgument
     );
     assert_eq!(
+        ChannelLayoutSpec::parse(" 0x3").unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse(" +2 channels (FL+FR)").unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("0x3 ").unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("2c ").unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("2 channels (FL+FR) ")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
         ChannelLayoutSpec::parse("USR+").unwrap(),
         ChannelLayoutSpec::NativeMask(
             NativeChannelMaskLayout::new(Channel::FrontLeft.mask()).unwrap()

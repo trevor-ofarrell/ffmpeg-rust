@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-channel-layout` update: parser-facing numeric-mask, count-suffix, and described-list parsing now follows pinned FFmpeg 8.1.1 `strtoull`/`strtol` leading-whitespace and full-consumption behavior more closely. `ChannelLayoutSpec::parse` accepts leading C whitespace and leading `+` where FFmpeg's C parsers accept them, such as ` 0x3`, ` 2c`, `+2C`, ` +2 channels`, and ` +2 channels (FL+FR)`, while trailing-junk forms such as `0x3 `, `3 `, `2c `, `2C `, `2 channels `, and `2 channels (FL+FR) ` reject with typed invalid-argument errors. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, formatting, and diff checks passed; `git diff --check` reported CRLF warnings only. The component remains `implemented`, not `complete`, because byte-preserving non-UTF-8 custom-name parity, oracle vectors, full `ffmpeg -layouts` inventory comparison, upstream FATE parity, and actual fuzz execution remain absent.
+
 Latest `avutil-channel-layout` update: parser-facing channel/layout string matching now follows pinned FFmpeg 8.1.1 case-sensitive `strcmp` behavior for native channel names, `UNK`/`UNSD`, uppercase `AMBI`/`USR` prefixes, and exact layout names. `ChannelLayoutSpec::parse` no longer falls through to the ergonomic case-insensitive `ChannelLayout::parse` helper, so case-mismatched forms such as `fl+fr`, `unk+unk`, `ambi0`, `usr0`, `STEREO`, `stereo `, and `ambisonic 1+STEREO` reject with typed invalid-argument errors while canonical uppercase channel IDs and exact lowercase layout names such as `stereo` remain supported. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, formatting, and diff checks passed; `git diff --check` reported CRLF warnings only. The component remains `implemented`, not `complete`, because byte-preserving non-UTF-8 custom-name parity, oracle vectors, full `ffmpeg -layouts` inventory comparison, upstream FATE parity, and actual fuzz execution remain absent.
 
 Latest `avutil-channel-layout` update: the explicit `ambisonic <order>[+extra]` parser branch now uses the bounded FFmpeg `strtol`-shaped base-0 parser for the order prefix. This covers signed-zero and no-conversion edge cases from pinned FFmpeg 8.1.1: `ambisonic -0` resolves to order 0, `ambisonic -0+stereo` resolves to order 0 with stereo extras, and `ambisonic +stereo` resolves to zeroth-order ambisonics with stereo extras because the C `strtol` branch consumes no digits before the `+`. Negative nonzero orders still reject. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, formatting, and diff checks passed; `git diff --check` reported CRLF warnings only. The component remains `implemented`, not `complete`, because byte-preserving non-UTF-8 custom-name parity, oracle vectors, full `ffmpeg -layouts` inventory comparison, upstream FATE parity, and actual fuzz execution remain absent.
@@ -429,6 +431,18 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-channel-layout` whitespace/full-consumption parser slice:
+  - `cargo test -p avutil channel_layout` (33 tests passed)
+  - `cargo check --manifest-path fuzz\Cargo.toml --target-dir target-codex`
+  - `cargo fmt --all`
+  - `cargo fmt --all -- --check`
+  - `cargo clippy -p avutil --all-targets -- -D warnings`
+  - `cargo clippy --manifest-path fuzz\Cargo.toml --target-dir target-codex --all-targets -- -D warnings`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --component avutil-channel-layout`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `git diff --check` (CRLF warnings only)
 
 - Current `avutil-channel-layout` case-sensitive parser-string slice:
   - `cargo test -p avutil channel_layout` (33 tests passed)
@@ -4686,6 +4700,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-channel-layout` whitespace/full-consumption parser slice: no remaining failing commands. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, formatting, and `git diff --check` all passed; `git diff --check` reported CRLF warnings only.
+
 - Current `avutil-channel-layout` case-sensitive parser-string slice: no remaining failing commands. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, formatting, and `git diff --check` all passed; `git diff --check` reported CRLF warnings only.
 
 - Current `avutil-channel-layout` explicit ambisonic strtol-order parser slice: no remaining failing commands. Focused channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run/execution, formatting, and `git diff --check` all passed; `git diff --check` reported CRLF warnings only.
@@ -5089,6 +5105,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change aligns the parser's numeric-mask, count-suffix, and described-list branches with the pinned FFmpeg `strtoull`/`strtol` shape: leading C whitespace and leading `+` are accepted where the C parsers accept them, and trailing junk after masks, count suffixes, or described lists is no longer hidden by whole-expression trimming. It deliberately does not claim byte-preserving FFmpeg custom-name parity, oracle-vector parity, full `ffmpeg -layouts` inventory coverage, upstream FATE parity, or actual fuzz execution.
+
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change aligns FFmpeg-facing channel/layout string parsing with pinned `strcmp` behavior: native channel IDs and `UNK`/`UNSD` require exact uppercase names, `AMBI`/`USR` parser prefixes stay uppercase-only, exact layout names use `ChannelLayout::from_name`, and `ChannelLayoutSpec::parse` stops falling through to the more permissive `ChannelLayout::parse` helper. It deliberately does not claim byte-preserving FFmpeg custom-name parity, oracle-vector parity, full `ffmpeg -layouts` inventory coverage, upstream FATE parity, or actual fuzz execution.
 
 `avutil-channel-layout` is the active infrastructure focus for this turn. The concrete change strengthens the explicit `ambisonic <order>[+extra]` layout parser branch so order parsing follows FFmpeg's bounded `strtol` shape: signed-zero `ambisonic -0` is order 0, `ambisonic -0+stereo` and no-conversion `ambisonic +stereo` become zeroth-order ambisonics with stereo extras, and negative nonzero orders remain rejected. It deliberately does not claim byte-preserving FFmpeg custom-name parity, oracle-vector parity, full `ffmpeg -layouts` inventory coverage, upstream FATE parity, or actual fuzz execution.
@@ -5315,6 +5333,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Known Blockers
 
+- Latest `avutil-channel-layout` parser-facing whitespace coverage now matches the source-checked leading-whitespace/full-consumption shape for numeric masks, `Nc`/`NC`, `N channels`, and described channel lists, while preserving channel-list tokenizer whitespace trimming. Remaining blockers are byte-preserving non-UTF-8 custom-name parity if required by the selected API surface, oracle-vector calibration, full `ffmpeg -layouts` inventory comparison, deeper `AV_CHANNEL_ORDER_AMBISONIC` semantics beyond the current bounded lookup/retype surface, upstream FATE parity, and actual fuzz execution.
+
 - Latest `avutil-channel-layout` parser-facing string coverage now rejects case-mismatched channel/layout forms such as `fl+fr`, `unk+unk`, `ambi0`, `usr0`, `STEREO`, and `ambisonic 1+STEREO`, while preserving exact FFmpeg uppercase channel IDs and exact lowercase standard layout names. Remaining blockers are byte-preserving non-UTF-8 custom-name parity if required by the selected API surface, oracle-vector calibration, full `ffmpeg -layouts` inventory comparison, deeper `AV_CHANNEL_ORDER_AMBISONIC` semantics beyond the current bounded lookup/retype surface, upstream FATE parity, and actual fuzz execution.
 
 - Latest `avutil-channel-layout` explicit ambisonic parser coverage now follows the bounded FFmpeg `strtol` order-prefix shape for signed-zero and no-conversion extras: `ambisonic -0`, `ambisonic +stereo`, and `ambisonic -0+stereo` resolve to zeroth-order ambisonic layouts while negative nonzero orders reject. Remaining blockers are byte-preserving non-UTF-8 custom-name parity if required by the selected API surface, oracle-vector calibration, full `ffmpeg -layouts` inventory comparison, deeper `AV_CHANNEL_ORDER_AMBISONIC` semantics beyond the current bounded lookup/retype surface, upstream FATE parity, and actual fuzz execution.
@@ -5426,6 +5446,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: tightened FFmpeg-facing channel-layout parsing for numeric/count/described-list whitespace. `ChannelLayoutSpec::parse` now passes raw input into the numeric-mask, count-suffix, described-list, and channel-list branches instead of trimming the whole expression first; `parse_numeric_channel_mask` skips only leading C numeric whitespace; and count parsing now uses a bounded `strtol`-shaped decimal prefix helper with optional leading `+`. Unit tests and `avutil_core_models` fixtures cover accepted leading-whitespace forms (` 0x3`, ` 2c`, `+2C`, ` +2 channels (FL+FR)`) and rejected trailing-junk forms (`0x3 `, `3 `, `2c `, `2C `, `2 channels `, `2 channels (FL+FR) `). Docs and the ledger record this as bounded source-checked parser parity only. Validation passed with focused avutil channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run and execution, formatting, and `git diff --check` with CRLF warnings only.
 
 Latest slice: tightened FFmpeg-facing channel/layout string parsing to source-checked case-sensitive matching. `ChannelId::from_ffmpeg_string` now uses exact native short names plus exact `UNK`/`UNSD`/uppercase `AMBI`/`USR`; `ChannelLayoutSpec::parse` accepts exact layout names through `ChannelLayout::from_name` and stops falling back to the ergonomic case-insensitive `ChannelLayout::parse` helper. Unit tests and `avutil_core_models` fixtures cover rejection of `fl+fr`, `unk+unk`, `ambi0`, `usr0`, `STEREO`, `stereo `, and `ambisonic 1+STEREO`; docs and the ledger record this as bounded parser parity only. Validation passed with focused avutil channel-layout tests, fuzz-package check/clippy, avutil clippy, local component FATE, changed-path FATE dry-run and execution, formatting, and `git diff --check` with CRLF warnings only.
 

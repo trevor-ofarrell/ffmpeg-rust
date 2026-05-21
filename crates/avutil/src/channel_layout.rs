@@ -2295,15 +2295,15 @@ impl ChannelLayoutSpec {
             return Ok(layout);
         }
 
-        if let Some(layout) = Self::parse_described_channel_list(trimmed)? {
+        if let Some(layout) = Self::parse_described_channel_list(value)? {
             return Ok(layout);
         }
 
-        if let Some(mask) = parse_numeric_channel_mask(trimmed) {
+        if let Some(mask) = parse_numeric_channel_mask(value) {
             return Self::from_native_channel_mask(mask);
         }
 
-        if let Some(channels) = parse_count_suffix(trimmed, "c") {
+        if let Some(channels) = parse_count_suffix(value, "c") {
             let Some(layout) = ChannelLayout::default_for_count(channels) else {
                 return Err(AvError::invalid_argument(format!(
                     "channel count {channels} has no native default layout"
@@ -2313,12 +2313,12 @@ impl ChannelLayoutSpec {
         }
 
         if let Some(channels) =
-            parse_count_suffix(trimmed, "C").or_else(|| parse_count_suffix(trimmed, " channels"))
+            parse_count_suffix(value, "C").or_else(|| parse_count_suffix(value, " channels"))
         {
             return Self::unspecified(channels);
         }
 
-        if let Some(layout) = Self::parse_channel_list(trimmed)? {
+        if let Some(layout) = Self::parse_channel_list(value)? {
             return Ok(layout);
         }
 
@@ -2913,6 +2913,7 @@ fn parse_numeric_channel_mask(value: &str) -> Option<u64> {
     if value.contains('-') {
         return None;
     }
+    let value = trim_c_number_leading_whitespace(value);
     let unsigned = value.strip_prefix('+').unwrap_or(value);
     if unsigned.is_empty() {
         return None;
@@ -2935,6 +2936,10 @@ fn parse_numeric_channel_mask(value: &str) -> Option<u64> {
     (mask != 0).then_some(mask)
 }
 
+fn trim_c_number_leading_whitespace(value: &str) -> &str {
+    value.trim_start_matches(|ch: char| ch.is_ascii_whitespace())
+}
+
 fn parse_ambisonic_order_prefix(value: &str) -> Option<(u32, &str)> {
     let value = value.trim_start();
     let (order, consumed) = parse_ffmpeg_i32_base0(value, false)?;
@@ -2943,16 +2948,46 @@ fn parse_ambisonic_order_prefix(value: &str) -> Option<(u32, &str)> {
 }
 
 fn parse_count_suffix(value: &str, suffix: &str) -> Option<u16> {
-    let count = value.strip_suffix(suffix)?;
-    parse_positive_channel_count(count)
+    let (count, rest) = parse_decimal_channel_count_prefix(value)?;
+    (rest == suffix).then_some(count)
 }
 
 fn parse_positive_channel_count(value: &str) -> Option<u16> {
+    let (count, rest) = parse_decimal_channel_count_prefix(value)?;
+    rest.is_empty().then_some(count)
+}
+
+fn parse_decimal_channel_count_prefix(value: &str) -> Option<(u16, &str)> {
+    let value = trim_c_number_leading_whitespace(value);
     if value.is_empty() {
         return None;
     }
-    let channels = value.parse::<u16>().ok()?;
-    (channels > 0).then_some(channels)
+
+    let bytes = value.as_bytes();
+    let mut index = 0usize;
+    let mut negative = false;
+    if matches!(bytes[index], b'+' | b'-') {
+        negative = bytes[index] == b'-';
+        index += 1;
+    }
+
+    let digit_start = index;
+    let mut channels = 0u32;
+    while let Some(byte) = bytes.get(index).copied() {
+        if !byte.is_ascii_digit() {
+            break;
+        }
+        channels = channels
+            .checked_mul(10)?
+            .checked_add(u32::from(byte - b'0'))?;
+        index += 1;
+    }
+    if index == digit_start || negative || channels == 0 {
+        return None;
+    }
+
+    let channels = u16::try_from(channels).ok()?;
+    Some((channels, &value[index..]))
 }
 
 #[cfg(test)]
@@ -5193,6 +5228,10 @@ mod tests {
             ChannelLayoutSpec::Native(ChannelLayout::stereo())
         );
         assert_eq!(
+            ChannelLayoutSpec::parse(" +2 channels (FL+FR)").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
             ChannelLayoutSpec::parse("0x3").unwrap(),
             ChannelLayoutSpec::Native(ChannelLayout::stereo())
         );
@@ -5206,6 +5245,14 @@ mod tests {
         );
         assert_eq!(
             ChannelLayoutSpec::parse("+0x3").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse(" 0x3").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse(" +0x3").unwrap(),
             ChannelLayoutSpec::Native(ChannelLayout::stereo())
         );
         assert_eq!(
@@ -5249,11 +5296,23 @@ mod tests {
             ChannelLayoutSpec::Native(ChannelLayout::stereo())
         );
         assert_eq!(
+            ChannelLayoutSpec::parse(" 2c").unwrap(),
+            ChannelLayoutSpec::Native(ChannelLayout::stereo())
+        );
+        assert_eq!(
             ChannelLayoutSpec::parse("2C").unwrap(),
             ChannelLayoutSpec::unspecified(2).unwrap()
         );
         assert_eq!(
+            ChannelLayoutSpec::parse("+2C").unwrap(),
+            ChannelLayoutSpec::unspecified(2).unwrap()
+        );
+        assert_eq!(
             ChannelLayoutSpec::parse("2 channels").unwrap(),
+            ChannelLayoutSpec::unspecified(2).unwrap()
+        );
+        assert_eq!(
+            ChannelLayoutSpec::parse(" +2 channels").unwrap(),
             ChannelLayoutSpec::unspecified(2).unwrap()
         );
         assert_eq!(
@@ -5275,12 +5334,18 @@ mod tests {
             "2 channels ()",
             "2channels",
             "2 channels trailing",
+            "2 channels ",
             "2 channels (FL+FR) trailing",
+            "2 channels (FL+FR) ",
             "0",
             "0x0",
             "-0x3",
+            "0x3 ",
+            "3 ",
             "09",
             "0x3g",
+            "2c ",
+            "2C ",
             "STEREO",
             "stereo ",
             "fl+fr",
