@@ -1967,20 +1967,22 @@ impl AmbisonicChannelLayout {
             ChannelId::Ambisonic(_) => Err(AvError::invalid_argument(
                 "channel is not present in ambisonic layout",
             )),
-            ChannelId::Native(channel) => {
-                if self.extra_native_mask == 0 {
+            _ => {
+                let raw_id = id.raw_id();
+                if ChannelId::from_raw(raw_id) != id || !(0..64).contains(&raw_id) {
                     return Err(AvError::invalid_argument(
                         "channel is not present in ambisonic layout",
                     ));
                 }
-                let native_index = NativeChannelMaskLayout::new(self.extra_native_mask)
-                    .expect("nonzero ambisonic extra native mask is valid")
-                    .index_from_channel(ChannelId::Native(channel))?;
-                Ok(ambisonic_channel_count + native_index)
+                let channel_mask = 1u64 << raw_id;
+                if self.extra_native_mask & channel_mask == 0 {
+                    return Err(AvError::invalid_argument(
+                        "channel is not present in ambisonic layout",
+                    ));
+                }
+                let native_index = (self.extra_native_mask & (channel_mask - 1)).count_ones();
+                Ok(ambisonic_channel_count + native_index as usize)
             }
-            ChannelId::None | ChannelId::Unused | ChannelId::Unknown | ChannelId::User(_) => Err(
-                AvError::invalid_argument("channel is not present in ambisonic layout"),
-            ),
         }
     }
 
@@ -5854,6 +5856,55 @@ mod tests {
         ] {
             let err = ChannelLayoutSpec::parse(input).unwrap_err();
             assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        }
+    }
+
+    #[test]
+    fn ambisonic_layouts_lookup_raw_native_mask_extra_channels() {
+        let raw_extra_mask = 1u64 << 45;
+        let layout = AmbisonicChannelLayout::new(1, raw_extra_mask).unwrap();
+        assert_eq!(layout.describe(), "ambisonic 1+1 channels (USR45)");
+        assert_eq!(layout.channel_count(), 5);
+        assert_eq!(layout.channel_from_index(4), Some(ChannelId::User(45)));
+        assert_eq!(layout.index_from_channel(ChannelId::User(45)).unwrap(), 4);
+        assert_eq!(layout.index_from_string("USR45").unwrap(), 4);
+        assert_eq!(
+            layout.channel_from_string("USR45"),
+            Some(ChannelId::User(45))
+        );
+        assert_eq!(
+            layout.subset_mask(raw_extra_mask | ChannelLayout::stereo().channel_mask()),
+            raw_extra_mask
+        );
+
+        let spec = ChannelLayoutSpec::parse("ambisonic 1+0x200000000000").unwrap();
+        assert_eq!(spec.as_ambisonic(), Some(layout));
+        assert_eq!(spec.index_from_channel(ChannelId::User(45)).unwrap(), 4);
+        assert_eq!(spec.index_from_string("USR45").unwrap(), 4);
+        assert_eq!(spec.channel_from_index(4), Some(ChannelId::User(45)));
+        assert_eq!(spec.channel_from_string("USR45"), Some(ChannelId::User(45)));
+
+        let custom =
+            CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+USR45").unwrap();
+        assert!(spec.is_equivalent_to(ChannelLayoutSpec::Custom(custom.clone())));
+        assert!(spec.is_equivalent_to_custom(&custom));
+        for absent in [
+            ChannelId::Native(Channel::FrontLeft),
+            ChannelId::User(0),
+            ChannelId::User(44),
+            ChannelId::User(46),
+            ChannelId::Unknown,
+        ] {
+            assert_eq!(
+                spec.index_from_channel(absent).unwrap_err().kind(),
+                AvErrorKind::InvalidArgument
+            );
+        }
+        for lookup in ["FL", "USR44", "USR46", "UNK", "USR45@Raw"] {
+            assert_eq!(
+                spec.index_from_string(lookup).unwrap_err().kind(),
+                AvErrorKind::InvalidArgument
+            );
         }
     }
 

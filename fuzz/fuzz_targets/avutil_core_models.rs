@@ -108,7 +108,28 @@ fn assert_raw_channel_layout_retype_fixtures() {
         AmbisonicChannelLayout::new(1, raw_ambisonic_mask).unwrap(),
     );
     assert_eq!(
+        raw_ambisonic.index_from_channel(ChannelId::User(45)).unwrap(),
+        4
+    );
+    assert_eq!(raw_ambisonic.index_from_string("USR45").unwrap(), 4);
+    assert_eq!(
+        raw_ambisonic.channel_from_index(4),
+        Some(ChannelId::User(45))
+    );
+    assert_eq!(
+        raw_ambisonic.channel_from_string("USR45"),
+        Some(ChannelId::User(45))
+    );
+    assert_eq!(
+        raw_ambisonic.subset_mask(raw_ambisonic_mask | ChannelLayout::stereo().channel_mask()),
+        raw_ambisonic_mask
+    );
+    assert_eq!(
         ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+USR45").unwrap(),
+        raw_ambisonic
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic 1+0x200000000000").unwrap(),
         raw_ambisonic
     );
     assert_eq!(
