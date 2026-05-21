@@ -1,0 +1,10 @@
+# Differential mappings that require a pinned FFmpeg oracle.
+#
+# Format matches tests/fate/mappings.txt:
+# component_id|target|workdir|program|arg1|arg2|...
+#
+# Mapping-scoped env:NAME=value fields are consumed by fate-runner and are not
+# passed as command arguments.
+fftools-ffmpeg-rawvideo-file-output|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
+avformat-rawvideo-demuxer|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
+avformat-rawvideo-muxer|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored

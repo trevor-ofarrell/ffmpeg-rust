@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `fate-runner` update: mapping rows now support `env:NAME=value` fields that are parsed as child-process environment assignments instead of command arguments. Placeholder resolution applies to those environment values, so `tests/differential/mappings.txt` can validate `--oracle-ffmpeg <path>` and inject it as `FFMPEG_ORACLE` for the ignored rawvideo oracle integration harness. Dry-run and prerequisite-check coverage now prove the differential mapping file resolves all three rawvideo components through the same oracle path; real parity execution is still blocked until a pinned FFmpeg 8.1.1 oracle binary is available locally.
+
 Latest `fate-runner` update: explicit FATE runs now accept repeated `--component <id>` flags for multi-component execution, deduplicate duplicate component IDs while preserving first occurrence order, and still reject mixed `--changed` plus `--component` mode selection. A real dry-run verified that `avformat-rawvideo-demuxer` and `avformat-rawvideo-muxer` can be selected together in one command. This removes the prior repeated-`--component` local runner blocker; upstream FATE media mappings and samples remain absent.
 
 Latest rawvideo oracle update: added an ignored `fftools` integration harness that compares Rust rawvideo file-output bytes against a pinned FFmpeg 8.1.1 oracle using streamcopy rawvideo output. The harness currently covers `rgb24` and `gbrp10msble`, exercises the constrained `ffmpeg-rs -f rawvideo ... -f rawvideo <file>` path through the Rust rawvideo demuxer and muxer, and records the tests in the rawvideo CLI/demuxer/muxer ledger entries. `fate-runner` now maps changes to that harness back to `fftools-ffmpeg-rawvideo-file-output`, `avformat-rawvideo-demuxer`, and `avformat-rawvideo-muxer`, so changed-path FATE dry-runs and local smoke runs no longer treat the test file as unmapped implementation work. Default compilation passes with the tests ignored; explicit `--ignored` execution fails locally because neither `FFMPEG_ORACLE` nor `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` is present. This is a measurable differential-test slot, not completed parity.
@@ -337,6 +339,17 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `fate-runner` oracle-env mapping slice:
+  - `cargo fmt --all`
+  - `cargo fmt --all -- --check`
+  - `cargo test -p fate-runner --target-dir target-codex`
+  - `cargo run --target-dir target-codex -p fate-runner -- mappings --mappings tests/differential/mappings.txt --check-prereqs --oracle-ffmpeg Cargo.toml`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --dry-run --mappings tests/differential/mappings.txt --oracle-ffmpeg Cargo.toml --component fftools-ffmpeg-rawvideo-file-output --component avformat-rawvideo-demuxer --component avformat-rawvideo-muxer`
+  - `cargo clippy -p fate-runner --target-dir target-codex -- -D warnings`
+  - `cargo run --target-dir target-codex -p fate-runner -- run --changed --dry-run`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run --target-dir target-codex -p fate-runner -- run --changed`
+  - `git diff --check`
 
 - Current `fate-runner` repeated-component slice:
   - `cargo fmt --all`
@@ -4062,6 +4075,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `fate-runner` oracle-env mapping slice:
+  - `cargo run --target-dir target-codex -p fate-runner -- mappings --mappings tests/differential/mappings.txt --check-prereqs` failed as expected because the differential mappings reference `{oracle_ffmpeg}` and require `--oracle-ffmpeg <path>` before injecting `FFMPEG_ORACLE`. This confirms the differential mapping file does not silently skip the pinned-oracle prerequisite.
+
 - Current `fate-runner` repeated-component slice: no assertion failure remains. The prior repeated-`--component` rejection is resolved by accepting multiple explicit component IDs and deduplicating duplicate IDs before executing mappings.
 
 - Current rawvideo oracle harness slice:
@@ -4369,7 +4385,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`fate-runner` was the active infrastructure focus for this turn. The latest change makes explicit multi-component local FATE runs usable through repeated `--component` flags, which is useful for running coupled demuxer/muxer or CLI/component smoke mappings together. The component remains `scaffolded` because upstream FFmpeg FATE media sample execution and real sample-backed mappings are still not present.
+`fate-runner` was the active infrastructure focus for this turn. The latest change makes differential mapping rows able to inject mapping-scoped environment variables with placeholder resolution, so rawvideo oracle tests can receive a validated `FFMPEG_ORACLE` path from `--oracle-ffmpeg` instead of manual shell setup. The component remains `scaffolded` because upstream FFmpeg FATE media sample execution and real sample-backed mappings are still not present.
 
 `fftools-ffmpeg-rawvideo-file-output`, `avformat-rawvideo-demuxer`, and `avformat-rawvideo-muxer` are the current focus for turning rawvideo local coverage into oracle-backed differential coverage. The latest concrete change adds ignored `rgb24` and `gbrp10msble` rawvideo file-output oracle tests. The component status remains `implemented`, not `differential_pass` or `complete`, until the pinned FFmpeg 8.1.1 oracle binary is installed and those tests pass.
 
@@ -4519,13 +4535,13 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 
 ## Next 3 Concrete Actions
 
-1. Install or build the pinned FFmpeg 8.1.1 default-native oracle binary, or set `FFMPEG_ORACLE`, then run `cargo test -p fftools --test rawvideo_oracle --target-dir target-codex -- --ignored`.
-2. Add sample-backed FATE mapping rows once a local samples root and pinned oracle binary are available, using repeated `--component` invocations for related component groups.
-3. If the `rgb24` and `gbrp10msble` oracle cases pass, expand the rawvideo oracle harness to additional representative packed, planar, endian, row-padded, and chroma-subsampled formats, then record passing commands before advancing any rawvideo status toward `differential_pass`.
+1. Install or build the pinned FFmpeg 8.1.1 default-native oracle binary, then run `cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --oracle-ffmpeg <path> --component fftools-ffmpeg-rawvideo-file-output --component avformat-rawvideo-demuxer --component avformat-rawvideo-muxer`.
+2. If the `rgb24` and `gbrp10msble` oracle cases pass through the mapping file, expand the rawvideo oracle harness to additional representative packed, planar, endian, row-padded, and chroma-subsampled formats, then record passing commands before advancing any rawvideo status toward `differential_pass`.
+3. Add sample-backed upstream FATE mapping rows once a local samples root and pinned oracle binary are available, reusing mapping-scoped environment values or prerequisites where needed.
 
 ## Known Blockers
 
-- Rawvideo oracle differentials are now wired but cannot run to parity in this workspace because the pinned FFmpeg 8.1.1 oracle binary is missing. `cargo test -p fftools --test rawvideo_oracle --target-dir target-codex -- --ignored` fails before comparison until `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` is available.
+- Rawvideo oracle differentials are now wired through `tests/differential/mappings.txt` with `env:FFMPEG_ORACLE={oracle_ffmpeg}`, but cannot run to parity in this workspace because the pinned FFmpeg 8.1.1 oracle binary is missing. The mapping prerequisite check intentionally fails without `--oracle-ffmpeg <path>`, and the ignored test harness fails before comparison until `FFMPEG_ORACLE` or `third_party/ffmpeg-oracle/build/bin/ffmpeg(.exe)` is available.
 
 - Current MSB-aligned planar YUV444/GBR validation has no remaining code/test assertion failures. Focused avutil, avcodec, avformat, and fftools tests passed through `target-codex`; main and fuzz-package clippy passed; main and fuzz-package check passed; changed-path and single-component FATE dry-runs passed. The prior direct repeated-`--component` FATE dry-run limitation is resolved in the current runner. The remaining blockers are pinned oracle differentials, upstream FATE media parity, pixel conversion, hardware formats, and actual fuzz execution.
 
@@ -4586,6 +4602,8 @@ This slice does not mark packet handling complete. The broader goal remains bloc
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: updated `fate-runner` mapping parsing and execution so fields with `env:NAME=value` become child-process environment assignments, with the same placeholder resolution and prerequisite validation as command arguments. `tests/differential/mappings.txt` now maps the rawvideo oracle harness to `fftools-ffmpeg-rawvideo-file-output`, `avformat-rawvideo-demuxer`, and `avformat-rawvideo-muxer`, injecting `FFMPEG_ORACLE={oracle_ffmpeg}` from the validated `--oracle-ffmpeg` path. Unit coverage checks env parsing, invalid env rows, placeholder resolution, formatted diagnostics, and prerequisite failures. The docs and ledger record this as differential wiring only; rawvideo is still below `differential_pass` until a pinned FFmpeg 8.1.1 oracle binary runs the ignored tests successfully.
 
 Latest slice: updated `fate-runner` explicit run parsing so repeated `--component <id>` flags select multiple components in a single invocation, with duplicate component IDs deduplicated before mapping execution. Parser coverage now checks multi-component parsing, duplicate removal, dry-run preservation, and unchanged `--changed`/`--component` ambiguity rejection. A real dry-run verified that `avformat-rawvideo-demuxer` and `avformat-rawvideo-muxer` mappings resolve together. The ledger and FATE/oracle/architecture docs record the new behavior. `fate-runner` remains `scaffolded`, not complete, because upstream sample-backed FATE execution is still absent.
 

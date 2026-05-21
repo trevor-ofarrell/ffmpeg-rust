@@ -17,6 +17,7 @@ struct FateMapping {
     target: String,
     workdir: String,
     program: String,
+    env: Vec<(String, String)>,
     args: Vec<String>,
 }
 
@@ -838,21 +839,44 @@ fn parse_fate_mappings(
         }
         seen_targets.push(key);
 
-        let args = fields[4..]
-            .iter()
-            .map(|arg| (*arg).to_string())
-            .collect::<Vec<_>>();
+        let mut env = Vec::new();
+        let mut args = Vec::new();
+        for field in &fields[4..] {
+            if let Some(assignment) = field.strip_prefix("env:") {
+                let (name, value) = parse_env_assignment(assignment)
+                    .map_err(|err| format!("invalid FATE mapping at line {line_number}: {err}"))?;
+                env.push((name.to_string(), value.to_string()));
+            } else {
+                args.push((*field).to_string());
+            }
+        }
 
         mappings.push(FateMapping {
             component_id: component_id.to_string(),
             target: target.to_string(),
             workdir: normalize_path(workdir),
             program: program.to_string(),
+            env,
             args,
         });
     }
 
     Ok(mappings)
+}
+
+fn parse_env_assignment(assignment: &str) -> Result<(&str, &str), String> {
+    let (name, value) = assignment
+        .split_once('=')
+        .ok_or_else(|| "environment assignments must use env:NAME=value".to_string())?;
+    if name.is_empty() || value.is_empty() {
+        return Err("environment assignments must use non-empty env:NAME=value".to_string());
+    }
+    if name.contains(char::is_whitespace) {
+        return Err(format!(
+            "environment variable name `{name}` must not contain whitespace"
+        ));
+    }
+    Ok((name, value))
 }
 
 fn run_fate_mapping(
@@ -883,6 +907,7 @@ fn run_fate_mapping(
     }
 
     let status = Command::new(&mapping.program)
+        .envs(mapping.env.iter().map(|(name, value)| (name, value)))
         .args(&mapping.args)
         .current_dir(&mapping.workdir)
         .status()
@@ -912,6 +937,16 @@ fn resolve_fate_mapping(
         target: mapping.target.clone(),
         workdir: replace_mapping_placeholders(mapping, &mapping.workdir, context)?,
         program: replace_mapping_placeholders(mapping, &mapping.program, context)?,
+        env: mapping
+            .env
+            .iter()
+            .map(|(name, value)| {
+                Ok((
+                    name.clone(),
+                    replace_mapping_placeholders(mapping, value, context)?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()?,
         args: mapping
             .args
             .iter()
@@ -983,9 +1018,15 @@ fn required_oracle_ffmpeg<'a>(
 }
 
 fn format_mapping_command(mapping: &FateMapping) -> String {
-    let mut parts = Vec::with_capacity(mapping.args.len() + 1);
-    parts.push(mapping.program.as_str());
-    parts.extend(mapping.args.iter().map(String::as_str));
+    let mut parts = Vec::with_capacity(mapping.env.len() + mapping.args.len() + 1);
+    parts.extend(
+        mapping
+            .env
+            .iter()
+            .map(|(name, value)| format!("{name}={value}")),
+    );
+    parts.push(mapping.program.clone());
+    parts.extend(mapping.args.iter().cloned());
     format!("(cd {} && {})", mapping.workdir, parts.join(" "))
 }
 
@@ -1565,6 +1606,7 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
                     target: "local-self-test".to_string(),
                     workdir: ".".to_string(),
                     program: "cargo".to_string(),
+                    env: vec![],
                     args: vec![
                         "test".to_string(),
                         "-p".to_string(),
@@ -1576,6 +1618,7 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
                     target: "error-unit".to_string(),
                     workdir: ".".to_string(),
                     program: "cargo".to_string(),
+                    env: vec![],
                     args: vec![
                         "test".to_string(),
                         "-p".to_string(),
@@ -1607,6 +1650,16 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
         )
         .unwrap_err()
         .contains("duplicate target `target`"));
+        assert!(
+            parse_fate_mappings("fate-runner|target|.|cargo|env:BAD|test", &component_ids,)
+                .unwrap_err()
+                .contains("environment assignments must use env:NAME=value")
+        );
+        assert!(
+            parse_fate_mappings("fate-runner|target|.|cargo|env:=value|test", &component_ids,)
+                .unwrap_err()
+                .contains("non-empty env:NAME=value")
+        );
     }
 
     #[test]
@@ -1616,6 +1669,7 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             target: "local-self-test".to_string(),
             workdir: ".".to_string(),
             program: "cargo".to_string(),
+            env: vec![],
             args: vec![
                 "test".to_string(),
                 "-p".to_string(),
@@ -1630,12 +1684,38 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
     }
 
     #[test]
+    fn parses_formats_and_resolves_mapping_environment_assignments() {
+        let component_ids =
+            component_ids_from_ledger(&ledger(&["fftools-ffmpeg-rawvideo-file-output"]));
+        let mappings = parse_fate_mappings(
+            "fftools-ffmpeg-rawvideo-file-output|oracle-rawvideo|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored",
+            &component_ids,
+        )
+        .unwrap();
+        let context = FateContext {
+            samples_root: None,
+            oracle_ffmpeg: Some("Cargo.toml".to_string()),
+        };
+        let resolved = resolve_fate_mapping(&mappings[0], &context).unwrap();
+
+        assert_eq!(
+            resolved.env,
+            vec![("FFMPEG_ORACLE".to_string(), "Cargo.toml".to_string())]
+        );
+        assert_eq!(
+            format_mapping_command(&resolved),
+            "(cd . && FFMPEG_ORACLE=Cargo.toml cargo test -p fftools --test rawvideo_oracle -- --ignored)"
+        );
+    }
+
+    #[test]
     fn resolves_mapping_prerequisite_placeholders() {
         let mapping = FateMapping {
             component_id: "avformat-wav-demuxer".to_string(),
             target: "sample-framecrc".to_string(),
             workdir: "{samples}/audio".to_string(),
             program: "{oracle_ffmpeg}".to_string(),
+            env: vec![("FFMPEG_ORACLE".to_string(), "{oracle_ffmpeg}".to_string())],
             args: vec![
                 "-i".to_string(),
                 "{samples}/audio/test.wav".to_string(),
@@ -1656,6 +1736,7 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
                 target: "sample-framecrc".to_string(),
                 workdir: "./audio".to_string(),
                 program: "Cargo.toml".to_string(),
+                env: vec![("FFMPEG_ORACLE".to_string(), "Cargo.toml".to_string())],
                 args: vec![
                     "-i".to_string(),
                     "./audio/test.wav".to_string(),
@@ -1674,6 +1755,7 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             target: "sample-framecrc".to_string(),
             workdir: ".".to_string(),
             program: "cargo".to_string(),
+            env: vec![],
             args: vec!["{samples}/audio/test.wav".to_string()],
         };
 
@@ -1694,6 +1776,7 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             target: "sample-framecrc".to_string(),
             workdir: ".".to_string(),
             program: "{oracle_ffmpeg}".to_string(),
+            env: vec![],
             args: vec!["-version".to_string()],
         };
         let context = FateContext {
@@ -1712,6 +1795,7 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             target: "local-self-test".to_string(),
             workdir: ".".to_string(),
             program: "cargo".to_string(),
+            env: vec![],
             args: vec![
                 "test".to_string(),
                 "-p".to_string(),
@@ -1735,6 +1819,7 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             target: "sample-framecrc".to_string(),
             workdir: "{samples}/audio".to_string(),
             program: "{oracle_ffmpeg}".to_string(),
+            env: vec![],
             args: vec![
                 "-i".to_string(),
                 "{samples}/audio/test.wav".to_string(),
@@ -1759,6 +1844,7 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             target: "sample-framecrc".to_string(),
             workdir: "{samples}".to_string(),
             program: "{oracle_ffmpeg}".to_string(),
+            env: vec![],
             args: vec!["-version".to_string()],
         }];
 
@@ -1787,6 +1873,7 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             target: "nonexistent-program".to_string(),
             workdir: ".".to_string(),
             program: "definitely-not-a-real-fate-command".to_string(),
+            env: vec![],
             args: vec!["--would-fail-if-executed".to_string()],
         };
 
@@ -1803,6 +1890,7 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             target: "sample-framecrc".to_string(),
             workdir: ".".to_string(),
             program: "cargo".to_string(),
+            env: vec![],
             args: vec!["{samples}/audio/test.wav".to_string()],
         };
 

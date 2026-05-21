@@ -8,6 +8,8 @@ Each non-comment row is pipe-separated:
 component_id|target|workdir|program|arg1|arg2|...
 ```
 
+Arguments with the form `env:NAME=value` are consumed by `fate-runner` as mapping-scoped environment variables and are not passed to the child process. Placeholder resolution applies to environment values, so `env:FFMPEG_ORACLE={oracle_ffmpeg}` can inject a validated oracle path for differential mappings.
+
 Mappings may use `{samples}` and `{oracle_ffmpeg}` placeholders in the workdir, program, or args fields. Selected mappings that reference those placeholders require `--samples <path>` and/or `--oracle-ffmpeg <path>`, and the runner validates that the samples path is a directory and the oracle path is a file before executing the command.
 
 List configured mappings without selecting a component:

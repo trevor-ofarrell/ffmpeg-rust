@@ -812,7 +812,7 @@ upstream_profile = "ffmpeg-8.1.1-default-native"
 status = "scaffolded"
 priority = 2
 oracle_command = "make fate"
-rust_command = "cargo run -p fate-runner -- list; cargo run -p fate-runner -- mappings; cargo run -p fate-runner -- mappings --check-prereqs --samples . --oracle-ffmpeg Cargo.toml; cargo run -p fate-runner -- run --dry-run --component fate-runner; cargo run -p fate-runner -- run --dry-run --component avformat-rawvideo-demuxer --component avformat-rawvideo-muxer --component avformat-rawvideo-demuxer; cargo run -p fate-runner -- run --component fate-runner"
+rust_command = "cargo run -p fate-runner -- list; cargo run -p fate-runner -- mappings; cargo run -p fate-runner -- mappings --check-prereqs --samples . --oracle-ffmpeg Cargo.toml; cargo run -p fate-runner -- mappings --mappings tests/differential/mappings.txt --check-prereqs --oracle-ffmpeg Cargo.toml; cargo run -p fate-runner -- run --dry-run --component fate-runner; cargo run -p fate-runner -- run --dry-run --component avformat-rawvideo-demuxer --component avformat-rawvideo-muxer --component avformat-rawvideo-demuxer; cargo run -p fate-runner -- run --dry-run --mappings tests/differential/mappings.txt --oracle-ffmpeg Cargo.toml --component fftools-ffmpeg-rawvideo-file-output --component avformat-rawvideo-demuxer --component avformat-rawvideo-muxer; cargo run -p fate-runner -- run --component fate-runner"
 unit_tests = [
   "tests::parses_component_ids_from_ledger",
   "tests::changed_selection_maps_paths_and_preserves_ledger_order",
@@ -829,6 +829,7 @@ unit_tests = [
   "tests::parses_fate_mapping_rows",
   "tests::rejects_invalid_fate_mapping_rows",
   "tests::formats_mapping_commands_for_diagnostics",
+  "tests::parses_formats_and_resolves_mapping_environment_assignments",
   "tests::reports_selected_components_without_mappings",
   "tests::resolves_mapping_prerequisite_placeholders",
   "tests::reports_missing_or_invalid_mapping_prerequisites",
@@ -842,7 +843,8 @@ unit_tests = [
 differential_tests = []
 fate_tests = ["tests/fate/mappings.txt:fate-runner|local-self-test"]
 fuzz_targets = []
-notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules, dependency manifests and lockfile, xtask runtime guard, cargo-fuzz target files, and the rawvideo oracle integration harness, parse the explicit tests/fate/mappings.txt format, accept repeated --component flags with duplicate component IDs coalesced before execution, expand {samples} and {oracle_ffmpeg} prerequisites when mappings require them, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus repo runtime guard, local avutil unit-test, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, and shared ffprobe unit-test smoke mappings. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
+notes = "Can list ledger component IDs, list all configured FATE mappings independently of component selection, audit all mapping prerequisites with --check-prereqs, select changed ledger components from git paths for the currently mapped Rust modules, dependency manifests and lockfile, xtask runtime guard, cargo-fuzz target files, and the rawvideo oracle integration harness, parse the explicit tests/fate/mappings.txt format, accept repeated --component flags with duplicate component IDs coalesced before execution, parse mapping-scoped env:NAME=value fields as child-process environment assignments instead of command arguments, expand {samples} and {oracle_ffmpeg} prerequisites in both command arguments and environment values, dry-run selected mappings without executing commands, and run the local fate-runner smoke mapping plus repo runtime guard, local avutil unit-test, MOV demuxer, fftools version, fftools hide-banner, fftools option-parser, fftools I/O-plan, shared ffmpeg unit-test, shared ffprobe unit-test, and tests/differential/mappings.txt rawvideo oracle smoke selections. The local mappings prove runner wiring and selected component command execution only; upstream FFmpeg FATE media mappings are still absent."
+# Latest update: mapping-scoped env:NAME=value fields are parsed, resolved, displayed, and injected into child commands, enabling tests/differential/mappings.txt to pass validated {oracle_ffmpeg} as FFMPEG_ORACLE for rawvideo oracle tests.
 # Latest update: repeated --component flags are now accepted for explicit multi-component runs, duplicate component IDs are deduplicated while preserving first occurrence order, and a real dry-run confirms rawvideo demuxer/muxer mappings can be selected together.
 blocked_reason = "No upstream FATE samples path or media component mapping has been configured."
 
@@ -2117,11 +2119,13 @@ unit_tests = [
 differential_tests = [
   "crates/fftools/tests/rawvideo_oracle.rs::rawvideo_rgb24_file_output_matches_ffmpeg_oracle",
   "crates/fftools/tests/rawvideo_oracle.rs::rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle",
+  "tests/differential/mappings.txt:fftools-ffmpeg-rawvideo-file-output|oracle-rawvideo-file-output",
 ]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-rawvideo-file-output|local-ffmpeg-unit"]
 fuzz_targets = []
 notes = "ffmpeg-rs command execution supports explicit rawvideo input packet-copy to a local rawvideo output file with explicit -f rawvideo, -pix_fmt, -s, and -r input parameters and explicit -f rawvideo output format. It uses the Rust rawvideo demuxer and RawVideoMuxer over the current shared PixelFormat set, creates output files with no overwrite, and now has ignored oracle differential tests for rgb24 and gbrp10msble rawvideo streamcopy output bytes. Transcoding, stdout rawvideo output, overwrite confirmation flags, broad muxer selection, non-rawvideo inputs, and upstream FATE coverage remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
-# Latest update: added ignored rawvideo oracle integration tests comparing Rust rawvideo file-output bytes against pinned FFmpeg streamcopy rawvideo output for rgb24 and gbrp10msble; default compilation passes, explicit --ignored execution is blocked until FFMPEG_ORACLE or third_party oracle binary is available.
+# Latest update: tests/differential/mappings.txt now selects the ignored rawvideo oracle integration harness for this component and injects FFMPEG_ORACLE through a validated {oracle_ffmpeg} mapping environment value; real execution remains blocked until the pinned oracle binary exists locally.
+# Prior update: added ignored rawvideo oracle integration tests comparing Rust rawvideo file-output bytes against pinned FFmpeg streamcopy rawvideo output for rgb24 and gbrp10msble; default compilation passes, explicit --ignored execution is blocked until FFMPEG_ORACLE or third_party oracle binary is available.
 blocked_reason = "Pinned FFmpeg oracle binary is not present locally, so rawvideo oracle differential tests are ignored by default and fail explicitly when run with --ignored until FFMPEG_ORACLE is configured."
 
 [[component]]
@@ -2704,11 +2708,13 @@ unit_tests = [
 differential_tests = [
   "crates/fftools/tests/rawvideo_oracle.rs::rawvideo_rgb24_file_output_matches_ffmpeg_oracle",
   "crates/fftools/tests/rawvideo_oracle.rs::rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle",
+  "tests/differential/mappings.txt:avformat-rawvideo-demuxer|oracle-rawvideo-file-output",
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-rawvideo-demuxer|local-avformat-rawvideo-unit"]
 fuzz_targets = ["avformat_rawvideo"]
 notes = "Initial rawvideo demuxer slices fixed-size frame packets for gray, ya8, ya16le, ya16be, gray9le, gray9be, gray10le, gray10be, gray12le, gray12be, gray14le, gray14be, gray16le, gray16be, gray32le, gray32be, grayf16le, grayf16be, grayf32le, grayf32be, rgb24, bgr24, rgb48le, rgb48be, bgr48le, bgr48be, rgba64le, rgba64be, bgra64le, bgra64be, rgba, bgra, argb, abgr, 0rgb, rgb0, 0bgr, bgr0, gbrp, gbrp9le, gbrp9be, gbrp10le, gbrp10be, gbrp12le, gbrp12be, gbrp14le, gbrp14be, gbrp16le, gbrp16be, yuv420p, yuv422p, yuv410p, yuv411p, yuv440p, and yuv444p with shared VideoStreamParameters dimensions/frame-size validation, frame-rate validation, monotonic PTS, and truncated-frame rejection. Build-checked cargo-fuzz target avformat_rawvideo exercises geometry/format/rate validation, frame slicing, packet timing, side-data invariants, and current PixelFormat inventory selection, but actual local fuzz execution is blocked until cargo-fuzz is installed. CLI wiring, probe integration, more pixel formats, differential tests, and upstream FATE are pending. The local FATE-runner smoke mapping executes the rawvideo unit filter only and does not count as upstream FATE parity."
-# Latest update: an ignored fftools rawvideo oracle harness now exercises demux packetization against FFmpeg streamcopy rawvideo output for rgb24 and gbrp10msble; blocked locally by missing pinned oracle binary.
+# Latest update: tests/differential/mappings.txt now selects the ignored rawvideo oracle integration harness for this demuxer and injects FFMPEG_ORACLE through a validated {oracle_ffmpeg} mapping environment value; real execution remains blocked until the pinned oracle binary exists locally.
+# Prior update: an ignored fftools rawvideo oracle harness now exercises demux packetization against FFmpeg streamcopy rawvideo output for rgb24 and gbrp10msble; blocked locally by missing pinned oracle binary.
 # Prior update: rawvideo demux frame-size and side-data coverage includes gbrp10msble frame slicing, rawvideo_pix_fmt side data, gbrp10msb/gbrp12msb payload sizing, and MSB-aligned yuv444p10/yuv444p12 payload sizing through the shared PixelFormat model.
 # Prior update: rawvideo demux frame-size and side-data coverage includes rgb96le and rgba128be frame slicing, rawvideo_pix_fmt side data, and rgb96/rgba128 payload sizing through the shared PixelFormat model.
 # Prior update: rawvideo demux frame-size and side-data coverage includes rgbaf32le frame slicing, rawvideo_pix_fmt side data, and rgbaf16/rgbaf32 payload sizing through the shared PixelFormat model.
@@ -2835,11 +2841,13 @@ unit_tests = [
 differential_tests = [
   "crates/fftools/tests/rawvideo_oracle.rs::rawvideo_rgb24_file_output_matches_ffmpeg_oracle",
   "crates/fftools/tests/rawvideo_oracle.rs::rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle",
+  "tests/differential/mappings.txt:avformat-rawvideo-muxer|oracle-rawvideo-file-output",
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-rawvideo-muxer|local-avformat-rawvideo-unit"]
 fuzz_targets = ["avformat_basic_muxers"]
 notes = "Initial rawvideo muxer concatenates stream-0 fixed-size frame packet payloads validated with shared VideoStreamParameters dimensions/frame-size checks for gray, ya8, ya16le, ya16be, gray9le, gray9be, gray10le, gray10be, gray12le, gray12be, gray14le, gray14be, gray16le, gray16be, gray32le, gray32be, grayf16le, grayf16be, grayf32le, grayf32be, rgb24, bgr24, rgb48le, rgb48be, bgr48le, bgr48be, rgba64le, rgba64be, bgra64le, bgra64be, rgba, bgra, argb, abgr, 0rgb, rgb0, 0bgr, bgr0, gbrp, gbrp9le, gbrp9be, gbrp10le, gbrp10be, gbrp12le, gbrp12be, gbrp14le, gbrp14be, gbrp16le, gbrp16be, yuv420p, yuv422p, yuv410p, yuv411p, yuv440p, and yuv444p, tracks frame/byte counts, supports empty output, and prevents writes after finish. It is wired to a constrained ffmpeg-rs rawvideo file-output path. Build-checked cargo-fuzz target avformat_basic_muxers covers accepted/rejected packet writes, state accounting, render/finish stability, post-finish rejection, and RawVideoDemuxer round trips across the current PixelFormat inventory, but actual local fuzz execution is blocked until cargo-fuzz is installed. Probe integration, more pixel formats, broader CLI execution, differential tests, and upstream FATE are pending. The local FATE-runner smoke mapping executes the rawvideo unit filter only and does not count as upstream FATE parity."
-# Latest update: an ignored fftools rawvideo oracle harness now exercises muxed rawvideo bytes against FFmpeg streamcopy rawvideo output for rgb24 and gbrp10msble; blocked locally by missing pinned oracle binary.
+# Latest update: tests/differential/mappings.txt now selects the ignored rawvideo oracle integration harness for this muxer and injects FFMPEG_ORACLE through a validated {oracle_ffmpeg} mapping environment value; real execution remains blocked until the pinned oracle binary exists locally.
+# Prior update: an ignored fftools rawvideo oracle harness now exercises muxed rawvideo bytes against FFmpeg streamcopy rawvideo output for rgb24 and gbrp10msble; blocked locally by missing pinned oracle binary.
 # Prior update: rawvideo mux frame-size and basic-muxer fuzz-build coverage include MSB-aligned gbrp10/gbrp12 and yuv444p10/yuv444p12 payload sizing plus a representative gbrp10msble mux-demux round trip through the shared PixelFormat model.
 # Prior update: rawvideo mux frame-size and basic-muxer fuzz-build coverage include rgb96/rgba128 payload sizing and representative mux-demux round trips through the shared PixelFormat model.
 # Prior update: rawvideo mux frame-size and basic-muxer fuzz-build coverage include rgbaf16/rgbaf32 payload sizing and representative mux-demux round trips through the shared PixelFormat model.
