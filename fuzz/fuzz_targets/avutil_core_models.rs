@@ -7611,11 +7611,15 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let mut packet_ref = Packet::default();
     packet_ref.ref_from(&packet);
     assert_eq!(packet_ref.data(), packet.data());
-    assert!(packet_ref
+    assert!(!packet_ref
         .data_buffer()
         .shares_storage(packet.data_buffer()));
-    assert!(!packet_ref.is_data_writable());
-    assert!(packet_ref.data_mut().is_none());
+    assert_eq!(
+        packet_ref.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(packet_ref.is_data_writable());
+    assert!(packet_ref.data_mut().is_some());
     assert_eq!(
         packet_ref.side_data_by_kind("ref_side_data").unwrap().data(),
         &[0xbb, 0xcc]
@@ -7633,9 +7637,14 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
     let mut cloned_packet = packet.clone();
     assert_eq!(cloned_packet.data(), packet.data());
-    assert!(cloned_packet
+    assert!(!cloned_packet
         .data_buffer()
         .shares_storage(packet.data_buffer()));
+    assert_eq!(
+        cloned_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(cloned_packet.is_data_writable());
     assert_eq!(
         cloned_packet
             .side_data_by_kind("ref_side_data")

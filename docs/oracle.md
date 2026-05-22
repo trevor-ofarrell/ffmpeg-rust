@@ -178,6 +178,8 @@ The harness also includes `packet:payload-grow-unrefcounted*` and `packet:payloa
 
 The harness also includes a `packet:payload-shrink-unrefcounted` row, proving raw `AVPacket.data`/`size` shrink behavior with caller-provided input padding. FFmpeg truncates visible size and zeroes padding without allocating an `AVBufferRef`, so the row compares payload length, visible bytes, and padding rather than writability.
 
+The harness also includes `packet:payload-ref-unrefcounted-*` and `packet:payload-clone-unrefcounted` rows, proving raw `AVPacket.data`/`size` reference behavior when `pkt->buf` is NULL. FFmpeg copies the visible bytes into new padded refcounted destination storage for both `av_packet_ref()` and `av_packet_clone()`, while the raw source packet remains a no-buffer packet.
+
 The harness also includes `packet:side-add-capacity-*` and `packet:side-new-capacity-overflow` rows, proving packet-owned side-data capacity behavior at `AV_PKT_DATA_NB`: replacement remains valid at capacity, append fails with `ERANGE` without changing the entry count, and `av_packet_new_side_data()` returns NULL at capacity.
 
 The harness also includes `packet:fifo-*` rows, proving the packet-specialized container FIFO transfer semantics for move writes, ref writes, read draining, non-mutating peek, valid drain, can-read counts, and invalid offset handling.

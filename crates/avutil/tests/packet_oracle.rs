@@ -968,6 +968,26 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&from_zero_data),
     );
 
+    let raw_ref_src = Packet::new(vec![0xaa, 0xbb], 0);
+    let mut raw_ref_dst = Packet::default();
+    raw_ref_dst.ref_from(&raw_ref_src);
+    rows.insert(
+        "packet:payload-ref-unrefcounted-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-ref-unrefcounted-src".to_string(),
+        payload_visible_fields(&raw_ref_src),
+    );
+    rows.insert(
+        "packet:payload-ref-unrefcounted-dst".to_string(),
+        payload_fields(&raw_ref_dst),
+    );
+    rows.insert(
+        "packet:payload-clone-unrefcounted".to_string(),
+        payload_fields(&raw_ref_src.clone()),
+    );
+
     let mut grow = Packet::new_zeroed(2, 0).unwrap();
     grow.make_data_writable().copy_from_slice(&[0xaa, 0xbb]);
     grow.grow_data(3).unwrap();
@@ -1696,6 +1716,10 @@ fn payload_prefix_fields(packet: &Packet, prefix_len: usize) -> Vec<String> {
         hex_or_dash(&padding[..AV_INPUT_BUFFER_PADDING_SIZE]),
         u8::from(packet.is_data_writable()).to_string(),
     ]
+}
+
+fn payload_visible_fields(packet: &Packet) -> Vec<String> {
+    vec![packet.len().to_string(), hex_or_dash(packet.data())]
 }
 
 fn payload_unowned_fields(packet: &Packet) -> Vec<String> {
@@ -2676,6 +2700,12 @@ static void print_payload_prefix(const char *name, const AVPacket *pkt, int pref
     printf("|%d\n", pkt->buf ? av_buffer_is_writable(pkt->buf) : 0);
 }
 
+static void print_payload_visible(const char *name, const AVPacket *pkt) {
+    printf("%s|%d|", name, pkt->size);
+    print_hex_or_dash(pkt->data, pkt->size);
+    printf("\n");
+}
+
 static void print_payload_unowned(const char *name, const AVPacket *pkt) {
     printf("%s|%d|", name, pkt->size);
     print_hex_or_dash(pkt->data, pkt->size);
@@ -3017,6 +3047,27 @@ static void exercise_payload_api(void) {
     }
     print_payload("packet:payload-from-data-zero", pkt);
     av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t *ref_raw = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!ref_raw, "av_mallocz raw ref payload failed");
+    ref_raw[0] = 0xaa;
+    ref_raw[1] = 0xbb;
+    pkt->data = ref_raw;
+    pkt->size = 2;
+    AVPacket *ref_dst = new_packet();
+    ret = av_packet_ref(ref_dst, pkt);
+    printf("packet:payload-ref-unrefcounted-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_ref raw payload failed");
+    print_payload_visible("packet:payload-ref-unrefcounted-src", pkt);
+    print_payload("packet:payload-ref-unrefcounted-dst", ref_dst);
+    AVPacket *raw_cloned = av_packet_clone(pkt);
+    fail_if(!raw_cloned, "av_packet_clone raw payload failed");
+    print_payload("packet:payload-clone-unrefcounted", raw_cloned);
+    av_packet_free(&raw_cloned);
+    av_packet_free(&ref_dst);
+    av_packet_free(&pkt);
+    av_free(ref_raw);
 
     pkt = new_packet();
     fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet payload grow failed");

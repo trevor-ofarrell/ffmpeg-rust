@@ -4863,7 +4863,7 @@ impl PacketOpaque {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Packet {
     data: BufferRef,
     pts: i64,
@@ -5252,8 +5252,35 @@ impl Packet {
         *self = Self::default();
     }
 
+    pub fn try_ref_from(&mut self, src: &Self) -> AvResult<()> {
+        let data = if src.has_input_padding() {
+            src.data.clone()
+        } else {
+            let mut data = BufferRef::from_vec(src.data().to_vec());
+            data.resize_with_padding(data.len(), AV_INPUT_BUFFER_PADDING_SIZE)?;
+            data
+        };
+
+        *self = Self {
+            data,
+            pts: src.pts,
+            dts: src.dts,
+            duration: src.duration,
+            pos: src.pos,
+            stream_index: src.stream_index,
+            flags: src.flags,
+            side_data: src.side_data.clone(),
+            opaque: src.opaque,
+            opaque_ref: src.opaque_ref.clone(),
+            time_base: src.time_base,
+        };
+
+        Ok(())
+    }
+
     pub fn ref_from(&mut self, src: &Self) {
-        *self = src.clone();
+        self.try_ref_from(src)
+            .expect("failed to allocate packet reference payload");
     }
 
     pub fn move_ref_from(&mut self, src: &mut Self) {
@@ -5303,6 +5330,16 @@ impl Packet {
             && self.data.padding_slice()[..AV_INPUT_BUFFER_PADDING_SIZE]
                 .iter()
                 .all(|byte| *byte == 0)
+    }
+}
+
+impl Clone for Packet {
+    fn clone(&self) -> Self {
+        let mut cloned = Self::default();
+        cloned
+            .try_ref_from(self)
+            .expect("failed to allocate cloned packet payload");
+        cloned
     }
 }
 
@@ -10404,7 +10441,8 @@ mod tests {
 
     #[test]
     fn packet_ref_from_shares_payload_and_copies_side_data() {
-        let mut src = Packet::new(vec![1, 2, 3], 4);
+        let mut src = Packet::from_data(vec![1, 2, 3]).unwrap();
+        src.stream_index = 4;
         src.set_pts(Some(12));
         src.set_dts(Some(10));
         src.set_duration(2).unwrap();
@@ -10450,7 +10488,8 @@ mod tests {
 
     #[test]
     fn packet_clone_matches_ref_from_shape() {
-        let mut src = Packet::new(vec![1, 2, 3], 4);
+        let mut src = Packet::from_data(vec![1, 2, 3]).unwrap();
+        src.stream_index = 4;
         src.set_pts(Some(12));
         src.set_dts(Some(10));
         src.set_duration(2).unwrap();
@@ -10495,8 +10534,52 @@ mod tests {
     }
 
     #[test]
+    fn packet_ref_from_unpadded_payload_copies_into_refcounted_buffer() {
+        let src = Packet::new(vec![1, 2, 3], 4);
+        let mut dst = Packet::default();
+
+        dst.ref_from(&src);
+
+        assert_eq!(dst.data(), &[1, 2, 3]);
+        assert!(!dst.data_buffer().shares_storage(src.data_buffer()));
+        assert_eq!(src.data_buffer().padding_len(), 0);
+        assert_eq!(
+            dst.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
+        assert!(src.is_data_writable());
+        assert!(dst.is_data_writable());
+
+        dst.make_data_writable()[0] = 9;
+
+        assert_eq!(src.data(), &[1, 2, 3]);
+        assert_eq!(dst.data(), &[9, 2, 3]);
+    }
+
+    #[test]
+    fn packet_clone_of_unpadded_payload_matches_refcounted_copy_shape() {
+        let src = Packet::new(vec![1, 2, 3], 4);
+
+        let cloned = src.clone();
+
+        assert_eq!(cloned.data(), &[1, 2, 3]);
+        assert!(!cloned.data_buffer().shares_storage(src.data_buffer()));
+        assert_eq!(
+            cloned.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(cloned.is_data_writable());
+    }
+
+    #[test]
     fn packet_make_data_writable_detaches_shared_payload() {
-        let src = Packet::new(vec![1, 2, 3], 0);
+        let src = Packet::from_data(vec![1, 2, 3]).unwrap();
         let mut dst = Packet::default();
         dst.ref_from(&src);
 
