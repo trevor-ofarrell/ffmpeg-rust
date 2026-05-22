@@ -13634,14 +13634,18 @@ impl VideoFrame {
         if crop.is_empty() {
             return Ok(());
         }
-        if self.pixel_format != PixelFormat::Gray8 {
-            return Err(AvError::unsupported(format!(
-                "frame cropping is currently implemented for gray video frames, not {}",
-                self.pixel_format.name()
-            )));
-        }
+        let crop_step = match self.pixel_format {
+            PixelFormat::Gray8 => 1,
+            PixelFormat::Rgb24 => 3,
+            _ => {
+                return Err(AvError::unsupported(format!(
+                    "frame cropping is currently implemented for gray and rgb24 video frames, not {}",
+                    self.pixel_format.name()
+                )));
+            }
+        };
 
-        let crop_left = adjusted_gray8_crop_left(crop, self.line_sizes[0], flags)?;
+        let crop_left = adjusted_packed_crop_left(crop, self.line_sizes[0], flags, crop_step)?;
         let new_width = self
             .width
             .checked_sub(crop_left + crop.right)
@@ -13652,17 +13656,23 @@ impl VideoFrame {
             .ok_or_else(|| crop_range_error("frame crop height underflow"))?;
 
         let line_size = self.line_sizes[0];
+        let crop_left_bytes = crop_left
+            .checked_mul(crop_step)
+            .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?;
+        let visible_row_bytes = new_width
+            .checked_mul(crop_step)
+            .ok_or_else(|| AvError::invalid_argument("frame crop row-byte size overflow"))?;
         let start_offset = crop
             .top
             .checked_mul(line_size)
-            .and_then(|offset| offset.checked_add(crop_left))
+            .and_then(|offset| offset.checked_add(crop_left_bytes))
             .ok_or_else(|| AvError::invalid_argument("frame crop offset overflow"))?;
         let row_span = if new_height == 0 {
             0
         } else {
             (new_height - 1)
                 .checked_mul(line_size)
-                .and_then(|prefix| prefix.checked_add(new_width))
+                .and_then(|prefix| prefix.checked_add(visible_row_bytes))
                 .ok_or_else(|| AvError::invalid_argument("frame crop row span overflow"))?
         };
         let source = &self.plane_buffers[0];
@@ -13688,9 +13698,9 @@ impl VideoFrame {
             let mut storage = vec![0; storage_len];
             for row in 0..new_height {
                 let src_start = start_offset + row * line_size;
-                let src_end = src_start + new_width;
+                let src_end = src_start + visible_row_bytes;
                 let dst_start = row * line_size;
-                let dst_end = dst_start + new_width;
+                let dst_end = dst_start + visible_row_bytes;
                 storage[dst_start..dst_end].copy_from_slice(&source.as_slice()[src_start..src_end]);
             }
             BufferRef::from_vec(storage)
@@ -15008,26 +15018,31 @@ fn crop_range_error(message: impl Into<String>) -> AvError {
     )
 }
 
-fn adjusted_gray8_crop_left(
+fn adjusted_packed_crop_left(
     crop: FrameCrop,
     line_size: usize,
     flags: FrameCropFlags,
+    bytes_per_pixel: usize,
 ) -> AvResult<usize> {
     if flags.contains(FrameCropFlags::UNALIGNED) || crop.left == 0 {
         return Ok(crop.left);
     }
 
+    let left_offset = crop
+        .left
+        .checked_mul(bytes_per_pixel)
+        .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?;
     let offset = crop
         .top
         .checked_mul(line_size)
-        .and_then(|top| top.checked_add(crop.left))
+        .and_then(|top| top.checked_add(left_offset))
         .ok_or_else(|| AvError::invalid_argument("frame crop offset overflow"))?;
     let min_log2_align = if offset == 0 {
         u32::MAX
     } else {
         offset.trailing_zeros()
     };
-    let crop_log2_align = crop.left.trailing_zeros();
+    let crop_log2_align = left_offset.trailing_zeros();
     if crop_log2_align < min_log2_align {
         return Err(AvError::bug(
             "frame crop alignment relation does not match FFmpeg assumptions",
@@ -15042,7 +15057,13 @@ fn adjusted_gray8_crop_left(
         return Ok(0);
     }
     let mask = (1usize << shift) - 1;
-    Ok(crop.left & !mask)
+    let adjusted_offset = left_offset & !mask;
+    if adjusted_offset % bytes_per_pixel != 0 {
+        return Err(AvError::bug(
+            "frame crop byte alignment did not preserve whole pixels",
+        ));
+    }
+    Ok(adjusted_offset / bytes_per_pixel)
 }
 
 fn align_line_sizes(
@@ -19866,12 +19887,46 @@ mod tests {
     }
 
     #[test]
-    fn frame_apply_cropping_matches_gray8_alignment_rules() {
+    fn frame_apply_cropping_matches_gray8_and_rgb24_alignment_rules() {
         fn storage(width: usize, height: usize, line_size: usize) -> Vec<u8> {
             let mut data = vec![0; height * line_size];
             for row in 0..height {
                 for column in 0..width {
                     data[row * line_size + column] = (row * 16 + column) as u8;
+                }
+            }
+            data
+        }
+
+        fn packed_storage(
+            width: usize,
+            height: usize,
+            bytes_per_pixel: usize,
+            line_size: usize,
+        ) -> Vec<u8> {
+            let visible_row_bytes = width * bytes_per_pixel;
+            let mut data = vec![0; height * line_size];
+            for row in 0..height {
+                for column in 0..visible_row_bytes {
+                    data[row * line_size + column] = (row * 16 + column) as u8;
+                }
+            }
+            data
+        }
+
+        fn packed_visible(
+            bytes_per_pixel: usize,
+            start_row: usize,
+            start_column_pixels: usize,
+            width: usize,
+            height: usize,
+        ) -> Vec<u8> {
+            let start_column = start_column_pixels * bytes_per_pixel;
+            let row_bytes = width * bytes_per_pixel;
+            let mut data = Vec::with_capacity(row_bytes * height);
+            for row in start_row..start_row + height {
+                for column in start_column..start_column + row_bytes {
+                    data.push((row * 16 + column) as u8);
                 }
             }
             data
@@ -19918,6 +19973,43 @@ mod tests {
         assert_eq!(video.height(), 2);
         assert_eq!(video.line_sizes(), &[64]);
         assert_eq!(video.planes(), &[vec![17, 18, 19, 33, 34, 35]]);
+
+        let rgb_storage = packed_storage(8, 4, 3, 192);
+        let mut rgb_aligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                PixelFormat::Rgb24,
+                vec![rgb_storage.clone()],
+                vec![192],
+            )
+            .unwrap(),
+        );
+        rgb_aligned.set_crop_offsets(1, 0, 1, 1);
+        rgb_aligned.apply_cropping(FrameCropFlags::NONE).unwrap();
+        let FrameData::Video(video) = rgb_aligned.data() else {
+            unreachable!("constructed video frame changed variant");
+        };
+        assert_eq!(video.width(), 7);
+        assert_eq!(video.height(), 3);
+        assert_eq!(video.line_sizes(), &[192]);
+        assert_eq!(video.planes(), &[packed_visible(3, 1, 0, 7, 3)]);
+
+        let mut rgb_unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(8, 4, PixelFormat::Rgb24, vec![rgb_storage], vec![192])
+                .unwrap(),
+        );
+        rgb_unaligned.set_crop_offsets(1, 0, 1, 1);
+        rgb_unaligned
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .unwrap();
+        let FrameData::Video(video) = rgb_unaligned.data() else {
+            unreachable!("constructed video frame changed variant");
+        };
+        assert_eq!(video.width(), 6);
+        assert_eq!(video.height(), 3);
+        assert_eq!(video.line_sizes(), &[192]);
+        assert_eq!(video.planes(), &[packed_visible(3, 1, 1, 6, 3)]);
 
         let mut invalid = Frame::video(
             VideoFrame::new_with_line_sizes(
