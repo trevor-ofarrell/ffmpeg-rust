@@ -2,9 +2,9 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest avutil-packet evidence: AV_PKT_DATA_PALETTE payload layout now has a
-# pinned oracle row proving the FFmpeg AVPALETTE_SIZE 1024-byte side-data shape,
-# and PacketPalette derives its constants from the shared pixel palette model.
+# Latest avutil-packet evidence: AV_PKT_DATA_CONTENT_LIGHT_LEVEL payload layout
+# now has a pinned oracle row proving the FFmpeg AVContentLightMetadata
+# native 8-byte side-data shape and field offsets.
 # avutil-packet remains differential_pass, not complete.
 
 [[component]]
@@ -259,7 +259,8 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-packet|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-# Latest update: pinned libavcodec/libavutil AVPacket oracle coverage now validates AV_PKT_DATA_PALETTE payload layout through packet:payload-layout-palette, proving the 1024-byte AVPALETTE_SIZE packet side-data shape. Rust PacketPalette now derives ENTRY_COUNT/DATA_LEN from the shared AVPALETTE_COUNT/AVPALETTE_SIZE pixel constants, while unit tests and avutil_core_models fuzz-smoke invariants continue to cover valid and malformed palette payloads.
+# Latest update: pinned libavcodec/libavutil AVPacket oracle coverage now validates AV_PKT_DATA_CONTENT_LIGHT_LEVEL payload layout through packet:payload-layout-content-light, proving the native 8-byte AVContentLightMetadata packet side-data shape and MaxCLL/MaxFALL field offsets. Rust PacketContentLightMetadata unit tests and avutil_core_models fuzz-smoke invariants continue to cover valid, boundary, and malformed content-light payloads.
+# Prior update: pinned libavcodec/libavutil AVPacket oracle coverage validates AV_PKT_DATA_PALETTE payload layout through packet:payload-layout-palette, proving the 1024-byte AVPALETTE_SIZE packet side-data shape. Rust PacketPalette derives ENTRY_COUNT/DATA_LEN from the shared AVPALETTE_COUNT/AVPALETTE_SIZE pixel constants, while unit tests and avutil_core_models fuzz-smoke invariants continue to cover valid and malformed palette payloads.
 # Prior update: pinned libavcodec AVPacket oracle coverage now validates raw data/size shrink behavior when pkt->buf is NULL through packet:payload-shrink-unrefcounted; Rust Packet::new(...).shrink_data(...), unit tests, and avutil_core_models fuzz-smoke invariants cover visible payload truncation plus zeroed FFmpeg input padding after an actual shrink. FFmpeg leaves pkt->buf NULL for av_shrink_packet(), so this row compares length/data/padding rather than AVBufferRef writability.
 # Prior update: pinned libavcodec AVPacket oracle coverage validates raw data/size payload helper behavior when pkt->buf is NULL through packet:payload-grow-unrefcounted* and packet:payload-make-writable-unrefcounted* rows; Rust Packet::new(...).grow_data(...), Packet::new(...).make_writable(), unit tests, and avutil_core_models fuzz-smoke invariants cover preserved prefix bytes, zeroed FFmpeg input padding, and writable storage. FFmpeg's newly visible bytes after av_grow_packet() in this no-buf path are allocator-unspecified, so that oracle row compares length/prefix/padding/writability rather than full grown payload bytes.
 # Prior update: pinned libavcodec AVPacket oracle coverage validates zero-size packet payload helper behavior through packet:payload-new-zero*, packet:payload-from-data-zero*, packet:payload-make-refcounted-empty*, and packet:payload-make-writable-empty* rows; Rust Packet::new_zeroed(0), Packet::from_data(Vec::new()), make_refcounted(empty), make_writable(empty), unit tests, and avutil_core_models fuzz-smoke invariants cover the same zero visible size plus input-padding/writability surface.
