@@ -537,7 +537,12 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-# Latest update: The pinned libavutil `AVFrame` oracle now validates the current core Rust
+# Latest update: The pinned libavutil `AVFrame` oracle now validates PTS,
+# packet-DTS, duration, and time-base propagation through default allocation,
+# unref reset, `av_frame_ref`, `av_frame_move_ref`, and `av_frame_copy_props`.
+# Rust unit and avutil_core_models fuzz-smoke invariants cover the same timing
+# defaults, setter validation, ref/move/copy-props propagation, and unref reset.
+# Previous update: The pinned libavutil `AVFrame` oracle validates the current core Rust
 # model for default `av_frame_alloc`/`av_frame_unref` shape, `AV_FRAME_DATA_*`
 # numeric values, names, descriptors, and `AV_SIDE_DATA_PROP_*` flags,
 # `AV_FRAME_SIDE_DATA_FLAG_*` values, gray8 video `av_frame_get_buffer`,

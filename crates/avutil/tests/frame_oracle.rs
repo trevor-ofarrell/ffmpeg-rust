@@ -7,8 +7,8 @@ use std::{
 
 use avutil::{
     AudioFrame, AvErrorCode, BufferRef, ChannelLayout, Frame, FrameData, FrameSideData,
-    FrameSideDataFlags, FrameSideDataKind, FrameSideDataProperties, PixelFormat, SampleFormat,
-    VideoFrame, AV_NOPTS_VALUE,
+    FrameSideDataFlags, FrameSideDataKind, FrameSideDataProperties, PixelFormat, Rational,
+    SampleFormat, VideoFrame, AV_NOPTS_VALUE,
 };
 
 #[test]
@@ -98,6 +98,11 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         .unwrap(),
     );
     video.set_pts(Some(123));
+    video.set_pkt_dts(Some(122));
+    video.set_duration(121).unwrap();
+    video
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
     rows.insert("frame:video-buffer".to_string(), frame_fields(&video));
 
     let mut video_ref = Frame::empty();
@@ -156,6 +161,11 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     let mut copy_source =
         Frame::video(copy_source_video).with_hw_frames_context(BufferRef::copy_from_slice(&[0xEE]));
     copy_source.set_pts(Some(321));
+    copy_source.set_pkt_dts(Some(320));
+    copy_source.set_duration(319).unwrap();
+    copy_source
+        .set_time_base(Rational::new(1, 48_000).unwrap())
+        .unwrap();
     copy_source
         .set_side_data_kind_buffer(
             FrameSideDataKind::DisplayMatrix,
@@ -168,6 +178,11 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     let mut copy_destination = Frame::video(copy_destination_video)
         .with_hw_frames_context(BufferRef::copy_from_slice(&[0xAA]));
     copy_destination.set_pts(Some(999));
+    copy_destination.set_pkt_dts(Some(998));
+    copy_destination.set_duration(997).unwrap();
+    copy_destination
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
     copy_destination
         .set_side_data_kind(FrameSideDataKind::DisplayMatrix, vec![0x99; 36])
         .unwrap();
@@ -469,6 +484,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
 
 fn frame_fields(frame: &Frame) -> Vec<String> {
     let pts = frame.pts().unwrap_or(AV_NOPTS_VALUE);
+    let pkt_dts = frame.pkt_dts().unwrap_or(AV_NOPTS_VALUE);
     let (kind, format, width, height, nb_samples, sample_rate, channels, line_sizes, planes) =
         match frame.data() {
             FrameData::Empty => (
@@ -508,6 +524,9 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
 
     vec![
         pts.to_string(),
+        pkt_dts.to_string(),
+        frame.duration().to_string(),
+        format!("{}/{}", frame.time_base().num(), frame.time_base().den()),
         kind.to_string(),
         format.to_string(),
         width.to_string(),
@@ -1021,10 +1040,11 @@ static void print_frame(const char *name, const AVFrame *frame)
                           : 1;
     }
 
-    printf("%s|%" PRId64 "|%s|%s|%d|%d|%d|%d|%d|",
-           name, frame->pts, kind, format ? format : "none", frame->width,
-           frame->height, frame->nb_samples, frame->sample_rate,
-           frame->ch_layout.nb_channels);
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%s|%s|%d|%d|%d|%d|%d|",
+           name, frame->pts, frame->pkt_dts, frame->duration,
+           frame->time_base.num, frame->time_base.den, kind,
+           format ? format : "none", frame->width, frame->height,
+           frame->nb_samples, frame->sample_rate, frame->ch_layout.nb_channels);
     print_line_sizes(frame->linesize, plane_count);
     printf("|");
     if (strcmp(kind, "video") == 0)
@@ -1165,6 +1185,9 @@ int main(void)
     video->width = 2;
     video->height = 3;
     video->pts = 123;
+    video->pkt_dts = 122;
+    video->duration = 121;
+    video->time_base = (AVRational){ 1, 90000 };
     fail_if(av_frame_get_buffer(video, 1) < 0,
             "video av_frame_get_buffer failed");
     static const uint8_t video_payload[] = { 1, 2, 3, 4, 5, 6 };
@@ -1212,6 +1235,9 @@ int main(void)
     copy_src->width = 2;
     copy_src->height = 1;
     copy_src->pts = 321;
+    copy_src->pkt_dts = 320;
+    copy_src->duration = 319;
+    copy_src->time_base = (AVRational){ 1, 48000 };
     fail_if(av_frame_get_buffer(copy_src, 1) < 0,
             "copy_src av_frame_get_buffer failed");
     static const uint8_t copy_src_payload[] = { 1, 2 };
@@ -1231,6 +1257,9 @@ int main(void)
     copy_dst->width = 2;
     copy_dst->height = 1;
     copy_dst->pts = 999;
+    copy_dst->pkt_dts = 998;
+    copy_dst->duration = 997;
+    copy_dst->time_base = (AVRational){ 1, 1000 };
     fail_if(av_frame_get_buffer(copy_dst, 1) < 0,
             "copy_dst av_frame_get_buffer failed");
     static const uint8_t copy_dst_payload[] = { 9, 8 };

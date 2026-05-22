@@ -2684,6 +2684,28 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     let pts = timestamp_from(cursor.next());
     frame.set_pts(pts);
     assert_eq!(frame.pts(), pts);
+    let pkt_dts = timestamp_from(cursor.next());
+    frame.set_pkt_dts(pkt_dts);
+    assert_eq!(frame.pkt_dts(), pkt_dts);
+    let duration = i64::from(cursor.next().unwrap_or_default() % 16);
+    frame.set_duration(duration).unwrap();
+    assert_eq!(frame.duration(), duration);
+    assert_eq!(
+        frame.set_duration(-1).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(frame.duration(), duration);
+    let frame_time_base = Rational::new(1, 90_000).unwrap();
+    frame.set_time_base(frame_time_base).unwrap();
+    assert_eq!(frame.time_base(), frame_time_base);
+    assert_eq!(
+        frame
+            .set_time_base(Rational::from_raw(1, 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(frame.time_base(), frame_time_base);
     assert!(matches!(frame.data(), FrameData::Video(_)));
     assert!(frame.hw_frames_context().is_none());
     assert!(frame.side_data().is_empty());
@@ -12160,6 +12182,9 @@ fn exercise_fixtures() {
     let video = VideoFrame::new(1, 1, PixelFormat::Rgb24, vec![vec![1, 2, 3]]).unwrap();
     assert_eq!(video.line_sizes(), &[3]);
     assert_eq!(Frame::video(video).pts(), None);
+    assert_eq!(Frame::empty().pkt_dts(), None);
+    assert_eq!(Frame::empty().duration(), 0);
+    assert_eq!(Frame::empty().time_base(), Rational::ZERO);
     let mut empty_frame = Frame::empty();
     assert!(empty_frame.is_empty());
     assert!(!empty_frame.is_writable());
@@ -12207,6 +12232,11 @@ fn exercise_fixtures() {
         VideoFrame::new_with_buffer_refs(3, 1, PixelFormat::Gray8, vec![plane]).unwrap();
     let mut unref_frame = Frame::video(unref_video).with_hw_frames_context(hw_context);
     unref_frame.set_pts(Some(99));
+    unref_frame.set_pkt_dts(Some(98));
+    unref_frame.set_duration(97).unwrap();
+    unref_frame
+        .set_time_base(Rational::new(1, 48_000).unwrap())
+        .unwrap();
     unref_frame
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
         .unwrap();
@@ -12214,6 +12244,9 @@ fn exercise_fixtures() {
     unref_frame.unref();
     assert!(unref_frame.is_empty());
     assert_eq!(unref_frame.pts(), None);
+    assert_eq!(unref_frame.pkt_dts(), None);
+    assert_eq!(unref_frame.duration(), 0);
+    assert_eq!(unref_frame.time_base(), Rational::ZERO);
     assert!(matches!(unref_frame.data(), FrameData::Empty));
     assert!(unref_frame.hw_frames_context().is_none());
     assert!(unref_frame.side_data().is_empty());
@@ -12237,6 +12270,11 @@ fn exercise_fixtures() {
     let ref_hw = BufferRef::copy_from_slice(&[0x55]);
     let mut source_frame = Frame::video(ref_video).with_hw_frames_context(ref_hw.clone());
     source_frame.set_pts(Some(7));
+    source_frame.set_pkt_dts(Some(6));
+    source_frame.set_duration(5).unwrap();
+    source_frame
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
     source_frame
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, ref_side.clone())
         .unwrap();
@@ -12259,6 +12297,12 @@ fn exercise_fixtures() {
         vec![String::from("old-plane")]
     );
     assert_eq!(referenced_frame.pts(), Some(7));
+    assert_eq!(referenced_frame.pkt_dts(), Some(6));
+    assert_eq!(referenced_frame.duration(), 5);
+    assert_eq!(
+        referenced_frame.time_base(),
+        Rational::new(1, 90_000).unwrap()
+    );
     assert!(!referenced_frame.is_empty());
     let (referenced_video, source_video) = match (referenced_frame.data(), source_frame.data()) {
         (FrameData::Video(referenced_video), FrameData::Video(source_video)) => {
@@ -12307,11 +12351,19 @@ fn exercise_fixtures() {
             .unwrap();
     let mut props_frame = Frame::video(props_video).with_hw_frames_context(props_old_hw);
     props_frame.set_pts(Some(99));
+    props_frame.set_pkt_dts(Some(98));
+    props_frame.set_duration(97).unwrap();
+    props_frame
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
     props_frame
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, props_old_side)
         .unwrap();
     props_frame.copy_props_from(&source_frame);
     assert_eq!(props_frame.pts(), Some(7));
+    assert_eq!(props_frame.pkt_dts(), Some(6));
+    assert_eq!(props_frame.duration(), 5);
+    assert_eq!(props_frame.time_base(), Rational::new(1, 90_000).unwrap());
     assert!(props_old_side_released.lock().unwrap().is_empty());
     assert!(props_old_hw_released.lock().unwrap().is_empty());
     let FrameData::Video(props_video) = props_frame.data() else {
@@ -12360,6 +12412,11 @@ fn exercise_fixtures() {
             .unwrap();
     let mut move_source = Frame::video(move_source_video);
     move_source.set_pts(Some(11));
+    move_source.set_pkt_dts(Some(10));
+    move_source.set_duration(9).unwrap();
+    move_source
+        .set_time_base(Rational::new(1, 48_000).unwrap())
+        .unwrap();
 
     let move_destination_released = Arc::new(Mutex::new(Vec::<String>::new()));
     let move_destination_capture = Arc::clone(&move_destination_released);
@@ -12379,6 +12436,12 @@ fn exercise_fixtures() {
 
     assert!(move_source.is_empty());
     assert_eq!(move_destination.pts(), Some(11));
+    assert_eq!(move_destination.pkt_dts(), Some(10));
+    assert_eq!(move_destination.duration(), 9);
+    assert_eq!(
+        move_destination.time_base(),
+        Rational::new(1, 48_000).unwrap()
+    );
     assert!(matches!(move_destination.data(), FrameData::Video(_)));
     assert_eq!(
         *move_destination_released.lock().unwrap(),

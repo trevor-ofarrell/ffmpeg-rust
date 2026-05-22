@@ -49,6 +49,9 @@ impl FrameData {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     pts: Option<i64>,
+    pkt_dts: Option<i64>,
+    duration: i64,
+    time_base: Rational,
     data: FrameData,
     hw_frames_context: Option<BufferRef>,
     side_data: Vec<FrameSideData>,
@@ -58,6 +61,9 @@ impl Frame {
     pub fn empty() -> Self {
         Self {
             pts: None,
+            pkt_dts: None,
+            duration: 0,
+            time_base: Rational::ZERO,
             data: FrameData::Empty,
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -67,6 +73,9 @@ impl Frame {
     pub fn video(frame: VideoFrame) -> Self {
         Self {
             pts: None,
+            pkt_dts: None,
+            duration: 0,
+            time_base: Rational::ZERO,
             data: FrameData::Video(frame),
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -76,6 +85,9 @@ impl Frame {
     pub fn audio(frame: AudioFrame) -> Self {
         Self {
             pts: None,
+            pkt_dts: None,
+            duration: 0,
+            time_base: Rational::ZERO,
             data: FrameData::Audio(frame),
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -84,6 +96,9 @@ impl Frame {
 
     pub fn is_empty(&self) -> bool {
         self.pts.is_none()
+            && self.pkt_dts.is_none()
+            && self.duration == 0
+            && self.time_base == Rational::ZERO
             && self.data.is_empty()
             && self.hw_frames_context.is_none()
             && self.side_data.is_empty()
@@ -103,6 +118,9 @@ impl Frame {
 
     pub fn copy_props_from(&mut self, source: &Self) {
         self.pts = source.pts;
+        self.pkt_dts = source.pkt_dts;
+        self.duration = source.duration;
+        self.time_base = source.time_base;
         self.side_data
             .extend(source.side_data.iter().map(FrameSideData::copy_props_clone));
 
@@ -119,6 +137,37 @@ impl Frame {
 
     pub fn set_pts(&mut self, pts: Option<i64>) {
         self.pts = pts;
+    }
+
+    pub fn pkt_dts(&self) -> Option<i64> {
+        self.pkt_dts
+    }
+
+    pub fn set_pkt_dts(&mut self, pkt_dts: Option<i64>) {
+        self.pkt_dts = pkt_dts;
+    }
+
+    pub fn duration(&self) -> i64 {
+        self.duration
+    }
+
+    pub fn set_duration(&mut self, duration: i64) -> AvResult<()> {
+        if duration < 0 {
+            return Err(AvError::invalid_argument(
+                "frame duration must not be negative",
+            ));
+        }
+        self.duration = duration;
+        Ok(())
+    }
+
+    pub fn time_base(&self) -> Rational {
+        self.time_base
+    }
+
+    pub fn set_time_base(&mut self, time_base: Rational) -> AvResult<()> {
+        self.time_base = Rational::new(time_base.num(), time_base.den())?;
+        Ok(())
     }
 
     pub fn data(&self) -> &FrameData {
@@ -17596,11 +17645,36 @@ mod tests {
         let mut frame = Frame::video(video);
 
         assert_eq!(frame.pts(), None);
+        assert_eq!(frame.pkt_dts(), None);
+        assert_eq!(frame.duration(), 0);
+        assert_eq!(frame.time_base(), Rational::ZERO);
         assert!(frame.hw_frames_context().is_none());
         assert!(frame.side_data().is_empty());
         frame.set_pts(Some(42));
+        frame.set_pkt_dts(Some(41));
+        frame.set_duration(12).unwrap();
+        frame
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
         assert_eq!(frame.pts(), Some(42));
+        assert_eq!(frame.pkt_dts(), Some(41));
+        assert_eq!(frame.duration(), 12);
+        assert_eq!(frame.time_base(), Rational::new(1, 90_000).unwrap());
         assert!(matches!(frame.data(), FrameData::Video(_)));
+
+        assert_eq!(
+            frame.set_duration(-1).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(frame.duration(), 12);
+        assert_eq!(
+            frame
+                .set_time_base(Rational::from_raw(1, 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(frame.time_base(), Rational::new(1, 90_000).unwrap());
     }
 
     #[test]
@@ -17639,6 +17713,11 @@ mod tests {
             VideoFrame::new_with_buffer_refs(3, 1, PixelFormat::Gray8, vec![plane]).unwrap();
         let mut frame = Frame::video(video).with_hw_frames_context(hw_context);
         frame.set_pts(Some(99));
+        frame.set_pkt_dts(Some(98));
+        frame.set_duration(97).unwrap();
+        frame
+            .set_time_base(Rational::new(1, 48_000).unwrap())
+            .unwrap();
         frame
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
             .unwrap();
@@ -17648,6 +17727,9 @@ mod tests {
 
         assert!(frame.is_empty());
         assert_eq!(frame.pts(), None);
+        assert_eq!(frame.pkt_dts(), None);
+        assert_eq!(frame.duration(), 0);
+        assert_eq!(frame.time_base(), Rational::ZERO);
         assert!(matches!(frame.data(), FrameData::Empty));
         assert!(frame.hw_frames_context().is_none());
         assert!(frame.side_data().is_empty());
@@ -17676,6 +17758,11 @@ mod tests {
                 .unwrap();
         let mut source = Frame::video(source_video).with_hw_frames_context(source_hw.clone());
         source.set_pts(Some(7));
+        source.set_pkt_dts(Some(6));
+        source.set_duration(5).unwrap();
+        source
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
         source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
             .unwrap();
@@ -17700,6 +17787,9 @@ mod tests {
             vec![String::from("old-plane")]
         );
         assert_eq!(destination.pts(), Some(7));
+        assert_eq!(destination.pkt_dts(), Some(6));
+        assert_eq!(destination.duration(), 5);
+        assert_eq!(destination.time_base(), Rational::new(1, 90_000).unwrap());
         assert!(!source.is_empty());
         let (destination_video, source_video) = match (destination.data(), source.data()) {
             (FrameData::Video(destination_video), FrameData::Video(source_video)) => {
@@ -17742,6 +17832,11 @@ mod tests {
             VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![source_plane]).unwrap();
         let mut source = Frame::video(source_video);
         source.set_pts(Some(11));
+        source.set_pkt_dts(Some(10));
+        source.set_duration(9).unwrap();
+        source
+            .set_time_base(Rational::new(1, 48_000).unwrap())
+            .unwrap();
 
         let destination_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let destination_capture = std::sync::Arc::clone(&destination_released);
@@ -17761,6 +17856,9 @@ mod tests {
 
         assert!(source.is_empty());
         assert_eq!(destination.pts(), Some(11));
+        assert_eq!(destination.pkt_dts(), Some(10));
+        assert_eq!(destination.duration(), 9);
+        assert_eq!(destination.time_base(), Rational::new(1, 48_000).unwrap());
         assert!(matches!(destination.data(), FrameData::Video(_)));
         assert_eq!(
             *destination_released.lock().unwrap(),
@@ -17785,6 +17883,11 @@ mod tests {
                 .unwrap();
         let mut source = Frame::video(source_video).with_hw_frames_context(source_hw.clone());
         source.set_pts(Some(321));
+        source.set_pkt_dts(Some(320));
+        source.set_duration(319).unwrap();
+        source
+            .set_time_base(Rational::new(1, 48_000).unwrap())
+            .unwrap();
         source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
             .unwrap();
@@ -17817,6 +17920,11 @@ mod tests {
         .unwrap();
         let mut destination = Frame::video(destination_video).with_hw_frames_context(old_hw);
         destination.set_pts(Some(999));
+        destination.set_pkt_dts(Some(998));
+        destination.set_duration(997).unwrap();
+        destination
+            .set_time_base(Rational::new(1, 1_000).unwrap())
+            .unwrap();
         destination
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, old_side)
             .unwrap();
@@ -17824,6 +17932,9 @@ mod tests {
         destination.copy_props_from(&source);
 
         assert_eq!(destination.pts(), Some(321));
+        assert_eq!(destination.pkt_dts(), Some(320));
+        assert_eq!(destination.duration(), 319);
+        assert_eq!(destination.time_base(), Rational::new(1, 48_000).unwrap());
         assert!(old_side_released.lock().unwrap().is_empty());
         assert!(old_hw_released.lock().unwrap().is_empty());
         let (destination_video, source_video) = match (destination.data(), source.data()) {
