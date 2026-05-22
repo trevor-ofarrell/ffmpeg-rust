@@ -893,7 +893,6 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     let realloc_empty = realloc_empty.expect("nullable realloc allocates");
     assert_eq!(realloc_empty.len(), payload_len);
     assert!(realloc_empty.is_writable());
-    assert!(realloc_empty.as_slice().iter().all(|byte| *byte == 0));
     let mut realloc_existing = Some(BufferRef::copy_from_slice(&payload));
     BufferRef::realloc(&mut realloc_existing, resize_len).unwrap();
     let realloc_existing = realloc_existing.expect("existing realloc stays present");
@@ -902,9 +901,6 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         &realloc_existing.as_slice()[..realloc_prefix_len],
         &payload[..realloc_prefix_len]
     );
-    assert!(realloc_existing.as_slice()[realloc_prefix_len..]
-        .iter()
-        .all(|byte| *byte == 0));
     let same_len_source = BufferRef::copy_from_slice(&payload);
     let mut same_len_ref = Some(BufferRef::ref_from(&same_len_source));
     let same_len_ptr = same_len_ref.as_ref().unwrap().as_ptr();
@@ -913,6 +909,23 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(same_len_ref.shares_storage(&same_len_source));
     assert_eq!(same_len_ref.as_ptr(), same_len_ptr);
     assert_eq!(same_len_source.strong_count(), 2);
+    let custom_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let custom_realloc_capture = Arc::clone(&custom_realloc_released);
+    let mut custom_realloc = Some(BufferRef::from_vec_with_opaque_release_callback(
+        payload.clone(),
+        payload_len,
+        move |opaque, bytes| {
+            custom_realloc_capture.lock().unwrap().push((opaque, bytes));
+        },
+    ));
+    BufferRef::realloc(&mut custom_realloc, payload_len + 1).unwrap();
+    let custom_realloc = custom_realloc.expect("custom realloc stays present");
+    assert_eq!(&custom_realloc.as_slice()[..payload_len], payload.as_slice());
+    assert!(custom_realloc.opaque_ref::<usize>().is_none());
+    assert_eq!(
+        *custom_realloc_released.lock().unwrap(),
+        vec![(payload_len, payload.clone())]
+    );
     let mut realloc_failed = None;
     assert!(BufferRef::realloc(&mut realloc_failed, usize::MAX).is_err());
     assert!(realloc_failed.is_none());

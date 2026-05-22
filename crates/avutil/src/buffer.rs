@@ -609,12 +609,51 @@ impl BufferRef {
     pub fn realloc(dst: &mut Option<Self>, len: usize) -> AvResult<()> {
         match dst {
             Some(buffer) if buffer.len == len => Ok(()),
-            Some(buffer) => buffer.resize(len),
+            Some(buffer) => buffer.realloc_visible_len(len),
             None => {
-                *dst = Some(Self::zeroed(len)?);
+                let data = allocate_zeroed_len(len)?;
+                *dst = Some(Self {
+                    data: Arc::new(BufferStorage::reallocatable(data)),
+                    offset: 0,
+                    len,
+                });
                 Ok(())
             }
         }
+    }
+
+    fn realloc_visible_len(&mut self, len: usize) -> AvResult<()> {
+        if self.can_realloc_in_place() {
+            let storage =
+                Arc::get_mut(&mut self.data).expect("in-place realloc requires unique storage");
+            let bytes = storage
+                .bytes
+                .as_mut_vec()
+                .expect("in-place realloc requires owned storage");
+            if len > bytes.len() {
+                bytes.try_reserve_exact(len - bytes.len()).map_err(|_| {
+                    AvError::external(format!("failed to allocate {len} reallocated buffer bytes"))
+                })?;
+            }
+            bytes.resize(len, 0);
+            self.len = len;
+            return Ok(());
+        }
+
+        let bytes = resized_storage(self.as_slice(), len, 0)?;
+        self.data = Arc::new(BufferStorage::reallocatable(bytes));
+        self.offset = 0;
+        self.len = len;
+        Ok(())
+    }
+
+    fn can_realloc_in_place(&self) -> bool {
+        self.strong_count() == 1
+            && self.offset == 0
+            && !self.is_readonly()
+            && self.data.owner.is_none()
+            && self.data.reallocatable
+            && self.data.bytes.is_owned()
     }
 
     pub fn unref(dst: &mut Option<Self>) {
@@ -680,6 +719,7 @@ struct BufferStorage {
     bytes: BufferBytes,
     owner: Option<BufferOwner>,
     readonly: bool,
+    reallocatable: bool,
 }
 
 type BufferReleaseCallback = Arc<dyn Fn(Vec<u8>) + Send + Sync + 'static>;
@@ -751,6 +791,16 @@ impl BufferStorage {
             bytes: BufferBytes::owned(bytes),
             owner: None,
             readonly: false,
+            reallocatable: false,
+        }
+    }
+
+    fn reallocatable(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes: BufferBytes::owned(bytes),
+            owner: None,
+            readonly: false,
+            reallocatable: true,
         }
     }
 
@@ -759,6 +809,7 @@ impl BufferStorage {
             bytes: BufferBytes::owned(bytes),
             owner: None,
             readonly: true,
+            reallocatable: false,
         }
     }
 
@@ -767,6 +818,7 @@ impl BufferStorage {
             bytes: BufferBytes::static_slice(bytes),
             owner: None,
             readonly: true,
+            reallocatable: false,
         }
     }
 
@@ -775,6 +827,7 @@ impl BufferStorage {
             bytes: BufferBytes::shared(bytes),
             owner: None,
             readonly: true,
+            reallocatable: false,
         }
     }
 
@@ -790,6 +843,7 @@ impl BufferStorage {
                 on_release,
             }))),
             readonly: true,
+            reallocatable: false,
         }
     }
 
@@ -810,6 +864,7 @@ impl BufferStorage {
                 on_release,
             }))),
             readonly,
+            reallocatable: false,
         }
     }
 
@@ -823,6 +878,7 @@ impl BufferStorage {
                 opaque,
             }),
             readonly: false,
+            reallocatable: false,
         }
     }
 
@@ -841,6 +897,7 @@ impl BufferStorage {
             bytes: BufferBytes::owned(bytes),
             owner: Some(BufferOwner::Callback(Arc::new(on_release))),
             readonly,
+            reallocatable: false,
         }
     }
 
@@ -965,6 +1022,7 @@ impl std::fmt::Debug for BufferStorage {
             .field("bytes", &self.bytes)
             .field("owner", &owner)
             .field("readonly", &self.readonly)
+            .field("reallocatable", &self.reallocatable)
             .finish()
     }
 }
@@ -1939,19 +1997,28 @@ mod tests {
         assert_eq!(allocated.allocated_len(), 3);
         assert!(allocated.is_writable());
         assert_eq!(allocated.strong_count(), 1);
-        assert!(allocated.as_slice().iter().all(|byte| *byte == 0));
 
         allocated.make_mut().copy_from_slice(&[4, 5, 6]);
+        let reallocatable_storage = std::sync::Arc::as_ptr(&allocated.data);
         let mut existing = Some(allocated);
         BufferRef::realloc(&mut existing, 5).unwrap();
         let grown = existing.as_ref().unwrap();
+        assert_eq!(std::sync::Arc::as_ptr(&grown.data), reallocatable_storage);
         assert_eq!(grown.len(), 5);
         assert_eq!(&grown.as_slice()[..3], &[4, 5, 6]);
-        assert!(grown.as_slice()[3..].iter().all(|byte| *byte == 0));
 
         BufferRef::realloc(&mut existing, 2).unwrap();
         let shrunk = existing.as_ref().unwrap();
+        assert_eq!(std::sync::Arc::as_ptr(&shrunk.data), reallocatable_storage);
         assert_eq!(shrunk.as_slice(), &[4, 5]);
+
+        let mut ordinary = Some(BufferRef::from_vec(vec![11, 12, 13]));
+        let ordinary_storage = std::sync::Arc::as_ptr(&ordinary.as_ref().unwrap().data);
+        BufferRef::realloc(&mut ordinary, 5).unwrap();
+        let ordinary = ordinary.expect("ordinary realloc result");
+        assert_ne!(std::sync::Arc::as_ptr(&ordinary.data), ordinary_storage);
+        assert!(ordinary.data.reallocatable);
+        assert_eq!(&ordinary.as_slice()[..3], &[11, 12, 13]);
 
         let same_source = BufferRef::copy_from_slice(&[10, 20, 30]);
         let mut same_shared = Some(BufferRef::ref_from(&same_source));

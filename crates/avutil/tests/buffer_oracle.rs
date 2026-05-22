@@ -197,14 +197,22 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_shared_released),
     );
 
-    let mut grow = BufferRef::from_vec(vec![1, 2, 3]);
-    grow.resize(5).unwrap();
+    let mut grow = Some(BufferRef::from_vec(vec![1, 2, 3]));
+    let grow_data_before = grow.as_ref().expect("grow input").as_ptr();
+    BufferRef::realloc(&mut grow, 5).unwrap();
+    let grow = grow.expect("grow realloc result");
     rows.insert("buffer:realloc-grow-ret".to_string(), vec!["0".to_string()]);
     rows.insert(
         "buffer:realloc-grow".to_string(),
         buffer_prefix_fields(&grow, 3),
     );
-    grow.resize(2).unwrap();
+    rows.insert(
+        "buffer:realloc-grow-replaced".to_string(),
+        vec![bool_field(grow_data_before != grow.as_ptr())],
+    );
+    let mut grow = Some(grow);
+    BufferRef::realloc(&mut grow, 2).unwrap();
+    let grow = grow.expect("shrink realloc result");
     rows.insert(
         "buffer:realloc-shrink-ret".to_string(),
         vec!["0".to_string()],
@@ -319,6 +327,17 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "buffer:realloc-null".to_string(),
         buffer_status_fields(realloc_null.as_ref().expect("realloc null result")),
+    );
+    let mut realloc_null = realloc_null;
+    BufferRef::realloc(&mut realloc_null, 6).unwrap();
+    let realloc_null = realloc_null.expect("nullable realloc grow result");
+    rows.insert(
+        "buffer:realloc-null-grow-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:realloc-null-grow".to_string(),
+        buffer_status_fields(&realloc_null),
     );
 
     let offset_src = BufferRef::from_vec(vec![10, 11, 12, 13]);
@@ -901,9 +920,12 @@ int main(void) {
     AVBufferRef *grow = av_buffer_allocz(3);
     fail_if(!grow, "av_buffer_allocz grow failed");
     fill_bytes(grow, grow_bytes, sizeof(grow_bytes));
+    uint8_t *grow_data_before = grow->data;
     ret = av_buffer_realloc(&grow, 5);
     printf("buffer:realloc-grow-ret|%d\n", ret);
     print_buffer_prefix("buffer:realloc-grow", grow, 3);
+    printf("buffer:realloc-grow-replaced|%d\n",
+           grow_data_before != grow->data);
     ret = av_buffer_realloc(&grow, 2);
     printf("buffer:realloc-shrink-ret|%d\n", ret);
     print_buffer("buffer:realloc-shrink", grow);
@@ -996,6 +1018,9 @@ int main(void) {
     ret = av_buffer_realloc(&realloc_null, 4);
     printf("buffer:realloc-null-ret|%d\n", ret);
     print_status("buffer:realloc-null", realloc_null);
+    ret = av_buffer_realloc(&realloc_null, 6);
+    printf("buffer:realloc-null-grow-ret|%d\n", ret);
+    print_status("buffer:realloc-null-grow", realloc_null);
     av_buffer_unref(&realloc_null);
 
     static const uint8_t offset_bytes[] = { 10, 11, 12, 13 };
