@@ -23,6 +23,14 @@ wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && ./script
 
 The script clones tag `n8.1.1`, configures FFmpeg with `--disable-gpl --disable-nonfree --disable-doc --disable-x86asm`, installs the Linux oracle under ignored `third_party/ffmpeg-oracle/wsl/`, and generates wrappers under `third_party/ffmpeg-oracle/build/bin/`. Windows-side tests prefer `ffmpeg.exe`, then the generated `ffmpeg.cmd` WSL wrapper, then the Unix-style `ffmpeg` wrapper; WSL/Linux-side commands use the Unix-style wrapper directly.
 
+Verify the installed oracle before relying on strict completion evidence:
+
+```sh
+cargo run -p xtask -- oracle-doctor
+```
+
+The doctor command locates the default local `ffmpeg` and `ffprobe` oracle wrappers, runs `-version`, and fails unless both tools report FFmpeg 8.1.1 with the pinned library ABI versions (`libavutil 60.26.101`, `libavcodec 62.28.101`, `libavformat 62.12.101`, `libavdevice 62.3.101`, `libavfilter 11.14.101`, `libswscale 9.5.101`, and `libswresample 6.3.101`). Non-default paths can be checked with `--ffmpeg <path>` and `--ffprobe <path>`.
+
 ## Inventory Generation
 
 Run:

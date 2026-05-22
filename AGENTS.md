@@ -84,6 +84,7 @@ Create and maintain these commands:
 - `cargo run -p xtask -- quick`
 - `cargo run -p xtask -- changed`
 - `cargo run -p xtask -- full`
+- `cargo run -p xtask -- oracle-doctor`
 - `cargo run -p xtask -- inventory --ffmpeg <path> --out compat/ffmpeg-8.1.1`
 
 If a command cannot exist yet, implement the smallest useful version and record the limitation in `AGENT_STATE.md`.

@@ -50,6 +50,23 @@ const RUNTIME_CRATES: &[&str] = &[
     "crates/fftools",
 ];
 
+const TARGET_FFMPEG_VERSION: &str = "8.1.1";
+const EXPECTED_LIBRARY_ABIS: &[(&str, &str)] = &[
+    ("libavutil", "60.26.101"),
+    ("libavcodec", "62.28.101"),
+    ("libavformat", "62.12.101"),
+    ("libavdevice", "62.3.101"),
+    ("libavfilter", "11.14.101"),
+    ("libswscale", "9.5.101"),
+    ("libswresample", "6.3.101"),
+];
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct OracleDoctorArgs {
+    ffmpeg: Option<PathBuf>,
+    ffprobe: Option<PathBuf>,
+}
+
 fn main() {
     match real_main() {
         Ok(()) => {}
@@ -67,6 +84,7 @@ fn real_main() -> Result<(), String> {
         Some("changed") => changed(),
         Some("full") => full(),
         Some("inventory") => inventory(args.collect()),
+        Some("oracle-doctor") => oracle_doctor(args.collect()),
         Some("guard-runtime") => guard_runtime(),
         Some("help") | Some("--help") | Some("-h") => {
             print_help();
@@ -114,6 +132,146 @@ fn inventory(args: Vec<String>) -> Result<(), String> {
         command_args.push(arg);
     }
     run("cargo", &command_args)
+}
+
+fn oracle_doctor(args: Vec<String>) -> Result<(), String> {
+    let args = parse_oracle_doctor_args(args)?;
+    let root = env::current_dir().map_err(|err| format!("failed to read current dir: {err}"))?;
+    let ffmpeg = match args.ffmpeg {
+        Some(path) => path,
+        None => find_default_oracle_tool(&root, "ffmpeg")?,
+    };
+    let ffprobe = match args.ffprobe {
+        Some(path) => path,
+        None => find_default_oracle_tool(&root, "ffprobe")?,
+    };
+
+    let ffmpeg_output = run_version_command(&ffmpeg)?;
+    validate_version_output("ffmpeg", &ffmpeg_output)?;
+    let ffprobe_output = run_version_command(&ffprobe)?;
+    validate_version_output("ffprobe", &ffprobe_output)?;
+
+    println!(
+        "oracle doctor passed: {} and {} report FFmpeg {} with pinned library ABIs",
+        ffmpeg.display(),
+        ffprobe.display(),
+        TARGET_FFMPEG_VERSION
+    );
+    Ok(())
+}
+
+fn parse_oracle_doctor_args(args: Vec<String>) -> Result<OracleDoctorArgs, String> {
+    let mut parsed = OracleDoctorArgs::default();
+    let mut iter = args.into_iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--ffmpeg" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "--ffmpeg requires a path".to_string())?;
+                parsed.ffmpeg = Some(PathBuf::from(value));
+            }
+            "--ffprobe" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "--ffprobe requires a path".to_string())?;
+                parsed.ffprobe = Some(PathBuf::from(value));
+            }
+            other => return Err(format!("unsupported oracle-doctor argument `{other}`")),
+        }
+    }
+    Ok(parsed)
+}
+
+fn find_default_oracle_tool(root: &Path, tool: &str) -> Result<PathBuf, String> {
+    let candidates = default_oracle_tool_candidates(root, tool);
+    candidates
+        .iter()
+        .find(|path| path.is_file())
+        .cloned()
+        .ok_or_else(|| {
+            let searched = candidates
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "could not find local pinned {tool} oracle; searched {searched}. \
+Run scripts/bootstrap_ffmpeg_oracle_wsl.sh from WSL on this Windows workspace."
+            )
+        })
+}
+
+fn default_oracle_tool_candidates(root: &Path, tool: &str) -> Vec<PathBuf> {
+    let bin = root.join("third_party/ffmpeg-oracle/build/bin");
+    if cfg!(windows) {
+        vec![
+            bin.join(format!("{tool}.exe")),
+            bin.join(format!("{tool}.cmd")),
+            bin.join(tool),
+        ]
+    } else {
+        vec![
+            bin.join(tool),
+            bin.join(format!("{tool}.exe")),
+            bin.join(format!("{tool}.cmd")),
+        ]
+    }
+}
+
+fn run_version_command(path: &Path) -> Result<String, String> {
+    let output = Command::new(path)
+        .arg("-version")
+        .output()
+        .map_err(|err| format!("failed to run {} -version: {err}", path.display()))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = if stderr.is_empty() {
+        stdout.into_owned()
+    } else {
+        format!("{stdout}{stderr}")
+    };
+
+    if output.status.success() {
+        Ok(combined)
+    } else {
+        Err(format!(
+            "{} -version exited with status {}; output:\n{}",
+            path.display(),
+            output.status,
+            combined
+        ))
+    }
+}
+
+fn validate_version_output(tool: &str, output: &str) -> Result<(), String> {
+    let expected_prefix = format!("{tool} version {TARGET_FFMPEG_VERSION}");
+    let first_line = output.lines().next().unwrap_or_default();
+    if !first_line.starts_with(&expected_prefix) {
+        return Err(format!(
+            "{tool} oracle version mismatch: expected first line to start with `{expected_prefix}`, got `{first_line}`"
+        ));
+    }
+
+    for (library, abi) in EXPECTED_LIBRARY_ABIS {
+        if !output
+            .lines()
+            .any(|line| library_version_line_matches(line, library, abi))
+        {
+            return Err(format!(
+                "{tool} oracle ABI mismatch: missing `{library} {abi} / {abi}`"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn library_version_line_matches(line: &str, library: &str, abi: &str) -> bool {
+    let normalized: String = line.chars().filter(|ch| !ch.is_whitespace()).collect();
+    let expected = format!("{library}{abi}/{abi}");
+    normalized.starts_with(&expected)
 }
 
 fn guard_runtime() -> Result<(), String> {
@@ -380,7 +538,9 @@ fn run(program: &str, args: &[&str]) -> Result<(), String> {
 }
 
 fn print_help() {
-    eprintln!("usage: cargo run -p xtask -- <quick|changed|full|inventory|guard-runtime>");
+    eprintln!(
+        "usage: cargo run -p xtask -- <quick|changed|full|inventory|oracle-doctor|guard-runtime>"
+    );
 }
 
 #[cfg(test)]
@@ -470,5 +630,73 @@ fn binary_name() -> &'static str { "ffprobe-rs" }
 "#;
 
         assert!(runtime_source_violations(Path::new("src/lib.rs"), source).is_empty());
+    }
+
+    #[test]
+    fn oracle_doctor_args_accept_defaults_and_overrides() {
+        assert_eq!(
+            parse_oracle_doctor_args(Vec::new()).unwrap(),
+            OracleDoctorArgs::default()
+        );
+
+        let parsed = parse_oracle_doctor_args(vec![
+            "--ffmpeg".to_string(),
+            "tools/ffmpeg".to_string(),
+            "--ffprobe".to_string(),
+            "tools/ffprobe".to_string(),
+        ])
+        .unwrap();
+
+        assert_eq!(parsed.ffmpeg, Some(PathBuf::from("tools/ffmpeg")));
+        assert_eq!(parsed.ffprobe, Some(PathBuf::from("tools/ffprobe")));
+    }
+
+    #[test]
+    fn oracle_doctor_args_reject_missing_values_and_unknown_flags() {
+        assert!(parse_oracle_doctor_args(vec!["--ffmpeg".to_string()]).is_err());
+        assert!(parse_oracle_doctor_args(vec!["--unknown".to_string()]).is_err());
+    }
+
+    #[test]
+    fn oracle_version_validation_accepts_pinned_output_shape() {
+        let output = "\
+ffmpeg version 8.1.1 Copyright (c) 2000-2026 the FFmpeg developers
+libavutil      60. 26.101 / 60. 26.101
+libavcodec     62. 28.101 / 62. 28.101
+libavformat    62. 12.101 / 62. 12.101
+libavdevice    62.  3.101 / 62.  3.101
+libavfilter    11. 14.101 / 11. 14.101
+libswscale      9.  5.101 /  9.  5.101
+libswresample   6.  3.101 /  6.  3.101
+";
+
+        validate_version_output("ffmpeg", output).unwrap();
+    }
+
+    #[test]
+    fn oracle_version_validation_rejects_wrong_tool_version_or_abi() {
+        let output = "\
+ffmpeg version 8.1.0
+libavutil      60. 26.101 / 60. 26.101
+libavcodec     62. 28.101 / 62. 28.101
+libavformat    62. 12.101 / 62. 12.101
+libavdevice    62.  3.101 / 62.  3.101
+libavfilter    11. 14.101 / 11. 14.101
+libswscale      9.  5.101 /  9.  5.101
+libswresample   6.  3.101 /  6.  3.101
+";
+        assert!(validate_version_output("ffmpeg", output).is_err());
+
+        let output = "\
+ffprobe version 8.1.1
+libavutil      60. 26.101 / 60. 26.101
+libavcodec     62. 99.101 / 62. 99.101
+libavformat    62. 12.101 / 62. 12.101
+libavdevice    62.  3.101 / 62.  3.101
+libavfilter    11. 14.101 / 11. 14.101
+libswscale      9.  5.101 /  9.  5.101
+libswresample   6.  3.101 /  6.  3.101
+";
+        assert!(validate_version_output("ffprobe", output).is_err());
     }
 }

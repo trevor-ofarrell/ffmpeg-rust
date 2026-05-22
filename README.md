@@ -77,6 +77,12 @@ Run the project guard and quick command set:
 cargo run -p xtask -- quick
 ```
 
+Verify the local pinned FFmpeg oracle install:
+
+```sh
+cargo run -p xtask -- oracle-doctor
+```
+
 Run the Rust FFmpeg-like version commands:
 
 ```sh
@@ -121,6 +127,8 @@ That script builds the pinned Linux oracle under ignored `third_party/ffmpeg-ora
 ```
 
 Windows Rust oracle tests prefer `ffmpeg.exe`, then `ffmpeg.cmd`, then the Unix-style `ffmpeg` path. WSL/Linux runs prefer the Unix-style wrapper. The `third_party/` tree is ignored and should not be committed.
+
+`cargo run -p xtask -- oracle-doctor` checks the default `ffmpeg` and `ffprobe` oracle paths, runs `-version`, and rejects a build that does not report FFmpeg 8.1.1 with the pinned libav* ABI versions. Use `--ffmpeg <path>` and `--ffprobe <path>` to validate non-default oracle paths.
 
 FATE samples are expected under a local samples tree obtained through upstream FFmpeg's documented `make fate-rsync` flow. This repository does not check in oracle binaries or media samples.
 

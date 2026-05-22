@@ -2,6 +2,10 @@
 
 ## Current Status
 
+Latest oracle-installation slice: the local pinned FFmpeg 8.1.1 oracle is installed and now has an explicit `xtask oracle-doctor` guard. The guard locates the default local `ffmpeg` and `ffprobe` wrappers under ignored `third_party/ffmpeg-oracle/build/bin/`, runs `-version`, and rejects any tool that does not report FFmpeg 8.1.1 plus the pinned libav* ABI versions. This answers the current operating question directly: yes, strict parity work should keep a local oracle installed; this workspace already has it, and future turns can verify it quickly before trusting differential evidence.
+
+Latest validation commands for the oracle-installation slice: `cargo fmt --all`, `CARGO_TARGET_DIR=target-codex cargo test -p xtask oracle`, `CARGO_TARGET_DIR=target-codex cargo run -p xtask -- oracle-doctor`, `CARGO_TARGET_DIR=target-codex cargo test -p xtask`, `CARGO_TARGET_DIR=target-codex cargo clippy -p xtask --all-targets --all-features -- -D warnings`, `cargo fmt --all -- --check`, `CARGO_TARGET_DIR=target-codex cargo test -p oracle`, `CARGO_TARGET_DIR=target-codex cargo run -p fate-runner -- run --component oracle-inventory`, and `git diff --check` passed. Strict completion remains 11/96 components; this slice strengthens oracle tooling and documentation without changing a ledger status.
+
 Latest `avutil-buffer` init2-default slice: the pinned `buffer_oracle` harness now validates `av_buffer_pool_init2(size, opaque, NULL, pool_free)` fallback allocation. FFmpeg 8.1.1 allocates buffers through the default allocator, so per-buffer pool opaque remains NULL and returned storage is reused without clearing, while `pool_free` still receives the pool owner after uninit. Rust mirrors this through `BufferPoolCallbacks::default().with_pool_free(...)`, a focused unit test, and `avutil_core_models` fuzz-smoke invariants. `avutil-buffer` remains `differential_pass`, not `complete`, because broader ABI/lifetime closure, FATE disposition, and final completion documentation remain pending.
 
 Latest validation commands for the `avutil-buffer` init2-default slice: `cargo fmt --all`, WSL `CARGO_TARGET_DIR=target-wsl cargo test -p avutil --lib buffer_pool_init2_default_allocator_runs_pool_free_without_opaque`, WSL `CARGO_TARGET_DIR=target-wsl cargo test -p avutil --test buffer_oracle -- --ignored --nocapture`, WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg ./third_party/ffmpeg-oracle/wsl/bin/ffmpeg`, WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fate-runner -- run --component avutil-buffer`, `CARGO_TARGET_DIR=target-codex cargo check -p avutil`, `CARGO_TARGET_DIR=target-codex\fuzz-check cargo check --manifest-path fuzz\Cargo.toml`, `CARGO_TARGET_DIR=target-codex cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`, `CARGO_TARGET_DIR=target-codex\fuzz-check cargo clippy --manifest-path fuzz\Cargo.toml -- -D warnings`, and WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1` passed. Strict completion remains 11/96 components; this slice adds evidence but does not change a ledger status.
@@ -575,6 +579,17 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current oracle-installation slice:
+  - `cmd /c cargo fmt --all`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p xtask oracle"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo run -p xtask -- oracle-doctor"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p xtask"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo clippy -p xtask --all-targets --all-features -- -D warnings"`
+  - `cmd /c cargo fmt --all -- --check`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p oracle"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo run -p fate-runner -- run --component oracle-inventory"`
+  - `git diff --check`
 
 - Current `avutil-buffer` init2-default slice:
   - `cmd /c cargo fmt --all`
@@ -5703,7 +5718,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-buffer` is the current focus. The latest slice adds pinned libavutil `av_buffer_pool_init2(size, opaque, NULL, pool_free)` default-allocator coverage: buffers have NULL per-buffer pool opaque and no-clear reuse, while the pool owner callback still runs on uninit. The component remains `differential_pass`, not `complete`, because broader ABI/lifetime parity, FATE disposition, and final completion documentation still need closure.
+The current turn focused on oracle availability because strict parity evidence depends on it. `xtask oracle-doctor` now verifies that the local default `ffmpeg` and `ffprobe` oracle wrappers report FFmpeg 8.1.1 and the pinned libav* ABI versions. After this tooling slice, return to the highest-priority incomplete component.
+
+`avutil-buffer` remains the prior active component. The latest buffer slice adds pinned libavutil `av_buffer_pool_init2(size, opaque, NULL, pool_free)` default-allocator coverage: buffers have NULL per-buffer pool opaque and no-clear reuse, while the pool owner callback still runs on uninit. The component remains `differential_pass`, not `complete`, because broader ABI/lifetime parity, FATE disposition, and final completion documentation still need closure.
 
 `avutil-byteio`, `avutil-bitreader`, `avutil-dict`, and `avutil-options` are better positioned for the 10% push now that their WSL fuzz smoke targets execute. They still cannot honestly move to `complete` until the remaining oracle/FATE applicability decisions and stricter differential evidence are closed.
 
@@ -5971,13 +5988,13 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Continue `avutil-buffer` toward strict completion by closing or explicitly bounding the remaining ABI/lifetime behaviors and documenting the FATE disposition for this low-level helper surface.
-2. If buffer completion remains blocked, move to the next highest-priority incomplete infrastructure row such as `avutil-options`, `avutil-logging`, `fftools-version`, or `avutil-channel-layout`.
-3. Keep moving toward 100% default-native parity by marking rows `complete` only when the strict completion rules are satisfied.
+1. Use `cargo run -p xtask -- oracle-doctor` at the start of oracle-backed completion slices when local oracle availability is in doubt.
+2. Continue `avutil-buffer` toward strict completion by closing or explicitly bounding the remaining ABI/lifetime behaviors and documenting the FATE disposition for this low-level helper surface.
+3. If buffer completion remains blocked, move to the next highest-priority incomplete infrastructure row such as `avutil-options`, `avutil-logging`, `fftools-version`, or `avutil-channel-layout`.
 
 ## Known Blockers
 
-- Local pinned FFmpeg 8.1.1 oracle installation is no longer a blocker. The WSL-backed wrappers exist under ignored `third_party/ffmpeg-oracle/build/bin/`, and local inventory snapshots have been generated under ignored `compat/ffmpeg-8.1.1/`.
+- Local pinned FFmpeg 8.1.1 oracle installation is no longer a blocker. The WSL-backed wrappers exist under ignored `third_party/ffmpeg-oracle/build/bin/`, local inventory snapshots have been generated under ignored `compat/ffmpeg-8.1.1/`, and `cargo run -p xtask -- oracle-doctor` verifies both ffmpeg/ffprobe wrappers against the pinned target and ABI versions.
 - FATE samples are still absent locally, so sample-backed upstream FATE rows such as `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` remain blocked until `third_party/fate-samples`, `FATE_SAMPLES`, or an equivalent sample tree is configured.
 - Windows-side fuzz execution is still unreliable because of MSVC ASan runtime/path behavior and previous timeouts, but WSL Ubuntu now has Rust nightly plus `cargo-fuzz` and passes avutil smoke fuzz runs.
 - `avutil-buffer` now has pinned libavutil `AVBufferRef` and bounded `AVBufferPool` differential evidence, including nullable replace/unref/realloc rows, NULL-to-NULL replace no-op coverage, offset `data`/`size` subrange refs and offset-ref clones, writable `av_buffer_create` opaque-data owner rows, default pool fallback/no-opaque reuse rows, init2 default-allocator fallback with pool-free owner callback rows, custom pool reuse/opaque/free timing rows, and custom allocator failure/no-release rows, and is marked `differential_pass`, but not complete. Remaining blockers are broader ABI/lifetime closure, FATE disposition, and final completion documentation.
@@ -6110,6 +6127,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added `xtask oracle-doctor` so the local pinned FFmpeg oracle is an explicit verified prerequisite rather than an assumption. `xtask/src/main.rs` now resolves default `ffmpeg`/`ffprobe` oracle wrappers, supports `--ffmpeg` and `--ffprobe` overrides, runs `-version`, and validates FFmpeg 8.1.1 plus the pinned libav* ABI versions. README, `docs/oracle.md`, `docs/architecture.md`, `docs/compatibility.md`, `AGENTS.md`, and the oracle-inventory ledger entry now document the guard. The local doctor command passed against the installed WSL-backed oracle wrappers, and strict completion remains 11/96.
 
 Latest slice: added `av_buffer_pool_init2(size, opaque, NULL, pool_free)` fallback coverage. `crates/avutil/tests/buffer_oracle.rs` now compares the pinned FFmpeg 8.1.1 rows for this default-allocator pool: first-buffer status, NULL pool opaque, no-clear reuse after unref, NULL pool opaque on reuse, and `pool_free` receiving the pool owner on uninit. `crates/avutil/src/buffer.rs` and `fuzz/fuzz_targets/avutil_core_models.rs` assert the same Rust `BufferPoolCallbacks::default().with_pool_free(...)` invariant. The docs/ledger record the added evidence, and `avutil-buffer` remains `differential_pass`, not complete, because broader ABI/lifetime closure and FATE disposition remain pending.
 
