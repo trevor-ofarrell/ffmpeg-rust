@@ -6,7 +6,8 @@ use std::{
 };
 
 use avutil::{
-    Packet, PacketActiveFormatDescription, PacketAudioServiceType, PacketCpbProperties,
+    packet_pack_dictionary, packet_unpack_dictionary, Dictionary, Packet,
+    PacketActiveFormatDescription, PacketAudioServiceType, PacketCpbProperties,
     PacketDolbyVisionConf, PacketDoviCompression, PacketFallbackTrack, PacketFlags,
     PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketOpaque, PacketParamChange,
@@ -118,6 +119,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
 
     insert_side_data_api_rows(&mut rows);
     insert_payload_api_rows(&mut rows);
+    insert_dictionary_api_rows(&mut rows);
 
     rows
 }
@@ -379,6 +381,42 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
 }
 
+fn insert_dictionary_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let empty = Dictionary::new();
+    rows.insert(
+        "packet:dict-pack-empty".to_string(),
+        dictionary_payload_fields(&packet_pack_dictionary(&empty)),
+    );
+
+    let mut dict = Dictionary::new();
+    dict.set("title", "Clip").unwrap();
+    dict.set("language", "eng").unwrap();
+    dict.set("empty", "").unwrap();
+    let packed = packet_pack_dictionary(&dict);
+    rows.insert(
+        "packet:dict-pack".to_string(),
+        dictionary_payload_fields(&packed),
+    );
+
+    let unpacked = packet_unpack_dictionary(&packed).unwrap();
+    rows.insert("packet:dict-unpack-ret".to_string(), vec!["0".to_string()]);
+    rows.insert(
+        "packet:dict-unpack".to_string(),
+        dictionary_fields(&unpacked),
+    );
+
+    let duplicate = b"title\0first\0TITLE\0second\0";
+    let duplicate = packet_unpack_dictionary(duplicate).unwrap();
+    rows.insert(
+        "packet:dict-unpack-duplicate-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:dict-unpack-duplicate".to_string(),
+        dictionary_fields(&duplicate),
+    );
+}
+
 fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     let mut packet = Packet::default();
     packet.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33, 0x44]).unwrap());
@@ -536,6 +574,23 @@ fn payload_layout_fields(bytes: &[u8], offsets: &[usize]) -> Vec<String> {
     fields
 }
 
+fn dictionary_payload_fields(bytes: &[u8]) -> Vec<String> {
+    vec![
+        u8::from(!bytes.is_empty()).to_string(),
+        bytes.len().to_string(),
+        hex_or_dash(bytes),
+    ]
+}
+
+fn dictionary_fields(dict: &Dictionary) -> Vec<String> {
+    let mut fields = vec![dict.len().to_string()];
+    for entry in dict.entries() {
+        fields.push(entry.key().to_string());
+        fields.push(entry.value().to_string());
+    }
+    fields
+}
+
 fn packet_side_data_type(kind: &PacketSideDataKind) -> &'static str {
     match kind.ffmpeg_value() {
         Some(0) => "0",
@@ -633,6 +688,7 @@ fn oracle_c_source() -> &'static str {
 #include "libavcodec/defs.h"
 #include "libavcodec/packet.h"
 #include "libavutil/buffer.h"
+#include "libavutil/dict.h"
 #include "libavutil/dovi_meta.h"
 #include "libavutil/frame.h"
 #include "libavutil/intreadwrite.h"
@@ -963,6 +1019,21 @@ static void print_payload(const char *name, const AVPacket *pkt) {
     printf("|%d\n", pkt->buf ? av_buffer_is_writable(pkt->buf) : 0);
 }
 
+static void print_dictionary_payload(const char *name, const uint8_t *data, size_t size) {
+    printf("%s|%d|%zu|", name, data != NULL, size);
+    print_hex_or_dash(data, (int)size);
+    printf("\n");
+}
+
+static void print_dictionary(const char *name, const AVDictionary *dict) {
+    const AVDictionaryEntry *entry = NULL;
+    printf("%s|%d", name, av_dict_count(dict));
+    while ((entry = av_dict_iterate(dict, entry))) {
+        printf("|%s|%s", entry->key, entry->value);
+    }
+    printf("\n");
+}
+
 static AVPacket *new_packet(void) {
     AVPacket *pkt = av_packet_alloc();
     fail_if(!pkt, "av_packet_alloc failed");
@@ -1090,6 +1161,37 @@ static void exercise_payload_api(void) {
     av_packet_free(&pkt);
 }
 
+static void exercise_dictionary_api(void) {
+    size_t packed_size = 999;
+    uint8_t *packed = av_packet_pack_dictionary(NULL, &packed_size);
+    print_dictionary_payload("packet:dict-pack-empty", packed, packed_size);
+    av_free(packed);
+
+    AVDictionary *dict = NULL;
+    fail_if(av_dict_set(&dict, "title", "Clip", 0) < 0, "dict set title failed");
+    fail_if(av_dict_set(&dict, "language", "eng", 0) < 0, "dict set language failed");
+    fail_if(av_dict_set(&dict, "empty", "", 0) < 0, "dict set empty failed");
+
+    packed_size = 999;
+    packed = av_packet_pack_dictionary(dict, &packed_size);
+    fail_if(!packed, "av_packet_pack_dictionary failed");
+    print_dictionary_payload("packet:dict-pack", packed, packed_size);
+
+    AVDictionary *unpacked = NULL;
+    int ret = av_packet_unpack_dictionary(packed, packed_size, &unpacked);
+    printf("packet:dict-unpack-ret|%d\n", ret);
+    print_dictionary("packet:dict-unpack", unpacked);
+    av_dict_free(&unpacked);
+    av_free(packed);
+    av_dict_free(&dict);
+
+    static const uint8_t duplicate[] = "title\0first\0TITLE\0second";
+    ret = av_packet_unpack_dictionary(duplicate, sizeof(duplicate), &unpacked);
+    printf("packet:dict-unpack-duplicate-ret|%d\n", ret);
+    print_dictionary("packet:dict-unpack-duplicate", unpacked);
+    av_dict_free(&unpacked);
+}
+
 int main(void) {
     AVPacket *pkt = new_packet();
     print_packet("packet:default", pkt);
@@ -1146,6 +1248,7 @@ int main(void) {
 
     exercise_side_data_api();
     exercise_payload_api();
+    exercise_dictionary_api();
 
     return 0;
 }

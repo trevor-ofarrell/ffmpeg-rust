@@ -89,10 +89,10 @@ pub use options::{
     OptionQuery, OptionRange, OptionSet, OptionValue,
 };
 pub use packet::{
-    Packet, PacketA53ClosedCaptions, PacketActiveFormatDescription,
-    PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
-    PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
-    PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
+    packet_pack_dictionary, packet_unpack_dictionary, Packet, PacketA53ClosedCaptions,
+    PacketActiveFormatDescription, PacketAmbientViewingEnvironment, PacketAudioServiceType,
+    PacketContentLightMetadata, PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf,
+    PacketDoviCompression, PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
     PacketEncryptionInitInfoEntry, PacketEncryptionSubsample, PacketExif, PacketFallbackTrack,
     PacketFlags, PacketFrameCropping, PacketH263MbInfo, PacketH263MbInfoEntry,
     PacketHdrPlusColorTransformParams, PacketHdrPlusOverlapProcessOption, PacketHdrPlusPercentile,

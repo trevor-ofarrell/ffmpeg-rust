@@ -4,7 +4,7 @@ use crate::frame::{
     FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye, FrameStereo3dType,
     FrameStereo3dView, FrameThreeDReferenceDisplay, FrameThreeDReferenceDisplays,
 };
-use crate::{rescale_q, AvError, AvResult, BufferRef, Rational};
+use crate::{rescale_q, AvError, AvResult, BufferRef, Dictionary, Rational};
 use std::num::NonZeroUsize;
 
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
@@ -2370,6 +2370,26 @@ impl<'a> PacketStringMetadata<'a> {
     pub fn entry(&self, index: usize) -> Option<PacketStringMetadataEntry<'a>> {
         self.entries.get(index).copied()
     }
+}
+
+pub fn packet_pack_dictionary(dict: &Dictionary) -> Vec<u8> {
+    let mut data = Vec::new();
+    for entry in dict.entries() {
+        data.extend_from_slice(entry.key().as_bytes());
+        data.push(0);
+        data.extend_from_slice(entry.value().as_bytes());
+        data.push(0);
+    }
+    data
+}
+
+pub fn packet_unpack_dictionary(data: &[u8]) -> AvResult<Dictionary> {
+    let metadata = PacketStringMetadata::parse(data)?;
+    let mut dict = Dictionary::new();
+    for entry in metadata.entries() {
+        dict.set(entry.key_str()?, entry.value_str()?)?;
+    }
+    Ok(dict)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7884,6 +7904,47 @@ mod tests {
             SideData::new_with_kind(PacketSideDataKind::MpegTsStreamId, data).unwrap();
         assert_eq!(non_strings.strings_metadata().unwrap(), None);
         assert_eq!(non_strings.metadata_update().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_dictionary_pack_unpack_uses_string_metadata_wire_format() {
+        let mut dict = Dictionary::new();
+        dict.set("title", "Clip").unwrap();
+        dict.set("language", "eng").unwrap();
+        dict.set("empty", "").unwrap();
+
+        let packed = packet_pack_dictionary(&dict);
+
+        assert_eq!(packed, b"title\0Clip\0language\0eng\0empty\0\0");
+
+        let unpacked = packet_unpack_dictionary(&packed).unwrap();
+        assert_eq!(unpacked.entries(), dict.entries());
+
+        let empty = Dictionary::new();
+        assert!(packet_pack_dictionary(&empty).is_empty());
+        assert!(packet_unpack_dictionary(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn packet_dictionary_unpack_rejects_malformed_or_non_utf8_metadata() {
+        for data in [
+            b"title\0Clip".as_slice(),
+            b"\0Clip\0".as_slice(),
+            b"title\0".as_slice(),
+            b"title\0Clip\0\0".as_slice(),
+        ] {
+            assert_eq!(
+                packet_unpack_dictionary(data).unwrap_err().kind(),
+                crate::AvErrorKind::InvalidData
+            );
+        }
+
+        assert_eq!(
+            packet_unpack_dictionary(b"title\0\xff\xfe\0")
+                .unwrap_err()
+                .kind(),
+            crate::AvErrorKind::InvalidData
+        );
     }
 
     #[test]

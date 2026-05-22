@@ -13,7 +13,7 @@ use avutil::{
     FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
     NativeChannelMaskLayout,
     FrameAudioServiceType,
-    FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
+    Dictionary, FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
     FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
@@ -67,7 +67,8 @@ use avutil::{
     Ripemd256, Ripemd320, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
     Sha512Trunc256, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE,
     AV_INPUT_BUFFER_PADDING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE,
-    AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE,
+    AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE, packet_pack_dictionary,
+    packet_unpack_dictionary,
 };
 use libfuzzer_sys::fuzz_target;
 use std::cmp::Ordering;
@@ -6373,6 +6374,37 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             assert!(packet_string_metadata_payload_invalid(&typed_payload));
         }
     }
+
+    let mut dict = Dictionary::new();
+    dict.set("title", "Clip").unwrap();
+    dict.set("language", "eng").unwrap();
+    dict.set("empty", "").unwrap();
+    let packed_dict = packet_pack_dictionary(&dict);
+    assert_eq!(
+        packed_dict.as_slice(),
+        b"title\0Clip\0language\0eng\0empty\0\0"
+    );
+    assert_eq!(packet_unpack_dictionary(&packed_dict).unwrap(), dict);
+    assert!(packet_pack_dictionary(&Dictionary::new()).is_empty());
+    assert!(packet_unpack_dictionary(&[]).unwrap().is_empty());
+    match packet_unpack_dictionary(&typed_payload) {
+        Ok(unpacked) => {
+            for entry in unpacked.entries() {
+                assert!(!entry.key().is_empty());
+                assert!(!entry.key().as_bytes().contains(&0));
+                assert!(!entry.value().as_bytes().contains(&0));
+            }
+            let repacked = packet_pack_dictionary(&unpacked);
+            if unpacked.is_empty() {
+                assert!(repacked.is_empty());
+            } else {
+                assert_eq!(repacked.last(), Some(&0));
+                assert!(PacketStringMetadata::parse(&repacked).is_ok());
+            }
+        }
+        Err(err) => assert_eq!(err.kind(), AvErrorKind::InvalidData),
+    }
+
     match typed_payload_side_data.encryption_info() {
         Ok(Some(value)) => {
             assert_eq!(typed_payload_kind, PacketSideDataKind::EncryptionInfo);
