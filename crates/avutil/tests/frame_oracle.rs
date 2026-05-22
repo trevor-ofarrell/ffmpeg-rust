@@ -865,10 +865,44 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "frame:side-array-multi-replace".to_string(),
         side_array_status_fields(multi_replaced, &side_array),
     );
+    let multi_found = side_array.side_data_by_kind(&FrameSideDataKind::SeiUnregistered);
+    rows.insert(
+        "frame:side-array-get-multi-first".to_string(),
+        vec![
+            side_array.side_data().len().to_string(),
+            bool_field(
+                multi_found
+                    .map(|side_data| side_data.data() == [0x77; 16].as_slice())
+                    .unwrap_or(false),
+            ),
+            multi_found
+                .map(|side_data| side_data.data().len().to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            multi_found
+                .map(|side_data| hex(side_data.data()))
+                .unwrap_or_else(|| "none".to_string()),
+        ],
+    );
+    let missing_found = side_array.side_data_by_kind(&FrameSideDataKind::FilmGrainParams);
+    rows.insert(
+        "frame:side-array-get-missing".to_string(),
+        vec![
+            bool_field(missing_found.is_some()),
+            side_array.side_data().len().to_string(),
+        ],
+    );
     side_array.remove_side_data_by_properties(FrameSideDataProperties::MULTI);
     rows.insert(
         "frame:side-array-remove-multi".to_string(),
         side_array_fields(&side_array),
+    );
+    side_array.clear_side_data();
+    rows.insert(
+        "frame:side-array-free".to_string(),
+        vec![
+            side_array.side_data().len().to_string(),
+            bool_field(side_array.side_data().is_empty()),
+        ],
     );
 
     let mut side_add = Frame::empty();
@@ -2672,12 +2706,29 @@ int main(void)
                          sei_replace_entry != NULL, side_array,
                          nb_side_array);
 
+    const AVFrameSideData *array_multi_found = av_frame_side_data_get(
+        side_array, nb_side_array, AV_FRAME_DATA_SEI_UNREGISTERED);
+    printf("frame:side-array-get-multi-first|%d|%d|%zu|",
+           nb_side_array, array_multi_found == sei_entry,
+           array_multi_found ? array_multi_found->size : 0);
+    if (array_multi_found)
+        print_hex(array_multi_found->data, array_multi_found->size);
+    else
+        printf("none");
+    printf("\n");
+    const AVFrameSideData *array_missing_found = av_frame_side_data_get(
+        side_array, nb_side_array, AV_FRAME_DATA_FILM_GRAIN_PARAMS);
+    printf("frame:side-array-get-missing|%d|%d\n",
+           array_missing_found != NULL, nb_side_array);
+
     av_frame_side_data_remove_by_props(&side_array, &nb_side_array,
                                        AV_SIDE_DATA_PROP_MULTI);
     printf("frame:side-array-remove-multi|%d|", nb_side_array);
     print_side_array_summary(side_array, nb_side_array);
     printf("\n");
     av_frame_side_data_free(&side_array, &nb_side_array);
+    printf("frame:side-array-free|%d|%d\n", nb_side_array,
+           side_array == NULL);
 
     AVFrameSideData **side_add_array = NULL;
     int nb_side_add_array = 0;

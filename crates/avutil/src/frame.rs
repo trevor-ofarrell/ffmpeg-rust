@@ -1757,6 +1757,10 @@ impl Frame {
             .map(|index| self.side_data.remove(index))
     }
 
+    pub fn clear_side_data(&mut self) {
+        self.side_data.clear();
+    }
+
     pub fn remove_all_side_data(&mut self, kind: &str) -> Vec<FrameSideData> {
         let Ok(kind) = FrameSideDataKind::from_name(kind) else {
             return Vec::new();
@@ -28799,6 +28803,18 @@ mod tests {
                 .count(),
             2
         );
+        assert_eq!(
+            frame
+                .side_data_by_kind(&FrameSideDataKind::SeiUnregistered)
+                .unwrap()
+                .data(),
+            &[0; 16]
+        );
+        assert!(frame
+            .side_data_by_kind(&FrameSideDataKind::FilmGrainParams)
+            .is_none());
+        frame.clear_side_data();
+        assert!(frame.side_data().is_empty());
     }
 
     #[test]

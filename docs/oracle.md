@@ -244,12 +244,14 @@ The `av_frame_apply_cropping` rows prove FFmpeg's default left-crop rounding to
 keep the data pointer at least 32-byte aligned, exact-left behavior under
 `AV_FRAME_CROP_UNALIGNED`, crop-field reset on success, and `ERANGE`
 no-mutation behavior for invalid crop rectangles.
-The standalone side-data array rows exercise `av_frame_side_data_new()` and
-`av_frame_side_data_remove_by_props()`: duplicate insertion without flags fails
-without mutation, `AV_FRAME_SIDE_DATA_FLAG_REPLACE` replaces non-MULTI entries,
+The standalone side-data array rows exercise `av_frame_side_data_new()`,
+`av_frame_side_data_get()`, `av_frame_side_data_remove_by_props()`, and
+`av_frame_side_data_free()`: duplicate insertion without flags fails without
+mutation, `AV_FRAME_SIDE_DATA_FLAG_REPLACE` replaces non-MULTI entries,
 `AV_FRAME_SIDE_DATA_FLAG_UNIQUE` removes matching entries before appending,
-MULTI side data appends even with REPLACE, and property removal clears all
-MULTI entries.
+MULTI side data appends even with REPLACE, lookup returns the first matching
+MULTI entry, missing lookup returns NULL, property removal clears all MULTI
+entries, and free resets the array.
 The buffer-backed side-data rows exercise `av_frame_side_data_add()` ownership:
 successful non-`NEW_REF` insert and replace consume the caller `AVBufferRef`,
 duplicate failure leaves the caller buffer alive, and

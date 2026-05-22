@@ -4358,6 +4358,40 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         .remove_all_side_data_kind(&FrameSideDataKind::ReplayGain)
         .is_empty());
 
+    let mut side_array_frame = Frame::empty();
+    side_array_frame
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0x55]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    side_array_frame
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::SeiUnregistered, vec![0x77; 16])
+                .unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    side_array_frame
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::SeiUnregistered, vec![0x88; 16])
+                .unwrap(),
+            FrameSideDataFlags::REPLACE,
+        )
+        .unwrap();
+    assert_eq!(
+        side_array_frame
+            .side_data_by_kind(&FrameSideDataKind::SeiUnregistered)
+            .unwrap()
+            .data(),
+        &[0x77; 16]
+    );
+    assert!(side_array_frame
+        .side_data_by_kind(&FrameSideDataKind::FilmGrainParams)
+        .is_none());
+    side_array_frame.clear_side_data();
+    assert!(side_array_frame.side_data().is_empty());
+
     let replacement_side_data_buffer =
         BufferRef::copy_from_slice_with_padding(&[0x55, 0x66], 1).unwrap();
     let replaced_side_data = frame
