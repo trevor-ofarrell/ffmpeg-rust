@@ -33,7 +33,7 @@ avutil-byteio|local-avutil-unit|.|cargo|test|-p|avutil|byteio
 avutil-bitreader|local-avutil-unit|.|cargo|test|-p|avutil|bitreader
 avutil-bitwriter|local-avutil-unit|.|cargo|test|-p|avutil|bitwriter
 avutil-dict|local-avutil-unit|.|cargo|test|-p|avutil|dict
-avutil-options|local-avutil-unit|.|cargo|test|-p|avutil|options
+avutil-options|local-avutil-unit|.|cargo|test|-p|avutil|--lib|options
 avutil-pixel-format|local-avutil-unit|.|cargo|test|-p|avutil|pixel
 avutil-sample-format|local-avutil-unit|.|cargo|test|-p|avutil|samplefmt
 avutil-channel-layout|local-avutil-unit|.|cargo|test|-p|avutil|channel_layout
