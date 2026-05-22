@@ -4149,6 +4149,28 @@ impl PixelFormat {
         self.descriptor().bits_per_component
     }
 
+    pub fn component_bit_depths(self) -> Vec<u8> {
+        match self {
+            Self::Rgb8 | Self::Bgr8 => vec![3, 3, 2],
+            Self::Rgb4 | Self::Bgr4 | Self::Rgb4Byte | Self::Bgr4Byte => vec![1, 2, 1],
+            Self::Rgb565Be | Self::Rgb565Le | Self::Bgr565Be | Self::Bgr565Le => {
+                vec![5, 6, 5]
+            }
+            Self::BayerBggr8 | Self::BayerRggb8 | Self::BayerGbrg8 | Self::BayerGrbg8 => {
+                vec![2, 4, 2]
+            }
+            Self::BayerBggr16Le
+            | Self::BayerBggr16Be
+            | Self::BayerRggb16Le
+            | Self::BayerRggb16Be
+            | Self::BayerGbrg16Le
+            | Self::BayerGbrg16Be
+            | Self::BayerGrbg16Le
+            | Self::BayerGrbg16Be => vec![4, 8, 4],
+            _ => vec![self.bits_per_component(); self.component_count()],
+        }
+    }
+
     pub fn bits_per_pixel(self) -> Rational {
         self.descriptor().bits_per_pixel
     }
@@ -6338,19 +6360,33 @@ mod tests {
         assert_eq!(PixelFormat::Rgb24.bits_per_pixel(), bpp(24));
         assert_eq!(PixelFormat::Rgb8.component_count(), 3);
         assert_eq!(PixelFormat::Rgb8.bits_per_component(), 3);
+        assert_eq!(PixelFormat::Rgb8.component_bit_depths(), vec![3, 3, 2]);
+        assert_eq!(PixelFormat::Bgr8.component_bit_depths(), vec![3, 3, 2]);
         assert_eq!(PixelFormat::Bgr8.bits_per_pixel(), bpp(8));
         assert_eq!(PixelFormat::Rgb4.bits_per_component(), 2);
+        assert_eq!(PixelFormat::Rgb4.component_bit_depths(), vec![1, 2, 1]);
+        assert_eq!(PixelFormat::Bgr4.component_bit_depths(), vec![1, 2, 1]);
         assert_eq!(PixelFormat::Bgr4.bits_per_pixel(), bpp(4));
         assert_eq!(PixelFormat::Rgb4Byte.bits_per_component(), 2);
+        assert_eq!(PixelFormat::Rgb4Byte.component_bit_depths(), vec![1, 2, 1]);
+        assert_eq!(PixelFormat::Bgr4Byte.component_bit_depths(), vec![1, 2, 1]);
         assert_eq!(PixelFormat::Bgr4Byte.bits_per_pixel(), bpp(4));
         assert_eq!(PixelFormat::BayerBggr8.component_count(), 3);
         assert_eq!(PixelFormat::BayerBggr8.bits_per_component(), 8);
         assert_eq!(PixelFormat::BayerBggr8.bits_per_pixel(), bpp(8));
+        assert_eq!(
+            PixelFormat::BayerBggr8.component_bit_depths(),
+            vec![2, 4, 2]
+        );
         assert_eq!(PixelFormat::BayerBggr8.packed_bytes_per_pixel(), Some(1));
         assert!(PixelFormat::BayerBggr8.is_bayer());
         assert_eq!(PixelFormat::BayerGrbg16Be.component_count(), 3);
         assert_eq!(PixelFormat::BayerGrbg16Be.bits_per_component(), 16);
         assert_eq!(PixelFormat::BayerGrbg16Be.bits_per_pixel(), bpp(16));
+        assert_eq!(
+            PixelFormat::BayerGrbg16Be.component_bit_depths(),
+            vec![4, 8, 4]
+        );
         assert_eq!(PixelFormat::BayerGrbg16Be.packed_bytes_per_pixel(), Some(2));
         assert!(PixelFormat::BayerGrbg16Be.is_bayer());
         assert_eq!(PixelFormat::RgbF16Le.component_count(), 3);
@@ -6462,8 +6498,16 @@ mod tests {
         assert_eq!(PixelFormat::Bgr48Be.bits_per_pixel(), bpp(48));
         assert_eq!(PixelFormat::Rgb565Le.component_count(), 3);
         assert_eq!(PixelFormat::Rgb565Le.bits_per_component(), 6);
+        assert_eq!(PixelFormat::Rgb565Le.component_bit_depths(), vec![5, 6, 5]);
+        assert_eq!(PixelFormat::Bgr565Be.component_bit_depths(), vec![5, 6, 5]);
         assert_eq!(PixelFormat::Rgb565Le.bits_per_pixel(), bpp(16));
         assert_eq!(PixelFormat::Bgr555Be.bits_per_component(), 5);
+        assert_eq!(PixelFormat::Rgb24.component_bit_depths(), vec![8, 8, 8]);
+        assert_eq!(PixelFormat::Bgr555Be.component_bit_depths(), vec![5, 5, 5]);
+        assert_eq!(
+            PixelFormat::Rgba64Le.component_bit_depths(),
+            vec![16, 16, 16, 16]
+        );
         assert_eq!(PixelFormat::Bgr555Be.bits_per_pixel(), bpp(15));
         assert_eq!(PixelFormat::Rgb444Le.bits_per_component(), 4);
         assert_eq!(PixelFormat::Bgr444Be.bits_per_component(), 4);

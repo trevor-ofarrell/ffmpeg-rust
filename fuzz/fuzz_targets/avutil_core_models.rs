@@ -2164,6 +2164,42 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         descriptor.packed_bytes_per_pixel,
         pixel_format.packed_bytes_per_pixel()
     );
+    let component_bit_depths = pixel_format.component_bit_depths();
+    assert_eq!(component_bit_depths.len(), pixel_format.component_count());
+    assert!(component_bit_depths
+        .iter()
+        .all(|depth| *depth > 0 && *depth <= pixel_format.bits_per_component()));
+    match pixel_format {
+        PixelFormat::Rgb8 | PixelFormat::Bgr8 => {
+            assert_eq!(component_bit_depths, vec![3, 3, 2]);
+        }
+        PixelFormat::Rgb4 | PixelFormat::Bgr4 | PixelFormat::Rgb4Byte | PixelFormat::Bgr4Byte => {
+            assert_eq!(component_bit_depths, vec![1, 2, 1]);
+        }
+        PixelFormat::Rgb565Be
+        | PixelFormat::Rgb565Le
+        | PixelFormat::Bgr565Be
+        | PixelFormat::Bgr565Le => {
+            assert_eq!(component_bit_depths, vec![5, 6, 5]);
+        }
+        PixelFormat::BayerBggr8
+        | PixelFormat::BayerRggb8
+        | PixelFormat::BayerGbrg8
+        | PixelFormat::BayerGrbg8 => {
+            assert_eq!(component_bit_depths, vec![2, 4, 2]);
+        }
+        PixelFormat::BayerBggr16Le
+        | PixelFormat::BayerBggr16Be
+        | PixelFormat::BayerRggb16Le
+        | PixelFormat::BayerRggb16Be
+        | PixelFormat::BayerGbrg16Le
+        | PixelFormat::BayerGbrg16Be
+        | PixelFormat::BayerGrbg16Le
+        | PixelFormat::BayerGrbg16Be => {
+            assert_eq!(component_bit_depths, vec![4, 8, 4]);
+        }
+        _ => {}
+    }
     assert_eq!(
         (descriptor.log2_chroma_w, descriptor.log2_chroma_h),
         pixel_format.log2_chroma()

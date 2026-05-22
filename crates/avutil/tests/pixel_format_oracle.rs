@@ -12,6 +12,7 @@ struct PixelFormatRow {
     name: String,
     component_count: usize,
     bits_per_pixel: usize,
+    bit_depths: Vec<u8>,
 }
 
 impl PixelFormatRow {
@@ -25,6 +26,7 @@ struct ExpectedPixelFormatRow {
     name: String,
     component_count: usize,
     bits_per_pixel: Option<usize>,
+    bit_depths: Vec<u8>,
     is_paletted: bool,
 }
 
@@ -70,6 +72,11 @@ fn ffmpeg_pixel_format_inventory_contains_current_pixel_format_subset() {
             );
         }
         assert_eq!(
+            actual.bit_depths, expected.bit_depths,
+            "ffmpeg -pix_fmts component bit depths diverged for `{}`",
+            expected.name
+        );
+        assert_eq!(
             actual.is_paletted(),
             expected.is_paletted,
             "ffmpeg -pix_fmts paletted flag diverged for `{}`",
@@ -103,10 +110,13 @@ IO.P. pal8                   1             8
             name: "yuv420p".to_string(),
             component_count: 3,
             bits_per_pixel: 12,
+            bit_depths: vec![8, 8, 8],
         })
     );
     assert!(!rows["monow"].is_paletted());
     assert!(rows["pal8"].is_paletted());
+    assert_eq!(rows["monow"].bit_depths, vec![1]);
+    assert_eq!(rows["pal8"].bit_depths, vec![8]);
 }
 
 fn expected_pixel_format_subset() -> Vec<ExpectedPixelFormatRow> {
@@ -118,6 +128,7 @@ fn expected_pixel_format_subset() -> Vec<ExpectedPixelFormatRow> {
                 name: descriptor.name.to_string(),
                 component_count: descriptor.component_count,
                 bits_per_pixel: descriptor.bits_per_pixel_integer().map(usize::from),
+                bit_depths: format.component_bit_depths(),
                 is_paletted: descriptor.is_paletted,
             }
         })
@@ -143,7 +154,7 @@ fn parse_pixel_format_inventory(text: &str) -> BTreeMap<String, PixelFormatRow> 
         }
 
         let columns = trimmed.split_whitespace().collect::<Vec<_>>();
-        if columns.len() < 4 || columns[0].len() != 5 {
+        if columns.len() < 5 || columns[0].len() != 5 {
             continue;
         }
 
@@ -153,12 +164,21 @@ fn parse_pixel_format_inventory(text: &str) -> BTreeMap<String, PixelFormatRow> 
         let bits_per_pixel = columns[3].parse().unwrap_or_else(|err| {
             panic!("invalid ffmpeg -pix_fmts bits-per-pixel in `{trimmed}`: {err}")
         });
+        let bit_depths = columns[4]
+            .split('-')
+            .map(|depth| {
+                depth.parse::<u8>().unwrap_or_else(|err| {
+                    panic!("invalid ffmpeg -pix_fmts bit-depth entry in `{trimmed}`: {err}")
+                })
+            })
+            .collect::<Vec<_>>();
 
         let row = PixelFormatRow {
             flags: columns[0].to_string(),
             name: columns[1].to_string(),
             component_count,
             bits_per_pixel,
+            bit_depths,
         };
         let previous = rows.insert(row.name.clone(), row);
         assert!(previous.is_none(), "duplicate ffmpeg -pix_fmts row");
@@ -170,8 +190,15 @@ fn parse_pixel_format_inventory(text: &str) -> BTreeMap<String, PixelFormatRow> 
 }
 
 fn oracle_ffmpeg() -> PathBuf {
+    let root = repo_root();
+
     if let Ok(path) = env::var("FFMPEG_ORACLE") {
         let path = PathBuf::from(path);
+        let path = if path.is_absolute() {
+            path
+        } else {
+            root.join(path)
+        };
         assert!(
             path.is_file(),
             "FFMPEG_ORACLE must point to the pinned FFmpeg 8.1.1 binary, got `{}`",
@@ -180,12 +207,7 @@ fn oracle_ffmpeg() -> PathBuf {
         return path;
     }
 
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("avutil crate should be under crates/");
-
-    for candidate in default_ffmpeg_candidates(root) {
+    for candidate in default_ffmpeg_candidates(&root) {
         if candidate.is_file() {
             return candidate;
         }
@@ -196,6 +218,14 @@ fn oracle_ffmpeg() -> PathBuf {
         root.join("third_party/ffmpeg-oracle/build/bin/ffmpeg")
             .display()
     );
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("avutil crate should be under crates/")
+        .to_path_buf()
 }
 
 fn default_ffmpeg_candidates(root: &Path) -> Vec<PathBuf> {
