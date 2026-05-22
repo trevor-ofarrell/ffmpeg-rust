@@ -350,6 +350,16 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
 }
 
 fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let new_packet = Packet::new_zeroed(3, 0).unwrap();
+    rows.insert(
+        "packet:payload-new-packet-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-new-packet".to_string(),
+        payload_allocation_fields(&new_packet),
+    );
+
     let from_data = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
     rows.insert(
         "packet:payload-from-data-ret".to_string(),
@@ -786,6 +796,19 @@ fn payload_fields(packet: &Packet) -> Vec<String> {
     vec![
         packet.len().to_string(),
         hex_or_dash(packet.data()),
+        hex_or_dash(&padding[..AV_INPUT_BUFFER_PADDING_SIZE]),
+        u8::from(packet.is_data_writable()).to_string(),
+    ]
+}
+
+fn payload_allocation_fields(packet: &Packet) -> Vec<String> {
+    let padding = packet.data_buffer().padding_slice();
+    assert!(
+        padding.len() >= AV_INPUT_BUFFER_PADDING_SIZE,
+        "packet payload should have FFmpeg input padding for oracle comparison"
+    );
+    vec![
+        packet.len().to_string(),
         hex_or_dash(&padding[..AV_INPUT_BUFFER_PADDING_SIZE]),
         u8::from(packet.is_data_writable()).to_string(),
     ]
@@ -1286,6 +1309,13 @@ static void print_payload(const char *name, const AVPacket *pkt) {
     printf("|%d\n", pkt->buf ? av_buffer_is_writable(pkt->buf) : 0);
 }
 
+static void print_payload_allocation(const char *name, const AVPacket *pkt) {
+    printf("%s|%d|", name, pkt->size);
+    print_hex_or_dash(pkt->data ? pkt->data + pkt->size : NULL,
+                      AV_INPUT_BUFFER_PADDING_SIZE);
+    printf("|%d\n", pkt->buf ? av_buffer_is_writable(pkt->buf) : 0);
+}
+
 static void print_dictionary_payload(const char *name, const uint8_t *data, size_t size) {
     printf("%s|%d|%zu|", name, data != NULL, size);
     print_hex_or_dash(data, (int)size);
@@ -1515,12 +1545,19 @@ static void exercise_frame_packet_side_data_bridge_api(void) {
 
 static void exercise_payload_api(void) {
     AVPacket *pkt = new_packet();
+    int ret = av_new_packet(pkt, 3);
+    printf("packet:payload-new-packet-ret|%d\n", ret);
+    fail_if(ret < 0, "av_new_packet payload allocation failed");
+    print_payload_allocation("packet:payload-new-packet", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
     uint8_t *owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!owned, "av_mallocz payload from-data failed");
     owned[0] = 0xaa;
     owned[1] = 0xbb;
     owned[2] = 0xcc;
-    int ret = av_packet_from_data(pkt, owned, 3);
+    ret = av_packet_from_data(pkt, owned, 3);
     printf("packet:payload-from-data-ret|%d\n", ret);
     print_payload("packet:payload-from-data", pkt);
     av_packet_free(&pkt);
