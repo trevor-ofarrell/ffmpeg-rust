@@ -12357,6 +12357,7 @@ fn exercise_fixtures() {
     unref_frame
         .set_time_base(Rational::new(1, 48_000).unwrap())
         .unwrap();
+    unref_frame.metadata_mut().set("title", "before-unref").unwrap();
     unref_frame
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
         .unwrap();
@@ -12367,6 +12368,7 @@ fn exercise_fixtures() {
     assert_eq!(unref_frame.pkt_dts(), None);
     assert_eq!(unref_frame.duration(), 0);
     assert_eq!(unref_frame.time_base(), Rational::ZERO);
+    assert!(unref_frame.metadata().is_empty());
     assert!(matches!(unref_frame.data(), FrameData::Empty));
     assert!(unref_frame.hw_frames_context().is_none());
     assert!(unref_frame.side_data().is_empty());
@@ -12395,6 +12397,7 @@ fn exercise_fixtures() {
     source_frame
         .set_time_base(Rational::new(1, 90_000).unwrap())
         .unwrap();
+    source_frame.metadata_mut().set("title", "source").unwrap();
     source_frame
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, ref_side.clone())
         .unwrap();
@@ -12423,6 +12426,12 @@ fn exercise_fixtures() {
         referenced_frame.time_base(),
         Rational::new(1, 90_000).unwrap()
     );
+    assert_eq!(referenced_frame.metadata().get("title"), Some("source"));
+    referenced_frame
+        .metadata_mut()
+        .set("artist", "reference")
+        .unwrap();
+    assert_eq!(source_frame.metadata().get("artist"), None);
     assert!(!referenced_frame.is_empty());
     let (referenced_video, source_video) = match (referenced_frame.data(), source_frame.data()) {
         (FrameData::Video(referenced_video), FrameData::Video(source_video)) => {
@@ -12477,6 +12486,11 @@ fn exercise_fixtures() {
         .set_time_base(Rational::new(1, 1_000).unwrap())
         .unwrap();
     props_frame
+        .metadata_mut()
+        .set("title", "destination")
+        .unwrap();
+    props_frame.metadata_mut().set("keep", "destination").unwrap();
+    props_frame
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, props_old_side)
         .unwrap();
     props_frame.copy_props_from(&source_frame);
@@ -12484,6 +12498,8 @@ fn exercise_fixtures() {
     assert_eq!(props_frame.pkt_dts(), Some(6));
     assert_eq!(props_frame.duration(), 5);
     assert_eq!(props_frame.time_base(), Rational::new(1, 90_000).unwrap());
+    assert_eq!(props_frame.metadata().get("title"), Some("source"));
+    assert_eq!(props_frame.metadata().get("keep"), Some("destination"));
     assert!(props_old_side_released.lock().unwrap().is_empty());
     assert!(props_old_hw_released.lock().unwrap().is_empty());
     let FrameData::Video(props_video) = props_frame.data() else {
@@ -12537,6 +12553,10 @@ fn exercise_fixtures() {
     move_source
         .set_time_base(Rational::new(1, 48_000).unwrap())
         .unwrap();
+    move_source
+        .metadata_mut()
+        .set("title", "move-source")
+        .unwrap();
 
     let move_destination_released = Arc::new(Mutex::new(Vec::<String>::new()));
     let move_destination_capture = Arc::clone(&move_destination_released);
@@ -12562,6 +12582,8 @@ fn exercise_fixtures() {
         move_destination.time_base(),
         Rational::new(1, 48_000).unwrap()
     );
+    assert_eq!(move_destination.metadata().get("title"), Some("move-source"));
+    assert!(move_source.metadata().is_empty());
     assert!(matches!(move_destination.data(), FrameData::Video(_)));
     assert_eq!(
         *move_destination_released.lock().unwrap(),

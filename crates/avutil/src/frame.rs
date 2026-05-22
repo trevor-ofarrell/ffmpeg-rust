@@ -1,6 +1,6 @@
 use crate::{
     AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, ChannelLayout, ChannelLayoutSpec,
-    Dictionary, PixelFormat, Rational, SampleFormat,
+    Dictionary, MatchMode, PixelFormat, Rational, SampleFormat, SetMode,
 };
 
 const FFMPEG_FRAME_DEFAULT_ALIGNMENT: usize = 64;
@@ -632,6 +632,7 @@ pub struct Frame {
     color_transfer_characteristic: FrameColorTransferCharacteristic,
     color_space: FrameColorSpace,
     chroma_location: FrameChromaLocation,
+    metadata: Dictionary,
     data: FrameData,
     hw_frames_context: Option<BufferRef>,
     side_data: Vec<FrameSideData>,
@@ -655,6 +656,7 @@ impl Frame {
             color_transfer_characteristic: FrameColorTransferCharacteristic::Unspecified,
             color_space: FrameColorSpace::Unspecified,
             chroma_location: FrameChromaLocation::Unspecified,
+            metadata: Dictionary::new(),
             data: FrameData::Empty,
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -678,6 +680,7 @@ impl Frame {
             color_transfer_characteristic: FrameColorTransferCharacteristic::Unspecified,
             color_space: FrameColorSpace::Unspecified,
             chroma_location: FrameChromaLocation::Unspecified,
+            metadata: Dictionary::new(),
             data: FrameData::Video(frame),
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -701,6 +704,7 @@ impl Frame {
             color_transfer_characteristic: FrameColorTransferCharacteristic::Unspecified,
             color_space: FrameColorSpace::Unspecified,
             chroma_location: FrameChromaLocation::Unspecified,
+            metadata: Dictionary::new(),
             data: FrameData::Audio(frame),
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -723,6 +727,7 @@ impl Frame {
             && self.color_transfer_characteristic == FrameColorTransferCharacteristic::Unspecified
             && self.color_space == FrameColorSpace::Unspecified
             && self.chroma_location == FrameChromaLocation::Unspecified
+            && self.metadata.is_empty()
             && self.data.is_empty()
             && self.hw_frames_context.is_none()
             && self.side_data.is_empty()
@@ -756,6 +761,13 @@ impl Frame {
         self.color_transfer_characteristic = source.color_transfer_characteristic;
         self.color_space = source.color_space;
         self.chroma_location = source.chroma_location;
+        self.metadata
+            .copy_from(
+                &source.metadata,
+                MatchMode::CaseInsensitive,
+                SetMode::Overwrite,
+            )
+            .expect("frame metadata was previously validated");
         self.side_data
             .extend(source.side_data.iter().map(FrameSideData::copy_props_clone));
 
@@ -934,6 +946,22 @@ impl Frame {
     pub fn set_chroma_location_from_raw(&mut self, value: i32) -> AvResult<()> {
         self.chroma_location = FrameChromaLocation::from_raw(value)?;
         Ok(())
+    }
+
+    pub fn metadata(&self) -> &Dictionary {
+        &self.metadata
+    }
+
+    pub fn metadata_mut(&mut self) -> &mut Dictionary {
+        &mut self.metadata
+    }
+
+    pub fn set_metadata(&mut self, metadata: Dictionary) {
+        self.metadata = metadata;
+    }
+
+    pub fn clear_metadata(&mut self) {
+        self.metadata.clear();
     }
 
     pub fn data(&self) -> &FrameData {
@@ -18875,6 +18903,7 @@ mod tests {
         frame.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Bt709);
         frame.set_color_space(FrameColorSpace::Smpte170M);
         frame.set_chroma_location(FrameChromaLocation::Center);
+        frame.metadata_mut().set("title", "before-unref").unwrap();
         frame
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
             .unwrap();
@@ -18901,6 +18930,7 @@ mod tests {
         );
         assert_eq!(frame.color_space(), FrameColorSpace::Unspecified);
         assert_eq!(frame.chroma_location(), FrameChromaLocation::Unspecified);
+        assert!(frame.metadata().is_empty());
         assert!(matches!(frame.data(), FrameData::Empty));
         assert!(frame.hw_frames_context().is_none());
         assert!(frame.side_data().is_empty());
@@ -18947,6 +18977,7 @@ mod tests {
         source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
         source.set_color_space(FrameColorSpace::Bt2020Ncl);
         source.set_chroma_location(FrameChromaLocation::TopLeft);
+        source.metadata_mut().set("title", "source").unwrap();
         source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
             .unwrap();
@@ -18991,6 +19022,12 @@ mod tests {
         );
         assert_eq!(destination.color_space(), FrameColorSpace::Bt2020Ncl);
         assert_eq!(destination.chroma_location(), FrameChromaLocation::TopLeft);
+        assert_eq!(destination.metadata().get("title"), Some("source"));
+        destination
+            .metadata_mut()
+            .set("artist", "destination")
+            .unwrap();
+        assert_eq!(source.metadata().get("artist"), None);
         assert!(!source.is_empty());
         let (destination_video, source_video) = match (destination.data(), source.data()) {
             (FrameData::Video(destination_video), FrameData::Video(source_video)) => {
@@ -19051,6 +19088,7 @@ mod tests {
         source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Gamma22);
         source.set_color_space(FrameColorSpace::Bt470Bg);
         source.set_chroma_location(FrameChromaLocation::Left);
+        source.metadata_mut().set("title", "move-source").unwrap();
 
         let destination_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let destination_capture = std::sync::Arc::clone(&destination_released);
@@ -19090,6 +19128,8 @@ mod tests {
         );
         assert_eq!(destination.color_space(), FrameColorSpace::Bt470Bg);
         assert_eq!(destination.chroma_location(), FrameChromaLocation::Left);
+        assert_eq!(destination.metadata().get("title"), Some("move-source"));
+        assert!(source.metadata().is_empty());
         assert!(matches!(destination.data(), FrameData::Video(_)));
         assert_eq!(
             *destination_released.lock().unwrap(),
@@ -19132,6 +19172,8 @@ mod tests {
         source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
         source.set_color_space(FrameColorSpace::Bt2020Ncl);
         source.set_chroma_location(FrameChromaLocation::TopLeft);
+        source.metadata_mut().set("title", "source").unwrap();
+        source.metadata_mut().set("artist", "libavutil").unwrap();
         source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
             .unwrap();
@@ -19183,6 +19225,14 @@ mod tests {
         destination.set_color_space(FrameColorSpace::Smpte170M);
         destination.set_chroma_location(FrameChromaLocation::Center);
         destination
+            .metadata_mut()
+            .set("title", "destination")
+            .unwrap();
+        destination
+            .metadata_mut()
+            .set("keep", "destination")
+            .unwrap();
+        destination
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, old_side)
             .unwrap();
 
@@ -19210,6 +19260,10 @@ mod tests {
         );
         assert_eq!(destination.color_space(), FrameColorSpace::Bt2020Ncl);
         assert_eq!(destination.chroma_location(), FrameChromaLocation::TopLeft);
+        assert_eq!(destination.metadata().get("title"), Some("source"));
+        assert_eq!(destination.metadata().get("artist"), Some("libavutil"));
+        assert_eq!(destination.metadata().get("keep"), Some("destination"));
+        assert_eq!(source.metadata().get("keep"), None);
         assert!(old_side_released.lock().unwrap().is_empty());
         assert!(old_hw_released.lock().unwrap().is_empty());
         let (destination_video, source_video) = match (destination.data(), source.data()) {

@@ -117,6 +117,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     video.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
     video.set_color_space(FrameColorSpace::Bt2020Ncl);
     video.set_chroma_location(FrameChromaLocation::TopLeft);
+    video.metadata_mut().set("encoder", "oracle").unwrap();
     rows.insert("frame:video-buffer".to_string(), frame_fields(&video));
 
     let mut video_ref = Frame::empty();
@@ -193,6 +194,11 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copy_source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
     copy_source.set_color_space(FrameColorSpace::Bt2020Ncl);
     copy_source.set_chroma_location(FrameChromaLocation::TopLeft);
+    copy_source.metadata_mut().set("title", "source").unwrap();
+    copy_source
+        .metadata_mut()
+        .set("artist", "libavutil")
+        .unwrap();
     copy_source
         .set_side_data_kind_buffer(
             FrameSideDataKind::DisplayMatrix,
@@ -223,6 +229,14 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copy_destination.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Bt709);
     copy_destination.set_color_space(FrameColorSpace::Smpte170M);
     copy_destination.set_chroma_location(FrameChromaLocation::Center);
+    copy_destination
+        .metadata_mut()
+        .set("title", "destination")
+        .unwrap();
+    copy_destination
+        .metadata_mut()
+        .set("keep", "destination")
+        .unwrap();
     copy_destination
         .set_side_data_kind(FrameSideDataKind::DisplayMatrix, vec![0x99; 36])
         .unwrap();
@@ -587,6 +601,7 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
         frame.color_transfer_characteristic().as_raw().to_string(),
         frame.color_space().as_raw().to_string(),
         frame.chroma_location().as_raw().to_string(),
+        metadata_summary(frame.metadata()),
         kind.to_string(),
         format.to_string(),
         width.to_string(),
@@ -601,6 +616,21 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
         side_summary(frame.side_data()),
         bool_field(frame.hw_frames_context().is_some()),
     ]
+}
+
+fn metadata_summary(metadata: &avutil::Dictionary) -> String {
+    let mut values = Vec::new();
+    for key in ["encoder", "title", "keep", "artist"] {
+        if let Some(value) = metadata.get(key) {
+            values.push(format!("{key}={value}"));
+        }
+    }
+
+    if values.is_empty() {
+        "none".to_string()
+    } else {
+        values.join(";")
+    }
 }
 
 fn frame_side_data_inventory_fields() -> Vec<String> {
@@ -999,6 +1029,26 @@ static void print_side_summary(const AVFrame *frame)
     }
 }
 
+static void print_metadata_summary(const AVDictionary *metadata)
+{
+    const char *keys[] = { "encoder", "title", "keep", "artist" };
+    int printed = 0;
+
+    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+        const AVDictionaryEntry *entry =
+            av_dict_get(metadata, keys[i], NULL, 0);
+        if (!entry)
+            continue;
+        if (printed)
+            printf(";");
+        printf("%s=%s", keys[i], entry->value);
+        printed = 1;
+    }
+
+    if (!printed)
+        printf("none");
+}
+
 static void print_side_array_summary(AVFrameSideData * const *sd, int nb_sd)
 {
     if (nb_sd == 0) {
@@ -1102,7 +1152,7 @@ static void print_frame(const char *name, const AVFrame *frame)
                           : 1;
     }
 
-    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%d/%d|%zu|%zu|%zu|%zu|%d|%c|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s|%d|%d|%d|%d|%d|",
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%d/%d|%zu|%zu|%zu|%zu|%d|%c|%d|%d|%d|%d|%d|%d|%d|%d|",
            name, frame->pts, frame->pkt_dts, frame->duration,
            frame->time_base.num, frame->time_base.den,
            frame->sample_aspect_ratio.num, frame->sample_aspect_ratio.den,
@@ -1111,9 +1161,11 @@ static void print_frame(const char *name, const AVFrame *frame)
            av_get_picture_type_char(frame->pict_type), frame->quality,
            frame->repeat_pict, frame->flags, frame->color_range,
            frame->color_primaries, frame->color_trc, frame->colorspace,
-           frame->chroma_location, kind,
-           format ? format : "none", frame->width, frame->height,
-           frame->nb_samples, frame->sample_rate, frame->ch_layout.nb_channels);
+           frame->chroma_location);
+    print_metadata_summary(frame->metadata);
+    printf("|%s|%s|%d|%d|%d|%d|%d|", kind, format ? format : "none",
+           frame->width, frame->height, frame->nb_samples, frame->sample_rate,
+           frame->ch_layout.nb_channels);
     print_line_sizes(frame->linesize, plane_count);
     printf("|");
     if (strcmp(kind, "video") == 0)
@@ -1272,6 +1324,7 @@ int main(void)
     video->color_trc = AVCOL_TRC_SMPTE2084;
     video->colorspace = AVCOL_SPC_BT2020_NCL;
     video->chroma_location = AVCHROMA_LOC_TOPLEFT;
+    av_dict_set(&video->metadata, "encoder", "oracle", 0);
     fail_if(av_frame_get_buffer(video, 1) < 0,
             "video av_frame_get_buffer failed");
     static const uint8_t video_payload[] = { 1, 2, 3, 4, 5, 6 };
@@ -1336,6 +1389,8 @@ int main(void)
     copy_src->color_trc = AVCOL_TRC_SMPTE2084;
     copy_src->colorspace = AVCOL_SPC_BT2020_NCL;
     copy_src->chroma_location = AVCHROMA_LOC_TOPLEFT;
+    av_dict_set(&copy_src->metadata, "title", "source", 0);
+    av_dict_set(&copy_src->metadata, "artist", "libavutil", 0);
     fail_if(av_frame_get_buffer(copy_src, 1) < 0,
             "copy_src av_frame_get_buffer failed");
     static const uint8_t copy_src_payload[] = { 1, 2 };
@@ -1372,6 +1427,8 @@ int main(void)
     copy_dst->color_trc = AVCOL_TRC_BT709;
     copy_dst->colorspace = AVCOL_SPC_SMPTE170M;
     copy_dst->chroma_location = AVCHROMA_LOC_CENTER;
+    av_dict_set(&copy_dst->metadata, "title", "destination", 0);
+    av_dict_set(&copy_dst->metadata, "keep", "destination", 0);
     fail_if(av_frame_get_buffer(copy_dst, 1) < 0,
             "copy_dst av_frame_get_buffer failed");
     static const uint8_t copy_dst_payload[] = { 9, 8 };

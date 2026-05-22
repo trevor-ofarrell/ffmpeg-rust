@@ -540,6 +540,13 @@ differential_tests = [
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
+# top-level `AVFrame.metadata` defaults plus `av_frame_ref`,
+# `av_frame_move_ref`, `av_frame_unref`, and `av_frame_copy_props`
+# propagation. The copy-props row proves FFmpeg overwrites matching
+# destination metadata keys from the source while preserving destination-only
+# keys. Rust unit and avutil_core_models fuzz-smoke invariants cover the same
+# lifecycle behavior.
+# Previous update: The pinned libavutil `AVFrame` oracle now validates
 # top-level color_range, color_primaries, color_trc, colorspace, and
 # chroma_location defaults plus `av_frame_ref`, `av_frame_move_ref`, and
 # `av_frame_copy_props` propagation. Rust unit and avutil_core_models
