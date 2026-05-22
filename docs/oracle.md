@@ -146,6 +146,8 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --com
 
 The harness also includes a direct `av_init_packet()` row. `Packet::init_legacy()` matches the deterministic reset shape by preserving payload data/size while resetting unknown timestamps and position, zero duration, stream index 0, empty flags, cleared side data, cleared opaque metadata, cleared `opaque_ref`, and `time_base` `0/1`. The safe Rust model releases owned metadata when clearing it; it does not model C leak behavior caused by calling `av_init_packet()` on an already-owned packet.
 
+The harness also includes `packet:copy-props-replace`, `packet:copy-props-replace-side`, and `packet:copy-props-replace-payload` rows for `av_packet_copy_props()`. These rows prove that a destination packet with existing payload, side data, opaque pointer metadata, and `opaque_ref` keeps its payload bytes while FFmpeg replaces the old metadata, side data, and `opaque_ref` with source properties.
+
 The harness also includes a `packet:payload-layout-palette` row, proving FFmpeg's packet palette side-data payload uses `AVPALETTE_SIZE` bytes. `PacketPalette` derives its modeled length from the same shared `AVPALETTE_COUNT` and `AVPALETTE_SIZE` constants used by the pixel-format model.
 
 The harness also includes a `packet:payload-layout-content-light` row, proving FFmpeg's packet content-light side-data payload uses the native 8-byte `AVContentLightMetadata` shape with `MaxCLL` at offset 0 and `MaxFALL` at offset 4.

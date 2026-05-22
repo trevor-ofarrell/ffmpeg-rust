@@ -129,6 +129,38 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copied.copy_props_from(&src);
     rows.insert("packet:copy-props".to_string(), packet_fields(&copied));
 
+    let mut copy_replace_src = packet_with_common_props();
+    copy_replace_src.push_side_data(
+        SideData::new_with_kind(
+            PacketSideDataKind::SkipSamples,
+            vec![0x01, 0x02, 0x03, 0x04],
+        )
+        .unwrap(),
+    );
+    let mut copy_replace_dst = Packet::new(vec![0x77, 0x66], 11);
+    copy_replace_dst.set_pts(Some(11));
+    copy_replace_dst.set_duration(1).unwrap();
+    copy_replace_dst
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
+    copy_replace_dst
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    copy_replace_dst.set_opaque(Some(PacketOpaque::new(0x5678).unwrap()));
+    copy_replace_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0x99, 0x00])));
+    copy_replace_dst.copy_props_from(&copy_replace_src);
+    rows.insert(
+        "packet:copy-props-replace".to_string(),
+        packet_fields(&copy_replace_dst),
+    );
+    rows.insert(
+        "packet:copy-props-replace-side".to_string(),
+        side_data_summary_fields(&copy_replace_dst),
+    );
+    rows.insert(
+        "packet:copy-props-replace-payload".to_string(),
+        payload_visible_fields(&copy_replace_dst),
+    );
+
     let mut referenced = Packet::default();
     referenced.ref_from(&src);
     rows.insert("packet:ref".to_string(), packet_fields(&referenced));
@@ -3305,6 +3337,45 @@ int main(void) {
     fail_if(av_packet_copy_props(dst, src) < 0, "av_packet_copy_props failed");
     print_packet("packet:copy-props", dst);
     av_packet_free(&dst);
+
+    AVPacket *copy_replace_src = packet_with_common_props();
+    uint8_t *copy_replace_extra = av_packet_new_side_data(
+        copy_replace_src, AV_PKT_DATA_SKIP_SAMPLES, 4);
+    fail_if(!copy_replace_extra, "copy props replace source side data failed");
+    copy_replace_extra[0] = 0x01;
+    copy_replace_extra[1] = 0x02;
+    copy_replace_extra[2] = 0x03;
+    copy_replace_extra[3] = 0x04;
+
+    AVPacket *copy_replace_dst = new_packet();
+    fail_if(av_new_packet(copy_replace_dst, 2) < 0,
+            "av_new_packet copy replace dst failed");
+    copy_replace_dst->data[0] = 0x77;
+    copy_replace_dst->data[1] = 0x66;
+    copy_replace_dst->pts = 11;
+    copy_replace_dst->duration = 1;
+    copy_replace_dst->stream_index = 11;
+    copy_replace_dst->time_base = (AVRational){ 1, 1000 };
+    uint8_t *copy_replace_old_side = av_packet_new_side_data(
+        copy_replace_dst, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!copy_replace_old_side, "copy props replace old side data failed");
+    copy_replace_old_side[0] = 0xee;
+    copy_replace_dst->opaque = (void *)(uintptr_t)0x5678;
+    copy_replace_dst->opaque_ref = av_buffer_alloc(2);
+    fail_if(!copy_replace_dst->opaque_ref,
+            "copy props replace old opaque_ref failed");
+    copy_replace_dst->opaque_ref->data[0] = 0x99;
+    copy_replace_dst->opaque_ref->data[1] = 0x00;
+
+    fail_if(av_packet_copy_props(copy_replace_dst, copy_replace_src) < 0,
+            "av_packet_copy_props replace failed");
+    print_packet("packet:copy-props-replace", copy_replace_dst);
+    print_side_data_summary("packet:copy-props-replace-side",
+                            copy_replace_dst);
+    print_payload_visible("packet:copy-props-replace-payload",
+                          copy_replace_dst);
+    av_packet_free(&copy_replace_dst);
+    av_packet_free(&copy_replace_src);
 
     dst = new_packet();
     fail_if(av_packet_ref(dst, src) < 0, "av_packet_ref failed");

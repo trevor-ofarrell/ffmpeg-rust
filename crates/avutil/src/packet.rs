@@ -10855,6 +10855,33 @@ mod tests {
     }
 
     #[test]
+    fn packet_copy_props_replaces_old_opaque_ref_and_preserves_payload() {
+        let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture_old = Arc::clone(&released);
+
+        let mut src = Packet::new(vec![1], 0);
+        src.set_opaque_ref(Some(BufferRef::from_vec(vec![0x20, 0x21])));
+
+        let mut dst = Packet::new(vec![9, 8], 1);
+        dst.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0x10],
+            move |data| {
+                capture_old.lock().unwrap().push(data);
+            },
+        )));
+
+        dst.copy_props_from(&src);
+
+        assert_eq!(dst.data(), &[9, 8]);
+        assert_eq!(*released.lock().unwrap(), vec![vec![0x10]]);
+        assert_eq!(dst.opaque_ref().unwrap().as_slice(), &[0x20, 0x21]);
+        assert!(dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+    }
+
+    #[test]
     fn packet_opaque_address_tracks_nullable_raw_pointer_metadata() {
         assert_eq!(
             PacketOpaque::new(0).unwrap_err().kind(),
