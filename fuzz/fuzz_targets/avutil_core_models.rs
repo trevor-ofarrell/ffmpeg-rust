@@ -1016,6 +1016,15 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         offset_source.as_ptr().wrapping_add(offset_start)
     );
     assert!(offset_ref.shares_storage(&offset_source));
+    let offset_clone = BufferRef::ref_from(&offset_ref);
+    assert!(offset_clone.shares_storage(&offset_ref));
+    assert_eq!(offset_clone.offset(), offset_ref.offset());
+    assert_eq!(offset_clone.len(), offset_ref.len());
+    assert_eq!(offset_clone.as_ptr(), offset_ref.as_ptr());
+    assert_eq!(offset_clone.as_slice(), offset_ref.as_slice());
+    assert_eq!(offset_source.strong_count(), 3);
+    drop(offset_clone);
+    assert_eq!(offset_source.strong_count(), 2);
     assert_eq!(
         offset_source
             .ref_slice(offset_source.len().saturating_add(1), 0)

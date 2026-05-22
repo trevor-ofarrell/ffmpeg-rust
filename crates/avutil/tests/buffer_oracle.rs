@@ -520,6 +520,23 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![((offset_ref.as_ptr() as usize) - (offset_src.as_ptr() as usize)).to_string()],
     );
 
+    {
+        let offset_ref_clone = BufferRef::ref_from(&offset_ref);
+        rows.insert(
+            "buffer:offset-ref-clone".to_string(),
+            buffer_fields(&offset_ref_clone),
+        );
+        rows.insert(
+            "buffer:offset-ref-clone-shape".to_string(),
+            vec![
+                bool_field(offset_ref_clone.shares_storage(&offset_ref)),
+                bool_field(offset_ref_clone.as_ptr() == offset_ref.as_ptr()),
+                ((offset_ref_clone.as_ptr() as usize) - (offset_src.as_ptr() as usize)).to_string(),
+                offset_ref.strong_count().to_string(),
+            ],
+        );
+    }
+
     let mut offset_make_writable = offset_ref.clone();
     offset_make_writable.make_mut();
     rows.insert(
@@ -1343,6 +1360,16 @@ int main(void) {
     print_buffer("buffer:offset-ref-src", offset_src);
     print_buffer("buffer:offset-ref-view", offset_ref);
     printf("buffer:offset-ref-delta|%td\n", offset_ref->data - offset_src->data);
+
+    AVBufferRef *offset_ref_clone = av_buffer_ref(offset_ref);
+    fail_if(!offset_ref_clone, "av_buffer_ref offset_ref_clone failed");
+    print_buffer("buffer:offset-ref-clone", offset_ref_clone);
+    printf("buffer:offset-ref-clone-shape|%d|%d|%td|%d\n",
+           offset_ref_clone->buffer == offset_ref->buffer,
+           offset_ref_clone->data == offset_ref->data,
+           offset_ref_clone->data - offset_src->data,
+           av_buffer_get_ref_count(offset_ref));
+    av_buffer_unref(&offset_ref_clone);
 
     AVBufferRef *offset_make_writable = av_buffer_ref(offset_ref);
     fail_if(!offset_make_writable, "av_buffer_ref offset_make_writable failed");

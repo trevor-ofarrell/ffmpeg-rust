@@ -2185,6 +2185,16 @@ mod tests {
         assert_eq!(source.strong_count(), 2);
         assert!(!offset_ref.is_writable());
 
+        let offset_clone = BufferRef::ref_from(&offset_ref);
+        assert!(offset_clone.shares_storage(&offset_ref));
+        assert_eq!(offset_clone.offset(), offset_ref.offset());
+        assert_eq!(offset_clone.len(), offset_ref.len());
+        assert_eq!(offset_clone.as_ptr(), offset_ref.as_ptr());
+        assert_eq!(offset_clone.as_slice(), offset_ref.as_slice());
+        assert_eq!(source.strong_count(), 3);
+        drop(offset_clone);
+        assert_eq!(source.strong_count(), 2);
+
         let mut detached = offset_ref.clone();
         detached.make_mut()[0] = 99;
         assert_eq!(detached.offset(), 0);
