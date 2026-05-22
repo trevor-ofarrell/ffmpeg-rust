@@ -195,6 +195,24 @@ cargo test -p avutil --test packet_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
+`crates/avutil/tests/frame_oracle.rs` is an ignored oracle harness for libavutil
+`AVFrame` core lifecycle helpers. It compiles a small test-only C helper against
+`third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_frame_alloc`,
+`av_frame_unref`, `av_frame_ref`, `av_frame_make_writable`, `av_frame_move_ref`,
+`av_frame_get_buffer` for a gray8 video frame and a packed s16 stereo audio
+frame, `AV_FRAME_DATA_*` numeric values/names/descriptors/properties,
+`AV_FRAME_SIDE_DATA_FLAG_*`, `AV_SIDE_DATA_PROP_*`, and
+`av_frame_new_side_data` / `av_frame_get_side_data` /
+`av_frame_remove_side_data` displaymatrix rows against the Rust `Frame` model.
+The first row caught and now verifies the pinned default 64-byte
+`av_frame_make_writable()` realignment path. It is wired into
+`tests/differential/mappings.txt` as `avutil-frame|oracle-libavutil-frame-core`:
+
+```sh
+cargo test -p avutil --test frame_oracle -- --ignored
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-frame --target oracle-libavutil-frame-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+```
+
 `crates/avutil/tests/byteio_oracle.rs` is an ignored oracle harness for libavutil byte-order helpers. It compiles a small test-only C helper against the pinned `third_party/ffmpeg-oracle/wsl/include/libavutil/intreadwrite.h` header and compares `AV_RB*`, `AV_RL*`, `AV_WB*`, and `AV_WL*` 8/16/24/32/48/64-bit read/write byte-order behavior plus signed interpretation vectors against the Rust `ByteReader`/`ByteWriter` model. It is wired into `tests/differential/mappings.txt` as `avutil-byteio|oracle-libavutil-byteio`:
 
 ```sh

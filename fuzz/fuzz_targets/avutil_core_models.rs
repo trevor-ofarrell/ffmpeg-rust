@@ -78,6 +78,33 @@ use std::time::{Duration, UNIX_EPOCH};
 
 const MAX_PAYLOAD: usize = 128;
 const MAX_SAMPLES: usize = 64;
+const FFMPEG_FRAME_DEFAULT_ALIGNMENT: usize = 64;
+
+fn assert_strided_plane(
+    data: &[u8],
+    line_size: usize,
+    row_bytes: usize,
+    rows: usize,
+    visible: &[u8],
+) {
+    assert_eq!(data.len(), line_size * rows);
+    assert_eq!(visible.len(), row_bytes * rows);
+    for row in 0..rows {
+        let visible_start = row * row_bytes;
+        let visible_end = visible_start + row_bytes;
+        let data_start = row * line_size;
+        let data_end = data_start + row_bytes;
+        assert_eq!(
+            &data[data_start..data_end],
+            &visible[visible_start..visible_end]
+        );
+    }
+}
+
+fn assert_padded_prefix(data: &[u8], visible: &[u8], line_size: usize) {
+    assert_eq!(data.len(), line_size);
+    assert_eq!(&data[..visible.len()], visible);
+}
 
 fn assert_raw_channel_layout_retype_fixtures() {
     let raw_mask = (1u64 << 45) | (1u64 << 46);
@@ -12222,7 +12249,14 @@ fn exercise_fixtures() {
     direct_video.make_writable();
     assert!(direct_video.is_writable());
     assert!(!direct_video.plane_buffers()[0].shares_storage(&direct_video_source));
-    assert_eq!(direct_video.plane_buffers()[0].as_slice(), &[1, 2, 3, 4]);
+    assert_eq!(direct_video.line_sizes(), &[FFMPEG_FRAME_DEFAULT_ALIGNMENT]);
+    assert_strided_plane(
+        direct_video.plane_buffers()[0].as_slice(),
+        FFMPEG_FRAME_DEFAULT_ALIGNMENT,
+        2,
+        2,
+        &[1, 2, 3, 4],
+    );
     assert_eq!(direct_video_source.as_slice(), &[1, 2, 3, 4]);
 
     let direct_audio_source = BufferRef::from_vec_readonly(vec![0, 0, 1, 0]);
@@ -12238,7 +12272,12 @@ fn exercise_fixtures() {
     direct_audio.make_writable();
     assert!(direct_audio.is_writable());
     assert!(!direct_audio.plane_buffers()[0].shares_storage(&direct_audio_source));
-    assert_eq!(direct_audio.plane_buffers()[0].as_slice(), &[0, 0, 1, 0]);
+    assert_eq!(direct_audio.line_sizes(), &[FFMPEG_FRAME_DEFAULT_ALIGNMENT]);
+    assert_padded_prefix(
+        direct_audio.plane_buffers()[0].as_slice(),
+        &[0, 0, 1, 0],
+        FFMPEG_FRAME_DEFAULT_ALIGNMENT,
+    );
     assert_eq!(direct_audio_source.as_slice(), &[0, 0, 1, 0]);
 
     let make_source = BufferRef::from_vec_readonly(vec![1, 2, 3, 4]);
@@ -12291,8 +12330,15 @@ fn exercise_fixtures() {
     };
     assert_eq!(make_frame_video.planes(), &[vec![4, 3, 2, 1]]);
     assert_eq!(
+        make_frame_video.line_sizes(),
+        &[FFMPEG_FRAME_DEFAULT_ALIGNMENT]
+    );
+    assert_strided_plane(
         make_frame_video.plane_buffers()[0].as_slice(),
-        &[4, 3, 2, 1]
+        FFMPEG_FRAME_DEFAULT_ALIGNMENT,
+        2,
+        2,
+        &[4, 3, 2, 1],
     );
     assert_eq!(make_clone_video.planes(), &[vec![1, 2, 3, 4]]);
     assert_eq!(make_source.as_slice(), &[1, 2, 3, 4]);

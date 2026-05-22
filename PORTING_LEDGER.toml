@@ -387,9 +387,9 @@ id = "avutil-frame"
 kind = "utility"
 ffmpeg_name = "AVFrame"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 1
-oracle_command = ""
+oracle_command = "cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-frame --target oracle-libavutil-frame-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"
 rust_command = "cargo test -p avutil frame"
 unit_tests = [
   "frame::tests::video_frame_validates_required_shape",
@@ -527,9 +527,24 @@ unit_tests = [
   "frame::tests::frame_hw_context_tracks_buffer_lifetime_and_clone_sharing",
   "frame::tests::frame_hw_context_replacement_releases_unshared_context",
 ]
-differential_tests = []
+differential_tests = [
+  "crates/avutil/tests/frame_oracle.rs::libavutil_frame_core_lifecycle_matches_current_model",
+  "tests/differential/mappings.txt:avutil-frame|oracle-libavutil-frame-core",
+]
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: The pinned libavutil `AVFrame` oracle now validates the current core Rust
+# model for default `av_frame_alloc`/`av_frame_unref` shape, `AV_FRAME_DATA_*`
+# numeric values, names, descriptors, and `AV_SIDE_DATA_PROP_*` flags,
+# `AV_FRAME_SIDE_DATA_FLAG_*` values, gray8 video `av_frame_get_buffer`,
+# `av_frame_ref` sharing, `av_frame_make_writable` copy-on-write detachment
+# through the pinned default 64-byte alignment path, `av_frame_move_ref`, packed
+# s16 stereo audio `av_frame_get_buffer`, and `av_frame_new_side_data` /
+# `av_frame_get_side_data` / `av_frame_remove_side_data` for displaymatrix.
+# Rust now repacks non-writable VideoFrame and AudioFrame payloads into the same
+# pinned default-aligned storage shape while preserving visible snapshots.
+# WSL `cargo fuzz run avutil_core_models -- -runs=1` passes locally with the
+# aligned make-writable video/audio frame invariants.
 # Current Pan Scan coverage parses the FFmpeg 8.1.1 native AVPanScan payload
 # for AV_FRAME_DATA_PANSCAN, preserving id, width, height, and three
 # two-coordinate top-left positions in native byte order while rejecting

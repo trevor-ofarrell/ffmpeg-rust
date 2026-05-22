@@ -3,6 +3,8 @@ use crate::{
     Dictionary, PixelFormat, Rational, SampleFormat,
 };
 
+const FFMPEG_FRAME_DEFAULT_ALIGNMENT: usize = 64;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum FrameData {
     #[default]
@@ -11912,9 +11914,29 @@ impl VideoFrame {
     }
 
     pub fn make_writable(&mut self) {
-        for plane in &mut self.plane_buffers {
-            plane.make_mut();
+        if self.is_writable() {
+            return;
         }
+
+        let line_sizes = Self::aligned_line_sizes(
+            self.pixel_format,
+            self.width,
+            self.height,
+            FFMPEG_FRAME_DEFAULT_ALIGNMENT,
+        )
+        .expect("existing video frame shape should align");
+        let plane_shapes = video_plane_shapes(self.pixel_format, self.width, self.height)
+            .expect("existing video frame shape should remain valid");
+        let plane_buffers = repack_video_planes(
+            &self.planes,
+            &plane_shapes,
+            &line_sizes,
+            self.pixel_format.name(),
+        )
+        .expect("existing video planes should repack into aligned storage");
+
+        self.line_sizes = line_sizes;
+        self.plane_buffers = plane_buffers;
     }
 
     pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
@@ -12308,9 +12330,31 @@ impl AudioFrame {
     }
 
     pub fn make_writable(&mut self) {
-        for plane in &mut self.plane_buffers {
-            plane.make_mut();
+        if self.is_writable() {
+            return;
         }
+
+        let line_sizes = Self::aligned_line_sizes(
+            self.sample_format,
+            self.samples_per_channel,
+            self.channels,
+            FFMPEG_FRAME_DEFAULT_ALIGNMENT,
+        )
+        .expect("existing audio frame shape should align");
+        let visible_plane_sizes = self
+            .sample_format
+            .plane_sizes(self.samples_per_channel, self.channels)
+            .expect("existing audio frame shape should remain valid");
+        let plane_buffers = repack_audio_planes(
+            &self.planes,
+            &visible_plane_sizes,
+            &line_sizes,
+            self.sample_format.name(),
+        )
+        .expect("existing audio planes should repack into aligned storage");
+
+        self.line_sizes = line_sizes;
+        self.plane_buffers = plane_buffers;
     }
 
     pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
@@ -12336,6 +12380,45 @@ impl AudioFrame {
         self.planes[index].extend_from_slice(data);
         Ok(())
     }
+}
+
+fn repack_audio_planes(
+    planes: &[Vec<u8>],
+    visible_plane_sizes: &[usize],
+    line_sizes: &[usize],
+    format_name: &str,
+) -> AvResult<Vec<BufferRef>> {
+    if planes.len() != visible_plane_sizes.len() || planes.len() != line_sizes.len() {
+        return Err(AvError::invalid_argument(format!(
+            "{format_name} audio frame plane metadata is inconsistent"
+        )));
+    }
+
+    let mut plane_buffers = Vec::with_capacity(planes.len());
+    for (index, ((plane, visible_size), line_size)) in planes
+        .iter()
+        .zip(visible_plane_sizes)
+        .zip(line_sizes)
+        .enumerate()
+    {
+        if plane.len() != *visible_size {
+            return Err(AvError::invalid_data(format!(
+                "{format_name} audio frame plane {index} visible snapshot has {} bytes, expected {visible_size}",
+                plane.len()
+            )));
+        }
+        if *line_size < *visible_size {
+            return Err(AvError::invalid_argument(format!(
+                "{format_name} audio frame plane {index} line size {line_size} is smaller than visible bytes {visible_size}"
+            )));
+        }
+
+        let mut storage = vec![0; *line_size];
+        storage[..*visible_size].copy_from_slice(plane);
+        plane_buffers.push(BufferRef::from_vec(storage));
+    }
+
+    Ok(plane_buffers)
 }
 
 fn snapshot_audio_plane_buffers(
@@ -12386,6 +12469,54 @@ fn snapshot_audio_plane_buffers(
 struct VideoPlaneShape {
     row_bytes: usize,
     rows: usize,
+}
+
+fn repack_video_planes(
+    planes: &[Vec<u8>],
+    plane_shapes: &[VideoPlaneShape],
+    line_sizes: &[usize],
+    format_name: &str,
+) -> AvResult<Vec<BufferRef>> {
+    if planes.len() != plane_shapes.len() || planes.len() != line_sizes.len() {
+        return Err(AvError::invalid_argument(format!(
+            "{format_name} video frame plane metadata is inconsistent"
+        )));
+    }
+
+    let mut plane_buffers = Vec::with_capacity(planes.len());
+    for (index, ((plane, shape), line_size)) in
+        planes.iter().zip(plane_shapes).zip(line_sizes).enumerate()
+    {
+        if *line_size < shape.row_bytes {
+            return Err(AvError::invalid_argument(format!(
+                "{format_name} video frame plane {index} line size {line_size} is smaller than visible row bytes {}",
+                shape.row_bytes
+            )));
+        }
+        let expected_visible = checked_mul(
+            shape.row_bytes,
+            shape.rows,
+            "video frame visible plane size",
+        )?;
+        if plane.len() != expected_visible {
+            return Err(AvError::invalid_data(format!(
+                "{format_name} video frame plane {index} visible snapshot has {} bytes, expected {expected_visible}",
+                plane.len()
+            )));
+        }
+        let expected_storage = checked_mul(*line_size, shape.rows, "video frame storage size")?;
+        let mut storage = vec![0; expected_storage];
+        for row in 0..shape.rows {
+            let src_start = row * shape.row_bytes;
+            let src_end = src_start + shape.row_bytes;
+            let dst_start = row * line_size;
+            let dst_end = dst_start + shape.row_bytes;
+            storage[dst_start..dst_end].copy_from_slice(&plane[src_start..src_end]);
+        }
+        plane_buffers.push(BufferRef::from_vec(storage));
+    }
+
+    Ok(plane_buffers)
 }
 
 fn snapshot_video_plane_buffers(
@@ -13107,6 +13238,32 @@ fn one_bit_line_size(width: usize) -> usize {
 mod tests {
     use super::*;
     use crate::AvErrorKind;
+
+    fn assert_strided_plane(
+        data: &[u8],
+        line_size: usize,
+        row_bytes: usize,
+        rows: usize,
+        visible: &[u8],
+    ) {
+        assert_eq!(data.len(), line_size * rows);
+        assert_eq!(visible.len(), row_bytes * rows);
+        for row in 0..rows {
+            let visible_start = row * row_bytes;
+            let visible_end = visible_start + row_bytes;
+            let data_start = row * line_size;
+            let data_end = data_start + row_bytes;
+            assert_eq!(
+                &data[data_start..data_end],
+                &visible[visible_start..visible_end]
+            );
+        }
+    }
+
+    fn assert_padded_prefix(data: &[u8], visible: &[u8], line_size: usize) {
+        assert_eq!(data.len(), line_size);
+        assert_eq!(&data[..visible.len()], visible);
+    }
 
     fn minimal_icc_profile() -> Vec<u8> {
         let mut data = vec![0; FrameIccProfile::MIN_DATA_LEN];
@@ -16445,7 +16602,14 @@ mod tests {
         frame.make_writable();
         assert!(frame.is_writable());
         assert!(!frame.plane_buffers()[0].shares_storage(&source));
-        assert_eq!(frame.plane_buffers()[0].as_slice(), &[1, 2, 3, 4]);
+        assert_eq!(frame.line_sizes(), &[FFMPEG_FRAME_DEFAULT_ALIGNMENT]);
+        assert_strided_plane(
+            frame.plane_buffers()[0].as_slice(),
+            FFMPEG_FRAME_DEFAULT_ALIGNMENT,
+            2,
+            2,
+            &[1, 2, 3, 4],
+        );
         assert_eq!(source.as_slice(), &[1, 2, 3, 4]);
     }
 
@@ -16878,7 +17042,12 @@ mod tests {
         frame.make_writable();
         assert!(frame.is_writable());
         assert!(!frame.plane_buffers()[0].shares_storage(&source));
-        assert_eq!(frame.plane_buffers()[0].as_slice(), &[0, 0, 1, 0]);
+        assert_eq!(frame.line_sizes(), &[FFMPEG_FRAME_DEFAULT_ALIGNMENT]);
+        assert_padded_prefix(
+            frame.plane_buffers()[0].as_slice(),
+            &[0, 0, 1, 0],
+            FFMPEG_FRAME_DEFAULT_ALIGNMENT,
+        );
         assert_eq!(source.as_slice(), &[0, 0, 1, 0]);
     }
 
@@ -17586,7 +17755,14 @@ mod tests {
             _ => panic!("expected video frames"),
         };
         assert_eq!(frame_video.planes(), &[vec![4, 3, 2, 1]]);
-        assert_eq!(frame_video.plane_buffers()[0].as_slice(), &[4, 3, 2, 1]);
+        assert_eq!(frame_video.line_sizes(), &[FFMPEG_FRAME_DEFAULT_ALIGNMENT]);
+        assert_strided_plane(
+            frame_video.plane_buffers()[0].as_slice(),
+            FFMPEG_FRAME_DEFAULT_ALIGNMENT,
+            2,
+            2,
+            &[4, 3, 2, 1],
+        );
         assert_eq!(cloned_video.planes(), &[vec![1, 2, 3, 4]]);
         assert_eq!(source.as_slice(), &[1, 2, 3, 4]);
     }
