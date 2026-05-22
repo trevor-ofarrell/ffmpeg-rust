@@ -5067,17 +5067,44 @@ impl Packet {
         self.side_data.push(side_data);
     }
 
+    pub fn new_side_data(
+        &mut self,
+        kind: PacketSideDataKind,
+        size: usize,
+    ) -> AvResult<&mut SideData> {
+        let mut data = Vec::new();
+        data.try_reserve_exact(size).map_err(|_| {
+            AvError::with_code(
+                AvErrorKind::External,
+                AvErrorCode::ENOMEM,
+                "cannot allocate packet side data",
+            )
+        })?;
+        data.resize(size, 0);
+        let side_data = SideData::new_with_kind(kind, data)?;
+        Ok(self.add_or_replace_side_data(side_data).1)
+    }
+
     pub fn add_side_data(&mut self, side_data: SideData) -> Option<SideData> {
-        if let Some(existing) = self
+        self.add_or_replace_side_data(side_data).0
+    }
+
+    fn add_or_replace_side_data(
+        &mut self,
+        side_data: SideData,
+    ) -> (Option<SideData>, &mut SideData) {
+        if let Some(index) = self
             .side_data
-            .iter_mut()
-            .find(|existing| existing.kind_id() == side_data.kind_id())
+            .iter()
+            .position(|existing| existing.kind_id() == side_data.kind_id())
         {
-            return Some(std::mem::replace(existing, side_data));
+            let replaced = std::mem::replace(&mut self.side_data[index], side_data);
+            return (Some(replaced), &mut self.side_data[index]);
         }
 
         self.side_data.push(side_data);
-        None
+        let index = self.side_data.len() - 1;
+        (None, &mut self.side_data[index])
     }
 
     pub fn shrink_side_data(&mut self, kind: &str, len: usize) -> AvResult<bool> {
@@ -9598,6 +9625,45 @@ mod tests {
 
         packet.clear_side_data();
         assert!(packet.side_data().is_empty());
+    }
+
+    #[test]
+    fn packet_new_side_data_zeroes_and_replaces_first_matching_kind() {
+        let mut packet = Packet::new(Vec::new(), 0);
+        packet.push_side_data(SideData::new("palette", vec![0xaa]).unwrap());
+        packet.push_side_data(SideData::new("skip_samples", vec![0xbb]).unwrap());
+        packet.push_side_data(SideData::new("palette", vec![0xcc]).unwrap());
+
+        {
+            let entry = packet
+                .new_side_data(PacketSideDataKind::NewExtradata, 3)
+                .unwrap();
+            assert_eq!(entry.kind_id(), &PacketSideDataKind::NewExtradata);
+            assert_eq!(entry.data(), &[0, 0, 0]);
+            entry.data_mut().copy_from_slice(&[1, 2, 3]);
+        }
+
+        assert_eq!(packet.side_data().len(), 4);
+        assert_eq!(
+            packet.side_data_by_kind("new_extradata").unwrap().data(),
+            &[1, 2, 3]
+        );
+
+        {
+            let entry = packet
+                .new_side_data(PacketSideDataKind::Palette, 2)
+                .unwrap();
+            assert_eq!(entry.kind_id(), &PacketSideDataKind::Palette);
+            assert_eq!(entry.data(), &[0, 0]);
+            entry.data_mut().copy_from_slice(&[9, 8]);
+        }
+
+        assert_eq!(packet.side_data().len(), 4);
+        assert_eq!(packet.side_data()[0].kind(), "palette");
+        assert_eq!(packet.side_data()[0].data(), &[9, 8]);
+        assert_eq!(packet.side_data()[1].kind(), "skip_samples");
+        assert_eq!(packet.side_data()[2].kind(), "palette");
+        assert_eq!(packet.side_data()[2].data(), &[0xcc]);
     }
 
     #[test]

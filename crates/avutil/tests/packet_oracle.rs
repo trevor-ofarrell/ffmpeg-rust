@@ -450,7 +450,11 @@ fn insert_dictionary_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
 
 fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     let mut packet = Packet::default();
-    packet.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33, 0x44]).unwrap());
+    packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 4)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
     rows.insert(
         "packet:side-new".to_string(),
         side_data_summary_fields(&packet),
@@ -483,8 +487,16 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
 
     let mut packet = Packet::default();
-    packet.add_side_data(SideData::new_extradata(vec![0x11, 0x22]).unwrap());
-    packet.add_side_data(SideData::new_extradata(vec![0xaa, 0xbb, 0xcc]).unwrap());
+    packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x11, 0x22]);
+    packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 3)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xaa, 0xbb, 0xcc]);
     rows.insert(
         "packet:side-new-replace".to_string(),
         side_data_summary_fields(&packet),

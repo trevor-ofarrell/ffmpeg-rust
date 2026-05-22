@@ -5958,6 +5958,43 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .side_data_by_kind_id(&typed_side_data_kind)
         .is_none());
 
+    let new_side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);
+    let new_side_data_payload = payload_from(cursor, new_side_data_len);
+    let mut new_side_data_packet = Packet::default();
+    let new_entry = new_side_data_packet
+        .new_side_data(typed_side_data_kind.clone(), new_side_data_payload.len())
+        .unwrap();
+    assert!(new_entry.data().iter().all(|byte| *byte == 0));
+    new_entry
+        .data_mut()
+        .copy_from_slice(new_side_data_payload.as_slice());
+    assert_eq!(new_side_data_packet.side_data().len(), 1);
+    assert_eq!(
+        new_side_data_packet
+            .side_data_by_kind_id(&typed_side_data_kind)
+            .unwrap()
+            .data(),
+        new_side_data_payload.as_slice()
+    );
+
+    let new_side_data_replacement_len = usize::from(cursor.next().unwrap_or_default() % 16);
+    let new_side_data_replacement = payload_from(cursor, new_side_data_replacement_len);
+    let new_entry = new_side_data_packet
+        .new_side_data(typed_side_data_kind.clone(), new_side_data_replacement.len())
+        .unwrap();
+    assert!(new_entry.data().iter().all(|byte| *byte == 0));
+    new_entry
+        .data_mut()
+        .copy_from_slice(new_side_data_replacement.as_slice());
+    assert_eq!(new_side_data_packet.side_data().len(), 1);
+    assert_eq!(
+        new_side_data_packet
+            .side_data_by_kind_id(&typed_side_data_kind)
+            .unwrap()
+            .data(),
+        new_side_data_replacement.as_slice()
+    );
+
     let mut side_data_list = PacketSideDataList::new();
     let list_entry = side_data_list
         .new_side_data(typed_side_data_kind.clone(), typed_side_data_payload.len())
