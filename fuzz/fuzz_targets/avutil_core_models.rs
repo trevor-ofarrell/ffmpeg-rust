@@ -5897,6 +5897,12 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     }
     packet.set_flag(PacketFlags::KEY, false);
     assert!(!packet.flags().contains(PacketFlags::KEY));
+    assert_eq!(PacketFlags::KEY.bits(), 0x0001);
+    assert_eq!(PacketFlags::CORRUPT.bits(), 0x0002);
+    assert_eq!(PacketFlags::DISCARD.bits(), 0x0004);
+    assert_eq!(PacketFlags::TRUSTED.bits(), 0x0008);
+    assert_eq!(PacketFlags::DISPOSABLE.bits(), 0x0010);
+    assert_eq!(PacketFlags::all().bits(), 0x001f);
     for flag in [
         PacketFlags::CORRUPT,
         PacketFlags::DISCARD,

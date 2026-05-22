@@ -5816,6 +5816,16 @@ mod tests {
     }
 
     #[test]
+    fn packet_flag_values_match_ffmpeg_8_1_1_header() {
+        assert_eq!(PacketFlags::KEY.bits(), 0x0001);
+        assert_eq!(PacketFlags::CORRUPT.bits(), 0x0002);
+        assert_eq!(PacketFlags::DISCARD.bits(), 0x0004);
+        assert_eq!(PacketFlags::TRUSTED.bits(), 0x0008);
+        assert_eq!(PacketFlags::DISPOSABLE.bits(), 0x0010);
+        assert_eq!(PacketFlags::all().bits(), 0x001f);
+    }
+
+    #[test]
     fn packet_flags_can_be_cleared() {
         let mut flags = PacketFlags::empty();
         assert!(flags.is_empty());

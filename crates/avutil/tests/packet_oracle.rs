@@ -91,6 +91,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     init.init_legacy();
     rows.insert("packet:init".to_string(), packet_fields(&init));
     insert_side_data_kind_inventory_row(&mut rows);
+    insert_flag_inventory_row(&mut rows);
     insert_side_data_payload_layout_rows(&mut rows);
 
     let mut rescaled = packet_with_common_props();
@@ -153,6 +154,26 @@ fn insert_side_data_kind_inventory_row(rows: &mut BTreeMap<String, Vec<String>>)
         fields.push(kind.ffmpeg_side_data_name().unwrap().to_string());
     }
     rows.insert("packet:side-kind-inventory".to_string(), fields);
+}
+
+fn insert_flag_inventory_row(rows: &mut BTreeMap<String, Vec<String>>) {
+    rows.insert(
+        "packet:flag-inventory".to_string(),
+        vec![
+            "AV_PKT_FLAG_KEY".to_string(),
+            PacketFlags::KEY.bits().to_string(),
+            "AV_PKT_FLAG_CORRUPT".to_string(),
+            PacketFlags::CORRUPT.bits().to_string(),
+            "AV_PKT_FLAG_DISCARD".to_string(),
+            PacketFlags::DISCARD.bits().to_string(),
+            "AV_PKT_FLAG_TRUSTED".to_string(),
+            PacketFlags::TRUSTED.bits().to_string(),
+            "AV_PKT_FLAG_DISPOSABLE".to_string(),
+            PacketFlags::DISPOSABLE.bits().to_string(),
+            "all".to_string(),
+            PacketFlags::all().bits().to_string(),
+        ],
+    );
 }
 
 fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -1132,6 +1153,27 @@ static void print_side_data_kind_inventory(void) {
 #undef PRINT_SIDE_KIND
 }
 
+static void print_flag_inventory(void) {
+    const int all = AV_PKT_FLAG_KEY |
+                    AV_PKT_FLAG_CORRUPT |
+                    AV_PKT_FLAG_DISCARD |
+                    AV_PKT_FLAG_TRUSTED |
+                    AV_PKT_FLAG_DISPOSABLE;
+    printf("packet:flag-inventory"
+           "|AV_PKT_FLAG_KEY|%d"
+           "|AV_PKT_FLAG_CORRUPT|%d"
+           "|AV_PKT_FLAG_DISCARD|%d"
+           "|AV_PKT_FLAG_TRUSTED|%d"
+           "|AV_PKT_FLAG_DISPOSABLE|%d"
+           "|all|%d\n",
+           AV_PKT_FLAG_KEY,
+           AV_PKT_FLAG_CORRUPT,
+           AV_PKT_FLAG_DISCARD,
+           AV_PKT_FLAG_TRUSTED,
+           AV_PKT_FLAG_DISPOSABLE,
+           all);
+}
+
 static void print_payload_layout_header(const char *name, const void *payload, size_t size) {
     printf("%s|%zu|", name, size);
     print_hex_or_dash(payload, (int)size);
@@ -1685,6 +1727,7 @@ int main(void) {
     av_free(pkt);
 
     print_side_data_kind_inventory();
+    print_flag_inventory();
     print_side_data_payload_layouts();
 
     pkt = packet_with_common_props();
