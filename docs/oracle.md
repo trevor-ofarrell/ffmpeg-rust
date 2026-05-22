@@ -219,6 +219,12 @@ successful non-`NEW_REF` insert and replace consume the caller `AVBufferRef`,
 duplicate failure leaves the caller buffer alive, and
 `AV_FRAME_SIDE_DATA_FLAG_NEW_REF` creates a second shared buffer reference
 without taking ownership.
+The side-data clone rows exercise `av_frame_side_data_clone()`: cloned entries
+copy source metadata, share the source `AVBufferRef` through a new reference,
+return `EEXIST` for duplicate non-MULTI insertion without flags, replace
+non-MULTI entries under `AV_FRAME_SIDE_DATA_FLAG_REPLACE`, remove matching
+entries under `AV_FRAME_SIDE_DATA_FLAG_UNIQUE`, and append MULTI entries even
+when `REPLACE` is set.
 The first row caught and now verifies the pinned default 64-byte
 `av_frame_make_writable()` realignment path. It is wired into
 `tests/differential/mappings.txt` as `avutil-frame|oracle-libavutil-frame-core`:

@@ -372,6 +372,25 @@ impl Frame {
         Ok(&mut self.side_data[index])
     }
 
+    pub fn clone_side_data_with_flags(
+        &mut self,
+        source: &FrameSideData,
+        flags: FrameSideDataFlags,
+    ) -> AvResult<&mut FrameSideData> {
+        self.add_side_data_with_flags(source.ref_clone(), flags)
+            .map_err(|error| {
+                if error.code() == Some(AvErrorCode::ENOMEM) {
+                    AvError::with_code(
+                        AvErrorKind::External,
+                        AvErrorCode::from_posix_errno(17),
+                        "frame side data clone target already exists",
+                    )
+                } else {
+                    error
+                }
+            })
+    }
+
     pub fn side_data_by_kind(&self, kind: &FrameSideDataKind) -> Option<&FrameSideData> {
         self.side_data
             .iter()
@@ -11445,6 +11464,14 @@ impl FrameSideData {
         Self {
             kind: self.kind.clone(),
             buffer: BufferRef::copy_from_slice(self.data()),
+            metadata: self.metadata.clone(),
+        }
+    }
+
+    pub fn ref_clone(&self) -> Self {
+        Self {
+            kind: self.kind.clone(),
+            buffer: BufferRef::ref_from(&self.buffer),
             metadata: self.metadata.clone(),
         }
     }
@@ -25729,6 +25756,122 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+    }
+
+    #[test]
+    fn frame_clone_side_data_with_flags_matches_reference_semantics() {
+        let mut source = FrameSideData::new_with_kind_and_buffer_ref(
+            FrameSideDataKind::ReplayGain,
+            BufferRef::copy_from_slice(&[0x10, 0x20]),
+        )
+        .unwrap();
+        source.metadata_mut().set("gain", "source").unwrap();
+
+        let source_clone = source.ref_clone();
+        assert!(source_clone.buffer().shares_storage(source.buffer()));
+        assert_eq!(source_clone.metadata().get("gain"), Some("source"));
+        assert_eq!(source.buffer().strong_count(), 2);
+        drop(source_clone);
+        assert_eq!(source.buffer().strong_count(), 1);
+
+        let mut frame = Frame::empty();
+        frame
+            .clone_side_data_with_flags(&source, FrameSideDataFlags::EMPTY)
+            .unwrap();
+        assert_eq!(frame.side_data().len(), 1);
+        assert_eq!(frame.side_data()[0].data(), &[0x10, 0x20]);
+        assert_eq!(frame.side_data()[0].metadata().get("gain"), Some("source"));
+        assert!(frame.side_data()[0]
+            .buffer()
+            .shares_storage(source.buffer()));
+        assert_eq!(source.buffer().strong_count(), 2);
+        assert!(!source.is_writable());
+        assert!(!frame.side_data()[0].is_writable());
+
+        let err = frame
+            .clone_side_data_with_flags(&source, FrameSideDataFlags::EMPTY)
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::External);
+        assert_eq!(err.code(), Some(AvErrorCode::from_posix_errno(17)));
+        assert_eq!(frame.side_data().len(), 1);
+        assert_eq!(frame.side_data()[0].data(), &[0x10, 0x20]);
+        assert_eq!(source.buffer().strong_count(), 2);
+
+        let mut replacement = FrameSideData::new_with_kind_and_buffer_ref(
+            FrameSideDataKind::ReplayGain,
+            BufferRef::copy_from_slice(&[0x30, 0x40]),
+        )
+        .unwrap();
+        replacement
+            .metadata_mut()
+            .set("gain", "replacement")
+            .unwrap();
+        frame
+            .clone_side_data_with_flags(&replacement, FrameSideDataFlags::REPLACE)
+            .unwrap();
+        assert_eq!(frame.side_data().len(), 1);
+        assert_eq!(frame.side_data()[0].data(), &[0x30, 0x40]);
+        assert_eq!(
+            frame.side_data()[0].metadata().get("gain"),
+            Some("replacement")
+        );
+        assert!(frame.side_data()[0]
+            .buffer()
+            .shares_storage(replacement.buffer()));
+        assert_eq!(source.buffer().strong_count(), 1);
+        assert_eq!(replacement.buffer().strong_count(), 2);
+
+        frame
+            .add_side_data_with_flags(
+                FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0x50]).unwrap(),
+                FrameSideDataFlags::EMPTY,
+            )
+            .unwrap();
+        frame
+            .clone_side_data_with_flags(&source, FrameSideDataFlags::UNIQUE)
+            .unwrap();
+        assert_eq!(frame.side_data().len(), 2);
+        assert_eq!(
+            frame.side_data()[0].kind_id(),
+            &FrameSideDataKind::DisplayMatrix
+        );
+        assert_eq!(
+            frame.side_data()[1].kind_id(),
+            &FrameSideDataKind::ReplayGain
+        );
+        assert_eq!(frame.side_data()[1].data(), &[0x10, 0x20]);
+        assert_eq!(frame.side_data()[1].metadata().get("gain"), Some("source"));
+        assert!(frame.side_data()[1]
+            .buffer()
+            .shares_storage(source.buffer()));
+
+        let mut sei_source = FrameSideData::new_with_kind_and_buffer_ref(
+            FrameSideDataKind::SeiUnregistered,
+            BufferRef::copy_from_slice(&[0x77; 16]),
+        )
+        .unwrap();
+        sei_source.metadata_mut().set("gain", "sei").unwrap();
+        let mut multi = Frame::empty();
+        multi
+            .clone_side_data_with_flags(&sei_source, FrameSideDataFlags::EMPTY)
+            .unwrap();
+        multi
+            .clone_side_data_with_flags(&sei_source, FrameSideDataFlags::REPLACE)
+            .unwrap();
+        assert_eq!(multi.side_data().len(), 2);
+        assert!(multi
+            .side_data()
+            .iter()
+            .all(|side_data| side_data.kind_id() == &FrameSideDataKind::SeiUnregistered));
+        assert!(multi
+            .side_data()
+            .iter()
+            .all(|side_data| side_data.buffer().shares_storage(sei_source.buffer())));
+        assert!(multi
+            .side_data()
+            .iter()
+            .all(|side_data| side_data.metadata().get("gain") == Some("sei")));
+        assert_eq!(sei_source.buffer().strong_count(), 3);
     }
 
     #[test]

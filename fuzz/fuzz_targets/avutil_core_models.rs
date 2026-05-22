@@ -2754,6 +2754,52 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         frame.side_data()[0].supports_multiple_instances(),
         frame_side_data_kind.supports_multiple_instances()
     );
+    let source_side_data = frame.side_data()[0].clone();
+    let mut clone_target = Frame::empty();
+    clone_target
+        .clone_side_data_with_flags(&source_side_data, FrameSideDataFlags::EMPTY)
+        .unwrap();
+    assert_eq!(clone_target.side_data().len(), 1);
+    assert_eq!(clone_target.side_data()[0].data(), source_side_data.data());
+    assert_eq!(
+        clone_target.side_data()[0].metadata().get("origin"),
+        Some("fuzz")
+    );
+    assert!(clone_target.side_data()[0]
+        .buffer()
+        .shares_storage(source_side_data.buffer()));
+    let duplicate_clone =
+        clone_target.clone_side_data_with_flags(&source_side_data, FrameSideDataFlags::EMPTY);
+    if source_side_data.supports_multiple_instances() {
+        duplicate_clone.unwrap();
+        assert_eq!(clone_target.side_data().len(), 2);
+    } else {
+        let err = duplicate_clone.unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::External);
+        assert_eq!(err.code(), Some(AvErrorCode::from_posix_errno(17)));
+        assert_eq!(clone_target.side_data().len(), 1);
+    }
+    let mut replacement_target = Frame::empty();
+    replacement_target
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(frame_side_data_kind.clone(), Vec::new()).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    replacement_target
+        .clone_side_data_with_flags(&source_side_data, FrameSideDataFlags::REPLACE)
+        .unwrap();
+    if source_side_data.supports_multiple_instances() {
+        assert_eq!(replacement_target.side_data().len(), 2);
+    } else {
+        assert_eq!(replacement_target.side_data().len(), 1);
+    }
+    assert!(replacement_target
+        .side_data()
+        .last()
+        .unwrap()
+        .buffer()
+        .shares_storage(source_side_data.buffer()));
 
     let mut side_data_for_mutation = frame.side_data()[0].clone();
     let cloned_side_data = side_data_for_mutation.clone();

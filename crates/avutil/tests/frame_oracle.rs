@@ -6,9 +6,9 @@ use std::{
 };
 
 use avutil::{
-    AudioFrame, BufferRef, ChannelLayout, Frame, FrameData, FrameSideData, FrameSideDataFlags,
-    FrameSideDataKind, FrameSideDataProperties, PixelFormat, SampleFormat, VideoFrame,
-    AV_NOPTS_VALUE,
+    AudioFrame, AvErrorCode, BufferRef, ChannelLayout, Frame, FrameData, FrameSideData,
+    FrameSideDataFlags, FrameSideDataKind, FrameSideDataProperties, PixelFormat, SampleFormat,
+    VideoFrame, AV_NOPTS_VALUE,
 };
 
 #[test]
@@ -353,6 +353,117 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ),
     );
 
+    let mut clone_source = FrameSideData::new_with_kind_and_buffer_ref(
+        FrameSideDataKind::ReplayGain,
+        BufferRef::copy_from_slice(&[0xe1, 0xe2]),
+    )
+    .unwrap();
+    clone_source.metadata_mut().set("gain", "source").unwrap();
+    let mut side_clone = Frame::empty();
+    let clone_new_ret = side_clone
+        .clone_side_data_with_flags(&clone_source, FrameSideDataFlags::EMPTY)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:side-clone-new".to_string(),
+        side_clone_fields(
+            clone_new_ret,
+            &side_clone,
+            &clone_source,
+            &FrameSideDataKind::ReplayGain,
+        ),
+    );
+    let clone_duplicate_ret = side_clone
+        .clone_side_data_with_flags(&clone_source, FrameSideDataFlags::EMPTY)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:side-clone-duplicate".to_string(),
+        side_clone_fields(
+            clone_duplicate_ret,
+            &side_clone,
+            &clone_source,
+            &FrameSideDataKind::ReplayGain,
+        ),
+    );
+    let mut clone_replacement = FrameSideData::new_with_kind_and_buffer_ref(
+        FrameSideDataKind::ReplayGain,
+        BufferRef::copy_from_slice(&[0xf1, 0xf2]),
+    )
+    .unwrap();
+    clone_replacement
+        .metadata_mut()
+        .set("gain", "replacement")
+        .unwrap();
+    let clone_replace_ret = side_clone
+        .clone_side_data_with_flags(&clone_replacement, FrameSideDataFlags::REPLACE)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:side-clone-replace".to_string(),
+        side_clone_fields(
+            clone_replace_ret,
+            &side_clone,
+            &clone_replacement,
+            &FrameSideDataKind::ReplayGain,
+        ),
+    );
+    side_clone
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0xe5]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    let clone_unique_ret = side_clone
+        .clone_side_data_with_flags(&clone_source, FrameSideDataFlags::UNIQUE)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:side-clone-unique".to_string(),
+        side_clone_fields(
+            clone_unique_ret,
+            &side_clone,
+            &clone_source,
+            &FrameSideDataKind::ReplayGain,
+        ),
+    );
+    let mut clone_multi_source = FrameSideData::new_with_kind_and_buffer_ref(
+        FrameSideDataKind::SeiUnregistered,
+        BufferRef::copy_from_slice(&[0x77; 16]),
+    )
+    .unwrap();
+    clone_multi_source
+        .metadata_mut()
+        .set("gain", "multi")
+        .unwrap();
+    let mut clone_multi = Frame::empty();
+    let clone_multi_new_ret = clone_multi
+        .clone_side_data_with_flags(&clone_multi_source, FrameSideDataFlags::EMPTY)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:side-clone-multi-new".to_string(),
+        side_clone_fields(
+            clone_multi_new_ret,
+            &clone_multi,
+            &clone_multi_source,
+            &FrameSideDataKind::SeiUnregistered,
+        ),
+    );
+    let clone_multi_replace_ret = clone_multi
+        .clone_side_data_with_flags(&clone_multi_source, FrameSideDataFlags::REPLACE)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:side-clone-multi-replace".to_string(),
+        side_clone_fields(
+            clone_multi_replace_ret,
+            &clone_multi,
+            &clone_multi_source,
+            &FrameSideDataKind::SeiUnregistered,
+        ),
+    );
+
     rows
 }
 
@@ -500,6 +611,40 @@ fn side_add_buffer_fields(
             (Some(source), Some(entry)) => bool_field(source.shares_storage(entry.buffer())),
             _ => "0".to_string(),
         },
+    ]
+}
+
+fn side_clone_fields(
+    ret: i32,
+    frame: &Frame,
+    source: &FrameSideData,
+    kind: &FrameSideDataKind,
+) -> Vec<String> {
+    let entry = frame
+        .side_data()
+        .iter()
+        .find(|side_data| side_data.kind_id() == kind);
+    vec![
+        bool_field(ret >= 0),
+        ret.to_string(),
+        frame.side_data().len().to_string(),
+        side_summary(frame.side_data()),
+        source.metadata().get("gain").unwrap_or("none").to_string(),
+        entry
+            .and_then(|side_data| side_data.metadata().get("gain"))
+            .unwrap_or("none")
+            .to_string(),
+        source.buffer().strong_count().to_string(),
+        bool_field(source.is_writable()),
+        entry
+            .map(|side_data| side_data.buffer().strong_count().to_string())
+            .unwrap_or_else(|| "0".to_string()),
+        entry
+            .map(|side_data| bool_field(side_data.is_writable()))
+            .unwrap_or_else(|| "0".to_string()),
+        entry
+            .map(|side_data| bool_field(source.buffer().shares_storage(side_data.buffer())))
+            .unwrap_or_else(|| "0".to_string()),
     ]
 }
 
@@ -678,6 +823,7 @@ fn oracle_c_source() -> &'static str {
 #include <string.h>
 #include <libavutil/buffer.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/dict.h>
 #include <libavutil/frame.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/pixdesc.h>
@@ -824,6 +970,34 @@ static void print_side_add_buffer_row(const char *name, int success,
     printf("|%d|%d|%d|%d|%d\n",
            source ? av_buffer_get_ref_count((AVBufferRef *)source) : 0,
            source ? av_buffer_is_writable((AVBufferRef *)source) : 0,
+           entry && entry->buf ? av_buffer_get_ref_count(entry->buf) : 0,
+           entry && entry->buf ? av_buffer_is_writable(entry->buf) : 0,
+           source && entry ? source->data == entry->data : 0);
+}
+
+static const char *side_metadata_value(const AVFrameSideData *sd,
+                                       const char *key)
+{
+    const AVDictionaryEntry *entry =
+        sd ? av_dict_get(sd->metadata, key, NULL, 0) : NULL;
+    return entry ? entry->value : "none";
+}
+
+static void print_side_clone_row(const char *name, int ret,
+                                 AVFrameSideData * const *sd, int nb_sd,
+                                 const AVFrameSideData *source,
+                                 enum AVFrameSideDataType type)
+{
+    const AVFrameSideData *entry = find_side_array_entry(sd, nb_sd, type);
+    printf("%s|%d|%d|%d|", name, ret >= 0, ret, nb_sd);
+    print_side_array_summary(sd, nb_sd);
+    printf("|%s|%s|%d|%d|%d|%d|%d\n",
+           side_metadata_value(source, "gain"),
+           side_metadata_value(entry, "gain"),
+           source && source->buf ? av_buffer_get_ref_count(source->buf) : 0,
+           source && source->buf
+               ? av_buffer_is_writable((AVBufferRef *)source->buf)
+               : 0,
            entry && entry->buf ? av_buffer_get_ref_count(entry->buf) : 0,
            entry && entry->buf ? av_buffer_is_writable(entry->buf) : 0,
            source && entry ? source->data == entry->data : 0);
@@ -1199,6 +1373,96 @@ int main(void)
                               AV_FRAME_DATA_DISPLAYMATRIX);
     av_buffer_unref(&ref_buf);
     av_frame_side_data_free(&side_add_array, &nb_side_add_array);
+
+    AVFrameSideData **clone_source_array = NULL;
+    int nb_clone_source_array = 0;
+    AVFrameSideData *clone_source = av_frame_side_data_new(
+        &clone_source_array, &nb_clone_source_array, AV_FRAME_DATA_REPLAYGAIN,
+        2, 0);
+    fail_if(!clone_source, "frame side clone source allocation failed");
+    clone_source->data[0] = 0xe1;
+    clone_source->data[1] = 0xe2;
+    fail_if(av_dict_set(&clone_source->metadata, "gain", "source", 0) < 0,
+            "frame side clone source metadata failed");
+
+    AVFrameSideData **side_clone_array = NULL;
+    int nb_side_clone_array = 0;
+    int clone_new_ret = av_frame_side_data_clone(
+        &side_clone_array, &nb_side_clone_array, clone_source, 0);
+    print_side_clone_row("frame:side-clone-new", clone_new_ret,
+                         side_clone_array, nb_side_clone_array, clone_source,
+                         AV_FRAME_DATA_REPLAYGAIN);
+
+    int clone_duplicate_ret = av_frame_side_data_clone(
+        &side_clone_array, &nb_side_clone_array, clone_source, 0);
+    print_side_clone_row("frame:side-clone-duplicate", clone_duplicate_ret,
+                         side_clone_array, nb_side_clone_array, clone_source,
+                         AV_FRAME_DATA_REPLAYGAIN);
+
+    AVFrameSideData **clone_replacement_array = NULL;
+    int nb_clone_replacement_array = 0;
+    AVFrameSideData *clone_replacement = av_frame_side_data_new(
+        &clone_replacement_array, &nb_clone_replacement_array,
+        AV_FRAME_DATA_REPLAYGAIN, 2, 0);
+    fail_if(!clone_replacement,
+            "frame side clone replacement allocation failed");
+    clone_replacement->data[0] = 0xf1;
+    clone_replacement->data[1] = 0xf2;
+    fail_if(av_dict_set(&clone_replacement->metadata, "gain",
+                        "replacement", 0) < 0,
+            "frame side clone replacement metadata failed");
+    int clone_replace_ret = av_frame_side_data_clone(
+        &side_clone_array, &nb_side_clone_array, clone_replacement,
+        AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    print_side_clone_row("frame:side-clone-replace", clone_replace_ret,
+                         side_clone_array, nb_side_clone_array,
+                         clone_replacement, AV_FRAME_DATA_REPLAYGAIN);
+
+    AVFrameSideData *clone_display_entry = av_frame_side_data_new(
+        &side_clone_array, &nb_side_clone_array, AV_FRAME_DATA_DISPLAYMATRIX,
+        1, 0);
+    fail_if(!clone_display_entry,
+            "frame side clone display allocation failed");
+    clone_display_entry->data[0] = 0xe5;
+    int clone_unique_ret = av_frame_side_data_clone(
+        &side_clone_array, &nb_side_clone_array, clone_source,
+        AV_FRAME_SIDE_DATA_FLAG_UNIQUE);
+    print_side_clone_row("frame:side-clone-unique", clone_unique_ret,
+                         side_clone_array, nb_side_clone_array, clone_source,
+                         AV_FRAME_DATA_REPLAYGAIN);
+
+    AVFrameSideData **clone_multi_source_array = NULL;
+    int nb_clone_multi_source_array = 0;
+    AVFrameSideData *clone_multi_source = av_frame_side_data_new(
+        &clone_multi_source_array, &nb_clone_multi_source_array,
+        AV_FRAME_DATA_SEI_UNREGISTERED, 16, 0);
+    fail_if(!clone_multi_source,
+            "frame side clone multi source allocation failed");
+    memset(clone_multi_source->data, 0x77, clone_multi_source->size);
+    fail_if(av_dict_set(&clone_multi_source->metadata, "gain", "multi", 0) < 0,
+            "frame side clone multi metadata failed");
+    AVFrameSideData **clone_multi_array = NULL;
+    int nb_clone_multi_array = 0;
+    int clone_multi_new_ret = av_frame_side_data_clone(
+        &clone_multi_array, &nb_clone_multi_array, clone_multi_source, 0);
+    print_side_clone_row("frame:side-clone-multi-new", clone_multi_new_ret,
+                         clone_multi_array, nb_clone_multi_array,
+                         clone_multi_source, AV_FRAME_DATA_SEI_UNREGISTERED);
+    int clone_multi_replace_ret = av_frame_side_data_clone(
+        &clone_multi_array, &nb_clone_multi_array, clone_multi_source,
+        AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    print_side_clone_row("frame:side-clone-multi-replace",
+                         clone_multi_replace_ret, clone_multi_array,
+                         nb_clone_multi_array, clone_multi_source,
+                         AV_FRAME_DATA_SEI_UNREGISTERED);
+
+    av_frame_side_data_free(&clone_multi_array, &nb_clone_multi_array);
+    av_frame_side_data_free(&clone_multi_source_array,
+                            &nb_clone_multi_source_array);
+    av_frame_side_data_free(&side_clone_array, &nb_side_clone_array);
+    av_frame_side_data_free(&clone_replacement_array,
+                            &nb_clone_replacement_array);
+    av_frame_side_data_free(&clone_source_array, &nb_clone_source_array);
 
     av_frame_free(&side_frame);
     av_frame_free(&copy_dst);
