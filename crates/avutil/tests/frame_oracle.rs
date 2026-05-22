@@ -6,12 +6,12 @@ use std::{
 };
 
 use avutil::{
-    AudioFrame, AvErrorCode, BufferRef, ChannelLayout, ChannelLayoutSpec, Frame, FrameAlphaMode,
-    FrameBufferTopology, FrameChromaLocation, FrameColorPrimaries, FrameColorRange,
-    FrameColorSpace, FrameColorTransferCharacteristic, FrameCropFlags, FrameData,
-    FrameDecodeErrorFlags, FrameFlags, FramePictureType, FrameSideData, FrameSideDataFlags,
-    FrameSideDataKind, FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame,
-    AV_NOPTS_VALUE, AV_NUM_DATA_POINTERS,
+    frame_side_data_name_for_value, AudioFrame, AvErrorCode, BufferRef, ChannelLayout,
+    ChannelLayoutSpec, Frame, FrameAlphaMode, FrameBufferTopology, FrameChromaLocation,
+    FrameColorPrimaries, FrameColorRange, FrameColorSpace, FrameColorTransferCharacteristic,
+    FrameCropFlags, FrameData, FrameDecodeErrorFlags, FrameFlags, FramePictureType, FrameSideData,
+    FrameSideDataFlags, FrameSideDataKind, FrameSideDataProperties, PixelFormat, Rational,
+    SampleFormat, VideoFrame, AV_NOPTS_VALUE, AV_NUM_DATA_POINTERS,
 };
 
 #[test]
@@ -87,6 +87,30 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             FrameSideDataProperties::CHANNEL_DEPENDENT
                 .bits()
                 .to_string(),
+        ],
+    );
+    let display_value = FrameSideDataKind::DisplayMatrix
+        .ffmpeg_value()
+        .expect("displaymatrix should have a raw FFmpeg value");
+    let exif_value = FrameSideDataKind::Exif
+        .ffmpeg_value()
+        .expect("EXIF should have a raw FFmpeg value");
+    let sentinel_value = FrameSideDataKind::KNOWN.len() as i32;
+    rows.insert(
+        "frame:side-name-boundaries".to_string(),
+        vec![
+            display_value.to_string(),
+            frame_side_data_name_for_value(display_value)
+                .expect("displaymatrix should have a name")
+                .to_string(),
+            exif_value.to_string(),
+            frame_side_data_name_for_value(exif_value)
+                .expect("EXIF should have a name")
+                .to_string(),
+            bool_field(frame_side_data_name_for_value(-1).is_none()),
+            bool_field(frame_side_data_name_for_value(sentinel_value).is_none()),
+            bool_field(frame_side_data_name_for_value(sentinel_value + 1).is_none()),
+            bool_field(frame_side_data_name_for_value(i32::MAX).is_none()),
         ],
     );
 
@@ -1560,6 +1584,7 @@ fn compile_and_run_oracle(
 
 fn oracle_c_source() -> &'static str {
     r#"#include <inttypes.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -2053,6 +2078,14 @@ int main(void)
            AV_SIDE_DATA_PROP_SIZE_DEPENDENT,
            AV_SIDE_DATA_PROP_COLOR_DEPENDENT,
            AV_SIDE_DATA_PROP_CHANNEL_DEPENDENT);
+    printf("frame:side-name-boundaries|%d|%s|%d|%s|%d|%d|%d|%d\n",
+           AV_FRAME_DATA_DISPLAYMATRIX,
+           av_frame_side_data_name(AV_FRAME_DATA_DISPLAYMATRIX),
+           AV_FRAME_DATA_EXIF, av_frame_side_data_name(AV_FRAME_DATA_EXIF),
+           av_frame_side_data_name((enum AVFrameSideDataType)-1) == NULL,
+           av_frame_side_data_name((enum AVFrameSideDataType)(AV_FRAME_DATA_EXIF + 1)) == NULL,
+           av_frame_side_data_name((enum AVFrameSideDataType)(AV_FRAME_DATA_EXIF + 2)) == NULL,
+           av_frame_side_data_name((enum AVFrameSideDataType)INT_MAX) == NULL);
 
     AVFrame *video = av_frame_alloc();
     fail_if(!video, "video av_frame_alloc failed");

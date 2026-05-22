@@ -45,10 +45,10 @@ use avutil::{
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId,
     clear_global_log_callback, clear_global_log_records, flush_global_log_repeated,
-    global_formatted_log_records, global_log, global_log_flags, global_log_level,
-    set_global_log_callback, set_global_log_flag, set_global_log_flags, set_global_log_level,
-    take_global_log_records, LogColorMode, LogFlags, LogFormatOptions, LogLevel, LogRecord,
-    LogTimestamp, Logger, Md5, Packet, PacketA53ClosedCaptions,
+    frame_side_data_name_for_value, global_formatted_log_records, global_log, global_log_flags,
+    global_log_level, set_global_log_callback, set_global_log_flag, set_global_log_flags,
+    set_global_log_level, take_global_log_records, LogColorMode, LogFlags, LogFormatOptions,
+    LogLevel, LogRecord, LogTimestamp, Logger, Md5, Packet, PacketA53ClosedCaptions,
     PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
@@ -4467,6 +4467,27 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         FrameSideDataProperties::ALL.bits()
     );
     assert_eq!(FrameSideDataKind::KNOWN.len(), 32);
+    for (index, kind) in FrameSideDataKind::KNOWN.iter().enumerate() {
+        assert_eq!(kind.ffmpeg_value(), Some(index as i32));
+        assert_eq!(
+            FrameSideDataKind::from_ffmpeg_value(index as i32),
+            Some(kind.clone())
+        );
+        assert_eq!(
+            frame_side_data_name_for_value(index as i32),
+            kind.descriptor_name()
+        );
+    }
+    let frame_side_data_sentinel = FrameSideDataKind::KNOWN.len() as i32;
+    for value in [
+        -1,
+        frame_side_data_sentinel,
+        frame_side_data_sentinel + 1,
+        i32::MAX,
+    ] {
+        assert_eq!(FrameSideDataKind::from_ffmpeg_value(value), None);
+        assert_eq!(frame_side_data_name_for_value(value), None);
+    }
     assert_eq!(
         FrameSideDataKind::from_name("vendor.private.side-data")
             .unwrap()

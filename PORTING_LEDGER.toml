@@ -535,6 +535,7 @@ unit_tests = [
   "frame::tests::frame_side_data_parses_sei_unregistered_payload",
   "frame::tests::frame_side_data_rejects_malformed_sei_unregistered_payload",
   "frame::tests::frame_side_data_properties_drive_multi_and_removal_helpers",
+  "frame::tests::frame_side_data_name_lookup_matches_ffmpeg_value_boundaries",
   "frame::tests::frame_side_data_validates_kind_and_supports_remove_and_take",
   "frame::tests::frame_add_side_data_with_flags_matches_array_insert_semantics",
   "frame::tests::frame_add_side_data_buffer_with_flags_matches_ownership_semantics",
@@ -551,6 +552,13 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: The pinned libavutil `AVFrame` oracle now validates
+# `av_frame_side_data_name()` raw-value lookup boundaries. Rust exposes the
+# bounded equivalent through `FrameSideDataKind::from_ffmpeg_value()` and
+# `frame_side_data_name_for_value()`: every known 0-based enum value maps back
+# to its descriptor name, while -1, the first value after the last public enum
+# entry, the next value, and INT_MAX return no name. Unit, oracle, and
+# avutil_core_models fuzz-smoke invariants cover the same value boundaries.
 # Latest update: The pinned libavutil `AVFrame` oracle now validates standalone
 # `av_frame_side_data_get()` and `av_frame_side_data_free()` array behavior.
 # The array lookup returns the first matching MULTI side-data entry and returns

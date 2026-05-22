@@ -12437,6 +12437,11 @@ impl FrameSideDataKind {
             .map(|index| index as i32)
     }
 
+    pub fn from_ffmpeg_value(value: i32) -> Option<Self> {
+        let index = usize::try_from(value).ok()?;
+        Self::KNOWN.get(index).cloned()
+    }
+
     pub fn descriptor(&self) -> Option<FrameSideDataDescriptor> {
         use FrameSideDataProperties as Props;
 
@@ -12601,6 +12606,12 @@ impl FrameSideDataKind {
             _ => None,
         }
     }
+}
+
+pub fn frame_side_data_name_for_value(value: i32) -> Option<&'static str> {
+    FrameSideDataKind::from_ffmpeg_value(value)
+        .as_ref()
+        .and_then(FrameSideDataKind::descriptor_name)
 }
 
 impl TryFrom<&str> for FrameSideDataKind {
@@ -28660,6 +28671,27 @@ mod tests {
             .remove_side_data_by_properties(FrameSideDataProperties::EMPTY)
             .is_empty());
         assert_eq!(frame.side_data().len(), 1);
+    }
+
+    #[test]
+    fn frame_side_data_name_lookup_matches_ffmpeg_value_boundaries() {
+        for (index, kind) in FrameSideDataKind::KNOWN.iter().enumerate() {
+            assert_eq!(kind.ffmpeg_value(), Some(index as i32));
+            assert_eq!(
+                FrameSideDataKind::from_ffmpeg_value(index as i32),
+                Some(kind.clone())
+            );
+            assert_eq!(
+                frame_side_data_name_for_value(index as i32),
+                kind.descriptor_name()
+            );
+        }
+
+        let sentinel = FrameSideDataKind::KNOWN.len() as i32;
+        for value in [-1, sentinel, sentinel + 1, i32::MAX] {
+            assert_eq!(FrameSideDataKind::from_ffmpeg_value(value), None);
+            assert_eq!(frame_side_data_name_for_value(value), None);
+        }
     }
 
     #[test]

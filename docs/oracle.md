@@ -217,7 +217,8 @@ audio, and out-of-range indexes,
 `av_frame_apply_cropping()` for gray8 aligned, gray8 unaligned, and invalid
 crop rectangles,
 `AV_FRAME_DATA_*` numeric
-values/names/descriptors/properties, `AV_FRAME_SIDE_DATA_FLAG_*`,
+values/names/descriptors/properties, `av_frame_side_data_name()` invalid
+raw-value boundaries, `AV_FRAME_SIDE_DATA_FLAG_*`,
 `AV_SIDE_DATA_PROP_*`, `av_frame_new_side_data` / `av_frame_get_side_data`
 / `av_frame_remove_side_data` displaymatrix rows, duplicate
 `av_frame_get_side_data()` / `av_frame_remove_side_data()` rows, and
@@ -236,6 +237,11 @@ source metadata keys overwrite matching
 destination metadata while destination-only metadata keys remain, existing destination side data is retained,
 source side data is appended as a deep copy, and destination `hw_frames_ctx`
 remains unchanged.
+The `av_frame_side_data_name` boundary row proves that known 0-based
+`AV_FRAME_DATA_*` values map to descriptor names, while -1, the first raw value
+after `AV_FRAME_DATA_EXIF`, the next raw value, and INT_MAX return NULL. FFmpeg
+8.1.1 does not expose a public `AV_FRAME_DATA_NB` sentinel, so the Rust model
+uses the current pinned inventory length as its bounded sentinel.
 The `av_frame_clone` and `av_frame_replace` rows prove source properties and
 refcounted plane, side-data, hardware-context, and `opaque_ref` storage are
 shared for cloned/replaced frames, pre-populated destination state is dropped
