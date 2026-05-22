@@ -10,17 +10,17 @@ use avutil::{
     FrameSideDataFlags, FrameSideDataKind, Packet, PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
-    PacketDynamicHdr10Plus, PacketFallbackTrack, PacketFifo, PacketFlags, PacketFrameCropping,
-    PacketHdrPlusColorTransformParams, PacketJpDualMono, PacketJpDualMonoSelection,
-    PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
-    PacketOpaque, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
-    PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
-    PacketSideDataKind, PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason,
-    PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,
-    PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition,
-    PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
-    PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE,
-    AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    PacketDynamicHdr10Plus, PacketEncryptionSubsample, PacketFallbackTrack, PacketFifo,
+    PacketFlags, PacketFrameCropping, PacketHdrPlusColorTransformParams, PacketJpDualMono,
+    PacketJpDualMonoSelection, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
+    PacketMpegTsStreamId, PacketOpaque, PacketParamChange, PacketPictureType,
+    PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport,
+    PacketS12mTimecode, PacketSideDataKind, PacketSideDataList, PacketSkipSamples,
+    PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d,
+    PacketStereo3dFlags, PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView,
+    PacketSubtitlePosition, PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays,
+    PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE,
+    AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -422,6 +422,10 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
             &dynamic_hdr10_plus_payload_layout_offsets(),
         ),
     );
+    rows.insert(
+        "packet:payload-layout-encryption-info".to_string(),
+        payload_layout_fields(&encryption_info_payload_layout_bytes(), &[]),
+    );
 
     let mut audio_fields =
         payload_layout_fields(&PacketAudioServiceType::Commentary.to_bytes(), &[]);
@@ -636,6 +640,24 @@ fn dynamic_hdr10_plus_peak_table_len() -> usize {
 
 fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {
     data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn encryption_info_payload_layout_bytes() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&u32::from_be_bytes(*b"cenc").to_be_bytes());
+    data.extend_from_slice(&1_u32.to_be_bytes());
+    data.extend_from_slice(&9_u32.to_be_bytes());
+    data.extend_from_slice(&16_u32.to_be_bytes());
+    data.extend_from_slice(&8_u32.to_be_bytes());
+    data.extend_from_slice(&2_u32.to_be_bytes());
+    data.extend_from_slice(&[
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
+        0x1f,
+    ]);
+    data.extend_from_slice(&[0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7]);
+    data.extend_from_slice(&PacketEncryptionSubsample::new(3, 100).to_bytes());
+    data.extend_from_slice(&PacketEncryptionSubsample::new(0, 55).to_bytes());
+    data
 }
 
 fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -1556,6 +1578,7 @@ fn oracle_c_source() -> &'static str {
 #include "libavutil/dict.h"
 #include "libavutil/display.h"
 #include "libavutil/dovi_meta.h"
+#include "libavutil/encryption_info.h"
 #include "libavutil/frame.h"
 #include "libavutil/hdr_dynamic_metadata.h"
 #include "libavutil/intreadwrite.h"
@@ -2043,6 +2066,30 @@ static void print_side_data_payload_layouts(void) {
            offsetof(AVDynamicHDRPlus, num_rows_mastering_display_actual_peak_luminance),
            offsetof(AVDynamicHDRPlus, num_cols_mastering_display_actual_peak_luminance),
            offsetof(AVDynamicHDRPlus, mastering_display_actual_peak_luminance));
+
+    AVEncryptionInfo *enc = av_encryption_info_alloc(2, 16, 8);
+    fail_if(!enc, "av_encryption_info_alloc returned NULL");
+    enc->scheme = ((uint32_t)'c' << 24) |
+                  ((uint32_t)'e' << 16) |
+                  ((uint32_t)'n' << 8) |
+                  (uint32_t)'c';
+    enc->crypt_byte_block = 1;
+    enc->skip_byte_block = 9;
+    for (uint32_t i = 0; i < enc->key_id_size; i++)
+        enc->key_id[i] = (uint8_t)(0x10 + i);
+    for (uint32_t i = 0; i < enc->iv_size; i++)
+        enc->iv[i] = (uint8_t)(0xa0 + i);
+    enc->subsamples[0].bytes_of_clear_data = 3;
+    enc->subsamples[0].bytes_of_protected_data = 100;
+    enc->subsamples[1].bytes_of_clear_data = 0;
+    enc->subsamples[1].bytes_of_protected_data = 55;
+    size_t enc_side_size = 0;
+    uint8_t *enc_side = av_encryption_info_add_side_data(enc, &enc_side_size);
+    fail_if(!enc_side, "av_encryption_info_add_side_data returned NULL");
+    print_payload_layout_bytes("packet:payload-layout-encryption-info",
+                               enc_side, enc_side_size);
+    av_free(enc_side);
+    av_encryption_info_free(enc);
 
     enum AVAudioServiceType service_type = AV_AUDIO_SERVICE_TYPE_COMMENTARY;
     print_payload_layout_header("packet:payload-layout-audio-service-type",
