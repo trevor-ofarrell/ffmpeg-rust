@@ -199,6 +199,35 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert("packet:move-dst".to_string(), packet_fields(&move_dst));
     rows.insert("packet:move-src".to_string(), packet_fields(&move_src));
 
+    let mut move_replace_src = packet_with_common_props();
+    move_replace_src.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x07, 0x08]).unwrap(),
+    );
+    let mut move_replace_dst = Packet::from_data(vec![0x33, 0x22]).unwrap();
+    move_replace_dst.set_pts(Some(77));
+    move_replace_dst.set_duration(7).unwrap();
+    move_replace_dst
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    move_replace_dst.set_opaque(Some(PacketOpaque::new(0x5678).unwrap()));
+    move_replace_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0x99])));
+    move_replace_dst.move_ref_from(&mut move_replace_src);
+    rows.insert(
+        "packet:move-replace-dst".to_string(),
+        packet_fields(&move_replace_dst),
+    );
+    rows.insert(
+        "packet:move-replace-dst-side".to_string(),
+        side_data_summary_fields(&move_replace_dst),
+    );
+    rows.insert(
+        "packet:move-replace-dst-payload".to_string(),
+        payload_visible_fields(&move_replace_dst),
+    );
+    rows.insert(
+        "packet:move-replace-src".to_string(),
+        packet_fields(&move_replace_src),
+    );
+
     let mut unref = packet_with_common_props();
     unref.unref();
     rows.insert("packet:unref".to_string(), packet_fields(&unref));
@@ -3455,6 +3484,42 @@ int main(void) {
     print_packet("packet:move-src", src);
     av_packet_free(&dst);
     av_packet_free(&src);
+
+    AVPacket *move_replace_src = packet_with_common_props();
+    uint8_t *move_replace_extra = av_packet_new_side_data(
+        move_replace_src, AV_PKT_DATA_SKIP_SAMPLES, 2);
+    fail_if(!move_replace_extra,
+            "av_packet_move_ref replace source side data failed");
+    move_replace_extra[0] = 0x07;
+    move_replace_extra[1] = 0x08;
+
+    AVPacket *move_replace_dst = new_packet();
+    fail_if(av_new_packet(move_replace_dst, 2) < 0,
+            "av_new_packet move replace dst failed");
+    move_replace_dst->data[0] = 0x33;
+    move_replace_dst->data[1] = 0x22;
+    move_replace_dst->pts = 77;
+    move_replace_dst->duration = 7;
+    uint8_t *move_replace_old_side = av_packet_new_side_data(
+        move_replace_dst, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!move_replace_old_side,
+            "av_packet_move_ref replace old side data failed");
+    move_replace_old_side[0] = 0xee;
+    move_replace_dst->opaque = (void *)(uintptr_t)0x5678;
+    move_replace_dst->opaque_ref = av_buffer_alloc(1);
+    fail_if(!move_replace_dst->opaque_ref,
+            "av_packet_move_ref replace old opaque_ref failed");
+    move_replace_dst->opaque_ref->data[0] = 0x99;
+
+    av_packet_move_ref(move_replace_dst, move_replace_src);
+    print_packet("packet:move-replace-dst", move_replace_dst);
+    print_side_data_summary("packet:move-replace-dst-side",
+                            move_replace_dst);
+    print_payload_visible("packet:move-replace-dst-payload",
+                          move_replace_dst);
+    print_packet("packet:move-replace-src", move_replace_src);
+    av_packet_free(&move_replace_dst);
+    av_packet_free(&move_replace_src);
 
     pkt = packet_with_common_props();
     av_packet_unref(pkt);

@@ -148,6 +148,8 @@ The harness also includes a direct `av_init_packet()` row. `Packet::init_legacy(
 
 The harness also includes `packet:ref-replace`, `packet:ref-replace-side`, and `packet:ref-replace-payload` rows for `av_packet_ref()`. These rows prove that a destination packet with existing payload, side data, opaque pointer metadata, and `opaque_ref` is unreferenced and then replaced with source packet state.
 
+The harness also includes `packet:move-replace-dst`, `packet:move-replace-dst-side`, `packet:move-replace-dst-payload`, and `packet:move-replace-src` rows for `av_packet_move_ref()`. These rows prove that a destination packet with existing payload, side data, opaque pointer metadata, and `opaque_ref` is unreferenced before FFmpeg transfers the complete source packet state and resets the source packet to defaults.
+
 The harness also includes `packet:copy-props-replace`, `packet:copy-props-replace-side`, and `packet:copy-props-replace-payload` rows for `av_packet_copy_props()`. These rows prove that a destination packet with existing payload, side data, opaque pointer metadata, and `opaque_ref` keeps its payload bytes while FFmpeg replaces the old metadata, side data, and `opaque_ref` with source properties.
 
 The harness also includes a `packet:payload-layout-palette` row, proving FFmpeg's packet palette side-data payload uses `AVPALETTE_SIZE` bytes. `PacketPalette` derives its modeled length from the same shared `AVPALETTE_COUNT` and `AVPALETTE_SIZE` constants used by the pixel-format model.

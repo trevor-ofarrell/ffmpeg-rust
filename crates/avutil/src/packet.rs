@@ -10531,6 +10531,79 @@ mod tests {
     }
 
     #[test]
+    fn packet_move_ref_from_replaces_destination_and_releases_old_refs() {
+        let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture_payload = Arc::clone(&released);
+        let capture_opaque = Arc::clone(&released);
+
+        let mut src = Packet::from_data(vec![1, 2, 3]).unwrap();
+        let src_payload = src.data_buffer().clone();
+        src.stream_index = 4;
+        src.set_pts(Some(12));
+        src.set_dts(Some(10));
+        src.set_duration(3).unwrap();
+        src.set_pos(Some(99)).unwrap();
+        src.set_flag(PacketFlags::KEY, true);
+        src.set_time_base(Rational::new(1, 48_000).unwrap())
+            .unwrap();
+        src.push_side_data(SideData::new_extradata(vec![0x11]).unwrap());
+        src.set_opaque_address(0x2222);
+        src.set_opaque_ref(Some(BufferRef::from_vec(vec![0x20])));
+
+        let mut dst = Packet::with_buffer(
+            BufferRef::from_vec_with_release_callback(vec![0x99], move |data| {
+                capture_payload.lock().unwrap().push(data);
+            }),
+            7,
+        );
+        dst.set_pts(Some(77));
+        dst.set_duration(7).unwrap();
+        dst.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+        );
+        dst.set_opaque_address(0x1111);
+        dst.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0x88],
+            move |data| {
+                capture_opaque.lock().unwrap().push(data);
+            },
+        )));
+
+        dst.move_ref_from(&mut src);
+
+        let mut released_values = released.lock().unwrap().clone();
+        released_values.sort();
+        assert_eq!(released_values, vec![vec![0x88], vec![0x99]]);
+        assert!(src.is_empty());
+        assert_eq!(src.stream_index(), 0);
+        assert!(src.pts().is_none());
+        assert!(src.dts().is_none());
+        assert_eq!(src.duration(), 0);
+        assert!(src.pos().is_none());
+        assert!(src.side_data().is_empty());
+        assert!(src.opaque().is_none());
+        assert!(src.opaque_ref().is_none());
+        assert_eq!(src.time_base(), Rational::ZERO);
+
+        assert_eq!(dst.data(), &[1, 2, 3]);
+        assert!(dst.data_buffer().shares_storage(&src_payload));
+        assert_eq!(dst.stream_index(), 4);
+        assert_eq!(dst.pts(), Some(12));
+        assert_eq!(dst.dts(), Some(10));
+        assert_eq!(dst.duration(), 3);
+        assert_eq!(dst.pos(), Some(99));
+        assert!(dst.flags().contains(PacketFlags::KEY));
+        assert_eq!(dst.time_base(), Rational::new(1, 48_000).unwrap());
+        assert!(dst.side_data_by_kind("palette").is_none());
+        assert_eq!(
+            dst.side_data_by_kind("new_extradata").unwrap().data(),
+            &[0x11]
+        );
+        assert_eq!(dst.opaque_address(), Some(0x2222));
+        assert_eq!(dst.opaque_ref().unwrap().as_slice(), &[0x20]);
+    }
+
+    #[test]
     fn packet_clone_matches_ref_from_shape() {
         let mut src = Packet::from_data(vec![1, 2, 3]).unwrap();
         src.stream_index = 4;
