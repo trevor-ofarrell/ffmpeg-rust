@@ -9,8 +9,8 @@ use avutil::{
     frame_side_data_descriptor_for_value, frame_side_data_name_for_value, AudioFrame, AvErrorCode,
     BufferRef, ChannelLayout, ChannelLayoutSpec, Frame, FrameAlphaMode, FrameBufferTopology,
     FrameChromaLocation, FrameColorPrimaries, FrameColorRange, FrameColorSpace,
-    FrameColorTransferCharacteristic, FrameCropFlags, FrameData, FrameDecodeErrorFlags, FrameFlags,
-    FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
+    FrameColorTransferCharacteristic, FrameCropFlags, FrameData, FrameDecodeErrorFlags, FrameFifo,
+    FrameFlags, FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
     FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame, AV_NOPTS_VALUE,
     AV_NUM_DATA_POINTERS,
 };
@@ -850,6 +850,136 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         hw_frames_context_share_fields(&replace_destination, &move_replace_destination),
     );
 
+    let mut fifo = FrameFifo::new();
+    rows.insert(
+        "frame:fifo-new-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+
+    let mut fifo_move_src = frame_with_fifo_props();
+    let fifo_write_move_ret = fifo
+        .write_move(&mut fifo_move_src)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:fifo-write-move-ret".to_string(),
+        vec![fifo_write_move_ret.to_string()],
+    );
+    rows.insert(
+        "frame:fifo-write-move-src".to_string(),
+        frame_fields(&fifo_move_src),
+    );
+    rows.insert(
+        "frame:fifo-after-write-move-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    let fifo_peek0 = fifo.peek(0);
+    rows.insert(
+        "frame:fifo-peek0-ret".to_string(),
+        vec![fifo_peek0
+            .as_ref()
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1))
+            .to_string()],
+    );
+    rows.insert(
+        "frame:fifo-peek0".to_string(),
+        frame_fields(fifo_peek0.expect("peek 0 should succeed")),
+    );
+    let fifo_peek1_ret = fifo
+        .peek(1)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:fifo-peek1-ret".to_string(),
+        vec![fifo_peek1_ret.to_string()],
+    );
+    let mut fifo_move_dst = Frame::empty();
+    let fifo_read_move_ret = fifo
+        .read_move(&mut fifo_move_dst)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:fifo-read-move-ret".to_string(),
+        vec![fifo_read_move_ret.to_string()],
+    );
+    rows.insert(
+        "frame:fifo-read-move-dst".to_string(),
+        frame_fields(&fifo_move_dst),
+    );
+    rows.insert(
+        "frame:fifo-after-read-move-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+
+    let fifo_ref_src = frame_with_fifo_props();
+    let fifo_write_ref_ret = fifo
+        .write_ref(&fifo_ref_src)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:fifo-write-ref-ret".to_string(),
+        vec![fifo_write_ref_ret.to_string()],
+    );
+    rows.insert(
+        "frame:fifo-write-ref-src".to_string(),
+        frame_fields(&fifo_ref_src),
+    );
+    rows.insert(
+        "frame:fifo-after-write-ref-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    let mut fifo_ref_dst = Frame::empty();
+    let fifo_read_ref_ret = fifo
+        .read_ref(&mut fifo_ref_dst)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:fifo-read-ref-ret".to_string(),
+        vec![fifo_read_ref_ret.to_string()],
+    );
+    rows.insert(
+        "frame:fifo-read-ref-dst".to_string(),
+        frame_fields(&fifo_ref_dst),
+    );
+    rows.insert(
+        "frame:fifo-after-read-ref-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+
+    let mut fifo_first = frame_with_fifo_props();
+    fifo_first.set_pts(Some(611));
+    fifo.write_move(&mut fifo_first).unwrap();
+    let mut fifo_second = frame_with_fifo_props();
+    fifo_second.set_pts(Some(612));
+    fifo.write_move(&mut fifo_second).unwrap();
+    rows.insert(
+        "frame:fifo-before-drain-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    fifo.drain(1).unwrap();
+    rows.insert(
+        "frame:fifo-after-drain-one-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    rows.insert(
+        "frame:fifo-after-drain-one-peek".to_string(),
+        frame_fields(fifo.peek(0).expect("second drained frame should remain")),
+    );
+    fifo.drain(1).unwrap();
+    rows.insert(
+        "frame:fifo-after-drain-all-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    let fifo_read_empty_ret = fifo
+        .read_move(&mut Frame::empty())
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:fifo-read-empty-ret".to_string(),
+        vec![fifo_read_empty_ret.to_string()],
+    );
+
     let side_payload = (1..=36).collect::<Vec<u8>>();
     let mut side_frame = Frame::empty();
     side_frame
@@ -1247,6 +1377,37 @@ fn gray8_strided_storage(width: usize, height: usize, line_size: usize, visible:
         storage[dst_start..dst_end].copy_from_slice(&visible[src_start..src_end]);
     }
     storage
+}
+
+fn frame_with_fifo_props() -> Frame {
+    let video = VideoFrame::new_with_aligned_line_sizes(
+        2,
+        1,
+        PixelFormat::Gray8,
+        vec![vec![0xaa, 0xbb]],
+        1,
+    )
+    .unwrap();
+    let mut frame = Frame::video(video).with_hw_frames_context(BufferRef::copy_from_slice(&[0xee]));
+    frame.set_pts(Some(410));
+    frame.set_pkt_dts(Some(409));
+    frame.set_duration(3).unwrap();
+    frame
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    frame
+        .set_sample_aspect_ratio(Rational::new(1, 1).unwrap())
+        .unwrap();
+    frame.set_picture_type(FramePictureType::P);
+    frame.set_quality(17);
+    frame.set_repeat_pict(1);
+    frame.set_flags(FrameFlags::KEY | FrameFlags::LOSSLESS);
+    frame.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0xde, 0xad])));
+    frame.metadata_mut().set("title", "fifo").unwrap();
+    frame
+        .set_side_data_kind(FrameSideDataKind::DisplayMatrix, vec![0x33; 36])
+        .unwrap();
+    frame
 }
 
 fn frame_fields(frame: &Frame) -> Vec<String> {
@@ -1706,6 +1867,7 @@ fn oracle_c_source() -> &'static str {
 #include <libavutil/avutil.h>
 #include <libavutil/buffer.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/container_fifo.h>
 #include <libavutil/dict.h>
 #include <libavutil/frame.h>
 #include <libavutil/imgutils.h>
@@ -2172,6 +2334,131 @@ static void print_side_data_row(const char *name, const AVFrame *frame,
     print_hex(sd->data, sd->size);
     printf("|%d|%d\n", sd->buf ? av_buffer_get_ref_count(sd->buf) : 0,
            sd->buf ? av_buffer_is_writable(sd->buf) : 0);
+}
+
+static AVFrame *frame_with_fifo_props(void)
+{
+    AVFrame *frame = av_frame_alloc();
+    fail_if(!frame, "frame fifo allocation failed");
+    frame->format = AV_PIX_FMT_GRAY8;
+    frame->width = 2;
+    frame->height = 1;
+    frame->pts = 410;
+    frame->pkt_dts = 409;
+    frame->duration = 3;
+    frame->time_base = (AVRational){ 1, 90000 };
+    frame->sample_aspect_ratio = (AVRational){ 1, 1 };
+    frame->pict_type = AV_PICTURE_TYPE_P;
+    frame->quality = 17;
+    frame->repeat_pict = 1;
+    frame->flags = AV_FRAME_FLAG_KEY | AV_FRAME_FLAG_LOSSLESS;
+    fail_if(av_frame_get_buffer(frame, 1) < 0,
+            "frame fifo get buffer failed");
+    frame->data[0][0] = 0xaa;
+    frame->data[0][1] = 0xbb;
+    frame->opaque_ref = av_buffer_alloc(2);
+    fail_if(!frame->opaque_ref, "frame fifo opaque_ref allocation failed");
+    frame->opaque_ref->data[0] = 0xde;
+    frame->opaque_ref->data[1] = 0xad;
+    frame->hw_frames_ctx = av_buffer_alloc(1);
+    fail_if(!frame->hw_frames_ctx, "frame fifo hw allocation failed");
+    frame->hw_frames_ctx->data[0] = 0xee;
+    fail_if(av_dict_set(&frame->metadata, "title", "fifo", 0) < 0,
+            "frame fifo metadata allocation failed");
+    AVFrameSideData *sd = av_frame_new_side_data(
+        frame, AV_FRAME_DATA_DISPLAYMATRIX, 36);
+    fail_if(!sd, "frame fifo side data allocation failed");
+    memset(sd->data, 0x33, sd->size);
+    return frame;
+}
+
+static void exercise_frame_fifo_api(void)
+{
+    AVContainerFifo *fifo = av_container_fifo_alloc_avframe(123);
+    fail_if(!fifo, "frame fifo allocation failed");
+    printf("frame:fifo-new-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+
+    AVFrame *move_src = frame_with_fifo_props();
+    int write_move_ret = av_container_fifo_write(fifo, move_src, 0);
+    printf("frame:fifo-write-move-ret|%d\n", write_move_ret);
+    fail_if(write_move_ret < 0, "frame fifo write move failed");
+    print_frame("frame:fifo-write-move-src", move_src);
+    printf("frame:fifo-after-write-move-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+
+    void *peeked = NULL;
+    int peek0_ret = av_container_fifo_peek(fifo, &peeked, 0);
+    printf("frame:fifo-peek0-ret|%d\n", peek0_ret);
+    fail_if(peek0_ret < 0, "frame fifo peek 0 failed");
+    print_frame("frame:fifo-peek0", (const AVFrame *)peeked);
+    void *invalid_peek = NULL;
+    int peek1_ret = av_container_fifo_peek(fifo, &invalid_peek, 1);
+    printf("frame:fifo-peek1-ret|%d\n", peek1_ret);
+
+    AVFrame *move_dst = av_frame_alloc();
+    fail_if(!move_dst, "frame fifo move dst allocation failed");
+    int read_move_ret = av_container_fifo_read(fifo, move_dst, 0);
+    printf("frame:fifo-read-move-ret|%d\n", read_move_ret);
+    fail_if(read_move_ret < 0, "frame fifo read move failed");
+    print_frame("frame:fifo-read-move-dst", move_dst);
+    printf("frame:fifo-after-read-move-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_frame_free(&move_dst);
+    av_frame_free(&move_src);
+
+    AVFrame *ref_src = frame_with_fifo_props();
+    int write_ref_ret = av_container_fifo_write(
+        fifo, ref_src, AV_CONTAINER_FIFO_FLAG_REF);
+    printf("frame:fifo-write-ref-ret|%d\n", write_ref_ret);
+    fail_if(write_ref_ret < 0, "frame fifo write ref failed");
+    print_frame("frame:fifo-write-ref-src", ref_src);
+    printf("frame:fifo-after-write-ref-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+
+    AVFrame *ref_dst = av_frame_alloc();
+    fail_if(!ref_dst, "frame fifo ref dst allocation failed");
+    int read_ref_ret = av_container_fifo_read(
+        fifo, ref_dst, AV_CONTAINER_FIFO_FLAG_REF);
+    printf("frame:fifo-read-ref-ret|%d\n", read_ref_ret);
+    fail_if(read_ref_ret < 0, "frame fifo read ref failed");
+    print_frame("frame:fifo-read-ref-dst", ref_dst);
+    printf("frame:fifo-after-read-ref-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_frame_free(&ref_dst);
+    av_frame_free(&ref_src);
+
+    AVFrame *first = frame_with_fifo_props();
+    first->pts = 611;
+    AVFrame *second = frame_with_fifo_props();
+    second->pts = 612;
+    fail_if(av_container_fifo_write(fifo, first, 0) < 0,
+            "frame fifo first write failed");
+    fail_if(av_container_fifo_write(fifo, second, 0) < 0,
+            "frame fifo second write failed");
+    printf("frame:fifo-before-drain-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_container_fifo_drain(fifo, 1);
+    printf("frame:fifo-after-drain-one-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    peeked = NULL;
+    fail_if(av_container_fifo_peek(fifo, &peeked, 0) < 0,
+            "frame fifo drain peek failed");
+    print_frame("frame:fifo-after-drain-one-peek",
+                (const AVFrame *)peeked);
+    av_container_fifo_drain(fifo, 1);
+    printf("frame:fifo-after-drain-all-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+
+    AVFrame *empty_read = av_frame_alloc();
+    fail_if(!empty_read, "frame fifo empty read allocation failed");
+    int read_empty_ret = av_container_fifo_read(fifo, empty_read, 0);
+    printf("frame:fifo-read-empty-ret|%d\n", read_empty_ret);
+
+    av_frame_free(&empty_read);
+    av_frame_free(&second);
+    av_frame_free(&first);
+    av_container_fifo_free(&fifo);
 }
 
 int main(void)
@@ -2819,6 +3106,8 @@ int main(void)
                      move_replace_dst);
     print_hw_share("frame:move-replace-hw-shares", replace_dst,
                    move_replace_dst);
+
+    exercise_frame_fifo_api();
 
     AVFrame *side_frame = av_frame_alloc();
     fail_if(!side_frame, "side_frame av_frame_alloc failed");

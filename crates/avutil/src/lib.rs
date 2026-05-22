@@ -57,7 +57,7 @@ pub use frame::{
     FrameExifSceneCaptureType, FrameExifSceneType, FrameExifSensingMethod,
     FrameExifSensitivityType, FrameExifSharpness, FrameExifSignedRational, FrameExifSubfileType,
     FrameExifSubjectArea, FrameExifSubjectDistanceRange, FrameExifThresholding, FrameExifTiffType,
-    FrameExifWhiteBalance, FrameExifYcbCrPositioning, FrameFilmGrainAomParams,
+    FrameExifWhiteBalance, FrameExifYcbCrPositioning, FrameFifo, FrameFilmGrainAomParams,
     FrameFilmGrainH274Params, FrameFilmGrainParams, FrameFilmGrainParamsType, FrameFlags,
     FrameGopTimecode, FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption,
     FrameHdrPlusPercentile, FrameHdrVivid3SplineParams, FrameHdrVividColorToneMappingParams,

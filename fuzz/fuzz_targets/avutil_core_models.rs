@@ -17,7 +17,7 @@ use avutil::{
     FrameAudioServiceType,
     Dictionary, FrameContentLightMetadata, FrameCrop, FrameCropFlags, FrameData,
     FrameDecodeErrorFlags,
-    FrameDetectionBbox, FrameFlags, FrameDetectionBboxes, FrameDisplayMatrix,
+    FrameDetectionBbox, FrameFifo, FrameFlags, FrameDetectionBboxes, FrameDisplayMatrix,
     FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping, FrameDolbyVisionDmData,
     FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
@@ -12918,6 +12918,75 @@ fn exercise_fixtures() {
     moved_frame.unref();
     assert!(moved_frame.is_empty());
     assert!(moved_frame.opaque_ref().is_none());
+
+    let mut frame_fifo = FrameFifo::new();
+    assert_eq!(
+        frame_fifo
+            .read_move(&mut Frame::empty())
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(frame_fifo.drain(1).unwrap_err().code(), Some(AvErrorCode::EINVAL));
+    let fifo_move_plane = BufferRef::copy_from_slice(&[0x31, 0x32]);
+    let fifo_move_side = BufferRef::copy_from_slice(&[0x33; 36]);
+    let fifo_move_opaque = BufferRef::copy_from_slice(&[0x34]);
+    let fifo_move_video = VideoFrame::new_with_buffer_refs(
+        2,
+        1,
+        PixelFormat::Gray8,
+        vec![fifo_move_plane.clone()],
+    )
+    .unwrap();
+    let mut fifo_move = Frame::video(fifo_move_video);
+    fifo_move.set_pts(Some(1234));
+    fifo_move.set_opaque_ref(Some(fifo_move_opaque.clone()));
+    fifo_move
+        .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, fifo_move_side.clone())
+        .unwrap();
+    frame_fifo.write_move(&mut fifo_move).unwrap();
+    assert!(fifo_move.is_empty());
+    assert_eq!(frame_fifo.can_read(), 1);
+    assert_eq!(frame_fifo.peek(1).unwrap_err().code(), Some(AvErrorCode::EINVAL));
+    let mut fifo_move_dst = Frame::empty();
+    frame_fifo.read_move(&mut fifo_move_dst).unwrap();
+    assert_eq!(fifo_move_dst.pts(), Some(1234));
+    let FrameData::Video(fifo_move_video_dst) = fifo_move_dst.data() else {
+        unreachable!("constructed frame fifo move frame changed variant");
+    };
+    assert!(fifo_move_video_dst.plane_buffers()[0].shares_storage(&fifo_move_plane));
+    assert!(fifo_move_dst.side_data()[0]
+        .buffer()
+        .shares_storage(&fifo_move_side));
+    assert!(fifo_move_dst
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(&fifo_move_opaque));
+
+    let fifo_ref_plane = BufferRef::copy_from_slice(&[0x41, 0x42]);
+    let fifo_ref_video = VideoFrame::new_with_buffer_refs(
+        2,
+        1,
+        PixelFormat::Gray8,
+        vec![fifo_ref_plane.clone()],
+    )
+    .unwrap();
+    let mut fifo_ref = Frame::video(fifo_ref_video);
+    fifo_ref.set_pts(Some(2234));
+    frame_fifo.write_ref(&fifo_ref).unwrap();
+    assert!(!fifo_ref.is_empty());
+    let mut fifo_ref_dst = Frame::empty();
+    frame_fifo.read_ref(&mut fifo_ref_dst).unwrap();
+    assert!(frame_fifo.is_empty());
+    assert_eq!(fifo_ref_dst.pts(), Some(2234));
+    let (FrameData::Video(fifo_ref_src_video), FrameData::Video(fifo_ref_dst_video)) =
+        (fifo_ref.data(), fifo_ref_dst.data())
+    else {
+        unreachable!("constructed frame fifo ref frame changed variant");
+    };
+    assert!(fifo_ref_dst_video.plane_buffers()[0]
+        .shares_storage(&fifo_ref_src_video.plane_buffers()[0]));
+    assert!(fifo_ref_dst_video.plane_buffers()[0].shares_storage(&fifo_ref_plane));
 
     let move_source_released = Arc::new(Mutex::new(Vec::<String>::new()));
     let move_source_capture = Arc::clone(&move_source_released);

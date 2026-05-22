@@ -2,6 +2,7 @@ use crate::{
     AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, ChannelLayout, ChannelLayoutSpec,
     Dictionary, MatchMode, PixelFormat, Rational, SampleFormat, SetMode,
 };
+use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 
 const FFMPEG_FRAME_DEFAULT_ALIGNMENT: usize = 64;
@@ -1818,6 +1819,90 @@ impl Frame {
 impl Default for Frame {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct FrameFifo {
+    entries: VecDeque<Frame>,
+}
+
+impl FrameFifo {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn can_read(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn write_move(&mut self, frame: &mut Frame) -> AvResult<()> {
+        let mut stored = Frame::empty();
+        stored.move_ref_from(frame);
+        self.entries.push_back(stored);
+        Ok(())
+    }
+
+    pub fn write_ref(&mut self, frame: &Frame) -> AvResult<()> {
+        let mut stored = Frame::empty();
+        stored.ref_from(frame);
+        self.entries.push_back(stored);
+        Ok(())
+    }
+
+    pub fn read_move(&mut self, frame: &mut Frame) -> AvResult<()> {
+        let mut stored = self.pop_front()?;
+        frame.move_ref_from(&mut stored);
+        Ok(())
+    }
+
+    pub fn read_ref(&mut self, frame: &mut Frame) -> AvResult<()> {
+        let stored = self.pop_front()?;
+        frame.ref_from(&stored);
+        Ok(())
+    }
+
+    pub fn peek(&self, offset: usize) -> AvResult<&Frame> {
+        self.entries.get(offset).ok_or_else(|| {
+            AvError::with_code(
+                AvErrorKind::InvalidArgument,
+                AvErrorCode::EINVAL,
+                "frame FIFO peek offset is out of range",
+            )
+        })
+    }
+
+    pub fn drain(&mut self, nb_elems: usize) -> AvResult<()> {
+        if nb_elems > self.entries.len() {
+            return Err(AvError::with_code(
+                AvErrorKind::InvalidArgument,
+                AvErrorCode::EINVAL,
+                "frame FIFO drain count is out of range",
+            ));
+        }
+
+        for _ in 0..nb_elems {
+            self.entries.pop_front();
+        }
+        Ok(())
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    fn pop_front(&mut self) -> AvResult<Frame> {
+        self.entries.pop_front().ok_or_else(|| {
+            AvError::with_code(
+                AvErrorKind::InvalidArgument,
+                AvErrorCode::EINVAL,
+                "frame FIFO is empty",
+            )
+        })
     }
 }
 
@@ -20887,6 +20972,144 @@ mod tests {
         assert_eq!(
             *source_released.lock().unwrap(),
             vec![String::from("source-plane")]
+        );
+    }
+
+    #[test]
+    fn frame_fifo_moves_refs_peeks_reads_and_drains_frames() {
+        fn first_video_plane(frame: &Frame) -> &BufferRef {
+            let FrameData::Video(video) = frame.data() else {
+                panic!("expected video frame");
+            };
+            &video.plane_buffers()[0]
+        }
+
+        let mut fifo = FrameFifo::new();
+        assert!(fifo.is_empty());
+        assert_eq!(fifo.can_read(), 0);
+        assert_eq!(
+            fifo.read_move(&mut Frame::empty()).unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(fifo.drain(1).unwrap_err().code(), Some(AvErrorCode::EINVAL));
+
+        let moved_plane = BufferRef::copy_from_slice(&[0xaa, 0xbb]);
+        let moved_side = BufferRef::copy_from_slice(&[0x33; 36]);
+        let moved_hw = BufferRef::copy_from_slice(&[0xee]);
+        let moved_opaque_ref = BufferRef::copy_from_slice(&[0xde, 0xad]);
+        let moved_video =
+            VideoFrame::new_with_buffer_refs(2, 1, PixelFormat::Gray8, vec![moved_plane.clone()])
+                .unwrap();
+        let mut moved = Frame::video(moved_video).with_hw_frames_context(moved_hw.clone());
+        moved.set_pts(Some(410));
+        moved.set_pkt_dts(Some(409));
+        moved.set_duration(3).unwrap();
+        moved
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+        moved
+            .set_sample_aspect_ratio(Rational::new(1, 1).unwrap())
+            .unwrap();
+        moved.set_picture_type(FramePictureType::P);
+        moved.set_quality(17);
+        moved.set_repeat_pict(1);
+        moved.set_flags(FrameFlags::KEY | FrameFlags::LOSSLESS);
+        moved.set_opaque_ref(Some(moved_opaque_ref.clone()));
+        moved.metadata_mut().set("title", "fifo").unwrap();
+        moved
+            .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, moved_side.clone())
+            .unwrap();
+
+        fifo.write_move(&mut moved).unwrap();
+        assert!(moved.is_empty());
+        assert_eq!(fifo.can_read(), 1);
+        let peeked = fifo.peek(0).unwrap();
+        assert_eq!(peeked.pts(), Some(410));
+        assert_eq!(peeked.pkt_dts(), Some(409));
+        assert_eq!(peeked.duration(), 3);
+        assert_eq!(peeked.metadata().get("title"), Some("fifo"));
+        assert!(first_video_plane(peeked).shares_storage(&moved_plane));
+        assert!(peeked.side_data()[0].buffer().shares_storage(&moved_side));
+        assert!(peeked
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(&moved_hw));
+        assert!(peeked
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&moved_opaque_ref));
+        assert_eq!(fifo.peek(1).unwrap_err().code(), Some(AvErrorCode::EINVAL));
+
+        let mut move_dst = Frame::empty();
+        fifo.read_move(&mut move_dst).unwrap();
+        assert!(fifo.is_empty());
+        assert_eq!(move_dst.pts(), Some(410));
+        assert_eq!(move_dst.pkt_dts(), Some(409));
+        assert_eq!(move_dst.duration(), 3);
+        assert_eq!(move_dst.metadata().get("title"), Some("fifo"));
+        assert!(first_video_plane(&move_dst).shares_storage(&moved_plane));
+        assert!(move_dst.side_data()[0].buffer().shares_storage(&moved_side));
+        assert!(move_dst
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(&moved_hw));
+        assert!(move_dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&moved_opaque_ref));
+
+        let ref_plane = BufferRef::copy_from_slice(&[0x11, 0x12]);
+        let ref_side = BufferRef::copy_from_slice(&[0x44; 36]);
+        let ref_opaque = BufferRef::copy_from_slice(&[0x55]);
+        let ref_video =
+            VideoFrame::new_with_buffer_refs(2, 1, PixelFormat::Gray8, vec![ref_plane.clone()])
+                .unwrap();
+        let mut ref_src = Frame::video(ref_video);
+        ref_src.set_pts(Some(510));
+        ref_src.set_opaque_ref(Some(ref_opaque.clone()));
+        ref_src
+            .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, ref_side.clone())
+            .unwrap();
+        fifo.write_ref(&ref_src).unwrap();
+        assert_eq!(fifo.can_read(), 1);
+        assert!(!ref_src.is_empty());
+        assert!(!first_video_plane(&ref_src).is_writable());
+        let peeked_ref = fifo.peek(0).unwrap();
+        assert_eq!(peeked_ref.pts(), Some(510));
+        assert!(first_video_plane(peeked_ref).shares_storage(first_video_plane(&ref_src)));
+        assert!(peeked_ref.side_data()[0]
+            .buffer()
+            .shares_storage(ref_src.side_data()[0].buffer()));
+        assert!(peeked_ref
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(ref_src.opaque_ref().unwrap()));
+        let mut ref_dst = Frame::empty();
+        fifo.read_ref(&mut ref_dst).unwrap();
+        assert!(fifo.is_empty());
+        assert_eq!(ref_dst.pts(), Some(510));
+        assert!(first_video_plane(&ref_dst).shares_storage(first_video_plane(&ref_src)));
+        assert!(first_video_plane(&ref_dst).shares_storage(&ref_plane));
+        assert!(ref_dst.side_data()[0].buffer().shares_storage(&ref_side));
+        assert!(ref_dst.opaque_ref().unwrap().shares_storage(&ref_opaque));
+
+        for pts in [1, 2] {
+            let plane = BufferRef::copy_from_slice(&[pts as u8]);
+            let video =
+                VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![plane]).unwrap();
+            let mut frame = Frame::video(video);
+            frame.set_pts(Some(pts));
+            fifo.write_move(&mut frame).unwrap();
+        }
+        assert_eq!(fifo.can_read(), 2);
+        fifo.drain(1).unwrap();
+        assert_eq!(fifo.can_read(), 1);
+        assert_eq!(fifo.peek(0).unwrap().pts(), Some(2));
+        fifo.drain(1).unwrap();
+        assert!(fifo.is_empty());
+        assert_eq!(
+            fifo.read_ref(&mut Frame::empty()).unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
         );
     }
 
