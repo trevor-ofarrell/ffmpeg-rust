@@ -130,6 +130,14 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     video.set_alpha_mode(FrameAlphaMode::Premultiplied);
     video.metadata_mut().set("encoder", "oracle").unwrap();
     rows.insert("frame:video-buffer".to_string(), frame_fields(&video));
+    rows.insert(
+        "frame:plane-buffer-video-0".to_string(),
+        frame_plane_buffer_fields(&video, 0),
+    );
+    rows.insert(
+        "frame:plane-buffer-video-invalid".to_string(),
+        frame_plane_buffer_fields(&video, 1),
+    );
 
     let mut video_ref = Frame::empty();
     video_ref.ref_from(&video);
@@ -179,6 +187,14 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         .unwrap(),
     );
     rows.insert("frame:audio-buffer".to_string(), frame_fields(&audio));
+    rows.insert(
+        "frame:plane-buffer-audio-packed-0".to_string(),
+        frame_plane_buffer_fields(&audio, 0),
+    );
+    rows.insert(
+        "frame:plane-buffer-audio-packed-invalid".to_string(),
+        frame_plane_buffer_fields(&audio, 1),
+    );
 
     let planar_audio = Frame::audio(
         AudioFrame::new_with_channel_layout_and_aligned_line_sizes(
@@ -195,6 +211,10 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "frame:audio-planar-buffer".to_string(),
         frame_fields(&planar_audio),
     );
+    rows.insert(
+        "frame:plane-buffer-audio-planar-1".to_string(),
+        frame_plane_buffer_fields(&planar_audio, 1),
+    );
 
     let extended_audio = Frame::audio(
         AudioFrame::new(
@@ -210,11 +230,31 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "frame:audio-extended-topology".to_string(),
         frame_buffer_topology_fields(&extended_audio),
     );
+    rows.insert(
+        "frame:plane-buffer-audio-extended-8".to_string(),
+        frame_plane_buffer_fields(&extended_audio, 8),
+    );
+    rows.insert(
+        "frame:plane-buffer-audio-extended-9".to_string(),
+        frame_plane_buffer_fields(&extended_audio, 9),
+    );
+    rows.insert(
+        "frame:plane-buffer-audio-extended-invalid".to_string(),
+        frame_plane_buffer_fields(&extended_audio, 10),
+    );
     let packed_ten_channel_audio =
         Frame::audio(AudioFrame::new(48_000, 10, SampleFormat::S16, 1, vec![vec![0; 20]]).unwrap());
     rows.insert(
         "frame:audio-packed-ten-topology".to_string(),
         frame_buffer_topology_fields(&packed_ten_channel_audio),
+    );
+    rows.insert(
+        "frame:plane-buffer-audio-packed-ten-0".to_string(),
+        frame_plane_buffer_fields(&packed_ten_channel_audio, 0),
+    );
+    rows.insert(
+        "frame:plane-buffer-audio-packed-ten-invalid".to_string(),
+        frame_plane_buffer_fields(&packed_ten_channel_audio, 1),
     );
 
     let copy_source_side = (1..=36).collect::<Vec<u8>>();
@@ -696,6 +736,23 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
 fn frame_buffer_topology_fields(frame: &Frame) -> Vec<String> {
     let topology = frame.buffer_topology();
     frame_buffer_topology_values(topology)
+}
+
+fn frame_plane_buffer_fields(frame: &Frame, index: usize) -> Vec<String> {
+    match frame.plane_buffer(index) {
+        Some(buffer) => vec![
+            "1".to_string(),
+            hex(buffer.as_slice()),
+            buffer.strong_count().to_string(),
+            bool_field(buffer.is_writable()),
+        ],
+        None => vec![
+            "0".to_string(),
+            "none".to_string(),
+            "0".to_string(),
+            "0".to_string(),
+        ],
+    }
 }
 
 fn frame_buffer_topology_values(topology: FrameBufferTopology) -> Vec<String> {
@@ -1187,6 +1244,53 @@ static void print_frame_buffer_topology(const char *name, const AVFrame *frame)
            frame->extended_data != NULL && frame->extended_data != frame->data);
 }
 
+static void print_frame_plane_buffer(const char *name, const AVFrame *frame,
+                                     int plane)
+{
+    AVBufferRef *ref = av_frame_get_plane_buffer(frame, plane);
+    const uint8_t *data = NULL;
+    size_t visible_size = 0;
+
+    if (!ref) {
+        printf("%s|0|none|0|0\n", name);
+        return;
+    }
+
+    if (frame->width > 0 && frame->height > 0 &&
+        frame->format == AV_PIX_FMT_GRAY8 && plane == 0) {
+        printf("%s|1|", name);
+        for (int row = 0; row < frame->height; row++)
+            print_hex(frame->data[0] + row * frame->linesize[0],
+                      frame->width);
+        printf("|%d|%d\n", av_buffer_get_ref_count(ref),
+               av_buffer_is_writable(ref));
+        return;
+    }
+
+    if (frame->nb_samples > 0 && frame->ch_layout.nb_channels > 0) {
+        int bytes_per_sample = av_get_bytes_per_sample(frame->format);
+        int planar = av_sample_fmt_is_planar(frame->format);
+        if (bytes_per_sample > 0 && planar &&
+            plane >= 0 && plane < frame->ch_layout.nb_channels) {
+            data = frame->extended_data ? frame->extended_data[plane]
+                                        : frame->data[plane];
+            visible_size = (size_t)bytes_per_sample * frame->nb_samples;
+        } else if (bytes_per_sample > 0 && !planar && plane == 0) {
+            data = frame->data[0];
+            visible_size = (size_t)bytes_per_sample * frame->nb_samples *
+                           frame->ch_layout.nb_channels;
+        }
+    }
+
+    printf("%s|1|", name);
+    if (data && visible_size > 0)
+        print_hex(data, visible_size);
+    else
+        printf("none");
+    printf("|%d|%d\n", av_buffer_get_ref_count(ref),
+           av_buffer_is_writable(ref));
+}
+
 static void print_side_summary(const AVFrame *frame)
 {
     if (frame->nb_side_data == 0) {
@@ -1520,6 +1624,8 @@ int main(void)
     static const uint8_t video_payload[] = { 1, 2, 3, 4, 5, 6 };
     fill_video_gray(video, video_payload);
     print_frame("frame:video-buffer", video);
+    print_frame_plane_buffer("frame:plane-buffer-video-0", video, 0);
+    print_frame_plane_buffer("frame:plane-buffer-video-invalid", video, 1);
 
     AVFrame *video_ref = av_frame_alloc();
     fail_if(!video_ref, "video_ref av_frame_alloc failed");
@@ -1555,6 +1661,9 @@ int main(void)
     for (int i = 0; i < 12; i++)
         audio->data[0][i] = (uint8_t)(i + 1);
     print_frame("frame:audio-buffer", audio);
+    print_frame_plane_buffer("frame:plane-buffer-audio-packed-0", audio, 0);
+    print_frame_plane_buffer("frame:plane-buffer-audio-packed-invalid",
+                             audio, 1);
 
     AVFrame *planar_audio = av_frame_alloc();
     fail_if(!planar_audio, "planar_audio av_frame_alloc failed");
@@ -1573,6 +1682,8 @@ int main(void)
     planar_audio->data[1][2] = 4;
     planar_audio->data[1][3] = 0;
     print_frame("frame:audio-planar-buffer", planar_audio);
+    print_frame_plane_buffer("frame:plane-buffer-audio-planar-1",
+                             planar_audio, 1);
 
     AVFrame *extended_audio = av_frame_alloc();
     fail_if(!extended_audio, "extended_audio av_frame_alloc failed");
@@ -1582,8 +1693,18 @@ int main(void)
     av_channel_layout_default(&extended_audio->ch_layout, 10);
     fail_if(av_frame_get_buffer(extended_audio, 1) < 0,
             "extended_audio av_frame_get_buffer failed");
+    for (int i = 0; i < 10; i++) {
+        extended_audio->extended_data[i][0] = (uint8_t)i;
+        extended_audio->extended_data[i][1] = 0;
+    }
     print_frame_buffer_topology("frame:audio-extended-topology",
                                 extended_audio);
+    print_frame_plane_buffer("frame:plane-buffer-audio-extended-8",
+                             extended_audio, 8);
+    print_frame_plane_buffer("frame:plane-buffer-audio-extended-9",
+                             extended_audio, 9);
+    print_frame_plane_buffer("frame:plane-buffer-audio-extended-invalid",
+                             extended_audio, 10);
 
     AVFrame *packed_ten_audio = av_frame_alloc();
     fail_if(!packed_ten_audio, "packed_ten_audio av_frame_alloc failed");
@@ -1595,6 +1716,10 @@ int main(void)
             "packed_ten_audio av_frame_get_buffer failed");
     print_frame_buffer_topology("frame:audio-packed-ten-topology",
                                 packed_ten_audio);
+    print_frame_plane_buffer("frame:plane-buffer-audio-packed-ten-0",
+                             packed_ten_audio, 0);
+    print_frame_plane_buffer("frame:plane-buffer-audio-packed-ten-invalid",
+                             packed_ten_audio, 1);
 
     AVFrame *copy_src = av_frame_alloc();
     fail_if(!copy_src, "copy_src av_frame_alloc failed");

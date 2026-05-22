@@ -11870,9 +11870,21 @@ fn exercise_fixtures() {
     );
     assert_eq!(extended_topology.writable_extended_buffer_refs(), 2);
     assert!(extended_topology.uses_separate_extended_data());
-    assert_eq!(Frame::audio(extended_audio).buffer_topology(), extended_topology);
+    assert_eq!(extended_audio.plane_buffer(8).unwrap().as_slice(), &[8, 0]);
+    assert_eq!(extended_audio.plane_buffer(9).unwrap().as_slice(), &[9, 0]);
+    assert!(extended_audio.plane_buffer(10).is_none());
+    let extended_frame = Frame::audio(extended_audio);
+    assert_eq!(extended_frame.buffer_topology(), extended_topology);
+    assert_eq!(extended_frame.plane_buffer(8).unwrap().as_slice(), &[8, 0]);
+    assert_eq!(extended_frame.plane_buffer(9).unwrap().as_slice(), &[9, 0]);
+    assert!(extended_frame.plane_buffer(10).is_none());
     let packed_ten_channel_audio =
         AudioFrame::new(48_000, 10, SampleFormat::S16, 1, vec![vec![0; 20]]).unwrap();
+    assert_eq!(
+        packed_ten_channel_audio.plane_buffer(0).unwrap().as_slice(),
+        &[0; 20]
+    );
+    assert!(packed_ten_channel_audio.plane_buffer(1).is_none());
     assert_eq!(packed_ten_channel_audio.ffmpeg_line_sizes(), vec![20]);
     let packed_topology = packed_ten_channel_audio.buffer_topology();
     assert_eq!(packed_topology.data_pointer_count(), 1);

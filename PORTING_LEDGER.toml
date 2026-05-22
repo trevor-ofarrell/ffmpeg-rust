@@ -415,6 +415,7 @@ unit_tests = [
   "frame::tests::frame_wraps_audio_or_video_with_optional_pts",
   "frame::tests::frame_audio_properties_are_top_level_and_copy_props_propagates_them",
   "frame::tests::frame_buffer_topology_tracks_extended_audio_slots",
+  "frame::tests::frame_plane_buffer_lookup_matches_ffmpeg_slot_model",
   "frame::tests::frame_picture_type_values_and_flags_match_ffmpeg_8_1_1_header",
   "frame::tests::frame_decode_error_flags_match_ffmpeg_8_1_1_header",
   "frame::tests::frame_alpha_mode_values_match_ffmpeg_8_1_1_header",
@@ -545,6 +546,13 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: The pinned libavutil `AVFrame` oracle now validates
+# `av_frame_get_plane_buffer()` lookup presence, visible plane bytes, refcount,
+# and writability for gray8 video, packed s16 audio, direct planar s16p audio,
+# extended planar s16p audio, and invalid plane indexes. Rust exposes the same
+# safe lookup shape through `plane_buffer(index)` on Frame, FrameData,
+# VideoFrame, and AudioFrame, with unit and avutil_core_models fuzz-smoke
+# invariants for empty frames, packed audio, and extended planar audio.
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
 # planar audio `AVFrame.linesize[]` semantics with a stereo s16p row:
 # FFmpeg stores the per-channel buffer size in `linesize[0]` and leaves the

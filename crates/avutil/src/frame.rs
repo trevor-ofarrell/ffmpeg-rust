@@ -115,6 +115,14 @@ impl FrameData {
         }
     }
 
+    pub fn plane_buffer(&self, index: usize) -> Option<&BufferRef> {
+        match self {
+            Self::Empty => None,
+            Self::Video(frame) => frame.plane_buffer(index),
+            Self::Audio(frame) => frame.plane_buffer(index),
+        }
+    }
+
     pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
         match self {
             Self::Empty => Err(AvError::invalid_argument(format!(
@@ -1347,6 +1355,10 @@ impl Frame {
 
     pub fn buffer_topology(&self) -> FrameBufferTopology {
         self.data.buffer_topology()
+    }
+
+    pub fn plane_buffer(&self, index: usize) -> Option<&BufferRef> {
+        self.data.plane_buffer(index)
     }
 
     pub fn is_writable(&self) -> bool {
@@ -13212,6 +13224,10 @@ impl VideoFrame {
         &self.plane_buffers
     }
 
+    pub fn plane_buffer(&self, index: usize) -> Option<&BufferRef> {
+        self.plane_buffers.get(index)
+    }
+
     pub fn buffer_topology(&self) -> FrameBufferTopology {
         FrameBufferTopology::from_plane_buffers(&self.plane_buffers)
     }
@@ -13644,6 +13660,10 @@ impl AudioFrame {
 
     pub fn plane_buffers(&self) -> &[BufferRef] {
         &self.plane_buffers
+    }
+
+    pub fn plane_buffer(&self, index: usize) -> Option<&BufferRef> {
+        self.plane_buffers.get(index)
     }
 
     pub fn buffer_topology(&self) -> FrameBufferTopology {
@@ -19100,6 +19120,73 @@ mod tests {
         assert_eq!(video_topology.writable_direct_buffer_refs(), 4);
         assert_eq!(video_topology.writable_extended_buffer_refs(), 0);
         assert!(!video_topology.uses_separate_extended_data());
+    }
+
+    #[test]
+    fn frame_plane_buffer_lookup_matches_ffmpeg_slot_model() {
+        assert!(Frame::empty().plane_buffer(0).is_none());
+        assert!(FrameData::Empty.plane_buffer(0).is_none());
+
+        let video_plane = BufferRef::copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+        let video =
+            VideoFrame::new_with_buffer_refs(2, 1, PixelFormat::Rgb24, vec![video_plane.clone()])
+                .unwrap();
+        assert!(video.plane_buffer(0).unwrap().shares_storage(&video_plane));
+        assert!(video.plane_buffer(1).is_none());
+
+        let video_frame = Frame::video(video);
+        assert!(video_frame
+            .plane_buffer(0)
+            .unwrap()
+            .shares_storage(&video_plane));
+        assert!(video_frame.data().plane_buffer(0).is_some());
+        assert!(video_frame.plane_buffer(1).is_none());
+
+        let packed_plane = BufferRef::copy_from_slice(&[0; 20]);
+        let packed_audio = AudioFrame::new_with_buffer_refs(
+            48_000,
+            10,
+            SampleFormat::S16,
+            1,
+            vec![packed_plane.clone()],
+        )
+        .unwrap();
+        assert!(packed_audio
+            .plane_buffer(0)
+            .unwrap()
+            .shares_storage(&packed_plane));
+        assert!(packed_audio.plane_buffer(1).is_none());
+
+        let plane_refs = (0..10)
+            .map(|plane| BufferRef::copy_from_slice(&[plane as u8, 0]))
+            .collect::<Vec<_>>();
+        let ninth_plane = plane_refs[8].clone();
+        let tenth_plane = plane_refs[9].clone();
+        let extended_audio =
+            AudioFrame::new_with_buffer_refs(48_000, 10, SampleFormat::S16P, 1, plane_refs)
+                .unwrap();
+
+        assert_eq!(extended_audio.plane_buffer(8).unwrap().as_slice(), &[8, 0]);
+        assert!(extended_audio
+            .plane_buffer(8)
+            .unwrap()
+            .shares_storage(&ninth_plane));
+        assert!(extended_audio
+            .plane_buffer(9)
+            .unwrap()
+            .shares_storage(&tenth_plane));
+        assert!(extended_audio.plane_buffer(10).is_none());
+
+        let extended_frame = Frame::audio(extended_audio);
+        assert!(extended_frame
+            .plane_buffer(8)
+            .unwrap()
+            .shares_storage(&ninth_plane));
+        assert!(extended_frame
+            .plane_buffer(9)
+            .unwrap()
+            .shares_storage(&tenth_plane));
+        assert!(extended_frame.plane_buffer(10).is_none());
     }
 
     #[test]

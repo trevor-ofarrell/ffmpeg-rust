@@ -210,6 +210,9 @@ planar s16p stereo audio proving that only `linesize[0]` is set for planar
 audio, planar 10-channel s16p direct-slot versus extended-buffer topology with
 direct and extended `av_buffer_is_writable()` counts, and packed 10-channel s16
 audio showing that high channel count alone does not allocate extended buffers,
+`av_frame_get_plane_buffer()` lookup presence, visible plane bytes, refcount,
+and writability for video, packed audio, direct planar audio, extended planar
+audio, and out-of-range indexes,
 `AV_FRAME_DATA_*` numeric
 values/names/descriptors/properties, `AV_FRAME_SIDE_DATA_FLAG_*`,
 `AV_SIDE_DATA_PROP_*`, and `av_frame_new_side_data` / `av_frame_get_side_data`
