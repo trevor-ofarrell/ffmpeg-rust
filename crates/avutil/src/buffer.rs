@@ -608,6 +608,7 @@ impl BufferRef {
 
     pub fn realloc(dst: &mut Option<Self>, len: usize) -> AvResult<()> {
         match dst {
+            Some(buffer) if buffer.len == len => Ok(()),
             Some(buffer) => buffer.resize(len),
             None => {
                 *dst = Some(Self::zeroed(len)?);
@@ -1951,6 +1952,30 @@ mod tests {
         BufferRef::realloc(&mut existing, 2).unwrap();
         let shrunk = existing.as_ref().unwrap();
         assert_eq!(shrunk.as_slice(), &[4, 5]);
+
+        let same_source = BufferRef::copy_from_slice(&[10, 20, 30]);
+        let mut same_shared = Some(BufferRef::ref_from(&same_source));
+        let same_ptr = same_shared.as_ref().unwrap().as_ptr();
+        BufferRef::realloc(&mut same_shared, same_source.len()).unwrap();
+        let same_shared = same_shared.expect("same-size realloc result");
+        assert!(same_shared.shares_storage(&same_source));
+        assert_eq!(same_shared.as_ptr(), same_ptr);
+        assert_eq!(same_source.strong_count(), 2);
+
+        let readonly_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let readonly_capture = std::sync::Arc::clone(&readonly_released);
+        let mut same_readonly = Some(BufferRef::from_vec_with_release_callback_readonly(
+            vec![4, 5, 6],
+            move |storage| {
+                readonly_capture.lock().unwrap().push(storage);
+            },
+        ));
+        let readonly_ptr = same_readonly.as_ref().unwrap().as_ptr();
+        BufferRef::realloc(&mut same_readonly, 3).unwrap();
+        let same_readonly = same_readonly.expect("same-size readonly realloc result");
+        assert!(same_readonly.is_readonly());
+        assert_eq!(same_readonly.as_ptr(), readonly_ptr);
+        assert!(readonly_released.lock().unwrap().is_empty());
 
         let shared_source = BufferRef::from_vec(vec![7, 8, 9]);
         let mut shared_realloc = Some(shared_source.clone());

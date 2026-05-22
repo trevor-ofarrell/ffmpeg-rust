@@ -905,6 +905,14 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(realloc_existing.as_slice()[realloc_prefix_len..]
         .iter()
         .all(|byte| *byte == 0));
+    let same_len_source = BufferRef::copy_from_slice(&payload);
+    let mut same_len_ref = Some(BufferRef::ref_from(&same_len_source));
+    let same_len_ptr = same_len_ref.as_ref().unwrap().as_ptr();
+    BufferRef::realloc(&mut same_len_ref, same_len_source.len()).unwrap();
+    let same_len_ref = same_len_ref.expect("same-size realloc stays present");
+    assert!(same_len_ref.shares_storage(&same_len_source));
+    assert_eq!(same_len_ref.as_ptr(), same_len_ptr);
+    assert_eq!(same_len_source.strong_count(), 2);
     let mut realloc_failed = None;
     assert!(BufferRef::realloc(&mut realloc_failed, usize::MAX).is_err());
     assert!(realloc_failed.is_none());

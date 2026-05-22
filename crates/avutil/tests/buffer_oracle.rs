@@ -231,6 +231,30 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![bool_field(realloc_src.shares_storage(&realloc_dst))],
     );
 
+    let realloc_same_src = BufferRef::from_vec(vec![4, 6, 8]);
+    let mut realloc_same_dst = Some(BufferRef::ref_from(&realloc_same_src));
+    BufferRef::realloc(&mut realloc_same_dst, realloc_same_src.len()).unwrap();
+    let realloc_same_dst = realloc_same_dst.expect("same-size realloc result");
+    rows.insert(
+        "buffer:realloc-same-shared-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:realloc-same-shared-src".to_string(),
+        buffer_fields(&realloc_same_src),
+    );
+    rows.insert(
+        "buffer:realloc-same-shared-dst".to_string(),
+        buffer_fields(&realloc_same_dst),
+    );
+    rows.insert(
+        "buffer:realloc-same-shared-shares".to_string(),
+        vec![
+            bool_field(realloc_same_src.shares_storage(&realloc_same_dst)),
+            realloc_same_src.strong_count().to_string(),
+        ],
+    );
+
     let replace_src = BufferRef::from_vec(vec![3, 4, 5]);
     let replace_dst = replace_src.clone();
     rows.insert("buffer:replace-ret".to_string(), vec!["0".to_string()]);
@@ -899,6 +923,23 @@ int main(void) {
            realloc_src->data == realloc_dst->data);
     av_buffer_unref(&realloc_dst);
     av_buffer_unref(&realloc_src);
+
+    static const uint8_t realloc_same_bytes[] = { 4, 6, 8 };
+    AVBufferRef *realloc_same_src = av_buffer_allocz(3);
+    fail_if(!realloc_same_src, "av_buffer_allocz realloc_same_src failed");
+    fill_bytes(realloc_same_src, realloc_same_bytes,
+               sizeof(realloc_same_bytes));
+    AVBufferRef *realloc_same_dst = av_buffer_ref(realloc_same_src);
+    fail_if(!realloc_same_dst, "av_buffer_ref realloc_same failed");
+    ret = av_buffer_realloc(&realloc_same_dst, realloc_same_dst->size);
+    printf("buffer:realloc-same-shared-ret|%d\n", ret);
+    print_buffer("buffer:realloc-same-shared-src", realloc_same_src);
+    print_buffer("buffer:realloc-same-shared-dst", realloc_same_dst);
+    printf("buffer:realloc-same-shared-shares|%d|%d\n",
+           realloc_same_src->data == realloc_same_dst->data,
+           av_buffer_get_ref_count(realloc_same_src));
+    av_buffer_unref(&realloc_same_dst);
+    av_buffer_unref(&realloc_same_src);
 
     static const uint8_t replace_src_bytes[] = { 3, 4, 5 };
     AVBufferRef *replace_src = av_buffer_allocz(3);
