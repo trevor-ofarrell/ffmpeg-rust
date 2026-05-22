@@ -5729,6 +5729,61 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .padding_slice()
         .iter()
         .all(|byte| *byte == 0));
+
+    let zero_new_packet = Packet::new_zeroed(0, 0).unwrap();
+    assert!(zero_new_packet.is_empty());
+    assert_eq!(
+        zero_new_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(zero_new_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(zero_new_packet.is_data_writable());
+
+    let zero_from_data_packet = Packet::from_data(Vec::new()).unwrap();
+    assert!(zero_from_data_packet.is_empty());
+    assert_eq!(
+        zero_from_data_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(zero_from_data_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(zero_from_data_packet.is_data_writable());
+
+    let mut empty_refcounted_packet = Packet::default();
+    empty_refcounted_packet.make_refcounted().unwrap();
+    assert!(empty_refcounted_packet.is_empty());
+    assert_eq!(
+        empty_refcounted_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(empty_refcounted_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(empty_refcounted_packet.is_data_writable());
+
+    let mut empty_writable_packet = Packet::default();
+    empty_writable_packet.make_writable().unwrap();
+    assert!(empty_writable_packet.is_empty());
+    assert_eq!(
+        empty_writable_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(empty_writable_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(empty_writable_packet.is_data_writable());
+
     let grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
     padded_packet.grow_data(grow_by).unwrap();
     assert_eq!(&padded_packet.data()[..payload.len()], payload.as_slice());

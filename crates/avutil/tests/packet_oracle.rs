@@ -425,6 +425,16 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_allocation_fields(&new_packet),
     );
 
+    let new_zero = Packet::new_zeroed(0, 0).unwrap();
+    rows.insert(
+        "packet:payload-new-zero-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-new-zero".to_string(),
+        payload_allocation_fields(&new_zero),
+    );
+
     let from_data = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
     rows.insert(
         "packet:payload-from-data-ret".to_string(),
@@ -433,6 +443,16 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:payload-from-data".to_string(),
         payload_fields(&from_data),
+    );
+
+    let from_zero_data = Packet::from_data(Vec::new()).unwrap();
+    rows.insert(
+        "packet:payload-from-data-zero-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-zero".to_string(),
+        payload_fields(&from_zero_data),
     );
 
     let mut grow = Packet::new_zeroed(2, 0).unwrap();
@@ -471,6 +491,28 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:payload-make-refcounted".to_string(),
         payload_fields(&refcounted),
+    );
+
+    let mut empty_refcounted = Packet::default();
+    empty_refcounted.make_refcounted().unwrap();
+    rows.insert(
+        "packet:payload-make-refcounted-empty-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-empty".to_string(),
+        payload_fields(&empty_refcounted),
+    );
+
+    let mut empty_writable = Packet::default();
+    empty_writable.make_writable().unwrap();
+    rows.insert(
+        "packet:payload-make-writable-empty-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-empty".to_string(),
+        payload_fields(&empty_writable),
     );
 }
 
@@ -1957,6 +1999,13 @@ static void exercise_payload_api(void) {
     av_packet_free(&pkt);
 
     pkt = new_packet();
+    ret = av_new_packet(pkt, 0);
+    printf("packet:payload-new-zero-ret|%d\n", ret);
+    fail_if(ret < 0, "av_new_packet zero-size payload allocation failed");
+    print_payload_allocation("packet:payload-new-zero", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
     uint8_t *owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!owned, "av_mallocz payload from-data failed");
     owned[0] = 0xaa;
@@ -1965,6 +2014,18 @@ static void exercise_payload_api(void) {
     ret = av_packet_from_data(pkt, owned, 3);
     printf("packet:payload-from-data-ret|%d\n", ret);
     print_payload("packet:payload-from-data", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t *zero_owned = av_mallocz(AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!zero_owned, "av_mallocz zero-size payload from-data failed");
+    ret = av_packet_from_data(pkt, zero_owned, 0);
+    printf("packet:payload-from-data-zero-ret|%d\n", ret);
+    if (ret < 0) {
+        av_free(zero_owned);
+        fail_if(1, "av_packet_from_data zero-size payload failed");
+    }
+    print_payload("packet:payload-from-data-zero", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();
@@ -1999,6 +2060,18 @@ static void exercise_payload_api(void) {
     ret = av_packet_make_refcounted(pkt);
     printf("packet:payload-make-refcounted-ret|%d\n", ret);
     print_payload("packet:payload-make-refcounted", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    ret = av_packet_make_refcounted(pkt);
+    printf("packet:payload-make-refcounted-empty-ret|%d\n", ret);
+    print_payload("packet:payload-make-refcounted-empty", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    ret = av_packet_make_writable(pkt);
+    printf("packet:payload-make-writable-empty-ret|%d\n", ret);
+    print_payload("packet:payload-make-writable-empty", pkt);
     av_packet_free(&pkt);
 }
 

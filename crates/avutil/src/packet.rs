@@ -10467,6 +10467,37 @@ mod tests {
     }
 
     #[test]
+    fn packet_zero_size_payload_helpers_keep_ffmpeg_padding() {
+        fn assert_empty_padded_writable(packet: &Packet) {
+            assert!(packet.is_empty());
+            assert_eq!(
+                packet.data_buffer().padding_len(),
+                AV_INPUT_BUFFER_PADDING_SIZE
+            );
+            assert!(packet
+                .data_buffer()
+                .padding_slice()
+                .iter()
+                .all(|byte| *byte == 0));
+            assert!(packet.is_data_writable());
+        }
+
+        let new_zero = Packet::new_zeroed(0, 0).unwrap();
+        assert_empty_padded_writable(&new_zero);
+
+        let from_zero_data = Packet::from_data(Vec::new()).unwrap();
+        assert_empty_padded_writable(&from_zero_data);
+
+        let mut refcounted = Packet::default();
+        refcounted.make_refcounted().unwrap();
+        assert_empty_padded_writable(&refcounted);
+
+        let mut writable = Packet::default();
+        writable.make_writable().unwrap();
+        assert_empty_padded_writable(&writable);
+    }
+
+    #[test]
     fn packet_move_ref_and_unref_reset_packets_and_release_payloads() {
         let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
         let capture_old = Arc::clone(&released);
