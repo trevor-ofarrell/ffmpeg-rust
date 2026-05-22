@@ -199,7 +199,7 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --com
 `AVFrame` core lifecycle helpers. It compiles a small test-only C helper against
 `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_frame_alloc`,
 `av_frame_unref`, `av_frame_ref`, `av_frame_make_writable`, `av_frame_move_ref`,
-`av_frame_copy_props`, PTS/packet-DTS/duration/time-base/sample-aspect-ratio,
+`av_frame_copy_props`, PTS/packet-DTS/duration/time-base/sample-rate/channel-layout/sample-aspect-ratio,
 crop-offset, picture-type, quality, repeat_pict, public frame-flag,
 color_range, color_primaries, color_trc, colorspace, chroma_location,
 best-effort timestamp, public decode-error flags, nullable non-dereferenceable
@@ -211,10 +211,11 @@ values/names/descriptors/properties, `AV_FRAME_SIDE_DATA_FLAG_*`,
 `AV_SIDE_DATA_PROP_*`, and `av_frame_new_side_data` / `av_frame_get_side_data`
 / `av_frame_remove_side_data` displaymatrix rows against the Rust `Frame`
 model. The `av_frame_copy_props` rows prove destination payload buffers are
-preserved, PTS, packet DTS, duration, time base, sample aspect ratio, crop
-offsets, picture type, quality, repeat_pict, public frame flags, best-effort
-timestamp, decode-error flags, nullable opaque pointer metadata, opaque_ref,
-alpha mode, and top-level color/chroma metadata are copied,
+preserved, PTS, packet DTS, duration, time base, sample rate, sample aspect
+ratio, crop offsets, picture type, quality, repeat_pict, public frame flags,
+best-effort timestamp, decode-error flags, nullable opaque pointer metadata,
+opaque_ref, alpha mode, and top-level color/chroma metadata are copied, while
+the destination channel layout remains unchanged,
 source metadata keys overwrite matching
 destination metadata while destination-only metadata keys remain, existing destination side data is retained,
 source side data is appended as a deep copy, and destination `hw_frames_ctx`

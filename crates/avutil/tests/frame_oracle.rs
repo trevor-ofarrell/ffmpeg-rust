@@ -6,11 +6,11 @@ use std::{
 };
 
 use avutil::{
-    AudioFrame, AvErrorCode, BufferRef, ChannelLayout, Frame, FrameAlphaMode, FrameChromaLocation,
-    FrameColorPrimaries, FrameColorRange, FrameColorSpace, FrameColorTransferCharacteristic,
-    FrameData, FrameDecodeErrorFlags, FrameFlags, FramePictureType, FrameSideData,
-    FrameSideDataFlags, FrameSideDataKind, FrameSideDataProperties, PixelFormat, Rational,
-    SampleFormat, VideoFrame, AV_NOPTS_VALUE,
+    AudioFrame, AvErrorCode, BufferRef, ChannelLayout, ChannelLayoutSpec, Frame, FrameAlphaMode,
+    FrameChromaLocation, FrameColorPrimaries, FrameColorRange, FrameColorSpace,
+    FrameColorTransferCharacteristic, FrameData, FrameDecodeErrorFlags, FrameFlags,
+    FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
+    FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame, AV_NOPTS_VALUE,
 };
 
 #[test]
@@ -105,6 +105,8 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     video
         .set_time_base(Rational::new(1, 90_000).unwrap())
         .unwrap();
+    video.set_sample_rate(44_100);
+    video.set_channel_layout(Some(ChannelLayout::mono()));
     video
         .set_sample_aspect_ratio(Rational::new(16, 9).unwrap())
         .unwrap();
@@ -189,6 +191,8 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copy_source
         .set_time_base(Rational::new(1, 48_000).unwrap())
         .unwrap();
+    copy_source.set_sample_rate(22_050);
+    copy_source.set_channel_layout(Some(ChannelLayout::stereo()));
     copy_source
         .set_sample_aspect_ratio(Rational::new(64, 45).unwrap())
         .unwrap();
@@ -231,6 +235,8 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copy_destination
         .set_time_base(Rational::new(1, 1_000).unwrap())
         .unwrap();
+    copy_destination.set_sample_rate(96_000);
+    copy_destination.set_channel_layout_spec(Some(ChannelLayoutSpec::unspecified(6).unwrap()));
     copy_destination
         .set_sample_aspect_ratio(Rational::new(1, 1).unwrap())
         .unwrap();
@@ -560,42 +566,45 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
     let pts = frame.pts().unwrap_or(AV_NOPTS_VALUE);
     let pkt_dts = frame.pkt_dts().unwrap_or(AV_NOPTS_VALUE);
     let crop = frame.crop();
-    let (kind, format, width, height, nb_samples, sample_rate, channels, line_sizes, planes) =
-        match frame.data() {
-            FrameData::Empty => (
-                "empty",
-                "none",
-                0usize,
-                0usize,
-                0usize,
-                0u32,
-                0u16,
-                Vec::new(),
-                Vec::new(),
-            ),
-            FrameData::Video(video) => (
-                "video",
-                video.pixel_format_name(),
-                video.width(),
-                video.height(),
-                0usize,
-                0u32,
-                0u16,
-                video.line_sizes().to_vec(),
-                video.planes().to_vec(),
-            ),
-            FrameData::Audio(audio) => (
-                "audio",
-                audio.sample_format_name(),
-                0usize,
-                0usize,
-                audio.samples_per_channel(),
-                audio.sample_rate(),
-                audio.channels(),
-                audio.line_sizes().to_vec(),
-                audio.planes().to_vec(),
-            ),
-        };
+    let top_level_channels = frame.channel_count();
+    let (kind, format, width, height, nb_samples, line_sizes, planes) = match frame.data() {
+        FrameData::Empty => (
+            "empty",
+            "none",
+            0usize,
+            0usize,
+            0usize,
+            Vec::new(),
+            Vec::new(),
+        ),
+        FrameData::Video(video) => (
+            "video",
+            video.pixel_format_name(),
+            video.width(),
+            video.height(),
+            0usize,
+            video.line_sizes().to_vec(),
+            video.planes().to_vec(),
+        ),
+        FrameData::Audio(audio) if audio.samples_per_channel() > 0 && top_level_channels > 0 => (
+            "audio",
+            audio.sample_format_name(),
+            0usize,
+            0usize,
+            audio.samples_per_channel(),
+            audio.line_sizes().to_vec(),
+            audio.planes().to_vec(),
+        ),
+        FrameData::Audio(_) => (
+            "empty",
+            "none",
+            0usize,
+            0usize,
+            0usize,
+            Vec::new(),
+            Vec::new(),
+        ),
+    };
 
     vec![
         pts.to_string(),
@@ -635,8 +644,8 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
         width.to_string(),
         height.to_string(),
         nb_samples.to_string(),
-        sample_rate.to_string(),
-        channels.to_string(),
+        frame.sample_rate().to_string(),
+        frame.channel_count().to_string(),
         join_usizes(&line_sizes),
         join_hex_planes(&planes),
         bool_field(frame.is_writable()),
@@ -1365,6 +1374,8 @@ int main(void)
     video->pkt_dts = 122;
     video->duration = 121;
     video->time_base = (AVRational){ 1, 90000 };
+    video->sample_rate = 44100;
+    av_channel_layout_default(&video->ch_layout, 1);
     video->sample_aspect_ratio = (AVRational){ 16, 9 };
     video->crop_top = 1;
     video->crop_bottom = 2;
@@ -1441,6 +1452,8 @@ int main(void)
     copy_src->pkt_dts = 320;
     copy_src->duration = 319;
     copy_src->time_base = (AVRational){ 1, 48000 };
+    copy_src->sample_rate = 22050;
+    av_channel_layout_default(&copy_src->ch_layout, 2);
     copy_src->sample_aspect_ratio = (AVRational){ 64, 45 };
     copy_src->crop_top = 1;
     copy_src->crop_bottom = 2;
@@ -1490,6 +1503,8 @@ int main(void)
     copy_dst->pkt_dts = 998;
     copy_dst->duration = 997;
     copy_dst->time_base = (AVRational){ 1, 1000 };
+    copy_dst->sample_rate = 96000;
+    av_channel_layout_default(&copy_dst->ch_layout, 6);
     copy_dst->sample_aspect_ratio = (AVRational){ 1, 1 };
     copy_dst->crop_top = 9;
     copy_dst->crop_bottom = 8;

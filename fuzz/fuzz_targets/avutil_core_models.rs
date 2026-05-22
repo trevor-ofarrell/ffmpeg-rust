@@ -2712,6 +2712,15 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         AvErrorKind::InvalidArgument
     );
     assert_eq!(frame.time_base(), frame_time_base);
+    let frame_sample_rate = sample_rate_from(cursor.next());
+    frame.set_sample_rate(frame_sample_rate);
+    assert_eq!(frame.sample_rate(), frame_sample_rate);
+    let frame_channel_layout =
+        ChannelLayoutSpec::unspecified(u16::from(cursor.next().unwrap_or_default() % 8) + 1)
+            .unwrap();
+    frame.set_channel_layout_spec(Some(frame_channel_layout.clone()));
+    assert_eq!(frame.channel_layout_spec(), Some(&frame_channel_layout));
+    assert_eq!(frame.channel_count(), frame_channel_layout.channel_count());
     let sample_aspect_ratio = Rational::new(4, 3).unwrap();
     frame.set_sample_aspect_ratio(sample_aspect_ratio).unwrap();
     assert_eq!(frame.sample_aspect_ratio(), sample_aspect_ratio);
@@ -2894,6 +2903,11 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(
         shared_frame_payload.best_effort_timestamp(),
         best_effort_timestamp
+    );
+    assert_eq!(shared_frame_payload.sample_rate(), frame_sample_rate);
+    assert_eq!(
+        shared_frame_payload.channel_layout_spec(),
+        Some(&frame_channel_layout)
     );
     assert_eq!(
         shared_frame_payload.decode_error_flags(),
@@ -12435,6 +12449,8 @@ fn exercise_fixtures() {
     unref_frame
         .set_time_base(Rational::new(1, 48_000).unwrap())
         .unwrap();
+    unref_frame.set_sample_rate(48_000);
+    unref_frame.set_channel_layout(Some(ChannelLayout::stereo()));
     unref_frame.set_opaque_address(0x1111);
     unref_frame.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0x11, 0x12])));
     unref_frame.set_alpha_mode(FrameAlphaMode::Straight);
@@ -12449,6 +12465,9 @@ fn exercise_fixtures() {
     assert_eq!(unref_frame.pkt_dts(), None);
     assert_eq!(unref_frame.duration(), 0);
     assert_eq!(unref_frame.time_base(), Rational::ZERO);
+    assert_eq!(unref_frame.sample_rate(), 0);
+    assert_eq!(unref_frame.channel_layout_spec(), None);
+    assert_eq!(unref_frame.channel_count(), 0);
     assert_eq!(unref_frame.opaque_address(), None);
     assert!(unref_frame.opaque_ref().is_none());
     assert_eq!(unref_frame.alpha_mode(), FrameAlphaMode::Unspecified);
@@ -12482,6 +12501,8 @@ fn exercise_fixtures() {
     source_frame
         .set_time_base(Rational::new(1, 90_000).unwrap())
         .unwrap();
+    source_frame.set_sample_rate(44_100);
+    source_frame.set_channel_layout(Some(ChannelLayout::mono()));
     source_frame.set_opaque_address(0x2222);
     source_frame.set_opaque_ref(Some(source_opaque_ref.clone()));
     source_frame.set_alpha_mode(FrameAlphaMode::Premultiplied);
@@ -12514,6 +12535,9 @@ fn exercise_fixtures() {
         referenced_frame.time_base(),
         Rational::new(1, 90_000).unwrap()
     );
+    assert_eq!(referenced_frame.sample_rate(), 44_100);
+    assert_eq!(referenced_frame.channel_layout(), Some(ChannelLayout::mono()));
+    assert_eq!(referenced_frame.channel_count(), 1);
     assert_eq!(referenced_frame.opaque_address(), Some(0x2222));
     assert_eq!(
         referenced_frame.opaque_ref().unwrap().as_slice(),
@@ -12587,6 +12611,8 @@ fn exercise_fixtures() {
     props_frame
         .set_time_base(Rational::new(1, 1_000).unwrap())
         .unwrap();
+    props_frame.set_sample_rate(96_000);
+    props_frame.set_channel_layout_spec(Some(ChannelLayoutSpec::unspecified(6).unwrap()));
     props_frame.set_opaque_address(0x3333);
     props_frame.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0x33])));
     props_frame.set_alpha_mode(FrameAlphaMode::Straight);
@@ -12603,6 +12629,13 @@ fn exercise_fixtures() {
     assert_eq!(props_frame.pkt_dts(), Some(6));
     assert_eq!(props_frame.duration(), 5);
     assert_eq!(props_frame.time_base(), Rational::new(1, 90_000).unwrap());
+    assert_eq!(props_frame.sample_rate(), 44_100);
+    assert_eq!(props_frame.channel_layout(), None);
+    assert_eq!(
+        props_frame.channel_layout_spec().cloned(),
+        Some(ChannelLayoutSpec::unspecified(6).unwrap())
+    );
+    assert_eq!(props_frame.channel_count(), 6);
     assert_eq!(props_frame.opaque_address(), Some(0x2222));
     assert_eq!(props_frame.opaque_ref().unwrap().as_slice(), &[0x22, 0x23]);
     assert!(props_frame
@@ -12644,9 +12677,13 @@ fn exercise_fixtures() {
     moved_frame.move_ref_from(&mut referenced_frame);
     assert!(referenced_frame.is_empty());
     assert_eq!(referenced_frame.opaque_address(), None);
+    assert_eq!(referenced_frame.sample_rate(), 0);
+    assert_eq!(referenced_frame.channel_layout_spec(), None);
     assert!(referenced_frame.opaque_ref().is_none());
     assert_eq!(referenced_frame.alpha_mode(), FrameAlphaMode::Unspecified);
     assert!(!moved_frame.is_empty());
+    assert_eq!(moved_frame.sample_rate(), 44_100);
+    assert_eq!(moved_frame.channel_layout(), Some(ChannelLayout::mono()));
     assert_eq!(moved_frame.opaque_address(), Some(0x2222));
     assert_eq!(moved_frame.opaque_ref().unwrap().as_slice(), &[0x22, 0x23]);
     assert!(moved_frame

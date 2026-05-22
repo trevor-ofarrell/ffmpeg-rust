@@ -767,6 +767,8 @@ pub struct Frame {
     pkt_dts: Option<i64>,
     duration: i64,
     time_base: Rational,
+    sample_rate: u32,
+    channel_layout: Option<ChannelLayoutSpec>,
     sample_aspect_ratio: Rational,
     crop: FrameCrop,
     picture_type: FramePictureType,
@@ -796,6 +798,8 @@ impl Frame {
             pkt_dts: None,
             duration: 0,
             time_base: Rational::ZERO,
+            sample_rate: 0,
+            channel_layout: None,
             sample_aspect_ratio: Rational::ZERO,
             crop: FrameCrop::default(),
             picture_type: FramePictureType::Unknown,
@@ -825,6 +829,8 @@ impl Frame {
             pkt_dts: None,
             duration: 0,
             time_base: Rational::ZERO,
+            sample_rate: 0,
+            channel_layout: None,
             sample_aspect_ratio: Rational::ZERO,
             crop: FrameCrop::default(),
             picture_type: FramePictureType::Unknown,
@@ -849,11 +855,16 @@ impl Frame {
     }
 
     pub fn audio(frame: AudioFrame) -> Self {
+        let sample_rate = frame.sample_rate();
+        let channel_layout = frame.channel_layout_spec();
+
         Self {
             pts: None,
             pkt_dts: None,
             duration: 0,
             time_base: Rational::ZERO,
+            sample_rate,
+            channel_layout,
             sample_aspect_ratio: Rational::ZERO,
             crop: FrameCrop::default(),
             picture_type: FramePictureType::Unknown,
@@ -882,6 +893,8 @@ impl Frame {
             && self.pkt_dts.is_none()
             && self.duration == 0
             && self.time_base == Rational::ZERO
+            && self.sample_rate == 0
+            && self.channel_layout.is_none()
             && self.sample_aspect_ratio == Rational::ZERO
             && self.crop.is_empty()
             && self.picture_type == FramePictureType::Unknown
@@ -921,6 +934,7 @@ impl Frame {
         self.pkt_dts = source.pkt_dts;
         self.duration = source.duration;
         self.time_base = source.time_base;
+        self.sample_rate = source.sample_rate;
         self.sample_aspect_ratio = source.sample_aspect_ratio;
         self.crop = source.crop;
         self.picture_type = source.picture_type;
@@ -946,12 +960,6 @@ impl Frame {
             .expect("frame metadata was previously validated");
         self.side_data
             .extend(source.side_data.iter().map(FrameSideData::copy_props_clone));
-
-        if let (FrameData::Audio(destination), FrameData::Audio(source)) =
-            (&mut self.data, &source.data)
-        {
-            destination.sample_rate = source.sample_rate;
-        }
     }
 
     pub fn pts(&self) -> Option<i64> {
@@ -991,6 +999,42 @@ impl Frame {
     pub fn set_time_base(&mut self, time_base: Rational) -> AvResult<()> {
         self.time_base = Rational::new(time_base.num(), time_base.den())?;
         Ok(())
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub fn set_sample_rate(&mut self, sample_rate: u32) {
+        self.sample_rate = sample_rate;
+    }
+
+    pub fn channel_layout(&self) -> Option<ChannelLayout> {
+        self.channel_layout
+            .as_ref()
+            .and_then(ChannelLayoutSpec::as_native)
+    }
+
+    pub fn channel_layout_spec(&self) -> Option<&ChannelLayoutSpec> {
+        self.channel_layout.as_ref()
+    }
+
+    pub fn set_channel_layout(&mut self, channel_layout: Option<ChannelLayout>) {
+        self.channel_layout = channel_layout.map(ChannelLayoutSpec::from);
+    }
+
+    pub fn set_channel_layout_spec(&mut self, channel_layout: Option<ChannelLayoutSpec>) {
+        self.channel_layout = channel_layout;
+    }
+
+    pub fn clear_channel_layout(&mut self) {
+        self.channel_layout = None;
+    }
+
+    pub fn channel_count(&self) -> u16 {
+        self.channel_layout
+            .as_ref()
+            .map_or(0, ChannelLayoutSpec::channel_count)
     }
 
     pub fn sample_aspect_ratio(&self) -> Rational {
@@ -18705,6 +18749,10 @@ mod tests {
         assert_eq!(frame.pkt_dts(), None);
         assert_eq!(frame.duration(), 0);
         assert_eq!(frame.time_base(), Rational::ZERO);
+        assert_eq!(frame.sample_rate(), 0);
+        assert_eq!(frame.channel_layout(), None);
+        assert_eq!(frame.channel_layout_spec(), None);
+        assert_eq!(frame.channel_count(), 0);
         assert_eq!(frame.sample_aspect_ratio(), Rational::ZERO);
         assert_eq!(frame.crop(), FrameCrop::default());
         assert_eq!(frame.picture_type(), FramePictureType::Unknown);
@@ -18727,6 +18775,8 @@ mod tests {
         frame
             .set_time_base(Rational::new(1, 90_000).unwrap())
             .unwrap();
+        frame.set_sample_rate(48_000);
+        frame.set_channel_layout(Some(ChannelLayout::stereo()));
         frame
             .set_sample_aspect_ratio(Rational::new(4, 3).unwrap())
             .unwrap();
@@ -18746,6 +18796,19 @@ mod tests {
         assert_eq!(frame.pkt_dts(), Some(41));
         assert_eq!(frame.duration(), 12);
         assert_eq!(frame.time_base(), Rational::new(1, 90_000).unwrap());
+        assert_eq!(frame.sample_rate(), 48_000);
+        assert_eq!(frame.channel_layout(), Some(ChannelLayout::stereo()));
+        assert_eq!(
+            frame.channel_layout_spec(),
+            Some(&ChannelLayoutSpec::Native(ChannelLayout::stereo()))
+        );
+        assert_eq!(frame.channel_count(), 2);
+        frame.set_channel_layout_spec(Some(ChannelLayoutSpec::unspecified(9).unwrap()));
+        assert_eq!(frame.channel_layout(), None);
+        assert_eq!(frame.channel_count(), 9);
+        frame.clear_channel_layout();
+        assert_eq!(frame.channel_layout_spec(), None);
+        assert_eq!(frame.channel_count(), 0);
         assert_eq!(frame.sample_aspect_ratio(), Rational::new(4, 3).unwrap());
         assert_eq!(frame.crop(), FrameCrop::new(1, 2, 3, 4));
         assert_eq!(frame.picture_type(), FramePictureType::P);
@@ -18821,6 +18884,48 @@ mod tests {
             AvErrorKind::InvalidData
         );
         assert_eq!(frame.chroma_location(), FrameChromaLocation::TopLeft);
+    }
+
+    #[test]
+    fn frame_audio_properties_are_top_level_and_copy_props_propagates_them() {
+        let audio = AudioFrame::new(48_000, 2, SampleFormat::S16, 1, vec![vec![0; 4]]).unwrap();
+        let frame = Frame::audio(audio);
+        assert_eq!(frame.sample_rate(), 48_000);
+        assert_eq!(frame.channel_layout(), Some(ChannelLayout::stereo()));
+        assert_eq!(
+            frame.channel_layout_spec(),
+            Some(&ChannelLayoutSpec::Native(ChannelLayout::stereo()))
+        );
+        assert_eq!(frame.channel_count(), 2);
+
+        let mut source = Frame::empty();
+        source.set_sample_rate(44_100);
+        source.set_channel_layout(Some(ChannelLayout::mono()));
+        source.set_pts(Some(7));
+
+        let destination_plane = BufferRef::copy_from_slice(&[1, 2, 3]);
+        let destination_video =
+            VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Rgb24, vec![destination_plane])
+                .unwrap();
+        let mut destination = Frame::video(destination_video);
+        destination.set_sample_rate(96_000);
+        destination.set_channel_layout_spec(Some(ChannelLayoutSpec::unspecified(6).unwrap()));
+
+        destination.copy_props_from(&source);
+
+        assert_eq!(destination.sample_rate(), 44_100);
+        assert_eq!(destination.channel_layout(), None);
+        assert_eq!(
+            destination.channel_layout_spec().cloned(),
+            Some(ChannelLayoutSpec::unspecified(6).unwrap())
+        );
+        assert_eq!(destination.channel_count(), 6);
+        assert_eq!(destination.pts(), Some(7));
+        let FrameData::Video(video) = destination.data() else {
+            panic!("copy_props_from must preserve destination payload data");
+        };
+        assert_eq!(video.pixel_format(), PixelFormat::Rgb24);
+        assert_eq!(video.planes(), &[vec![1, 2, 3]]);
     }
 
     #[test]
@@ -19309,6 +19414,8 @@ mod tests {
         frame
             .set_time_base(Rational::new(1, 48_000).unwrap())
             .unwrap();
+        frame.set_sample_rate(48_000);
+        frame.set_channel_layout(Some(ChannelLayout::stereo()));
         frame
             .set_sample_aspect_ratio(Rational::new(16, 9).unwrap())
             .unwrap();
@@ -19342,6 +19449,9 @@ mod tests {
         assert_eq!(frame.pkt_dts(), None);
         assert_eq!(frame.duration(), 0);
         assert_eq!(frame.time_base(), Rational::ZERO);
+        assert_eq!(frame.sample_rate(), 0);
+        assert_eq!(frame.channel_layout_spec(), None);
+        assert_eq!(frame.channel_count(), 0);
         assert_eq!(frame.sample_aspect_ratio(), Rational::ZERO);
         assert_eq!(frame.crop(), FrameCrop::default());
         assert_eq!(frame.picture_type(), FramePictureType::Unknown);
@@ -19397,6 +19507,8 @@ mod tests {
         source
             .set_time_base(Rational::new(1, 90_000).unwrap())
             .unwrap();
+        source.set_sample_rate(44_100);
+        source.set_channel_layout(Some(ChannelLayout::mono()));
         source
             .set_sample_aspect_ratio(Rational::new(16, 9).unwrap())
             .unwrap();
@@ -19445,6 +19557,9 @@ mod tests {
         assert_eq!(destination.pkt_dts(), Some(6));
         assert_eq!(destination.duration(), 5);
         assert_eq!(destination.time_base(), Rational::new(1, 90_000).unwrap());
+        assert_eq!(destination.sample_rate(), 44_100);
+        assert_eq!(destination.channel_layout(), Some(ChannelLayout::mono()));
+        assert_eq!(destination.channel_count(), 1);
         assert_eq!(
             destination.sample_aspect_ratio(),
             Rational::new(16, 9).unwrap()
@@ -19534,6 +19649,8 @@ mod tests {
         source
             .set_time_base(Rational::new(1, 48_000).unwrap())
             .unwrap();
+        source.set_sample_rate(32_000);
+        source.set_channel_layout_spec(Some(ChannelLayoutSpec::unspecified(3).unwrap()));
         source
             .set_sample_aspect_ratio(Rational::new(4, 3).unwrap())
             .unwrap();
@@ -19584,6 +19701,13 @@ mod tests {
         assert_eq!(destination.pkt_dts(), Some(10));
         assert_eq!(destination.duration(), 9);
         assert_eq!(destination.time_base(), Rational::new(1, 48_000).unwrap());
+        assert_eq!(destination.sample_rate(), 32_000);
+        assert_eq!(
+            destination.channel_layout_spec(),
+            Some(&ChannelLayoutSpec::unspecified(3).unwrap())
+        );
+        assert_eq!(source.sample_rate(), 0);
+        assert_eq!(source.channel_layout_spec(), None);
         assert_eq!(
             destination.sample_aspect_ratio(),
             Rational::new(4, 3).unwrap()
@@ -19651,6 +19775,8 @@ mod tests {
         source
             .set_time_base(Rational::new(1, 48_000).unwrap())
             .unwrap();
+        source.set_sample_rate(22_050);
+        source.set_channel_layout(Some(ChannelLayout::stereo()));
         source
             .set_sample_aspect_ratio(Rational::new(64, 45).unwrap())
             .unwrap();
@@ -19719,6 +19845,8 @@ mod tests {
         destination
             .set_time_base(Rational::new(1, 1_000).unwrap())
             .unwrap();
+        destination.set_sample_rate(96_000);
+        destination.set_channel_layout(Some(ChannelLayout::mono()));
         destination
             .set_sample_aspect_ratio(Rational::new(1, 1).unwrap())
             .unwrap();
@@ -19754,6 +19882,9 @@ mod tests {
         assert_eq!(destination.pkt_dts(), Some(320));
         assert_eq!(destination.duration(), 319);
         assert_eq!(destination.time_base(), Rational::new(1, 48_000).unwrap());
+        assert_eq!(destination.sample_rate(), 22_050);
+        assert_eq!(destination.channel_layout(), Some(ChannelLayout::mono()));
+        assert_eq!(destination.channel_count(), 1);
         assert_eq!(
             destination.sample_aspect_ratio(),
             Rational::new(64, 45).unwrap()
