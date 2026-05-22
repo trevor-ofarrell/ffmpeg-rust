@@ -81,11 +81,13 @@ runner_wsl_path="$runner_path"
 cat > "$wrapper_dir/ffmpeg.cmd" <<CMD
 @echo off
 wsl.exe -d $WSL_DISTRO --exec bash "$runner_wsl_path" ffmpeg %*
+exit /b %ERRORLEVEL%
 CMD
 
 cat > "$wrapper_dir/ffprobe.cmd" <<CMD
 @echo off
 wsl.exe -d $WSL_DISTRO --exec bash "$runner_wsl_path" ffprobe %*
+exit /b %ERRORLEVEL%
 CMD
 
 "$install_dir/bin/ffmpeg" -version | head -1

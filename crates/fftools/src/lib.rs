@@ -39,16 +39,22 @@ pub fn version_banner(tool_name: &str) -> String {
     out.push_str("built with rustc\n");
     out.push_str("configuration: --disable-gpl --disable-nonfree --disable-doc\n");
     for (name, version) in TARGET_LIBRARY_VERSIONS {
-        out.push_str(&format!("{name:>13} {version}\n"));
+        out.push_str(&format_library_version_line(name, version));
     }
     out
 }
 
+fn format_library_version_line(name: &str, version: &str) -> String {
+    let mut parts = version.split('.');
+    let major = parts.next().unwrap_or_default();
+    let minor = parts.next().unwrap_or_default();
+    let micro = parts.next().unwrap_or_default();
+    format!("{name:<15}{major:>2}.{minor:>3}.{micro:<3} / {major:>2}.{minor:>3}.{micro:<3}\n")
+}
+
 pub fn run_version_tool(tool_name: &str, args: &[String]) -> i32 {
     let hide_banner = args.iter().any(|arg| arg == "-hide_banner");
-    let asks_version = args
-        .iter()
-        .any(|arg| arg == "-version" || arg == "--version");
+    let asks_version = args.iter().any(|arg| arg == "-version");
 
     if asks_version {
         print!("{}", version_banner(tool_name));
@@ -81,8 +87,7 @@ mod tests {
         let banner = version_banner("ffprobe");
 
         assert!(banner.starts_with("ffprobe version 8.1.1-rust target FFmpeg 8.1.1"));
-        assert!(banner.contains("libavutil"));
-        assert!(banner.contains("60.26.101"));
+        assert!(banner.contains("libavutil      60. 26.101 / 60. 26.101"));
         assert!(banner.contains("--disable-gpl --disable-nonfree --disable-doc"));
     }
 
@@ -91,5 +96,12 @@ mod tests {
         let args = vec!["-version".to_string()];
 
         assert_eq!(run_version_tool("ffmpeg", &args), 0);
+    }
+
+    #[test]
+    fn double_dash_version_is_not_a_successful_version_request() {
+        let args = vec!["--version".to_string()];
+
+        assert_ne!(run_version_tool("ffmpeg", &args), 0);
     }
 }

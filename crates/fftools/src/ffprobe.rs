@@ -446,10 +446,7 @@ pub fn run_ffprobe_tool(args: &[String]) -> i32 {
 }
 
 pub fn ffprobe_output(args: &[String]) -> Result<String, FfprobeError> {
-    if args
-        .iter()
-        .any(|arg| arg == "-version" || arg == "--version")
-    {
+    if args.iter().any(|arg| arg == "-version") {
         return Ok(crate::version_banner("ffprobe"));
     }
 
@@ -1999,7 +1996,7 @@ mod tests {
         let stdout = ffprobe_output(&strings(&["-version"])).unwrap();
 
         assert!(stdout.starts_with("ffprobe version 8.1.1-rust target FFmpeg 8.1.1"));
-        assert!(stdout.contains("libavformat"));
+        assert!(stdout.contains("libavformat    62. 12.101 / 62. 12.101"));
     }
 
     #[test]
@@ -2007,6 +2004,13 @@ mod tests {
         let stdout = ffprobe_output(&strings(&["-hide_banner", "-version"])).unwrap();
 
         assert!(stdout.starts_with("ffprobe version 8.1.1-rust target FFmpeg 8.1.1"));
+    }
+
+    #[test]
+    fn ffprobe_output_rejects_double_dash_version_like_upstream() {
+        let err = ffprobe_output(&strings(&["--version"])).unwrap_err();
+
+        assert!(err.message().contains("unknown option"));
     }
 
     #[test]

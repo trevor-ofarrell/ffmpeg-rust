@@ -1,5 +1,6 @@
 use fftools::{
-    version_banner, TARGET_FFMPEG_VERSION, TARGET_LIBRARY_VERSIONS, TARGET_RELEASE_NAME,
+    ffmpeg_output, ffprobe_output, version_banner, TARGET_FFMPEG_VERSION, TARGET_LIBRARY_VERSIONS,
+    TARGET_RELEASE_NAME,
 };
 use std::{
     collections::BTreeMap,
@@ -18,6 +19,13 @@ fn ffmpeg_version_banner_matches_oracle_target_versions() {
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFPROBE_ORACLE, set FFMPEG_ORACLE with sibling ffprobe, or install third_party/ffmpeg-oracle/build/bin/ffprobe"]
 fn ffprobe_version_banner_matches_oracle_target_versions() {
     compare_version_surface("ffprobe");
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn double_dash_version_is_not_a_success_version_request() {
+    compare_double_dash_version_rejection("ffmpeg");
+    compare_double_dash_version_rejection("ffprobe");
 }
 
 #[test]
@@ -54,7 +62,7 @@ fn rust_banner_library_versions_are_parseable() {
 
 fn compare_version_surface(tool_name: &str) {
     let oracle = oracle_tool(tool_name);
-    let oracle_stdout = run_oracle_version(&oracle, tool_name);
+    let oracle_stdout = run_oracle(&oracle, tool_name, &["-version"]).stdout;
     let oracle_first_line = oracle_stdout
         .lines()
         .next()
@@ -95,28 +103,90 @@ fn compare_version_surface(tool_name: &str) {
     }
 }
 
-fn run_oracle_version(path: &Path, tool_name: &str) -> String {
+fn compare_double_dash_version_rejection(tool_name: &str) {
+    let oracle = oracle_tool(tool_name);
+    let oracle_output = run_oracle(&oracle, tool_name, &["--version"]);
+    let combined = format!("{}{}", oracle_output.stdout, oracle_output.stderr);
+    assert!(
+        !oracle_output.status_success || version_error_output(&combined),
+        "oracle `{}` should reject --version as a clean success, got status success={} output:\n{}",
+        oracle.display(),
+        oracle_output.status_success,
+        combined
+    );
+
+    match tool_name {
+        "ffmpeg" => {
+            let err = ffmpeg_output(&strings(&["--version"])).unwrap_err();
+            assert!(err.message().contains("unknown option"));
+        }
+        "ffprobe" => {
+            let err = ffprobe_output(&strings(&["--version"])).unwrap_err();
+            assert!(err.message().contains("unknown option"));
+        }
+        other => panic!("unsupported tool `{other}`"),
+    }
+}
+
+fn version_error_output(output: &str) -> bool {
+    output.contains("Unrecognized option")
+        || output.contains("Option not found")
+        || output.contains("Missing argument for option")
+}
+
+struct OracleOutput {
+    status_success: bool,
+    stdout: String,
+    stderr: String,
+}
+
+fn run_oracle(path: &Path, tool_name: &str, args: &[&str]) -> OracleOutput {
     let output = Command::new(path)
-        .arg("-version")
+        .args(args)
         .output()
         .unwrap_or_else(|err| {
             panic!(
-                "failed to run {tool_name} oracle `{}`: {err}",
-                path.display()
+                "failed to run {tool_name} oracle `{}` with args {:?}: {err}",
+                path.display(),
+                args
             )
         });
 
-    assert!(
-        output.status.success(),
-        "{tool_name} oracle `{}` failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
-        path.display(),
-        output.status.code(),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let stdout = String::from_utf8(output.stdout).unwrap_or_else(|err| {
+        panic!(
+            "{tool_name} oracle `{}` stdout must be UTF-8 for args {:?}: {err}",
+            path.display(),
+            args
+        )
+    });
+    let stderr = String::from_utf8(output.stderr).unwrap_or_else(|err| {
+        panic!(
+            "{tool_name} oracle `{}` stderr must be UTF-8 for args {:?}: {err}",
+            path.display(),
+            args
+        )
+    });
 
-    String::from_utf8(output.stdout)
-        .unwrap_or_else(|err| panic!("{tool_name} oracle output must be UTF-8: {err}"))
+    if args == ["-version"] {
+        assert!(
+            output.status.success(),
+            "{tool_name} oracle `{}` failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+            path.display(),
+            output.status.code(),
+            stdout,
+            stderr
+        );
+    }
+
+    OracleOutput {
+        status_success: output.status.success(),
+        stdout,
+        stderr,
+    }
+}
+
+fn strings(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| value.to_string()).collect()
 }
 
 fn parse_library_versions(stdout: &str) -> BTreeMap<String, String> {
@@ -152,7 +222,7 @@ fn oracle_tool(tool_name: &str) -> PathBuf {
 
     if tool_name == "ffprobe" {
         if let Ok(ffmpeg_path) = env::var("FFMPEG_ORACLE") {
-            let ffmpeg_path = PathBuf::from(ffmpeg_path);
+            let ffmpeg_path = resolve_tool_path(PathBuf::from(ffmpeg_path));
             for candidate in sibling_tool_candidates(&ffmpeg_path, "ffprobe") {
                 if candidate.is_file() {
                     return candidate;
@@ -161,11 +231,8 @@ fn oracle_tool(tool_name: &str) -> PathBuf {
         }
     }
 
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("fftools crate should be under crates/");
-    for candidate in default_tool_candidates(root, tool_name) {
+    let root = repository_root();
+    for candidate in default_tool_candidates(&root, tool_name) {
         if candidate.is_file() {
             return candidate;
         }
@@ -180,12 +247,32 @@ fn oracle_tool(tool_name: &str) -> PathBuf {
 }
 
 fn require_tool_path(path: PathBuf, env_var: &str) -> PathBuf {
+    let resolved = resolve_tool_path(path);
     assert!(
-        path.is_file(),
+        resolved.is_file(),
         "{env_var} must point to the pinned FFmpeg 8.1.1 binary, got `{}`",
-        path.display()
+        resolved.display()
     );
+    resolved
+}
+
+fn resolve_tool_path(path: PathBuf) -> PathBuf {
+    if path.is_file() || path.is_absolute() {
+        return path;
+    }
+    let candidate = repository_root().join(&path);
+    if candidate.is_file() {
+        return candidate;
+    }
     path
+}
+
+fn repository_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("fftools crate should be under crates/")
+        .to_path_buf()
 }
 
 fn sibling_tool_candidates(ffmpeg_path: &Path, tool_name: &str) -> Vec<PathBuf> {

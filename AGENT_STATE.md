@@ -2,6 +2,10 @@
 
 ## Current Status
 
+Latest `fftools-version` slice: fixed a CLI parity bug where Rust accepted GNU-style `--version` as a successful version request. Pinned FFmpeg 8.1.1 does not treat that form as clean success, so `ffmpeg-rs` and `ffprobe-rs` now reject `--version`, while `-version` and `-hide_banner -version` still print the version banner. The banner library rows now use FFmpeg-shaped current/configured ABI formatting. The ignored version oracle harness has a new `oracle-double-dash-version-rejection` mapping, resolves relative `FFMPEG_ORACLE` paths against the repo root, and the WSL process checks confirm the Rust binaries print `-version` output and reject `--version` with exit code 1. The component remains `differential_pass`, not complete, because the banner is intentionally not byte-identical to upstream and upstream FATE completion disposition is still not closed.
+
+Latest validation commands for the `fftools-version` double-dash slice: `cargo fmt --all`, `CARGO_TARGET_DIR=target-codex cargo test -p fftools version`, `CARGO_TARGET_DIR=target-codex cargo test -p fftools option_parser::tests::double_dash_options_are_not_normalized_to_single_dash_options`, `CARGO_TARGET_DIR=target-codex cargo test -p fftools --test version_oracle`, `CARGO_TARGET_DIR=target-codex cargo test -p fftools --test version_oracle double_dash_version_is_not_a_success_version_request -- --ignored --nocapture`, `CARGO_TARGET_DIR=target-codex cargo run -p fate-runner -- mappings --mappings tests/differential/mappings.txt --target oracle-double-dash-version-rejection`, `CARGO_TARGET_DIR=target-codex cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version --target oracle-double-dash-version-rejection --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`, `CARGO_TARGET_DIR=target-codex cargo run -p fate-runner -- run --component fftools-version`, `CARGO_TARGET_DIR=target-codex cargo clippy -p fftools -p fate-runner --all-targets --all-features -- -D warnings`, `cargo fmt --all -- --check`, `CARGO_TARGET_DIR=target-codex cargo test -p fate-runner differential_mappings_parse_against_current_ledger`, `CARGO_TARGET_DIR=target-codex cargo run -p xtask -- guard-runtime`, `CARGO_TARGET_DIR=target-codex cargo test -p fftools`, WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fftools --bin ffmpeg-rs -- -version`, WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fftools --bin ffprobe-rs -- -version`, WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fftools --bin ffmpeg-rs -- --version` (exit 1), WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fftools --bin ffprobe-rs -- --version` (exit 1), and `git diff --check` passed. Strict completion remains 11/96 components; this slice adds evidence but does not change a ledger status.
+
 Latest oracle-installation slice: the local pinned FFmpeg 8.1.1 oracle is installed and now has an explicit `xtask oracle-doctor` guard. The guard locates the default local `ffmpeg` and `ffprobe` wrappers under ignored `third_party/ffmpeg-oracle/build/bin/`, runs `-version`, and rejects any tool that does not report FFmpeg 8.1.1 plus the pinned libav* ABI versions. This answers the current operating question directly: yes, strict parity work should keep a local oracle installed; this workspace already has it, and future turns can verify it quickly before trusting differential evidence.
 
 Latest validation commands for the oracle-installation slice: `cargo fmt --all`, `CARGO_TARGET_DIR=target-codex cargo test -p xtask oracle`, `CARGO_TARGET_DIR=target-codex cargo run -p xtask -- oracle-doctor`, `CARGO_TARGET_DIR=target-codex cargo test -p xtask`, `CARGO_TARGET_DIR=target-codex cargo clippy -p xtask --all-targets --all-features -- -D warnings`, `cargo fmt --all -- --check`, `CARGO_TARGET_DIR=target-codex cargo test -p oracle`, `CARGO_TARGET_DIR=target-codex cargo run -p fate-runner -- run --component oracle-inventory`, and `git diff --check` passed. Strict completion remains 11/96 components; this slice strengthens oracle tooling and documentation without changing a ledger status.
@@ -579,6 +583,26 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `fftools-version` double-dash slice:
+  - `cmd /c cargo fmt --all`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p fftools version"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p fftools option_parser::tests::double_dash_options_are_not_normalized_to_single_dash_options"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p fftools --test version_oracle"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p fftools --test version_oracle double_dash_version_is_not_a_success_version_request -- --ignored --nocapture"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo run -p fate-runner -- mappings --mappings tests/differential/mappings.txt --target oracle-double-dash-version-rejection"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version --target oracle-double-dash-version-rejection --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo run -p fate-runner -- run --component fftools-version"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo clippy -p fftools -p fate-runner --all-targets --all-features -- -D warnings"`
+  - `cmd /c cargo fmt --all -- --check`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p fate-runner differential_mappings_parse_against_current_ledger"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo run -p xtask -- guard-runtime"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p fftools"`
+  - WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fftools --bin ffmpeg-rs -- -version`
+  - WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fftools --bin ffprobe-rs -- -version`
+  - WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fftools --bin ffmpeg-rs -- --version` returned exit 1 with `unknown option`.
+  - WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fftools --bin ffprobe-rs -- --version` returned exit 1 with `unknown option`.
+  - `git diff --check`
 
 - Current oracle-installation slice:
   - `cmd /c cargo fmt --all`
@@ -5214,6 +5238,10 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `fftools-version` double-dash slice:
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p fftools version"` initially failed because `ffmpeg_output(&["--version"])` reached the normal parser but `option_name` collapsed all leading dashes, so `--version` was still parsed as the supported `version` option before failing later with a non-unknown-option path. Updating `option_name` to strip exactly one dash fixed the failure.
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version --target oracle-double-dash-version-rejection --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"` initially failed because the version oracle harness treated env-provided relative `FFMPEG_ORACLE` paths as relative to the integration-test process cwd. Resolving relative env oracle paths against the repository root fixed the failure.
+
 - Current `avutil-buffer` default-pool slice:
   - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p avutil --lib buffer_pool_default_allocator_reuses_storage_without_opaque"` compiled successfully but Windows Application Control blocked the freshly built test executable before execution (`os error 4551`). The equivalent WSL `cargo test -p avutil --lib buffer_pool_default_allocator_reuses_storage_without_opaque` command passed.
 
@@ -5718,7 +5746,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-The current turn focused on oracle availability because strict parity evidence depends on it. `xtask oracle-doctor` now verifies that the local default `ffmpeg` and `ffprobe` oracle wrappers report FFmpeg 8.1.1 and the pinned libav* ABI versions. After this tooling slice, return to the highest-priority incomplete component.
+The current turn focused on `fftools-version` because it was already at `differential_pass` and a pinned oracle check exposed a concrete option-parsing parity bug. `ffmpeg-rs` and `ffprobe-rs` now reject `--version` instead of treating it as `-version`, the version banner ABI rows are closer to FFmpeg's current/configured format, and the differential mapping covers the double-dash rejection. The row remains `differential_pass`, not complete, because byte-identical banner policy and upstream FATE disposition are still unresolved.
 
 `avutil-buffer` remains the prior active component. The latest buffer slice adds pinned libavutil `av_buffer_pool_init2(size, opaque, NULL, pool_free)` default-allocator coverage: buffers have NULL per-buffer pool opaque and no-clear reuse, while the pool owner callback still runs on uninit. The component remains `differential_pass`, not `complete`, because broader ABI/lifetime parity, FATE disposition, and final completion documentation still need closure.
 
@@ -5988,13 +6016,14 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Use `cargo run -p xtask -- oracle-doctor` at the start of oracle-backed completion slices when local oracle availability is in doubt.
+1. Decide whether `fftools-version` should pursue byte-identical upstream banner text or a documented Rust-build banner exception; only then can it move from `differential_pass` to `complete`.
 2. Continue `avutil-buffer` toward strict completion by closing or explicitly bounding the remaining ABI/lifetime behaviors and documenting the FATE disposition for this low-level helper surface.
-3. If buffer completion remains blocked, move to the next highest-priority incomplete infrastructure row such as `avutil-options`, `avutil-logging`, `fftools-version`, or `avutil-channel-layout`.
+3. If buffer completion remains blocked, move to the next highest-priority incomplete infrastructure row such as `avutil-options`, `avutil-logging`, or `avutil-channel-layout`.
 
 ## Known Blockers
 
 - Local pinned FFmpeg 8.1.1 oracle installation is no longer a blocker. The WSL-backed wrappers exist under ignored `third_party/ffmpeg-oracle/build/bin/`, local inventory snapshots have been generated under ignored `compat/ffmpeg-8.1.1/`, and `cargo run -p xtask -- oracle-doctor` verifies both ffmpeg/ffprobe wrappers against the pinned target and ABI versions.
+- `fftools-version` is closer to completion after the double-dash rejection fix, but it still cannot honestly be marked complete while the banner is intentionally not byte-identical and the upstream FATE inapplicability/coverage decision is not documented in the row.
 - FATE samples are still absent locally, so sample-backed upstream FATE rows such as `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` remain blocked until `third_party/fate-samples`, `FATE_SAMPLES`, or an equivalent sample tree is configured.
 - Windows-side fuzz execution is still unreliable because of MSVC ASan runtime/path behavior and previous timeouts, but WSL Ubuntu now has Rust nightly plus `cargo-fuzz` and passes avutil smoke fuzz runs.
 - `avutil-buffer` now has pinned libavutil `AVBufferRef` and bounded `AVBufferPool` differential evidence, including nullable replace/unref/realloc rows, NULL-to-NULL replace no-op coverage, offset `data`/`size` subrange refs and offset-ref clones, writable `av_buffer_create` opaque-data owner rows, default pool fallback/no-opaque reuse rows, init2 default-allocator fallback with pool-free owner callback rows, custom pool reuse/opaque/free timing rows, and custom allocator failure/no-release rows, and is marked `differential_pass`, but not complete. Remaining blockers are broader ABI/lifetime closure, FATE disposition, and final completion documentation.
@@ -6127,6 +6156,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: fixed `fftools-version` double-dash parity. `ffmpeg-rs` and `ffprobe-rs` now only treat `-version` as a successful version request; `--version` flows through normal option parsing and is rejected, matching pinned FFmpeg 8.1.1's non-clean-success behavior. `version_banner` now prints FFmpeg-shaped `libav* current / configured` ABI rows. `crates/fftools/tests/version_oracle.rs` gained an ignored oracle-backed `double_dash_version_is_not_a_success_version_request` test, `tests/differential/mappings.txt` gained `oracle-double-dash-version-rejection`, and the bootstrap script now generates `.cmd` oracle wrappers that propagate WSL exit codes. `fftools-version` remains `differential_pass`, not complete, because byte-identical banner policy and upstream FATE disposition are still pending.
 
 Latest slice: added `xtask oracle-doctor` so the local pinned FFmpeg oracle is an explicit verified prerequisite rather than an assumption. `xtask/src/main.rs` now resolves default `ffmpeg`/`ffprobe` oracle wrappers, supports `--ffmpeg` and `--ffprobe` overrides, runs `-version`, and validates FFmpeg 8.1.1 plus the pinned libav* ABI versions. README, `docs/oracle.md`, `docs/architecture.md`, `docs/compatibility.md`, `AGENTS.md`, and the oracle-inventory ledger entry now document the guard. The local doctor command passed against the installed WSL-backed oracle wrappers, and strict completion remains 11/96.
 

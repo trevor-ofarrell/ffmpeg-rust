@@ -232,7 +232,9 @@ pub fn parse_ffmpeg_args(args: &[String]) -> Result<ParsedCommand, CliParseError
 }
 
 fn option_name(arg: &str) -> Result<&str, CliParseError> {
-    let name = arg.trim_start_matches('-');
+    let name = arg
+        .strip_prefix('-')
+        .expect("option_name is only called for option tokens");
     if name.is_empty() {
         return Err(CliParseError::new("empty option name"));
     }
@@ -658,6 +660,13 @@ mod tests {
         let err = parse_ffmpeg_args(&strings(&["-definitely_not_ffmpeg", "out"])).unwrap_err();
 
         assert!(err.message().contains("unknown option"));
+    }
+
+    #[test]
+    fn double_dash_options_are_not_normalized_to_single_dash_options() {
+        let err = parse_ffmpeg_args(&strings(&["--version"])).unwrap_err();
+
+        assert!(err.message().contains("unknown option `--version`"));
     }
 
     fn strings(values: &[&str]) -> Vec<String> {

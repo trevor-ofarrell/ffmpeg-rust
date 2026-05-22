@@ -23,6 +23,8 @@ wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && ./script
 
 The script clones tag `n8.1.1`, configures FFmpeg with `--disable-gpl --disable-nonfree --disable-doc --disable-x86asm`, installs the Linux oracle under ignored `third_party/ffmpeg-oracle/wsl/`, and generates wrappers under `third_party/ffmpeg-oracle/build/bin/`. Windows-side tests prefer `ffmpeg.exe`, then the generated `ffmpeg.cmd` WSL wrapper, then the Unix-style `ffmpeg` wrapper; WSL/Linux-side commands use the Unix-style wrapper directly.
 
+The generated Windows `.cmd` wrappers propagate the WSL FFmpeg process exit code. If an older local wrapper returns success for failing oracle invocations, rerun the bootstrap script to refresh it.
+
 Verify the installed oracle before relying on strict completion evidence:
 
 ```sh
@@ -181,6 +183,12 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --com
 ```sh
 FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p fftools --test version_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+```
+
+The same harness also checks that `--version` is not a clean successful version request for either tool, matching upstream option parsing rather than GNU-style aliases:
+
+```sh
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-double-dash-version-rejection --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
 The first rawvideo oracle harness lives at `crates/fftools/tests/rawvideo_oracle.rs` and is ignored by default so ordinary local test runs do not claim oracle parity without an oracle binary. Run it with a pinned FFmpeg 8.1.1 binary:

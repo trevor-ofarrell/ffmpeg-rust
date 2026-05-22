@@ -310,10 +310,7 @@ pub fn run_ffmpeg_tool(args: &[String]) -> i32 {
 }
 
 pub fn ffmpeg_output(args: &[String]) -> Result<FfmpegOutput, FfmpegError> {
-    if args
-        .iter()
-        .any(|arg| arg == "-version" || arg == "--version")
-    {
+    if args.iter().any(|arg| arg == "-version") {
         return Ok(FfmpegOutput::version(version_banner("ffmpeg")));
     }
 
@@ -1703,9 +1700,18 @@ mod tests {
         assert!(output
             .stdout()
             .starts_with("ffmpeg version 8.1.1-rust target FFmpeg 8.1.1"));
-        assert!(output.stdout().contains("libavformat"));
+        assert!(output
+            .stdout()
+            .contains("libavformat    62. 12.101 / 62. 12.101"));
         assert!(output.stderr().is_empty());
         assert_eq!(output.output_format(), None);
+    }
+
+    #[test]
+    fn ffmpeg_output_rejects_double_dash_version_like_upstream() {
+        let err = ffmpeg_output(&strings(&["--version"])).unwrap_err();
+
+        assert!(err.message().contains("unknown option"));
     }
 
     #[test]
