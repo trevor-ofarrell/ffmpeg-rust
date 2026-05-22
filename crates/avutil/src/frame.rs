@@ -1447,11 +1447,17 @@ impl Frame {
     }
 
     pub fn make_writable(&mut self) {
-        self.data.make_writable();
+        let _ = self.try_make_writable();
     }
 
     pub fn try_make_writable(&mut self) -> AvResult<()> {
-        self.data.try_make_writable()
+        self.data.try_make_writable()?;
+        self.side_data = self
+            .side_data
+            .iter()
+            .map(FrameSideData::copy_props_clone)
+            .collect();
+        Ok(())
     }
 
     pub fn side_data_is_writable(&self) -> bool {
@@ -21328,15 +21334,19 @@ mod tests {
                 .unwrap();
         let side_data = BufferRef::copy_from_slice(&[0xAA, 0xBB]);
         let hw_context = BufferRef::copy_from_slice(&[0xCC]);
+        let opaque_ref = BufferRef::copy_from_slice(&[0xDD, 0xEE]);
         let mut frame = Frame::video(video).with_hw_frames_context(hw_context.clone());
+        frame.set_opaque_ref(Some(opaque_ref.clone()));
         frame
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side_data.clone())
             .unwrap();
         let cloned = frame.clone();
 
         assert!(!frame.is_writable());
+        assert!(!frame.all_references_are_writable());
         frame.make_writable();
         assert!(frame.is_writable());
+        assert!(!frame.all_references_are_writable());
 
         let (frame_video, cloned_video) = match (frame.data(), cloned.data()) {
             (FrameData::Video(frame_video), FrameData::Video(cloned_video)) => {
@@ -21348,10 +21358,13 @@ mod tests {
         assert!(cloned_video.plane_buffers()[0].shares_storage(&source));
         assert_eq!(frame_video.planes(), &[vec![1, 2, 3, 4]]);
         assert_eq!(cloned_video.planes(), &[vec![1, 2, 3, 4]]);
-        assert!(frame.side_data()[0].buffer().shares_storage(&side_data));
-        assert!(frame.side_data()[0]
+        assert!(!frame.side_data()[0].buffer().shares_storage(&side_data));
+        assert!(!frame.side_data()[0]
             .buffer()
             .shares_storage(cloned.side_data()[0].buffer()));
+        assert_eq!(frame.side_data()[0].data(), &[0xAA, 0xBB]);
+        assert_eq!(cloned.side_data()[0].data(), &[0xAA, 0xBB]);
+        assert!(frame.side_data()[0].is_writable());
         assert!(frame
             .hw_frames_context()
             .unwrap()
@@ -21360,6 +21373,11 @@ mod tests {
             .hw_frames_context()
             .unwrap()
             .shares_storage(cloned.hw_frames_context().unwrap()));
+        assert!(frame.opaque_ref().unwrap().shares_storage(&opaque_ref));
+        assert!(frame
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(cloned.opaque_ref().unwrap()));
 
         frame.set_plane_visible_data(0, &[4, 3, 2, 1]).unwrap();
         let (frame_video, cloned_video) = match (frame.data(), cloned.data()) {

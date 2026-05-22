@@ -736,7 +736,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     drop(ref_destination);
 
-    let replace_clone = replace_source.clone_ref();
+    let mut replace_clone = replace_source.clone_ref();
     rows.insert(
         "frame:clone-ref-src".to_string(),
         frame_fields(&replace_source),
@@ -756,6 +756,35 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "frame:clone-ref-hw-shares".to_string(),
         hw_frames_context_share_fields(&replace_source, &replace_clone),
+    );
+    replace_clone.take_hw_frames_context();
+    let rich_make_writable_ret = replace_clone
+        .try_make_writable()
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:rich-make-writable-ret".to_string(),
+        vec![rich_make_writable_ret.to_string()],
+    );
+    rows.insert(
+        "frame:rich-after-make-writable-src".to_string(),
+        frame_fields(&replace_source),
+    );
+    rows.insert(
+        "frame:rich-after-make-writable-dst".to_string(),
+        frame_fields(&replace_clone),
+    );
+    rows.insert(
+        "frame:rich-after-make-writable-plane-shares".to_string(),
+        first_plane_share_fields(&replace_source, &replace_clone),
+    );
+    rows.insert(
+        "frame:rich-after-make-writable-side-shares".to_string(),
+        first_side_data_share_fields(&replace_source, &replace_clone),
+    );
+    rows.insert(
+        "frame:rich-after-make-writable-opaque-ref-shares".to_string(),
+        opaque_ref_share_fields(&replace_source, &replace_clone),
     );
 
     let replace_destination_video =
@@ -1726,6 +1755,16 @@ fn hw_frames_context_share_fields(left: &Frame, right: &Frame) -> Vec<String> {
     buffer_share_fields(left, right)
 }
 
+fn opaque_ref_share_fields(left: &Frame, right: &Frame) -> Vec<String> {
+    let left = left
+        .opaque_ref()
+        .expect("left frame should have opaque_ref");
+    let right = right
+        .opaque_ref()
+        .expect("right frame should have opaque_ref");
+    buffer_share_fields(left, right)
+}
+
 fn buffer_share_fields(left: &BufferRef, right: &BufferRef) -> Vec<String> {
     vec![
         bool_field(left.shares_storage(right)),
@@ -2267,6 +2306,12 @@ static void print_hw_share(const char *name, const AVFrame *left,
                            const AVFrame *right)
 {
     print_buffer_ref_share(name, left->hw_frames_ctx, right->hw_frames_ctx);
+}
+
+static void print_opaque_ref_share(const char *name, const AVFrame *left,
+                                   const AVFrame *right)
+{
+    print_buffer_ref_share(name, left->opaque_ref, right->opaque_ref);
 }
 
 static void print_side_kind_inventory(void)
@@ -3036,6 +3081,19 @@ int main(void)
     print_side_share("frame:clone-ref-side-shares", replace_src,
                      replace_clone);
     print_hw_share("frame:clone-ref-hw-shares", replace_src, replace_clone);
+    av_buffer_unref(&replace_clone->hw_frames_ctx);
+    int rich_make_writable_ret = av_frame_make_writable(replace_clone);
+    printf("frame:rich-make-writable-ret|%d\n", rich_make_writable_ret);
+    fail_if(rich_make_writable_ret < 0,
+            "rich av_frame_make_writable failed");
+    print_frame("frame:rich-after-make-writable-src", replace_src);
+    print_frame("frame:rich-after-make-writable-dst", replace_clone);
+    print_share("frame:rich-after-make-writable-plane-shares", replace_src,
+                replace_clone);
+    print_side_share("frame:rich-after-make-writable-side-shares",
+                     replace_src, replace_clone);
+    print_opaque_ref_share("frame:rich-after-make-writable-opaque-ref-shares",
+                           replace_src, replace_clone);
 
     AVFrame *replace_dst = av_frame_alloc();
     fail_if(!replace_dst, "replace_dst av_frame_alloc failed");

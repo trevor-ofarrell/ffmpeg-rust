@@ -13202,12 +13202,15 @@ fn exercise_fixtures() {
     assert!(make_clone_video.plane_buffers()[0].shares_storage(&make_source));
     assert_eq!(make_frame_video.planes(), &[vec![1, 2, 3, 4]]);
     assert_eq!(make_clone_video.planes(), &[vec![1, 2, 3, 4]]);
-    assert!(make_frame.side_data()[0]
+    assert!(!make_frame.side_data()[0]
         .buffer()
         .shares_storage(&make_side_data));
-    assert!(make_frame.side_data()[0]
+    assert!(!make_frame.side_data()[0]
         .buffer()
         .shares_storage(make_clone.side_data()[0].buffer()));
+    assert_eq!(make_frame.side_data()[0].data(), &[0xAA, 0xBB]);
+    assert_eq!(make_clone.side_data()[0].data(), &[0xAA, 0xBB]);
+    assert!(make_frame.side_data()[0].is_writable());
     assert!(make_frame
         .hw_frames_context()
         .unwrap()
@@ -13518,6 +13521,7 @@ fn exercise_fixtures() {
         .unwrap(),
     )
     .with_hw_frames_context(BufferRef::from_vec_readonly(vec![0x20]));
+    permission_frame.set_opaque_ref(Some(BufferRef::from_vec_readonly(vec![0x30])));
     permission_frame
         .set_side_data_kind_buffer(
             FrameSideDataKind::IccProfile,
@@ -13531,7 +13535,28 @@ fn exercise_fixtures() {
         permission_frame.hw_frames_context_is_writable(),
         Some(false)
     );
+    assert_eq!(permission_frame.opaque_ref_is_writable(), Some(false));
     assert!(!permission_frame.all_references_are_writable());
+    permission_frame.make_writable();
+    assert!(permission_frame.is_writable());
+    assert!(permission_frame.side_data_is_writable());
+    assert_eq!(
+        permission_frame.hw_frames_context_is_writable(),
+        Some(false)
+    );
+    assert_eq!(permission_frame.opaque_ref_is_writable(), Some(false));
+    assert!(!permission_frame.all_references_are_writable());
+    assert!(!permission_frame.side_data()[0]
+        .buffer()
+        .shares_storage(permission_clone.side_data()[0].buffer()));
+    assert!(permission_frame
+        .hw_frames_context()
+        .unwrap()
+        .shares_storage(permission_clone.hw_frames_context().unwrap()));
+    assert!(permission_frame
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(permission_clone.opaque_ref().unwrap()));
     permission_frame.make_all_references_writable();
     assert!(permission_frame.all_references_are_writable());
     assert!(!permission_frame.side_data()[0]
@@ -13541,6 +13566,10 @@ fn exercise_fixtures() {
         .hw_frames_context()
         .unwrap()
         .shares_storage(permission_clone.hw_frames_context().unwrap()));
+    assert!(!permission_frame
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(permission_clone.opaque_ref().unwrap()));
     permission_frame
         .side_data_by_kind_mut(&FrameSideDataKind::IccProfile)
         .unwrap()

@@ -213,7 +213,8 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --com
 `AVFrame` core lifecycle helpers. It compiles a small test-only C helper against
 `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_frame_alloc`,
 `av_frame_unref`, `av_frame_ref`, `av_frame_clone`, `av_frame_replace`,
-`av_frame_make_writable`, including empty-frame `EINVAL` behavior,
+`av_frame_make_writable`, including empty-frame `EINVAL` behavior and rich
+data-plane/side-data/opaque_ref behavior,
 `av_frame_move_ref`, `av_frame_copy`,
 `av_frame_copy_props`, PTS/packet-DTS/duration/time-base/sample-rate/channel-layout/sample-aspect-ratio,
 crop-offset, picture-type, quality, repeat_pict, public frame-flag,
@@ -268,6 +269,13 @@ rows prove `av_frame_make_writable()` returns `EINVAL` for an empty frame and
 leaves that frame in the default unallocated state. Rust exposes the fallible
 equivalent through `FrameData::try_make_writable()` and
 `Frame::try_make_writable()`.
+The `frame:rich-after-make-writable-*` rows prove that a rich refcounted
+software frame detaches data-plane buffers, deep-copies frame side data, keeps
+`opaque_ref` shared, and leaves the source frame populated after
+`av_frame_make_writable()`. The oracle row clears the fake `hw_frames_ctx`
+before calling the C helper because an arbitrary `AVBufferRef` is not a valid
+hardware frames context and FFmpeg may dereference it on this path; hardware
+context make-writable parity remains outside this bounded row.
 The `av_frame_side_data_name` boundary row proves that known 0-based
 `AV_FRAME_DATA_*` values map to descriptor names, while -1, the first raw value
 after `AV_FRAME_DATA_EXIF`, the next raw value, and INT_MAX return NULL. FFmpeg
@@ -320,8 +328,9 @@ return `EEXIST` for duplicate non-MULTI insertion without flags, replace
 non-MULTI entries under `AV_FRAME_SIDE_DATA_FLAG_REPLACE`, remove matching
 entries under `AV_FRAME_SIDE_DATA_FLAG_UNIQUE`, and append MULTI entries even
 when `REPLACE` is set.
-The first row caught and now verifies the pinned default 64-byte
-`av_frame_make_writable()` realignment path. It is wired into
+The make-writable rows caught and now verify the pinned default 64-byte
+`av_frame_make_writable()` realignment path plus side-data deep-copy behavior.
+The harness is wired into
 `tests/differential/mappings.txt` as `avutil-frame|oracle-libavutil-frame-core`:
 
 ```sh
