@@ -1352,6 +1352,47 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         *bad_releases.lock().unwrap(),
         vec![vec![1; payload_len + padding_len + 1]]
     );
+
+    let failed_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let failed_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let failed_pool_frees = Arc::new(Mutex::new(0usize));
+    let failed_allocation_capture = Arc::clone(&failed_allocations);
+    let failed_release_capture = Arc::clone(&failed_releases);
+    let failed_pool_free_capture = Arc::clone(&failed_pool_frees);
+    let failed_pool = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                failed_allocation_capture
+                    .lock()
+                    .unwrap()
+                    .push(allocated_len);
+                Err(AvError::external("pool allocation failed"))
+            },
+            move |allocation| {
+                failed_release_capture
+                    .lock()
+                    .unwrap()
+                    .push(allocation.into_vec());
+            },
+        )
+        .with_pool_free(move || {
+            *failed_pool_free_capture.lock().unwrap() += 1;
+        }),
+    )
+    .unwrap();
+    assert_eq!(failed_pool.get().unwrap_err().kind(), AvErrorKind::External);
+    assert_eq!(
+        *failed_allocations.lock().unwrap(),
+        vec![payload_len + padding_len]
+    );
+    assert!(failed_releases.lock().unwrap().is_empty());
+    assert_eq!(*failed_pool_frees.lock().unwrap(), 0);
+    drop(failed_pool);
+    assert!(failed_releases.lock().unwrap().is_empty());
+    assert_eq!(*failed_pool_frees.lock().unwrap(), 1);
+
     assert_eq!(
         BufferPool::new(1, usize::MAX).unwrap_err().kind(),
         AvErrorKind::InvalidArgument

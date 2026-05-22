@@ -2,6 +2,10 @@
 
 ## Current Status
 
+Latest `avutil-buffer` pool allocator-failure slice: the pinned `buffer_oracle` harness now validates `av_buffer_pool_get()` when an `av_buffer_pool_init2` custom allocator returns `NULL`: FFmpeg 8.1.1 reports no buffer, records the allocation attempt, does not call the per-buffer release callback, and still calls `pool_free` on pool uninit. Rust mirrors this with a failing `BufferPoolCallbacks::with_allocation_callbacks` allocator, preserving an empty spare pool and delaying `pool_free` until `drop(pool)`. The focused unit test and `avutil_core_models` fuzz smoke assert the same allocator-failure/no-release/pool-free invariant. `avutil-buffer` remains `differential_pass`, not `complete`, because broader ABI/lifetime closure, FATE disposition, and final completion documentation remain pending.
+
+Latest validation commands for the `avutil-buffer` pool allocator-failure slice: `cargo fmt --all`, `CARGO_TARGET_DIR=target-codex cargo test -p avutil --lib custom_buffer_pool_allocator_failure_preserves_pool_until_drop`, `CARGO_TARGET_DIR=target-codex cargo test -p avutil --test buffer_oracle -- --ignored --nocapture`, `CARGO_TARGET_DIR=target-codex cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`, `CARGO_TARGET_DIR=target-codex cargo run -p fate-runner -- run --component avutil-buffer`, `CARGO_TARGET_DIR=target-codex cargo check -p avutil`, `CARGO_TARGET_DIR=target-codex\\fuzz-check cargo check --manifest-path fuzz\\Cargo.toml`, `CARGO_TARGET_DIR=target-codex cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`, `CARGO_TARGET_DIR=target-codex\\fuzz-check cargo clippy --manifest-path fuzz\\Cargo.toml -- -D warnings`, WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fate-runner -- run --component avutil-buffer`, and WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1` passed. Strict completion remains 11/96 components; this slice adds evidence but does not change a ledger status.
+
 Latest `avutil-buffer` null-replace slice: the pinned `buffer_oracle` harness now validates `av_buffer_replace(&dst, NULL)` when `dst` already starts as `NULL`: FFmpeg 8.1.1 returns success and leaves the destination NULL. Rust mirrors this with `BufferRef::replace(&mut None, None)`, the focused unit test covers the no-op, and `avutil_core_models` fuzz-smokes the same invariant. `avutil-buffer` remains `differential_pass`, not `complete`, because broader ABI/lifetime closure, FATE disposition, and final completion documentation remain pending.
 
 Latest validation commands for the `avutil-buffer` null-replace slice: `cargo fmt --all`, `CARGO_TARGET_DIR=target-codex cargo test -p avutil --lib buffer_ref_replace_and_unref_handle_nullable_c_api_shape`, `CARGO_TARGET_DIR=target-codex cargo test -p avutil --test buffer_oracle -- --ignored --nocapture`, `CARGO_TARGET_DIR=target-codex cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`, `CARGO_TARGET_DIR=target-codex cargo run -p fate-runner -- run --component avutil-buffer`, `CARGO_TARGET_DIR=target-codex cargo check -p avutil`, `CARGO_TARGET_DIR=target-codex\\fuzz-check cargo check --manifest-path fuzz\\Cargo.toml`, `CARGO_TARGET_DIR=target-codex cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`, `CARGO_TARGET_DIR=target-codex\\fuzz-check cargo clippy --manifest-path fuzz\\Cargo.toml -- -D warnings`, WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fate-runner -- run --component avutil-buffer`, WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1`, `cargo fmt --all -- --check`, and `git diff --check` passed. Strict completion remains 11/96 components; this slice adds evidence but does not change a ledger status.
@@ -563,6 +567,19 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-buffer` pool allocator-failure slice:
+  - `cmd /c cargo fmt --all`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p avutil --lib custom_buffer_pool_allocator_failure_preserves_pool_until_drop"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p avutil --test buffer_oracle -- --ignored --nocapture"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo run -p fate-runner -- run --mappings tests\differential\mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo run -p fate-runner -- run --component avutil-buffer"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo check -p avutil"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex\fuzz-check&& cargo check --manifest-path fuzz\Cargo.toml"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings"`
+  - `cmd /c "set CARGO_TARGET_DIR=target-codex\fuzz-check&& cargo clippy --manifest-path fuzz\Cargo.toml -- -D warnings"`
+  - `cmd /c wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && . /home/trevo/.cargo/env && CARGO_TARGET_DIR=target-wsl cargo run -p fate-runner -- run --component avutil-buffer"`
+  - `cmd /c wsl -d Ubuntu --exec bash -lc "cd /mnt/c/Users/trevo/code/ffmpegrust && . /home/trevo/.cargo/env && CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1"`
 
 - Current `avutil-buffer` null-replace slice:
   - `cmd /c cargo fmt --all`
@@ -5150,6 +5167,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-buffer` pool allocator-failure slice:
+  - `git add ... && git commit -m "Cover AVBufferPool allocation failure"` failed in PowerShell because this shell invocation did not accept `&&` as a statement separator. No files were staged or committed by that failed command; the commit should be rerun with PowerShell-native `;` separators.
+
 - Current `avutil-buffer` create-ref slice:
   - An exploratory `av_buffer_ref(NULL)` oracle row caused the pinned C helper to exit with status 139, showing that direct NULL input is not a valid FFmpeg `av_buffer_ref` contract despite nearby nullable `replace`/`unref`/`realloc` APIs. That row and the matching Rust helper were removed before the committed slice; the final create-ref oracle and tests pass.
 
@@ -5648,7 +5668,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-`avutil-buffer` is the current focus. The latest slice adds pinned libavutil nullable `av_buffer_replace` coverage for the `NULL` source plus already-`NULL` destination no-op on top of the existing `AVBufferRef` and `AVBufferPool` oracle rows. The component remains `differential_pass`, not `complete`, because broader ABI/lifetime parity, FATE disposition, and final completion documentation still need closure.
+`avutil-buffer` is the current focus. The latest slice adds pinned libavutil `av_buffer_pool_get()` coverage for a custom allocator that returns `NULL`: the call returns no buffer, does not run the per-buffer release callback, does not add spare storage, and still runs `pool_free` when the pool drops. The component remains `differential_pass`, not `complete`, because broader ABI/lifetime parity, FATE disposition, and final completion documentation still need closure.
 
 `avutil-byteio`, `avutil-bitreader`, `avutil-dict`, and `avutil-options` are better positioned for the 10% push now that their WSL fuzz smoke targets execute. They still cannot honestly move to `complete` until the remaining oracle/FATE applicability decisions and stricter differential evidence are closed.
 
@@ -5925,7 +5945,7 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Local pinned FFmpeg 8.1.1 oracle installation is no longer a blocker. The WSL-backed wrappers exist under ignored `third_party/ffmpeg-oracle/build/bin/`, and local inventory snapshots have been generated under ignored `compat/ffmpeg-8.1.1/`.
 - FATE samples are still absent locally, so sample-backed upstream FATE rows such as `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` remain blocked until `third_party/fate-samples`, `FATE_SAMPLES`, or an equivalent sample tree is configured.
 - Windows-side fuzz execution is still unreliable because of MSVC ASan runtime/path behavior and previous timeouts, but WSL Ubuntu now has Rust nightly plus `cargo-fuzz` and passes avutil smoke fuzz runs.
-- `avutil-buffer` now has pinned libavutil `AVBufferRef` and bounded `AVBufferPool` differential evidence, including nullable replace/unref/realloc rows, NULL-to-NULL replace no-op coverage, offset `data`/`size` subrange refs and offset-ref clones, and writable `av_buffer_create` opaque-data owner rows, and is marked `differential_pass`, but not complete. Remaining blockers are broader ABI/lifetime closure, FATE disposition, and final completion documentation.
+- `avutil-buffer` now has pinned libavutil `AVBufferRef` and bounded `AVBufferPool` differential evidence, including nullable replace/unref/realloc rows, NULL-to-NULL replace no-op coverage, offset `data`/`size` subrange refs and offset-ref clones, writable `av_buffer_create` opaque-data owner rows, custom pool reuse/opaque/free timing rows, and custom allocator failure/no-release rows, and is marked `differential_pass`, but not complete. Remaining blockers are broader ABI/lifetime closure, FATE disposition, and final completion documentation.
 - `avutil-channel-layout` `ffmpeg -layouts` inventory now passes, but the component is not complete because parser-level oracle vectors, upstream FATE decision/coverage, byte-preserving custom-name parity, and actual fuzz execution remain pending.
 - `avutil-hash`, `avutil-error`, `avutil-rational`, `avutil-timebase`, `avutil-byteio`, `avutil-bitreader`, `avutil-sample-format`, `avutil-dict`, `repo-runtime-guard`, and `oracle-inventory` are complete for the selected default-native profile; their completion evidence remains valid, and WSL avutil smoke fuzz now also passes.
 - Windows Application Control intermittently blocks freshly built Cargo test executables. Use already accepted target caches or `target-codex` fallbacks when the same command is blocked before Rust code executes.
@@ -6056,7 +6076,7 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added `av_buffer_replace(&dst, NULL)` coverage when `dst` is already `NULL`. `crates/avutil/tests/buffer_oracle.rs` now compares the pinned FFmpeg 8.1.1 NULL-to-NULL replace no-op row against the Rust expected model, `crates/avutil/src/buffer.rs` and `fuzz/fuzz_targets/avutil_core_models.rs` assert the same `BufferRef::replace(&mut None, None)` invariant, and the docs/ledger record the added evidence. `avutil-buffer` remains `differential_pass`, not complete, because broader ABI/lifetime closure and FATE disposition remain pending.
+Latest slice: added `av_buffer_pool_get()` custom allocator-failure coverage. `crates/avutil/tests/buffer_oracle.rs` now compares the pinned FFmpeg 8.1.1 row where an `av_buffer_pool_init2` allocator returns `NULL`: the pool records the allocation attempt, returns no buffer, does not call the per-buffer release callback, and still calls `pool_free` on uninit. `crates/avutil/src/buffer.rs` and `fuzz/fuzz_targets/avutil_core_models.rs` assert the same Rust `BufferPoolCallbacks` failure invariant. The docs/ledger record the added evidence, and `avutil-buffer` remains `differential_pass`, not complete, because broader ABI/lifetime closure and FATE disposition remain pending.
 
 Latest slice: expanded `avutil-hash` parity with FFmpeg-exposed SHA512/224 and SHA512/256 support. `crates/avutil/src/hash.rs` now has streaming and one-shot SHA-512/t helpers with known-vector tests, `avformat` hash muxer dispatch and `ffmpeg-rs -hash` parsing accept the new algorithms, `crates/avutil/tests/hash_oracle.rs` validates them against pinned libavutil `av_hash_*`, and both affected fuzz models build-check the new hash paths. This historical note predates the Murmur3 and RIPEMD slices; the current remaining hash blocker is full generic hash API parity.
 

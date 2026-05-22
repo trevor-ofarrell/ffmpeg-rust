@@ -782,6 +782,52 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     drop(outstanding_release_values);
 
+    let failed_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let failed_releases = Arc::new(Mutex::new(Vec::<BufferPoolAllocation>::new()));
+    let failed_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let failed_allocation_capture = Arc::clone(&failed_allocations);
+    let failed_release_capture = Arc::clone(&failed_releases);
+    let failed_pool_free_capture = Arc::clone(&failed_pool_frees);
+    let fail_pool = BufferPool::with_callbacks(
+        4,
+        0,
+        BufferPoolCallbacks::with_allocation_callbacks(
+            move |allocated_len| {
+                failed_allocation_capture
+                    .lock()
+                    .unwrap()
+                    .push(allocated_len);
+                Err(avutil::AvError::external("pool allocation failed"))
+            },
+            move |allocation| {
+                failed_release_capture.lock().unwrap().push(allocation);
+            },
+        )
+        .with_pool_free(move || {
+            failed_pool_free_capture.lock().unwrap().push(77);
+        }),
+    )
+    .unwrap();
+    rows.insert(
+        "pool:alloc-fail".to_string(),
+        vec![
+            bool_field(fail_pool.get().is_err()),
+            failed_allocations.lock().unwrap().len().to_string(),
+            failed_releases.lock().unwrap().len().to_string(),
+            failed_pool_frees.lock().unwrap().len().to_string(),
+        ],
+    );
+    drop(fail_pool);
+    let failed_pool_free_values = failed_pool_frees.lock().unwrap();
+    rows.insert(
+        "pool:alloc-fail-uninit".to_string(),
+        vec![
+            failed_pool_free_values.len().to_string(),
+            failed_pool_free_values[0].to_string(),
+        ],
+    );
+    drop(failed_pool_free_values);
+
     rows
 }
 
@@ -1001,6 +1047,13 @@ static AVBufferRef *test_pool_alloc(void *opaque, size_t size) {
     for (size_t i = 0; i < size; i++)
         data[i] = (uint8_t)(i + 1);
     return av_buffer_create(data, size, test_pool_free, opaque, 0);
+}
+
+static AVBufferRef *test_pool_alloc_fail(void *opaque, size_t size) {
+    (void)opaque;
+    (void)size;
+    pool_alloc_count++;
+    return NULL;
 }
 
 static void fill_bytes(AVBufferRef *buf, const uint8_t *data, size_t size) {
@@ -1543,6 +1596,20 @@ int main(void) {
            pool_release_count, last_pool_release_id);
     print_hex(last_pool_release, last_pool_release_size);
     printf("|%d\n", pool_free_count);
+
+    reset_pool_counters();
+    PoolOpaque fail_opaque = { 77, 4 };
+    pool = av_buffer_pool_init2(4, &fail_opaque, test_pool_alloc_fail,
+                                test_pool_owner_free);
+    fail_if(!pool, "av_buffer_pool_init2 alloc fail failed");
+    AVBufferRef *pool_fail = av_buffer_pool_get(pool);
+    printf("pool:alloc-fail|%d|%d|%d|%d\n",
+           pool_fail == NULL, pool_alloc_count, pool_release_count,
+           pool_free_count);
+    av_buffer_unref(&pool_fail);
+    av_buffer_pool_uninit(&pool);
+    printf("pool:alloc-fail-uninit|%d|%" PRIuPTR "\n",
+           pool_free_count, last_pool_free_id);
 
     return 0;
 }

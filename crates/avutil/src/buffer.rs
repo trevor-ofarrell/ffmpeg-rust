@@ -2644,6 +2644,43 @@ mod tests {
     }
 
     #[test]
+    fn custom_buffer_pool_allocator_failure_preserves_pool_until_drop() {
+        let allocations = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let pool_frees = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let allocate_capture = std::sync::Arc::clone(&allocations);
+        let release_capture = std::sync::Arc::clone(&releases);
+        let pool_free_capture = std::sync::Arc::clone(&pool_frees);
+        let pool = BufferPool::with_callbacks(
+            4,
+            0,
+            BufferPoolCallbacks::with_allocation_callbacks(
+                move |allocated_len| {
+                    allocate_capture.lock().unwrap().push(allocated_len);
+                    Err(AvError::external("pool allocation failed"))
+                },
+                move |allocation| {
+                    release_capture.lock().unwrap().push(allocation.into_vec());
+                },
+            )
+            .with_pool_free(move || {
+                pool_free_capture.lock().unwrap().push(77);
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(pool.get().unwrap_err().kind(), AvErrorKind::External);
+        assert_eq!(*allocations.lock().unwrap(), vec![4]);
+        assert!(releases.lock().unwrap().is_empty());
+        assert!(pool_frees.lock().unwrap().is_empty());
+        assert_eq!(pool.available_count().unwrap(), 0);
+
+        drop(pool);
+        assert!(releases.lock().unwrap().is_empty());
+        assert_eq!(*pool_frees.lock().unwrap(), vec![77]);
+    }
+
+    #[test]
     fn buffer_pool_recycle_transfers_callback_owned_storage_to_pool() {
         let original_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
         let pool_releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
