@@ -9,7 +9,7 @@ use avutil::{
     packet_pack_dictionary, packet_unpack_dictionary, BufferRef, Dictionary, Frame, FrameSideData,
     FrameSideDataFlags, FrameSideDataKind, Packet, PacketActiveFormatDescription,
     PacketAudioServiceType, PacketCpbProperties, PacketDolbyVisionConf, PacketDoviCompression,
-    PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketJpDualMono,
+    PacketFallbackTrack, PacketFifo, PacketFlags, PacketFrameCropping, PacketJpDualMono,
     PacketJpDualMonoSelection, PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketOpaque,
     PacketParamChange, PacketPictureType, PacketProducerReferenceTime, PacketQualityStats,
     PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind,
@@ -144,6 +144,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     insert_frame_packet_side_data_bridge_rows(&mut rows);
     insert_payload_api_rows(&mut rows);
     insert_dictionary_api_rows(&mut rows);
+    insert_packet_fifo_rows(&mut rows);
 
     rows
 }
@@ -505,6 +506,106 @@ fn insert_dictionary_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:dict-unpack-duplicate".to_string(),
         dictionary_fields(&duplicate),
+    );
+}
+
+fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let mut fifo = PacketFifo::new();
+    rows.insert(
+        "packet:fifo-new-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+
+    let mut move_src = packet_with_common_props();
+    fifo.write_move(&mut move_src).unwrap();
+    rows.insert(
+        "packet:fifo-write-move-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-write-move-src".to_string(),
+        packet_fields(&move_src),
+    );
+    rows.insert(
+        "packet:fifo-after-write-move-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    rows.insert("packet:fifo-peek0-ret".to_string(), vec!["0".to_string()]);
+    rows.insert(
+        "packet:fifo-peek0".to_string(),
+        packet_fields(fifo.peek(0).unwrap()),
+    );
+    let err = fifo.peek(1).unwrap_err();
+    rows.insert(
+        "packet:fifo-peek1-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
+
+    let mut move_dst = Packet::new(vec![0x44], 9);
+    fifo.read_move(&mut move_dst).unwrap();
+    rows.insert(
+        "packet:fifo-read-move-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-read-move-dst".to_string(),
+        packet_fields(&move_dst),
+    );
+    rows.insert(
+        "packet:fifo-after-read-move-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+
+    let ref_src = packet_with_common_props();
+    fifo.write_ref(&ref_src).unwrap();
+    rows.insert(
+        "packet:fifo-write-ref-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-write-ref-src".to_string(),
+        packet_fields(&ref_src),
+    );
+    rows.insert(
+        "packet:fifo-after-write-ref-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    let mut ref_dst = Packet::default();
+    fifo.read_ref(&mut ref_dst).unwrap();
+    rows.insert(
+        "packet:fifo-read-ref-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-read-ref-dst".to_string(),
+        packet_fields(&ref_dst),
+    );
+    rows.insert(
+        "packet:fifo-after-read-ref-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+
+    let mut first = Packet::new(vec![1], 1);
+    let mut second = Packet::new(vec![2], 2);
+    fifo.write_move(&mut first).unwrap();
+    fifo.write_move(&mut second).unwrap();
+    rows.insert(
+        "packet:fifo-before-drain-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    fifo.drain(1).unwrap();
+    rows.insert(
+        "packet:fifo-after-drain-one-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    rows.insert(
+        "packet:fifo-after-drain-one-peek".to_string(),
+        packet_fields(fifo.peek(0).unwrap()),
+    );
+    fifo.drain(1).unwrap();
+    rows.insert(
+        "packet:fifo-after-drain-all-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
     );
 }
 
@@ -1061,6 +1162,7 @@ fn oracle_c_source() -> &'static str {
 #include "libavcodec/packet.h"
 #include "libavutil/avutil.h"
 #include "libavutil/buffer.h"
+#include "libavutil/container_fifo.h"
 #include "libavutil/dict.h"
 #include "libavutil/dovi_meta.h"
 #include "libavutil/frame.h"
@@ -1818,6 +1920,92 @@ static void exercise_dictionary_api(void) {
     av_dict_free(&unpacked);
 }
 
+static void exercise_packet_fifo_api(void) {
+    AVContainerFifo *fifo = av_container_fifo_alloc_avpacket(123);
+    fail_if(!fifo, "av_container_fifo_alloc_avpacket failed");
+    printf("packet:fifo-new-can-read|%zu\n", av_container_fifo_can_read(fifo));
+
+    AVPacket *move_src = packet_with_common_props();
+    int ret = av_container_fifo_write(fifo, move_src, 0);
+    printf("packet:fifo-write-move-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_write move failed");
+    print_packet("packet:fifo-write-move-src", move_src);
+    printf("packet:fifo-after-write-move-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+
+    AVPacket *peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 0);
+    printf("packet:fifo-peek0-ret|%d\n", ret);
+    fail_if(ret < 0 || !peek, "av_container_fifo_peek 0 failed");
+    print_packet("packet:fifo-peek0", peek);
+
+    peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 1);
+    printf("packet:fifo-peek1-ret|%d\n", ret);
+
+    AVPacket *move_dst = new_packet();
+    fail_if(av_new_packet(move_dst, 1) < 0, "fifo move dst seed failed");
+    move_dst->data[0] = 0x44;
+    move_dst->stream_index = 9;
+    ret = av_container_fifo_read(fifo, move_dst, 0);
+    printf("packet:fifo-read-move-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_read move failed");
+    print_packet("packet:fifo-read-move-dst", move_dst);
+    printf("packet:fifo-after-read-move-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_packet_free(&move_dst);
+    av_packet_free(&move_src);
+    av_container_fifo_free(&fifo);
+
+    fifo = av_container_fifo_alloc_avpacket(0);
+    fail_if(!fifo, "av_container_fifo_alloc_avpacket ref failed");
+    AVPacket *ref_src = packet_with_common_props();
+    ret = av_container_fifo_write(fifo, ref_src, AV_CONTAINER_FIFO_FLAG_REF);
+    printf("packet:fifo-write-ref-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_write ref failed");
+    print_packet("packet:fifo-write-ref-src", ref_src);
+    printf("packet:fifo-after-write-ref-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+
+    AVPacket *ref_dst = new_packet();
+    ret = av_container_fifo_read(fifo, ref_dst, AV_CONTAINER_FIFO_FLAG_REF);
+    printf("packet:fifo-read-ref-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_read ref failed");
+    print_packet("packet:fifo-read-ref-dst", ref_dst);
+    printf("packet:fifo-after-read-ref-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_packet_free(&ref_dst);
+    av_packet_free(&ref_src);
+
+    AVPacket *first = new_packet();
+    fail_if(av_new_packet(first, 1) < 0, "fifo first seed failed");
+    first->data[0] = 0x01;
+    first->stream_index = 1;
+    AVPacket *second = new_packet();
+    fail_if(av_new_packet(second, 1) < 0, "fifo second seed failed");
+    second->data[0] = 0x02;
+    second->stream_index = 2;
+    fail_if(av_container_fifo_write(fifo, first, 0) < 0,
+            "fifo first write failed");
+    fail_if(av_container_fifo_write(fifo, second, 0) < 0,
+            "fifo second write failed");
+    printf("packet:fifo-before-drain-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_container_fifo_drain(fifo, 1);
+    printf("packet:fifo-after-drain-one-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 0);
+    fail_if(ret < 0 || !peek, "fifo peek after drain failed");
+    print_packet("packet:fifo-after-drain-one-peek", peek);
+    av_container_fifo_drain(fifo, 1);
+    printf("packet:fifo-after-drain-all-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_packet_free(&first);
+    av_packet_free(&second);
+    av_container_fifo_free(&fifo);
+}
+
 int main(void) {
     AVPacket *pkt = new_packet();
     print_packet("packet:default", pkt);
@@ -1890,6 +2078,7 @@ int main(void) {
     exercise_frame_packet_side_data_bridge_api();
     exercise_payload_api();
     exercise_dictionary_api();
+    exercise_packet_fifo_api();
 
     return 0;
 }

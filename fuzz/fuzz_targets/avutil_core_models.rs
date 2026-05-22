@@ -49,9 +49,9 @@ use avutil::{
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
     PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
-    PacketEncryptionSubsample, PacketExif, PacketFallbackTrack, PacketFlags, PacketFrameCropping,
-    PacketH263MbInfo, PacketH263MbInfoEntry, PacketHdrPlusColorTransformParams, PacketIccProfile,
-    PacketIamfAnimationType, PacketIamfDemixingInfoParam, PacketIamfMixGainParam,
+    PacketEncryptionSubsample, PacketExif, PacketFallbackTrack, PacketFifo, PacketFlags,
+    PacketFrameCropping, PacketH263MbInfo, PacketH263MbInfoEntry, PacketHdrPlusColorTransformParams,
+    PacketIccProfile, PacketIamfAnimationType, PacketIamfDemixingInfoParam, PacketIamfMixGainParam,
     PacketIamfParamDefinitionType, PacketIamfReconGainInfoParam, PacketIamfReconGainSubblock,
     PacketJpDualMono, PacketJpDualMonoSelection, PacketLcevc, PacketMasteringDisplayMetadata,
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketNewExtradata, PacketPalette,
@@ -6102,6 +6102,68 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(side_data_list.remove_kind(&typed_side_data_kind).is_none());
     side_data_list.clear();
     assert!(side_data_list.is_empty());
+
+    let mut packet_fifo = PacketFifo::new();
+    assert_eq!(packet_fifo.can_read(), 0);
+    assert!(packet_fifo.is_empty());
+
+    let fifo_move_payload = vec![cursor.next().unwrap_or_default()];
+    let mut fifo_move_src = Packet::from_data(fifo_move_payload.clone()).unwrap();
+    fifo_move_src.set_pts(Some(i64::from(cursor.next().unwrap_or_default())));
+    let fifo_move_storage = fifo_move_src.data_buffer().clone();
+    packet_fifo.write_move(&mut fifo_move_src).unwrap();
+    assert!(fifo_move_src.is_empty());
+    assert_eq!(packet_fifo.can_read(), 1);
+    assert_eq!(packet_fifo.peek(0).unwrap().data(), fifo_move_payload.as_slice());
+    assert!(packet_fifo
+        .peek(0)
+        .unwrap()
+        .data_buffer()
+        .shares_storage(&fifo_move_storage));
+    let fifo_peek_err = packet_fifo.peek(1).unwrap_err();
+    assert_eq!(fifo_peek_err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(fifo_peek_err.code(), Some(AvErrorCode::EINVAL));
+    let mut fifo_move_dst = Packet::default();
+    packet_fifo.read_move(&mut fifo_move_dst).unwrap();
+    assert_eq!(packet_fifo.can_read(), 0);
+    assert_eq!(fifo_move_dst.data(), fifo_move_payload.as_slice());
+    assert!(fifo_move_dst
+        .data_buffer()
+        .shares_storage(&fifo_move_storage));
+
+    let fifo_ref_payload = vec![cursor.next().unwrap_or_default()];
+    let fifo_ref_src = Packet::from_data(fifo_ref_payload.clone()).unwrap();
+    let fifo_ref_storage = fifo_ref_src.data_buffer().clone();
+    packet_fifo.write_ref(&fifo_ref_src).unwrap();
+    assert_eq!(fifo_ref_src.data(), fifo_ref_payload.as_slice());
+    assert_eq!(packet_fifo.can_read(), 1);
+    assert!(packet_fifo
+        .peek(0)
+        .unwrap()
+        .data_buffer()
+        .shares_storage(&fifo_ref_storage));
+    let mut fifo_ref_dst = Packet::default();
+    packet_fifo.read_ref(&mut fifo_ref_dst).unwrap();
+    assert_eq!(packet_fifo.can_read(), 0);
+    assert_eq!(fifo_ref_src.data(), fifo_ref_payload.as_slice());
+    assert_eq!(fifo_ref_dst.data(), fifo_ref_payload.as_slice());
+    assert!(fifo_ref_dst.data_buffer().shares_storage(&fifo_ref_storage));
+
+    let mut fifo_first = Packet::new(vec![0x01], 1);
+    let mut fifo_second = Packet::new(vec![0x02], 2);
+    packet_fifo.write_move(&mut fifo_first).unwrap();
+    packet_fifo.write_move(&mut fifo_second).unwrap();
+    assert_eq!(packet_fifo.can_read(), 2);
+    packet_fifo.drain(1).unwrap();
+    assert_eq!(packet_fifo.can_read(), 1);
+    assert_eq!(packet_fifo.peek(0).unwrap().data(), &[0x02]);
+    packet_fifo.clear();
+    assert!(packet_fifo.is_empty());
+    let mut fifo_empty_dst = Packet::default();
+    let fifo_empty_read = packet_fifo.read_move(&mut fifo_empty_dst).unwrap_err();
+    assert_eq!(fifo_empty_read.code(), Some(AvErrorCode::EAGAIN));
+    let fifo_drain_err = packet_fifo.drain(1).unwrap_err();
+    assert_eq!(fifo_drain_err.code(), Some(AvErrorCode::EINVAL));
 
     let bridge_payload_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let bridge_payload = payload_from(cursor, bridge_payload_len);

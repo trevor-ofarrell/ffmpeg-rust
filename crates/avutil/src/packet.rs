@@ -8,6 +8,7 @@ use crate::frame::{
 use crate::{
     rescale_q, AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, Dictionary, Rational,
 };
+use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
@@ -5287,6 +5288,90 @@ impl Default for Packet {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct PacketFifo {
+    entries: VecDeque<Packet>,
+}
+
+impl PacketFifo {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn can_read(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn write_move(&mut self, packet: &mut Packet) -> AvResult<()> {
+        let mut stored = Packet::default();
+        stored.move_ref_from(packet);
+        self.entries.push_back(stored);
+        Ok(())
+    }
+
+    pub fn write_ref(&mut self, packet: &Packet) -> AvResult<()> {
+        let mut stored = Packet::default();
+        stored.ref_from(packet);
+        self.entries.push_back(stored);
+        Ok(())
+    }
+
+    pub fn read_move(&mut self, packet: &mut Packet) -> AvResult<()> {
+        let mut stored = self.pop_front()?;
+        packet.move_ref_from(&mut stored);
+        Ok(())
+    }
+
+    pub fn read_ref(&mut self, packet: &mut Packet) -> AvResult<()> {
+        let stored = self.pop_front()?;
+        packet.ref_from(&stored);
+        Ok(())
+    }
+
+    pub fn peek(&self, offset: usize) -> AvResult<&Packet> {
+        self.entries.get(offset).ok_or_else(|| {
+            AvError::with_code(
+                AvErrorKind::InvalidArgument,
+                AvErrorCode::EINVAL,
+                "packet FIFO peek offset is out of range",
+            )
+        })
+    }
+
+    pub fn drain(&mut self, nb_elems: usize) -> AvResult<()> {
+        if nb_elems > self.entries.len() {
+            return Err(AvError::with_code(
+                AvErrorKind::InvalidArgument,
+                AvErrorCode::EINVAL,
+                "packet FIFO drain count is out of range",
+            ));
+        }
+
+        for _ in 0..nb_elems {
+            self.entries.pop_front();
+        }
+        Ok(())
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    fn pop_front(&mut self) -> AvResult<Packet> {
+        self.entries.pop_front().ok_or_else(|| {
+            AvError::with_code(
+                AvErrorKind::External,
+                AvErrorCode::EAGAIN,
+                "packet FIFO is empty",
+            )
+        })
+    }
+}
+
 fn validate_packet_side_data_kind(kind: String) -> AvResult<String> {
     if kind.trim().is_empty() {
         return Err(AvError::invalid_argument(
@@ -10372,6 +10457,94 @@ mod tests {
         assert!(packet.side_data().is_empty());
         assert!(packet.opaque().is_none());
         assert!(packet.opaque_ref().is_none());
+    }
+
+    #[test]
+    fn packet_fifo_moves_refs_peeks_reads_and_drains_packets() {
+        let mut fifo = PacketFifo::new();
+        assert!(fifo.is_empty());
+        assert_eq!(fifo.can_read(), 0);
+
+        let mut moved = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+        moved.set_pts(Some(90_000));
+        moved.set_dts(Some(45_000));
+        moved.set_duration(180_000).unwrap();
+        moved.set_pos(Some(1_234)).unwrap();
+        moved.set_flag(PacketFlags::KEY, true);
+        moved.set_flag(PacketFlags::CORRUPT, true);
+        moved
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+        moved.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
+        moved.set_opaque_address(0x1234);
+        moved.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad, 0xbe])));
+
+        let moved_payload = moved.data_buffer().clone();
+        fifo.write_move(&mut moved).unwrap();
+        assert!(moved.is_empty());
+        assert_eq!(moved.stream_index(), 0);
+        assert_eq!(moved.pts(), None);
+        assert!(moved.side_data().is_empty());
+        assert_eq!(fifo.can_read(), 1);
+
+        let peeked = fifo.peek(0).unwrap();
+        assert_eq!(peeked.data(), &[0xaa, 0xbb, 0xcc]);
+        assert!(peeked.data_buffer().shares_storage(&moved_payload));
+        assert_eq!(peeked.pts(), Some(90_000));
+        assert_eq!(peeked.side_data()[0].data(), &[0x11, 0x22, 0x33]);
+        let peek_err = fifo.peek(1).unwrap_err();
+        assert_eq!(peek_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(peek_err.code(), Some(AvErrorCode::EINVAL));
+
+        let mut move_dst = Packet::new(vec![0x44], 9);
+        fifo.read_move(&mut move_dst).unwrap();
+        assert_eq!(fifo.can_read(), 0);
+        assert_eq!(move_dst.data(), &[0xaa, 0xbb, 0xcc]);
+        assert!(move_dst.data_buffer().shares_storage(&moved_payload));
+        assert_eq!(move_dst.pts(), Some(90_000));
+
+        let mut source = Packet::from_data(vec![0x10, 0x20]).unwrap();
+        source.set_pts(Some(33));
+        source.set_duration(44).unwrap();
+        source.set_opaque_ref(Some(BufferRef::from_vec(vec![0xee])));
+        let source_payload = source.data_buffer().clone();
+        fifo.write_ref(&source).unwrap();
+        assert_eq!(source.data(), &[0x10, 0x20]);
+        assert_eq!(source.pts(), Some(33));
+        assert_eq!(fifo.can_read(), 1);
+        assert!(fifo
+            .peek(0)
+            .unwrap()
+            .data_buffer()
+            .shares_storage(&source_payload));
+
+        let mut ref_dst = Packet::default();
+        fifo.read_ref(&mut ref_dst).unwrap();
+        assert_eq!(fifo.can_read(), 0);
+        assert_eq!(source.data(), &[0x10, 0x20]);
+        assert_eq!(ref_dst.data(), &[0x10, 0x20]);
+        assert!(ref_dst.data_buffer().shares_storage(source.data_buffer()));
+        assert!(ref_dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(source.opaque_ref().unwrap()));
+
+        let mut first = Packet::new(vec![1], 1);
+        let mut second = Packet::new(vec![2], 2);
+        fifo.write_move(&mut first).unwrap();
+        fifo.write_move(&mut second).unwrap();
+        assert_eq!(fifo.can_read(), 2);
+        fifo.drain(1).unwrap();
+        assert_eq!(fifo.can_read(), 1);
+        assert_eq!(fifo.peek(0).unwrap().data(), &[2]);
+        fifo.drain(1).unwrap();
+        assert!(fifo.is_empty());
+
+        let mut empty_dst = Packet::default();
+        let read_err = fifo.read_move(&mut empty_dst).unwrap_err();
+        assert_eq!(read_err.code(), Some(AvErrorCode::EAGAIN));
+        let drain_err = fifo.drain(1).unwrap_err();
+        assert_eq!(drain_err.code(), Some(AvErrorCode::EINVAL));
     }
 
     #[test]
