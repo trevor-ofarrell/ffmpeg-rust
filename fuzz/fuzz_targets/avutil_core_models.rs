@@ -6103,6 +6103,57 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     side_data_list.clear();
     assert!(side_data_list.is_empty());
 
+    let mut capacity_packet = Packet::default();
+    for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
+        assert!(capacity_packet
+            .try_add_side_data(SideData::new_with_kind(kind.clone(), vec![index as u8]).unwrap())
+            .unwrap()
+            .is_none());
+    }
+    assert_eq!(
+        capacity_packet.side_data().len(),
+        PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
+    );
+    let replaced = capacity_packet
+        .try_add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(replaced.data(), &[0]);
+    assert_eq!(
+        capacity_packet
+            .side_data_by_kind_id(&PacketSideDataKind::Palette)
+            .unwrap()
+            .data(),
+        &[0xaa]
+    );
+    let capacity_err = capacity_packet
+        .try_add_side_data(SideData::new("vendor.private.extra_packet_data", vec![0xee]).unwrap())
+        .unwrap_err();
+    assert_eq!(capacity_err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(
+        capacity_err.code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(
+        capacity_packet.side_data().len(),
+        PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
+    );
+    let capacity_new_err = capacity_packet
+        .new_side_data(
+            PacketSideDataKind::Unknown("vendor.private.new_packet_data".to_string()),
+            1,
+        )
+        .unwrap_err();
+    assert_eq!(capacity_new_err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(
+        capacity_new_err.code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(
+        capacity_packet.side_data().len(),
+        PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
+    );
+
     let mut packet_fifo = PacketFifo::new();
     assert_eq!(packet_fifo.can_read(), 0);
     assert!(packet_fifo.is_empty());

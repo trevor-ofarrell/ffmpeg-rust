@@ -133,6 +133,8 @@ The harness also includes a direct `av_init_packet()` row. `Packet::init_legacy(
 
 The harness also includes `packet:side-new-zero` and `packet:array-new-zero` rows, proving FFmpeg 8.1.1 accepts zero-size `AV_PKT_DATA_NEW_EXTRADATA` entries through both packet-owned and standalone side-data allocation APIs.
 
+The harness also includes `packet:side-add-capacity-*` and `packet:side-new-capacity-overflow` rows, proving packet-owned side-data capacity behavior at `AV_PKT_DATA_NB`: replacement remains valid at capacity, append fails with `ERANGE` without changing the entry count, and `av_packet_new_side_data()` returns NULL at capacity.
+
 The harness also includes `packet:fifo-*` rows, proving the packet-specialized container FIFO transfer semantics for move writes, ref writes, read draining, non-mutating peek, valid drain, can-read counts, and invalid offset handling.
 
 ```sh

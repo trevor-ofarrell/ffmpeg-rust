@@ -140,6 +140,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert("packet:unref".to_string(), packet_fields(&unref));
 
     insert_side_data_api_rows(&mut rows);
+    insert_side_data_capacity_rows(&mut rows);
     insert_side_data_array_api_rows(&mut rows);
     insert_frame_packet_side_data_bridge_rows(&mut rows);
     insert_payload_api_rows(&mut rows);
@@ -721,6 +722,67 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:side-new-zero".to_string(),
         side_data_summary_fields(&packet),
+    );
+}
+
+fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let mut packet = Packet::default();
+    for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
+        packet
+            .try_add_side_data(SideData::new_with_kind(kind.clone(), vec![index as u8]).unwrap())
+            .unwrap();
+    }
+    rows.insert(
+        "packet:side-add-capacity-count".to_string(),
+        vec![packet.side_data().len().to_string()],
+    );
+
+    packet
+        .try_add_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap(),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:side-add-capacity-replace-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-add-capacity-replace-count".to_string(),
+        vec![packet.side_data().len().to_string()],
+    );
+    rows.insert(
+        "packet:side-add-capacity-replace-palette".to_string(),
+        side_data_lookup_fields(packet.side_data_by_kind_id(&PacketSideDataKind::Palette)),
+    );
+
+    let err = packet
+        .try_add_side_data(SideData::new("vendor.private.extra_packet_data", vec![0xee]).unwrap())
+        .unwrap_err();
+    rows.insert(
+        "packet:side-add-capacity-overflow-ret".to_string(),
+        vec![err
+            .code()
+            .expect("capacity error should preserve FFmpeg ERANGE code")
+            .raw()
+            .to_string()],
+    );
+    rows.insert(
+        "packet:side-add-capacity-overflow-count".to_string(),
+        vec![packet.side_data().len().to_string()],
+    );
+
+    let new_side_data_ok = packet
+        .new_side_data(
+            PacketSideDataKind::Unknown("vendor.private.new_packet_data".to_string()),
+            1,
+        )
+        .is_ok();
+    rows.insert(
+        "packet:side-new-capacity-overflow".to_string(),
+        vec![
+            u8::from(new_side_data_ok).to_string(),
+            packet.side_data().len().to_string(),
+        ],
     );
 }
 
@@ -1702,6 +1764,57 @@ static void exercise_side_data_api(void) {
     av_packet_free(&pkt);
 }
 
+static uint8_t *alloc_owned_side_data_byte(uint8_t value) {
+    uint8_t *data = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!data, "side data byte allocation failed");
+    data[0] = value;
+    return data;
+}
+
+static void exercise_side_data_capacity_api(void) {
+    AVPacket *pkt = av_packet_alloc();
+    fail_if(!pkt, "av_packet_alloc side-data capacity failed");
+
+    for (int type = 0; type < AV_PKT_DATA_NB; type++) {
+        uint8_t *owned = alloc_owned_side_data_byte((uint8_t)type);
+        int ret = av_packet_add_side_data(pkt,
+                                          (enum AVPacketSideDataType)type,
+                                          owned, 1);
+        if (ret < 0)
+            av_free(owned);
+        fail_if(ret < 0, "av_packet_add_side_data capacity fill failed");
+    }
+    printf("packet:side-add-capacity-count|%d\n", pkt->side_data_elems);
+
+    uint8_t *replacement = alloc_owned_side_data_byte(0xaa);
+    int ret = av_packet_add_side_data(pkt, AV_PKT_DATA_PALETTE, replacement, 1);
+    if (ret < 0)
+        av_free(replacement);
+    printf("packet:side-add-capacity-replace-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_add_side_data capacity replace failed");
+    printf("packet:side-add-capacity-replace-count|%d\n",
+           pkt->side_data_elems);
+    print_side_data_lookup("packet:side-add-capacity-replace-palette", pkt,
+                           AV_PKT_DATA_PALETTE);
+
+    uint8_t *extra = alloc_owned_side_data_byte(0xee);
+    ret = av_packet_add_side_data(pkt, (enum AVPacketSideDataType)AV_PKT_DATA_NB,
+                                  extra, 1);
+    printf("packet:side-add-capacity-overflow-ret|%d\n", ret);
+    if (ret < 0)
+        av_free(extra);
+    printf("packet:side-add-capacity-overflow-count|%d\n",
+           pkt->side_data_elems);
+
+    uint8_t *created = av_packet_new_side_data(pkt,
+                                               (enum AVPacketSideDataType)AV_PKT_DATA_NB,
+                                               1);
+    printf("packet:side-new-capacity-overflow|%d|%d\n",
+           created ? 1 : 0, pkt->side_data_elems);
+
+    av_packet_free(&pkt);
+}
+
 static void exercise_side_data_array_api(void) {
     AVPacketSideData *sd = NULL;
     int nb_sd = 0;
@@ -2074,6 +2187,7 @@ int main(void) {
     av_packet_free(&pkt);
 
     exercise_side_data_api();
+    exercise_side_data_capacity_api();
     exercise_side_data_array_api();
     exercise_frame_packet_side_data_bridge_api();
     exercise_payload_api();

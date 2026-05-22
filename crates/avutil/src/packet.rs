@@ -228,6 +228,7 @@ impl PacketSideDataKind {
         Self::RtcpSenderReport,
         Self::Exif,
     ];
+    pub const MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS: usize = Self::KNOWN.len();
 
     pub fn from_name(name: impl Into<String>) -> AvResult<Self> {
         let name = validate_packet_side_data_kind(name.into())?;
@@ -5097,6 +5098,7 @@ impl Packet {
         kind: PacketSideDataKind,
         size: usize,
     ) -> AvResult<&mut SideData> {
+        self.ensure_side_data_capacity_for(&kind)?;
         let mut data = Vec::new();
         data.try_reserve_exact(size).map_err(|_| {
             AvError::with_code(
@@ -5108,6 +5110,11 @@ impl Packet {
         data.resize(size, 0);
         let side_data = SideData::new_with_kind(kind, data)?;
         Ok(self.add_or_replace_side_data(side_data).1)
+    }
+
+    pub fn try_add_side_data(&mut self, side_data: SideData) -> AvResult<Option<SideData>> {
+        self.ensure_side_data_capacity_for(side_data.kind_id())?;
+        Ok(self.add_or_replace_side_data(side_data).0)
     }
 
     pub fn add_side_data(&mut self, side_data: SideData) -> Option<SideData> {
@@ -5130,6 +5137,22 @@ impl Packet {
         self.side_data.push(side_data);
         let index = self.side_data.len() - 1;
         (None, &mut self.side_data[index])
+    }
+
+    fn ensure_side_data_capacity_for(&self, kind: &PacketSideDataKind) -> AvResult<()> {
+        if self
+            .side_data
+            .iter()
+            .any(|existing| existing.kind_id() == kind)
+        {
+            return Ok(());
+        }
+
+        if self.side_data.len() >= PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS {
+            return Err(packet_side_data_capacity_error());
+        }
+
+        Ok(())
     }
 
     pub fn shrink_side_data(&mut self, kind: &str, len: usize) -> AvResult<bool> {
@@ -5392,6 +5415,14 @@ fn packet_frame_side_data_map_error() -> AvError {
         AvErrorKind::InvalidArgument,
         AvErrorCode::EINVAL,
         "packet and frame side data types do not have a matching mapped type",
+    )
+}
+
+fn packet_side_data_capacity_error() -> AvError {
+    AvError::with_code(
+        AvErrorKind::InvalidArgument,
+        AvErrorCode::from_posix_errno(34),
+        "packet side data entry limit exceeded",
     )
 }
 
@@ -9915,6 +9946,71 @@ mod tests {
         assert_eq!(
             packet.side_data_by_kind("new_extradata").unwrap().data(),
             &[7]
+        );
+    }
+
+    #[test]
+    fn packet_try_add_side_data_reports_ffmpeg_entry_limit() {
+        let mut packet = Packet::new(Vec::new(), 0);
+        for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
+            assert!(packet
+                .try_add_side_data(
+                    SideData::new_with_kind(kind.clone(), vec![index as u8]).unwrap()
+                )
+                .unwrap()
+                .is_none());
+        }
+
+        assert_eq!(
+            packet.side_data().len(),
+            PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
+        );
+
+        let replaced = packet
+            .try_add_side_data(
+                SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap(),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(replaced.data(), &[0]);
+        assert_eq!(
+            packet.side_data().len(),
+            PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
+        );
+        assert_eq!(
+            packet
+                .side_data_by_kind_id(&PacketSideDataKind::Palette)
+                .unwrap()
+                .data(),
+            &[0xaa]
+        );
+
+        let err = packet
+            .try_add_side_data(
+                SideData::new("vendor.private.extra_packet_data", vec![0xee]).unwrap(),
+            )
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.code(), Some(AvErrorCode::from_posix_errno(34)));
+        assert_eq!(
+            packet.side_data().len(),
+            PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
+        );
+        assert!(packet
+            .side_data_by_kind("vendor.private.extra_packet_data")
+            .is_none());
+
+        let err = packet
+            .new_side_data(
+                PacketSideDataKind::Unknown("vendor.private.new_packet_data".to_string()),
+                1,
+            )
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.code(), Some(AvErrorCode::from_posix_errno(34)));
+        assert_eq!(
+            packet.side_data().len(),
+            PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
         );
     }
 
