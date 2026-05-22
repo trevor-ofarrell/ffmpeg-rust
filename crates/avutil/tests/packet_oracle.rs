@@ -18,8 +18,9 @@ use avutil::{
     PacketSideDataKind, PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason,
     PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,
     PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition,
-    PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE,
-    AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
+    PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE,
+    AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -286,6 +287,34 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
             .unwrap()
             .to_bytes(),
             &[0, 8, 16],
+        ),
+    );
+    let first_tdrdi = PacketThreeDReferenceDisplay::new(0, 1, (12, 34), (5, 67), true, -11);
+    let second_tdrdi = PacketThreeDReferenceDisplay::new(2, 3, (10, 20), (4, 40), false, 0);
+    rows.insert(
+        "packet:payload-layout-3d-reference-displays".to_string(),
+        payload_layout_fields(
+            &PacketThreeDReferenceDisplays::new(31, true, 7, vec![first_tdrdi, second_tdrdi])
+                .unwrap()
+                .to_bytes(),
+            &[
+                0,
+                1,
+                2,
+                3,
+                PacketThreeDReferenceDisplays::ENTRIES_OFFSET_OFFSET,
+                PacketThreeDReferenceDisplays::ENTRY_SIZE_OFFSET,
+                PacketThreeDReferenceDisplays::ENTRIES_OFFSET,
+                PacketThreeDReferenceDisplays::ENTRY_DATA_LEN,
+                0,
+                2,
+                4,
+                5,
+                6,
+                7,
+                8,
+                10,
+            ],
         ),
     );
     rows.insert(
@@ -1536,6 +1565,7 @@ fn oracle_c_source() -> &'static str {
 #include "libavutil/replaygain.h"
 #include "libavutil/spherical.h"
 #include "libavutil/stereo3d.h"
+#include "libavutil/tdrdi.h"
 
 static void fail_if(int condition, const char *message) {
     if (condition) {
@@ -1809,6 +1839,51 @@ static void print_side_data_payload_layouts(void) {
            offsetof(AVAmbientViewingEnvironment, ambient_illuminance),
            offsetof(AVAmbientViewingEnvironment, ambient_light_x),
            offsetof(AVAmbientViewingEnvironment, ambient_light_y));
+
+    size_t tdrdi_size = 0;
+    AV3DReferenceDisplaysInfo *tdrdi = av_tdrdi_alloc(2, &tdrdi_size);
+    fail_if(!tdrdi, "av_tdrdi_alloc returned NULL");
+    tdrdi->prec_ref_display_width = 31;
+    tdrdi->ref_viewing_distance_flag = 1;
+    tdrdi->prec_ref_viewing_dist = 7;
+    AV3DReferenceDisplay *tdrdi_first = av_tdrdi_get_display(tdrdi, 0);
+    tdrdi_first->left_view_id = 0;
+    tdrdi_first->right_view_id = 1;
+    tdrdi_first->exponent_ref_display_width = 12;
+    tdrdi_first->mantissa_ref_display_width = 34;
+    tdrdi_first->exponent_ref_viewing_distance = 5;
+    tdrdi_first->mantissa_ref_viewing_distance = 67;
+    tdrdi_first->additional_shift_present_flag = 1;
+    tdrdi_first->num_sample_shift = -11;
+    AV3DReferenceDisplay *tdrdi_second = av_tdrdi_get_display(tdrdi, 1);
+    tdrdi_second->left_view_id = 2;
+    tdrdi_second->right_view_id = 3;
+    tdrdi_second->exponent_ref_display_width = 10;
+    tdrdi_second->mantissa_ref_display_width = 20;
+    tdrdi_second->exponent_ref_viewing_distance = 4;
+    tdrdi_second->mantissa_ref_viewing_distance = 40;
+    tdrdi_second->additional_shift_present_flag = 0;
+    tdrdi_second->num_sample_shift = 0;
+    print_payload_layout_header("packet:payload-layout-3d-reference-displays",
+                                tdrdi, tdrdi_size);
+    printf("|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu\n",
+           offsetof(AV3DReferenceDisplaysInfo, prec_ref_display_width),
+           offsetof(AV3DReferenceDisplaysInfo, ref_viewing_distance_flag),
+           offsetof(AV3DReferenceDisplaysInfo, prec_ref_viewing_dist),
+           offsetof(AV3DReferenceDisplaysInfo, num_ref_displays),
+           offsetof(AV3DReferenceDisplaysInfo, entries_offset),
+           offsetof(AV3DReferenceDisplaysInfo, entry_size),
+           tdrdi->entries_offset,
+           tdrdi->entry_size,
+           offsetof(AV3DReferenceDisplay, left_view_id),
+           offsetof(AV3DReferenceDisplay, right_view_id),
+           offsetof(AV3DReferenceDisplay, exponent_ref_display_width),
+           offsetof(AV3DReferenceDisplay, mantissa_ref_display_width),
+           offsetof(AV3DReferenceDisplay, exponent_ref_viewing_distance),
+           offsetof(AV3DReferenceDisplay, mantissa_ref_viewing_distance),
+           offsetof(AV3DReferenceDisplay, additional_shift_present_flag),
+           offsetof(AV3DReferenceDisplay, num_sample_shift));
+    av_free(tdrdi);
 
     AVSphericalMapping spherical;
     memset(&spherical, 0, sizeof(spherical));

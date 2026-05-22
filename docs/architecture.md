@@ -169,7 +169,7 @@ The rawvideo-facing paletted subset now includes FFmpeg's `pal8` name. The share
 
 `PacketAmbientViewingEnvironment` covers `AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT` as the pinned native `AVAmbientViewingEnvironment` packet payload, preserving ambient illuminance and CIE 1931 x/y ambient-light chromaticity rationals with the same denominator, sign, and normalized-coordinate validation envelope as the existing frame-side model. The packet oracle validates the 24-byte native payload shape and rational field offsets.
 
-`PacketThreeDReferenceDisplays` covers `AV_PKT_DATA_3D_REFERENCE_DISPLAYS` as the pinned native `AV3DReferenceDisplaysInfo` allocation envelope, preserving precision fields, reference display entries, native header length, and entry-offset/entry-size invariants with the same validation envelope as the existing frame-side model.
+`PacketThreeDReferenceDisplays` covers `AV_PKT_DATA_3D_REFERENCE_DISPLAYS` as the pinned native `AV3DReferenceDisplaysInfo` allocation envelope, preserving precision fields, reference display entries, native header length, and entry-offset/entry-size invariants with the same validation envelope as the existing frame-side model. The packet oracle validates the native allocation size, precision/count offsets, `entries_offset` and `entry_size` metadata, and `AV3DReferenceDisplay` entry field offsets.
 
 `PacketExif` covers `AV_PKT_DATA_EXIF` as a borrowed EXIF/TIFF payload starting with a little-endian or big-endian TIFF header, preserving the original bytes and reusing the frame-side IFD parser, linked-IFD traversal, typed entry accessors, and selected common-tag validation envelope.
 
