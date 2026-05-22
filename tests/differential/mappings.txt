@@ -15,6 +15,7 @@ fftools-version|oracle-hide-banner-version|.|cargo|env:FFMPEG_ORACLE={oracle_ffm
 avutil-error|oracle-libavutil-error-strings|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|error_oracle|--|--ignored
 avutil-rational|oracle-libavutil-rational|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|rational_oracle|--|--ignored
 avutil-timebase|oracle-libavutil-timebase|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|timebase_oracle|--|--ignored
+avutil-logging|oracle-libavutil-logging|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|logging_oracle|--|--ignored
 avutil-packet|oracle-libavcodec-packet-core|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|packet_oracle|--|--ignored
 avutil-buffer|oracle-libavutil-buffer|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|buffer_oracle|--|--ignored
 avutil-frame|oracle-libavutil-frame-core|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|frame_oracle|--|--ignored
