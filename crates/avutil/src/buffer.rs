@@ -287,6 +287,94 @@ impl BufferRef {
         }
     }
 
+    pub fn from_vec_with_opaque_release_callback<T, F>(
+        data: Vec<u8>,
+        opaque: T,
+        on_release: F,
+    ) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+        F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+    {
+        let len = data.len();
+        Self {
+            data: Arc::new(BufferStorage::with_opaque_data_release(
+                data, opaque, on_release, false,
+            )),
+            offset: 0,
+            len,
+        }
+    }
+
+    pub fn from_vec_with_opaque_release_callback_readonly<T, F>(
+        data: Vec<u8>,
+        opaque: T,
+        on_release: F,
+    ) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+        F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+    {
+        let len = data.len();
+        Self {
+            data: Arc::new(BufferStorage::with_opaque_data_release(
+                data, opaque, on_release, true,
+            )),
+            offset: 0,
+            len,
+        }
+    }
+
+    pub fn from_vec_with_len_and_opaque_release_callback<T, F>(
+        data: Vec<u8>,
+        len: usize,
+        opaque: T,
+        on_release: F,
+    ) -> AvResult<Self>
+    where
+        T: Any + Send + Sync + 'static,
+        F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+    {
+        if len > data.len() {
+            return Err(AvError::invalid_argument(format!(
+                "visible buffer length {len} exceeds {} allocated bytes",
+                data.len()
+            )));
+        }
+        Ok(Self {
+            data: Arc::new(BufferStorage::with_opaque_data_release(
+                data, opaque, on_release, false,
+            )),
+            offset: 0,
+            len,
+        })
+    }
+
+    pub fn from_vec_with_len_and_opaque_release_callback_readonly<T, F>(
+        data: Vec<u8>,
+        len: usize,
+        opaque: T,
+        on_release: F,
+    ) -> AvResult<Self>
+    where
+        T: Any + Send + Sync + 'static,
+        F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+    {
+        if len > data.len() {
+            return Err(AvError::invalid_argument(format!(
+                "visible buffer length {len} exceeds {} allocated bytes",
+                data.len()
+            )));
+        }
+        Ok(Self {
+            data: Arc::new(BufferStorage::with_opaque_data_release(
+                data, opaque, on_release, true,
+            )),
+            offset: 0,
+            len,
+        })
+    }
+
     pub fn from_vec_with_len_and_release_callback<F>(
         data: Vec<u8>,
         len: usize,
@@ -593,6 +681,7 @@ enum BufferOwner {
     },
     Callback(BufferReleaseCallback),
     Opaque(Box<dyn OpaqueOwner>),
+    OpaqueData(Box<dyn OpaqueDataOwner>),
 }
 
 trait OpaqueOwner: Send + Sync {
@@ -601,6 +690,16 @@ trait OpaqueOwner: Send + Sync {
 }
 
 struct TypedOpaqueOwner<T, F> {
+    opaque: T,
+    on_release: F,
+}
+
+trait OpaqueDataOwner: Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+    fn release(self: Box<Self>, bytes: Vec<u8>);
+}
+
+struct TypedOpaqueDataOwner<T, F> {
     opaque: T,
     on_release: F,
 }
@@ -617,6 +716,21 @@ where
     fn release(self: Box<Self>) {
         let Self { opaque, on_release } = *self;
         on_release(opaque);
+    }
+}
+
+impl<T, F> OpaqueDataOwner for TypedOpaqueDataOwner<T, F>
+where
+    T: Any + Send + Sync + 'static,
+    F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+{
+    fn as_any(&self) -> &dyn Any {
+        &self.opaque
+    }
+
+    fn release(self: Box<Self>, bytes: Vec<u8>) {
+        let Self { opaque, on_release } = *self;
+        on_release(opaque, bytes);
     }
 }
 
@@ -668,6 +782,26 @@ impl BufferStorage {
         }
     }
 
+    fn with_opaque_data_release<T, F>(
+        bytes: Vec<u8>,
+        opaque: T,
+        on_release: F,
+        readonly: bool,
+    ) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+        F: FnOnce(T, Vec<u8>) + Send + Sync + 'static,
+    {
+        Self {
+            bytes: BufferBytes::owned(bytes),
+            owner: Some(BufferOwner::OpaqueData(Box::new(TypedOpaqueDataOwner {
+                opaque,
+                on_release,
+            }))),
+            readonly,
+        }
+    }
+
     fn with_pool(allocation: BufferPoolAllocation, pool: &Arc<BufferPoolInner>) -> Self {
         let BufferPoolAllocation { bytes, opaque } = allocation;
         Self {
@@ -706,6 +840,7 @@ impl BufferStorage {
     fn opaque_ref<T: 'static>(&self) -> Option<&T> {
         match &self.owner {
             Some(BufferOwner::Opaque(owner)) => owner.as_any().downcast_ref::<T>(),
+            Some(BufferOwner::OpaqueData(owner)) => owner.as_any().downcast_ref::<T>(),
             _ => None,
         }
     }
@@ -812,6 +947,7 @@ impl std::fmt::Debug for BufferStorage {
             Some(BufferOwner::Pool { .. }) => "pool",
             Some(BufferOwner::Callback(_)) => "callback",
             Some(BufferOwner::Opaque(_)) => "opaque",
+            Some(BufferOwner::OpaqueData(_)) => "opaque-data",
             None => "none",
         };
         f.debug_struct("BufferStorage")
@@ -865,6 +1001,10 @@ impl Drop for BufferStorage {
             }
             Some(BufferOwner::Opaque(owner)) => {
                 owner.release();
+            }
+            Some(BufferOwner::OpaqueData(owner)) => {
+                let storage = self.bytes.take_vec();
+                owner.release(storage);
             }
             None => {}
         }
@@ -1566,6 +1706,95 @@ mod tests {
         );
         assert!(released.lock().unwrap().is_empty());
         assert_eq!(Arc::strong_count(&storage), 1);
+    }
+
+    #[test]
+    fn opaque_data_buffers_preserve_owner_until_original_release() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut unique = BufferRef::from_vec_with_opaque_release_callback(
+            vec![1, 2, 3],
+            17usize,
+            move |opaque, bytes| {
+                capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+
+        assert!(unique.is_writable());
+        assert!(!unique.is_readonly());
+        assert_eq!(unique.opaque_ref::<usize>(), Some(&17));
+        unique.make_mut()[1] = 9;
+        assert_eq!(unique.opaque_ref::<usize>(), Some(&17));
+        drop(unique);
+        assert_eq!(*released.lock().unwrap(), vec![(17, vec![1, 9, 3])]);
+
+        let shared_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let shared_capture = std::sync::Arc::clone(&shared_released);
+        let source = BufferRef::from_vec_with_opaque_release_callback(
+            vec![4, 5, 6],
+            23usize,
+            move |opaque, bytes| {
+                shared_capture.lock().unwrap().push((opaque, bytes));
+            },
+        );
+        let mut detached = source.clone();
+        detached.make_mut()[0] = 8;
+
+        assert_eq!(source.opaque_ref::<usize>(), Some(&23));
+        assert!(detached.opaque_ref::<usize>().is_none());
+        assert!(!detached.shares_storage(&source));
+        assert_eq!(detached.as_slice(), &[8, 5, 6]);
+        assert_eq!(source.as_slice(), &[4, 5, 6]);
+        drop(detached);
+        assert!(shared_released.lock().unwrap().is_empty());
+        drop(source);
+        assert_eq!(*shared_released.lock().unwrap(), vec![(23, vec![4, 5, 6])]);
+    }
+
+    #[test]
+    fn readonly_opaque_data_buffers_release_original_bytes_on_detach() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let capture = std::sync::Arc::clone(&released);
+        let mut buffer = BufferRef::from_vec_with_len_and_opaque_release_callback_readonly(
+            vec![7, 8, 9, 0],
+            3,
+            31usize,
+            move |opaque, bytes| {
+                capture.lock().unwrap().push((opaque, bytes));
+            },
+        )
+        .unwrap();
+
+        assert!(buffer.is_readonly());
+        assert!(!buffer.is_writable());
+        assert_eq!(buffer.opaque_ref::<usize>(), Some(&31));
+        buffer.make_mut()[2] = 4;
+
+        assert_eq!(*released.lock().unwrap(), vec![(31, vec![7, 8, 9, 0])]);
+        assert!(!buffer.is_readonly());
+        assert!(buffer.is_writable());
+        assert!(buffer.opaque_ref::<usize>().is_none());
+        assert_eq!(buffer.as_slice(), &[7, 8, 4]);
+        assert_eq!(buffer.padding_slice(), &[0]);
+
+        let invalid_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let invalid_capture = std::sync::Arc::clone(&invalid_released);
+        assert_eq!(
+            BufferRef::from_vec_with_len_and_opaque_release_callback(
+                vec![1, 2],
+                3,
+                41usize,
+                move |opaque, bytes| {
+                    invalid_capture.lock().unwrap().push((opaque, bytes));
+                },
+            )
+            .unwrap_err()
+            .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert!(invalid_released.lock().unwrap().is_empty());
     }
 
     #[test]

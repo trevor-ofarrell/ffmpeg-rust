@@ -8,6 +8,8 @@ use std::{
 
 use avutil::{BufferPool, BufferPoolAllocation, BufferPoolCallbacks, BufferRef};
 
+type ReleaseRows = Arc<Mutex<Vec<(usize, Vec<u8>)>>>;
+
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 libavutil oracle under third_party/ffmpeg-oracle/wsl"]
 fn libavutil_buffer_refs_match_current_model() {
@@ -134,6 +136,65 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "buffer:readonly-after".to_string(),
         buffer_fields_with_opaque(&readonly),
+    );
+
+    let create_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_capture = Arc::clone(&create_released);
+    let create = BufferRef::from_vec_with_opaque_release_callback(
+        vec![31, 32, 33],
+        123usize,
+        move |opaque, bytes| {
+            create_capture.lock().unwrap().push((opaque, bytes));
+        },
+    );
+    rows.insert(
+        "buffer:create-writable".to_string(),
+        buffer_fields_with_opaque(&create),
+    );
+    drop(create);
+    rows.insert(
+        "buffer:create-writable-release".to_string(),
+        release_fields(&create_released),
+    );
+
+    let create_shared_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_shared_capture = Arc::clone(&create_shared_released);
+    let create_shared_src = BufferRef::from_vec_with_opaque_release_callback(
+        vec![40, 41, 42],
+        456usize,
+        move |opaque, bytes| {
+            create_shared_capture.lock().unwrap().push((opaque, bytes));
+        },
+    );
+    let mut create_shared_dst = create_shared_src.clone();
+    create_shared_dst.make_mut();
+    rows.insert(
+        "buffer:create-shared-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-shared-src".to_string(),
+        buffer_fields_with_opaque(&create_shared_src),
+    );
+    rows.insert(
+        "buffer:create-shared-dst".to_string(),
+        buffer_fields_with_opaque(&create_shared_dst),
+    );
+    rows.insert(
+        "buffer:create-shared-shares".to_string(),
+        vec![bool_field(
+            create_shared_src.shares_storage(&create_shared_dst),
+        )],
+    );
+    drop(create_shared_dst);
+    rows.insert(
+        "buffer:create-shared-release-before-src-drop".to_string(),
+        vec![create_shared_released.lock().unwrap().len().to_string()],
+    );
+    drop(create_shared_src);
+    rows.insert(
+        "buffer:create-shared-release".to_string(),
+        release_fields(&create_shared_released),
     );
 
     let mut grow = BufferRef::from_vec(vec![1, 2, 3]);
@@ -455,6 +516,12 @@ fn buffer_fields_with_opaque(buffer: &BufferRef) -> Vec<String> {
     fields
 }
 
+fn release_fields(released: &ReleaseRows) -> Vec<String> {
+    let released = released.lock().unwrap();
+    let (opaque, bytes) = released.first().expect("expected release row");
+    vec![released.len().to_string(), opaque.to_string(), hex(bytes)]
+}
+
 fn hex(data: &[u8]) -> String {
     let mut output = String::with_capacity(data.len() * 2);
     for byte in data {
@@ -543,6 +610,10 @@ fn oracle_c_source() -> &'static str {
 
 static int release_count = 0;
 static uintptr_t last_opaque = 0;
+static int create_release_count = 0;
+static uintptr_t last_create_opaque = 0;
+static size_t last_create_release_size = 0;
+static uint8_t last_create_release[32];
 static int pool_alloc_count = 0;
 static int pool_release_count = 0;
 static int pool_free_count = 0;
@@ -566,6 +637,24 @@ static void fail_if(int condition, const char *message) {
 static void test_free(void *opaque, uint8_t *data) {
     release_count++;
     last_opaque = (uintptr_t)opaque;
+    av_free(data);
+}
+
+static void reset_create_release(void) {
+    create_release_count = 0;
+    last_create_opaque = 0;
+    last_create_release_size = 0;
+    for (size_t i = 0; i < sizeof(last_create_release); i++)
+        last_create_release[i] = 0;
+}
+
+static void test_create_free(void *opaque, uint8_t *data) {
+    create_release_count++;
+    last_create_opaque = (uintptr_t)opaque;
+    fail_if(last_create_release_size > sizeof(last_create_release),
+            "create release fixture too large");
+    for (size_t i = 0; i < last_create_release_size; i++)
+        last_create_release[i] = data[i];
     av_free(data);
 }
 
@@ -654,6 +743,15 @@ static void print_buffer_opaque(const char *label, const AVBufferRef *buf) {
            (unsigned long long)(uintptr_t)(buf ? av_buffer_get_opaque(buf) : NULL));
 }
 
+static void print_create_release(const char *label) {
+    printf("%s|%d|%llu|",
+           label,
+           create_release_count,
+           (unsigned long long)last_create_opaque);
+    print_hex(last_create_release, last_create_release_size);
+    printf("\n");
+}
+
 int main(void) {
     AVBufferRef *buf = av_buffer_alloc(4);
     fail_if(!buf, "av_buffer_alloc failed");
@@ -718,6 +816,46 @@ int main(void) {
            ret, release_count, (unsigned long long)last_opaque);
     print_buffer_opaque("buffer:readonly-after", readonly);
     av_buffer_unref(&readonly);
+
+    reset_create_release();
+    static const uint8_t create_bytes[] = { 31, 32, 33 };
+    uint8_t *create_data = av_malloc(sizeof(create_bytes));
+    fail_if(!create_data, "av_malloc create_data failed");
+    for (size_t i = 0; i < sizeof(create_bytes); i++)
+        create_data[i] = create_bytes[i];
+    last_create_release_size = sizeof(create_bytes);
+    AVBufferRef *create = av_buffer_create(create_data, sizeof(create_bytes),
+                                           test_create_free,
+                                           (void *)(uintptr_t)123, 0);
+    fail_if(!create, "av_buffer_create writable failed");
+    print_buffer_opaque("buffer:create-writable", create);
+    av_buffer_unref(&create);
+    print_create_release("buffer:create-writable-release");
+
+    reset_create_release();
+    static const uint8_t create_shared_bytes[] = { 40, 41, 42 };
+    uint8_t *create_shared_data = av_malloc(sizeof(create_shared_bytes));
+    fail_if(!create_shared_data, "av_malloc create_shared_data failed");
+    for (size_t i = 0; i < sizeof(create_shared_bytes); i++)
+        create_shared_data[i] = create_shared_bytes[i];
+    last_create_release_size = sizeof(create_shared_bytes);
+    AVBufferRef *create_shared_src =
+        av_buffer_create(create_shared_data, sizeof(create_shared_bytes),
+                         test_create_free, (void *)(uintptr_t)456, 0);
+    fail_if(!create_shared_src, "av_buffer_create shared src failed");
+    AVBufferRef *create_shared_dst = av_buffer_ref(create_shared_src);
+    fail_if(!create_shared_dst, "av_buffer_ref create_shared failed");
+    ret = av_buffer_make_writable(&create_shared_dst);
+    printf("buffer:create-shared-make-writable-ret|%d\n", ret);
+    print_buffer_opaque("buffer:create-shared-src", create_shared_src);
+    print_buffer_opaque("buffer:create-shared-dst", create_shared_dst);
+    printf("buffer:create-shared-shares|%d\n",
+           create_shared_src->data == create_shared_dst->data);
+    av_buffer_unref(&create_shared_dst);
+    printf("buffer:create-shared-release-before-src-drop|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_shared_src);
+    print_create_release("buffer:create-shared-release");
 
     static const uint8_t grow_bytes[] = { 1, 2, 3 };
     AVBufferRef *grow = av_buffer_allocz(3);

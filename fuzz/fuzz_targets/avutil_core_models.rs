@@ -803,6 +803,55 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(invalid_external_released.lock().unwrap().is_empty());
     assert_eq!(Arc::strong_count(&external_storage), 1);
 
+    let opaque_data_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let opaque_data_capture = Arc::clone(&opaque_data_released);
+    let opaque_data_source = BufferRef::from_vec_with_opaque_release_callback(
+        payload.clone(),
+        payload_len,
+        move |opaque, bytes| {
+            opaque_data_capture.lock().unwrap().push((opaque, bytes));
+        },
+    );
+    assert_eq!(opaque_data_source.opaque_ref::<usize>(), Some(&payload_len));
+    assert!(opaque_data_source.is_writable());
+    let mut opaque_data_detached = opaque_data_source.clone();
+    let opaque_mutation = cursor.next().unwrap_or_default();
+    if !opaque_data_detached.is_empty() {
+        opaque_data_detached.make_mut()[0] = opaque_mutation;
+    } else {
+        assert_eq!(opaque_data_detached.make_mut(), &mut []);
+    }
+    assert!(opaque_data_detached.opaque_ref::<usize>().is_none());
+    assert!(!opaque_data_detached.shares_storage(&opaque_data_source));
+    drop(opaque_data_detached);
+    assert!(opaque_data_released.lock().unwrap().is_empty());
+    drop(opaque_data_source);
+    assert_eq!(
+        *opaque_data_released.lock().unwrap(),
+        vec![(payload_len, payload.clone())]
+    );
+
+    let readonly_opaque_data_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_opaque_data_capture = Arc::clone(&readonly_opaque_data_released);
+    let mut readonly_opaque_data = BufferRef::from_vec_with_opaque_release_callback_readonly(
+        payload.clone(),
+        payload_len,
+        move |opaque, bytes| {
+            readonly_opaque_data_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    );
+    assert!(readonly_opaque_data.is_readonly());
+    assert!(!readonly_opaque_data.is_writable());
+    readonly_opaque_data.make_mut();
+    assert!(readonly_opaque_data.opaque_ref::<usize>().is_none());
+    assert_eq!(
+        *readonly_opaque_data_released.lock().unwrap(),
+        vec![(payload_len, payload.clone())]
+    );
+
     let replace_source = BufferRef::copy_from_slice(&payload);
     let mut replace_empty_dst = None;
     BufferRef::replace(&mut replace_empty_dst, Some(&replace_source));
