@@ -542,10 +542,16 @@ fuzz_targets = ["avutil_core_models"]
 # through the pinned default 64-byte alignment path, `av_frame_move_ref`,
 # `av_frame_copy_props` payload/property behavior, packed s16 stereo audio
 # `av_frame_get_buffer`, and `av_frame_new_side_data` /
-# `av_frame_get_side_data` / `av_frame_remove_side_data` for displaymatrix.
+# `av_frame_get_side_data` / `av_frame_remove_side_data` for displaymatrix,
+# plus standalone `av_frame_side_data_new` / remove-by-props array behavior.
 # The copy-props row proves destination payload buffers are preserved, PTS is
 # copied, existing destination side data is retained, source side data is
 # appended as a deep copy, and destination `hw_frames_ctx` is left untouched.
+# The side-data array rows prove duplicate insertion without flags fails without
+# mutating the array, `REPLACE` replaces only non-MULTI entries, `UNIQUE`
+# removes matching entries before appending, MULTI side-data ignores replacement
+# and appends another entry, and removal by `AV_SIDE_DATA_PROP_MULTI` removes all
+# matching entries.
 # Rust now repacks non-writable VideoFrame and AudioFrame payloads into the same
 # pinned default-aligned storage shape while preserving visible snapshots.
 # WSL `cargo fuzz run avutil_core_models -- -runs=1` passes locally with the

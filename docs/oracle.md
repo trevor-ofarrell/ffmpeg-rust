@@ -208,6 +208,12 @@ model. The `av_frame_copy_props` rows prove destination payload buffers are
 preserved, PTS is copied, existing destination side data is retained, source
 side data is appended as a deep copy, and destination `hw_frames_ctx` remains
 unchanged.
+The standalone side-data array rows exercise `av_frame_side_data_new()` and
+`av_frame_side_data_remove_by_props()`: duplicate insertion without flags fails
+without mutation, `AV_FRAME_SIDE_DATA_FLAG_REPLACE` replaces non-MULTI entries,
+`AV_FRAME_SIDE_DATA_FLAG_UNIQUE` removes matching entries before appending,
+MULTI side data appends even with REPLACE, and property removal clears all
+MULTI entries.
 The first row caught and now verifies the pinned default 64-byte
 `av_frame_make_writable()` realignment path. It is wired into
 `tests/differential/mappings.txt` as `avutil-frame|oracle-libavutil-frame-core`:

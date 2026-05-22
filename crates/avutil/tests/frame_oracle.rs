@@ -212,6 +212,77 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![bool_field(found), side_frame.side_data().len().to_string()],
     );
 
+    let mut side_array = Frame::empty();
+    let added = side_array
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .is_ok();
+    rows.insert(
+        "frame:side-array-new".to_string(),
+        side_array_status_fields(added, &side_array),
+    );
+    let duplicate = side_array
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x22]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .is_ok();
+    rows.insert(
+        "frame:side-array-duplicate".to_string(),
+        side_array_status_fields(duplicate, &side_array),
+    );
+    let replaced = side_array
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x33, 0x44]).unwrap(),
+            FrameSideDataFlags::REPLACE,
+        )
+        .is_ok();
+    rows.insert(
+        "frame:side-array-replace".to_string(),
+        side_array_status_fields(replaced, &side_array),
+    );
+    side_array
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0x55]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    let uniqued = side_array
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x66]).unwrap(),
+            FrameSideDataFlags::UNIQUE,
+        )
+        .is_ok();
+    rows.insert(
+        "frame:side-array-unique".to_string(),
+        side_array_status_fields(uniqued, &side_array),
+    );
+    side_array
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::SeiUnregistered, vec![0x77; 16])
+                .unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    let multi_replaced = side_array
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::SeiUnregistered, vec![0x88; 16])
+                .unwrap(),
+            FrameSideDataFlags::REPLACE,
+        )
+        .is_ok();
+    rows.insert(
+        "frame:side-array-multi-replace".to_string(),
+        side_array_status_fields(multi_replaced, &side_array),
+    );
+    side_array.remove_side_data_by_properties(FrameSideDataProperties::MULTI);
+    rows.insert(
+        "frame:side-array-remove-multi".to_string(),
+        side_array_fields(&side_array),
+    );
+
     rows
 }
 
@@ -309,6 +380,19 @@ fn frame_side_data_fields(frame: &Frame) -> Vec<String> {
         hex(side_data.data()),
         side_data.buffer().strong_count().to_string(),
         bool_field(side_data.is_writable()),
+    ]
+}
+
+fn side_array_status_fields(success: bool, frame: &Frame) -> Vec<String> {
+    let mut fields = vec![bool_field(success)];
+    fields.extend(side_array_fields(frame));
+    fields
+}
+
+fn side_array_fields(frame: &Frame) -> Vec<String> {
+    vec![
+        frame.side_data().len().to_string(),
+        side_summary(frame.side_data()),
     ]
 }
 
@@ -581,6 +665,31 @@ static void print_side_summary(const AVFrame *frame)
     }
 }
 
+static void print_side_array_summary(AVFrameSideData * const *sd, int nb_sd)
+{
+    if (nb_sd == 0) {
+        printf("none");
+        return;
+    }
+
+    for (int i = 0; i < nb_sd; i++) {
+        const AVFrameSideData *entry = sd[i];
+        const char *name = av_frame_side_data_name(entry->type);
+        if (i)
+            printf(";");
+        printf("%s:%zu:", name ? name : "unknown", entry->size);
+        print_hex(entry->data, entry->size);
+    }
+}
+
+static void print_side_array_row(const char *name, int success,
+                                 AVFrameSideData * const *sd, int nb_sd)
+{
+    printf("%s|%d|%d|", name, success, nb_sd);
+    print_side_array_summary(sd, nb_sd);
+    printf("\n");
+}
+
 static void print_frame(const char *name, const AVFrame *frame)
 {
     const char *kind = "empty";
@@ -844,6 +953,61 @@ int main(void)
     av_frame_remove_side_data(side_frame, AV_FRAME_DATA_DISPLAYMATRIX);
     printf("frame:side-data-remove|%d|%d\n", found == sd,
            side_frame->nb_side_data);
+
+    AVFrameSideData **side_array = NULL;
+    int nb_side_array = 0;
+    AVFrameSideData *array_entry = av_frame_side_data_new(
+        &side_array, &nb_side_array, AV_FRAME_DATA_REPLAYGAIN, 1, 0);
+    fail_if(!array_entry, "frame side array new failed");
+    array_entry->data[0] = 0x11;
+    print_side_array_row("frame:side-array-new", array_entry != NULL,
+                         side_array, nb_side_array);
+
+    AVFrameSideData *duplicate_entry = av_frame_side_data_new(
+        &side_array, &nb_side_array, AV_FRAME_DATA_REPLAYGAIN, 1, 0);
+    print_side_array_row("frame:side-array-duplicate",
+                         duplicate_entry != NULL, side_array, nb_side_array);
+
+    AVFrameSideData *replace_entry = av_frame_side_data_new(
+        &side_array, &nb_side_array, AV_FRAME_DATA_REPLAYGAIN, 2,
+        AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    fail_if(!replace_entry, "frame side array replace failed");
+    replace_entry->data[0] = 0x33;
+    replace_entry->data[1] = 0x44;
+    print_side_array_row("frame:side-array-replace", replace_entry != NULL,
+                         side_array, nb_side_array);
+
+    AVFrameSideData *display_entry = av_frame_side_data_new(
+        &side_array, &nb_side_array, AV_FRAME_DATA_DISPLAYMATRIX, 1, 0);
+    fail_if(!display_entry, "frame side array display add failed");
+    display_entry->data[0] = 0x55;
+    AVFrameSideData *unique_entry = av_frame_side_data_new(
+        &side_array, &nb_side_array, AV_FRAME_DATA_REPLAYGAIN, 1,
+        AV_FRAME_SIDE_DATA_FLAG_UNIQUE);
+    fail_if(!unique_entry, "frame side array unique add failed");
+    unique_entry->data[0] = 0x66;
+    print_side_array_row("frame:side-array-unique", unique_entry != NULL,
+                         side_array, nb_side_array);
+
+    AVFrameSideData *sei_entry = av_frame_side_data_new(
+        &side_array, &nb_side_array, AV_FRAME_DATA_SEI_UNREGISTERED, 16, 0);
+    fail_if(!sei_entry, "frame side array multi add failed");
+    memset(sei_entry->data, 0x77, sei_entry->size);
+    AVFrameSideData *sei_replace_entry = av_frame_side_data_new(
+        &side_array, &nb_side_array, AV_FRAME_DATA_SEI_UNREGISTERED, 16,
+        AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    fail_if(!sei_replace_entry, "frame side array multi replace add failed");
+    memset(sei_replace_entry->data, 0x88, sei_replace_entry->size);
+    print_side_array_row("frame:side-array-multi-replace",
+                         sei_replace_entry != NULL, side_array,
+                         nb_side_array);
+
+    av_frame_side_data_remove_by_props(&side_array, &nb_side_array,
+                                       AV_SIDE_DATA_PROP_MULTI);
+    printf("frame:side-array-remove-multi|%d|", nb_side_array);
+    print_side_array_summary(side_array, nb_side_array);
+    printf("\n");
+    av_frame_side_data_free(&side_array, &nb_side_array);
 
     av_frame_free(&side_frame);
     av_frame_free(&copy_dst);
