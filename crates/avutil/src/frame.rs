@@ -187,6 +187,38 @@ impl FrameCrop {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameCropFlags {
+    bits: u32,
+}
+
+impl FrameCropFlags {
+    pub const NONE: Self = Self { bits: 0 };
+    pub const UNALIGNED: Self = Self { bits: 1 << 0 };
+
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        Self {
+            bits: bits & Self::UNALIGNED.bits,
+        }
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.bits
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        (self.bits & other.bits) == other.bits
+    }
+}
+
+impl std::ops::BitOr for FrameCropFlags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self::from_bits_truncate(self.bits | rhs.bits)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FrameFlags {
     bits: u32,
@@ -1065,6 +1097,19 @@ impl Frame {
 
     pub fn copy_data_from(&mut self, source: &Self) -> AvResult<()> {
         self.data.copy_data_from(&source.data)
+    }
+
+    pub fn apply_cropping(&mut self, flags: FrameCropFlags) -> AvResult<()> {
+        match &mut self.data {
+            FrameData::Video(video) => {
+                video.apply_cropping(self.crop, flags)?;
+                self.crop = FrameCrop::default();
+                Ok(())
+            }
+            FrameData::Audio(_) | FrameData::Empty => Err(AvError::invalid_argument(
+                "frame cropping requires a video frame",
+            )),
+        }
     }
 
     pub fn pts(&self) -> Option<i64> {
@@ -13409,6 +13454,91 @@ impl VideoFrame {
         }
         Ok(())
     }
+
+    pub fn apply_cropping(&mut self, crop: FrameCrop, flags: FrameCropFlags) -> AvResult<()> {
+        validate_frame_crop(self.width, self.height, crop)?;
+        if crop.is_empty() {
+            return Ok(());
+        }
+        if self.pixel_format != PixelFormat::Gray8 {
+            return Err(AvError::unsupported(format!(
+                "frame cropping is currently implemented for gray video frames, not {}",
+                self.pixel_format.name()
+            )));
+        }
+
+        let crop_left = adjusted_gray8_crop_left(crop, self.line_sizes[0], flags)?;
+        let new_width = self
+            .width
+            .checked_sub(crop_left + crop.right)
+            .ok_or_else(|| crop_range_error("frame crop width underflow"))?;
+        let new_height = self
+            .height
+            .checked_sub(crop.top + crop.bottom)
+            .ok_or_else(|| crop_range_error("frame crop height underflow"))?;
+
+        let line_size = self.line_sizes[0];
+        let start_offset = crop
+            .top
+            .checked_mul(line_size)
+            .and_then(|offset| offset.checked_add(crop_left))
+            .ok_or_else(|| AvError::invalid_argument("frame crop offset overflow"))?;
+        let row_span = if new_height == 0 {
+            0
+        } else {
+            (new_height - 1)
+                .checked_mul(line_size)
+                .and_then(|prefix| prefix.checked_add(new_width))
+                .ok_or_else(|| AvError::invalid_argument("frame crop row span overflow"))?
+        };
+        let source = &self.plane_buffers[0];
+        let storage_len = line_size
+            .checked_mul(new_height)
+            .ok_or_else(|| AvError::invalid_argument("frame crop line-size span overflow"))?;
+        let new_buffer = if start_offset
+            .checked_add(storage_len)
+            .is_some_and(|end| end <= source.len())
+        {
+            source.ref_slice(start_offset, storage_len)?
+        } else {
+            let end = start_offset
+                .checked_add(row_span)
+                .ok_or_else(|| AvError::invalid_argument("frame crop source span overflow"))?;
+            if end > source.len() {
+                return Err(AvError::invalid_data(format!(
+                    "gray video frame crop span {start_offset}..{end} exceeds {} bytes",
+                    source.len()
+                )));
+            }
+
+            let mut storage = vec![0; storage_len];
+            for row in 0..new_height {
+                let src_start = start_offset + row * line_size;
+                let src_end = src_start + new_width;
+                let dst_start = row * line_size;
+                let dst_end = dst_start + new_width;
+                storage[dst_start..dst_end].copy_from_slice(&source.as_slice()[src_start..src_end]);
+            }
+            BufferRef::from_vec(storage)
+        };
+
+        let new_shapes = video_plane_shapes(self.pixel_format, new_width, new_height)?;
+        let line_sizes = vec![line_size];
+        let plane_buffers = vec![new_buffer];
+        let planes = snapshot_video_plane_buffers(
+            &plane_buffers,
+            &new_shapes,
+            &line_sizes,
+            self.pixel_format.name(),
+        )?;
+
+        self.width = new_width;
+        self.height = new_height;
+        self.line_sizes = line_sizes;
+        self.planes = planes;
+        self.plane_buffers = plane_buffers;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14677,6 +14807,68 @@ fn video_line_sizes(
         .into_iter()
         .map(|shape| shape.row_bytes)
         .collect())
+}
+
+fn validate_frame_crop(width: usize, height: usize, crop: FrameCrop) -> AvResult<()> {
+    let horizontal = crop
+        .left
+        .checked_add(crop.right)
+        .ok_or_else(|| crop_range_error("frame horizontal crop overflow"))?;
+    let vertical = crop
+        .top
+        .checked_add(crop.bottom)
+        .ok_or_else(|| crop_range_error("frame vertical crop overflow"))?;
+    if horizontal >= width || vertical >= height {
+        return Err(crop_range_error(
+            "frame crop rectangle is outside frame bounds",
+        ));
+    }
+    Ok(())
+}
+
+fn crop_range_error(message: impl Into<String>) -> AvError {
+    AvError::with_code(
+        AvErrorKind::InvalidArgument,
+        AvErrorCode::from_posix_errno(34),
+        message,
+    )
+}
+
+fn adjusted_gray8_crop_left(
+    crop: FrameCrop,
+    line_size: usize,
+    flags: FrameCropFlags,
+) -> AvResult<usize> {
+    if flags.contains(FrameCropFlags::UNALIGNED) || crop.left == 0 {
+        return Ok(crop.left);
+    }
+
+    let offset = crop
+        .top
+        .checked_mul(line_size)
+        .and_then(|top| top.checked_add(crop.left))
+        .ok_or_else(|| AvError::invalid_argument("frame crop offset overflow"))?;
+    let min_log2_align = if offset == 0 {
+        u32::MAX
+    } else {
+        offset.trailing_zeros()
+    };
+    let crop_log2_align = crop.left.trailing_zeros();
+    if crop_log2_align < min_log2_align {
+        return Err(AvError::bug(
+            "frame crop alignment relation does not match FFmpeg assumptions",
+        ));
+    }
+    if min_log2_align >= 5 {
+        return Ok(crop.left);
+    }
+
+    let shift = 5 + crop_log2_align - min_log2_align;
+    if shift as usize >= usize::BITS as usize {
+        return Ok(0);
+    }
+    let mask = (1usize << shift) - 1;
+    Ok(crop.left & !mask)
 }
 
 fn align_line_sizes(
@@ -19497,6 +19689,95 @@ mod tests {
             AvErrorKind::InvalidArgument
         );
         assert_eq!(mono_destination, mono_before);
+    }
+
+    #[test]
+    fn frame_apply_cropping_matches_gray8_alignment_rules() {
+        fn storage(width: usize, height: usize, line_size: usize) -> Vec<u8> {
+            let mut data = vec![0; height * line_size];
+            for row in 0..height {
+                for column in 0..width {
+                    data[row * line_size + column] = (row * 16 + column) as u8;
+                }
+            }
+            data
+        }
+
+        let source_storage = storage(6, 4, 64);
+        let mut aligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                6,
+                4,
+                PixelFormat::Gray8,
+                vec![source_storage.clone()],
+                vec![64],
+            )
+            .unwrap(),
+        );
+        aligned.set_crop_offsets(1, 1, 1, 2);
+        aligned.apply_cropping(FrameCropFlags::NONE).unwrap();
+        assert_eq!(aligned.crop(), FrameCrop::default());
+        let FrameData::Video(video) = aligned.data() else {
+            unreachable!("constructed video frame changed variant");
+        };
+        assert_eq!(video.width(), 4);
+        assert_eq!(video.height(), 2);
+        assert_eq!(video.line_sizes(), &[64]);
+        assert_eq!(video.planes(), &[vec![16, 17, 18, 19, 32, 33, 34, 35]]);
+
+        let mut unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                6,
+                4,
+                PixelFormat::Gray8,
+                vec![source_storage.clone()],
+                vec![64],
+            )
+            .unwrap(),
+        );
+        unaligned.set_crop_offsets(1, 1, 1, 2);
+        unaligned.apply_cropping(FrameCropFlags::UNALIGNED).unwrap();
+        let FrameData::Video(video) = unaligned.data() else {
+            unreachable!("constructed video frame changed variant");
+        };
+        assert_eq!(video.width(), 3);
+        assert_eq!(video.height(), 2);
+        assert_eq!(video.line_sizes(), &[64]);
+        assert_eq!(video.planes(), &[vec![17, 18, 19, 33, 34, 35]]);
+
+        let mut invalid = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                6,
+                4,
+                PixelFormat::Gray8,
+                vec![source_storage],
+                vec![64],
+            )
+            .unwrap(),
+        );
+        invalid.set_crop_offsets(1, 0, 5, 1);
+        let before = invalid.clone();
+        let err = invalid.apply_cropping(FrameCropFlags::NONE).unwrap_err();
+        assert_eq!(err.code().map(AvErrorCode::raw), Some(-34));
+        assert_eq!(invalid, before);
+
+        let mut audio = Frame::audio(
+            AudioFrame::new_with_channel_layout(
+                48_000,
+                ChannelLayout::stereo(),
+                SampleFormat::S16,
+                1,
+                vec![vec![1, 0, 2, 0]],
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            audio
+                .apply_cropping(FrameCropFlags::NONE)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
     }
 
     #[test]

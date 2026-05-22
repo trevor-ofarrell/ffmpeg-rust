@@ -15,7 +15,8 @@ use avutil::{
     FrameColorTransferCharacteristic,
     NativeChannelMaskLayout,
     FrameAudioServiceType,
-    Dictionary, FrameContentLightMetadata, FrameCrop, FrameData, FrameDecodeErrorFlags,
+    Dictionary, FrameContentLightMetadata, FrameCrop, FrameCropFlags, FrameData,
+    FrameDecodeErrorFlags,
     FrameDetectionBbox, FrameFlags, FrameDetectionBboxes, FrameDisplayMatrix,
     FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping, FrameDolbyVisionDmData,
     FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
@@ -13020,6 +13021,80 @@ fn exercise_fixtures() {
         copy_audio_destination.plane_buffers()[0].as_slice(),
         &[1, 0, 2, 0, 0xaa, 0xbb]
     );
+
+    let mut crop_storage = vec![0; 64 * 4];
+    for row in 0..4 {
+        for column in 0..6 {
+            crop_storage[row * 64 + column] = (row * 16 + column) as u8;
+        }
+    }
+    let mut aligned_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            6,
+            4,
+            PixelFormat::Gray8,
+            vec![crop_storage.clone()],
+            vec![64],
+        )
+        .unwrap(),
+    );
+    aligned_crop.set_crop_offsets(1, 1, 1, 2);
+    aligned_crop.apply_cropping(FrameCropFlags::NONE).unwrap();
+    assert_eq!(aligned_crop.crop(), FrameCrop::default());
+    let FrameData::Video(aligned_crop_video) = aligned_crop.data() else {
+        panic!("constructed crop frame changed variant");
+    };
+    assert_eq!(aligned_crop_video.width(), 4);
+    assert_eq!(aligned_crop_video.height(), 2);
+    assert_eq!(
+        aligned_crop_video.planes(),
+        &[vec![16, 17, 18, 19, 32, 33, 34, 35]]
+    );
+
+    let mut unaligned_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            6,
+            4,
+            PixelFormat::Gray8,
+            vec![crop_storage.clone()],
+            vec![64],
+        )
+        .unwrap(),
+    );
+    unaligned_crop.set_crop_offsets(1, 1, 1, 2);
+    unaligned_crop
+        .apply_cropping(FrameCropFlags::UNALIGNED)
+        .unwrap();
+    let FrameData::Video(unaligned_crop_video) = unaligned_crop.data() else {
+        panic!("constructed crop frame changed variant");
+    };
+    assert_eq!(unaligned_crop_video.width(), 3);
+    assert_eq!(unaligned_crop_video.height(), 2);
+    assert_eq!(
+        unaligned_crop_video.planes(),
+        &[vec![17, 18, 19, 33, 34, 35]]
+    );
+
+    let mut invalid_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            6,
+            4,
+            PixelFormat::Gray8,
+            vec![crop_storage],
+            vec![64],
+        )
+        .unwrap(),
+    );
+    invalid_crop.set_crop_offsets(1, 0, 5, 1);
+    let invalid_crop_before = invalid_crop.clone();
+    let invalid_crop_error = invalid_crop
+        .apply_cropping(FrameCropFlags::NONE)
+        .unwrap_err();
+    assert_eq!(
+        invalid_crop_error.code().map(AvErrorCode::raw),
+        Some(-34)
+    );
+    assert_eq!(invalid_crop, invalid_crop_before);
 
     let mut permission_frame = Frame::video(
         VideoFrame::new_with_buffer_refs(

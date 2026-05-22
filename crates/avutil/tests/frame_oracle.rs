@@ -8,10 +8,10 @@ use std::{
 use avutil::{
     AudioFrame, AvErrorCode, BufferRef, ChannelLayout, ChannelLayoutSpec, Frame, FrameAlphaMode,
     FrameBufferTopology, FrameChromaLocation, FrameColorPrimaries, FrameColorRange,
-    FrameColorSpace, FrameColorTransferCharacteristic, FrameData, FrameDecodeErrorFlags,
-    FrameFlags, FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
-    FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame, AV_NOPTS_VALUE,
-    AV_NUM_DATA_POINTERS,
+    FrameColorSpace, FrameColorTransferCharacteristic, FrameCropFlags, FrameData,
+    FrameDecodeErrorFlags, FrameFlags, FramePictureType, FrameSideData, FrameSideDataFlags,
+    FrameSideDataKind, FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame,
+    AV_NOPTS_VALUE, AV_NUM_DATA_POINTERS,
 };
 
 #[test]
@@ -410,6 +410,74 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         frame_fields(&copy_data_too_small_destination),
     );
 
+    let crop_payload = gray8_incrementing_payload(6, 4);
+    let crop_storage = gray8_strided_storage(6, 4, 64, &crop_payload);
+    let mut crop_aligned = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            6,
+            4,
+            PixelFormat::Gray8,
+            vec![crop_storage.clone()],
+            vec![64],
+        )
+        .unwrap(),
+    );
+    crop_aligned.set_crop_offsets(1, 1, 1, 2);
+    let crop_aligned_ret = crop_aligned
+        .apply_cropping(FrameCropFlags::NONE)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:apply-crop-aligned-ret".to_string(),
+        vec![crop_aligned_ret.to_string()],
+    );
+    rows.insert(
+        "frame:apply-crop-aligned".to_string(),
+        frame_fields(&crop_aligned),
+    );
+
+    let mut crop_unaligned = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            6,
+            4,
+            PixelFormat::Gray8,
+            vec![crop_storage.clone()],
+            vec![64],
+        )
+        .unwrap(),
+    );
+    crop_unaligned.set_crop_offsets(1, 1, 1, 2);
+    let crop_unaligned_ret = crop_unaligned
+        .apply_cropping(FrameCropFlags::UNALIGNED)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:apply-crop-unaligned-ret".to_string(),
+        vec![crop_unaligned_ret.to_string()],
+    );
+    rows.insert(
+        "frame:apply-crop-unaligned".to_string(),
+        frame_fields(&crop_unaligned),
+    );
+
+    let mut invalid_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(6, 4, PixelFormat::Gray8, vec![crop_storage], vec![64])
+            .unwrap(),
+    );
+    invalid_crop.set_crop_offsets(1, 0, 5, 1);
+    let invalid_crop_ret = invalid_crop
+        .apply_cropping(FrameCropFlags::NONE)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:apply-crop-invalid-ret".to_string(),
+        vec![invalid_crop_ret.to_string()],
+    );
+    rows.insert(
+        "frame:apply-crop-invalid".to_string(),
+        frame_fields(&invalid_crop),
+    );
+
     let copy_source_side = (1..=36).collect::<Vec<u8>>();
     let copy_source_video =
         VideoFrame::new_with_aligned_line_sizes(2, 1, PixelFormat::Gray8, vec![vec![1, 2]], 1)
@@ -791,6 +859,29 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
 
     rows
+}
+
+fn gray8_incrementing_payload(width: usize, height: usize) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(width * height);
+    for row in 0..height {
+        for column in 0..width {
+            payload.push((row * 16 + column) as u8);
+        }
+    }
+    payload
+}
+
+fn gray8_strided_storage(width: usize, height: usize, line_size: usize, visible: &[u8]) -> Vec<u8> {
+    assert_eq!(visible.len(), width * height);
+    let mut storage = vec![0; line_size * height];
+    for row in 0..height {
+        let src_start = row * width;
+        let src_end = src_start + width;
+        let dst_start = row * line_size;
+        let dst_end = dst_start + width;
+        storage[dst_start..dst_end].copy_from_slice(&visible[src_start..src_end]);
+    }
+    storage
 }
 
 fn frame_fields(frame: &Frame) -> Vec<String> {
@@ -2005,6 +2096,64 @@ int main(void)
            copy_data_too_small_ret);
     print_frame("frame:copy-data-video-too-small-dst",
                 copy_data_too_small_dst);
+
+    static const uint8_t crop_payload[] = {
+        0,  1,  2,  3,  4,  5,
+        16, 17, 18, 19, 20, 21,
+        32, 33, 34, 35, 36, 37,
+        48, 49, 50, 51, 52, 53,
+    };
+
+    AVFrame *crop_aligned = av_frame_alloc();
+    fail_if(!crop_aligned, "crop_aligned allocation failed");
+    crop_aligned->format = AV_PIX_FMT_GRAY8;
+    crop_aligned->width = 6;
+    crop_aligned->height = 4;
+    fail_if(av_frame_get_buffer(crop_aligned, 64) < 0,
+            "crop_aligned get_buffer failed");
+    fill_video_gray(crop_aligned, crop_payload);
+    crop_aligned->crop_top = 1;
+    crop_aligned->crop_bottom = 1;
+    crop_aligned->crop_left = 1;
+    crop_aligned->crop_right = 2;
+    int crop_aligned_ret = av_frame_apply_cropping(crop_aligned, 0);
+    printf("frame:apply-crop-aligned-ret|%d\n", crop_aligned_ret);
+    fail_if(crop_aligned_ret < 0, "crop_aligned apply failed");
+    print_frame("frame:apply-crop-aligned", crop_aligned);
+
+    AVFrame *crop_unaligned = av_frame_alloc();
+    fail_if(!crop_unaligned, "crop_unaligned allocation failed");
+    crop_unaligned->format = AV_PIX_FMT_GRAY8;
+    crop_unaligned->width = 6;
+    crop_unaligned->height = 4;
+    fail_if(av_frame_get_buffer(crop_unaligned, 64) < 0,
+            "crop_unaligned get_buffer failed");
+    fill_video_gray(crop_unaligned, crop_payload);
+    crop_unaligned->crop_top = 1;
+    crop_unaligned->crop_bottom = 1;
+    crop_unaligned->crop_left = 1;
+    crop_unaligned->crop_right = 2;
+    int crop_unaligned_ret =
+        av_frame_apply_cropping(crop_unaligned, AV_FRAME_CROP_UNALIGNED);
+    printf("frame:apply-crop-unaligned-ret|%d\n", crop_unaligned_ret);
+    fail_if(crop_unaligned_ret < 0, "crop_unaligned apply failed");
+    print_frame("frame:apply-crop-unaligned", crop_unaligned);
+
+    AVFrame *invalid_crop = av_frame_alloc();
+    fail_if(!invalid_crop, "invalid_crop allocation failed");
+    invalid_crop->format = AV_PIX_FMT_GRAY8;
+    invalid_crop->width = 6;
+    invalid_crop->height = 4;
+    fail_if(av_frame_get_buffer(invalid_crop, 64) < 0,
+            "invalid_crop get_buffer failed");
+    fill_video_gray(invalid_crop, crop_payload);
+    invalid_crop->crop_top = 1;
+    invalid_crop->crop_bottom = 0;
+    invalid_crop->crop_left = 5;
+    invalid_crop->crop_right = 1;
+    int invalid_crop_ret = av_frame_apply_cropping(invalid_crop, 0);
+    printf("frame:apply-crop-invalid-ret|%d\n", invalid_crop_ret);
+    print_frame("frame:apply-crop-invalid", invalid_crop);
 
     AVFrame *copy_src = av_frame_alloc();
     fail_if(!copy_src, "copy_src av_frame_alloc failed");

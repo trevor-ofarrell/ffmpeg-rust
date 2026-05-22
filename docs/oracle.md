@@ -213,6 +213,8 @@ audio showing that high channel count alone does not allocate extended buffers,
 `av_frame_get_plane_buffer()` lookup presence, visible plane bytes, refcount,
 and writability for video, packed audio, direct planar audio, extended planar
 audio, and out-of-range indexes,
+`av_frame_apply_cropping()` for gray8 aligned, gray8 unaligned, and invalid
+crop rectangles,
 `AV_FRAME_DATA_*` numeric
 values/names/descriptors/properties, `AV_FRAME_SIDE_DATA_FLAG_*`,
 `AV_SIDE_DATA_PROP_*`, and `av_frame_new_side_data` / `av_frame_get_side_data`
@@ -231,6 +233,10 @@ source metadata keys overwrite matching
 destination metadata while destination-only metadata keys remain, existing destination side data is retained,
 source side data is appended as a deep copy, and destination `hw_frames_ctx`
 remains unchanged.
+The `av_frame_apply_cropping` rows prove FFmpeg's default left-crop rounding to
+keep the data pointer at least 32-byte aligned, exact-left behavior under
+`AV_FRAME_CROP_UNALIGNED`, crop-field reset on success, and `ERANGE`
+no-mutation behavior for invalid crop rectangles.
 The standalone side-data array rows exercise `av_frame_side_data_new()` and
 `av_frame_side_data_remove_by_props()`: duplicate insertion without flags fails
 without mutation, `AV_FRAME_SIDE_DATA_FLAG_REPLACE` replaces non-MULTI entries,
