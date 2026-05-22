@@ -888,6 +888,27 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     BufferRef::unref(&mut replace_empty_dst);
     assert!(replace_empty_dst.is_none());
 
+    let mut realloc_empty = None;
+    BufferRef::realloc(&mut realloc_empty, payload_len).unwrap();
+    let realloc_empty = realloc_empty.expect("nullable realloc allocates");
+    assert_eq!(realloc_empty.len(), payload_len);
+    assert!(realloc_empty.is_writable());
+    assert!(realloc_empty.as_slice().iter().all(|byte| *byte == 0));
+    let mut realloc_existing = Some(BufferRef::copy_from_slice(&payload));
+    BufferRef::realloc(&mut realloc_existing, resize_len).unwrap();
+    let realloc_existing = realloc_existing.expect("existing realloc stays present");
+    let realloc_prefix_len = payload_len.min(resize_len);
+    assert_eq!(
+        &realloc_existing.as_slice()[..realloc_prefix_len],
+        &payload[..realloc_prefix_len]
+    );
+    assert!(realloc_existing.as_slice()[realloc_prefix_len..]
+        .iter()
+        .all(|byte| *byte == 0));
+    let mut realloc_failed = None;
+    assert!(BufferRef::realloc(&mut realloc_failed, usize::MAX).is_err());
+    assert!(realloc_failed.is_none());
+
     let offset_source = BufferRef::copy_from_slice(&payload);
     let offset_start = if offset_source.is_empty() {
         0

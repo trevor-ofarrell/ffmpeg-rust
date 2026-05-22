@@ -606,6 +606,16 @@ impl BufferRef {
         *dst = src.cloned();
     }
 
+    pub fn realloc(dst: &mut Option<Self>, len: usize) -> AvResult<()> {
+        match dst {
+            Some(buffer) => buffer.resize(len),
+            None => {
+                *dst = Some(Self::zeroed(len)?);
+                Ok(())
+            }
+        }
+    }
+
     pub fn unref(dst: &mut Option<Self>) {
         *dst = None;
     }
@@ -1917,6 +1927,42 @@ mod tests {
         assert!(empty_dst.is_none());
         BufferRef::unref(&mut empty_dst);
         assert!(empty_dst.is_none());
+    }
+
+    #[test]
+    fn buffer_ref_realloc_handles_nullable_c_api_shape() {
+        let mut empty = None;
+        BufferRef::realloc(&mut empty, 3).unwrap();
+        let mut allocated = empty.take().expect("realloc null allocates");
+        assert_eq!(allocated.len(), 3);
+        assert_eq!(allocated.allocated_len(), 3);
+        assert!(allocated.is_writable());
+        assert_eq!(allocated.strong_count(), 1);
+        assert!(allocated.as_slice().iter().all(|byte| *byte == 0));
+
+        allocated.make_mut().copy_from_slice(&[4, 5, 6]);
+        let mut existing = Some(allocated);
+        BufferRef::realloc(&mut existing, 5).unwrap();
+        let grown = existing.as_ref().unwrap();
+        assert_eq!(grown.len(), 5);
+        assert_eq!(&grown.as_slice()[..3], &[4, 5, 6]);
+        assert!(grown.as_slice()[3..].iter().all(|byte| *byte == 0));
+
+        BufferRef::realloc(&mut existing, 2).unwrap();
+        let shrunk = existing.as_ref().unwrap();
+        assert_eq!(shrunk.as_slice(), &[4, 5]);
+
+        let shared_source = BufferRef::from_vec(vec![7, 8, 9]);
+        let mut shared_realloc = Some(shared_source.clone());
+        BufferRef::realloc(&mut shared_realloc, 4).unwrap();
+        let shared_realloc = shared_realloc.expect("shared realloc result");
+        assert_eq!(&shared_realloc.as_slice()[..3], &[7, 8, 9]);
+        assert_eq!(shared_source.as_slice(), &[7, 8, 9]);
+        assert!(!shared_realloc.shares_storage(&shared_source));
+
+        let mut failed = None;
+        assert!(BufferRef::realloc(&mut failed, usize::MAX).is_err());
+        assert!(failed.is_none());
     }
 
     #[test]

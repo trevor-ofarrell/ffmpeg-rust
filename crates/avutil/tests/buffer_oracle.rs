@@ -289,6 +289,14 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![bool_field(unref_null_input.is_none())],
     );
 
+    let mut realloc_null = None;
+    BufferRef::realloc(&mut realloc_null, 4).unwrap();
+    rows.insert("buffer:realloc-null-ret".to_string(), vec!["0".to_string()]);
+    rows.insert(
+        "buffer:realloc-null".to_string(),
+        buffer_status_fields(realloc_null.as_ref().expect("realloc null result")),
+    );
+
     let offset_src = BufferRef::from_vec(vec![10, 11, 12, 13]);
     let offset_ref = offset_src.ref_slice(1, 2).unwrap();
     rows.insert(
@@ -490,6 +498,14 @@ fn buffer_fields(buffer: &BufferRef) -> Vec<String> {
     vec![
         buffer.len().to_string(),
         hex(buffer.as_slice()),
+        buffer.strong_count().to_string(),
+        bool_field(buffer.is_writable()),
+    ]
+}
+
+fn buffer_status_fields(buffer: &BufferRef) -> Vec<String> {
+    vec![
+        buffer.len().to_string(),
         buffer.strong_count().to_string(),
         bool_field(buffer.is_writable()),
     ]
@@ -934,6 +950,12 @@ int main(void) {
     av_buffer_unref(NULL);
     av_buffer_unref(&unref_null_input);
     printf("buffer:unref-null-input|%d\n", unref_null_input == NULL);
+
+    AVBufferRef *realloc_null = NULL;
+    ret = av_buffer_realloc(&realloc_null, 4);
+    printf("buffer:realloc-null-ret|%d\n", ret);
+    print_status("buffer:realloc-null", realloc_null);
+    av_buffer_unref(&realloc_null);
 
     static const uint8_t offset_bytes[] = { 10, 11, 12, 13 };
     AVBufferRef *offset_src = av_buffer_allocz(4);
