@@ -2,9 +2,9 @@
 
 ## Current Status
 
-Latest `avutil-frame` side-data array slice: the local pinned FFmpeg 8.1.1 oracle is installed and verified by `xtask oracle-doctor`. Added pinned libavutil `av_frame_side_data_new()` and `av_frame_side_data_remove_by_props()` oracle rows proving duplicate insertion without flags fails without mutation, `AV_FRAME_SIDE_DATA_FLAG_REPLACE` replaces non-MULTI entries, `AV_FRAME_SIDE_DATA_FLAG_UNIQUE` removes matching entries before appending, MULTI side data appends even with REPLACE, and property removal clears all MULTI entries. The current Rust `Frame::add_side_data_with_flags` and property-removal model already matched those rows, so this slice strengthens differential evidence without changing the ledger status. `avutil-frame` remains `differential_pass`, not complete, because full AVFrame fields, upstream FATE disposition, broader ABI/media integration, hardware context internals, and complete alignment policy across profiles remain pending.
+Latest `avutil-frame` side-data-add buffer slice: the local pinned FFmpeg 8.1.1 oracle is installed and verified by `xtask oracle-doctor`. Added a safe Rust `Frame::add_side_data_kind_buffer_with_flags` API that mirrors `av_frame_side_data_add()` ownership with `&mut Option<BufferRef>`: successful non-`NEW_REF` insert/replace consumes the caller buffer, duplicate failure leaves the caller buffer alive, and `AV_FRAME_SIDE_DATA_FLAG_NEW_REF` keeps caller ownership while sharing storage. The pinned libavutil oracle now emits matching rows for take, duplicate failure, replace, and NEW_REF shared-ref behavior, and `avutil_core_models` build-checks the same invariants. `avutil-frame` remains `differential_pass`, not complete, because full AVFrame fields, upstream FATE disposition, broader ABI/media integration, hardware context internals, and complete alignment policy across profiles remain pending.
 
-Latest validation commands for the `avutil-frame` side-data array slice: `cargo fmt --all`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test frame_oracle -- --ignored --nocapture`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib frame_add_side_data_with_flags -- --nocapture`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib frame`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-frame`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-frame --target oracle-libavutil-frame-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo clippy --manifest-path fuzz\\Cargo.toml -- -D warnings`, WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1`, `cargo fmt --all -- --check`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`, `$env:CARGO_TARGET_DIR='target-codex-clippy'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`, and `git diff --check` passed. `git diff --check` reported CRLF conversion warnings only.
+Latest validation commands for the `avutil-frame` side-data-add buffer slice: `cargo fmt --all`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib frame_add_side_data_buffer_with_flags -- --nocapture`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test frame_oracle -- --ignored --nocapture`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib frame`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-frame`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-frame --target oracle-libavutil-frame-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo clippy --manifest-path fuzz\\Cargo.toml -- -D warnings`, `cargo fmt --all -- --check`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`, `$env:CARGO_TARGET_DIR='target-codex-clippy'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`, WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1`, and `git diff --check` passed. `git diff --check` reported CRLF conversion warnings only.
 
 Latest `avutil-packet` move-ref replacement slice: the pinned packet oracle now emits `packet:move-replace-dst`, `packet:move-replace-dst-side`, `packet:move-replace-dst-payload`, and `packet:move-replace-src` rows for `av_packet_move_ref()` when the destination already owns payload bytes, side data, opaque metadata, and `opaque_ref`. The rows prove FFmpeg unreferences the old destination, transfers the complete source packet state into the destination, and resets the source to defaults. Rust `Packet::move_ref_from` already had the same replacement shape; the new unit test specifically proves old destination payload and `opaque_ref` storage are released, old side data is removed, source payload storage is transferred, source metadata lands on the destination, and the source is emptied. `avutil-packet` remains `differential_pass`, not complete, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration remain pending.
 
@@ -698,20 +698,21 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Successful Commands
 
-- Current `avutil-frame` side-data array slice:
+- Current `avutil-frame` side-data-add buffer slice:
   - `cargo fmt --all`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib frame_add_side_data_buffer_with_flags -- --nocapture`
   - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --test frame_oracle -- --ignored --nocapture`
-  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib frame_add_side_data_with_flags -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`
   - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib frame`
   - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-frame`
   - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-frame --target oracle-libavutil-frame-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`
-  - `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml`
   - `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo clippy --manifest-path fuzz\\Cargo.toml -- -D warnings`
-  - WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1`
   - `cargo fmt --all -- --check`
   - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger`
   - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`
   - `$env:CARGO_TARGET_DIR='target-codex-clippy'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`
+  - WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1`
   - `git diff --check`
 
 - Current `avutil-packet` spherical payload layout slice:
@@ -5967,7 +5968,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-The current turn continues `avutil-frame`, the highest-priority incomplete priority-1 row with active oracle evidence. The concrete slice adds pinned standalone frame side-data array rows for duplicate insertion, REPLACE, UNIQUE, MULTI side-data, and remove-by-property behavior. `avutil-frame` remains `differential_pass`, not `complete`, because full AVFrame field coverage, FATE disposition, broader ABI/media integration, hardware context internals, and complete cross-profile alignment policy remain pending.
+The current turn continues `avutil-frame`, the highest-priority incomplete priority-1 row with active oracle evidence. The concrete slice adds pinned `av_frame_side_data_add()` buffer-ownership rows plus the matching safe Rust API: non-`NEW_REF` success consumes the caller buffer, duplicate failure preserves it, and `NEW_REF` creates a shared reference while leaving caller ownership intact. `avutil-frame` remains `differential_pass`, not `complete`, because full AVFrame field coverage, FATE disposition, broader ABI/media integration, hardware context internals, and complete cross-profile alignment policy remain pending.
 
 The current turn continues `avutil-packet`, the highest-priority incomplete infrastructure row. The concrete slice adds destination-replacement evidence for `av_packet_move_ref()`: pinned oracle rows now cover a pre-populated destination being unreferenced, complete source-state transfer into the destination, and source reset. The row remains `differential_pass`, not `complete`, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration still need closure.
 
@@ -6259,7 +6260,7 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Continue `avutil-frame` by adding the next libavutil oracle vector for `av_frame_side_data_add` buffer ownership with and without `AV_FRAME_SIDE_DATA_FLAG_NEW_REF`, additional audio make-writable/reference rows, or more `av_frame_copy_props` metadata fields.
+1. Continue `avutil-frame` by adding the next libavutil oracle vector for `av_frame_side_data_clone`, additional audio make-writable/reference rows, or more `av_frame_copy_props` metadata fields.
 2. Continue `avutil-packet` toward strict completion by documenting or adding upstream FATE disposition and identifying the remaining ABI/media-integration oracle vectors.
 3. Continue `avutil-buffer` toward strict completion by closing or explicitly bounding the remaining ABI/lifetime behaviors and documenting the FATE disposition for this low-level helper surface.
 
@@ -6401,7 +6402,7 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Summary Of Latest Commit Or Changes
 
-Latest slice: added pinned libavutil standalone frame side-data array evidence for `avutil-frame`. `crates/avutil/tests/frame_oracle.rs` now emits rows for `av_frame_side_data_new()` duplicate failure, REPLACE, UNIQUE, MULTI side-data append under REPLACE, and `av_frame_side_data_remove_by_props()`. The Rust `Frame::add_side_data_with_flags` model already matched those rows, so this is differential evidence rather than a status promotion. `avutil-frame` remains `differential_pass`, not complete.
+Latest slice: added pinned libavutil `av_frame_side_data_add()` buffer-ownership evidence for `avutil-frame`. `Frame::add_side_data_kind_buffer_with_flags` now models C-style `AVBufferRef **` ownership with `&mut Option<BufferRef>`, consuming caller ownership on successful non-`NEW_REF` insertion/replacement, preserving it on duplicate failure, and sharing storage under `NEW_REF`; `crates/avutil/tests/frame_oracle.rs` emits matching pinned rows, and `avutil_core_models` build-checks the invariants. `avutil-frame` remains `differential_pass`, not complete.
 
 Latest slice: added `av_packet_move_ref()` destination-replacement evidence for `avutil-packet`. `crates/avutil/src/packet.rs` now has unit coverage proving old destination payload and `opaque_ref` release, side-data replacement, source state transfer, and source reset; `crates/avutil/tests/packet_oracle.rs` now emits matching `packet:move-replace-*` rows from Rust and the pinned FFmpeg C oracle. `avutil-packet` remains `differential_pass`, not complete, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration remain pending.
 

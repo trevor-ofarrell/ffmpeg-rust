@@ -6432,6 +6432,60 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(unmapped_packet_err.kind(), AvErrorKind::InvalidArgument);
     assert_eq!(unmapped_packet_err.code(), Some(AvErrorCode::EINVAL));
 
+    let mut owned_frame_side_buffer = Some(BufferRef::copy_from_slice(bridge_payload.as_slice()));
+    bridge_frame
+        .add_side_data_kind_buffer_with_flags(
+            FrameSideDataKind::IccProfile,
+            &mut owned_frame_side_buffer,
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    assert!(owned_frame_side_buffer.is_none());
+    assert_eq!(
+        bridge_frame
+            .side_data_by_kind(&FrameSideDataKind::IccProfile)
+            .unwrap()
+            .data(),
+        bridge_payload.as_slice()
+    );
+
+    let mut failed_duplicate_buffer =
+        Some(BufferRef::copy_from_slice(bridge_replacement.as_slice()));
+    let side_count_before_duplicate = bridge_frame.side_data().len();
+    let duplicate_buffer_err = bridge_frame
+        .add_side_data_kind_buffer_with_flags(
+            FrameSideDataKind::IccProfile,
+            &mut failed_duplicate_buffer,
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap_err();
+    assert_eq!(duplicate_buffer_err.kind(), AvErrorKind::External);
+    assert_eq!(duplicate_buffer_err.code(), Some(AvErrorCode::ENOMEM));
+    assert_eq!(bridge_frame.side_data().len(), side_count_before_duplicate);
+    assert_eq!(
+        failed_duplicate_buffer.as_ref().unwrap().as_slice(),
+        bridge_replacement.as_slice()
+    );
+
+    let mut referenced_frame_side_buffer =
+        Some(BufferRef::copy_from_slice(bridge_replacement.as_slice()));
+    bridge_frame
+        .add_side_data_kind_buffer_with_flags(
+            FrameSideDataKind::DisplayMatrix,
+            &mut referenced_frame_side_buffer,
+            FrameSideDataFlags::NEW_REF,
+        )
+        .unwrap();
+    let referenced_frame_side_buffer = referenced_frame_side_buffer.as_ref().unwrap();
+    let referenced_entry = bridge_frame
+        .side_data_by_kind(&FrameSideDataKind::DisplayMatrix)
+        .unwrap();
+    assert!(referenced_entry
+        .buffer()
+        .shares_storage(referenced_frame_side_buffer));
+    assert!(!referenced_entry.is_writable());
+    assert!(!referenced_frame_side_buffer.is_writable());
+
     let typed_payload_max_len = (PacketQualityStats::HEADER_LEN
         + PacketQualityStats::ERROR_ENTRY_LEN * 3
         + 1)

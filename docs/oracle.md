@@ -214,6 +214,11 @@ without mutation, `AV_FRAME_SIDE_DATA_FLAG_REPLACE` replaces non-MULTI entries,
 `AV_FRAME_SIDE_DATA_FLAG_UNIQUE` removes matching entries before appending,
 MULTI side data appends even with REPLACE, and property removal clears all
 MULTI entries.
+The buffer-backed side-data rows exercise `av_frame_side_data_add()` ownership:
+successful non-`NEW_REF` insert and replace consume the caller `AVBufferRef`,
+duplicate failure leaves the caller buffer alive, and
+`AV_FRAME_SIDE_DATA_FLAG_NEW_REF` creates a second shared buffer reference
+without taking ownership.
 The first row caught and now verifies the pinned default 64-byte
 `av_frame_make_writable()` realignment path. It is wired into
 `tests/differential/mappings.txt` as `avutil-frame|oracle-libavutil-frame-core`:

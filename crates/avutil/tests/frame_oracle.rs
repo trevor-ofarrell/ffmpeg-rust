@@ -283,6 +283,76 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         side_array_fields(&side_array),
     );
 
+    let mut side_add = Frame::empty();
+    let mut take_source = Some(BufferRef::copy_from_slice(&[0xa1, 0xa2, 0xa3]));
+    let take_success = side_add
+        .add_side_data_kind_buffer_with_flags(
+            FrameSideDataKind::ReplayGain,
+            &mut take_source,
+            FrameSideDataFlags::EMPTY,
+        )
+        .is_ok();
+    rows.insert(
+        "frame:side-add-take".to_string(),
+        side_add_buffer_fields(
+            take_success,
+            &side_add,
+            take_source.as_ref(),
+            &FrameSideDataKind::ReplayGain,
+        ),
+    );
+    let mut duplicate_source = Some(BufferRef::copy_from_slice(&[0xb1]));
+    let duplicate_success = side_add
+        .add_side_data_kind_buffer_with_flags(
+            FrameSideDataKind::ReplayGain,
+            &mut duplicate_source,
+            FrameSideDataFlags::EMPTY,
+        )
+        .is_ok();
+    rows.insert(
+        "frame:side-add-duplicate".to_string(),
+        side_add_buffer_fields(
+            duplicate_success,
+            &side_add,
+            duplicate_source.as_ref(),
+            &FrameSideDataKind::ReplayGain,
+        ),
+    );
+    let mut replace_source = Some(BufferRef::copy_from_slice(&[0xc1, 0xc2]));
+    let replace_success = side_add
+        .add_side_data_kind_buffer_with_flags(
+            FrameSideDataKind::ReplayGain,
+            &mut replace_source,
+            FrameSideDataFlags::REPLACE,
+        )
+        .is_ok();
+    rows.insert(
+        "frame:side-add-replace".to_string(),
+        side_add_buffer_fields(
+            replace_success,
+            &side_add,
+            replace_source.as_ref(),
+            &FrameSideDataKind::ReplayGain,
+        ),
+    );
+    let mut ref_source = Some(BufferRef::copy_from_slice(&[0xd1, 0xd2]));
+    let ref_success = side_add
+        .add_side_data_kind_buffer_with_flags(
+            FrameSideDataKind::DisplayMatrix,
+            &mut ref_source,
+            FrameSideDataFlags::NEW_REF,
+        )
+        .is_ok();
+    rows.insert(
+        "frame:side-add-new-ref".to_string(),
+        side_add_buffer_fields(
+            ref_success,
+            &side_add,
+            ref_source.as_ref(),
+            &FrameSideDataKind::DisplayMatrix,
+        ),
+    );
+
     rows
 }
 
@@ -393,6 +463,43 @@ fn side_array_fields(frame: &Frame) -> Vec<String> {
     vec![
         frame.side_data().len().to_string(),
         side_summary(frame.side_data()),
+    ]
+}
+
+fn side_add_buffer_fields(
+    success: bool,
+    frame: &Frame,
+    source: Option<&BufferRef>,
+    kind: &FrameSideDataKind,
+) -> Vec<String> {
+    let entry = frame
+        .side_data()
+        .iter()
+        .find(|side_data| side_data.kind_id() == kind);
+    vec![
+        bool_field(success),
+        bool_field(source.is_some()),
+        frame.side_data().len().to_string(),
+        side_summary(frame.side_data()),
+        source
+            .map(|buffer| hex(buffer.as_slice()))
+            .unwrap_or_else(|| "none".to_string()),
+        source
+            .map(|buffer| buffer.strong_count().to_string())
+            .unwrap_or_else(|| "0".to_string()),
+        source
+            .map(|buffer| bool_field(buffer.is_writable()))
+            .unwrap_or_else(|| "0".to_string()),
+        entry
+            .map(|side_data| side_data.buffer().strong_count().to_string())
+            .unwrap_or_else(|| "0".to_string()),
+        entry
+            .map(|side_data| bool_field(side_data.is_writable()))
+            .unwrap_or_else(|| "0".to_string()),
+        match (source, entry) {
+            (Some(source), Some(entry)) => bool_field(source.shares_storage(entry.buffer())),
+            _ => "0".to_string(),
+        },
     ]
 }
 
@@ -688,6 +795,38 @@ static void print_side_array_row(const char *name, int success,
     printf("%s|%d|%d|", name, success, nb_sd);
     print_side_array_summary(sd, nb_sd);
     printf("\n");
+}
+
+static const AVFrameSideData *find_side_array_entry(AVFrameSideData * const *sd,
+                                                    int nb_sd,
+                                                    enum AVFrameSideDataType type)
+{
+    for (int i = 0; i < nb_sd; i++) {
+        if (sd[i]->type == type)
+            return sd[i];
+    }
+    return NULL;
+}
+
+static void print_side_add_buffer_row(const char *name, int success,
+                                      AVFrameSideData * const *sd, int nb_sd,
+                                      const AVBufferRef *source,
+                                      enum AVFrameSideDataType type)
+{
+    const AVFrameSideData *entry = find_side_array_entry(sd, nb_sd, type);
+    printf("%s|%d|%d|%d|", name, success, source != NULL, nb_sd);
+    print_side_array_summary(sd, nb_sd);
+    printf("|");
+    if (source)
+        print_hex(source->data, source->size);
+    else
+        printf("none");
+    printf("|%d|%d|%d|%d|%d\n",
+           source ? av_buffer_get_ref_count((AVBufferRef *)source) : 0,
+           source ? av_buffer_is_writable((AVBufferRef *)source) : 0,
+           entry && entry->buf ? av_buffer_get_ref_count(entry->buf) : 0,
+           entry && entry->buf ? av_buffer_is_writable(entry->buf) : 0,
+           source && entry ? source->data == entry->data : 0);
 }
 
 static void print_frame(const char *name, const AVFrame *frame)
@@ -1008,6 +1147,58 @@ int main(void)
     print_side_array_summary(side_array, nb_side_array);
     printf("\n");
     av_frame_side_data_free(&side_array, &nb_side_array);
+
+    AVFrameSideData **side_add_array = NULL;
+    int nb_side_add_array = 0;
+    AVBufferRef *take_buf = av_buffer_alloc(3);
+    fail_if(!take_buf, "frame side add take buffer allocation failed");
+    take_buf->data[0] = 0xa1;
+    take_buf->data[1] = 0xa2;
+    take_buf->data[2] = 0xa3;
+    AVFrameSideData *take_entry = av_frame_side_data_add(
+        &side_add_array, &nb_side_add_array, AV_FRAME_DATA_REPLAYGAIN,
+        &take_buf, 0);
+    print_side_add_buffer_row("frame:side-add-take", take_entry != NULL,
+                              side_add_array, nb_side_add_array, take_buf,
+                              AV_FRAME_DATA_REPLAYGAIN);
+
+    AVBufferRef *duplicate_buf = av_buffer_alloc(1);
+    fail_if(!duplicate_buf, "frame side add duplicate buffer allocation failed");
+    duplicate_buf->data[0] = 0xb1;
+    AVFrameSideData *duplicate_add_entry = av_frame_side_data_add(
+        &side_add_array, &nb_side_add_array, AV_FRAME_DATA_REPLAYGAIN,
+        &duplicate_buf, 0);
+    print_side_add_buffer_row("frame:side-add-duplicate",
+                              duplicate_add_entry != NULL, side_add_array,
+                              nb_side_add_array, duplicate_buf,
+                              AV_FRAME_DATA_REPLAYGAIN);
+    av_buffer_unref(&duplicate_buf);
+
+    AVBufferRef *replace_buf = av_buffer_alloc(2);
+    fail_if(!replace_buf, "frame side add replace buffer allocation failed");
+    replace_buf->data[0] = 0xc1;
+    replace_buf->data[1] = 0xc2;
+    AVFrameSideData *replace_add_entry = av_frame_side_data_add(
+        &side_add_array, &nb_side_add_array, AV_FRAME_DATA_REPLAYGAIN,
+        &replace_buf, AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    print_side_add_buffer_row("frame:side-add-replace",
+                              replace_add_entry != NULL, side_add_array,
+                              nb_side_add_array, replace_buf,
+                              AV_FRAME_DATA_REPLAYGAIN);
+
+    AVBufferRef *ref_buf = av_buffer_alloc(2);
+    fail_if(!ref_buf, "frame side add new-ref buffer allocation failed");
+    ref_buf->data[0] = 0xd1;
+    ref_buf->data[1] = 0xd2;
+    AVFrameSideData *ref_add_entry = av_frame_side_data_add(
+        &side_add_array, &nb_side_add_array, AV_FRAME_DATA_DISPLAYMATRIX,
+        &ref_buf, AV_FRAME_SIDE_DATA_FLAG_NEW_REF);
+    print_side_add_buffer_row("frame:side-add-new-ref",
+                              ref_add_entry != NULL, side_add_array,
+                              nb_side_add_array, ref_buf,
+                              AV_FRAME_DATA_DISPLAYMATRIX);
+    av_buffer_unref(&ref_buf);
+    av_frame_side_data_free(&side_add_array, &nb_side_add_array);
 
     av_frame_free(&side_frame);
     av_frame_free(&copy_dst);
