@@ -8,15 +8,15 @@ use std::{
 use avutil::{
     packet_pack_dictionary, packet_unpack_dictionary, BufferRef, Dictionary, Frame, FrameSideData,
     FrameSideDataFlags, FrameSideDataKind, Packet, PacketActiveFormatDescription,
-    PacketAudioServiceType, PacketContentLightMetadata, PacketCpbProperties, PacketDolbyVisionConf,
-    PacketDoviCompression, PacketFallbackTrack, PacketFifo, PacketFlags, PacketFrameCropping,
-    PacketJpDualMono, PacketJpDualMonoSelection, PacketMatroskaBlockAdditional,
-    PacketMpegTsStreamId, PacketOpaque, PacketParamChange, PacketPictureType,
-    PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport,
-    PacketS12mTimecode, PacketSideDataKind, PacketSideDataList, PacketSkipSamples,
-    PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings,
-    Rational, SideData, AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE,
-    AV_PACKET_POS_UNKNOWN,
+    PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
+    PacketCpbProperties, PacketDolbyVisionConf, PacketDoviCompression, PacketFallbackTrack,
+    PacketFifo, PacketFlags, PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
+    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketOpaque, PacketParamChange,
+    PacketPictureType, PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain,
+    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSideDataList,
+    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier,
+    PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE,
+    AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -239,6 +239,19 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
         payload_layout_fields(
             &PacketContentLightMetadata::new(1000, 400).to_bytes(),
             &[0, 4],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-ambient-viewing-environment".to_string(),
+        payload_layout_fields(
+            &PacketAmbientViewingEnvironment::new(
+                Rational::new(1000, 1).unwrap(),
+                Rational::new(3127, 10000).unwrap(),
+                Rational::new(3291, 10000).unwrap(),
+            )
+            .unwrap()
+            .to_bytes(),
+            &[0, 8, 16],
         ),
     );
     rows.insert(
@@ -1341,6 +1354,7 @@ fn oracle_c_source() -> &'static str {
 #include <string.h>
 #include "libavcodec/defs.h"
 #include "libavcodec/packet.h"
+#include "libavutil/ambient_viewing_environment.h"
 #include "libavutil/avutil.h"
 #include "libavutil/buffer.h"
 #include "libavutil/container_fifo.h"
@@ -1589,6 +1603,18 @@ static void print_side_data_payload_layouts(void) {
     printf("|%zu|%zu\n",
            offsetof(AVContentLightMetadata, MaxCLL),
            offsetof(AVContentLightMetadata, MaxFALL));
+
+    AVAmbientViewingEnvironment ambient;
+    memset(&ambient, 0, sizeof(ambient));
+    ambient.ambient_illuminance = (AVRational){ 1000, 1 };
+    ambient.ambient_light_x = (AVRational){ 3127, 10000 };
+    ambient.ambient_light_y = (AVRational){ 3291, 10000 };
+    print_payload_layout_header("packet:payload-layout-ambient-viewing-environment",
+                                &ambient, sizeof(ambient));
+    printf("|%zu|%zu|%zu\n",
+           offsetof(AVAmbientViewingEnvironment, ambient_illuminance),
+           offsetof(AVAmbientViewingEnvironment, ambient_light_x),
+           offsetof(AVAmbientViewingEnvironment, ambient_light_y));
 
     AVCPBProperties cpb;
     memset(&cpb, 0, sizeof(cpb));

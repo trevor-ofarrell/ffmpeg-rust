@@ -159,7 +159,7 @@ The rawvideo-facing paletted subset now includes FFmpeg's `pal8` name. The share
 
 `PacketStereo3d` covers `AV_PKT_DATA_STEREO3D` as the pinned native `AVStereo3D` packet payload, preserving stereo layout type, invert flags, view, primary eye, baseline, and rational disparity/field-of-view metadata with the same validation envelope as the existing frame-side `AVStereo3D` model.
 
-`PacketAmbientViewingEnvironment` covers `AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT` as the pinned native `AVAmbientViewingEnvironment` packet payload, preserving ambient illuminance and CIE 1931 x/y ambient-light chromaticity rationals with the same denominator, sign, and normalized-coordinate validation envelope as the existing frame-side model.
+`PacketAmbientViewingEnvironment` covers `AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT` as the pinned native `AVAmbientViewingEnvironment` packet payload, preserving ambient illuminance and CIE 1931 x/y ambient-light chromaticity rationals with the same denominator, sign, and normalized-coordinate validation envelope as the existing frame-side model. The packet oracle validates the 24-byte native payload shape and rational field offsets.
 
 `PacketThreeDReferenceDisplays` covers `AV_PKT_DATA_3D_REFERENCE_DISPLAYS` as the pinned native `AV3DReferenceDisplaysInfo` allocation envelope, preserving precision fields, reference display entries, native header length, and entry-offset/entry-size invariants with the same validation envelope as the existing frame-side model.
 
