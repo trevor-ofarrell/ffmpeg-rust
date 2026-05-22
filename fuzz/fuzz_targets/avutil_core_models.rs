@@ -13,7 +13,7 @@ use avutil::{
     FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
     NativeChannelMaskLayout,
     FrameAudioServiceType,
-    Dictionary, FrameContentLightMetadata, FrameCrop, FrameData, FrameDetectionBbox,
+    Dictionary, FrameContentLightMetadata, FrameCrop, FrameData, FrameDetectionBbox, FrameFlags,
     FrameDetectionBboxes, FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
@@ -33,7 +33,7 @@ use avutil::{
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
     FrameLcevc, FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector,
-    FrameMotionVectors, FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest,
+    FrameMotionVectors, FramePanScan, FramePictureType, FrameRegionOfInterest, FrameRegionsOfInterest,
     FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataFlags,
     FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason,
     FrameSphericalMapping, FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags,
@@ -2725,6 +2725,33 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     );
     frame.set_crop(frame_crop);
     assert_eq!(frame.crop(), frame_crop);
+    let picture_type_byte = cursor.next().unwrap_or_default() % 8;
+    frame.set_picture_type_from_byte(picture_type_byte).unwrap();
+    let picture_type = FramePictureType::from_byte(picture_type_byte).unwrap();
+    assert_eq!(frame.picture_type(), picture_type);
+    assert_eq!(frame.picture_type().as_byte(), picture_type_byte);
+    assert_eq!(
+        frame.set_picture_type_from_byte(8).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(frame.picture_type(), picture_type);
+    let quality = i32::from(cursor.next().unwrap_or_default());
+    frame.set_quality(quality);
+    assert_eq!(frame.quality(), quality);
+    let repeat_pict = i32::from(cursor.next().unwrap_or_default() % 8);
+    frame.set_repeat_pict(repeat_pict);
+    assert_eq!(frame.repeat_pict(), repeat_pict);
+    let frame_flags = FrameFlags::from_bits_truncate(u32::from(cursor.next().unwrap_or_default()));
+    frame.set_flags(frame_flags);
+    assert_eq!(frame.flags(), frame_flags);
+    frame.set_flag(FrameFlags::LOSSLESS, true);
+    assert!(frame.flags().contains(FrameFlags::LOSSLESS));
+    frame.set_flag(FrameFlags::LOSSLESS, false);
+    assert!(!frame.flags().contains(FrameFlags::LOSSLESS));
+    assert_eq!(
+        FrameFlags::from_bits_truncate(u32::MAX).bits(),
+        FrameFlags::all().bits()
+    );
     assert!(matches!(frame.data(), FrameData::Video(_)));
     assert!(frame.hw_frames_context().is_none());
     assert!(frame.side_data().is_empty());

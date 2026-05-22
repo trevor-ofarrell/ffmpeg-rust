@@ -199,18 +199,19 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --com
 `AVFrame` core lifecycle helpers. It compiles a small test-only C helper against
 `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_frame_alloc`,
 `av_frame_unref`, `av_frame_ref`, `av_frame_make_writable`, `av_frame_move_ref`,
-`av_frame_copy_props`, PTS/packet-DTS/duration/time-base/sample-aspect-ratio
-and crop-offset propagation through ref/move/copy-props rows,
+`av_frame_copy_props`, PTS/packet-DTS/duration/time-base/sample-aspect-ratio,
+crop-offset, picture-type, quality, repeat_pict, and public frame-flag
+propagation through ref/move/copy-props rows,
 `av_frame_get_buffer` for a gray8 video frame and a packed s16 stereo audio
 frame, `AV_FRAME_DATA_*` numeric
 values/names/descriptors/properties, `AV_FRAME_SIDE_DATA_FLAG_*`,
 `AV_SIDE_DATA_PROP_*`, and `av_frame_new_side_data` / `av_frame_get_side_data`
 / `av_frame_remove_side_data` displaymatrix rows against the Rust `Frame`
 model. The `av_frame_copy_props` rows prove destination payload buffers are
-preserved, PTS, packet DTS, duration, time base, sample aspect ratio, and crop
-offsets are copied, existing destination side data is retained, source side
-data is appended as a deep copy, and destination `hw_frames_ctx` remains
-unchanged.
+preserved, PTS, packet DTS, duration, time base, sample aspect ratio, crop
+offsets, picture type, quality, repeat_pict, and public frame flags are copied,
+existing destination side data is retained, source side data is appended as a
+deep copy, and destination `hw_frames_ctx` remains unchanged.
 The standalone side-data array rows exercise `av_frame_side_data_new()` and
 `av_frame_side_data_remove_by_props()`: duplicate insertion without flags fails
 without mutation, `AV_FRAME_SIDE_DATA_FLAG_REPLACE` replaces non-MULTI entries,

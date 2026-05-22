@@ -85,6 +85,148 @@ impl FrameCrop {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FrameFlags {
+    bits: u32,
+}
+
+impl FrameFlags {
+    pub const CORRUPT: Self = Self { bits: 1 << 0 };
+    pub const KEY: Self = Self { bits: 1 << 1 };
+    pub const DISCARD: Self = Self { bits: 1 << 2 };
+    pub const INTERLACED: Self = Self { bits: 1 << 3 };
+    pub const TOP_FIELD_FIRST: Self = Self { bits: 1 << 4 };
+    pub const LOSSLESS: Self = Self { bits: 1 << 5 };
+    const KNOWN_BITS: u32 = Self::CORRUPT.bits
+        | Self::KEY.bits
+        | Self::DISCARD.bits
+        | Self::INTERLACED.bits
+        | Self::TOP_FIELD_FIRST.bits
+        | Self::LOSSLESS.bits;
+
+    pub const fn empty() -> Self {
+        Self { bits: 0 }
+    }
+
+    pub const fn all() -> Self {
+        Self {
+            bits: Self::KNOWN_BITS,
+        }
+    }
+
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        Self {
+            bits: bits & Self::KNOWN_BITS,
+        }
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.bits
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.bits == 0
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        self.bits & other.bits == other.bits
+    }
+
+    pub fn insert(&mut self, other: Self) {
+        self.bits |= other.bits;
+    }
+
+    pub fn remove(&mut self, other: Self) {
+        self.bits &= !other.bits;
+    }
+
+    pub fn set(&mut self, other: Self, enabled: bool) {
+        if enabled {
+            self.insert(other);
+        } else {
+            self.remove(other);
+        }
+    }
+}
+
+impl std::ops::BitOr for FrameFlags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self {
+            bits: self.bits | rhs.bits,
+        }
+    }
+}
+
+impl std::ops::BitOrAssign for FrameFlags {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.bits |= rhs.bits;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum FramePictureType {
+    #[default]
+    Unknown = 0,
+    I = 1,
+    P = 2,
+    B = 3,
+    S = 4,
+    Si = 5,
+    Sp = 6,
+    Bi = 7,
+}
+
+impl FramePictureType {
+    pub fn from_byte(value: u8) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Unknown),
+            1 => Ok(Self::I),
+            2 => Ok(Self::P),
+            3 => Ok(Self::B),
+            4 => Ok(Self::S),
+            5 => Ok(Self::Si),
+            6 => Ok(Self::Sp),
+            7 => Ok(Self::Bi),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid frame picture type value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_byte(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn ffmpeg_char(self) -> char {
+        match self {
+            Self::Unknown => '?',
+            Self::I => 'I',
+            Self::P => 'P',
+            Self::B => 'B',
+            Self::S => 'S',
+            Self::Si => 'i',
+            Self::Sp => 'p',
+            Self::Bi => 'b',
+        }
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Unknown => "AV_PICTURE_TYPE_NONE",
+            Self::I => "AV_PICTURE_TYPE_I",
+            Self::P => "AV_PICTURE_TYPE_P",
+            Self::B => "AV_PICTURE_TYPE_B",
+            Self::S => "AV_PICTURE_TYPE_S",
+            Self::Si => "AV_PICTURE_TYPE_SI",
+            Self::Sp => "AV_PICTURE_TYPE_SP",
+            Self::Bi => "AV_PICTURE_TYPE_BI",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     pts: Option<i64>,
@@ -93,6 +235,10 @@ pub struct Frame {
     time_base: Rational,
     sample_aspect_ratio: Rational,
     crop: FrameCrop,
+    picture_type: FramePictureType,
+    quality: i32,
+    repeat_pict: i32,
+    flags: FrameFlags,
     data: FrameData,
     hw_frames_context: Option<BufferRef>,
     side_data: Vec<FrameSideData>,
@@ -107,6 +253,10 @@ impl Frame {
             time_base: Rational::ZERO,
             sample_aspect_ratio: Rational::ZERO,
             crop: FrameCrop::default(),
+            picture_type: FramePictureType::Unknown,
+            quality: 0,
+            repeat_pict: 0,
+            flags: FrameFlags::empty(),
             data: FrameData::Empty,
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -121,6 +271,10 @@ impl Frame {
             time_base: Rational::ZERO,
             sample_aspect_ratio: Rational::ZERO,
             crop: FrameCrop::default(),
+            picture_type: FramePictureType::Unknown,
+            quality: 0,
+            repeat_pict: 0,
+            flags: FrameFlags::empty(),
             data: FrameData::Video(frame),
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -135,6 +289,10 @@ impl Frame {
             time_base: Rational::ZERO,
             sample_aspect_ratio: Rational::ZERO,
             crop: FrameCrop::default(),
+            picture_type: FramePictureType::Unknown,
+            quality: 0,
+            repeat_pict: 0,
+            flags: FrameFlags::empty(),
             data: FrameData::Audio(frame),
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -148,6 +306,10 @@ impl Frame {
             && self.time_base == Rational::ZERO
             && self.sample_aspect_ratio == Rational::ZERO
             && self.crop.is_empty()
+            && self.picture_type == FramePictureType::Unknown
+            && self.quality == 0
+            && self.repeat_pict == 0
+            && self.flags.is_empty()
             && self.data.is_empty()
             && self.hw_frames_context.is_none()
             && self.side_data.is_empty()
@@ -172,6 +334,10 @@ impl Frame {
         self.time_base = source.time_base;
         self.sample_aspect_ratio = source.sample_aspect_ratio;
         self.crop = source.crop;
+        self.picture_type = source.picture_type;
+        self.quality = source.quality;
+        self.repeat_pict = source.repeat_pict;
+        self.flags = source.flags;
         self.side_data
             .extend(source.side_data.iter().map(FrameSideData::copy_props_clone));
 
@@ -241,6 +407,47 @@ impl Frame {
 
     pub fn set_crop_offsets(&mut self, top: usize, bottom: usize, left: usize, right: usize) {
         self.crop = FrameCrop::new(top, bottom, left, right);
+    }
+
+    pub fn picture_type(&self) -> FramePictureType {
+        self.picture_type
+    }
+
+    pub fn set_picture_type(&mut self, picture_type: FramePictureType) {
+        self.picture_type = picture_type;
+    }
+
+    pub fn set_picture_type_from_byte(&mut self, value: u8) -> AvResult<()> {
+        self.picture_type = FramePictureType::from_byte(value)?;
+        Ok(())
+    }
+
+    pub fn quality(&self) -> i32 {
+        self.quality
+    }
+
+    pub fn set_quality(&mut self, quality: i32) {
+        self.quality = quality;
+    }
+
+    pub fn repeat_pict(&self) -> i32 {
+        self.repeat_pict
+    }
+
+    pub fn set_repeat_pict(&mut self, repeat_pict: i32) {
+        self.repeat_pict = repeat_pict;
+    }
+
+    pub fn flags(&self) -> FrameFlags {
+        self.flags
+    }
+
+    pub fn set_flags(&mut self, flags: FrameFlags) {
+        self.flags = flags;
+    }
+
+    pub fn set_flag(&mut self, flag: FrameFlags, enabled: bool) {
+        self.flags.set(flag, enabled);
     }
 
     pub fn data(&self) -> &FrameData {
@@ -17723,6 +17930,10 @@ mod tests {
         assert_eq!(frame.time_base(), Rational::ZERO);
         assert_eq!(frame.sample_aspect_ratio(), Rational::ZERO);
         assert_eq!(frame.crop(), FrameCrop::default());
+        assert_eq!(frame.picture_type(), FramePictureType::Unknown);
+        assert_eq!(frame.quality(), 0);
+        assert_eq!(frame.repeat_pict(), 0);
+        assert!(frame.flags().is_empty());
         assert!(frame.hw_frames_context().is_none());
         assert!(frame.side_data().is_empty());
         frame.set_pts(Some(42));
@@ -17735,12 +17946,24 @@ mod tests {
             .set_sample_aspect_ratio(Rational::new(4, 3).unwrap())
             .unwrap();
         frame.set_crop_offsets(1, 2, 3, 4);
+        frame.set_picture_type(FramePictureType::P);
+        frame.set_quality(23);
+        frame.set_repeat_pict(2);
+        frame.set_flag(FrameFlags::KEY, true);
+        frame.set_flag(FrameFlags::INTERLACED, true);
+        frame.set_flag(FrameFlags::TOP_FIELD_FIRST, true);
         assert_eq!(frame.pts(), Some(42));
         assert_eq!(frame.pkt_dts(), Some(41));
         assert_eq!(frame.duration(), 12);
         assert_eq!(frame.time_base(), Rational::new(1, 90_000).unwrap());
         assert_eq!(frame.sample_aspect_ratio(), Rational::new(4, 3).unwrap());
         assert_eq!(frame.crop(), FrameCrop::new(1, 2, 3, 4));
+        assert_eq!(frame.picture_type(), FramePictureType::P);
+        assert_eq!(frame.quality(), 23);
+        assert_eq!(frame.repeat_pict(), 2);
+        assert!(frame.flags().contains(FrameFlags::KEY));
+        assert!(frame.flags().contains(FrameFlags::INTERLACED));
+        assert!(frame.flags().contains(FrameFlags::TOP_FIELD_FIRST));
         assert!(matches!(frame.data(), FrameData::Video(_)));
 
         assert_eq!(
@@ -17764,6 +17987,59 @@ mod tests {
             AvErrorKind::InvalidArgument
         );
         assert_eq!(frame.sample_aspect_ratio(), Rational::new(4, 3).unwrap());
+        assert_eq!(
+            frame.set_picture_type_from_byte(8).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(frame.picture_type(), FramePictureType::P);
+    }
+
+    #[test]
+    fn frame_picture_type_values_and_flags_match_ffmpeg_8_1_1_header() {
+        let inventory = [
+            (FramePictureType::Unknown, 0, "AV_PICTURE_TYPE_NONE", '?'),
+            (FramePictureType::I, 1, "AV_PICTURE_TYPE_I", 'I'),
+            (FramePictureType::P, 2, "AV_PICTURE_TYPE_P", 'P'),
+            (FramePictureType::B, 3, "AV_PICTURE_TYPE_B", 'B'),
+            (FramePictureType::S, 4, "AV_PICTURE_TYPE_S", 'S'),
+            (FramePictureType::Si, 5, "AV_PICTURE_TYPE_SI", 'i'),
+            (FramePictureType::Sp, 6, "AV_PICTURE_TYPE_SP", 'p'),
+            (FramePictureType::Bi, 7, "AV_PICTURE_TYPE_BI", 'b'),
+        ];
+        for (picture_type, value, constant, ffmpeg_char) in inventory {
+            assert_eq!(picture_type.as_byte(), value);
+            assert_eq!(picture_type.ffmpeg_constant(), constant);
+            assert_eq!(picture_type.ffmpeg_char(), ffmpeg_char);
+            assert_eq!(FramePictureType::from_byte(value).unwrap(), picture_type);
+        }
+        assert_eq!(
+            FramePictureType::from_byte(8).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        assert_eq!(FrameFlags::CORRUPT.bits(), 1 << 0);
+        assert_eq!(FrameFlags::KEY.bits(), 1 << 1);
+        assert_eq!(FrameFlags::DISCARD.bits(), 1 << 2);
+        assert_eq!(FrameFlags::INTERLACED.bits(), 1 << 3);
+        assert_eq!(FrameFlags::TOP_FIELD_FIRST.bits(), 1 << 4);
+        assert_eq!(FrameFlags::LOSSLESS.bits(), 1 << 5);
+        assert_eq!(FrameFlags::all().bits(), 0x3f);
+
+        let mut flags = FrameFlags::empty();
+        assert!(flags.is_empty());
+        flags.insert(FrameFlags::KEY);
+        flags.set(FrameFlags::LOSSLESS, true);
+        assert!(flags.contains(FrameFlags::KEY));
+        assert!(flags.contains(FrameFlags::LOSSLESS));
+        flags.remove(FrameFlags::KEY);
+        assert!(!flags.contains(FrameFlags::KEY));
+        assert!(flags.contains(FrameFlags::LOSSLESS));
+        flags.set(FrameFlags::LOSSLESS, false);
+        assert!(flags.is_empty());
+        assert_eq!(
+            FrameFlags::from_bits_truncate(u32::MAX).bits(),
+            FrameFlags::all().bits()
+        );
     }
 
     #[test]
@@ -17811,6 +18087,10 @@ mod tests {
             .set_sample_aspect_ratio(Rational::new(16, 9).unwrap())
             .unwrap();
         frame.set_crop_offsets(1, 2, 3, 4);
+        frame.set_picture_type(FramePictureType::I);
+        frame.set_quality(31);
+        frame.set_repeat_pict(1);
+        frame.set_flags(FrameFlags::KEY);
         frame
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
             .unwrap();
@@ -17825,6 +18105,10 @@ mod tests {
         assert_eq!(frame.time_base(), Rational::ZERO);
         assert_eq!(frame.sample_aspect_ratio(), Rational::ZERO);
         assert_eq!(frame.crop(), FrameCrop::default());
+        assert_eq!(frame.picture_type(), FramePictureType::Unknown);
+        assert_eq!(frame.quality(), 0);
+        assert_eq!(frame.repeat_pict(), 0);
+        assert!(frame.flags().is_empty());
         assert!(matches!(frame.data(), FrameData::Empty));
         assert!(frame.hw_frames_context().is_none());
         assert!(frame.side_data().is_empty());
@@ -17862,6 +18146,10 @@ mod tests {
             .set_sample_aspect_ratio(Rational::new(16, 9).unwrap())
             .unwrap();
         source.set_crop_offsets(1, 2, 3, 4);
+        source.set_picture_type(FramePictureType::P);
+        source.set_quality(44);
+        source.set_repeat_pict(2);
+        source.set_flags(FrameFlags::KEY);
         source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
             .unwrap();
@@ -17894,6 +18182,10 @@ mod tests {
             Rational::new(16, 9).unwrap()
         );
         assert_eq!(destination.crop(), FrameCrop::new(1, 2, 3, 4));
+        assert_eq!(destination.picture_type(), FramePictureType::P);
+        assert_eq!(destination.quality(), 44);
+        assert_eq!(destination.repeat_pict(), 2);
+        assert!(destination.flags().contains(FrameFlags::KEY));
         assert!(!source.is_empty());
         let (destination_video, source_video) = match (destination.data(), source.data()) {
             (FrameData::Video(destination_video), FrameData::Video(source_video)) => {
@@ -17945,6 +18237,10 @@ mod tests {
             .set_sample_aspect_ratio(Rational::new(4, 3).unwrap())
             .unwrap();
         source.set_crop_offsets(5, 6, 7, 8);
+        source.set_picture_type(FramePictureType::B);
+        source.set_quality(55);
+        source.set_repeat_pict(3);
+        source.set_flags(FrameFlags::INTERLACED);
 
         let destination_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let destination_capture = std::sync::Arc::clone(&destination_released);
@@ -17972,6 +18268,10 @@ mod tests {
             Rational::new(4, 3).unwrap()
         );
         assert_eq!(destination.crop(), FrameCrop::new(5, 6, 7, 8));
+        assert_eq!(destination.picture_type(), FramePictureType::B);
+        assert_eq!(destination.quality(), 55);
+        assert_eq!(destination.repeat_pict(), 3);
+        assert!(destination.flags().contains(FrameFlags::INTERLACED));
         assert!(matches!(destination.data(), FrameData::Video(_)));
         assert_eq!(
             *destination_released.lock().unwrap(),
@@ -18005,6 +18305,10 @@ mod tests {
             .set_sample_aspect_ratio(Rational::new(64, 45).unwrap())
             .unwrap();
         source.set_crop_offsets(1, 2, 3, 4);
+        source.set_picture_type(FramePictureType::Bi);
+        source.set_quality(66);
+        source.set_repeat_pict(4);
+        source.set_flags(FrameFlags::KEY);
         source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
             .unwrap();
@@ -18046,6 +18350,10 @@ mod tests {
             .set_sample_aspect_ratio(Rational::new(1, 1).unwrap())
             .unwrap();
         destination.set_crop_offsets(9, 8, 7, 6);
+        destination.set_picture_type(FramePictureType::I);
+        destination.set_quality(11);
+        destination.set_repeat_pict(1);
+        destination.set_flags(FrameFlags::CORRUPT);
         destination
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, old_side)
             .unwrap();
@@ -18061,6 +18369,11 @@ mod tests {
             Rational::new(64, 45).unwrap()
         );
         assert_eq!(destination.crop(), FrameCrop::new(1, 2, 3, 4));
+        assert_eq!(destination.picture_type(), FramePictureType::Bi);
+        assert_eq!(destination.quality(), 66);
+        assert_eq!(destination.repeat_pict(), 4);
+        assert!(destination.flags().contains(FrameFlags::KEY));
+        assert!(!destination.flags().contains(FrameFlags::CORRUPT));
         assert!(old_side_released.lock().unwrap().is_empty());
         assert!(old_hw_released.lock().unwrap().is_empty());
         let (destination_video, source_video) = match (destination.data(), source.data()) {

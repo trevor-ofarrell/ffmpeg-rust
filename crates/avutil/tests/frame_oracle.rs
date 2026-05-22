@@ -6,9 +6,9 @@ use std::{
 };
 
 use avutil::{
-    AudioFrame, AvErrorCode, BufferRef, ChannelLayout, Frame, FrameData, FrameSideData,
-    FrameSideDataFlags, FrameSideDataKind, FrameSideDataProperties, PixelFormat, Rational,
-    SampleFormat, VideoFrame, AV_NOPTS_VALUE,
+    AudioFrame, AvErrorCode, BufferRef, ChannelLayout, Frame, FrameData, FrameFlags,
+    FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
+    FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame, AV_NOPTS_VALUE,
 };
 
 #[test]
@@ -107,6 +107,10 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         .set_sample_aspect_ratio(Rational::new(16, 9).unwrap())
         .unwrap();
     video.set_crop_offsets(1, 2, 3, 4);
+    video.set_picture_type(FramePictureType::P);
+    video.set_quality(23);
+    video.set_repeat_pict(2);
+    video.set_flags(FrameFlags::KEY | FrameFlags::INTERLACED | FrameFlags::TOP_FIELD_FIRST);
     rows.insert("frame:video-buffer".to_string(), frame_fields(&video));
 
     let mut video_ref = Frame::empty();
@@ -174,6 +178,10 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         .set_sample_aspect_ratio(Rational::new(64, 45).unwrap())
         .unwrap();
     copy_source.set_crop_offsets(1, 2, 3, 4);
+    copy_source.set_picture_type(FramePictureType::Bi);
+    copy_source.set_quality(66);
+    copy_source.set_repeat_pict(4);
+    copy_source.set_flags(FrameFlags::KEY | FrameFlags::LOSSLESS);
     copy_source
         .set_side_data_kind_buffer(
             FrameSideDataKind::DisplayMatrix,
@@ -195,6 +203,10 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         .set_sample_aspect_ratio(Rational::new(1, 1).unwrap())
         .unwrap();
     copy_destination.set_crop_offsets(9, 8, 7, 6);
+    copy_destination.set_picture_type(FramePictureType::I);
+    copy_destination.set_quality(11);
+    copy_destination.set_repeat_pict(1);
+    copy_destination.set_flags(FrameFlags::CORRUPT);
     copy_destination
         .set_side_data_kind(FrameSideDataKind::DisplayMatrix, vec![0x99; 36])
         .unwrap();
@@ -549,6 +561,11 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
         crop.bottom().to_string(),
         crop.left().to_string(),
         crop.right().to_string(),
+        frame.picture_type().as_byte().to_string(),
+        frame.picture_type().ffmpeg_char().to_string(),
+        frame.quality().to_string(),
+        frame.repeat_pict().to_string(),
+        frame.flags().bits().to_string(),
         kind.to_string(),
         format.to_string(),
         width.to_string(),
@@ -862,6 +879,7 @@ fn oracle_c_source() -> &'static str {
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <libavutil/avutil.h>
 #include <libavutil/buffer.h>
 #include <libavutil/channel_layout.h>
 #include <libavutil/dict.h>
@@ -1062,12 +1080,14 @@ static void print_frame(const char *name, const AVFrame *frame)
                           : 1;
     }
 
-    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%d/%d|%zu|%zu|%zu|%zu|%s|%s|%d|%d|%d|%d|%d|",
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%d/%d|%zu|%zu|%zu|%zu|%d|%c|%d|%d|%d|%s|%s|%d|%d|%d|%d|%d|",
            name, frame->pts, frame->pkt_dts, frame->duration,
            frame->time_base.num, frame->time_base.den,
            frame->sample_aspect_ratio.num, frame->sample_aspect_ratio.den,
            frame->crop_top, frame->crop_bottom, frame->crop_left,
-           frame->crop_right, kind,
+           frame->crop_right, frame->pict_type,
+           av_get_picture_type_char(frame->pict_type), frame->quality,
+           frame->repeat_pict, frame->flags, kind,
            format ? format : "none", frame->width, frame->height,
            frame->nb_samples, frame->sample_rate, frame->ch_layout.nb_channels);
     print_line_sizes(frame->linesize, plane_count);
@@ -1218,6 +1238,11 @@ int main(void)
     video->crop_bottom = 2;
     video->crop_left = 3;
     video->crop_right = 4;
+    video->pict_type = AV_PICTURE_TYPE_P;
+    video->quality = 23;
+    video->repeat_pict = 2;
+    video->flags = AV_FRAME_FLAG_KEY | AV_FRAME_FLAG_INTERLACED |
+                   AV_FRAME_FLAG_TOP_FIELD_FIRST;
     fail_if(av_frame_get_buffer(video, 1) < 0,
             "video av_frame_get_buffer failed");
     static const uint8_t video_payload[] = { 1, 2, 3, 4, 5, 6 };
@@ -1273,6 +1298,10 @@ int main(void)
     copy_src->crop_bottom = 2;
     copy_src->crop_left = 3;
     copy_src->crop_right = 4;
+    copy_src->pict_type = AV_PICTURE_TYPE_BI;
+    copy_src->quality = 66;
+    copy_src->repeat_pict = 4;
+    copy_src->flags = AV_FRAME_FLAG_KEY | AV_FRAME_FLAG_LOSSLESS;
     fail_if(av_frame_get_buffer(copy_src, 1) < 0,
             "copy_src av_frame_get_buffer failed");
     static const uint8_t copy_src_payload[] = { 1, 2 };
@@ -1300,6 +1329,10 @@ int main(void)
     copy_dst->crop_bottom = 8;
     copy_dst->crop_left = 7;
     copy_dst->crop_right = 6;
+    copy_dst->pict_type = AV_PICTURE_TYPE_I;
+    copy_dst->quality = 11;
+    copy_dst->repeat_pict = 1;
+    copy_dst->flags = AV_FRAME_FLAG_CORRUPT;
     fail_if(av_frame_get_buffer(copy_dst, 1) < 0,
             "copy_dst av_frame_get_buffer failed");
     static const uint8_t copy_dst_payload[] = { 9, 8 };
