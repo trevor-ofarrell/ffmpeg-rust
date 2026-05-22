@@ -103,6 +103,10 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     video
         .set_time_base(Rational::new(1, 90_000).unwrap())
         .unwrap();
+    video
+        .set_sample_aspect_ratio(Rational::new(16, 9).unwrap())
+        .unwrap();
+    video.set_crop_offsets(1, 2, 3, 4);
     rows.insert("frame:video-buffer".to_string(), frame_fields(&video));
 
     let mut video_ref = Frame::empty();
@@ -167,6 +171,10 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         .set_time_base(Rational::new(1, 48_000).unwrap())
         .unwrap();
     copy_source
+        .set_sample_aspect_ratio(Rational::new(64, 45).unwrap())
+        .unwrap();
+    copy_source.set_crop_offsets(1, 2, 3, 4);
+    copy_source
         .set_side_data_kind_buffer(
             FrameSideDataKind::DisplayMatrix,
             BufferRef::copy_from_slice(&copy_source_side),
@@ -183,6 +191,10 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copy_destination
         .set_time_base(Rational::new(1, 1_000).unwrap())
         .unwrap();
+    copy_destination
+        .set_sample_aspect_ratio(Rational::new(1, 1).unwrap())
+        .unwrap();
+    copy_destination.set_crop_offsets(9, 8, 7, 6);
     copy_destination
         .set_side_data_kind(FrameSideDataKind::DisplayMatrix, vec![0x99; 36])
         .unwrap();
@@ -485,6 +497,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
 fn frame_fields(frame: &Frame) -> Vec<String> {
     let pts = frame.pts().unwrap_or(AV_NOPTS_VALUE);
     let pkt_dts = frame.pkt_dts().unwrap_or(AV_NOPTS_VALUE);
+    let crop = frame.crop();
     let (kind, format, width, height, nb_samples, sample_rate, channels, line_sizes, planes) =
         match frame.data() {
             FrameData::Empty => (
@@ -527,6 +540,15 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
         pkt_dts.to_string(),
         frame.duration().to_string(),
         format!("{}/{}", frame.time_base().num(), frame.time_base().den()),
+        format!(
+            "{}/{}",
+            frame.sample_aspect_ratio().num(),
+            frame.sample_aspect_ratio().den()
+        ),
+        crop.top().to_string(),
+        crop.bottom().to_string(),
+        crop.left().to_string(),
+        crop.right().to_string(),
         kind.to_string(),
         format.to_string(),
         width.to_string(),
@@ -1040,9 +1062,12 @@ static void print_frame(const char *name, const AVFrame *frame)
                           : 1;
     }
 
-    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%s|%s|%d|%d|%d|%d|%d|",
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%d/%d|%zu|%zu|%zu|%zu|%s|%s|%d|%d|%d|%d|%d|",
            name, frame->pts, frame->pkt_dts, frame->duration,
-           frame->time_base.num, frame->time_base.den, kind,
+           frame->time_base.num, frame->time_base.den,
+           frame->sample_aspect_ratio.num, frame->sample_aspect_ratio.den,
+           frame->crop_top, frame->crop_bottom, frame->crop_left,
+           frame->crop_right, kind,
            format ? format : "none", frame->width, frame->height,
            frame->nb_samples, frame->sample_rate, frame->ch_layout.nb_channels);
     print_line_sizes(frame->linesize, plane_count);
@@ -1188,6 +1213,11 @@ int main(void)
     video->pkt_dts = 122;
     video->duration = 121;
     video->time_base = (AVRational){ 1, 90000 };
+    video->sample_aspect_ratio = (AVRational){ 16, 9 };
+    video->crop_top = 1;
+    video->crop_bottom = 2;
+    video->crop_left = 3;
+    video->crop_right = 4;
     fail_if(av_frame_get_buffer(video, 1) < 0,
             "video av_frame_get_buffer failed");
     static const uint8_t video_payload[] = { 1, 2, 3, 4, 5, 6 };
@@ -1238,6 +1268,11 @@ int main(void)
     copy_src->pkt_dts = 320;
     copy_src->duration = 319;
     copy_src->time_base = (AVRational){ 1, 48000 };
+    copy_src->sample_aspect_ratio = (AVRational){ 64, 45 };
+    copy_src->crop_top = 1;
+    copy_src->crop_bottom = 2;
+    copy_src->crop_left = 3;
+    copy_src->crop_right = 4;
     fail_if(av_frame_get_buffer(copy_src, 1) < 0,
             "copy_src av_frame_get_buffer failed");
     static const uint8_t copy_src_payload[] = { 1, 2 };
@@ -1260,6 +1295,11 @@ int main(void)
     copy_dst->pkt_dts = 998;
     copy_dst->duration = 997;
     copy_dst->time_base = (AVRational){ 1, 1000 };
+    copy_dst->sample_aspect_ratio = (AVRational){ 1, 1 };
+    copy_dst->crop_top = 9;
+    copy_dst->crop_bottom = 8;
+    copy_dst->crop_left = 7;
+    copy_dst->crop_right = 6;
     fail_if(av_frame_get_buffer(copy_dst, 1) < 0,
             "copy_dst av_frame_get_buffer failed");
     static const uint8_t copy_dst_payload[] = { 9, 8 };

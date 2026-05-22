@@ -13,8 +13,8 @@ use avutil::{
     FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
     NativeChannelMaskLayout,
     FrameAudioServiceType,
-    Dictionary, FrameContentLightMetadata, FrameData, FrameDetectionBbox, FrameDetectionBboxes,
-    FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
+    Dictionary, FrameContentLightMetadata, FrameCrop, FrameData, FrameDetectionBbox,
+    FrameDetectionBboxes, FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
     FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
     FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace, FrameExifCompositeImage,
@@ -2706,6 +2706,25 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         AvErrorKind::InvalidArgument
     );
     assert_eq!(frame.time_base(), frame_time_base);
+    let sample_aspect_ratio = Rational::new(4, 3).unwrap();
+    frame.set_sample_aspect_ratio(sample_aspect_ratio).unwrap();
+    assert_eq!(frame.sample_aspect_ratio(), sample_aspect_ratio);
+    assert_eq!(
+        frame
+            .set_sample_aspect_ratio(Rational::from_raw(1, 0))
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(frame.sample_aspect_ratio(), sample_aspect_ratio);
+    let frame_crop = FrameCrop::new(
+        usize::from(cursor.next().unwrap_or_default() % 4),
+        usize::from(cursor.next().unwrap_or_default() % 4),
+        usize::from(cursor.next().unwrap_or_default() % 4),
+        usize::from(cursor.next().unwrap_or_default() % 4),
+    );
+    frame.set_crop(frame_crop);
+    assert_eq!(frame.crop(), frame_crop);
     assert!(matches!(frame.data(), FrameData::Video(_)));
     assert!(frame.hw_frames_context().is_none());
     assert!(frame.side_data().is_empty());

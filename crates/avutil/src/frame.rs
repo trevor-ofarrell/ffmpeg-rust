@@ -46,12 +46,53 @@ impl FrameData {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameCrop {
+    top: usize,
+    bottom: usize,
+    left: usize,
+    right: usize,
+}
+
+impl FrameCrop {
+    pub const fn new(top: usize, bottom: usize, left: usize, right: usize) -> Self {
+        Self {
+            top,
+            bottom,
+            left,
+            right,
+        }
+    }
+
+    pub const fn top(self) -> usize {
+        self.top
+    }
+
+    pub const fn bottom(self) -> usize {
+        self.bottom
+    }
+
+    pub const fn left(self) -> usize {
+        self.left
+    }
+
+    pub const fn right(self) -> usize {
+        self.right
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.top == 0 && self.bottom == 0 && self.left == 0 && self.right == 0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     pts: Option<i64>,
     pkt_dts: Option<i64>,
     duration: i64,
     time_base: Rational,
+    sample_aspect_ratio: Rational,
+    crop: FrameCrop,
     data: FrameData,
     hw_frames_context: Option<BufferRef>,
     side_data: Vec<FrameSideData>,
@@ -64,6 +105,8 @@ impl Frame {
             pkt_dts: None,
             duration: 0,
             time_base: Rational::ZERO,
+            sample_aspect_ratio: Rational::ZERO,
+            crop: FrameCrop::default(),
             data: FrameData::Empty,
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -76,6 +119,8 @@ impl Frame {
             pkt_dts: None,
             duration: 0,
             time_base: Rational::ZERO,
+            sample_aspect_ratio: Rational::ZERO,
+            crop: FrameCrop::default(),
             data: FrameData::Video(frame),
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -88,6 +133,8 @@ impl Frame {
             pkt_dts: None,
             duration: 0,
             time_base: Rational::ZERO,
+            sample_aspect_ratio: Rational::ZERO,
+            crop: FrameCrop::default(),
             data: FrameData::Audio(frame),
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -99,6 +146,8 @@ impl Frame {
             && self.pkt_dts.is_none()
             && self.duration == 0
             && self.time_base == Rational::ZERO
+            && self.sample_aspect_ratio == Rational::ZERO
+            && self.crop.is_empty()
             && self.data.is_empty()
             && self.hw_frames_context.is_none()
             && self.side_data.is_empty()
@@ -121,6 +170,8 @@ impl Frame {
         self.pkt_dts = source.pkt_dts;
         self.duration = source.duration;
         self.time_base = source.time_base;
+        self.sample_aspect_ratio = source.sample_aspect_ratio;
+        self.crop = source.crop;
         self.side_data
             .extend(source.side_data.iter().map(FrameSideData::copy_props_clone));
 
@@ -168,6 +219,28 @@ impl Frame {
     pub fn set_time_base(&mut self, time_base: Rational) -> AvResult<()> {
         self.time_base = Rational::new(time_base.num(), time_base.den())?;
         Ok(())
+    }
+
+    pub fn sample_aspect_ratio(&self) -> Rational {
+        self.sample_aspect_ratio
+    }
+
+    pub fn set_sample_aspect_ratio(&mut self, sample_aspect_ratio: Rational) -> AvResult<()> {
+        self.sample_aspect_ratio =
+            Rational::new(sample_aspect_ratio.num(), sample_aspect_ratio.den())?;
+        Ok(())
+    }
+
+    pub fn crop(&self) -> FrameCrop {
+        self.crop
+    }
+
+    pub fn set_crop(&mut self, crop: FrameCrop) {
+        self.crop = crop;
+    }
+
+    pub fn set_crop_offsets(&mut self, top: usize, bottom: usize, left: usize, right: usize) {
+        self.crop = FrameCrop::new(top, bottom, left, right);
     }
 
     pub fn data(&self) -> &FrameData {
@@ -17648,6 +17721,8 @@ mod tests {
         assert_eq!(frame.pkt_dts(), None);
         assert_eq!(frame.duration(), 0);
         assert_eq!(frame.time_base(), Rational::ZERO);
+        assert_eq!(frame.sample_aspect_ratio(), Rational::ZERO);
+        assert_eq!(frame.crop(), FrameCrop::default());
         assert!(frame.hw_frames_context().is_none());
         assert!(frame.side_data().is_empty());
         frame.set_pts(Some(42));
@@ -17656,10 +17731,16 @@ mod tests {
         frame
             .set_time_base(Rational::new(1, 90_000).unwrap())
             .unwrap();
+        frame
+            .set_sample_aspect_ratio(Rational::new(4, 3).unwrap())
+            .unwrap();
+        frame.set_crop_offsets(1, 2, 3, 4);
         assert_eq!(frame.pts(), Some(42));
         assert_eq!(frame.pkt_dts(), Some(41));
         assert_eq!(frame.duration(), 12);
         assert_eq!(frame.time_base(), Rational::new(1, 90_000).unwrap());
+        assert_eq!(frame.sample_aspect_ratio(), Rational::new(4, 3).unwrap());
+        assert_eq!(frame.crop(), FrameCrop::new(1, 2, 3, 4));
         assert!(matches!(frame.data(), FrameData::Video(_)));
 
         assert_eq!(
@@ -17675,6 +17756,14 @@ mod tests {
             AvErrorKind::InvalidArgument
         );
         assert_eq!(frame.time_base(), Rational::new(1, 90_000).unwrap());
+        assert_eq!(
+            frame
+                .set_sample_aspect_ratio(Rational::from_raw(1, 0))
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(frame.sample_aspect_ratio(), Rational::new(4, 3).unwrap());
     }
 
     #[test]
@@ -17719,6 +17808,10 @@ mod tests {
             .set_time_base(Rational::new(1, 48_000).unwrap())
             .unwrap();
         frame
+            .set_sample_aspect_ratio(Rational::new(16, 9).unwrap())
+            .unwrap();
+        frame.set_crop_offsets(1, 2, 3, 4);
+        frame
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
             .unwrap();
 
@@ -17730,6 +17823,8 @@ mod tests {
         assert_eq!(frame.pkt_dts(), None);
         assert_eq!(frame.duration(), 0);
         assert_eq!(frame.time_base(), Rational::ZERO);
+        assert_eq!(frame.sample_aspect_ratio(), Rational::ZERO);
+        assert_eq!(frame.crop(), FrameCrop::default());
         assert!(matches!(frame.data(), FrameData::Empty));
         assert!(frame.hw_frames_context().is_none());
         assert!(frame.side_data().is_empty());
@@ -17764,6 +17859,10 @@ mod tests {
             .set_time_base(Rational::new(1, 90_000).unwrap())
             .unwrap();
         source
+            .set_sample_aspect_ratio(Rational::new(16, 9).unwrap())
+            .unwrap();
+        source.set_crop_offsets(1, 2, 3, 4);
+        source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
             .unwrap();
 
@@ -17790,6 +17889,11 @@ mod tests {
         assert_eq!(destination.pkt_dts(), Some(6));
         assert_eq!(destination.duration(), 5);
         assert_eq!(destination.time_base(), Rational::new(1, 90_000).unwrap());
+        assert_eq!(
+            destination.sample_aspect_ratio(),
+            Rational::new(16, 9).unwrap()
+        );
+        assert_eq!(destination.crop(), FrameCrop::new(1, 2, 3, 4));
         assert!(!source.is_empty());
         let (destination_video, source_video) = match (destination.data(), source.data()) {
             (FrameData::Video(destination_video), FrameData::Video(source_video)) => {
@@ -17837,6 +17941,10 @@ mod tests {
         source
             .set_time_base(Rational::new(1, 48_000).unwrap())
             .unwrap();
+        source
+            .set_sample_aspect_ratio(Rational::new(4, 3).unwrap())
+            .unwrap();
+        source.set_crop_offsets(5, 6, 7, 8);
 
         let destination_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let destination_capture = std::sync::Arc::clone(&destination_released);
@@ -17859,6 +17967,11 @@ mod tests {
         assert_eq!(destination.pkt_dts(), Some(10));
         assert_eq!(destination.duration(), 9);
         assert_eq!(destination.time_base(), Rational::new(1, 48_000).unwrap());
+        assert_eq!(
+            destination.sample_aspect_ratio(),
+            Rational::new(4, 3).unwrap()
+        );
+        assert_eq!(destination.crop(), FrameCrop::new(5, 6, 7, 8));
         assert!(matches!(destination.data(), FrameData::Video(_)));
         assert_eq!(
             *destination_released.lock().unwrap(),
@@ -17888,6 +18001,10 @@ mod tests {
         source
             .set_time_base(Rational::new(1, 48_000).unwrap())
             .unwrap();
+        source
+            .set_sample_aspect_ratio(Rational::new(64, 45).unwrap())
+            .unwrap();
+        source.set_crop_offsets(1, 2, 3, 4);
         source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
             .unwrap();
@@ -17926,6 +18043,10 @@ mod tests {
             .set_time_base(Rational::new(1, 1_000).unwrap())
             .unwrap();
         destination
+            .set_sample_aspect_ratio(Rational::new(1, 1).unwrap())
+            .unwrap();
+        destination.set_crop_offsets(9, 8, 7, 6);
+        destination
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, old_side)
             .unwrap();
 
@@ -17935,6 +18056,11 @@ mod tests {
         assert_eq!(destination.pkt_dts(), Some(320));
         assert_eq!(destination.duration(), 319);
         assert_eq!(destination.time_base(), Rational::new(1, 48_000).unwrap());
+        assert_eq!(
+            destination.sample_aspect_ratio(),
+            Rational::new(64, 45).unwrap()
+        );
+        assert_eq!(destination.crop(), FrameCrop::new(1, 2, 3, 4));
         assert!(old_side_released.lock().unwrap().is_empty());
         assert!(old_hw_released.lock().unwrap().is_empty());
         let (destination_video, source_video) = match (destination.data(), source.data()) {
