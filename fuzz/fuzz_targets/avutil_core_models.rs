@@ -8338,6 +8338,9 @@ fn exercise_fixtures() {
     assert_eq!(SampleFormat::S64.plane_sizes(2, 2).unwrap(), vec![32]);
     assert_eq!(SampleFormat::S64P.plane_sizes(2, 2).unwrap(), vec![16, 16]);
     assert_eq!(PacketSideDataKind::KNOWN.len(), 41);
+    for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
+        assert_eq!(kind.ffmpeg_value(), Some(index as i32));
+    }
     assert_eq!(
         PacketSideDataKind::from_name("AV_PKT_DATA_A53_CC").unwrap(),
         PacketSideDataKind::A53ClosedCaptions

@@ -67,6 +67,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "packet:default".to_string(),
         packet_fields(&Packet::default()),
     );
+    insert_side_data_kind_inventory_row(&mut rows);
 
     let mut rescaled = packet_with_common_props();
     rescaled
@@ -112,6 +113,15 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     insert_payload_api_rows(&mut rows);
 
     rows
+}
+
+fn insert_side_data_kind_inventory_row(rows: &mut BTreeMap<String, Vec<String>>) {
+    let mut fields = vec![PacketSideDataKind::KNOWN.len().to_string()];
+    for kind in PacketSideDataKind::KNOWN {
+        fields.push(kind.ffmpeg_constant().unwrap().to_string());
+        fields.push(kind.ffmpeg_value().unwrap().to_string());
+    }
+    rows.insert("packet:side-kind-inventory".to_string(), fields);
 }
 
 fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -316,9 +326,9 @@ fn payload_fields(packet: &Packet) -> Vec<String> {
 }
 
 fn packet_side_data_type(kind: &PacketSideDataKind) -> &'static str {
-    match kind {
-        PacketSideDataKind::Palette => "0",
-        PacketSideDataKind::NewExtradata => "1",
+    match kind.ffmpeg_value() {
+        Some(0) => "0",
+        Some(1) => "1",
         _ => panic!("unexpected packet side data kind in oracle test: {kind:?}"),
     }
 }
@@ -467,6 +477,51 @@ static void print_side_data_lookup(const char *name, const AVPacket *pkt,
     printf("\n");
 }
 
+static void print_side_data_kind_inventory(void) {
+    printf("packet:side-kind-inventory|%d", (int)AV_PKT_DATA_NB);
+    printf("|AV_PKT_DATA_PALETTE|%d", (int)AV_PKT_DATA_PALETTE);
+    printf("|AV_PKT_DATA_NEW_EXTRADATA|%d", (int)AV_PKT_DATA_NEW_EXTRADATA);
+    printf("|AV_PKT_DATA_PARAM_CHANGE|%d", (int)AV_PKT_DATA_PARAM_CHANGE);
+    printf("|AV_PKT_DATA_H263_MB_INFO|%d", (int)AV_PKT_DATA_H263_MB_INFO);
+    printf("|AV_PKT_DATA_REPLAYGAIN|%d", (int)AV_PKT_DATA_REPLAYGAIN);
+    printf("|AV_PKT_DATA_DISPLAYMATRIX|%d", (int)AV_PKT_DATA_DISPLAYMATRIX);
+    printf("|AV_PKT_DATA_STEREO3D|%d", (int)AV_PKT_DATA_STEREO3D);
+    printf("|AV_PKT_DATA_AUDIO_SERVICE_TYPE|%d", (int)AV_PKT_DATA_AUDIO_SERVICE_TYPE);
+    printf("|AV_PKT_DATA_QUALITY_STATS|%d", (int)AV_PKT_DATA_QUALITY_STATS);
+    printf("|AV_PKT_DATA_FALLBACK_TRACK|%d", (int)AV_PKT_DATA_FALLBACK_TRACK);
+    printf("|AV_PKT_DATA_CPB_PROPERTIES|%d", (int)AV_PKT_DATA_CPB_PROPERTIES);
+    printf("|AV_PKT_DATA_SKIP_SAMPLES|%d", (int)AV_PKT_DATA_SKIP_SAMPLES);
+    printf("|AV_PKT_DATA_JP_DUALMONO|%d", (int)AV_PKT_DATA_JP_DUALMONO);
+    printf("|AV_PKT_DATA_STRINGS_METADATA|%d", (int)AV_PKT_DATA_STRINGS_METADATA);
+    printf("|AV_PKT_DATA_SUBTITLE_POSITION|%d", (int)AV_PKT_DATA_SUBTITLE_POSITION);
+    printf("|AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL|%d", (int)AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL);
+    printf("|AV_PKT_DATA_WEBVTT_IDENTIFIER|%d", (int)AV_PKT_DATA_WEBVTT_IDENTIFIER);
+    printf("|AV_PKT_DATA_WEBVTT_SETTINGS|%d", (int)AV_PKT_DATA_WEBVTT_SETTINGS);
+    printf("|AV_PKT_DATA_METADATA_UPDATE|%d", (int)AV_PKT_DATA_METADATA_UPDATE);
+    printf("|AV_PKT_DATA_MPEGTS_STREAM_ID|%d", (int)AV_PKT_DATA_MPEGTS_STREAM_ID);
+    printf("|AV_PKT_DATA_MASTERING_DISPLAY_METADATA|%d", (int)AV_PKT_DATA_MASTERING_DISPLAY_METADATA);
+    printf("|AV_PKT_DATA_SPHERICAL|%d", (int)AV_PKT_DATA_SPHERICAL);
+    printf("|AV_PKT_DATA_CONTENT_LIGHT_LEVEL|%d", (int)AV_PKT_DATA_CONTENT_LIGHT_LEVEL);
+    printf("|AV_PKT_DATA_A53_CC|%d", (int)AV_PKT_DATA_A53_CC);
+    printf("|AV_PKT_DATA_ENCRYPTION_INIT_INFO|%d", (int)AV_PKT_DATA_ENCRYPTION_INIT_INFO);
+    printf("|AV_PKT_DATA_ENCRYPTION_INFO|%d", (int)AV_PKT_DATA_ENCRYPTION_INFO);
+    printf("|AV_PKT_DATA_AFD|%d", (int)AV_PKT_DATA_AFD);
+    printf("|AV_PKT_DATA_PRFT|%d", (int)AV_PKT_DATA_PRFT);
+    printf("|AV_PKT_DATA_ICC_PROFILE|%d", (int)AV_PKT_DATA_ICC_PROFILE);
+    printf("|AV_PKT_DATA_DOVI_CONF|%d", (int)AV_PKT_DATA_DOVI_CONF);
+    printf("|AV_PKT_DATA_S12M_TIMECODE|%d", (int)AV_PKT_DATA_S12M_TIMECODE);
+    printf("|AV_PKT_DATA_DYNAMIC_HDR10_PLUS|%d", (int)AV_PKT_DATA_DYNAMIC_HDR10_PLUS);
+    printf("|AV_PKT_DATA_IAMF_MIX_GAIN_PARAM|%d", (int)AV_PKT_DATA_IAMF_MIX_GAIN_PARAM);
+    printf("|AV_PKT_DATA_IAMF_DEMIXING_INFO_PARAM|%d", (int)AV_PKT_DATA_IAMF_DEMIXING_INFO_PARAM);
+    printf("|AV_PKT_DATA_IAMF_RECON_GAIN_INFO_PARAM|%d", (int)AV_PKT_DATA_IAMF_RECON_GAIN_INFO_PARAM);
+    printf("|AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT|%d", (int)AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT);
+    printf("|AV_PKT_DATA_FRAME_CROPPING|%d", (int)AV_PKT_DATA_FRAME_CROPPING);
+    printf("|AV_PKT_DATA_LCEVC|%d", (int)AV_PKT_DATA_LCEVC);
+    printf("|AV_PKT_DATA_3D_REFERENCE_DISPLAYS|%d", (int)AV_PKT_DATA_3D_REFERENCE_DISPLAYS);
+    printf("|AV_PKT_DATA_RTCP_SR|%d", (int)AV_PKT_DATA_RTCP_SR);
+    printf("|AV_PKT_DATA_EXIF|%d\n", (int)AV_PKT_DATA_EXIF);
+}
+
 static void print_payload(const char *name, const AVPacket *pkt) {
     printf("%s|%d|", name, pkt->size);
     print_hex_or_dash(pkt->data, pkt->size);
@@ -607,6 +662,8 @@ int main(void) {
     AVPacket *pkt = new_packet();
     print_packet("packet:default", pkt);
     av_packet_free(&pkt);
+
+    print_side_data_kind_inventory();
 
     pkt = packet_with_common_props();
     av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });

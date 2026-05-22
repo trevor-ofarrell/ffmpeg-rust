@@ -311,6 +311,13 @@ impl PacketSideDataKind {
         }
     }
 
+    pub fn ffmpeg_value(&self) -> Option<i32> {
+        Self::KNOWN
+            .iter()
+            .position(|kind| kind == self)
+            .map(|index| index as i32)
+    }
+
     pub fn is_known(&self) -> bool {
         !matches!(self, Self::Unknown(_))
     }
@@ -5622,6 +5629,10 @@ mod tests {
         );
         assert_eq!(PacketSideDataKind::KNOWN[0].name(), "palette");
         assert_eq!(PacketSideDataKind::KNOWN[40].name(), "exif");
+        assert_eq!(PacketSideDataKind::KNOWN.len(), 41);
+        for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
+            assert_eq!(kind.ffmpeg_value(), Some(index as i32));
+        }
     }
 
     #[test]
@@ -5643,6 +5654,7 @@ mod tests {
         assert_eq!(unknown.name(), "vendor.packet");
         assert!(!unknown.is_known());
         assert_eq!(unknown.ffmpeg_constant(), None);
+        assert_eq!(unknown.ffmpeg_value(), None);
 
         let side_data = SideData::new("AV_PKT_DATA_PALETTE", vec![1, 2]).unwrap();
         assert_eq!(side_data.kind(), "palette");
