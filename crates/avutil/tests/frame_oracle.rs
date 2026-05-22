@@ -711,6 +711,31 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, replace_source_side)
         .unwrap();
 
+    let mut ref_destination = Frame::empty();
+    ref_destination.ref_from(&replace_source);
+    rows.insert("frame:ref-rich-ret".to_string(), vec!["0".to_string()]);
+    rows.insert(
+        "frame:ref-rich-src".to_string(),
+        frame_fields(&replace_source),
+    );
+    rows.insert(
+        "frame:ref-rich-dst".to_string(),
+        frame_fields(&ref_destination),
+    );
+    rows.insert(
+        "frame:ref-rich-plane-shares".to_string(),
+        first_plane_share_fields(&replace_source, &ref_destination),
+    );
+    rows.insert(
+        "frame:ref-rich-side-shares".to_string(),
+        first_side_data_share_fields(&replace_source, &ref_destination),
+    );
+    rows.insert(
+        "frame:ref-rich-hw-shares".to_string(),
+        hw_frames_context_share_fields(&replace_source, &ref_destination),
+    );
+    drop(ref_destination);
+
     let replace_clone = replace_source.clone_ref();
     rows.insert(
         "frame:clone-ref-src".to_string(),
@@ -2703,6 +2728,18 @@ int main(void)
         replace_src, AV_FRAME_DATA_DISPLAYMATRIX, 36);
     fail_if(!replace_src_sd, "replace_src side data allocation failed");
     memset(replace_src_sd->data, 0x44, replace_src_sd->size);
+
+    AVFrame *ref_dst = av_frame_alloc();
+    fail_if(!ref_dst, "ref_dst av_frame_alloc failed");
+    int ref_ret = av_frame_ref(ref_dst, replace_src);
+    printf("frame:ref-rich-ret|%d\n", ref_ret);
+    fail_if(ref_ret < 0, "ref_dst av_frame_ref failed");
+    print_frame("frame:ref-rich-src", replace_src);
+    print_frame("frame:ref-rich-dst", ref_dst);
+    print_share("frame:ref-rich-plane-shares", replace_src, ref_dst);
+    print_side_share("frame:ref-rich-side-shares", replace_src, ref_dst);
+    print_hw_share("frame:ref-rich-hw-shares", replace_src, ref_dst);
+    av_frame_free(&ref_dst);
 
     AVFrame *replace_clone = av_frame_clone(replace_src);
     fail_if(!replace_clone, "av_frame_clone failed");

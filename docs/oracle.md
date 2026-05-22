@@ -241,6 +241,14 @@ remains unchanged.
 The `frame:unref-rich` row proves `av_frame_unref()` resets a populated frame
 that owns payload buffers, metadata, displaymatrix side data, `hw_frames_ctx`,
 and `opaque_ref`, matching the Rust `Frame::unref()` reset surface.
+The `frame:ref-rich-*` rows prove valid `av_frame_ref()` behavior on a newly
+allocated destination: payload buffers, displaymatrix side data,
+`hw_frames_ctx`, and `opaque_ref` are shared through new references, source
+properties are copied, and the source frame remains populated. A pre-populated
+destination is intentionally not claimed as an oracle row because FFmpeg
+documents that call shape as invalid caller input; Rust `Frame::ref_from()`
+safely releases existing destination owners before cloning as a wrapper
+boundary.
 The `frame:empty-make-writable-ret` and `frame:empty-after-make-writable`
 rows prove `av_frame_make_writable()` returns `EINVAL` for an empty frame and
 leaves that frame in the default unallocated state. Rust exposes the fallible

@@ -20480,7 +20480,37 @@ mod tests {
         );
         let old_video =
             VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![old_plane]).unwrap();
-        let mut destination = Frame::video(old_video);
+        let old_side_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let old_side_capture = std::sync::Arc::clone(&old_side_released);
+        let old_side = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![0x77]),
+            String::from("old-side"),
+            move |opaque| {
+                old_side_capture.lock().unwrap().push(opaque);
+            },
+        );
+        let old_hw_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let old_hw_capture = std::sync::Arc::clone(&old_hw_released);
+        let old_hw = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![0x88]),
+            String::from("old-hw"),
+            move |opaque| {
+                old_hw_capture.lock().unwrap().push(opaque);
+            },
+        );
+        let mut destination = Frame::video(old_video).with_hw_frames_context(old_hw);
+        let old_opaque_ref_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let old_opaque_ref_capture = std::sync::Arc::clone(&old_opaque_ref_released);
+        destination.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0x99],
+            move |data| {
+                old_opaque_ref_capture.lock().unwrap().push(data);
+            },
+        )));
+        destination
+            .set_side_data_kind_buffer(FrameSideDataKind::ReplayGain, old_side)
+            .unwrap();
 
         destination.ref_from(&source);
 
@@ -20488,6 +20518,15 @@ mod tests {
             *old_released.lock().unwrap(),
             vec![String::from("old-plane")]
         );
+        assert_eq!(
+            *old_side_released.lock().unwrap(),
+            vec![String::from("old-side")]
+        );
+        assert_eq!(
+            *old_hw_released.lock().unwrap(),
+            vec![String::from("old-hw")]
+        );
+        assert_eq!(*old_opaque_ref_released.lock().unwrap(), vec![vec![0x99]]);
         assert_eq!(destination.pts(), Some(7));
         assert_eq!(destination.pkt_dts(), Some(6));
         assert_eq!(destination.duration(), 5);
