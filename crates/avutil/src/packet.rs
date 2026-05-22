@@ -10329,6 +10329,20 @@ mod tests {
             .all(|byte| *byte == 0));
         assert!(grown.is_data_writable());
 
+        let mut shrunk = Packet::new(vec![0xaa, 0xbb, 0xcc, 0xdd], 0);
+        shrunk.shrink_data(2).unwrap();
+        assert_eq!(shrunk.data(), &[0xaa, 0xbb]);
+        assert_eq!(
+            shrunk.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(shrunk
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(shrunk.is_data_writable());
+
         let mut writable = Packet::new(vec![0xaa, 0xbb], 0);
         writable.make_writable().unwrap();
         writable.make_data_writable()[0] = 0xcc;

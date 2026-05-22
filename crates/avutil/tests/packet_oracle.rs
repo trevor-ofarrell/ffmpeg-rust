@@ -475,6 +475,13 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_prefix_fields(&grow_unrefcounted, 2),
     );
 
+    let mut shrink_unrefcounted = Packet::new(vec![0xaa, 0xbb, 0xcc, 0xdd], 0);
+    shrink_unrefcounted.shrink_data(2).unwrap();
+    rows.insert(
+        "packet:payload-shrink-unrefcounted".to_string(),
+        payload_unowned_fields(&shrink_unrefcounted),
+    );
+
     let src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
     let mut writable = Packet::default();
     writable.ref_from(&src);
@@ -1178,6 +1185,19 @@ fn payload_prefix_fields(packet: &Packet, prefix_len: usize) -> Vec<String> {
     ]
 }
 
+fn payload_unowned_fields(packet: &Packet) -> Vec<String> {
+    let padding = packet.data_buffer().padding_slice();
+    assert!(
+        padding.len() >= AV_INPUT_BUFFER_PADDING_SIZE,
+        "packet payload should have FFmpeg input padding for oracle comparison"
+    );
+    vec![
+        packet.len().to_string(),
+        hex_or_dash(packet.data()),
+        hex_or_dash(&padding[..AV_INPUT_BUFFER_PADDING_SIZE]),
+    ]
+}
+
 fn payload_layout_fields(bytes: &[u8], offsets: &[usize]) -> Vec<String> {
     let mut fields = vec![bytes.len().to_string(), hex_or_dash(bytes)];
     fields.extend(offsets.iter().map(ToString::to_string));
@@ -1747,6 +1767,15 @@ static void print_payload_prefix(const char *name, const AVPacket *pkt, int pref
     printf("|%d\n", pkt->buf ? av_buffer_is_writable(pkt->buf) : 0);
 }
 
+static void print_payload_unowned(const char *name, const AVPacket *pkt) {
+    printf("%s|%d|", name, pkt->size);
+    print_hex_or_dash(pkt->data, pkt->size);
+    printf("|");
+    print_hex_or_dash(pkt->data ? pkt->data + pkt->size : NULL,
+                      AV_INPUT_BUFFER_PADDING_SIZE);
+    printf("\n");
+}
+
 static void print_dictionary_payload(const char *name, const uint8_t *data, size_t size) {
     printf("%s|%d|%zu|", name, data != NULL, size);
     print_hex_or_dash(data, (int)size);
@@ -2099,6 +2128,20 @@ static void exercise_payload_api(void) {
     printf("packet:payload-grow-unrefcounted-ret|%d\n", ret);
     print_payload_prefix("packet:payload-grow-unrefcounted", pkt, 2);
     av_packet_free(&pkt);
+
+    pkt = new_packet();
+    uint8_t *shrink_raw = av_mallocz(4 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!shrink_raw, "av_mallocz raw shrink payload failed");
+    shrink_raw[0] = 0xaa;
+    shrink_raw[1] = 0xbb;
+    shrink_raw[2] = 0xcc;
+    shrink_raw[3] = 0xdd;
+    pkt->data = shrink_raw;
+    pkt->size = 4;
+    av_shrink_packet(pkt, 2);
+    print_payload_unowned("packet:payload-shrink-unrefcounted", pkt);
+    av_packet_free(&pkt);
+    av_free(shrink_raw);
 
     AVPacket *src = new_packet();
     fail_if(av_new_packet(src, 2) < 0, "av_new_packet writable src failed");

@@ -5828,6 +5828,30 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .all(|byte| *byte == 0));
     assert!(unpadded_grown_packet.is_data_writable());
 
+    let unpadded_shrink_to = usize::from(cursor.next().unwrap_or_default()) % (payload.len() + 1);
+    let mut unpadded_shrunk_packet = Packet::new(payload.clone(), stream_index);
+    unpadded_shrunk_packet
+        .shrink_data(unpadded_shrink_to)
+        .unwrap();
+    assert_eq!(
+        unpadded_shrunk_packet.data(),
+        &payload[..unpadded_shrink_to]
+    );
+    if unpadded_shrink_to < payload.len() {
+        assert_eq!(
+            unpadded_shrunk_packet.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(unpadded_shrunk_packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+    } else {
+        assert_eq!(unpadded_shrunk_packet.data_buffer().padding_len(), 0);
+    }
+    assert!(unpadded_shrunk_packet.is_data_writable());
+
     let mut unpadded_writable_packet = Packet::new(payload.clone(), stream_index);
     unpadded_writable_packet.make_writable().unwrap();
     assert_eq!(unpadded_writable_packet.data(), payload.as_slice());
