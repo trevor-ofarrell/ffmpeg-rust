@@ -2936,7 +2936,7 @@ id = "avformat-wav-demuxer"
 kind = "demuxer"
 ffmpeg_name = "wav"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "fate_pass"
 priority = 3
 oracle_command = "ffmpeg -i <input.wav> -f framecrc -"
 rust_command = "cargo test -p avformat wav"
@@ -2955,8 +2955,8 @@ fate_tests = [
   "tests/fate/upstream-mappings.txt:avformat-wav-demuxer|fate-wav-pcm-s16le-md5",
 ]
 fuzz_targets = ["avformat_wav"]
-notes = "Initial RIFF/WAVE demuxer parses PCM s16le fmt/data chunks, skips padded unknown chunks, validates stream parameters through the shared avformat AudioStreamParameters helper and SampleFormat::S16 sizing model, derives native or count-only ChannelLayoutSpec metadata where safe, and emits one data packet. Build-checked cargo-fuzz target avformat_wav exercises demuxer opening, packet emission, and parsed stream invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. The ignored wav_oracle harness compares Rust WAV-to-MD5 output against pinned FFmpeg 8.1.1 streamcopy MD5 output for both a generated PCM s16le WAV fixture and FATE sample audio-reference/luckynight_2ch_44kHz_s16.wav. tests/differential/mappings.txt exposes the generated fixture row through fate-runner with only an oracle prerequisite, and that generated row passed locally through the pinned WSL oracle wrapper; tests/fate/upstream-mappings.txt exposes the sample-backed row without adding it to local smoke runs. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, packet chunking, probing, broad CLI wiring, and upstream FATE pass status are pending. The local FATE-runner smoke mapping executes the wav unit filter only and does not count as upstream FATE parity."
-blocked_reason = "The generated WAV differential row passed locally, but the FATE sample tree is absent locally, so the sample-backed WAV oracle/FATE mapping has not executed; broader WAV coverage and actual cargo-fuzz execution remain pending."
+notes = "Initial RIFF/WAVE demuxer parses PCM s16le fmt/data chunks, skips padded unknown chunks, validates stream parameters through the shared avformat AudioStreamParameters helper and SampleFormat::S16 sizing model, derives native or count-only ChannelLayoutSpec metadata where safe, and emits one data packet. Build-checked cargo-fuzz target avformat_wav exercises demuxer opening, packet emission, and parsed stream invariants, but actual local fuzz execution is still pending for this component. The ignored wav_oracle harness compares Rust WAV-to-MD5 output against pinned FFmpeg 8.1.1 streamcopy MD5 output for both a generated PCM s16le WAV fixture and FATE sample audio-reference/luckynight_2ch_44kHz_s16.wav. tests/differential/mappings.txt exposes the generated fixture row through fate-runner with only an oracle prerequisite, and that generated row passed locally through the pinned WSL oracle wrapper. tests/fate/upstream-mappings.txt exposes the sample-backed row without adding it to local smoke runs; the current local workspace has that exact FATE WAV sample installed under ignored third_party/fate-samples, and the sample-backed mapping passed locally through the pinned WSL oracle wrapper. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, packet chunking, probing, broad CLI wiring, broader upstream FATE coverage, and actual cargo-fuzz execution remain pending. The local FATE-runner smoke mapping executes the wav unit filter only and does not count as upstream FATE parity."
+blocked_reason = "The generated differential row and the configured sample-backed WAV FATE row passed locally, but broader WAV coverage, full upstream FATE coverage beyond this one sample row, and actual cargo-fuzz execution remain pending."
 
 [[component]]
 id = "avformat-wav-muxer"

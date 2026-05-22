@@ -129,7 +129,7 @@ fn default_fate_wav_sample(root: &Path) -> PathBuf {
 
 fn oracle_ffmpeg() -> PathBuf {
     if let Ok(path) = env::var("FFMPEG_ORACLE") {
-        let path = PathBuf::from(path);
+        let path = resolve_repo_relative_path(PathBuf::from(path));
         assert!(
             path.is_file(),
             "FFMPEG_ORACLE must point to the pinned FFmpeg 8.1.1 binary, got `{}`",
@@ -169,6 +169,17 @@ fn default_ffmpeg_candidates(root: &Path) -> Vec<PathBuf> {
     }
 }
 
+fn resolve_repo_relative_path(path: PathBuf) -> PathBuf {
+    if path.is_file() || path.is_absolute() {
+        return path;
+    }
+    let candidate = repo_root().join(&path);
+    if candidate.is_file() {
+        return candidate;
+    }
+    path
+}
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -179,6 +190,16 @@ fn repo_root() -> PathBuf {
 
 fn strings(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| value.to_string()).collect()
+}
+
+#[test]
+fn repo_relative_oracle_paths_resolve_from_workspace_root() {
+    let resolved = resolve_repo_relative_path(PathBuf::from("crates/fftools/Cargo.toml"));
+    assert!(
+        resolved.is_file(),
+        "repo-relative path should resolve to an existing file, got `{}`",
+        resolved.display()
+    );
 }
 
 fn write_generated_wav(label: &str, channels: u16, sample_rate: u32, payload: &[u8]) -> PathBuf {

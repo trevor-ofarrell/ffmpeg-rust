@@ -71,7 +71,22 @@ The inventory tool validates that the supplied oracle reports a first-line `ffmp
 
 ## FATE Samples
 
-FATE samples are expected to be obtained using upstream FFmpeg's documented `make fate-rsync` flow against a local samples directory. This repository does not yet contain samples or an upstream media FATE target mapping.
+FATE samples are expected to be obtained using upstream FFmpeg's documented `make fate-rsync` flow against a local samples directory. Samples are intentionally ignored by git under `third_party/`; install them locally before claiming sample-backed FATE rows.
+
+The current workspace has the first required sample-backed WAV seed installed at:
+
+```text
+third_party/fate-samples/audio-reference/luckynight_2ch_44kHz_s16.wav
+```
+
+That one-file seed can be refreshed without downloading the full suite:
+
+```sh
+mkdir -p third_party/fate-samples/audio-reference
+rsync -vrltLW --timeout=60 rsync://fate-suite.ffmpeg.org/fate-suite/audio-reference/luckynight_2ch_44kHz_s16.wav third_party/fate-samples/audio-reference/
+```
+
+The full suite is still needed as more upstream FATE mappings are added.
 
 ## Fuzz Execution
 
@@ -100,7 +115,7 @@ cargo run -p fate-runner -- mappings --mappings tests/fate/upstream-mappings.txt
 cargo run -p fate-runner -- run --dry-run --mappings tests/fate/upstream-mappings.txt --component avformat-wav-demuxer --target fate-wav-pcm-s16le-md5 --samples <fate-samples> --oracle-ffmpeg <ffmpeg>
 ```
 
-The mapping is intentionally outside the default local smoke file so ordinary component runs do not require downloaded samples. It does not count as `fate_pass` until executed with a real pinned oracle and matching FATE sample tree.
+The mapping is intentionally outside the default local smoke file so ordinary component runs do not require downloaded samples. It has passed locally with the pinned WSL oracle wrapper and the one-file WAV sample seed, which advances `avformat-wav-demuxer` to `fate_pass` while leaving broader WAV coverage, actual fuzz execution, and full upstream FATE coverage incomplete.
 
 ## Differential Tests
 
@@ -287,6 +302,8 @@ $env:FFMPEG_ORACLE = ".\third_party\ffmpeg-oracle\build\bin\ffmpeg.exe"
 $env:FATE_WAV_SAMPLE = ".\third_party\fate-samples\audio-reference\luckynight_2ch_44kHz_s16.wav"
 cargo test -p fftools --test wav_oracle wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample -- --ignored
 ```
+
+The `fftools` WAV and rawvideo oracle harnesses resolve repo-relative `FFMPEG_ORACLE` values against the workspace root, so `fate-runner` can pass `./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd` even when Cargo executes the test binary from a package directory.
 
 ## Source-Checked Notes
 

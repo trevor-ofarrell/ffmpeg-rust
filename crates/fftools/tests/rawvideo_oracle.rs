@@ -92,7 +92,7 @@ fn compare_rawvideo_file_output(pixel_format: &str, size: &str, rate: &str, payl
 
 fn oracle_ffmpeg() -> PathBuf {
     if let Ok(path) = env::var("FFMPEG_ORACLE") {
-        let path = PathBuf::from(path);
+        let path = resolve_repo_relative_path(PathBuf::from(path));
         assert!(
             path.is_file(),
             "FFMPEG_ORACLE must point to the pinned FFmpeg 8.1.1 binary, got `{}`",
@@ -101,12 +101,9 @@ fn oracle_ffmpeg() -> PathBuf {
         return path;
     }
 
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("fftools crate should be under crates/");
+    let root = repo_root();
 
-    for candidate in default_ffmpeg_candidates(root) {
+    for candidate in default_ffmpeg_candidates(&root) {
         if candidate.is_file() {
             return candidate;
         }
@@ -136,8 +133,37 @@ fn default_ffmpeg_candidates(root: &Path) -> Vec<PathBuf> {
     }
 }
 
+fn resolve_repo_relative_path(path: PathBuf) -> PathBuf {
+    if path.is_file() || path.is_absolute() {
+        return path;
+    }
+    let candidate = repo_root().join(&path);
+    if candidate.is_file() {
+        return candidate;
+    }
+    path
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("fftools crate should be under crates/")
+        .to_path_buf()
+}
+
 fn strings(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| value.to_string()).collect()
+}
+
+#[test]
+fn repo_relative_oracle_paths_resolve_from_workspace_root() {
+    let resolved = resolve_repo_relative_path(PathBuf::from("crates/fftools/Cargo.toml"));
+    assert!(
+        resolved.is_file(),
+        "repo-relative path should resolve to an existing file, got `{}`",
+        resolved.display()
+    );
 }
 
 fn write_temp_bytes(label: &str, extension: &str, bytes: &[u8]) -> PathBuf {
