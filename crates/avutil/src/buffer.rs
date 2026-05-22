@@ -2020,6 +2020,28 @@ mod tests {
         assert!(ordinary.data.reallocatable);
         assert_eq!(&ordinary.as_slice()[..3], &[11, 12, 13]);
 
+        let custom_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let custom_capture = std::sync::Arc::clone(&custom_released);
+        let mut custom = Some(BufferRef::from_vec_with_opaque_release_callback(
+            vec![21, 22, 23],
+            321usize,
+            move |opaque, storage| {
+                custom_capture.lock().unwrap().push((opaque, storage));
+            },
+        ));
+        let custom_storage = std::sync::Arc::as_ptr(&custom.as_ref().unwrap().data);
+        BufferRef::realloc(&mut custom, 5).unwrap();
+        let custom = custom.expect("custom realloc result");
+        assert_ne!(std::sync::Arc::as_ptr(&custom.data), custom_storage);
+        assert!(custom.data.reallocatable);
+        assert_eq!(&custom.as_slice()[..3], &[21, 22, 23]);
+        assert!(custom.opaque_ref::<usize>().is_none());
+        assert_eq!(
+            *custom_released.lock().unwrap(),
+            vec![(321, vec![21, 22, 23])]
+        );
+
         let same_source = BufferRef::copy_from_slice(&[10, 20, 30]);
         let mut same_shared = Some(BufferRef::ref_from(&same_source));
         let same_ptr = same_shared.as_ref().unwrap().as_ptr();

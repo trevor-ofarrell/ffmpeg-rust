@@ -920,6 +920,8 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     ));
     BufferRef::realloc(&mut custom_realloc, payload_len + 1).unwrap();
     let custom_realloc = custom_realloc.expect("custom realloc stays present");
+    assert_eq!(custom_realloc.len(), payload_len + 1);
+    assert!(custom_realloc.is_writable());
     assert_eq!(&custom_realloc.as_slice()[..payload_len], payload.as_slice());
     assert!(custom_realloc.opaque_ref::<usize>().is_none());
     assert_eq!(

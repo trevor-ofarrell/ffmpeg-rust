@@ -197,6 +197,46 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         release_fields(&create_shared_released),
     );
 
+    let create_realloc_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_realloc_capture = Arc::clone(&create_realloc_released);
+    let mut create_realloc = Some(BufferRef::from_vec_with_opaque_release_callback(
+        vec![50, 51, 52],
+        789usize,
+        move |opaque, bytes| {
+            create_realloc_capture.lock().unwrap().push((opaque, bytes));
+        },
+    ));
+    let create_realloc_before = create_realloc
+        .as_ref()
+        .expect("create realloc input")
+        .as_ptr();
+    BufferRef::realloc(&mut create_realloc, 5).unwrap();
+    let create_realloc = create_realloc.expect("create realloc result");
+    rows.insert(
+        "buffer:create-realloc-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-realloc".to_string(),
+        buffer_prefix_fields(&create_realloc, 3),
+    );
+    rows.insert(
+        "buffer:create-realloc-opaque".to_string(),
+        vec![create_realloc
+            .opaque_ref::<usize>()
+            .copied()
+            .unwrap_or_default()
+            .to_string()],
+    );
+    rows.insert(
+        "buffer:create-realloc-replaced".to_string(),
+        vec![bool_field(create_realloc_before != create_realloc.as_ptr())],
+    );
+    rows.insert(
+        "buffer:create-realloc-release".to_string(),
+        release_fields(&create_realloc_released),
+    );
+
     let mut grow = Some(BufferRef::from_vec(vec![1, 2, 3]));
     let grow_data_before = grow.as_ref().expect("grow input").as_ptr();
     BufferRef::realloc(&mut grow, 5).unwrap();
@@ -915,6 +955,27 @@ int main(void) {
            create_release_count);
     av_buffer_unref(&create_shared_src);
     print_create_release("buffer:create-shared-release");
+
+    reset_create_release();
+    static const uint8_t create_realloc_bytes[] = { 50, 51, 52 };
+    uint8_t *create_realloc_data = av_malloc(sizeof(create_realloc_bytes));
+    fail_if(!create_realloc_data, "av_malloc create_realloc_data failed");
+    for (size_t i = 0; i < sizeof(create_realloc_bytes); i++)
+        create_realloc_data[i] = create_realloc_bytes[i];
+    last_create_release_size = sizeof(create_realloc_bytes);
+    AVBufferRef *create_realloc =
+        av_buffer_create(create_realloc_data, sizeof(create_realloc_bytes),
+                         test_create_free, (void *)(uintptr_t)789, 0);
+    fail_if(!create_realloc, "av_buffer_create realloc failed");
+    ret = av_buffer_realloc(&create_realloc, 5);
+    printf("buffer:create-realloc-ret|%d\n", ret);
+    print_buffer_prefix("buffer:create-realloc", create_realloc, 3);
+    printf("buffer:create-realloc-opaque|%llu\n",
+           (unsigned long long)(uintptr_t)av_buffer_get_opaque(create_realloc));
+    printf("buffer:create-realloc-replaced|%d\n",
+           create_realloc_data != create_realloc->data);
+    print_create_release("buffer:create-realloc-release");
+    av_buffer_unref(&create_realloc);
 
     static const uint8_t grow_bytes[] = { 1, 2, 3 };
     AVBufferRef *grow = av_buffer_allocz(3);
