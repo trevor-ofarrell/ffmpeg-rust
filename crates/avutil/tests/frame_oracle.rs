@@ -257,6 +257,159 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         frame_plane_buffer_fields(&packed_ten_channel_audio, 1),
     );
 
+    let mut copy_data_video_source = Frame::video(
+        VideoFrame::new_with_aligned_line_sizes(
+            3,
+            2,
+            PixelFormat::Gray8,
+            vec![vec![1, 2, 3, 4, 5, 6]],
+            1,
+        )
+        .unwrap(),
+    );
+    copy_data_video_source.set_pts(Some(101));
+    copy_data_video_source
+        .metadata_mut()
+        .set("title", "copy-data-source")
+        .unwrap();
+    let mut copy_data_video_destination = Frame::video(
+        VideoFrame::new_with_aligned_line_sizes(
+            3,
+            2,
+            PixelFormat::Gray8,
+            vec![vec![9, 9, 9, 8, 8, 8]],
+            1,
+        )
+        .unwrap(),
+    );
+    copy_data_video_destination.set_pts(Some(202));
+    copy_data_video_destination
+        .metadata_mut()
+        .set("title", "copy-data-destination")
+        .unwrap();
+    let copy_data_video_ret = copy_data_video_destination
+        .copy_data_from(&copy_data_video_source)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:copy-data-video-ret".to_string(),
+        vec![copy_data_video_ret.to_string()],
+    );
+    rows.insert(
+        "frame:copy-data-video-src".to_string(),
+        frame_fields(&copy_data_video_source),
+    );
+    rows.insert(
+        "frame:copy-data-video-dst".to_string(),
+        frame_fields(&copy_data_video_destination),
+    );
+
+    let copy_data_audio_source = Frame::audio(
+        AudioFrame::new_with_channel_layout_and_aligned_line_sizes(
+            44_100,
+            ChannelLayout::stereo(),
+            SampleFormat::S16,
+            2,
+            vec![vec![1, 0, 2, 0, 3, 0, 4, 0]],
+            1,
+        )
+        .unwrap(),
+    );
+    let mut copy_data_audio_destination = Frame::audio(
+        AudioFrame::new_with_channel_layout_and_aligned_line_sizes(
+            96_000,
+            ChannelLayout::stereo(),
+            SampleFormat::S16,
+            2,
+            vec![vec![9, 0, 8, 0, 7, 0, 6, 0]],
+            1,
+        )
+        .unwrap(),
+    );
+    copy_data_audio_destination.set_pts(Some(303));
+    let copy_data_audio_ret = copy_data_audio_destination
+        .copy_data_from(&copy_data_audio_source)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:copy-data-audio-ret".to_string(),
+        vec![copy_data_audio_ret.to_string()],
+    );
+    rows.insert(
+        "frame:copy-data-audio-src".to_string(),
+        frame_fields(&copy_data_audio_source),
+    );
+    rows.insert(
+        "frame:copy-data-audio-dst".to_string(),
+        frame_fields(&copy_data_audio_destination),
+    );
+
+    let mut copy_data_larger_destination = Frame::video(
+        VideoFrame::new_with_aligned_line_sizes(
+            3,
+            2,
+            PixelFormat::Gray8,
+            vec![vec![7, 7, 7, 6, 6, 6]],
+            1,
+        )
+        .unwrap(),
+    );
+    let copy_data_larger_source = Frame::video(
+        VideoFrame::new_with_aligned_line_sizes(
+            2,
+            2,
+            PixelFormat::Gray8,
+            vec![vec![1, 2, 3, 4]],
+            1,
+        )
+        .unwrap(),
+    );
+    let copy_data_larger_ret = copy_data_larger_destination
+        .copy_data_from(&copy_data_larger_source)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:copy-data-video-larger-dst-ret".to_string(),
+        vec![copy_data_larger_ret.to_string()],
+    );
+    rows.insert(
+        "frame:copy-data-video-larger-dst".to_string(),
+        frame_fields(&copy_data_larger_destination),
+    );
+
+    let mut copy_data_too_small_destination = Frame::video(
+        VideoFrame::new_with_aligned_line_sizes(
+            2,
+            2,
+            PixelFormat::Gray8,
+            vec![vec![7, 7, 6, 6]],
+            1,
+        )
+        .unwrap(),
+    );
+    let copy_data_too_small_source = Frame::video(
+        VideoFrame::new_with_aligned_line_sizes(
+            3,
+            2,
+            PixelFormat::Gray8,
+            vec![vec![1, 2, 3, 4, 5, 6]],
+            1,
+        )
+        .unwrap(),
+    );
+    let copy_data_too_small_ret = copy_data_too_small_destination
+        .copy_data_from(&copy_data_too_small_source)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:copy-data-video-too-small-ret".to_string(),
+        vec![copy_data_too_small_ret.to_string()],
+    );
+    rows.insert(
+        "frame:copy-data-video-too-small-dst".to_string(),
+        frame_fields(&copy_data_too_small_destination),
+    );
+
     let copy_source_side = (1..=36).collect::<Vec<u8>>();
     let copy_source_video =
         VideoFrame::new_with_aligned_line_sizes(2, 1, PixelFormat::Gray8, vec![vec![1, 2]], 1)
@@ -1721,6 +1874,138 @@ int main(void)
     print_frame_plane_buffer("frame:plane-buffer-audio-packed-ten-invalid",
                              packed_ten_audio, 1);
 
+    AVFrame *copy_data_video_src = av_frame_alloc();
+    fail_if(!copy_data_video_src, "copy_data_video_src allocation failed");
+    copy_data_video_src->format = AV_PIX_FMT_GRAY8;
+    copy_data_video_src->width = 3;
+    copy_data_video_src->height = 2;
+    copy_data_video_src->pts = 101;
+    av_dict_set(&copy_data_video_src->metadata, "title",
+                "copy-data-source", 0);
+    fail_if(av_frame_get_buffer(copy_data_video_src, 1) < 0,
+            "copy_data_video_src get_buffer failed");
+    static const uint8_t copy_data_video_src_payload[] =
+        { 1, 2, 3, 4, 5, 6 };
+    fill_video_gray(copy_data_video_src, copy_data_video_src_payload);
+
+    AVFrame *copy_data_video_dst = av_frame_alloc();
+    fail_if(!copy_data_video_dst, "copy_data_video_dst allocation failed");
+    copy_data_video_dst->format = AV_PIX_FMT_GRAY8;
+    copy_data_video_dst->width = 3;
+    copy_data_video_dst->height = 2;
+    copy_data_video_dst->pts = 202;
+    av_dict_set(&copy_data_video_dst->metadata, "title",
+                "copy-data-destination", 0);
+    fail_if(av_frame_get_buffer(copy_data_video_dst, 1) < 0,
+            "copy_data_video_dst get_buffer failed");
+    static const uint8_t copy_data_video_dst_payload[] =
+        { 9, 9, 9, 8, 8, 8 };
+    fill_video_gray(copy_data_video_dst, copy_data_video_dst_payload);
+
+    int copy_data_video_ret =
+        av_frame_copy(copy_data_video_dst, copy_data_video_src);
+    printf("frame:copy-data-video-ret|%d\n", copy_data_video_ret);
+    fail_if(copy_data_video_ret < 0, "copy_data_video av_frame_copy failed");
+    print_frame("frame:copy-data-video-src", copy_data_video_src);
+    print_frame("frame:copy-data-video-dst", copy_data_video_dst);
+
+    AVFrame *copy_data_audio_src = av_frame_alloc();
+    fail_if(!copy_data_audio_src, "copy_data_audio_src allocation failed");
+    copy_data_audio_src->format = AV_SAMPLE_FMT_S16;
+    copy_data_audio_src->sample_rate = 44100;
+    copy_data_audio_src->nb_samples = 2;
+    av_channel_layout_default(&copy_data_audio_src->ch_layout, 2);
+    fail_if(av_frame_get_buffer(copy_data_audio_src, 1) < 0,
+            "copy_data_audio_src get_buffer failed");
+    static const uint8_t copy_data_audio_src_payload[] =
+        { 1, 0, 2, 0, 3, 0, 4, 0 };
+    memcpy(copy_data_audio_src->data[0], copy_data_audio_src_payload,
+           sizeof(copy_data_audio_src_payload));
+
+    AVFrame *copy_data_audio_dst = av_frame_alloc();
+    fail_if(!copy_data_audio_dst, "copy_data_audio_dst allocation failed");
+    copy_data_audio_dst->format = AV_SAMPLE_FMT_S16;
+    copy_data_audio_dst->sample_rate = 96000;
+    copy_data_audio_dst->nb_samples = 2;
+    copy_data_audio_dst->pts = 303;
+    av_channel_layout_default(&copy_data_audio_dst->ch_layout, 2);
+    fail_if(av_frame_get_buffer(copy_data_audio_dst, 1) < 0,
+            "copy_data_audio_dst get_buffer failed");
+    static const uint8_t copy_data_audio_dst_payload[] =
+        { 9, 0, 8, 0, 7, 0, 6, 0 };
+    memcpy(copy_data_audio_dst->data[0], copy_data_audio_dst_payload,
+           sizeof(copy_data_audio_dst_payload));
+
+    int copy_data_audio_ret =
+        av_frame_copy(copy_data_audio_dst, copy_data_audio_src);
+    printf("frame:copy-data-audio-ret|%d\n", copy_data_audio_ret);
+    fail_if(copy_data_audio_ret < 0, "copy_data_audio av_frame_copy failed");
+    print_frame("frame:copy-data-audio-src", copy_data_audio_src);
+    print_frame("frame:copy-data-audio-dst", copy_data_audio_dst);
+
+    AVFrame *copy_data_larger_dst = av_frame_alloc();
+    fail_if(!copy_data_larger_dst,
+            "copy_data_larger_dst allocation failed");
+    copy_data_larger_dst->format = AV_PIX_FMT_GRAY8;
+    copy_data_larger_dst->width = 3;
+    copy_data_larger_dst->height = 2;
+    fail_if(av_frame_get_buffer(copy_data_larger_dst, 1) < 0,
+            "copy_data_larger_dst get_buffer failed");
+    static const uint8_t copy_data_larger_dst_payload[] =
+        { 7, 7, 7, 6, 6, 6 };
+    fill_video_gray(copy_data_larger_dst, copy_data_larger_dst_payload);
+
+    AVFrame *copy_data_larger_src = av_frame_alloc();
+    fail_if(!copy_data_larger_src,
+            "copy_data_larger_src allocation failed");
+    copy_data_larger_src->format = AV_PIX_FMT_GRAY8;
+    copy_data_larger_src->width = 2;
+    copy_data_larger_src->height = 2;
+    fail_if(av_frame_get_buffer(copy_data_larger_src, 1) < 0,
+            "copy_data_larger_src get_buffer failed");
+    static const uint8_t copy_data_larger_src_payload[] = { 1, 2, 3, 4 };
+    fill_video_gray(copy_data_larger_src, copy_data_larger_src_payload);
+
+    int copy_data_larger_ret =
+        av_frame_copy(copy_data_larger_dst, copy_data_larger_src);
+    printf("frame:copy-data-video-larger-dst-ret|%d\n",
+           copy_data_larger_ret);
+    fail_if(copy_data_larger_ret < 0,
+            "copy_data_larger av_frame_copy failed");
+    print_frame("frame:copy-data-video-larger-dst", copy_data_larger_dst);
+
+    AVFrame *copy_data_too_small_dst = av_frame_alloc();
+    fail_if(!copy_data_too_small_dst,
+            "copy_data_too_small_dst allocation failed");
+    copy_data_too_small_dst->format = AV_PIX_FMT_GRAY8;
+    copy_data_too_small_dst->width = 2;
+    copy_data_too_small_dst->height = 2;
+    fail_if(av_frame_get_buffer(copy_data_too_small_dst, 1) < 0,
+            "copy_data_too_small_dst get_buffer failed");
+    static const uint8_t copy_data_too_small_dst_payload[] = { 7, 7, 6, 6 };
+    fill_video_gray(copy_data_too_small_dst,
+                    copy_data_too_small_dst_payload);
+
+    AVFrame *copy_data_too_small_src = av_frame_alloc();
+    fail_if(!copy_data_too_small_src,
+            "copy_data_too_small_src allocation failed");
+    copy_data_too_small_src->format = AV_PIX_FMT_GRAY8;
+    copy_data_too_small_src->width = 3;
+    copy_data_too_small_src->height = 2;
+    fail_if(av_frame_get_buffer(copy_data_too_small_src, 1) < 0,
+            "copy_data_too_small_src get_buffer failed");
+    static const uint8_t copy_data_too_small_src_payload[] =
+        { 1, 2, 3, 4, 5, 6 };
+    fill_video_gray(copy_data_too_small_src,
+                    copy_data_too_small_src_payload);
+
+    int copy_data_too_small_ret =
+        av_frame_copy(copy_data_too_small_dst, copy_data_too_small_src);
+    printf("frame:copy-data-video-too-small-ret|%d\n",
+           copy_data_too_small_ret);
+    print_frame("frame:copy-data-video-too-small-dst",
+                copy_data_too_small_dst);
+
     AVFrame *copy_src = av_frame_alloc();
     fail_if(!copy_src, "copy_src av_frame_alloc failed");
     copy_src->format = AV_PIX_FMT_GRAY8;
@@ -2042,6 +2327,14 @@ int main(void)
     av_frame_free(&side_frame);
     av_frame_free(&copy_dst);
     av_frame_free(&copy_src);
+    av_frame_free(&copy_data_too_small_src);
+    av_frame_free(&copy_data_too_small_dst);
+    av_frame_free(&copy_data_larger_src);
+    av_frame_free(&copy_data_larger_dst);
+    av_frame_free(&copy_data_audio_dst);
+    av_frame_free(&copy_data_audio_src);
+    av_frame_free(&copy_data_video_dst);
+    av_frame_free(&copy_data_video_src);
     av_frame_free(&packed_ten_audio);
     av_frame_free(&extended_audio);
     av_frame_free(&planar_audio);

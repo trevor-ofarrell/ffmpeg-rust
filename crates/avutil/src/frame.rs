@@ -133,6 +133,19 @@ impl FrameData {
             Self::Audio(frame) => frame.set_plane_visible_data(index, data),
         }
     }
+
+    pub fn copy_data_from(&mut self, source: &Self) -> AvResult<()> {
+        match (self, source) {
+            (Self::Video(destination), Self::Video(source)) => destination.copy_data_from(source),
+            (Self::Audio(destination), Self::Audio(source)) => destination.copy_data_from(source),
+            (Self::Empty, _) | (_, Self::Empty) => Err(AvError::invalid_argument(
+                "frame data copy requires allocated source and destination data",
+            )),
+            (Self::Video(_), Self::Audio(_)) | (Self::Audio(_), Self::Video(_)) => Err(
+                AvError::invalid_argument("frame data copy requires matching media data kinds"),
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1048,6 +1061,10 @@ impl Frame {
             .expect("frame metadata was previously validated");
         self.side_data
             .extend(source.side_data.iter().map(FrameSideData::copy_props_clone));
+    }
+
+    pub fn copy_data_from(&mut self, source: &Self) -> AvResult<()> {
+        self.data.copy_data_from(&source.data)
     }
 
     pub fn pts(&self) -> Option<i64> {
@@ -13297,6 +13314,101 @@ impl VideoFrame {
         self.planes[index].extend_from_slice(data);
         Ok(())
     }
+
+    pub fn copy_data_from(&mut self, source: &Self) -> AvResult<()> {
+        if self.pixel_format != source.pixel_format {
+            return Err(AvError::invalid_argument(format!(
+                "video frame data copy requires matching pixel format: destination {}, source {}",
+                self.pixel_format.name(),
+                source.pixel_format.name()
+            )));
+        }
+        if self.width < source.width || self.height < source.height {
+            return Err(AvError::invalid_argument(format!(
+                "video frame data copy requires destination dimensions at least as large as source: destination {}x{}, source {}x{}",
+                self.width, self.height, source.width, source.height
+            )));
+        }
+        if self.planes.len() != source.planes.len() {
+            return Err(AvError::invalid_argument(format!(
+                "{} video frame data copy requires matching plane counts: destination {}, source {}",
+                self.pixel_format.name(),
+                self.planes.len(),
+                source.planes.len()
+            )));
+        }
+
+        let source_shapes = video_plane_shapes(source.pixel_format, source.width, source.height)?;
+        let destination_shapes = video_plane_shapes(self.pixel_format, self.width, self.height)?;
+        if source_shapes.len() != destination_shapes.len()
+            || source_shapes.len() != self.planes.len()
+        {
+            return Err(AvError::invalid_argument(format!(
+                "{} video frame data copy requires matching plane metadata",
+                self.pixel_format.name()
+            )));
+        }
+
+        for (index, (source_shape, destination_shape)) in
+            source_shapes.iter().zip(&destination_shapes).enumerate()
+        {
+            if destination_shape.row_bytes < source_shape.row_bytes
+                || destination_shape.rows < source_shape.rows
+            {
+                return Err(AvError::invalid_argument(format!(
+                    "{} video frame plane {index} destination shape is smaller than source shape",
+                    self.pixel_format.name()
+                )));
+            }
+            let expected_source_visible = checked_mul(
+                source_shape.row_bytes,
+                source_shape.rows,
+                "video source visible size",
+            )?;
+            if source.planes[index].len() != expected_source_visible {
+                return Err(AvError::invalid_data(format!(
+                    "{} video frame source plane {index} has {} visible bytes, expected {expected_source_visible}",
+                    self.pixel_format.name(),
+                    source.planes[index].len()
+                )));
+            }
+            let expected_destination_visible = checked_mul(
+                destination_shape.row_bytes,
+                destination_shape.rows,
+                "video destination visible size",
+            )?;
+            if self.planes[index].len() != expected_destination_visible {
+                return Err(AvError::invalid_data(format!(
+                    "{} video frame destination plane {index} has {} visible bytes, expected {expected_destination_visible}",
+                    self.pixel_format.name(),
+                    self.planes[index].len()
+                )));
+            }
+        }
+
+        for (index, source_shape) in source_shapes.iter().enumerate() {
+            {
+                let storage = self.plane_buffers[index].make_mut();
+                for row in 0..source_shape.rows {
+                    let src_start = row * source_shape.row_bytes;
+                    let src_end = src_start + source_shape.row_bytes;
+                    let dst_start = row * self.line_sizes[index];
+                    let dst_end = dst_start + source_shape.row_bytes;
+                    storage[dst_start..dst_end]
+                        .copy_from_slice(&source.planes[index][src_start..src_end]);
+                }
+            }
+            for row in 0..source_shape.rows {
+                let src_start = row * source_shape.row_bytes;
+                let src_end = src_start + source_shape.row_bytes;
+                let dst_start = row * destination_shapes[index].row_bytes;
+                let dst_end = dst_start + source_shape.row_bytes;
+                self.planes[index][dst_start..dst_end]
+                    .copy_from_slice(&source.planes[index][src_start..src_end]);
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13723,6 +13835,36 @@ impl AudioFrame {
         self.plane_buffers[index].make_mut()[..expected_visible].copy_from_slice(data);
         self.planes[index].clear();
         self.planes[index].extend_from_slice(data);
+        Ok(())
+    }
+
+    pub fn copy_data_from(&mut self, source: &Self) -> AvResult<()> {
+        if self.sample_format != source.sample_format
+            || self.samples_per_channel != source.samples_per_channel
+            || self.channel_layout != source.channel_layout
+        {
+            return Err(AvError::invalid_argument(format!(
+                "audio frame data copy requires matching sample format, sample count, and channel layout: destination {} {} samples {:?}, source {} {} samples {:?}",
+                self.sample_format.name(),
+                self.samples_per_channel,
+                self.channel_layout,
+                source.sample_format.name(),
+                source.samples_per_channel,
+                source.channel_layout
+            )));
+        }
+        if self.planes.len() != source.planes.len() {
+            return Err(AvError::invalid_argument(format!(
+                "{} audio frame data copy requires matching plane counts: destination {}, source {}",
+                self.sample_format.name(),
+                self.planes.len(),
+                source.planes.len()
+            )));
+        }
+
+        for (index, plane) in source.planes.iter().enumerate() {
+            self.set_plane_visible_data(index, plane)?;
+        }
         Ok(())
     }
 }
@@ -19187,6 +19329,174 @@ mod tests {
             .unwrap()
             .shares_storage(&tenth_plane));
         assert!(extended_frame.plane_buffer(10).is_none());
+    }
+
+    #[test]
+    fn frame_copy_data_from_matches_av_frame_copy_payload_only() {
+        let source_video = Frame::video(
+            VideoFrame::new_with_aligned_line_sizes(
+                3,
+                2,
+                PixelFormat::Gray8,
+                vec![vec![1, 2, 3, 4, 5, 6]],
+                1,
+            )
+            .unwrap(),
+        );
+        let destination_plane =
+            BufferRef::copy_from_slice(&[9, 9, 9, 0xaa, 0xbb, 8, 8, 8, 0xcc, 0xdd]);
+        let destination_video = VideoFrame::new_with_buffer_refs_and_line_sizes(
+            3,
+            2,
+            PixelFormat::Gray8,
+            vec![destination_plane.clone()],
+            vec![5],
+        )
+        .unwrap();
+        let mut destination = Frame::video(destination_video);
+        destination.set_pts(Some(99));
+        destination
+            .set_time_base(Rational::new(1, 1_000).unwrap())
+            .unwrap();
+        destination
+            .metadata_mut()
+            .set("keep", "destination")
+            .unwrap();
+
+        destination.copy_data_from(&source_video).unwrap();
+
+        assert_eq!(destination.pts(), Some(99));
+        assert_eq!(destination.time_base(), Rational::new(1, 1_000).unwrap());
+        assert_eq!(destination.metadata().get("keep"), Some("destination"));
+        let FrameData::Video(video) = destination.data() else {
+            panic!("expected video destination");
+        };
+        assert_eq!(video.planes(), &[vec![1, 2, 3, 4, 5, 6]]);
+        assert_eq!(video.line_sizes(), &[5]);
+        assert_eq!(
+            video.plane_buffers()[0].as_slice(),
+            &[1, 2, 3, 0xaa, 0xbb, 4, 5, 6, 0xcc, 0xdd]
+        );
+        assert!(!video.plane_buffers()[0].shares_storage(&destination_plane));
+
+        let source_audio = Frame::audio(
+            AudioFrame::new_with_channel_layout_and_aligned_line_sizes(
+                44_100,
+                ChannelLayout::stereo(),
+                SampleFormat::S16,
+                2,
+                vec![vec![1, 0, 2, 0, 3, 0, 4, 0]],
+                1,
+            )
+            .unwrap(),
+        );
+        let mut destination_audio = Frame::audio(
+            AudioFrame::new_with_channel_layout_and_line_sizes(
+                96_000,
+                ChannelLayout::stereo(),
+                SampleFormat::S16,
+                2,
+                vec![vec![9, 0, 8, 0, 7, 0, 6, 0, 0xaa, 0xbb]],
+                vec![10],
+            )
+            .unwrap(),
+        );
+        destination_audio.set_sample_rate(96_000);
+        destination_audio.set_pts(Some(88));
+
+        destination_audio.copy_data_from(&source_audio).unwrap();
+
+        assert_eq!(destination_audio.sample_rate(), 96_000);
+        assert_eq!(destination_audio.pts(), Some(88));
+        let FrameData::Audio(audio) = destination_audio.data() else {
+            panic!("expected audio destination");
+        };
+        assert_eq!(audio.planes(), &[vec![1, 0, 2, 0, 3, 0, 4, 0]]);
+        assert_eq!(
+            audio.plane_buffers()[0].as_slice(),
+            &[1, 0, 2, 0, 3, 0, 4, 0, 0xaa, 0xbb]
+        );
+
+        let planar_source = AudioFrame::new_with_channel_layout_and_aligned_line_sizes(
+            48_000,
+            ChannelLayout::stereo(),
+            SampleFormat::S16P,
+            2,
+            vec![vec![1, 0, 2, 0], vec![3, 0, 4, 0]],
+            1,
+        )
+        .unwrap();
+        let mut planar_destination = AudioFrame::new_with_channel_layout_and_line_sizes(
+            96_000,
+            ChannelLayout::stereo(),
+            SampleFormat::S16P,
+            2,
+            vec![vec![9, 0, 8, 0, 0xaa], vec![7, 0, 6, 0, 0xbb]],
+            vec![5, 5],
+        )
+        .unwrap();
+
+        planar_destination.copy_data_from(&planar_source).unwrap();
+
+        assert_eq!(
+            planar_destination.planes(),
+            &[vec![1, 0, 2, 0], vec![3, 0, 4, 0]]
+        );
+        assert_eq!(
+            planar_destination.plane_buffers()[0].as_slice(),
+            &[1, 0, 2, 0, 0xaa]
+        );
+        assert_eq!(
+            planar_destination.plane_buffers()[1].as_slice(),
+            &[3, 0, 4, 0, 0xbb]
+        );
+
+        let before = destination.clone();
+        let too_large_source = Frame::video(
+            VideoFrame::new_with_aligned_line_sizes(4, 2, PixelFormat::Gray8, vec![vec![0; 8]], 1)
+                .unwrap(),
+        );
+        assert_eq!(
+            destination
+                .copy_data_from(&too_large_source)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(destination, before);
+        assert_eq!(
+            destination
+                .copy_data_from(&source_audio)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(destination, before);
+        let mut empty = Frame::empty();
+        assert_eq!(
+            empty.copy_data_from(&source_video).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        let mut mono_destination =
+            AudioFrame::new(44_100, 1, SampleFormat::S16, 2, vec![vec![9, 0, 8, 0]]).unwrap();
+        let mono_before = mono_destination.clone();
+        let stereo_source = AudioFrame::new(
+            44_100,
+            2,
+            SampleFormat::S16,
+            2,
+            vec![vec![1, 0, 2, 0, 3, 0, 4, 0]],
+        )
+        .unwrap();
+        assert_eq!(
+            mono_destination
+                .copy_data_from(&stereo_source)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(mono_destination, mono_before);
     }
 
     #[test]

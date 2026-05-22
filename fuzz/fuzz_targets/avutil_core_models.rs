@@ -12958,6 +12958,69 @@ fn exercise_fixtures() {
     assert_eq!(data_clone_audio.planes(), &[vec![0, 0, 1, 0]]);
     assert_eq!(data_source.as_slice(), &[0, 0, 1, 0]);
 
+    let copy_video_source =
+        Frame::video(VideoFrame::new(2, 2, PixelFormat::Gray8, vec![vec![1, 2, 3, 4]]).unwrap());
+    let mut copy_video_destination = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            3,
+            2,
+            PixelFormat::Gray8,
+            vec![vec![7, 7, 7, 6, 6, 6]],
+            vec![3],
+        )
+        .unwrap(),
+    );
+    copy_video_destination.set_pts(Some(55));
+    copy_video_destination
+        .copy_data_from(&copy_video_source)
+        .unwrap();
+    assert_eq!(copy_video_destination.pts(), Some(55));
+    let FrameData::Video(copy_video_destination_data) = copy_video_destination.data() else {
+        unreachable!("constructed video copy destination changed variant");
+    };
+    assert_eq!(
+        copy_video_destination_data.planes(),
+        &[vec![1, 2, 7, 3, 4, 6]]
+    );
+    let too_large_video_source = Frame::video(
+        VideoFrame::new(4, 2, PixelFormat::Gray8, vec![vec![0; 8]]).unwrap(),
+    );
+    let copy_video_before = copy_video_destination.clone();
+    assert_eq!(
+        copy_video_destination
+            .copy_data_from(&too_large_video_source)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(copy_video_destination, copy_video_before);
+
+    let copy_audio_source = AudioFrame::new_with_channel_layout(
+        48_000,
+        ChannelLayout::stereo(),
+        SampleFormat::S16,
+        1,
+        vec![vec![1, 0, 2, 0]],
+    )
+    .unwrap();
+    let mut copy_audio_destination = AudioFrame::new_with_channel_layout_and_line_sizes(
+        96_000,
+        ChannelLayout::stereo(),
+        SampleFormat::S16,
+        1,
+        vec![vec![9, 0, 8, 0, 0xaa, 0xbb]],
+        vec![6],
+    )
+    .unwrap();
+    copy_audio_destination
+        .copy_data_from(&copy_audio_source)
+        .unwrap();
+    assert_eq!(copy_audio_destination.planes(), &[vec![1, 0, 2, 0]]);
+    assert_eq!(
+        copy_audio_destination.plane_buffers()[0].as_slice(),
+        &[1, 0, 2, 0, 0xaa, 0xbb]
+    );
+
     let mut permission_frame = Frame::video(
         VideoFrame::new_with_buffer_refs(
             1,
