@@ -9,6 +9,7 @@ use std::num::NonZeroUsize;
 
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
 pub const AV_PACKET_POS_UNKNOWN: i64 = -1;
+pub const AV_INPUT_BUFFER_PADDING_SIZE: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PacketFlags {
@@ -4621,6 +4622,19 @@ impl Packet {
         Self::with_buffer(BufferRef::from_vec(data), stream_index)
     }
 
+    pub fn from_data(data: Vec<u8>) -> AvResult<Self> {
+        let mut buffer = BufferRef::from_vec(data);
+        buffer.resize_with_padding(buffer.len(), AV_INPUT_BUFFER_PADDING_SIZE)?;
+        Ok(Self::with_buffer(buffer, 0))
+    }
+
+    pub fn new_zeroed(size: usize, stream_index: usize) -> AvResult<Self> {
+        Ok(Self::with_buffer(
+            BufferRef::zeroed_with_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)?,
+            stream_index,
+        ))
+    }
+
     pub fn with_buffer(data: BufferRef, stream_index: usize) -> Self {
         Self {
             data,
@@ -4663,6 +4677,41 @@ impl Packet {
 
     pub fn make_data_writable(&mut self) -> &mut [u8] {
         self.data.make_mut()
+    }
+
+    pub fn make_refcounted(&mut self) -> AvResult<()> {
+        if self.has_input_padding() {
+            return Ok(());
+        }
+
+        self.data
+            .resize_with_padding(self.data.len(), AV_INPUT_BUFFER_PADDING_SIZE)
+    }
+
+    pub fn make_writable(&mut self) -> AvResult<()> {
+        if self.data.is_writable() && self.has_input_padding() {
+            return Ok(());
+        }
+
+        self.data
+            .resize_with_padding(self.data.len(), AV_INPUT_BUFFER_PADDING_SIZE)
+    }
+
+    pub fn grow_data(&mut self, grow_by: usize) -> AvResult<()> {
+        let len = self.data.len().checked_add(grow_by).ok_or_else(|| {
+            AvError::invalid_argument("packet grow size overflows visible payload length")
+        })?;
+        self.data
+            .resize_with_padding(len, AV_INPUT_BUFFER_PADDING_SIZE)
+    }
+
+    pub fn shrink_data(&mut self, size: usize) -> AvResult<()> {
+        if size >= self.data.len() {
+            return Ok(());
+        }
+
+        self.data
+            .resize_with_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)
     }
 
     pub fn pts(&self) -> Option<i64> {
@@ -4905,6 +4954,13 @@ impl Packet {
         self.dts = dts;
         self.duration = duration;
         Ok(())
+    }
+
+    fn has_input_padding(&self) -> bool {
+        self.data.padding_len() >= AV_INPUT_BUFFER_PADDING_SIZE
+            && self.data.padding_slice()[..AV_INPUT_BUFFER_PADDING_SIZE]
+                .iter()
+                .all(|byte| *byte == 0)
     }
 }
 
@@ -9268,6 +9324,109 @@ mod tests {
             packet.side_data_by_kind("new_extradata").unwrap().data(),
             &[7]
         );
+    }
+
+    #[test]
+    fn packet_from_data_and_zeroed_constructors_add_input_padding() {
+        let packet = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        assert_eq!(packet.stream_index(), 0);
+        assert_eq!(packet.data(), &[0xaa, 0xbb]);
+        assert_eq!(
+            packet.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(packet.is_data_writable());
+
+        let zeroed = Packet::new_zeroed(3, 7).unwrap();
+        assert_eq!(zeroed.stream_index(), 7);
+        assert_eq!(zeroed.data(), &[0, 0, 0]);
+        assert_eq!(
+            zeroed.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(zeroed
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn packet_grow_and_shrink_data_preserve_payload_and_padding() {
+        let mut packet = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        packet.grow_data(3).unwrap();
+        assert_eq!(packet.data(), &[0xaa, 0xbb, 0, 0, 0]);
+        assert_eq!(
+            packet.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+
+        packet.shrink_data(2).unwrap();
+        assert_eq!(packet.data(), &[0xaa, 0xbb]);
+        assert_eq!(
+            packet.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(packet
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+
+        packet.shrink_data(99).unwrap();
+        assert_eq!(packet.data(), &[0xaa, 0xbb]);
+    }
+
+    #[test]
+    fn packet_make_writable_detaches_shared_payload_with_padding() {
+        let src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        let mut dst = Packet::default();
+        dst.ref_from(&src);
+        assert!(!dst.is_data_writable());
+        assert!(dst.data_buffer().shares_storage(src.data_buffer()));
+
+        dst.make_writable().unwrap();
+        assert!(dst.is_data_writable());
+        assert!(!dst.data_buffer().shares_storage(src.data_buffer()));
+        assert_eq!(
+            dst.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+
+        dst.make_data_writable()[0] = 0xcc;
+        assert_eq!(src.data(), &[0xaa, 0xbb]);
+        assert_eq!(dst.data(), &[0xcc, 0xbb]);
+    }
+
+    #[test]
+    fn packet_make_refcounted_adds_padding_without_detaching_padded_refs() {
+        let mut unpadded = Packet::new(vec![0xaa, 0xbb], 0);
+        unpadded.make_refcounted().unwrap();
+        assert_eq!(unpadded.data(), &[0xaa, 0xbb]);
+        assert_eq!(
+            unpadded.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(unpadded.is_data_writable());
+
+        let src = Packet::from_data(vec![0x11, 0x22]).unwrap();
+        let mut dst = Packet::default();
+        dst.ref_from(&src);
+        assert!(!dst.is_data_writable());
+        assert!(dst.data_buffer().shares_storage(src.data_buffer()));
+        dst.make_refcounted().unwrap();
+        assert!(!dst.is_data_writable());
+        assert!(dst.data_buffer().shares_storage(src.data_buffer()));
     }
 
     #[test]

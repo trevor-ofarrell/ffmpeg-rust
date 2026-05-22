@@ -66,8 +66,8 @@ use avutil::{
     SampleFormatNumericKind, HashAlgorithm, HashContext, Murmur3, Ripemd128, Ripemd160,
     Ripemd256, Ripemd320, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
     Sha512Trunc256, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE,
-    AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE, AV_TIME_BASE_Q,
-    AVPALETTE_COUNT, AVPALETTE_SIZE,
+    AV_INPUT_BUFFER_PADDING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE,
+    AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE,
 };
 use libfuzzer_sys::fuzz_target;
 use std::cmp::Ordering;
@@ -5307,6 +5307,73 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet.opaque_address(), None);
     assert!(packet.opaque_ref().is_none());
     assert_eq!(packet.time_base(), Rational::ZERO);
+
+    let mut padded_packet = Packet::from_data(payload.clone()).unwrap();
+    assert_eq!(padded_packet.data(), payload.as_slice());
+    assert_eq!(
+        padded_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(padded_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    let grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
+    padded_packet.grow_data(grow_by).unwrap();
+    assert_eq!(&padded_packet.data()[..payload.len()], payload.as_slice());
+    assert!(padded_packet.data()[payload.len()..]
+        .iter()
+        .all(|byte| *byte == 0));
+    assert_eq!(
+        padded_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(padded_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    let shrink_to = usize::from(cursor.next().unwrap_or_default()) % (padded_packet.len() + 1);
+    padded_packet.shrink_data(shrink_to).unwrap();
+    let mut expected_shrunk = payload.clone();
+    expected_shrunk.resize(payload.len() + grow_by, 0);
+    expected_shrunk.truncate(shrink_to);
+    assert_eq!(padded_packet.len(), shrink_to);
+    assert_eq!(padded_packet.data(), expected_shrunk.as_slice());
+    assert_eq!(
+        padded_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+
+    let mut refcounted_packet = Packet::new(payload.clone(), stream_index);
+    refcounted_packet.make_refcounted().unwrap();
+    assert_eq!(refcounted_packet.data(), payload.as_slice());
+    assert_eq!(
+        refcounted_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(refcounted_packet.is_data_writable());
+
+    let shared_src = Packet::from_data(payload.clone()).unwrap();
+    let mut shared_dst = Packet::default();
+    shared_dst.ref_from(&shared_src);
+    assert!(shared_dst
+        .data_buffer()
+        .shares_storage(shared_src.data_buffer()));
+    shared_dst.make_refcounted().unwrap();
+    assert!(shared_dst
+        .data_buffer()
+        .shares_storage(shared_src.data_buffer()));
+    shared_dst.make_writable().unwrap();
+    assert!(!shared_dst
+        .data_buffer()
+        .shares_storage(shared_src.data_buffer()));
+    assert!(shared_dst.is_data_writable());
+    if !shared_dst.is_empty() {
+        shared_dst.make_data_writable()[0] ^= 0xff;
+        assert_eq!(shared_src.data(), payload.as_slice());
+    }
 
     let pts = timestamp_from(cursor.next());
     let dts = timestamp_from(cursor.next());

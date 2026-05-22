@@ -6,8 +6,8 @@ use std::{
 };
 
 use avutil::{
-    Packet, PacketFlags, PacketOpaque, PacketSideDataKind, Rational, SideData, AV_NOPTS_VALUE,
-    AV_PACKET_POS_UNKNOWN,
+    Packet, PacketFlags, PacketOpaque, PacketSideDataKind, Rational, SideData,
+    AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -109,8 +109,59 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert("packet:unref".to_string(), packet_fields(&unref));
 
     insert_side_data_api_rows(&mut rows);
+    insert_payload_api_rows(&mut rows);
 
     rows
+}
+
+fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let from_data = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+    rows.insert(
+        "packet:payload-from-data-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data".to_string(),
+        payload_fields(&from_data),
+    );
+
+    let mut grow = Packet::new_zeroed(2, 0).unwrap();
+    grow.make_data_writable().copy_from_slice(&[0xaa, 0xbb]);
+    grow.grow_data(3).unwrap();
+    rows.insert("packet:payload-grow-ret".to_string(), vec!["0".to_string()]);
+    rows.insert("packet:payload-grow".to_string(), payload_fields(&grow));
+
+    grow.shrink_data(2).unwrap();
+    rows.insert("packet:payload-shrink".to_string(), payload_fields(&grow));
+
+    let src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+    let mut writable = Packet::default();
+    writable.ref_from(&src);
+    writable.make_writable().unwrap();
+    writable.make_data_writable()[0] = 0xcc;
+    rows.insert(
+        "packet:payload-make-writable-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-src".to_string(),
+        payload_fields(&src),
+    );
+    rows.insert(
+        "packet:payload-make-writable-dst".to_string(),
+        payload_fields(&writable),
+    );
+
+    let mut refcounted = Packet::new(vec![0xaa, 0xbb], 0);
+    refcounted.make_refcounted().unwrap();
+    rows.insert(
+        "packet:payload-make-refcounted-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted".to_string(),
+        payload_fields(&refcounted),
+    );
 }
 
 fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -250,6 +301,20 @@ fn side_data_lookup_fields(side_data: Option<&SideData>) -> Vec<String> {
     }
 }
 
+fn payload_fields(packet: &Packet) -> Vec<String> {
+    let padding = packet.data_buffer().padding_slice();
+    assert!(
+        padding.len() >= AV_INPUT_BUFFER_PADDING_SIZE,
+        "packet payload should have FFmpeg input padding for oracle comparison"
+    );
+    vec![
+        packet.len().to_string(),
+        hex_or_dash(packet.data()),
+        hex_or_dash(&padding[..AV_INPUT_BUFFER_PADDING_SIZE]),
+        u8::from(packet.is_data_writable()).to_string(),
+    ]
+}
+
 fn packet_side_data_type(kind: &PacketSideDataKind) -> &'static str {
     match kind {
         PacketSideDataKind::Palette => "0",
@@ -344,6 +409,7 @@ fn oracle_c_source() -> &'static str {
 #include <stdlib.h>
 #include "libavcodec/defs.h"
 #include "libavcodec/packet.h"
+#include "libavutil/buffer.h"
 #include "libavutil/mem.h"
 
 static void fail_if(int condition, const char *message) {
@@ -399,6 +465,15 @@ static void print_side_data_lookup(const char *name, const AVPacket *pkt,
     printf("%s|%d|%zu|", name, data != NULL, size);
     print_hex_or_dash(data, (int)size);
     printf("\n");
+}
+
+static void print_payload(const char *name, const AVPacket *pkt) {
+    printf("%s|%d|", name, pkt->size);
+    print_hex_or_dash(pkt->data, pkt->size);
+    printf("|");
+    print_hex_or_dash(pkt->data ? pkt->data + pkt->size : NULL,
+                      AV_INPUT_BUFFER_PADDING_SIZE);
+    printf("|%d\n", pkt->buf ? av_buffer_is_writable(pkt->buf) : 0);
 }
 
 static AVPacket *new_packet(void) {
@@ -481,6 +556,53 @@ static void exercise_side_data_api(void) {
     av_packet_free(&pkt);
 }
 
+static void exercise_payload_api(void) {
+    AVPacket *pkt = new_packet();
+    uint8_t *owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz payload from-data failed");
+    owned[0] = 0xaa;
+    owned[1] = 0xbb;
+    owned[2] = 0xcc;
+    int ret = av_packet_from_data(pkt, owned, 3);
+    printf("packet:payload-from-data-ret|%d\n", ret);
+    print_payload("packet:payload-from-data", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet payload grow failed");
+    pkt->data[0] = 0xaa;
+    pkt->data[1] = 0xbb;
+    ret = av_grow_packet(pkt, 3);
+    printf("packet:payload-grow-ret|%d\n", ret);
+    print_payload("packet:payload-grow", pkt);
+    av_shrink_packet(pkt, 2);
+    print_payload("packet:payload-shrink", pkt);
+    av_packet_free(&pkt);
+
+    AVPacket *src = new_packet();
+    fail_if(av_new_packet(src, 2) < 0, "av_new_packet writable src failed");
+    src->data[0] = 0xaa;
+    src->data[1] = 0xbb;
+    AVPacket *dst = new_packet();
+    fail_if(av_packet_ref(dst, src) < 0, "av_packet_ref writable dst failed");
+    ret = av_packet_make_writable(dst);
+    printf("packet:payload-make-writable-ret|%d\n", ret);
+    dst->data[0] = 0xcc;
+    print_payload("packet:payload-make-writable-src", src);
+    print_payload("packet:payload-make-writable-dst", dst);
+    av_packet_free(&dst);
+    av_packet_free(&src);
+
+    pkt = new_packet();
+    uint8_t stack_data[2] = { 0xaa, 0xbb };
+    pkt->data = stack_data;
+    pkt->size = 2;
+    ret = av_packet_make_refcounted(pkt);
+    printf("packet:payload-make-refcounted-ret|%d\n", ret);
+    print_payload("packet:payload-make-refcounted", pkt);
+    av_packet_free(&pkt);
+}
+
 int main(void) {
     AVPacket *pkt = new_packet();
     print_packet("packet:default", pkt);
@@ -533,6 +655,7 @@ int main(void) {
     av_packet_free(&pkt);
 
     exercise_side_data_api();
+    exercise_payload_api();
 
     return 0;
 }

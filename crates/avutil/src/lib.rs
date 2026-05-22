@@ -108,7 +108,7 @@ pub use packet::{
     PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView, PacketStringMetadata,
     PacketStringMetadataEntry, PacketSubtitlePosition, PacketThreeDReferenceDisplay,
     PacketThreeDReferenceDisplays, PacketWebVttIdentifier, PacketWebVttSettings, SideData,
-    AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 pub use pixel::{
     PixelFormat, PixelFormatClass, PixelFormatDescriptor, AVPALETTE_COUNT, AVPALETTE_SIZE,
