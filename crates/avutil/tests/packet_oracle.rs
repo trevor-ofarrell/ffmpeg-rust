@@ -612,6 +612,15 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-add-append".to_string(),
         side_data_summary_fields(&packet),
     );
+
+    let mut packet = Packet::default();
+    packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    rows.insert(
+        "packet:side-new-zero".to_string(),
+        side_data_summary_fields(&packet),
+    );
 }
 
 fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -686,6 +695,14 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     list.clear();
     rows.insert(
         "packet:array-free".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+
+    let mut list = PacketSideDataList::new();
+    list.new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    rows.insert(
+        "packet:array-new-zero".to_string(),
         side_data_list_summary_fields(&list),
     );
 }
@@ -1575,6 +1592,12 @@ static void exercise_side_data_api(void) {
     printf("packet:side-add-append-ret|%d\n", ret);
     print_side_data_summary("packet:side-add-append", pkt);
     av_packet_free(&pkt);
+
+    pkt = new_packet();
+    sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 0);
+    fail_if(!sd, "av_packet_new_side_data zero failed");
+    print_side_data_summary("packet:side-new-zero", pkt);
+    av_packet_free(&pkt);
 }
 
 static void exercise_side_data_array_api(void) {
@@ -1625,6 +1648,12 @@ static void exercise_side_data_array_api(void) {
     print_side_data_array_summary("packet:array-remove-missing", sd, nb_sd);
     av_packet_side_data_free(&sd, &nb_sd);
     print_side_data_array_summary("packet:array-free", sd, nb_sd);
+
+    entry = av_packet_side_data_new(&sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA,
+                                    0, 0);
+    fail_if(!entry, "av_packet_side_data_new zero failed");
+    print_side_data_array_summary("packet:array-new-zero", sd, nb_sd);
+    av_packet_side_data_free(&sd, &nb_sd);
 }
 
 static void exercise_frame_packet_side_data_bridge_api(void) {

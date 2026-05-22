@@ -9787,6 +9787,24 @@ mod tests {
     }
 
     #[test]
+    fn packet_new_side_data_accepts_zero_size() {
+        let mut packet = Packet::new(Vec::new(), 0);
+        let entry = packet
+            .new_side_data(PacketSideDataKind::NewExtradata, 0)
+            .unwrap();
+
+        assert_eq!(entry.kind_id(), &PacketSideDataKind::NewExtradata);
+        assert_eq!(entry.len(), 0);
+        assert!(entry.data().is_empty());
+        assert_eq!(packet.side_data().len(), 1);
+        assert!(packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .data()
+            .is_empty());
+    }
+
+    #[test]
     fn packet_add_side_data_replaces_first_matching_kind() {
         let mut packet = Packet::new(Vec::new(), 0);
         packet.push_side_data(SideData::new("palette", vec![0]).unwrap());
@@ -9818,6 +9836,15 @@ mod tests {
     #[test]
     fn packet_side_data_list_matches_standalone_array_lifecycle() {
         let mut list = PacketSideDataList::new();
+        assert!(list.is_empty());
+
+        let entry = list
+            .new_side_data(PacketSideDataKind::NewExtradata, 0)
+            .unwrap();
+        assert_eq!(entry.kind_id(), &PacketSideDataKind::NewExtradata);
+        assert!(entry.data().is_empty());
+        assert_eq!(list.len(), 1);
+        list.clear();
         assert!(list.is_empty());
 
         let entry = list

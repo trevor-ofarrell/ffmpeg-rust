@@ -5967,6 +5967,13 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let new_side_data_len = usize::from(cursor.next().unwrap_or_default() % 16);
     let new_side_data_payload = payload_from(cursor, new_side_data_len);
     let mut new_side_data_packet = Packet::default();
+    let mut zero_side_data_packet = Packet::default();
+    let zero_entry = zero_side_data_packet
+        .new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    assert_eq!(zero_entry.kind_id(), &PacketSideDataKind::NewExtradata);
+    assert!(zero_entry.data().is_empty());
+    assert_eq!(zero_side_data_packet.side_data().len(), 1);
     let new_entry = new_side_data_packet
         .new_side_data(typed_side_data_kind.clone(), new_side_data_payload.len())
         .unwrap();
@@ -6038,6 +6045,13 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
 
     let mut side_data_list = PacketSideDataList::new();
+    let mut zero_side_data_list = PacketSideDataList::new();
+    let zero_list_entry = zero_side_data_list
+        .new_side_data(PacketSideDataKind::NewExtradata, 0)
+        .unwrap();
+    assert_eq!(zero_list_entry.kind_id(), &PacketSideDataKind::NewExtradata);
+    assert!(zero_list_entry.data().is_empty());
+    assert_eq!(zero_side_data_list.len(), 1);
     let list_entry = side_data_list
         .new_side_data(typed_side_data_kind.clone(), typed_side_data_payload.len())
         .unwrap();
