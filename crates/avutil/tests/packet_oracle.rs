@@ -12,9 +12,10 @@ use avutil::{
     PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketOpaque, PacketParamChange,
     PacketPictureType, PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain,
-    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
-    PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings,
-    Rational, SideData, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSideDataList,
+    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier,
+    PacketWebVttSettings, Rational, SideData, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE,
+    AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -118,6 +119,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert("packet:unref".to_string(), packet_fields(&unref));
 
     insert_side_data_api_rows(&mut rows);
+    insert_side_data_array_api_rows(&mut rows);
     insert_payload_api_rows(&mut rows);
     insert_dictionary_api_rows(&mut rows);
 
@@ -485,6 +487,82 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
 }
 
+fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let mut list = PacketSideDataList::new();
+    list.new_side_data(PacketSideDataKind::NewExtradata, 4)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
+    rows.insert(
+        "packet:array-new".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+    rows.insert(
+        "packet:array-get".to_string(),
+        side_data_lookup_fields(list.get(&PacketSideDataKind::NewExtradata)),
+    );
+
+    list.new_side_data(PacketSideDataKind::NewExtradata, 2)
+        .unwrap()
+        .data_mut()
+        .copy_from_slice(&[0xaa, 0xbb]);
+    rows.insert(
+        "packet:array-new-replace".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+
+    let replaced = list
+        .add_side_data(SideData::new_extradata(vec![0x55, 0x66, 0x77]).unwrap())
+        .expect("new_extradata should be replaced");
+    assert_eq!(replaced.data(), &[0xaa, 0xbb]);
+    rows.insert(
+        "packet:array-add-replace-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-replace".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+
+    let appended = list
+        .add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x99]).unwrap());
+    assert!(appended.is_none(), "palette side data should append");
+    rows.insert(
+        "packet:array-add-append-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-append".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+    rows.insert(
+        "packet:array-get-palette".to_string(),
+        side_data_lookup_fields(list.get(&PacketSideDataKind::Palette)),
+    );
+
+    let removed = list
+        .remove_kind(&PacketSideDataKind::NewExtradata)
+        .expect("new_extradata should be removed");
+    assert_eq!(removed.data(), &[0x55, 0x66, 0x77]);
+    rows.insert(
+        "packet:array-remove-new".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+    assert!(list
+        .remove_kind(&PacketSideDataKind::NewExtradata)
+        .is_none());
+    rows.insert(
+        "packet:array-remove-missing".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+
+    list.clear();
+    rows.insert(
+        "packet:array-free".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+}
+
 fn packet_with_common_props() -> Packet {
     let mut packet = Packet::new(vec![0xaa, 0xbb, 0xcc], 7);
     packet.set_pts(Some(90_000));
@@ -536,6 +614,16 @@ fn first_side_data_fields(packet: &Packet) -> (String, String, String) {
 fn side_data_summary_fields(packet: &Packet) -> Vec<String> {
     let mut fields = vec![packet.side_data().len().to_string()];
     for side_data in packet.side_data() {
+        fields.push(packet_side_data_type(side_data.kind_id()).to_string());
+        fields.push(side_data.len().to_string());
+        fields.push(hex_or_dash(side_data.data()));
+    }
+    fields
+}
+
+fn side_data_list_summary_fields(list: &PacketSideDataList) -> Vec<String> {
+    let mut fields = vec![list.len().to_string()];
+    for side_data in list.entries() {
         fields.push(packet_side_data_type(side_data.kind_id()).to_string());
         fields.push(side_data.len().to_string());
         fields.push(hex_or_dash(side_data.data()));
@@ -747,6 +835,27 @@ static void print_side_data_lookup(const char *name, const AVPacket *pkt,
     uint8_t *data = av_packet_get_side_data(pkt, type, &size);
     printf("%s|%d|%zu|", name, data != NULL, size);
     print_hex_or_dash(data, (int)size);
+    printf("\n");
+}
+
+static void print_side_data_array_summary(const char *name,
+                                          const AVPacketSideData *sd,
+                                          int nb_sd) {
+    printf("%s|%d", name, nb_sd);
+    for (int i = 0; i < nb_sd; i++) {
+        printf("|%d|%zu|", (int)sd[i].type, sd[i].size);
+        print_hex_or_dash(sd[i].data, (int)sd[i].size);
+    }
+    printf("\n");
+}
+
+static void print_side_data_array_lookup(const char *name,
+                                         const AVPacketSideData *sd,
+                                         int nb_sd,
+                                         enum AVPacketSideDataType type) {
+    const AVPacketSideData *entry = av_packet_side_data_get(sd, nb_sd, type);
+    printf("%s|%d|%zu|", name, entry != NULL, entry ? entry->size : 0);
+    print_hex_or_dash(entry ? entry->data : NULL, entry ? (int)entry->size : 0);
     printf("\n");
 }
 
@@ -1114,6 +1223,56 @@ static void exercise_side_data_api(void) {
     av_packet_free(&pkt);
 }
 
+static void exercise_side_data_array_api(void) {
+    AVPacketSideData *sd = NULL;
+    int nb_sd = 0;
+    AVPacketSideData *entry = av_packet_side_data_new(&sd, &nb_sd,
+                                                      AV_PKT_DATA_NEW_EXTRADATA,
+                                                      4, 0);
+    fail_if(!entry, "av_packet_side_data_new failed");
+    entry->data[0] = 0x11;
+    entry->data[1] = 0x22;
+    entry->data[2] = 0x33;
+    entry->data[3] = 0x44;
+    print_side_data_array_summary("packet:array-new", sd, nb_sd);
+    print_side_data_array_lookup("packet:array-get", sd, nb_sd,
+                                 AV_PKT_DATA_NEW_EXTRADATA);
+
+    entry = av_packet_side_data_new(&sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA,
+                                    2, 0);
+    fail_if(!entry, "av_packet_side_data_new replace failed");
+    entry->data[0] = 0xaa;
+    entry->data[1] = 0xbb;
+    print_side_data_array_summary("packet:array-new-replace", sd, nb_sd);
+
+    uint8_t *owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz array replace side data failed");
+    owned[0] = 0x55;
+    owned[1] = 0x66;
+    owned[2] = 0x77;
+    entry = av_packet_side_data_add(&sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA,
+                                    owned, 3, 0);
+    printf("packet:array-add-replace-ret|%d\n", entry != NULL);
+    print_side_data_array_summary("packet:array-add-replace", sd, nb_sd);
+
+    owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz array append side data failed");
+    owned[0] = 0x99;
+    entry = av_packet_side_data_add(&sd, &nb_sd, AV_PKT_DATA_PALETTE,
+                                    owned, 1, 0);
+    printf("packet:array-add-append-ret|%d\n", entry != NULL);
+    print_side_data_array_summary("packet:array-add-append", sd, nb_sd);
+    print_side_data_array_lookup("packet:array-get-palette", sd, nb_sd,
+                                 AV_PKT_DATA_PALETTE);
+
+    av_packet_side_data_remove(sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA);
+    print_side_data_array_summary("packet:array-remove-new", sd, nb_sd);
+    av_packet_side_data_remove(sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA);
+    print_side_data_array_summary("packet:array-remove-missing", sd, nb_sd);
+    av_packet_side_data_free(&sd, &nb_sd);
+    print_side_data_array_summary("packet:array-free", sd, nb_sd);
+}
+
 static void exercise_payload_api(void) {
     AVPacket *pkt = new_packet();
     uint8_t *owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
@@ -1247,6 +1406,7 @@ int main(void) {
     av_packet_free(&pkt);
 
     exercise_side_data_api();
+    exercise_side_data_array_api();
     exercise_payload_api();
     exercise_dictionary_api();
 

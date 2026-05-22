@@ -4,7 +4,9 @@ use crate::frame::{
     FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye, FrameStereo3dType,
     FrameStereo3dView, FrameThreeDReferenceDisplay, FrameThreeDReferenceDisplays,
 };
-use crate::{rescale_q, AvError, AvResult, BufferRef, Dictionary, Rational};
+use crate::{
+    rescale_q, AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, Dictionary, Rational,
+};
 use std::num::NonZeroUsize;
 
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
@@ -4295,6 +4297,10 @@ impl SideData {
         &self.data
     }
 
+    pub fn data_mut(&mut self) -> &mut [u8] {
+        &mut self.data
+    }
+
     pub fn len(&self) -> usize {
         self.data.len()
     }
@@ -4640,6 +4646,94 @@ impl SideData {
 
         self.data.truncate(len);
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PacketSideDataList {
+    entries: Vec<SideData>,
+}
+
+impl PacketSideDataList {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_entries(entries: Vec<SideData>) -> Self {
+        Self { entries }
+    }
+
+    pub fn entries(&self) -> &[SideData] {
+        &self.entries
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn get(&self, kind: &PacketSideDataKind) -> Option<&SideData> {
+        self.entries
+            .iter()
+            .find(|side_data| side_data.kind_id() == kind)
+    }
+
+    pub fn get_mut(&mut self, kind: &PacketSideDataKind) -> Option<&mut SideData> {
+        self.entries
+            .iter_mut()
+            .find(|side_data| side_data.kind_id() == kind)
+    }
+
+    pub fn new_side_data(
+        &mut self,
+        kind: PacketSideDataKind,
+        size: usize,
+    ) -> AvResult<&mut SideData> {
+        let mut data = Vec::new();
+        data.try_reserve_exact(size).map_err(|_| {
+            AvError::with_code(
+                AvErrorKind::External,
+                AvErrorCode::ENOMEM,
+                "cannot allocate packet side data",
+            )
+        })?;
+        data.resize(size, 0);
+        let side_data = SideData::new_with_kind(kind, data)?;
+        Ok(self.add_or_replace(side_data).1)
+    }
+
+    pub fn add_side_data(&mut self, side_data: SideData) -> Option<SideData> {
+        self.add_or_replace(side_data).0
+    }
+
+    pub fn remove_kind(&mut self, kind: &PacketSideDataKind) -> Option<SideData> {
+        let index = self
+            .entries
+            .iter()
+            .rposition(|side_data| side_data.kind_id() == kind)?;
+        Some(self.entries.swap_remove(index))
+    }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    fn add_or_replace(&mut self, side_data: SideData) -> (Option<SideData>, &mut SideData) {
+        if let Some(index) = self
+            .entries
+            .iter()
+            .position(|existing| existing.kind_id() == side_data.kind_id())
+        {
+            let replaced = std::mem::replace(&mut self.entries[index], side_data);
+            return (Some(replaced), &mut self.entries[index]);
+        }
+
+        self.entries.push(side_data);
+        let index = self.entries.len() - 1;
+        (None, &mut self.entries[index])
     }
 }
 
@@ -9446,6 +9540,92 @@ mod tests {
             packet.side_data_by_kind("new_extradata").unwrap().data(),
             &[7]
         );
+    }
+
+    #[test]
+    fn packet_side_data_list_matches_standalone_array_lifecycle() {
+        let mut list = PacketSideDataList::new();
+        assert!(list.is_empty());
+
+        let entry = list
+            .new_side_data(PacketSideDataKind::NewExtradata, 4)
+            .unwrap();
+        entry.data_mut().copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
+        assert_eq!(list.len(), 1);
+        assert_eq!(
+            list.get(&PacketSideDataKind::NewExtradata).unwrap().data(),
+            &[0x11, 0x22, 0x33, 0x44]
+        );
+
+        let entry = list
+            .new_side_data(PacketSideDataKind::NewExtradata, 2)
+            .unwrap();
+        entry.data_mut().copy_from_slice(&[0xaa, 0xbb]);
+        assert_eq!(list.entries().len(), 1);
+        assert_eq!(
+            list.get(&PacketSideDataKind::NewExtradata).unwrap().data(),
+            &[0xaa, 0xbb]
+        );
+
+        let replaced = list
+            .add_side_data(SideData::new_extradata(vec![0x55, 0x66, 0x77]).unwrap())
+            .unwrap();
+        assert_eq!(replaced.data(), &[0xaa, 0xbb]);
+        assert_eq!(list.entries().len(), 1);
+        assert_eq!(
+            list.get(&PacketSideDataKind::NewExtradata).unwrap().data(),
+            &[0x55, 0x66, 0x77]
+        );
+
+        assert!(list
+            .add_side_data(
+                SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x99]).unwrap()
+            )
+            .is_none());
+        assert_eq!(list.entries().len(), 2);
+        assert_eq!(
+            list.entries()[0].kind_id(),
+            &PacketSideDataKind::NewExtradata
+        );
+        assert_eq!(list.entries()[1].kind_id(), &PacketSideDataKind::Palette);
+
+        let removed = list.remove_kind(&PacketSideDataKind::NewExtradata).unwrap();
+        assert_eq!(removed.data(), &[0x55, 0x66, 0x77]);
+        assert_eq!(list.entries().len(), 1);
+        assert_eq!(list.entries()[0].kind_id(), &PacketSideDataKind::Palette);
+        assert_eq!(list.entries()[0].data(), &[0x99]);
+        assert!(list
+            .remove_kind(&PacketSideDataKind::NewExtradata)
+            .is_none());
+
+        list.clear();
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn packet_side_data_list_remove_uses_last_match_swap_semantics() {
+        let mut list = PacketSideDataList::from_entries(vec![
+            SideData::new_extradata(vec![0x00]).unwrap(),
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
+            SideData::new_extradata(vec![0x22]).unwrap(),
+            SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x33]).unwrap(),
+        ]);
+
+        let removed = list.remove_kind(&PacketSideDataKind::NewExtradata).unwrap();
+
+        assert_eq!(removed.data(), &[0x22]);
+        assert_eq!(list.entries().len(), 3);
+        assert_eq!(
+            list.entries()[0].kind_id(),
+            &PacketSideDataKind::NewExtradata
+        );
+        assert_eq!(list.entries()[0].data(), &[0x00]);
+        assert_eq!(list.entries()[1].kind_id(), &PacketSideDataKind::Palette);
+        assert_eq!(
+            list.entries()[2].kind_id(),
+            &PacketSideDataKind::SkipSamples
+        );
+        assert_eq!(list.entries()[2].data(), &[0x33]);
     }
 
     #[test]

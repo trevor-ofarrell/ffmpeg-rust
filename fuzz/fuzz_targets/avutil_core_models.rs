@@ -57,9 +57,9 @@ use avutil::{
     PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketNewExtradata, PacketPalette,
     PacketOpaque, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
     PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
-    PacketSideDataKind, PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping,
-    PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags, PacketStereo3dPrimaryEye,
-    PacketStereo3dType,
+    PacketSideDataKind, PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason,
+    PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,
+    PacketStereo3dPrimaryEye, PacketStereo3dType,
     PacketStereo3dView, PacketStringMetadata, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, PixelFormat, PixelFormatClass, Rational, Rounding, SampleFormat,
@@ -5548,6 +5548,58 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(typed_side_data_packet
         .side_data_by_kind_id(&typed_side_data_kind)
         .is_none());
+
+    let mut side_data_list = PacketSideDataList::new();
+    let list_entry = side_data_list
+        .new_side_data(typed_side_data_kind.clone(), typed_side_data_payload.len())
+        .unwrap();
+    list_entry
+        .data_mut()
+        .copy_from_slice(typed_side_data_payload.as_slice());
+    assert_eq!(side_data_list.len(), 1);
+    assert_eq!(
+        side_data_list
+            .get(&typed_side_data_kind)
+            .unwrap()
+            .data(),
+        typed_side_data_payload.as_slice()
+    );
+
+    let replacement_len = usize::from(cursor.next().unwrap_or_default() % 16);
+    let replacement_payload = payload_from(cursor, replacement_len);
+    let replaced = side_data_list
+        .add_side_data(
+            SideData::new_with_kind(typed_side_data_kind.clone(), replacement_payload.clone())
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(replaced.data(), typed_side_data_payload.as_slice());
+    assert_eq!(side_data_list.len(), 1);
+    assert_eq!(
+        side_data_list
+            .get(&typed_side_data_kind)
+            .unwrap()
+            .data(),
+        replacement_payload.as_slice()
+    );
+
+    let other_list_kind = if typed_side_data_kind == PacketSideDataKind::Palette {
+        PacketSideDataKind::NewExtradata
+    } else {
+        PacketSideDataKind::Palette
+    };
+    assert!(side_data_list
+        .add_side_data(SideData::new_with_kind(other_list_kind.clone(), vec![0xee]).unwrap())
+        .is_none());
+    let removed = side_data_list
+        .remove_kind(&typed_side_data_kind)
+        .unwrap();
+    assert_eq!(removed.data(), replacement_payload.as_slice());
+    assert_eq!(side_data_list.len(), 1);
+    assert_eq!(side_data_list.entries()[0].kind_id(), &other_list_kind);
+    assert!(side_data_list.remove_kind(&typed_side_data_kind).is_none());
+    side_data_list.clear();
+    assert!(side_data_list.is_empty());
 
     let typed_payload_max_len = (PacketQualityStats::HEADER_LEN
         + PacketQualityStats::ERROR_ENTRY_LEN * 3
