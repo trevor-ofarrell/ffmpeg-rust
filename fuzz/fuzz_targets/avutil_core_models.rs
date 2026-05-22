@@ -8,8 +8,8 @@ use avutil::{
     sha224, sha256, sha384, sha512, sha512_224, sha512_256, Adler32, AudioFrame, AvError,
     AvErrorCode, AvErrorKind,
     BufferPool,
-    AmbisonicChannelLayout, BufferPoolCallbacks, BufferRef, Channel, ChannelCustom, ChannelId,
-    ChannelLayout, ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame,
+    AmbisonicChannelLayout, BufferPoolAllocation, BufferPoolCallbacks, BufferRef, Channel,
+    ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame,
     FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
     NativeChannelMaskLayout,
     FrameAudioServiceType,
@@ -960,21 +960,33 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(readonly_callback.is_writable());
 
     let custom_allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
-    let custom_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let custom_releases = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let custom_pool_frees = Arc::new(Mutex::new(0usize));
     let allocate_capture = Arc::clone(&custom_allocations);
     let release_capture = Arc::clone(&custom_releases);
+    let pool_free_capture = Arc::clone(&custom_pool_frees);
     let custom_pool = BufferPool::with_callbacks(
         payload_len,
         padding_len,
-        BufferPoolCallbacks::new(
+        BufferPoolCallbacks::with_allocation_callbacks(
             move |allocated_len| {
                 allocate_capture.lock().unwrap().push(allocated_len);
-                Ok(vec![0xaa; allocated_len])
+                Ok(BufferPoolAllocation::with_opaque(
+                    vec![0xaa; allocated_len],
+                    allocated_len,
+                ))
             },
-            move |storage| {
-                release_capture.lock().unwrap().push(storage);
+            move |allocation| {
+                let opaque = *allocation.opaque_ref::<usize>().unwrap();
+                release_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, allocation.into_vec()));
             },
-        ),
+        )
+        .with_pool_free(move || {
+            *pool_free_capture.lock().unwrap() += 1;
+        }),
     )
     .unwrap();
     let custom_buffer = custom_pool.get().unwrap();
@@ -986,13 +998,19 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         custom_buffer.as_padded_slice(),
         vec![0xaa; payload_len + padding_len].as_slice()
     );
+    assert_eq!(
+        custom_buffer.pool_opaque_ref::<usize>().copied(),
+        Some(payload_len + padding_len)
+    );
     drop(custom_pool);
     assert!(custom_releases.lock().unwrap().is_empty());
+    assert_eq!(*custom_pool_frees.lock().unwrap(), 0);
     drop(custom_buffer);
     assert_eq!(
         *custom_releases.lock().unwrap(),
-        vec![vec![0xaa; payload_len + padding_len]]
+        vec![(payload_len + padding_len, vec![0xaa; payload_len + padding_len])]
     );
+    assert_eq!(*custom_pool_frees.lock().unwrap(), 1);
 
     let bad_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
     let bad_release_capture = Arc::clone(&bad_releases);

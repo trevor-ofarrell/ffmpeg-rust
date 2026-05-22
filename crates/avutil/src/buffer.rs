@@ -1,15 +1,71 @@
 use crate::{AvError, AvResult};
 use std::any::Any;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
 pub struct BufferPoolCallbacks {
     allocate: PoolAllocateCallback,
     release: PoolReleaseCallback,
+    pool_free: Option<PoolFreeCallback>,
 }
 
-type PoolAllocateCallback = Arc<dyn Fn(usize) -> AvResult<Vec<u8>> + Send + Sync + 'static>;
-type PoolReleaseCallback = Arc<dyn Fn(Vec<u8>) + Send + Sync + 'static>;
+type PoolAllocateCallback =
+    Arc<dyn Fn(usize) -> AvResult<BufferPoolAllocation> + Send + Sync + 'static>;
+type PoolReleaseCallback = Arc<dyn Fn(BufferPoolAllocation) + Send + Sync + 'static>;
+type PoolFreeCallback = Arc<dyn Fn() + Send + Sync + 'static>;
+
+pub struct BufferPoolAllocation {
+    bytes: Vec<u8>,
+    opaque: Option<Box<dyn Any + Send + Sync>>,
+}
+
+impl BufferPoolAllocation {
+    pub fn new(bytes: Vec<u8>) -> Self {
+        Self {
+            bytes,
+            opaque: None,
+        }
+    }
+
+    pub fn with_opaque<T>(bytes: Vec<u8>, opaque: T) -> Self
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        Self {
+            bytes,
+            opaque: Some(Box::new(opaque)),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    pub fn opaque_ref<T: 'static>(&self) -> Option<&T> {
+        self.opaque.as_deref()?.downcast_ref::<T>()
+    }
+
+    pub fn into_vec(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
+impl std::fmt::Debug for BufferPoolAllocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BufferPoolAllocation")
+            .field("bytes", &self.bytes)
+            .field("has_opaque", &self.opaque.is_some())
+            .finish()
+    }
+}
 
 impl BufferPoolCallbacks {
     pub fn new<A, R>(allocate: A, release: R) -> Self
@@ -17,9 +73,39 @@ impl BufferPoolCallbacks {
         A: Fn(usize) -> AvResult<Vec<u8>> + Send + Sync + 'static,
         R: Fn(Vec<u8>) + Send + Sync + 'static,
     {
+        Self::with_allocation_callbacks(
+            move |allocated_len| allocate(allocated_len).map(BufferPoolAllocation::new),
+            move |allocation| release(allocation.into_vec()),
+        )
+    }
+
+    pub fn with_allocation_callbacks<A, R>(allocate: A, release: R) -> Self
+    where
+        A: Fn(usize) -> AvResult<BufferPoolAllocation> + Send + Sync + 'static,
+        R: Fn(BufferPoolAllocation) + Send + Sync + 'static,
+    {
         Self {
             allocate: Arc::new(allocate),
             release: Arc::new(release),
+            pool_free: None,
+        }
+    }
+
+    pub fn with_pool_free<F>(mut self, pool_free: F) -> Self
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        self.pool_free = Some(Arc::new(pool_free));
+        self
+    }
+
+    fn release(&self, allocation: BufferPoolAllocation) {
+        (self.release)(allocation);
+    }
+
+    fn free_pool(&self) {
+        if let Some(pool_free) = &self.pool_free {
+            pool_free();
         }
     }
 }
@@ -323,6 +409,10 @@ impl BufferRef {
         self.data.opaque_ref::<T>()
     }
 
+    pub fn pool_opaque_ref<T: 'static>(&self) -> Option<&T> {
+        self.data.pool_opaque_ref::<T>()
+    }
+
     pub fn get_mut(&mut self) -> Option<&mut [u8]> {
         if self.is_readonly() {
             return None;
@@ -424,9 +514,9 @@ type BufferReleaseCallback = Arc<dyn Fn(Vec<u8>) + Send + Sync + 'static>;
 
 enum BufferOwner {
     Pool {
-        pool: Weak<BufferPoolInner>,
+        pool: Arc<BufferPoolInner>,
         allocated_len: usize,
-        release: PoolReleaseCallback,
+        opaque: Option<Box<dyn Any + Send + Sync>>,
     },
     Callback(BufferReleaseCallback),
     Opaque(Box<dyn OpaqueOwner>),
@@ -505,13 +595,14 @@ impl BufferStorage {
         }
     }
 
-    fn with_pool(bytes: Vec<u8>, pool: &Arc<BufferPoolInner>) -> Self {
+    fn with_pool(allocation: BufferPoolAllocation, pool: &Arc<BufferPoolInner>) -> Self {
+        let BufferPoolAllocation { bytes, opaque } = allocation;
         Self {
             bytes: BufferBytes::owned(bytes),
             owner: Some(BufferOwner::Pool {
-                pool: Arc::downgrade(pool),
+                pool: Arc::clone(pool),
                 allocated_len: pool.allocated_len,
-                release: Arc::clone(&pool.callbacks.release),
+                opaque,
             }),
             readonly: false,
         }
@@ -546,10 +637,26 @@ impl BufferStorage {
         }
     }
 
-    fn into_vec(mut self) -> Vec<u8> {
-        self.owner = None;
+    fn pool_opaque_ref<T: 'static>(&self) -> Option<&T> {
+        match &self.owner {
+            Some(BufferOwner::Pool {
+                opaque: Some(opaque),
+                ..
+            }) => opaque.downcast_ref::<T>(),
+            _ => None,
+        }
+    }
+
+    fn into_pool_allocation(mut self) -> BufferPoolAllocation {
+        let opaque = match self.owner.take() {
+            Some(BufferOwner::Pool { opaque, .. }) => opaque,
+            _ => None,
+        };
         self.readonly = false;
-        self.bytes.take_vec()
+        BufferPoolAllocation {
+            bytes: self.bytes.take_vec(),
+            opaque,
+        }
     }
 }
 
@@ -662,20 +769,21 @@ impl Drop for BufferStorage {
             Some(BufferOwner::Pool {
                 pool,
                 allocated_len,
-                release,
+                opaque,
             }) => {
                 let storage = self.bytes.take_vec();
-                if storage.len() != allocated_len {
-                    release(storage);
-                    return;
-                }
-                let Some(pool) = pool.upgrade() else {
-                    release(storage);
+                let storage_len = storage.len();
+                let allocation = BufferPoolAllocation {
+                    bytes: storage,
+                    opaque,
+                };
+                if storage_len != allocated_len {
+                    pool.callbacks.release(allocation);
                     return;
                 };
                 match pool.spare.lock() {
-                    Ok(mut spare) => spare.push(storage),
-                    Err(_) => release(storage),
+                    Ok(mut spare) => spare.push(allocation),
+                    Err(_) => pool.callbacks.release(allocation),
                 };
             }
             Some(BufferOwner::Callback(on_release)) => {
@@ -701,7 +809,7 @@ struct BufferPoolInner {
     allocated_len: usize,
     padding: usize,
     callbacks: BufferPoolCallbacks,
-    spare: Mutex<Vec<Vec<u8>>>,
+    spare: Mutex<Vec<BufferPoolAllocation>>,
 }
 
 impl Drop for BufferPoolInner {
@@ -710,10 +818,10 @@ impl Drop for BufferPoolInner {
             Ok(spare) => spare,
             Err(poisoned) => poisoned.into_inner(),
         };
-        let release = Arc::clone(&self.callbacks.release);
         for storage in spare.drain(..) {
-            release(storage);
+            self.callbacks.release(storage);
         }
+        self.callbacks.free_pool();
     }
 }
 
@@ -794,16 +902,16 @@ impl BufferPool {
 
         let storage = Arc::try_unwrap(data)
             .map_err(|_| AvError::invalid_argument("cannot recycle a shared buffer"))?;
-        let storage = storage.into_vec();
-        self.lock_spare()?.push(storage);
+        let allocation = storage.into_pool_allocation();
+        self.lock_spare()?.push(allocation);
         Ok(())
     }
 
-    fn allocate_storage(&self) -> AvResult<Vec<u8>> {
+    fn allocate_storage(&self) -> AvResult<BufferPoolAllocation> {
         let storage = (self.inner.callbacks.allocate)(self.allocated_len())?;
         if storage.len() != self.allocated_len() {
             let actual_len = storage.len();
-            (self.inner.callbacks.release)(storage);
+            self.inner.callbacks.release(storage);
             return Err(AvError::invalid_argument(format!(
                 "buffer pool allocator returned {actual_len} bytes for {} byte shape",
                 self.allocated_len()
@@ -812,7 +920,7 @@ impl BufferPool {
         Ok(storage)
     }
 
-    fn lock_spare(&self) -> AvResult<std::sync::MutexGuard<'_, Vec<Vec<u8>>>> {
+    fn lock_spare(&self) -> AvResult<std::sync::MutexGuard<'_, Vec<BufferPoolAllocation>>> {
         self.inner
             .spare
             .lock()
@@ -1739,6 +1847,75 @@ mod tests {
         drop(pool);
 
         assert_eq!(*releases.lock().unwrap(), vec![vec![1, 2, 3, 9, 9]]);
+    }
+
+    #[test]
+    fn custom_buffer_pool_preserves_buffer_opaque_and_runs_pool_free_last() {
+        #[derive(Debug)]
+        struct PoolToken {
+            id: usize,
+        }
+
+        let next_id = std::sync::Arc::new(std::sync::Mutex::new(40usize));
+        let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let pool_free_events =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<&'static str>::new()));
+        let next_id_capture = std::sync::Arc::clone(&next_id);
+        let release_capture = std::sync::Arc::clone(&releases);
+        let pool_free_capture = std::sync::Arc::clone(&pool_free_events);
+        let pool = BufferPool::with_callbacks(
+            3,
+            0,
+            BufferPoolCallbacks::with_allocation_callbacks(
+                move |allocated_len| {
+                    let mut next_id = next_id_capture.lock().unwrap();
+                    *next_id += 1;
+                    Ok(BufferPoolAllocation::with_opaque(
+                        vec![1, 2, 3][..allocated_len].to_vec(),
+                        PoolToken { id: *next_id },
+                    ))
+                },
+                move |allocation| {
+                    let id = allocation
+                        .opaque_ref::<PoolToken>()
+                        .map(|token| token.id)
+                        .unwrap_or_default();
+                    release_capture
+                        .lock()
+                        .unwrap()
+                        .push((id, allocation.into_vec()));
+                },
+            )
+            .with_pool_free(move || {
+                pool_free_capture.lock().unwrap().push("pool-free");
+            }),
+        )
+        .unwrap();
+
+        let mut first = pool.get().unwrap();
+        assert_eq!(
+            first.pool_opaque_ref::<PoolToken>().map(|token| token.id),
+            Some(41)
+        );
+        first.make_mut().copy_from_slice(&[0xaa, 0xbb, 0xcc]);
+        drop(first);
+
+        let reused = pool.get().unwrap();
+        assert_eq!(
+            reused.pool_opaque_ref::<PoolToken>().map(|token| token.id),
+            Some(41)
+        );
+        assert_eq!(reused.as_slice(), &[0xaa, 0xbb, 0xcc]);
+        drop(pool);
+        assert!(releases.lock().unwrap().is_empty());
+        assert!(pool_free_events.lock().unwrap().is_empty());
+        drop(reused);
+
+        assert_eq!(
+            *releases.lock().unwrap(),
+            vec![(41, vec![0xaa, 0xbb, 0xcc])]
+        );
+        assert_eq!(*pool_free_events.lock().unwrap(), vec!["pool-free"]);
     }
 
     #[test]

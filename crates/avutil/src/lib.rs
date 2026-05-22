@@ -20,7 +20,7 @@ pub mod timebase;
 
 pub use bitreader::BitReader;
 pub use bitwriter::BitWriter;
-pub use buffer::{BufferPool, BufferPoolCallbacks, BufferRef, BufferSlice};
+pub use buffer::{BufferPool, BufferPoolAllocation, BufferPoolCallbacks, BufferRef, BufferSlice};
 pub use byteio::{ByteReader, ByteWriter};
 pub use channel_layout::{
     AmbisonicChannelLayout, Channel, ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec,
