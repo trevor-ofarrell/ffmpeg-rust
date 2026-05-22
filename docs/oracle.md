@@ -201,7 +201,8 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --com
 `av_frame_unref`, `av_frame_ref`, `av_frame_make_writable`, `av_frame_move_ref`,
 `av_frame_copy_props`, PTS/packet-DTS/duration/time-base/sample-aspect-ratio,
 crop-offset, picture-type, quality, repeat_pict, public frame-flag,
-color_range, color_primaries, color_trc, colorspace, chroma_location, and
+color_range, color_primaries, color_trc, colorspace, chroma_location,
+best-effort timestamp, public decode-error flags, and
 top-level frame metadata propagation through ref/move/copy-props rows,
 `av_frame_get_buffer` for a gray8 video frame and a packed s16 stereo audio
 frame, `AV_FRAME_DATA_*` numeric
@@ -210,8 +211,9 @@ values/names/descriptors/properties, `AV_FRAME_SIDE_DATA_FLAG_*`,
 / `av_frame_remove_side_data` displaymatrix rows against the Rust `Frame`
 model. The `av_frame_copy_props` rows prove destination payload buffers are
 preserved, PTS, packet DTS, duration, time base, sample aspect ratio, crop
-offsets, picture type, quality, repeat_pict, public frame flags, and top-level
-color/chroma metadata are copied, source metadata keys overwrite matching
+offsets, picture type, quality, repeat_pict, public frame flags, best-effort
+timestamp, decode-error flags, and top-level color/chroma metadata are copied,
+source metadata keys overwrite matching
 destination metadata while destination-only metadata keys remain, existing destination side data is retained,
 source side data is appended as a deep copy, and destination `hw_frames_ctx`
 remains unchanged.

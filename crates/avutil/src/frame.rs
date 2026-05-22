@@ -166,6 +166,82 @@ impl std::ops::BitOrAssign for FrameFlags {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FrameDecodeErrorFlags {
+    bits: u32,
+}
+
+impl FrameDecodeErrorFlags {
+    pub const INVALID_BITSTREAM: Self = Self { bits: 1 << 0 };
+    pub const MISSING_REFERENCE: Self = Self { bits: 1 << 1 };
+    pub const CONCEALMENT_ACTIVE: Self = Self { bits: 1 << 2 };
+    pub const DECODE_SLICES: Self = Self { bits: 1 << 3 };
+    const KNOWN_BITS: u32 = Self::INVALID_BITSTREAM.bits
+        | Self::MISSING_REFERENCE.bits
+        | Self::CONCEALMENT_ACTIVE.bits
+        | Self::DECODE_SLICES.bits;
+
+    pub const fn empty() -> Self {
+        Self { bits: 0 }
+    }
+
+    pub const fn all() -> Self {
+        Self {
+            bits: Self::KNOWN_BITS,
+        }
+    }
+
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        Self {
+            bits: bits & Self::KNOWN_BITS,
+        }
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.bits
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.bits == 0
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        self.bits & other.bits == other.bits
+    }
+
+    pub fn insert(&mut self, other: Self) {
+        self.bits |= other.bits;
+    }
+
+    pub fn remove(&mut self, other: Self) {
+        self.bits &= !other.bits;
+    }
+
+    pub fn set(&mut self, other: Self, enabled: bool) {
+        if enabled {
+            self.insert(other);
+        } else {
+            self.remove(other);
+        }
+    }
+}
+
+impl std::ops::BitOr for FrameDecodeErrorFlags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self {
+            bits: self.bits | rhs.bits,
+        }
+    }
+}
+
+impl std::ops::BitOrAssign for FrameDecodeErrorFlags {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.bits |= rhs.bits;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum FramePictureType {
     #[default]
@@ -632,6 +708,8 @@ pub struct Frame {
     color_transfer_characteristic: FrameColorTransferCharacteristic,
     color_space: FrameColorSpace,
     chroma_location: FrameChromaLocation,
+    best_effort_timestamp: Option<i64>,
+    decode_error_flags: FrameDecodeErrorFlags,
     metadata: Dictionary,
     data: FrameData,
     hw_frames_context: Option<BufferRef>,
@@ -656,6 +734,8 @@ impl Frame {
             color_transfer_characteristic: FrameColorTransferCharacteristic::Unspecified,
             color_space: FrameColorSpace::Unspecified,
             chroma_location: FrameChromaLocation::Unspecified,
+            best_effort_timestamp: None,
+            decode_error_flags: FrameDecodeErrorFlags::empty(),
             metadata: Dictionary::new(),
             data: FrameData::Empty,
             hw_frames_context: None,
@@ -680,6 +760,8 @@ impl Frame {
             color_transfer_characteristic: FrameColorTransferCharacteristic::Unspecified,
             color_space: FrameColorSpace::Unspecified,
             chroma_location: FrameChromaLocation::Unspecified,
+            best_effort_timestamp: None,
+            decode_error_flags: FrameDecodeErrorFlags::empty(),
             metadata: Dictionary::new(),
             data: FrameData::Video(frame),
             hw_frames_context: None,
@@ -704,6 +786,8 @@ impl Frame {
             color_transfer_characteristic: FrameColorTransferCharacteristic::Unspecified,
             color_space: FrameColorSpace::Unspecified,
             chroma_location: FrameChromaLocation::Unspecified,
+            best_effort_timestamp: None,
+            decode_error_flags: FrameDecodeErrorFlags::empty(),
             metadata: Dictionary::new(),
             data: FrameData::Audio(frame),
             hw_frames_context: None,
@@ -727,6 +811,8 @@ impl Frame {
             && self.color_transfer_characteristic == FrameColorTransferCharacteristic::Unspecified
             && self.color_space == FrameColorSpace::Unspecified
             && self.chroma_location == FrameChromaLocation::Unspecified
+            && self.best_effort_timestamp.is_none()
+            && self.decode_error_flags.is_empty()
             && self.metadata.is_empty()
             && self.data.is_empty()
             && self.hw_frames_context.is_none()
@@ -761,6 +847,8 @@ impl Frame {
         self.color_transfer_characteristic = source.color_transfer_characteristic;
         self.color_space = source.color_space;
         self.chroma_location = source.chroma_location;
+        self.best_effort_timestamp = source.best_effort_timestamp;
+        self.decode_error_flags = source.decode_error_flags;
         self.metadata
             .copy_from(
                 &source.metadata,
@@ -946,6 +1034,26 @@ impl Frame {
     pub fn set_chroma_location_from_raw(&mut self, value: i32) -> AvResult<()> {
         self.chroma_location = FrameChromaLocation::from_raw(value)?;
         Ok(())
+    }
+
+    pub fn best_effort_timestamp(&self) -> Option<i64> {
+        self.best_effort_timestamp
+    }
+
+    pub fn set_best_effort_timestamp(&mut self, best_effort_timestamp: Option<i64>) {
+        self.best_effort_timestamp = best_effort_timestamp;
+    }
+
+    pub fn decode_error_flags(&self) -> FrameDecodeErrorFlags {
+        self.decode_error_flags
+    }
+
+    pub fn set_decode_error_flags(&mut self, flags: FrameDecodeErrorFlags) {
+        self.decode_error_flags = flags;
+    }
+
+    pub fn set_decode_error_flag(&mut self, flag: FrameDecodeErrorFlags, enabled: bool) {
+        self.decode_error_flags.set(flag, enabled);
     }
 
     pub fn metadata(&self) -> &Dictionary {
@@ -18609,6 +18717,31 @@ mod tests {
     }
 
     #[test]
+    fn frame_decode_error_flags_match_ffmpeg_8_1_1_header() {
+        assert_eq!(FrameDecodeErrorFlags::INVALID_BITSTREAM.bits(), 1);
+        assert_eq!(FrameDecodeErrorFlags::MISSING_REFERENCE.bits(), 2);
+        assert_eq!(FrameDecodeErrorFlags::CONCEALMENT_ACTIVE.bits(), 4);
+        assert_eq!(FrameDecodeErrorFlags::DECODE_SLICES.bits(), 8);
+        assert_eq!(FrameDecodeErrorFlags::all().bits(), 0x0f);
+
+        let mut flags = FrameDecodeErrorFlags::empty();
+        assert!(flags.is_empty());
+        flags.insert(FrameDecodeErrorFlags::INVALID_BITSTREAM);
+        flags.set(FrameDecodeErrorFlags::DECODE_SLICES, true);
+        assert!(flags.contains(FrameDecodeErrorFlags::INVALID_BITSTREAM));
+        assert!(flags.contains(FrameDecodeErrorFlags::DECODE_SLICES));
+        flags.remove(FrameDecodeErrorFlags::INVALID_BITSTREAM);
+        assert!(!flags.contains(FrameDecodeErrorFlags::INVALID_BITSTREAM));
+        assert!(flags.contains(FrameDecodeErrorFlags::DECODE_SLICES));
+        flags.set(FrameDecodeErrorFlags::DECODE_SLICES, false);
+        assert!(flags.is_empty());
+        assert_eq!(
+            FrameDecodeErrorFlags::from_bits_truncate(u32::MAX).bits(),
+            FrameDecodeErrorFlags::all().bits()
+        );
+    }
+
+    #[test]
     fn frame_color_metadata_values_match_ffmpeg_8_1_1_header() {
         let ranges = [
             (FrameColorRange::Unspecified, 0, "AVCOL_RANGE_UNSPECIFIED"),
@@ -18903,6 +19036,10 @@ mod tests {
         frame.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Bt709);
         frame.set_color_space(FrameColorSpace::Smpte170M);
         frame.set_chroma_location(FrameChromaLocation::Center);
+        frame.set_best_effort_timestamp(Some(96));
+        frame.set_decode_error_flags(
+            FrameDecodeErrorFlags::INVALID_BITSTREAM | FrameDecodeErrorFlags::CONCEALMENT_ACTIVE,
+        );
         frame.metadata_mut().set("title", "before-unref").unwrap();
         frame
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
@@ -18930,6 +19067,8 @@ mod tests {
         );
         assert_eq!(frame.color_space(), FrameColorSpace::Unspecified);
         assert_eq!(frame.chroma_location(), FrameChromaLocation::Unspecified);
+        assert_eq!(frame.best_effort_timestamp(), None);
+        assert!(frame.decode_error_flags().is_empty());
         assert!(frame.metadata().is_empty());
         assert!(matches!(frame.data(), FrameData::Empty));
         assert!(frame.hw_frames_context().is_none());
@@ -18977,6 +19116,10 @@ mod tests {
         source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
         source.set_color_space(FrameColorSpace::Bt2020Ncl);
         source.set_chroma_location(FrameChromaLocation::TopLeft);
+        source.set_best_effort_timestamp(Some(4));
+        source.set_decode_error_flags(
+            FrameDecodeErrorFlags::MISSING_REFERENCE | FrameDecodeErrorFlags::DECODE_SLICES,
+        );
         source.metadata_mut().set("title", "source").unwrap();
         source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
@@ -19022,6 +19165,13 @@ mod tests {
         );
         assert_eq!(destination.color_space(), FrameColorSpace::Bt2020Ncl);
         assert_eq!(destination.chroma_location(), FrameChromaLocation::TopLeft);
+        assert_eq!(destination.best_effort_timestamp(), Some(4));
+        assert!(destination
+            .decode_error_flags()
+            .contains(FrameDecodeErrorFlags::MISSING_REFERENCE));
+        assert!(destination
+            .decode_error_flags()
+            .contains(FrameDecodeErrorFlags::DECODE_SLICES));
         assert_eq!(destination.metadata().get("title"), Some("source"));
         destination
             .metadata_mut()
@@ -19088,6 +19238,8 @@ mod tests {
         source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Gamma22);
         source.set_color_space(FrameColorSpace::Bt470Bg);
         source.set_chroma_location(FrameChromaLocation::Left);
+        source.set_best_effort_timestamp(Some(8));
+        source.set_decode_error_flags(FrameDecodeErrorFlags::CONCEALMENT_ACTIVE);
         source.metadata_mut().set("title", "move-source").unwrap();
 
         let destination_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -19128,6 +19280,13 @@ mod tests {
         );
         assert_eq!(destination.color_space(), FrameColorSpace::Bt470Bg);
         assert_eq!(destination.chroma_location(), FrameChromaLocation::Left);
+        assert_eq!(destination.best_effort_timestamp(), Some(8));
+        assert_eq!(
+            destination.decode_error_flags(),
+            FrameDecodeErrorFlags::CONCEALMENT_ACTIVE
+        );
+        assert_eq!(source.best_effort_timestamp(), None);
+        assert!(source.decode_error_flags().is_empty());
         assert_eq!(destination.metadata().get("title"), Some("move-source"));
         assert!(source.metadata().is_empty());
         assert!(matches!(destination.data(), FrameData::Video(_)));
@@ -19172,6 +19331,10 @@ mod tests {
         source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
         source.set_color_space(FrameColorSpace::Bt2020Ncl);
         source.set_chroma_location(FrameChromaLocation::TopLeft);
+        source.set_best_effort_timestamp(Some(322));
+        source.set_decode_error_flags(
+            FrameDecodeErrorFlags::MISSING_REFERENCE | FrameDecodeErrorFlags::DECODE_SLICES,
+        );
         source.metadata_mut().set("title", "source").unwrap();
         source.metadata_mut().set("artist", "libavutil").unwrap();
         source
@@ -19224,6 +19387,8 @@ mod tests {
         destination.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Bt709);
         destination.set_color_space(FrameColorSpace::Smpte170M);
         destination.set_chroma_location(FrameChromaLocation::Center);
+        destination.set_best_effort_timestamp(Some(1000));
+        destination.set_decode_error_flags(FrameDecodeErrorFlags::INVALID_BITSTREAM);
         destination
             .metadata_mut()
             .set("title", "destination")
@@ -19260,6 +19425,16 @@ mod tests {
         );
         assert_eq!(destination.color_space(), FrameColorSpace::Bt2020Ncl);
         assert_eq!(destination.chroma_location(), FrameChromaLocation::TopLeft);
+        assert_eq!(destination.best_effort_timestamp(), Some(322));
+        assert!(destination
+            .decode_error_flags()
+            .contains(FrameDecodeErrorFlags::MISSING_REFERENCE));
+        assert!(destination
+            .decode_error_flags()
+            .contains(FrameDecodeErrorFlags::DECODE_SLICES));
+        assert!(!destination
+            .decode_error_flags()
+            .contains(FrameDecodeErrorFlags::INVALID_BITSTREAM));
         assert_eq!(destination.metadata().get("title"), Some("source"));
         assert_eq!(destination.metadata().get("artist"), Some("libavutil"));
         assert_eq!(destination.metadata().get("keep"), Some("destination"));

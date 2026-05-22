@@ -15,9 +15,10 @@ use avutil::{
     FrameColorTransferCharacteristic,
     NativeChannelMaskLayout,
     FrameAudioServiceType,
-    Dictionary, FrameContentLightMetadata, FrameCrop, FrameData, FrameDetectionBbox, FrameFlags,
-    FrameDetectionBboxes, FrameDisplayMatrix, FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping,
-    FrameDolbyVisionDmData, FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
+    Dictionary, FrameContentLightMetadata, FrameCrop, FrameData, FrameDecodeErrorFlags,
+    FrameDetectionBbox, FrameFlags, FrameDetectionBboxes, FrameDisplayMatrix,
+    FrameDolbyVisionColorMetadata, FrameDolbyVisionDataMapping, FrameDolbyVisionDmData,
+    FrameDolbyVisionMetadata, FrameDolbyVisionRpuBuffer,
     FrameDolbyVisionRpuDataHeader, FrameDownmixInfo, FrameDownmixType, FrameDynamicHdrPlus,
     FrameDynamicHdrVivid, FrameExif, FrameExifColorSpace, FrameExifCompositeImage,
     FrameExifContrast, FrameExifCustomRendered, FrameExifEndian, FrameExifEntry,
@@ -2689,6 +2690,9 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     let pkt_dts = timestamp_from(cursor.next());
     frame.set_pkt_dts(pkt_dts);
     assert_eq!(frame.pkt_dts(), pkt_dts);
+    let best_effort_timestamp = timestamp_from(cursor.next());
+    frame.set_best_effort_timestamp(best_effort_timestamp);
+    assert_eq!(frame.best_effort_timestamp(), best_effort_timestamp);
     let duration = i64::from(cursor.next().unwrap_or_default() % 16);
     frame.set_duration(duration).unwrap();
     assert_eq!(frame.duration(), duration);
@@ -2753,6 +2757,22 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(
         FrameFlags::from_bits_truncate(u32::MAX).bits(),
         FrameFlags::all().bits()
+    );
+    let frame_decode_error_flags =
+        FrameDecodeErrorFlags::from_bits_truncate(u32::from(cursor.next().unwrap_or_default()));
+    frame.set_decode_error_flags(frame_decode_error_flags);
+    assert_eq!(frame.decode_error_flags(), frame_decode_error_flags);
+    frame.set_decode_error_flag(FrameDecodeErrorFlags::DECODE_SLICES, true);
+    assert!(frame
+        .decode_error_flags()
+        .contains(FrameDecodeErrorFlags::DECODE_SLICES));
+    frame.set_decode_error_flag(FrameDecodeErrorFlags::DECODE_SLICES, false);
+    assert!(!frame
+        .decode_error_flags()
+        .contains(FrameDecodeErrorFlags::DECODE_SLICES));
+    assert_eq!(
+        FrameDecodeErrorFlags::from_bits_truncate(u32::MAX).bits(),
+        FrameDecodeErrorFlags::all().bits()
     );
     let frame_color_range =
         pick_copy(cursor, &FrameColorRange::KNOWN).unwrap_or(FrameColorRange::Unspecified);
@@ -2830,6 +2850,14 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(
         shared_frame_payload.chroma_location(),
         frame_chroma_location
+    );
+    assert_eq!(
+        shared_frame_payload.best_effort_timestamp(),
+        best_effort_timestamp
+    );
+    assert_eq!(
+        shared_frame_payload.decode_error_flags(),
+        frame.decode_error_flags()
     );
     assert!(!frame.is_writable());
     frame.make_writable();
