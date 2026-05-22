@@ -451,6 +451,13 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec!["0".to_string(), bool_field(replace_null_src.is_none())],
     );
 
+    let mut replace_null_null = None;
+    BufferRef::replace(&mut replace_null_null, None);
+    rows.insert(
+        "buffer:replace-null-null".to_string(),
+        vec!["0".to_string(), bool_field(replace_null_null.is_none())],
+    );
+
     let replace_null_source = BufferRef::from_vec(vec![6, 7, 8]);
     let mut replace_null_dst = None;
     BufferRef::replace(&mut replace_null_dst, Some(&replace_null_source));
@@ -1320,6 +1327,10 @@ int main(void) {
     fail_if(!replace_null_src, "av_buffer_allocz replace_null_src failed");
     ret = av_buffer_replace(&replace_null_src, NULL);
     printf("buffer:replace-null-src|%d|%d\n", ret, replace_null_src == NULL);
+
+    AVBufferRef *replace_null_null = NULL;
+    ret = av_buffer_replace(&replace_null_null, NULL);
+    printf("buffer:replace-null-null|%d|%d\n", ret, replace_null_null == NULL);
 
     static const uint8_t replace_null_source_bytes[] = { 6, 7, 8 };
     AVBufferRef *replace_null_source = av_buffer_allocz(3);

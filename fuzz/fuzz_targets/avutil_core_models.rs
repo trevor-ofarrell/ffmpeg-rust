@@ -899,6 +899,9 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(replace_same_source.strong_count(), 2);
     BufferRef::replace(&mut replace_same_dst, None);
     assert!(replace_same_dst.is_none());
+    let mut replace_null_null = None;
+    BufferRef::replace(&mut replace_null_null, None);
+    assert!(replace_null_null.is_none());
     BufferRef::unref(&mut replace_empty_dst);
     assert!(replace_empty_dst.is_none());
     BufferRef::unref(&mut replace_empty_dst);

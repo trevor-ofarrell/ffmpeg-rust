@@ -1998,6 +1998,9 @@ mod tests {
 
         BufferRef::replace(&mut same_dst, None);
         assert!(same_dst.is_none());
+        let mut null_dst = None;
+        BufferRef::replace(&mut null_dst, None);
+        assert!(null_dst.is_none());
         assert!(empty_dst.is_some());
         BufferRef::unref(&mut empty_dst);
         assert!(empty_dst.is_none());
