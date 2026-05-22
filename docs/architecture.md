@@ -143,6 +143,8 @@ The rawvideo-facing paletted subset now includes FFmpeg's `pal8` name. The share
 
 `PacketContentLightMetadata` covers `AV_PKT_DATA_CONTENT_LIGHT_LEVEL` as the pinned FFmpeg 8.1.1 native `AVContentLightMetadata` payload, preserving `MaxCLL` and `MaxFALL` as two native unsigned fields in an exact 8-byte payload with exact-length validation.
 
+`PacketMasteringDisplayMetadata` covers `AV_PKT_DATA_MASTERING_DISPLAY_METADATA` as the pinned FFmpeg 8.1.1 native `AVMasteringDisplayMetadata` payload, preserving display-primary, white-point, min/max luminance rational fields plus raw `has_primaries` and `has_luminance` flags. The packet oracle validates the 88-byte native payload shape and top-level field offsets.
+
 `PacketNewExtradata` covers `AV_PKT_DATA_NEW_EXTRADATA` as an embedded replacement extradata byte buffer. The current model preserves the raw bytes, including empty buffers, and does not interpret codec-specific extradata formats.
 
 `PacketH263MbInfo` covers `AV_PKT_DATA_H263_MB_INFO` as an array of 12-byte little-endian records with bit offset, quantizer, GOB number, macroblock address, and four motion-vector predictor bytes. The parser rejects payloads whose length is not a whole number of records.

@@ -11,12 +11,12 @@ use avutil::{
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDolbyVisionConf, PacketDoviCompression, PacketFallbackTrack,
     PacketFifo, PacketFlags, PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
-    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketOpaque, PacketParamChange,
-    PacketPictureType, PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain,
-    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSideDataList,
-    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier,
-    PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE,
-    AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
+    PacketOpaque, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
+    PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
+    PacketSideDataKind, PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason,
+    PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData,
+    AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -239,6 +239,37 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
         payload_layout_fields(
             &PacketContentLightMetadata::new(1000, 400).to_bytes(),
             &[0, 4],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-mastering-display".to_string(),
+        payload_layout_fields(
+            &PacketMasteringDisplayMetadata::new(
+                [
+                    [
+                        Rational::from_raw(34_000, 50_000),
+                        Rational::from_raw(16_000, 50_000),
+                    ],
+                    [
+                        Rational::from_raw(13_250, 50_000),
+                        Rational::from_raw(34_500, 50_000),
+                    ],
+                    [
+                        Rational::from_raw(7_500, 50_000),
+                        Rational::from_raw(3_000, 50_000),
+                    ],
+                ],
+                [
+                    Rational::from_raw(15_635, 50_000),
+                    Rational::from_raw(16_450, 50_000),
+                ],
+                Rational::from_raw(50, 10_000),
+                Rational::from_raw(1000, 1),
+                1,
+                2,
+            )
+            .to_bytes(),
+            &[0, 48, 64, 72, 80, 84],
         ),
     );
     rows.insert(
@@ -1603,6 +1634,30 @@ static void print_side_data_payload_layouts(void) {
     printf("|%zu|%zu\n",
            offsetof(AVContentLightMetadata, MaxCLL),
            offsetof(AVContentLightMetadata, MaxFALL));
+
+    AVMasteringDisplayMetadata mastering;
+    memset(&mastering, 0, sizeof(mastering));
+    mastering.display_primaries[0][0] = (AVRational){ 34000, 50000 };
+    mastering.display_primaries[0][1] = (AVRational){ 16000, 50000 };
+    mastering.display_primaries[1][0] = (AVRational){ 13250, 50000 };
+    mastering.display_primaries[1][1] = (AVRational){ 34500, 50000 };
+    mastering.display_primaries[2][0] = (AVRational){ 7500, 50000 };
+    mastering.display_primaries[2][1] = (AVRational){ 3000, 50000 };
+    mastering.white_point[0] = (AVRational){ 15635, 50000 };
+    mastering.white_point[1] = (AVRational){ 16450, 50000 };
+    mastering.min_luminance = (AVRational){ 50, 10000 };
+    mastering.max_luminance = (AVRational){ 1000, 1 };
+    mastering.has_primaries = 1;
+    mastering.has_luminance = 2;
+    print_payload_layout_header("packet:payload-layout-mastering-display",
+                                &mastering, sizeof(mastering));
+    printf("|%zu|%zu|%zu|%zu|%zu|%zu\n",
+           offsetof(AVMasteringDisplayMetadata, display_primaries),
+           offsetof(AVMasteringDisplayMetadata, white_point),
+           offsetof(AVMasteringDisplayMetadata, min_luminance),
+           offsetof(AVMasteringDisplayMetadata, max_luminance),
+           offsetof(AVMasteringDisplayMetadata, has_primaries),
+           offsetof(AVMasteringDisplayMetadata, has_luminance));
 
     AVAmbientViewingEnvironment ambient;
     memset(&ambient, 0, sizeof(ambient));
