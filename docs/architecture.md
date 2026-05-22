@@ -25,7 +25,7 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 Offset `BufferRef` views are the safe Rust equivalent of C callers adjusting `AVBufferRef.data` and `AVBufferRef.size` while retaining ownership of the same underlying `AVBuffer`. They preserve the visible pointer delta and shared storage identity until a shared make-writable or resize path detaches to a new zero-offset owned allocation.
 
-Default `BufferPool::new` coverage includes the FFmpeg `av_buffer_pool_init(size, NULL)` fallback path: pooled refs are writable, carry no user opaque data, and returned storage is reused without implicit clearing.
+Default `BufferPool::new` coverage includes the FFmpeg `av_buffer_pool_init(size, NULL)` fallback path: pooled refs are writable, carry no user opaque data, and returned storage is reused without implicit clearing. `BufferPoolCallbacks::default().with_pool_free(...)` models the bounded `av_buffer_pool_init2(size, opaque, NULL, pool_free)` path: buffer allocation still falls back to the default allocator while the pool-free callback remains tied to the pool owner.
 
 Owned opaque-data buffers are the safe Rust equivalent of `av_buffer_create` with an opaque pointer and free callback. The original owner exposes typed opaque data, unique writable mutation keeps that owner, shared make-writable copies detach without carrying opaque state, and final release hands the callback both the opaque value and original byte storage.
 

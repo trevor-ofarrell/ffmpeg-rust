@@ -675,6 +675,54 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     drop(default_reuse);
     drop(default_pool);
 
+    let init2_default_pool_frees = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let init2_default_pool_free_capture = Arc::clone(&init2_default_pool_frees);
+    let init2_default_pool = BufferPool::with_callbacks(
+        2,
+        0,
+        BufferPoolCallbacks::default().with_pool_free(move || {
+            init2_default_pool_free_capture.lock().unwrap().push(88);
+        }),
+    )
+    .unwrap();
+    let mut init2_default_first = init2_default_pool.get().unwrap();
+    rows.insert(
+        "pool-init2-default:first-status".to_string(),
+        buffer_status_fields(&init2_default_first),
+    );
+    rows.insert(
+        "pool-init2-default:first-opaque".to_string(),
+        vec![bool_field(
+            init2_default_first.pool_opaque_ref::<usize>().is_none(),
+        )],
+    );
+    init2_default_first
+        .make_mut()
+        .copy_from_slice(&[0x31, 0x32]);
+    drop(init2_default_first);
+    let init2_default_reuse = init2_default_pool.get().unwrap();
+    rows.insert(
+        "pool-init2-default:reuse".to_string(),
+        buffer_fields(&init2_default_reuse),
+    );
+    rows.insert(
+        "pool-init2-default:reuse-opaque".to_string(),
+        vec![bool_field(
+            init2_default_reuse.pool_opaque_ref::<usize>().is_none(),
+        )],
+    );
+    drop(init2_default_reuse);
+    drop(init2_default_pool);
+    let init2_default_pool_free_values = init2_default_pool_frees.lock().unwrap();
+    rows.insert(
+        "pool-init2-default:pool-free".to_string(),
+        vec![
+            init2_default_pool_free_values.len().to_string(),
+            init2_default_pool_free_values[0].to_string(),
+        ],
+    );
+    drop(init2_default_pool_free_values);
+
     struct PoolToken {
         id: usize,
         size: usize,
@@ -1596,6 +1644,33 @@ int main(void) {
            av_buffer_pool_buffer_get_opaque(default_reuse) == NULL);
     av_buffer_unref(&default_reuse);
     av_buffer_pool_uninit(&default_pool);
+
+    reset_pool_counters();
+    PoolOpaque init2_default_opaque = { 88, 2 };
+    AVBufferPool *init2_default_pool =
+        av_buffer_pool_init2(2, &init2_default_opaque, NULL,
+                             test_pool_owner_free);
+    fail_if(!init2_default_pool, "av_buffer_pool_init2 default failed");
+    AVBufferRef *init2_default_first = av_buffer_pool_get(init2_default_pool);
+    fail_if(!init2_default_first,
+            "av_buffer_pool_get init2 default first failed");
+    print_status("pool-init2-default:first-status", init2_default_first);
+    printf("pool-init2-default:first-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(init2_default_first) == NULL);
+    static const uint8_t init2_default_mutated[] = { 0x31, 0x32 };
+    fill_bytes(init2_default_first, init2_default_mutated,
+               sizeof(init2_default_mutated));
+    av_buffer_unref(&init2_default_first);
+    AVBufferRef *init2_default_reuse = av_buffer_pool_get(init2_default_pool);
+    fail_if(!init2_default_reuse,
+            "av_buffer_pool_get init2 default reuse failed");
+    print_buffer("pool-init2-default:reuse", init2_default_reuse);
+    printf("pool-init2-default:reuse-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(init2_default_reuse) == NULL);
+    av_buffer_unref(&init2_default_reuse);
+    av_buffer_pool_uninit(&init2_default_pool);
+    printf("pool-init2-default:pool-free|%d|%" PRIuPTR "\n",
+           pool_free_count, last_pool_free_id);
 
     reset_pool_counters();
     PoolOpaque pool_opaque = { 55, 3 };

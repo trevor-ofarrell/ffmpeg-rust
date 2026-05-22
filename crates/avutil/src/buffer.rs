@@ -2508,6 +2508,38 @@ mod tests {
     }
 
     #[test]
+    fn buffer_pool_init2_default_allocator_runs_pool_free_without_opaque() {
+        let pool_frees = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+        let pool_free_capture = std::sync::Arc::clone(&pool_frees);
+        let pool = BufferPool::with_callbacks(
+            2,
+            0,
+            BufferPoolCallbacks::default().with_pool_free(move || {
+                pool_free_capture.lock().unwrap().push(88);
+            }),
+        )
+        .unwrap();
+
+        let mut first = pool.get().unwrap();
+        assert_eq!(first.len(), 2);
+        assert_eq!(first.strong_count(), 1);
+        assert!(first.is_writable());
+        assert!(first.pool_opaque_ref::<usize>().is_none());
+        first.make_mut().copy_from_slice(&[0x31, 0x32]);
+        drop(first);
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        let reused = pool.get().unwrap();
+        assert_eq!(reused.as_slice(), &[0x31, 0x32]);
+        assert!(reused.pool_opaque_ref::<usize>().is_none());
+        drop(reused);
+        assert!(pool_frees.lock().unwrap().is_empty());
+        drop(pool);
+
+        assert_eq!(*pool_frees.lock().unwrap(), vec![88]);
+    }
+
+    #[test]
     fn custom_buffer_pool_callbacks_allocate_reuse_and_release_storage() {
         let allocations = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
         let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));

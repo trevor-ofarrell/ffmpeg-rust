@@ -1176,6 +1176,34 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     drop(auto_shared);
     assert_eq!(pool.available_count().unwrap(), 1);
 
+    let default_pool_free_count = Arc::new(Mutex::new(0usize));
+    let default_pool_free_capture = Arc::clone(&default_pool_free_count);
+    let default_pool_with_free = BufferPool::with_callbacks(
+        payload_len,
+        padding_len,
+        BufferPoolCallbacks::default().with_pool_free(move || {
+            *default_pool_free_capture.lock().unwrap() += 1;
+        }),
+    )
+    .unwrap();
+    let mut default_with_free_buffer = default_pool_with_free.get().unwrap();
+    assert!(default_with_free_buffer.pool_opaque_ref::<usize>().is_none());
+    if !default_with_free_buffer.is_empty() {
+        default_with_free_buffer.make_mut()[0] = cursor.next().unwrap_or_default();
+    }
+    let expected_default_with_free = default_with_free_buffer.as_padded_slice().to_vec();
+    drop(default_with_free_buffer);
+    let default_with_free_reuse = default_pool_with_free.get().unwrap();
+    assert_eq!(
+        default_with_free_reuse.as_padded_slice(),
+        expected_default_with_free.as_slice()
+    );
+    assert!(default_with_free_reuse.pool_opaque_ref::<usize>().is_none());
+    drop(default_with_free_reuse);
+    assert_eq!(*default_pool_free_count.lock().unwrap(), 0);
+    drop(default_pool_with_free);
+    assert_eq!(*default_pool_free_count.lock().unwrap(), 1);
+
     let cow_pool = BufferPool::new(payload_len, padding_len).unwrap();
     let mut cow_buffer = cow_pool.get().unwrap();
     let cow_shared = cow_buffer.clone();
