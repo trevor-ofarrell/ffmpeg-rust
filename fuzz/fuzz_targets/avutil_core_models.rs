@@ -553,6 +553,14 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(zeroed.allocated_len(), zeroed_len);
     assert_eq!(zeroed.padding_len(), 0);
     assert!(zeroed.as_slice().iter().all(|byte| *byte == 0));
+    let ordinary_empty = BufferRef::from_vec(Vec::new());
+    assert_eq!(ordinary_empty.len(), 0);
+    assert_eq!(ordinary_empty.allocated_len(), 0);
+    assert!(ordinary_empty.is_writable());
+    let zeroed_empty = BufferRef::zeroed(0).unwrap();
+    assert_eq!(zeroed_empty.len(), 0);
+    assert_eq!(zeroed_empty.allocated_len(), 0);
+    assert!(zeroed_empty.is_writable());
 
     let padding_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
     let mut padded = BufferRef::copy_from_slice_with_padding(&payload, padding_len).unwrap();

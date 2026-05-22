@@ -1868,10 +1868,21 @@ mod tests {
 
     #[test]
     fn zeroed_buffer_allocates_requested_zero_bytes() {
+        let ordinary_empty = BufferRef::from_vec(Vec::new());
+        assert!(ordinary_empty.is_empty());
+        assert_eq!(ordinary_empty.as_slice(), &[]);
+        assert_eq!(ordinary_empty.as_padded_slice(), &[]);
+        assert_eq!(ordinary_empty.allocated_len(), 0);
+        assert!(ordinary_empty.is_writable());
+        assert_eq!(ordinary_empty.strong_count(), 1);
+
         let empty = BufferRef::zeroed(0).unwrap();
         assert!(empty.is_empty());
         assert_eq!(empty.as_slice(), &[]);
         assert_eq!(empty.as_padded_slice(), &[]);
+        assert_eq!(empty.allocated_len(), 0);
+        assert!(empty.is_writable());
+        assert_eq!(empty.strong_count(), 1);
 
         let buffer = BufferRef::zeroed(4).unwrap();
         assert_eq!(buffer.as_slice(), &[0, 0, 0, 0]);

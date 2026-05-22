@@ -62,8 +62,17 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec!["4".to_string(), "1".to_string(), "1".to_string()],
     );
 
+    let alloc_zero = BufferRef::from_vec(Vec::new());
+    rows.insert("buffer:alloc-zero".to_string(), buffer_fields(&alloc_zero));
+
     let allocz = BufferRef::zeroed(4).unwrap();
     rows.insert("buffer:allocz".to_string(), buffer_fields(&allocz));
+
+    let allocz_zero = BufferRef::zeroed(0).unwrap();
+    rows.insert(
+        "buffer:allocz-zero".to_string(),
+        buffer_fields(&allocz_zero),
+    );
 
     let ref_src = BufferRef::from_vec(vec![1, 2, 3]);
     let ref_dst = ref_src.clone();
@@ -880,9 +889,19 @@ int main(void) {
     print_status("buffer:alloc", buf);
     av_buffer_unref(&buf);
 
+    buf = av_buffer_alloc(0);
+    fail_if(!buf, "av_buffer_alloc zero failed");
+    print_buffer("buffer:alloc-zero", buf);
+    av_buffer_unref(&buf);
+
     buf = av_buffer_allocz(4);
     fail_if(!buf, "av_buffer_allocz failed");
     print_buffer("buffer:allocz", buf);
+    av_buffer_unref(&buf);
+
+    buf = av_buffer_allocz(0);
+    fail_if(!buf, "av_buffer_allocz zero failed");
+    print_buffer("buffer:allocz-zero", buf);
     av_buffer_unref(&buf);
 
     static const uint8_t ref_bytes[] = { 1, 2, 3 };
