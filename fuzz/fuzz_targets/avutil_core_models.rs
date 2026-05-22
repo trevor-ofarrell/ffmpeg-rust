@@ -13281,6 +13281,40 @@ fn exercise_fixtures() {
     };
     assert!(replace_destination_video.plane_buffers()[0].shares_storage(&replace_source_plane));
     assert!(!replace_destination_video.plane_buffers()[0].shares_storage(&old_replace_plane));
+
+    let old_move_replace_plane = BufferRef::copy_from_slice(&[0xAA]);
+    let old_move_replace_video = VideoFrame::new_with_buffer_refs(
+        1,
+        1,
+        PixelFormat::Gray8,
+        vec![old_move_replace_plane.clone()],
+    )
+    .unwrap();
+    let mut move_replace_destination = Frame::video(old_move_replace_video)
+        .with_hw_frames_context(BufferRef::copy_from_slice(&[0xAA]));
+    move_replace_destination
+        .set_side_data_kind(FrameSideDataKind::ReplayGain, vec![0xAA; 16])
+        .unwrap();
+    move_replace_destination.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0xAB])));
+    move_replace_destination.move_ref_from(&mut replace_source);
+    assert!(replace_source.is_empty());
+    let FrameData::Video(move_replace_destination_video) = move_replace_destination.data() else {
+        panic!("frame move_ref_from did not move video data");
+    };
+    assert!(move_replace_destination_video.plane_buffers()[0].shares_storage(&replace_source_plane));
+    assert!(!move_replace_destination_video.plane_buffers()[0].shares_storage(&old_move_replace_plane));
+    assert!(move_replace_destination.side_data()[0]
+        .buffer()
+        .shares_storage(&replace_source_side));
+    assert!(move_replace_destination
+        .hw_frames_context()
+        .unwrap()
+        .shares_storage(&replace_source_hw));
+    assert!(move_replace_destination
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(&replace_source_opaque_ref));
+
     replace_destination.replace_from(&Frame::empty()).unwrap();
     assert!(replace_destination.is_empty());
 

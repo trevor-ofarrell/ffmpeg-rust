@@ -789,6 +789,42 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         frame_fields(&replace_empty_destination),
     );
 
+    let move_replace_destination_video =
+        VideoFrame::new_with_aligned_line_sizes(1, 1, PixelFormat::Gray8, vec![vec![0xAA]], 1)
+            .unwrap();
+    let mut move_replace_destination = Frame::video(move_replace_destination_video)
+        .with_hw_frames_context(BufferRef::copy_from_slice(&[0xAA]));
+    move_replace_destination.set_pts(Some(1_234));
+    move_replace_destination.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0xAB])));
+    move_replace_destination
+        .metadata_mut()
+        .set("keep", "move-destination")
+        .unwrap();
+    move_replace_destination
+        .set_side_data_kind(FrameSideDataKind::ReplayGain, vec![0xAA; 16])
+        .unwrap();
+    move_replace_destination.move_ref_from(&mut replace_source);
+    rows.insert(
+        "frame:move-replace-dst".to_string(),
+        frame_fields(&move_replace_destination),
+    );
+    rows.insert(
+        "frame:move-replace-src".to_string(),
+        frame_fields(&replace_source),
+    );
+    rows.insert(
+        "frame:move-replace-plane-shares".to_string(),
+        first_plane_share_fields(&replace_destination, &move_replace_destination),
+    );
+    rows.insert(
+        "frame:move-replace-side-shares".to_string(),
+        first_side_data_share_fields(&replace_destination, &move_replace_destination),
+    );
+    rows.insert(
+        "frame:move-replace-hw-shares".to_string(),
+        hw_frames_context_share_fields(&replace_destination, &move_replace_destination),
+    );
+
     let side_payload = (1..=36).collect::<Vec<u8>>();
     let mut side_frame = Frame::empty();
     side_frame
@@ -2714,6 +2750,39 @@ int main(void)
     fail_if(replace_empty_ret < 0, "av_frame_replace empty failed");
     print_frame("frame:replace-empty-dst", replace_empty_dst);
 
+    AVFrame *move_replace_dst = av_frame_alloc();
+    fail_if(!move_replace_dst, "move_replace_dst av_frame_alloc failed");
+    move_replace_dst->format = AV_PIX_FMT_GRAY8;
+    move_replace_dst->width = 1;
+    move_replace_dst->height = 1;
+    move_replace_dst->pts = 1234;
+    av_dict_set(&move_replace_dst->metadata, "keep", "move-destination", 0);
+    fail_if(av_frame_get_buffer(move_replace_dst, 1) < 0,
+            "move_replace_dst av_frame_get_buffer failed");
+    move_replace_dst->data[0][0] = 0xAA;
+    move_replace_dst->hw_frames_ctx = av_buffer_alloc(1);
+    fail_if(!move_replace_dst->hw_frames_ctx,
+            "move_replace_dst hw context allocation failed");
+    move_replace_dst->hw_frames_ctx->data[0] = 0xAA;
+    move_replace_dst->opaque_ref = av_buffer_alloc(1);
+    fail_if(!move_replace_dst->opaque_ref,
+            "move_replace_dst opaque_ref allocation failed");
+    move_replace_dst->opaque_ref->data[0] = 0xAB;
+    AVFrameSideData *move_replace_dst_sd = av_frame_new_side_data(
+        move_replace_dst, AV_FRAME_DATA_REPLAYGAIN, 16);
+    fail_if(!move_replace_dst_sd,
+            "move_replace_dst side data allocation failed");
+    memset(move_replace_dst_sd->data, 0xAA, move_replace_dst_sd->size);
+    av_frame_move_ref(move_replace_dst, replace_src);
+    print_frame("frame:move-replace-dst", move_replace_dst);
+    print_frame("frame:move-replace-src", replace_src);
+    print_share("frame:move-replace-plane-shares", replace_dst,
+                move_replace_dst);
+    print_side_share("frame:move-replace-side-shares", replace_dst,
+                     move_replace_dst);
+    print_hw_share("frame:move-replace-hw-shares", replace_dst,
+                   move_replace_dst);
+
     AVFrame *side_frame = av_frame_alloc();
     fail_if(!side_frame, "side_frame av_frame_alloc failed");
     AVFrameSideData *sd = av_frame_new_side_data(
@@ -3002,6 +3071,12 @@ int main(void)
                             &nb_clone_replacement_array);
     av_frame_side_data_free(&clone_source_array, &nb_clone_source_array);
 
+    av_frame_free(&move_replace_dst);
+    av_frame_free(&replace_empty_src);
+    av_frame_free(&replace_empty_dst);
+    av_frame_free(&replace_dst);
+    av_frame_free(&replace_clone);
+    av_frame_free(&replace_src);
     av_frame_free(&side_from_buf);
     av_frame_free(&side_frame);
     av_frame_free(&copy_dst);

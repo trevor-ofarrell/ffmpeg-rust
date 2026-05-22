@@ -259,6 +259,10 @@ The `av_frame_clone` and `av_frame_replace` rows prove source properties and
 refcounted plane, side-data, hardware-context, and `opaque_ref` storage are
 shared for cloned/replaced frames, pre-populated destination state is dropped
 and replaced, and replacing from an empty source unreferences the destination.
+The `frame:move-replace-*` rows prove `av_frame_move_ref()` first unreferences
+a pre-populated destination carrying payload, side data, `hw_frames_ctx`, and
+`opaque_ref`, then transfers the source references and resets the source frame
+to defaults.
 The `av_frame_apply_cropping` rows prove FFmpeg's default left-crop rounding to
 keep the data pointer at least 32-byte aligned, exact-left behavior under
 `AV_FRAME_CROP_UNALIGNED`, crop-field reset on success, and `ERANGE`

@@ -20690,7 +20690,9 @@ mod tests {
         );
         let source_video =
             VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![source_plane]).unwrap();
-        let mut source = Frame::video(source_video);
+        let source_side = BufferRef::copy_from_slice(&[0x44; 36]);
+        let source_hw = BufferRef::copy_from_slice(&[0x55]);
+        let mut source = Frame::video(source_video).with_hw_frames_context(source_hw.clone());
         let source_opaque_ref = BufferRef::copy_from_slice(&[0x33, 0x34]);
         source.set_pts(Some(11));
         source.set_pkt_dts(Some(10));
@@ -20719,6 +20721,9 @@ mod tests {
         source.set_opaque_ref(Some(source_opaque_ref.clone()));
         source.set_alpha_mode(FrameAlphaMode::Straight);
         source.metadata_mut().set("title", "move-source").unwrap();
+        source
+            .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
+            .unwrap();
 
         let destination_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let destination_capture = std::sync::Arc::clone(&destination_released);
@@ -20732,7 +20737,16 @@ mod tests {
         let destination_video =
             VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![destination_plane])
                 .unwrap();
-        let mut destination = Frame::video(destination_video);
+        let old_hw_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let old_hw_capture = std::sync::Arc::clone(&old_hw_released);
+        let old_hw = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![0x88]),
+            String::from("destination-hw"),
+            move |opaque| {
+                old_hw_capture.lock().unwrap().push(opaque);
+            },
+        );
+        let mut destination = Frame::video(destination_video).with_hw_frames_context(old_hw);
         let old_opaque_ref_released =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
         let old_opaque_ref_capture = std::sync::Arc::clone(&old_opaque_ref_released);
@@ -20742,6 +20756,18 @@ mod tests {
                 old_opaque_ref_capture.lock().unwrap().push(data);
             },
         )));
+        let old_side_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let old_side_capture = std::sync::Arc::clone(&old_side_released);
+        let old_side = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![0x77; 16]),
+            String::from("destination-side"),
+            move |opaque| {
+                old_side_capture.lock().unwrap().push(opaque);
+            },
+        );
+        destination
+            .set_side_data_kind_buffer(FrameSideDataKind::ReplayGain, old_side)
+            .unwrap();
 
         destination.move_ref_from(&mut source);
 
@@ -20791,14 +20817,31 @@ mod tests {
         assert_eq!(source.opaque_address(), None);
         assert!(source.opaque_ref().is_none());
         assert_eq!(source.alpha_mode(), FrameAlphaMode::Unspecified);
+        assert!(source.hw_frames_context().is_none());
+        assert!(source.side_data().is_empty());
         assert_eq!(destination.metadata().get("title"), Some("move-source"));
         assert!(source.metadata().is_empty());
         assert!(matches!(destination.data(), FrameData::Video(_)));
+        assert!(destination.side_data()[0]
+            .buffer()
+            .shares_storage(&source_side));
+        assert!(destination
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(&source_hw));
         assert_eq!(
             *destination_released.lock().unwrap(),
             vec![String::from("destination-plane")]
         );
         assert_eq!(*old_opaque_ref_released.lock().unwrap(), vec![vec![0x99]]);
+        assert_eq!(
+            *old_side_released.lock().unwrap(),
+            vec![String::from("destination-side")]
+        );
+        assert_eq!(
+            *old_hw_released.lock().unwrap(),
+            vec![String::from("destination-hw")]
+        );
         assert!(source_released.lock().unwrap().is_empty());
 
         drop(destination);
