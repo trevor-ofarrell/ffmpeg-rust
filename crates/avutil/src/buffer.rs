@@ -2079,6 +2079,35 @@ mod tests {
         assert_eq!(same_shared.as_ptr(), same_ptr);
         assert_eq!(same_source.strong_count(), 2);
 
+        let same_custom_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let same_custom_capture = std::sync::Arc::clone(&same_custom_released);
+        let mut same_custom = Some(BufferRef::from_vec_with_opaque_release_callback(
+            vec![41, 42, 43],
+            432usize,
+            move |opaque, storage| {
+                same_custom_capture.lock().unwrap().push((opaque, storage));
+            },
+        ));
+        let same_custom_storage = std::sync::Arc::as_ptr(&same_custom.as_ref().unwrap().data);
+        let same_custom_ptr = same_custom.as_ref().unwrap().as_ptr();
+        BufferRef::realloc(&mut same_custom, 3).unwrap();
+        let same_custom = same_custom.expect("same-size custom realloc result");
+        assert_eq!(
+            std::sync::Arc::as_ptr(&same_custom.data),
+            same_custom_storage
+        );
+        assert_eq!(same_custom.as_ptr(), same_custom_ptr);
+        assert!(!same_custom.data.reallocatable);
+        assert!(same_custom.is_writable());
+        assert_eq!(same_custom.opaque_ref::<usize>(), Some(&432));
+        assert!(same_custom_released.lock().unwrap().is_empty());
+        drop(same_custom);
+        assert_eq!(
+            *same_custom_released.lock().unwrap(),
+            vec![(432, vec![41, 42, 43])]
+        );
+
         let readonly_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
         let readonly_capture = std::sync::Arc::clone(&readonly_released);
         let mut same_readonly = Some(BufferRef::from_vec_with_release_callback_readonly(
@@ -2093,6 +2122,41 @@ mod tests {
         assert!(same_readonly.is_readonly());
         assert_eq!(same_readonly.as_ptr(), readonly_ptr);
         assert!(readonly_released.lock().unwrap().is_empty());
+
+        let readonly_opaque_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+        let readonly_opaque_capture = std::sync::Arc::clone(&readonly_opaque_released);
+        let mut same_readonly_opaque =
+            Some(BufferRef::from_vec_with_opaque_release_callback_readonly(
+                vec![51, 52, 53],
+                543usize,
+                move |opaque, storage| {
+                    readonly_opaque_capture
+                        .lock()
+                        .unwrap()
+                        .push((opaque, storage));
+                },
+            ));
+        let readonly_opaque_storage =
+            std::sync::Arc::as_ptr(&same_readonly_opaque.as_ref().unwrap().data);
+        let readonly_opaque_ptr = same_readonly_opaque.as_ref().unwrap().as_ptr();
+        BufferRef::realloc(&mut same_readonly_opaque, 3).unwrap();
+        let same_readonly_opaque =
+            same_readonly_opaque.expect("same-size readonly opaque realloc result");
+        assert_eq!(
+            std::sync::Arc::as_ptr(&same_readonly_opaque.data),
+            readonly_opaque_storage
+        );
+        assert_eq!(same_readonly_opaque.as_ptr(), readonly_opaque_ptr);
+        assert!(same_readonly_opaque.is_readonly());
+        assert!(!same_readonly_opaque.data.reallocatable);
+        assert_eq!(same_readonly_opaque.opaque_ref::<usize>(), Some(&543));
+        assert!(readonly_opaque_released.lock().unwrap().is_empty());
+        drop(same_readonly_opaque);
+        assert_eq!(
+            *readonly_opaque_released.lock().unwrap(),
+            vec![(543, vec![51, 52, 53])]
+        );
 
         let shared_source = BufferRef::from_vec(vec![7, 8, 9]);
         let mut shared_realloc = Some(shared_source.clone());

@@ -320,6 +320,99 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let create_realloc_same_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let create_realloc_same_capture = Arc::clone(&create_realloc_same_released);
+    let mut create_realloc_same = Some(BufferRef::from_vec_with_opaque_release_callback(
+        vec![60, 61, 62],
+        654usize,
+        move |opaque, bytes| {
+            create_realloc_same_capture
+                .lock()
+                .unwrap()
+                .push((opaque, bytes));
+        },
+    ));
+    let create_realloc_same_ptr = create_realloc_same
+        .as_ref()
+        .expect("create same realloc input")
+        .as_ptr();
+    BufferRef::realloc(&mut create_realloc_same, 3).unwrap();
+    let create_realloc_same = create_realloc_same.expect("create same realloc result");
+    rows.insert(
+        "buffer:create-realloc-same-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:create-realloc-same".to_string(),
+        buffer_fields_with_opaque(&create_realloc_same),
+    );
+    rows.insert(
+        "buffer:create-realloc-same-sameptr".to_string(),
+        vec![bool_field(
+            create_realloc_same_ptr == create_realloc_same.as_ptr(),
+        )],
+    );
+    rows.insert(
+        "buffer:create-realloc-same-release-before-unref".to_string(),
+        vec![create_realloc_same_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(create_realloc_same);
+    rows.insert(
+        "buffer:create-realloc-same-release".to_string(),
+        release_fields(&create_realloc_same_released),
+    );
+
+    let readonly_realloc_same_released = Arc::new(Mutex::new(Vec::<(usize, Vec<u8>)>::new()));
+    let readonly_realloc_same_capture = Arc::clone(&readonly_realloc_same_released);
+    let mut readonly_realloc_same =
+        Some(BufferRef::from_vec_with_opaque_release_callback_readonly(
+            vec![70, 71, 72],
+            88usize,
+            move |opaque, bytes| {
+                readonly_realloc_same_capture
+                    .lock()
+                    .unwrap()
+                    .push((opaque, bytes));
+            },
+        ));
+    let readonly_realloc_same_ptr = readonly_realloc_same
+        .as_ref()
+        .expect("readonly same realloc input")
+        .as_ptr();
+    BufferRef::realloc(&mut readonly_realloc_same, 3).unwrap();
+    let readonly_realloc_same = readonly_realloc_same.expect("readonly same realloc result");
+    rows.insert(
+        "buffer:readonly-realloc-same-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:readonly-realloc-same".to_string(),
+        buffer_fields_with_opaque(&readonly_realloc_same),
+    );
+    rows.insert(
+        "buffer:readonly-realloc-same-sameptr".to_string(),
+        vec![bool_field(
+            readonly_realloc_same_ptr == readonly_realloc_same.as_ptr(),
+        )],
+    );
+    rows.insert(
+        "buffer:readonly-realloc-same-release-before-unref".to_string(),
+        vec![readonly_realloc_same_released
+            .lock()
+            .unwrap()
+            .len()
+            .to_string()],
+    );
+    drop(readonly_realloc_same);
+    rows.insert(
+        "buffer:readonly-realloc-same-release".to_string(),
+        release_fields(&readonly_realloc_same_released),
+    );
+
     let replace_src = BufferRef::from_vec(vec![3, 4, 5]);
     let replace_dst = replace_src.clone();
     rows.insert("buffer:replace-ret".to_string(), vec!["0".to_string()]);
@@ -1074,6 +1167,60 @@ int main(void) {
            av_buffer_get_ref_count(realloc_same_src));
     av_buffer_unref(&realloc_same_dst);
     av_buffer_unref(&realloc_same_src);
+
+    reset_create_release();
+    static const uint8_t create_realloc_same_bytes[] = { 60, 61, 62 };
+    uint8_t *create_realloc_same_data =
+        av_malloc(sizeof(create_realloc_same_bytes));
+    fail_if(!create_realloc_same_data,
+            "av_malloc create_realloc_same_data failed");
+    for (size_t i = 0; i < sizeof(create_realloc_same_bytes); i++)
+        create_realloc_same_data[i] = create_realloc_same_bytes[i];
+    last_create_release_size = sizeof(create_realloc_same_bytes);
+    AVBufferRef *create_realloc_same =
+        av_buffer_create(create_realloc_same_data,
+                         sizeof(create_realloc_same_bytes),
+                         test_create_free, (void *)(uintptr_t)654, 0);
+    fail_if(!create_realloc_same, "av_buffer_create realloc same failed");
+    uint8_t *create_realloc_same_before = create_realloc_same->data;
+    ret = av_buffer_realloc(&create_realloc_same,
+                            create_realloc_same->size);
+    printf("buffer:create-realloc-same-ret|%d\n", ret);
+    print_buffer_opaque("buffer:create-realloc-same", create_realloc_same);
+    printf("buffer:create-realloc-same-sameptr|%d\n",
+           create_realloc_same_before == create_realloc_same->data);
+    printf("buffer:create-realloc-same-release-before-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&create_realloc_same);
+    print_create_release("buffer:create-realloc-same-release");
+
+    reset_create_release();
+    static const uint8_t readonly_realloc_same_bytes[] = { 70, 71, 72 };
+    uint8_t *readonly_realloc_same_data =
+        av_malloc(sizeof(readonly_realloc_same_bytes));
+    fail_if(!readonly_realloc_same_data,
+            "av_malloc readonly_realloc_same_data failed");
+    for (size_t i = 0; i < sizeof(readonly_realloc_same_bytes); i++)
+        readonly_realloc_same_data[i] = readonly_realloc_same_bytes[i];
+    last_create_release_size = sizeof(readonly_realloc_same_bytes);
+    AVBufferRef *readonly_realloc_same =
+        av_buffer_create(readonly_realloc_same_data,
+                         sizeof(readonly_realloc_same_bytes),
+                         test_create_free, (void *)(uintptr_t)88,
+                         AV_BUFFER_FLAG_READONLY);
+    fail_if(!readonly_realloc_same, "av_buffer_create readonly realloc same failed");
+    uint8_t *readonly_realloc_same_before = readonly_realloc_same->data;
+    ret = av_buffer_realloc(&readonly_realloc_same,
+                            readonly_realloc_same->size);
+    printf("buffer:readonly-realloc-same-ret|%d\n", ret);
+    print_buffer_opaque("buffer:readonly-realloc-same",
+                        readonly_realloc_same);
+    printf("buffer:readonly-realloc-same-sameptr|%d\n",
+           readonly_realloc_same_before == readonly_realloc_same->data);
+    printf("buffer:readonly-realloc-same-release-before-unref|%d\n",
+           create_release_count);
+    av_buffer_unref(&readonly_realloc_same);
+    print_create_release("buffer:readonly-realloc-same-release");
 
     static const uint8_t replace_src_bytes[] = { 3, 4, 5 };
     AVBufferRef *replace_src = av_buffer_allocz(3);
