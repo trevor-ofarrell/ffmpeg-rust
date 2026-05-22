@@ -6,10 +6,14 @@ use std::{
 };
 
 use avutil::{
-    Packet, PacketAudioServiceType, PacketCpbProperties, PacketDolbyVisionConf,
-    PacketDoviCompression, PacketFlags, PacketOpaque, PacketProducerReferenceTime,
-    PacketReplayGain, PacketRtcpSenderReport, PacketSideDataKind, Rational, SideData,
-    AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    Packet, PacketActiveFormatDescription, PacketAudioServiceType, PacketCpbProperties,
+    PacketDolbyVisionConf, PacketDoviCompression, PacketFallbackTrack, PacketFlags,
+    PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
+    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketOpaque, PacketParamChange,
+    PacketPictureType, PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain,
+    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSkipSamples,
+    PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings,
+    Rational, SideData, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -194,6 +198,134 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
     rows.insert(
         "packet:payload-layout-audio-service-type".to_string(),
         audio_fields,
+    );
+
+    rows.insert(
+        "packet:payload-layout-h263-mb-info".to_string(),
+        payload_layout_fields(
+            &[
+                0x04, 0x03, 0x02, 0x01, 0x11, 0x22, 0x44, 0x33, 0x55, 0x66, 0x77, 0x88,
+            ],
+            &[],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-quality-stats".to_string(),
+        payload_layout_fields(
+            &PacketQualityStats::new(
+                1234,
+                PacketPictureType::B,
+                vec![0x0102_0304_0506_0708, 0x1112_1314_1516_1718],
+            )
+            .unwrap()
+            .to_bytes(),
+            &[],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-fallback-track".to_string(),
+        payload_layout_fields(&PacketFallbackTrack::new(7).unwrap().to_bytes(), &[]),
+    );
+    rows.insert(
+        "packet:payload-layout-skip-samples".to_string(),
+        payload_layout_fields(
+            &PacketSkipSamples::new(
+                0x0102_0304,
+                0x1112_1314,
+                PacketSkipSamplesReason::PaddingSilence,
+                PacketSkipSamplesReason::Convergence,
+            )
+            .to_bytes(),
+            &[],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-param-change".to_string(),
+        payload_layout_fields(
+            &PacketParamChange::new(Some(-48_000), Some((1920, 1080))).to_bytes(),
+            &[],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-jp-dualmono".to_string(),
+        payload_layout_fields(
+            &PacketJpDualMono::new(PacketJpDualMonoSelection::Both).to_bytes(),
+            &[],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-strings-metadata".to_string(),
+        payload_layout_fields(b"title\0clip\0lang\0en\0", &[]),
+    );
+    rows.insert(
+        "packet:payload-layout-subtitle-position".to_string(),
+        payload_layout_fields(
+            &PacketSubtitlePosition::new(10, 20, 640, 480).to_bytes(),
+            &[],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-matroska-blockadditional".to_string(),
+        payload_layout_fields(
+            &PacketMatroskaBlockAdditional::new(0x0102_0304_0506_0708, vec![0xaa, 0xbb, 0xcc])
+                .to_bytes(),
+            &[],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-webvtt-identifier".to_string(),
+        payload_layout_fields(
+            &PacketWebVttIdentifier::new(b"cue-id".to_vec())
+                .unwrap()
+                .to_bytes(),
+            &[],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-webvtt-settings".to_string(),
+        payload_layout_fields(
+            &PacketWebVttSettings::new(b"line:10% align:start".to_vec())
+                .unwrap()
+                .to_bytes(),
+            &[],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-metadata-update".to_string(),
+        payload_layout_fields(b"artist\0example\0", &[]),
+    );
+    rows.insert(
+        "packet:payload-layout-mpegts-stream-id".to_string(),
+        payload_layout_fields(&PacketMpegTsStreamId::new(0xe0).to_bytes(), &[]),
+    );
+    rows.insert(
+        "packet:payload-layout-a53-cc".to_string(),
+        payload_layout_fields(&[0x04, 0xff, 0x00, 0x05, 0xee, 0x01], &[]),
+    );
+    rows.insert(
+        "packet:payload-layout-afd".to_string(),
+        payload_layout_fields(&PacketActiveFormatDescription::SixteenNine.to_bytes(), &[]),
+    );
+    rows.insert(
+        "packet:payload-layout-icc-profile-opaque".to_string(),
+        payload_layout_fields(b"opaque-icc-profile-bytes", &[]),
+    );
+    rows.insert(
+        "packet:payload-layout-s12m-timecode".to_string(),
+        payload_layout_fields(
+            &PacketS12mTimecode::new(&[0x0102_0304, 0x1112_1314, 0x2122_2324])
+                .unwrap()
+                .to_bytes(),
+            &[],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-frame-cropping".to_string(),
+        payload_layout_fields(&PacketFrameCropping::new(1, 2, 3, 4).to_bytes(), &[]),
+    );
+    rows.insert(
+        "packet:payload-layout-lcevc".to_string(),
+        payload_layout_fields(&[0x00, 0x00, 0x01, 0xe0, 0x90], &[]),
     );
 }
 
@@ -502,6 +634,8 @@ fn oracle_c_source() -> &'static str {
 #include "libavcodec/packet.h"
 #include "libavutil/buffer.h"
 #include "libavutil/dovi_meta.h"
+#include "libavutil/frame.h"
+#include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
 #include "libavutil/replaygain.h"
 
@@ -616,6 +750,11 @@ static void print_payload_layout_header(const char *name, const void *payload, s
     print_hex_or_dash(payload, (int)size);
 }
 
+static void print_payload_layout_bytes(const char *name, const uint8_t *payload, size_t size) {
+    print_payload_layout_header(name, payload, size);
+    printf("\n");
+}
+
 static void print_side_data_payload_layouts(void) {
     AVReplayGain replaygain;
     memset(&replaygain, 0, sizeof(replaygain));
@@ -711,6 +850,108 @@ static void print_side_data_payload_layouts(void) {
            AV_AUDIO_SERVICE_TYPE_VOICE_OVER,
            AV_AUDIO_SERVICE_TYPE_KARAOKE,
            AV_AUDIO_SERVICE_TYPE_NB);
+
+    uint8_t h263[12] = {0};
+    AV_WL32(h263, 0x01020304U);
+    h263[4] = 0x11;
+    h263[5] = 0x22;
+    AV_WL16(h263 + 6, 0x3344U);
+    h263[8] = 0x55;
+    h263[9] = 0x66;
+    h263[10] = 0x77;
+    h263[11] = 0x88;
+    print_payload_layout_bytes("packet:payload-layout-h263-mb-info", h263, sizeof(h263));
+
+    uint8_t quality[24] = {0};
+    AV_WL32(quality, 1234U);
+    quality[4] = AV_PICTURE_TYPE_B;
+    quality[5] = 2;
+    AV_WL64(quality + 8, 0x0102030405060708ULL);
+    AV_WL64(quality + 16, 0x1112131415161718ULL);
+    print_payload_layout_bytes("packet:payload-layout-quality-stats", quality, sizeof(quality));
+
+    int32_t fallback = 7;
+    print_payload_layout_bytes("packet:payload-layout-fallback-track",
+                               (const uint8_t *)&fallback, sizeof(fallback));
+
+    uint8_t skip[10] = {0};
+    AV_WL32(skip, 0x01020304U);
+    AV_WL32(skip + 4, 0x11121314U);
+    skip[8] = 0;
+    skip[9] = 1;
+    print_payload_layout_bytes("packet:payload-layout-skip-samples", skip, sizeof(skip));
+
+    uint8_t param[16] = {0};
+    AV_WL32(param, AV_SIDE_DATA_PARAM_CHANGE_SAMPLE_RATE |
+                   AV_SIDE_DATA_PARAM_CHANGE_DIMENSIONS);
+    AV_WL32(param + 4, (uint32_t)(int32_t)-48000);
+    AV_WL32(param + 8, 1920U);
+    AV_WL32(param + 12, 1080U);
+    print_payload_layout_bytes("packet:payload-layout-param-change", param, sizeof(param));
+
+    const uint8_t jp_dualmono[] = { 2 };
+    print_payload_layout_bytes("packet:payload-layout-jp-dualmono",
+                               jp_dualmono, sizeof(jp_dualmono));
+
+    static const uint8_t strings_metadata[] = "title\0clip\0lang\0en";
+    print_payload_layout_bytes("packet:payload-layout-strings-metadata",
+                               strings_metadata, sizeof(strings_metadata));
+
+    uint8_t subtitle[16] = {0};
+    AV_WL32(subtitle, 10U);
+    AV_WL32(subtitle + 4, 20U);
+    AV_WL32(subtitle + 8, 640U);
+    AV_WL32(subtitle + 12, 480U);
+    print_payload_layout_bytes("packet:payload-layout-subtitle-position",
+                               subtitle, sizeof(subtitle));
+
+    uint8_t matroska[11] = {0};
+    AV_WB64(matroska, 0x0102030405060708ULL);
+    matroska[8] = 0xaa;
+    matroska[9] = 0xbb;
+    matroska[10] = 0xcc;
+    print_payload_layout_bytes("packet:payload-layout-matroska-blockadditional",
+                               matroska, sizeof(matroska));
+
+    static const uint8_t webvtt_id[] = "cue-id";
+    print_payload_layout_bytes("packet:payload-layout-webvtt-identifier",
+                               webvtt_id, sizeof(webvtt_id) - 1);
+    static const uint8_t webvtt_settings[] = "line:10% align:start";
+    print_payload_layout_bytes("packet:payload-layout-webvtt-settings",
+                               webvtt_settings, sizeof(webvtt_settings) - 1);
+
+    static const uint8_t metadata_update[] = "artist\0example";
+    print_payload_layout_bytes("packet:payload-layout-metadata-update",
+                               metadata_update, sizeof(metadata_update));
+
+    const uint8_t stream_id[] = { 0xe0 };
+    print_payload_layout_bytes("packet:payload-layout-mpegts-stream-id",
+                               stream_id, sizeof(stream_id));
+
+    const uint8_t a53_cc[] = { 0x04, 0xff, 0x00, 0x05, 0xee, 0x01 };
+    print_payload_layout_bytes("packet:payload-layout-a53-cc", a53_cc, sizeof(a53_cc));
+
+    const uint8_t afd[] = { AV_AFD_16_9 };
+    print_payload_layout_bytes("packet:payload-layout-afd", afd, sizeof(afd));
+
+    static const uint8_t icc_profile[] = "opaque-icc-profile-bytes";
+    print_payload_layout_bytes("packet:payload-layout-icc-profile-opaque",
+                               icc_profile, sizeof(icc_profile) - 1);
+
+    uint32_t s12m[4] = { 3, 0x01020304U, 0x11121314U, 0x21222324U };
+    print_payload_layout_bytes("packet:payload-layout-s12m-timecode",
+                               (const uint8_t *)s12m, sizeof(s12m));
+
+    uint8_t cropping[16] = {0};
+    AV_WL32(cropping, 1U);
+    AV_WL32(cropping + 4, 2U);
+    AV_WL32(cropping + 8, 3U);
+    AV_WL32(cropping + 12, 4U);
+    print_payload_layout_bytes("packet:payload-layout-frame-cropping",
+                               cropping, sizeof(cropping));
+
+    const uint8_t lcevc[] = { 0x00, 0x00, 0x01, 0xe0, 0x90 };
+    print_payload_layout_bytes("packet:payload-layout-lcevc", lcevc, sizeof(lcevc));
 }
 
 static void print_payload(const char *name, const AVPacket *pkt) {
