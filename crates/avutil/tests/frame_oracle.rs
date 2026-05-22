@@ -6,12 +6,13 @@ use std::{
 };
 
 use avutil::{
-    frame_side_data_name_for_value, AudioFrame, AvErrorCode, BufferRef, ChannelLayout,
-    ChannelLayoutSpec, Frame, FrameAlphaMode, FrameBufferTopology, FrameChromaLocation,
-    FrameColorPrimaries, FrameColorRange, FrameColorSpace, FrameColorTransferCharacteristic,
-    FrameCropFlags, FrameData, FrameDecodeErrorFlags, FrameFlags, FramePictureType, FrameSideData,
-    FrameSideDataFlags, FrameSideDataKind, FrameSideDataProperties, PixelFormat, Rational,
-    SampleFormat, VideoFrame, AV_NOPTS_VALUE, AV_NUM_DATA_POINTERS,
+    frame_side_data_descriptor_for_value, frame_side_data_name_for_value, AudioFrame, AvErrorCode,
+    BufferRef, ChannelLayout, ChannelLayoutSpec, Frame, FrameAlphaMode, FrameBufferTopology,
+    FrameChromaLocation, FrameColorPrimaries, FrameColorRange, FrameColorSpace,
+    FrameColorTransferCharacteristic, FrameCropFlags, FrameData, FrameDecodeErrorFlags, FrameFlags,
+    FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
+    FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame, AV_NOPTS_VALUE,
+    AV_NUM_DATA_POINTERS,
 };
 
 #[test]
@@ -111,6 +112,24 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             bool_field(frame_side_data_name_for_value(sentinel_value).is_none()),
             bool_field(frame_side_data_name_for_value(sentinel_value + 1).is_none()),
             bool_field(frame_side_data_name_for_value(i32::MAX).is_none()),
+        ],
+    );
+    let display_desc =
+        frame_side_data_descriptor_for_value(display_value).expect("displaymatrix descriptor");
+    let exif_desc = frame_side_data_descriptor_for_value(exif_value).expect("EXIF descriptor");
+    rows.insert(
+        "frame:side-desc-boundaries".to_string(),
+        vec![
+            display_value.to_string(),
+            display_desc.name().to_string(),
+            display_desc.properties().bits().to_string(),
+            exif_value.to_string(),
+            exif_desc.name().to_string(),
+            exif_desc.properties().bits().to_string(),
+            bool_field(frame_side_data_descriptor_for_value(-1).is_none()),
+            bool_field(frame_side_data_descriptor_for_value(sentinel_value).is_none()),
+            bool_field(frame_side_data_descriptor_for_value(sentinel_value + 1).is_none()),
+            bool_field(frame_side_data_descriptor_for_value(i32::MAX).is_none()),
         ],
     );
 
@@ -2086,6 +2105,21 @@ int main(void)
            av_frame_side_data_name((enum AVFrameSideDataType)(AV_FRAME_DATA_EXIF + 1)) == NULL,
            av_frame_side_data_name((enum AVFrameSideDataType)(AV_FRAME_DATA_EXIF + 2)) == NULL,
            av_frame_side_data_name((enum AVFrameSideDataType)INT_MAX) == NULL);
+    const AVSideDataDescriptor *display_desc =
+        av_frame_side_data_desc(AV_FRAME_DATA_DISPLAYMATRIX);
+    const AVSideDataDescriptor *exif_desc =
+        av_frame_side_data_desc(AV_FRAME_DATA_EXIF);
+    printf("frame:side-desc-boundaries|%d|%s|%u|%d|%s|%u|%d|%d|%d|%d\n",
+           AV_FRAME_DATA_DISPLAYMATRIX,
+           display_desc ? display_desc->name : "",
+           display_desc ? display_desc->props : 0,
+           AV_FRAME_DATA_EXIF,
+           exif_desc ? exif_desc->name : "",
+           exif_desc ? exif_desc->props : 0,
+           av_frame_side_data_desc((enum AVFrameSideDataType)-1) == NULL,
+           av_frame_side_data_desc((enum AVFrameSideDataType)(AV_FRAME_DATA_EXIF + 1)) == NULL,
+           av_frame_side_data_desc((enum AVFrameSideDataType)(AV_FRAME_DATA_EXIF + 2)) == NULL,
+           av_frame_side_data_desc((enum AVFrameSideDataType)INT_MAX) == NULL);
 
     AVFrame *video = av_frame_alloc();
     fail_if(!video, "video av_frame_alloc failed");

@@ -45,9 +45,10 @@ use avutil::{
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId,
     clear_global_log_callback, clear_global_log_records, flush_global_log_repeated,
-    frame_side_data_name_for_value, global_formatted_log_records, global_log, global_log_flags,
-    global_log_level, set_global_log_callback, set_global_log_flag, set_global_log_flags,
-    set_global_log_level, take_global_log_records, LogColorMode, LogFlags, LogFormatOptions,
+    frame_side_data_descriptor_for_value, frame_side_data_name_for_value,
+    global_formatted_log_records, global_log, global_log_flags, global_log_level,
+    set_global_log_callback, set_global_log_flag, set_global_log_flags, set_global_log_level,
+    take_global_log_records, LogColorMode, LogFlags, LogFormatOptions,
     LogLevel, LogRecord, LogTimestamp, Logger, Md5, Packet, PacketA53ClosedCaptions,
     PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
@@ -4477,6 +4478,10 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
             frame_side_data_name_for_value(index as i32),
             kind.descriptor_name()
         );
+        assert_eq!(
+            frame_side_data_descriptor_for_value(index as i32),
+            kind.descriptor()
+        );
     }
     let frame_side_data_sentinel = FrameSideDataKind::KNOWN.len() as i32;
     for value in [
@@ -4487,6 +4492,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     ] {
         assert_eq!(FrameSideDataKind::from_ffmpeg_value(value), None);
         assert_eq!(frame_side_data_name_for_value(value), None);
+        assert_eq!(frame_side_data_descriptor_for_value(value), None);
     }
     assert_eq!(
         FrameSideDataKind::from_name("vendor.private.side-data")

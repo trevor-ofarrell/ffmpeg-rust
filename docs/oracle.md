@@ -242,6 +242,10 @@ The `av_frame_side_data_name` boundary row proves that known 0-based
 after `AV_FRAME_DATA_EXIF`, the next raw value, and INT_MAX return NULL. FFmpeg
 8.1.1 does not expose a public `AV_FRAME_DATA_NB` sentinel, so the Rust model
 uses the current pinned inventory length as its bounded sentinel.
+The adjacent `av_frame_side_data_desc` boundary row proves the same raw-value
+range for descriptor lookup, including descriptor names and `AV_SIDE_DATA_PROP_*`
+property bits for representative valid values and NULL for the invalid
+boundaries.
 The `av_frame_clone` and `av_frame_replace` rows prove source properties and
 refcounted plane, side-data, hardware-context, and `opaque_ref` storage are
 shared for cloned/replaced frames, pre-populated destination state is dropped

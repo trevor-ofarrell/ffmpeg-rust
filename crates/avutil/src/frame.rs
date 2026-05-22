@@ -12614,6 +12614,12 @@ pub fn frame_side_data_name_for_value(value: i32) -> Option<&'static str> {
         .and_then(FrameSideDataKind::descriptor_name)
 }
 
+pub fn frame_side_data_descriptor_for_value(value: i32) -> Option<FrameSideDataDescriptor> {
+    FrameSideDataKind::from_ffmpeg_value(value)
+        .as_ref()
+        .and_then(FrameSideDataKind::descriptor)
+}
+
 impl TryFrom<&str> for FrameSideDataKind {
     type Error = AvError;
 
@@ -28691,6 +28697,21 @@ mod tests {
         for value in [-1, sentinel, sentinel + 1, i32::MAX] {
             assert_eq!(FrameSideDataKind::from_ffmpeg_value(value), None);
             assert_eq!(frame_side_data_name_for_value(value), None);
+        }
+    }
+
+    #[test]
+    fn frame_side_data_descriptor_lookup_matches_ffmpeg_value_boundaries() {
+        for (index, kind) in FrameSideDataKind::KNOWN.iter().enumerate() {
+            assert_eq!(
+                frame_side_data_descriptor_for_value(index as i32),
+                kind.descriptor()
+            );
+        }
+
+        let sentinel = FrameSideDataKind::KNOWN.len() as i32;
+        for value in [-1, sentinel, sentinel + 1, i32::MAX] {
+            assert_eq!(frame_side_data_descriptor_for_value(value), None);
         }
     }
 
