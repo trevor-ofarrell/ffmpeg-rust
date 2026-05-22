@@ -1631,6 +1631,26 @@ impl Frame {
             .expect("side data was just inserted"))
     }
 
+    pub fn new_side_data_kind_buffer(
+        &mut self,
+        kind: FrameSideDataKind,
+        buffer: &mut Option<BufferRef>,
+    ) -> AvResult<&mut FrameSideData> {
+        let buffer = buffer.take().ok_or_else(|| {
+            AvError::with_code(
+                AvErrorKind::InvalidArgument,
+                AvErrorCode::EINVAL,
+                "frame side data buffer is missing",
+            )
+        })?;
+        let side_data = FrameSideData::new_with_kind_and_buffer_ref(kind, buffer)?;
+        self.side_data.push(side_data);
+        Ok(self
+            .side_data
+            .last_mut()
+            .expect("side data was just inserted"))
+    }
+
     pub fn add_side_data_kind_buffer_with_flags(
         &mut self,
         kind: FrameSideDataKind,
@@ -28836,6 +28856,53 @@ mod tests {
                 &mut missing,
                 FrameSideDataFlags::EMPTY,
             )
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+    }
+
+    #[test]
+    fn frame_new_side_data_from_buffer_matches_frame_helper_ownership() {
+        let mut frame = Frame::empty();
+        let mut taken = Some(BufferRef::copy_from_slice(&[0x10, 0x20, 0x30]));
+        frame
+            .new_side_data_kind_buffer(FrameSideDataKind::ReplayGain, &mut taken)
+            .unwrap();
+        assert!(taken.is_none());
+        assert_eq!(frame.side_data().len(), 1);
+        assert_eq!(frame.side_data()[0].data(), &[0x10, 0x20, 0x30]);
+        assert!(frame.side_data()[0].is_writable());
+        assert_eq!(frame.side_data()[0].buffer().strong_count(), 1);
+
+        let mut duplicate = Some(BufferRef::copy_from_slice(&[0x40]));
+        frame
+            .new_side_data_kind_buffer(FrameSideDataKind::ReplayGain, &mut duplicate)
+            .unwrap();
+        assert!(duplicate.is_none());
+        assert_eq!(frame.side_data().len(), 2);
+        assert_eq!(frame.side_data()[0].data(), &[0x10, 0x20, 0x30]);
+        assert_eq!(
+            frame.side_data()[1].kind_id(),
+            &FrameSideDataKind::ReplayGain
+        );
+        assert_eq!(frame.side_data()[1].data(), &[0x40]);
+        assert!(frame.side_data()[1].is_writable());
+
+        let mut multi = Some(BufferRef::copy_from_slice(&[0x50; 16]));
+        frame
+            .new_side_data_kind_buffer(FrameSideDataKind::SeiUnregistered, &mut multi)
+            .unwrap();
+        assert!(multi.is_none());
+        assert_eq!(frame.side_data().len(), 3);
+        assert_eq!(
+            frame.side_data()[2].kind_id(),
+            &FrameSideDataKind::SeiUnregistered
+        );
+        assert_eq!(frame.side_data()[2].data(), &[0x50; 16]);
+
+        let mut missing = None;
+        let err = frame
+            .new_side_data_kind_buffer(FrameSideDataKind::IccProfile, &mut missing)
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(err.code(), Some(AvErrorCode::EINVAL));

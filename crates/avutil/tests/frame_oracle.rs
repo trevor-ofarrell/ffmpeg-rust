@@ -731,6 +731,47 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![bool_field(found), side_frame.side_data().len().to_string()],
     );
 
+    let mut side_from_buf = Frame::empty();
+    let mut frame_take_source = Some(BufferRef::copy_from_slice(&[0x91, 0x92, 0x93]));
+    let frame_take_success = side_from_buf
+        .new_side_data_kind_buffer(FrameSideDataKind::ReplayGain, &mut frame_take_source)
+        .is_ok();
+    rows.insert(
+        "frame:side-data-from-buf-take".to_string(),
+        side_add_buffer_fields(
+            frame_take_success,
+            &side_from_buf,
+            frame_take_source.as_ref(),
+            &FrameSideDataKind::ReplayGain,
+        ),
+    );
+    let mut frame_duplicate_source = Some(BufferRef::copy_from_slice(&[0x94]));
+    let frame_duplicate_success = side_from_buf
+        .new_side_data_kind_buffer(FrameSideDataKind::ReplayGain, &mut frame_duplicate_source)
+        .is_ok();
+    rows.insert(
+        "frame:side-data-from-buf-duplicate".to_string(),
+        side_add_buffer_fields(
+            frame_duplicate_success,
+            &side_from_buf,
+            frame_duplicate_source.as_ref(),
+            &FrameSideDataKind::ReplayGain,
+        ),
+    );
+    let mut frame_multi_source = Some(BufferRef::copy_from_slice(&[0x95; 16]));
+    let frame_multi_success = side_from_buf
+        .new_side_data_kind_buffer(FrameSideDataKind::SeiUnregistered, &mut frame_multi_source)
+        .is_ok();
+    rows.insert(
+        "frame:side-data-from-buf-multi".to_string(),
+        side_add_buffer_fields(
+            frame_multi_success,
+            &side_from_buf,
+            frame_multi_source.as_ref(),
+            &FrameSideDataKind::SeiUnregistered,
+        ),
+    );
+
     let mut side_array = Frame::empty();
     let added = side_array
         .add_side_data_with_flags(
@@ -2495,6 +2536,47 @@ int main(void)
     printf("frame:side-data-remove|%d|%d\n", found == sd,
            side_frame->nb_side_data);
 
+    AVFrame *side_from_buf = av_frame_alloc();
+    fail_if(!side_from_buf, "side_from_buf av_frame_alloc failed");
+    AVBufferRef *frame_take_buf = av_buffer_alloc(3);
+    fail_if(!frame_take_buf, "frame side data from buf allocation failed");
+    frame_take_buf->data[0] = 0x91;
+    frame_take_buf->data[1] = 0x92;
+    frame_take_buf->data[2] = 0x93;
+    AVFrameSideData *frame_take_entry = av_frame_new_side_data_from_buf(
+        side_from_buf, AV_FRAME_DATA_REPLAYGAIN, frame_take_buf);
+    print_side_add_buffer_row(
+        "frame:side-data-from-buf-take", frame_take_entry != NULL,
+        side_from_buf->side_data, side_from_buf->nb_side_data,
+        frame_take_entry ? NULL : frame_take_buf, AV_FRAME_DATA_REPLAYGAIN);
+
+    AVBufferRef *frame_duplicate_buf = av_buffer_alloc(1);
+    fail_if(!frame_duplicate_buf,
+            "frame side data from buf duplicate allocation failed");
+    frame_duplicate_buf->data[0] = 0x94;
+    AVFrameSideData *frame_duplicate_entry = av_frame_new_side_data_from_buf(
+        side_from_buf, AV_FRAME_DATA_REPLAYGAIN, frame_duplicate_buf);
+    print_side_add_buffer_row(
+        "frame:side-data-from-buf-duplicate",
+        frame_duplicate_entry != NULL, side_from_buf->side_data,
+        side_from_buf->nb_side_data,
+        frame_duplicate_entry ? NULL : frame_duplicate_buf,
+        AV_FRAME_DATA_REPLAYGAIN);
+    if (!frame_duplicate_entry)
+        av_buffer_unref(&frame_duplicate_buf);
+
+    AVBufferRef *frame_multi_buf = av_buffer_alloc(16);
+    fail_if(!frame_multi_buf,
+            "frame side data from buf multi allocation failed");
+    memset(frame_multi_buf->data, 0x95, frame_multi_buf->size);
+    AVFrameSideData *frame_multi_entry = av_frame_new_side_data_from_buf(
+        side_from_buf, AV_FRAME_DATA_SEI_UNREGISTERED, frame_multi_buf);
+    print_side_add_buffer_row(
+        "frame:side-data-from-buf-multi", frame_multi_entry != NULL,
+        side_from_buf->side_data, side_from_buf->nb_side_data,
+        frame_multi_entry ? NULL : frame_multi_buf,
+        AV_FRAME_DATA_SEI_UNREGISTERED);
+
     AVFrameSideData **side_array = NULL;
     int nb_side_array = 0;
     AVFrameSideData *array_entry = av_frame_side_data_new(
@@ -2692,6 +2774,7 @@ int main(void)
                             &nb_clone_replacement_array);
     av_frame_side_data_free(&clone_source_array, &nb_clone_source_array);
 
+    av_frame_free(&side_from_buf);
     av_frame_free(&side_frame);
     av_frame_free(&copy_dst);
     av_frame_free(&copy_src);

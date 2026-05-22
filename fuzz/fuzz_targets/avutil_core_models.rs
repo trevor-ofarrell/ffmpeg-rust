@@ -4307,6 +4307,37 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         )
         .unwrap();
     assert_eq!(frame.side_data().len(), 2);
+
+    let mut from_buf_frame = Frame::empty();
+    let mut owned_replay_gain = Some(BufferRef::copy_from_slice(&[0x91, 0x92, 0x93]));
+    from_buf_frame
+        .new_side_data_kind_buffer(FrameSideDataKind::ReplayGain, &mut owned_replay_gain)
+        .unwrap();
+    assert!(owned_replay_gain.is_none());
+    assert_eq!(from_buf_frame.side_data().len(), 1);
+    assert_eq!(from_buf_frame.side_data()[0].data(), &[0x91, 0x92, 0x93]);
+    assert!(from_buf_frame.side_data()[0].is_writable());
+
+    let mut duplicate_replay_gain = Some(BufferRef::copy_from_slice(&[0x94]));
+    from_buf_frame
+        .new_side_data_kind_buffer(FrameSideDataKind::ReplayGain, &mut duplicate_replay_gain)
+        .unwrap();
+    assert!(duplicate_replay_gain.is_none());
+    assert_eq!(from_buf_frame.side_data().len(), 2);
+    assert_eq!(
+        from_buf_frame.side_data()[1].kind_id(),
+        &FrameSideDataKind::ReplayGain
+    );
+    assert_eq!(from_buf_frame.side_data()[1].data(), &[0x94]);
+
+    let mut multi_side_data = Some(BufferRef::copy_from_slice(&[0x95; 16]));
+    from_buf_frame
+        .new_side_data_kind_buffer(FrameSideDataKind::SeiUnregistered, &mut multi_side_data)
+        .unwrap();
+    assert!(multi_side_data.is_none());
+    assert_eq!(from_buf_frame.side_data().len(), 3);
+    assert_eq!(from_buf_frame.side_data()[2].data(), &[0x95; 16]);
+
     let replacement_side_data_buffer =
         BufferRef::copy_from_slice_with_padding(&[0x55, 0x66], 1).unwrap();
     let replaced_side_data = frame
