@@ -10903,6 +10903,48 @@ mod tests {
             .unwrap()
             .shares_storage(source.opaque_ref().unwrap()));
 
+        let mut replace_src = Packet::from_data(vec![0x30, 0x40]).unwrap();
+        replace_src.set_pts(Some(55));
+        replace_src.set_duration(66).unwrap();
+        replace_src.push_side_data(SideData::new("skip_samples", vec![0x05, 0x06]).unwrap());
+        replace_src.set_opaque_ref(Some(BufferRef::from_vec(vec![0x12, 0x34])));
+        let replace_src_payload = replace_src.data_buffer().clone();
+        let replace_src_opaque = replace_src.opaque_ref().unwrap().clone();
+        fifo.write_ref(&replace_src).unwrap();
+        assert_eq!(fifo.can_read(), 1);
+
+        let mut replace_dst = Packet::new(vec![0x99, 0x88], 77);
+        replace_dst.set_pts(Some(22));
+        replace_dst.push_side_data(SideData::new("palette", vec![0xee]).unwrap());
+        replace_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0xfe])));
+        let old_dst_payload = replace_dst.data_buffer().clone();
+        let old_dst_opaque = replace_dst.opaque_ref().unwrap().clone();
+        fifo.read_ref(&mut replace_dst).unwrap();
+        assert_eq!(fifo.can_read(), 0);
+        assert_eq!(replace_dst.data(), &[0x30, 0x40]);
+        assert_eq!(replace_dst.pts(), Some(55));
+        assert_eq!(replace_dst.duration(), 66);
+        assert!(replace_dst
+            .data_buffer()
+            .shares_storage(&replace_src_payload));
+        assert!(!replace_dst.data_buffer().shares_storage(&old_dst_payload));
+        assert!(replace_dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&replace_src_opaque));
+        assert!(!replace_dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&old_dst_opaque));
+        assert!(replace_dst.side_data_by_kind("palette").is_none());
+        assert_eq!(
+            replace_dst
+                .side_data_by_kind("skip_samples")
+                .unwrap()
+                .data(),
+            &[0x05, 0x06]
+        );
+
         let mut first = Packet::new(vec![1], 1);
         let mut second = Packet::new(vec![2], 2);
         fifo.write_move(&mut first).unwrap();

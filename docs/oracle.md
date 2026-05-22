@@ -188,7 +188,7 @@ The harness also includes `packet:payload-ref-unrefcounted-*` and `packet:payloa
 
 The harness also includes `packet:side-add-capacity-*` and `packet:side-new-capacity-overflow` rows, proving packet-owned side-data capacity behavior at `AV_PKT_DATA_NB`: replacement remains valid at capacity, append fails with `ERANGE` without changing the entry count, and `av_packet_new_side_data()` returns NULL at capacity.
 
-The harness also includes `packet:fifo-*` rows, proving the packet-specialized container FIFO transfer semantics for move writes, ref writes, read draining, non-mutating peek, valid drain, can-read counts, invalid offset handling, and empty-read `EINVAL` handling.
+The harness also includes `packet:fifo-*` rows, proving the packet-specialized container FIFO transfer semantics for move writes, ref writes, read draining, ref reads into pre-populated destinations, non-mutating peek, valid drain, can-read counts, invalid offset handling, and empty-read `EINVAL` handling.
 
 ```sh
 cargo test -p avutil --test packet_oracle -- --ignored

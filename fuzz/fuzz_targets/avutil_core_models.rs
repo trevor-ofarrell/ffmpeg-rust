@@ -6731,6 +6731,52 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(fifo_ref_dst.data(), fifo_ref_payload.as_slice());
     assert!(fifo_ref_dst.data_buffer().shares_storage(&fifo_ref_storage));
 
+    let fifo_ref_replace_payload = vec![cursor.next().unwrap_or_default()];
+    let mut fifo_ref_replace_src = Packet::from_data(fifo_ref_replace_payload.clone()).unwrap();
+    fifo_ref_replace_src
+        .push_side_data(SideData::new("skip_samples", vec![0x05, 0x06]).unwrap());
+    fifo_ref_replace_src.set_opaque_ref(Some(BufferRef::from_vec(vec![0x12, 0x34])));
+    let fifo_ref_replace_storage = fifo_ref_replace_src.data_buffer().clone();
+    let fifo_ref_replace_opaque = fifo_ref_replace_src.opaque_ref().unwrap().clone();
+    packet_fifo.write_ref(&fifo_ref_replace_src).unwrap();
+    assert_eq!(packet_fifo.can_read(), 1);
+    let mut fifo_ref_replace_dst = Packet::new(vec![0x99], 77);
+    fifo_ref_replace_dst
+        .push_side_data(SideData::new("palette", vec![0xee]).unwrap());
+    fifo_ref_replace_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0xfe])));
+    let fifo_ref_replace_old_storage = fifo_ref_replace_dst.data_buffer().clone();
+    let fifo_ref_replace_old_opaque = fifo_ref_replace_dst.opaque_ref().unwrap().clone();
+    packet_fifo.read_ref(&mut fifo_ref_replace_dst).unwrap();
+    assert_eq!(packet_fifo.can_read(), 0);
+    assert_eq!(
+        fifo_ref_replace_dst.data(),
+        fifo_ref_replace_payload.as_slice()
+    );
+    assert!(fifo_ref_replace_dst
+        .data_buffer()
+        .shares_storage(&fifo_ref_replace_storage));
+    assert!(!fifo_ref_replace_dst
+        .data_buffer()
+        .shares_storage(&fifo_ref_replace_old_storage));
+    assert!(fifo_ref_replace_dst
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(&fifo_ref_replace_opaque));
+    assert!(!fifo_ref_replace_dst
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(&fifo_ref_replace_old_opaque));
+    assert!(fifo_ref_replace_dst
+        .side_data_by_kind("palette")
+        .is_none());
+    assert_eq!(
+        fifo_ref_replace_dst
+            .side_data_by_kind("skip_samples")
+            .unwrap()
+            .data(),
+        &[0x05, 0x06]
+    );
+
     let mut fifo_first = Packet::new(vec![0x01], 1);
     let mut fifo_second = Packet::new(vec![0x02], 2);
     packet_fifo.write_move(&mut fifo_first).unwrap();
