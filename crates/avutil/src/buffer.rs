@@ -2489,6 +2489,25 @@ mod tests {
     }
 
     #[test]
+    fn buffer_pool_default_allocator_reuses_storage_without_opaque() {
+        let pool = BufferPool::new(3, 0).unwrap();
+
+        let mut first = pool.get().unwrap();
+        assert_eq!(first.len(), 3);
+        assert_eq!(first.strong_count(), 1);
+        assert!(first.is_writable());
+        assert!(first.pool_opaque_ref::<usize>().is_none());
+        first.make_mut().copy_from_slice(&[0x21, 0x22, 0x23]);
+        drop(first);
+        assert_eq!(pool.available_count().unwrap(), 1);
+
+        let reused = pool.get().unwrap();
+        assert_eq!(pool.available_count().unwrap(), 0);
+        assert_eq!(reused.as_slice(), &[0x21, 0x22, 0x23]);
+        assert!(reused.pool_opaque_ref::<usize>().is_none());
+    }
+
+    #[test]
     fn custom_buffer_pool_callbacks_allocate_reuse_and_release_storage() {
         let allocations = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
         let releases = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));

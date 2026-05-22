@@ -1132,6 +1132,7 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(pooled.len(), payload_len);
     assert_eq!(pooled.allocated_len(), payload_len + padding_len);
     assert!(pooled.as_padded_slice().iter().all(|byte| *byte == 0));
+    assert!(pooled.pool_opaque_ref::<usize>().is_none());
     if !pooled.is_empty() {
         pooled.make_mut()[0] = cursor.next().unwrap_or_default();
     }
@@ -1162,6 +1163,7 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(reused.len(), payload_len);
     assert_eq!(reused.allocated_len(), payload_len + padding_len);
     assert_eq!(reused.as_padded_slice(), expected_reused.as_slice());
+    assert!(reused.pool_opaque_ref::<usize>().is_none());
     drop(reused);
     assert_eq!(pool.available_count().unwrap(), 1);
 

@@ -645,6 +645,36 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
 
     rows.insert("buffer:unref-null".to_string(), vec!["1".to_string()]);
 
+    let default_pool = BufferPool::new(3, 0).unwrap();
+    let mut default_first = default_pool.get().unwrap();
+    rows.insert(
+        "pool-default:first-status".to_string(),
+        buffer_status_fields(&default_first),
+    );
+    rows.insert(
+        "pool-default:first-opaque".to_string(),
+        vec![bool_field(
+            default_first.pool_opaque_ref::<usize>().is_none(),
+        )],
+    );
+    default_first
+        .make_mut()
+        .copy_from_slice(&[0x21, 0x22, 0x23]);
+    drop(default_first);
+    let default_reuse = default_pool.get().unwrap();
+    rows.insert(
+        "pool-default:reuse".to_string(),
+        buffer_fields(&default_reuse),
+    );
+    rows.insert(
+        "pool-default:reuse-opaque".to_string(),
+        vec![bool_field(
+            default_reuse.pool_opaque_ref::<usize>().is_none(),
+        )],
+    );
+    drop(default_reuse);
+    drop(default_pool);
+
     struct PoolToken {
         id: usize,
         size: usize,
@@ -1547,6 +1577,25 @@ int main(void) {
     fail_if(!buf, "av_buffer_allocz unref failed");
     av_buffer_unref(&buf);
     printf("buffer:unref-null|%d\n", buf == NULL);
+
+    AVBufferPool *default_pool = av_buffer_pool_init(3, NULL);
+    fail_if(!default_pool, "av_buffer_pool_init default failed");
+    AVBufferRef *default_first = av_buffer_pool_get(default_pool);
+    fail_if(!default_first, "av_buffer_pool_get default first failed");
+    print_status("pool-default:first-status", default_first);
+    printf("pool-default:first-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(default_first) == NULL);
+    static const uint8_t default_pool_mutated[] = { 0x21, 0x22, 0x23 };
+    fill_bytes(default_first, default_pool_mutated,
+               sizeof(default_pool_mutated));
+    av_buffer_unref(&default_first);
+    AVBufferRef *default_reuse = av_buffer_pool_get(default_pool);
+    fail_if(!default_reuse, "av_buffer_pool_get default reuse failed");
+    print_buffer("pool-default:reuse", default_reuse);
+    printf("pool-default:reuse-opaque|%d\n",
+           av_buffer_pool_buffer_get_opaque(default_reuse) == NULL);
+    av_buffer_unref(&default_reuse);
+    av_buffer_pool_uninit(&default_pool);
 
     reset_pool_counters();
     PoolOpaque pool_opaque = { 55, 3 };
