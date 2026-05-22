@@ -145,6 +145,8 @@ The rawvideo-facing paletted subset now includes FFmpeg's `pal8` name. The share
 
 `PacketMasteringDisplayMetadata` covers `AV_PKT_DATA_MASTERING_DISPLAY_METADATA` as the pinned FFmpeg 8.1.1 native `AVMasteringDisplayMetadata` payload, preserving display-primary, white-point, min/max luminance rational fields plus raw `has_primaries` and `has_luminance` flags. The packet oracle validates the 88-byte native payload shape and top-level field offsets.
 
+`PacketSphericalMapping` covers `AV_PKT_DATA_SPHERICAL` as the pinned FFmpeg 8.1.1 native `AVSphericalMapping` payload, preserving projection, yaw/pitch/roll orientation, four tile bounds, and cubemap padding fields. The packet oracle validates the 36-byte native payload shape and field offsets.
+
 `PacketNewExtradata` covers `AV_PKT_DATA_NEW_EXTRADATA` as an embedded replacement extradata byte buffer. The current model preserves the raw bytes, including empty buffers, and does not interpret codec-specific extradata formats.
 
 `PacketH263MbInfo` covers `AV_PKT_DATA_H263_MB_INFO` as an array of 12-byte little-endian records with bit offset, quantizer, GOB number, macroblock address, and four motion-vector predictor bytes. The parser rejects payloads whose length is not a whole number of records.
@@ -414,6 +416,8 @@ Correctness and parity come before performance. Performance-sensitive code shoul
 The packet oracle now includes a `packet:payload-layout-palette` row for `AV_PKT_DATA_PALETTE`, proving the side-data payload uses FFmpeg's 1024-byte `AVPALETTE_SIZE` shape. `PacketPalette` derives its modeled entry count and data length from the shared `AVPALETTE_COUNT` and `AVPALETTE_SIZE` constants used by the pixel-format model.
 
 The packet oracle now also includes a `packet:payload-layout-content-light` row for `AV_PKT_DATA_CONTENT_LIGHT_LEVEL`, proving the native `AVContentLightMetadata` payload length and `MaxCLL`/`MaxFALL` field offsets used by `PacketContentLightMetadata`.
+
+The packet oracle now also includes a `packet:payload-layout-spherical` row for `AV_PKT_DATA_SPHERICAL`, proving the native `AVSphericalMapping` payload length and projection/orientation/bounds/padding field offsets used by `PacketSphericalMapping`.
 
 `PacketSideDataKind` now has a bounded value lookup surface for the pinned FFmpeg 8.1.1 packet side-data enum. `from_ffmpeg_value()` maps public `AV_PKT_DATA_*` values before `AV_PKT_DATA_NB` back to Rust known kinds, while `ffmpeg_side_data_name_for_value()` mirrors the modeled `av_packet_side_data_name()` name surface and returns `None` for invalid values and the sentinel.
 

@@ -15,8 +15,9 @@ use avutil::{
     PacketOpaque, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
     PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
     PacketSideDataKind, PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason,
-    PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData,
-    AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    PacketSphericalMapping, PacketSphericalProjection, PacketSubtitlePosition,
+    PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE,
+    AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -283,6 +284,21 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
             .unwrap()
             .to_bytes(),
             &[0, 8, 16],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-spherical".to_string(),
+        payload_layout_fields(
+            &PacketSphericalMapping::new(
+                PacketSphericalProjection::ParametricImmersive,
+                -11,
+                22,
+                -33,
+                [0x0102_0304, 0x0506_0708, 0x090a_0b0c, 0x0d0e_0f10],
+                0x1112_1314,
+            )
+            .to_bytes(),
+            &[0, 4, 8, 12, 16, 20, 24, 28, 32],
         ),
     );
     rows.insert(
@@ -1397,6 +1413,7 @@ fn oracle_c_source() -> &'static str {
 #include "libavutil/mem.h"
 #include "libavutil/pixfmt.h"
 #include "libavutil/replaygain.h"
+#include "libavutil/spherical.h"
 
 static void fail_if(int condition, const char *message) {
     if (condition) {
@@ -1670,6 +1687,30 @@ static void print_side_data_payload_layouts(void) {
            offsetof(AVAmbientViewingEnvironment, ambient_illuminance),
            offsetof(AVAmbientViewingEnvironment, ambient_light_x),
            offsetof(AVAmbientViewingEnvironment, ambient_light_y));
+
+    AVSphericalMapping spherical;
+    memset(&spherical, 0, sizeof(spherical));
+    spherical.projection = AV_SPHERICAL_PARAMETRIC_IMMERSIVE;
+    spherical.yaw = -11;
+    spherical.pitch = 22;
+    spherical.roll = -33;
+    spherical.bound_left = 0x01020304;
+    spherical.bound_top = 0x05060708;
+    spherical.bound_right = 0x090a0b0c;
+    spherical.bound_bottom = 0x0d0e0f10;
+    spherical.padding = 0x11121314;
+    print_payload_layout_header("packet:payload-layout-spherical",
+                                &spherical, sizeof(spherical));
+    printf("|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu\n",
+           offsetof(AVSphericalMapping, projection),
+           offsetof(AVSphericalMapping, yaw),
+           offsetof(AVSphericalMapping, pitch),
+           offsetof(AVSphericalMapping, roll),
+           offsetof(AVSphericalMapping, bound_left),
+           offsetof(AVSphericalMapping, bound_top),
+           offsetof(AVSphericalMapping, bound_right),
+           offsetof(AVSphericalMapping, bound_bottom),
+           offsetof(AVSphericalMapping, padding));
 
     AVCPBProperties cpb;
     memset(&cpb, 0, sizeof(cpb));

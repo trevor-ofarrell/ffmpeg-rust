@@ -2,6 +2,10 @@
 
 ## Current Status
 
+Latest `avutil-packet` spherical payload layout slice: the pinned packet oracle now emits `packet:payload-layout-spherical` from FFmpeg's native `AVSphericalMapping` struct, proving the current `AV_PKT_DATA_SPHERICAL` model uses the same 36-byte native side-data shape with projection at offset 0, yaw/pitch/roll at offsets 4/8/12, tile bounds at offsets 16/20/24/28, and padding at offset 32. `PacketSphericalMapping` already had unit and fuzz-model coverage for valid, enum-table, raw-bound, and malformed payloads, so this slice tightens oracle evidence without marking `avutil-packet` complete. `avutil-packet` remains `differential_pass`, not complete, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration remain pending.
+
+Latest validation commands for the `avutil-packet` spherical payload layout slice: `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`, `cargo fmt --all`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib spherical_mapping`, WSL `CARGO_TARGET_DIR=target-wsl cargo test -p avutil --test packet_oracle -- --ignored --nocapture`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib packet`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml`, `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo clippy --manifest-path fuzz\\Cargo.toml -- -D warnings`, WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/wsl/bin/ffmpeg`, WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1`, `cargo fmt --all -- --check`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`, and `git diff --check` passed. `xtask oracle-doctor` confirms the local WSL-backed FFmpeg 8.1.1 oracle wrappers are installed and report the pinned library ABI versions.
+
 Latest `avutil-packet` mastering-display payload layout slice: the pinned packet oracle now emits `packet:payload-layout-mastering-display` from FFmpeg's native `AVMasteringDisplayMetadata` struct, proving the current `AV_PKT_DATA_MASTERING_DISPLAY_METADATA` model uses the same 88-byte native side-data shape with display primaries at offset 0, white point at offset 48, min luminance at offset 64, max luminance at offset 72, `has_primaries` at offset 80, and `has_luminance` at offset 84. `PacketMasteringDisplayMetadata` already had unit and fuzz-model coverage for valid, raw-rational, and malformed payloads, so this slice tightens oracle evidence without marking `avutil-packet` complete. `avutil-packet` remains `differential_pass`, not complete, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration remain pending.
 
 Latest validation commands for the `avutil-packet` mastering-display payload layout slice: `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`, `cargo fmt --all`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib mastering_display`, WSL `CARGO_TARGET_DIR=target-wsl cargo test -p avutil --test packet_oracle -- --ignored --nocapture`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib packet`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml`, `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo clippy --manifest-path fuzz\\Cargo.toml -- -D warnings`, WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/wsl/bin/ffmpeg`, WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1`, `cargo fmt --all -- --check`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`, and `git diff --check` passed. `xtask oracle-doctor` confirms the local WSL-backed FFmpeg 8.1.1 oracle wrappers are installed and report the pinned library ABI versions.
@@ -651,6 +655,23 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-packet` spherical payload layout slice:
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`
+  - `cargo fmt --all`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib spherical_mapping`
+  - WSL `CARGO_TARGET_DIR=target-wsl cargo test -p avutil --test packet_oracle -- --ignored --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib packet`
+  - `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`
+  - `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo clippy --manifest-path fuzz\\Cargo.toml -- -D warnings`
+  - WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/wsl/bin/ffmpeg`
+  - WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1`
+  - `cargo fmt --all -- --check`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`
+  - `git diff --check`
 
 - Current `avutil-packet` mastering-display payload layout slice:
   - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`
@@ -5888,7 +5909,7 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
-The current turn continues `avutil-packet`, the highest-priority incomplete infrastructure row. The concrete slice adds a native `AVMasteringDisplayMetadata` packet side-data layout oracle row for `AV_PKT_DATA_MASTERING_DISPLAY_METADATA`, proving the 88-byte payload and display-primary, white-point, luminance, and presence-flag field offsets. The row remains `differential_pass`, not `complete`, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration still need closure.
+The current turn continues `avutil-packet`, the highest-priority incomplete infrastructure row. The concrete slice adds a native `AVSphericalMapping` packet side-data layout oracle row for `AV_PKT_DATA_SPHERICAL`, proving the 36-byte payload and projection, orientation, bounds, and padding field offsets. The row remains `differential_pass`, not `complete`, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration still need closure.
 
 The current turn continues `avutil-packet`, the highest-priority incomplete infrastructure row. The concrete slice adds a raw-data/no-buffer `av_shrink_packet()` oracle row and records the FFmpeg distinction that this path mutates caller-owned padded memory while leaving `pkt->buf` NULL. The row remains `differential_pass`, not `complete`, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration still need closure.
 
