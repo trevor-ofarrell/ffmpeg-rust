@@ -110,6 +110,19 @@ impl PacketPictureType {
         self as u8
     }
 
+    pub const fn ffmpeg_char(self) -> char {
+        match self {
+            Self::Unknown => '?',
+            Self::I => 'I',
+            Self::P => 'P',
+            Self::B => 'B',
+            Self::S => 'S',
+            Self::Si => 'i',
+            Self::Sp => 'p',
+            Self::Bi => 'b',
+        }
+    }
+
     pub const fn ffmpeg_constant(self) -> &'static str {
         match self {
             Self::Unknown => "AV_PICTURE_TYPE_NONE",
@@ -6234,6 +6247,26 @@ mod tests {
         let palette =
             SideData::new_with_kind(PacketSideDataKind::Palette, expected_bytes.to_vec()).unwrap();
         assert_eq!(palette.quality_stats().unwrap(), None);
+    }
+
+    #[test]
+    fn packet_picture_type_values_and_chars_match_ffmpeg_8_1_1_header() {
+        let inventory = [
+            (PacketPictureType::Unknown, 0, "AV_PICTURE_TYPE_NONE", '?'),
+            (PacketPictureType::I, 1, "AV_PICTURE_TYPE_I", 'I'),
+            (PacketPictureType::P, 2, "AV_PICTURE_TYPE_P", 'P'),
+            (PacketPictureType::B, 3, "AV_PICTURE_TYPE_B", 'B'),
+            (PacketPictureType::S, 4, "AV_PICTURE_TYPE_S", 'S'),
+            (PacketPictureType::Si, 5, "AV_PICTURE_TYPE_SI", 'i'),
+            (PacketPictureType::Sp, 6, "AV_PICTURE_TYPE_SP", 'p'),
+            (PacketPictureType::Bi, 7, "AV_PICTURE_TYPE_BI", 'b'),
+        ];
+        for (picture_type, value, constant, ffmpeg_char) in inventory {
+            assert_eq!(picture_type.as_byte(), value);
+            assert_eq!(picture_type.ffmpeg_constant(), constant);
+            assert_eq!(picture_type.ffmpeg_char(), ffmpeg_char);
+            assert_eq!(PacketPictureType::from_byte(value).unwrap(), picture_type);
+        }
     }
 
     #[test]

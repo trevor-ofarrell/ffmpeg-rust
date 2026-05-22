@@ -9634,6 +9634,14 @@ fn exercise_fixtures() {
         PacketPictureType::Bi.ffmpeg_constant(),
         "AV_PICTURE_TYPE_BI"
     );
+    assert_eq!(PacketPictureType::Unknown.ffmpeg_char(), '?');
+    assert_eq!(PacketPictureType::I.ffmpeg_char(), 'I');
+    assert_eq!(PacketPictureType::P.ffmpeg_char(), 'P');
+    assert_eq!(PacketPictureType::B.ffmpeg_char(), 'B');
+    assert_eq!(PacketPictureType::S.ffmpeg_char(), 'S');
+    assert_eq!(PacketPictureType::Si.ffmpeg_char(), 'i');
+    assert_eq!(PacketPictureType::Sp.ffmpeg_char(), 'p');
+    assert_eq!(PacketPictureType::Bi.ffmpeg_char(), 'b');
     assert_eq!(
         SideData::new_quality_stats(packet_quality_stats.clone())
             .unwrap()

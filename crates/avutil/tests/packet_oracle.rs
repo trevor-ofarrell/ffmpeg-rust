@@ -92,6 +92,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert("packet:init".to_string(), packet_fields(&init));
     insert_side_data_kind_inventory_row(&mut rows);
     insert_flag_inventory_row(&mut rows);
+    insert_picture_type_inventory_row(&mut rows);
     insert_side_data_payload_layout_rows(&mut rows);
 
     let mut rescaled = packet_with_common_props();
@@ -174,6 +175,25 @@ fn insert_flag_inventory_row(rows: &mut BTreeMap<String, Vec<String>>) {
             PacketFlags::all().bits().to_string(),
         ],
     );
+}
+
+fn insert_picture_type_inventory_row(rows: &mut BTreeMap<String, Vec<String>>) {
+    let mut fields = Vec::new();
+    for picture_type in [
+        PacketPictureType::Unknown,
+        PacketPictureType::I,
+        PacketPictureType::P,
+        PacketPictureType::B,
+        PacketPictureType::S,
+        PacketPictureType::Si,
+        PacketPictureType::Sp,
+        PacketPictureType::Bi,
+    ] {
+        fields.push(picture_type.ffmpeg_constant().to_string());
+        fields.push(picture_type.as_byte().to_string());
+        fields.push(picture_type.ffmpeg_char().to_string());
+    }
+    rows.insert("packet:picture-type-inventory".to_string(), fields);
 }
 
 fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -1002,6 +1022,7 @@ fn oracle_c_source() -> &'static str {
 #include <string.h>
 #include "libavcodec/defs.h"
 #include "libavcodec/packet.h"
+#include "libavutil/avutil.h"
 #include "libavutil/buffer.h"
 #include "libavutil/dict.h"
 #include "libavutil/dovi_meta.h"
@@ -1172,6 +1193,23 @@ static void print_flag_inventory(void) {
            AV_PKT_FLAG_TRUSTED,
            AV_PKT_FLAG_DISPOSABLE,
            all);
+}
+
+static void print_picture_type_inventory(void) {
+#define PRINT_PICTURE_TYPE(kind) do { \
+    printf("|" #kind "|%d|%c", (int)(kind), av_get_picture_type_char(kind)); \
+} while (0)
+    printf("packet:picture-type-inventory");
+    PRINT_PICTURE_TYPE(AV_PICTURE_TYPE_NONE);
+    PRINT_PICTURE_TYPE(AV_PICTURE_TYPE_I);
+    PRINT_PICTURE_TYPE(AV_PICTURE_TYPE_P);
+    PRINT_PICTURE_TYPE(AV_PICTURE_TYPE_B);
+    PRINT_PICTURE_TYPE(AV_PICTURE_TYPE_S);
+    PRINT_PICTURE_TYPE(AV_PICTURE_TYPE_SI);
+    PRINT_PICTURE_TYPE(AV_PICTURE_TYPE_SP);
+    PRINT_PICTURE_TYPE(AV_PICTURE_TYPE_BI);
+    printf("\n");
+#undef PRINT_PICTURE_TYPE
 }
 
 static void print_payload_layout_header(const char *name, const void *payload, size_t size) {
@@ -1728,6 +1766,7 @@ int main(void) {
 
     print_side_data_kind_inventory();
     print_flag_inventory();
+    print_picture_type_inventory();
     print_side_data_payload_layouts();
 
     pkt = packet_with_common_props();
