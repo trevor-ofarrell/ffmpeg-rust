@@ -664,12 +664,11 @@ impl Drop for BufferStorage {
                 allocated_len,
                 release,
             }) => {
-                let mut storage = self.bytes.take_vec();
+                let storage = self.bytes.take_vec();
                 if storage.len() != allocated_len {
                     release(storage);
                     return;
                 }
-                storage.fill(0);
                 let Some(pool) = pool.upgrade() else {
                     release(storage);
                     return;
@@ -712,10 +711,7 @@ impl Drop for BufferPoolInner {
             Err(poisoned) => poisoned.into_inner(),
         };
         let release = Arc::clone(&self.callbacks.release);
-        for mut storage in spare.drain(..) {
-            if storage.len() == self.allocated_len {
-                storage.fill(0);
-            }
+        for storage in spare.drain(..) {
             release(storage);
         }
     }
@@ -766,14 +762,10 @@ impl BufferPool {
     pub fn get(&self) -> AvResult<BufferRef> {
         let storage = self.lock_spare()?.pop();
         match storage {
-            Some(mut storage) => {
-                storage.resize(self.allocated_len(), 0);
-                storage.fill(0);
-                Ok(BufferRef {
-                    data: Arc::new(BufferStorage::with_pool(storage, &self.inner)),
-                    len: self.len(),
-                })
-            }
+            Some(storage) => Ok(BufferRef {
+                data: Arc::new(BufferStorage::with_pool(storage, &self.inner)),
+                len: self.len(),
+            }),
             None => {
                 let storage = self.allocate_storage()?;
                 Ok(BufferRef {
@@ -802,14 +794,13 @@ impl BufferPool {
 
         let storage = Arc::try_unwrap(data)
             .map_err(|_| AvError::invalid_argument("cannot recycle a shared buffer"))?;
-        let mut storage = storage.into_vec();
-        storage.fill(0);
+        let storage = storage.into_vec();
         self.lock_spare()?.push(storage);
         Ok(())
     }
 
     fn allocate_storage(&self) -> AvResult<Vec<u8>> {
-        let mut storage = (self.inner.callbacks.allocate)(self.allocated_len())?;
+        let storage = (self.inner.callbacks.allocate)(self.allocated_len())?;
         if storage.len() != self.allocated_len() {
             let actual_len = storage.len();
             (self.inner.callbacks.release)(storage);
@@ -818,7 +809,6 @@ impl BufferPool {
                 self.allocated_len()
             )));
         }
-        storage.fill(0);
         Ok(storage)
     }
 
@@ -1688,7 +1678,7 @@ mod tests {
     }
 
     #[test]
-    fn buffer_pool_allocates_recycles_and_reuses_zeroed_storage() {
+    fn buffer_pool_allocates_recycles_and_reuses_storage_without_clearing() {
         let pool = BufferPool::new(3, 2).unwrap();
 
         assert_eq!(pool.len(), 3);
@@ -1709,7 +1699,7 @@ mod tests {
 
         let reused = pool.get().unwrap();
         assert_eq!(pool.available_count().unwrap(), 0);
-        assert_eq!(reused.as_slice(), &[0, 0, 0]);
+        assert_eq!(reused.as_slice(), &[4, 5, 6]);
         assert_eq!(reused.padding_slice(), &[0, 0]);
     }
 
@@ -1736,7 +1726,7 @@ mod tests {
 
         let mut first = pool.get().unwrap();
         assert_eq!(*allocations.lock().unwrap(), vec![5]);
-        assert_eq!(first.as_padded_slice(), &[0, 0, 0, 0, 0]);
+        assert_eq!(first.as_padded_slice(), &[9, 9, 9, 9, 9]);
         first.make_mut().copy_from_slice(&[1, 2, 3]);
         drop(first);
         assert_eq!(pool.available_count().unwrap(), 1);
@@ -1744,11 +1734,11 @@ mod tests {
 
         let second = pool.get().unwrap();
         assert_eq!(*allocations.lock().unwrap(), vec![5]);
-        assert_eq!(second.as_padded_slice(), &[0, 0, 0, 0, 0]);
+        assert_eq!(second.as_padded_slice(), &[1, 2, 3, 9, 9]);
         drop(second);
         drop(pool);
 
-        assert_eq!(*releases.lock().unwrap(), vec![vec![0, 0, 0, 0, 0]]);
+        assert_eq!(*releases.lock().unwrap(), vec![vec![1, 2, 3, 9, 9]]);
     }
 
     #[test]
@@ -1775,7 +1765,7 @@ mod tests {
         assert!(releases.lock().unwrap().is_empty());
         drop(shared);
 
-        assert_eq!(*releases.lock().unwrap(), vec![vec![0, 0, 0]]);
+        assert_eq!(*releases.lock().unwrap(), vec![vec![7, 7, 7]]);
     }
 
     #[test]
@@ -1828,7 +1818,7 @@ mod tests {
         drop(pool);
 
         assert!(original_releases.lock().unwrap().is_empty());
-        assert_eq!(*pool_releases.lock().unwrap(), vec![vec![0, 0, 0]]);
+        assert_eq!(*pool_releases.lock().unwrap(), vec![vec![8, 9, 0]]);
     }
 
     #[test]
@@ -1845,7 +1835,7 @@ mod tests {
         assert_eq!(pool.available_count().unwrap(), 1);
         let reused = pool.get().unwrap();
         assert_eq!(pool.available_count().unwrap(), 0);
-        assert_eq!(reused.as_slice(), &[0, 0, 0, 0]);
+        assert_eq!(reused.as_slice(), &[1, 2, 3, 4]);
         assert_eq!(reused.padding_slice(), &[0, 0]);
     }
 
@@ -1894,7 +1884,7 @@ mod tests {
         assert_eq!(pool.available_count().unwrap(), 1);
 
         let reused = pool.get().unwrap();
-        assert_eq!(reused.as_padded_slice(), &[0, 0, 0]);
+        assert_eq!(reused.as_padded_slice(), &[8, 9, 0]);
     }
 
     #[test]

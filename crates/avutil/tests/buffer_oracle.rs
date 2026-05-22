@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use avutil::BufferRef;
+use avutil::{BufferPool, BufferPoolCallbacks, BufferRef};
 
 #[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 libavutil oracle under third_party/ffmpeg-oracle/wsl"]
@@ -188,6 +188,77 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
 
     rows.insert("buffer:unref-null".to_string(), vec!["1".to_string()]);
 
+    let allocations = Arc::new(Mutex::new(Vec::<usize>::new()));
+    let releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let allocation_capture = Arc::clone(&allocations);
+    let release_capture = Arc::clone(&releases);
+    let pool = BufferPool::with_callbacks(
+        3,
+        0,
+        BufferPoolCallbacks::new(
+            move |allocated_len| {
+                allocation_capture.lock().unwrap().push(allocated_len);
+                Ok(vec![1, 2, 3])
+            },
+            move |storage| {
+                release_capture.lock().unwrap().push(storage);
+            },
+        ),
+    )
+    .unwrap();
+    let mut pool_first = pool.get().unwrap();
+    rows.insert("pool:first".to_string(), buffer_fields(&pool_first));
+    pool_first.make_mut().copy_from_slice(&[0xaa, 0xbb, 0xcc]);
+    drop(pool_first);
+    let pool_reuse = pool.get().unwrap();
+    rows.insert("pool:reuse".to_string(), buffer_fields(&pool_reuse));
+    rows.insert(
+        "pool:reuse-allocs".to_string(),
+        vec![allocations.lock().unwrap().len().to_string()],
+    );
+    drop(pool_reuse);
+    drop(pool);
+    let release_values = releases.lock().unwrap();
+    rows.insert(
+        "pool:uninit-releases".to_string(),
+        vec![release_values.len().to_string(), hex(&release_values[0])],
+    );
+    drop(release_values);
+
+    let outstanding_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let outstanding_release_capture = Arc::clone(&outstanding_releases);
+    let outstanding_pool = BufferPool::with_callbacks(
+        2,
+        0,
+        BufferPoolCallbacks::new(
+            |allocated_len| {
+                assert_eq!(allocated_len, 2);
+                Ok(vec![1, 2])
+            },
+            move |storage| {
+                outstanding_release_capture.lock().unwrap().push(storage);
+            },
+        ),
+    )
+    .unwrap();
+    let mut outstanding = outstanding_pool.get().unwrap();
+    outstanding.make_mut().copy_from_slice(&[0x11, 0x22]);
+    drop(outstanding_pool);
+    rows.insert(
+        "pool:outstanding-after-uninit".to_string(),
+        vec![outstanding_releases.lock().unwrap().len().to_string()],
+    );
+    drop(outstanding);
+    let outstanding_release_values = outstanding_releases.lock().unwrap();
+    rows.insert(
+        "pool:outstanding-after-drop".to_string(),
+        vec![
+            outstanding_release_values.len().to_string(),
+            hex(&outstanding_release_values[0]),
+        ],
+    );
+    drop(outstanding_release_values);
+
     rows
 }
 
@@ -307,6 +378,15 @@ fn oracle_c_source() -> &'static str {
 
 static int release_count = 0;
 static uintptr_t last_opaque = 0;
+static int pool_alloc_count = 0;
+static int pool_release_count = 0;
+static size_t last_pool_release_size = 0;
+static uint8_t last_pool_release[32];
+
+typedef struct PoolOpaque {
+    uintptr_t id;
+    size_t size;
+} PoolOpaque;
 
 static void fail_if(int condition, const char *message) {
     if (condition) {
@@ -319,6 +399,34 @@ static void test_free(void *opaque, uint8_t *data) {
     release_count++;
     last_opaque = (uintptr_t)opaque;
     av_free(data);
+}
+
+static void reset_pool_counters(void) {
+    pool_alloc_count = 0;
+    pool_release_count = 0;
+    last_pool_release_size = 0;
+    for (size_t i = 0; i < sizeof(last_pool_release); i++)
+        last_pool_release[i] = 0;
+}
+
+static void test_pool_free(void *opaque, uint8_t *data) {
+    PoolOpaque *pool_opaque = opaque;
+    pool_release_count++;
+    last_pool_release_size = pool_opaque->size;
+    fail_if(last_pool_release_size > sizeof(last_pool_release),
+            "pool release fixture too large");
+    for (size_t i = 0; i < last_pool_release_size; i++)
+        last_pool_release[i] = data[i];
+    av_free(data);
+}
+
+static AVBufferRef *test_pool_alloc(void *opaque, size_t size) {
+    uint8_t *data = av_malloc(size);
+    fail_if(!data, "av_malloc pool data failed");
+    pool_alloc_count++;
+    for (size_t i = 0; i < size; i++)
+        data[i] = (uint8_t)(i + 1);
+    return av_buffer_create(data, size, test_pool_free, opaque, 0);
 }
 
 static void fill_bytes(AVBufferRef *buf, const uint8_t *data, size_t size) {
@@ -477,6 +585,42 @@ int main(void) {
     fail_if(!buf, "av_buffer_allocz unref failed");
     av_buffer_unref(&buf);
     printf("buffer:unref-null|%d\n", buf == NULL);
+
+    reset_pool_counters();
+    PoolOpaque pool_opaque = { 55, 3 };
+    AVBufferPool *pool = av_buffer_pool_init2(3, &pool_opaque,
+                                              test_pool_alloc, NULL);
+    fail_if(!pool, "av_buffer_pool_init2 failed");
+    AVBufferRef *pool_first = av_buffer_pool_get(pool);
+    fail_if(!pool_first, "av_buffer_pool_get first failed");
+    print_buffer("pool:first", pool_first);
+    static const uint8_t pool_mutated[] = { 0xaa, 0xbb, 0xcc };
+    fill_bytes(pool_first, pool_mutated, sizeof(pool_mutated));
+    av_buffer_unref(&pool_first);
+    AVBufferRef *pool_reuse = av_buffer_pool_get(pool);
+    fail_if(!pool_reuse, "av_buffer_pool_get reuse failed");
+    print_buffer("pool:reuse", pool_reuse);
+    printf("pool:reuse-allocs|%d\n", pool_alloc_count);
+    av_buffer_unref(&pool_reuse);
+    av_buffer_pool_uninit(&pool);
+    printf("pool:uninit-releases|%d|", pool_release_count);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("\n");
+
+    reset_pool_counters();
+    PoolOpaque outstanding_opaque = { 66, 2 };
+    pool = av_buffer_pool_init2(2, &outstanding_opaque, test_pool_alloc, NULL);
+    fail_if(!pool, "av_buffer_pool_init2 outstanding failed");
+    AVBufferRef *outstanding = av_buffer_pool_get(pool);
+    fail_if(!outstanding, "av_buffer_pool_get outstanding failed");
+    static const uint8_t outstanding_mutated[] = { 0x11, 0x22 };
+    fill_bytes(outstanding, outstanding_mutated, sizeof(outstanding_mutated));
+    av_buffer_pool_uninit(&pool);
+    printf("pool:outstanding-after-uninit|%d\n", pool_release_count);
+    av_buffer_unref(&outstanding);
+    printf("pool:outstanding-after-drop|%d|", pool_release_count);
+    print_hex(last_pool_release, last_pool_release_size);
+    printf("\n");
 
     return 0;
 }

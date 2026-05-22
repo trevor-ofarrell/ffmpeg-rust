@@ -835,19 +835,20 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         let last = recyclable.len() - 1;
         recyclable.make_mut()[last] = cursor.next().unwrap_or_default();
     }
+    let expected_reused = recyclable.as_padded_slice().to_vec();
     pool.recycle(recyclable).unwrap();
     assert_eq!(pool.available_count().unwrap(), 1);
     let reused = pool.get().unwrap();
     assert_eq!(pool.available_count().unwrap(), 0);
     assert_eq!(reused.len(), payload_len);
     assert_eq!(reused.allocated_len(), payload_len + padding_len);
-    assert!(reused.as_padded_slice().iter().all(|byte| *byte == 0));
+    assert_eq!(reused.as_padded_slice(), expected_reused.as_slice());
     drop(reused);
     assert_eq!(pool.available_count().unwrap(), 1);
 
     let auto_reused = pool.get().unwrap();
     assert_eq!(pool.available_count().unwrap(), 0);
-    assert!(auto_reused.as_padded_slice().iter().all(|byte| *byte == 0));
+    assert_eq!(auto_reused.as_padded_slice(), expected_reused.as_slice());
     let auto_shared = auto_reused.clone();
     drop(auto_reused);
     assert_eq!(pool.available_count().unwrap(), 0);
@@ -981,16 +982,16 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         *custom_allocations.lock().unwrap(),
         vec![payload_len + padding_len]
     );
-    assert!(custom_buffer
-        .as_padded_slice()
-        .iter()
-        .all(|byte| *byte == 0));
+    assert_eq!(
+        custom_buffer.as_padded_slice(),
+        vec![0xaa; payload_len + padding_len].as_slice()
+    );
     drop(custom_pool);
     assert!(custom_releases.lock().unwrap().is_empty());
     drop(custom_buffer);
     assert_eq!(
         *custom_releases.lock().unwrap(),
-        vec![vec![0; payload_len + padding_len]]
+        vec![vec![0xaa; payload_len + padding_len]]
     );
 
     let bad_releases = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));

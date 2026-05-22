@@ -161,7 +161,7 @@ cargo test -p avutil --test dict_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-dict --target oracle-libavutil-dict --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
-`crates/avutil/tests/buffer_oracle.rs` is an ignored oracle harness for libavutil `AVBufferRef` helpers. It compiles a small test-only C helper against `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares allocation status, zeroed allocation, ref sharing, refcount/writability, make-writable copy-on-write, readonly external opaque release behavior, realloc grow/shrink/shared detach prefix preservation, replace sharing, and unref nulling against the Rust `BufferRef` model. It is wired into `tests/differential/mappings.txt` as `avutil-buffer|oracle-libavutil-buffer`:
+`crates/avutil/tests/buffer_oracle.rs` is an ignored oracle harness for libavutil `AVBufferRef` and bounded `AVBufferPool` helpers. It compiles a small test-only C helper against `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares allocation status, zeroed allocation, ref sharing, refcount/writability, make-writable copy-on-write, readonly external opaque release behavior, realloc grow/shrink/shared detach prefix preservation, replace sharing, unref nulling, custom-pool allocator bytes, no-clear pool reuse, spare release on pool uninit, and outstanding-buffer release after pool uninit against the Rust `BufferRef`/`BufferPool` model. It is wired into `tests/differential/mappings.txt` as `avutil-buffer|oracle-libavutil-buffer`:
 
 ```sh
 cargo test -p avutil --test buffer_oracle -- --ignored
