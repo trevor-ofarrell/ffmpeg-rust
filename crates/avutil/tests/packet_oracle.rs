@@ -14,8 +14,8 @@ use avutil::{
     PacketParamChange, PacketPictureType, PacketProducerReferenceTime, PacketQualityStats,
     PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind,
     PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition,
-    PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData, AV_INPUT_BUFFER_PADDING_SIZE,
-    AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE,
+    AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -218,6 +218,14 @@ fn insert_picture_type_inventory_row(rows: &mut BTreeMap<String, Vec<String>>) {
 }
 
 fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let palette = (0..AVPALETTE_SIZE)
+        .map(|index| (index & 0xff) as u8)
+        .collect::<Vec<_>>();
+    rows.insert(
+        "packet:payload-layout-palette".to_string(),
+        payload_layout_fields(&palette, &[]),
+    );
+
     rows.insert(
         "packet:payload-layout-replaygain".to_string(),
         payload_layout_fields(
@@ -1333,6 +1341,7 @@ fn oracle_c_source() -> &'static str {
 #include "libavutil/frame.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mem.h"
+#include "libavutil/pixfmt.h"
 #include "libavutil/replaygain.h"
 
 static void fail_if(int condition, const char *message) {
@@ -1542,6 +1551,12 @@ static void print_payload_layout_bytes(const char *name, const uint8_t *payload,
 }
 
 static void print_side_data_payload_layouts(void) {
+    uint8_t palette[AVPALETTE_SIZE];
+    for (size_t i = 0; i < sizeof(palette); i++)
+        palette[i] = (uint8_t)(i & 0xff);
+    print_payload_layout_bytes("packet:payload-layout-palette",
+                               palette, sizeof(palette));
+
     AVReplayGain replaygain;
     memset(&replaygain, 0, sizeof(replaygain));
     replaygain.track_gain = -123456;

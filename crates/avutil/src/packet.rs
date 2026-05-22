@@ -5,6 +5,7 @@ use crate::frame::{
     FrameStereo3dPrimaryEye, FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays,
 };
+use crate::pixel::{AVPALETTE_COUNT, AVPALETTE_SIZE};
 use crate::{
     rescale_q, AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, Dictionary, Rational,
 };
@@ -518,9 +519,9 @@ pub struct PacketPalette<'a> {
 }
 
 impl<'a> PacketPalette<'a> {
-    pub const ENTRY_COUNT: usize = 256;
+    pub const ENTRY_COUNT: usize = AVPALETTE_COUNT;
     pub const ENTRY_LEN: usize = 4;
-    pub const DATA_LEN: usize = Self::ENTRY_COUNT * Self::ENTRY_LEN;
+    pub const DATA_LEN: usize = AVPALETTE_SIZE;
 
     pub fn parse(data: &'a [u8]) -> AvResult<Self> {
         if data.len() != Self::DATA_LEN {
