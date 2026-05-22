@@ -223,6 +223,11 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/avutil/tests/buffer_oracle.rs",
+        exact_ids: &["avutil-buffer"],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/avutil/src/frame.rs",
         exact_ids: &["avutil-frame"],
         id_prefixes: &[],
@@ -1748,6 +1753,17 @@ mod tests {
         assert_eq!(
             changed_components(&component_ids, &paths),
             vec!["avutil-timebase".to_string()]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_buffer_oracle_test_to_component() {
+        let component_ids = component_ids_from_ledger(&ledger(&["avutil-buffer"]));
+        let paths = vec!["crates/avutil/tests/buffer_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec!["avutil-buffer".to_string()]
         );
     }
 

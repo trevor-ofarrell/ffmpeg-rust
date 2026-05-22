@@ -21,6 +21,8 @@ This repository is a Rust workspace for a compatibility-oriented FFmpeg 8.1.1 re
 
 ## Type Model
 
+`BufferRef` now has pinned libavutil `AVBufferRef` oracle coverage for the current core helper shape: allocation status, zeroed allocation, reference sharing, refcount/writability, make-writable copy-on-write, readonly external opaque release behavior, realloc grow/shrink/shared detach prefix preservation, replace sharing, and unref nulling. The Rust model still treats `AVBufferPool` public API oracle coverage, deeper ABI/lifetime parity, and hardware/device ownership integration as future completion work.
+
 Byte I/O now includes checked random access for bounded in-memory streams. `ByteReader` supports absolute positioning, relative seeks, rewind, fixed-size array reads/peeks, and fixed four-byte tag reads/peeks without advancing on invalid seek or short-input requests; `ByteWriter` supports append-position, clear, checked truncate, raw patching, fixed four-byte tag writes/patches, and endian-aware signed/unsigned integer patch helpers that preserve the existing buffer on failed bounds or range checks.
 
 Bit I/O now includes checked random access for bounded MSB-first bitstreams and rollback helpers for writers. `BitReader` supports single-bit peeks, byte-aligned slice reads/peeks, absolute bit positioning, relative bit seeks, and rewind without advancing on invalid seek or short-input requests; `BitWriter` can append whole byte slices only when byte-aligned, clear/reset state, report byte-alignment padding distance, pad to byte alignment with caller-selected zero or one bits, and truncate to a checked bit position with unused tail bits masked, while preserving state on unaligned, overflowing, or out-of-range requests.

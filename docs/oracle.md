@@ -161,6 +161,13 @@ cargo test -p avutil --test dict_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-dict --target oracle-libavutil-dict --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
+`crates/avutil/tests/buffer_oracle.rs` is an ignored oracle harness for libavutil `AVBufferRef` helpers. It compiles a small test-only C helper against `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares allocation status, zeroed allocation, ref sharing, refcount/writability, make-writable copy-on-write, readonly external opaque release behavior, realloc grow/shrink/shared detach prefix preservation, replace sharing, and unref nulling against the Rust `BufferRef` model. It is wired into `tests/differential/mappings.txt` as `avutil-buffer|oracle-libavutil-buffer`:
+
+```sh
+cargo test -p avutil --test buffer_oracle -- --ignored
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-buffer --target oracle-libavutil-buffer --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+```
+
 `crates/fftools/tests/version_oracle.rs` is an ignored oracle harness for `ffmpeg -version` and `ffprobe -version`. It checks the pinned tool-version prefix and the libav* ABI versions reported by the oracle against the Rust `ffmpeg-rs`/`ffprobe-rs` banner constants. `FFMPEG_ORACLE` points to the pinned `ffmpeg` binary; `ffprobe` is found through `FFPROBE_ORACLE`, a sibling of `FFMPEG_ORACLE`, or the standard `third_party/ffmpeg-oracle/build/bin/ffprobe(.exe)` path. Run it with:
 
 ```sh
