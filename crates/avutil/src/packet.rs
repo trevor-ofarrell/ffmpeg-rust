@@ -4697,7 +4697,9 @@ impl SideData {
 
     pub fn shrink(&mut self, len: usize) -> AvResult<()> {
         if len > self.data.len() {
-            return Err(AvError::invalid_argument(
+            return Err(AvError::with_code(
+                AvErrorKind::External,
+                AvErrorCode::ENOMEM,
                 "packet side data cannot be shrunk to a larger size",
             ));
         }
@@ -5108,12 +5110,31 @@ impl Packet {
     }
 
     pub fn shrink_side_data(&mut self, kind: &str, len: usize) -> AvResult<bool> {
-        let Some(side_data) = self.side_data_mut_by_kind(kind) else {
+        let Ok(kind) = PacketSideDataKind::from_name(kind) else {
             return Ok(false);
         };
 
-        side_data.shrink(len)?;
-        Ok(true)
+        match self.shrink_side_data_by_kind_id(&kind, len) {
+            Ok(()) => Ok(true),
+            Err(err) if err.code() == Some(AvErrorCode::ENOENT) => Ok(false),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub fn shrink_side_data_by_kind_id(
+        &mut self,
+        kind: &PacketSideDataKind,
+        len: usize,
+    ) -> AvResult<()> {
+        let Some(side_data) = self.side_data_mut_by_kind_id(kind) else {
+            return Err(AvError::with_code(
+                AvErrorKind::NotFound,
+                AvErrorCode::ENOENT,
+                "packet side data not found",
+            ));
+        };
+
+        side_data.shrink(len)
     }
 
     pub fn take_side_data(&mut self, kind: &str) -> Option<SideData> {
@@ -9600,11 +9621,40 @@ mod tests {
 
         let err = packet.shrink_side_data("palette", 4).unwrap_err();
 
-        assert_eq!(err.kind(), crate::AvErrorKind::InvalidArgument);
+        assert_eq!(err.kind(), crate::AvErrorKind::External);
+        assert_eq!(err.code(), Some(crate::AvErrorCode::ENOMEM));
         assert_eq!(
             packet.side_data_by_kind("palette").unwrap().data(),
             &[0, 1, 2]
         );
+    }
+
+    #[test]
+    fn packet_shrink_side_data_by_kind_id_reports_ffmpeg_errors() {
+        let mut packet = Packet::new(Vec::new(), 0);
+
+        let missing = packet
+            .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 0)
+            .unwrap_err();
+        assert_eq!(missing.kind(), crate::AvErrorKind::NotFound);
+        assert_eq!(missing.code(), Some(crate::AvErrorCode::ENOENT));
+
+        packet.push_side_data(SideData::new("palette", vec![0, 1, 2]).unwrap());
+
+        let too_large = packet
+            .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 4)
+            .unwrap_err();
+        assert_eq!(too_large.kind(), crate::AvErrorKind::External);
+        assert_eq!(too_large.code(), Some(crate::AvErrorCode::ENOMEM));
+        assert_eq!(
+            packet.side_data_by_kind("palette").unwrap().data(),
+            &[0, 1, 2]
+        );
+
+        packet
+            .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 1)
+            .unwrap();
+        assert_eq!(packet.side_data_by_kind("palette").unwrap().data(), &[0]);
     }
 
     #[test]

@@ -479,6 +479,32 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-get-missing".to_string(),
         side_data_lookup_fields(packet.side_data_by_kind("palette")),
     );
+    let missing_shrink = packet
+        .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 1)
+        .unwrap_err();
+    rows.insert(
+        "packet:side-shrink-missing-ret".to_string(),
+        vec![missing_shrink
+            .code()
+            .expect("missing side data shrink should preserve an FFmpeg error code")
+            .raw()
+            .to_string()],
+    );
+    let oversize_shrink = packet
+        .shrink_side_data_by_kind_id(&PacketSideDataKind::NewExtradata, 3)
+        .unwrap_err();
+    rows.insert(
+        "packet:side-shrink-oversize-ret".to_string(),
+        vec![oversize_shrink
+            .code()
+            .expect("oversize side data shrink should preserve an FFmpeg error code")
+            .raw()
+            .to_string()],
+    );
+    rows.insert(
+        "packet:side-shrink-oversize".to_string(),
+        side_data_summary_fields(&packet),
+    );
 
     packet.clear_side_data();
     rows.insert(
@@ -1397,6 +1423,11 @@ static void exercise_side_data_api(void) {
     print_side_data_summary("packet:side-shrink", pkt);
     print_side_data_lookup("packet:side-get-shrunk", pkt, AV_PKT_DATA_NEW_EXTRADATA);
     print_side_data_lookup("packet:side-get-missing", pkt, AV_PKT_DATA_PALETTE);
+    ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_PALETTE, 1);
+    printf("packet:side-shrink-missing-ret|%d\n", ret);
+    ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 3);
+    printf("packet:side-shrink-oversize-ret|%d\n", ret);
+    print_side_data_summary("packet:side-shrink-oversize", pkt);
 
     av_packet_free_side_data(pkt);
     print_side_data_summary("packet:side-free", pkt);

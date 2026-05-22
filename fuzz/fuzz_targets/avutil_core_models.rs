@@ -5994,6 +5994,42 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .data(),
         new_side_data_replacement.as_slice()
     );
+    let absent_side_data_kind = if typed_side_data_kind == PacketSideDataKind::Palette {
+        PacketSideDataKind::NewExtradata
+    } else {
+        PacketSideDataKind::Palette
+    };
+    let missing_shrink = new_side_data_packet
+        .shrink_side_data_by_kind_id(&absent_side_data_kind, 0)
+        .unwrap_err();
+    assert_eq!(missing_shrink.kind(), AvErrorKind::NotFound);
+    assert_eq!(missing_shrink.code(), Some(AvErrorCode::ENOENT));
+    let too_large_shrink = new_side_data_packet
+        .shrink_side_data_by_kind_id(
+            &typed_side_data_kind,
+            new_side_data_replacement.len().saturating_add(1),
+        )
+        .unwrap_err();
+    assert_eq!(too_large_shrink.kind(), AvErrorKind::External);
+    assert_eq!(too_large_shrink.code(), Some(AvErrorCode::ENOMEM));
+    assert_eq!(
+        new_side_data_packet
+            .side_data_by_kind_id(&typed_side_data_kind)
+            .unwrap()
+            .data(),
+        new_side_data_replacement.as_slice()
+    );
+    let strict_shrink_len = new_side_data_replacement.len() / 2;
+    new_side_data_packet
+        .shrink_side_data_by_kind_id(&typed_side_data_kind, strict_shrink_len)
+        .unwrap();
+    assert_eq!(
+        new_side_data_packet
+            .side_data_by_kind_id(&typed_side_data_kind)
+            .unwrap()
+            .data(),
+        &new_side_data_replacement[..strict_shrink_len]
+    );
 
     let mut side_data_list = PacketSideDataList::new();
     let list_entry = side_data_list
@@ -7300,13 +7336,11 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .unwrap()
         .data()
         .to_vec();
-    assert_eq!(
-        packet
-            .shrink_side_data("fuzz_side_data", shrunk_payload.len() + 1)
-            .unwrap_err()
-            .kind(),
-        AvErrorKind::InvalidArgument
-    );
+    let oversized_shrink = packet
+        .shrink_side_data("fuzz_side_data", shrunk_payload.len() + 1)
+        .unwrap_err();
+    assert_eq!(oversized_shrink.kind(), AvErrorKind::External);
+    assert_eq!(oversized_shrink.code(), Some(AvErrorCode::ENOMEM));
     assert_eq!(
         packet.side_data_by_kind("fuzz_side_data").unwrap().data(),
         shrunk_payload.as_slice()
