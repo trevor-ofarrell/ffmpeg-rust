@@ -6,7 +6,9 @@ use std::{
 };
 
 use avutil::{
-    Packet, PacketFlags, PacketOpaque, PacketSideDataKind, Rational, SideData,
+    Packet, PacketAudioServiceType, PacketCpbProperties, PacketDolbyVisionConf,
+    PacketDoviCompression, PacketFlags, PacketOpaque, PacketProducerReferenceTime,
+    PacketReplayGain, PacketRtcpSenderReport, PacketSideDataKind, Rational, SideData,
     AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
@@ -68,6 +70,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         packet_fields(&Packet::default()),
     );
     insert_side_data_kind_inventory_row(&mut rows);
+    insert_side_data_payload_layout_rows(&mut rows);
 
     let mut rescaled = packet_with_common_props();
     rescaled
@@ -122,6 +125,75 @@ fn insert_side_data_kind_inventory_row(rows: &mut BTreeMap<String, Vec<String>>)
         fields.push(kind.ffmpeg_value().unwrap().to_string());
     }
     rows.insert("packet:side-kind-inventory".to_string(), fields);
+}
+
+fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    rows.insert(
+        "packet:payload-layout-replaygain".to_string(),
+        payload_layout_fields(
+            &PacketReplayGain::new(-123_456, 100_000, i32::MIN, 0x0102_0304).to_bytes(),
+            &[0, 4, 8, 12],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-cpb-properties".to_string(),
+        payload_layout_fields(
+            &PacketCpbProperties::new(5_000_000, 1_000_000, 3_500_000, 750_000, u64::MAX - 123)
+                .unwrap()
+                .to_bytes(),
+            &[0, 8, 16, 24, 32],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-prft".to_string(),
+        payload_layout_fields(
+            &PacketProducerReferenceTime::new(1_700_000_000_123_456, 0x0102_0304).to_bytes(),
+            &[0, 8],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-rtcp-sr".to_string(),
+        payload_layout_fields(
+            &PacketRtcpSenderReport::new(
+                0x0102_0304,
+                0x0506_0708_090a_0b0c,
+                0x0d0e_0f10,
+                0x1112_1314,
+                0x1516_1718,
+            )
+            .to_bytes(),
+            &[0, 8, 16, 20, 24],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-dovi-conf".to_string(),
+        payload_layout_fields(
+            &PacketDolbyVisionConf::new(
+                1,
+                0,
+                8,
+                6,
+                true,
+                false,
+                true,
+                4,
+                PacketDoviCompression::Limited,
+            )
+            .to_bytes(),
+            &[0, 1, 2, 3, 4, 5, 6, 7, 8],
+        ),
+    );
+
+    let mut audio_fields =
+        payload_layout_fields(&PacketAudioServiceType::Commentary.to_bytes(), &[]);
+    for service_type in PacketAudioServiceType::KNOWN {
+        audio_fields.push(service_type.as_raw().to_string());
+    }
+    audio_fields.push("9".to_string());
+    rows.insert(
+        "packet:payload-layout-audio-service-type".to_string(),
+        audio_fields,
+    );
 }
 
 fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -325,6 +397,12 @@ fn payload_fields(packet: &Packet) -> Vec<String> {
     ]
 }
 
+fn payload_layout_fields(bytes: &[u8], offsets: &[usize]) -> Vec<String> {
+    let mut fields = vec![bytes.len().to_string(), hex_or_dash(bytes)];
+    fields.extend(offsets.iter().map(ToString::to_string));
+    fields
+}
+
 fn packet_side_data_type(kind: &PacketSideDataKind) -> &'static str {
     match kind.ffmpeg_value() {
         Some(0) => "0",
@@ -414,13 +492,17 @@ fn compile_and_run_oracle(
 
 fn oracle_c_source() -> &'static str {
     r#"#include <inttypes.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "libavcodec/defs.h"
 #include "libavcodec/packet.h"
 #include "libavutil/buffer.h"
+#include "libavutil/dovi_meta.h"
 #include "libavutil/mem.h"
+#include "libavutil/replaygain.h"
 
 static void fail_if(int condition, const char *message) {
     if (condition) {
@@ -520,6 +602,108 @@ static void print_side_data_kind_inventory(void) {
     printf("|AV_PKT_DATA_3D_REFERENCE_DISPLAYS|%d", (int)AV_PKT_DATA_3D_REFERENCE_DISPLAYS);
     printf("|AV_PKT_DATA_RTCP_SR|%d", (int)AV_PKT_DATA_RTCP_SR);
     printf("|AV_PKT_DATA_EXIF|%d\n", (int)AV_PKT_DATA_EXIF);
+}
+
+static void print_payload_layout_header(const char *name, const void *payload, size_t size) {
+    printf("%s|%zu|", name, size);
+    print_hex_or_dash(payload, (int)size);
+}
+
+static void print_side_data_payload_layouts(void) {
+    AVReplayGain replaygain;
+    memset(&replaygain, 0, sizeof(replaygain));
+    replaygain.track_gain = -123456;
+    replaygain.track_peak = 100000;
+    replaygain.album_gain = INT32_MIN;
+    replaygain.album_peak = 0x01020304;
+    print_payload_layout_header("packet:payload-layout-replaygain",
+                                &replaygain, sizeof(replaygain));
+    printf("|%zu|%zu|%zu|%zu\n",
+           offsetof(AVReplayGain, track_gain),
+           offsetof(AVReplayGain, track_peak),
+           offsetof(AVReplayGain, album_gain),
+           offsetof(AVReplayGain, album_peak));
+
+    AVCPBProperties cpb;
+    memset(&cpb, 0, sizeof(cpb));
+    cpb.max_bitrate = 5000000;
+    cpb.min_bitrate = 1000000;
+    cpb.avg_bitrate = 3500000;
+    cpb.buffer_size = 750000;
+    cpb.vbv_delay = UINT64_MAX - 123;
+    print_payload_layout_header("packet:payload-layout-cpb-properties",
+                                &cpb, sizeof(cpb));
+    printf("|%zu|%zu|%zu|%zu|%zu\n",
+           offsetof(AVCPBProperties, max_bitrate),
+           offsetof(AVCPBProperties, min_bitrate),
+           offsetof(AVCPBProperties, avg_bitrate),
+           offsetof(AVCPBProperties, buffer_size),
+           offsetof(AVCPBProperties, vbv_delay));
+
+    AVProducerReferenceTime prft;
+    memset(&prft, 0, sizeof(prft));
+    prft.wallclock = 1700000000123456LL;
+    prft.flags = 0x01020304;
+    print_payload_layout_header("packet:payload-layout-prft",
+                                &prft, sizeof(prft));
+    printf("|%zu|%zu\n",
+           offsetof(AVProducerReferenceTime, wallclock),
+           offsetof(AVProducerReferenceTime, flags));
+
+    AVRTCPSenderReport rtcp;
+    memset(&rtcp, 0, sizeof(rtcp));
+    rtcp.ssrc = 0x01020304;
+    rtcp.ntp_timestamp = 0x05060708090a0b0cULL;
+    rtcp.rtp_timestamp = 0x0d0e0f10;
+    rtcp.sender_nb_packets = 0x11121314;
+    rtcp.sender_nb_bytes = 0x15161718;
+    print_payload_layout_header("packet:payload-layout-rtcp-sr",
+                                &rtcp, sizeof(rtcp));
+    printf("|%zu|%zu|%zu|%zu|%zu\n",
+           offsetof(AVRTCPSenderReport, ssrc),
+           offsetof(AVRTCPSenderReport, ntp_timestamp),
+           offsetof(AVRTCPSenderReport, rtp_timestamp),
+           offsetof(AVRTCPSenderReport, sender_nb_packets),
+           offsetof(AVRTCPSenderReport, sender_nb_bytes));
+
+    AVDOVIDecoderConfigurationRecord dovi;
+    memset(&dovi, 0, sizeof(dovi));
+    dovi.dv_version_major = 1;
+    dovi.dv_version_minor = 0;
+    dovi.dv_profile = 8;
+    dovi.dv_level = 6;
+    dovi.rpu_present_flag = 1;
+    dovi.el_present_flag = 0;
+    dovi.bl_present_flag = 1;
+    dovi.dv_bl_signal_compatibility_id = 4;
+    dovi.dv_md_compression = AV_DOVI_COMPRESSION_LIMITED;
+    print_payload_layout_header("packet:payload-layout-dovi-conf",
+                                &dovi, sizeof(dovi));
+    printf("|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu\n",
+           offsetof(AVDOVIDecoderConfigurationRecord, dv_version_major),
+           offsetof(AVDOVIDecoderConfigurationRecord, dv_version_minor),
+           offsetof(AVDOVIDecoderConfigurationRecord, dv_profile),
+           offsetof(AVDOVIDecoderConfigurationRecord, dv_level),
+           offsetof(AVDOVIDecoderConfigurationRecord, rpu_present_flag),
+           offsetof(AVDOVIDecoderConfigurationRecord, el_present_flag),
+           offsetof(AVDOVIDecoderConfigurationRecord, bl_present_flag),
+           offsetof(AVDOVIDecoderConfigurationRecord, dv_bl_signal_compatibility_id),
+           offsetof(AVDOVIDecoderConfigurationRecord, dv_md_compression));
+
+    enum AVAudioServiceType service_type = AV_AUDIO_SERVICE_TYPE_COMMENTARY;
+    print_payload_layout_header("packet:payload-layout-audio-service-type",
+                                &service_type, sizeof(service_type));
+    printf("|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d\n",
+           AV_AUDIO_SERVICE_TYPE_MAIN,
+           AV_AUDIO_SERVICE_TYPE_EFFECTS,
+           AV_AUDIO_SERVICE_TYPE_VISUALLY_IMPAIRED,
+           AV_AUDIO_SERVICE_TYPE_HEARING_IMPAIRED,
+           AV_AUDIO_SERVICE_TYPE_DIALOGUE,
+           AV_AUDIO_SERVICE_TYPE_COMMENTARY,
+           AV_AUDIO_SERVICE_TYPE_EMERGENCY,
+           AV_AUDIO_SERVICE_TYPE_VOICE_OVER,
+           AV_AUDIO_SERVICE_TYPE_KARAOKE,
+           AV_AUDIO_SERVICE_TYPE_NB);
 }
 
 static void print_payload(const char *name, const AVPacket *pkt) {
@@ -664,6 +848,7 @@ int main(void) {
     av_packet_free(&pkt);
 
     print_side_data_kind_inventory();
+    print_side_data_payload_layouts();
 
     pkt = packet_with_common_props();
     av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
