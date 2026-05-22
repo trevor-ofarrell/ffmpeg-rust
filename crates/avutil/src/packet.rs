@@ -9995,6 +9995,52 @@ mod tests {
     }
 
     #[test]
+    fn packet_clone_matches_ref_from_shape() {
+        let mut src = Packet::new(vec![1, 2, 3], 4);
+        src.set_pts(Some(12));
+        src.set_dts(Some(10));
+        src.set_duration(2).unwrap();
+        src.set_pos(Some(42)).unwrap();
+        src.set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+        src.set_flag(PacketFlags::KEY, true);
+        src.push_side_data(SideData::new("palette", vec![5, 6]).unwrap());
+        src.set_opaque_address(0xfeed_cafe);
+        src.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad])));
+
+        let mut cloned = src.clone();
+
+        assert_eq!(cloned.data(), &[1, 2, 3]);
+        assert!(cloned.data_buffer().shares_storage(src.data_buffer()));
+        assert_eq!(cloned.stream_index(), 4);
+        assert_eq!(cloned.pts(), Some(12));
+        assert_eq!(cloned.dts(), Some(10));
+        assert_eq!(cloned.duration(), 2);
+        assert_eq!(cloned.pos(), Some(42));
+        assert_eq!(cloned.time_base(), Rational::new(1, 90_000).unwrap());
+        assert!(cloned.flags().contains(PacketFlags::KEY));
+        assert_eq!(cloned.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+        assert_eq!(cloned.opaque_address(), Some(0xfeed_cafe));
+        assert_eq!(cloned.opaque_ref().unwrap().as_slice(), &[0xde, 0xad]);
+        assert!(cloned
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+
+        cloned.shrink_side_data("palette", 1).unwrap();
+        cloned.make_data_writable()[0] = 9;
+        cloned.clear_opaque_ref();
+
+        assert_eq!(cloned.data(), &[9, 2, 3]);
+        assert_eq!(src.data(), &[1, 2, 3]);
+        assert!(!cloned.data_buffer().shares_storage(src.data_buffer()));
+        assert_eq!(cloned.side_data_by_kind("palette").unwrap().data(), &[5]);
+        assert_eq!(src.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+        assert!(cloned.opaque_ref().is_none());
+        assert!(src.opaque_ref().is_some());
+    }
+
+    #[test]
     fn packet_make_data_writable_detaches_shared_payload() {
         let src = Packet::new(vec![1, 2, 3], 0);
         let mut dst = Packet::default();

@@ -120,6 +120,9 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     referenced.ref_from(&src);
     rows.insert("packet:ref".to_string(), packet_fields(&referenced));
 
+    let cloned = src.clone();
+    rows.insert("packet:clone".to_string(), packet_fields(&cloned));
+
     let mut move_src = packet_with_common_props();
     let mut move_dst = Packet::new(vec![0x44], 9);
     move_dst.move_ref_from(&mut move_src);
@@ -1600,6 +1603,11 @@ int main(void) {
     fail_if(av_packet_ref(dst, src) < 0, "av_packet_ref failed");
     print_packet("packet:ref", dst);
     av_packet_free(&dst);
+
+    AVPacket *cloned = av_packet_clone(src);
+    fail_if(!cloned, "av_packet_clone failed");
+    print_packet("packet:clone", cloned);
+    av_packet_free(&cloned);
     av_packet_free(&src);
 
     src = packet_with_common_props();

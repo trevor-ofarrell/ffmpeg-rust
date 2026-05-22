@@ -6907,6 +6907,48 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .shares_storage(packet.opaque_ref().unwrap()));
     assert_eq!(packet_ref.opaque(), packet.opaque());
     assert_eq!(packet_ref.time_base(), packet.time_base());
+
+    let mut cloned_packet = packet.clone();
+    assert_eq!(cloned_packet.data(), packet.data());
+    assert!(cloned_packet
+        .data_buffer()
+        .shares_storage(packet.data_buffer()));
+    assert_eq!(
+        cloned_packet
+            .side_data_by_kind("ref_side_data")
+            .unwrap()
+            .data(),
+        &[0xbb, 0xcc]
+    );
+    assert_eq!(
+        cloned_packet.opaque_ref().unwrap().as_slice(),
+        opaque_payload.as_slice()
+    );
+    assert!(cloned_packet
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(packet.opaque_ref().unwrap()));
+    cloned_packet
+        .shrink_side_data("ref_side_data", 1)
+        .unwrap();
+    if let Some(first) = cloned_packet.make_data_writable().first_mut() {
+        *first = first.wrapping_add(2);
+    }
+    assert_eq!(
+        cloned_packet
+            .side_data_by_kind("ref_side_data")
+            .unwrap()
+            .data(),
+        &[0xbb]
+    );
+    assert_eq!(
+        packet.side_data_by_kind("ref_side_data").unwrap().data(),
+        &[0xbb, 0xcc]
+    );
+    assert!(!cloned_packet
+        .data_buffer()
+        .shares_storage(packet.data_buffer()));
+
     packet_ref.shrink_side_data("ref_side_data", 1).unwrap();
     assert_eq!(
         packet_ref.side_data_by_kind("ref_side_data").unwrap().data(),
