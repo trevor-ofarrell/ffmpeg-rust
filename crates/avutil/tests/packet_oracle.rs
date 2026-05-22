@@ -15,7 +15,8 @@ use avutil::{
     PacketOpaque, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
     PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
     PacketSideDataKind, PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason,
-    PacketSphericalMapping, PacketSphericalProjection, PacketSubtitlePosition,
+    PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,
+    PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition,
     PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE,
     AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
@@ -299,6 +300,23 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
             )
             .to_bytes(),
             &[0, 4, 8, 12, 16, 20, 24, 28, 32],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-stereo3d".to_string(),
+        payload_layout_fields(
+            &PacketStereo3d::new(
+                PacketStereo3dType::SideBySide,
+                PacketStereo3dFlags::INVERT,
+                PacketStereo3dView::Right,
+                PacketStereo3dPrimaryEye::Left,
+                0x0102_0304,
+                Rational::from_raw(1, 2),
+                Rational::from_raw(75, 1),
+            )
+            .unwrap()
+            .to_bytes(),
+            &[0, 4, 8, 12, 16, 20, 28],
         ),
     );
     rows.insert(
@@ -1414,6 +1432,7 @@ fn oracle_c_source() -> &'static str {
 #include "libavutil/pixfmt.h"
 #include "libavutil/replaygain.h"
 #include "libavutil/spherical.h"
+#include "libavutil/stereo3d.h"
 
 static void fail_if(int condition, const char *message) {
     if (condition) {
@@ -1711,6 +1730,26 @@ static void print_side_data_payload_layouts(void) {
            offsetof(AVSphericalMapping, bound_right),
            offsetof(AVSphericalMapping, bound_bottom),
            offsetof(AVSphericalMapping, padding));
+
+    AVStereo3D stereo3d;
+    memset(&stereo3d, 0, sizeof(stereo3d));
+    stereo3d.type = AV_STEREO3D_SIDEBYSIDE;
+    stereo3d.flags = AV_STEREO3D_FLAG_INVERT;
+    stereo3d.view = AV_STEREO3D_VIEW_RIGHT;
+    stereo3d.primary_eye = AV_PRIMARY_EYE_LEFT;
+    stereo3d.baseline = 0x01020304;
+    stereo3d.horizontal_disparity_adjustment = (AVRational){ 1, 2 };
+    stereo3d.horizontal_field_of_view = (AVRational){ 75, 1 };
+    print_payload_layout_header("packet:payload-layout-stereo3d",
+                                &stereo3d, sizeof(stereo3d));
+    printf("|%zu|%zu|%zu|%zu|%zu|%zu|%zu\n",
+           offsetof(AVStereo3D, type),
+           offsetof(AVStereo3D, flags),
+           offsetof(AVStereo3D, view),
+           offsetof(AVStereo3D, primary_eye),
+           offsetof(AVStereo3D, baseline),
+           offsetof(AVStereo3D, horizontal_disparity_adjustment),
+           offsetof(AVStereo3D, horizontal_field_of_view));
 
     AVCPBProperties cpb;
     memset(&cpb, 0, sizeof(cpb));

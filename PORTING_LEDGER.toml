@@ -2,9 +2,9 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest avutil-packet evidence: AV_PKT_DATA_SPHERICAL
+# Latest avutil-packet evidence: AV_PKT_DATA_STEREO3D
 # payload layout now has a pinned oracle row proving the FFmpeg
-# AVSphericalMapping native 36-byte side-data shape and field offsets.
+# AVStereo3D native 36-byte side-data shape and field offsets.
 # avutil-packet remains differential_pass, not complete.
 
 [[component]]
@@ -259,7 +259,8 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-packet|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-# Latest update: pinned libavcodec/libavutil AVPacket oracle coverage now validates AV_PKT_DATA_SPHERICAL payload layout through packet:payload-layout-spherical, proving the native 36-byte AVSphericalMapping packet side-data shape and projection / orientation / bounds / padding field offsets. Rust PacketSphericalMapping unit tests and avutil_core_models fuzz-smoke invariants continue to cover valid, enum-table, raw-bound, and malformed spherical payloads.
+# Latest update: pinned libavcodec/libavutil AVPacket oracle coverage now validates AV_PKT_DATA_STEREO3D payload layout through packet:payload-layout-stereo3d, proving the native 36-byte AVStereo3D packet side-data shape and type / flags / view / primary-eye / baseline / rational field offsets. Rust PacketStereo3d unit tests and avutil_core_models fuzz-smoke invariants continue to cover valid, enum-table, rational-bound, and malformed stereo3d payloads. This evidence was checked with `cargo test -p avutil --lib stereo3d` and WSL `cargo test -p avutil --test packet_oracle -- --ignored --nocapture`.
+# Prior update: pinned libavcodec/libavutil AVPacket oracle coverage validates AV_PKT_DATA_SPHERICAL payload layout through packet:payload-layout-spherical, proving the native 36-byte AVSphericalMapping packet side-data shape and projection / orientation / bounds / padding field offsets. Rust PacketSphericalMapping unit tests and avutil_core_models fuzz-smoke invariants continue to cover valid, enum-table, raw-bound, and malformed spherical payloads.
 # Prior update: pinned libavcodec/libavutil AVPacket oracle coverage now validates AV_PKT_DATA_MASTERING_DISPLAY_METADATA payload layout through packet:payload-layout-mastering-display, proving the native 88-byte AVMasteringDisplayMetadata packet side-data shape and display-primary / white-point / luminance / flag field offsets. Rust PacketMasteringDisplayMetadata unit tests and avutil_core_models fuzz-smoke invariants continue to cover valid, raw-rational, and malformed mastering-display payloads.
 # Prior update: pinned libavcodec/libavutil AVPacket oracle coverage now validates AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT payload layout through packet:payload-layout-ambient-viewing-environment, proving the native 24-byte AVAmbientViewingEnvironment packet side-data shape and ambient illuminance / ambient light x / ambient light y field offsets. Rust PacketAmbientViewingEnvironment unit tests and avutil_core_models fuzz-smoke invariants continue to cover valid and malformed ambient viewing environment payloads.
 # Prior update: pinned libavcodec/libavutil AVPacket oracle coverage now validates AV_PKT_DATA_CONTENT_LIGHT_LEVEL payload layout through packet:payload-layout-content-light, proving the native 8-byte AVContentLightMetadata packet side-data shape and MaxCLL/MaxFALL field offsets. Rust PacketContentLightMetadata unit tests and avutil_core_models fuzz-smoke invariants continue to cover valid, boundary, and malformed content-light payloads.
