@@ -10,15 +10,16 @@ use avutil::{
     FrameSideDataFlags, FrameSideDataKind, Packet, PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
-    PacketFallbackTrack, PacketFifo, PacketFlags, PacketFrameCropping, PacketJpDualMono,
-    PacketJpDualMonoSelection, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
-    PacketMpegTsStreamId, PacketOpaque, PacketParamChange, PacketPictureType,
-    PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport,
-    PacketS12mTimecode, PacketSideDataKind, PacketSideDataList, PacketSkipSamples,
-    PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d,
-    PacketStereo3dFlags, PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView,
-    PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData,
-    AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    PacketDynamicHdr10Plus, PacketFallbackTrack, PacketFifo, PacketFlags, PacketFrameCropping,
+    PacketHdrPlusColorTransformParams, PacketJpDualMono, PacketJpDualMonoSelection,
+    PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
+    PacketOpaque, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
+    PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
+    PacketSideDataKind, PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason,
+    PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,
+    PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition,
+    PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE,
+    AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -385,6 +386,13 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
             &[0, 1, 2, 3, 4, 5, 6, 7, 8],
         ),
     );
+    rows.insert(
+        "packet:payload-layout-dynamic-hdr10-plus".to_string(),
+        payload_layout_fields(
+            &dynamic_hdr10_plus_payload_layout_bytes(),
+            &dynamic_hdr10_plus_payload_layout_offsets(),
+        ),
+    );
 
     let mut audio_fields =
         payload_layout_fields(&PacketAudioServiceType::Commentary.to_bytes(), &[]);
@@ -524,6 +532,81 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
         "packet:payload-layout-lcevc".to_string(),
         payload_layout_fields(&[0x00, 0x00, 0x01, 0xe0, 0x90], &[]),
     );
+}
+
+fn dynamic_hdr10_plus_payload_layout_bytes() -> Vec<u8> {
+    let mut data = vec![0; PacketDynamicHdr10Plus::DATA_LEN];
+    data[0] = PacketDynamicHdr10Plus::ITU_T_T35_COUNTRY_CODE;
+    data[1] = PacketDynamicHdr10Plus::APPLICATION_VERSION;
+    data[2] = 1;
+
+    let targeted_max_offset = dynamic_hdr10_plus_targeted_max_offset();
+    write_ne_i32(&mut data, targeted_max_offset, 1000);
+    write_ne_i32(&mut data, targeted_max_offset + 4, 1);
+    data[targeted_max_offset + 8] = 1;
+    data[targeted_max_offset + 9] = 2;
+    data[targeted_max_offset + 10] = 2;
+
+    let targeted_table_offset = targeted_max_offset + 12;
+    write_ne_i32(&mut data, targeted_table_offset, 1);
+    write_ne_i32(&mut data, targeted_table_offset + 4, 15);
+
+    let mastering_flag_offset = targeted_table_offset + dynamic_hdr10_plus_peak_table_len();
+    data[mastering_flag_offset] = 1;
+    data[mastering_flag_offset + 1] = 2;
+    data[mastering_flag_offset + 2] = 2;
+
+    let mastering_table_offset = mastering_flag_offset + 4;
+    let second_mastering_entry =
+        mastering_table_offset + (PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_COLS + 1) * 8;
+    write_ne_i32(&mut data, second_mastering_entry, 2);
+    write_ne_i32(&mut data, second_mastering_entry + 4, 15);
+
+    data
+}
+
+fn dynamic_hdr10_plus_payload_layout_offsets() -> Vec<usize> {
+    let params_offset = dynamic_hdr10_plus_params_offset();
+    let targeted_max_offset = dynamic_hdr10_plus_targeted_max_offset();
+    let targeted_table_offset = targeted_max_offset + 12;
+    let mastering_flag_offset = targeted_table_offset + dynamic_hdr10_plus_peak_table_len();
+    let mastering_table_offset = mastering_flag_offset + 4;
+
+    vec![
+        0,
+        1,
+        2,
+        params_offset,
+        params_offset + PacketHdrPlusColorTransformParams::DATA_LEN,
+        targeted_max_offset,
+        targeted_max_offset + 8,
+        targeted_max_offset + 9,
+        targeted_max_offset + 10,
+        targeted_table_offset,
+        mastering_flag_offset,
+        mastering_flag_offset + 1,
+        mastering_flag_offset + 2,
+        mastering_table_offset,
+    ]
+}
+
+fn dynamic_hdr10_plus_params_offset() -> usize {
+    4
+}
+
+fn dynamic_hdr10_plus_targeted_max_offset() -> usize {
+    dynamic_hdr10_plus_params_offset()
+        + PacketDynamicHdr10Plus::MAX_WINDOWS * PacketHdrPlusColorTransformParams::DATA_LEN
+}
+
+fn dynamic_hdr10_plus_peak_table_len() -> usize {
+    PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_ROWS
+        * PacketDynamicHdr10Plus::MAX_PEAK_LUMINANCE_COLS
+        * 8
+}
+
+fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {
+    data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
 }
 
 fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -1445,6 +1528,7 @@ fn oracle_c_source() -> &'static str {
 #include "libavutil/display.h"
 #include "libavutil/dovi_meta.h"
 #include "libavutil/frame.h"
+#include "libavutil/hdr_dynamic_metadata.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mastering_display_metadata.h"
 #include "libavutil/mem.h"
@@ -1852,6 +1936,38 @@ static void print_side_data_payload_layouts(void) {
            offsetof(AVDOVIDecoderConfigurationRecord, bl_present_flag),
            offsetof(AVDOVIDecoderConfigurationRecord, dv_bl_signal_compatibility_id),
            offsetof(AVDOVIDecoderConfigurationRecord, dv_md_compression));
+
+    AVDynamicHDRPlus hdr10_plus;
+    memset(&hdr10_plus, 0, sizeof(hdr10_plus));
+    hdr10_plus.itu_t_t35_country_code = 0xB5;
+    hdr10_plus.application_version = 0;
+    hdr10_plus.num_windows = 1;
+    hdr10_plus.targeted_system_display_maximum_luminance = (AVRational){ 1000, 1 };
+    hdr10_plus.targeted_system_display_actual_peak_luminance_flag = 1;
+    hdr10_plus.num_rows_targeted_system_display_actual_peak_luminance = 2;
+    hdr10_plus.num_cols_targeted_system_display_actual_peak_luminance = 2;
+    hdr10_plus.targeted_system_display_actual_peak_luminance[0][0] = (AVRational){ 1, 15 };
+    hdr10_plus.mastering_display_actual_peak_luminance_flag = 1;
+    hdr10_plus.num_rows_mastering_display_actual_peak_luminance = 2;
+    hdr10_plus.num_cols_mastering_display_actual_peak_luminance = 2;
+    hdr10_plus.mastering_display_actual_peak_luminance[1][1] = (AVRational){ 2, 15 };
+    print_payload_layout_header("packet:payload-layout-dynamic-hdr10-plus",
+                                &hdr10_plus, sizeof(hdr10_plus));
+    printf("|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu\n",
+           offsetof(AVDynamicHDRPlus, itu_t_t35_country_code),
+           offsetof(AVDynamicHDRPlus, application_version),
+           offsetof(AVDynamicHDRPlus, num_windows),
+           offsetof(AVDynamicHDRPlus, params),
+           (size_t)((const uint8_t *)&hdr10_plus.params[1] - (const uint8_t *)&hdr10_plus),
+           offsetof(AVDynamicHDRPlus, targeted_system_display_maximum_luminance),
+           offsetof(AVDynamicHDRPlus, targeted_system_display_actual_peak_luminance_flag),
+           offsetof(AVDynamicHDRPlus, num_rows_targeted_system_display_actual_peak_luminance),
+           offsetof(AVDynamicHDRPlus, num_cols_targeted_system_display_actual_peak_luminance),
+           offsetof(AVDynamicHDRPlus, targeted_system_display_actual_peak_luminance),
+           offsetof(AVDynamicHDRPlus, mastering_display_actual_peak_luminance_flag),
+           offsetof(AVDynamicHDRPlus, num_rows_mastering_display_actual_peak_luminance),
+           offsetof(AVDynamicHDRPlus, num_cols_mastering_display_actual_peak_luminance),
+           offsetof(AVDynamicHDRPlus, mastering_display_actual_peak_luminance));
 
     enum AVAudioServiceType service_type = AV_AUDIO_SERVICE_TYPE_COMMENTARY;
     print_payload_layout_header("packet:payload-layout-audio-service-type",
