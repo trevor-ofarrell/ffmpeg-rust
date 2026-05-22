@@ -69,8 +69,9 @@ use avutil::{
     SampleFormatNumericKind, HashAlgorithm, HashContext, Murmur3, Ripemd128, Ripemd160,
     Ripemd256, Ripemd320, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
     Sha512Trunc256, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE,
-    AV_INPUT_BUFFER_PADDING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV, AV_TIME_BASE,
-    AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE, packet_pack_dictionary,
+    AV_INPUT_BUFFER_PADDING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV,
+    AV_NUM_DATA_POINTERS, AV_TIME_BASE, AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE,
+    packet_pack_dictionary,
     packet_unpack_dictionary,
 };
 use libfuzzer_sys::fuzz_target;
@@ -11844,6 +11845,35 @@ fn exercise_fixtures() {
         ChannelLayoutSpec::default_for_count(10).unwrap(),
         ChannelLayoutSpec::Native(ChannelLayout::five_one_four())
     );
+    let extended_audio = AudioFrame::new(
+        48_000,
+        10,
+        SampleFormat::S16P,
+        1,
+        (0..10).map(|plane| vec![plane as u8, 0]).collect(),
+    )
+    .unwrap();
+    let extended_topology = extended_audio.buffer_topology();
+    assert_eq!(extended_topology.data_pointer_count(), 10);
+    assert_eq!(
+        extended_topology.direct_data_slots(),
+        AV_NUM_DATA_POINTERS
+    );
+    assert_eq!(
+        extended_topology.direct_buffer_refs(),
+        AV_NUM_DATA_POINTERS
+    );
+    assert_eq!(extended_topology.extended_buffer_refs(), 2);
+    assert!(extended_topology.uses_separate_extended_data());
+    assert_eq!(Frame::audio(extended_audio).buffer_topology(), extended_topology);
+    let packed_ten_channel_audio =
+        AudioFrame::new(48_000, 10, SampleFormat::S16, 1, vec![vec![0; 20]]).unwrap();
+    let packed_topology = packed_ten_channel_audio.buffer_topology();
+    assert_eq!(packed_topology.data_pointer_count(), 1);
+    assert_eq!(packed_topology.direct_data_slots(), 1);
+    assert_eq!(packed_topology.direct_buffer_refs(), 1);
+    assert_eq!(packed_topology.extended_buffer_refs(), 0);
+    assert!(!packed_topology.uses_separate_extended_data());
     assert_eq!(
         ChannelLayoutSpec::parse("2 channels (FL+FR)").unwrap(),
         ChannelLayoutSpec::Native(ChannelLayout::stereo())

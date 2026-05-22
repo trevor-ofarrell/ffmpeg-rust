@@ -5,6 +5,55 @@ use crate::{
 use std::num::NonZeroUsize;
 
 const FFMPEG_FRAME_DEFAULT_ALIGNMENT: usize = 64;
+pub const AV_NUM_DATA_POINTERS: usize = 8;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameBufferTopology {
+    data_pointer_count: usize,
+    direct_data_slots: usize,
+    direct_buffer_refs: usize,
+    extended_buffer_refs: usize,
+    uses_separate_extended_data: bool,
+}
+
+impl FrameBufferTopology {
+    const fn from_data_pointer_count(data_pointer_count: usize) -> Self {
+        let direct_slots = if data_pointer_count < AV_NUM_DATA_POINTERS {
+            data_pointer_count
+        } else {
+            AV_NUM_DATA_POINTERS
+        };
+        let extended_refs = data_pointer_count.saturating_sub(AV_NUM_DATA_POINTERS);
+
+        Self {
+            data_pointer_count,
+            direct_data_slots: direct_slots,
+            direct_buffer_refs: direct_slots,
+            extended_buffer_refs: extended_refs,
+            uses_separate_extended_data: data_pointer_count > AV_NUM_DATA_POINTERS,
+        }
+    }
+
+    pub const fn data_pointer_count(self) -> usize {
+        self.data_pointer_count
+    }
+
+    pub const fn direct_data_slots(self) -> usize {
+        self.direct_data_slots
+    }
+
+    pub const fn direct_buffer_refs(self) -> usize {
+        self.direct_buffer_refs
+    }
+
+    pub const fn extended_buffer_refs(self) -> usize {
+        self.extended_buffer_refs
+    }
+
+    pub const fn uses_separate_extended_data(self) -> bool {
+        self.uses_separate_extended_data
+    }
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum FrameData {
@@ -32,6 +81,14 @@ impl FrameData {
             Self::Empty => {}
             Self::Video(frame) => frame.make_writable(),
             Self::Audio(frame) => frame.make_writable(),
+        }
+    }
+
+    pub fn buffer_topology(&self) -> FrameBufferTopology {
+        match self {
+            Self::Empty => FrameBufferTopology::default(),
+            Self::Video(frame) => frame.buffer_topology(),
+            Self::Audio(frame) => frame.buffer_topology(),
         }
     }
 
@@ -1263,6 +1320,10 @@ impl Frame {
 
     pub fn data_mut(&mut self) -> &mut FrameData {
         &mut self.data
+    }
+
+    pub fn buffer_topology(&self) -> FrameBufferTopology {
+        self.data.buffer_topology()
     }
 
     pub fn is_writable(&self) -> bool {
@@ -13128,6 +13189,10 @@ impl VideoFrame {
         &self.plane_buffers
     }
 
+    pub fn buffer_topology(&self) -> FrameBufferTopology {
+        FrameBufferTopology::from_data_pointer_count(self.plane_buffers.len())
+    }
+
     pub fn is_writable(&self) -> bool {
         self.plane_buffers.iter().all(BufferRef::is_writable)
     }
@@ -13542,6 +13607,10 @@ impl AudioFrame {
 
     pub fn plane_buffers(&self) -> &[BufferRef] {
         &self.plane_buffers
+    }
+
+    pub fn buffer_topology(&self) -> FrameBufferTopology {
+        FrameBufferTopology::from_data_pointer_count(self.plane_buffers.len())
     }
 
     pub fn is_writable(&self) -> bool {
@@ -18926,6 +18995,52 @@ mod tests {
         };
         assert_eq!(video.pixel_format(), PixelFormat::Rgb24);
         assert_eq!(video.planes(), &[vec![1, 2, 3]]);
+    }
+
+    #[test]
+    fn frame_buffer_topology_tracks_extended_audio_slots() {
+        assert_eq!(AV_NUM_DATA_POINTERS, 8);
+        assert_eq!(
+            Frame::empty().buffer_topology(),
+            FrameBufferTopology::default()
+        );
+
+        let planar_planes = (0..10)
+            .map(|plane| vec![plane as u8, plane as u8 + 1])
+            .collect::<Vec<_>>();
+        let planar_audio =
+            AudioFrame::new(48_000, 10, SampleFormat::S16P, 1, planar_planes).unwrap();
+        let planar_topology = planar_audio.buffer_topology();
+        assert_eq!(planar_topology.data_pointer_count(), 10);
+        assert_eq!(planar_topology.direct_data_slots(), AV_NUM_DATA_POINTERS);
+        assert_eq!(planar_topology.direct_buffer_refs(), AV_NUM_DATA_POINTERS);
+        assert_eq!(planar_topology.extended_buffer_refs(), 2);
+        assert!(planar_topology.uses_separate_extended_data());
+
+        let planar_frame = Frame::audio(planar_audio);
+        assert_eq!(planar_frame.buffer_topology(), planar_topology);
+
+        let packed_audio =
+            AudioFrame::new(48_000, 10, SampleFormat::S16, 1, vec![vec![0; 20]]).unwrap();
+        let packed_topology = packed_audio.buffer_topology();
+        assert_eq!(packed_topology.data_pointer_count(), 1);
+        assert_eq!(packed_topology.direct_data_slots(), 1);
+        assert_eq!(packed_topology.direct_buffer_refs(), 1);
+        assert_eq!(packed_topology.extended_buffer_refs(), 0);
+        assert!(!packed_topology.uses_separate_extended_data());
+
+        let video = VideoFrame::new(
+            2,
+            2,
+            PixelFormat::Yuva444p,
+            vec![vec![0; 4], vec![1; 4], vec![2; 4], vec![3; 4]],
+        )
+        .unwrap();
+        let video_topology = video.buffer_topology();
+        assert_eq!(video_topology.data_pointer_count(), 4);
+        assert_eq!(video_topology.direct_data_slots(), 4);
+        assert_eq!(video_topology.extended_buffer_refs(), 0);
+        assert!(!video_topology.uses_separate_extended_data());
     }
 
     #[test]

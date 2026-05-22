@@ -7,10 +7,11 @@ use std::{
 
 use avutil::{
     AudioFrame, AvErrorCode, BufferRef, ChannelLayout, ChannelLayoutSpec, Frame, FrameAlphaMode,
-    FrameChromaLocation, FrameColorPrimaries, FrameColorRange, FrameColorSpace,
-    FrameColorTransferCharacteristic, FrameData, FrameDecodeErrorFlags, FrameFlags,
-    FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
+    FrameBufferTopology, FrameChromaLocation, FrameColorPrimaries, FrameColorRange,
+    FrameColorSpace, FrameColorTransferCharacteristic, FrameData, FrameDecodeErrorFlags,
+    FrameFlags, FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
     FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame, AV_NOPTS_VALUE,
+    AV_NUM_DATA_POINTERS,
 };
 
 #[test]
@@ -178,6 +179,21 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         .unwrap(),
     );
     rows.insert("frame:audio-buffer".to_string(), frame_fields(&audio));
+
+    let extended_audio = Frame::audio(
+        AudioFrame::new(
+            48_000,
+            10,
+            SampleFormat::S16P,
+            1,
+            (0..10).map(|plane| vec![plane as u8, 0]).collect(),
+        )
+        .unwrap(),
+    );
+    rows.insert(
+        "frame:audio-extended-topology".to_string(),
+        frame_buffer_topology_fields(&extended_audio),
+    );
 
     let copy_source_side = (1..=36).collect::<Vec<u8>>();
     let copy_source_video =
@@ -655,6 +671,22 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
     ]
 }
 
+fn frame_buffer_topology_fields(frame: &Frame) -> Vec<String> {
+    let topology = frame.buffer_topology();
+    frame_buffer_topology_values(topology)
+}
+
+fn frame_buffer_topology_values(topology: FrameBufferTopology) -> Vec<String> {
+    vec![
+        AV_NUM_DATA_POINTERS.to_string(),
+        topology.direct_data_slots().to_string(),
+        topology.data_pointer_count().to_string(),
+        topology.direct_buffer_refs().to_string(),
+        topology.extended_buffer_refs().to_string(),
+        bool_field(topology.uses_separate_extended_data()),
+    ]
+}
+
 fn metadata_summary(metadata: &avutil::Dictionary) -> String {
     let mut values = Vec::new();
     for key in ["encoder", "title", "keep", "artist"] {
@@ -1074,6 +1106,51 @@ static void print_audio_planes(const AVFrame *frame)
     }
 }
 
+static int frame_data_pointer_count(const AVFrame *frame)
+{
+    if (frame->width > 0 && frame->height > 0) {
+        int count = 0;
+        for (int i = 0; i < AV_NUM_DATA_POINTERS; i++)
+            if (frame->data[i] != NULL)
+                count++;
+        return count;
+    }
+
+    if (frame->nb_samples > 0 && frame->ch_layout.nb_channels > 0) {
+        return av_sample_fmt_is_planar(frame->format)
+                   ? frame->ch_layout.nb_channels
+                   : 1;
+    }
+
+    return 0;
+}
+
+static void print_frame_buffer_topology(const char *name, const AVFrame *frame)
+{
+    int direct_data_slots = 0;
+    int extended_data_pointers = 0;
+    int direct_buffer_refs = 0;
+    int data_pointer_count = frame_data_pointer_count(frame);
+
+    for (int i = 0; i < AV_NUM_DATA_POINTERS; i++) {
+        if (frame->data[i] != NULL)
+            direct_data_slots++;
+        if (frame->buf[i] != NULL)
+            direct_buffer_refs++;
+    }
+
+    if (frame->extended_data != NULL) {
+        for (int i = 0; i < data_pointer_count; i++)
+            if (frame->extended_data[i] != NULL)
+                extended_data_pointers++;
+    }
+
+    printf("%s|%d|%d|%d|%d|%d|%d\n", name, AV_NUM_DATA_POINTERS,
+           direct_data_slots, extended_data_pointers, direct_buffer_refs,
+           frame->nb_extended_buf,
+           frame->extended_data != NULL && frame->extended_data != frame->data);
+}
+
 static void print_side_summary(const AVFrame *frame)
 {
     if (frame->nb_side_data == 0) {
@@ -1443,6 +1520,17 @@ int main(void)
         audio->data[0][i] = (uint8_t)(i + 1);
     print_frame("frame:audio-buffer", audio);
 
+    AVFrame *extended_audio = av_frame_alloc();
+    fail_if(!extended_audio, "extended_audio av_frame_alloc failed");
+    extended_audio->format = AV_SAMPLE_FMT_S16P;
+    extended_audio->sample_rate = 48000;
+    extended_audio->nb_samples = 1;
+    av_channel_layout_default(&extended_audio->ch_layout, 10);
+    fail_if(av_frame_get_buffer(extended_audio, 1) < 0,
+            "extended_audio av_frame_get_buffer failed");
+    print_frame_buffer_topology("frame:audio-extended-topology",
+                                extended_audio);
+
     AVFrame *copy_src = av_frame_alloc();
     fail_if(!copy_src, "copy_src av_frame_alloc failed");
     copy_src->format = AV_PIX_FMT_GRAY8;
@@ -1764,6 +1852,7 @@ int main(void)
     av_frame_free(&side_frame);
     av_frame_free(&copy_dst);
     av_frame_free(&copy_src);
+    av_frame_free(&extended_audio);
     av_frame_free(&audio);
     av_frame_free(&move_dst);
     av_frame_free(&video_ref);

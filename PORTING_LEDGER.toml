@@ -414,6 +414,7 @@ unit_tests = [
   "frame::tests::frames_report_tightly_packed_line_sizes",
   "frame::tests::frame_wraps_audio_or_video_with_optional_pts",
   "frame::tests::frame_audio_properties_are_top_level_and_copy_props_propagates_them",
+  "frame::tests::frame_buffer_topology_tracks_extended_audio_slots",
   "frame::tests::frame_picture_type_values_and_flags_match_ffmpeg_8_1_1_header",
   "frame::tests::frame_decode_error_flags_match_ffmpeg_8_1_1_header",
   "frame::tests::frame_alpha_mode_values_match_ffmpeg_8_1_1_header",
@@ -544,6 +545,13 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: The pinned libavutil `AVFrame` oracle now validates
+# `AV_NUM_DATA_POINTERS = 8` plus planar 10-channel s16p buffer topology:
+# eight direct `data[]`/`buf[]` slots, ten valid `extended_data` pointers,
+# two `extended_buf` refs, and a separate extended-data array. Rust exposes
+# this through safe `FrameBufferTopology` counts on FrameData/Frame,
+# VideoFrame, and AudioFrame, with unit and avutil_core_models fuzz-smoke
+# invariants for planar extended audio and packed ten-channel audio.
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
 # top-level `sample_rate` and `ch_layout.nb_channels` defaults plus
 # `av_frame_ref`, `av_frame_move_ref`, `av_frame_unref`, and
