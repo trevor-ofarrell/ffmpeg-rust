@@ -19,7 +19,7 @@ Strict parity status is still low:
 - Rows marked `differential_pass`, `fate_pass`, or `fuzzed`: 3
 - Pinned FFmpeg oracle: installed locally through WSL wrappers under ignored `third_party/ffmpeg-oracle/`
 - Generated FFmpeg inventory snapshot: present locally under ignored `compat/ffmpeg-8.1.1/`
-- Upstream FATE sample execution: not running locally; sample tree is still absent
+- Upstream FATE sample execution: limited; one WAV sample is installed locally, but the full sample tree is still absent
 - Actual local `cargo-fuzz` execution: available through WSL; avutil smoke targets have run locally
 
 Estimated completion:

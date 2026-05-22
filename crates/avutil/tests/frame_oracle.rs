@@ -217,6 +217,26 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     video.unref();
     rows.insert("frame:unref".to_string(), frame_fields(&video));
 
+    let mut rich_unref = Frame::video(
+        VideoFrame::new_with_aligned_line_sizes(1, 1, PixelFormat::Gray8, vec![vec![0x42]], 1)
+            .unwrap(),
+    )
+    .with_hw_frames_context(BufferRef::copy_from_slice(&[0x77]));
+    rich_unref.set_pts(Some(701));
+    rich_unref
+        .set_time_base(Rational::new(1, 25).unwrap())
+        .unwrap();
+    rich_unref.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0x88, 0x99])));
+    rich_unref
+        .metadata_mut()
+        .set("title", "before-unref")
+        .unwrap();
+    rich_unref
+        .set_side_data_kind(FrameSideDataKind::DisplayMatrix, vec![0x55; 36])
+        .unwrap();
+    rich_unref.unref();
+    rows.insert("frame:unref-rich".to_string(), frame_fields(&rich_unref));
+
     let audio_payload = (1..=12).collect::<Vec<u8>>();
     let audio = Frame::audio(
         AudioFrame::new_with_channel_layout_and_aligned_line_sizes(
@@ -2189,6 +2209,33 @@ int main(void)
     av_frame_unref(video);
     print_frame("frame:unref", video);
 
+    AVFrame *rich_unref = av_frame_alloc();
+    fail_if(!rich_unref, "rich_unref av_frame_alloc failed");
+    rich_unref->format = AV_PIX_FMT_GRAY8;
+    rich_unref->width = 1;
+    rich_unref->height = 1;
+    rich_unref->pts = 701;
+    rich_unref->time_base = (AVRational){ 1, 25 };
+    rich_unref->opaque_ref = av_buffer_alloc(2);
+    fail_if(!rich_unref->opaque_ref,
+            "rich_unref opaque_ref allocation failed");
+    rich_unref->opaque_ref->data[0] = 0x88;
+    rich_unref->opaque_ref->data[1] = 0x99;
+    rich_unref->hw_frames_ctx = av_buffer_alloc(1);
+    fail_if(!rich_unref->hw_frames_ctx,
+            "rich_unref hw_frames_ctx allocation failed");
+    rich_unref->hw_frames_ctx->data[0] = 0x77;
+    av_dict_set(&rich_unref->metadata, "title", "before-unref", 0);
+    fail_if(av_frame_get_buffer(rich_unref, 1) < 0,
+            "rich_unref av_frame_get_buffer failed");
+    rich_unref->data[0][0] = 0x42;
+    AVFrameSideData *rich_unref_sd = av_frame_new_side_data(
+        rich_unref, AV_FRAME_DATA_DISPLAYMATRIX, 36);
+    fail_if(!rich_unref_sd, "rich_unref side data allocation failed");
+    memset(rich_unref_sd->data, 0x55, rich_unref_sd->size);
+    av_frame_unref(rich_unref);
+    print_frame("frame:unref-rich", rich_unref);
+
     AVFrame *audio = av_frame_alloc();
     fail_if(!audio, "audio av_frame_alloc failed");
     audio->format = AV_SAMPLE_FMT_S16;
@@ -2957,6 +3004,7 @@ int main(void)
     av_frame_free(&audio);
     av_frame_free(&move_dst);
     av_frame_free(&video_ref);
+    av_frame_free(&rich_unref);
     av_frame_free(&video);
 
     return 0;

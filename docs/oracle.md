@@ -237,6 +237,9 @@ source metadata keys overwrite matching
 destination metadata while destination-only metadata keys remain, existing destination side data is retained,
 source side data is appended as a deep copy, and destination `hw_frames_ctx`
 remains unchanged.
+The `frame:unref-rich` row proves `av_frame_unref()` resets a populated frame
+that owns payload buffers, metadata, displaymatrix side data, `hw_frames_ctx`,
+and `opaque_ref`, matching the Rust `Frame::unref()` reset surface.
 The `av_frame_side_data_name` boundary row proves that known 0-based
 `AV_FRAME_DATA_*` values map to descriptor names, while -1, the first raw value
 after `AV_FRAME_DATA_EXIF`, the next raw value, and INT_MAX return NULL. FFmpeg
