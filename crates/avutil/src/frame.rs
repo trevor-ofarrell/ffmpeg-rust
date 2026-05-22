@@ -1757,6 +1757,26 @@ impl Frame {
             .map(|index| self.side_data.remove(index))
     }
 
+    pub fn remove_all_side_data(&mut self, kind: &str) -> Vec<FrameSideData> {
+        let Ok(kind) = FrameSideDataKind::from_name(kind) else {
+            return Vec::new();
+        };
+        self.remove_all_side_data_kind(&kind)
+    }
+
+    pub fn remove_all_side_data_kind(&mut self, kind: &FrameSideDataKind) -> Vec<FrameSideData> {
+        let mut removed = Vec::new();
+        let mut index = 0;
+        while index < self.side_data.len() {
+            if self.side_data[index].kind_id() == kind {
+                removed.push(self.side_data.remove(index));
+            } else {
+                index += 1;
+            }
+        }
+        removed
+    }
+
     pub fn remove_side_data_by_properties(
         &mut self,
         properties: FrameSideDataProperties,
@@ -28906,6 +28926,44 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+    }
+
+    #[test]
+    fn frame_get_and_remove_duplicate_side_data_matches_frame_helper() {
+        let mut frame = Frame::empty();
+        let mut first = Some(BufferRef::copy_from_slice(&[0x11]));
+        frame
+            .new_side_data_kind_buffer(FrameSideDataKind::ReplayGain, &mut first)
+            .unwrap();
+        let mut second = Some(BufferRef::copy_from_slice(&[0x22]));
+        frame
+            .new_side_data_kind_buffer(FrameSideDataKind::ReplayGain, &mut second)
+            .unwrap();
+        let mut multi = Some(BufferRef::copy_from_slice(&[0x33; 16]));
+        frame
+            .new_side_data_kind_buffer(FrameSideDataKind::SeiUnregistered, &mut multi)
+            .unwrap();
+
+        let found = frame
+            .side_data_by_kind(&FrameSideDataKind::ReplayGain)
+            .expect("replaygain side data should be present");
+        assert_eq!(found.data(), &[0x11]);
+        assert_eq!(frame.side_data().len(), 3);
+
+        let removed = frame.remove_all_side_data_kind(&FrameSideDataKind::ReplayGain);
+        assert_eq!(removed.len(), 2);
+        assert_eq!(removed[0].data(), &[0x11]);
+        assert_eq!(removed[1].data(), &[0x22]);
+        assert_eq!(frame.side_data().len(), 1);
+        assert_eq!(
+            frame.side_data()[0].kind_id(),
+            &FrameSideDataKind::SeiUnregistered
+        );
+        assert_eq!(frame.side_data()[0].data(), &[0x33; 16]);
+        assert!(frame
+            .remove_all_side_data_kind(&FrameSideDataKind::ReplayGain)
+            .is_empty());
+        assert!(frame.remove_all_side_data("missing").is_empty());
     }
 
     #[test]

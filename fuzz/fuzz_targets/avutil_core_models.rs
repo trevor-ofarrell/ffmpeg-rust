@@ -4337,6 +4337,26 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert!(multi_side_data.is_none());
     assert_eq!(from_buf_frame.side_data().len(), 3);
     assert_eq!(from_buf_frame.side_data()[2].data(), &[0x95; 16]);
+    assert_eq!(
+        from_buf_frame
+            .side_data_by_kind(&FrameSideDataKind::ReplayGain)
+            .unwrap()
+            .data(),
+        &[0x91, 0x92, 0x93]
+    );
+    let removed_duplicate_replay_gains =
+        from_buf_frame.remove_all_side_data_kind(&FrameSideDataKind::ReplayGain);
+    assert_eq!(removed_duplicate_replay_gains.len(), 2);
+    assert_eq!(removed_duplicate_replay_gains[0].data(), &[0x91, 0x92, 0x93]);
+    assert_eq!(removed_duplicate_replay_gains[1].data(), &[0x94]);
+    assert_eq!(from_buf_frame.side_data().len(), 1);
+    assert_eq!(
+        from_buf_frame.side_data()[0].kind_id(),
+        &FrameSideDataKind::SeiUnregistered
+    );
+    assert!(from_buf_frame
+        .remove_all_side_data_kind(&FrameSideDataKind::ReplayGain)
+        .is_empty());
 
     let replacement_side_data_buffer =
         BufferRef::copy_from_slice_with_padding(&[0x55, 0x66], 1).unwrap();

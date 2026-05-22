@@ -771,6 +771,34 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             &FrameSideDataKind::SeiUnregistered,
         ),
     );
+    let duplicate_found = side_from_buf.side_data_by_kind(&FrameSideDataKind::ReplayGain);
+    rows.insert(
+        "frame:side-data-get-duplicate".to_string(),
+        vec![
+            side_from_buf.side_data().len().to_string(),
+            bool_field(
+                duplicate_found
+                    .map(|side_data| side_data.data() == [0x91, 0x92, 0x93].as_slice())
+                    .unwrap_or(false),
+            ),
+            duplicate_found
+                .map(|side_data| side_data.data().len().to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            duplicate_found
+                .map(|side_data| hex(side_data.data()))
+                .unwrap_or_else(|| "none".to_string()),
+        ],
+    );
+    let removed_duplicates =
+        side_from_buf.remove_all_side_data_kind(&FrameSideDataKind::ReplayGain);
+    rows.insert(
+        "frame:side-data-remove-duplicate".to_string(),
+        vec![
+            removed_duplicates.len().to_string(),
+            side_from_buf.side_data().len().to_string(),
+            side_summary(side_from_buf.side_data()),
+        ],
+    );
 
     let mut side_array = Frame::empty();
     let added = side_array
@@ -2576,6 +2604,25 @@ int main(void)
         side_from_buf->side_data, side_from_buf->nb_side_data,
         frame_multi_entry ? NULL : frame_multi_buf,
         AV_FRAME_DATA_SEI_UNREGISTERED);
+    AVFrameSideData *frame_duplicate_found =
+        av_frame_get_side_data(side_from_buf, AV_FRAME_DATA_REPLAYGAIN);
+    printf("frame:side-data-get-duplicate|%d|%d|%zu|",
+           side_from_buf->nb_side_data,
+           frame_duplicate_found == frame_take_entry,
+           frame_duplicate_found ? frame_duplicate_found->size : 0);
+    if (frame_duplicate_found)
+        print_hex(frame_duplicate_found->data, frame_duplicate_found->size);
+    else
+        printf("none");
+    printf("\n");
+    int before_frame_duplicate_remove = side_from_buf->nb_side_data;
+    av_frame_remove_side_data(side_from_buf, AV_FRAME_DATA_REPLAYGAIN);
+    printf("frame:side-data-remove-duplicate|%d|%d|",
+           before_frame_duplicate_remove - side_from_buf->nb_side_data,
+           side_from_buf->nb_side_data);
+    print_side_array_summary(side_from_buf->side_data,
+                             side_from_buf->nb_side_data);
+    printf("\n");
 
     AVFrameSideData **side_array = NULL;
     int nb_side_array = 0;

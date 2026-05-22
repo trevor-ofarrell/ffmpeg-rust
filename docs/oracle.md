@@ -219,8 +219,9 @@ crop rectangles,
 `AV_FRAME_DATA_*` numeric
 values/names/descriptors/properties, `AV_FRAME_SIDE_DATA_FLAG_*`,
 `AV_SIDE_DATA_PROP_*`, `av_frame_new_side_data` / `av_frame_get_side_data`
-/ `av_frame_remove_side_data` displaymatrix rows, and frame-level
-`av_frame_new_side_data_from_buf()` rows against the Rust `Frame`
+/ `av_frame_remove_side_data` displaymatrix rows, duplicate
+`av_frame_get_side_data()` / `av_frame_remove_side_data()` rows, and
+frame-level `av_frame_new_side_data_from_buf()` rows against the Rust `Frame`
 model. The `av_frame_copy` rows prove payload-only copy for gray8 video and
 packed s16 audio, that destination frame properties remain unchanged, that a
 larger video destination preserves bytes outside the source rectangle, and that
@@ -258,6 +259,10 @@ The frame-level from-buffer rows exercise `av_frame_new_side_data_from_buf()`:
 successful insertion consumes caller ownership, duplicate non-MULTI ReplayGain
 entries append instead of replacing or failing, MULTI SEI_UNREGISTERED entries
 append, and the Rust safe wrapper rejects a missing caller buffer with `EINVAL`.
+The duplicate frame-owned side-data rows exercise `av_frame_get_side_data()` and
+`av_frame_remove_side_data()`: lookup returns the first matching duplicate, and
+removal clears all records of the requested type while preserving nonmatching
+MULTI side data.
 The side-data clone rows exercise `av_frame_side_data_clone()`: cloned entries
 copy source metadata, share the source `AVBufferRef` through a new reference,
 return `EEXIST` for duplicate non-MULTI insertion without flags, replace

@@ -539,6 +539,7 @@ unit_tests = [
   "frame::tests::frame_add_side_data_with_flags_matches_array_insert_semantics",
   "frame::tests::frame_add_side_data_buffer_with_flags_matches_ownership_semantics",
   "frame::tests::frame_new_side_data_from_buffer_matches_frame_helper_ownership",
+  "frame::tests::frame_get_and_remove_duplicate_side_data_matches_frame_helper",
   "frame::tests::frame_clone_side_data_with_flags_matches_reference_semantics",
   "frame::tests::frame_set_side_data_replaces_alias_duplicates_and_releases_removed_records",
   "frame::tests::frame_hw_context_tracks_buffer_lifetime_and_clone_sharing",
@@ -550,6 +551,14 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: The pinned libavutil `AVFrame` oracle now validates duplicate
+# frame-owned side-data lookup/removal behavior. `av_frame_get_side_data()`
+# returns the first matching duplicate entry, while `av_frame_remove_side_data()`
+# removes all matching entries. Rust exposes the removal-equivalent behavior
+# through `Frame::remove_all_side_data_kind`; unit, oracle, and
+# avutil_core_models fuzz-smoke invariants cover first-match lookup,
+# all-matching removal, preserved nonmatching MULTI entries, and no-op missing
+# removals.
 # Latest update: The pinned libavutil `AVFrame` oracle now validates the
 # frame-level `av_frame_new_side_data_from_buf()` ownership-transfer helper.
 # Rust exposes the bounded equivalent through `Frame::new_side_data_kind_buffer`;
@@ -684,6 +693,9 @@ fuzz_targets = ["avutil_core_models"]
 # `av_frame_new_side_data_from_buf` takes ownership on success, appends duplicate
 # non-MULTI entries instead of replacing/rejecting them, appends MULTI entries,
 # and leaves missing/null buffers as an invalid caller input in the Rust wrapper.
+# The frame-level duplicate get/remove rows prove `av_frame_get_side_data`
+# returns the first matching duplicate entry and `av_frame_remove_side_data`
+# removes all entries of the requested type while preserving nonmatching entries.
 # The side-data clone rows prove `av_frame_side_data_clone` copies metadata,
 # shares the source AVBufferRef storage through a new reference, reports EEXIST
 # for duplicate non-MULTI insertion without flags, replaces non-MULTI entries
