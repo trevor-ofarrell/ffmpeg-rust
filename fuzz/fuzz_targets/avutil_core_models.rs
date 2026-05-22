@@ -11873,6 +11873,7 @@ fn exercise_fixtures() {
     assert_eq!(Frame::audio(extended_audio).buffer_topology(), extended_topology);
     let packed_ten_channel_audio =
         AudioFrame::new(48_000, 10, SampleFormat::S16, 1, vec![vec![0; 20]]).unwrap();
+    assert_eq!(packed_ten_channel_audio.ffmpeg_line_sizes(), vec![20]);
     let packed_topology = packed_ten_channel_audio.buffer_topology();
     assert_eq!(packed_topology.data_pointer_count(), 1);
     assert_eq!(packed_topology.direct_data_slots(), 1);
@@ -11881,6 +11882,16 @@ fn exercise_fixtures() {
     assert_eq!(packed_topology.writable_direct_buffer_refs(), 1);
     assert_eq!(packed_topology.writable_extended_buffer_refs(), 0);
     assert!(!packed_topology.uses_separate_extended_data());
+    let planar_stereo_audio = AudioFrame::new(
+        48_000,
+        2,
+        SampleFormat::S16P,
+        2,
+        vec![vec![1, 0, 2, 0], vec![3, 0, 4, 0]],
+    )
+    .unwrap();
+    assert_eq!(planar_stereo_audio.line_sizes(), &[4, 4]);
+    assert_eq!(planar_stereo_audio.ffmpeg_line_sizes(), vec![4, 0]);
     assert_eq!(
         ChannelLayoutSpec::parse("2 channels (FL+FR)").unwrap(),
         ChannelLayoutSpec::Native(ChannelLayout::stereo())

@@ -180,6 +180,22 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     rows.insert("frame:audio-buffer".to_string(), frame_fields(&audio));
 
+    let planar_audio = Frame::audio(
+        AudioFrame::new_with_channel_layout_and_aligned_line_sizes(
+            48_000,
+            ChannelLayout::stereo(),
+            SampleFormat::S16P,
+            2,
+            vec![vec![1, 0, 2, 0], vec![3, 0, 4, 0]],
+            1,
+        )
+        .unwrap(),
+    );
+    rows.insert(
+        "frame:audio-planar-buffer".to_string(),
+        frame_fields(&planar_audio),
+    );
+
     let extended_audio = Frame::audio(
         AudioFrame::new(
             48_000,
@@ -614,7 +630,7 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
             0usize,
             0usize,
             audio.samples_per_channel(),
-            audio.line_sizes().to_vec(),
+            audio.ffmpeg_line_sizes(),
             audio.planes().to_vec(),
         ),
         FrameData::Audio(_) => (
@@ -1540,6 +1556,24 @@ int main(void)
         audio->data[0][i] = (uint8_t)(i + 1);
     print_frame("frame:audio-buffer", audio);
 
+    AVFrame *planar_audio = av_frame_alloc();
+    fail_if(!planar_audio, "planar_audio av_frame_alloc failed");
+    planar_audio->format = AV_SAMPLE_FMT_S16P;
+    planar_audio->sample_rate = 48000;
+    planar_audio->nb_samples = 2;
+    av_channel_layout_default(&planar_audio->ch_layout, 2);
+    fail_if(av_frame_get_buffer(planar_audio, 1) < 0,
+            "planar_audio av_frame_get_buffer failed");
+    planar_audio->data[0][0] = 1;
+    planar_audio->data[0][1] = 0;
+    planar_audio->data[0][2] = 2;
+    planar_audio->data[0][3] = 0;
+    planar_audio->data[1][0] = 3;
+    planar_audio->data[1][1] = 0;
+    planar_audio->data[1][2] = 4;
+    planar_audio->data[1][3] = 0;
+    print_frame("frame:audio-planar-buffer", planar_audio);
+
     AVFrame *extended_audio = av_frame_alloc();
     fail_if(!extended_audio, "extended_audio av_frame_alloc failed");
     extended_audio->format = AV_SAMPLE_FMT_S16P;
@@ -1885,6 +1919,7 @@ int main(void)
     av_frame_free(&copy_src);
     av_frame_free(&packed_ten_audio);
     av_frame_free(&extended_audio);
+    av_frame_free(&planar_audio);
     av_frame_free(&audio);
     av_frame_free(&move_dst);
     av_frame_free(&video_ref);

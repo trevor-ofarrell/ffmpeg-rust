@@ -546,6 +546,12 @@ differential_tests = [
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
+# planar audio `AVFrame.linesize[]` semantics with a stereo s16p row:
+# FFmpeg stores the per-channel buffer size in `linesize[0]` and leaves the
+# second audio line-size slot zero. Rust exposes that public-AVFrame view
+# through `AudioFrame::ffmpeg_line_sizes()` while preserving the internal
+# per-plane storage line sizes used for safe plane slicing.
+# Latest update: The pinned libavutil `AVFrame` oracle now validates
 # `AV_NUM_DATA_POINTERS = 8` plus direct/extended `AVBufferRef` topology and
 # `av_buffer_is_writable()` counts. Planar 10-channel s16p audio has eight
 # direct `data[]`/`buf[]` slots, ten valid `extended_data` pointers, two

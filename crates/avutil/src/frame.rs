@@ -13624,6 +13624,20 @@ impl AudioFrame {
         &self.line_sizes
     }
 
+    pub fn ffmpeg_line_sizes(&self) -> Vec<usize> {
+        if self.line_sizes.is_empty() {
+            return Vec::new();
+        }
+
+        if !self.sample_format.is_planar() {
+            return vec![self.line_sizes[0]];
+        }
+
+        let mut line_sizes = vec![0; self.line_sizes.len()];
+        line_sizes[0] = self.line_sizes[0];
+        line_sizes
+    }
+
     pub fn planes(&self) -> &[Vec<u8>] {
         &self.planes
     }
@@ -18003,6 +18017,7 @@ mod tests {
         .unwrap();
         assert_eq!(frame.channel_layout(), Some(ChannelLayout::stereo()));
         assert_eq!(frame.line_sizes(), &[10]);
+        assert_eq!(frame.ffmpeg_line_sizes(), vec![10]);
         assert_eq!(frame.planes(), &[vec![0, 0, 1, 0, 2, 0, 3, 0]]);
         assert_eq!(
             frame.plane_buffers()[0].as_slice(),
@@ -18161,6 +18176,7 @@ mod tests {
         assert_eq!(planar.channel_layout(), Some(ChannelLayout::stereo()));
         assert_eq!(planar.sample_format_name(), "s16p");
         assert_eq!(planar.line_sizes(), &[6, 6]);
+        assert_eq!(planar.ffmpeg_line_sizes(), vec![6, 0]);
         assert_eq!(
             planar.planes(),
             &[vec![0, 0, 1, 0, 2, 0], vec![3, 0, 4, 0, 5, 0]]
@@ -18177,6 +18193,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(padded.line_sizes(), &[5, 5]);
+        assert_eq!(padded.ffmpeg_line_sizes(), vec![5, 0]);
         assert_eq!(padded.planes(), &[vec![0, 0, 1, 0], vec![2, 0, 3, 0]]);
         assert_eq!(padded.plane_buffers()[0].as_slice(), &[0, 0, 1, 0, 0xaa]);
         assert_eq!(padded.plane_buffers()[1].as_slice(), &[2, 0, 3, 0, 0xbb]);

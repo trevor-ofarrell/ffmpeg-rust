@@ -205,8 +205,9 @@ color_range, color_primaries, color_trc, colorspace, chroma_location,
 best-effort timestamp, public decode-error flags, nullable non-dereferenceable
 opaque pointer metadata, BufferRef-backed opaque_ref user storage, alpha_mode,
 and top-level frame metadata propagation through ref/move/copy-props rows,
-`av_frame_get_buffer` for a gray8 video frame, a packed s16 stereo audio
-frame, planar 10-channel s16p direct-slot versus extended-buffer topology with
+`av_frame_get_buffer` for a gray8 video frame, packed s16 stereo audio,
+planar s16p stereo audio proving that only `linesize[0]` is set for planar
+audio, planar 10-channel s16p direct-slot versus extended-buffer topology with
 direct and extended `av_buffer_is_writable()` counts, and packed 10-channel s16
 audio showing that high channel count alone does not allocate extended buffers,
 `AV_FRAME_DATA_*` numeric
