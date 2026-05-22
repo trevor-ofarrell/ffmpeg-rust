@@ -11,7 +11,9 @@ use avutil::{
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
     PacketDynamicHdr10Plus, PacketEncryptionSubsample, PacketFallbackTrack, PacketFifo,
-    PacketFlags, PacketFrameCropping, PacketHdrPlusColorTransformParams, PacketJpDualMono,
+    PacketFlags, PacketFrameCropping, PacketHdrPlusColorTransformParams, PacketIamfAnimationType,
+    PacketIamfDemixingInfoSubblock, PacketIamfMixGainSubblock, PacketIamfParamDefinition,
+    PacketIamfParamDefinitionType, PacketIamfReconGainSubblock, PacketJpDualMono,
     PacketJpDualMonoSelection, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
     PacketMpegTsStreamId, PacketOpaque, PacketParamChange, PacketPictureType,
     PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport,
@@ -430,6 +432,27 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
         "packet:payload-layout-encryption-init-info".to_string(),
         payload_layout_fields(&encryption_init_info_payload_layout_bytes(), &[]),
     );
+    rows.insert(
+        "packet:payload-layout-iamf-mix-gain-param".to_string(),
+        payload_layout_fields(
+            &iamf_mix_gain_param_payload_layout_bytes(),
+            &iamf_mix_gain_param_payload_layout_offsets(),
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-iamf-demixing-info-param".to_string(),
+        payload_layout_fields(
+            &iamf_demixing_info_param_payload_layout_bytes(),
+            &iamf_demixing_info_param_payload_layout_offsets(),
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-iamf-recon-gain-info-param".to_string(),
+        payload_layout_fields(
+            &iamf_recon_gain_info_param_payload_layout_bytes(),
+            &iamf_recon_gain_info_param_payload_layout_offsets(),
+        ),
+    );
 
     let mut audio_fields =
         payload_layout_fields(&PacketAudioServiceType::Commentary.to_bytes(), &[]);
@@ -646,6 +669,19 @@ fn write_ne_i32(data: &mut [u8], offset: usize, value: i32) {
     data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
 }
 
+fn write_ne_u32(data: &mut [u8], offset: usize, value: u32) {
+    data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn write_ne_usize(data: &mut [u8], offset: usize, value: usize) {
+    data[offset..offset + core::mem::size_of::<usize>()].copy_from_slice(&value.to_ne_bytes());
+}
+
+fn write_ne_rational(data: &mut [u8], offset: usize, value: Rational) {
+    write_ne_i32(data, offset, value.num());
+    write_ne_i32(data, offset + 4, value.den());
+}
+
 fn encryption_info_payload_layout_bytes() -> Vec<u8> {
     let mut data = Vec::new();
     data.extend_from_slice(&u32::from_be_bytes(*b"cenc").to_be_bytes());
@@ -681,6 +717,214 @@ fn encryption_init_info_payload_layout_bytes() -> Vec<u8> {
     }
     data.extend_from_slice(b"pss");
     data
+}
+
+fn iamf_param_definition_payload_layout_bytes(
+    definition_type: PacketIamfParamDefinitionType,
+    subblock_size: usize,
+    subblocks: &[Vec<u8>],
+) -> Vec<u8> {
+    let subblocks_offset = PacketIamfParamDefinition::HEADER_LEN;
+    let mut data = vec![0; subblocks_offset + subblock_size * subblocks.len()];
+    write_ne_usize(
+        &mut data,
+        PacketIamfParamDefinition::SUBBLOCKS_OFFSET_OFFSET,
+        subblocks_offset,
+    );
+    write_ne_usize(
+        &mut data,
+        PacketIamfParamDefinition::SUBBLOCK_SIZE_OFFSET,
+        subblock_size,
+    );
+    write_ne_u32(
+        &mut data,
+        PacketIamfParamDefinition::SUBBLOCK_COUNT_OFFSET,
+        subblocks.len() as u32,
+    );
+    write_ne_u32(
+        &mut data,
+        PacketIamfParamDefinition::TYPE_OFFSET,
+        definition_type.as_raw(),
+    );
+    write_ne_u32(&mut data, PacketIamfParamDefinition::PARAMETER_ID_OFFSET, 7);
+    write_ne_u32(
+        &mut data,
+        PacketIamfParamDefinition::PARAMETER_RATE_OFFSET,
+        48_000,
+    );
+    write_ne_u32(&mut data, PacketIamfParamDefinition::DURATION_OFFSET, 960);
+    write_ne_u32(
+        &mut data,
+        PacketIamfParamDefinition::CONSTANT_SUBBLOCK_DURATION_OFFSET,
+        480,
+    );
+
+    for (index, subblock) in subblocks.iter().enumerate() {
+        assert_eq!(subblock.len(), subblock_size);
+        let offset = subblocks_offset + index * subblock_size;
+        data[offset..offset + subblock_size].copy_from_slice(subblock);
+    }
+
+    data
+}
+
+fn iamf_mix_gain_subblock_payload_layout_bytes(
+    duration: u32,
+    animation_type: PacketIamfAnimationType,
+) -> Vec<u8> {
+    let mut data = vec![0; PacketIamfMixGainSubblock::MIN_DATA_LEN];
+    write_ne_u32(
+        &mut data,
+        PacketIamfMixGainSubblock::SUBBLOCK_DURATION_OFFSET,
+        duration,
+    );
+    write_ne_u32(
+        &mut data,
+        PacketIamfMixGainSubblock::ANIMATION_TYPE_OFFSET,
+        animation_type.as_raw(),
+    );
+    write_ne_rational(
+        &mut data,
+        PacketIamfMixGainSubblock::START_POINT_VALUE_OFFSET,
+        Rational::from_raw(-1, 2),
+    );
+    write_ne_rational(
+        &mut data,
+        PacketIamfMixGainSubblock::END_POINT_VALUE_OFFSET,
+        Rational::from_raw(3, 4),
+    );
+    write_ne_rational(
+        &mut data,
+        PacketIamfMixGainSubblock::CONTROL_POINT_VALUE_OFFSET,
+        Rational::from_raw(1, 3),
+    );
+    write_ne_rational(
+        &mut data,
+        PacketIamfMixGainSubblock::CONTROL_POINT_RELATIVE_TIME_OFFSET,
+        Rational::from_raw(1, 2),
+    );
+    data
+}
+
+fn iamf_mix_gain_param_payload_layout_bytes() -> Vec<u8> {
+    let subblocks = [
+        iamf_mix_gain_subblock_payload_layout_bytes(480, PacketIamfAnimationType::Linear),
+        iamf_mix_gain_subblock_payload_layout_bytes(480, PacketIamfAnimationType::Bezier),
+    ];
+    iamf_param_definition_payload_layout_bytes(
+        PacketIamfParamDefinitionType::MixGain,
+        PacketIamfMixGainSubblock::MIN_DATA_LEN,
+        &subblocks,
+    )
+}
+
+fn iamf_mix_gain_param_payload_layout_offsets() -> Vec<usize> {
+    vec![
+        PacketIamfParamDefinition::AV_CLASS_OFFSET,
+        PacketIamfParamDefinition::SUBBLOCKS_OFFSET_OFFSET,
+        PacketIamfParamDefinition::SUBBLOCK_SIZE_OFFSET,
+        PacketIamfParamDefinition::SUBBLOCK_COUNT_OFFSET,
+        PacketIamfParamDefinition::TYPE_OFFSET,
+        PacketIamfParamDefinition::PARAMETER_ID_OFFSET,
+        PacketIamfParamDefinition::PARAMETER_RATE_OFFSET,
+        PacketIamfParamDefinition::DURATION_OFFSET,
+        PacketIamfParamDefinition::CONSTANT_SUBBLOCK_DURATION_OFFSET,
+        PacketIamfParamDefinition::HEADER_LEN,
+        PacketIamfMixGainSubblock::MIN_DATA_LEN,
+        PacketIamfMixGainSubblock::AV_CLASS_OFFSET,
+        PacketIamfMixGainSubblock::SUBBLOCK_DURATION_OFFSET,
+        PacketIamfMixGainSubblock::ANIMATION_TYPE_OFFSET,
+        PacketIamfMixGainSubblock::START_POINT_VALUE_OFFSET,
+        PacketIamfMixGainSubblock::END_POINT_VALUE_OFFSET,
+        PacketIamfMixGainSubblock::CONTROL_POINT_VALUE_OFFSET,
+        PacketIamfMixGainSubblock::CONTROL_POINT_RELATIVE_TIME_OFFSET,
+    ]
+}
+
+fn iamf_demixing_info_subblock_payload_layout_bytes(duration: u32, dmixp_mode: u32) -> Vec<u8> {
+    let mut data = vec![0; PacketIamfDemixingInfoSubblock::MIN_DATA_LEN];
+    write_ne_u32(
+        &mut data,
+        PacketIamfDemixingInfoSubblock::SUBBLOCK_DURATION_OFFSET,
+        duration,
+    );
+    write_ne_u32(
+        &mut data,
+        PacketIamfDemixingInfoSubblock::DMIXP_MODE_OFFSET,
+        dmixp_mode,
+    );
+    data
+}
+
+fn iamf_demixing_info_param_payload_layout_bytes() -> Vec<u8> {
+    iamf_param_definition_payload_layout_bytes(
+        PacketIamfParamDefinitionType::Demixing,
+        PacketIamfDemixingInfoSubblock::MIN_DATA_LEN,
+        &[iamf_demixing_info_subblock_payload_layout_bytes(960, 7)],
+    )
+}
+
+fn iamf_demixing_info_param_payload_layout_offsets() -> Vec<usize> {
+    vec![
+        PacketIamfParamDefinition::AV_CLASS_OFFSET,
+        PacketIamfParamDefinition::SUBBLOCKS_OFFSET_OFFSET,
+        PacketIamfParamDefinition::SUBBLOCK_SIZE_OFFSET,
+        PacketIamfParamDefinition::SUBBLOCK_COUNT_OFFSET,
+        PacketIamfParamDefinition::TYPE_OFFSET,
+        PacketIamfParamDefinition::PARAMETER_ID_OFFSET,
+        PacketIamfParamDefinition::PARAMETER_RATE_OFFSET,
+        PacketIamfParamDefinition::DURATION_OFFSET,
+        PacketIamfParamDefinition::CONSTANT_SUBBLOCK_DURATION_OFFSET,
+        PacketIamfParamDefinition::HEADER_LEN,
+        PacketIamfDemixingInfoSubblock::MIN_DATA_LEN,
+        PacketIamfDemixingInfoSubblock::AV_CLASS_OFFSET,
+        PacketIamfDemixingInfoSubblock::SUBBLOCK_DURATION_OFFSET,
+        PacketIamfDemixingInfoSubblock::DMIXP_MODE_OFFSET,
+    ]
+}
+
+fn iamf_recon_gain_subblock_payload_layout_bytes(duration: u32) -> Vec<u8> {
+    let mut data = vec![0; PacketIamfReconGainSubblock::MIN_DATA_LEN];
+    write_ne_u32(
+        &mut data,
+        PacketIamfReconGainSubblock::SUBBLOCK_DURATION_OFFSET,
+        duration,
+    );
+    for layer in 0..PacketIamfReconGainSubblock::LAYERS {
+        for channel in 0..PacketIamfReconGainSubblock::CHANNELS {
+            data[PacketIamfReconGainSubblock::RECON_GAIN_OFFSET
+                + layer * PacketIamfReconGainSubblock::CHANNELS
+                + channel] = (layer * 16 + channel) as u8;
+        }
+    }
+    data
+}
+
+fn iamf_recon_gain_info_param_payload_layout_bytes() -> Vec<u8> {
+    iamf_param_definition_payload_layout_bytes(
+        PacketIamfParamDefinitionType::ReconGain,
+        PacketIamfReconGainSubblock::MIN_DATA_LEN,
+        &[iamf_recon_gain_subblock_payload_layout_bytes(960)],
+    )
+}
+
+fn iamf_recon_gain_info_param_payload_layout_offsets() -> Vec<usize> {
+    vec![
+        PacketIamfParamDefinition::AV_CLASS_OFFSET,
+        PacketIamfParamDefinition::SUBBLOCKS_OFFSET_OFFSET,
+        PacketIamfParamDefinition::SUBBLOCK_SIZE_OFFSET,
+        PacketIamfParamDefinition::SUBBLOCK_COUNT_OFFSET,
+        PacketIamfParamDefinition::TYPE_OFFSET,
+        PacketIamfParamDefinition::PARAMETER_ID_OFFSET,
+        PacketIamfParamDefinition::PARAMETER_RATE_OFFSET,
+        PacketIamfParamDefinition::DURATION_OFFSET,
+        PacketIamfParamDefinition::CONSTANT_SUBBLOCK_DURATION_OFFSET,
+        PacketIamfParamDefinition::HEADER_LEN,
+        PacketIamfReconGainSubblock::MIN_DATA_LEN,
+        PacketIamfReconGainSubblock::AV_CLASS_OFFSET,
+        PacketIamfReconGainSubblock::SUBBLOCK_DURATION_OFFSET,
+        PacketIamfReconGainSubblock::RECON_GAIN_OFFSET,
+    ]
 }
 
 fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -1604,6 +1848,7 @@ fn oracle_c_source() -> &'static str {
 #include "libavutil/encryption_info.h"
 #include "libavutil/frame.h"
 #include "libavutil/hdr_dynamic_metadata.h"
+#include "libavutil/iamf.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mastering_display_metadata.h"
 #include "libavutil/mem.h"
@@ -1817,6 +2062,22 @@ static void print_payload_layout_header(const char *name, const void *payload, s
 static void print_payload_layout_bytes(const char *name, const uint8_t *payload, size_t size) {
     print_payload_layout_header(name, payload, size);
     printf("\n");
+}
+
+static uint8_t *copy_payload_zero_pointer(const void *payload, size_t size, size_t offset) {
+    fail_if(offset > size || size - offset < sizeof(void *),
+            "payload pointer field offset is out of bounds");
+    uint8_t *copy = av_malloc(size);
+    fail_if(!copy, "av_malloc for payload copy returned NULL");
+    memcpy(copy, payload, size);
+    memset(copy + offset, 0, sizeof(void *));
+    return copy;
+}
+
+static void zero_payload_pointer(uint8_t *payload, size_t size, size_t offset) {
+    fail_if(offset > size || size - offset < sizeof(void *),
+            "payload pointer field offset is out of bounds");
+    memset(payload + offset, 0, sizeof(void *));
 }
 
 static void print_side_data_payload_layouts(void) {
@@ -2132,6 +2393,143 @@ static void print_side_data_payload_layouts(void) {
                                init_side, init_side_size);
     av_free(init_side);
     av_encryption_init_info_free(init_a);
+
+    size_t iamf_mix_size = 0;
+    AVIAMFParamDefinition *iamf_mix =
+        av_iamf_param_definition_alloc(AV_IAMF_PARAMETER_DEFINITION_MIX_GAIN,
+                                       2, &iamf_mix_size);
+    fail_if(!iamf_mix, "av_iamf_param_definition_alloc mix returned NULL");
+    iamf_mix->parameter_id = 7;
+    iamf_mix->parameter_rate = 48000;
+    iamf_mix->duration = 960;
+    iamf_mix->constant_subblock_duration = 480;
+    AVIAMFMixGain *iamf_mix_first =
+        av_iamf_param_definition_get_subblock(iamf_mix, 0);
+    iamf_mix_first->subblock_duration = 480;
+    iamf_mix_first->animation_type = AV_IAMF_ANIMATION_TYPE_LINEAR;
+    iamf_mix_first->start_point_value = (AVRational){ -1, 2 };
+    iamf_mix_first->end_point_value = (AVRational){ 3, 4 };
+    iamf_mix_first->control_point_value = (AVRational){ 1, 3 };
+    iamf_mix_first->control_point_relative_time = (AVRational){ 1, 2 };
+    AVIAMFMixGain *iamf_mix_second =
+        av_iamf_param_definition_get_subblock(iamf_mix, 1);
+    iamf_mix_second->subblock_duration = 480;
+    iamf_mix_second->animation_type = AV_IAMF_ANIMATION_TYPE_BEZIER;
+    iamf_mix_second->start_point_value = (AVRational){ -1, 2 };
+    iamf_mix_second->end_point_value = (AVRational){ 3, 4 };
+    iamf_mix_second->control_point_value = (AVRational){ 1, 3 };
+    iamf_mix_second->control_point_relative_time = (AVRational){ 1, 2 };
+    uint8_t *iamf_mix_bytes = copy_payload_zero_pointer(
+        iamf_mix, iamf_mix_size, offsetof(AVIAMFParamDefinition, av_class));
+    for (unsigned int i = 0; i < iamf_mix->nb_subblocks; i++) {
+        zero_payload_pointer(iamf_mix_bytes, iamf_mix_size,
+                             iamf_mix->subblocks_offset +
+                             i * iamf_mix->subblock_size +
+                             offsetof(AVIAMFMixGain, av_class));
+    }
+    print_payload_layout_header("packet:payload-layout-iamf-mix-gain-param",
+                                iamf_mix_bytes, iamf_mix_size);
+    printf("|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu\n",
+           offsetof(AVIAMFParamDefinition, av_class),
+           offsetof(AVIAMFParamDefinition, subblocks_offset),
+           offsetof(AVIAMFParamDefinition, subblock_size),
+           offsetof(AVIAMFParamDefinition, nb_subblocks),
+           offsetof(AVIAMFParamDefinition, type),
+           offsetof(AVIAMFParamDefinition, parameter_id),
+           offsetof(AVIAMFParamDefinition, parameter_rate),
+           offsetof(AVIAMFParamDefinition, duration),
+           offsetof(AVIAMFParamDefinition, constant_subblock_duration),
+           iamf_mix->subblocks_offset,
+           iamf_mix->subblock_size,
+           offsetof(AVIAMFMixGain, av_class),
+           offsetof(AVIAMFMixGain, subblock_duration),
+           offsetof(AVIAMFMixGain, animation_type),
+           offsetof(AVIAMFMixGain, start_point_value),
+           offsetof(AVIAMFMixGain, end_point_value),
+           offsetof(AVIAMFMixGain, control_point_value),
+           offsetof(AVIAMFMixGain, control_point_relative_time));
+    av_free(iamf_mix_bytes);
+    av_free(iamf_mix);
+
+    size_t iamf_demix_size = 0;
+    AVIAMFParamDefinition *iamf_demix =
+        av_iamf_param_definition_alloc(AV_IAMF_PARAMETER_DEFINITION_DEMIXING,
+                                       1, &iamf_demix_size);
+    fail_if(!iamf_demix, "av_iamf_param_definition_alloc demixing returned NULL");
+    iamf_demix->parameter_id = 7;
+    iamf_demix->parameter_rate = 48000;
+    iamf_demix->duration = 960;
+    iamf_demix->constant_subblock_duration = 480;
+    AVIAMFDemixingInfo *iamf_demix_sub =
+        av_iamf_param_definition_get_subblock(iamf_demix, 0);
+    iamf_demix_sub->subblock_duration = 960;
+    iamf_demix_sub->dmixp_mode = 7;
+    uint8_t *iamf_demix_bytes = copy_payload_zero_pointer(
+        iamf_demix, iamf_demix_size, offsetof(AVIAMFParamDefinition, av_class));
+    zero_payload_pointer(iamf_demix_bytes, iamf_demix_size,
+                         iamf_demix->subblocks_offset +
+                         offsetof(AVIAMFDemixingInfo, av_class));
+    print_payload_layout_header("packet:payload-layout-iamf-demixing-info-param",
+                                iamf_demix_bytes, iamf_demix_size);
+    printf("|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu\n",
+           offsetof(AVIAMFParamDefinition, av_class),
+           offsetof(AVIAMFParamDefinition, subblocks_offset),
+           offsetof(AVIAMFParamDefinition, subblock_size),
+           offsetof(AVIAMFParamDefinition, nb_subblocks),
+           offsetof(AVIAMFParamDefinition, type),
+           offsetof(AVIAMFParamDefinition, parameter_id),
+           offsetof(AVIAMFParamDefinition, parameter_rate),
+           offsetof(AVIAMFParamDefinition, duration),
+           offsetof(AVIAMFParamDefinition, constant_subblock_duration),
+           iamf_demix->subblocks_offset,
+           iamf_demix->subblock_size,
+           offsetof(AVIAMFDemixingInfo, av_class),
+           offsetof(AVIAMFDemixingInfo, subblock_duration),
+           offsetof(AVIAMFDemixingInfo, dmixp_mode));
+    av_free(iamf_demix_bytes);
+    av_free(iamf_demix);
+
+    size_t iamf_recon_size = 0;
+    AVIAMFParamDefinition *iamf_recon =
+        av_iamf_param_definition_alloc(AV_IAMF_PARAMETER_DEFINITION_RECON_GAIN,
+                                       1, &iamf_recon_size);
+    fail_if(!iamf_recon, "av_iamf_param_definition_alloc recon returned NULL");
+    iamf_recon->parameter_id = 7;
+    iamf_recon->parameter_rate = 48000;
+    iamf_recon->duration = 960;
+    iamf_recon->constant_subblock_duration = 480;
+    AVIAMFReconGain *iamf_recon_sub =
+        av_iamf_param_definition_get_subblock(iamf_recon, 0);
+    iamf_recon_sub->subblock_duration = 960;
+    for (size_t layer = 0; layer < 6; layer++) {
+        for (size_t channel = 0; channel < 12; channel++)
+            iamf_recon_sub->recon_gain[layer][channel] =
+                (uint8_t)(layer * 16 + channel);
+    }
+    uint8_t *iamf_recon_bytes = copy_payload_zero_pointer(
+        iamf_recon, iamf_recon_size, offsetof(AVIAMFParamDefinition, av_class));
+    zero_payload_pointer(iamf_recon_bytes, iamf_recon_size,
+                         iamf_recon->subblocks_offset +
+                         offsetof(AVIAMFReconGain, av_class));
+    print_payload_layout_header("packet:payload-layout-iamf-recon-gain-info-param",
+                                iamf_recon_bytes, iamf_recon_size);
+    printf("|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu\n",
+           offsetof(AVIAMFParamDefinition, av_class),
+           offsetof(AVIAMFParamDefinition, subblocks_offset),
+           offsetof(AVIAMFParamDefinition, subblock_size),
+           offsetof(AVIAMFParamDefinition, nb_subblocks),
+           offsetof(AVIAMFParamDefinition, type),
+           offsetof(AVIAMFParamDefinition, parameter_id),
+           offsetof(AVIAMFParamDefinition, parameter_rate),
+           offsetof(AVIAMFParamDefinition, duration),
+           offsetof(AVIAMFParamDefinition, constant_subblock_duration),
+           iamf_recon->subblocks_offset,
+           iamf_recon->subblock_size,
+           offsetof(AVIAMFReconGain, av_class),
+           offsetof(AVIAMFReconGain, subblock_duration),
+           offsetof(AVIAMFReconGain, recon_gain));
+    av_free(iamf_recon_bytes);
+    av_free(iamf_recon);
 
     enum AVAudioServiceType service_type = AV_AUDIO_SERVICE_TYPE_COMMENTARY;
     print_payload_layout_header("packet:payload-layout-audio-service-type",
