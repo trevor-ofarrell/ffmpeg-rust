@@ -1,8 +1,9 @@
 use crate::frame::{
-    FrameAmbientViewingEnvironment, FrameDynamicHdrPlus, FrameExif,
+    Frame, FrameAmbientViewingEnvironment, FrameDynamicHdrPlus, FrameExif,
     FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrPlusPercentile,
-    FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye, FrameStereo3dType,
-    FrameStereo3dView, FrameThreeDReferenceDisplay, FrameThreeDReferenceDisplays,
+    FrameSideData, FrameSideDataFlags, FrameSideDataKind, FrameStereo3d, FrameStereo3dFlags,
+    FrameStereo3dPrimaryEye, FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
+    FrameThreeDReferenceDisplays,
 };
 use crate::{
     rescale_q, AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, Dictionary, Rational,
@@ -364,6 +365,40 @@ impl PacketSideDataKind {
             Self::RtcpSenderReport => Some("RTCP Sender Report"),
             Self::Exif => Some("EXIF metadata"),
             Self::Unknown(_) => None,
+        }
+    }
+
+    pub fn from_frame_side_data_kind(kind: &FrameSideDataKind) -> Option<Self> {
+        match kind {
+            FrameSideDataKind::ReplayGain => Some(Self::ReplayGain),
+            FrameSideDataKind::DisplayMatrix => Some(Self::DisplayMatrix),
+            FrameSideDataKind::Spherical => Some(Self::Spherical),
+            FrameSideDataKind::Stereo3d => Some(Self::Stereo3d),
+            FrameSideDataKind::AudioServiceType => Some(Self::AudioServiceType),
+            FrameSideDataKind::MasteringDisplayMetadata => Some(Self::MasteringDisplayMetadata),
+            FrameSideDataKind::ContentLightLevel => Some(Self::ContentLightLevel),
+            FrameSideDataKind::IccProfile => Some(Self::IccProfile),
+            FrameSideDataKind::AmbientViewingEnvironment => Some(Self::AmbientViewingEnvironment),
+            FrameSideDataKind::ThreeDReferenceDisplays => Some(Self::ThreeDReferenceDisplays),
+            FrameSideDataKind::Exif => Some(Self::Exif),
+            _ => None,
+        }
+    }
+
+    pub fn frame_side_data_kind(&self) -> Option<FrameSideDataKind> {
+        match self {
+            Self::ReplayGain => Some(FrameSideDataKind::ReplayGain),
+            Self::DisplayMatrix => Some(FrameSideDataKind::DisplayMatrix),
+            Self::Spherical => Some(FrameSideDataKind::Spherical),
+            Self::Stereo3d => Some(FrameSideDataKind::Stereo3d),
+            Self::AudioServiceType => Some(FrameSideDataKind::AudioServiceType),
+            Self::MasteringDisplayMetadata => Some(FrameSideDataKind::MasteringDisplayMetadata),
+            Self::ContentLightLevel => Some(FrameSideDataKind::ContentLightLevel),
+            Self::IccProfile => Some(FrameSideDataKind::IccProfile),
+            Self::AmbientViewingEnvironment => Some(FrameSideDataKind::AmbientViewingEnvironment),
+            Self::ThreeDReferenceDisplays => Some(FrameSideDataKind::ThreeDReferenceDisplays),
+            Self::Exif => Some(FrameSideDataKind::Exif),
+            _ => None,
         }
     }
 
@@ -4277,6 +4312,29 @@ impl SideData {
         Ok(Self { kind, data })
     }
 
+    pub fn from_frame_side_data(side_data: &FrameSideData) -> AvResult<Self> {
+        let kind = PacketSideDataKind::from_frame_side_data_kind(side_data.kind_id())
+            .ok_or_else(packet_frame_side_data_map_error)?;
+        Self::new_with_kind(kind, side_data.data().to_vec())
+    }
+
+    pub fn to_frame_side_data(&self) -> AvResult<FrameSideData> {
+        let kind = self
+            .kind
+            .frame_side_data_kind()
+            .ok_or_else(packet_frame_side_data_map_error)?;
+        FrameSideData::new_with_kind(kind, self.data.clone())
+    }
+
+    pub fn add_to_frame<'a>(
+        &self,
+        frame: &'a mut Frame,
+        flags: FrameSideDataFlags,
+    ) -> AvResult<&'a mut FrameSideData> {
+        let side_data = self.to_frame_side_data()?;
+        frame.add_side_data_with_flags(side_data, flags)
+    }
+
     pub fn kind(&self) -> &str {
         self.kind.name()
     }
@@ -4707,6 +4765,14 @@ impl PacketSideDataList {
 
     pub fn add_side_data(&mut self, side_data: SideData) -> Option<SideData> {
         self.add_or_replace(side_data).0
+    }
+
+    pub fn add_from_frame_side_data(
+        &mut self,
+        side_data: &FrameSideData,
+    ) -> AvResult<&mut SideData> {
+        let side_data = SideData::from_frame_side_data(side_data)?;
+        Ok(self.add_or_replace(side_data).1)
     }
 
     pub fn remove_kind(&mut self, kind: &PacketSideDataKind) -> Option<SideData> {
@@ -5151,6 +5217,14 @@ fn validate_packet_side_data_kind(kind: String) -> AvResult<String> {
     }
 
     Ok(kind)
+}
+
+fn packet_frame_side_data_map_error() -> AvError {
+    AvError::with_code(
+        AvErrorKind::InvalidArgument,
+        AvErrorCode::EINVAL,
+        "packet and frame side data types do not have a matching mapped type",
+    )
 }
 
 fn normalize_packet_side_data_name(name: &str) -> String {
@@ -9626,6 +9700,149 @@ mod tests {
             &PacketSideDataKind::SkipSamples
         );
         assert_eq!(list.entries()[2].data(), &[0x33]);
+    }
+
+    #[test]
+    fn packet_side_data_maps_global_frame_side_data() {
+        let expected = [
+            (
+                PacketSideDataKind::ReplayGain,
+                FrameSideDataKind::ReplayGain,
+            ),
+            (
+                PacketSideDataKind::DisplayMatrix,
+                FrameSideDataKind::DisplayMatrix,
+            ),
+            (PacketSideDataKind::Spherical, FrameSideDataKind::Spherical),
+            (PacketSideDataKind::Stereo3d, FrameSideDataKind::Stereo3d),
+            (
+                PacketSideDataKind::AudioServiceType,
+                FrameSideDataKind::AudioServiceType,
+            ),
+            (
+                PacketSideDataKind::MasteringDisplayMetadata,
+                FrameSideDataKind::MasteringDisplayMetadata,
+            ),
+            (
+                PacketSideDataKind::ContentLightLevel,
+                FrameSideDataKind::ContentLightLevel,
+            ),
+            (
+                PacketSideDataKind::IccProfile,
+                FrameSideDataKind::IccProfile,
+            ),
+            (
+                PacketSideDataKind::AmbientViewingEnvironment,
+                FrameSideDataKind::AmbientViewingEnvironment,
+            ),
+            (
+                PacketSideDataKind::ThreeDReferenceDisplays,
+                FrameSideDataKind::ThreeDReferenceDisplays,
+            ),
+            (PacketSideDataKind::Exif, FrameSideDataKind::Exif),
+        ];
+
+        for (packet_kind, frame_kind) in expected {
+            assert_eq!(packet_kind.frame_side_data_kind(), Some(frame_kind.clone()));
+            assert_eq!(
+                PacketSideDataKind::from_frame_side_data_kind(&frame_kind),
+                Some(packet_kind)
+            );
+        }
+
+        assert_eq!(
+            PacketSideDataKind::NewExtradata.frame_side_data_kind(),
+            None
+        );
+        assert_eq!(
+            PacketSideDataKind::from_frame_side_data_kind(&FrameSideDataKind::A53ClosedCaptions),
+            None
+        );
+    }
+
+    #[test]
+    fn packet_side_data_list_adds_from_frame_side_data_with_replacement() {
+        let mut list = PacketSideDataList::new();
+        let first =
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![1, 2, 3]).unwrap();
+        list.add_from_frame_side_data(&first).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list.entries()[0].kind_id(), &PacketSideDataKind::ReplayGain);
+        assert_eq!(list.entries()[0].data(), &[1, 2, 3]);
+
+        let replacement =
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![9, 8]).unwrap();
+        let entry = list.add_from_frame_side_data(&replacement).unwrap();
+        assert_eq!(entry.kind_id(), &PacketSideDataKind::ReplayGain);
+        assert_eq!(entry.data(), &[9, 8]);
+        assert_eq!(list.len(), 1);
+
+        let unmapped =
+            FrameSideData::new_with_kind(FrameSideDataKind::A53ClosedCaptions, vec![0]).unwrap();
+        let err = list.add_from_frame_side_data(&unmapped).unwrap_err();
+        assert_eq!(err.kind(), crate::AvErrorKind::InvalidArgument);
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn packet_side_data_adds_to_frame_with_flags() {
+        let source = SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![1]).unwrap();
+        let mut frame = Frame::empty();
+
+        source
+            .add_to_frame(&mut frame, FrameSideDataFlags::EMPTY)
+            .unwrap();
+        assert_eq!(frame.side_data().len(), 1);
+        assert_eq!(
+            frame.side_data()[0].kind_id(),
+            &FrameSideDataKind::ReplayGain
+        );
+        assert_eq!(frame.side_data()[0].data(), &[1]);
+
+        let duplicate_err = source
+            .add_to_frame(&mut frame, FrameSideDataFlags::EMPTY)
+            .unwrap_err();
+        assert_eq!(duplicate_err.kind(), crate::AvErrorKind::External);
+        assert_eq!(duplicate_err.code(), Some(AvErrorCode::ENOMEM));
+        assert_eq!(frame.side_data().len(), 1);
+        assert_eq!(frame.side_data()[0].data(), &[1]);
+
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![2, 3])
+            .unwrap()
+            .add_to_frame(&mut frame, FrameSideDataFlags::REPLACE)
+            .unwrap();
+        assert_eq!(frame.side_data().len(), 1);
+        assert_eq!(frame.side_data()[0].data(), &[2, 3]);
+
+        frame
+            .add_side_data_with_flags(
+                FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![4]).unwrap(),
+                FrameSideDataFlags::EMPTY,
+            )
+            .unwrap();
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![5])
+            .unwrap()
+            .add_to_frame(&mut frame, FrameSideDataFlags::UNIQUE)
+            .unwrap();
+        assert_eq!(frame.side_data().len(), 2);
+        assert_eq!(
+            frame.side_data()[0].kind_id(),
+            &FrameSideDataKind::DisplayMatrix
+        );
+        assert_eq!(
+            frame.side_data()[1].kind_id(),
+            &FrameSideDataKind::ReplayGain
+        );
+        assert_eq!(frame.side_data()[1].data(), &[5]);
+
+        let unmapped = SideData::new_extradata(vec![0xaa]).unwrap();
+        let err = unmapped
+            .add_to_frame(&mut frame, FrameSideDataFlags::EMPTY)
+            .unwrap_err();
+        assert_eq!(err.kind(), crate::AvErrorKind::InvalidArgument);
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(frame.side_data().len(), 2);
     }
 
     #[test]

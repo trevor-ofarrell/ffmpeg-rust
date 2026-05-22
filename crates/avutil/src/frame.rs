@@ -1,6 +1,6 @@
 use crate::{
-    AvError, AvResult, BufferRef, ChannelLayout, ChannelLayoutSpec, Dictionary, PixelFormat,
-    Rational, SampleFormat,
+    AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, ChannelLayout, ChannelLayoutSpec,
+    Dictionary, PixelFormat, Rational, SampleFormat,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -300,6 +300,42 @@ impl Frame {
             .expect("side data was just inserted"))
     }
 
+    pub fn add_side_data_with_flags(
+        &mut self,
+        side_data: FrameSideData,
+        flags: FrameSideDataFlags,
+    ) -> AvResult<&mut FrameSideData> {
+        let kind = side_data.kind_id().clone();
+
+        if flags.contains(FrameSideDataFlags::UNIQUE) {
+            self.side_data
+                .retain(|existing| existing.kind_id() != &kind);
+        }
+
+        if !kind.supports_multiple_instances() {
+            if let Some(index) = self
+                .side_data
+                .iter()
+                .position(|existing| existing.kind_id() == &kind)
+            {
+                if flags.contains(FrameSideDataFlags::REPLACE) {
+                    self.side_data[index] = side_data;
+                    return Ok(&mut self.side_data[index]);
+                }
+
+                return Err(AvError::with_code(
+                    AvErrorKind::External,
+                    AvErrorCode::ENOMEM,
+                    "cannot allocate duplicate frame side data without replace flag",
+                ));
+            }
+        }
+
+        self.side_data.push(side_data);
+        let index = self.side_data.len() - 1;
+        Ok(&mut self.side_data[index])
+    }
+
     pub fn side_data_by_kind(&self, kind: &FrameSideDataKind) -> Option<&FrameSideData> {
         self.side_data
             .iter()
@@ -392,6 +428,37 @@ impl FrameSideDataProperties {
 
     pub const fn intersects(self, other: Self) -> bool {
         (self.0 & other.0) != 0
+    }
+
+    pub const fn union(self, other: Self) -> Self {
+        Self::from_bits_truncate(self.0 | other.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameSideDataFlags(u32);
+
+impl FrameSideDataFlags {
+    pub const EMPTY: Self = Self(0);
+    pub const UNIQUE: Self = Self(1 << 0);
+    pub const REPLACE: Self = Self(1 << 1);
+    pub const NEW_REF: Self = Self(1 << 2);
+    pub const ALL: Self = Self(Self::UNIQUE.0 | Self::REPLACE.0 | Self::NEW_REF.0);
+
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        Self(bits & Self::ALL.0)
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        (self.0 & other.0) == other.0
     }
 
     pub const fn union(self, other: Self) -> Self {
@@ -10947,6 +11014,13 @@ impl FrameSideDataKind {
         }
     }
 
+    pub fn ffmpeg_value(&self) -> Option<i32> {
+        Self::KNOWN
+            .iter()
+            .position(|kind| kind == self)
+            .map(|index| index as i32)
+    }
+
     pub fn descriptor(&self) -> Option<FrameSideDataDescriptor> {
         use FrameSideDataProperties as Props;
 
@@ -17749,6 +17823,7 @@ mod tests {
             FrameSideDataKind::DisplayMatrix.ffmpeg_constant(),
             Some("AV_FRAME_DATA_DISPLAYMATRIX")
         );
+        assert_eq!(FrameSideDataKind::DisplayMatrix.ffmpeg_value(), Some(6));
         assert!(FrameSideDataKind::DisplayMatrix.is_known());
         assert!(FrameSideDataKind::KNOWN.contains(&FrameSideDataKind::DisplayMatrix));
 
@@ -17759,6 +17834,7 @@ mod tests {
         );
         assert_eq!(unknown.name(), "vendor.private.side-data");
         assert_eq!(unknown.ffmpeg_constant(), None);
+        assert_eq!(unknown.ffmpeg_value(), None);
         assert!(!unknown.is_known());
 
         assert_eq!(
@@ -17874,6 +17950,13 @@ mod tests {
 
         for (kind, ffmpeg_constant) in expected {
             assert_eq!(kind.ffmpeg_constant(), Some(ffmpeg_constant));
+            assert_eq!(
+                kind.ffmpeg_value(),
+                FrameSideDataKind::KNOWN
+                    .iter()
+                    .position(|known| known == &kind)
+                    .map(|index| index as i32)
+            );
             assert_eq!(FrameSideDataKind::from_name(ffmpeg_constant).unwrap(), kind);
             assert_eq!(FrameSideDataKind::from_name(kind.name()).unwrap(), kind);
         }
@@ -25173,6 +25256,98 @@ mod tests {
         assert!(frame.side_data().is_empty());
         assert_eq!(taken.len(), 1);
         assert_eq!(taken[0].kind(), "replaygain");
+    }
+
+    #[test]
+    fn frame_add_side_data_with_flags_matches_array_insert_semantics() {
+        assert_eq!(FrameSideDataFlags::UNIQUE.bits(), 1);
+        assert_eq!(FrameSideDataFlags::REPLACE.bits(), 2);
+        assert_eq!(FrameSideDataFlags::NEW_REF.bits(), 4);
+        assert_eq!(
+            FrameSideDataFlags::from_bits_truncate(u32::MAX).bits(),
+            FrameSideDataFlags::ALL.bits()
+        );
+        assert!(FrameSideDataFlags::EMPTY.is_empty());
+
+        let mut frame = Frame::empty();
+        frame
+            .add_side_data_with_flags(
+                FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![1]).unwrap(),
+                FrameSideDataFlags::EMPTY,
+            )
+            .unwrap();
+        let err = frame
+            .add_side_data_with_flags(
+                FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![2]).unwrap(),
+                FrameSideDataFlags::EMPTY,
+            )
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::External);
+        assert_eq!(err.code(), Some(AvErrorCode::ENOMEM));
+        assert_eq!(frame.side_data().len(), 1);
+        assert_eq!(frame.side_data()[0].data(), &[1]);
+
+        frame
+            .side_data_by_kind_mut(&FrameSideDataKind::ReplayGain)
+            .unwrap()
+            .metadata_mut()
+            .set("gain", "old")
+            .unwrap();
+        frame
+            .add_side_data_with_flags(
+                FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![3, 4]).unwrap(),
+                FrameSideDataFlags::REPLACE,
+            )
+            .unwrap();
+        assert_eq!(frame.side_data().len(), 1);
+        assert_eq!(frame.side_data()[0].data(), &[3, 4]);
+        assert!(frame.side_data()[0].metadata().is_empty());
+
+        frame
+            .add_side_data_with_flags(
+                FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![5]).unwrap(),
+                FrameSideDataFlags::EMPTY,
+            )
+            .unwrap();
+        frame
+            .add_side_data_with_flags(
+                FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![6]).unwrap(),
+                FrameSideDataFlags::UNIQUE,
+            )
+            .unwrap();
+        assert_eq!(frame.side_data().len(), 2);
+        assert_eq!(
+            frame.side_data()[0].kind_id(),
+            &FrameSideDataKind::DisplayMatrix
+        );
+        assert_eq!(
+            frame.side_data()[1].kind_id(),
+            &FrameSideDataKind::ReplayGain
+        );
+        assert_eq!(frame.side_data()[1].data(), &[6]);
+
+        frame
+            .add_side_data_with_flags(
+                FrameSideData::new_with_kind(FrameSideDataKind::SeiUnregistered, vec![0; 16])
+                    .unwrap(),
+                FrameSideDataFlags::EMPTY,
+            )
+            .unwrap();
+        frame
+            .add_side_data_with_flags(
+                FrameSideData::new_with_kind(FrameSideDataKind::SeiUnregistered, vec![1; 16])
+                    .unwrap(),
+                FrameSideDataFlags::REPLACE,
+            )
+            .unwrap();
+        assert_eq!(
+            frame
+                .side_data()
+                .iter()
+                .filter(|side_data| side_data.kind_id() == &FrameSideDataKind::SeiUnregistered)
+                .count(),
+            2
+        );
     }
 
     #[test]

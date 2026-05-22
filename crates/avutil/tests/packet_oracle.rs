@@ -6,16 +6,16 @@ use std::{
 };
 
 use avutil::{
-    packet_pack_dictionary, packet_unpack_dictionary, Dictionary, Packet,
-    PacketActiveFormatDescription, PacketAudioServiceType, PacketCpbProperties,
-    PacketDolbyVisionConf, PacketDoviCompression, PacketFallbackTrack, PacketFlags,
-    PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
-    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketOpaque, PacketParamChange,
-    PacketPictureType, PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain,
-    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSideDataList,
-    PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition, PacketWebVttIdentifier,
-    PacketWebVttSettings, Rational, SideData, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE,
-    AV_PACKET_POS_UNKNOWN,
+    packet_pack_dictionary, packet_unpack_dictionary, Dictionary, Frame, FrameSideData,
+    FrameSideDataFlags, FrameSideDataKind, Packet, PacketActiveFormatDescription,
+    PacketAudioServiceType, PacketCpbProperties, PacketDolbyVisionConf, PacketDoviCompression,
+    PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketJpDualMono,
+    PacketJpDualMonoSelection, PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketOpaque,
+    PacketParamChange, PacketPictureType, PacketProducerReferenceTime, PacketQualityStats,
+    PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind,
+    PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason, PacketSubtitlePosition,
+    PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData, AV_INPUT_BUFFER_PADDING_SIZE,
+    AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -25,6 +25,7 @@ fn libavcodec_packet_core_lifecycle_matches_packet_model() {
     let oracle_root = oracle_root(&repo_root);
     let include_dir = oracle_root.join("wsl/include");
     let libavcodec = oracle_root.join("wsl/lib/libavcodec.a");
+    let libswresample = oracle_root.join("wsl/lib/libswresample.a");
     let libavutil = oracle_root.join("wsl/lib/libavutil.a");
 
     assert!(
@@ -42,6 +43,11 @@ fn libavcodec_packet_core_lifecycle_matches_packet_model() {
         "missing pinned FFmpeg libavutil static library `{}`",
         libavutil.display()
     );
+    assert!(
+        libswresample.is_file(),
+        "missing pinned FFmpeg libswresample static library `{}`",
+        libswresample.display()
+    );
 
     let work_dir = repo_root.join("target/oracle/avutil-packet");
     fs::create_dir_all(&work_dir).expect("create avutil-packet oracle work dir");
@@ -49,8 +55,14 @@ fn libavcodec_packet_core_lifecycle_matches_packet_model() {
     let executable = work_dir.join("packet_oracle");
     fs::write(&source, oracle_c_source()).expect("write avutil-packet oracle C source");
 
-    let stdout =
-        compile_and_run_oracle(&include_dir, &libavcodec, &libavutil, &source, &executable);
+    let stdout = compile_and_run_oracle(
+        &include_dir,
+        &libavcodec,
+        &libswresample,
+        &libavutil,
+        &source,
+        &executable,
+    );
     let oracle = parse_oracle_output(&stdout);
     let expected = expected_rows();
 
@@ -120,6 +132,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
 
     insert_side_data_api_rows(&mut rows);
     insert_side_data_array_api_rows(&mut rows);
+    insert_frame_packet_side_data_bridge_rows(&mut rows);
     insert_payload_api_rows(&mut rows);
     insert_dictionary_api_rows(&mut rows);
 
@@ -563,6 +576,101 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     );
 }
 
+fn insert_frame_packet_side_data_bridge_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let mut packet_list = PacketSideDataList::new();
+    let frame_side_data =
+        FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x10, 0x20, 0x30])
+            .unwrap();
+    packet_list
+        .add_from_frame_side_data(&frame_side_data)
+        .unwrap();
+    rows.insert(
+        "packet:frame-to-packet-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:frame-to-packet".to_string(),
+        side_data_list_summary_fields(&packet_list),
+    );
+
+    let replacement =
+        FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0xaa]).unwrap();
+    packet_list.add_from_frame_side_data(&replacement).unwrap();
+    rows.insert(
+        "packet:frame-to-packet-replace-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:frame-to-packet-replace".to_string(),
+        side_data_list_summary_fields(&packet_list),
+    );
+
+    let unmapped =
+        FrameSideData::new_with_kind(FrameSideDataKind::A53ClosedCaptions, vec![0x55]).unwrap();
+    let err = packet_list.add_from_frame_side_data(&unmapped).unwrap_err();
+    rows.insert(
+        "packet:frame-to-packet-unmapped-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:frame-to-packet-unmapped".to_string(),
+        side_data_list_summary_fields(&packet_list),
+    );
+
+    let mut frame = Frame::empty();
+    let packet_side_data =
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x01, 0x02, 0x03]).unwrap();
+    packet_side_data
+        .add_to_frame(&mut frame, FrameSideDataFlags::EMPTY)
+        .unwrap();
+    rows.insert(
+        "packet:packet-to-frame-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:packet-to-frame".to_string(),
+        frame_side_data_summary_fields(&frame),
+    );
+
+    let duplicate_err = packet_side_data
+        .add_to_frame(&mut frame, FrameSideDataFlags::EMPTY)
+        .unwrap_err();
+    rows.insert(
+        "packet:packet-to-frame-duplicate-ret".to_string(),
+        vec![duplicate_err.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:packet-to-frame-duplicate".to_string(),
+        frame_side_data_summary_fields(&frame),
+    );
+
+    SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x09, 0x08])
+        .unwrap()
+        .add_to_frame(&mut frame, FrameSideDataFlags::REPLACE)
+        .unwrap();
+    rows.insert(
+        "packet:packet-to-frame-replace-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:packet-to-frame-replace".to_string(),
+        frame_side_data_summary_fields(&frame),
+    );
+
+    let unmapped_packet = SideData::new_extradata(vec![0x77]).unwrap();
+    let err = unmapped_packet
+        .add_to_frame(&mut frame, FrameSideDataFlags::EMPTY)
+        .unwrap_err();
+    rows.insert(
+        "packet:packet-to-frame-unmapped-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:packet-to-frame-unmapped".to_string(),
+        frame_side_data_summary_fields(&frame),
+    );
+}
+
 fn packet_with_common_props() -> Packet {
     let mut packet = Packet::new(vec![0xaa, 0xbb, 0xcc], 7);
     packet.set_pts(Some(90_000));
@@ -605,7 +713,7 @@ fn first_side_data_fields(packet: &Packet) -> (String, String, String) {
     };
 
     (
-        packet_side_data_type(side_data.kind_id()).to_string(),
+        packet_side_data_type(side_data.kind_id()),
         side_data.len().to_string(),
         hex_or_dash(side_data.data()),
     )
@@ -614,7 +722,7 @@ fn first_side_data_fields(packet: &Packet) -> (String, String, String) {
 fn side_data_summary_fields(packet: &Packet) -> Vec<String> {
     let mut fields = vec![packet.side_data().len().to_string()];
     for side_data in packet.side_data() {
-        fields.push(packet_side_data_type(side_data.kind_id()).to_string());
+        fields.push(packet_side_data_type(side_data.kind_id()));
         fields.push(side_data.len().to_string());
         fields.push(hex_or_dash(side_data.data()));
     }
@@ -624,8 +732,18 @@ fn side_data_summary_fields(packet: &Packet) -> Vec<String> {
 fn side_data_list_summary_fields(list: &PacketSideDataList) -> Vec<String> {
     let mut fields = vec![list.len().to_string()];
     for side_data in list.entries() {
-        fields.push(packet_side_data_type(side_data.kind_id()).to_string());
+        fields.push(packet_side_data_type(side_data.kind_id()));
         fields.push(side_data.len().to_string());
+        fields.push(hex_or_dash(side_data.data()));
+    }
+    fields
+}
+
+fn frame_side_data_summary_fields(frame: &Frame) -> Vec<String> {
+    let mut fields = vec![frame.side_data().len().to_string()];
+    for side_data in frame.side_data() {
+        fields.push(frame_side_data_type(side_data.kind_id()));
+        fields.push(side_data.data().len().to_string());
         fields.push(hex_or_dash(side_data.data()));
     }
     fields
@@ -679,12 +797,16 @@ fn dictionary_fields(dict: &Dictionary) -> Vec<String> {
     fields
 }
 
-fn packet_side_data_type(kind: &PacketSideDataKind) -> &'static str {
-    match kind.ffmpeg_value() {
-        Some(0) => "0",
-        Some(1) => "1",
-        _ => panic!("unexpected packet side data kind in oracle test: {kind:?}"),
-    }
+fn packet_side_data_type(kind: &PacketSideDataKind) -> String {
+    kind.ffmpeg_value()
+        .unwrap_or_else(|| panic!("unexpected packet side data kind in oracle test: {kind:?}"))
+        .to_string()
+}
+
+fn frame_side_data_type(kind: &FrameSideDataKind) -> String {
+    kind.ffmpeg_value()
+        .unwrap_or_else(|| panic!("unexpected frame side data kind in oracle test: {kind:?}"))
+        .to_string()
 }
 
 fn raw_ts(value: Option<i64>) -> i64 {
@@ -721,16 +843,18 @@ fn row_fields<'a>(rows: &'a BTreeMap<String, Vec<String>>, name: &str) -> &'a [S
 fn compile_and_run_oracle(
     include_dir: &Path,
     libavcodec: &Path,
+    libswresample: &Path,
     libavutil: &Path,
     source: &Path,
     executable: &Path,
 ) -> String {
     let output = if cfg!(windows) {
         let script = format!(
-            "gcc -I {} {} {} {} -lm -pthread -ldl -o {} && {}",
+            "gcc -I {} {} {} {} {} -lz -lm -pthread -ldl -o {} && {}",
             shell_quote(&to_wsl_path(include_dir)),
             shell_quote(&to_wsl_path(source)),
             shell_quote(&to_wsl_path(libavcodec)),
+            shell_quote(&to_wsl_path(libswresample)),
             shell_quote(&to_wsl_path(libavutil)),
             shell_quote(&to_wsl_path(executable)),
             shell_quote(&to_wsl_path(executable))
@@ -743,10 +867,11 @@ fn compile_and_run_oracle(
         Command::new("sh")
             .arg("-c")
             .arg(format!(
-                "gcc -I {} {} {} {} -lm -pthread -ldl -o {} && {}",
+                "gcc -I {} {} {} {} {} -lz -lm -pthread -ldl -o {} && {}",
                 shell_quote(&include_dir.display().to_string()),
                 shell_quote(&source.display().to_string()),
                 shell_quote(&libavcodec.display().to_string()),
+                shell_quote(&libswresample.display().to_string()),
                 shell_quote(&libavutil.display().to_string()),
                 shell_quote(&executable.display().to_string()),
                 shell_quote(&executable.display().to_string())
@@ -856,6 +981,17 @@ static void print_side_data_array_lookup(const char *name,
     const AVPacketSideData *entry = av_packet_side_data_get(sd, nb_sd, type);
     printf("%s|%d|%zu|", name, entry != NULL, entry ? entry->size : 0);
     print_hex_or_dash(entry ? entry->data : NULL, entry ? (int)entry->size : 0);
+    printf("\n");
+}
+
+static void print_frame_side_data_array_summary(const char *name,
+                                                AVFrameSideData * const *sd,
+                                                int nb_sd) {
+    printf("%s|%d", name, nb_sd);
+    for (int i = 0; i < nb_sd; i++) {
+        printf("|%d|%zu|", (int)sd[i]->type, sd[i]->size);
+        print_hex_or_dash(sd[i]->data, (int)sd[i]->size);
+    }
     printf("\n");
 }
 
@@ -1273,6 +1409,83 @@ static void exercise_side_data_array_api(void) {
     print_side_data_array_summary("packet:array-free", sd, nb_sd);
 }
 
+static void exercise_frame_packet_side_data_bridge_api(void) {
+    AVPacketSideData *psd = NULL;
+    int nb_psd = 0;
+    AVFrameSideData **fsd = NULL;
+    int nb_fsd = 0;
+    int ret;
+
+    AVFrameSideData *frame_entry = av_frame_side_data_new(&fsd, &nb_fsd,
+                                                          AV_FRAME_DATA_REPLAYGAIN,
+                                                          3, 0);
+    fail_if(!frame_entry, "av_frame_side_data_new bridge seed failed");
+    frame_entry->data[0] = 0x10;
+    frame_entry->data[1] = 0x20;
+    frame_entry->data[2] = 0x30;
+    ret = av_packet_side_data_from_frame(&psd, &nb_psd, frame_entry, 0);
+    printf("packet:frame-to-packet-ret|%d\n", ret);
+    print_side_data_array_summary("packet:frame-to-packet", psd, nb_psd);
+
+    frame_entry = av_frame_side_data_new(&fsd, &nb_fsd,
+                                         AV_FRAME_DATA_REPLAYGAIN,
+                                         1, AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    fail_if(!frame_entry, "av_frame_side_data_new bridge replace seed failed");
+    frame_entry->data[0] = 0xaa;
+    ret = av_packet_side_data_from_frame(&psd, &nb_psd, frame_entry, 0);
+    printf("packet:frame-to-packet-replace-ret|%d\n", ret);
+    print_side_data_array_summary("packet:frame-to-packet-replace", psd, nb_psd);
+
+    AVFrameSideData *unmapped_frame = av_frame_side_data_new(&fsd, &nb_fsd,
+                                                             AV_FRAME_DATA_A53_CC,
+                                                             1, 0);
+    fail_if(!unmapped_frame, "av_frame_side_data_new bridge unmapped seed failed");
+    unmapped_frame->data[0] = 0x55;
+    ret = av_packet_side_data_from_frame(&psd, &nb_psd, unmapped_frame, 0);
+    printf("packet:frame-to-packet-unmapped-ret|%d\n", ret);
+    print_side_data_array_summary("packet:frame-to-packet-unmapped", psd, nb_psd);
+    av_frame_side_data_free(&fsd, &nb_fsd);
+    av_packet_side_data_free(&psd, &nb_psd);
+
+    AVPacketSideData *packet_entry = av_packet_side_data_new(&psd, &nb_psd,
+                                                            AV_PKT_DATA_REPLAYGAIN,
+                                                            3, 0);
+    fail_if(!packet_entry, "av_packet_side_data_new bridge seed failed");
+    packet_entry->data[0] = 0x01;
+    packet_entry->data[1] = 0x02;
+    packet_entry->data[2] = 0x03;
+    ret = av_packet_side_data_to_frame(&fsd, &nb_fsd, packet_entry, 0);
+    printf("packet:packet-to-frame-ret|%d\n", ret);
+    print_frame_side_data_array_summary("packet:packet-to-frame", fsd, nb_fsd);
+
+    ret = av_packet_side_data_to_frame(&fsd, &nb_fsd, packet_entry, 0);
+    printf("packet:packet-to-frame-duplicate-ret|%d\n", ret);
+    print_frame_side_data_array_summary("packet:packet-to-frame-duplicate", fsd, nb_fsd);
+
+    packet_entry = av_packet_side_data_new(&psd, &nb_psd,
+                                           AV_PKT_DATA_REPLAYGAIN,
+                                           2, 0);
+    fail_if(!packet_entry, "av_packet_side_data_new bridge replace seed failed");
+    packet_entry->data[0] = 0x09;
+    packet_entry->data[1] = 0x08;
+    ret = av_packet_side_data_to_frame(&fsd, &nb_fsd, packet_entry,
+                                       AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    printf("packet:packet-to-frame-replace-ret|%d\n", ret);
+    print_frame_side_data_array_summary("packet:packet-to-frame-replace", fsd, nb_fsd);
+
+    packet_entry = av_packet_side_data_new(&psd, &nb_psd,
+                                           AV_PKT_DATA_NEW_EXTRADATA,
+                                           1, 0);
+    fail_if(!packet_entry, "av_packet_side_data_new bridge unmapped seed failed");
+    packet_entry->data[0] = 0x77;
+    ret = av_packet_side_data_to_frame(&fsd, &nb_fsd, packet_entry, 0);
+    printf("packet:packet-to-frame-unmapped-ret|%d\n", ret);
+    print_frame_side_data_array_summary("packet:packet-to-frame-unmapped", fsd, nb_fsd);
+
+    av_frame_side_data_free(&fsd, &nb_fsd);
+    av_packet_side_data_free(&psd, &nb_psd);
+}
+
 static void exercise_payload_api(void) {
     AVPacket *pkt = new_packet();
     uint8_t *owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
@@ -1407,6 +1620,7 @@ int main(void) {
 
     exercise_side_data_api();
     exercise_side_data_array_api();
+    exercise_frame_packet_side_data_bridge_api();
     exercise_payload_api();
     exercise_dictionary_api();
 

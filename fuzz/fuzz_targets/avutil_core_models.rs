@@ -34,10 +34,10 @@ use avutil::{
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
     FrameLcevc, FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector,
     FrameMotionVectors, FramePanScan, FrameRegionOfInterest, FrameRegionsOfInterest,
-    FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataKind,
-    FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason, FrameSphericalMapping,
-    FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags, FrameStereo3dPrimaryEye,
-    FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
+    FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataFlags,
+    FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason,
+    FrameSphericalMapping, FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags,
+    FrameStereo3dPrimaryEye, FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
     FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
     FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId,
     clear_global_log_callback, clear_global_log_records, flush_global_log_repeated,
@@ -5600,6 +5600,85 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(side_data_list.remove_kind(&typed_side_data_kind).is_none());
     side_data_list.clear();
     assert!(side_data_list.is_empty());
+
+    let bridge_payload_len = usize::from(cursor.next().unwrap_or_default() % 16);
+    let bridge_payload = payload_from(cursor, bridge_payload_len);
+    let frame_side_data =
+        FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, bridge_payload.clone())
+            .unwrap();
+    let mut bridge_list = PacketSideDataList::new();
+    bridge_list
+        .add_from_frame_side_data(&frame_side_data)
+        .unwrap();
+    assert_eq!(bridge_list.len(), 1);
+    assert_eq!(
+        bridge_list.entries()[0].kind_id(),
+        &PacketSideDataKind::ReplayGain
+    );
+    assert_eq!(bridge_list.entries()[0].data(), bridge_payload.as_slice());
+
+    let bridge_replacement_len = usize::from(cursor.next().unwrap_or_default() % 16);
+    let bridge_replacement = payload_from(cursor, bridge_replacement_len);
+    bridge_list
+        .add_from_frame_side_data(
+            &FrameSideData::new_with_kind(
+                FrameSideDataKind::ReplayGain,
+                bridge_replacement.clone(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(bridge_list.len(), 1);
+    assert_eq!(
+        bridge_list.entries()[0].data(),
+        bridge_replacement.as_slice()
+    );
+
+    let unmapped_frame_side_data =
+        FrameSideData::new_with_kind(FrameSideDataKind::A53ClosedCaptions, vec![0xcc]).unwrap();
+    let unmapped_frame_err = bridge_list
+        .add_from_frame_side_data(&unmapped_frame_side_data)
+        .unwrap_err();
+    assert_eq!(unmapped_frame_err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(unmapped_frame_err.code(), Some(AvErrorCode::EINVAL));
+
+    let packet_side_data =
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, bridge_payload.clone()).unwrap();
+    let mut bridge_frame = Frame::default();
+    packet_side_data
+        .add_to_frame(&mut bridge_frame, FrameSideDataFlags::EMPTY)
+        .unwrap();
+    assert_eq!(bridge_frame.side_data().len(), 1);
+    assert_eq!(
+        bridge_frame.side_data()[0].kind_id(),
+        &FrameSideDataKind::ReplayGain
+    );
+    assert_eq!(bridge_frame.side_data()[0].data(), bridge_payload.as_slice());
+
+    let duplicate_err = packet_side_data
+        .add_to_frame(&mut bridge_frame, FrameSideDataFlags::EMPTY)
+        .unwrap_err();
+    assert_eq!(duplicate_err.kind(), AvErrorKind::External);
+    assert_eq!(duplicate_err.code(), Some(AvErrorCode::ENOMEM));
+    assert_eq!(bridge_frame.side_data().len(), 1);
+    assert_eq!(bridge_frame.side_data()[0].data(), bridge_payload.as_slice());
+
+    SideData::new_with_kind(PacketSideDataKind::ReplayGain, bridge_replacement.clone())
+        .unwrap()
+        .add_to_frame(&mut bridge_frame, FrameSideDataFlags::REPLACE)
+        .unwrap();
+    assert_eq!(bridge_frame.side_data().len(), 1);
+    assert_eq!(
+        bridge_frame.side_data()[0].data(),
+        bridge_replacement.as_slice()
+    );
+
+    let unmapped_packet_err = SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0xee])
+        .unwrap()
+        .add_to_frame(&mut bridge_frame, FrameSideDataFlags::EMPTY)
+        .unwrap_err();
+    assert_eq!(unmapped_packet_err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(unmapped_packet_err.code(), Some(AvErrorCode::EINVAL));
 
     let typed_payload_max_len = (PacketQualityStats::HEADER_LEN
         + PacketQualityStats::ERROR_ENTRY_LEN * 3
