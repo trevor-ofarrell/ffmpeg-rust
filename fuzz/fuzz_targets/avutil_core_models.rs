@@ -12182,6 +12182,60 @@ fn exercise_fixtures() {
         .hw_frames_context()
         .unwrap()
         .shares_storage(source_frame.hw_frames_context().unwrap()));
+
+    let props_old_side_released = Arc::new(Mutex::new(Vec::<String>::new()));
+    let props_old_side_capture = Arc::clone(&props_old_side_released);
+    let props_old_side = BufferRef::from_external_slice_with_opaque_readonly(
+        Arc::<[u8]>::from(vec![0x99]),
+        String::from("props-old-side"),
+        move |opaque| {
+            props_old_side_capture.lock().unwrap().push(opaque);
+        },
+    );
+    let props_old_hw_released = Arc::new(Mutex::new(Vec::<String>::new()));
+    let props_old_hw_capture = Arc::clone(&props_old_hw_released);
+    let props_old_hw = BufferRef::from_external_slice_with_opaque_readonly(
+        Arc::<[u8]>::from(vec![0xAA]),
+        String::from("props-old-hw"),
+        move |opaque| {
+            props_old_hw_capture.lock().unwrap().push(opaque);
+        },
+    );
+    let props_plane = BufferRef::copy_from_slice(&[3]);
+    let props_video =
+        VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![props_plane.clone()])
+            .unwrap();
+    let mut props_frame = Frame::video(props_video).with_hw_frames_context(props_old_hw);
+    props_frame.set_pts(Some(99));
+    props_frame
+        .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, props_old_side)
+        .unwrap();
+    props_frame.copy_props_from(&source_frame);
+    assert_eq!(props_frame.pts(), Some(7));
+    assert!(props_old_side_released.lock().unwrap().is_empty());
+    assert!(props_old_hw_released.lock().unwrap().is_empty());
+    let FrameData::Video(props_video) = props_frame.data() else {
+        unreachable!("constructed video frame changed variant");
+    };
+    assert_eq!(props_video.planes(), &[vec![3]]);
+    assert!(props_video.plane_buffers()[0].shares_storage(&props_plane));
+    assert!(!props_video.plane_buffers()[0].shares_storage(&ref_plane));
+    assert_eq!(props_frame.side_data().len(), 2);
+    assert_eq!(props_frame.side_data()[0].data(), &[0x99]);
+    assert_eq!(props_frame.side_data()[1].data(), source_frame.side_data()[0].data());
+    assert!(!props_frame.side_data()[1].buffer().shares_storage(&ref_side));
+    assert!(!props_frame.side_data()[1]
+        .buffer()
+        .shares_storage(source_frame.side_data()[0].buffer()));
+    assert!(!props_frame
+        .hw_frames_context()
+        .unwrap()
+        .shares_storage(&ref_hw));
+    assert!(!props_frame
+        .hw_frames_context()
+        .unwrap()
+        .shares_storage(source_frame.hw_frames_context().unwrap()));
+
     let mut moved_frame = Frame::empty();
     moved_frame.move_ref_from(&mut referenced_frame);
     assert!(referenced_frame.is_empty());

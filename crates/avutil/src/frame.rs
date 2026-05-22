@@ -101,6 +101,18 @@ impl Frame {
         *self = std::mem::take(source);
     }
 
+    pub fn copy_props_from(&mut self, source: &Self) {
+        self.pts = source.pts;
+        self.side_data
+            .extend(source.side_data.iter().map(FrameSideData::copy_props_clone));
+
+        if let (FrameData::Audio(destination), FrameData::Audio(source)) =
+            (&mut self.data, &source.data)
+        {
+            destination.sample_rate = source.sample_rate;
+        }
+    }
+
     pub fn pts(&self) -> Option<i64> {
         self.pts
     }
@@ -11407,6 +11419,14 @@ impl FrameSideData {
         })
     }
 
+    fn copy_props_clone(&self) -> Self {
+        Self {
+            kind: self.kind.clone(),
+            buffer: BufferRef::copy_from_slice(self.data()),
+            metadata: self.metadata.clone(),
+        }
+    }
+
     pub fn kind(&self) -> &str {
         self.kind.name()
     }
@@ -17704,6 +17724,89 @@ mod tests {
             *source_released.lock().unwrap(),
             vec![String::from("source-plane")]
         );
+    }
+
+    #[test]
+    fn frame_copy_props_from_preserves_payload_appends_side_data_and_keeps_hw_context() {
+        let source_plane = BufferRef::copy_from_slice(&[1, 2]);
+        let source_side = BufferRef::copy_from_slice(&(1..=36).collect::<Vec<_>>());
+        let source_hw = BufferRef::copy_from_slice(&[0xEE]);
+        let source_video =
+            VideoFrame::new_with_buffer_refs(2, 1, PixelFormat::Gray8, vec![source_plane.clone()])
+                .unwrap();
+        let mut source = Frame::video(source_video).with_hw_frames_context(source_hw.clone());
+        source.set_pts(Some(321));
+        source
+            .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
+            .unwrap();
+
+        let old_side_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let old_side_capture = std::sync::Arc::clone(&old_side_released);
+        let old_side = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![0x99; 36]),
+            String::from("old-side"),
+            move |opaque| {
+                old_side_capture.lock().unwrap().push(opaque);
+            },
+        );
+        let old_hw_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let old_hw_capture = std::sync::Arc::clone(&old_hw_released);
+        let old_hw = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![0xAA]),
+            String::from("old-hw"),
+            move |opaque| {
+                old_hw_capture.lock().unwrap().push(opaque);
+            },
+        );
+        let destination_plane = BufferRef::copy_from_slice(&[9, 8]);
+        let destination_video = VideoFrame::new_with_buffer_refs(
+            2,
+            1,
+            PixelFormat::Gray8,
+            vec![destination_plane.clone()],
+        )
+        .unwrap();
+        let mut destination = Frame::video(destination_video).with_hw_frames_context(old_hw);
+        destination.set_pts(Some(999));
+        destination
+            .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, old_side)
+            .unwrap();
+
+        destination.copy_props_from(&source);
+
+        assert_eq!(destination.pts(), Some(321));
+        assert!(old_side_released.lock().unwrap().is_empty());
+        assert!(old_hw_released.lock().unwrap().is_empty());
+        let (destination_video, source_video) = match (destination.data(), source.data()) {
+            (FrameData::Video(destination_video), FrameData::Video(source_video)) => {
+                (destination_video, source_video)
+            }
+            _ => panic!("expected video frames"),
+        };
+        assert_eq!(destination_video.planes(), &[vec![9, 8]]);
+        assert_eq!(source_video.planes(), &[vec![1, 2]]);
+        assert!(destination_video.plane_buffers()[0].shares_storage(&destination_plane));
+        assert!(!destination_video.plane_buffers()[0].shares_storage(&source_plane));
+        assert_eq!(destination.side_data().len(), 2);
+        assert_eq!(destination.side_data()[0].data(), &[0x99; 36]);
+        assert_eq!(
+            destination.side_data()[1].data(),
+            source.side_data()[0].data()
+        );
+        assert!(!destination.side_data()[1]
+            .buffer()
+            .shares_storage(&source_side));
+        assert!(!destination.side_data()[1]
+            .buffer()
+            .shares_storage(source.side_data()[0].buffer()));
+        assert!(!destination
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(&source_hw));
+        assert!(!destination
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(source.hw_frames_context().unwrap()));
     }
 
     #[test]

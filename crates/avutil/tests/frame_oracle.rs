@@ -149,6 +149,51 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     rows.insert("frame:audio-buffer".to_string(), frame_fields(&audio));
 
+    let copy_source_side = (1..=36).collect::<Vec<u8>>();
+    let copy_source_video =
+        VideoFrame::new_with_aligned_line_sizes(2, 1, PixelFormat::Gray8, vec![vec![1, 2]], 1)
+            .unwrap();
+    let mut copy_source =
+        Frame::video(copy_source_video).with_hw_frames_context(BufferRef::copy_from_slice(&[0xEE]));
+    copy_source.set_pts(Some(321));
+    copy_source
+        .set_side_data_kind_buffer(
+            FrameSideDataKind::DisplayMatrix,
+            BufferRef::copy_from_slice(&copy_source_side),
+        )
+        .unwrap();
+    let copy_destination_video =
+        VideoFrame::new_with_aligned_line_sizes(2, 1, PixelFormat::Gray8, vec![vec![9, 8]], 1)
+            .unwrap();
+    let mut copy_destination = Frame::video(copy_destination_video)
+        .with_hw_frames_context(BufferRef::copy_from_slice(&[0xAA]));
+    copy_destination.set_pts(Some(999));
+    copy_destination
+        .set_side_data_kind(FrameSideDataKind::DisplayMatrix, vec![0x99; 36])
+        .unwrap();
+    copy_destination.copy_props_from(&copy_source);
+    rows.insert("frame:copy-props-ret".to_string(), vec!["0".to_string()]);
+    rows.insert(
+        "frame:copy-props-src".to_string(),
+        frame_fields(&copy_source),
+    );
+    rows.insert(
+        "frame:copy-props-dst".to_string(),
+        frame_fields(&copy_destination),
+    );
+    rows.insert(
+        "frame:copy-props-plane-shares".to_string(),
+        first_plane_share_fields(&copy_source, &copy_destination),
+    );
+    rows.insert(
+        "frame:copy-props-side-shares".to_string(),
+        first_side_data_share_fields(&copy_source, &copy_destination),
+    );
+    rows.insert(
+        "frame:copy-props-hw-shares".to_string(),
+        hw_frames_context_share_fields(&copy_source, &copy_destination),
+    );
+
     let side_payload = (1..=36).collect::<Vec<u8>>();
     let mut side_frame = Frame::empty();
     side_frame
@@ -289,6 +334,34 @@ fn side_summary(side_data: &[FrameSideData]) -> String {
 fn first_plane_share_fields(left: &Frame, right: &Frame) -> Vec<String> {
     let left = first_plane_buffer(left);
     let right = first_plane_buffer(right);
+    buffer_share_fields(left, right)
+}
+
+fn first_side_data_share_fields(left: &Frame, right: &Frame) -> Vec<String> {
+    let left = left
+        .side_data()
+        .first()
+        .expect("left frame should have side data")
+        .buffer();
+    let right = right
+        .side_data()
+        .last()
+        .expect("right frame should have side data")
+        .buffer();
+    buffer_share_fields(left, right)
+}
+
+fn hw_frames_context_share_fields(left: &Frame, right: &Frame) -> Vec<String> {
+    let left = left
+        .hw_frames_context()
+        .expect("left frame should have hw context");
+    let right = right
+        .hw_frames_context()
+        .expect("right frame should have hw context");
+    buffer_share_fields(left, right)
+}
+
+fn buffer_share_fields(left: &BufferRef, right: &BufferRef) -> Vec<String> {
     vec![
         bool_field(left.shares_storage(right)),
         left.strong_count().to_string(),
@@ -503,7 +576,7 @@ static void print_side_summary(const AVFrame *frame)
         const char *name = av_frame_side_data_name(sd->type);
         if (i)
             printf(";");
-        printf("%s|%zu|", name ? name : "unknown", sd->size);
+        printf("%s:%zu:", name ? name : "unknown", sd->size);
         print_hex(sd->data, sd->size);
     }
 }
@@ -553,6 +626,30 @@ static void print_share(const char *name, const AVFrame *left,
            av_buffer_get_ref_count(right->buf[0]),
            av_buffer_is_writable(left->buf[0]),
            av_buffer_is_writable(right->buf[0]));
+}
+
+static void print_buffer_ref_share(const char *name, const AVBufferRef *left,
+                                   const AVBufferRef *right)
+{
+    fail_if(!left || !right, "missing buffer refs to compare");
+    printf("%s|%d|%d|%d|%d|%d\n", name, left->data == right->data,
+           av_buffer_get_ref_count(left), av_buffer_get_ref_count(right),
+           av_buffer_is_writable(left), av_buffer_is_writable(right));
+}
+
+static void print_side_share(const char *name, const AVFrame *left,
+                             const AVFrame *right)
+{
+    fail_if(left->nb_side_data <= 0 || right->nb_side_data <= 0,
+            "missing frame side data refs");
+    print_buffer_ref_share(name, left->side_data[0]->buf,
+                           right->side_data[right->nb_side_data - 1]->buf);
+}
+
+static void print_hw_share(const char *name, const AVFrame *left,
+                           const AVFrame *right)
+{
+    print_buffer_ref_share(name, left->hw_frames_ctx, right->hw_frames_ctx);
 }
 
 static void print_side_kind_inventory(void)
@@ -687,6 +784,53 @@ int main(void)
         audio->data[0][i] = (uint8_t)(i + 1);
     print_frame("frame:audio-buffer", audio);
 
+    AVFrame *copy_src = av_frame_alloc();
+    fail_if(!copy_src, "copy_src av_frame_alloc failed");
+    copy_src->format = AV_PIX_FMT_GRAY8;
+    copy_src->width = 2;
+    copy_src->height = 1;
+    copy_src->pts = 321;
+    fail_if(av_frame_get_buffer(copy_src, 1) < 0,
+            "copy_src av_frame_get_buffer failed");
+    static const uint8_t copy_src_payload[] = { 1, 2 };
+    fill_video_gray(copy_src, copy_src_payload);
+    copy_src->hw_frames_ctx = av_buffer_alloc(1);
+    fail_if(!copy_src->hw_frames_ctx, "copy_src hw context allocation failed");
+    copy_src->hw_frames_ctx->data[0] = 0xEE;
+    AVFrameSideData *copy_src_sd = av_frame_new_side_data(
+        copy_src, AV_FRAME_DATA_DISPLAYMATRIX, 36);
+    fail_if(!copy_src_sd, "copy_src side data allocation failed");
+    for (int i = 0; i < 36; i++)
+        copy_src_sd->data[i] = (uint8_t)(i + 1);
+
+    AVFrame *copy_dst = av_frame_alloc();
+    fail_if(!copy_dst, "copy_dst av_frame_alloc failed");
+    copy_dst->format = AV_PIX_FMT_GRAY8;
+    copy_dst->width = 2;
+    copy_dst->height = 1;
+    copy_dst->pts = 999;
+    fail_if(av_frame_get_buffer(copy_dst, 1) < 0,
+            "copy_dst av_frame_get_buffer failed");
+    static const uint8_t copy_dst_payload[] = { 9, 8 };
+    fill_video_gray(copy_dst, copy_dst_payload);
+    copy_dst->hw_frames_ctx = av_buffer_alloc(1);
+    fail_if(!copy_dst->hw_frames_ctx, "copy_dst hw context allocation failed");
+    copy_dst->hw_frames_ctx->data[0] = 0xAA;
+    AVFrameSideData *copy_dst_sd = av_frame_new_side_data(
+        copy_dst, AV_FRAME_DATA_DISPLAYMATRIX, 36);
+    fail_if(!copy_dst_sd, "copy_dst side data allocation failed");
+    for (int i = 0; i < 36; i++)
+        copy_dst_sd->data[i] = 0x99;
+
+    int copy_props_ret = av_frame_copy_props(copy_dst, copy_src);
+    printf("frame:copy-props-ret|%d\n", copy_props_ret);
+    fail_if(copy_props_ret < 0, "av_frame_copy_props failed");
+    print_frame("frame:copy-props-src", copy_src);
+    print_frame("frame:copy-props-dst", copy_dst);
+    print_share("frame:copy-props-plane-shares", copy_src, copy_dst);
+    print_side_share("frame:copy-props-side-shares", copy_src, copy_dst);
+    print_hw_share("frame:copy-props-hw-shares", copy_src, copy_dst);
+
     AVFrame *side_frame = av_frame_alloc();
     fail_if(!side_frame, "side_frame av_frame_alloc failed");
     AVFrameSideData *sd = av_frame_new_side_data(
@@ -702,6 +846,8 @@ int main(void)
            side_frame->nb_side_data);
 
     av_frame_free(&side_frame);
+    av_frame_free(&copy_dst);
+    av_frame_free(&copy_src);
     av_frame_free(&audio);
     av_frame_free(&move_dst);
     av_frame_free(&video_ref);

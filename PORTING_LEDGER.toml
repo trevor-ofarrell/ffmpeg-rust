@@ -416,6 +416,7 @@ unit_tests = [
   "frame::tests::empty_frame_unref_clears_data_and_releases_references",
   "frame::tests::frame_ref_from_shares_references_and_replaces_destination",
   "frame::tests::frame_move_ref_from_moves_references_and_unrefs_source",
+  "frame::tests::frame_copy_props_from_preserves_payload_appends_side_data_and_keeps_hw_context",
   "frame::tests::frame_make_writable_detaches_video_payload_refs",
   "frame::tests::frame_make_all_references_writable_detaches_side_data_and_hw_context",
   "frame::tests::frame_data_make_writable_detaches_audio_payload_refs",
@@ -538,9 +539,13 @@ fuzz_targets = ["avutil_core_models"]
 # numeric values, names, descriptors, and `AV_SIDE_DATA_PROP_*` flags,
 # `AV_FRAME_SIDE_DATA_FLAG_*` values, gray8 video `av_frame_get_buffer`,
 # `av_frame_ref` sharing, `av_frame_make_writable` copy-on-write detachment
-# through the pinned default 64-byte alignment path, `av_frame_move_ref`, packed
-# s16 stereo audio `av_frame_get_buffer`, and `av_frame_new_side_data` /
+# through the pinned default 64-byte alignment path, `av_frame_move_ref`,
+# `av_frame_copy_props` payload/property behavior, packed s16 stereo audio
+# `av_frame_get_buffer`, and `av_frame_new_side_data` /
 # `av_frame_get_side_data` / `av_frame_remove_side_data` for displaymatrix.
+# The copy-props row proves destination payload buffers are preserved, PTS is
+# copied, existing destination side data is retained, source side data is
+# appended as a deep copy, and destination `hw_frames_ctx` is left untouched.
 # Rust now repacks non-writable VideoFrame and AudioFrame payloads into the same
 # pinned default-aligned storage shape while preserving visible snapshots.
 # WSL `cargo fuzz run avutil_core_models -- -runs=1` passes locally with the
