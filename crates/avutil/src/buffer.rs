@@ -2204,9 +2204,27 @@ mod tests {
             .unwrap();
         assert!(unique_offset.is_writable());
         let mut unique_offset = unique_offset;
+        let unique_offset_storage = Arc::as_ptr(&unique_offset.data);
+        let unique_offset_ptr = unique_offset.as_ptr();
         unique_offset.make_mut()[0] = 7;
+        assert_eq!(Arc::as_ptr(&unique_offset.data), unique_offset_storage);
+        assert_eq!(unique_offset.as_ptr(), unique_offset_ptr);
         assert_eq!(unique_offset.offset(), 2);
         assert_eq!(unique_offset.as_slice(), &[7, 4]);
+
+        let realloc_offset_base = BufferRef::from_vec(vec![5, 6, 7, 8]);
+        let mut realloc_offset = Some(realloc_offset_base.ref_slice(1, 2).unwrap());
+        drop(realloc_offset_base);
+        let realloc_offset_storage = Arc::as_ptr(&realloc_offset.as_ref().unwrap().data);
+        let realloc_offset_ptr = realloc_offset.as_ref().unwrap().as_ptr();
+        BufferRef::realloc(&mut realloc_offset, 3).unwrap();
+        let realloc_offset = realloc_offset.expect("unique offset realloc result");
+        assert_ne!(Arc::as_ptr(&realloc_offset.data), realloc_offset_storage);
+        assert_ne!(realloc_offset.as_ptr(), realloc_offset_ptr);
+        assert_eq!(realloc_offset.offset(), 0);
+        assert_eq!(&realloc_offset.as_slice()[..2], &[6, 7]);
+        assert!(realloc_offset.is_writable());
+        assert!(realloc_offset.data.reallocatable);
 
         assert_eq!(
             source.ref_slice(5, 0).unwrap_err().kind(),

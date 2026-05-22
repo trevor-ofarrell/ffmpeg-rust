@@ -1023,6 +1023,61 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
             .kind(),
         AvErrorKind::InvalidArgument
     );
+
+    let unique_offset_base = BufferRef::copy_from_slice(&payload);
+    let unique_start = if unique_offset_base.is_empty() {
+        0
+    } else {
+        usize::from(cursor.next().unwrap_or_default()) % unique_offset_base.len()
+    };
+    let unique_len =
+        usize::from(cursor.next().unwrap_or_default()) % (unique_offset_base.len() - unique_start + 1);
+    let mut unique_offset = unique_offset_base
+        .ref_slice(unique_start, unique_len)
+        .unwrap();
+    drop(unique_offset_base);
+    let unique_visible = unique_offset.as_slice().to_vec();
+    let unique_ptr = unique_offset.as_ptr();
+    let unique_offset_value = unique_offset.offset();
+    if !unique_offset.is_empty() {
+        unique_offset.make_mut()[0] = unique_offset.as_slice()[0];
+    } else {
+        assert_eq!(unique_offset.make_mut(), &mut []);
+    }
+    assert_eq!(unique_offset.as_ptr(), unique_ptr);
+    assert_eq!(unique_offset.offset(), unique_offset_value);
+    assert_eq!(unique_offset.as_slice(), unique_visible.as_slice());
+
+    let unique_realloc_base = BufferRef::copy_from_slice(&payload);
+    let unique_realloc_start = if unique_realloc_base.is_empty() {
+        0
+    } else {
+        usize::from(cursor.next().unwrap_or_default()) % unique_realloc_base.len()
+    };
+    let unique_realloc_len = usize::from(cursor.next().unwrap_or_default())
+        % (unique_realloc_base.len() - unique_realloc_start + 1);
+    let mut unique_realloc = Some(
+        unique_realloc_base
+            .ref_slice(unique_realloc_start, unique_realloc_len)
+            .unwrap(),
+    );
+    drop(unique_realloc_base);
+    let unique_realloc_visible = unique_realloc
+        .as_ref()
+        .expect("unique offset realloc input")
+        .as_slice()
+        .to_vec();
+    let unique_realloc_new_len = unique_realloc_len.saturating_add(1);
+    let unique_realloc_prefix_len = unique_realloc_len.min(unique_realloc_new_len);
+    BufferRef::realloc(&mut unique_realloc, unique_realloc_new_len).unwrap();
+    let unique_realloc = unique_realloc.expect("unique offset realloc result");
+    assert_eq!(unique_realloc.offset(), 0);
+    assert_eq!(
+        &unique_realloc.as_slice()[..unique_realloc_prefix_len],
+        &unique_realloc_visible[..unique_realloc_prefix_len]
+    );
+    assert!(unique_realloc.is_writable());
+
     let mut offset_writable = offset_ref.clone();
     let expected_offset_visible = offset_writable.as_slice().to_vec();
     if !offset_writable.is_empty() {

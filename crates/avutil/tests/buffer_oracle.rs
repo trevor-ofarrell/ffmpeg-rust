@@ -542,6 +542,50 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![bool_field(offset_realloc.shares_storage(&offset_src))],
     );
 
+    let offset_unique_base = BufferRef::from_vec(vec![30, 31, 32, 33]);
+    let offset_unique_base_ptr = offset_unique_base.as_ptr() as usize;
+    let mut offset_unique_make_writable = offset_unique_base.ref_slice(1, 2).unwrap();
+    drop(offset_unique_base);
+    let offset_unique_before = offset_unique_make_writable.as_ptr();
+    offset_unique_make_writable.make_mut();
+    rows.insert(
+        "buffer:offset-unique-make-writable-ret".to_string(),
+        vec![
+            "0".to_string(),
+            bool_field(offset_unique_before == offset_unique_make_writable.as_ptr()),
+            ((offset_unique_make_writable.as_ptr() as usize) - offset_unique_base_ptr).to_string(),
+        ],
+    );
+    rows.insert(
+        "buffer:offset-unique-make-writable".to_string(),
+        buffer_fields(&offset_unique_make_writable),
+    );
+
+    let offset_unique_realloc_base = BufferRef::from_vec(vec![34, 35, 36, 37]);
+    let mut offset_unique_realloc = Some(offset_unique_realloc_base.ref_slice(1, 2).unwrap());
+    drop(offset_unique_realloc_base);
+    let offset_unique_realloc_before = offset_unique_realloc
+        .as_ref()
+        .expect("unique offset realloc input")
+        .as_ptr();
+    BufferRef::realloc(&mut offset_unique_realloc, 3).unwrap();
+    let offset_unique_realloc = offset_unique_realloc.expect("unique offset realloc result");
+    rows.insert(
+        "buffer:offset-unique-realloc-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:offset-unique-realloc".to_string(),
+        buffer_prefix_fields(&offset_unique_realloc, 2),
+    );
+    rows.insert(
+        "buffer:offset-unique-realloc-replaced".to_string(),
+        vec![
+            bool_field(offset_unique_realloc_before != offset_unique_realloc.as_ptr()),
+            offset_unique_realloc.offset().to_string(),
+        ],
+    );
+
     let replace_offset_base = BufferRef::from_vec(vec![21, 22, 23, 24]);
     let replace_offset_src = replace_offset_base.ref_slice(1, 2).unwrap();
     let mut replace_offset_dst = Some(BufferRef::ref_from(&replace_offset_base));
@@ -1321,6 +1365,51 @@ int main(void) {
     av_buffer_unref(&offset_realloc);
     av_buffer_unref(&offset_ref);
     av_buffer_unref(&offset_src);
+
+    static const uint8_t offset_unique_bytes[] = { 30, 31, 32, 33 };
+    AVBufferRef *offset_unique_base = av_buffer_allocz(4);
+    fail_if(!offset_unique_base, "av_buffer_allocz offset_unique_base failed");
+    fill_bytes(offset_unique_base, offset_unique_bytes, sizeof(offset_unique_bytes));
+    AVBufferRef *offset_unique_make_writable = av_buffer_ref(offset_unique_base);
+    fail_if(!offset_unique_make_writable,
+            "av_buffer_ref offset_unique_make_writable failed");
+    uint8_t *offset_unique_base_data = offset_unique_base->data;
+    av_buffer_unref(&offset_unique_base);
+    offset_unique_make_writable->data += 1;
+    offset_unique_make_writable->size = 2;
+    uint8_t *offset_unique_before = offset_unique_make_writable->data;
+    ret = av_buffer_make_writable(&offset_unique_make_writable);
+    fail_if(ret < 0, "av_buffer_make_writable unique offset failed");
+    printf("buffer:offset-unique-make-writable-ret|%d|%d|%td\n",
+           ret, offset_unique_before == offset_unique_make_writable->data,
+           offset_unique_make_writable->data - offset_unique_base_data);
+    print_buffer("buffer:offset-unique-make-writable",
+                 offset_unique_make_writable);
+    av_buffer_unref(&offset_unique_make_writable);
+
+    static const uint8_t offset_unique_realloc_bytes[] = { 34, 35, 36, 37 };
+    AVBufferRef *offset_unique_realloc_base = av_buffer_allocz(4);
+    fail_if(!offset_unique_realloc_base,
+            "av_buffer_allocz offset_unique_realloc_base failed");
+    fill_bytes(offset_unique_realloc_base, offset_unique_realloc_bytes,
+               sizeof(offset_unique_realloc_bytes));
+    AVBufferRef *offset_unique_realloc =
+        av_buffer_ref(offset_unique_realloc_base);
+    fail_if(!offset_unique_realloc,
+            "av_buffer_ref offset_unique_realloc failed");
+    av_buffer_unref(&offset_unique_realloc_base);
+    offset_unique_realloc->data += 1;
+    offset_unique_realloc->size = 2;
+    uint8_t *offset_unique_realloc_before = offset_unique_realloc->data;
+    ret = av_buffer_realloc(&offset_unique_realloc, 3);
+    fail_if(ret < 0, "av_buffer_realloc unique offset failed");
+    printf("buffer:offset-unique-realloc-ret|%d\n", ret);
+    print_buffer_prefix("buffer:offset-unique-realloc",
+                        offset_unique_realloc, 2);
+    printf("buffer:offset-unique-realloc-replaced|%d|%d\n",
+           offset_unique_realloc_before != offset_unique_realloc->data,
+           0);
+    av_buffer_unref(&offset_unique_realloc);
 
     static const uint8_t replace_offset_bytes[] = { 21, 22, 23, 24 };
     AVBufferRef *replace_offset_base = av_buffer_allocz(4);
