@@ -13096,6 +13096,72 @@ fn exercise_fixtures() {
     );
     assert_eq!(invalid_crop, invalid_crop_before);
 
+    let replace_source_plane = BufferRef::copy_from_slice(&[10, 11, 12, 13]);
+    let replace_source_side = BufferRef::copy_from_slice(&[0x44; 36]);
+    let replace_source_hw = BufferRef::copy_from_slice(&[0x55]);
+    let replace_source_opaque_ref = BufferRef::copy_from_slice(&[0x66, 0x67]);
+    let replace_source_video = VideoFrame::new_with_buffer_refs(
+        2,
+        2,
+        PixelFormat::Gray8,
+        vec![replace_source_plane.clone()],
+    )
+    .unwrap();
+    let mut replace_source =
+        Frame::video(replace_source_video).with_hw_frames_context(replace_source_hw.clone());
+    replace_source.set_pts(Some(410));
+    replace_source.set_pkt_dts(Some(409));
+    replace_source.set_duration(408).unwrap();
+    replace_source
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
+    replace_source.set_sample_rate(32_000);
+    replace_source.set_channel_layout(Some(ChannelLayout::mono()));
+    replace_source.set_opaque_address(0x5151);
+    replace_source.set_opaque_ref(Some(replace_source_opaque_ref.clone()));
+    replace_source.metadata_mut().set("title", "replace-source").unwrap();
+    replace_source
+        .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, replace_source_side.clone())
+        .unwrap();
+    let replace_clone = replace_source.clone_ref();
+    let FrameData::Video(replace_clone_video) = replace_clone.data() else {
+        panic!("frame clone_ref changed source variant");
+    };
+    assert!(replace_clone_video.plane_buffers()[0].shares_storage(&replace_source_plane));
+    assert!(replace_clone
+        .side_data()[0]
+        .buffer()
+        .shares_storage(&replace_source_side));
+    assert!(replace_clone
+        .hw_frames_context()
+        .unwrap()
+        .shares_storage(&replace_source_hw));
+    assert!(replace_clone
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(&replace_source_opaque_ref));
+
+    let old_replace_plane = BufferRef::copy_from_slice(&[0x99]);
+    let old_replace_video =
+        VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![old_replace_plane.clone()])
+            .unwrap();
+    let mut replace_destination = Frame::video(old_replace_video);
+    replace_destination
+        .metadata_mut()
+        .set("keep", "destination")
+        .unwrap();
+    replace_destination.replace_from(&replace_source).unwrap();
+    assert_eq!(replace_destination.pts(), Some(410));
+    assert_eq!(replace_destination.metadata().get("title"), Some("replace-source"));
+    assert_eq!(replace_destination.metadata().get("keep"), None);
+    let FrameData::Video(replace_destination_video) = replace_destination.data() else {
+        panic!("frame replace_from did not copy video data");
+    };
+    assert!(replace_destination_video.plane_buffers()[0].shares_storage(&replace_source_plane));
+    assert!(!replace_destination_video.plane_buffers()[0].shares_storage(&old_replace_plane));
+    replace_destination.replace_from(&Frame::empty()).unwrap();
+    assert!(replace_destination.is_empty());
+
     let mut permission_frame = Frame::video(
         VideoFrame::new_with_buffer_refs(
             1,

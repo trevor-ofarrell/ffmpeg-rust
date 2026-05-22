@@ -588,6 +588,131 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         hw_frames_context_share_fields(&copy_source, &copy_destination),
     );
 
+    let replace_source_side = BufferRef::copy_from_slice(&[0x44; 36]);
+    let replace_source_hw = BufferRef::copy_from_slice(&[0x55]);
+    let replace_source_opaque_ref = BufferRef::copy_from_slice(&[0x66, 0x67]);
+    let replace_source_video = VideoFrame::new_with_aligned_line_sizes(
+        2,
+        2,
+        PixelFormat::Gray8,
+        vec![vec![10, 11, 12, 13]],
+        1,
+    )
+    .unwrap();
+    let mut replace_source =
+        Frame::video(replace_source_video).with_hw_frames_context(replace_source_hw);
+    replace_source.set_pts(Some(410));
+    replace_source.set_pkt_dts(Some(409));
+    replace_source.set_duration(408).unwrap();
+    replace_source
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
+    replace_source.set_sample_rate(32_000);
+    replace_source.set_channel_layout(Some(ChannelLayout::mono()));
+    replace_source
+        .set_sample_aspect_ratio(Rational::new(4, 3).unwrap())
+        .unwrap();
+    replace_source.set_crop_offsets(1, 0, 0, 1);
+    replace_source.set_picture_type(FramePictureType::I);
+    replace_source.set_quality(77);
+    replace_source.set_repeat_pict(2);
+    replace_source.set_flags(FrameFlags::KEY | FrameFlags::LOSSLESS);
+    replace_source.set_color_range(FrameColorRange::Jpeg);
+    replace_source.set_color_primaries(FrameColorPrimaries::Bt2020);
+    replace_source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
+    replace_source.set_color_space(FrameColorSpace::Bt2020Ncl);
+    replace_source.set_chroma_location(FrameChromaLocation::TopLeft);
+    replace_source.set_best_effort_timestamp(Some(411));
+    replace_source.set_decode_error_flags(FrameDecodeErrorFlags::MISSING_REFERENCE);
+    replace_source.set_opaque_address(0x5151);
+    replace_source.set_opaque_ref(Some(replace_source_opaque_ref));
+    replace_source.set_alpha_mode(FrameAlphaMode::Straight);
+    replace_source
+        .metadata_mut()
+        .set("title", "replace-source")
+        .unwrap();
+    replace_source
+        .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, replace_source_side)
+        .unwrap();
+
+    let replace_clone = replace_source.clone_ref();
+    rows.insert(
+        "frame:clone-ref-src".to_string(),
+        frame_fields(&replace_source),
+    );
+    rows.insert(
+        "frame:clone-ref-dst".to_string(),
+        frame_fields(&replace_clone),
+    );
+    rows.insert(
+        "frame:clone-ref-plane-shares".to_string(),
+        first_plane_share_fields(&replace_source, &replace_clone),
+    );
+    rows.insert(
+        "frame:clone-ref-side-shares".to_string(),
+        first_side_data_share_fields(&replace_source, &replace_clone),
+    );
+    rows.insert(
+        "frame:clone-ref-hw-shares".to_string(),
+        hw_frames_context_share_fields(&replace_source, &replace_clone),
+    );
+
+    let replace_destination_video =
+        VideoFrame::new_with_aligned_line_sizes(1, 1, PixelFormat::Gray8, vec![vec![9]], 1)
+            .unwrap();
+    let mut replace_destination = Frame::video(replace_destination_video)
+        .with_hw_frames_context(BufferRef::copy_from_slice(&[0x99]));
+    replace_destination.set_pts(Some(999));
+    replace_destination
+        .metadata_mut()
+        .set("keep", "destination")
+        .unwrap();
+    replace_destination
+        .set_side_data_kind(FrameSideDataKind::ReplayGain, vec![0x99; 16])
+        .unwrap();
+    let replace_ret = replace_destination
+        .replace_from(&replace_source)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:replace-ret".to_string(),
+        vec![replace_ret.to_string()],
+    );
+    rows.insert(
+        "frame:replace-src".to_string(),
+        frame_fields(&replace_source),
+    );
+    rows.insert(
+        "frame:replace-dst".to_string(),
+        frame_fields(&replace_destination),
+    );
+    rows.insert(
+        "frame:replace-plane-shares".to_string(),
+        first_plane_share_fields(&replace_source, &replace_destination),
+    );
+    rows.insert(
+        "frame:replace-side-shares".to_string(),
+        first_side_data_share_fields(&replace_source, &replace_destination),
+    );
+    rows.insert(
+        "frame:replace-hw-shares".to_string(),
+        hw_frames_context_share_fields(&replace_source, &replace_destination),
+    );
+
+    let mut replace_empty_destination = replace_source.clone_ref();
+    let replace_empty_ret = replace_empty_destination
+        .replace_from(&Frame::empty())
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:replace-empty-ret".to_string(),
+        vec![replace_empty_ret.to_string()],
+    );
+    rows.insert(
+        "frame:replace-empty-dst".to_string(),
+        frame_fields(&replace_empty_destination),
+    );
+
     let side_payload = (1..=36).collect::<Vec<u8>>();
     let mut side_frame = Frame::empty();
     side_frame
@@ -2261,6 +2386,100 @@ int main(void)
     print_share("frame:copy-props-plane-shares", copy_src, copy_dst);
     print_side_share("frame:copy-props-side-shares", copy_src, copy_dst);
     print_hw_share("frame:copy-props-hw-shares", copy_src, copy_dst);
+
+    AVFrame *replace_src = av_frame_alloc();
+    fail_if(!replace_src, "replace_src av_frame_alloc failed");
+    replace_src->format = AV_PIX_FMT_GRAY8;
+    replace_src->width = 2;
+    replace_src->height = 2;
+    replace_src->pts = 410;
+    replace_src->pkt_dts = 409;
+    replace_src->duration = 408;
+    replace_src->time_base = (AVRational){ 1, 1000 };
+    replace_src->sample_rate = 32000;
+    av_channel_layout_default(&replace_src->ch_layout, 1);
+    replace_src->sample_aspect_ratio = (AVRational){ 4, 3 };
+    replace_src->crop_top = 1;
+    replace_src->crop_bottom = 0;
+    replace_src->crop_left = 0;
+    replace_src->crop_right = 1;
+    replace_src->pict_type = AV_PICTURE_TYPE_I;
+    replace_src->quality = 77;
+    replace_src->repeat_pict = 2;
+    replace_src->flags = AV_FRAME_FLAG_KEY | AV_FRAME_FLAG_LOSSLESS;
+    replace_src->color_range = AVCOL_RANGE_JPEG;
+    replace_src->color_primaries = AVCOL_PRI_BT2020;
+    replace_src->color_trc = AVCOL_TRC_SMPTE2084;
+    replace_src->colorspace = AVCOL_SPC_BT2020_NCL;
+    replace_src->chroma_location = AVCHROMA_LOC_TOPLEFT;
+    replace_src->best_effort_timestamp = 411;
+    replace_src->decode_error_flags = FF_DECODE_ERROR_MISSING_REFERENCE;
+    replace_src->opaque = (void *)(uintptr_t)0x5151;
+    replace_src->opaque_ref = av_buffer_alloc(2);
+    fail_if(!replace_src->opaque_ref,
+            "replace_src opaque_ref allocation failed");
+    replace_src->opaque_ref->data[0] = 0x66;
+    replace_src->opaque_ref->data[1] = 0x67;
+    replace_src->alpha_mode = AVALPHA_MODE_STRAIGHT;
+    av_dict_set(&replace_src->metadata, "title", "replace-source", 0);
+    fail_if(av_frame_get_buffer(replace_src, 1) < 0,
+            "replace_src av_frame_get_buffer failed");
+    static const uint8_t replace_src_payload[] = { 10, 11, 12, 13 };
+    fill_video_gray(replace_src, replace_src_payload);
+    replace_src->hw_frames_ctx = av_buffer_alloc(1);
+    fail_if(!replace_src->hw_frames_ctx,
+            "replace_src hw context allocation failed");
+    replace_src->hw_frames_ctx->data[0] = 0x55;
+    AVFrameSideData *replace_src_sd = av_frame_new_side_data(
+        replace_src, AV_FRAME_DATA_DISPLAYMATRIX, 36);
+    fail_if(!replace_src_sd, "replace_src side data allocation failed");
+    memset(replace_src_sd->data, 0x44, replace_src_sd->size);
+
+    AVFrame *replace_clone = av_frame_clone(replace_src);
+    fail_if(!replace_clone, "av_frame_clone failed");
+    print_frame("frame:clone-ref-src", replace_src);
+    print_frame("frame:clone-ref-dst", replace_clone);
+    print_share("frame:clone-ref-plane-shares", replace_src, replace_clone);
+    print_side_share("frame:clone-ref-side-shares", replace_src,
+                     replace_clone);
+    print_hw_share("frame:clone-ref-hw-shares", replace_src, replace_clone);
+
+    AVFrame *replace_dst = av_frame_alloc();
+    fail_if(!replace_dst, "replace_dst av_frame_alloc failed");
+    replace_dst->format = AV_PIX_FMT_GRAY8;
+    replace_dst->width = 1;
+    replace_dst->height = 1;
+    replace_dst->pts = 999;
+    av_dict_set(&replace_dst->metadata, "keep", "destination", 0);
+    fail_if(av_frame_get_buffer(replace_dst, 1) < 0,
+            "replace_dst av_frame_get_buffer failed");
+    replace_dst->data[0][0] = 9;
+    replace_dst->hw_frames_ctx = av_buffer_alloc(1);
+    fail_if(!replace_dst->hw_frames_ctx,
+            "replace_dst hw context allocation failed");
+    replace_dst->hw_frames_ctx->data[0] = 0x99;
+    AVFrameSideData *replace_dst_sd = av_frame_new_side_data(
+        replace_dst, AV_FRAME_DATA_REPLAYGAIN, 16);
+    fail_if(!replace_dst_sd, "replace_dst side data allocation failed");
+    memset(replace_dst_sd->data, 0x99, replace_dst_sd->size);
+    int replace_ret = av_frame_replace(replace_dst, replace_src);
+    printf("frame:replace-ret|%d\n", replace_ret);
+    fail_if(replace_ret < 0, "av_frame_replace failed");
+    print_frame("frame:replace-src", replace_src);
+    print_frame("frame:replace-dst", replace_dst);
+    print_share("frame:replace-plane-shares", replace_src, replace_dst);
+    print_side_share("frame:replace-side-shares", replace_src, replace_dst);
+    print_hw_share("frame:replace-hw-shares", replace_src, replace_dst);
+
+    AVFrame *replace_empty_dst = av_frame_clone(replace_src);
+    fail_if(!replace_empty_dst, "replace_empty_dst clone failed");
+    AVFrame *replace_empty_src = av_frame_alloc();
+    fail_if(!replace_empty_src, "replace_empty_src av_frame_alloc failed");
+    int replace_empty_ret =
+        av_frame_replace(replace_empty_dst, replace_empty_src);
+    printf("frame:replace-empty-ret|%d\n", replace_empty_ret);
+    fail_if(replace_empty_ret < 0, "av_frame_replace empty failed");
+    print_frame("frame:replace-empty-dst", replace_empty_dst);
 
     AVFrame *side_frame = av_frame_alloc();
     fail_if(!side_frame, "side_frame av_frame_alloc failed");

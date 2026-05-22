@@ -198,8 +198,9 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --com
 `crates/avutil/tests/frame_oracle.rs` is an ignored oracle harness for libavutil
 `AVFrame` core lifecycle helpers. It compiles a small test-only C helper against
 `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_frame_alloc`,
-`av_frame_unref`, `av_frame_ref`, `av_frame_make_writable`, `av_frame_move_ref`,
-`av_frame_copy`, `av_frame_copy_props`, PTS/packet-DTS/duration/time-base/sample-rate/channel-layout/sample-aspect-ratio,
+`av_frame_unref`, `av_frame_ref`, `av_frame_clone`, `av_frame_replace`,
+`av_frame_make_writable`, `av_frame_move_ref`, `av_frame_copy`,
+`av_frame_copy_props`, PTS/packet-DTS/duration/time-base/sample-rate/channel-layout/sample-aspect-ratio,
 crop-offset, picture-type, quality, repeat_pict, public frame-flag,
 color_range, color_primaries, color_trc, colorspace, chroma_location,
 best-effort timestamp, public decode-error flags, nullable non-dereferenceable
@@ -233,6 +234,10 @@ source metadata keys overwrite matching
 destination metadata while destination-only metadata keys remain, existing destination side data is retained,
 source side data is appended as a deep copy, and destination `hw_frames_ctx`
 remains unchanged.
+The `av_frame_clone` and `av_frame_replace` rows prove source properties and
+refcounted plane, side-data, hardware-context, and `opaque_ref` storage are
+shared for cloned/replaced frames, pre-populated destination state is dropped
+and replaced, and replacing from an empty source unreferences the destination.
 The `av_frame_apply_cropping` rows prove FFmpeg's default left-crop rounding to
 keep the data pointer at least 32-byte aligned, exact-left behavior under
 `AV_FRAME_CROP_UNALIGNED`, crop-field reset on success, and `ERANGE`

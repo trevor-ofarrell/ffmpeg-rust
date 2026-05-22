@@ -1058,6 +1058,15 @@ impl Frame {
         *self = source.clone();
     }
 
+    pub fn clone_ref(&self) -> Self {
+        self.clone()
+    }
+
+    pub fn replace_from(&mut self, source: &Self) -> AvResult<()> {
+        *self = source.clone();
+        Ok(())
+    }
+
     pub fn move_ref_from(&mut self, source: &mut Self) {
         *self = std::mem::take(source);
     }
@@ -20478,6 +20487,120 @@ mod tests {
             .hw_frames_context()
             .unwrap()
             .shares_storage(source.hw_frames_context().unwrap()));
+    }
+
+    #[test]
+    fn frame_clone_ref_and_replace_from_share_references_and_unref_empty_source() {
+        let source_plane = BufferRef::copy_from_slice(&[10, 11, 12, 13]);
+        let source_side = BufferRef::copy_from_slice(&[0x44; 36]);
+        let source_hw = BufferRef::copy_from_slice(&[0x55]);
+        let source_opaque_ref = BufferRef::copy_from_slice(&[0x66, 0x67]);
+        let source_video =
+            VideoFrame::new_with_buffer_refs(2, 2, PixelFormat::Gray8, vec![source_plane.clone()])
+                .unwrap();
+        let mut source = Frame::video(source_video).with_hw_frames_context(source_hw.clone());
+        source.set_pts(Some(410));
+        source.set_pkt_dts(Some(409));
+        source.set_duration(408).unwrap();
+        source
+            .set_time_base(Rational::new(1, 1_000).unwrap())
+            .unwrap();
+        source.set_sample_rate(32_000);
+        source.set_channel_layout(Some(ChannelLayout::mono()));
+        source
+            .set_sample_aspect_ratio(Rational::new(4, 3).unwrap())
+            .unwrap();
+        source.set_crop_offsets(1, 0, 0, 1);
+        source.set_picture_type(FramePictureType::I);
+        source.set_quality(77);
+        source.set_repeat_pict(2);
+        source.set_flags(FrameFlags::KEY | FrameFlags::LOSSLESS);
+        source.set_color_range(FrameColorRange::Jpeg);
+        source.set_color_primaries(FrameColorPrimaries::Bt2020);
+        source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
+        source.set_color_space(FrameColorSpace::Bt2020Ncl);
+        source.set_chroma_location(FrameChromaLocation::TopLeft);
+        source.set_best_effort_timestamp(Some(411));
+        source.set_decode_error_flags(FrameDecodeErrorFlags::MISSING_REFERENCE);
+        source.set_opaque_address(0x5151);
+        source.set_opaque_ref(Some(source_opaque_ref.clone()));
+        source.set_alpha_mode(FrameAlphaMode::Straight);
+        source
+            .metadata_mut()
+            .set("title", "replace-source")
+            .unwrap();
+        source
+            .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
+            .unwrap();
+
+        let cloned = source.clone_ref();
+        assert_eq!(cloned.pts(), source.pts());
+        assert_eq!(cloned.metadata().get("title"), Some("replace-source"));
+        let (cloned_video, source_video) = match (cloned.data(), source.data()) {
+            (FrameData::Video(cloned_video), FrameData::Video(source_video)) => {
+                (cloned_video, source_video)
+            }
+            _ => panic!("expected video frames"),
+        };
+        assert!(cloned_video.plane_buffers()[0].shares_storage(&source_plane));
+        assert!(cloned_video.plane_buffers()[0].shares_storage(&source_video.plane_buffers()[0]));
+        assert!(cloned.side_data()[0]
+            .buffer()
+            .shares_storage(source.side_data()[0].buffer()));
+        assert!(cloned
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(source.hw_frames_context().unwrap()));
+        assert!(cloned
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(source.opaque_ref().unwrap()));
+
+        let old_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let old_capture = std::sync::Arc::clone(&old_released);
+        let old_plane = BufferRef::from_external_slice_with_opaque_readonly(
+            std::sync::Arc::<[u8]>::from(vec![9]),
+            String::from("old-replace-plane"),
+            move |opaque| {
+                old_capture.lock().unwrap().push(opaque);
+            },
+        );
+        let old_video =
+            VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![old_plane]).unwrap();
+        let mut destination = Frame::video(old_video);
+        destination.metadata_mut().set("keep", "old").unwrap();
+        destination.replace_from(&source).unwrap();
+
+        assert_eq!(
+            *old_released.lock().unwrap(),
+            vec![String::from("old-replace-plane")]
+        );
+        assert_eq!(destination.pts(), Some(410));
+        assert_eq!(destination.pkt_dts(), Some(409));
+        assert_eq!(destination.duration(), 408);
+        assert_eq!(destination.time_base(), Rational::new(1, 1_000).unwrap());
+        assert_eq!(destination.sample_rate(), 32_000);
+        assert_eq!(destination.channel_layout(), Some(ChannelLayout::mono()));
+        assert_eq!(destination.metadata().get("title"), Some("replace-source"));
+        assert_eq!(destination.metadata().get("keep"), None);
+        let FrameData::Video(destination_video) = destination.data() else {
+            panic!("expected destination video frame");
+        };
+        assert!(destination_video.plane_buffers()[0].shares_storage(&source_plane));
+        assert!(destination.side_data()[0]
+            .buffer()
+            .shares_storage(&source_side));
+        assert!(destination
+            .hw_frames_context()
+            .unwrap()
+            .shares_storage(&source_hw));
+        assert!(destination
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&source_opaque_ref));
+
+        destination.replace_from(&Frame::empty()).unwrap();
+        assert!(destination.is_empty());
     }
 
     #[test]
