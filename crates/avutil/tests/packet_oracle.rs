@@ -6,7 +6,7 @@ use std::{
 };
 
 use avutil::{
-    packet_pack_dictionary, packet_unpack_dictionary, Dictionary, Frame, FrameSideData,
+    packet_pack_dictionary, packet_unpack_dictionary, BufferRef, Dictionary, Frame, FrameSideData,
     FrameSideDataFlags, FrameSideDataKind, Packet, PacketActiveFormatDescription,
     PacketAudioServiceType, PacketCpbProperties, PacketDolbyVisionConf, PacketDoviCompression,
     PacketFallbackTrack, PacketFlags, PacketFrameCropping, PacketJpDualMono,
@@ -687,6 +687,7 @@ fn packet_with_common_props() -> Packet {
         .unwrap();
     packet.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
     packet.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad, 0xbe])));
     packet
 }
 
@@ -706,6 +707,19 @@ fn packet_fields(packet: &Packet) -> Vec<String> {
         side_size,
         side_hex,
         packet.opaque_address().unwrap_or(0).to_string(),
+        u8::from(packet.opaque_ref().is_some()).to_string(),
+        packet.opaque_ref().map_or_else(
+            || "0".to_string(),
+            |opaque_ref| opaque_ref.len().to_string(),
+        ),
+        packet.opaque_ref().map_or_else(
+            || "-".to_string(),
+            |opaque_ref| hex_or_dash(opaque_ref.as_slice()),
+        ),
+        packet.opaque_ref().map_or_else(
+            || "0".to_string(),
+            |opaque_ref| u8::from(opaque_ref.is_writable()).to_string(),
+        ),
         format!("{}/{}", packet.time_base().num(), packet.time_base().den()),
     ]
 }
@@ -943,7 +957,12 @@ static void print_packet(const char *name, const AVPacket *pkt) {
            pkt->stream_index, pkt->flags, pkt->size);
     print_hex_or_dash(pkt->data, pkt->size);
     print_side_data(pkt);
-    printf("|%" PRIuPTR "|%d/%d\n", (uintptr_t)pkt->opaque,
+    printf("|%" PRIuPTR "|%d|%zu|", (uintptr_t)pkt->opaque,
+           pkt->opaque_ref != NULL, pkt->opaque_ref ? pkt->opaque_ref->size : 0);
+    print_hex_or_dash(pkt->opaque_ref ? pkt->opaque_ref->data : NULL,
+                      pkt->opaque_ref ? (int)pkt->opaque_ref->size : 0);
+    printf("|%d|%d/%d\n",
+           pkt->opaque_ref ? av_buffer_is_writable(pkt->opaque_ref) : 0,
            pkt->time_base.num, pkt->time_base.den);
 }
 
@@ -1303,6 +1322,11 @@ static AVPacket *packet_with_common_props(void) {
     pkt->flags = AV_PKT_FLAG_KEY | AV_PKT_FLAG_CORRUPT;
     pkt->time_base = (AVRational){ 1, 90000 };
     pkt->opaque = (void *)(uintptr_t)0x1234;
+    pkt->opaque_ref = av_buffer_alloc(3);
+    fail_if(!pkt->opaque_ref, "av_buffer_alloc opaque_ref failed");
+    pkt->opaque_ref->data[0] = 0xde;
+    pkt->opaque_ref->data[1] = 0xad;
+    pkt->opaque_ref->data[2] = 0xbe;
 
     uint8_t *sd = av_packet_new_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 3);
     fail_if(!sd, "av_packet_new_side_data failed");
