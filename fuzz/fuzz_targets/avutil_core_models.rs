@@ -803,6 +803,42 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert!(invalid_external_released.lock().unwrap().is_empty());
     assert_eq!(Arc::strong_count(&external_storage), 1);
 
+    let replace_source = BufferRef::copy_from_slice(&payload);
+    let mut replace_empty_dst = None;
+    BufferRef::replace(&mut replace_empty_dst, Some(&replace_source));
+    assert!(replace_empty_dst
+        .as_ref()
+        .unwrap()
+        .shares_storage(&replace_source));
+    assert_eq!(replace_source.strong_count(), 2);
+
+    let replace_released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+    let replace_release_capture = Arc::clone(&replace_released);
+    let mut replace_dst = Some(BufferRef::from_vec_with_release_callback(
+        vec![0xcc; payload_len],
+        move |storage| {
+            replace_release_capture.lock().unwrap().push(storage);
+        },
+    ));
+    BufferRef::replace(&mut replace_dst, Some(&replace_source));
+    assert!(replace_dst.as_ref().unwrap().shares_storage(&replace_source));
+    assert_eq!(*replace_released.lock().unwrap(), vec![vec![0xcc; payload_len]]);
+
+    let replace_same_source = BufferRef::copy_from_slice(&payload);
+    let mut replace_same_dst = Some(BufferRef::ref_from(&replace_same_source));
+    BufferRef::replace(&mut replace_same_dst, Some(&replace_same_source));
+    assert!(replace_same_dst
+        .as_ref()
+        .unwrap()
+        .shares_storage(&replace_same_source));
+    assert_eq!(replace_same_source.strong_count(), 2);
+    BufferRef::replace(&mut replace_same_dst, None);
+    assert!(replace_same_dst.is_none());
+    BufferRef::unref(&mut replace_empty_dst);
+    assert!(replace_empty_dst.is_none());
+    BufferRef::unref(&mut replace_empty_dst);
+    assert!(replace_empty_dst.is_none());
+
     let pool = BufferPool::new(payload_len, padding_len).unwrap();
     assert_eq!(pool.len(), payload_len);
     assert_eq!(pool.allocated_len(), payload_len + padding_len);

@@ -186,6 +186,48 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![bool_field(replace_src.shares_storage(&replace_dst))],
     );
 
+    let mut replace_null_src = Some(BufferRef::from_vec(vec![8, 9]));
+    BufferRef::replace(&mut replace_null_src, None);
+    rows.insert(
+        "buffer:replace-null-src".to_string(),
+        vec!["0".to_string(), bool_field(replace_null_src.is_none())],
+    );
+
+    let replace_null_source = BufferRef::from_vec(vec![6, 7, 8]);
+    let mut replace_null_dst = None;
+    BufferRef::replace(&mut replace_null_dst, Some(&replace_null_source));
+    let replace_null_dst = replace_null_dst.expect("replace into null dst");
+    rows.insert(
+        "buffer:replace-null-dst".to_string(),
+        buffer_fields(&replace_null_dst),
+    );
+    rows.insert(
+        "buffer:replace-null-dst-shares".to_string(),
+        vec![bool_field(
+            replace_null_source.shares_storage(&replace_null_dst),
+        )],
+    );
+
+    let replace_equiv_src = BufferRef::from_vec(vec![1, 4, 9]);
+    let mut replace_equiv_dst = Some(BufferRef::ref_from(&replace_equiv_src));
+    BufferRef::replace(&mut replace_equiv_dst, Some(&replace_equiv_src));
+    let replace_equiv_dst = replace_equiv_dst.expect("replace equivalent dst");
+    rows.insert(
+        "buffer:replace-equivalent-ret".to_string(),
+        vec![
+            "0".to_string(),
+            replace_equiv_src.strong_count().to_string(),
+            bool_field(replace_equiv_src.shares_storage(&replace_equiv_dst)),
+        ],
+    );
+
+    let mut unref_null_input = None;
+    BufferRef::unref(&mut unref_null_input);
+    rows.insert(
+        "buffer:unref-null-input".to_string(),
+        vec![bool_field(unref_null_input.is_none())],
+    );
+
     rows.insert("buffer:unref-null".to_string(), vec!["1".to_string()]);
 
     struct PoolToken {
@@ -660,6 +702,44 @@ int main(void) {
     printf("buffer:replace-shares|%d\n", replace_src->data == replace_dst->data);
     av_buffer_unref(&replace_dst);
     av_buffer_unref(&replace_src);
+
+    AVBufferRef *replace_null_src = av_buffer_allocz(2);
+    fail_if(!replace_null_src, "av_buffer_allocz replace_null_src failed");
+    ret = av_buffer_replace(&replace_null_src, NULL);
+    printf("buffer:replace-null-src|%d|%d\n", ret, replace_null_src == NULL);
+
+    static const uint8_t replace_null_source_bytes[] = { 6, 7, 8 };
+    AVBufferRef *replace_null_source = av_buffer_allocz(3);
+    AVBufferRef *replace_null_dst = NULL;
+    fail_if(!replace_null_source, "av_buffer_allocz replace_null_source failed");
+    fill_bytes(replace_null_source, replace_null_source_bytes,
+               sizeof(replace_null_source_bytes));
+    ret = av_buffer_replace(&replace_null_dst, replace_null_source);
+    fail_if(ret < 0 || !replace_null_dst, "av_buffer_replace null dst failed");
+    print_buffer("buffer:replace-null-dst", replace_null_dst);
+    printf("buffer:replace-null-dst-shares|%d\n",
+           replace_null_source->data == replace_null_dst->data);
+    av_buffer_unref(&replace_null_dst);
+    av_buffer_unref(&replace_null_source);
+
+    static const uint8_t replace_equiv_bytes[] = { 1, 4, 9 };
+    AVBufferRef *replace_equiv_src = av_buffer_allocz(3);
+    fail_if(!replace_equiv_src, "av_buffer_allocz replace_equiv_src failed");
+    fill_bytes(replace_equiv_src, replace_equiv_bytes,
+               sizeof(replace_equiv_bytes));
+    AVBufferRef *replace_equiv_dst = av_buffer_ref(replace_equiv_src);
+    fail_if(!replace_equiv_dst, "av_buffer_ref replace_equiv failed");
+    ret = av_buffer_replace(&replace_equiv_dst, replace_equiv_src);
+    printf("buffer:replace-equivalent-ret|%d|%d|%d\n",
+           ret, av_buffer_get_ref_count(replace_equiv_src),
+           replace_equiv_src->data == replace_equiv_dst->data);
+    av_buffer_unref(&replace_equiv_dst);
+    av_buffer_unref(&replace_equiv_src);
+
+    AVBufferRef *unref_null_input = NULL;
+    av_buffer_unref(NULL);
+    av_buffer_unref(&unref_null_input);
+    printf("buffer:unref-null-input|%d\n", unref_null_input == NULL);
 
     buf = av_buffer_allocz(1);
     fail_if(!buf, "av_buffer_allocz unref failed");

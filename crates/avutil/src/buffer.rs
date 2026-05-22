@@ -485,6 +485,18 @@ impl BufferRef {
             && self.data.bytes.is_owned()
     }
 
+    pub fn ref_from(source: &Self) -> Self {
+        source.clone()
+    }
+
+    pub fn replace(dst: &mut Option<Self>, src: Option<&Self>) {
+        *dst = src.cloned();
+    }
+
+    pub fn unref(dst: &mut Option<Self>) {
+        *dst = None;
+    }
+
     pub fn slice(&self, offset: usize, len: usize) -> AvResult<BufferSlice> {
         let end = offset.checked_add(len).ok_or_else(|| {
             AvError::invalid_argument("buffer slice offset plus length overflows")
@@ -1576,6 +1588,43 @@ mod tests {
         assert!(first_slice.shares_storage_with_buffer(&first_shared));
         assert!(!first_slice.shares_storage_with_buffer(&second));
         assert!(!first_slice.shares_storage(&second_slice));
+    }
+
+    #[test]
+    fn buffer_ref_replace_and_unref_handle_nullable_c_api_shape() {
+        let source = BufferRef::from_vec(vec![1, 2, 3]);
+        let mut empty_dst = None;
+        BufferRef::replace(&mut empty_dst, Some(&source));
+        let copied = empty_dst.as_ref().unwrap();
+        assert!(copied.shares_storage(&source));
+        assert_eq!(source.strong_count(), 2);
+
+        let replacement = BufferRef::from_vec(vec![4, 5]);
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let release_capture = std::sync::Arc::clone(&released);
+        let mut dst = Some(BufferRef::from_vec_with_release_callback(
+            vec![9, 9],
+            move |storage| {
+                release_capture.lock().unwrap().push(storage);
+            },
+        ));
+        BufferRef::replace(&mut dst, Some(&replacement));
+        assert_eq!(*released.lock().unwrap(), vec![vec![9, 9]]);
+        assert!(dst.as_ref().unwrap().shares_storage(&replacement));
+
+        let same_source = BufferRef::from_vec(vec![7, 8, 9]);
+        let mut same_dst = Some(BufferRef::ref_from(&same_source));
+        BufferRef::replace(&mut same_dst, Some(&same_source));
+        assert!(same_dst.as_ref().unwrap().shares_storage(&same_source));
+        assert_eq!(same_source.strong_count(), 2);
+
+        BufferRef::replace(&mut same_dst, None);
+        assert!(same_dst.is_none());
+        assert!(empty_dst.is_some());
+        BufferRef::unref(&mut empty_dst);
+        assert!(empty_dst.is_none());
+        BufferRef::unref(&mut empty_dst);
+        assert!(empty_dst.is_none());
     }
 
     #[test]
