@@ -426,6 +426,10 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
         "packet:payload-layout-encryption-info".to_string(),
         payload_layout_fields(&encryption_info_payload_layout_bytes(), &[]),
     );
+    rows.insert(
+        "packet:payload-layout-encryption-init-info".to_string(),
+        payload_layout_fields(&encryption_init_info_payload_layout_bytes(), &[]),
+    );
 
     let mut audio_fields =
         payload_layout_fields(&PacketAudioServiceType::Commentary.to_bytes(), &[]);
@@ -657,6 +661,25 @@ fn encryption_info_payload_layout_bytes() -> Vec<u8> {
     data.extend_from_slice(&[0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7]);
     data.extend_from_slice(&PacketEncryptionSubsample::new(3, 100).to_bytes());
     data.extend_from_slice(&PacketEncryptionSubsample::new(0, 55).to_bytes());
+    data
+}
+
+fn encryption_init_info_payload_layout_bytes() -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&2_u32.to_be_bytes());
+
+    for value in [4_u32, 2, 3, 5] {
+        data.extend_from_slice(&value.to_be_bytes());
+    }
+    data.extend_from_slice(b"sys1");
+    data.extend_from_slice(b"abc");
+    data.extend_from_slice(b"def");
+    data.extend_from_slice(b"hello");
+
+    for value in [0_u32, 0, 16, 3] {
+        data.extend_from_slice(&value.to_be_bytes());
+    }
+    data.extend_from_slice(b"pss");
     data
 }
 
@@ -2090,6 +2113,25 @@ static void print_side_data_payload_layouts(void) {
                                enc_side, enc_side_size);
     av_free(enc_side);
     av_encryption_info_free(enc);
+
+    AVEncryptionInitInfo *init_a = av_encryption_init_info_alloc(4, 2, 3, 5);
+    fail_if(!init_a, "av_encryption_init_info_alloc first returned NULL");
+    AVEncryptionInitInfo *init_b = av_encryption_init_info_alloc(0, 0, 16, 3);
+    fail_if(!init_b, "av_encryption_init_info_alloc second returned NULL");
+    memcpy(init_a->system_id, "sys1", 4);
+    memcpy(init_a->key_ids[0], "abc", 3);
+    memcpy(init_a->key_ids[1], "def", 3);
+    memcpy(init_a->data, "hello", 5);
+    memcpy(init_b->data, "pss", 3);
+    init_a->next = init_b;
+    size_t init_side_size = 0;
+    uint8_t *init_side = av_encryption_init_info_add_side_data(init_a,
+                                                               &init_side_size);
+    fail_if(!init_side, "av_encryption_init_info_add_side_data returned NULL");
+    print_payload_layout_bytes("packet:payload-layout-encryption-init-info",
+                               init_side, init_side_size);
+    av_free(init_side);
+    av_encryption_init_info_free(init_a);
 
     enum AVAudioServiceType service_type = AV_AUDIO_SERVICE_TYPE_COMMENTARY;
     print_payload_layout_header("packet:payload-layout-audio-service-type",
