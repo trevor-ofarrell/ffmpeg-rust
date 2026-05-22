@@ -414,6 +414,7 @@ unit_tests = [
   "frame::tests::frames_report_tightly_packed_line_sizes",
   "frame::tests::frame_wraps_audio_or_video_with_optional_pts",
   "frame::tests::frame_picture_type_values_and_flags_match_ffmpeg_8_1_1_header",
+  "frame::tests::frame_color_metadata_values_match_ffmpeg_8_1_1_header",
   "frame::tests::empty_frame_unref_clears_data_and_releases_references",
   "frame::tests::frame_ref_from_shares_references_and_replaces_destination",
   "frame::tests::frame_move_ref_from_moves_references_and_unrefs_source",
@@ -539,6 +540,13 @@ differential_tests = [
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
+# top-level color_range, color_primaries, color_trc, colorspace, and
+# chroma_location defaults plus `av_frame_ref`, `av_frame_move_ref`, and
+# `av_frame_copy_props` propagation. Rust unit and avutil_core_models
+# fuzz-smoke invariants cover the same fields, exact pinned enum values
+# including FFmpeg's current custom extension values, and invalid raw enum
+# no-mutation paths.
+# Previous update: The pinned libavutil `AVFrame` oracle validates
 # AVPictureType, quality, repeat_pict, and public AV_FRAME_FLAG_* defaults,
 # unref reset, `av_frame_ref`, `av_frame_move_ref`, and
 # `av_frame_copy_props` propagation. Rust unit and avutil_core_models

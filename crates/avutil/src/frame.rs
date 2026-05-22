@@ -227,6 +227,394 @@ impl FramePictureType {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(i32)]
+pub enum FrameColorRange {
+    #[default]
+    Unspecified = 0,
+    Mpeg = 1,
+    Jpeg = 2,
+}
+
+impl FrameColorRange {
+    pub const KNOWN: [Self; 3] = [Self::Unspecified, Self::Mpeg, Self::Jpeg];
+
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Unspecified),
+            1 => Ok(Self::Mpeg),
+            2 => Ok(Self::Jpeg),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid frame color range value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Unspecified => "AVCOL_RANGE_UNSPECIFIED",
+            Self::Mpeg => "AVCOL_RANGE_MPEG",
+            Self::Jpeg => "AVCOL_RANGE_JPEG",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(i32)]
+pub enum FrameColorPrimaries {
+    Reserved0 = 0,
+    Bt709 = 1,
+    #[default]
+    Unspecified = 2,
+    Reserved = 3,
+    Bt470M = 4,
+    Bt470Bg = 5,
+    Smpte170M = 6,
+    Smpte240M = 7,
+    Film = 8,
+    Bt2020 = 9,
+    Smpte428 = 10,
+    Smpte431 = 11,
+    Smpte432 = 12,
+    Ebu3213 = 22,
+    VGamut = 256,
+}
+
+impl FrameColorPrimaries {
+    pub const KNOWN: [Self; 15] = [
+        Self::Reserved0,
+        Self::Bt709,
+        Self::Unspecified,
+        Self::Reserved,
+        Self::Bt470M,
+        Self::Bt470Bg,
+        Self::Smpte170M,
+        Self::Smpte240M,
+        Self::Film,
+        Self::Bt2020,
+        Self::Smpte428,
+        Self::Smpte431,
+        Self::Smpte432,
+        Self::Ebu3213,
+        Self::VGamut,
+    ];
+
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Reserved0),
+            1 => Ok(Self::Bt709),
+            2 => Ok(Self::Unspecified),
+            3 => Ok(Self::Reserved),
+            4 => Ok(Self::Bt470M),
+            5 => Ok(Self::Bt470Bg),
+            6 => Ok(Self::Smpte170M),
+            7 => Ok(Self::Smpte240M),
+            8 => Ok(Self::Film),
+            9 => Ok(Self::Bt2020),
+            10 => Ok(Self::Smpte428),
+            11 => Ok(Self::Smpte431),
+            12 => Ok(Self::Smpte432),
+            22 => Ok(Self::Ebu3213),
+            256 => Ok(Self::VGamut),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid frame color primaries value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Reserved0 => "AVCOL_PRI_RESERVED0",
+            Self::Bt709 => "AVCOL_PRI_BT709",
+            Self::Unspecified => "AVCOL_PRI_UNSPECIFIED",
+            Self::Reserved => "AVCOL_PRI_RESERVED",
+            Self::Bt470M => "AVCOL_PRI_BT470M",
+            Self::Bt470Bg => "AVCOL_PRI_BT470BG",
+            Self::Smpte170M => "AVCOL_PRI_SMPTE170M",
+            Self::Smpte240M => "AVCOL_PRI_SMPTE240M",
+            Self::Film => "AVCOL_PRI_FILM",
+            Self::Bt2020 => "AVCOL_PRI_BT2020",
+            Self::Smpte428 => "AVCOL_PRI_SMPTE428",
+            Self::Smpte431 => "AVCOL_PRI_SMPTE431",
+            Self::Smpte432 => "AVCOL_PRI_SMPTE432",
+            Self::Ebu3213 => "AVCOL_PRI_EBU3213",
+            Self::VGamut => "AVCOL_PRI_V_GAMUT",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(i32)]
+pub enum FrameColorTransferCharacteristic {
+    Reserved0 = 0,
+    Bt709 = 1,
+    #[default]
+    Unspecified = 2,
+    Reserved = 3,
+    Gamma22 = 4,
+    Gamma28 = 5,
+    Smpte170M = 6,
+    Smpte240M = 7,
+    Linear = 8,
+    Log = 9,
+    LogSqrt = 10,
+    Iec61966_2_4 = 11,
+    Bt1361Ecg = 12,
+    Iec61966_2_1 = 13,
+    Bt2020_10 = 14,
+    Bt2020_12 = 15,
+    Smpte2084 = 16,
+    Smpte428 = 17,
+    AribStdB67 = 18,
+    VLog = 256,
+}
+
+impl FrameColorTransferCharacteristic {
+    pub const KNOWN: [Self; 20] = [
+        Self::Reserved0,
+        Self::Bt709,
+        Self::Unspecified,
+        Self::Reserved,
+        Self::Gamma22,
+        Self::Gamma28,
+        Self::Smpte170M,
+        Self::Smpte240M,
+        Self::Linear,
+        Self::Log,
+        Self::LogSqrt,
+        Self::Iec61966_2_4,
+        Self::Bt1361Ecg,
+        Self::Iec61966_2_1,
+        Self::Bt2020_10,
+        Self::Bt2020_12,
+        Self::Smpte2084,
+        Self::Smpte428,
+        Self::AribStdB67,
+        Self::VLog,
+    ];
+
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Reserved0),
+            1 => Ok(Self::Bt709),
+            2 => Ok(Self::Unspecified),
+            3 => Ok(Self::Reserved),
+            4 => Ok(Self::Gamma22),
+            5 => Ok(Self::Gamma28),
+            6 => Ok(Self::Smpte170M),
+            7 => Ok(Self::Smpte240M),
+            8 => Ok(Self::Linear),
+            9 => Ok(Self::Log),
+            10 => Ok(Self::LogSqrt),
+            11 => Ok(Self::Iec61966_2_4),
+            12 => Ok(Self::Bt1361Ecg),
+            13 => Ok(Self::Iec61966_2_1),
+            14 => Ok(Self::Bt2020_10),
+            15 => Ok(Self::Bt2020_12),
+            16 => Ok(Self::Smpte2084),
+            17 => Ok(Self::Smpte428),
+            18 => Ok(Self::AribStdB67),
+            256 => Ok(Self::VLog),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid frame color transfer characteristic value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Reserved0 => "AVCOL_TRC_RESERVED0",
+            Self::Bt709 => "AVCOL_TRC_BT709",
+            Self::Unspecified => "AVCOL_TRC_UNSPECIFIED",
+            Self::Reserved => "AVCOL_TRC_RESERVED",
+            Self::Gamma22 => "AVCOL_TRC_GAMMA22",
+            Self::Gamma28 => "AVCOL_TRC_GAMMA28",
+            Self::Smpte170M => "AVCOL_TRC_SMPTE170M",
+            Self::Smpte240M => "AVCOL_TRC_SMPTE240M",
+            Self::Linear => "AVCOL_TRC_LINEAR",
+            Self::Log => "AVCOL_TRC_LOG",
+            Self::LogSqrt => "AVCOL_TRC_LOG_SQRT",
+            Self::Iec61966_2_4 => "AVCOL_TRC_IEC61966_2_4",
+            Self::Bt1361Ecg => "AVCOL_TRC_BT1361_ECG",
+            Self::Iec61966_2_1 => "AVCOL_TRC_IEC61966_2_1",
+            Self::Bt2020_10 => "AVCOL_TRC_BT2020_10",
+            Self::Bt2020_12 => "AVCOL_TRC_BT2020_12",
+            Self::Smpte2084 => "AVCOL_TRC_SMPTE2084",
+            Self::Smpte428 => "AVCOL_TRC_SMPTE428",
+            Self::AribStdB67 => "AVCOL_TRC_ARIB_STD_B67",
+            Self::VLog => "AVCOL_TRC_V_LOG",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(i32)]
+pub enum FrameColorSpace {
+    Rgb = 0,
+    Bt709 = 1,
+    #[default]
+    Unspecified = 2,
+    Reserved = 3,
+    Fcc = 4,
+    Bt470Bg = 5,
+    Smpte170M = 6,
+    Smpte240M = 7,
+    Ycgco = 8,
+    Bt2020Ncl = 9,
+    Bt2020Cl = 10,
+    Smpte2085 = 11,
+    ChromaDerivedNcl = 12,
+    ChromaDerivedCl = 13,
+    Ictcp = 14,
+    IptC2 = 15,
+    YcgcoRe = 16,
+    YcgcoRo = 17,
+}
+
+impl FrameColorSpace {
+    pub const KNOWN: [Self; 18] = [
+        Self::Rgb,
+        Self::Bt709,
+        Self::Unspecified,
+        Self::Reserved,
+        Self::Fcc,
+        Self::Bt470Bg,
+        Self::Smpte170M,
+        Self::Smpte240M,
+        Self::Ycgco,
+        Self::Bt2020Ncl,
+        Self::Bt2020Cl,
+        Self::Smpte2085,
+        Self::ChromaDerivedNcl,
+        Self::ChromaDerivedCl,
+        Self::Ictcp,
+        Self::IptC2,
+        Self::YcgcoRe,
+        Self::YcgcoRo,
+    ];
+
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Rgb),
+            1 => Ok(Self::Bt709),
+            2 => Ok(Self::Unspecified),
+            3 => Ok(Self::Reserved),
+            4 => Ok(Self::Fcc),
+            5 => Ok(Self::Bt470Bg),
+            6 => Ok(Self::Smpte170M),
+            7 => Ok(Self::Smpte240M),
+            8 => Ok(Self::Ycgco),
+            9 => Ok(Self::Bt2020Ncl),
+            10 => Ok(Self::Bt2020Cl),
+            11 => Ok(Self::Smpte2085),
+            12 => Ok(Self::ChromaDerivedNcl),
+            13 => Ok(Self::ChromaDerivedCl),
+            14 => Ok(Self::Ictcp),
+            15 => Ok(Self::IptC2),
+            16 => Ok(Self::YcgcoRe),
+            17 => Ok(Self::YcgcoRo),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid frame color space value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Rgb => "AVCOL_SPC_RGB",
+            Self::Bt709 => "AVCOL_SPC_BT709",
+            Self::Unspecified => "AVCOL_SPC_UNSPECIFIED",
+            Self::Reserved => "AVCOL_SPC_RESERVED",
+            Self::Fcc => "AVCOL_SPC_FCC",
+            Self::Bt470Bg => "AVCOL_SPC_BT470BG",
+            Self::Smpte170M => "AVCOL_SPC_SMPTE170M",
+            Self::Smpte240M => "AVCOL_SPC_SMPTE240M",
+            Self::Ycgco => "AVCOL_SPC_YCGCO",
+            Self::Bt2020Ncl => "AVCOL_SPC_BT2020_NCL",
+            Self::Bt2020Cl => "AVCOL_SPC_BT2020_CL",
+            Self::Smpte2085 => "AVCOL_SPC_SMPTE2085",
+            Self::ChromaDerivedNcl => "AVCOL_SPC_CHROMA_DERIVED_NCL",
+            Self::ChromaDerivedCl => "AVCOL_SPC_CHROMA_DERIVED_CL",
+            Self::Ictcp => "AVCOL_SPC_ICTCP",
+            Self::IptC2 => "AVCOL_SPC_IPT_C2",
+            Self::YcgcoRe => "AVCOL_SPC_YCGCO_RE",
+            Self::YcgcoRo => "AVCOL_SPC_YCGCO_RO",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(i32)]
+pub enum FrameChromaLocation {
+    #[default]
+    Unspecified = 0,
+    Left = 1,
+    Center = 2,
+    TopLeft = 3,
+    Top = 4,
+    BottomLeft = 5,
+    Bottom = 6,
+}
+
+impl FrameChromaLocation {
+    pub const KNOWN: [Self; 7] = [
+        Self::Unspecified,
+        Self::Left,
+        Self::Center,
+        Self::TopLeft,
+        Self::Top,
+        Self::BottomLeft,
+        Self::Bottom,
+    ];
+
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Unspecified),
+            1 => Ok(Self::Left),
+            2 => Ok(Self::Center),
+            3 => Ok(Self::TopLeft),
+            4 => Ok(Self::Top),
+            5 => Ok(Self::BottomLeft),
+            6 => Ok(Self::Bottom),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid frame chroma location value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Unspecified => "AVCHROMA_LOC_UNSPECIFIED",
+            Self::Left => "AVCHROMA_LOC_LEFT",
+            Self::Center => "AVCHROMA_LOC_CENTER",
+            Self::TopLeft => "AVCHROMA_LOC_TOPLEFT",
+            Self::Top => "AVCHROMA_LOC_TOP",
+            Self::BottomLeft => "AVCHROMA_LOC_BOTTOMLEFT",
+            Self::Bottom => "AVCHROMA_LOC_BOTTOM",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     pts: Option<i64>,
@@ -239,6 +627,11 @@ pub struct Frame {
     quality: i32,
     repeat_pict: i32,
     flags: FrameFlags,
+    color_range: FrameColorRange,
+    color_primaries: FrameColorPrimaries,
+    color_transfer_characteristic: FrameColorTransferCharacteristic,
+    color_space: FrameColorSpace,
+    chroma_location: FrameChromaLocation,
     data: FrameData,
     hw_frames_context: Option<BufferRef>,
     side_data: Vec<FrameSideData>,
@@ -257,6 +650,11 @@ impl Frame {
             quality: 0,
             repeat_pict: 0,
             flags: FrameFlags::empty(),
+            color_range: FrameColorRange::Unspecified,
+            color_primaries: FrameColorPrimaries::Unspecified,
+            color_transfer_characteristic: FrameColorTransferCharacteristic::Unspecified,
+            color_space: FrameColorSpace::Unspecified,
+            chroma_location: FrameChromaLocation::Unspecified,
             data: FrameData::Empty,
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -275,6 +673,11 @@ impl Frame {
             quality: 0,
             repeat_pict: 0,
             flags: FrameFlags::empty(),
+            color_range: FrameColorRange::Unspecified,
+            color_primaries: FrameColorPrimaries::Unspecified,
+            color_transfer_characteristic: FrameColorTransferCharacteristic::Unspecified,
+            color_space: FrameColorSpace::Unspecified,
+            chroma_location: FrameChromaLocation::Unspecified,
             data: FrameData::Video(frame),
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -293,6 +696,11 @@ impl Frame {
             quality: 0,
             repeat_pict: 0,
             flags: FrameFlags::empty(),
+            color_range: FrameColorRange::Unspecified,
+            color_primaries: FrameColorPrimaries::Unspecified,
+            color_transfer_characteristic: FrameColorTransferCharacteristic::Unspecified,
+            color_space: FrameColorSpace::Unspecified,
+            chroma_location: FrameChromaLocation::Unspecified,
             data: FrameData::Audio(frame),
             hw_frames_context: None,
             side_data: Vec::new(),
@@ -310,6 +718,11 @@ impl Frame {
             && self.quality == 0
             && self.repeat_pict == 0
             && self.flags.is_empty()
+            && self.color_range == FrameColorRange::Unspecified
+            && self.color_primaries == FrameColorPrimaries::Unspecified
+            && self.color_transfer_characteristic == FrameColorTransferCharacteristic::Unspecified
+            && self.color_space == FrameColorSpace::Unspecified
+            && self.chroma_location == FrameChromaLocation::Unspecified
             && self.data.is_empty()
             && self.hw_frames_context.is_none()
             && self.side_data.is_empty()
@@ -338,6 +751,11 @@ impl Frame {
         self.quality = source.quality;
         self.repeat_pict = source.repeat_pict;
         self.flags = source.flags;
+        self.color_range = source.color_range;
+        self.color_primaries = source.color_primaries;
+        self.color_transfer_characteristic = source.color_transfer_characteristic;
+        self.color_space = source.color_space;
+        self.chroma_location = source.chroma_location;
         self.side_data
             .extend(source.side_data.iter().map(FrameSideData::copy_props_clone));
 
@@ -448,6 +866,74 @@ impl Frame {
 
     pub fn set_flag(&mut self, flag: FrameFlags, enabled: bool) {
         self.flags.set(flag, enabled);
+    }
+
+    pub fn color_range(&self) -> FrameColorRange {
+        self.color_range
+    }
+
+    pub fn set_color_range(&mut self, color_range: FrameColorRange) {
+        self.color_range = color_range;
+    }
+
+    pub fn set_color_range_from_raw(&mut self, value: i32) -> AvResult<()> {
+        self.color_range = FrameColorRange::from_raw(value)?;
+        Ok(())
+    }
+
+    pub fn color_primaries(&self) -> FrameColorPrimaries {
+        self.color_primaries
+    }
+
+    pub fn set_color_primaries(&mut self, color_primaries: FrameColorPrimaries) {
+        self.color_primaries = color_primaries;
+    }
+
+    pub fn set_color_primaries_from_raw(&mut self, value: i32) -> AvResult<()> {
+        self.color_primaries = FrameColorPrimaries::from_raw(value)?;
+        Ok(())
+    }
+
+    pub fn color_transfer_characteristic(&self) -> FrameColorTransferCharacteristic {
+        self.color_transfer_characteristic
+    }
+
+    pub fn set_color_transfer_characteristic(
+        &mut self,
+        color_transfer_characteristic: FrameColorTransferCharacteristic,
+    ) {
+        self.color_transfer_characteristic = color_transfer_characteristic;
+    }
+
+    pub fn set_color_transfer_characteristic_from_raw(&mut self, value: i32) -> AvResult<()> {
+        self.color_transfer_characteristic = FrameColorTransferCharacteristic::from_raw(value)?;
+        Ok(())
+    }
+
+    pub fn color_space(&self) -> FrameColorSpace {
+        self.color_space
+    }
+
+    pub fn set_color_space(&mut self, color_space: FrameColorSpace) {
+        self.color_space = color_space;
+    }
+
+    pub fn set_color_space_from_raw(&mut self, value: i32) -> AvResult<()> {
+        self.color_space = FrameColorSpace::from_raw(value)?;
+        Ok(())
+    }
+
+    pub fn chroma_location(&self) -> FrameChromaLocation {
+        self.chroma_location
+    }
+
+    pub fn set_chroma_location(&mut self, chroma_location: FrameChromaLocation) {
+        self.chroma_location = chroma_location;
+    }
+
+    pub fn set_chroma_location_from_raw(&mut self, value: i32) -> AvResult<()> {
+        self.chroma_location = FrameChromaLocation::from_raw(value)?;
+        Ok(())
     }
 
     pub fn data(&self) -> &FrameData {
@@ -17934,6 +18420,14 @@ mod tests {
         assert_eq!(frame.quality(), 0);
         assert_eq!(frame.repeat_pict(), 0);
         assert!(frame.flags().is_empty());
+        assert_eq!(frame.color_range(), FrameColorRange::Unspecified);
+        assert_eq!(frame.color_primaries(), FrameColorPrimaries::Unspecified);
+        assert_eq!(
+            frame.color_transfer_characteristic(),
+            FrameColorTransferCharacteristic::Unspecified
+        );
+        assert_eq!(frame.color_space(), FrameColorSpace::Unspecified);
+        assert_eq!(frame.chroma_location(), FrameChromaLocation::Unspecified);
         assert!(frame.hw_frames_context().is_none());
         assert!(frame.side_data().is_empty());
         frame.set_pts(Some(42));
@@ -17952,6 +18446,11 @@ mod tests {
         frame.set_flag(FrameFlags::KEY, true);
         frame.set_flag(FrameFlags::INTERLACED, true);
         frame.set_flag(FrameFlags::TOP_FIELD_FIRST, true);
+        frame.set_color_range(FrameColorRange::Jpeg);
+        frame.set_color_primaries(FrameColorPrimaries::Bt2020);
+        frame.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
+        frame.set_color_space(FrameColorSpace::Bt2020Ncl);
+        frame.set_chroma_location(FrameChromaLocation::TopLeft);
         assert_eq!(frame.pts(), Some(42));
         assert_eq!(frame.pkt_dts(), Some(41));
         assert_eq!(frame.duration(), 12);
@@ -17964,6 +18463,14 @@ mod tests {
         assert!(frame.flags().contains(FrameFlags::KEY));
         assert!(frame.flags().contains(FrameFlags::INTERLACED));
         assert!(frame.flags().contains(FrameFlags::TOP_FIELD_FIRST));
+        assert_eq!(frame.color_range(), FrameColorRange::Jpeg);
+        assert_eq!(frame.color_primaries(), FrameColorPrimaries::Bt2020);
+        assert_eq!(
+            frame.color_transfer_characteristic(),
+            FrameColorTransferCharacteristic::Smpte2084
+        );
+        assert_eq!(frame.color_space(), FrameColorSpace::Bt2020Ncl);
+        assert_eq!(frame.chroma_location(), FrameChromaLocation::TopLeft);
         assert!(matches!(frame.data(), FrameData::Video(_)));
 
         assert_eq!(
@@ -17992,6 +18499,37 @@ mod tests {
             AvErrorKind::InvalidData
         );
         assert_eq!(frame.picture_type(), FramePictureType::P);
+        assert_eq!(
+            frame.set_color_range_from_raw(3).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(frame.color_range(), FrameColorRange::Jpeg);
+        assert_eq!(
+            frame.set_color_primaries_from_raw(23).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(frame.color_primaries(), FrameColorPrimaries::Bt2020);
+        assert_eq!(
+            frame
+                .set_color_transfer_characteristic_from_raw(19)
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(
+            frame.color_transfer_characteristic(),
+            FrameColorTransferCharacteristic::Smpte2084
+        );
+        assert_eq!(
+            frame.set_color_space_from_raw(18).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(frame.color_space(), FrameColorSpace::Bt2020Ncl);
+        assert_eq!(
+            frame.set_chroma_location_from_raw(7).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(frame.chroma_location(), FrameChromaLocation::TopLeft);
     }
 
     #[test]
@@ -18039,6 +18577,247 @@ mod tests {
         assert_eq!(
             FrameFlags::from_bits_truncate(u32::MAX).bits(),
             FrameFlags::all().bits()
+        );
+    }
+
+    #[test]
+    fn frame_color_metadata_values_match_ffmpeg_8_1_1_header() {
+        let ranges = [
+            (FrameColorRange::Unspecified, 0, "AVCOL_RANGE_UNSPECIFIED"),
+            (FrameColorRange::Mpeg, 1, "AVCOL_RANGE_MPEG"),
+            (FrameColorRange::Jpeg, 2, "AVCOL_RANGE_JPEG"),
+        ];
+        assert_eq!(FrameColorRange::KNOWN, ranges.map(|(value, _, _)| value));
+        for (value, raw, constant) in ranges {
+            assert_eq!(value.as_raw(), raw);
+            assert_eq!(value.ffmpeg_constant(), constant);
+            assert_eq!(FrameColorRange::from_raw(raw).unwrap(), value);
+        }
+        assert_eq!(
+            FrameColorRange::from_raw(3).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let primaries = [
+            (FrameColorPrimaries::Reserved0, 0, "AVCOL_PRI_RESERVED0"),
+            (FrameColorPrimaries::Bt709, 1, "AVCOL_PRI_BT709"),
+            (FrameColorPrimaries::Unspecified, 2, "AVCOL_PRI_UNSPECIFIED"),
+            (FrameColorPrimaries::Reserved, 3, "AVCOL_PRI_RESERVED"),
+            (FrameColorPrimaries::Bt470M, 4, "AVCOL_PRI_BT470M"),
+            (FrameColorPrimaries::Bt470Bg, 5, "AVCOL_PRI_BT470BG"),
+            (FrameColorPrimaries::Smpte170M, 6, "AVCOL_PRI_SMPTE170M"),
+            (FrameColorPrimaries::Smpte240M, 7, "AVCOL_PRI_SMPTE240M"),
+            (FrameColorPrimaries::Film, 8, "AVCOL_PRI_FILM"),
+            (FrameColorPrimaries::Bt2020, 9, "AVCOL_PRI_BT2020"),
+            (FrameColorPrimaries::Smpte428, 10, "AVCOL_PRI_SMPTE428"),
+            (FrameColorPrimaries::Smpte431, 11, "AVCOL_PRI_SMPTE431"),
+            (FrameColorPrimaries::Smpte432, 12, "AVCOL_PRI_SMPTE432"),
+            (FrameColorPrimaries::Ebu3213, 22, "AVCOL_PRI_EBU3213"),
+            (FrameColorPrimaries::VGamut, 256, "AVCOL_PRI_V_GAMUT"),
+        ];
+        assert_eq!(
+            FrameColorPrimaries::KNOWN,
+            primaries.map(|(value, _, _)| value)
+        );
+        for (value, raw, constant) in primaries {
+            assert_eq!(value.as_raw(), raw);
+            assert_eq!(value.ffmpeg_constant(), constant);
+            assert_eq!(FrameColorPrimaries::from_raw(raw).unwrap(), value);
+        }
+        for invalid in [13, 23, 257] {
+            assert_eq!(
+                FrameColorPrimaries::from_raw(invalid).unwrap_err().kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let transfers = [
+            (
+                FrameColorTransferCharacteristic::Reserved0,
+                0,
+                "AVCOL_TRC_RESERVED0",
+            ),
+            (
+                FrameColorTransferCharacteristic::Bt709,
+                1,
+                "AVCOL_TRC_BT709",
+            ),
+            (
+                FrameColorTransferCharacteristic::Unspecified,
+                2,
+                "AVCOL_TRC_UNSPECIFIED",
+            ),
+            (
+                FrameColorTransferCharacteristic::Reserved,
+                3,
+                "AVCOL_TRC_RESERVED",
+            ),
+            (
+                FrameColorTransferCharacteristic::Gamma22,
+                4,
+                "AVCOL_TRC_GAMMA22",
+            ),
+            (
+                FrameColorTransferCharacteristic::Gamma28,
+                5,
+                "AVCOL_TRC_GAMMA28",
+            ),
+            (
+                FrameColorTransferCharacteristic::Smpte170M,
+                6,
+                "AVCOL_TRC_SMPTE170M",
+            ),
+            (
+                FrameColorTransferCharacteristic::Smpte240M,
+                7,
+                "AVCOL_TRC_SMPTE240M",
+            ),
+            (
+                FrameColorTransferCharacteristic::Linear,
+                8,
+                "AVCOL_TRC_LINEAR",
+            ),
+            (FrameColorTransferCharacteristic::Log, 9, "AVCOL_TRC_LOG"),
+            (
+                FrameColorTransferCharacteristic::LogSqrt,
+                10,
+                "AVCOL_TRC_LOG_SQRT",
+            ),
+            (
+                FrameColorTransferCharacteristic::Iec61966_2_4,
+                11,
+                "AVCOL_TRC_IEC61966_2_4",
+            ),
+            (
+                FrameColorTransferCharacteristic::Bt1361Ecg,
+                12,
+                "AVCOL_TRC_BT1361_ECG",
+            ),
+            (
+                FrameColorTransferCharacteristic::Iec61966_2_1,
+                13,
+                "AVCOL_TRC_IEC61966_2_1",
+            ),
+            (
+                FrameColorTransferCharacteristic::Bt2020_10,
+                14,
+                "AVCOL_TRC_BT2020_10",
+            ),
+            (
+                FrameColorTransferCharacteristic::Bt2020_12,
+                15,
+                "AVCOL_TRC_BT2020_12",
+            ),
+            (
+                FrameColorTransferCharacteristic::Smpte2084,
+                16,
+                "AVCOL_TRC_SMPTE2084",
+            ),
+            (
+                FrameColorTransferCharacteristic::Smpte428,
+                17,
+                "AVCOL_TRC_SMPTE428",
+            ),
+            (
+                FrameColorTransferCharacteristic::AribStdB67,
+                18,
+                "AVCOL_TRC_ARIB_STD_B67",
+            ),
+            (
+                FrameColorTransferCharacteristic::VLog,
+                256,
+                "AVCOL_TRC_V_LOG",
+            ),
+        ];
+        assert_eq!(
+            FrameColorTransferCharacteristic::KNOWN,
+            transfers.map(|(value, _, _)| value)
+        );
+        for (value, raw, constant) in transfers {
+            assert_eq!(value.as_raw(), raw);
+            assert_eq!(value.ffmpeg_constant(), constant);
+            assert_eq!(
+                FrameColorTransferCharacteristic::from_raw(raw).unwrap(),
+                value
+            );
+        }
+        for invalid in [19, 257] {
+            assert_eq!(
+                FrameColorTransferCharacteristic::from_raw(invalid)
+                    .unwrap_err()
+                    .kind(),
+                AvErrorKind::InvalidData
+            );
+        }
+
+        let spaces = [
+            (FrameColorSpace::Rgb, 0, "AVCOL_SPC_RGB"),
+            (FrameColorSpace::Bt709, 1, "AVCOL_SPC_BT709"),
+            (FrameColorSpace::Unspecified, 2, "AVCOL_SPC_UNSPECIFIED"),
+            (FrameColorSpace::Reserved, 3, "AVCOL_SPC_RESERVED"),
+            (FrameColorSpace::Fcc, 4, "AVCOL_SPC_FCC"),
+            (FrameColorSpace::Bt470Bg, 5, "AVCOL_SPC_BT470BG"),
+            (FrameColorSpace::Smpte170M, 6, "AVCOL_SPC_SMPTE170M"),
+            (FrameColorSpace::Smpte240M, 7, "AVCOL_SPC_SMPTE240M"),
+            (FrameColorSpace::Ycgco, 8, "AVCOL_SPC_YCGCO"),
+            (FrameColorSpace::Bt2020Ncl, 9, "AVCOL_SPC_BT2020_NCL"),
+            (FrameColorSpace::Bt2020Cl, 10, "AVCOL_SPC_BT2020_CL"),
+            (FrameColorSpace::Smpte2085, 11, "AVCOL_SPC_SMPTE2085"),
+            (
+                FrameColorSpace::ChromaDerivedNcl,
+                12,
+                "AVCOL_SPC_CHROMA_DERIVED_NCL",
+            ),
+            (
+                FrameColorSpace::ChromaDerivedCl,
+                13,
+                "AVCOL_SPC_CHROMA_DERIVED_CL",
+            ),
+            (FrameColorSpace::Ictcp, 14, "AVCOL_SPC_ICTCP"),
+            (FrameColorSpace::IptC2, 15, "AVCOL_SPC_IPT_C2"),
+            (FrameColorSpace::YcgcoRe, 16, "AVCOL_SPC_YCGCO_RE"),
+            (FrameColorSpace::YcgcoRo, 17, "AVCOL_SPC_YCGCO_RO"),
+        ];
+        assert_eq!(FrameColorSpace::KNOWN, spaces.map(|(value, _, _)| value));
+        for (value, raw, constant) in spaces {
+            assert_eq!(value.as_raw(), raw);
+            assert_eq!(value.ffmpeg_constant(), constant);
+            assert_eq!(FrameColorSpace::from_raw(raw).unwrap(), value);
+        }
+        assert_eq!(
+            FrameColorSpace::from_raw(18).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let chroma_locations = [
+            (
+                FrameChromaLocation::Unspecified,
+                0,
+                "AVCHROMA_LOC_UNSPECIFIED",
+            ),
+            (FrameChromaLocation::Left, 1, "AVCHROMA_LOC_LEFT"),
+            (FrameChromaLocation::Center, 2, "AVCHROMA_LOC_CENTER"),
+            (FrameChromaLocation::TopLeft, 3, "AVCHROMA_LOC_TOPLEFT"),
+            (FrameChromaLocation::Top, 4, "AVCHROMA_LOC_TOP"),
+            (
+                FrameChromaLocation::BottomLeft,
+                5,
+                "AVCHROMA_LOC_BOTTOMLEFT",
+            ),
+            (FrameChromaLocation::Bottom, 6, "AVCHROMA_LOC_BOTTOM"),
+        ];
+        assert_eq!(
+            FrameChromaLocation::KNOWN,
+            chroma_locations.map(|(value, _, _)| value)
+        );
+        for (value, raw, constant) in chroma_locations {
+            assert_eq!(value.as_raw(), raw);
+            assert_eq!(value.ffmpeg_constant(), constant);
+            assert_eq!(FrameChromaLocation::from_raw(raw).unwrap(), value);
+        }
+        assert_eq!(
+            FrameChromaLocation::from_raw(7).unwrap_err().kind(),
+            AvErrorKind::InvalidData
         );
     }
 
@@ -18091,6 +18870,11 @@ mod tests {
         frame.set_quality(31);
         frame.set_repeat_pict(1);
         frame.set_flags(FrameFlags::KEY);
+        frame.set_color_range(FrameColorRange::Mpeg);
+        frame.set_color_primaries(FrameColorPrimaries::Smpte170M);
+        frame.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Bt709);
+        frame.set_color_space(FrameColorSpace::Smpte170M);
+        frame.set_chroma_location(FrameChromaLocation::Center);
         frame
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
             .unwrap();
@@ -18109,6 +18893,14 @@ mod tests {
         assert_eq!(frame.quality(), 0);
         assert_eq!(frame.repeat_pict(), 0);
         assert!(frame.flags().is_empty());
+        assert_eq!(frame.color_range(), FrameColorRange::Unspecified);
+        assert_eq!(frame.color_primaries(), FrameColorPrimaries::Unspecified);
+        assert_eq!(
+            frame.color_transfer_characteristic(),
+            FrameColorTransferCharacteristic::Unspecified
+        );
+        assert_eq!(frame.color_space(), FrameColorSpace::Unspecified);
+        assert_eq!(frame.chroma_location(), FrameChromaLocation::Unspecified);
         assert!(matches!(frame.data(), FrameData::Empty));
         assert!(frame.hw_frames_context().is_none());
         assert!(frame.side_data().is_empty());
@@ -18150,6 +18942,11 @@ mod tests {
         source.set_quality(44);
         source.set_repeat_pict(2);
         source.set_flags(FrameFlags::KEY);
+        source.set_color_range(FrameColorRange::Jpeg);
+        source.set_color_primaries(FrameColorPrimaries::Bt2020);
+        source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
+        source.set_color_space(FrameColorSpace::Bt2020Ncl);
+        source.set_chroma_location(FrameChromaLocation::TopLeft);
         source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
             .unwrap();
@@ -18186,6 +18983,14 @@ mod tests {
         assert_eq!(destination.quality(), 44);
         assert_eq!(destination.repeat_pict(), 2);
         assert!(destination.flags().contains(FrameFlags::KEY));
+        assert_eq!(destination.color_range(), FrameColorRange::Jpeg);
+        assert_eq!(destination.color_primaries(), FrameColorPrimaries::Bt2020);
+        assert_eq!(
+            destination.color_transfer_characteristic(),
+            FrameColorTransferCharacteristic::Smpte2084
+        );
+        assert_eq!(destination.color_space(), FrameColorSpace::Bt2020Ncl);
+        assert_eq!(destination.chroma_location(), FrameChromaLocation::TopLeft);
         assert!(!source.is_empty());
         let (destination_video, source_video) = match (destination.data(), source.data()) {
             (FrameData::Video(destination_video), FrameData::Video(source_video)) => {
@@ -18241,6 +19046,11 @@ mod tests {
         source.set_quality(55);
         source.set_repeat_pict(3);
         source.set_flags(FrameFlags::INTERLACED);
+        source.set_color_range(FrameColorRange::Mpeg);
+        source.set_color_primaries(FrameColorPrimaries::Bt470Bg);
+        source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Gamma22);
+        source.set_color_space(FrameColorSpace::Bt470Bg);
+        source.set_chroma_location(FrameChromaLocation::Left);
 
         let destination_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let destination_capture = std::sync::Arc::clone(&destination_released);
@@ -18272,6 +19082,14 @@ mod tests {
         assert_eq!(destination.quality(), 55);
         assert_eq!(destination.repeat_pict(), 3);
         assert!(destination.flags().contains(FrameFlags::INTERLACED));
+        assert_eq!(destination.color_range(), FrameColorRange::Mpeg);
+        assert_eq!(destination.color_primaries(), FrameColorPrimaries::Bt470Bg);
+        assert_eq!(
+            destination.color_transfer_characteristic(),
+            FrameColorTransferCharacteristic::Gamma22
+        );
+        assert_eq!(destination.color_space(), FrameColorSpace::Bt470Bg);
+        assert_eq!(destination.chroma_location(), FrameChromaLocation::Left);
         assert!(matches!(destination.data(), FrameData::Video(_)));
         assert_eq!(
             *destination_released.lock().unwrap(),
@@ -18309,6 +19127,11 @@ mod tests {
         source.set_quality(66);
         source.set_repeat_pict(4);
         source.set_flags(FrameFlags::KEY);
+        source.set_color_range(FrameColorRange::Jpeg);
+        source.set_color_primaries(FrameColorPrimaries::Bt2020);
+        source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
+        source.set_color_space(FrameColorSpace::Bt2020Ncl);
+        source.set_chroma_location(FrameChromaLocation::TopLeft);
         source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
             .unwrap();
@@ -18354,6 +19177,11 @@ mod tests {
         destination.set_quality(11);
         destination.set_repeat_pict(1);
         destination.set_flags(FrameFlags::CORRUPT);
+        destination.set_color_range(FrameColorRange::Mpeg);
+        destination.set_color_primaries(FrameColorPrimaries::Smpte170M);
+        destination.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Bt709);
+        destination.set_color_space(FrameColorSpace::Smpte170M);
+        destination.set_chroma_location(FrameChromaLocation::Center);
         destination
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, old_side)
             .unwrap();
@@ -18374,6 +19202,14 @@ mod tests {
         assert_eq!(destination.repeat_pict(), 4);
         assert!(destination.flags().contains(FrameFlags::KEY));
         assert!(!destination.flags().contains(FrameFlags::CORRUPT));
+        assert_eq!(destination.color_range(), FrameColorRange::Jpeg);
+        assert_eq!(destination.color_primaries(), FrameColorPrimaries::Bt2020);
+        assert_eq!(
+            destination.color_transfer_characteristic(),
+            FrameColorTransferCharacteristic::Smpte2084
+        );
+        assert_eq!(destination.color_space(), FrameColorSpace::Bt2020Ncl);
+        assert_eq!(destination.chroma_location(), FrameChromaLocation::TopLeft);
         assert!(old_side_released.lock().unwrap().is_empty());
         assert!(old_hw_released.lock().unwrap().is_empty());
         let (destination_video, source_video) = match (destination.data(), source.data()) {

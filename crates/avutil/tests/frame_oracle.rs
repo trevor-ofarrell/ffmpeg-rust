@@ -6,8 +6,9 @@ use std::{
 };
 
 use avutil::{
-    AudioFrame, AvErrorCode, BufferRef, ChannelLayout, Frame, FrameData, FrameFlags,
-    FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
+    AudioFrame, AvErrorCode, BufferRef, ChannelLayout, Frame, FrameChromaLocation,
+    FrameColorPrimaries, FrameColorRange, FrameColorSpace, FrameColorTransferCharacteristic,
+    FrameData, FrameFlags, FramePictureType, FrameSideData, FrameSideDataFlags, FrameSideDataKind,
     FrameSideDataProperties, PixelFormat, Rational, SampleFormat, VideoFrame, AV_NOPTS_VALUE,
 };
 
@@ -111,6 +112,11 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     video.set_quality(23);
     video.set_repeat_pict(2);
     video.set_flags(FrameFlags::KEY | FrameFlags::INTERLACED | FrameFlags::TOP_FIELD_FIRST);
+    video.set_color_range(FrameColorRange::Jpeg);
+    video.set_color_primaries(FrameColorPrimaries::Bt2020);
+    video.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
+    video.set_color_space(FrameColorSpace::Bt2020Ncl);
+    video.set_chroma_location(FrameChromaLocation::TopLeft);
     rows.insert("frame:video-buffer".to_string(), frame_fields(&video));
 
     let mut video_ref = Frame::empty();
@@ -182,6 +188,11 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copy_source.set_quality(66);
     copy_source.set_repeat_pict(4);
     copy_source.set_flags(FrameFlags::KEY | FrameFlags::LOSSLESS);
+    copy_source.set_color_range(FrameColorRange::Jpeg);
+    copy_source.set_color_primaries(FrameColorPrimaries::Bt2020);
+    copy_source.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Smpte2084);
+    copy_source.set_color_space(FrameColorSpace::Bt2020Ncl);
+    copy_source.set_chroma_location(FrameChromaLocation::TopLeft);
     copy_source
         .set_side_data_kind_buffer(
             FrameSideDataKind::DisplayMatrix,
@@ -207,6 +218,11 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copy_destination.set_quality(11);
     copy_destination.set_repeat_pict(1);
     copy_destination.set_flags(FrameFlags::CORRUPT);
+    copy_destination.set_color_range(FrameColorRange::Mpeg);
+    copy_destination.set_color_primaries(FrameColorPrimaries::Smpte170M);
+    copy_destination.set_color_transfer_characteristic(FrameColorTransferCharacteristic::Bt709);
+    copy_destination.set_color_space(FrameColorSpace::Smpte170M);
+    copy_destination.set_chroma_location(FrameChromaLocation::Center);
     copy_destination
         .set_side_data_kind(FrameSideDataKind::DisplayMatrix, vec![0x99; 36])
         .unwrap();
@@ -566,6 +582,11 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
         frame.quality().to_string(),
         frame.repeat_pict().to_string(),
         frame.flags().bits().to_string(),
+        frame.color_range().as_raw().to_string(),
+        frame.color_primaries().as_raw().to_string(),
+        frame.color_transfer_characteristic().as_raw().to_string(),
+        frame.color_space().as_raw().to_string(),
+        frame.chroma_location().as_raw().to_string(),
         kind.to_string(),
         format.to_string(),
         width.to_string(),
@@ -886,6 +907,7 @@ fn oracle_c_source() -> &'static str {
 #include <libavutil/frame.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/pixdesc.h>
+#include <libavutil/pixfmt.h>
 #include <libavutil/samplefmt.h>
 
 typedef struct SideKind {
@@ -1080,14 +1102,16 @@ static void print_frame(const char *name, const AVFrame *frame)
                           : 1;
     }
 
-    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%d/%d|%zu|%zu|%zu|%zu|%d|%c|%d|%d|%d|%s|%s|%d|%d|%d|%d|%d|",
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%d/%d|%zu|%zu|%zu|%zu|%d|%c|%d|%d|%d|%d|%d|%d|%d|%d|%s|%s|%d|%d|%d|%d|%d|",
            name, frame->pts, frame->pkt_dts, frame->duration,
            frame->time_base.num, frame->time_base.den,
            frame->sample_aspect_ratio.num, frame->sample_aspect_ratio.den,
            frame->crop_top, frame->crop_bottom, frame->crop_left,
            frame->crop_right, frame->pict_type,
            av_get_picture_type_char(frame->pict_type), frame->quality,
-           frame->repeat_pict, frame->flags, kind,
+           frame->repeat_pict, frame->flags, frame->color_range,
+           frame->color_primaries, frame->color_trc, frame->colorspace,
+           frame->chroma_location, kind,
            format ? format : "none", frame->width, frame->height,
            frame->nb_samples, frame->sample_rate, frame->ch_layout.nb_channels);
     print_line_sizes(frame->linesize, plane_count);
@@ -1243,6 +1267,11 @@ int main(void)
     video->repeat_pict = 2;
     video->flags = AV_FRAME_FLAG_KEY | AV_FRAME_FLAG_INTERLACED |
                    AV_FRAME_FLAG_TOP_FIELD_FIRST;
+    video->color_range = AVCOL_RANGE_JPEG;
+    video->color_primaries = AVCOL_PRI_BT2020;
+    video->color_trc = AVCOL_TRC_SMPTE2084;
+    video->colorspace = AVCOL_SPC_BT2020_NCL;
+    video->chroma_location = AVCHROMA_LOC_TOPLEFT;
     fail_if(av_frame_get_buffer(video, 1) < 0,
             "video av_frame_get_buffer failed");
     static const uint8_t video_payload[] = { 1, 2, 3, 4, 5, 6 };
@@ -1302,6 +1331,11 @@ int main(void)
     copy_src->quality = 66;
     copy_src->repeat_pict = 4;
     copy_src->flags = AV_FRAME_FLAG_KEY | AV_FRAME_FLAG_LOSSLESS;
+    copy_src->color_range = AVCOL_RANGE_JPEG;
+    copy_src->color_primaries = AVCOL_PRI_BT2020;
+    copy_src->color_trc = AVCOL_TRC_SMPTE2084;
+    copy_src->colorspace = AVCOL_SPC_BT2020_NCL;
+    copy_src->chroma_location = AVCHROMA_LOC_TOPLEFT;
     fail_if(av_frame_get_buffer(copy_src, 1) < 0,
             "copy_src av_frame_get_buffer failed");
     static const uint8_t copy_src_payload[] = { 1, 2 };
@@ -1333,6 +1367,11 @@ int main(void)
     copy_dst->quality = 11;
     copy_dst->repeat_pict = 1;
     copy_dst->flags = AV_FRAME_FLAG_CORRUPT;
+    copy_dst->color_range = AVCOL_RANGE_MPEG;
+    copy_dst->color_primaries = AVCOL_PRI_SMPTE170M;
+    copy_dst->color_trc = AVCOL_TRC_BT709;
+    copy_dst->colorspace = AVCOL_SPC_SMPTE170M;
+    copy_dst->chroma_location = AVCHROMA_LOC_CENTER;
     fail_if(av_frame_get_buffer(copy_dst, 1) < 0,
             "copy_dst av_frame_get_buffer failed");
     static const uint8_t copy_dst_payload[] = { 9, 8 };

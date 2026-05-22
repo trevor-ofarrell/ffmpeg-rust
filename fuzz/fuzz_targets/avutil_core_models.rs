@@ -11,6 +11,8 @@ use avutil::{
     AmbisonicChannelLayout, BufferPoolAllocation, BufferPoolCallbacks, BufferRef, Channel,
     ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame,
     FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
+    FrameChromaLocation, FrameColorPrimaries, FrameColorRange, FrameColorSpace,
+    FrameColorTransferCharacteristic,
     NativeChannelMaskLayout,
     FrameAudioServiceType,
     Dictionary, FrameContentLightMetadata, FrameCrop, FrameData, FrameDetectionBbox, FrameFlags,
@@ -2752,11 +2754,83 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         FrameFlags::from_bits_truncate(u32::MAX).bits(),
         FrameFlags::all().bits()
     );
+    let frame_color_range =
+        pick_copy(cursor, &FrameColorRange::KNOWN).unwrap_or(FrameColorRange::Unspecified);
+    frame.set_color_range(frame_color_range);
+    assert_eq!(frame.color_range(), frame_color_range);
+    assert_eq!(
+        frame.set_color_range_from_raw(3).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(frame.color_range(), frame_color_range);
+
+    let frame_color_primaries = pick_copy(cursor, &FrameColorPrimaries::KNOWN)
+        .unwrap_or(FrameColorPrimaries::Unspecified);
+    frame.set_color_primaries(frame_color_primaries);
+    assert_eq!(frame.color_primaries(), frame_color_primaries);
+    assert_eq!(
+        frame
+            .set_color_primaries_from_raw(23)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(frame.color_primaries(), frame_color_primaries);
+
+    let frame_color_transfer = pick_copy(cursor, &FrameColorTransferCharacteristic::KNOWN)
+        .unwrap_or(FrameColorTransferCharacteristic::Unspecified);
+    frame.set_color_transfer_characteristic(frame_color_transfer);
+    assert_eq!(
+        frame.color_transfer_characteristic(),
+        frame_color_transfer
+    );
+    assert_eq!(
+        frame
+            .set_color_transfer_characteristic_from_raw(19)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(
+        frame.color_transfer_characteristic(),
+        frame_color_transfer
+    );
+
+    let frame_color_space =
+        pick_copy(cursor, &FrameColorSpace::KNOWN).unwrap_or(FrameColorSpace::Unspecified);
+    frame.set_color_space(frame_color_space);
+    assert_eq!(frame.color_space(), frame_color_space);
+    assert_eq!(
+        frame.set_color_space_from_raw(18).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(frame.color_space(), frame_color_space);
+
+    let frame_chroma_location =
+        pick_copy(cursor, &FrameChromaLocation::KNOWN).unwrap_or(FrameChromaLocation::Unspecified);
+    frame.set_chroma_location(frame_chroma_location);
+    assert_eq!(frame.chroma_location(), frame_chroma_location);
+    assert_eq!(
+        frame.set_chroma_location_from_raw(7).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(frame.chroma_location(), frame_chroma_location);
     assert!(matches!(frame.data(), FrameData::Video(_)));
     assert!(frame.hw_frames_context().is_none());
     assert!(frame.side_data().is_empty());
     assert!(frame.is_writable());
     let shared_frame_payload = frame.clone();
+    assert_eq!(shared_frame_payload.color_range(), frame_color_range);
+    assert_eq!(shared_frame_payload.color_primaries(), frame_color_primaries);
+    assert_eq!(
+        shared_frame_payload.color_transfer_characteristic(),
+        frame_color_transfer
+    );
+    assert_eq!(shared_frame_payload.color_space(), frame_color_space);
+    assert_eq!(
+        shared_frame_payload.chroma_location(),
+        frame_chroma_location
+    );
     assert!(!frame.is_writable());
     frame.make_writable();
     assert!(frame.is_writable());
@@ -22864,6 +22938,14 @@ fn payload_from(cursor: &mut Cursor<'_>, len: usize) -> Vec<u8> {
         payload.push(cursor.next().unwrap_or_default());
     }
     payload
+}
+
+fn pick_copy<T: Copy>(cursor: &mut Cursor<'_>, values: &[T]) -> Option<T> {
+    if values.is_empty() {
+        return None;
+    }
+    let index = usize::from(cursor.next().unwrap_or_default()) % values.len();
+    Some(values[index])
 }
 
 struct Cursor<'a> {
