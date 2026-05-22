@@ -228,6 +228,61 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         vec![bool_field(unref_null_input.is_none())],
     );
 
+    let offset_src = BufferRef::from_vec(vec![10, 11, 12, 13]);
+    let offset_ref = offset_src.ref_slice(1, 2).unwrap();
+    rows.insert(
+        "buffer:offset-ref-src".to_string(),
+        buffer_fields(&offset_src),
+    );
+    rows.insert(
+        "buffer:offset-ref-view".to_string(),
+        buffer_fields(&offset_ref),
+    );
+    rows.insert(
+        "buffer:offset-ref-delta".to_string(),
+        vec![((offset_ref.as_ptr() as usize) - (offset_src.as_ptr() as usize)).to_string()],
+    );
+
+    let mut offset_make_writable = offset_ref.clone();
+    offset_make_writable.make_mut();
+    rows.insert(
+        "buffer:offset-make-writable".to_string(),
+        buffer_fields(&offset_make_writable),
+    );
+    rows.insert(
+        "buffer:offset-make-writable-shares".to_string(),
+        vec![bool_field(offset_make_writable.shares_storage(&offset_ref))],
+    );
+
+    let mut offset_realloc = offset_src.ref_slice(1, 2).unwrap();
+    offset_realloc.resize(3).unwrap();
+    rows.insert(
+        "buffer:offset-realloc-grow".to_string(),
+        buffer_prefix_fields(&offset_realloc, 2),
+    );
+    rows.insert(
+        "buffer:offset-realloc-shares".to_string(),
+        vec![bool_field(offset_realloc.shares_storage(&offset_src))],
+    );
+
+    let replace_offset_base = BufferRef::from_vec(vec![21, 22, 23, 24]);
+    let replace_offset_src = replace_offset_base.ref_slice(1, 2).unwrap();
+    let mut replace_offset_dst = Some(BufferRef::ref_from(&replace_offset_base));
+    drop(replace_offset_base);
+    BufferRef::replace(&mut replace_offset_dst, Some(&replace_offset_src));
+    let replace_offset_dst = replace_offset_dst.expect("replace offset dst");
+    rows.insert(
+        "buffer:replace-offset-equivalent".to_string(),
+        buffer_fields(&replace_offset_dst),
+    );
+    rows.insert(
+        "buffer:replace-offset-equivalent-shares".to_string(),
+        vec![
+            bool_field(replace_offset_src.shares_storage(&replace_offset_dst)),
+            replace_offset_src.strong_count().to_string(),
+        ],
+    );
+
     rows.insert("buffer:unref-null".to_string(), vec!["1".to_string()]);
 
     struct PoolToken {
@@ -479,6 +534,7 @@ fn compile_and_run_oracle(
 
 fn oracle_c_source() -> &'static str {
     r#"#include <inttypes.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -740,6 +796,61 @@ int main(void) {
     av_buffer_unref(NULL);
     av_buffer_unref(&unref_null_input);
     printf("buffer:unref-null-input|%d\n", unref_null_input == NULL);
+
+    static const uint8_t offset_bytes[] = { 10, 11, 12, 13 };
+    AVBufferRef *offset_src = av_buffer_allocz(4);
+    fail_if(!offset_src, "av_buffer_allocz offset_src failed");
+    fill_bytes(offset_src, offset_bytes, sizeof(offset_bytes));
+    AVBufferRef *offset_ref = av_buffer_ref(offset_src);
+    fail_if(!offset_ref, "av_buffer_ref offset_ref failed");
+    offset_ref->data += 1;
+    offset_ref->size = 2;
+    print_buffer("buffer:offset-ref-src", offset_src);
+    print_buffer("buffer:offset-ref-view", offset_ref);
+    printf("buffer:offset-ref-delta|%td\n", offset_ref->data - offset_src->data);
+
+    AVBufferRef *offset_make_writable = av_buffer_ref(offset_ref);
+    fail_if(!offset_make_writable, "av_buffer_ref offset_make_writable failed");
+    ret = av_buffer_make_writable(&offset_make_writable);
+    fail_if(ret < 0, "av_buffer_make_writable offset failed");
+    print_buffer("buffer:offset-make-writable", offset_make_writable);
+    printf("buffer:offset-make-writable-shares|%d\n",
+           offset_make_writable->data == offset_ref->data);
+    av_buffer_unref(&offset_make_writable);
+
+    AVBufferRef *offset_realloc = av_buffer_ref(offset_src);
+    fail_if(!offset_realloc, "av_buffer_ref offset_realloc failed");
+    offset_realloc->data += 1;
+    offset_realloc->size = 2;
+    ret = av_buffer_realloc(&offset_realloc, 3);
+    fail_if(ret < 0, "av_buffer_realloc offset failed");
+    print_buffer_prefix("buffer:offset-realloc-grow", offset_realloc, 2);
+    printf("buffer:offset-realloc-shares|%d\n",
+           offset_realloc->data == offset_src->data + 1);
+    av_buffer_unref(&offset_realloc);
+    av_buffer_unref(&offset_ref);
+    av_buffer_unref(&offset_src);
+
+    static const uint8_t replace_offset_bytes[] = { 21, 22, 23, 24 };
+    AVBufferRef *replace_offset_base = av_buffer_allocz(4);
+    fail_if(!replace_offset_base, "av_buffer_allocz replace_offset_base failed");
+    fill_bytes(replace_offset_base, replace_offset_bytes,
+               sizeof(replace_offset_bytes));
+    AVBufferRef *replace_offset_src = av_buffer_ref(replace_offset_base);
+    AVBufferRef *replace_offset_dst = av_buffer_ref(replace_offset_base);
+    fail_if(!replace_offset_src || !replace_offset_dst,
+            "av_buffer_ref replace_offset failed");
+    replace_offset_src->data += 1;
+    replace_offset_src->size = 2;
+    av_buffer_unref(&replace_offset_base);
+    ret = av_buffer_replace(&replace_offset_dst, replace_offset_src);
+    fail_if(ret < 0, "av_buffer_replace offset equivalent failed");
+    print_buffer("buffer:replace-offset-equivalent", replace_offset_dst);
+    printf("buffer:replace-offset-equivalent-shares|%d|%d\n",
+           replace_offset_dst->data == replace_offset_src->data,
+           av_buffer_get_ref_count(replace_offset_src));
+    av_buffer_unref(&replace_offset_dst);
+    av_buffer_unref(&replace_offset_src);
 
     buf = av_buffer_allocz(1);
     fail_if(!buf, "av_buffer_allocz unref failed");

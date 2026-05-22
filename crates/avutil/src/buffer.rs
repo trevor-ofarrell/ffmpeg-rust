@@ -126,12 +126,13 @@ impl Default for BufferPoolCallbacks {
 #[derive(Debug, Clone)]
 pub struct BufferRef {
     data: Arc<BufferStorage>,
+    offset: usize,
     len: usize,
 }
 
 impl PartialEq for BufferRef {
     fn eq(&self, other: &Self) -> bool {
-        self.len == other.len && self.as_padded_slice() == other.as_padded_slice()
+        self.len == other.len && self.as_slice() == other.as_slice()
     }
 }
 
@@ -142,6 +143,7 @@ impl BufferRef {
         let len = data.len();
         Self {
             data: Arc::new(BufferStorage::new(data)),
+            offset: 0,
             len,
         }
     }
@@ -150,6 +152,7 @@ impl BufferRef {
         let len = data.len();
         Self {
             data: Arc::new(BufferStorage::readonly(data)),
+            offset: 0,
             len,
         }
     }
@@ -163,6 +166,7 @@ impl BufferRef {
         }
         Ok(Self {
             data: Arc::new(BufferStorage::readonly(data)),
+            offset: 0,
             len,
         })
     }
@@ -171,6 +175,7 @@ impl BufferRef {
         let len = data.len();
         Self {
             data: Arc::new(BufferStorage::static_readonly(data)),
+            offset: 0,
             len,
         }
     }
@@ -184,6 +189,7 @@ impl BufferRef {
         }
         Ok(Self {
             data: Arc::new(BufferStorage::static_readonly(data)),
+            offset: 0,
             len,
         })
     }
@@ -192,6 +198,7 @@ impl BufferRef {
         let len = data.len();
         Self {
             data: Arc::new(BufferStorage::shared_readonly(data)),
+            offset: 0,
             len,
         }
     }
@@ -205,6 +212,7 @@ impl BufferRef {
         }
         Ok(Self {
             data: Arc::new(BufferStorage::shared_readonly(data)),
+            offset: 0,
             len,
         })
     }
@@ -223,6 +231,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::with_opaque_release_readonly(
                 data, opaque, on_release,
             )),
+            offset: 0,
             len,
         }
     }
@@ -247,6 +256,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::with_opaque_release_readonly(
                 data, opaque, on_release,
             )),
+            offset: 0,
             len,
         })
     }
@@ -258,6 +268,7 @@ impl BufferRef {
         let len = data.len();
         Self {
             data: Arc::new(BufferStorage::with_release_callback(data, on_release)),
+            offset: 0,
             len,
         }
     }
@@ -271,6 +282,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::with_release_callback_readonly(
                 data, on_release, true,
             )),
+            offset: 0,
             len,
         }
     }
@@ -291,6 +303,7 @@ impl BufferRef {
         }
         Ok(Self {
             data: Arc::new(BufferStorage::with_release_callback(data, on_release)),
+            offset: 0,
             len,
         })
     }
@@ -313,6 +326,7 @@ impl BufferRef {
             data: Arc::new(BufferStorage::with_release_callback_readonly(
                 data, on_release, true,
             )),
+            offset: 0,
             len,
         })
     }
@@ -333,6 +347,7 @@ impl BufferRef {
         storage.resize(total_len, 0);
         Ok(Self {
             data: Arc::new(BufferStorage::new(storage)),
+            offset: 0,
             len: data.len(),
         })
     }
@@ -345,6 +360,7 @@ impl BufferRef {
         let data = allocate_zeroed_storage(size, padding)?;
         Ok(Self {
             data: Arc::new(BufferStorage::new(data)),
+            offset: 0,
             len: size,
         })
     }
@@ -357,8 +373,12 @@ impl BufferRef {
         self.len == 0
     }
 
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
     pub fn as_slice(&self) -> &[u8] {
-        &self.data.bytes.as_slice()[..self.len]
+        &self.data.bytes.as_slice()[self.offset..self.offset + self.len]
     }
 
     pub fn as_ptr(&self) -> *const u8 {
@@ -366,7 +386,7 @@ impl BufferRef {
     }
 
     pub fn as_padded_slice(&self) -> &[u8] {
-        self.data.bytes.as_slice()
+        &self.data.bytes.as_slice()[self.offset..]
     }
 
     pub fn as_padded_ptr(&self) -> *const u8 {
@@ -374,7 +394,7 @@ impl BufferRef {
     }
 
     pub fn allocated_len(&self) -> usize {
-        self.data.len()
+        self.data.len() - self.offset
     }
 
     pub fn padding_len(&self) -> usize {
@@ -382,7 +402,7 @@ impl BufferRef {
     }
 
     pub fn padding_slice(&self) -> &[u8] {
-        &self.data.bytes.as_slice()[self.len..]
+        &self.as_padded_slice()[self.len..]
     }
 
     pub fn strong_count(&self) -> usize {
@@ -417,22 +437,25 @@ impl BufferRef {
         if self.is_readonly() {
             return None;
         }
+        let offset = self.offset;
+        let end = self.offset + self.len;
         Arc::get_mut(&mut self.data)
             .and_then(|data| data.bytes.as_mut_vec())
-            .map(|bytes| &mut bytes[..self.len])
+            .map(|bytes| &mut bytes[offset..end])
     }
 
     pub fn make_mut(&mut self) -> &mut [u8] {
         if self.strong_count() != 1 || self.is_readonly() {
-            let bytes = self.data.bytes.as_slice().to_vec();
+            let bytes = self.as_padded_slice().to_vec();
             self.data = Arc::new(BufferStorage::new(bytes));
+            self.offset = 0;
         }
         let bytes = Arc::get_mut(&mut self.data)
             .expect("buffer storage is unique after copy-on-write")
             .bytes
             .as_mut_vec()
             .expect("copy-on-write storage is owned");
-        &mut bytes[..self.len]
+        &mut bytes[self.offset..self.offset + self.len]
     }
 
     pub fn resize(&mut self, len: usize) -> AvResult<()> {
@@ -472,14 +495,16 @@ impl BufferRef {
             return Ok(());
         }
 
-        let bytes = resized_storage(&self.data.bytes.as_slice()[..self.len], len, padding)?;
+        let bytes = resized_storage(self.as_slice(), len, padding)?;
         self.data = Arc::new(BufferStorage::new(bytes));
+        self.offset = 0;
         self.len = len;
         Ok(())
     }
 
     fn can_resize_in_place(&self) -> bool {
         self.strong_count() == 1
+            && self.offset == 0
             && !self.is_readonly()
             && self.data.owner.is_none()
             && self.data.bytes.is_owned()
@@ -497,6 +522,42 @@ impl BufferRef {
         *dst = None;
     }
 
+    pub fn ref_slice(&self, offset: usize, len: usize) -> AvResult<Self> {
+        let end = offset.checked_add(len).ok_or_else(|| {
+            AvError::invalid_argument("buffer ref slice offset plus length overflows")
+        })?;
+        if offset > self.len() || end > self.len() {
+            return Err(AvError::invalid_argument(format!(
+                "buffer ref slice {offset}..{end} exceeds {} bytes",
+                self.len()
+            )));
+        }
+
+        Ok(Self {
+            data: Arc::clone(&self.data),
+            offset: self.offset + offset,
+            len,
+        })
+    }
+
+    pub fn into_ref_slice(self, offset: usize, len: usize) -> AvResult<Self> {
+        let end = offset.checked_add(len).ok_or_else(|| {
+            AvError::invalid_argument("buffer ref slice offset plus length overflows")
+        })?;
+        if offset > self.len || end > self.len {
+            return Err(AvError::invalid_argument(format!(
+                "buffer ref slice {offset}..{end} exceeds {} bytes",
+                self.len
+            )));
+        }
+
+        Ok(Self {
+            data: self.data,
+            offset: self.offset + offset,
+            len,
+        })
+    }
+
     pub fn slice(&self, offset: usize, len: usize) -> AvResult<BufferSlice> {
         let end = offset.checked_add(len).ok_or_else(|| {
             AvError::invalid_argument("buffer slice offset plus length overflows")
@@ -510,7 +571,7 @@ impl BufferRef {
 
         Ok(BufferSlice {
             data: Arc::clone(&self.data),
-            offset,
+            offset: self.offset + offset,
             len,
         })
     }
@@ -884,12 +945,14 @@ impl BufferPool {
         match storage {
             Some(storage) => Ok(BufferRef {
                 data: Arc::new(BufferStorage::with_pool(storage, &self.inner)),
+                offset: 0,
                 len: self.len(),
             }),
             None => {
                 let storage = self.allocate_storage()?;
                 Ok(BufferRef {
                     data: Arc::new(BufferStorage::with_pool(storage, &self.inner)),
+                    offset: 0,
                     len: self.len(),
                 })
             }
@@ -897,10 +960,10 @@ impl BufferPool {
     }
 
     pub fn recycle(&self, buffer: BufferRef) -> AvResult<()> {
-        let BufferRef { data, len } = buffer;
-        if len != self.len() || data.len() != self.allocated_len() {
+        let BufferRef { data, offset, len } = buffer;
+        if offset != 0 || len != self.len() || data.len() != self.allocated_len() {
             return Err(AvError::invalid_argument(format!(
-                "buffer shape {len}/{} does not match pool shape {}/{}",
+                "buffer shape offset {offset} len {len}/{} does not match pool shape {}/{}",
                 data.len(),
                 self.len(),
                 self.allocated_len()
@@ -1625,6 +1688,53 @@ mod tests {
         assert!(empty_dst.is_none());
         BufferRef::unref(&mut empty_dst);
         assert!(empty_dst.is_none());
+    }
+
+    #[test]
+    fn buffer_ref_slices_model_offset_data_and_size_refs() {
+        let source = BufferRef::from_vec(vec![10, 11, 12, 13]);
+        let offset_ref = source.ref_slice(1, 2).unwrap();
+        assert_eq!(offset_ref.offset(), 1);
+        assert_eq!(offset_ref.len(), 2);
+        assert_eq!(offset_ref.as_slice(), &[11, 12]);
+        assert_eq!(offset_ref.as_ptr(), source.as_ptr().wrapping_add(1));
+        assert_eq!(offset_ref.allocated_len(), 3);
+        assert_eq!(offset_ref.padding_slice(), &[13]);
+        assert!(offset_ref.shares_storage(&source));
+        assert_eq!(source.strong_count(), 2);
+        assert!(!offset_ref.is_writable());
+
+        let mut detached = offset_ref.clone();
+        detached.make_mut()[0] = 99;
+        assert_eq!(detached.offset(), 0);
+        assert_eq!(detached.as_slice(), &[99, 12]);
+        assert_eq!(offset_ref.as_slice(), &[11, 12]);
+        assert!(!detached.shares_storage(&offset_ref));
+
+        let mut resized = source.ref_slice(1, 2).unwrap();
+        resized.resize(3).unwrap();
+        assert_eq!(&resized.as_slice()[..2], &[11, 12]);
+        assert_eq!(resized.offset(), 0);
+        assert!(resized.is_writable());
+        assert_eq!(source.as_slice(), &[10, 11, 12, 13]);
+
+        let unique_offset = BufferRef::from_vec(vec![1, 2, 3, 4])
+            .into_ref_slice(2, 2)
+            .unwrap();
+        assert!(unique_offset.is_writable());
+        let mut unique_offset = unique_offset;
+        unique_offset.make_mut()[0] = 7;
+        assert_eq!(unique_offset.offset(), 2);
+        assert_eq!(unique_offset.as_slice(), &[7, 4]);
+
+        assert_eq!(
+            source.ref_slice(5, 0).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(
+            source.ref_slice(3, 2).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
     }
 
     #[test]

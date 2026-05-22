@@ -839,6 +839,56 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     BufferRef::unref(&mut replace_empty_dst);
     assert!(replace_empty_dst.is_none());
 
+    let offset_source = BufferRef::copy_from_slice(&payload);
+    let offset_start = if offset_source.is_empty() {
+        0
+    } else {
+        usize::from(cursor.next().unwrap_or_default()) % offset_source.len()
+    };
+    let offset_len =
+        usize::from(cursor.next().unwrap_or_default()) % (offset_source.len() - offset_start + 1);
+    let offset_ref = offset_source.ref_slice(offset_start, offset_len).unwrap();
+    assert_eq!(offset_ref.offset(), offset_start);
+    assert_eq!(
+        offset_ref.as_slice(),
+        &offset_source.as_slice()[offset_start..offset_start + offset_len]
+    );
+    assert_eq!(
+        offset_ref.as_ptr(),
+        offset_source.as_ptr().wrapping_add(offset_start)
+    );
+    assert!(offset_ref.shares_storage(&offset_source));
+    assert_eq!(
+        offset_source
+            .ref_slice(offset_source.len().saturating_add(1), 0)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    let mut offset_writable = offset_ref.clone();
+    let expected_offset_visible = offset_writable.as_slice().to_vec();
+    if !offset_writable.is_empty() {
+        offset_writable.make_mut()[0] = cursor.next().unwrap_or_default();
+    } else {
+        assert_eq!(offset_writable.make_mut(), &mut []);
+    }
+    assert_eq!(offset_writable.offset(), 0);
+    if offset_writable.is_empty() {
+        assert_eq!(offset_writable.as_slice(), expected_offset_visible.as_slice());
+    }
+    assert!(!offset_writable.shares_storage(&offset_ref));
+    let mut offset_resized = offset_ref.clone();
+    let offset_resize_len = usize::from(cursor.next().unwrap_or_default() % 8);
+    let offset_prefix_len = offset_resize_len.min(offset_ref.len());
+    let expected_offset_prefix = offset_ref.as_slice()[..offset_prefix_len].to_vec();
+    offset_resized.resize(offset_resize_len).unwrap();
+    assert_eq!(offset_resized.offset(), 0);
+    assert_eq!(
+        &offset_resized.as_slice()[..offset_prefix_len],
+        expected_offset_prefix.as_slice()
+    );
+    assert!(!offset_resized.shares_storage(&offset_ref));
+
     let pool = BufferPool::new(payload_len, padding_len).unwrap();
     assert_eq!(pool.len(), payload_len);
     assert_eq!(pool.allocated_len(), payload_len + padding_len);
