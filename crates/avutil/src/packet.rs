@@ -334,6 +334,15 @@ impl PacketSideDataKind {
             .map(|index| index as i32)
     }
 
+    pub fn from_ffmpeg_value(value: i32) -> Option<Self> {
+        let index = usize::try_from(value).ok()?;
+        Self::KNOWN.get(index).cloned()
+    }
+
+    pub fn ffmpeg_side_data_name_for_value(value: i32) -> Option<&'static str> {
+        Self::from_ffmpeg_value(value)?.ffmpeg_side_data_name()
+    }
+
     pub fn ffmpeg_side_data_name(&self) -> Option<&'static str> {
         match self {
             Self::Palette => Some("Palette"),
@@ -5951,8 +5960,26 @@ mod tests {
         assert_eq!(PacketSideDataKind::KNOWN.len(), 41);
         for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
             assert_eq!(kind.ffmpeg_value(), Some(index as i32));
+            assert_eq!(
+                PacketSideDataKind::from_ffmpeg_value(index as i32),
+                Some(kind.clone())
+            );
             assert!(kind.ffmpeg_side_data_name().is_some());
+            assert_eq!(
+                PacketSideDataKind::ffmpeg_side_data_name_for_value(index as i32),
+                kind.ffmpeg_side_data_name()
+            );
         }
+        assert_eq!(PacketSideDataKind::from_ffmpeg_value(-1), None);
+        assert_eq!(PacketSideDataKind::from_ffmpeg_value(41), None);
+        assert_eq!(
+            PacketSideDataKind::ffmpeg_side_data_name_for_value(-1),
+            None
+        );
+        assert_eq!(
+            PacketSideDataKind::ffmpeg_side_data_name_for_value(41),
+            None
+        );
     }
 
     #[test]

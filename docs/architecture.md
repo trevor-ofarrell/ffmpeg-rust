@@ -402,3 +402,7 @@ Unsafe Rust requires a safety comment and a test or documented invariant. Crates
 ## Performance Policy
 
 Correctness and parity come before performance. Performance-sensitive code should keep allocation behavior measurable and should gain benchmarks once semantic parity exists.
+
+## Latest Packet Evidence
+
+`PacketSideDataKind` now has a bounded value lookup surface for the pinned FFmpeg 8.1.1 packet side-data enum. `from_ffmpeg_value()` maps public `AV_PKT_DATA_*` values before `AV_PKT_DATA_NB` back to Rust known kinds, while `ffmpeg_side_data_name_for_value()` mirrors the modeled `av_packet_side_data_name()` name surface and returns `None` for invalid values and the sentinel.

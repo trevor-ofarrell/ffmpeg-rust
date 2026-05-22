@@ -2,6 +2,11 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest avutil-packet evidence: PacketSideDataKind now maps pinned FFmpeg side-data enum
+# values back to known kinds/names and the packet oracle validates that
+# av_packet_side_data_name() returns NULL for -1, AV_PKT_DATA_NB, AV_PKT_DATA_NB + 1,
+# and INT_MAX. avutil-packet remains differential_pass, not complete.
+
 [[component]]
 id = "avutil-error"
 kind = "utility"

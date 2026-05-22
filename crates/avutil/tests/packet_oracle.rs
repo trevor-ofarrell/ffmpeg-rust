@@ -91,6 +91,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     init.init_legacy();
     rows.insert("packet:init".to_string(), packet_fields(&init));
     insert_side_data_kind_inventory_row(&mut rows);
+    insert_side_data_name_boundary_row(&mut rows);
     insert_flag_inventory_row(&mut rows);
     insert_picture_type_inventory_row(&mut rows);
     insert_side_data_payload_layout_rows(&mut rows);
@@ -155,6 +156,24 @@ fn insert_side_data_kind_inventory_row(rows: &mut BTreeMap<String, Vec<String>>)
         fields.push(kind.ffmpeg_side_data_name().unwrap().to_string());
     }
     rows.insert("packet:side-kind-inventory".to_string(), fields);
+}
+
+fn insert_side_data_name_boundary_row(rows: &mut BTreeMap<String, Vec<String>>) {
+    let mut fields = Vec::new();
+    for value in [
+        -1,
+        PacketSideDataKind::KNOWN.len() as i32,
+        PacketSideDataKind::KNOWN.len() as i32 + 1,
+        i32::MAX,
+    ] {
+        fields.push(value.to_string());
+        fields.push(
+            PacketSideDataKind::ffmpeg_side_data_name_for_value(value)
+                .unwrap_or("<null>")
+                .to_string(),
+        );
+    }
+    rows.insert("packet:side-kind-name-boundaries".to_string(), fields);
 }
 
 fn insert_flag_inventory_row(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -1015,6 +1034,7 @@ fn compile_and_run_oracle(
 
 fn oracle_c_source() -> &'static str {
     r#"#include <inttypes.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -1172,6 +1192,21 @@ static void print_side_data_kind_inventory(void) {
     PRINT_SIDE_KIND(AV_PKT_DATA_EXIF);
     printf("\n");
 #undef PRINT_SIDE_KIND
+}
+
+static void print_side_data_name_boundaries(void) {
+#define PRINT_SIDE_NAME(value) do { \
+    int v = (value); \
+    const char *name = av_packet_side_data_name((enum AVPacketSideDataType)v); \
+    printf("|%d|%s", v, name ? name : "<null>"); \
+} while (0)
+    printf("packet:side-kind-name-boundaries");
+    PRINT_SIDE_NAME(-1);
+    PRINT_SIDE_NAME(AV_PKT_DATA_NB);
+    PRINT_SIDE_NAME(AV_PKT_DATA_NB + 1);
+    PRINT_SIDE_NAME(INT_MAX);
+    printf("\n");
+#undef PRINT_SIDE_NAME
 }
 
 static void print_flag_inventory(void) {
@@ -1765,6 +1800,7 @@ int main(void) {
     av_free(pkt);
 
     print_side_data_kind_inventory();
+    print_side_data_name_boundaries();
     print_flag_inventory();
     print_picture_type_inventory();
     print_side_data_payload_layouts();

@@ -9031,8 +9031,22 @@ fn exercise_fixtures() {
     assert_eq!(PacketSideDataKind::KNOWN.len(), 41);
     for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
         assert_eq!(kind.ffmpeg_value(), Some(index as i32));
+        assert_eq!(
+            PacketSideDataKind::from_ffmpeg_value(index as i32),
+            Some(kind.clone())
+        );
         assert!(kind.ffmpeg_side_data_name().is_some());
+        assert_eq!(
+            PacketSideDataKind::ffmpeg_side_data_name_for_value(index as i32),
+            kind.ffmpeg_side_data_name()
+        );
     }
+    assert_eq!(PacketSideDataKind::from_ffmpeg_value(-1), None);
+    assert_eq!(PacketSideDataKind::from_ffmpeg_value(41), None);
+    assert_eq!(
+        PacketSideDataKind::ffmpeg_side_data_name_for_value(i32::MAX),
+        None
+    );
     assert_eq!(
         PacketSideDataKind::from_name("AV_PKT_DATA_A53_CC").unwrap(),
         PacketSideDataKind::A53ClosedCaptions
