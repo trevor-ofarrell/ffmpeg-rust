@@ -6743,7 +6743,8 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(packet_fifo.is_empty());
     let mut fifo_empty_dst = Packet::default();
     let fifo_empty_read = packet_fifo.read_move(&mut fifo_empty_dst).unwrap_err();
-    assert_eq!(fifo_empty_read.code(), Some(AvErrorCode::EAGAIN));
+    assert_eq!(fifo_empty_read.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(fifo_empty_read.code(), Some(AvErrorCode::EINVAL));
     let fifo_drain_err = packet_fifo.drain(1).unwrap_err();
     assert_eq!(fifo_drain_err.code(), Some(AvErrorCode::EINVAL));
 

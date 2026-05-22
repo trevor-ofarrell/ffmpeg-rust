@@ -1299,6 +1299,16 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:fifo-after-drain-all-can-read".to_string(),
         vec![fifo.can_read().to_string()],
     );
+    let mut empty_dst = Packet::default();
+    let err = fifo.read_move(&mut empty_dst).unwrap_err();
+    rows.insert(
+        "packet:fifo-read-empty-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:fifo-read-empty-dst".to_string(),
+        packet_fields(&empty_dst),
+    );
 }
 
 fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -3347,6 +3357,13 @@ static void exercise_packet_fifo_api(void) {
     av_container_fifo_drain(fifo, 1);
     printf("packet:fifo-after-drain-all-can-read|%zu\n",
            av_container_fifo_can_read(fifo));
+
+    AVPacket *empty_dst = new_packet();
+    ret = av_container_fifo_read(fifo, empty_dst, 0);
+    printf("packet:fifo-read-empty-ret|%d\n", ret);
+    print_packet("packet:fifo-read-empty-dst", empty_dst);
+    av_packet_free(&empty_dst);
+
     av_packet_free(&first);
     av_packet_free(&second);
     av_container_fifo_free(&fifo);

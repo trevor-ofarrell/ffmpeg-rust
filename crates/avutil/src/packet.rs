@@ -5425,8 +5425,8 @@ impl PacketFifo {
     fn pop_front(&mut self) -> AvResult<Packet> {
         self.entries.pop_front().ok_or_else(|| {
             AvError::with_code(
-                AvErrorKind::External,
-                AvErrorCode::EAGAIN,
+                AvErrorKind::InvalidArgument,
+                AvErrorCode::EINVAL,
                 "packet FIFO is empty",
             )
         })
@@ -10916,7 +10916,9 @@ mod tests {
 
         let mut empty_dst = Packet::default();
         let read_err = fifo.read_move(&mut empty_dst).unwrap_err();
-        assert_eq!(read_err.code(), Some(AvErrorCode::EAGAIN));
+        assert_eq!(read_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(read_err.code(), Some(AvErrorCode::EINVAL));
+        assert!(empty_dst.is_empty());
         let drain_err = fifo.drain(1).unwrap_err();
         assert_eq!(drain_err.code(), Some(AvErrorCode::EINVAL));
     }
