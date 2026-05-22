@@ -35,7 +35,7 @@ pub use error::{
     AvResult, AV_ERROR_MAX_STRING_SIZE,
 };
 pub use frame::{
-    AudioFrame, Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription,
+    AudioFrame, Frame, FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAlphaMode,
     FrameAmbientViewingEnvironment, FrameAudioServiceType, FrameChromaLocation,
     FrameColorPrimaries, FrameColorRange, FrameColorSpace, FrameColorTransferCharacteristic,
     FrameContentLightMetadata, FrameCrop, FrameData, FrameDecodeErrorFlags, FrameDetectionBbox,
@@ -61,15 +61,15 @@ pub use frame::{
     FrameHdrPlusColorTransformParams, FrameHdrPlusOverlapProcessOption, FrameHdrPlusPercentile,
     FrameHdrVivid3SplineParams, FrameHdrVividColorToneMappingParams,
     FrameHdrVividColorTransformParams, FrameIccProfile, FrameLcevc, FrameMasteringDisplayMetadata,
-    FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors, FramePanScan, FramePictureType,
-    FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain, FrameS12mTimecode,
-    FrameSeiUnregistered, FrameSideData, FrameSideDataDescriptor, FrameSideDataFlags,
-    FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason,
-    FrameSphericalMapping, FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags,
-    FrameStereo3dPrimaryEye, FrameStereo3dType, FrameStereo3dView, FrameThreeDReferenceDisplay,
-    FrameThreeDReferenceDisplays, FrameVideoBlockParams, FrameVideoEncParams,
-    FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType, FrameVideoRect, FrameViewId,
-    VideoFrame,
+    FrameMatrixEncoding, FrameMotionVector, FrameMotionVectors, FrameOpaque, FramePanScan,
+    FramePictureType, FrameRegionOfInterest, FrameRegionsOfInterest, FrameReplayGain,
+    FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataDescriptor,
+    FrameSideDataFlags, FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples,
+    FrameSkipSamplesReason, FrameSphericalMapping, FrameSphericalProjection, FrameStereo3d,
+    FrameStereo3dFlags, FrameStereo3dPrimaryEye, FrameStereo3dType, FrameStereo3dView,
+    FrameThreeDReferenceDisplay, FrameThreeDReferenceDisplays, FrameVideoBlockParams,
+    FrameVideoEncParams, FrameVideoEncParamsType, FrameVideoHint, FrameVideoHintType,
+    FrameVideoRect, FrameViewId, VideoFrame,
 };
 pub use hash::{
     adler32, crc32_ieee, digest_to_base64, digest_to_hex, hash_name, md5, murmur3, murmur3_seeded,

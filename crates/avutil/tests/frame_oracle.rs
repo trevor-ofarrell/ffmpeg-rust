@@ -6,7 +6,7 @@ use std::{
 };
 
 use avutil::{
-    AudioFrame, AvErrorCode, BufferRef, ChannelLayout, Frame, FrameChromaLocation,
+    AudioFrame, AvErrorCode, BufferRef, ChannelLayout, Frame, FrameAlphaMode, FrameChromaLocation,
     FrameColorPrimaries, FrameColorRange, FrameColorSpace, FrameColorTransferCharacteristic,
     FrameData, FrameDecodeErrorFlags, FrameFlags, FramePictureType, FrameSideData,
     FrameSideDataFlags, FrameSideDataKind, FrameSideDataProperties, PixelFormat, Rational,
@@ -122,6 +122,8 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     video.set_decode_error_flags(
         FrameDecodeErrorFlags::INVALID_BITSTREAM | FrameDecodeErrorFlags::CONCEALMENT_ACTIVE,
     );
+    video.set_opaque_address(0x1234);
+    video.set_alpha_mode(FrameAlphaMode::Premultiplied);
     video.metadata_mut().set("encoder", "oracle").unwrap();
     rows.insert("frame:video-buffer".to_string(), frame_fields(&video));
 
@@ -203,6 +205,8 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copy_source.set_decode_error_flags(
         FrameDecodeErrorFlags::MISSING_REFERENCE | FrameDecodeErrorFlags::DECODE_SLICES,
     );
+    copy_source.set_opaque_address(0x2222);
+    copy_source.set_alpha_mode(FrameAlphaMode::Straight);
     copy_source.metadata_mut().set("title", "source").unwrap();
     copy_source
         .metadata_mut()
@@ -240,6 +244,8 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copy_destination.set_chroma_location(FrameChromaLocation::Center);
     copy_destination.set_best_effort_timestamp(Some(1000));
     copy_destination.set_decode_error_flags(FrameDecodeErrorFlags::INVALID_BITSTREAM);
+    copy_destination.set_opaque_address(0x3333);
+    copy_destination.set_alpha_mode(FrameAlphaMode::Premultiplied);
     copy_destination
         .metadata_mut()
         .set("title", "destination")
@@ -617,6 +623,8 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
             .unwrap_or(AV_NOPTS_VALUE)
             .to_string(),
         frame.decode_error_flags().bits().to_string(),
+        frame.opaque_address().unwrap_or(0).to_string(),
+        frame.alpha_mode().as_raw().to_string(),
         metadata_summary(frame.metadata()),
         kind.to_string(),
         format.to_string(),
@@ -1168,7 +1176,7 @@ static void print_frame(const char *name, const AVFrame *frame)
                           : 1;
     }
 
-    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%d/%d|%zu|%zu|%zu|%zu|%d|%c|%d|%d|%d|%d|%d|%d|%d|%d|%" PRId64 "|%d|",
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%d/%d|%zu|%zu|%zu|%zu|%d|%c|%d|%d|%d|%d|%d|%d|%d|%d|%" PRId64 "|%d|%" PRIuPTR "|%d|",
            name, frame->pts, frame->pkt_dts, frame->duration,
            frame->time_base.num, frame->time_base.den,
            frame->sample_aspect_ratio.num, frame->sample_aspect_ratio.den,
@@ -1178,7 +1186,8 @@ static void print_frame(const char *name, const AVFrame *frame)
            frame->repeat_pict, frame->flags, frame->color_range,
            frame->color_primaries, frame->color_trc, frame->colorspace,
            frame->chroma_location, frame->best_effort_timestamp,
-           frame->decode_error_flags);
+           frame->decode_error_flags, (uintptr_t)frame->opaque,
+           frame->alpha_mode);
     print_metadata_summary(frame->metadata);
     printf("|%s|%s|%d|%d|%d|%d|%d|", kind, format ? format : "none",
            frame->width, frame->height, frame->nb_samples, frame->sample_rate,
@@ -1345,6 +1354,8 @@ int main(void)
     video->decode_error_flags =
         FF_DECODE_ERROR_INVALID_BITSTREAM |
         FF_DECODE_ERROR_CONCEALMENT_ACTIVE;
+    video->opaque = (void *)(uintptr_t)0x1234;
+    video->alpha_mode = AVALPHA_MODE_PREMULTIPLIED;
     av_dict_set(&video->metadata, "encoder", "oracle", 0);
     fail_if(av_frame_get_buffer(video, 1) < 0,
             "video av_frame_get_buffer failed");
@@ -1414,6 +1425,8 @@ int main(void)
     copy_src->decode_error_flags =
         FF_DECODE_ERROR_MISSING_REFERENCE |
         FF_DECODE_ERROR_DECODE_SLICES;
+    copy_src->opaque = (void *)(uintptr_t)0x2222;
+    copy_src->alpha_mode = AVALPHA_MODE_STRAIGHT;
     av_dict_set(&copy_src->metadata, "title", "source", 0);
     av_dict_set(&copy_src->metadata, "artist", "libavutil", 0);
     fail_if(av_frame_get_buffer(copy_src, 1) < 0,
@@ -1454,6 +1467,8 @@ int main(void)
     copy_dst->chroma_location = AVCHROMA_LOC_CENTER;
     copy_dst->best_effort_timestamp = 1000;
     copy_dst->decode_error_flags = FF_DECODE_ERROR_INVALID_BITSTREAM;
+    copy_dst->opaque = (void *)(uintptr_t)0x3333;
+    copy_dst->alpha_mode = AVALPHA_MODE_PREMULTIPLIED;
     av_dict_set(&copy_dst->metadata, "title", "destination", 0);
     av_dict_set(&copy_dst->metadata, "keep", "destination", 0);
     fail_if(av_frame_get_buffer(copy_dst, 1) < 0,

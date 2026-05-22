@@ -10,8 +10,8 @@ use avutil::{
     BufferPool,
     AmbisonicChannelLayout, BufferPoolAllocation, BufferPoolCallbacks, BufferRef, Channel,
     ChannelCustom, ChannelId, ChannelLayout, ChannelLayoutSpec, CustomChannelLayout, Crc32, Frame,
-    FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAmbientViewingEnvironment,
-    FrameChromaLocation, FrameColorPrimaries, FrameColorRange, FrameColorSpace,
+    FrameA53ClosedCaptions, FrameActiveFormatDescription, FrameAlphaMode,
+    FrameAmbientViewingEnvironment, FrameChromaLocation, FrameColorPrimaries, FrameColorRange, FrameColorSpace,
     FrameColorTransferCharacteristic,
     NativeChannelMaskLayout,
     FrameAudioServiceType,
@@ -36,7 +36,7 @@ use avutil::{
     FrameHdrPlusOverlapProcessOption, FrameHdrVivid3SplineParams,
     FrameHdrVividColorToneMappingParams, FrameHdrVividColorTransformParams, FrameIccProfile,
     FrameLcevc, FrameMasteringDisplayMetadata, FrameMatrixEncoding, FrameMotionVector,
-    FrameMotionVectors, FramePanScan, FramePictureType, FrameRegionOfInterest, FrameRegionsOfInterest,
+    FrameMotionVectors, FrameOpaque, FramePanScan, FramePictureType, FrameRegionOfInterest, FrameRegionsOfInterest,
     FrameReplayGain, FrameS12mTimecode, FrameSeiUnregistered, FrameSideData, FrameSideDataFlags,
     FrameSideDataKind, FrameSideDataProperties, FrameSkipSamples, FrameSkipSamplesReason,
     FrameSphericalMapping, FrameSphericalProjection, FrameStereo3d, FrameStereo3dFlags,
@@ -2774,6 +2774,39 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         FrameDecodeErrorFlags::from_bits_truncate(u32::MAX).bits(),
         FrameDecodeErrorFlags::all().bits()
     );
+    assert_eq!(
+        FrameOpaque::new(0).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(FrameOpaque::from_address(0), None);
+    let frame_opaque_address = usize::from(cursor.next().unwrap_or_default()) + 1;
+    let frame_opaque = FrameOpaque::new(frame_opaque_address).unwrap();
+    assert_eq!(frame_opaque.address(), frame_opaque_address);
+    assert_eq!(
+        frame_opaque.nonzero_address().get(),
+        frame_opaque_address
+    );
+    assert_eq!(
+        FrameOpaque::from_address(frame_opaque_address),
+        Some(frame_opaque)
+    );
+    frame.set_opaque(Some(frame_opaque));
+    assert_eq!(frame.opaque(), Some(frame_opaque));
+    assert_eq!(frame.opaque_address(), Some(frame_opaque_address));
+    frame.set_opaque_address(0);
+    assert_eq!(frame.opaque(), None);
+    frame.set_opaque_address(frame_opaque_address);
+    assert_eq!(frame.opaque(), Some(frame_opaque));
+
+    let frame_alpha_mode =
+        pick_copy(cursor, &FrameAlphaMode::KNOWN).unwrap_or(FrameAlphaMode::Unspecified);
+    frame.set_alpha_mode(frame_alpha_mode);
+    assert_eq!(frame.alpha_mode(), frame_alpha_mode);
+    assert_eq!(
+        frame.set_alpha_mode_from_raw(3).unwrap_err().kind(),
+        AvErrorKind::InvalidData
+    );
+    assert_eq!(frame.alpha_mode(), frame_alpha_mode);
     let frame_color_range =
         pick_copy(cursor, &FrameColorRange::KNOWN).unwrap_or(FrameColorRange::Unspecified);
     frame.set_color_range(frame_color_range);
@@ -2859,6 +2892,8 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         shared_frame_payload.decode_error_flags(),
         frame.decode_error_flags()
     );
+    assert_eq!(shared_frame_payload.opaque(), Some(frame_opaque));
+    assert_eq!(shared_frame_payload.alpha_mode(), frame_alpha_mode);
     assert!(!frame.is_writable());
     frame.make_writable();
     assert!(frame.is_writable());
@@ -12385,6 +12420,8 @@ fn exercise_fixtures() {
     unref_frame
         .set_time_base(Rational::new(1, 48_000).unwrap())
         .unwrap();
+    unref_frame.set_opaque_address(0x1111);
+    unref_frame.set_alpha_mode(FrameAlphaMode::Straight);
     unref_frame.metadata_mut().set("title", "before-unref").unwrap();
     unref_frame
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
@@ -12396,6 +12433,8 @@ fn exercise_fixtures() {
     assert_eq!(unref_frame.pkt_dts(), None);
     assert_eq!(unref_frame.duration(), 0);
     assert_eq!(unref_frame.time_base(), Rational::ZERO);
+    assert_eq!(unref_frame.opaque_address(), None);
+    assert_eq!(unref_frame.alpha_mode(), FrameAlphaMode::Unspecified);
     assert!(unref_frame.metadata().is_empty());
     assert!(matches!(unref_frame.data(), FrameData::Empty));
     assert!(unref_frame.hw_frames_context().is_none());
@@ -12425,6 +12464,8 @@ fn exercise_fixtures() {
     source_frame
         .set_time_base(Rational::new(1, 90_000).unwrap())
         .unwrap();
+    source_frame.set_opaque_address(0x2222);
+    source_frame.set_alpha_mode(FrameAlphaMode::Premultiplied);
     source_frame.metadata_mut().set("title", "source").unwrap();
     source_frame
         .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, ref_side.clone())
@@ -12454,6 +12495,8 @@ fn exercise_fixtures() {
         referenced_frame.time_base(),
         Rational::new(1, 90_000).unwrap()
     );
+    assert_eq!(referenced_frame.opaque_address(), Some(0x2222));
+    assert_eq!(referenced_frame.alpha_mode(), FrameAlphaMode::Premultiplied);
     assert_eq!(referenced_frame.metadata().get("title"), Some("source"));
     referenced_frame
         .metadata_mut()
@@ -12513,6 +12556,8 @@ fn exercise_fixtures() {
     props_frame
         .set_time_base(Rational::new(1, 1_000).unwrap())
         .unwrap();
+    props_frame.set_opaque_address(0x3333);
+    props_frame.set_alpha_mode(FrameAlphaMode::Straight);
     props_frame
         .metadata_mut()
         .set("title", "destination")
@@ -12526,6 +12571,8 @@ fn exercise_fixtures() {
     assert_eq!(props_frame.pkt_dts(), Some(6));
     assert_eq!(props_frame.duration(), 5);
     assert_eq!(props_frame.time_base(), Rational::new(1, 90_000).unwrap());
+    assert_eq!(props_frame.opaque_address(), Some(0x2222));
+    assert_eq!(props_frame.alpha_mode(), FrameAlphaMode::Premultiplied);
     assert_eq!(props_frame.metadata().get("title"), Some("source"));
     assert_eq!(props_frame.metadata().get("keep"), Some("destination"));
     assert!(props_old_side_released.lock().unwrap().is_empty());
@@ -12555,7 +12602,11 @@ fn exercise_fixtures() {
     let mut moved_frame = Frame::empty();
     moved_frame.move_ref_from(&mut referenced_frame);
     assert!(referenced_frame.is_empty());
+    assert_eq!(referenced_frame.opaque_address(), None);
+    assert_eq!(referenced_frame.alpha_mode(), FrameAlphaMode::Unspecified);
     assert!(!moved_frame.is_empty());
+    assert_eq!(moved_frame.opaque_address(), Some(0x2222));
+    assert_eq!(moved_frame.alpha_mode(), FrameAlphaMode::Premultiplied);
     assert!(moved_frame.side_data()[0]
         .buffer()
         .shares_storage(&ref_side));

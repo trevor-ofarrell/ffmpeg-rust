@@ -2,6 +2,7 @@ use crate::{
     AvError, AvErrorCode, AvErrorKind, AvResult, BufferRef, ChannelLayout, ChannelLayoutSpec,
     Dictionary, MatchMode, PixelFormat, Rational, SampleFormat, SetMode,
 };
+use std::num::NonZeroUsize;
 
 const FFMPEG_FRAME_DEFAULT_ALIGNMENT: usize = 64;
 
@@ -691,6 +692,75 @@ impl FrameChromaLocation {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FrameOpaque {
+    address: NonZeroUsize,
+}
+
+impl FrameOpaque {
+    pub fn new(address: usize) -> AvResult<Self> {
+        let Some(address) = NonZeroUsize::new(address) else {
+            return Err(AvError::invalid_argument(
+                "frame opaque pointer address must not be zero",
+            ));
+        };
+
+        Ok(Self { address })
+    }
+
+    pub const fn from_nonzero(address: NonZeroUsize) -> Self {
+        Self { address }
+    }
+
+    pub fn from_address(address: usize) -> Option<Self> {
+        NonZeroUsize::new(address).map(Self::from_nonzero)
+    }
+
+    pub const fn address(self) -> usize {
+        self.address.get()
+    }
+
+    pub const fn nonzero_address(self) -> NonZeroUsize {
+        self.address
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(i32)]
+pub enum FrameAlphaMode {
+    #[default]
+    Unspecified = 0,
+    Premultiplied = 1,
+    Straight = 2,
+}
+
+impl FrameAlphaMode {
+    pub const KNOWN: [Self; 3] = [Self::Unspecified, Self::Premultiplied, Self::Straight];
+
+    pub fn from_raw(value: i32) -> AvResult<Self> {
+        match value {
+            0 => Ok(Self::Unspecified),
+            1 => Ok(Self::Premultiplied),
+            2 => Ok(Self::Straight),
+            _ => Err(AvError::invalid_data(format!(
+                "invalid frame alpha mode value {value}"
+            ))),
+        }
+    }
+
+    pub const fn as_raw(self) -> i32 {
+        self as i32
+    }
+
+    pub const fn ffmpeg_constant(self) -> &'static str {
+        match self {
+            Self::Unspecified => "AVALPHA_MODE_UNSPECIFIED",
+            Self::Premultiplied => "AVALPHA_MODE_PREMULTIPLIED",
+            Self::Straight => "AVALPHA_MODE_STRAIGHT",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Frame {
     pts: Option<i64>,
@@ -710,6 +780,8 @@ pub struct Frame {
     chroma_location: FrameChromaLocation,
     best_effort_timestamp: Option<i64>,
     decode_error_flags: FrameDecodeErrorFlags,
+    opaque: Option<FrameOpaque>,
+    alpha_mode: FrameAlphaMode,
     metadata: Dictionary,
     data: FrameData,
     hw_frames_context: Option<BufferRef>,
@@ -736,6 +808,8 @@ impl Frame {
             chroma_location: FrameChromaLocation::Unspecified,
             best_effort_timestamp: None,
             decode_error_flags: FrameDecodeErrorFlags::empty(),
+            opaque: None,
+            alpha_mode: FrameAlphaMode::Unspecified,
             metadata: Dictionary::new(),
             data: FrameData::Empty,
             hw_frames_context: None,
@@ -762,6 +836,8 @@ impl Frame {
             chroma_location: FrameChromaLocation::Unspecified,
             best_effort_timestamp: None,
             decode_error_flags: FrameDecodeErrorFlags::empty(),
+            opaque: None,
+            alpha_mode: FrameAlphaMode::Unspecified,
             metadata: Dictionary::new(),
             data: FrameData::Video(frame),
             hw_frames_context: None,
@@ -788,6 +864,8 @@ impl Frame {
             chroma_location: FrameChromaLocation::Unspecified,
             best_effort_timestamp: None,
             decode_error_flags: FrameDecodeErrorFlags::empty(),
+            opaque: None,
+            alpha_mode: FrameAlphaMode::Unspecified,
             metadata: Dictionary::new(),
             data: FrameData::Audio(frame),
             hw_frames_context: None,
@@ -813,6 +891,8 @@ impl Frame {
             && self.chroma_location == FrameChromaLocation::Unspecified
             && self.best_effort_timestamp.is_none()
             && self.decode_error_flags.is_empty()
+            && self.opaque.is_none()
+            && self.alpha_mode == FrameAlphaMode::Unspecified
             && self.metadata.is_empty()
             && self.data.is_empty()
             && self.hw_frames_context.is_none()
@@ -849,6 +929,8 @@ impl Frame {
         self.chroma_location = source.chroma_location;
         self.best_effort_timestamp = source.best_effort_timestamp;
         self.decode_error_flags = source.decode_error_flags;
+        self.opaque = source.opaque;
+        self.alpha_mode = source.alpha_mode;
         self.metadata
             .copy_from(
                 &source.metadata,
@@ -1054,6 +1136,43 @@ impl Frame {
 
     pub fn set_decode_error_flag(&mut self, flag: FrameDecodeErrorFlags, enabled: bool) {
         self.decode_error_flags.set(flag, enabled);
+    }
+
+    pub fn opaque(&self) -> Option<FrameOpaque> {
+        self.opaque
+    }
+
+    pub fn opaque_address(&self) -> Option<usize> {
+        self.opaque.map(FrameOpaque::address)
+    }
+
+    pub fn set_opaque(&mut self, opaque: Option<FrameOpaque>) {
+        self.opaque = opaque;
+    }
+
+    pub fn set_opaque_address(&mut self, address: usize) {
+        self.opaque = FrameOpaque::from_address(address);
+    }
+
+    pub fn take_opaque(&mut self) -> Option<FrameOpaque> {
+        self.opaque.take()
+    }
+
+    pub fn clear_opaque(&mut self) {
+        self.opaque = None;
+    }
+
+    pub fn alpha_mode(&self) -> FrameAlphaMode {
+        self.alpha_mode
+    }
+
+    pub fn set_alpha_mode(&mut self, alpha_mode: FrameAlphaMode) {
+        self.alpha_mode = alpha_mode;
+    }
+
+    pub fn set_alpha_mode_from_raw(&mut self, value: i32) -> AvResult<()> {
+        self.alpha_mode = FrameAlphaMode::from_raw(value)?;
+        Ok(())
     }
 
     pub fn metadata(&self) -> &Dictionary {
@@ -18983,6 +19102,73 @@ mod tests {
     }
 
     #[test]
+    fn frame_alpha_mode_values_match_ffmpeg_8_1_1_header() {
+        let alpha_modes = [
+            (FrameAlphaMode::Unspecified, 0, "AVALPHA_MODE_UNSPECIFIED"),
+            (
+                FrameAlphaMode::Premultiplied,
+                1,
+                "AVALPHA_MODE_PREMULTIPLIED",
+            ),
+            (FrameAlphaMode::Straight, 2, "AVALPHA_MODE_STRAIGHT"),
+        ];
+        assert_eq!(
+            FrameAlphaMode::KNOWN,
+            alpha_modes.map(|(value, _, _)| value)
+        );
+        for (value, raw, constant) in alpha_modes {
+            assert_eq!(value.as_raw(), raw);
+            assert_eq!(value.ffmpeg_constant(), constant);
+            assert_eq!(FrameAlphaMode::from_raw(raw).unwrap(), value);
+        }
+        assert_eq!(
+            FrameAlphaMode::from_raw(3).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+
+        let mut frame = Frame::empty();
+        frame.set_alpha_mode(FrameAlphaMode::Straight);
+        assert_eq!(
+            frame.set_alpha_mode_from_raw(3).unwrap_err().kind(),
+            AvErrorKind::InvalidData
+        );
+        assert_eq!(frame.alpha_mode(), FrameAlphaMode::Straight);
+        frame.set_alpha_mode_from_raw(1).unwrap();
+        assert_eq!(frame.alpha_mode(), FrameAlphaMode::Premultiplied);
+    }
+
+    #[test]
+    fn frame_opaque_address_tracks_nullable_raw_pointer_metadata() {
+        assert_eq!(
+            FrameOpaque::new(0).unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+        assert_eq!(FrameOpaque::from_address(0), None);
+
+        let opaque = FrameOpaque::new(0x1234).unwrap();
+        assert_eq!(opaque.address(), 0x1234);
+        assert_eq!(opaque.nonzero_address().get(), 0x1234);
+        assert_eq!(FrameOpaque::from_address(0x1234), Some(opaque));
+
+        let mut src = Frame::empty();
+        src.set_opaque(Some(opaque));
+        assert_eq!(src.opaque(), Some(opaque));
+        assert_eq!(src.opaque_address(), Some(0x1234));
+
+        let mut dst = Frame::empty();
+        dst.copy_props_from(&src);
+        assert_eq!(dst.opaque(), Some(opaque));
+        assert_eq!(dst.take_opaque(), Some(opaque));
+        assert_eq!(dst.opaque(), None);
+        dst.set_opaque_address(0);
+        assert_eq!(dst.opaque_address(), None);
+        dst.set_opaque_address(0xabcd);
+        assert_eq!(dst.opaque_address(), Some(0xabcd));
+        dst.clear_opaque();
+        assert_eq!(dst.opaque(), None);
+    }
+
+    #[test]
     fn empty_frame_unref_clears_data_and_releases_references() {
         let plane_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let plane_capture = std::sync::Arc::clone(&plane_released);
@@ -19040,6 +19226,8 @@ mod tests {
         frame.set_decode_error_flags(
             FrameDecodeErrorFlags::INVALID_BITSTREAM | FrameDecodeErrorFlags::CONCEALMENT_ACTIVE,
         );
+        frame.set_opaque_address(0x1111);
+        frame.set_alpha_mode(FrameAlphaMode::Straight);
         frame.metadata_mut().set("title", "before-unref").unwrap();
         frame
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, side)
@@ -19069,6 +19257,8 @@ mod tests {
         assert_eq!(frame.chroma_location(), FrameChromaLocation::Unspecified);
         assert_eq!(frame.best_effort_timestamp(), None);
         assert!(frame.decode_error_flags().is_empty());
+        assert_eq!(frame.opaque_address(), None);
+        assert_eq!(frame.alpha_mode(), FrameAlphaMode::Unspecified);
         assert!(frame.metadata().is_empty());
         assert!(matches!(frame.data(), FrameData::Empty));
         assert!(frame.hw_frames_context().is_none());
@@ -19120,6 +19310,8 @@ mod tests {
         source.set_decode_error_flags(
             FrameDecodeErrorFlags::MISSING_REFERENCE | FrameDecodeErrorFlags::DECODE_SLICES,
         );
+        source.set_opaque_address(0x2222);
+        source.set_alpha_mode(FrameAlphaMode::Premultiplied);
         source.metadata_mut().set("title", "source").unwrap();
         source
             .set_side_data_kind_buffer(FrameSideDataKind::DisplayMatrix, source_side.clone())
@@ -19172,6 +19364,8 @@ mod tests {
         assert!(destination
             .decode_error_flags()
             .contains(FrameDecodeErrorFlags::DECODE_SLICES));
+        assert_eq!(destination.opaque_address(), Some(0x2222));
+        assert_eq!(destination.alpha_mode(), FrameAlphaMode::Premultiplied);
         assert_eq!(destination.metadata().get("title"), Some("source"));
         destination
             .metadata_mut()
@@ -19240,6 +19434,8 @@ mod tests {
         source.set_chroma_location(FrameChromaLocation::Left);
         source.set_best_effort_timestamp(Some(8));
         source.set_decode_error_flags(FrameDecodeErrorFlags::CONCEALMENT_ACTIVE);
+        source.set_opaque_address(0x3333);
+        source.set_alpha_mode(FrameAlphaMode::Straight);
         source.metadata_mut().set("title", "move-source").unwrap();
 
         let destination_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -19285,8 +19481,12 @@ mod tests {
             destination.decode_error_flags(),
             FrameDecodeErrorFlags::CONCEALMENT_ACTIVE
         );
+        assert_eq!(destination.opaque_address(), Some(0x3333));
+        assert_eq!(destination.alpha_mode(), FrameAlphaMode::Straight);
         assert_eq!(source.best_effort_timestamp(), None);
         assert!(source.decode_error_flags().is_empty());
+        assert_eq!(source.opaque_address(), None);
+        assert_eq!(source.alpha_mode(), FrameAlphaMode::Unspecified);
         assert_eq!(destination.metadata().get("title"), Some("move-source"));
         assert!(source.metadata().is_empty());
         assert!(matches!(destination.data(), FrameData::Video(_)));
@@ -19335,6 +19535,8 @@ mod tests {
         source.set_decode_error_flags(
             FrameDecodeErrorFlags::MISSING_REFERENCE | FrameDecodeErrorFlags::DECODE_SLICES,
         );
+        source.set_opaque_address(0x4444);
+        source.set_alpha_mode(FrameAlphaMode::Straight);
         source.metadata_mut().set("title", "source").unwrap();
         source.metadata_mut().set("artist", "libavutil").unwrap();
         source
@@ -19389,6 +19591,8 @@ mod tests {
         destination.set_chroma_location(FrameChromaLocation::Center);
         destination.set_best_effort_timestamp(Some(1000));
         destination.set_decode_error_flags(FrameDecodeErrorFlags::INVALID_BITSTREAM);
+        destination.set_opaque_address(0x5555);
+        destination.set_alpha_mode(FrameAlphaMode::Premultiplied);
         destination
             .metadata_mut()
             .set("title", "destination")
@@ -19435,6 +19639,8 @@ mod tests {
         assert!(!destination
             .decode_error_flags()
             .contains(FrameDecodeErrorFlags::INVALID_BITSTREAM));
+        assert_eq!(destination.opaque_address(), Some(0x4444));
+        assert_eq!(destination.alpha_mode(), FrameAlphaMode::Straight);
         assert_eq!(destination.metadata().get("title"), Some("source"));
         assert_eq!(destination.metadata().get("artist"), Some("libavutil"));
         assert_eq!(destination.metadata().get("keep"), Some("destination"));
