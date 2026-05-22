@@ -127,6 +127,8 @@ The rawvideo-facing paletted subset now includes FFmpeg's `pal8` name. The share
 
 `PacketOpaque` models `AVPacket.opaque` as nullable, non-dereferenceable raw address metadata. Null input maps to `None`; nonzero addresses copy through `ref_from` and `copy_props_from`, transfer through `move_ref_from`, can be taken or cleared explicitly, and reset on `unref` without any Rust-side ownership or pointer dereference.
 
+`Packet::init_legacy` models the deterministic field-reset shape of pinned FFmpeg 8.1.1 `av_init_packet()` for legacy callers: existing payload data/size are preserved, while PTS/DTS, position, duration, stream index, flags, side data, opaque metadata, `opaque_ref`, and `time_base` reset to the observed C API values. Because this is safe Rust, clearing side data and `opaque_ref` releases owned storage instead of reproducing C misuse or leak side effects from calling `av_init_packet()` on an owned packet.
+
 `PacketPalette` covers `AV_PKT_DATA_PALETTE` as the fixed `AVPALETTE_SIZE` payload, preserving the 256 four-byte palette entries and exposing raw entry bytes plus native `u32` views with exact-length validation.
 
 `PacketNewExtradata` covers `AV_PKT_DATA_NEW_EXTRADATA` as an embedded replacement extradata byte buffer. The current model preserves the raw bytes, including empty buffers, and does not interpret codec-specific extradata formats.

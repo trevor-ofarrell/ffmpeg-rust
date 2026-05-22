@@ -87,6 +87,9 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "packet:default".to_string(),
         packet_fields(&Packet::default()),
     );
+    let mut init = packet_with_common_props();
+    init.init_legacy();
+    rows.insert("packet:init".to_string(), packet_fields(&init));
     insert_side_data_kind_inventory_row(&mut rows);
     insert_side_data_payload_layout_rows(&mut rows);
 
@@ -1632,6 +1635,11 @@ int main(void) {
     AVPacket *pkt = new_packet();
     print_packet("packet:default", pkt);
     av_packet_free(&pkt);
+
+    pkt = packet_with_common_props();
+    av_init_packet(pkt);
+    print_packet("packet:init", pkt);
+    av_free(pkt);
 
     print_side_data_kind_inventory();
     print_side_data_payload_layouts();
