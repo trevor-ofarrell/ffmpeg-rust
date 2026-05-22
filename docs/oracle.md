@@ -206,8 +206,10 @@ best-effort timestamp, public decode-error flags, nullable non-dereferenceable
 opaque pointer metadata, BufferRef-backed opaque_ref user storage, alpha_mode,
 and top-level frame metadata propagation through ref/move/copy-props rows,
 `av_frame_get_buffer` for a gray8 video frame, a packed s16 stereo audio
-frame, and planar 10-channel s16p direct-slot versus extended-buffer
-topology, `AV_FRAME_DATA_*` numeric
+frame, planar 10-channel s16p direct-slot versus extended-buffer topology with
+direct and extended `av_buffer_is_writable()` counts, and packed 10-channel s16
+audio showing that high channel count alone does not allocate extended buffers,
+`AV_FRAME_DATA_*` numeric
 values/names/descriptors/properties, `AV_FRAME_SIDE_DATA_FLAG_*`,
 `AV_SIDE_DATA_PROP_*`, and `av_frame_new_side_data` / `av_frame_get_side_data`
 / `av_frame_remove_side_data` displaymatrix rows against the Rust `Frame`

@@ -546,12 +546,15 @@ differential_tests = [
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
-# `AV_NUM_DATA_POINTERS = 8` plus planar 10-channel s16p buffer topology:
-# eight direct `data[]`/`buf[]` slots, ten valid `extended_data` pointers,
-# two `extended_buf` refs, and a separate extended-data array. Rust exposes
-# this through safe `FrameBufferTopology` counts on FrameData/Frame,
-# VideoFrame, and AudioFrame, with unit and avutil_core_models fuzz-smoke
-# invariants for planar extended audio and packed ten-channel audio.
+# `AV_NUM_DATA_POINTERS = 8` plus direct/extended `AVBufferRef` topology and
+# `av_buffer_is_writable()` counts. Planar 10-channel s16p audio has eight
+# direct `data[]`/`buf[]` slots, ten valid `extended_data` pointers, two
+# `extended_buf` refs, and writable direct/extended refs from `av_frame_get_buffer`.
+# Packed 10-channel s16 audio remains one direct writable buffer with no
+# separate extended-data array. Rust exposes this through safe
+# `FrameBufferTopology` counts on FrameData/Frame, VideoFrame, and AudioFrame,
+# with unit and avutil_core_models fuzz-smoke invariants for planar extended
+# audio, packed ten-channel audio, and a readonly direct audio plane.
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
 # top-level `sample_rate` and `ch_layout.nb_channels` defaults plus
 # `av_frame_ref`, `av_frame_move_ref`, `av_frame_unref`, and

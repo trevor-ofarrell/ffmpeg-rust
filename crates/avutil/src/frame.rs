@@ -13,23 +13,38 @@ pub struct FrameBufferTopology {
     direct_data_slots: usize,
     direct_buffer_refs: usize,
     extended_buffer_refs: usize,
+    writable_direct_buffer_refs: usize,
+    writable_extended_buffer_refs: usize,
     uses_separate_extended_data: bool,
 }
 
 impl FrameBufferTopology {
-    const fn from_data_pointer_count(data_pointer_count: usize) -> Self {
+    fn from_plane_buffers(plane_buffers: &[BufferRef]) -> Self {
+        let data_pointer_count = plane_buffers.len();
         let direct_slots = if data_pointer_count < AV_NUM_DATA_POINTERS {
             data_pointer_count
         } else {
             AV_NUM_DATA_POINTERS
         };
         let extended_refs = data_pointer_count.saturating_sub(AV_NUM_DATA_POINTERS);
+        let writable_direct_refs = plane_buffers
+            .iter()
+            .take(AV_NUM_DATA_POINTERS)
+            .filter(|buffer| buffer.is_writable())
+            .count();
+        let writable_extended_refs = plane_buffers
+            .iter()
+            .skip(AV_NUM_DATA_POINTERS)
+            .filter(|buffer| buffer.is_writable())
+            .count();
 
         Self {
             data_pointer_count,
             direct_data_slots: direct_slots,
             direct_buffer_refs: direct_slots,
             extended_buffer_refs: extended_refs,
+            writable_direct_buffer_refs: writable_direct_refs,
+            writable_extended_buffer_refs: writable_extended_refs,
             uses_separate_extended_data: data_pointer_count > AV_NUM_DATA_POINTERS,
         }
     }
@@ -48,6 +63,14 @@ impl FrameBufferTopology {
 
     pub const fn extended_buffer_refs(self) -> usize {
         self.extended_buffer_refs
+    }
+
+    pub const fn writable_direct_buffer_refs(self) -> usize {
+        self.writable_direct_buffer_refs
+    }
+
+    pub const fn writable_extended_buffer_refs(self) -> usize {
+        self.writable_extended_buffer_refs
     }
 
     pub const fn uses_separate_extended_data(self) -> bool {
@@ -13190,7 +13213,7 @@ impl VideoFrame {
     }
 
     pub fn buffer_topology(&self) -> FrameBufferTopology {
-        FrameBufferTopology::from_data_pointer_count(self.plane_buffers.len())
+        FrameBufferTopology::from_plane_buffers(&self.plane_buffers)
     }
 
     pub fn is_writable(&self) -> bool {
@@ -13610,7 +13633,7 @@ impl AudioFrame {
     }
 
     pub fn buffer_topology(&self) -> FrameBufferTopology {
-        FrameBufferTopology::from_data_pointer_count(self.plane_buffers.len())
+        FrameBufferTopology::from_plane_buffers(&self.plane_buffers)
     }
 
     pub fn is_writable(&self) -> bool {
@@ -19015,6 +19038,11 @@ mod tests {
         assert_eq!(planar_topology.direct_data_slots(), AV_NUM_DATA_POINTERS);
         assert_eq!(planar_topology.direct_buffer_refs(), AV_NUM_DATA_POINTERS);
         assert_eq!(planar_topology.extended_buffer_refs(), 2);
+        assert_eq!(
+            planar_topology.writable_direct_buffer_refs(),
+            AV_NUM_DATA_POINTERS
+        );
+        assert_eq!(planar_topology.writable_extended_buffer_refs(), 2);
         assert!(planar_topology.uses_separate_extended_data());
 
         let planar_frame = Frame::audio(planar_audio);
@@ -19027,7 +19055,19 @@ mod tests {
         assert_eq!(packed_topology.direct_data_slots(), 1);
         assert_eq!(packed_topology.direct_buffer_refs(), 1);
         assert_eq!(packed_topology.extended_buffer_refs(), 0);
+        assert_eq!(packed_topology.writable_direct_buffer_refs(), 1);
+        assert_eq!(packed_topology.writable_extended_buffer_refs(), 0);
         assert!(!packed_topology.uses_separate_extended_data());
+
+        let readonly_plane = BufferRef::from_vec_with_len_readonly(vec![0, 0, 99], 2).unwrap();
+        let readonly_audio =
+            AudioFrame::new_with_buffer_refs(48_000, 1, SampleFormat::S16, 1, vec![readonly_plane])
+                .unwrap();
+        let readonly_topology = readonly_audio.buffer_topology();
+        assert_eq!(readonly_topology.data_pointer_count(), 1);
+        assert_eq!(readonly_topology.direct_buffer_refs(), 1);
+        assert_eq!(readonly_topology.writable_direct_buffer_refs(), 0);
+        assert_eq!(readonly_topology.writable_extended_buffer_refs(), 0);
 
         let video = VideoFrame::new(
             2,
@@ -19040,6 +19080,8 @@ mod tests {
         assert_eq!(video_topology.data_pointer_count(), 4);
         assert_eq!(video_topology.direct_data_slots(), 4);
         assert_eq!(video_topology.extended_buffer_refs(), 0);
+        assert_eq!(video_topology.writable_direct_buffer_refs(), 4);
+        assert_eq!(video_topology.writable_extended_buffer_refs(), 0);
         assert!(!video_topology.uses_separate_extended_data());
     }
 

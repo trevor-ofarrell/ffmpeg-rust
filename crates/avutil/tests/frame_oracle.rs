@@ -194,6 +194,12 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "frame:audio-extended-topology".to_string(),
         frame_buffer_topology_fields(&extended_audio),
     );
+    let packed_ten_channel_audio =
+        Frame::audio(AudioFrame::new(48_000, 10, SampleFormat::S16, 1, vec![vec![0; 20]]).unwrap());
+    rows.insert(
+        "frame:audio-packed-ten-topology".to_string(),
+        frame_buffer_topology_fields(&packed_ten_channel_audio),
+    );
 
     let copy_source_side = (1..=36).collect::<Vec<u8>>();
     let copy_source_video =
@@ -683,6 +689,8 @@ fn frame_buffer_topology_values(topology: FrameBufferTopology) -> Vec<String> {
         topology.data_pointer_count().to_string(),
         topology.direct_buffer_refs().to_string(),
         topology.extended_buffer_refs().to_string(),
+        topology.writable_direct_buffer_refs().to_string(),
+        topology.writable_extended_buffer_refs().to_string(),
         bool_field(topology.uses_separate_extended_data()),
     ]
 }
@@ -1130,13 +1138,18 @@ static void print_frame_buffer_topology(const char *name, const AVFrame *frame)
     int direct_data_slots = 0;
     int extended_data_pointers = 0;
     int direct_buffer_refs = 0;
+    int writable_direct_buffer_refs = 0;
+    int writable_extended_buffer_refs = 0;
     int data_pointer_count = frame_data_pointer_count(frame);
 
     for (int i = 0; i < AV_NUM_DATA_POINTERS; i++) {
         if (frame->data[i] != NULL)
             direct_data_slots++;
-        if (frame->buf[i] != NULL)
+        if (frame->buf[i] != NULL) {
             direct_buffer_refs++;
+            if (av_buffer_is_writable(frame->buf[i]))
+                writable_direct_buffer_refs++;
+        }
     }
 
     if (frame->extended_data != NULL) {
@@ -1145,9 +1158,16 @@ static void print_frame_buffer_topology(const char *name, const AVFrame *frame)
                 extended_data_pointers++;
     }
 
-    printf("%s|%d|%d|%d|%d|%d|%d\n", name, AV_NUM_DATA_POINTERS,
+    for (int i = 0; i < frame->nb_extended_buf; i++) {
+        if (frame->extended_buf[i] != NULL &&
+            av_buffer_is_writable(frame->extended_buf[i]))
+            writable_extended_buffer_refs++;
+    }
+
+    printf("%s|%d|%d|%d|%d|%d|%d|%d|%d\n", name, AV_NUM_DATA_POINTERS,
            direct_data_slots, extended_data_pointers, direct_buffer_refs,
-           frame->nb_extended_buf,
+           frame->nb_extended_buf, writable_direct_buffer_refs,
+           writable_extended_buffer_refs,
            frame->extended_data != NULL && frame->extended_data != frame->data);
 }
 
@@ -1531,6 +1551,17 @@ int main(void)
     print_frame_buffer_topology("frame:audio-extended-topology",
                                 extended_audio);
 
+    AVFrame *packed_ten_audio = av_frame_alloc();
+    fail_if(!packed_ten_audio, "packed_ten_audio av_frame_alloc failed");
+    packed_ten_audio->format = AV_SAMPLE_FMT_S16;
+    packed_ten_audio->sample_rate = 48000;
+    packed_ten_audio->nb_samples = 1;
+    av_channel_layout_default(&packed_ten_audio->ch_layout, 10);
+    fail_if(av_frame_get_buffer(packed_ten_audio, 1) < 0,
+            "packed_ten_audio av_frame_get_buffer failed");
+    print_frame_buffer_topology("frame:audio-packed-ten-topology",
+                                packed_ten_audio);
+
     AVFrame *copy_src = av_frame_alloc();
     fail_if(!copy_src, "copy_src av_frame_alloc failed");
     copy_src->format = AV_PIX_FMT_GRAY8;
@@ -1852,6 +1883,7 @@ int main(void)
     av_frame_free(&side_frame);
     av_frame_free(&copy_dst);
     av_frame_free(&copy_src);
+    av_frame_free(&packed_ten_audio);
     av_frame_free(&extended_audio);
     av_frame_free(&audio);
     av_frame_free(&move_dst);

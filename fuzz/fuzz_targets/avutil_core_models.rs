@@ -11864,6 +11864,11 @@ fn exercise_fixtures() {
         AV_NUM_DATA_POINTERS
     );
     assert_eq!(extended_topology.extended_buffer_refs(), 2);
+    assert_eq!(
+        extended_topology.writable_direct_buffer_refs(),
+        AV_NUM_DATA_POINTERS
+    );
+    assert_eq!(extended_topology.writable_extended_buffer_refs(), 2);
     assert!(extended_topology.uses_separate_extended_data());
     assert_eq!(Frame::audio(extended_audio).buffer_topology(), extended_topology);
     let packed_ten_channel_audio =
@@ -11873,6 +11878,8 @@ fn exercise_fixtures() {
     assert_eq!(packed_topology.direct_data_slots(), 1);
     assert_eq!(packed_topology.direct_buffer_refs(), 1);
     assert_eq!(packed_topology.extended_buffer_refs(), 0);
+    assert_eq!(packed_topology.writable_direct_buffer_refs(), 1);
+    assert_eq!(packed_topology.writable_extended_buffer_refs(), 0);
     assert!(!packed_topology.uses_separate_extended_data());
     assert_eq!(
         ChannelLayoutSpec::parse("2 channels (FL+FR)").unwrap(),
