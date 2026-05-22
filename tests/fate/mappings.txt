@@ -25,7 +25,7 @@ avformat-streamhash-muxer|local-avformat-streamhash-unit|.|cargo|test|-p|avforma
 avutil-error|local-avutil-unit|.|cargo|test|-p|avutil|error
 avutil-rational|local-avutil-unit|.|cargo|test|-p|avutil|rational
 avutil-timebase|local-avutil-unit|.|cargo|test|-p|avutil|timebase
-avutil-packet|local-avutil-unit|.|cargo|test|-p|avutil|packet
+avutil-packet|local-avutil-unit|.|cargo|test|-p|avutil|--lib|packet
 avutil-buffer|local-avutil-unit|.|cargo|test|-p|avutil|buffer
 avutil-frame|local-avutil-unit|.|cargo|test|-p|avutil|frame
 avutil-logging|local-avutil-unit|.|cargo|test|-p|avutil|logging
