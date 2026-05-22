@@ -893,6 +893,11 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     let realloc_empty = realloc_empty.expect("nullable realloc allocates");
     assert_eq!(realloc_empty.len(), payload_len);
     assert!(realloc_empty.is_writable());
+    let mut realloc_zero_empty = None;
+    BufferRef::realloc(&mut realloc_zero_empty, 0).unwrap();
+    let realloc_zero_empty = realloc_zero_empty.expect("nullable zero realloc allocates");
+    assert_eq!(realloc_zero_empty.len(), 0);
+    assert!(realloc_zero_empty.is_writable());
     let mut realloc_existing = Some(BufferRef::copy_from_slice(&payload));
     BufferRef::realloc(&mut realloc_existing, resize_len).unwrap();
     let realloc_existing = realloc_existing.expect("existing realloc stays present");
@@ -901,6 +906,11 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
         &realloc_existing.as_slice()[..realloc_prefix_len],
         &payload[..realloc_prefix_len]
     );
+    let mut realloc_to_zero = Some(BufferRef::copy_from_slice(&payload));
+    BufferRef::realloc(&mut realloc_to_zero, 0).unwrap();
+    let realloc_to_zero = realloc_to_zero.expect("existing zero realloc stays present");
+    assert!(realloc_to_zero.is_empty());
+    assert!(realloc_to_zero.is_writable());
     let same_len_source = BufferRef::copy_from_slice(&payload);
     let mut same_len_ref = Some(BufferRef::ref_from(&same_len_source));
     let same_len_ptr = same_len_ref.as_ref().unwrap().as_ptr();

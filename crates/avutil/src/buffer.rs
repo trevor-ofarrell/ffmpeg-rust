@@ -2012,6 +2012,15 @@ mod tests {
         assert_eq!(std::sync::Arc::as_ptr(&shrunk.data), reallocatable_storage);
         assert_eq!(shrunk.as_slice(), &[4, 5]);
 
+        let mut empty_zero = None;
+        BufferRef::realloc(&mut empty_zero, 0).unwrap();
+        let empty_zero = empty_zero.expect("zero-size realloc null allocates a ref");
+        assert_eq!(empty_zero.len(), 0);
+        assert_eq!(empty_zero.allocated_len(), 0);
+        assert!(empty_zero.is_writable());
+        assert_eq!(empty_zero.strong_count(), 1);
+        assert!(empty_zero.data.reallocatable);
+
         let mut ordinary = Some(BufferRef::from_vec(vec![11, 12, 13]));
         let ordinary_storage = std::sync::Arc::as_ptr(&ordinary.as_ref().unwrap().data);
         BufferRef::realloc(&mut ordinary, 5).unwrap();
@@ -2019,6 +2028,14 @@ mod tests {
         assert_ne!(std::sync::Arc::as_ptr(&ordinary.data), ordinary_storage);
         assert!(ordinary.data.reallocatable);
         assert_eq!(&ordinary.as_slice()[..3], &[11, 12, 13]);
+
+        let mut ordinary_zero = Some(BufferRef::from_vec(vec![31, 32, 33]));
+        BufferRef::realloc(&mut ordinary_zero, 0).unwrap();
+        let ordinary_zero = ordinary_zero.expect("ordinary zero-size realloc result");
+        assert_eq!(ordinary_zero.len(), 0);
+        assert!(ordinary_zero.as_slice().is_empty());
+        assert!(ordinary_zero.is_writable());
+        assert!(ordinary_zero.data.reallocatable);
 
         let custom_released =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::<(usize, Vec<u8>)>::new()));

@@ -259,6 +259,14 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     rows.insert("buffer:realloc-shrink".to_string(), buffer_fields(&grow));
 
+    let mut realloc_zero = Some(BufferRef::from_vec(vec![9, 10, 11]));
+    BufferRef::realloc(&mut realloc_zero, 0).unwrap();
+    rows.insert("buffer:realloc-zero-ret".to_string(), vec!["0".to_string()]);
+    rows.insert(
+        "buffer:realloc-zero".to_string(),
+        buffer_status_fields(realloc_zero.as_ref().expect("zero realloc result")),
+    );
+
     let realloc_src = BufferRef::from_vec(vec![7, 7, 7]);
     let mut realloc_dst = realloc_src.clone();
     realloc_dst.resize(5).unwrap();
@@ -378,6 +386,21 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "buffer:realloc-null-grow".to_string(),
         buffer_status_fields(&realloc_null),
+    );
+
+    let mut realloc_null_zero = None;
+    BufferRef::realloc(&mut realloc_null_zero, 0).unwrap();
+    rows.insert(
+        "buffer:realloc-null-zero-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "buffer:realloc-null-zero".to_string(),
+        buffer_status_fields(
+            realloc_null_zero
+                .as_ref()
+                .expect("nullable zero realloc result"),
+        ),
     );
 
     let offset_src = BufferRef::from_vec(vec![10, 11, 12, 13]);
@@ -992,6 +1015,15 @@ int main(void) {
     print_buffer("buffer:realloc-shrink", grow);
     av_buffer_unref(&grow);
 
+    static const uint8_t realloc_zero_bytes[] = { 9, 10, 11 };
+    AVBufferRef *realloc_zero = av_buffer_allocz(3);
+    fail_if(!realloc_zero, "av_buffer_allocz realloc_zero failed");
+    fill_bytes(realloc_zero, realloc_zero_bytes, sizeof(realloc_zero_bytes));
+    ret = av_buffer_realloc(&realloc_zero, 0);
+    printf("buffer:realloc-zero-ret|%d\n", ret);
+    print_status("buffer:realloc-zero", realloc_zero);
+    av_buffer_unref(&realloc_zero);
+
     static const uint8_t realloc_shared_bytes[] = { 7, 7, 7 };
     AVBufferRef *realloc_src = av_buffer_allocz(3);
     fail_if(!realloc_src, "av_buffer_allocz realloc_src failed");
@@ -1083,6 +1115,12 @@ int main(void) {
     printf("buffer:realloc-null-grow-ret|%d\n", ret);
     print_status("buffer:realloc-null-grow", realloc_null);
     av_buffer_unref(&realloc_null);
+
+    AVBufferRef *realloc_null_zero = NULL;
+    ret = av_buffer_realloc(&realloc_null_zero, 0);
+    printf("buffer:realloc-null-zero-ret|%d\n", ret);
+    print_status("buffer:realloc-null-zero", realloc_null_zero);
+    av_buffer_unref(&realloc_null_zero);
 
     static const uint8_t offset_bytes[] = { 10, 11, 12, 13 };
     AVBufferRef *offset_src = av_buffer_allocz(4);
