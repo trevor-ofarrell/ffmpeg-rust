@@ -66,6 +66,19 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         "frame:alloc-default".to_string(),
         frame_fields(&Frame::empty()),
     );
+    let mut empty_make_writable = Frame::empty();
+    let empty_make_writable_ret = empty_make_writable
+        .try_make_writable()
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:empty-make-writable-ret".to_string(),
+        vec![empty_make_writable_ret.to_string()],
+    );
+    rows.insert(
+        "frame:empty-after-make-writable".to_string(),
+        frame_fields(&empty_make_writable),
+    );
     rows.insert(
         "frame:side-kind-inventory".to_string(),
         frame_side_data_inventory_fields(),
@@ -2105,6 +2118,9 @@ int main(void)
     AVFrame *empty = av_frame_alloc();
     fail_if(!empty, "av_frame_alloc failed");
     print_frame("frame:alloc-default", empty);
+    int empty_make_writable_ret = av_frame_make_writable(empty);
+    printf("frame:empty-make-writable-ret|%d\n", empty_make_writable_ret);
+    print_frame("frame:empty-after-make-writable", empty);
     av_frame_free(&empty);
 
     print_side_kind_inventory();

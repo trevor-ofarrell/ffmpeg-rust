@@ -100,11 +100,20 @@ impl FrameData {
     }
 
     pub fn make_writable(&mut self) {
+        let _ = self.try_make_writable();
+    }
+
+    pub fn try_make_writable(&mut self) -> AvResult<()> {
         match self {
-            Self::Empty => {}
+            Self::Empty => {
+                return Err(AvError::invalid_argument(
+                    "frame data must be allocated before making it writable",
+                ));
+            }
             Self::Video(frame) => frame.make_writable(),
             Self::Audio(frame) => frame.make_writable(),
         }
+        Ok(())
     }
 
     pub fn buffer_topology(&self) -> FrameBufferTopology {
@@ -1438,6 +1447,10 @@ impl Frame {
 
     pub fn make_writable(&mut self) {
         self.data.make_writable();
+    }
+
+    pub fn try_make_writable(&mut self) -> AvResult<()> {
+        self.data.try_make_writable()
     }
 
     pub fn side_data_is_writable(&self) -> bool {
@@ -21061,6 +21074,35 @@ mod tests {
         );
         assert_eq!(cloned_video.planes(), &[vec![1, 2, 3, 4]]);
         assert_eq!(source.as_slice(), &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn frame_try_make_writable_matches_empty_error_and_valid_detach() {
+        let mut empty_data = FrameData::Empty;
+        let data_err = empty_data.try_make_writable().unwrap_err();
+        assert_eq!(data_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(data_err.code(), Some(AvErrorCode::EINVAL));
+        assert!(matches!(empty_data, FrameData::Empty));
+
+        let mut empty_frame = Frame::empty();
+        let frame_err = empty_frame.try_make_writable().unwrap_err();
+        assert_eq!(frame_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(frame_err.code(), Some(AvErrorCode::EINVAL));
+        assert!(empty_frame.is_empty());
+
+        let source = BufferRef::from_vec_readonly(vec![9, 8, 7, 6]);
+        let video =
+            VideoFrame::new_with_buffer_refs(2, 2, PixelFormat::Gray8, vec![source.clone()])
+                .unwrap();
+        let mut frame = Frame::video(video);
+        assert!(!frame.is_writable());
+        frame.try_make_writable().unwrap();
+        assert!(frame.is_writable());
+        let FrameData::Video(video) = frame.data() else {
+            panic!("try_make_writable changed frame variant");
+        };
+        assert!(!video.plane_buffers()[0].shares_storage(&source));
+        assert_eq!(video.planes(), &[vec![9, 8, 7, 6]]);
     }
 
     #[test]

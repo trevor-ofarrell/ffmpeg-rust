@@ -199,7 +199,8 @@ cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --com
 `AVFrame` core lifecycle helpers. It compiles a small test-only C helper against
 `third_party/ffmpeg-oracle/wsl/lib/libavutil.a` and compares `av_frame_alloc`,
 `av_frame_unref`, `av_frame_ref`, `av_frame_clone`, `av_frame_replace`,
-`av_frame_make_writable`, `av_frame_move_ref`, `av_frame_copy`,
+`av_frame_make_writable`, including empty-frame `EINVAL` behavior,
+`av_frame_move_ref`, `av_frame_copy`,
 `av_frame_copy_props`, PTS/packet-DTS/duration/time-base/sample-rate/channel-layout/sample-aspect-ratio,
 crop-offset, picture-type, quality, repeat_pict, public frame-flag,
 color_range, color_primaries, color_trc, colorspace, chroma_location,
@@ -240,6 +241,11 @@ remains unchanged.
 The `frame:unref-rich` row proves `av_frame_unref()` resets a populated frame
 that owns payload buffers, metadata, displaymatrix side data, `hw_frames_ctx`,
 and `opaque_ref`, matching the Rust `Frame::unref()` reset surface.
+The `frame:empty-make-writable-ret` and `frame:empty-after-make-writable`
+rows prove `av_frame_make_writable()` returns `EINVAL` for an empty frame and
+leaves that frame in the default unallocated state. Rust exposes the fallible
+equivalent through `FrameData::try_make_writable()` and
+`Frame::try_make_writable()`.
 The `av_frame_side_data_name` boundary row proves that known 0-based
 `AV_FRAME_DATA_*` values map to descriptor names, while -1, the first raw value
 after `AV_FRAME_DATA_EXIF`, the next raw value, and INT_MAX return NULL. FFmpeg

@@ -12581,6 +12581,16 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidArgument
     );
+    let mut empty_make_frame = Frame::empty();
+    let make_frame_err = empty_make_frame.try_make_writable().unwrap_err();
+    assert_eq!(make_frame_err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(make_frame_err.code(), Some(AvErrorCode::EINVAL));
+    empty_make_frame.make_writable();
+    assert!(empty_make_frame.is_empty());
+    let mut empty_make_data = FrameData::Empty;
+    let make_data_err = empty_make_data.try_make_writable().unwrap_err();
+    assert_eq!(make_data_err.kind(), AvErrorKind::InvalidArgument);
+    assert_eq!(make_data_err.code(), Some(AvErrorCode::EINVAL));
     empty_frame.unref();
     assert!(empty_frame.is_empty());
 
