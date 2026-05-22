@@ -823,6 +823,14 @@ fn exercise_buffers(cursor: &mut Cursor<'_>) {
     assert_eq!(opaque_data_source.opaque_ref::<usize>(), Some(&payload_len));
     assert!(opaque_data_source.is_writable());
     let mut opaque_data_detached = opaque_data_source.clone();
+    assert_eq!(
+        opaque_data_detached.opaque_ref::<usize>(),
+        Some(&payload_len)
+    );
+    assert!(opaque_data_detached.shares_storage(&opaque_data_source));
+    assert_eq!(opaque_data_source.strong_count(), 2);
+    assert!(!opaque_data_source.is_writable());
+    assert!(!opaque_data_detached.is_writable());
     let opaque_mutation = cursor.next().unwrap_or_default();
     if !opaque_data_detached.is_empty() {
         opaque_data_detached.make_mut()[0] = opaque_mutation;

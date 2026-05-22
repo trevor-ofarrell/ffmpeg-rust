@@ -1808,6 +1808,12 @@ mod tests {
             },
         );
         let mut detached = source.clone();
+        assert_eq!(detached.opaque_ref::<usize>(), Some(&23));
+        assert!(detached.shares_storage(&source));
+        assert_eq!(source.strong_count(), 2);
+        assert!(!source.is_writable());
+        assert!(!detached.is_writable());
+
         detached.make_mut()[0] = 8;
 
         assert_eq!(source.opaque_ref::<usize>(), Some(&23));

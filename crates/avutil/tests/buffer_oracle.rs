@@ -176,6 +176,21 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         },
     );
     let mut create_shared_dst = create_shared_src.clone();
+    rows.insert(
+        "buffer:create-shared-ref-src".to_string(),
+        buffer_fields_with_opaque(&create_shared_src),
+    );
+    rows.insert(
+        "buffer:create-shared-ref-dst".to_string(),
+        buffer_fields_with_opaque(&create_shared_dst),
+    );
+    rows.insert(
+        "buffer:create-shared-ref-shares".to_string(),
+        vec![
+            bool_field(create_shared_src.shares_storage(&create_shared_dst)),
+            create_shared_src.strong_count().to_string(),
+        ],
+    );
     create_shared_dst.make_mut();
     rows.insert(
         "buffer:create-shared-make-writable-ret".to_string(),
@@ -1140,6 +1155,11 @@ int main(void) {
     fail_if(!create_shared_src, "av_buffer_create shared src failed");
     AVBufferRef *create_shared_dst = av_buffer_ref(create_shared_src);
     fail_if(!create_shared_dst, "av_buffer_ref create_shared failed");
+    print_buffer_opaque("buffer:create-shared-ref-src", create_shared_src);
+    print_buffer_opaque("buffer:create-shared-ref-dst", create_shared_dst);
+    printf("buffer:create-shared-ref-shares|%d|%d\n",
+           create_shared_src->data == create_shared_dst->data,
+           av_buffer_get_ref_count(create_shared_src));
     ret = av_buffer_make_writable(&create_shared_dst);
     printf("buffer:create-shared-make-writable-ret|%d\n", ret);
     print_buffer_opaque("buffer:create-shared-src", create_shared_src);
