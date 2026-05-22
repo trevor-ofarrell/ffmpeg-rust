@@ -10487,6 +10487,50 @@ mod tests {
     }
 
     #[test]
+    fn packet_ref_from_replaces_destination_and_releases_old_refs() {
+        let released = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let capture_payload = Arc::clone(&released);
+        let capture_opaque = Arc::clone(&released);
+
+        let mut src = Packet::from_data(vec![1, 2, 3]).unwrap();
+        src.push_side_data(SideData::new_extradata(vec![0x11]).unwrap());
+        src.set_opaque_ref(Some(BufferRef::from_vec(vec![0x20])));
+
+        let mut dst = Packet::with_buffer(
+            BufferRef::from_vec_with_release_callback(vec![0x99], move |data| {
+                capture_payload.lock().unwrap().push(data);
+            }),
+            7,
+        );
+        dst.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+        );
+        dst.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0x88],
+            move |data| {
+                capture_opaque.lock().unwrap().push(data);
+            },
+        )));
+
+        dst.ref_from(&src);
+
+        let mut released_values = released.lock().unwrap().clone();
+        released_values.sort();
+        assert_eq!(released_values, vec![vec![0x88], vec![0x99]]);
+        assert_eq!(dst.data(), &[1, 2, 3]);
+        assert!(dst.data_buffer().shares_storage(src.data_buffer()));
+        assert!(dst.side_data_by_kind("palette").is_none());
+        assert_eq!(
+            dst.side_data_by_kind("new_extradata").unwrap().data(),
+            &[0x11]
+        );
+        assert!(dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+    }
+
+    #[test]
     fn packet_clone_matches_ref_from_shape() {
         let mut src = Packet::from_data(vec![1, 2, 3]).unwrap();
         src.stream_index = 4;

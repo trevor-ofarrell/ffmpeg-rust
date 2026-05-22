@@ -165,6 +165,31 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     referenced.ref_from(&src);
     rows.insert("packet:ref".to_string(), packet_fields(&referenced));
 
+    let mut ref_replace_src = packet_with_common_props();
+    ref_replace_src.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x05, 0x06]).unwrap(),
+    );
+    let mut ref_replace_dst = Packet::from_data(vec![0x55, 0x44]).unwrap();
+    ref_replace_dst.set_pts(Some(22));
+    ref_replace_dst.set_duration(2).unwrap();
+    ref_replace_dst
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    ref_replace_dst.set_opaque(Some(PacketOpaque::new(0x5678).unwrap()));
+    ref_replace_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0x99])));
+    ref_replace_dst.ref_from(&ref_replace_src);
+    rows.insert(
+        "packet:ref-replace".to_string(),
+        packet_fields(&ref_replace_dst),
+    );
+    rows.insert(
+        "packet:ref-replace-side".to_string(),
+        side_data_summary_fields(&ref_replace_dst),
+    );
+    rows.insert(
+        "packet:ref-replace-payload".to_string(),
+        payload_visible_fields(&ref_replace_dst),
+    );
+
     let cloned = src.clone();
     rows.insert("packet:clone".to_string(), packet_fields(&cloned));
 
@@ -3381,6 +3406,38 @@ int main(void) {
     fail_if(av_packet_ref(dst, src) < 0, "av_packet_ref failed");
     print_packet("packet:ref", dst);
     av_packet_free(&dst);
+
+    AVPacket *ref_replace_src = packet_with_common_props();
+    uint8_t *ref_replace_extra = av_packet_new_side_data(
+        ref_replace_src, AV_PKT_DATA_SKIP_SAMPLES, 2);
+    fail_if(!ref_replace_extra, "av_packet_ref replace source side data failed");
+    ref_replace_extra[0] = 0x05;
+    ref_replace_extra[1] = 0x06;
+
+    AVPacket *ref_replace_dst = new_packet();
+    fail_if(av_new_packet(ref_replace_dst, 2) < 0,
+            "av_new_packet ref replace dst failed");
+    ref_replace_dst->data[0] = 0x55;
+    ref_replace_dst->data[1] = 0x44;
+    ref_replace_dst->pts = 22;
+    ref_replace_dst->duration = 2;
+    uint8_t *ref_replace_old_side = av_packet_new_side_data(
+        ref_replace_dst, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!ref_replace_old_side, "av_packet_ref replace old side data failed");
+    ref_replace_old_side[0] = 0xee;
+    ref_replace_dst->opaque = (void *)(uintptr_t)0x5678;
+    ref_replace_dst->opaque_ref = av_buffer_alloc(1);
+    fail_if(!ref_replace_dst->opaque_ref,
+            "av_packet_ref replace old opaque_ref failed");
+    ref_replace_dst->opaque_ref->data[0] = 0x99;
+
+    fail_if(av_packet_ref(ref_replace_dst, ref_replace_src) < 0,
+            "av_packet_ref replace failed");
+    print_packet("packet:ref-replace", ref_replace_dst);
+    print_side_data_summary("packet:ref-replace-side", ref_replace_dst);
+    print_payload_visible("packet:ref-replace-payload", ref_replace_dst);
+    av_packet_free(&ref_replace_dst);
+    av_packet_free(&ref_replace_src);
 
     AVPacket *cloned = av_packet_clone(src);
     fail_if(!cloned, "av_packet_clone failed");

@@ -2,9 +2,9 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest avutil-packet evidence: av_packet_copy_props replacement behavior now
-# has pinned oracle rows proving destination payload preservation and replacement
-# of old side data, opaque pointer metadata, and opaque_ref properties.
+# Latest avutil-packet evidence: av_packet_ref replacement behavior now has
+# pinned oracle rows proving destination unref/replacement when dst already
+# owns payload, side data, opaque pointer metadata, and opaque_ref properties.
 # avutil-packet remains differential_pass, not complete.
 
 [[component]]
@@ -241,6 +241,7 @@ unit_tests = [
   "packet::tests::packet_zero_size_payload_helpers_keep_ffmpeg_padding",
   "packet::tests::packet_unpadded_payload_helpers_add_padding_and_preserve_bytes",
   "packet::tests::packet_ref_from_shares_payload_and_copies_side_data",
+  "packet::tests::packet_ref_from_replaces_destination_and_releases_old_refs",
   "packet::tests::packet_ref_from_unpadded_payload_copies_into_refcounted_buffer",
   "packet::tests::packet_clone_matches_ref_from_shape",
   "packet::tests::packet_clone_of_unpadded_payload_matches_refcounted_copy_shape",
@@ -262,7 +263,8 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-packet|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
-# Latest update: pinned libavcodec AVPacket oracle coverage validates av_packet_copy_props() replacement behavior through packet:copy-props-replace, packet:copy-props-replace-side, and packet:copy-props-replace-payload rows. The rows prove old destination side data, opaque pointer metadata, and opaque_ref are replaced by source properties while destination payload bytes are preserved. Unit coverage now includes old opaque_ref release/replacement without payload mutation.
+# Latest update: pinned libavcodec AVPacket oracle coverage validates av_packet_ref() replacement behavior through packet:ref-replace, packet:ref-replace-side, and packet:ref-replace-payload rows. The rows prove a pre-populated destination packet is unreferenced and replaced by source payload, side data, opaque pointer metadata, opaque_ref, timestamps, flags, stream index, and time base. Unit coverage now includes old destination payload and opaque_ref release, old side-data removal, source storage sharing, and source side-data cloning.
+# Prior update: pinned libavcodec AVPacket oracle coverage validates av_packet_copy_props() replacement behavior through packet:copy-props-replace, packet:copy-props-replace-side, and packet:copy-props-replace-payload rows. The rows prove old destination side data, opaque pointer metadata, and opaque_ref are replaced by source properties while destination payload bytes are preserved. Unit coverage includes old opaque_ref release/replacement without payload mutation.
 # Prior update: pinned libavcodec AVPacket oracle coverage validates av_packet_ref() and av_packet_clone() on raw data/size packets where pkt->buf is NULL through packet:payload-ref-unrefcounted-* and packet:payload-clone-unrefcounted rows. Rust Packet::ref_from and Clone now copy unpadded Packet::new(...) payloads into separate BufferRef-backed storage with FFmpeg input padding instead of sharing the raw source storage, while still sharing already padded/refcounted Packet::from_data(...) payloads. Unit tests and avutil_core_models fuzz-smoke invariants cover both branches.
 # Prior update: pinned libavcodec/libavutil AVPacket oracle coverage now validates AV_PKT_DATA_IAMF_MIX_GAIN_PARAM, AV_PKT_DATA_IAMF_DEMIXING_INFO_PARAM, and AV_PKT_DATA_IAMF_RECON_GAIN_INFO_PARAM payload layouts through packet:payload-layout-iamf-mix-gain-param, packet:payload-layout-iamf-demixing-info-param, and packet:payload-layout-iamf-recon-gain-info-param. These rows use FFmpeg's av_iamf_param_definition_alloc() helper, zero copied AVClass pointer fields before comparison, and prove the native AVIAMFParamDefinition header/subblock envelope, subblock sizes, mix-gain animation/rational fields, demixing dmixp_mode, and recon-gain 6x12 byte table for the pinned default-native oracle. Rust IAMF unit tests and avutil_core_models fuzz-smoke invariants continue to cover valid payloads, trailing bytes, nonmatching side-data lookup, wrong definition type, zero parameter_rate, invalid offsets/sizes, truncation, zero subblock durations, invalid mix-gain animation values, and deferred accessor errors.
 # Prior update: pinned libavcodec/libavutil AVPacket oracle coverage now validates AV_PKT_DATA_ENCRYPTION_INIT_INFO payload bytes through packet:payload-layout-encryption-init-info, proving the helper-produced av_encryption_init_info_add_side_data() envelope for linked init-info entry count, system ID, key ID count/size/data, init data size/data, and a zero-key second record. Rust PacketEncryptionInitInfo unit tests and avutil_core_models fuzz-smoke invariants continue to cover valid helper-shaped payloads, trailing bytes, empty lists, nonmatching side-data lookup, short count/header/body payloads, and unsafe zero-sized keyed records.
