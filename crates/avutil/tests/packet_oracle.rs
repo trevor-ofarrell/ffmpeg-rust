@@ -464,6 +464,17 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     grow.shrink_data(2).unwrap();
     rows.insert("packet:payload-shrink".to_string(), payload_fields(&grow));
 
+    let mut grow_unrefcounted = Packet::new(vec![0xaa, 0xbb], 0);
+    grow_unrefcounted.grow_data(2).unwrap();
+    rows.insert(
+        "packet:payload-grow-unrefcounted-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-unrefcounted".to_string(),
+        payload_prefix_fields(&grow_unrefcounted, 2),
+    );
+
     let src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
     let mut writable = Packet::default();
     writable.ref_from(&src);
@@ -480,6 +491,18 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:payload-make-writable-dst".to_string(),
         payload_fields(&writable),
+    );
+
+    let mut unrefcounted_writable = Packet::new(vec![0xaa, 0xbb], 0);
+    unrefcounted_writable.make_writable().unwrap();
+    unrefcounted_writable.make_data_writable()[0] = 0xcc;
+    rows.insert(
+        "packet:payload-make-writable-unrefcounted-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-unrefcounted".to_string(),
+        payload_fields(&unrefcounted_writable),
     );
 
     let mut refcounted = Packet::new(vec![0xaa, 0xbb], 0);
@@ -1137,6 +1160,24 @@ fn payload_allocation_fields(packet: &Packet) -> Vec<String> {
     ]
 }
 
+fn payload_prefix_fields(packet: &Packet, prefix_len: usize) -> Vec<String> {
+    let padding = packet.data_buffer().padding_slice();
+    assert!(
+        prefix_len <= packet.len(),
+        "packet payload prefix exceeds visible payload length"
+    );
+    assert!(
+        padding.len() >= AV_INPUT_BUFFER_PADDING_SIZE,
+        "packet payload should have FFmpeg input padding for oracle comparison"
+    );
+    vec![
+        packet.len().to_string(),
+        hex_or_dash(&packet.data()[..prefix_len]),
+        hex_or_dash(&padding[..AV_INPUT_BUFFER_PADDING_SIZE]),
+        u8::from(packet.is_data_writable()).to_string(),
+    ]
+}
+
 fn payload_layout_fields(bytes: &[u8], offsets: &[usize]) -> Vec<String> {
     let mut fields = vec![bytes.len().to_string(), hex_or_dash(bytes)];
     fields.extend(offsets.iter().map(ToString::to_string));
@@ -1695,6 +1736,17 @@ static void print_payload_allocation(const char *name, const AVPacket *pkt) {
     printf("|%d\n", pkt->buf ? av_buffer_is_writable(pkt->buf) : 0);
 }
 
+static void print_payload_prefix(const char *name, const AVPacket *pkt, int prefix_size) {
+    fail_if(prefix_size < 0 || prefix_size > pkt->size,
+            "payload prefix size is out of bounds");
+    printf("%s|%d|", name, pkt->size);
+    print_hex_or_dash(pkt->data, prefix_size);
+    printf("|");
+    print_hex_or_dash(pkt->data ? pkt->data + pkt->size : NULL,
+                      AV_INPUT_BUFFER_PADDING_SIZE);
+    printf("|%d\n", pkt->buf ? av_buffer_is_writable(pkt->buf) : 0);
+}
+
 static void print_dictionary_payload(const char *name, const uint8_t *data, size_t size) {
     printf("%s|%d|%zu|", name, data != NULL, size);
     print_hex_or_dash(data, (int)size);
@@ -2039,6 +2091,15 @@ static void exercise_payload_api(void) {
     print_payload("packet:payload-shrink", pkt);
     av_packet_free(&pkt);
 
+    pkt = new_packet();
+    uint8_t grow_stack_data[2] = { 0xaa, 0xbb };
+    pkt->data = grow_stack_data;
+    pkt->size = 2;
+    ret = av_grow_packet(pkt, 2);
+    printf("packet:payload-grow-unrefcounted-ret|%d\n", ret);
+    print_payload_prefix("packet:payload-grow-unrefcounted", pkt, 2);
+    av_packet_free(&pkt);
+
     AVPacket *src = new_packet();
     fail_if(av_new_packet(src, 2) < 0, "av_new_packet writable src failed");
     src->data[0] = 0xaa;
@@ -2052,6 +2113,16 @@ static void exercise_payload_api(void) {
     print_payload("packet:payload-make-writable-dst", dst);
     av_packet_free(&dst);
     av_packet_free(&src);
+
+    pkt = new_packet();
+    uint8_t writable_stack_data[2] = { 0xaa, 0xbb };
+    pkt->data = writable_stack_data;
+    pkt->size = 2;
+    ret = av_packet_make_writable(pkt);
+    printf("packet:payload-make-writable-unrefcounted-ret|%d\n", ret);
+    pkt->data[0] = 0xcc;
+    print_payload("packet:payload-make-writable-unrefcounted", pkt);
+    av_packet_free(&pkt);
 
     pkt = new_packet();
     uint8_t stack_data[2] = { 0xaa, 0xbb };

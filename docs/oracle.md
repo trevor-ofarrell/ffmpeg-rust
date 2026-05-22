@@ -135,6 +135,8 @@ The harness also includes `packet:side-new-zero` and `packet:array-new-zero` row
 
 The harness also includes `packet:payload-new-zero*`, `packet:payload-from-data-zero*`, `packet:payload-make-refcounted-empty*`, and `packet:payload-make-writable-empty*` rows, proving zero-size packet payload helpers keep zero visible payload bytes while retaining zeroed FFmpeg input padding and writable refcounted storage.
 
+The harness also includes `packet:payload-grow-unrefcounted*` and `packet:payload-make-writable-unrefcounted*` rows, proving raw `AVPacket.data`/`size` helpers with no `buf` preserve prefix bytes, add zeroed FFmpeg input padding, and return writable storage after grow or make-writable. FFmpeg leaves the newly visible bytes from no-buffer `av_grow_packet()` allocator-unspecified, so that row compares payload length, preserved prefix, padding, and writability rather than full grown payload bytes.
+
 The harness also includes `packet:side-add-capacity-*` and `packet:side-new-capacity-overflow` rows, proving packet-owned side-data capacity behavior at `AV_PKT_DATA_NB`: replacement remains valid at capacity, append fails with `ERANGE` without changing the entry count, and `av_packet_new_side_data()` returns NULL at capacity.
 
 The harness also includes `packet:fifo-*` rows, proving the packet-specialized container FIFO transfer semantics for move writes, ref writes, read draining, non-mutating peek, valid drain, can-read counts, and invalid offset handling.

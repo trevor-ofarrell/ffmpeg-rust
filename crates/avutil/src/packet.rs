@@ -10314,6 +10314,38 @@ mod tests {
     }
 
     #[test]
+    fn packet_unpadded_payload_helpers_add_padding_and_preserve_bytes() {
+        let mut grown = Packet::new(vec![0xaa, 0xbb], 0);
+        grown.grow_data(2).unwrap();
+        assert_eq!(grown.data(), &[0xaa, 0xbb, 0, 0]);
+        assert_eq!(
+            grown.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(grown
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(grown.is_data_writable());
+
+        let mut writable = Packet::new(vec![0xaa, 0xbb], 0);
+        writable.make_writable().unwrap();
+        writable.make_data_writable()[0] = 0xcc;
+        assert_eq!(writable.data(), &[0xcc, 0xbb]);
+        assert_eq!(
+            writable.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(writable
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(writable.is_data_writable());
+    }
+
+    #[test]
     fn packet_make_writable_detaches_shared_payload_with_padding() {
         let src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
         let mut dst = Packet::default();

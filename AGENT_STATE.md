@@ -2,6 +2,10 @@
 
 ## Current Status
 
+Latest `avutil-packet` unrefcounted payload slice: the pinned packet oracle now emits `packet:payload-grow-unrefcounted*` and `packet:payload-make-writable-unrefcounted*` rows for raw `AVPacket.data`/`size` payloads with no `buf`. Rust `Packet::new(...).grow_data(...)` and `Packet::new(...).make_writable()` now have explicit unit, differential, and fuzz-smoke evidence that the original prefix bytes are preserved, FFmpeg input padding is zeroed, and storage becomes writable. The oracle showed that bytes newly exposed by `av_grow_packet()` on a raw no-buf packet are allocator-unspecified in FFmpeg, so the differential row intentionally compares length, preserved prefix, padding, and writability instead of requiring byte equality for the newly grown region. `avutil-packet` remains `differential_pass`, not complete, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration remain pending.
+
+Latest validation commands for the `avutil-packet` unrefcounted payload slice: `cargo fmt --all`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib packet_unpadded_payload_helpers_add_padding_and_preserve_bytes`, WSL `CARGO_TARGET_DIR=target-wsl cargo test -p avutil --test packet_oracle -- --ignored --nocapture`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib packet`, `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml`, WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/wsl/bin/ffmpeg`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo clippy --manifest-path fuzz\\Cargo.toml -- -D warnings`, WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`, `cargo fmt --all -- --check`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`, and `git diff --check` passed.
+
 Latest `avutil-packet` zero-size payload slice: the pinned packet oracle now emits `packet:payload-new-zero*`, `packet:payload-from-data-zero*`, `packet:payload-make-refcounted-empty*`, and `packet:payload-make-writable-empty*` rows. Rust `Packet::new_zeroed(0)`, `Packet::from_data(Vec::new())`, `Packet::make_refcounted()` on an empty packet, and `Packet::make_writable()` on an empty packet now have explicit unit, differential, and fuzz-smoke evidence for zero visible payload size, zeroed FFmpeg input padding, and writable refcounted storage. `avutil-packet` remains `differential_pass`, not complete, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration remain pending.
 
 Latest validation commands for the `avutil-packet` zero-size payload slice: `cargo fmt --all`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib packet_zero_size_payload_helpers_keep_ffmpeg_padding`, WSL `CARGO_TARGET_DIR=target-wsl cargo test -p avutil --test packet_oracle -- --ignored --nocapture`, `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib packet`, `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml`, WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/wsl/bin/ffmpeg`, `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`, `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo clippy --manifest-path fuzz\\Cargo.toml -- -D warnings`, WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1`, and `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor` passed.
@@ -627,6 +631,23 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-packet` unrefcounted payload slice:
+  - `cargo fmt --all`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib packet_unpadded_payload_helpers_add_padding_and_preserve_bytes`
+  - WSL `CARGO_TARGET_DIR=target-wsl cargo test -p avutil --test packet_oracle -- --ignored --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p avutil --lib packet`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml`
+  - WSL `CARGO_TARGET_DIR=target-wsl cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/wsl/bin/ffmpeg`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p fate-runner -- run --component avutil-packet`
+  - `$env:CARGO_TARGET_DIR='target-codex\\fuzz-check'; cargo clippy --manifest-path fuzz\\Cargo.toml -- -D warnings`
+  - WSL `CARGO_TARGET_DIR=target-wsl-fuzz cargo fuzz run avutil_core_models -- -runs=1`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- oracle-doctor`
+  - `cargo fmt --all -- --check`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo test -p fate-runner current_ledger`
+  - `$env:CARGO_TARGET_DIR='target-codex'; cargo run -p xtask -- guard-runtime`
+  - `git diff --check`
 
 - Current `fftools-version` double-dash slice:
   - `cmd /c cargo fmt --all`
@@ -5282,6 +5303,9 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-packet` unrefcounted payload slice:
+  - The first WSL `cargo test -p avutil --test packet_oracle -- --ignored --nocapture` run failed on `packet:payload-grow-unrefcounted` because FFmpeg preserved the two-byte prefix and zeroed padding but left newly visible grown bytes allocator-unspecified. The row now compares payload length, preserved prefix, padding, and writability for that specific raw-data/no-buf growth path; the rerun passed.
+
 - Current `fftools-version` double-dash slice:
   - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo test -p fftools version"` initially failed because `ffmpeg_output(&["--version"])` reached the normal parser but `option_name` collapsed all leading dashes, so `--version` was still parsed as the supported `version` option before failing later with a non-unknown-option path. Updating `option_name` to strip exactly one dash fixed the failure.
   - `cmd /c "set CARGO_TARGET_DIR=target-codex&& cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-ffmpeg-version --target oracle-ffprobe-version --target oracle-double-dash-version-rejection --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd"` initially failed because the version oracle harness treated env-provided relative `FFMPEG_ORACLE` paths as relative to the integration-test process cwd. Resolving relative env oracle paths against the repository root fixed the failure.
@@ -5790,6 +5814,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+The current turn continues `avutil-packet`, the highest-priority incomplete infrastructure row. The concrete slice adds raw-data/no-buffer payload oracle rows for `av_grow_packet()` and `av_packet_make_writable()` and records that FFmpeg's grown bytes in the no-buf branch are allocator-unspecified. The row remains `differential_pass`, not `complete`, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration still need closure.
+
 The current turn continues `avutil-packet`, the highest-priority incomplete infrastructure row. The concrete slice adds zero-size payload oracle rows for `av_new_packet(0)`, `av_packet_from_data(..., size=0)`, `av_packet_make_refcounted()` on an empty packet, and `av_packet_make_writable()` on an empty packet. The row remains `differential_pass`, not `complete`, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration still need closure.
 
 The current turn continues `avutil-packet`, the highest-priority incomplete infrastructure row. The concrete slice adds strict `av_packet_shrink_side_data`-style missing and oversize error-code parity through `Packet::shrink_side_data_by_kind_id`, wires those invalid-input vectors into the pinned packet oracle, and extends unit plus fuzz-smoke coverage. The row remains `differential_pass`, not `complete`, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration still need closure.
@@ -6210,6 +6236,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added raw-data/no-buffer payload parity evidence for `avutil-packet`. `crates/avutil/tests/packet_oracle.rs` now compares `av_grow_packet()` and `av_packet_make_writable()` when `AVPacket.data`/`size` are set without `buf`; `crates/avutil/src/packet.rs` adds a focused unit test for unpadded payload helpers adding FFmpeg input padding and preserving bytes; and `fuzz/fuzz_targets/avutil_core_models.rs` covers the same generated invariants. `avutil-packet` remains `differential_pass`, not complete, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration remain pending.
 
 Latest slice: added strict `av_packet_shrink_side_data` error-code parity for `avutil-packet`. `crates/avutil/src/packet.rs` now exposes `Packet::shrink_side_data_by_kind_id` for FFmpeg-shaped missing-side-data `ENOENT` and oversize-shrink `ENOMEM` returns while keeping the existing ergonomic string helper for optional lookup. `crates/avutil/tests/packet_oracle.rs` now compares the matching pinned libavcodec invalid-input rows, and `fuzz/fuzz_targets/avutil_core_models.rs` covers the generated strict shrink invariants. `avutil-packet` remains `differential_pass`, not complete, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration remain pending.
 

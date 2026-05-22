@@ -5811,6 +5811,37 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         AV_INPUT_BUFFER_PADDING_SIZE
     );
 
+    let unpadded_grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
+    let mut unpadded_grown_packet = Packet::new(payload.clone(), stream_index);
+    unpadded_grown_packet.grow_data(unpadded_grow_by).unwrap();
+    let mut expected_unpadded_grown = payload.clone();
+    expected_unpadded_grown.resize(payload.len() + unpadded_grow_by, 0);
+    assert_eq!(unpadded_grown_packet.data(), expected_unpadded_grown.as_slice());
+    assert_eq!(
+        unpadded_grown_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(unpadded_grown_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(unpadded_grown_packet.is_data_writable());
+
+    let mut unpadded_writable_packet = Packet::new(payload.clone(), stream_index);
+    unpadded_writable_packet.make_writable().unwrap();
+    assert_eq!(unpadded_writable_packet.data(), payload.as_slice());
+    assert_eq!(
+        unpadded_writable_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(unpadded_writable_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(unpadded_writable_packet.is_data_writable());
+
     let mut refcounted_packet = Packet::new(payload.clone(), stream_index);
     refcounted_packet.make_refcounted().unwrap();
     assert_eq!(refcounted_packet.data(), payload.as_slice());
