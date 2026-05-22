@@ -147,6 +147,8 @@ The rawvideo-facing paletted subset now includes FFmpeg's `pal8` name. The share
 
 `PacketSphericalMapping` covers `AV_PKT_DATA_SPHERICAL` as the pinned FFmpeg 8.1.1 native `AVSphericalMapping` payload, preserving projection, yaw/pitch/roll orientation, four tile bounds, and cubemap padding fields. The packet oracle validates the 36-byte native payload shape and field offsets.
 
+`PacketDisplayMatrix` covers `AV_PKT_DATA_DISPLAYMATRIX` as the pinned FFmpeg 8.1.1 native 9-element `int32_t` display matrix payload, preserving native integer elements. The packet oracle validates the 36-byte native array shape and element offsets.
+
 `PacketStereo3d` covers `AV_PKT_DATA_STEREO3D` as the pinned FFmpeg 8.1.1 native `AVStereo3D` payload, preserving type, flags, view, primary eye, baseline, horizontal disparity adjustment, and horizontal field-of-view rationals. The packet oracle validates the 36-byte native payload shape and field offsets.
 
 `PacketNewExtradata` covers `AV_PKT_DATA_NEW_EXTRADATA` as an embedded replacement extradata byte buffer. The current model preserves the raw bytes, including empty buffers, and does not interpret codec-specific extradata formats.
@@ -420,6 +422,8 @@ The packet oracle now includes a `packet:payload-layout-palette` row for `AV_PKT
 The packet oracle now also includes a `packet:payload-layout-content-light` row for `AV_PKT_DATA_CONTENT_LIGHT_LEVEL`, proving the native `AVContentLightMetadata` payload length and `MaxCLL`/`MaxFALL` field offsets used by `PacketContentLightMetadata`.
 
 The packet oracle now also includes a `packet:payload-layout-spherical` row for `AV_PKT_DATA_SPHERICAL`, proving the native `AVSphericalMapping` payload length and projection/orientation/bounds/padding field offsets used by `PacketSphericalMapping`.
+
+The packet oracle now also includes a `packet:payload-layout-displaymatrix` row for `AV_PKT_DATA_DISPLAYMATRIX`, proving the native 9-element `int32_t` array payload length and element offsets used by `PacketDisplayMatrix`.
 
 The packet oracle now also includes a `packet:payload-layout-stereo3d` row for `AV_PKT_DATA_STEREO3D`, proving the native `AVStereo3D` payload length and type/flags/view/primary-eye/baseline/rational field offsets used by `PacketStereo3d`.
 

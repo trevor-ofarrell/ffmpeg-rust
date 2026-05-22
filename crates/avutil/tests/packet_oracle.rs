@@ -9,16 +9,16 @@ use avutil::{
     packet_pack_dictionary, packet_unpack_dictionary, BufferRef, Dictionary, Frame, FrameSideData,
     FrameSideDataFlags, FrameSideDataKind, Packet, PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
-    PacketCpbProperties, PacketDolbyVisionConf, PacketDoviCompression, PacketFallbackTrack,
-    PacketFifo, PacketFlags, PacketFrameCropping, PacketJpDualMono, PacketJpDualMonoSelection,
-    PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional, PacketMpegTsStreamId,
-    PacketOpaque, PacketParamChange, PacketPictureType, PacketProducerReferenceTime,
-    PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport, PacketS12mTimecode,
-    PacketSideDataKind, PacketSideDataList, PacketSkipSamples, PacketSkipSamplesReason,
-    PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d, PacketStereo3dFlags,
-    PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView, PacketSubtitlePosition,
-    PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE,
-    AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
+    PacketFallbackTrack, PacketFifo, PacketFlags, PacketFrameCropping, PacketJpDualMono,
+    PacketJpDualMonoSelection, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
+    PacketMpegTsStreamId, PacketOpaque, PacketParamChange, PacketPictureType,
+    PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport,
+    PacketS12mTimecode, PacketSideDataKind, PacketSideDataList, PacketSkipSamples,
+    PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d,
+    PacketStereo3dFlags, PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView,
+    PacketSubtitlePosition, PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData,
+    AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -298,6 +298,24 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
                 [0x0102_0304, 0x0506_0708, 0x090a_0b0c, 0x0d0e_0f10],
                 0x1112_1314,
             )
+            .to_bytes(),
+            &[0, 4, 8, 12, 16, 20, 24, 28, 32],
+        ),
+    );
+    rows.insert(
+        "packet:payload-layout-displaymatrix".to_string(),
+        payload_layout_fields(
+            &PacketDisplayMatrix::new([
+                i32::MIN,
+                -1,
+                0,
+                1,
+                1 << 16,
+                -(1 << 16),
+                1 << 30,
+                -(1 << 30),
+                i32::MAX,
+            ])
             .to_bytes(),
             &[0, 4, 8, 12, 16, 20, 24, 28, 32],
         ),
@@ -1424,6 +1442,7 @@ fn oracle_c_source() -> &'static str {
 #include "libavutil/buffer.h"
 #include "libavutil/container_fifo.h"
 #include "libavutil/dict.h"
+#include "libavutil/display.h"
 #include "libavutil/dovi_meta.h"
 #include "libavutil/frame.h"
 #include "libavutil/intreadwrite.h"
@@ -1730,6 +1749,23 @@ static void print_side_data_payload_layouts(void) {
            offsetof(AVSphericalMapping, bound_right),
            offsetof(AVSphericalMapping, bound_bottom),
            offsetof(AVSphericalMapping, padding));
+
+    int32_t displaymatrix[9] = {
+        INT32_MIN, -1, 0, 1, 1 << 16, -(1 << 16),
+        1 << 30, -(1 << 30), INT32_MAX
+    };
+    print_payload_layout_header("packet:payload-layout-displaymatrix",
+                                displaymatrix, sizeof(displaymatrix));
+    printf("|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu|%zu\n",
+           (size_t)((const uint8_t *)&displaymatrix[0] - (const uint8_t *)displaymatrix),
+           (size_t)((const uint8_t *)&displaymatrix[1] - (const uint8_t *)displaymatrix),
+           (size_t)((const uint8_t *)&displaymatrix[2] - (const uint8_t *)displaymatrix),
+           (size_t)((const uint8_t *)&displaymatrix[3] - (const uint8_t *)displaymatrix),
+           (size_t)((const uint8_t *)&displaymatrix[4] - (const uint8_t *)displaymatrix),
+           (size_t)((const uint8_t *)&displaymatrix[5] - (const uint8_t *)displaymatrix),
+           (size_t)((const uint8_t *)&displaymatrix[6] - (const uint8_t *)displaymatrix),
+           (size_t)((const uint8_t *)&displaymatrix[7] - (const uint8_t *)displaymatrix),
+           (size_t)((const uint8_t *)&displaymatrix[8] - (const uint8_t *)displaymatrix));
 
     AVStereo3D stereo3d;
     memset(&stereo3d, 0, sizeof(stereo3d));
