@@ -29,6 +29,13 @@ fn double_dash_version_is_not_a_success_version_request() {
 }
 
 #[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn hide_banner_version_matches_plain_version_surface() {
+    compare_hide_banner_version("ffmpeg");
+    compare_hide_banner_version("ffprobe");
+}
+
+#[test]
 fn parses_split_ffmpeg_library_version_lines() {
     let versions = parse_library_versions(
         "ffmpeg version 8.1.1 Copyright (c) 2000-2026 the FFmpeg developers\n\
@@ -123,6 +130,43 @@ fn compare_double_dash_version_rejection(tool_name: &str) {
         "ffprobe" => {
             let err = ffprobe_output(&strings(&["--version"])).unwrap_err();
             assert!(err.message().contains("unknown option"));
+        }
+        other => panic!("unsupported tool `{other}`"),
+    }
+}
+
+fn compare_hide_banner_version(tool_name: &str) {
+    let oracle = oracle_tool(tool_name);
+    let plain_oracle = run_oracle(&oracle, tool_name, &["-version"]);
+    let hide_oracle = run_oracle(&oracle, tool_name, &["-hide_banner", "-version"]);
+    assert!(
+        hide_oracle.status_success,
+        "oracle `{}` should accept -hide_banner -version, got stdout:\n{}\nstderr:\n{}",
+        oracle.display(),
+        hide_oracle.stdout,
+        hide_oracle.stderr
+    );
+    assert_eq!(
+        hide_oracle.stdout, plain_oracle.stdout,
+        "oracle {tool_name} should print the same version surface with or without -hide_banner"
+    );
+    assert_eq!(
+        hide_oracle.stderr, plain_oracle.stderr,
+        "oracle {tool_name} should keep the same stderr with or without -hide_banner"
+    );
+
+    match tool_name {
+        "ffmpeg" => {
+            let plain = ffmpeg_output(&strings(&["-version"])).unwrap();
+            let hide = ffmpeg_output(&strings(&["-hide_banner", "-version"])).unwrap();
+            assert_eq!(hide.stdout(), plain.stdout());
+            assert_eq!(hide.stderr(), plain.stderr());
+            assert_eq!(hide.output_format(), None);
+        }
+        "ffprobe" => {
+            let plain = ffprobe_output(&strings(&["-version"])).unwrap();
+            let hide = ffprobe_output(&strings(&["-hide_banner", "-version"])).unwrap();
+            assert_eq!(hide, plain);
         }
         other => panic!("unsupported tool `{other}`"),
     }

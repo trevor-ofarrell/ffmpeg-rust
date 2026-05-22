@@ -11,6 +11,7 @@ avformat-rawvideo-muxer|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={o
 fftools-version|oracle-ffmpeg-version|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|ffmpeg_version_banner_matches_oracle_target_versions|--|--ignored
 fftools-version|oracle-ffprobe-version|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|ffprobe_version_banner_matches_oracle_target_versions|--|--ignored
 fftools-version|oracle-double-dash-version-rejection|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|double_dash_version_is_not_a_success_version_request|--|--ignored
+fftools-version|oracle-hide-banner-version|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|hide_banner_version_matches_plain_version_surface|--|--ignored
 avutil-error|oracle-libavutil-error-strings|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|error_oracle|--|--ignored
 avutil-rational|oracle-libavutil-rational|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|rational_oracle|--|--ignored
 avutil-timebase|oracle-libavutil-timebase|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|avutil|--test|timebase_oracle|--|--ignored

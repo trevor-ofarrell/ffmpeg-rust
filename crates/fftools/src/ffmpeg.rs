@@ -1708,6 +1708,16 @@ mod tests {
     }
 
     #[test]
+    fn ffmpeg_output_accepts_hide_banner_with_version() {
+        let plain = ffmpeg_output(&strings(&["-version"])).unwrap();
+        let hide = ffmpeg_output(&strings(&["-hide_banner", "-version"])).unwrap();
+
+        assert_eq!(hide.stdout(), plain.stdout());
+        assert!(hide.stderr().is_empty());
+        assert_eq!(hide.output_format(), None);
+    }
+
+    #[test]
     fn ffmpeg_output_rejects_double_dash_version_like_upstream() {
         let err = ffmpeg_output(&strings(&["--version"])).unwrap_err();
 
