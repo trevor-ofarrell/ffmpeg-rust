@@ -123,6 +123,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         FrameDecodeErrorFlags::INVALID_BITSTREAM | FrameDecodeErrorFlags::CONCEALMENT_ACTIVE,
     );
     video.set_opaque_address(0x1234);
+    video.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0xde, 0xad])));
     video.set_alpha_mode(FrameAlphaMode::Premultiplied);
     video.metadata_mut().set("encoder", "oracle").unwrap();
     rows.insert("frame:video-buffer".to_string(), frame_fields(&video));
@@ -206,6 +207,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         FrameDecodeErrorFlags::MISSING_REFERENCE | FrameDecodeErrorFlags::DECODE_SLICES,
     );
     copy_source.set_opaque_address(0x2222);
+    copy_source.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0x22, 0x23, 0x24])));
     copy_source.set_alpha_mode(FrameAlphaMode::Straight);
     copy_source.metadata_mut().set("title", "source").unwrap();
     copy_source
@@ -245,6 +247,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copy_destination.set_best_effort_timestamp(Some(1000));
     copy_destination.set_decode_error_flags(FrameDecodeErrorFlags::INVALID_BITSTREAM);
     copy_destination.set_opaque_address(0x3333);
+    copy_destination.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0x33])));
     copy_destination.set_alpha_mode(FrameAlphaMode::Premultiplied);
     copy_destination
         .metadata_mut()
@@ -624,6 +627,7 @@ fn frame_fields(frame: &Frame) -> Vec<String> {
             .to_string(),
         frame.decode_error_flags().bits().to_string(),
         frame.opaque_address().unwrap_or(0).to_string(),
+        opaque_ref_summary(frame.opaque_ref()),
         frame.alpha_mode().as_raw().to_string(),
         metadata_summary(frame.metadata()),
         kind.to_string(),
@@ -878,6 +882,19 @@ fn hex(data: &[u8]) -> String {
     output
 }
 
+fn opaque_ref_summary(buffer: Option<&BufferRef>) -> String {
+    match buffer {
+        Some(buffer) => format!(
+            "{}:{}:{}:{}",
+            buffer.len(),
+            hex(buffer.as_slice()),
+            buffer.strong_count(),
+            bool_field(buffer.is_writable())
+        ),
+        None => "none".to_string(),
+    }
+}
+
 fn bool_field(value: bool) -> String {
     if value { "1" } else { "0" }.to_string()
 }
@@ -981,6 +998,18 @@ static void print_hex(const uint8_t *data, size_t len)
 {
     for (size_t i = 0; i < len; i++)
         printf("%02x", data[i]);
+}
+
+static void print_buffer_ref_summary(const AVBufferRef *ref)
+{
+    if (!ref) {
+        printf("none");
+        return;
+    }
+    printf("%zu:", ref->size);
+    print_hex(ref->data, ref->size);
+    printf(":%d:%d", av_buffer_get_ref_count(ref),
+           av_buffer_is_writable((AVBufferRef *)ref));
 }
 
 static void print_line_sizes(const int *line_sizes, int count)
@@ -1176,7 +1205,7 @@ static void print_frame(const char *name, const AVFrame *frame)
                           : 1;
     }
 
-    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%d/%d|%zu|%zu|%zu|%zu|%d|%c|%d|%d|%d|%d|%d|%d|%d|%d|%" PRId64 "|%d|%" PRIuPTR "|%d|",
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%d/%d|%d/%d|%zu|%zu|%zu|%zu|%d|%c|%d|%d|%d|%d|%d|%d|%d|%d|%" PRId64 "|%d|%" PRIuPTR "|",
            name, frame->pts, frame->pkt_dts, frame->duration,
            frame->time_base.num, frame->time_base.den,
            frame->sample_aspect_ratio.num, frame->sample_aspect_ratio.den,
@@ -1186,8 +1215,9 @@ static void print_frame(const char *name, const AVFrame *frame)
            frame->repeat_pict, frame->flags, frame->color_range,
            frame->color_primaries, frame->color_trc, frame->colorspace,
            frame->chroma_location, frame->best_effort_timestamp,
-           frame->decode_error_flags, (uintptr_t)frame->opaque,
-           frame->alpha_mode);
+           frame->decode_error_flags, (uintptr_t)frame->opaque);
+    print_buffer_ref_summary(frame->opaque_ref);
+    printf("|%d|", frame->alpha_mode);
     print_metadata_summary(frame->metadata);
     printf("|%s|%s|%d|%d|%d|%d|%d|", kind, format ? format : "none",
            frame->width, frame->height, frame->nb_samples, frame->sample_rate,
@@ -1355,6 +1385,10 @@ int main(void)
         FF_DECODE_ERROR_INVALID_BITSTREAM |
         FF_DECODE_ERROR_CONCEALMENT_ACTIVE;
     video->opaque = (void *)(uintptr_t)0x1234;
+    video->opaque_ref = av_buffer_alloc(2);
+    fail_if(!video->opaque_ref, "video opaque_ref allocation failed");
+    video->opaque_ref->data[0] = 0xde;
+    video->opaque_ref->data[1] = 0xad;
     video->alpha_mode = AVALPHA_MODE_PREMULTIPLIED;
     av_dict_set(&video->metadata, "encoder", "oracle", 0);
     fail_if(av_frame_get_buffer(video, 1) < 0,
@@ -1426,6 +1460,11 @@ int main(void)
         FF_DECODE_ERROR_MISSING_REFERENCE |
         FF_DECODE_ERROR_DECODE_SLICES;
     copy_src->opaque = (void *)(uintptr_t)0x2222;
+    copy_src->opaque_ref = av_buffer_alloc(3);
+    fail_if(!copy_src->opaque_ref, "copy_src opaque_ref allocation failed");
+    copy_src->opaque_ref->data[0] = 0x22;
+    copy_src->opaque_ref->data[1] = 0x23;
+    copy_src->opaque_ref->data[2] = 0x24;
     copy_src->alpha_mode = AVALPHA_MODE_STRAIGHT;
     av_dict_set(&copy_src->metadata, "title", "source", 0);
     av_dict_set(&copy_src->metadata, "artist", "libavutil", 0);
@@ -1468,6 +1507,9 @@ int main(void)
     copy_dst->best_effort_timestamp = 1000;
     copy_dst->decode_error_flags = FF_DECODE_ERROR_INVALID_BITSTREAM;
     copy_dst->opaque = (void *)(uintptr_t)0x3333;
+    copy_dst->opaque_ref = av_buffer_alloc(1);
+    fail_if(!copy_dst->opaque_ref, "copy_dst opaque_ref allocation failed");
+    copy_dst->opaque_ref->data[0] = 0x33;
     copy_dst->alpha_mode = AVALPHA_MODE_PREMULTIPLIED;
     av_dict_set(&copy_dst->metadata, "title", "destination", 0);
     av_dict_set(&copy_dst->metadata, "keep", "destination", 0);

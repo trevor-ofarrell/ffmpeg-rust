@@ -2797,6 +2797,13 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
     assert_eq!(frame.opaque(), None);
     frame.set_opaque_address(frame_opaque_address);
     assert_eq!(frame.opaque(), Some(frame_opaque));
+    let frame_opaque_ref_len = usize::from(cursor.next().unwrap_or_default() % 8);
+    let frame_opaque_ref_payload = payload_from(cursor, frame_opaque_ref_len);
+    frame.set_opaque_ref(Some(BufferRef::copy_from_slice(&frame_opaque_ref_payload)));
+    assert_eq!(
+        frame.opaque_ref().unwrap().as_slice(),
+        frame_opaque_ref_payload.as_slice()
+    );
 
     let frame_alpha_mode =
         pick_copy(cursor, &FrameAlphaMode::KNOWN).unwrap_or(FrameAlphaMode::Unspecified);
@@ -2893,6 +2900,14 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
         frame.decode_error_flags()
     );
     assert_eq!(shared_frame_payload.opaque(), Some(frame_opaque));
+    assert_eq!(
+        shared_frame_payload.opaque_ref().unwrap().as_slice(),
+        frame_opaque_ref_payload.as_slice()
+    );
+    assert!(shared_frame_payload
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(frame.opaque_ref().unwrap()));
     assert_eq!(shared_frame_payload.alpha_mode(), frame_alpha_mode);
     assert!(!frame.is_writable());
     frame.make_writable();
@@ -12421,6 +12436,7 @@ fn exercise_fixtures() {
         .set_time_base(Rational::new(1, 48_000).unwrap())
         .unwrap();
     unref_frame.set_opaque_address(0x1111);
+    unref_frame.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0x11, 0x12])));
     unref_frame.set_alpha_mode(FrameAlphaMode::Straight);
     unref_frame.metadata_mut().set("title", "before-unref").unwrap();
     unref_frame
@@ -12434,6 +12450,7 @@ fn exercise_fixtures() {
     assert_eq!(unref_frame.duration(), 0);
     assert_eq!(unref_frame.time_base(), Rational::ZERO);
     assert_eq!(unref_frame.opaque_address(), None);
+    assert!(unref_frame.opaque_ref().is_none());
     assert_eq!(unref_frame.alpha_mode(), FrameAlphaMode::Unspecified);
     assert!(unref_frame.metadata().is_empty());
     assert!(matches!(unref_frame.data(), FrameData::Empty));
@@ -12457,6 +12474,7 @@ fn exercise_fixtures() {
             .unwrap();
     let ref_side = BufferRef::copy_from_slice(&[0x44]);
     let ref_hw = BufferRef::copy_from_slice(&[0x55]);
+    let source_opaque_ref = BufferRef::copy_from_slice(&[0x22, 0x23]);
     let mut source_frame = Frame::video(ref_video).with_hw_frames_context(ref_hw.clone());
     source_frame.set_pts(Some(7));
     source_frame.set_pkt_dts(Some(6));
@@ -12465,6 +12483,7 @@ fn exercise_fixtures() {
         .set_time_base(Rational::new(1, 90_000).unwrap())
         .unwrap();
     source_frame.set_opaque_address(0x2222);
+    source_frame.set_opaque_ref(Some(source_opaque_ref.clone()));
     source_frame.set_alpha_mode(FrameAlphaMode::Premultiplied);
     source_frame.metadata_mut().set("title", "source").unwrap();
     source_frame
@@ -12496,6 +12515,18 @@ fn exercise_fixtures() {
         Rational::new(1, 90_000).unwrap()
     );
     assert_eq!(referenced_frame.opaque_address(), Some(0x2222));
+    assert_eq!(
+        referenced_frame.opaque_ref().unwrap().as_slice(),
+        &[0x22, 0x23]
+    );
+    assert!(referenced_frame
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(&source_opaque_ref));
+    assert!(referenced_frame
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(source_frame.opaque_ref().unwrap()));
     assert_eq!(referenced_frame.alpha_mode(), FrameAlphaMode::Premultiplied);
     assert_eq!(referenced_frame.metadata().get("title"), Some("source"));
     referenced_frame
@@ -12557,6 +12588,7 @@ fn exercise_fixtures() {
         .set_time_base(Rational::new(1, 1_000).unwrap())
         .unwrap();
     props_frame.set_opaque_address(0x3333);
+    props_frame.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0x33])));
     props_frame.set_alpha_mode(FrameAlphaMode::Straight);
     props_frame
         .metadata_mut()
@@ -12572,6 +12604,15 @@ fn exercise_fixtures() {
     assert_eq!(props_frame.duration(), 5);
     assert_eq!(props_frame.time_base(), Rational::new(1, 90_000).unwrap());
     assert_eq!(props_frame.opaque_address(), Some(0x2222));
+    assert_eq!(props_frame.opaque_ref().unwrap().as_slice(), &[0x22, 0x23]);
+    assert!(props_frame
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(&source_opaque_ref));
+    assert!(props_frame
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(source_frame.opaque_ref().unwrap()));
     assert_eq!(props_frame.alpha_mode(), FrameAlphaMode::Premultiplied);
     assert_eq!(props_frame.metadata().get("title"), Some("source"));
     assert_eq!(props_frame.metadata().get("keep"), Some("destination"));
@@ -12603,15 +12644,22 @@ fn exercise_fixtures() {
     moved_frame.move_ref_from(&mut referenced_frame);
     assert!(referenced_frame.is_empty());
     assert_eq!(referenced_frame.opaque_address(), None);
+    assert!(referenced_frame.opaque_ref().is_none());
     assert_eq!(referenced_frame.alpha_mode(), FrameAlphaMode::Unspecified);
     assert!(!moved_frame.is_empty());
     assert_eq!(moved_frame.opaque_address(), Some(0x2222));
+    assert_eq!(moved_frame.opaque_ref().unwrap().as_slice(), &[0x22, 0x23]);
+    assert!(moved_frame
+        .opaque_ref()
+        .unwrap()
+        .shares_storage(&source_opaque_ref));
     assert_eq!(moved_frame.alpha_mode(), FrameAlphaMode::Premultiplied);
     assert!(moved_frame.side_data()[0]
         .buffer()
         .shares_storage(&ref_side));
     moved_frame.unref();
     assert!(moved_frame.is_empty());
+    assert!(moved_frame.opaque_ref().is_none());
 
     let move_source_released = Arc::new(Mutex::new(Vec::<String>::new()));
     let move_source_capture = Arc::clone(&move_source_released);

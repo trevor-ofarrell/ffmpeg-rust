@@ -781,6 +781,7 @@ pub struct Frame {
     best_effort_timestamp: Option<i64>,
     decode_error_flags: FrameDecodeErrorFlags,
     opaque: Option<FrameOpaque>,
+    opaque_ref: Option<BufferRef>,
     alpha_mode: FrameAlphaMode,
     metadata: Dictionary,
     data: FrameData,
@@ -809,6 +810,7 @@ impl Frame {
             best_effort_timestamp: None,
             decode_error_flags: FrameDecodeErrorFlags::empty(),
             opaque: None,
+            opaque_ref: None,
             alpha_mode: FrameAlphaMode::Unspecified,
             metadata: Dictionary::new(),
             data: FrameData::Empty,
@@ -837,6 +839,7 @@ impl Frame {
             best_effort_timestamp: None,
             decode_error_flags: FrameDecodeErrorFlags::empty(),
             opaque: None,
+            opaque_ref: None,
             alpha_mode: FrameAlphaMode::Unspecified,
             metadata: Dictionary::new(),
             data: FrameData::Video(frame),
@@ -865,6 +868,7 @@ impl Frame {
             best_effort_timestamp: None,
             decode_error_flags: FrameDecodeErrorFlags::empty(),
             opaque: None,
+            opaque_ref: None,
             alpha_mode: FrameAlphaMode::Unspecified,
             metadata: Dictionary::new(),
             data: FrameData::Audio(frame),
@@ -892,6 +896,7 @@ impl Frame {
             && self.best_effort_timestamp.is_none()
             && self.decode_error_flags.is_empty()
             && self.opaque.is_none()
+            && self.opaque_ref.is_none()
             && self.alpha_mode == FrameAlphaMode::Unspecified
             && self.metadata.is_empty()
             && self.data.is_empty()
@@ -930,6 +935,7 @@ impl Frame {
         self.best_effort_timestamp = source.best_effort_timestamp;
         self.decode_error_flags = source.decode_error_flags;
         self.opaque = source.opaque;
+        self.opaque_ref = source.opaque_ref.clone();
         self.alpha_mode = source.alpha_mode;
         self.metadata
             .copy_from(
@@ -1162,6 +1168,22 @@ impl Frame {
         self.opaque = None;
     }
 
+    pub fn opaque_ref(&self) -> Option<&BufferRef> {
+        self.opaque_ref.as_ref()
+    }
+
+    pub fn set_opaque_ref(&mut self, opaque_ref: Option<BufferRef>) {
+        self.opaque_ref = opaque_ref;
+    }
+
+    pub fn take_opaque_ref(&mut self) -> Option<BufferRef> {
+        self.opaque_ref.take()
+    }
+
+    pub fn clear_opaque_ref(&mut self) {
+        self.opaque_ref = None;
+    }
+
     pub fn alpha_mode(&self) -> FrameAlphaMode {
         self.alpha_mode
     }
@@ -1221,6 +1243,18 @@ impl Frame {
         self.hw_frames_context.as_ref().map(BufferRef::is_writable)
     }
 
+    pub fn opaque_ref_is_writable(&self) -> Option<bool> {
+        self.opaque_ref.as_ref().map(BufferRef::is_writable)
+    }
+
+    pub fn make_opaque_ref_writable(&mut self) -> bool {
+        let Some(opaque_ref) = self.opaque_ref.as_mut() else {
+            return false;
+        };
+        opaque_ref.make_mut();
+        true
+    }
+
     pub fn make_hw_frames_context_writable(&mut self) -> bool {
         let Some(context) = self.hw_frames_context.as_mut() else {
             return false;
@@ -1233,12 +1267,14 @@ impl Frame {
         self.is_writable()
             && self.side_data_is_writable()
             && self.hw_frames_context_is_writable().unwrap_or(true)
+            && self.opaque_ref_is_writable().unwrap_or(true)
     }
 
     pub fn make_all_references_writable(&mut self) {
         self.make_writable();
         self.make_side_data_writable();
         self.make_hw_frames_context_writable();
+        self.make_opaque_ref_writable();
     }
 
     pub fn set_plane_visible_data(&mut self, index: usize, data: &[u8]) -> AvResult<()> {
@@ -19169,6 +19205,65 @@ mod tests {
     }
 
     #[test]
+    fn frame_opaque_ref_shares_moves_takes_and_releases_lifecycle() {
+        let released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let release_capture = std::sync::Arc::clone(&released);
+        let mut src = Frame::empty();
+        src.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0xaa, 0xbb],
+            move |data| {
+                release_capture.lock().unwrap().push(data);
+            },
+        )));
+
+        let mut copy_dst = Frame::empty();
+        copy_dst.copy_props_from(&src);
+        assert_eq!(copy_dst.opaque_ref().unwrap().as_slice(), &[0xaa, 0xbb]);
+        assert!(copy_dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+        copy_dst.clear_opaque_ref();
+        assert!(released.lock().unwrap().is_empty());
+        src.clear_opaque_ref();
+        assert_eq!(*released.lock().unwrap(), vec![vec![0xaa, 0xbb]]);
+
+        src.set_opaque_ref(Some(BufferRef::copy_from_slice(&[0x10, 0x11])));
+        let mut ref_dst = Frame::empty();
+        ref_dst.ref_from(&src);
+        assert!(ref_dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+
+        let taken = ref_dst.take_opaque_ref().unwrap();
+        assert_eq!(taken.as_slice(), &[0x10, 0x11]);
+        assert!(ref_dst.opaque_ref().is_none());
+        assert!(src.opaque_ref().is_some());
+        ref_dst.set_opaque_ref(Some(taken));
+
+        let mut moved = Frame::empty();
+        moved.move_ref_from(&mut ref_dst);
+        assert!(ref_dst.is_empty());
+        assert!(ref_dst.opaque_ref().is_none());
+        assert_eq!(moved.opaque_ref().unwrap().as_slice(), &[0x10, 0x11]);
+        assert!(moved
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+
+        assert_eq!(moved.opaque_ref_is_writable(), Some(false));
+        assert!(moved.make_opaque_ref_writable());
+        assert_eq!(moved.opaque_ref_is_writable(), Some(true));
+        assert!(!moved
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(src.opaque_ref().unwrap()));
+        moved.clear_opaque_ref();
+        src.clear_opaque_ref();
+    }
+
+    #[test]
     fn empty_frame_unref_clears_data_and_releases_references() {
         let plane_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let plane_capture = std::sync::Arc::clone(&plane_released);
@@ -19199,6 +19294,11 @@ mod tests {
                 hw_capture.lock().unwrap().push(opaque);
             },
         );
+        let opaque_ref_released = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let opaque_ref_capture = std::sync::Arc::clone(&opaque_ref_released);
+        let opaque_ref = BufferRef::from_vec_with_release_callback(vec![0x11, 0x12], move |data| {
+            opaque_ref_capture.lock().unwrap().push(data);
+        });
 
         let video =
             VideoFrame::new_with_buffer_refs(3, 1, PixelFormat::Gray8, vec![plane]).unwrap();
@@ -19227,6 +19327,7 @@ mod tests {
             FrameDecodeErrorFlags::INVALID_BITSTREAM | FrameDecodeErrorFlags::CONCEALMENT_ACTIVE,
         );
         frame.set_opaque_address(0x1111);
+        frame.set_opaque_ref(Some(opaque_ref));
         frame.set_alpha_mode(FrameAlphaMode::Straight);
         frame.metadata_mut().set("title", "before-unref").unwrap();
         frame
@@ -19258,6 +19359,7 @@ mod tests {
         assert_eq!(frame.best_effort_timestamp(), None);
         assert!(frame.decode_error_flags().is_empty());
         assert_eq!(frame.opaque_address(), None);
+        assert!(frame.opaque_ref().is_none());
         assert_eq!(frame.alpha_mode(), FrameAlphaMode::Unspecified);
         assert!(frame.metadata().is_empty());
         assert!(matches!(frame.data(), FrameData::Empty));
@@ -19271,6 +19373,7 @@ mod tests {
         assert_eq!(*plane_released.lock().unwrap(), vec![String::from("plane")]);
         assert_eq!(*side_released.lock().unwrap(), vec![String::from("side")]);
         assert_eq!(*hw_released.lock().unwrap(), vec![String::from("hw")]);
+        assert_eq!(*opaque_ref_released.lock().unwrap(), vec![vec![0x11, 0x12]]);
 
         let mut empty = Frame::empty();
         assert!(empty.is_empty());
@@ -19283,6 +19386,7 @@ mod tests {
         let source_plane = BufferRef::copy_from_slice(&[1, 2, 3]);
         let source_side = BufferRef::copy_from_slice(&[0x44]);
         let source_hw = BufferRef::copy_from_slice(&[0x55]);
+        let source_opaque_ref = BufferRef::copy_from_slice(&[0x66, 0x67]);
         let source_video =
             VideoFrame::new_with_buffer_refs(3, 1, PixelFormat::Gray8, vec![source_plane.clone()])
                 .unwrap();
@@ -19311,6 +19415,7 @@ mod tests {
             FrameDecodeErrorFlags::MISSING_REFERENCE | FrameDecodeErrorFlags::DECODE_SLICES,
         );
         source.set_opaque_address(0x2222);
+        source.set_opaque_ref(Some(source_opaque_ref.clone()));
         source.set_alpha_mode(FrameAlphaMode::Premultiplied);
         source.metadata_mut().set("title", "source").unwrap();
         source
@@ -19365,6 +19470,15 @@ mod tests {
             .decode_error_flags()
             .contains(FrameDecodeErrorFlags::DECODE_SLICES));
         assert_eq!(destination.opaque_address(), Some(0x2222));
+        assert_eq!(destination.opaque_ref().unwrap().as_slice(), &[0x66, 0x67]);
+        assert!(destination
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&source_opaque_ref));
+        assert!(destination
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(source.opaque_ref().unwrap()));
         assert_eq!(destination.alpha_mode(), FrameAlphaMode::Premultiplied);
         assert_eq!(destination.metadata().get("title"), Some("source"));
         destination
@@ -19413,6 +19527,7 @@ mod tests {
         let source_video =
             VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![source_plane]).unwrap();
         let mut source = Frame::video(source_video);
+        let source_opaque_ref = BufferRef::copy_from_slice(&[0x33, 0x34]);
         source.set_pts(Some(11));
         source.set_pkt_dts(Some(10));
         source.set_duration(9).unwrap();
@@ -19435,6 +19550,7 @@ mod tests {
         source.set_best_effort_timestamp(Some(8));
         source.set_decode_error_flags(FrameDecodeErrorFlags::CONCEALMENT_ACTIVE);
         source.set_opaque_address(0x3333);
+        source.set_opaque_ref(Some(source_opaque_ref.clone()));
         source.set_alpha_mode(FrameAlphaMode::Straight);
         source.metadata_mut().set("title", "move-source").unwrap();
 
@@ -19451,6 +19567,15 @@ mod tests {
             VideoFrame::new_with_buffer_refs(1, 1, PixelFormat::Gray8, vec![destination_plane])
                 .unwrap();
         let mut destination = Frame::video(destination_video);
+        let old_opaque_ref_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let old_opaque_ref_capture = std::sync::Arc::clone(&old_opaque_ref_released);
+        destination.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0x99],
+            move |data| {
+                old_opaque_ref_capture.lock().unwrap().push(data);
+            },
+        )));
 
         destination.move_ref_from(&mut source);
 
@@ -19482,10 +19607,16 @@ mod tests {
             FrameDecodeErrorFlags::CONCEALMENT_ACTIVE
         );
         assert_eq!(destination.opaque_address(), Some(0x3333));
+        assert_eq!(destination.opaque_ref().unwrap().as_slice(), &[0x33, 0x34]);
+        assert!(destination
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&source_opaque_ref));
         assert_eq!(destination.alpha_mode(), FrameAlphaMode::Straight);
         assert_eq!(source.best_effort_timestamp(), None);
         assert!(source.decode_error_flags().is_empty());
         assert_eq!(source.opaque_address(), None);
+        assert!(source.opaque_ref().is_none());
         assert_eq!(source.alpha_mode(), FrameAlphaMode::Unspecified);
         assert_eq!(destination.metadata().get("title"), Some("move-source"));
         assert!(source.metadata().is_empty());
@@ -19494,6 +19625,7 @@ mod tests {
             *destination_released.lock().unwrap(),
             vec![String::from("destination-plane")]
         );
+        assert_eq!(*old_opaque_ref_released.lock().unwrap(), vec![vec![0x99]]);
         assert!(source_released.lock().unwrap().is_empty());
 
         drop(destination);
@@ -19508,6 +19640,7 @@ mod tests {
         let source_plane = BufferRef::copy_from_slice(&[1, 2]);
         let source_side = BufferRef::copy_from_slice(&(1..=36).collect::<Vec<_>>());
         let source_hw = BufferRef::copy_from_slice(&[0xEE]);
+        let source_opaque_ref = BufferRef::copy_from_slice(&[0x44, 0x45, 0x46]);
         let source_video =
             VideoFrame::new_with_buffer_refs(2, 1, PixelFormat::Gray8, vec![source_plane.clone()])
                 .unwrap();
@@ -19536,6 +19669,7 @@ mod tests {
             FrameDecodeErrorFlags::MISSING_REFERENCE | FrameDecodeErrorFlags::DECODE_SLICES,
         );
         source.set_opaque_address(0x4444);
+        source.set_opaque_ref(Some(source_opaque_ref.clone()));
         source.set_alpha_mode(FrameAlphaMode::Straight);
         source.metadata_mut().set("title", "source").unwrap();
         source.metadata_mut().set("artist", "libavutil").unwrap();
@@ -19570,6 +19704,15 @@ mod tests {
         )
         .unwrap();
         let mut destination = Frame::video(destination_video).with_hw_frames_context(old_hw);
+        let old_opaque_ref_released =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+        let old_opaque_ref_capture = std::sync::Arc::clone(&old_opaque_ref_released);
+        destination.set_opaque_ref(Some(BufferRef::from_vec_with_release_callback(
+            vec![0x77],
+            move |data| {
+                old_opaque_ref_capture.lock().unwrap().push(data);
+            },
+        )));
         destination.set_pts(Some(999));
         destination.set_pkt_dts(Some(998));
         destination.set_duration(997).unwrap();
@@ -19640,6 +19783,18 @@ mod tests {
             .decode_error_flags()
             .contains(FrameDecodeErrorFlags::INVALID_BITSTREAM));
         assert_eq!(destination.opaque_address(), Some(0x4444));
+        assert_eq!(
+            destination.opaque_ref().unwrap().as_slice(),
+            &[0x44, 0x45, 0x46]
+        );
+        assert!(destination
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&source_opaque_ref));
+        assert!(destination
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(source.opaque_ref().unwrap()));
         assert_eq!(destination.alpha_mode(), FrameAlphaMode::Straight);
         assert_eq!(destination.metadata().get("title"), Some("source"));
         assert_eq!(destination.metadata().get("artist"), Some("libavutil"));
@@ -19647,6 +19802,7 @@ mod tests {
         assert_eq!(source.metadata().get("keep"), None);
         assert!(old_side_released.lock().unwrap().is_empty());
         assert!(old_hw_released.lock().unwrap().is_empty());
+        assert_eq!(*old_opaque_ref_released.lock().unwrap(), vec![vec![0x77]]);
         let (destination_video, source_video) = match (destination.data(), source.data()) {
             (FrameData::Video(destination_video), FrameData::Video(source_video)) => {
                 (destination_video, source_video)
