@@ -318,6 +318,53 @@ impl PacketSideDataKind {
             .map(|index| index as i32)
     }
 
+    pub fn ffmpeg_side_data_name(&self) -> Option<&'static str> {
+        match self {
+            Self::Palette => Some("Palette"),
+            Self::NewExtradata => Some("New Extradata"),
+            Self::ParamChange => Some("Param Change"),
+            Self::H263MbInfo => Some("H263 MB Info"),
+            Self::ReplayGain => Some("Replay Gain"),
+            Self::DisplayMatrix => Some("Display Matrix"),
+            Self::Stereo3d => Some("Stereo 3D"),
+            Self::AudioServiceType => Some("Audio Service Type"),
+            Self::QualityStats => Some("Quality stats"),
+            Self::FallbackTrack => Some("Fallback track"),
+            Self::CpbProperties => Some("CPB properties"),
+            Self::SkipSamples => Some("Skip Samples"),
+            Self::JpDualMono => Some("JP Dual Mono"),
+            Self::StringsMetadata => Some("Strings Metadata"),
+            Self::SubtitlePosition => Some("Subtitle Position"),
+            Self::MatroskaBlockAdditional => Some("Matroska BlockAdditional"),
+            Self::WebVttIdentifier => Some("WebVTT ID"),
+            Self::WebVttSettings => Some("WebVTT Settings"),
+            Self::MetadataUpdate => Some("Metadata Update"),
+            Self::MpegTsStreamId => Some("MPEGTS Stream ID"),
+            Self::MasteringDisplayMetadata => Some("Mastering display metadata"),
+            Self::Spherical => Some("Spherical Mapping"),
+            Self::ContentLightLevel => Some("Content light level metadata"),
+            Self::A53ClosedCaptions => Some("A53 Closed Captions"),
+            Self::EncryptionInitInfo => Some("Encryption initialization data"),
+            Self::EncryptionInfo => Some("Encryption info"),
+            Self::ActiveFormatDescription => Some("Active Format Description data"),
+            Self::ProducerReferenceTime => Some("Producer Reference Time"),
+            Self::IccProfile => Some("ICC Profile"),
+            Self::DolbyVisionConf => Some("DOVI configuration record"),
+            Self::S12mTimecode => Some("SMPTE ST 12-1:2014 timecode"),
+            Self::DynamicHdr10Plus => Some("HDR10+ Dynamic Metadata (SMPTE 2094-40)"),
+            Self::IamfMixGainParam => Some("IAMF Mix Gain Parameter Data"),
+            Self::IamfDemixingInfoParam => Some("IAMF Demixing Info Parameter Data"),
+            Self::IamfReconGainInfoParam => Some("IAMF Recon Gain Info Parameter Data"),
+            Self::AmbientViewingEnvironment => Some("Ambient viewing environment"),
+            Self::FrameCropping => Some("Frame Cropping"),
+            Self::Lcevc => Some("LCEVC NAL data"),
+            Self::ThreeDReferenceDisplays => Some("3D Reference Displays Info"),
+            Self::RtcpSenderReport => Some("RTCP Sender Report"),
+            Self::Exif => Some("EXIF metadata"),
+            Self::Unknown(_) => None,
+        }
+    }
+
     pub fn is_known(&self) -> bool {
         !matches!(self, Self::Unknown(_))
     }
@@ -5632,6 +5679,7 @@ mod tests {
         assert_eq!(PacketSideDataKind::KNOWN.len(), 41);
         for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
             assert_eq!(kind.ffmpeg_value(), Some(index as i32));
+            assert!(kind.ffmpeg_side_data_name().is_some());
         }
     }
 
@@ -5655,6 +5703,7 @@ mod tests {
         assert!(!unknown.is_known());
         assert_eq!(unknown.ffmpeg_constant(), None);
         assert_eq!(unknown.ffmpeg_value(), None);
+        assert_eq!(unknown.ffmpeg_side_data_name(), None);
 
         let side_data = SideData::new("AV_PKT_DATA_PALETTE", vec![1, 2]).unwrap();
         assert_eq!(side_data.kind(), "palette");

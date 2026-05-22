@@ -8340,6 +8340,7 @@ fn exercise_fixtures() {
     assert_eq!(PacketSideDataKind::KNOWN.len(), 41);
     for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
         assert_eq!(kind.ffmpeg_value(), Some(index as i32));
+        assert!(kind.ffmpeg_side_data_name().is_some());
     }
     assert_eq!(
         PacketSideDataKind::from_name("AV_PKT_DATA_A53_CC").unwrap(),
