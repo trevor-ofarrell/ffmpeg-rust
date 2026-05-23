@@ -18,6 +18,8 @@ cargo test -p fftools --test rawvideo_oracle -- --ignored
 
 The current harness writes deterministic rawvideo inputs, runs Rust `ffmpeg-rs` to produce rawvideo file output, runs the pinned FFmpeg oracle with `-c:v copy -f rawvideo`, and compares the output bytes exactly. It also compares normalized rawvideo `framecrc`, `hash`, `md5`, `framehash`, `framemd5`, and `streamhash` stdout rows for the bounded `rgb24` streamcopy path.
 
+The yuv4mpegpipe oracle harness lives in `crates/fftools/tests/yuv4mpegpipe_oracle.rs`. It writes deterministic raw `yuv420p`, compares Rust local `-f yuv4mpegpipe` file bytes against pinned FFmpeg `-c:v copy -f yuv4mpegpipe`, and parses the oracle output through the Rust demuxer to cover FFmpeg's `A0:0` and `XYSCSS=420JPEG` header shape.
+
 The raw PCM oracle harness lives in `crates/fftools/tests/pcm_oracle.rs` and is ignored by default because it requires the pinned oracle. It writes deterministic stereo `pcm_s16le`, compares normalized `framecrc` rows against FFmpeg `-c:a copy -f framecrc -`, and compares raw `s16le` output bytes against FFmpeg `-c:a copy -f s16le`:
 
 ```sh

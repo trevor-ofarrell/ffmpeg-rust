@@ -311,9 +311,9 @@ GPS common-tag range validation currently rejects `GPSLatitude`/`GPSDestLatitude
 
 `tx3g` Timed Text media samples now keep every modifier box for unknown-box preservation and derive typed Rust models for `styl`, `hlit`, `hclr`, `krok`, `dlay`, `href`, `tbox`, `blnk`, `twrp`, and `disp`, with fixed-size payload validation, UTF-8 hyperlink text validation, ordered range checks, duplicate global-modifier rejection, and reserved wrap-flag rejection.
 
-`Yuv4MpegDemuxer` implements an initial yuv4mpegpipe parser for progressive 4:2:0 `C420jpeg` streams. It parses the stream header, validates dimensions and frame size through `VideoStreamParameters` and `PixelFormat::Yuv420p`, keeps frame rate, interlace, chroma, and frame-header checks local, then emits one packet per raw frame with monotonically increasing PTS.
+`Yuv4MpegDemuxer` implements an initial yuv4mpegpipe parser for progressive 4:2:0 `C420jpeg` streams. It parses the stream header, validates dimensions and frame size through `VideoStreamParameters` and `PixelFormat::Yuv420p`, treats FFmpeg's `A0:0` header field as unspecified sample aspect, ignores YUV4MPEG2 `X*` extension fields such as `XYSCSS=420JPEG`, keeps frame rate, interlace, chroma, and frame-header checks local, then emits one packet per raw frame with monotonically increasing PTS.
 
-`Yuv4MpegMuxer` implements the matching initial yuv4mpegpipe muxer path. It writes a canonical progressive `C420jpeg` stream header and one `FRAME` record per stream-0 packet whose exact yuv420p payload size is validated through `VideoStreamParameters`.
+`Yuv4MpegMuxer` implements the matching initial yuv4mpegpipe muxer path. It writes a pinned-oracle-shaped progressive `C420jpeg` stream header including `A0:0` for unspecified sample aspect plus `XYSCSS=420JPEG`, and one `FRAME` record per stream-0 packet whose exact yuv420p payload size is validated through `VideoStreamParameters`.
 
 `Image2Demuxer` implements an initial image2 packetizer over caller-provided image entries. It supports a single literal image path or a contiguous `%d`/`%0Nd` numbered sequence, sorts frames by frame number, rejects gaps and duplicates, and emits one packet per image with path side data.
 

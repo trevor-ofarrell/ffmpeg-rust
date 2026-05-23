@@ -192,14 +192,17 @@ impl Yuv4MpegMuxer {
             self.info.frame_rate.den(),
             self.info.interlace.tag()
         );
-        if let Some(sample_aspect_ratio) = self.info.sample_aspect_ratio {
-            header.push_str(&format!(
-                " A{}:{}",
-                sample_aspect_ratio.num(),
-                sample_aspect_ratio.den()
-            ));
+        match self.info.sample_aspect_ratio {
+            Some(sample_aspect_ratio) => {
+                header.push_str(&format!(
+                    " A{}:{}",
+                    sample_aspect_ratio.num(),
+                    sample_aspect_ratio.den()
+                ));
+            }
+            None => header.push_str(" A0:0"),
         }
-        header.push_str(&format!(" C{}\n", self.info.chroma.name()));
+        header.push_str(&format!(" C{} XYSCSS=420JPEG\n", self.info.chroma.name()));
         header
     }
 
@@ -276,12 +279,7 @@ fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
             "W" => width = Some(parse_positive_u32(value, "YUV4MPEG2 width")?),
             "H" => height = Some(parse_positive_u32(value, "YUV4MPEG2 height")?),
             "F" => frame_rate = Some(parse_positive_rational(value, "YUV4MPEG2 frame rate")?),
-            "A" => {
-                sample_aspect_ratio = Some(parse_positive_rational(
-                    value,
-                    "YUV4MPEG2 sample aspect ratio",
-                )?)
-            }
+            "A" => sample_aspect_ratio = parse_sample_aspect_ratio(value)?,
             "I" => {
                 if value != Yuv4MpegInterlace::Progressive.tag() {
                     return Err(AvError::unsupported(format!(
@@ -320,6 +318,16 @@ fn parse_header(line: &str) -> AvResult<Yuv4MpegInfo> {
         interlace,
         chroma,
     })
+}
+
+fn parse_sample_aspect_ratio(value: &str) -> AvResult<Option<Rational>> {
+    if value == "0:0" {
+        return Ok(None);
+    }
+    Ok(Some(parse_positive_rational(
+        value,
+        "YUV4MPEG2 sample aspect ratio",
+    )?))
 }
 
 fn parse_frame_header(line: &str) -> AvResult<()> {
@@ -484,6 +492,18 @@ mod tests {
     }
 
     #[test]
+    fn parses_ffmpeg_unspecified_sample_aspect_and_xyscss_extension() {
+        let input = b"YUV4MPEG2 W2 H2 F25:1 Ip A0:0 C420jpeg XYSCSS=420JPEG\nFRAME\nabcdef";
+        let mut demuxer = Yuv4MpegDemuxer::open(input).unwrap();
+
+        assert_eq!(demuxer.info().sample_aspect_ratio(), None);
+        assert_eq!(demuxer.info().chroma(), Yuv4MpegChroma::C420Jpeg);
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), b"abcdef");
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn rejects_bad_or_incomplete_stream_headers() {
         assert_eq!(
             Yuv4MpegDemuxer::open(b"not y4m\n").unwrap_err().kind(),
@@ -546,7 +566,9 @@ mod tests {
         assert_eq!(muxer.info().frame_size(), 6);
         assert_eq!(muxer.frame_count(), 2);
         assert_eq!(muxer.payload_len(), 12);
-        assert!(output.starts_with(b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg\nFRAME\n"));
+        assert!(
+            output.starts_with(b"YUV4MPEG2 W2 H2 F25:1 Ip A1:1 C420jpeg XYSCSS=420JPEG\nFRAME\n")
+        );
 
         let mut demuxer = Yuv4MpegDemuxer::open(&output).unwrap();
         assert_eq!(demuxer.info().sample_aspect_ratio(), Some(Rational::ONE));
@@ -556,14 +578,20 @@ mod tests {
     }
 
     #[test]
-    fn muxer_omits_sample_aspect_ratio_when_absent_and_allows_empty_output() {
+    fn muxer_writes_ffmpeg_unspecified_sample_aspect_and_allows_empty_output() {
         let mut muxer =
             Yuv4MpegMuxer::new(4, 2, Rational::new(30000, 1001).unwrap(), None).unwrap();
 
-        assert_eq!(muxer.header(), "YUV4MPEG2 W4 H2 F30000:1001 Ip C420jpeg\n");
+        assert_eq!(
+            muxer.header(),
+            "YUV4MPEG2 W4 H2 F30000:1001 Ip A0:0 C420jpeg XYSCSS=420JPEG\n"
+        );
         let output = muxer.finish();
 
-        assert_eq!(output, b"YUV4MPEG2 W4 H2 F30000:1001 Ip C420jpeg\n");
+        assert_eq!(
+            output,
+            b"YUV4MPEG2 W4 H2 F30000:1001 Ip A0:0 C420jpeg XYSCSS=420JPEG\n"
+        );
         assert_eq!(muxer.frame_count(), 0);
         assert_eq!(muxer.payload_len(), 0);
         let mut demuxer = Yuv4MpegDemuxer::open(&output).unwrap();

@@ -482,6 +482,16 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/fftools/tests/yuv4mpegpipe_oracle.rs",
+        exact_ids: &[
+            "fftools-ffmpeg-rawvideo-yuv4mpegpipe-file-output",
+            "avutil-packet",
+            "avformat-yuv4mpegpipe-demuxer",
+            "avformat-yuv4mpegpipe-muxer",
+        ],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/fftools/tests/pcm_oracle.rs",
         exact_ids: &[
             "fftools-ffmpeg-pcm-s16le-framecrc-null",
@@ -1743,6 +1753,27 @@ mod tests {
                 "avformat-framecrc-muxer".to_string(),
                 "avformat-framehash-muxer".to_string(),
                 "avformat-streamhash-muxer".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_yuv4mpegpipe_oracle_test_to_covered_components() {
+        let component_ids = component_ids_from_ledger(&ledger(&[
+            "fftools-ffmpeg-rawvideo-yuv4mpegpipe-file-output",
+            "avutil-packet",
+            "avformat-yuv4mpegpipe-demuxer",
+            "avformat-yuv4mpegpipe-muxer",
+        ]));
+        let paths = vec!["crates/fftools/tests/yuv4mpegpipe_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec![
+                "fftools-ffmpeg-rawvideo-yuv4mpegpipe-file-output".to_string(),
+                "avutil-packet".to_string(),
+                "avformat-yuv4mpegpipe-demuxer".to_string(),
+                "avformat-yuv4mpegpipe-muxer".to_string(),
             ]
         );
     }

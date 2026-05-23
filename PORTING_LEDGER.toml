@@ -338,6 +338,7 @@ unit_tests = [
 differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-libavcodec-packet-core",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-file-output",
+  "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-yuv4mpegpipe-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framehash-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framemd5-records",
@@ -350,6 +351,7 @@ differential_tests = [
   "packet_oracle::libavcodec_packet_core_lifecycle_matches_packet_model",
   "rawvideo_oracle::rawvideo_rgb24_file_output_matches_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle",
+  "yuv4mpegpipe_oracle::rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framehash_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framemd5_records_match_ffmpeg_oracle",
@@ -368,6 +370,10 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest yuv4mpegpipe media-integration update: the yuv4mpegpipe byte-copy
+# oracle row is now mapped to avutil-packet, validating the Rust rawvideo
+# yuv420p demuxer -> Packet -> yuv4mpegpipe muxer path against pinned FFmpeg
+# streamcopy bytes for a bounded two-frame yuv420p input.
 # Latest rawvideo file-output media-integration update: the rawvideo byte-copy
 # oracle row is now also mapped to avutil-packet, validating the Rust rawvideo
 # demuxer -> Packet -> rawvideo muxer path against pinned FFmpeg streamcopy
@@ -2261,7 +2267,6 @@ unit_tests = [
   "cli_logging::tests::later_loglevel_values_win",
   "cli_logging::tests::malformed_loglevel_arguments_fall_back_to_default_formatting",
 ]
-differential_tests = []
 differential_tests = [
   "tests/differential/mappings.txt:fftools-ffmpeg-rawvideo-framecrc-null|oracle-rawvideo-framecrc-records",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
@@ -3280,7 +3285,7 @@ id = "fftools-ffmpeg-rawvideo-yuv4mpegpipe-file-output"
 kind = "cli"
 ffmpeg_name = "ffmpeg raw yuv420p to yuv4mpegpipe file"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffmpeg -f rawvideo -pix_fmt yuv420p -s <WxH> -r <rate> -i <input.raw> -f yuv4mpegpipe <output.y4m>"
 rust_command = "cargo test -p fftools ffmpeg"
@@ -3289,10 +3294,13 @@ unit_tests = [
   "ffmpeg::tests::rejects_yuv4mpegpipe_file_output_overwrite",
   "ffmpeg::tests::rejects_yuv4mpegpipe_file_output_for_non_yuv420p_rawvideo",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-rawvideo-yuv4mpegpipe-file-output|oracle-rawvideo-yuv4mpegpipe-file-output",
+  "yuv4mpegpipe_oracle::rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-rawvideo-yuv4mpegpipe-file-output|local-ffmpeg-unit"]
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports explicit raw yuv420p input packet-copy to a local yuv4mpegpipe output file with explicit -f rawvideo, -pix_fmt yuv420p, -s, and -r input parameters and explicit -f yuv4mpegpipe output format. It uses the Rust rawvideo demuxer and Yuv4MpegMuxer, creates output files with no overwrite, validates the generated output through the Rust YUV4MPEG2 demuxer in tests, and rejects non-yuv420p rawvideo inputs instead of pretending to convert. No oracle differential or upstream FATE coverage exists yet. Color conversion, chroma variants, overwrite confirmation flags, broad muxer selection, and non-rawvideo inputs remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution supports explicit raw yuv420p input packet-copy to a local yuv4mpegpipe output file with explicit -f rawvideo, -pix_fmt yuv420p, -s, and -r input parameters and explicit -f yuv4mpegpipe output format. It uses the Rust rawvideo demuxer and Yuv4MpegMuxer, creates output files with no overwrite, validates the generated output through the Rust YUV4MPEG2 demuxer in tests, and rejects non-yuv420p rawvideo inputs instead of pretending to convert. The bounded two-frame yuv420p oracle row compares Rust yuv4mpegpipe output bytes against pinned FFmpeg 8.1.1 `-c:v copy -f yuv4mpegpipe` bytes, including FFmpeg-shaped `A0:0` unspecified sample aspect and `XYSCSS=420JPEG` header extension fields. Color conversion, chroma variants, overwrite confirmation flags, broad muxer selection, non-rawvideo inputs, and upstream FATE coverage remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -3800,20 +3808,24 @@ id = "avformat-yuv4mpegpipe-demuxer"
 kind = "demuxer"
 ffmpeg_name = "yuv4mpegpipe"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 3
 oracle_command = "ffmpeg -f yuv4mpegpipe -i <input.y4m> -f framecrc -"
 rust_command = "cargo test -p avformat yuv4mpegpipe"
 unit_tests = [
   "yuv4mpegpipe::tests::parses_header_and_reads_multiple_frames",
   "yuv4mpegpipe::tests::defaults_missing_chroma_and_allows_clean_eof_after_header",
+  "yuv4mpegpipe::tests::parses_ffmpeg_unspecified_sample_aspect_and_xyscss_extension",
   "yuv4mpegpipe::tests::rejects_bad_or_incomplete_stream_headers",
   "yuv4mpegpipe::tests::rejects_bad_frame_headers_and_truncated_payloads",
 ]
-differential_tests = []
-fate_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:avformat-yuv4mpegpipe-demuxer|oracle-rawvideo-yuv4mpegpipe-file-output",
+  "yuv4mpegpipe_oracle::rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle",
+]
+fate_tests = ["tests/fate/mappings.txt:avformat-yuv4mpegpipe-demuxer|local-avformat-yuv4mpegpipe-unit"]
 fuzz_targets = ["avformat_yuv4mpegpipe"]
-notes = "Initial YUV4MPEG2 demuxer parses progressive 4:2:0 C420jpeg headers, validates dimensions and frame size through shared VideoStreamParameters plus PixelFormat::Yuv420p while keeping frame rate/interlace/chroma field checks local, and emits one stream-0 packet per frame with incrementing PTS. Build-checked cargo-fuzz target avformat_yuv4mpegpipe exercises demuxer opening, frame packet emission, and parsed stream invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other chroma modes, interlaced modes, frame header overrides, CLI wiring, differential tests, and FATE are pending."
+notes = "Initial YUV4MPEG2 demuxer parses progressive 4:2:0 C420jpeg headers, validates dimensions and frame size through shared VideoStreamParameters plus PixelFormat::Yuv420p while keeping frame rate/interlace, chroma, and frame-header checks local, treats FFmpeg's `A0:0` yuv4mpegpipe header as unspecified sample aspect, ignores YUV4MPEG2 `X*` extension fields including the pinned `XYSCSS=420JPEG` field, and emits one stream-0 packet per frame with incrementing PTS. The bounded yuv420p yuv4mpegpipe oracle row now also parses pinned FFmpeg 8.1.1 y4m output with this demuxer after byte comparison. Build-checked cargo-fuzz target avformat_yuv4mpegpipe exercises demuxer opening, frame packet emission, and parsed stream invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other chroma modes, interlaced modes, frame header overrides, broader CLI wiring, upstream FATE, and sustained fuzz execution are pending."
 blocked_reason = ""
 
 [[component]]
@@ -4039,20 +4051,23 @@ id = "avformat-yuv4mpegpipe-muxer"
 kind = "muxer"
 ffmpeg_name = "yuv4mpegpipe"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 3
 oracle_command = "ffmpeg -f rawvideo -pix_fmt yuv420p -s <size> -framerate <rate> -i <input> -f yuv4mpegpipe <output.y4m>"
 rust_command = "cargo test -p avformat yuv4mpegpipe"
 unit_tests = [
   "yuv4mpegpipe::tests::muxer_writes_header_frames_and_round_trips_through_demuxer",
-  "yuv4mpegpipe::tests::muxer_omits_sample_aspect_ratio_when_absent_and_allows_empty_output",
+  "yuv4mpegpipe::tests::muxer_writes_ffmpeg_unspecified_sample_aspect_and_allows_empty_output",
   "yuv4mpegpipe::tests::muxer_rejects_invalid_parameters_streams_and_packet_sizes",
   "yuv4mpegpipe::tests::muxer_finish_prevents_more_writes",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:avformat-yuv4mpegpipe-muxer|oracle-rawvideo-yuv4mpegpipe-file-output",
+  "yuv4mpegpipe_oracle::rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:avformat-yuv4mpegpipe-muxer|local-avformat-yuv4mpegpipe-unit"]
 fuzz_targets = ["avformat_basic_muxers"]
-notes = "Initial YUV4MPEG2 muxer writes progressive C420jpeg stream headers and FRAME payloads for exact-size yuv420p stream-0 packets validated through shared VideoStreamParameters plus PixelFormat::Yuv420p, supports optional sample aspect ratio, empty output, round-trip demuxing, and finalization checks. It is wired to a constrained ffmpeg-rs raw yuv420p to yuv4mpegpipe file-output path. Build-checked cargo-fuzz target avformat_basic_muxers covers accepted/rejected packet writes, state accounting, render/finish stability, post-finish rejection, and Yuv4MpegDemuxer round trips, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other chroma modes, interlaced modes, frame header overrides, broader CLI wiring, differential tests, and upstream FATE are pending. The local FATE-runner smoke mapping executes the yuv4mpegpipe unit filter only and does not count as upstream FATE parity."
+notes = "Initial YUV4MPEG2 muxer writes progressive C420jpeg stream headers and FRAME payloads for exact-size yuv420p stream-0 packets validated through shared VideoStreamParameters plus PixelFormat::Yuv420p, supports optional sample aspect ratio, writes FFmpeg-shaped `A0:0` plus `XYSCSS=420JPEG` for unspecified sample aspect, supports empty output, round-trip demuxing, and finalization checks. It is wired to a constrained ffmpeg-rs raw yuv420p to yuv4mpegpipe file-output path. The bounded two-frame yuv420p oracle row compares Rust yuv4mpegpipe bytes against pinned FFmpeg 8.1.1 `-c:v copy -f yuv4mpegpipe` bytes. Build-checked cargo-fuzz target avformat_basic_muxers covers accepted/rejected packet writes, state accounting, render/finish stability, post-finish rejection, and Yuv4MpegDemuxer round trips, but actual local fuzz execution is blocked until cargo-fuzz is installed. Other chroma modes, interlaced modes, frame header overrides, broader CLI wiring, upstream FATE, and sustained fuzz execution are pending. The local FATE-runner smoke mapping executes the yuv4mpegpipe unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
