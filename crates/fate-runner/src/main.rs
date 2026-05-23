@@ -468,11 +468,13 @@ const PATH_RULES: &[PathRule] = &[
             "fftools-ffmpeg-rawvideo-framecrc-null",
             "fftools-ffmpeg-framehash-output",
             "fftools-ffmpeg-framemd5-output",
+            "fftools-ffmpeg-streamhash-output",
             "avutil-packet",
             "avformat-rawvideo-demuxer",
             "avformat-rawvideo-muxer",
             "avformat-framecrc-muxer",
             "avformat-framehash-muxer",
+            "avformat-streamhash-muxer",
         ],
         id_prefixes: &[],
     },
@@ -1687,11 +1689,13 @@ mod tests {
             "fftools-ffmpeg-rawvideo-framecrc-null",
             "fftools-ffmpeg-framehash-output",
             "fftools-ffmpeg-framemd5-output",
+            "fftools-ffmpeg-streamhash-output",
             "avutil-packet",
             "avformat-rawvideo-demuxer",
             "avformat-rawvideo-muxer",
             "avformat-framecrc-muxer",
             "avformat-framehash-muxer",
+            "avformat-streamhash-muxer",
         ]));
         let paths = vec!["crates/fftools/tests/rawvideo_oracle.rs".to_string()];
 
@@ -1702,11 +1706,13 @@ mod tests {
                 "fftools-ffmpeg-rawvideo-framecrc-null".to_string(),
                 "fftools-ffmpeg-framehash-output".to_string(),
                 "fftools-ffmpeg-framemd5-output".to_string(),
+                "fftools-ffmpeg-streamhash-output".to_string(),
                 "avutil-packet".to_string(),
                 "avformat-rawvideo-demuxer".to_string(),
                 "avformat-rawvideo-muxer".to_string(),
                 "avformat-framecrc-muxer".to_string(),
                 "avformat-framehash-muxer".to_string(),
+                "avformat-streamhash-muxer".to_string(),
             ]
         );
     }

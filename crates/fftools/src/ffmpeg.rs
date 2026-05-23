@@ -2927,6 +2927,44 @@ mod tests {
     }
 
     #[test]
+    fn runs_rawvideo_to_streamhash_stdout() {
+        let payload = (0_u8..12).collect::<Vec<_>>();
+        let path = write_temp_bytes("rawvideo-streamhash", "raw", &payload);
+        let path_arg = path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-s",
+            "2x1",
+            "-r",
+            "30",
+            "-i",
+            path_arg.as_str(),
+            "-f",
+            "streamhash",
+            "-",
+        ]))
+        .expect("rawvideo streamhash command path should execute");
+
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(output.output_format(), Some("streamhash"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), 12);
+        assert!(output.stderr().is_empty());
+        assert_eq!(
+            output.stdout(),
+            format!(
+                "0,v,SHA256={}\n",
+                avutil::digest_to_hex(&avutil::sha256(&payload))
+            )
+        );
+    }
+
+    #[test]
     fn runs_rawvideo_to_null_stdout() {
         let path = write_temp_bytes("rawvideo-null", "raw", &[0, 1, 2, 3]);
         let path_arg = path.to_string_lossy().into_owned();

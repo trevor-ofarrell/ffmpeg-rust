@@ -50,6 +50,19 @@ fn rawvideo_rgb24_framemd5_records_match_ffmpeg_oracle() {
     );
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn rawvideo_rgb24_streamhash_records_match_ffmpeg_oracle() {
+    compare_rawvideo_frame_checksum_records(
+        "rgb24",
+        "2x1",
+        "25",
+        &(0_u8..12).collect::<Vec<_>>(),
+        "streamhash",
+        &["-c:v", "copy"],
+    );
+}
+
 fn compare_rawvideo_file_output(pixel_format: &str, size: &str, rate: &str, payload: &[u8]) {
     let oracle = oracle_ffmpeg();
     let input_path = write_temp_bytes(&format!("{pixel_format}-input"), "raw", payload);
