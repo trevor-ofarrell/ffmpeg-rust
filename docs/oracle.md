@@ -166,6 +166,8 @@ The packet bridge rows also include `packet:frame-to-packet-map-inventory` and `
 
 The harness also includes a direct `av_init_packet()` row. `Packet::init_legacy()` matches the deterministic reset shape by preserving payload data/size while resetting unknown timestamps and position, zero duration, stream index 0, empty flags, cleared side data, cleared opaque metadata, cleared `opaque_ref`, and `time_base` `0/1`. The safe Rust model releases owned metadata when clearing it; it does not model C leak behavior caused by calling `av_init_packet()` on an already-owned packet.
 
+The harness also includes `packet:unref-empty` and `packet:unref-repeat` rows. These prove `av_packet_unref()` resets an already-empty allocated packet to the same default state and remains idempotent after releasing a populated packet.
+
 The harness also includes `packet:ref-replace`, `packet:ref-replace-side`, and `packet:ref-replace-payload` rows for `av_packet_ref()`. These rows prove that a destination packet with existing payload, side data, opaque pointer metadata, and `opaque_ref` is unreferenced and then replaced with source packet state.
 
 The harness also includes `packet:move-replace-dst`, `packet:move-replace-dst-side`, `packet:move-replace-dst-payload`, and `packet:move-replace-src` rows for `av_packet_move_ref()`. These rows prove that a destination packet with existing payload, side data, opaque pointer metadata, and `opaque_ref` is unreferenced before FFmpeg transfers the complete source packet state and resets the source packet to defaults.

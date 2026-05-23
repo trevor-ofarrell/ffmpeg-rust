@@ -397,6 +397,21 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     unref.unref();
     rows.insert("packet:unref".to_string(), packet_fields(&unref));
 
+    let mut unref_empty = Packet::default();
+    unref_empty.unref();
+    rows.insert(
+        "packet:unref-empty".to_string(),
+        packet_fields(&unref_empty),
+    );
+
+    let mut unref_repeat = packet_with_common_props();
+    unref_repeat.unref();
+    unref_repeat.unref();
+    rows.insert(
+        "packet:unref-repeat".to_string(),
+        packet_fields(&unref_repeat),
+    );
+
     insert_side_data_api_rows(&mut rows);
     insert_side_data_capacity_rows(&mut rows);
     insert_side_data_array_api_rows(&mut rows);
@@ -5676,6 +5691,17 @@ int main(void) {
     pkt = packet_with_common_props();
     av_packet_unref(pkt);
     print_packet("packet:unref", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    av_packet_unref(pkt);
+    print_packet("packet:unref-empty", pkt);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props();
+    av_packet_unref(pkt);
+    av_packet_unref(pkt);
+    print_packet("packet:unref-repeat", pkt);
     av_packet_free(&pkt);
 
     exercise_side_data_api();

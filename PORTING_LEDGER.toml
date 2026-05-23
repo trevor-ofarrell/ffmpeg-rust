@@ -2,6 +2,11 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest avutil-packet evidence: `packet:unref-empty` and
+# `packet:unref-repeat` rows now prove pinned FFmpeg 8.1.1
+# `av_packet_unref()` resets an already-empty allocated packet and remains
+# idempotent after releasing a populated packet. Rust unit and
+# `avutil_core_models` fuzz-model invariants cover the same reset shape.
 # Latest framecrc/rawvideo evidence: `FrameCrcMuxer` now emits FFmpeg-style
 # packet record rows using the framecrc Adler-style checksum initialized at
 # zero. The ignored rawvideo oracle harness compares normalized `rgb24`

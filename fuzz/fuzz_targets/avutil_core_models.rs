@@ -9508,6 +9508,14 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(moved_packet.opaque_ref().is_none());
     assert!(moved_packet.flags().is_empty());
     assert!(moved_packet.side_data().is_empty());
+    moved_packet.unref();
+    assert!(moved_packet.is_empty());
+
+    let mut unref_empty_packet = Packet::default();
+    unref_empty_packet.unref();
+    assert!(unref_empty_packet.is_empty());
+    assert_eq!(unref_empty_packet.stream_index(), 0);
+    assert_eq!(unref_empty_packet.time_base(), Rational::ZERO);
 
     let empty_lifecycle_source = Packet::default();
     let mut empty_props_packet = Packet::from_data(vec![0x12, 0x34]).unwrap();

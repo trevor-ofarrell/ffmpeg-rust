@@ -12016,6 +12016,17 @@ mod tests {
         assert!(dst.opaque().is_none());
         assert!(dst.flags().is_empty());
         assert!(dst.side_data().is_empty());
+
+        dst.unref();
+        assert!(dst.is_empty());
+        assert_eq!(*released.lock().unwrap(), vec![vec![9], vec![1, 2]]);
+
+        let mut empty = Packet::default();
+        empty.unref();
+        assert!(empty.is_empty());
+        assert_eq!(empty.stream_index(), 0);
+        assert_eq!(empty.pts(), None);
+        assert_eq!(empty.time_base(), Rational::ZERO);
     }
 
     #[test]
