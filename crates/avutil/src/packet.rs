@@ -8478,6 +8478,44 @@ mod tests {
         let unpacked = packet_unpack_dictionary(&packed).unwrap();
         assert_eq!(unpacked.entries(), dict.entries());
 
+        let mut duplicate_dict = Dictionary::new();
+        duplicate_dict
+            .set_with_mode(
+                "title",
+                "first",
+                crate::MatchMode::CaseInsensitive,
+                crate::SetMode::AllowMultiple,
+            )
+            .unwrap();
+        duplicate_dict
+            .set_with_mode(
+                "TITLE",
+                "second",
+                crate::MatchMode::CaseInsensitive,
+                crate::SetMode::AllowMultiple,
+            )
+            .unwrap();
+        duplicate_dict
+            .set_with_mode(
+                "artist",
+                "Name",
+                crate::MatchMode::CaseInsensitive,
+                crate::SetMode::AllowMultiple,
+            )
+            .unwrap();
+        let duplicate_packed = packet_pack_dictionary(&duplicate_dict);
+        assert_eq!(
+            duplicate_packed,
+            b"title\0first\0TITLE\0second\0artist\0Name\0"
+        );
+
+        let duplicate_unpacked = packet_unpack_dictionary(&duplicate_packed).unwrap();
+        assert_eq!(duplicate_unpacked.len(), 2);
+        assert_eq!(duplicate_unpacked.entries()[0].key(), "TITLE");
+        assert_eq!(duplicate_unpacked.entries()[0].value(), "second");
+        assert_eq!(duplicate_unpacked.entries()[1].key(), "artist");
+        assert_eq!(duplicate_unpacked.entries()[1].value(), "Name");
+
         let empty = Dictionary::new();
         assert!(packet_pack_dictionary(&empty).is_empty());
         assert!(packet_unpack_dictionary(&[]).unwrap().is_empty());

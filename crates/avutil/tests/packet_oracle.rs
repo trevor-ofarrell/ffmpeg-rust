@@ -7,22 +7,22 @@ use std::{
 
 use avutil::{
     packet_pack_dictionary, packet_unpack_dictionary, AvErrorCode, BufferRef, Dictionary, Frame,
-    FrameSideData, FrameSideDataFlags, FrameSideDataKind, Packet, PacketActiveFormatDescription,
-    PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
-    PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
-    PacketDynamicHdr10Plus, PacketEncryptionSubsample, PacketFallbackTrack, PacketFifo,
-    PacketFlags, PacketFrameCropping, PacketHdrPlusColorTransformParams, PacketIamfAnimationType,
-    PacketIamfDemixingInfoSubblock, PacketIamfMixGainSubblock, PacketIamfParamDefinition,
-    PacketIamfParamDefinitionType, PacketIamfReconGainSubblock, PacketJpDualMono,
-    PacketJpDualMonoSelection, PacketMasteringDisplayMetadata, PacketMatroskaBlockAdditional,
-    PacketMpegTsStreamId, PacketOpaque, PacketParamChange, PacketPictureType,
-    PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain, PacketRtcpSenderReport,
-    PacketS12mTimecode, PacketSideDataKind, PacketSideDataList, PacketSkipSamples,
-    PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection, PacketStereo3d,
-    PacketStereo3dFlags, PacketStereo3dPrimaryEye, PacketStereo3dType, PacketStereo3dView,
-    PacketSubtitlePosition, PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays,
-    PacketWebVttIdentifier, PacketWebVttSettings, Rational, SideData, AVPALETTE_SIZE,
-    AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    FrameSideData, FrameSideDataFlags, FrameSideDataKind, MatchMode, Packet,
+    PacketActiveFormatDescription, PacketAmbientViewingEnvironment, PacketAudioServiceType,
+    PacketContentLightMetadata, PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf,
+    PacketDoviCompression, PacketDynamicHdr10Plus, PacketEncryptionSubsample, PacketFallbackTrack,
+    PacketFifo, PacketFlags, PacketFrameCropping, PacketHdrPlusColorTransformParams,
+    PacketIamfAnimationType, PacketIamfDemixingInfoSubblock, PacketIamfMixGainSubblock,
+    PacketIamfParamDefinition, PacketIamfParamDefinitionType, PacketIamfReconGainSubblock,
+    PacketJpDualMono, PacketJpDualMonoSelection, PacketMasteringDisplayMetadata,
+    PacketMatroskaBlockAdditional, PacketMpegTsStreamId, PacketOpaque, PacketParamChange,
+    PacketPictureType, PacketProducerReferenceTime, PacketQualityStats, PacketReplayGain,
+    PacketRtcpSenderReport, PacketS12mTimecode, PacketSideDataKind, PacketSideDataList,
+    PacketSkipSamples, PacketSkipSamplesReason, PacketSphericalMapping, PacketSphericalProjection,
+    PacketStereo3d, PacketStereo3dFlags, PacketStereo3dPrimaryEye, PacketStereo3dType,
+    PacketStereo3dView, PacketSubtitlePosition, PacketThreeDReferenceDisplay,
+    PacketThreeDReferenceDisplays, PacketWebVttIdentifier, PacketWebVttSettings, Rational, SetMode,
+    SideData, AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
 };
 
 #[test]
@@ -1500,6 +1500,47 @@ fn insert_dictionary_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:dict-unpack".to_string(),
         dictionary_fields(&unpacked),
+    );
+
+    let mut duplicate_dict = Dictionary::new();
+    duplicate_dict
+        .set_with_mode(
+            "title",
+            "first",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+    duplicate_dict
+        .set_with_mode(
+            "TITLE",
+            "second",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+    duplicate_dict
+        .set_with_mode(
+            "artist",
+            "Name",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+    let duplicate_packed = packet_pack_dictionary(&duplicate_dict);
+    rows.insert(
+        "packet:dict-pack-multikey".to_string(),
+        dictionary_payload_fields(&duplicate_packed),
+    );
+
+    let duplicate_unpacked = packet_unpack_dictionary(&duplicate_packed).unwrap();
+    rows.insert(
+        "packet:dict-unpack-multikey-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:dict-unpack-multikey".to_string(),
+        dictionary_fields(&duplicate_unpacked),
     );
 
     let duplicate = b"title\0first\0TITLE\0second\0";
@@ -4733,6 +4774,26 @@ static void exercise_dictionary_api(void) {
     int ret = av_packet_unpack_dictionary(packed, packed_size, &unpacked);
     printf("packet:dict-unpack-ret|%d\n", ret);
     print_dictionary("packet:dict-unpack", unpacked);
+    av_dict_free(&unpacked);
+    av_free(packed);
+    av_dict_free(&dict);
+
+    dict = NULL;
+    fail_if(av_dict_set(&dict, "title", "first", AV_DICT_MULTIKEY) < 0,
+            "dict multikey set title failed");
+    fail_if(av_dict_set(&dict, "TITLE", "second", AV_DICT_MULTIKEY) < 0,
+            "dict multikey set TITLE failed");
+    fail_if(av_dict_set(&dict, "artist", "Name", AV_DICT_MULTIKEY) < 0,
+            "dict multikey set artist failed");
+    packed_size = 999;
+    packed = av_packet_pack_dictionary(dict, &packed_size);
+    fail_if(!packed, "av_packet_pack_dictionary multikey failed");
+    print_dictionary_payload("packet:dict-pack-multikey", packed, packed_size);
+
+    unpacked = NULL;
+    ret = av_packet_unpack_dictionary(packed, packed_size, &unpacked);
+    printf("packet:dict-unpack-multikey-ret|%d\n", ret);
+    print_dictionary("packet:dict-unpack-multikey", unpacked);
     av_dict_free(&unpacked);
     av_free(packed);
     av_dict_free(&dict);

@@ -73,7 +73,7 @@ use avutil::{
     Sha512Trunc256, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE,
     AV_INPUT_BUFFER_PADDING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV,
     AV_NUM_DATA_POINTERS, AV_TIME_BASE, AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE,
-    packet_pack_dictionary,
+    MatchMode, SetMode, packet_pack_dictionary,
     packet_unpack_dictionary,
 };
 use libfuzzer_sys::fuzz_target;
@@ -8747,6 +8747,42 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         b"title\0Clip\0language\0eng\0empty\0\0"
     );
     assert_eq!(packet_unpack_dictionary(&packed_dict).unwrap(), dict);
+    let mut duplicate_dict = Dictionary::new();
+    duplicate_dict
+        .set_with_mode(
+            "title",
+            "first",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+    duplicate_dict
+        .set_with_mode(
+            "TITLE",
+            "second",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+    duplicate_dict
+        .set_with_mode(
+            "artist",
+            "Name",
+            MatchMode::CaseInsensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+    let duplicate_packed_dict = packet_pack_dictionary(&duplicate_dict);
+    assert_eq!(
+        duplicate_packed_dict.as_slice(),
+        b"title\0first\0TITLE\0second\0artist\0Name\0"
+    );
+    let duplicate_unpacked = packet_unpack_dictionary(&duplicate_packed_dict).unwrap();
+    assert_eq!(duplicate_unpacked.len(), 2);
+    assert_eq!(duplicate_unpacked.entries()[0].key(), "TITLE");
+    assert_eq!(duplicate_unpacked.entries()[0].value(), "second");
+    assert_eq!(duplicate_unpacked.entries()[1].key(), "artist");
+    assert_eq!(duplicate_unpacked.entries()[1].value(), "Name");
     assert!(packet_pack_dictionary(&Dictionary::new()).is_empty());
     assert!(packet_unpack_dictionary(&[]).unwrap().is_empty());
     for invalid_dict in [

@@ -2,11 +2,12 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest avutil-packet evidence: `av_packet_from_data()` data/size/buf
-# replacement now has a property-preservation row proving timestamps, flags,
-# side data, opaque pointer metadata, `opaque_ref`, stream index, and time base
-# remain untouched while payload storage is replaced with padded writable data.
-# Earlier avutil-packet evidence: zero-size side-data add rows, shared
+# Latest avutil-packet evidence: multi-key dictionary packing now has
+# pinned `av_packet_pack_dictionary()` / `av_packet_unpack_dictionary()`
+# rows proving duplicate AVDictionary entries are serialized in order and
+# unpack collapse follows FFmpeg's case-insensitive replacement shape.
+# Earlier avutil-packet evidence: property-preserving `av_packet_from_data()`
+# data/size/buf replacement rows, zero-size side-data add rows, shared
 # refcounted payload grow rows, already-refcounted payload make-refcounted
 # and make-writable no-op rows, packet-to-frame and frame-to-packet
 # `AV_FRAME_SIDE_DATA_FLAG_UNIQUE` bridge rows, empty standalone side-data
