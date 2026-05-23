@@ -31,6 +31,13 @@ struct RetypeCase {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct CompareCase {
+    id: &'static str,
+    left: &'static str,
+    right: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
 enum RetypeTarget {
     Native,
     Custom,
@@ -484,6 +491,99 @@ const RETYPE_CASES: &[RetypeCase] = &[
     },
 ];
 
+const COMPARE_CASES: &[CompareCase] = &[
+    CompareCase {
+        id: "native-same",
+        left: "stereo",
+        right: "FL+FR",
+    },
+    CompareCase {
+        id: "native-different",
+        left: "stereo",
+        right: "mono",
+    },
+    CompareCase {
+        id: "sparse-native-same",
+        left: "0x5",
+        right: "FL+FC",
+    },
+    CompareCase {
+        id: "sparse-native-order-different",
+        left: "FL+FC",
+        right: "FC+FL",
+    },
+    CompareCase {
+        id: "named-custom-name-insensitive",
+        left: "FL@Left+FR@Right",
+        right: "FL+FR",
+    },
+    CompareCase {
+        id: "named-custom-different-channel",
+        left: "FL@Left+FR@Right",
+        right: "FL+FC",
+    },
+    CompareCase {
+        id: "duplicate-custom-same",
+        left: "FL+FL",
+        right: "FL+FL",
+    },
+    CompareCase {
+        id: "duplicate-custom-vs-native",
+        left: "FL+FL",
+        right: "stereo",
+    },
+    CompareCase {
+        id: "unknown-unused-name-insensitive",
+        left: "UNK@A+UNSD@B",
+        right: "UNK+UNSD",
+    },
+    CompareCase {
+        id: "unknown-unused-vs-unspec",
+        left: "UNK+UNSD",
+        right: "2C",
+    },
+    CompareCase {
+        id: "unspecified-same",
+        left: "2C",
+        right: "2 channels",
+    },
+    CompareCase {
+        id: "unspecified-different",
+        left: "2C",
+        right: "3C",
+    },
+    CompareCase {
+        id: "ambisonic-same",
+        left: "ambisonic 1+stereo",
+        right: "AMBI0+AMBI1+AMBI2+AMBI3+FL+FR",
+    },
+    CompareCase {
+        id: "ambisonic-extra-different",
+        left: "ambisonic 1+stereo",
+        right: "ambisonic 1+FL+FC",
+    },
+    CompareCase {
+        id: "ambisonic-vs-native",
+        left: "ambisonic 0+stereo",
+        right: "stereo",
+    },
+    CompareCase {
+        id: "raw-mask-same",
+        left: "USR45+USR46",
+        right: "0x600000000000",
+    },
+    CompareCase {
+        id: "raw-mask-order-different",
+        left: "USR46+USR45",
+        right: "0x600000000000",
+    },
+    CompareCase {
+        id: "named-raw-ambisonic-extra-same",
+        left: "AMBI0@W+AMBI1+AMBI2+AMBI3+USR45@Wide",
+        right: "ambisonic 1+0x200000000000",
+    },
+];
+
 #[derive(Debug, Default)]
 struct LayoutInventory {
     channels: BTreeMap<String, String>,
@@ -619,6 +719,52 @@ fn libavutil_channel_layout_retype_vectors_match_current_model() {
             oracle
                 .get(&name)
                 .unwrap_or_else(|| panic!("missing retype oracle row `{name}`")),
+            &expected_fields,
+            "{name} diverged"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 libavutil oracle under third_party/ffmpeg-oracle/wsl"]
+fn libavutil_channel_layout_compare_vectors_match_current_model() {
+    let repo_root = repo_root();
+    let oracle_root = oracle_root(&repo_root);
+    let include_dir = oracle_root.join("wsl/include");
+    let libavutil = oracle_root.join("wsl/lib/libavutil.a");
+
+    assert!(
+        include_dir.join("libavutil/channel_layout.h").is_file(),
+        "missing pinned FFmpeg libavutil channel layout headers under `{}`",
+        include_dir.display()
+    );
+    assert!(
+        libavutil.is_file(),
+        "missing pinned FFmpeg libavutil static library `{}`",
+        libavutil.display()
+    );
+
+    let work_dir = repo_root.join("target/oracle/avutil-channel-layout");
+    fs::create_dir_all(&work_dir).expect("create avutil-channel-layout oracle work dir");
+    let source = work_dir.join("channel_layout_compare_oracle.c");
+    let executable = work_dir.join("channel_layout_compare_oracle");
+    fs::write(&source, compare_oracle_c_source())
+        .expect("write channel layout compare oracle C source");
+
+    let stdout = compile_and_run_oracle(&include_dir, &libavutil, &source, &executable);
+    let oracle = parse_parser_oracle_output(&stdout);
+
+    assert_eq!(
+        oracle.keys().collect::<Vec<_>>(),
+        expected_compare_rows().keys().collect::<Vec<_>>(),
+        "channel layout compare oracle row set diverged"
+    );
+
+    for (name, expected_fields) in expected_compare_rows() {
+        assert_eq!(
+            oracle
+                .get(&name)
+                .unwrap_or_else(|| panic!("missing compare oracle row `{name}`")),
             &expected_fields,
             "{name} diverged"
         );
@@ -850,6 +996,18 @@ fn expected_retype_rows() -> BTreeMap<String, Vec<String>> {
         .collect()
 }
 
+fn expected_compare_rows() -> BTreeMap<String, Vec<String>> {
+    COMPARE_CASES
+        .iter()
+        .map(|case| {
+            (
+                format!("compare:{}", case.id),
+                expected_compare_fields(case),
+            )
+        })
+        .collect()
+}
+
 fn expected_retype_fields(case: &RetypeCase) -> Vec<String> {
     let original = ChannelLayoutSpec::parse(case.input)
         .unwrap_or_else(|err| panic!("Rust parser rejected retype case `{}`: {err}", case.id));
@@ -872,6 +1030,18 @@ fn expected_retype_fields(case: &RetypeCase) -> Vec<String> {
             fields
         }
     }
+}
+
+fn expected_compare_fields(case: &CompareCase) -> Vec<String> {
+    let left = ChannelLayoutSpec::parse(case.left)
+        .unwrap_or_else(|err| panic!("Rust parser rejected compare left `{}`: {err}", case.id));
+    let right = ChannelLayoutSpec::parse(case.right)
+        .unwrap_or_else(|err| panic!("Rust parser rejected compare right `{}`: {err}", case.id));
+    vec![if left.is_equivalent_to(right) {
+        "equal".to_string()
+    } else {
+        "different".to_string()
+    }]
 }
 
 fn retype_layout(
@@ -1297,6 +1467,64 @@ int main(void) {{
         print_parse_case(&parser_cases[index]);
     for (size_t index = 0; index < sizeof(byte_parser_cases) / sizeof(byte_parser_cases[0]); index++)
         print_byte_parse_case(&byte_parser_cases[index]);
+    return 0;
+}}
+"#
+    )
+}
+
+fn compare_oracle_c_source() -> String {
+    let cases = COMPARE_CASES
+        .iter()
+        .map(|case| {
+            format!(
+                "    {{ {}, {}, {} }},",
+                c_string_literal(case.id),
+                c_string_literal(case.left),
+                c_string_literal(case.right)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"#include <stdio.h>
+#include <libavutil/channel_layout.h>
+
+struct compare_case {{
+    const char *id;
+    const char *left;
+    const char *right;
+}};
+
+static const struct compare_case compare_cases[] = {{
+{cases}
+}};
+
+static void print_compare_case(const struct compare_case *test_case) {{
+    AVChannelLayout left = {{0}};
+    AVChannelLayout right = {{0}};
+    int left_ret = av_channel_layout_from_string(&left, test_case->left);
+    int right_ret = av_channel_layout_from_string(&right, test_case->right);
+
+    printf("compare:%s|", test_case->id);
+    if (left_ret < 0 || right_ret < 0) {{
+        printf("parseerr|%d|%d\n", left_ret, right_ret);
+        av_channel_layout_uninit(&left);
+        av_channel_layout_uninit(&right);
+        return;
+    }}
+
+    int ret = av_channel_layout_compare(&left, &right);
+    printf("%s\n", ret == 0 ? "equal" : "different");
+
+    av_channel_layout_uninit(&left);
+    av_channel_layout_uninit(&right);
+}}
+
+int main(void) {{
+    for (size_t index = 0; index < sizeof(compare_cases) / sizeof(compare_cases[0]); index++)
+        print_compare_case(&compare_cases[index]);
     return 0;
 }}
 "#

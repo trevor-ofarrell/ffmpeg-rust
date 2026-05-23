@@ -466,6 +466,45 @@ fn assert_channel_layout_byte_parser_fixtures() {
     );
 }
 
+fn assert_channel_layout_compare_fixtures() {
+    fn assert_compare(left: &str, right: &str, expected: bool) {
+        let left_layout = ChannelLayoutSpec::parse(left).unwrap();
+        let right_layout = ChannelLayoutSpec::parse(right).unwrap();
+        assert_eq!(
+            left_layout.is_equivalent_to(right_layout),
+            expected,
+            "{left} compared with {right}"
+        );
+    }
+
+    assert_compare("stereo", "FL+FR", true);
+    assert_compare("stereo", "mono", false);
+    assert_compare("0x5", "FL+FC", true);
+    assert_compare("FL+FC", "FC+FL", false);
+    assert_compare("FL@Left+FR@Right", "FL+FR", true);
+    assert_compare("FL@Left+FR@Right", "FL+FC", false);
+    assert_compare("FL+FL", "FL+FL", true);
+    assert_compare("FL+FL", "stereo", false);
+    assert_compare("UNK@A+UNSD@B", "UNK+UNSD", true);
+    assert_compare("UNK+UNSD", "2C", false);
+    assert_compare("2C", "2 channels", true);
+    assert_compare("2C", "3C", false);
+    assert_compare(
+        "ambisonic 1+stereo",
+        "AMBI0+AMBI1+AMBI2+AMBI3+FL+FR",
+        true,
+    );
+    assert_compare("ambisonic 1+stereo", "ambisonic 1+FL+FC", false);
+    assert_compare("ambisonic 0+stereo", "stereo", false);
+    assert_compare("USR45+USR46", "0x600000000000", true);
+    assert_compare("USR46+USR45", "0x600000000000", false);
+    assert_compare(
+        "AMBI0@W+AMBI1+AMBI2+AMBI3+USR45@Wide",
+        "ambisonic 1+0x200000000000",
+        true,
+    );
+}
+
 fn assert_color_parser_fixtures() {
     assert_eq!(
         parse_color("red").unwrap().rgba(),
@@ -4937,6 +4976,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
 fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_raw_channel_layout_retype_fixtures();
     assert_channel_layout_byte_parser_fixtures();
+    assert_channel_layout_compare_fixtures();
 
     let sample_rate = sample_rate_from(cursor.next());
     let channels = channel_count_from(cursor.next());
@@ -8703,6 +8743,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 fn exercise_fixtures() {
     assert_raw_channel_layout_retype_fixtures();
     assert_channel_layout_byte_parser_fixtures();
+    assert_channel_layout_compare_fixtures();
 
     assert_eq!(PixelFormat::from_name("gray8"), Some(PixelFormat::Gray8));
     assert_eq!(
