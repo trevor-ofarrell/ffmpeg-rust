@@ -2079,6 +2079,19 @@ mod tests {
         )));
         assert!(pairs.contains(&("avformat-image2-demuxer", "oracle-image2-file-output")));
         assert!(pairs.contains(&("avformat-image2-muxer", "oracle-image2-file-output")));
+        assert!(pairs.contains(&("avutil-packet", "oracle-image2-sequence-file-output")));
+        assert!(pairs.contains(&(
+            "fftools-ffmpeg-image2-file-output",
+            "oracle-image2-sequence-file-output"
+        )));
+        assert!(pairs.contains(&(
+            "avformat-image2-demuxer",
+            "oracle-image2-sequence-file-output"
+        )));
+        assert!(pairs.contains(&(
+            "avformat-image2-muxer",
+            "oracle-image2-sequence-file-output"
+        )));
         assert!(pairs.contains(&("avutil-channel-layout", "oracle-ffmpeg-layouts")));
         assert!(pairs.contains(&("avformat-wav-demuxer", "oracle-wav-generated-md5")));
         assert!(pairs.contains(&("avutil-sample-format", "oracle-ffmpeg-sample-fmts")));
