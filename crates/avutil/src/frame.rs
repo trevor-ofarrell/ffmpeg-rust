@@ -13637,6 +13637,18 @@ impl VideoFrame {
         let crop_step = match self.pixel_format {
             PixelFormat::Gray8 => 1,
             PixelFormat::Rgb24 | PixelFormat::Bgr24 => 3,
+            PixelFormat::Rgb565Be
+            | PixelFormat::Rgb565Le
+            | PixelFormat::Rgb555Be
+            | PixelFormat::Rgb555Le
+            | PixelFormat::Bgr565Be
+            | PixelFormat::Bgr565Le
+            | PixelFormat::Bgr555Be
+            | PixelFormat::Bgr555Le
+            | PixelFormat::Rgb444Le
+            | PixelFormat::Rgb444Be
+            | PixelFormat::Bgr444Le
+            | PixelFormat::Bgr444Be => 2,
             PixelFormat::Rgb48Le
             | PixelFormat::Rgb48Be
             | PixelFormat::Bgr48Le
@@ -15043,7 +15055,7 @@ fn adjusted_packed_crop_left(
     if flags.contains(FrameCropFlags::UNALIGNED) || crop.left == 0 {
         return Ok(crop.left);
     }
-    if matches!(bytes_per_pixel, 4 | 6 | 8) {
+    if matches!(bytes_per_pixel, 2 | 4 | 6 | 8) {
         return Err(AvError::bug(
             "FFmpeg rejects default left cropping for selected high-depth packed RGB frames",
         ));
@@ -20078,6 +20090,18 @@ mod tests {
             (PixelFormat::Rgb0, 4, 64),
             (PixelFormat::ZeroBgr, 4, 64),
             (PixelFormat::Bgr0, 4, 64),
+            (PixelFormat::Rgb565Be, 2, 64),
+            (PixelFormat::Rgb565Le, 2, 64),
+            (PixelFormat::Rgb555Be, 2, 64),
+            (PixelFormat::Rgb555Le, 2, 64),
+            (PixelFormat::Bgr565Be, 2, 64),
+            (PixelFormat::Bgr565Le, 2, 64),
+            (PixelFormat::Bgr555Be, 2, 64),
+            (PixelFormat::Bgr555Le, 2, 64),
+            (PixelFormat::Rgb444Le, 2, 64),
+            (PixelFormat::Rgb444Be, 2, 64),
+            (PixelFormat::Bgr444Le, 2, 64),
+            (PixelFormat::Bgr444Be, 2, 64),
             (PixelFormat::Rgb48Le, 6, 192),
             (PixelFormat::Rgb48Be, 6, 192),
             (PixelFormat::Bgr48Le, 6, 192),

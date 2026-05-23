@@ -643,6 +643,18 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         (PixelFormat::Rgb0, 4, 64),
         (PixelFormat::ZeroBgr, 4, 64),
         (PixelFormat::Bgr0, 4, 64),
+        (PixelFormat::Rgb565Be, 2, 64),
+        (PixelFormat::Rgb565Le, 2, 64),
+        (PixelFormat::Rgb555Be, 2, 64),
+        (PixelFormat::Rgb555Le, 2, 64),
+        (PixelFormat::Bgr565Be, 2, 64),
+        (PixelFormat::Bgr565Le, 2, 64),
+        (PixelFormat::Bgr555Be, 2, 64),
+        (PixelFormat::Bgr555Le, 2, 64),
+        (PixelFormat::Rgb444Le, 2, 64),
+        (PixelFormat::Rgb444Be, 2, 64),
+        (PixelFormat::Bgr444Le, 2, 64),
+        (PixelFormat::Bgr444Be, 2, 64),
         (PixelFormat::Rgb48Le, 6, 192),
         (PixelFormat::Rgb48Be, 6, 192),
         (PixelFormat::Bgr48Le, 6, 192),
@@ -2156,6 +2168,20 @@ static void print_video_planes(const AVFrame *frame)
     }
     int bytes_per_pixel = 0;
     switch (frame->format) {
+    case AV_PIX_FMT_RGB565BE:
+    case AV_PIX_FMT_RGB565LE:
+    case AV_PIX_FMT_RGB555BE:
+    case AV_PIX_FMT_RGB555LE:
+    case AV_PIX_FMT_BGR565BE:
+    case AV_PIX_FMT_BGR565LE:
+    case AV_PIX_FMT_BGR555BE:
+    case AV_PIX_FMT_BGR555LE:
+    case AV_PIX_FMT_RGB444LE:
+    case AV_PIX_FMT_RGB444BE:
+    case AV_PIX_FMT_BGR444LE:
+    case AV_PIX_FMT_BGR444BE:
+        bytes_per_pixel = 2;
+        break;
     case AV_PIX_FMT_RGB24:
     case AV_PIX_FMT_BGR24:
         bytes_per_pixel = 3;
@@ -3250,6 +3276,18 @@ int main(void)
     exercise_packed_crop_pair("rgb0", AV_PIX_FMT_RGB0, 4);
     exercise_packed_crop_pair("0bgr", AV_PIX_FMT_0BGR, 4);
     exercise_packed_crop_pair("bgr0", AV_PIX_FMT_BGR0, 4);
+    exercise_packed_crop_pair("rgb565be", AV_PIX_FMT_RGB565BE, 2);
+    exercise_packed_crop_pair("rgb565le", AV_PIX_FMT_RGB565LE, 2);
+    exercise_packed_crop_pair("rgb555be", AV_PIX_FMT_RGB555BE, 2);
+    exercise_packed_crop_pair("rgb555le", AV_PIX_FMT_RGB555LE, 2);
+    exercise_packed_crop_pair("bgr565be", AV_PIX_FMT_BGR565BE, 2);
+    exercise_packed_crop_pair("bgr565le", AV_PIX_FMT_BGR565LE, 2);
+    exercise_packed_crop_pair("bgr555be", AV_PIX_FMT_BGR555BE, 2);
+    exercise_packed_crop_pair("bgr555le", AV_PIX_FMT_BGR555LE, 2);
+    exercise_packed_crop_pair("rgb444le", AV_PIX_FMT_RGB444LE, 2);
+    exercise_packed_crop_pair("rgb444be", AV_PIX_FMT_RGB444BE, 2);
+    exercise_packed_crop_pair("bgr444le", AV_PIX_FMT_BGR444LE, 2);
+    exercise_packed_crop_pair("bgr444be", AV_PIX_FMT_BGR444BE, 2);
     exercise_packed_crop_pair("rgb48le", AV_PIX_FMT_RGB48LE, 6);
     exercise_packed_crop_pair("rgb48be", AV_PIX_FMT_RGB48BE, 6);
     exercise_packed_crop_pair("bgr48le", AV_PIX_FMT_BGR48LE, 6);
