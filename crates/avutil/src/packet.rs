@@ -11745,11 +11745,72 @@ mod tests {
         fifo.drain(1).unwrap();
         assert!(fifo.is_empty());
 
+        let peek_empty_err = fifo.peek(0).unwrap_err();
+        assert_eq!(peek_empty_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(peek_empty_err.code(), Some(AvErrorCode::EINVAL));
+
         let mut empty_dst = Packet::default();
         let read_err = fifo.read_move(&mut empty_dst).unwrap_err();
         assert_eq!(read_err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(read_err.code(), Some(AvErrorCode::EINVAL));
         assert!(empty_dst.is_empty());
+
+        let mut empty_move_preserve = Packet::from_data(vec![0x70, 0x71]).unwrap();
+        empty_move_preserve.set_pts(Some(101));
+        empty_move_preserve.set_duration(202).unwrap();
+        empty_move_preserve
+            .push_side_data(SideData::new("skip_samples", vec![0x09, 0x0a]).unwrap());
+        empty_move_preserve.set_opaque_ref(Some(BufferRef::from_vec(vec![0x0b, 0x0c])));
+        let empty_move_payload = empty_move_preserve.data_buffer().clone();
+        let empty_move_opaque = empty_move_preserve.opaque_ref().unwrap().clone();
+        let read_err = fifo.read_move(&mut empty_move_preserve).unwrap_err();
+        assert_eq!(read_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(read_err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(empty_move_preserve.data(), &[0x70, 0x71]);
+        assert_eq!(empty_move_preserve.pts(), Some(101));
+        assert_eq!(empty_move_preserve.duration(), 202);
+        assert!(empty_move_preserve
+            .data_buffer()
+            .shares_storage(&empty_move_payload));
+        assert!(empty_move_preserve
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&empty_move_opaque));
+        assert_eq!(
+            empty_move_preserve
+                .side_data_by_kind("skip_samples")
+                .unwrap()
+                .data(),
+            &[0x09, 0x0a]
+        );
+
+        let mut empty_ref_preserve = Packet::from_data(vec![0x80, 0x81]).unwrap();
+        empty_ref_preserve.set_pts(Some(303));
+        empty_ref_preserve.set_duration(404).unwrap();
+        empty_ref_preserve.push_side_data(SideData::new("skip_samples", vec![0x0d, 0x0e]).unwrap());
+        empty_ref_preserve.set_opaque_ref(Some(BufferRef::from_vec(vec![0x0f, 0x10])));
+        let empty_ref_payload = empty_ref_preserve.data_buffer().clone();
+        let empty_ref_opaque = empty_ref_preserve.opaque_ref().unwrap().clone();
+        let read_err = fifo.read_ref(&mut empty_ref_preserve).unwrap_err();
+        assert_eq!(read_err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(read_err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(empty_ref_preserve.data(), &[0x80, 0x81]);
+        assert_eq!(empty_ref_preserve.pts(), Some(303));
+        assert_eq!(empty_ref_preserve.duration(), 404);
+        assert!(empty_ref_preserve
+            .data_buffer()
+            .shares_storage(&empty_ref_payload));
+        assert!(empty_ref_preserve
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&empty_ref_opaque));
+        assert_eq!(
+            empty_ref_preserve
+                .side_data_by_kind("skip_samples")
+                .unwrap()
+                .data(),
+            &[0x0d, 0x0e]
+        );
         let drain_err = fifo.drain(1).unwrap_err();
         assert_eq!(drain_err.code(), Some(AvErrorCode::EINVAL));
     }

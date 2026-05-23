@@ -1682,6 +1682,11 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:fifo-after-drain-all-can-read".to_string(),
         vec![fifo.can_read().to_string()],
     );
+    let err = fifo.peek(0).unwrap_err();
+    rows.insert(
+        "packet:fifo-peek-empty-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
     let mut empty_dst = Packet::default();
     let err = fifo.read_move(&mut empty_dst).unwrap_err();
     rows.insert(
@@ -1691,6 +1696,26 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:fifo-read-empty-dst".to_string(),
         packet_fields(&empty_dst),
+    );
+    let mut empty_move_preserve_dst = packet_with_common_props();
+    let err = fifo.read_move(&mut empty_move_preserve_dst).unwrap_err();
+    rows.insert(
+        "packet:fifo-read-empty-move-preserve-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:fifo-read-empty-move-preserve-dst".to_string(),
+        packet_fields(&empty_move_preserve_dst),
+    );
+    let mut empty_ref_preserve_dst = packet_with_common_props();
+    let err = fifo.read_ref(&mut empty_ref_preserve_dst).unwrap_err();
+    rows.insert(
+        "packet:fifo-read-empty-ref-preserve-ret".to_string(),
+        vec![err.code().unwrap().raw().to_string()],
+    );
+    rows.insert(
+        "packet:fifo-read-empty-ref-preserve-dst".to_string(),
+        packet_fields(&empty_ref_preserve_dst),
     );
 }
 
@@ -4829,11 +4854,30 @@ static void exercise_packet_fifo_api(void) {
     printf("packet:fifo-after-drain-all-can-read|%zu\n",
            av_container_fifo_can_read(fifo));
 
+    peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 0);
+    printf("packet:fifo-peek-empty-ret|%d\n", ret);
+
     AVPacket *empty_dst = new_packet();
     ret = av_container_fifo_read(fifo, empty_dst, 0);
     printf("packet:fifo-read-empty-ret|%d\n", ret);
     print_packet("packet:fifo-read-empty-dst", empty_dst);
     av_packet_free(&empty_dst);
+
+    AVPacket *empty_move_preserve_dst = packet_with_common_props();
+    ret = av_container_fifo_read(fifo, empty_move_preserve_dst, 0);
+    printf("packet:fifo-read-empty-move-preserve-ret|%d\n", ret);
+    print_packet("packet:fifo-read-empty-move-preserve-dst",
+                 empty_move_preserve_dst);
+    av_packet_free(&empty_move_preserve_dst);
+
+    AVPacket *empty_ref_preserve_dst = packet_with_common_props();
+    ret = av_container_fifo_read(
+        fifo, empty_ref_preserve_dst, AV_CONTAINER_FIFO_FLAG_REF);
+    printf("packet:fifo-read-empty-ref-preserve-ret|%d\n", ret);
+    print_packet("packet:fifo-read-empty-ref-preserve-dst",
+                 empty_ref_preserve_dst);
+    av_packet_free(&empty_ref_preserve_dst);
 
     av_packet_free(&first);
     av_packet_free(&second);

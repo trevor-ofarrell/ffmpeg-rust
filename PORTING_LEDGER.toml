@@ -281,6 +281,15 @@ fate_tests = [
   "packet_oracle::upstream_fate_avpacket_passes",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket FIFO rows now validate empty FIFO
+# failure preservation through packet:fifo-peek-empty-ret,
+# packet:fifo-read-empty-move-preserve-*, and
+# packet:fifo-read-empty-ref-preserve-* rows. The rows prove empty peek and
+# empty move/ref reads return FFmpeg-shaped EINVAL, and failed empty reads do
+# not mutate a pre-populated destination packet's payload, side data, opaque
+# pointer metadata, opaque_ref, timestamps, flags, stream index, or time base.
+# Unit tests plus `avutil_core_models` cover the same no-mutation failure
+# shape.
 # Latest update: pinned libavcodec AVPacket FIFO rows now validate move-read
 # replacement into a pre-populated destination through
 # packet:fifo-write-move-replace-*, packet:fifo-read-move-replace-*, and
