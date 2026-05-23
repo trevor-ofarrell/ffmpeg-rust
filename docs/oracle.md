@@ -108,16 +108,18 @@ The current default mapping file contains `fate-runner|local-self-test`, which v
 
 Local `avformat-*muxer|local-avformat-*-unit` rows validate the current WAV, raw PCM, rawvideo, yuv4mpegpipe, null, hash, framecrc, framehash, and streamhash unit filters when those muxer components or their shared fuzz target change.
 
-`tests/fate/upstream-mappings.txt` is the non-default upstream FFmpeg/FATE-style mapping file. API-level rows can run against the pinned FFmpeg source/build cache without media samples; sample-backed rows additionally require `{samples}`. It currently maps `avutil-channel-layout|fate-channel_layout` to an ignored wrapper around upstream FFmpeg's `make fate-channel_layout`, and maps `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` to the sample-specific ignored test in `crates/fftools/tests/wav_oracle.rs`, injecting `FFMPEG_ORACLE={oracle_ffmpeg}` and `FATE_WAV_SAMPLE={samples}/audio-reference/luckynight_2ch_44kHz_s16.wav`. List or dry-run it explicitly:
+`tests/fate/upstream-mappings.txt` is the non-default upstream FFmpeg/FATE-style mapping file. API-level rows can run against the pinned FFmpeg source/build cache without media samples; sample-backed rows additionally require `{samples}`. It currently maps `avutil-channel-layout|fate-channel_layout` to an ignored wrapper around upstream FFmpeg's `make fate-channel_layout`, maps `avutil-packet|fate-avpacket` to an ignored wrapper around upstream FFmpeg's `make fate-avpacket`, and maps `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` to the sample-specific ignored test in `crates/fftools/tests/wav_oracle.rs`, injecting `FFMPEG_ORACLE={oracle_ffmpeg}` and `FATE_WAV_SAMPLE={samples}/audio-reference/luckynight_2ch_44kHz_s16.wav`. List or dry-run it explicitly:
 
 ```sh
 cargo run -p fate-runner -- mappings --mappings tests/fate/upstream-mappings.txt --target fate-wav-pcm-s16le-md5
 cargo run -p fate-runner -- mappings --mappings tests/fate/upstream-mappings.txt --target fate-channel_layout
+cargo run -p fate-runner -- mappings --mappings tests/fate/upstream-mappings.txt --target fate-avpacket
 cargo run -p fate-runner -- run --dry-run --mappings tests/fate/upstream-mappings.txt --component avformat-wav-demuxer --target fate-wav-pcm-s16le-md5 --samples <fate-samples> --oracle-ffmpeg <ffmpeg>
 cargo run -p fate-runner -- run --mappings tests/fate/upstream-mappings.txt --component avutil-channel-layout --target fate-channel_layout
+cargo run -p fate-runner -- run --mappings tests/fate/upstream-mappings.txt --component avutil-packet --target fate-avpacket
 ```
 
-These mappings are intentionally outside the default local smoke file so ordinary component runs do not require downloaded samples or an upstream build cache. The channel-layout row has passed locally with the pinned WSL source/build cache created by `scripts/bootstrap_ffmpeg_oracle_wsl.sh`, satisfying the upstream FATE target for that API surface while leaving broader parser/retype/ambisonic and sustained fuzz evidence incomplete. The WAV row has passed locally with the pinned WSL oracle wrapper and the one-file WAV sample seed, which advances `avformat-wav-demuxer` to `fate_pass` while leaving broader WAV coverage, actual fuzz execution, and full upstream FATE coverage incomplete.
+These mappings are intentionally outside the default local smoke file so ordinary component runs do not require downloaded samples or an upstream build cache. The channel-layout row has passed locally with the pinned WSL source/build cache created by `scripts/bootstrap_ffmpeg_oracle_wsl.sh`, satisfying the upstream FATE target for that API surface while leaving broader parser/retype/ambisonic and sustained fuzz evidence incomplete. The packet row has passed locally with the same pinned source/build cache, satisfying FFmpeg's upstream `fate-avpacket` API target while leaving remaining AVPacket ABI/media-integration vectors incomplete. The WAV row has passed locally with the pinned WSL oracle wrapper and the one-file WAV sample seed, which advances `avformat-wav-demuxer` to `fate_pass` while leaving broader WAV coverage, actual fuzz execution, and full upstream FATE coverage incomplete.
 
 ## Differential Tests
 
@@ -208,9 +210,12 @@ The harness also includes `packet:side-add-capacity-*` and `packet:side-new-capa
 
 The harness also includes `packet:fifo-*` rows, proving the packet-specialized container FIFO transfer semantics for move writes, ref writes, read draining, ref reads into pre-populated destinations, non-mutating peek, valid drain, can-read counts, invalid offset handling, and empty-read `EINVAL` handling.
 
+The same Rust test file includes an ignored `upstream_fate_avpacket_passes` wrapper for upstream FFmpeg's `fate-avpacket` target from `tests/fate/libavcodec.mak`, backed by `libavcodec/tests/avpacket.c`. It runs `make fate-avpacket` from `FFMPEG_FATE_BUILD_DIR` or the default WSL build cache created by `scripts/bootstrap_ffmpeg_oracle_wsl.sh`, and is wired through `tests/fate/upstream-mappings.txt` as `avutil-packet|fate-avpacket`.
+
 ```sh
-cargo test -p avutil --test packet_oracle -- --ignored
+cargo test -p avutil --test packet_oracle libavcodec_packet_core_lifecycle_matches_packet_model -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+cargo run -p fate-runner -- run --mappings tests/fate/upstream-mappings.txt --component avutil-packet --target fate-avpacket
 ```
 
 `crates/avutil/tests/frame_oracle.rs` is an ignored oracle harness for libavutil

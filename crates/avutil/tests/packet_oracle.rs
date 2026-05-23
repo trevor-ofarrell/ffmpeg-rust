@@ -88,6 +88,62 @@ fn libavcodec_packet_core_lifecycle_matches_packet_model() {
     }
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 source/build cache; set FFMPEG_FATE_BUILD_DIR or run scripts/bootstrap_ffmpeg_oracle_wsl.sh"]
+fn upstream_fate_avpacket_passes() {
+    let output = if cfg!(windows) {
+        let script = match env::var("FFMPEG_FATE_BUILD_DIR") {
+            Ok(build_dir) => {
+                let build_dir = if build_dir.starts_with('/') || build_dir.starts_with('~') {
+                    build_dir
+                } else {
+                    to_wsl_path(Path::new(&build_dir))
+                };
+                format!(
+                    "test -d {0} || {{ echo 'missing FFmpeg FATE build dir: {0}' >&2; exit 66; }}; make -C {0} fate-avpacket",
+                    shell_quote(&build_dir)
+                )
+            }
+            Err(_) => concat!(
+                "build_dir=\"${FFMPEGRUST_ORACLE_WORK:-$HOME/.cache/ffmpegrust/ffmpeg-oracle-n8.1.1}/build\"; ",
+                "test -d \"$build_dir\" || { echo \"missing FFmpeg FATE build dir: $build_dir\" >&2; exit 66; }; ",
+                "make -C \"$build_dir\" fate-avpacket"
+            )
+            .to_string(),
+        };
+        Command::new("wsl")
+            .args(["-d", "Ubuntu", "--exec", "bash", "-lc", &script])
+            .output()
+            .expect("run upstream FFmpeg fate-avpacket through WSL")
+    } else {
+        let build_dir = env::var_os("FFMPEG_FATE_BUILD_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(env::var("HOME").expect("HOME must be set"))
+                    .join(".cache/ffmpegrust/ffmpeg-oracle-n8.1.1/build")
+            });
+        Command::new("make")
+            .arg("-C")
+            .arg(&build_dir)
+            .arg("fate-avpacket")
+            .output()
+            .unwrap_or_else(|err| {
+                panic!(
+                    "run upstream FFmpeg fate-avpacket in `{}`: {err}",
+                    build_dir.display()
+                )
+            })
+    };
+
+    assert!(
+        output.status.success(),
+        "upstream FFmpeg fate-avpacket failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn expected_rows() -> BTreeMap<String, Vec<String>> {
     let mut rows = BTreeMap::new();
     rows.insert(
