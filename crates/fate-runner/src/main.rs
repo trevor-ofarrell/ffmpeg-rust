@@ -496,9 +496,11 @@ const PATH_RULES: &[PathRule] = &[
         exact_ids: &[
             "fftools-ffmpeg-pcm-s16le-framecrc-null",
             "fftools-ffmpeg-pcm-s16le-file-output",
+            "fftools-ffmpeg-pcm-s16le-wav-file-output",
             "avutil-packet",
             "avformat-pcm-s16le-demuxer",
             "avformat-pcm-s16le-muxer",
+            "avformat-wav-muxer",
             "avformat-framecrc-muxer",
         ],
         id_prefixes: &[],
@@ -1783,9 +1785,11 @@ mod tests {
         let component_ids = component_ids_from_ledger(&ledger(&[
             "fftools-ffmpeg-pcm-s16le-framecrc-null",
             "fftools-ffmpeg-pcm-s16le-file-output",
+            "fftools-ffmpeg-pcm-s16le-wav-file-output",
             "avutil-packet",
             "avformat-pcm-s16le-demuxer",
             "avformat-pcm-s16le-muxer",
+            "avformat-wav-muxer",
             "avformat-framecrc-muxer",
         ]));
         let paths = vec!["crates/fftools/tests/pcm_oracle.rs".to_string()];
@@ -1795,9 +1799,11 @@ mod tests {
             vec![
                 "fftools-ffmpeg-pcm-s16le-framecrc-null".to_string(),
                 "fftools-ffmpeg-pcm-s16le-file-output".to_string(),
+                "fftools-ffmpeg-pcm-s16le-wav-file-output".to_string(),
                 "avutil-packet".to_string(),
                 "avformat-pcm-s16le-demuxer".to_string(),
                 "avformat-pcm-s16le-muxer".to_string(),
+                "avformat-wav-muxer".to_string(),
                 "avformat-framecrc-muxer".to_string(),
             ]
         );

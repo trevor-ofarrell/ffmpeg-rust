@@ -39,6 +39,10 @@ avformat-pcm-s16le-demuxer|oracle-pcm-s16le-file-output|.|cargo|env:FFMPEG_ORACL
 avformat-pcm-s16le-muxer|oracle-pcm-s16le-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_file_output_matches_ffmpeg_oracle|--|--ignored
 fftools-ffmpeg-pcm-s16le-file-output|oracle-pcm-s16le-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_file_output_matches_ffmpeg_oracle|--|--ignored
 avutil-packet|oracle-pcm-s16le-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_file_output_matches_ffmpeg_oracle|--|--ignored
+avformat-pcm-s16le-demuxer|oracle-pcm-s16le-wav-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_wav_file_output_matches_ffmpeg_oracle|--|--ignored
+avformat-wav-muxer|oracle-pcm-s16le-wav-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_wav_file_output_matches_ffmpeg_oracle|--|--ignored
+fftools-ffmpeg-pcm-s16le-wav-file-output|oracle-pcm-s16le-wav-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_wav_file_output_matches_ffmpeg_oracle|--|--ignored
+avutil-packet|oracle-pcm-s16le-wav-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|pcm_oracle|pcm_s16le_wav_file_output_matches_ffmpeg_oracle|--|--ignored
 fftools-version|oracle-ffmpeg-version|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|ffmpeg_version_banner_matches_oracle_target_versions|--|--ignored
 fftools-version|oracle-ffprobe-version|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|ffprobe_version_banner_matches_oracle_target_versions|--|--ignored
 fftools-version|oracle-double-dash-version-rejection|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|version_oracle|double_dash_version_is_not_a_success_version_request|--|--ignored

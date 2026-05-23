@@ -5,8 +5,11 @@ use avutil::{
 
 const PCM_S16LE_FORMAT_TAG: u16 = 1;
 const WAV_FMT_CHUNK_SIZE: u32 = 16;
-const WAV_HEADER_SIZE: usize = 44;
-const MAX_RIFF_DATA_SIZE: usize = u32::MAX as usize - 36;
+const WAV_ENCODER_NAME: &[u8; 14] = b"Lavf62.12.101\0";
+const WAV_INFO_LIST_CHUNK_SIZE: u32 = 4 + 8 + WAV_ENCODER_NAME.len() as u32;
+const WAV_INFO_LIST_TOTAL_SIZE: usize = 8 + WAV_INFO_LIST_CHUNK_SIZE as usize;
+const WAV_HEADER_SIZE: usize = 44 + WAV_INFO_LIST_TOTAL_SIZE;
+const MAX_RIFF_DATA_SIZE: usize = u32::MAX as usize - 36 - WAV_INFO_LIST_TOTAL_SIZE;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WavInfo {
@@ -229,7 +232,7 @@ impl WavMuxer {
 
     pub fn render(&self) -> AvResult<Vec<u8>> {
         validate_data_len(self.data.len())?;
-        let riff_size = u32::try_from(36 + self.data.len())
+        let riff_size = u32::try_from(36 + WAV_INFO_LIST_TOTAL_SIZE + self.data.len())
             .map_err(|_| AvError::invalid_argument("WAV RIFF size does not fit u32"))?;
         let data_size = u32::try_from(self.data.len())
             .map_err(|_| AvError::invalid_argument("WAV data size does not fit u32"))?;
@@ -246,6 +249,7 @@ impl WavMuxer {
         writer.write_u32_le(self.info.byte_rate);
         writer.write_u16_le(self.info.block_align);
         writer.write_u16_le(self.info.bits_per_sample);
+        write_ffmpeg_info_chunk(&mut writer);
         writer.write_all(b"data");
         writer.write_u32_le(data_size);
         writer.write_all(&self.data);
@@ -351,6 +355,15 @@ fn validate_data_len(data_len: usize) -> AvResult<()> {
     Ok(())
 }
 
+fn write_ffmpeg_info_chunk(writer: &mut ByteWriter) {
+    writer.write_all(b"LIST");
+    writer.write_u32_le(WAV_INFO_LIST_CHUNK_SIZE);
+    writer.write_all(b"INFO");
+    writer.write_all(b"ISFT");
+    writer.write_u32_le(WAV_ENCODER_NAME.len() as u32);
+    writer.write_all(WAV_ENCODER_NAME);
+}
+
 fn read_fourcc(reader: &mut ByteReader<'_>) -> AvResult<[u8; 4]> {
     let bytes = reader.read_exact(4)?;
     Ok([bytes[0], bytes[1], bytes[2], bytes[3]])
@@ -445,7 +458,7 @@ mod tests {
         assert_eq!(muxer.packets(), 1);
         assert_eq!(muxer.data_len(), 8);
         assert_eq!(&bytes[0..4], b"RIFF");
-        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 44);
+        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 78);
         assert_eq!(&bytes[8..12], b"WAVE");
         assert_eq!(&bytes[12..16], b"fmt ");
         assert_eq!(u32::from_le_bytes(bytes[16..20].try_into().unwrap()), 16);
@@ -461,9 +474,21 @@ mod tests {
         );
         assert_eq!(u16::from_le_bytes(bytes[32..34].try_into().unwrap()), 4);
         assert_eq!(u16::from_le_bytes(bytes[34..36].try_into().unwrap()), 16);
-        assert_eq!(&bytes[36..40], b"data");
-        assert_eq!(u32::from_le_bytes(bytes[40..44].try_into().unwrap()), 8);
-        assert_eq!(&bytes[44..], &[0, 0, 1, 0, 2, 0, 3, 0]);
+        assert_eq!(&bytes[36..40], b"LIST");
+        assert_eq!(
+            u32::from_le_bytes(bytes[40..44].try_into().unwrap()),
+            WAV_INFO_LIST_CHUNK_SIZE
+        );
+        assert_eq!(&bytes[44..48], b"INFO");
+        assert_eq!(&bytes[48..52], b"ISFT");
+        assert_eq!(
+            u32::from_le_bytes(bytes[52..56].try_into().unwrap()),
+            WAV_ENCODER_NAME.len() as u32
+        );
+        assert_eq!(&bytes[56..70], WAV_ENCODER_NAME);
+        assert_eq!(&bytes[70..74], b"data");
+        assert_eq!(u32::from_le_bytes(bytes[74..78].try_into().unwrap()), 8);
+        assert_eq!(&bytes[78..], &[0, 0, 1, 0, 2, 0, 3, 0]);
     }
 
     #[test]

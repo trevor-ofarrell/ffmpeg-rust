@@ -347,6 +347,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-md5-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-file-output",
+  "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-wav-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-generated-md5",
   "packet_oracle::libavcodec_packet_core_lifecycle_matches_packet_model",
   "rawvideo_oracle::rawvideo_rgb24_file_output_matches_ffmpeg_oracle",
@@ -360,6 +361,7 @@ differential_tests = [
   "rawvideo_oracle::rawvideo_rgb24_md5_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_file_output_matches_ffmpeg_oracle",
+  "pcm_oracle::pcm_s16le_wav_file_output_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle",
 ]
 fate_tests = [
@@ -370,6 +372,10 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest raw PCM to WAV media-integration update: the WAV file-output oracle
+# row is now mapped to avutil-packet, validating the Rust raw pcm_s16le
+# demuxer -> Packet -> WAV muxer path against pinned FFmpeg streamcopy bytes,
+# including FFmpeg's default RIFF LIST/INFO/ISFT encoder chunk.
 # Latest yuv4mpegpipe media-integration update: the yuv4mpegpipe byte-copy
 # oracle row is now mapped to avutil-packet, validating the Rust rawvideo
 # yuv420p demuxer -> Packet -> yuv4mpegpipe muxer path against pinned FFmpeg
@@ -3125,7 +3131,7 @@ id = "fftools-ffmpeg-pcm-s16le-wav-file-output"
 kind = "cli"
 ffmpeg_name = "ffmpeg raw pcm_s16le to WAV file"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffmpeg -f s16le -ar <rate> -ac <channels> -i <input.raw> -f wav <output.wav>"
 rust_command = "cargo test -p fftools ffmpeg"
@@ -3133,10 +3139,13 @@ unit_tests = [
   "ffmpeg::tests::runs_s16le_to_wav_file_output",
   "ffmpeg::tests::rejects_wav_file_output_overwrite",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-pcm-s16le-wav-file-output|oracle-pcm-s16le-wav-file-output",
+  "pcm_oracle::pcm_s16le_wav_file_output_matches_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-pcm-s16le-wav-file-output|local-ffmpeg-unit"]
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports raw pcm_s16le input packet-copy to a local WAV output file with explicit -f s16le/pcm_s16le input parameters and explicit -f wav/wave output format. It uses the Rust raw PCM demuxer and WavMuxer, creates output files with no overwrite, validates the generated output through the Rust WAV demuxer in tests, and has no oracle differential or upstream FATE coverage yet. Transcoding, WAV output from non-raw-PCM inputs, overwrite confirmation flags, RF64/WAVE64, metadata chunks, and broader muxer selection remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution supports raw pcm_s16le input packet-copy to a local WAV output file with explicit -f s16le/pcm_s16le input parameters and explicit -f wav/wave output format. It uses the Rust raw PCM demuxer and WavMuxer, creates output files with no overwrite, and validates the generated output through the Rust WAV demuxer in tests. The bounded stereo pcm_s16le WAV file-output oracle row compares Rust WAV bytes against pinned FFmpeg 8.1.1 `-c:a copy -f wav` output, including the default RIFF LIST/INFO/ISFT `Lavf62.12.101` encoder chunk. Transcoding, WAV output from non-raw-PCM inputs, overwrite confirmation flags, RF64/WAVE64, arbitrary metadata chunks, and broader muxer selection remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -3787,7 +3796,7 @@ id = "avformat-wav-muxer"
 kind = "muxer"
 ffmpeg_name = "wav"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 3
 oracle_command = "ffmpeg -f s16le -ar <rate> -ac <channels> -i <input> -f wav <output.wav>"
 rust_command = "cargo test -p avformat wav"
@@ -3797,10 +3806,13 @@ unit_tests = [
   "wav::tests::muxer_validates_stream_parameters_and_packets",
   "wav::tests::muxer_finish_prevents_more_writes",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:avformat-wav-muxer|oracle-pcm-s16le-wav-file-output",
+  "pcm_oracle::pcm_s16le_wav_file_output_matches_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:avformat-wav-muxer|local-avformat-wav-unit"]
 fuzz_targets = ["avformat_basic_muxers"]
-notes = "Initial RIFF/WAVE muxer writes canonical PCM s16le headers and stream-0 packet payloads with block-align, bit-depth, and sample-frame validation derived from the shared avformat AudioStreamParameters helper and SampleFormat::S16 model, plus native or count-only ChannelLayoutSpec metadata where safe. It is wired to a constrained ffmpeg-rs raw pcm_s16le to WAV file-output path. Build-checked cargo-fuzz target avformat_basic_muxers covers accepted/rejected packet writes, state accounting, render/finish stability, post-finish rejection, and WavDemuxer round trips, but actual local fuzz execution is blocked until cargo-fuzz is installed. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, metadata chunks, broader CLI wiring, differential tests, and upstream FATE are pending. The local FATE-runner smoke mapping executes the wav unit filter only and does not count as upstream FATE parity."
+notes = "Initial RIFF/WAVE muxer writes PCM s16le headers, FFmpeg-shaped default RIFF LIST/INFO/ISFT encoder metadata with pinned `Lavf62.12.101`, and stream-0 packet payloads with block-align, bit-depth, and sample-frame validation derived from the shared avformat AudioStreamParameters helper and SampleFormat::S16 model, plus native or count-only ChannelLayoutSpec metadata where safe. It is wired to a constrained ffmpeg-rs raw pcm_s16le to WAV file-output path. The bounded stereo pcm_s16le WAV file-output oracle row compares Rust muxed bytes against pinned FFmpeg 8.1.1 `-c:a copy -f wav` output. Build-checked cargo-fuzz target avformat_basic_muxers covers accepted/rejected packet writes, state accounting, render/finish stability, post-finish rejection, and WavDemuxer round trips, but actual local fuzz execution is blocked until cargo-fuzz is installed. RF64/WAVE64, WAVE_FORMAT_EXTENSIBLE, float/non-PCM formats, arbitrary metadata chunks, broader CLI wiring, upstream FATE, and sustained fuzz execution are pending. The local FATE-runner smoke mapping executes the wav unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -3923,12 +3935,14 @@ unit_tests = [
 differential_tests = [
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-framecrc-records",
   "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-file-output",
+  "tests/differential/mappings.txt:avformat-pcm-s16le-demuxer|oracle-pcm-s16le-wav-file-output",
   "pcm_oracle::pcm_s16le_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_file_output_matches_ffmpeg_oracle",
+  "pcm_oracle::pcm_s16le_wav_file_output_matches_ffmpeg_oracle",
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-pcm-s16le-demuxer|local-avformat-pcm-unit"]
 fuzz_targets = ["avformat_pcm_s16le"]
-notes = "Initial raw pcm_s16le demuxer slices whole interleaved sample-frame packets with configurable packet sample counts, sample-rate/channel validation through the shared avformat AudioStreamParameters helper, SampleFormat::S16-derived frame sizing, native or count-only ChannelLayoutSpec metadata where safe, PTS measured in samples, and partial-frame rejection. The bounded stereo pcm_s16le oracle rows compare Rust framecrc streamcopy records and raw s16le file output against pinned FFmpeg 8.1.1 output, proving the demuxed packet payload, byte count, and sample-duration timing for that path. Build-checked cargo-fuzz target avformat_pcm_s16le exercises parameter validation, packet slicing, packet timing, and side-data invariants. Probe integration, other PCM formats, broader differential tests, upstream FATE, and sustained fuzz execution are pending. The local FATE-runner smoke mapping executes the pcm unit filter only and does not count as upstream FATE parity."
+notes = "Initial raw pcm_s16le demuxer slices whole interleaved sample-frame packets with configurable packet sample counts, sample-rate/channel validation through the shared avformat AudioStreamParameters helper, SampleFormat::S16-derived frame sizing, native or count-only ChannelLayoutSpec metadata where safe, PTS measured in samples, and partial-frame rejection. The bounded stereo pcm_s16le oracle rows compare Rust framecrc streamcopy records, raw s16le file output, and byte-exact WAV file output against pinned FFmpeg 8.1.1 output, proving the demuxed packet payload, byte count, sample-duration timing, and packet transfer into the constrained WAV muxer for that path. Build-checked cargo-fuzz target avformat_pcm_s16le exercises parameter validation, packet slicing, packet timing, and side-data invariants. Probe integration, other PCM formats, broader differential tests, upstream FATE, and sustained fuzz execution are pending. The local FATE-runner smoke mapping executes the pcm unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]

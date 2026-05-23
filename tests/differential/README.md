@@ -20,7 +20,7 @@ The current harness writes deterministic rawvideo inputs, runs Rust `ffmpeg-rs` 
 
 The yuv4mpegpipe oracle harness lives in `crates/fftools/tests/yuv4mpegpipe_oracle.rs`. It writes deterministic raw `yuv420p`, compares Rust local `-f yuv4mpegpipe` file bytes against pinned FFmpeg `-c:v copy -f yuv4mpegpipe`, and parses the oracle output through the Rust demuxer to cover FFmpeg's `A0:0` and `XYSCSS=420JPEG` header shape.
 
-The raw PCM oracle harness lives in `crates/fftools/tests/pcm_oracle.rs` and is ignored by default because it requires the pinned oracle. It writes deterministic stereo `pcm_s16le`, compares normalized `framecrc` rows against FFmpeg `-c:a copy -f framecrc -`, and compares raw `s16le` output bytes against FFmpeg `-c:a copy -f s16le`:
+The raw PCM oracle harness lives in `crates/fftools/tests/pcm_oracle.rs` and is ignored by default because it requires the pinned oracle. It writes deterministic stereo `pcm_s16le`, compares normalized `framecrc` rows against FFmpeg `-c:a copy -f framecrc -`, compares raw `s16le` output bytes against FFmpeg `-c:a copy -f s16le`, and compares constrained WAV output bytes against FFmpeg `-c:a copy -f wav`, including the pinned `LIST/INFO/ISFT` encoder chunk:
 
 ```sh
 FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg \
