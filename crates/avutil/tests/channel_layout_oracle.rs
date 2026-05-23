@@ -167,6 +167,14 @@ const PARSER_CASES: &[ParserCase] = &[
         input: "FL+",
     },
     ParserCase {
+        id: "invalid-leading-separator",
+        input: "+FL",
+    },
+    ParserCase {
+        id: "invalid-empty-token",
+        input: "FL++FR",
+    },
+    ParserCase {
         id: "zeroth-order-ambisonic",
         input: "ambisonic 0",
     },
@@ -187,8 +195,24 @@ const PARSER_CASES: &[ParserCase] = &[
         input: "ambisonic 0x1+stereo",
     },
     ParserCase {
+        id: "plus-hex-order-ambisonic",
+        input: "ambisonic +0x1",
+    },
+    ParserCase {
         id: "sparse-extra-ambisonic",
         input: "ambisonic 1+FL+FC",
+    },
+    ParserCase {
+        id: "zero-order-mask-extra-ambisonic",
+        input: "ambisonic 0+0x5",
+    },
+    ParserCase {
+        id: "signed-zero-mask-extra-ambisonic",
+        input: "ambisonic -0+0x5",
+    },
+    ParserCase {
+        id: "signed-zero-list-extra-ambisonic",
+        input: "ambisonic -0+FL+FC",
     },
     ParserCase {
         id: "named-extra-ambisonic",
@@ -241,6 +265,10 @@ const PARSER_CASES: &[ParserCase] = &[
     ParserCase {
         id: "invalid-trailing-count",
         input: "2C ",
+    },
+    ParserCase {
+        id: "invalid-trailing-channels",
+        input: "2 channels ",
     },
     ParserCase {
         id: "invalid-uppercase-layout",
@@ -561,6 +589,31 @@ const COMPARE_CASES: &[CompareCase] = &[
         id: "ambisonic-extra-different",
         left: "ambisonic 1+stereo",
         right: "ambisonic 1+FL+FC",
+    },
+    CompareCase {
+        id: "plus-hex-order-ambisonic-same",
+        left: "ambisonic +0x1",
+        right: "ambisonic 1",
+    },
+    CompareCase {
+        id: "zero-order-mask-custom-same",
+        left: "ambisonic -0+0x5",
+        right: "AMBI0+FL+FC",
+    },
+    CompareCase {
+        id: "zero-order-mask-list-same",
+        left: "ambisonic 0+0x5",
+        right: "ambisonic -0+FL+FC",
+    },
+    CompareCase {
+        id: "zero-order-extra-different",
+        left: "ambisonic -0+0x5",
+        right: "ambisonic +stereo",
+    },
+    CompareCase {
+        id: "signed-zero-extra-same",
+        left: "ambisonic -0+stereo",
+        right: "ambisonic +stereo",
     },
     CompareCase {
         id: "ambisonic-vs-native",

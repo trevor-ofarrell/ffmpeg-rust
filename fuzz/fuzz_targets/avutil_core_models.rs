@@ -192,6 +192,20 @@ fn assert_raw_channel_layout_retype_fixtures() {
             .kind(),
         AvErrorKind::InvalidArgument
     );
+    assert_eq!(
+        ChannelLayoutSpec::parse("+FL").unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("FL++FR").unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("2 channels ")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
     let escaped_at = CustomChannelLayout::parse_channel_list("FL@Left\\@Name+FR").unwrap();
     assert_eq!(escaped_at.channels()[0].name(), "Left@Name");
     assert_eq!(escaped_at.index_from_string("FL@Left@Name").unwrap(), 0);
@@ -243,11 +257,30 @@ fn assert_raw_channel_layout_retype_fixtures() {
         )
     );
     assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic +0x1").unwrap(),
+        ChannelLayoutSpec::Ambisonic(AmbisonicChannelLayout::new(1, 0).unwrap())
+    );
+    assert_eq!(
         ChannelLayoutSpec::parse("ambisonic 1+FL+FC").unwrap(),
         ChannelLayoutSpec::Ambisonic(
             AmbisonicChannelLayout::new(1, Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
                 .unwrap()
         )
+    );
+    let zero_order_extra =
+        AmbisonicChannelLayout::new(0, Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
+            .unwrap();
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic 0+0x5").unwrap(),
+        ChannelLayoutSpec::Ambisonic(zero_order_extra)
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic -0+0x5").unwrap(),
+        ChannelLayoutSpec::Ambisonic(zero_order_extra)
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic -0+FL+FC").unwrap(),
+        ChannelLayoutSpec::Ambisonic(zero_order_extra)
     );
     let named_extra = ChannelLayoutSpec::parse("ambisonic +1+FL@Left+FR@Right").unwrap();
     assert!(named_extra.as_custom().is_some());
@@ -495,6 +528,11 @@ fn assert_channel_layout_compare_fixtures() {
         true,
     );
     assert_compare("ambisonic 1+stereo", "ambisonic 1+FL+FC", false);
+    assert_compare("ambisonic +0x1", "ambisonic 1", true);
+    assert_compare("ambisonic -0+0x5", "AMBI0+FL+FC", true);
+    assert_compare("ambisonic 0+0x5", "ambisonic -0+FL+FC", true);
+    assert_compare("ambisonic -0+0x5", "ambisonic +stereo", false);
+    assert_compare("ambisonic -0+stereo", "ambisonic +stereo", true);
     assert_compare("ambisonic 0+stereo", "stereo", false);
     assert_compare("USR45+USR46", "0x600000000000", true);
     assert_compare("USR46+USR45", "0x600000000000", false);
