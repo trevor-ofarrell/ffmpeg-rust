@@ -38,6 +38,12 @@ struct CompareCase {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct DefaultCase {
+    id: &'static str,
+    channels: i32,
+}
+
+#[derive(Debug, Clone, Copy)]
 enum RetypeTarget {
     Native,
     Custom,
@@ -318,6 +324,101 @@ const BYTE_LOOKUP_NAMES: &[&[u8]] = &[
     b"@123456789012345",
     b"@1234567890123456",
     b"FR",
+];
+
+const DEFAULT_CASES: &[DefaultCase] = &[
+    DefaultCase {
+        id: "invalid-negative",
+        channels: -1,
+    },
+    DefaultCase {
+        id: "invalid-zero",
+        channels: 0,
+    },
+    DefaultCase {
+        id: "mono",
+        channels: 1,
+    },
+    DefaultCase {
+        id: "stereo",
+        channels: 2,
+    },
+    DefaultCase {
+        id: "two-one",
+        channels: 3,
+    },
+    DefaultCase {
+        id: "four-zero",
+        channels: 4,
+    },
+    DefaultCase {
+        id: "five-zero",
+        channels: 5,
+    },
+    DefaultCase {
+        id: "five-one",
+        channels: 6,
+    },
+    DefaultCase {
+        id: "six-one",
+        channels: 7,
+    },
+    DefaultCase {
+        id: "seven-one",
+        channels: 8,
+    },
+    DefaultCase {
+        id: "unspecified-nine",
+        channels: 9,
+    },
+    DefaultCase {
+        id: "five-one-four",
+        channels: 10,
+    },
+    DefaultCase {
+        id: "unspecified-eleven",
+        channels: 11,
+    },
+    DefaultCase {
+        id: "seven-one-four",
+        channels: 12,
+    },
+    DefaultCase {
+        id: "unspecified-thirteen",
+        channels: 13,
+    },
+    DefaultCase {
+        id: "nine-one-four",
+        channels: 14,
+    },
+    DefaultCase {
+        id: "unspecified-fifteen",
+        channels: 15,
+    },
+    DefaultCase {
+        id: "nine-one-six",
+        channels: 16,
+    },
+    DefaultCase {
+        id: "unspecified-seventeen",
+        channels: 17,
+    },
+    DefaultCase {
+        id: "unspecified-twentythree",
+        channels: 23,
+    },
+    DefaultCase {
+        id: "twentytwo-two",
+        channels: 24,
+    },
+    DefaultCase {
+        id: "unspecified-twentyfive",
+        channels: 25,
+    },
+    DefaultCase {
+        id: "unspecified-sixtyfour",
+        channels: 64,
+    },
 ];
 
 const RETYPE_CASES: &[RetypeCase] = &[
@@ -825,6 +926,52 @@ fn libavutil_channel_layout_compare_vectors_match_current_model() {
 }
 
 #[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 libavutil oracle under third_party/ffmpeg-oracle/wsl"]
+fn libavutil_channel_layout_default_vectors_match_current_model() {
+    let repo_root = repo_root();
+    let oracle_root = oracle_root(&repo_root);
+    let include_dir = oracle_root.join("wsl/include");
+    let libavutil = oracle_root.join("wsl/lib/libavutil.a");
+
+    assert!(
+        include_dir.join("libavutil/channel_layout.h").is_file(),
+        "missing pinned FFmpeg libavutil channel layout headers under `{}`",
+        include_dir.display()
+    );
+    assert!(
+        libavutil.is_file(),
+        "missing pinned FFmpeg libavutil static library `{}`",
+        libavutil.display()
+    );
+
+    let work_dir = repo_root.join("target/oracle/avutil-channel-layout");
+    fs::create_dir_all(&work_dir).expect("create avutil-channel-layout oracle work dir");
+    let source = work_dir.join("channel_layout_default_oracle.c");
+    let executable = work_dir.join("channel_layout_default_oracle");
+    fs::write(&source, default_oracle_c_source())
+        .expect("write channel layout default oracle C source");
+
+    let stdout = compile_and_run_oracle(&include_dir, &libavutil, &source, &executable);
+    let oracle = parse_parser_oracle_output(&stdout);
+
+    assert_eq!(
+        oracle.keys().collect::<Vec<_>>(),
+        expected_default_rows().keys().collect::<Vec<_>>(),
+        "channel layout default oracle row set diverged"
+    );
+
+    for (name, expected_fields) in expected_default_rows() {
+        assert_eq!(
+            oracle
+                .get(&name)
+                .unwrap_or_else(|| panic!("missing default oracle row `{name}`")),
+            &expected_fields,
+            "{name} diverged"
+        );
+    }
+}
+
+#[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 source/build cache; set FFMPEG_FATE_BUILD_DIR or run scripts/bootstrap_ffmpeg_oracle_wsl.sh"]
 fn upstream_fate_channel_layout_passes() {
     let output = if cfg!(windows) {
@@ -1061,6 +1208,18 @@ fn expected_compare_rows() -> BTreeMap<String, Vec<String>> {
         .collect()
 }
 
+fn expected_default_rows() -> BTreeMap<String, Vec<String>> {
+    DEFAULT_CASES
+        .iter()
+        .map(|case| {
+            (
+                format!("default:{}", case.id),
+                expected_default_fields(case),
+            )
+        })
+        .collect()
+}
+
 fn expected_retype_fields(case: &RetypeCase) -> Vec<String> {
     let original = ChannelLayoutSpec::parse(case.input)
         .unwrap_or_else(|err| panic!("Rust parser rejected retype case `{}`: {err}", case.id));
@@ -1095,6 +1254,24 @@ fn expected_compare_fields(case: &CompareCase) -> Vec<String> {
     } else {
         "different".to_string()
     }]
+}
+
+fn expected_default_fields(case: &DefaultCase) -> Vec<String> {
+    if case.channels <= 0 || case.channels > i32::from(u16::MAX) {
+        return vec!["err".to_string(), AvErrorCode::EINVAL.raw().to_string()];
+    }
+
+    match ChannelLayoutSpec::default_for_count(case.channels as u16) {
+        Ok(layout) => {
+            let mut fields = vec!["ok".to_string()];
+            fields.extend(layout_fields(&layout));
+            fields
+        }
+        Err(err) => vec![
+            "err".to_string(),
+            err.code().unwrap_or(AvErrorCode::EINVAL).raw().to_string(),
+        ],
+    }
 }
 
 fn retype_layout(
@@ -1610,6 +1787,138 @@ static void print_compare_case(const struct compare_case *test_case) {{
 int main(void) {{
     for (size_t index = 0; index < sizeof(compare_cases) / sizeof(compare_cases[0]); index++)
         print_compare_case(&compare_cases[index]);
+    return 0;
+}}
+"#
+    )
+}
+
+fn default_oracle_c_source() -> String {
+    let cases = DEFAULT_CASES
+        .iter()
+        .map(|case| {
+            format!(
+                "    {{ {}, {} }},",
+                c_string_literal(case.id),
+                case.channels
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let lookups = LOOKUP_NAMES
+        .iter()
+        .map(|name| format!("    {},", c_string_literal(name)))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"#include <errno.h>
+#include <inttypes.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/error.h>
+
+struct default_case {{
+    const char *id;
+    int channels;
+}};
+
+static const struct default_case default_cases[] = {{
+{cases}
+}};
+
+static const char *lookup_names[] = {{
+{lookups}
+}};
+
+static const char *order_name(enum AVChannelOrder order) {{
+    switch (order) {{
+    case AV_CHANNEL_ORDER_UNSPEC:
+        return "UNSPEC";
+    case AV_CHANNEL_ORDER_NATIVE:
+        return "NATIVE";
+    case AV_CHANNEL_ORDER_CUSTOM:
+        return "CUSTOM";
+    case AV_CHANNEL_ORDER_AMBISONIC:
+        return "AMBISONIC";
+    default:
+        return "UNKNOWN";
+    }}
+}}
+
+static uint64_t comparable_mask(const AVChannelLayout *layout) {{
+    if (layout->order == AV_CHANNEL_ORDER_NATIVE || layout->order == AV_CHANNEL_ORDER_AMBISONIC)
+        return layout->u.mask;
+    return 0;
+}}
+
+static void print_channel_sequence(const AVChannelLayout *layout) {{
+    int printed = 0;
+    for (int index = 0; index < layout->nb_channels; index++) {{
+        enum AVChannel channel = av_channel_layout_channel_from_index(layout, index);
+        if (channel == AV_CHAN_NONE)
+            continue;
+
+        char name[64];
+        av_channel_name(name, sizeof(name), channel);
+        if (printed)
+            putchar('+');
+        fputs(name, stdout);
+        printed++;
+    }}
+    if (!printed)
+        putchar('-');
+}}
+
+static void print_lookup_results(const AVChannelLayout *layout) {{
+    for (size_t index = 0; index < sizeof(lookup_names) / sizeof(lookup_names[0]); index++) {{
+        printf("|%d", av_channel_layout_index_from_string(layout, lookup_names[index]));
+    }}
+    for (size_t index = 0; index < sizeof(lookup_names) / sizeof(lookup_names[0]); index++) {{
+        printf("|%d", av_channel_layout_channel_from_string(layout, lookup_names[index]));
+    }}
+}}
+
+static void print_layout_fields(const AVChannelLayout *layout) {{
+    char description[512];
+    int ret = av_channel_layout_describe(layout, description, sizeof(description));
+    if (ret < 0)
+        snprintf(description, sizeof(description), "<describe-error:%d>", ret);
+
+    printf(
+        "%s|%d|%016" PRIx64 "|%s|",
+        order_name(layout->order),
+        layout->nb_channels,
+        comparable_mask(layout),
+        description
+    );
+    print_channel_sequence(layout);
+    printf("|%016" PRIx64, av_channel_layout_subset(layout, AV_CH_LAYOUT_STEREO));
+    print_lookup_results(layout);
+}}
+
+static void print_default_case(const struct default_case *test_case) {{
+    AVChannelLayout layout = {{0}};
+    av_channel_layout_default(&layout, test_case->channels);
+
+    printf("default:%s|", test_case->id);
+    if (!av_channel_layout_check(&layout)) {{
+        printf("err|%d\n", AVERROR(EINVAL));
+        av_channel_layout_uninit(&layout);
+        return;
+    }}
+
+    printf("ok|");
+    print_layout_fields(&layout);
+    putchar('\n');
+
+    av_channel_layout_uninit(&layout);
+}}
+
+int main(void) {{
+    for (size_t index = 0; index < sizeof(default_cases) / sizeof(default_cases[0]); index++)
+        print_default_case(&default_cases[index]);
     return 0;
 }}
 "#

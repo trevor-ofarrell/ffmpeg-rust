@@ -423,6 +423,47 @@ fn assert_raw_channel_layout_retype_fixtures() {
     );
 }
 
+fn assert_channel_layout_default_fixtures() {
+    for (channels, expected) in [
+        (1, ChannelLayout::mono()),
+        (2, ChannelLayout::stereo()),
+        (3, ChannelLayout::two_one()),
+        (4, ChannelLayout::four_zero()),
+        (5, ChannelLayout::five_zero()),
+        (6, ChannelLayout::five_one()),
+        (7, ChannelLayout::six_one()),
+        (8, ChannelLayout::seven_one()),
+        (10, ChannelLayout::five_one_four()),
+        (12, ChannelLayout::seven_one_four()),
+        (14, ChannelLayout::nine_one_four()),
+        (16, ChannelLayout::nine_one_six()),
+        (24, ChannelLayout::twenty_two_two()),
+    ] {
+        assert_eq!(
+            ChannelLayoutSpec::default_for_count(channels).unwrap(),
+            ChannelLayoutSpec::Native(expected)
+        );
+    }
+
+    for channels in [9, 11, 13, 15, 17, 23, 25, 64] {
+        let layout = ChannelLayoutSpec::default_for_count(channels).unwrap();
+        assert_eq!(layout, ChannelLayoutSpec::unspecified(channels).unwrap());
+        assert!(layout.is_unspecified());
+        assert_eq!(layout.channel_count(), channels);
+        assert_eq!(layout.subset_mask(ChannelLayout::stereo().channel_mask()), 0);
+        assert_eq!(layout.channel_from_string("FL"), None);
+        assert_eq!(
+            layout.index_from_string("FL").unwrap_err().kind(),
+            AvErrorKind::InvalidArgument
+        );
+    }
+
+    assert_eq!(
+        ChannelLayoutSpec::default_for_count(0).unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+}
+
 fn assert_channel_layout_byte_parser_fixtures() {
     assert_eq!(
         CustomChannelLayout::parse_channel_list_bytes(b"FL@Left\\+Right+USR45").unwrap(),
@@ -5085,6 +5126,7 @@ fn exercise_pixel_and_video_frame(cursor: &mut Cursor<'_>) {
 
 fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_raw_channel_layout_retype_fixtures();
+    assert_channel_layout_default_fixtures();
     assert_channel_layout_byte_parser_fixtures();
     assert_channel_layout_compare_fixtures();
     assert_channel_layout_string_lookup_fixtures();
@@ -8853,6 +8895,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
 fn exercise_fixtures() {
     assert_raw_channel_layout_retype_fixtures();
+    assert_channel_layout_default_fixtures();
     assert_channel_layout_byte_parser_fixtures();
     assert_channel_layout_compare_fixtures();
     assert_channel_layout_string_lookup_fixtures();
