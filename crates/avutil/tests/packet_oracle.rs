@@ -1678,6 +1678,22 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:array-remove-duplicate-before".to_string(),
         side_data_list_summary_fields(&duplicate_list),
     );
+    rows.insert(
+        "packet:array-get-duplicate-palette".to_string(),
+        side_data_lookup_fields(duplicate_list.get(&PacketSideDataKind::Palette)),
+    );
+    let replaced = duplicate_list
+        .add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap())
+        .expect("first palette side data should be replaced");
+    assert_eq!(replaced.data(), &[0x11]);
+    rows.insert(
+        "packet:array-add-duplicate-replace-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-duplicate-replace".to_string(),
+        side_data_list_summary_fields(&duplicate_list),
+    );
     let removed = duplicate_list
         .remove_kind(&PacketSideDataKind::Palette)
         .expect("last palette side data should be removed");
@@ -3396,6 +3412,19 @@ static void exercise_side_data_array_api(void) {
     };
     int duplicate_nb_sd = 4;
     print_side_data_array_summary("packet:array-remove-duplicate-before",
+                                  duplicate_sd, duplicate_nb_sd);
+    print_side_data_array_lookup("packet:array-get-duplicate-palette",
+                                 duplicate_sd, duplicate_nb_sd,
+                                 AV_PKT_DATA_PALETTE);
+    AVPacketSideData *duplicate_ptr = duplicate_sd;
+    uint8_t *duplicate_replacement = alloc_owned_side_data_byte(0x55);
+    AVPacketSideData *duplicate_entry =
+        av_packet_side_data_add(&duplicate_ptr, &duplicate_nb_sd,
+                                AV_PKT_DATA_PALETTE,
+                                duplicate_replacement, 1, 0);
+    printf("packet:array-add-duplicate-replace-ret|%d\n",
+           duplicate_entry != NULL);
+    print_side_data_array_summary("packet:array-add-duplicate-replace",
                                   duplicate_sd, duplicate_nb_sd);
     av_packet_side_data_remove(duplicate_sd, &duplicate_nb_sd,
                                AV_PKT_DATA_PALETTE);

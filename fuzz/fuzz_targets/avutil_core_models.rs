@@ -7030,6 +7030,19 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
         SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x44]).unwrap(),
     ]);
+    assert_eq!(
+        duplicate_remove_list
+            .get(&PacketSideDataKind::Palette)
+            .unwrap()
+            .data(),
+        &[0x11]
+    );
+    let replaced_duplicate = duplicate_remove_list
+        .add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap())
+        .unwrap();
+    assert_eq!(replaced_duplicate.data(), &[0x11]);
+    assert_eq!(duplicate_remove_list.entries()[0].data(), &[0x55]);
+    assert_eq!(duplicate_remove_list.entries()[2].data(), &[0x33]);
     let removed_duplicate = duplicate_remove_list
         .remove_kind(&PacketSideDataKind::Palette)
         .unwrap();
@@ -7039,7 +7052,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         duplicate_remove_list.entries()[0].kind_id(),
         &PacketSideDataKind::Palette
     );
-    assert_eq!(duplicate_remove_list.entries()[0].data(), &[0x11]);
+    assert_eq!(duplicate_remove_list.entries()[0].data(), &[0x55]);
     assert_eq!(
         duplicate_remove_list.entries()[1].kind_id(),
         &PacketSideDataKind::NewExtradata

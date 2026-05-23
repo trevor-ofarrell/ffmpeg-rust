@@ -10413,13 +10413,24 @@ mod tests {
     }
 
     #[test]
-    fn packet_side_data_list_remove_uses_last_match_swap_semantics() {
+    fn packet_side_data_list_duplicate_lookup_add_and_remove_match_standalone_array_semantics() {
         let mut list = PacketSideDataList::from_entries(vec![
             SideData::new_extradata(vec![0x00]).unwrap(),
             SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
             SideData::new_extradata(vec![0x22]).unwrap(),
             SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x33]).unwrap(),
         ]);
+
+        assert_eq!(
+            list.get(&PacketSideDataKind::NewExtradata).unwrap().data(),
+            &[0x00]
+        );
+        let replaced = list
+            .add_side_data(SideData::new_extradata(vec![0x44]).unwrap())
+            .unwrap();
+        assert_eq!(replaced.data(), &[0x00]);
+        assert_eq!(list.entries()[0].data(), &[0x44]);
+        assert_eq!(list.entries()[2].data(), &[0x22]);
 
         let removed = list.remove_kind(&PacketSideDataKind::NewExtradata).unwrap();
 
@@ -10429,7 +10440,7 @@ mod tests {
             list.entries()[0].kind_id(),
             &PacketSideDataKind::NewExtradata
         );
-        assert_eq!(list.entries()[0].data(), &[0x00]);
+        assert_eq!(list.entries()[0].data(), &[0x44]);
         assert_eq!(list.entries()[1].kind_id(), &PacketSideDataKind::Palette);
         assert_eq!(
             list.entries()[2].kind_id(),
