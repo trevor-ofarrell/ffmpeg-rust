@@ -13758,12 +13758,16 @@ impl VideoFrame {
             | PixelFormat::Uyva => 4,
             PixelFormat::Rgb48Le
             | PixelFormat::Rgb48Be
+            | PixelFormat::RgbF16Le
+            | PixelFormat::RgbF16Be
             | PixelFormat::Bgr48Le
             | PixelFormat::Bgr48Be
             | PixelFormat::Xyz12Le
             | PixelFormat::Xyz12Be => 6,
             PixelFormat::Yaf32Le
             | PixelFormat::Yaf32Be
+            | PixelFormat::RgbaF16Le
+            | PixelFormat::RgbaF16Be
             | PixelFormat::Rgba64Le
             | PixelFormat::Rgba64Be
             | PixelFormat::Bgra64Le
@@ -13774,9 +13778,17 @@ impl VideoFrame {
             | PixelFormat::Xv36Be
             | PixelFormat::Xv48Le
             | PixelFormat::Xv48Be => 8,
+            PixelFormat::RgbF32Le
+            | PixelFormat::RgbF32Be
+            | PixelFormat::Rgb96Le
+            | PixelFormat::Rgb96Be => 12,
+            PixelFormat::RgbaF32Le
+            | PixelFormat::RgbaF32Be
+            | PixelFormat::Rgba128Le
+            | PixelFormat::Rgba128Be => 16,
             _ => {
                 return Err(AvError::unsupported(format!(
-                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, selected packed grayscale/gray-alpha, packed YUV 4:2:2, selected planar YUV/GBR/YUVA/GBRA, rgb24/bgr24/vyu444, selected high-depth packed RGB/RGBA, and selected packed 4:4:4 RGB/YUV/XYZ video frames, not {}",
+                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, selected packed grayscale/gray-alpha, packed YUV 4:2:2, selected planar YUV/GBR/YUVA/GBRA, rgb24/bgr24/vyu444, selected high-depth packed RGB/RGBA including floating and 32-bit integer RGB/RGBA, and selected packed 4:4:4 RGB/YUV/XYZ video frames, not {}",
                     self.pixel_format.name()
                 )));
             }
@@ -15849,7 +15861,7 @@ fn adjusted_packed_crop_left(
     if flags.contains(FrameCropFlags::UNALIGNED) || crop.left == 0 {
         return Ok(crop.left);
     }
-    if matches!(bytes_per_pixel, 2 | 4 | 6 | 8) {
+    if matches!(bytes_per_pixel, 2 | 4 | 6 | 8 | 12 | 16) {
         return Err(AvError::bug(
             "FFmpeg rejects default left cropping for selected multi-byte packed video frames",
         ));
@@ -22078,14 +22090,26 @@ mod tests {
             (PixelFormat::Y216Be, 4, 64),
             (PixelFormat::Rgb48Le, 6, 192),
             (PixelFormat::Rgb48Be, 6, 192),
+            (PixelFormat::RgbF16Le, 6, 192),
+            (PixelFormat::RgbF16Be, 6, 192),
             (PixelFormat::Bgr48Le, 6, 192),
             (PixelFormat::Bgr48Be, 6, 192),
             (PixelFormat::Rgba64Le, 8, 64),
             (PixelFormat::Rgba64Be, 8, 64),
+            (PixelFormat::RgbaF16Le, 8, 64),
+            (PixelFormat::RgbaF16Be, 8, 64),
             (PixelFormat::Bgra64Le, 8, 64),
             (PixelFormat::Bgra64Be, 8, 64),
             (PixelFormat::Ayuv64Le, 8, 64),
             (PixelFormat::Ayuv64Be, 8, 64),
+            (PixelFormat::RgbF32Le, 12, 192),
+            (PixelFormat::RgbF32Be, 12, 192),
+            (PixelFormat::Rgb96Le, 12, 192),
+            (PixelFormat::Rgb96Be, 12, 192),
+            (PixelFormat::RgbaF32Le, 16, 128),
+            (PixelFormat::RgbaF32Be, 16, 128),
+            (PixelFormat::Rgba128Le, 16, 128),
+            (PixelFormat::Rgba128Be, 16, 128),
             (PixelFormat::Vuya, 4, 64),
             (PixelFormat::Vuyx, 4, 64),
             (PixelFormat::Xv30Le, 4, 64),

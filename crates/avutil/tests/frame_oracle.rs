@@ -1867,14 +1867,26 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         (PixelFormat::Y216Be, 4, 64),
         (PixelFormat::Rgb48Le, 6, 192),
         (PixelFormat::Rgb48Be, 6, 192),
+        (PixelFormat::RgbF16Le, 6, 192),
+        (PixelFormat::RgbF16Be, 6, 192),
         (PixelFormat::Bgr48Le, 6, 192),
         (PixelFormat::Bgr48Be, 6, 192),
         (PixelFormat::Rgba64Le, 8, 64),
         (PixelFormat::Rgba64Be, 8, 64),
+        (PixelFormat::RgbaF16Le, 8, 64),
+        (PixelFormat::RgbaF16Be, 8, 64),
         (PixelFormat::Bgra64Le, 8, 64),
         (PixelFormat::Bgra64Be, 8, 64),
         (PixelFormat::Ayuv64Le, 8, 64),
         (PixelFormat::Ayuv64Be, 8, 64),
+        (PixelFormat::RgbF32Le, 12, 192),
+        (PixelFormat::RgbF32Be, 12, 192),
+        (PixelFormat::Rgb96Le, 12, 192),
+        (PixelFormat::Rgb96Be, 12, 192),
+        (PixelFormat::RgbaF32Le, 16, 128),
+        (PixelFormat::RgbaF32Be, 16, 128),
+        (PixelFormat::Rgba128Le, 16, 128),
+        (PixelFormat::Rgba128Be, 16, 128),
         (PixelFormat::Vuya, 4, 64),
         (PixelFormat::Vuyx, 4, 64),
         (PixelFormat::Xv30Le, 4, 64),
@@ -3939,6 +3951,8 @@ static void print_video_planes(const AVFrame *frame)
         break;
     case AV_PIX_FMT_RGB48LE:
     case AV_PIX_FMT_RGB48BE:
+    case AV_PIX_FMT_RGBF16LE:
+    case AV_PIX_FMT_RGBF16BE:
     case AV_PIX_FMT_BGR48LE:
     case AV_PIX_FMT_BGR48BE:
         bytes_per_pixel = 6;
@@ -3979,12 +3993,20 @@ static void print_video_planes(const AVFrame *frame)
     case AV_PIX_FMT_Y216BE:
         bytes_per_pixel = 4;
         break;
+    case AV_PIX_FMT_RGBF32LE:
+    case AV_PIX_FMT_RGBF32BE:
+    case AV_PIX_FMT_RGB96LE:
+    case AV_PIX_FMT_RGB96BE:
+        bytes_per_pixel = 12;
+        break;
     case AV_PIX_FMT_XYZ12LE:
     case AV_PIX_FMT_XYZ12BE:
         bytes_per_pixel = 6;
         break;
     case AV_PIX_FMT_YAF32LE:
     case AV_PIX_FMT_YAF32BE:
+    case AV_PIX_FMT_RGBAF16LE:
+    case AV_PIX_FMT_RGBAF16BE:
     case AV_PIX_FMT_RGBA64LE:
     case AV_PIX_FMT_RGBA64BE:
     case AV_PIX_FMT_BGRA64LE:
@@ -3996,6 +4018,12 @@ static void print_video_planes(const AVFrame *frame)
     case AV_PIX_FMT_XV48LE:
     case AV_PIX_FMT_XV48BE:
         bytes_per_pixel = 8;
+        break;
+    case AV_PIX_FMT_RGBAF32LE:
+    case AV_PIX_FMT_RGBAF32BE:
+    case AV_PIX_FMT_RGBA128LE:
+    case AV_PIX_FMT_RGBA128BE:
+        bytes_per_pixel = 16;
         break;
     default:
         break;
@@ -5496,14 +5524,26 @@ int main(void)
     exercise_packed_crop_pair("y216be", AV_PIX_FMT_Y216BE, 4);
     exercise_packed_crop_pair("rgb48le", AV_PIX_FMT_RGB48LE, 6);
     exercise_packed_crop_pair("rgb48be", AV_PIX_FMT_RGB48BE, 6);
+    exercise_packed_crop_pair("rgbf16le", AV_PIX_FMT_RGBF16LE, 6);
+    exercise_packed_crop_pair("rgbf16be", AV_PIX_FMT_RGBF16BE, 6);
     exercise_packed_crop_pair("bgr48le", AV_PIX_FMT_BGR48LE, 6);
     exercise_packed_crop_pair("bgr48be", AV_PIX_FMT_BGR48BE, 6);
     exercise_packed_crop_pair("rgba64le", AV_PIX_FMT_RGBA64LE, 8);
     exercise_packed_crop_pair("rgba64be", AV_PIX_FMT_RGBA64BE, 8);
+    exercise_packed_crop_pair("rgbaf16le", AV_PIX_FMT_RGBAF16LE, 8);
+    exercise_packed_crop_pair("rgbaf16be", AV_PIX_FMT_RGBAF16BE, 8);
     exercise_packed_crop_pair("bgra64le", AV_PIX_FMT_BGRA64LE, 8);
     exercise_packed_crop_pair("bgra64be", AV_PIX_FMT_BGRA64BE, 8);
     exercise_packed_crop_pair("ayuv64le", AV_PIX_FMT_AYUV64LE, 8);
     exercise_packed_crop_pair("ayuv64be", AV_PIX_FMT_AYUV64BE, 8);
+    exercise_packed_crop_pair("rgbf32le", AV_PIX_FMT_RGBF32LE, 12);
+    exercise_packed_crop_pair("rgbf32be", AV_PIX_FMT_RGBF32BE, 12);
+    exercise_packed_crop_pair("rgb96le", AV_PIX_FMT_RGB96LE, 12);
+    exercise_packed_crop_pair("rgb96be", AV_PIX_FMT_RGB96BE, 12);
+    exercise_packed_crop_pair("rgbaf32le", AV_PIX_FMT_RGBAF32LE, 16);
+    exercise_packed_crop_pair("rgbaf32be", AV_PIX_FMT_RGBAF32BE, 16);
+    exercise_packed_crop_pair("rgba128le", AV_PIX_FMT_RGBA128LE, 16);
+    exercise_packed_crop_pair("rgba128be", AV_PIX_FMT_RGBA128BE, 16);
     exercise_packed_crop_pair("vuya", AV_PIX_FMT_VUYA, 4);
     exercise_packed_crop_pair("vuyx", AV_PIX_FMT_VUYX, 4);
     exercise_packed_crop_pair("xv30le", AV_PIX_FMT_XV30LE, 4);
