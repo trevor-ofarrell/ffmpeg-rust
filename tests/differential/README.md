@@ -16,7 +16,7 @@ $env:FFMPEG_ORACLE = ".\third_party\ffmpeg-oracle\build\bin\ffmpeg.exe"
 cargo test -p fftools --test rawvideo_oracle -- --ignored
 ```
 
-The current harness writes deterministic rawvideo inputs, runs Rust `ffmpeg-rs` to produce rawvideo file output, runs the pinned FFmpeg oracle with `-c:v copy -f rawvideo`, and compares the output bytes exactly.
+The current harness writes deterministic rawvideo inputs, runs Rust `ffmpeg-rs` to produce rawvideo file output, runs the pinned FFmpeg oracle with `-c:v copy -f rawvideo`, and compares the output bytes exactly. It also compares normalized rawvideo `framecrc`, `hash`, `md5`, `framehash`, `framemd5`, and `streamhash` stdout rows for the bounded `rgb24` streamcopy path.
 
 `crates/avutil/tests/channel_layout_oracle.rs` is an ignored oracle harness for `ffmpeg -layouts`. It compares the oracle's individual-channel names/descriptions and standard-layout decompositions against `avutil::Channel::ALL` and `avutil::ChannelLayout::known_layouts()`:
 

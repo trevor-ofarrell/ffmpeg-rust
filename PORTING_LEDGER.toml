@@ -14,6 +14,10 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # Latest streamhash/rawvideo evidence: `StreamHashMuxer` now has a pinned
 # rawvideo oracle row comparing normalized `rgb24` `-f streamhash -` streamcopy
 # rows against FFmpeg output, proving the bounded stream index/type/hash line.
+# Latest hash/md5 rawvideo evidence: `HashMuxer` now has pinned rawvideo oracle
+# rows comparing bounded `rgb24` `-f hash -` and `-f md5 -` streamcopy output
+# against FFmpeg, proving whole-output SHA-256 and MD5 packet-data digest lines
+# through the Rust rawvideo demuxer, Packet path, and hash muxer.
 # Latest avutil-packet evidence: default-native ABI layout rows now prove
 # pinned FFmpeg 8.1.1 `AVPacketSideData`, `AVPacket`, and deprecated
 # `AVPacketList` sizes, alignments, field offsets, and field sizes through C
@@ -324,11 +328,15 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framehash-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framemd5-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-streamhash-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-hash-output",
+  "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-md5-output",
   "packet_oracle::libavcodec_packet_core_lifecycle_matches_packet_model",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framehash_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framemd5_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_streamhash_records_match_ffmpeg_oracle",
+  "rawvideo_oracle::rawvideo_rgb24_hash_records_match_ffmpeg_oracle",
+  "rawvideo_oracle::rawvideo_rgb24_md5_records_match_ffmpeg_oracle",
 ]
 fate_tests = [
   "tests/fate/mappings.txt:avutil-packet|local-avutil-unit",
@@ -358,6 +366,11 @@ fuzz_targets = ["avutil_core_models"]
 # against pinned FFmpeg streamcopy output, covering packet count, byte count,
 # stream index/type labeling, and accumulated SHA-256 stream digest outside the
 # direct libavcodec AVPacket helper harness.
+# Latest media-integration update: the rawvideo hash and md5 oracle rows
+# validate the bounded Rust rawvideo demuxer -> Packet -> hash muxer CLI path
+# against pinned FFmpeg streamcopy output, covering packet count, byte count,
+# whole-output SHA-256 and MD5 digest lines outside the direct libavcodec
+# AVPacket helper harness.
 # Earlier update: pinned libavcodec AVPacket packet/frame bridge rows now
 # validate the full global side-data map inventory through
 # packet:frame-to-packet-map-inventory and
@@ -2857,12 +2870,13 @@ id = "fftools-ffmpeg-hash-output"
 kind = "cli"
 ffmpeg_name = "ffmpeg hash muxer stdout"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffmpeg -i <input> -f hash -; ffmpeg -f s16le -ar <rate> -ac <channels> -i <input.raw> -f hash -hash md5 -"
 rust_command = "cargo test -p fftools ffmpeg"
 unit_tests = [
   "ffmpeg::tests::runs_mov_to_hash_stdout_with_default_sha256",
+  "ffmpeg::tests::runs_rawvideo_to_hash_stdout",
   "ffmpeg::tests::runs_s16le_to_hash_stdout_with_md5_option",
   "ffmpeg::tests::runs_s16le_to_hash_stdout_with_sha160_option",
   "ffmpeg::tests::runs_s16le_to_hash_stdout_with_murmur3_option",
@@ -2871,10 +2885,13 @@ unit_tests = [
   "ffmpeg::tests::runs_s16le_to_hash_stdout_with_sha512_256_option_alias",
   "ffmpeg::tests::rejects_unknown_hash_algorithm",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-hash-output|oracle-rawvideo-hash-output",
+  "rawvideo_oracle::rawvideo_rgb24_hash_records_match_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-hash-output|local-ffmpeg-unit"]
 fuzz_targets = ["fftools_option_parser"]
-notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f hash -`, defaults the hash muxer to SHA-256, accepts output-scoped `-hash` for Adler-32, CRC-32, Murmur3, MD5, RIPEMD-128, RIPEMD-160, RIPEMD-256, RIPEMD-320, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256, and rejects unknown hash algorithm names without invoking FFmpeg at runtime. The current tests cover MOV packet concatenation, raw pcm_s16le MD5 output, raw pcm_s16le `-hash sha-160`, raw pcm_s16le `-hash murmur3`, raw pcm_s16le `-hash ripe-md-160`, and SHA-512/t output through in-process helpers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential or upstream FATE coverage yet. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f hash -`, defaults the hash muxer to SHA-256, accepts output-scoped `-hash` for Adler-32, CRC-32, Murmur3, MD5, RIPEMD-128, RIPEMD-160, RIPEMD-256, RIPEMD-320, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256, and rejects unknown hash algorithm names without invoking FFmpeg at runtime. The current tests cover MOV packet concatenation, rawvideo SHA-256 output, raw pcm_s16le MD5 output, raw pcm_s16le `-hash sha-160`, raw pcm_s16le `-hash murmur3`, raw pcm_s16le `-hash ripe-md-160`, and SHA-512/t output through in-process helpers. The rawvideo `rgb24` hash oracle row compares Rust `-f rawvideo ... -f hash -` streamcopy output against pinned FFmpeg 8.1.1 and passes locally through the generated WSL wrapper. Broader input/algorithm coverage and upstream FATE coverage are still pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -2882,18 +2899,22 @@ id = "fftools-ffmpeg-md5-output"
 kind = "cli"
 ffmpeg_name = "ffmpeg md5 muxer stdout"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffmpeg -i <input> -f md5 -"
 rust_command = "cargo test -p fftools ffmpeg"
 unit_tests = [
   "ffmpeg::tests::runs_mov_to_md5_muxer_stdout",
+  "ffmpeg::tests::runs_rawvideo_to_md5_stdout",
   "ffmpeg::tests::rejects_hash_option_for_md5_muxer",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-md5-output|oracle-rawvideo-md5-output",
+  "rawvideo_oracle::rawvideo_rgb24_md5_records_match_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-md5-output|local-ffmpeg-unit"]
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports the dedicated stdout `-f md5 -` muxer for one local seekable constrained input by routing packet payloads through the Rust HashMuxer with MD5 while preserving the observable output format name as `md5`. The dedicated md5 muxer rejects output-scoped `-hash` because algorithm selection belongs to the generic hash muxer path. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential or upstream FATE coverage yet. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution supports the dedicated stdout `-f md5 -` muxer for one local seekable constrained input by routing packet payloads through the Rust HashMuxer with MD5 while preserving the observable output format name as `md5`. The dedicated md5 muxer rejects output-scoped `-hash` because algorithm selection belongs to the generic hash muxer path. Unit tests cover MOV and rawvideo packet concatenation. The rawvideo `rgb24` md5 oracle row compares Rust `-f rawvideo ... -f md5 -` streamcopy output against pinned FFmpeg 8.1.1 and passes locally through the generated WSL wrapper. Broader input coverage and upstream FATE coverage are still pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -3466,7 +3487,7 @@ id = "avformat-hash-muxer"
 kind = "muxer"
 ffmpeg_name = "hash/md5/murmur3/ripemd/sha160/sha224/sha256/sha384/sha512"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 3
 oracle_command = "ffmpeg -i <input> -f hash -"
 rust_command = "cargo test -p avformat hash_muxer"
@@ -3484,10 +3505,15 @@ unit_tests = [
   "hash_muxer::tests::empty_packets_count_but_do_not_change_empty_digest",
   "hash_muxer::tests::finish_prevents_more_writes",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:avformat-hash-muxer|oracle-rawvideo-hash-output",
+  "tests/differential/mappings.txt:avformat-hash-muxer|oracle-rawvideo-md5-output",
+  "rawvideo_oracle::rawvideo_rgb24_hash_records_match_ffmpeg_oracle",
+  "rawvideo_oracle::rawvideo_rgb24_md5_records_match_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:avformat-hash-muxer|local-avformat-hash-unit"]
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "Initial internal packet-data hash muxer supports Adler-32, IEEE CRC-32, Murmur3, MD5, RIPEMD-128, RIPEMD-160, RIPEMD-256, RIPEMD-320, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256 with packet/byte accounting and variable-width digest reporting. It is now wired to constrained ffmpeg-rs stdout `-f hash -` execution with default SHA-256 and output-scoped `-hash` selection, plus dedicated `-f md5 -` stdout execution. Build-checked cargo-fuzz target avformat_packet_muxers covers packet/byte accounting, Adler-32/CRC-32/Murmur3/MD5/RIPEMD128/RIPEMD160/RIPEMD256/RIPEMD320/SHA-160/SHA-224/SHA-256/SHA-384/SHA-512/SHA-512/224/SHA-512/256 digest stability, formatted digest lines, and finish behavior, but actual local fuzz execution is blocked until cargo-fuzz is installed. Exact FFmpeg hash/md5 muxer output semantics, differential tests, and FATE are pending."
+notes = "Initial internal packet-data hash muxer supports Adler-32, IEEE CRC-32, Murmur3, MD5, RIPEMD-128, RIPEMD-160, RIPEMD-256, RIPEMD-320, SHA-160/SHA-1, SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224, and SHA-512/256 with packet/byte accounting and variable-width digest reporting. It is now wired to constrained ffmpeg-rs stdout `-f hash -` execution with default SHA-256 and output-scoped `-hash` selection, plus dedicated `-f md5 -` stdout execution. The rawvideo `rgb24` hash and md5 oracle rows compare Rust streamcopy output against pinned FFmpeg 8.1.1 and prove whole-output SHA-256 and MD5 digest line semantics for that bounded media path. Build-checked cargo-fuzz target avformat_packet_muxers covers packet/byte accounting, Adler-32/CRC-32/Murmur3/MD5/RIPEMD128/RIPEMD160/RIPEMD256/RIPEMD320/SHA-160/SHA-224/SHA-256/SHA-384/SHA-512/SHA-512/224/SHA-512/256 digest stability, formatted digest lines, and finish behavior. Broader input/algorithm differential coverage, upstream FATE coverage, and sustained fuzz execution are still pending."
 blocked_reason = ""
 
 [[component]]
