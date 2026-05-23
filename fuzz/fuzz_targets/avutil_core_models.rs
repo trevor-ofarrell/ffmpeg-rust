@@ -7009,6 +7009,11 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         &[]
     );
     assert_eq!(duplicate_packet.side_data()[2].data(), &[0x33]);
+    duplicate_packet.clear_side_data();
+    assert!(duplicate_packet.side_data().is_empty());
+    assert!(duplicate_packet
+        .side_data_by_kind_id(&PacketSideDataKind::Palette)
+        .is_none());
 
     let mut side_data_list = PacketSideDataList::new();
     let mut zero_side_data_list = PacketSideDataList::new();
@@ -7117,6 +7122,11 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         &PacketSideDataKind::SkipSamples
     );
     assert_eq!(duplicate_remove_list.entries()[2].data(), &[0x44]);
+    duplicate_remove_list.clear();
+    assert!(duplicate_remove_list.is_empty());
+    assert!(duplicate_remove_list
+        .get(&PacketSideDataKind::Palette)
+        .is_none());
 
     let mut capacity_packet = Packet::default();
     for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {

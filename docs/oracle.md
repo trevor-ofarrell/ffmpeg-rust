@@ -210,9 +210,11 @@ The harness also includes `packet:side-add-capacity-*` and `packet:side-new-capa
 
 The harness also includes `packet:array-add-capacity-*` and `packet:array-new-capacity-overflow` rows, proving the standalone `AVPacketSideData` array helpers do not apply the same packet-owned `AV_PKT_DATA_NB` ceiling: `av_packet_side_data_add()` accepts an out-of-range raw type and grows the array from 41 to 42 entries, and `av_packet_side_data_new()` for that same raw type replaces the entry while keeping the count at 42.
 
-The harness also includes `packet:side-duplicate-*` rows, proving packet-owned duplicate-type side-data behavior: `av_packet_get_side_data()` returns the first matching duplicate entry, `av_packet_new_side_data()` replaces the first matching duplicate entry, `av_packet_add_side_data()` replaces the first matching duplicate entry, and `av_packet_shrink_side_data()` shrinks the first matching duplicate entry while leaving later duplicates in place.
+The harness also includes `packet:side-duplicate-*` rows, proving packet-owned duplicate-type side-data behavior: `av_packet_get_side_data()` returns the first matching duplicate entry, `av_packet_new_side_data()` replaces the first matching duplicate entry, `av_packet_add_side_data()` replaces the first matching duplicate entry, `av_packet_shrink_side_data()` shrinks the first matching duplicate entry while leaving later duplicates in place, and `av_packet_free_side_data()` clears all duplicate-rich side data so subsequent lookup returns missing.
 
 The harness also includes `packet:array-new-duplicate-*` rows, proving standalone `av_packet_side_data_new()` duplicate-type behavior: the helper replaces the first matching duplicate entry while leaving later duplicates in place. The positive-size duplicate-new rows write deterministic bytes before comparison because FFmpeg allocator contents are not a stable oracle value until the caller initializes the returned buffer.
+
+The harness also includes `packet:array-free-duplicate-*` rows, proving standalone `av_packet_side_data_free()` resets a duplicate-rich side-data array to an empty/null state.
 
 The harness also includes `packet:fifo-*` rows, proving the packet-specialized container FIFO transfer semantics for move writes, ref writes, read draining, ref reads into pre-populated destinations, non-mutating peek, valid drain, can-read counts, invalid offset handling, and empty-read `EINVAL` handling.
 
@@ -621,4 +623,4 @@ The legacy/full-range 8-bit planar YUV `av_frame_apply_cropping()` slice was che
 
 The packet side-data name boundary slice was checked against pinned FFmpeg 8.1.1 `libavcodec/packet.h` and `av_packet_side_data_name()`. The oracle row records that invalid enum values `INT_MIN` and `-1`, sentinel `AV_PKT_DATA_NB`, `AV_PKT_DATA_NB + 1`, and `INT_MAX` return NULL; the Rust model exposes the same bounded surface through `PacketSideDataKind::from_ffmpeg_value()` and `ffmpeg_side_data_name_for_value()`.
 
-The standalone packet side-data duplicate slice now pins `av_packet_side_data_get()`, `av_packet_side_data_add()`, and `av_packet_side_data_remove()` on duplicate-type arrays: lookup returns the first matching entry, add replaces the first matching entry, and remove scans from the end, removes the last matching entry, and swap-fills with the previous tail.
+The standalone packet side-data duplicate slice now pins `av_packet_side_data_get()`, `av_packet_side_data_add()`, `av_packet_side_data_remove()`, and `av_packet_side_data_free()` on duplicate-type arrays: lookup returns the first matching entry, add replaces the first matching entry, remove scans from the end, removes the last matching entry, swap-fills with the previous tail, and free resets the duplicate-rich array.

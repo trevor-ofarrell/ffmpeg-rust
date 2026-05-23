@@ -10276,11 +10276,16 @@ mod tests {
             .unwrap();
         assert_eq!(packet.side_data()[0].data(), &[]);
         assert_eq!(packet.side_data()[2].data(), &[2]);
+        packet.clear_side_data();
+        assert!(packet.side_data().is_empty());
+        assert!(packet
+            .side_data_by_kind_id(&PacketSideDataKind::Palette)
+            .is_none());
 
         assert!(packet
             .add_side_data(SideData::new("new_extradata", vec![7]).unwrap())
             .is_none());
-        assert_eq!(packet.side_data().len(), 4);
+        assert_eq!(packet.side_data().len(), 1);
         assert_eq!(
             packet.side_data_by_kind("new_extradata").unwrap().data(),
             &[7]
@@ -10465,6 +10470,9 @@ mod tests {
             &PacketSideDataKind::SkipSamples
         );
         assert_eq!(list.entries()[2].data(), &[0x33]);
+        list.clear();
+        assert!(list.is_empty());
+        assert!(list.get(&PacketSideDataKind::NewExtradata).is_none());
     }
 
     #[test]

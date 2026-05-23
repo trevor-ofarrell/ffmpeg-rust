@@ -447,7 +447,7 @@ The packet oracle now also includes a `packet:payload-layout-dynamic-hdr10-plus`
 
 `PacketSideDataKind` now has a bounded value lookup surface for the pinned FFmpeg 8.1.1 packet side-data enum. `from_ffmpeg_value()` maps public `AV_PKT_DATA_*` values before `AV_PKT_DATA_NB` back to Rust known kinds, while `ffmpeg_side_data_name_for_value()` mirrors the modeled `av_packet_side_data_name()` name surface and returns `None` for invalid values and the sentinel.
 
-`PacketSideDataList` mirrors the current standalone `AVPacketSideData` array semantics for duplicate types: `get` returns the first matching entry, `add_side_data` replaces the first matching entry, and `remove_kind` scans from the end, removes the last matching entry, and swap-fills with the previous tail.
+`PacketSideDataList` mirrors the current standalone `AVPacketSideData` array semantics for duplicate types: `get` returns the first matching entry, `add_side_data` replaces the first matching entry, `remove_kind` scans from the end, removes the last matching entry, and swap-fills with the previous tail, and `clear` mirrors `av_packet_side_data_free()` by resetting duplicate-rich arrays to empty state.
 
 The packet oracle now includes zero-size allocation rows for both packet-owned `av_packet_new_side_data()` and standalone `av_packet_side_data_new()`. The Rust `Packet::new_side_data` and `PacketSideDataList::new_side_data` APIs retain those zero-length entries, and `avutil_core_models` fuzz-smokes the same invariant.
 
@@ -469,6 +469,6 @@ The packet oracle now includes `packet:side-add-capacity-*` and `packet:side-new
 
 The standalone packet side-data array rows intentionally diverge from the packet-owned capacity rule: pinned FFmpeg 8.1.1 accepts `av_packet_side_data_add()` with an out-of-range raw type after the array already has `AV_PKT_DATA_NB` entries, growing the count to 42, and a later `av_packet_side_data_new()` for that same raw type replaces rather than appends. `PacketSideDataList` models that standalone behavior separately from `Packet`.
 
-The packet oracle also includes `packet:side-duplicate-*` rows proving packet-owned duplicate-kind behavior: lookup returns the first matching duplicate, add-side-data replacement targets the first matching duplicate, and shrink mutates the first matching duplicate while preserving later duplicates.
+The packet oracle also includes `packet:side-duplicate-*` rows proving packet-owned duplicate-kind behavior: lookup returns the first matching duplicate, add-side-data replacement targets the first matching duplicate, shrink mutates the first matching duplicate while preserving later duplicates, and duplicate-rich free clears all packet-owned side data so later lookup returns missing.
 
 The packet oracle also includes `packet:fifo-*` rows for `av_container_fifo_alloc_avpacket()`, covering move/ref writes, move/ref reads including ref-read replacement into a pre-populated destination, source reset versus preservation, can-read counts, peek, drain, invalid peek, and empty-read behavior against the Rust `PacketFifo` model.

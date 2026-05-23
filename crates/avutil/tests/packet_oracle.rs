@@ -1616,6 +1616,17 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
             duplicate_packet.side_data_by_kind_id(&PacketSideDataKind::Palette),
         ),
     );
+    duplicate_packet.clear_side_data();
+    rows.insert(
+        "packet:side-free-duplicate".to_string(),
+        side_data_summary_fields(&duplicate_packet),
+    );
+    rows.insert(
+        "packet:side-get-duplicate-palette-free".to_string(),
+        side_data_lookup_fields(
+            duplicate_packet.side_data_by_kind_id(&PacketSideDataKind::Palette),
+        ),
+    );
 
     let mut packet = Packet::default();
     packet
@@ -1791,6 +1802,22 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:array-remove-duplicate-last".to_string(),
         side_data_list_summary_fields(&duplicate_list),
+    );
+
+    let mut duplicate_free_list = PacketSideDataList::from_entries(vec![
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x44]).unwrap(),
+    ]);
+    rows.insert(
+        "packet:array-free-duplicate-before".to_string(),
+        side_data_list_summary_fields(&duplicate_free_list),
+    );
+    duplicate_free_list.clear();
+    rows.insert(
+        "packet:array-free-duplicate".to_string(),
+        side_data_list_summary_fields(&duplicate_free_list),
     );
 
     let removed = list
@@ -3482,6 +3509,10 @@ static void exercise_side_data_api(void) {
     print_side_data_summary("packet:side-shrink-duplicate", pkt);
     print_side_data_lookup("packet:side-get-duplicate-palette-shrunk", pkt,
                            AV_PKT_DATA_PALETTE);
+    av_packet_free_side_data(pkt);
+    print_side_data_summary("packet:side-free-duplicate", pkt);
+    print_side_data_lookup("packet:side-get-duplicate-palette-free", pkt,
+                           AV_PKT_DATA_PALETTE);
     av_packet_free(&pkt);
 
     pkt = new_packet();
@@ -3625,6 +3656,20 @@ static void exercise_side_data_array_api(void) {
                                   duplicate_sd, duplicate_nb_sd);
     for (int i = 0; i < duplicate_nb_sd; i++)
         av_free(duplicate_sd[i].data);
+
+    AVPacketSideData *duplicate_free_sd =
+        av_mallocz(4 * sizeof(*duplicate_free_sd));
+    fail_if(!duplicate_free_sd, "av_mallocz duplicate free array failed");
+    int duplicate_free_nb_sd = 4;
+    duplicate_free_sd[0] = make_stack_side_data(AV_PKT_DATA_PALETTE, 0x11);
+    duplicate_free_sd[1] = make_stack_side_data(AV_PKT_DATA_NEW_EXTRADATA, 0x22);
+    duplicate_free_sd[2] = make_stack_side_data(AV_PKT_DATA_PALETTE, 0x33);
+    duplicate_free_sd[3] = make_stack_side_data(AV_PKT_DATA_SKIP_SAMPLES, 0x44);
+    print_side_data_array_summary("packet:array-free-duplicate-before",
+                                  duplicate_free_sd, duplicate_free_nb_sd);
+    av_packet_side_data_free(&duplicate_free_sd, &duplicate_free_nb_sd);
+    print_side_data_array_summary("packet:array-free-duplicate",
+                                  duplicate_free_sd, duplicate_free_nb_sd);
 
     av_packet_side_data_remove(sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA);
     print_side_data_array_summary("packet:array-remove-new", sd, nb_sd);
