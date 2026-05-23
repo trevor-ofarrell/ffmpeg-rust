@@ -2,8 +2,9 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest avutil-packet evidence: empty standalone side-data array no-op rows,
-# packet-owned side-data size-null lookup rows,
+# Latest avutil-packet evidence: packet-to-frame and frame-to-packet
+# `AV_FRAME_SIDE_DATA_FLAG_UNIQUE` bridge rows, empty standalone side-data
+# array no-op rows, packet-owned side-data size-null lookup rows,
 # duplicate side-data copy/ref/clone collapse and move-ref transfer rows,
 # packet-owned duplicate side-data get/new/add/shrink/free rows,
 # standalone duplicate side-data lookup/new/add/remove/free rows, and standalone side-data
@@ -276,6 +277,13 @@ fate_tests = [
   "packet_oracle::upstream_fate_avpacket_passes",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket packet-to-frame bridge coverage
+# validates `av_packet_side_data_to_frame(..., AV_FRAME_SIDE_DATA_FLAG_UNIQUE)`
+# with an existing matching frame side-data entry plus a nonmatching entry.
+# FFmpeg removes the matching mapped frame side data, preserves the nonmatching
+# entry order, and appends the new mapped frame side data; the Rust
+# `SideData::add_to_frame` path and `avutil_core_models` fuzz-smoke fixtures
+# cover that frame-owned UNIQUE behavior.
 # Latest update: pinned libavcodec AVPacket frame-to-packet bridge coverage validates
 # `av_packet_side_data_from_frame(..., AV_FRAME_SIDE_DATA_FLAG_UNIQUE)` on a
 # duplicate-rich packet side-data array. FFmpeg replaces the first matching
@@ -337,8 +345,10 @@ notes = "FATE pass for the current bounded AVPacket helper surface under the sel
 # Latest frame-to-packet bridge slice: pinned libavcodec rows now validate that
 # `av_packet_side_data_from_frame(..., AV_FRAME_SIDE_DATA_FLAG_UNIQUE)` replaces
 # only the first matching packet side-data entry and leaves later duplicates
-# intact. Unit and fuzz-smoke coverage assert the same flag-aware packet bridge
-# behavior.
+# intact. The packet-to-frame UNIQUE row proves the frame-owned insertion path
+# removes existing matching frame side data, preserves nonmatching side data,
+# and appends the mapped replacement. Unit and fuzz-smoke coverage assert both
+# flag-aware bridge behaviors.
 # Latest duplicate lifecycle slice: pinned libavcodec rows now validate that
 # `av_packet_ref()`, `av_packet_clone()`, and `av_packet_copy_props()` collapse
 # duplicate packet-owned side-data kinds by later-entry replacement, while

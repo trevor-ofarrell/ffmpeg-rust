@@ -2067,6 +2067,25 @@ fn insert_frame_packet_side_data_bridge_rows(rows: &mut BTreeMap<String, Vec<Str
         frame_side_data_summary_fields(&frame),
     );
 
+    frame
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x44])
+        .unwrap()
+        .add_to_frame(&mut frame, FrameSideDataFlags::UNIQUE)
+        .unwrap();
+    rows.insert(
+        "packet:packet-to-frame-unique-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:packet-to-frame-unique".to_string(),
+        frame_side_data_summary_fields(&frame),
+    );
+
     let unmapped_packet = SideData::new_extradata(vec![0x77]).unwrap();
     let err = unmapped_packet
         .add_to_frame(&mut frame, FrameSideDataFlags::EMPTY)
@@ -3934,6 +3953,20 @@ static void exercise_frame_packet_side_data_bridge_api(void) {
                                        AV_FRAME_SIDE_DATA_FLAG_REPLACE);
     printf("packet:packet-to-frame-replace-ret|%d\n", ret);
     print_frame_side_data_array_summary("packet:packet-to-frame-replace", fsd, nb_fsd);
+
+    AVFrameSideData *display_entry = av_frame_side_data_new(
+        &fsd, &nb_fsd, AV_FRAME_DATA_DISPLAYMATRIX, 1, 0);
+    fail_if(!display_entry, "av_frame_side_data_new bridge unique display seed failed");
+    display_entry->data[0] = 0x22;
+    packet_entry = av_packet_side_data_new(&psd, &nb_psd,
+                                           AV_PKT_DATA_REPLAYGAIN,
+                                           1, 0);
+    fail_if(!packet_entry, "av_packet_side_data_new bridge unique seed failed");
+    packet_entry->data[0] = 0x44;
+    ret = av_packet_side_data_to_frame(&fsd, &nb_fsd, packet_entry,
+                                       AV_FRAME_SIDE_DATA_FLAG_UNIQUE);
+    printf("packet:packet-to-frame-unique-ret|%d\n", ret);
+    print_frame_side_data_array_summary("packet:packet-to-frame-unique", fsd, nb_fsd);
 
     packet_entry = av_packet_side_data_new(&psd, &nb_psd,
                                            AV_PKT_DATA_NEW_EXTRADATA,

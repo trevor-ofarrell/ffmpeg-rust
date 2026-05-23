@@ -7449,6 +7449,36 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         bridge_replacement.as_slice()
     );
 
+    let mut unique_bridge_frame = Frame::default();
+    SideData::new_with_kind(PacketSideDataKind::ReplayGain, bridge_replacement.clone())
+        .unwrap()
+        .add_to_frame(&mut unique_bridge_frame, FrameSideDataFlags::EMPTY)
+        .unwrap();
+    unique_bridge_frame
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    SideData::new_with_kind(PacketSideDataKind::ReplayGain, bridge_payload.clone())
+        .unwrap()
+        .add_to_frame(&mut unique_bridge_frame, FrameSideDataFlags::UNIQUE)
+        .unwrap();
+    assert_eq!(unique_bridge_frame.side_data().len(), 2);
+    assert_eq!(
+        unique_bridge_frame.side_data()[0].kind_id(),
+        &FrameSideDataKind::DisplayMatrix
+    );
+    assert_eq!(unique_bridge_frame.side_data()[0].data(), &[0x22]);
+    assert_eq!(
+        unique_bridge_frame.side_data()[1].kind_id(),
+        &FrameSideDataKind::ReplayGain
+    );
+    assert_eq!(
+        unique_bridge_frame.side_data()[1].data(),
+        bridge_payload.as_slice()
+    );
+
     let unmapped_packet_err = SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0xee])
         .unwrap()
         .add_to_frame(&mut bridge_frame, FrameSideDataFlags::EMPTY)
