@@ -6730,20 +6730,33 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     );
     assert!(refcounted_packet.is_data_writable());
 
+    let mut unique_writable_packet = Packet::from_data(payload.clone()).unwrap();
+    let unique_writable_ptr = unique_writable_packet.data_buffer().as_padded_ptr();
+    unique_writable_packet.make_writable().unwrap();
+    assert_eq!(unique_writable_packet.data(), payload.as_slice());
+    assert!(unique_writable_packet.is_data_writable());
+    assert_eq!(
+        unique_writable_packet.data_buffer().as_padded_ptr(),
+        unique_writable_ptr
+    );
+
     let shared_src = Packet::from_data(payload.clone()).unwrap();
     let mut shared_dst = Packet::default();
     shared_dst.ref_from(&shared_src);
     assert!(shared_dst
         .data_buffer()
         .shares_storage(shared_src.data_buffer()));
+    let shared_dst_ptr = shared_dst.data_buffer().as_padded_ptr();
     shared_dst.make_refcounted().unwrap();
     assert!(shared_dst
         .data_buffer()
         .shares_storage(shared_src.data_buffer()));
+    assert_eq!(shared_dst.data_buffer().as_padded_ptr(), shared_dst_ptr);
     shared_dst.make_writable().unwrap();
     assert!(!shared_dst
         .data_buffer()
         .shares_storage(shared_src.data_buffer()));
+    assert_ne!(shared_dst.data_buffer().as_padded_ptr(), shared_dst_ptr);
     assert!(shared_dst.is_data_writable());
     if !shared_dst.is_empty() {
         shared_dst.make_data_writable()[0] ^= 0xff;

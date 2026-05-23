@@ -11000,9 +11000,40 @@ mod tests {
         dst.ref_from(&src);
         assert!(!dst.is_data_writable());
         assert!(dst.data_buffer().shares_storage(src.data_buffer()));
+        let dst_ptr = dst.data_buffer().as_padded_ptr();
         dst.make_refcounted().unwrap();
         assert!(!dst.is_data_writable());
         assert!(dst.data_buffer().shares_storage(src.data_buffer()));
+        assert_eq!(dst.data_buffer().as_padded_ptr(), dst_ptr);
+    }
+
+    #[test]
+    fn packet_make_writable_preserves_unique_and_detaches_shared_payloads() {
+        let mut unique = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        let unique_ptr = unique.data_buffer().as_padded_ptr();
+        unique.make_writable().unwrap();
+        assert_eq!(unique.data(), &[0xaa, 0xbb]);
+        assert!(unique.is_data_writable());
+        assert_eq!(unique.data_buffer().as_padded_ptr(), unique_ptr);
+
+        let src = Packet::from_data(vec![0x11, 0x22]).unwrap();
+        let mut dst = Packet::default();
+        dst.ref_from(&src);
+        assert!(dst.data_buffer().shares_storage(src.data_buffer()));
+        assert!(!dst.is_data_writable());
+        let shared_dst_ptr = dst.data_buffer().as_padded_ptr();
+
+        dst.make_writable().unwrap();
+
+        assert_eq!(dst.data(), &[0x11, 0x22]);
+        assert!(!dst.data_buffer().shares_storage(src.data_buffer()));
+        assert_ne!(dst.data_buffer().as_padded_ptr(), shared_dst_ptr);
+        assert!(dst.is_data_writable());
+        assert!(src.is_data_writable());
+
+        dst.make_data_writable()[0] = 0x33;
+        assert_eq!(dst.data(), &[0x33, 0x22]);
+        assert_eq!(src.data(), &[0x11, 0x22]);
     }
 
     #[test]

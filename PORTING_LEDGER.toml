@@ -2,7 +2,8 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest avutil-packet evidence: packet-to-frame and frame-to-packet
+# Latest avutil-packet evidence: already-refcounted payload make-refcounted and
+# make-writable no-op rows, packet-to-frame and frame-to-packet
 # `AV_FRAME_SIDE_DATA_FLAG_UNIQUE` bridge rows, empty standalone side-data
 # array no-op rows, packet-owned side-data size-null lookup rows,
 # duplicate side-data copy/ref/clone collapse and move-ref transfer rows,
@@ -247,6 +248,7 @@ unit_tests = [
   "packet::tests::packet_grow_and_shrink_data_preserve_payload_and_padding",
   "packet::tests::packet_make_writable_detaches_shared_payload_with_padding",
   "packet::tests::packet_make_refcounted_adds_padding_without_detaching_padded_refs",
+  "packet::tests::packet_make_writable_preserves_unique_and_detaches_shared_payloads",
   "packet::tests::packet_zero_size_payload_helpers_keep_ffmpeg_padding",
   "packet::tests::packet_unpadded_payload_helpers_add_padding_and_preserve_bytes",
   "packet::tests::packet_ref_from_shares_payload_and_copies_side_data",
@@ -278,6 +280,14 @@ fate_tests = [
   "packet_oracle::upstream_fate_avpacket_passes",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket payload rows now validate
+# already-refcounted `av_packet_make_writable()` and
+# `av_packet_make_refcounted()` no-op behavior. Unique refcounted packets keep
+# the same data pointer and writable padded storage, while shared refcounted
+# packets keep shared storage and remain non-writable after
+# `av_packet_make_refcounted()`. Unit tests and `avutil_core_models` cover the
+# same pointer/storability split; `avutil-packet` remains fate_pass, not
+# complete.
 # Latest update: pinned libavcodec AVPacket empty-source lifecycle coverage now
 # validates `av_packet_copy_props()`, `av_packet_ref()`, `av_packet_clone()`,
 # and `av_packet_move_ref()` when the source packet is empty and the

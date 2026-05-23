@@ -1339,6 +1339,25 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&unrefcounted_writable),
     );
 
+    let mut unique_writable = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+    let unique_writable_ptr = unique_writable.data_buffer().as_padded_ptr();
+    unique_writable.make_writable().unwrap();
+    rows.insert(
+        "packet:payload-make-writable-unique-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-writable-unique-same-ptr".to_string(),
+        vec![
+            u8::from(unique_writable.data_buffer().as_padded_ptr() == unique_writable_ptr)
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:payload-make-writable-unique".to_string(),
+        payload_fields(&unique_writable),
+    );
+
     let mut refcounted = Packet::new(vec![0xaa, 0xbb], 0);
     refcounted.make_refcounted().unwrap();
     rows.insert(
@@ -1348,6 +1367,50 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:payload-make-refcounted".to_string(),
         payload_fields(&refcounted),
+    );
+
+    let mut unique_refcounted = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+    let unique_refcounted_ptr = unique_refcounted.data_buffer().as_padded_ptr();
+    unique_refcounted.make_refcounted().unwrap();
+    rows.insert(
+        "packet:payload-make-refcounted-unique-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-unique-same-ptr".to_string(),
+        vec![
+            u8::from(unique_refcounted.data_buffer().as_padded_ptr() == unique_refcounted_ptr)
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-unique".to_string(),
+        payload_fields(&unique_refcounted),
+    );
+
+    let shared_refcounted_src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+    let mut shared_refcounted_dst = Packet::default();
+    shared_refcounted_dst.ref_from(&shared_refcounted_src);
+    let shared_refcounted_dst_ptr = shared_refcounted_dst.data_buffer().as_padded_ptr();
+    shared_refcounted_dst.make_refcounted().unwrap();
+    rows.insert(
+        "packet:payload-make-refcounted-shared-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-shared-same-ptr".to_string(),
+        vec![u8::from(
+            shared_refcounted_dst.data_buffer().as_padded_ptr() == shared_refcounted_dst_ptr,
+        )
+        .to_string()],
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-shared-src".to_string(),
+        payload_fields(&shared_refcounted_src),
+    );
+    rows.insert(
+        "packet:payload-make-refcounted-shared-dst".to_string(),
+        payload_fields(&shared_refcounted_dst),
     );
 
     let mut empty_refcounted = Packet::default();
@@ -4372,6 +4435,18 @@ static void exercise_payload_api(void) {
     av_packet_free(&pkt);
 
     pkt = new_packet();
+    fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet unique writable no-op failed");
+    pkt->data[0] = 0xaa;
+    pkt->data[1] = 0xbb;
+    uint8_t *unique_writable_ptr = pkt->data;
+    ret = av_packet_make_writable(pkt);
+    printf("packet:payload-make-writable-unique-ret|%d\n", ret);
+    printf("packet:payload-make-writable-unique-same-ptr|%d\n",
+           pkt->data == unique_writable_ptr);
+    print_payload("packet:payload-make-writable-unique", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
     uint8_t stack_data[2] = { 0xaa, 0xbb };
     pkt->data = stack_data;
     pkt->size = 2;
@@ -4379,6 +4454,35 @@ static void exercise_payload_api(void) {
     printf("packet:payload-make-refcounted-ret|%d\n", ret);
     print_payload("packet:payload-make-refcounted", pkt);
     av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 2) < 0, "av_new_packet unique refcounted no-op failed");
+    pkt->data[0] = 0xaa;
+    pkt->data[1] = 0xbb;
+    uint8_t *unique_refcounted_ptr = pkt->data;
+    ret = av_packet_make_refcounted(pkt);
+    printf("packet:payload-make-refcounted-unique-ret|%d\n", ret);
+    printf("packet:payload-make-refcounted-unique-same-ptr|%d\n",
+           pkt->data == unique_refcounted_ptr);
+    print_payload("packet:payload-make-refcounted-unique", pkt);
+    av_packet_free(&pkt);
+
+    AVPacket *shared_src = new_packet();
+    fail_if(av_new_packet(shared_src, 2) < 0, "av_new_packet shared refcounted src failed");
+    shared_src->data[0] = 0xaa;
+    shared_src->data[1] = 0xbb;
+    AVPacket *shared_dst = new_packet();
+    fail_if(av_packet_ref(shared_dst, shared_src) < 0,
+            "av_packet_ref shared refcounted dst failed");
+    uint8_t *shared_dst_ptr = shared_dst->data;
+    ret = av_packet_make_refcounted(shared_dst);
+    printf("packet:payload-make-refcounted-shared-ret|%d\n", ret);
+    printf("packet:payload-make-refcounted-shared-same-ptr|%d\n",
+           shared_dst->data == shared_dst_ptr);
+    print_payload("packet:payload-make-refcounted-shared-src", shared_src);
+    print_payload("packet:payload-make-refcounted-shared-dst", shared_dst);
+    av_packet_free(&shared_dst);
+    av_packet_free(&shared_src);
 
     pkt = new_packet();
     ret = av_packet_make_refcounted(pkt);
