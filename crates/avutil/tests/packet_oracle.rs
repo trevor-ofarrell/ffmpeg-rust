@@ -1668,6 +1668,15 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:fifo-before-drain-can-read".to_string(),
         vec![fifo.can_read().to_string()],
     );
+    fifo.drain(0).unwrap();
+    rows.insert(
+        "packet:fifo-after-drain-zero-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    rows.insert(
+        "packet:fifo-after-drain-zero-peek".to_string(),
+        packet_fields(fifo.peek(0).unwrap()),
+    );
     fifo.drain(1).unwrap();
     rows.insert(
         "packet:fifo-after-drain-one-can-read".to_string(),
@@ -4843,6 +4852,13 @@ static void exercise_packet_fifo_api(void) {
             "fifo second write failed");
     printf("packet:fifo-before-drain-can-read|%zu\n",
            av_container_fifo_can_read(fifo));
+    av_container_fifo_drain(fifo, 0);
+    printf("packet:fifo-after-drain-zero-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    peek = NULL;
+    ret = av_container_fifo_peek(fifo, (void **)&peek, 0);
+    fail_if(ret < 0 || !peek, "fifo peek after zero drain failed");
+    print_packet("packet:fifo-after-drain-zero-peek", peek);
     av_container_fifo_drain(fifo, 1);
     printf("packet:fifo-after-drain-one-can-read|%zu\n",
            av_container_fifo_can_read(fifo));

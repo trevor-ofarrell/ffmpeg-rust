@@ -11739,6 +11739,9 @@ mod tests {
         fifo.write_move(&mut first).unwrap();
         fifo.write_move(&mut second).unwrap();
         assert_eq!(fifo.can_read(), 2);
+        fifo.drain(0).unwrap();
+        assert_eq!(fifo.can_read(), 2);
+        assert_eq!(fifo.peek(0).unwrap().data(), &[1]);
         fifo.drain(1).unwrap();
         assert_eq!(fifo.can_read(), 1);
         assert_eq!(fifo.peek(0).unwrap().data(), &[2]);

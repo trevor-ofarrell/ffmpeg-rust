@@ -7477,6 +7477,9 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     packet_fifo.write_move(&mut fifo_first).unwrap();
     packet_fifo.write_move(&mut fifo_second).unwrap();
     assert_eq!(packet_fifo.can_read(), 2);
+    packet_fifo.drain(0).unwrap();
+    assert_eq!(packet_fifo.can_read(), 2);
+    assert_eq!(packet_fifo.peek(0).unwrap().data(), &[0x01]);
     packet_fifo.drain(1).unwrap();
     assert_eq!(packet_fifo.can_read(), 1);
     assert_eq!(packet_fifo.peek(0).unwrap().data(), &[0x02]);

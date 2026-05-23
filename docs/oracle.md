@@ -232,7 +232,7 @@ The harness also includes `packet:array-new-duplicate-*` rows, proving standalon
 
 The harness also includes `packet:array-free-duplicate-*` rows, proving standalone `av_packet_side_data_free()` resets a duplicate-rich side-data array to an empty/null state.
 
-The harness also includes `packet:fifo-*` rows, proving the packet-specialized container FIFO transfer semantics for move writes, ref writes, read draining, ref reads and move reads into pre-populated destinations, failed empty move/ref reads preserving pre-populated destinations, non-mutating peek, valid drain, can-read counts, invalid offset handling, and empty-read `EINVAL` handling.
+The harness also includes `packet:fifo-*` rows, proving the packet-specialized container FIFO transfer semantics for move writes, ref writes, read draining, ref reads and move reads into pre-populated destinations, failed empty move/ref reads preserving pre-populated destinations, non-mutating peek, zero-count drain no-op behavior, valid positive drain, can-read counts, invalid offset handling, and empty-read `EINVAL` handling.
 
 The same Rust test file includes an ignored `upstream_fate_avpacket_passes` wrapper for upstream FFmpeg's `fate-avpacket` target from `tests/fate/libavcodec.mak`, backed by `libavcodec/tests/avpacket.c`. It runs `make fate-avpacket` from `FFMPEG_FATE_BUILD_DIR` or the default WSL build cache created by `scripts/bootstrap_ffmpeg_oracle_wsl.sh`, and is wired through `tests/fate/upstream-mappings.txt` as `avutil-packet|fate-avpacket`.
 

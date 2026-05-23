@@ -281,6 +281,11 @@ fate_tests = [
   "packet_oracle::upstream_fate_avpacket_passes",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket FIFO rows now validate zero-count
+# `av_container_fifo_drain()` through packet:fifo-after-drain-zero-can-read
+# and packet:fifo-after-drain-zero-peek rows. The rows prove drain(0) leaves
+# the readable count and next queued packet unchanged. Unit tests plus
+# `avutil_core_models` cover the same no-op edge.
 # Latest update: pinned libavcodec AVPacket FIFO rows now validate empty FIFO
 # failure preservation through packet:fifo-peek-empty-ret,
 # packet:fifo-read-empty-move-preserve-*, and
