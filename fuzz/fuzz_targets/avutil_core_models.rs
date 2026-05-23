@@ -7810,6 +7810,81 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(unmapped_frame_err.kind(), AvErrorKind::InvalidArgument);
     assert_eq!(unmapped_frame_err.code(), Some(AvErrorCode::EINVAL));
 
+    let mapped_bridge_pairs = [
+        (
+            PacketSideDataKind::ReplayGain,
+            FrameSideDataKind::ReplayGain,
+        ),
+        (
+            PacketSideDataKind::DisplayMatrix,
+            FrameSideDataKind::DisplayMatrix,
+        ),
+        (PacketSideDataKind::Spherical, FrameSideDataKind::Spherical),
+        (PacketSideDataKind::Stereo3d, FrameSideDataKind::Stereo3d),
+        (
+            PacketSideDataKind::AudioServiceType,
+            FrameSideDataKind::AudioServiceType,
+        ),
+        (
+            PacketSideDataKind::MasteringDisplayMetadata,
+            FrameSideDataKind::MasteringDisplayMetadata,
+        ),
+        (
+            PacketSideDataKind::ContentLightLevel,
+            FrameSideDataKind::ContentLightLevel,
+        ),
+        (
+            PacketSideDataKind::IccProfile,
+            FrameSideDataKind::IccProfile,
+        ),
+        (
+            PacketSideDataKind::AmbientViewingEnvironment,
+            FrameSideDataKind::AmbientViewingEnvironment,
+        ),
+        (
+            PacketSideDataKind::ThreeDReferenceDisplays,
+            FrameSideDataKind::ThreeDReferenceDisplays,
+        ),
+        (PacketSideDataKind::Exif, FrameSideDataKind::Exif),
+    ];
+
+    let mut mapped_bridge_list = PacketSideDataList::new();
+    for (index, (packet_kind, frame_kind)) in mapped_bridge_pairs.iter().enumerate() {
+        let entry = mapped_bridge_list
+            .add_from_frame_side_data(
+                &FrameSideData::new_with_kind(frame_kind.clone(), vec![0x80 + index as u8])
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(entry.kind_id(), packet_kind);
+        assert_eq!(entry.data(), &[0x80 + index as u8]);
+    }
+    assert_eq!(mapped_bridge_list.len(), mapped_bridge_pairs.len());
+    for (index, (packet_kind, _)) in mapped_bridge_pairs.iter().enumerate() {
+        let entry = &mapped_bridge_list.entries()[index];
+        assert_eq!(entry.kind_id(), packet_kind);
+        assert_eq!(entry.data(), &[0x80 + index as u8]);
+    }
+
+    let mut mapped_bridge_frame = Frame::default();
+    for (index, (packet_kind, frame_kind)) in mapped_bridge_pairs.iter().enumerate() {
+        let entry = SideData::new_with_kind(packet_kind.clone(), vec![0xa0 + index as u8])
+            .unwrap()
+            .add_to_frame(&mut mapped_bridge_frame, FrameSideDataFlags::EMPTY)
+            .unwrap();
+        assert_eq!(entry.kind_id(), frame_kind);
+        assert_eq!(entry.data(), &[0xa0 + index as u8]);
+    }
+    assert_eq!(
+        mapped_bridge_frame.side_data().len(),
+        mapped_bridge_pairs.len()
+    );
+    for (index, (_, frame_kind)) in mapped_bridge_pairs.iter().enumerate() {
+        let entry = &mapped_bridge_frame.side_data()[index];
+        assert_eq!(entry.kind_id(), frame_kind);
+        assert_eq!(entry.data(), &[0xa0 + index as u8]);
+    }
+
     let packet_side_data =
         SideData::new_with_kind(PacketSideDataKind::ReplayGain, bridge_payload.clone()).unwrap();
     let mut bridge_frame = Frame::default();

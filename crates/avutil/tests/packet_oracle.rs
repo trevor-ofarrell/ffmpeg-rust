@@ -2348,6 +2348,70 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
 }
 
 fn insert_frame_packet_side_data_bridge_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let mapped_pairs = [
+        (
+            PacketSideDataKind::ReplayGain,
+            FrameSideDataKind::ReplayGain,
+        ),
+        (
+            PacketSideDataKind::DisplayMatrix,
+            FrameSideDataKind::DisplayMatrix,
+        ),
+        (PacketSideDataKind::Spherical, FrameSideDataKind::Spherical),
+        (PacketSideDataKind::Stereo3d, FrameSideDataKind::Stereo3d),
+        (
+            PacketSideDataKind::AudioServiceType,
+            FrameSideDataKind::AudioServiceType,
+        ),
+        (
+            PacketSideDataKind::MasteringDisplayMetadata,
+            FrameSideDataKind::MasteringDisplayMetadata,
+        ),
+        (
+            PacketSideDataKind::ContentLightLevel,
+            FrameSideDataKind::ContentLightLevel,
+        ),
+        (
+            PacketSideDataKind::IccProfile,
+            FrameSideDataKind::IccProfile,
+        ),
+        (
+            PacketSideDataKind::AmbientViewingEnvironment,
+            FrameSideDataKind::AmbientViewingEnvironment,
+        ),
+        (
+            PacketSideDataKind::ThreeDReferenceDisplays,
+            FrameSideDataKind::ThreeDReferenceDisplays,
+        ),
+        (PacketSideDataKind::Exif, FrameSideDataKind::Exif),
+    ];
+
+    let mut mapped_packet_list = PacketSideDataList::new();
+    for (index, (_, frame_kind)) in mapped_pairs.iter().enumerate() {
+        mapped_packet_list
+            .add_from_frame_side_data(
+                &FrameSideData::new_with_kind(frame_kind.clone(), vec![0x80 + index as u8])
+                    .unwrap(),
+            )
+            .unwrap();
+    }
+    rows.insert(
+        "packet:frame-to-packet-map-inventory".to_string(),
+        side_data_list_summary_fields(&mapped_packet_list),
+    );
+
+    let mut mapped_frame = Frame::empty();
+    for (index, (packet_kind, _)) in mapped_pairs.iter().enumerate() {
+        SideData::new_with_kind(packet_kind.clone(), vec![0xa0 + index as u8])
+            .unwrap()
+            .add_to_frame(&mut mapped_frame, FrameSideDataFlags::EMPTY)
+            .unwrap();
+    }
+    rows.insert(
+        "packet:packet-to-frame-map-inventory".to_string(),
+        frame_side_data_summary_fields(&mapped_frame),
+    );
+
     let mut packet_list = PacketSideDataList::new();
     let frame_side_data =
         FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x10, 0x20, 0x30])
@@ -4450,6 +4514,73 @@ static void exercise_frame_packet_side_data_bridge_api(void) {
     AVFrameSideData **fsd = NULL;
     int nb_fsd = 0;
     int ret;
+
+    const enum AVPacketSideDataType mapped_packet_types[] = {
+        AV_PKT_DATA_REPLAYGAIN,
+        AV_PKT_DATA_DISPLAYMATRIX,
+        AV_PKT_DATA_SPHERICAL,
+        AV_PKT_DATA_STEREO3D,
+        AV_PKT_DATA_AUDIO_SERVICE_TYPE,
+        AV_PKT_DATA_MASTERING_DISPLAY_METADATA,
+        AV_PKT_DATA_CONTENT_LIGHT_LEVEL,
+        AV_PKT_DATA_ICC_PROFILE,
+        AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT,
+        AV_PKT_DATA_3D_REFERENCE_DISPLAYS,
+        AV_PKT_DATA_EXIF,
+    };
+    const enum AVFrameSideDataType mapped_frame_types[] = {
+        AV_FRAME_DATA_REPLAYGAIN,
+        AV_FRAME_DATA_DISPLAYMATRIX,
+        AV_FRAME_DATA_SPHERICAL,
+        AV_FRAME_DATA_STEREO3D,
+        AV_FRAME_DATA_AUDIO_SERVICE_TYPE,
+        AV_FRAME_DATA_MASTERING_DISPLAY_METADATA,
+        AV_FRAME_DATA_CONTENT_LIGHT_LEVEL,
+        AV_FRAME_DATA_ICC_PROFILE,
+        AV_FRAME_DATA_AMBIENT_VIEWING_ENVIRONMENT,
+        AV_FRAME_DATA_3D_REFERENCE_DISPLAYS,
+        AV_FRAME_DATA_EXIF,
+    };
+    const int mapped_count = (int)(sizeof(mapped_packet_types) / sizeof(mapped_packet_types[0]));
+    const int mapped_frame_count = (int)(sizeof(mapped_frame_types) / sizeof(mapped_frame_types[0]));
+    fail_if(mapped_count != mapped_frame_count,
+            "packet/frame side-data bridge map table mismatch");
+
+    AVPacketSideData *mapped_psd = NULL;
+    int mapped_nb_psd = 0;
+    AVFrameSideData **mapped_from_fsd = NULL;
+    int mapped_from_nb_fsd = 0;
+    for (int i = 0; i < mapped_count; i++) {
+        AVFrameSideData *mapped_frame = av_frame_side_data_new(
+            &mapped_from_fsd, &mapped_from_nb_fsd, mapped_frame_types[i], 1, 0);
+        fail_if(!mapped_frame, "av_frame_side_data_new mapped bridge seed failed");
+        mapped_frame->data[0] = (uint8_t)(0x80 + i);
+        ret = av_packet_side_data_from_frame(&mapped_psd, &mapped_nb_psd,
+                                             mapped_frame, 0);
+        fail_if(ret < 0, "av_packet_side_data_from_frame mapped inventory failed");
+    }
+    print_side_data_array_summary("packet:frame-to-packet-map-inventory",
+                                  mapped_psd, mapped_nb_psd);
+    av_frame_side_data_free(&mapped_from_fsd, &mapped_from_nb_fsd);
+    av_packet_side_data_free(&mapped_psd, &mapped_nb_psd);
+
+    AVPacketSideData *mapped_to_psd = NULL;
+    int mapped_to_nb_psd = 0;
+    AVFrameSideData **mapped_to_fsd = NULL;
+    int mapped_to_nb_fsd = 0;
+    for (int i = 0; i < mapped_count; i++) {
+        AVPacketSideData *mapped_packet = av_packet_side_data_new(
+            &mapped_to_psd, &mapped_to_nb_psd, mapped_packet_types[i], 1, 0);
+        fail_if(!mapped_packet, "av_packet_side_data_new mapped bridge seed failed");
+        mapped_packet->data[0] = (uint8_t)(0xa0 + i);
+        ret = av_packet_side_data_to_frame(&mapped_to_fsd, &mapped_to_nb_fsd,
+                                           mapped_packet, 0);
+        fail_if(ret < 0, "av_packet_side_data_to_frame mapped inventory failed");
+    }
+    print_frame_side_data_array_summary("packet:packet-to-frame-map-inventory",
+                                        mapped_to_fsd, mapped_to_nb_fsd);
+    av_frame_side_data_free(&mapped_to_fsd, &mapped_to_nb_fsd);
+    av_packet_side_data_free(&mapped_to_psd, &mapped_to_nb_psd);
 
     AVFrameSideData *frame_entry = av_frame_side_data_new(&fsd, &nb_fsd,
                                                           AV_FRAME_DATA_REPLAYGAIN,

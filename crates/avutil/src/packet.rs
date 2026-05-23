@@ -10770,12 +10770,46 @@ mod tests {
             (PacketSideDataKind::Exif, FrameSideDataKind::Exif),
         ];
 
-        for (packet_kind, frame_kind) in expected {
+        for (packet_kind, frame_kind) in expected.iter() {
             assert_eq!(packet_kind.frame_side_data_kind(), Some(frame_kind.clone()));
             assert_eq!(
-                PacketSideDataKind::from_frame_side_data_kind(&frame_kind),
-                Some(packet_kind)
+                PacketSideDataKind::from_frame_side_data_kind(frame_kind),
+                Some(packet_kind.clone())
             );
+        }
+
+        let mut packet_list = PacketSideDataList::new();
+        for (index, (packet_kind, frame_kind)) in expected.iter().enumerate() {
+            let entry = packet_list
+                .add_from_frame_side_data(
+                    &FrameSideData::new_with_kind(frame_kind.clone(), vec![0x80 + index as u8])
+                        .unwrap(),
+                )
+                .unwrap();
+            assert_eq!(entry.kind_id(), packet_kind);
+            assert_eq!(entry.data(), &[0x80 + index as u8]);
+        }
+        assert_eq!(packet_list.len(), expected.len());
+        for (index, (packet_kind, _)) in expected.iter().enumerate() {
+            let entry = &packet_list.entries()[index];
+            assert_eq!(entry.kind_id(), packet_kind);
+            assert_eq!(entry.data(), &[0x80 + index as u8]);
+        }
+
+        let mut frame = Frame::empty();
+        for (index, (packet_kind, frame_kind)) in expected.iter().enumerate() {
+            let entry = SideData::new_with_kind(packet_kind.clone(), vec![0xa0 + index as u8])
+                .unwrap()
+                .add_to_frame(&mut frame, FrameSideDataFlags::EMPTY)
+                .unwrap();
+            assert_eq!(entry.kind_id(), frame_kind);
+            assert_eq!(entry.data(), &[0xa0 + index as u8]);
+        }
+        assert_eq!(frame.side_data().len(), expected.len());
+        for (index, (_, frame_kind)) in expected.iter().enumerate() {
+            let entry = &frame.side_data()[index];
+            assert_eq!(entry.kind_id(), frame_kind);
+            assert_eq!(entry.data(), &[0xa0 + index as u8]);
         }
 
         assert_eq!(

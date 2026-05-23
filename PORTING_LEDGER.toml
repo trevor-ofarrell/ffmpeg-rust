@@ -2,14 +2,18 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest avutil-packet evidence: packet/frame side-data bridge rows now prove
+# Latest avutil-packet evidence: packet/frame side-data bridge map-inventory
+# rows now prove all 11 pinned FFmpeg 8.1.1 global packet/frame side-data
+# mappings in both directions while preserving expected kind order and payload
+# bytes. Unit, differential, upstream `fate-avpacket`, and
+# `avutil_core_models` fuzz-smoke coverage passed for this slice.
+# Earlier avutil-packet evidence: packet/frame side-data bridge rows now prove
 # pinned FFmpeg 8.1.1 combined `AV_FRAME_SIDE_DATA_FLAG_UNIQUE |
 # AV_FRAME_SIDE_DATA_FLAG_REPLACE` behavior. Frame-to-packet still replaces
 # the first matching packet side-data entry and preserves later duplicates;
 # packet-to-frame follows frame-side UNIQUE precedence by removing matching
 # frame side data, preserving nonmatching entries, and appending the mapped
-# replacement. Unit, differential, upstream `fate-avpacket`, and
-# `avutil_core_models` fuzz-smoke coverage passed for this slice.
+# replacement.
 # Earlier avutil-packet evidence: packet-owned `av_packet_add_side_data()`
 # capacity-failure ownership rows now prove pinned FFmpeg 8.1.1 returns
 # ERANGE for a new kind at `AV_PKT_DATA_NB` capacity while preserving the
@@ -307,6 +311,13 @@ fate_tests = [
 ]
 fuzz_targets = ["avutil_core_models"]
 # Latest update: pinned libavcodec AVPacket packet/frame bridge rows now
+# validate the full global side-data map inventory through
+# packet:frame-to-packet-map-inventory and
+# packet:packet-to-frame-map-inventory rows. The rows prove all 11 supported
+# packet/frame side-data mappings in both directions, preserving expected kind
+# order and payload bytes. Unit tests plus `avutil_core_models` cover the same
+# complete bridge-map inventory.
+# Earlier update: pinned libavcodec AVPacket packet/frame bridge rows now
 # validate combined `AV_FRAME_SIDE_DATA_FLAG_UNIQUE |
 # AV_FRAME_SIDE_DATA_FLAG_REPLACE` behavior through
 # packet:frame-to-packet-unique-replace-* and
