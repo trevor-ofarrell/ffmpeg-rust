@@ -13492,65 +13492,75 @@ fn exercise_fixtures() {
         &[19, 20, 21, 22, 23, 24]
     );
 
-    for format in [
-        PixelFormat::Rgba,
-        PixelFormat::Bgra,
-        PixelFormat::Argb,
-        PixelFormat::Abgr,
-        PixelFormat::ZeroRgb,
-        PixelFormat::Rgb0,
-        PixelFormat::ZeroBgr,
-        PixelFormat::Bgr0,
+    for (format, bytes_per_pixel, line_size) in [
+        (PixelFormat::Rgba, 4, 64),
+        (PixelFormat::Bgra, 4, 64),
+        (PixelFormat::Argb, 4, 64),
+        (PixelFormat::Abgr, 4, 64),
+        (PixelFormat::ZeroRgb, 4, 64),
+        (PixelFormat::Rgb0, 4, 64),
+        (PixelFormat::ZeroBgr, 4, 64),
+        (PixelFormat::Bgr0, 4, 64),
+        (PixelFormat::Rgb48Le, 6, 192),
+        (PixelFormat::Rgb48Be, 6, 192),
+        (PixelFormat::Bgr48Le, 6, 192),
+        (PixelFormat::Bgr48Be, 6, 192),
+        (PixelFormat::Rgba64Le, 8, 64),
+        (PixelFormat::Rgba64Be, 8, 64),
+        (PixelFormat::Bgra64Le, 8, 64),
+        (PixelFormat::Bgra64Be, 8, 64),
     ] {
-        let mut packed32_crop_storage = vec![0; 64 * 4];
+        let mut packed_crop_storage = vec![0; line_size * 4];
         for row in 0..4 {
-            for column in 0..32 {
-                packed32_crop_storage[row * 64 + column] = (row * 16 + column) as u8;
+            for column in 0..8 * bytes_per_pixel {
+                packed_crop_storage[row * line_size + column] = (row * 16 + column) as u8;
             }
         }
-        let mut packed32_default_crop = Frame::video(
+        let mut packed_default_crop = Frame::video(
             VideoFrame::new_with_line_sizes(
                 8,
                 4,
                 format,
-                vec![packed32_crop_storage.clone()],
-                vec![64],
+                vec![packed_crop_storage.clone()],
+                vec![line_size],
             )
             .unwrap(),
         );
-        packed32_default_crop.set_crop_offsets(1, 0, 1, 1);
-        let packed32_before = packed32_default_crop.clone();
-        let packed32_error = packed32_default_crop
+        packed_default_crop.set_crop_offsets(1, 0, 1, 1);
+        let packed_before = packed_default_crop.clone();
+        let packed_error = packed_default_crop
             .apply_cropping(FrameCropFlags::NONE)
             .unwrap_err();
         assert_eq!(
-            packed32_error.code().map(AvErrorCode::raw),
+            packed_error.code().map(AvErrorCode::raw),
             Some(AvErrorCode::BUG.raw())
         );
-        assert_eq!(packed32_default_crop, packed32_before);
+        assert_eq!(packed_default_crop, packed_before);
 
-        let mut packed32_unaligned_crop = Frame::video(
+        let mut packed_unaligned_crop = Frame::video(
             VideoFrame::new_with_line_sizes(
                 8,
                 4,
                 format,
-                vec![packed32_crop_storage],
-                vec![64],
+                vec![packed_crop_storage],
+                vec![line_size],
             )
             .unwrap(),
         );
-        packed32_unaligned_crop.set_crop_offsets(1, 0, 1, 1);
-        packed32_unaligned_crop
+        packed_unaligned_crop.set_crop_offsets(1, 0, 1, 1);
+        packed_unaligned_crop
             .apply_cropping(FrameCropFlags::UNALIGNED)
             .unwrap();
-        let FrameData::Video(packed32_unaligned_crop_video) = packed32_unaligned_crop.data() else {
-            panic!("constructed packed32 crop frame changed variant");
+        let FrameData::Video(packed_unaligned_crop_video) = packed_unaligned_crop.data() else {
+            panic!("constructed packed crop frame changed variant");
         };
-        assert_eq!(packed32_unaligned_crop_video.width(), 6);
-        assert_eq!(packed32_unaligned_crop_video.height(), 3);
+        assert_eq!(packed_unaligned_crop_video.width(), 6);
+        assert_eq!(packed_unaligned_crop_video.height(), 3);
+        let expected_prefix =
+            (16 + bytes_per_pixel as u8..16 + (bytes_per_pixel * 2) as u8).collect::<Vec<_>>();
         assert_eq!(
-            &packed32_unaligned_crop_video.planes()[0][..8],
-            &[20, 21, 22, 23, 24, 25, 26, 27]
+            &packed_unaligned_crop_video.planes()[0][..bytes_per_pixel],
+            expected_prefix.as_slice()
         );
     }
 

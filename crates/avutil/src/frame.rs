@@ -13637,6 +13637,10 @@ impl VideoFrame {
         let crop_step = match self.pixel_format {
             PixelFormat::Gray8 => 1,
             PixelFormat::Rgb24 | PixelFormat::Bgr24 => 3,
+            PixelFormat::Rgb48Le
+            | PixelFormat::Rgb48Be
+            | PixelFormat::Bgr48Le
+            | PixelFormat::Bgr48Be => 6,
             PixelFormat::Rgba
             | PixelFormat::Bgra
             | PixelFormat::Argb
@@ -13645,9 +13649,13 @@ impl VideoFrame {
             | PixelFormat::Rgb0
             | PixelFormat::ZeroBgr
             | PixelFormat::Bgr0 => 4,
+            PixelFormat::Rgba64Le
+            | PixelFormat::Rgba64Be
+            | PixelFormat::Bgra64Le
+            | PixelFormat::Bgra64Be => 8,
             _ => {
                 return Err(AvError::unsupported(format!(
-                    "frame cropping is currently implemented for gray, rgb24, bgr24, and 32-bit packed RGB video frames, not {}",
+                    "frame cropping is currently implemented for gray8, rgb24/bgr24, and selected high-depth packed RGB/RGBA video frames, not {}",
                     self.pixel_format.name()
                 )));
             }
@@ -15035,9 +15043,9 @@ fn adjusted_packed_crop_left(
     if flags.contains(FrameCropFlags::UNALIGNED) || crop.left == 0 {
         return Ok(crop.left);
     }
-    if bytes_per_pixel == 4 {
+    if matches!(bytes_per_pixel, 4 | 6 | 8) {
         return Err(AvError::bug(
-            "FFmpeg rejects default left cropping for 32-bit packed RGB frames",
+            "FFmpeg rejects default left cropping for selected high-depth packed RGB frames",
         ));
     }
 
@@ -20061,30 +20069,38 @@ mod tests {
         assert_eq!(video.line_sizes(), &[192]);
         assert_eq!(video.planes(), &[packed_visible(3, 1, 1, 6, 3)]);
 
-        for format in [
-            PixelFormat::Rgba,
-            PixelFormat::Bgra,
-            PixelFormat::Argb,
-            PixelFormat::Abgr,
-            PixelFormat::ZeroRgb,
-            PixelFormat::Rgb0,
-            PixelFormat::ZeroBgr,
-            PixelFormat::Bgr0,
+        for (format, bytes_per_pixel, line_size) in [
+            (PixelFormat::Rgba, 4, 64),
+            (PixelFormat::Bgra, 4, 64),
+            (PixelFormat::Argb, 4, 64),
+            (PixelFormat::Abgr, 4, 64),
+            (PixelFormat::ZeroRgb, 4, 64),
+            (PixelFormat::Rgb0, 4, 64),
+            (PixelFormat::ZeroBgr, 4, 64),
+            (PixelFormat::Bgr0, 4, 64),
+            (PixelFormat::Rgb48Le, 6, 192),
+            (PixelFormat::Rgb48Be, 6, 192),
+            (PixelFormat::Bgr48Le, 6, 192),
+            (PixelFormat::Bgr48Be, 6, 192),
+            (PixelFormat::Rgba64Le, 8, 64),
+            (PixelFormat::Rgba64Be, 8, 64),
+            (PixelFormat::Bgra64Le, 8, 64),
+            (PixelFormat::Bgra64Be, 8, 64),
         ] {
-            let packed32_storage = packed_storage(8, 4, 4, 64);
-            let mut packed32_default = Frame::video(
+            let packed_crop_storage = packed_storage(8, 4, bytes_per_pixel, line_size);
+            let mut packed_default = Frame::video(
                 VideoFrame::new_with_line_sizes(
                     8,
                     4,
                     format,
-                    vec![packed32_storage.clone()],
-                    vec![64],
+                    vec![packed_crop_storage.clone()],
+                    vec![line_size],
                 )
                 .unwrap(),
             );
-            packed32_default.set_crop_offsets(1, 0, 1, 1);
-            let before = packed32_default.clone();
-            let err = packed32_default
+            packed_default.set_crop_offsets(1, 0, 1, 1);
+            let before = packed_default.clone();
+            let err = packed_default
                 .apply_cropping(FrameCropFlags::NONE)
                 .unwrap_err();
             assert_eq!(
@@ -20093,25 +20109,31 @@ mod tests {
                 "{} default crop should match FFmpeg's AVERROR_BUG path",
                 format.name()
             );
-            assert_eq!(packed32_default, before);
+            assert_eq!(packed_default, before);
 
-            let mut packed32_unaligned = Frame::video(
-                VideoFrame::new_with_line_sizes(8, 4, format, vec![packed32_storage], vec![64])
-                    .unwrap(),
+            let mut packed_unaligned = Frame::video(
+                VideoFrame::new_with_line_sizes(
+                    8,
+                    4,
+                    format,
+                    vec![packed_crop_storage],
+                    vec![line_size],
+                )
+                .unwrap(),
             );
-            packed32_unaligned.set_crop_offsets(1, 0, 1, 1);
-            packed32_unaligned
+            packed_unaligned.set_crop_offsets(1, 0, 1, 1);
+            packed_unaligned
                 .apply_cropping(FrameCropFlags::UNALIGNED)
                 .unwrap();
-            let FrameData::Video(video) = packed32_unaligned.data() else {
-                unreachable!("constructed packed32 crop frame changed variant");
+            let FrameData::Video(video) = packed_unaligned.data() else {
+                unreachable!("constructed packed crop frame changed variant");
             };
             assert_eq!(video.width(), 6, "{}", format.name());
             assert_eq!(video.height(), 3, "{}", format.name());
-            assert_eq!(video.line_sizes(), &[64], "{}", format.name());
+            assert_eq!(video.line_sizes(), &[line_size], "{}", format.name());
             assert_eq!(
                 video.planes(),
-                &[packed_visible(4, 1, 1, 6, 3)],
+                &[packed_visible(bytes_per_pixel, 1, 1, 6, 3)],
                 "{}",
                 format.name()
             );

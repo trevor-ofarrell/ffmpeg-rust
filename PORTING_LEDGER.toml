@@ -384,15 +384,15 @@ notes = "Initial reference-counted byte buffer model implemented with owned/copy
 # Previous nullable realloc slice: `BufferRef::realloc(&mut Option<BufferRef>, len)` models `av_buffer_realloc(&buf, len)` when `buf` is NULL, while preserving no-mutation failure behavior. The pinned libavutil oracle validates the NULL realloc status row.
 blocked_reason = ""
 
-# Latest BGR24 crop slice: pinned libavutil rows now prove `av_frame_apply_cropping()`
-# for BGR24 default-aligned and `AV_FRAME_CROP_UNALIGNED` cases. Like RGB24,
-# default BGR24 left cropping rounds down to preserve 32-byte alignment while
-# top/right crop still applies; unaligned mode applies the exact left crop.
-# Rust `VideoFrame::apply_cropping()` now covers gray8, RGB24, BGR24, and the
-# 32-bit packed RGB/RGBA family for this bounded surface with unit, oracle,
-# FATE-runner, and fuzz-smoke evidence. Default nonzero-left crop for 32-bit
-# packed formats follows the pinned `AVERROR_BUG` no-mutation path, while
-# `AV_FRAME_CROP_UNALIGNED` applies exact-left cropping.
+# Latest high-depth packed crop slice: pinned libavutil rows now prove
+# `av_frame_apply_cropping()` for `rgb48le`/`rgb48be`, `bgr48le`/`bgr48be`,
+# `rgba64le`/`rgba64be`, and `bgra64le`/`bgra64be`. Like the prior 32-bit
+# packed RGB/RGBA rows, default nonzero-left crop returns `AVERROR_BUG`
+# without mutation, while `AV_FRAME_CROP_UNALIGNED` applies exact-left
+# cropping and resets crop fields on success. Rust `VideoFrame::apply_cropping()`
+# now covers gray8, RGB24, BGR24, 32-bit packed RGB/RGBA, 48-bit packed
+# RGB/BGR, and 64-bit packed RGBA/BGRA for this bounded surface with unit,
+# oracle, FATE-runner, and fuzz-smoke evidence.
 [[component]]
 id = "avutil-frame"
 kind = "utility"
@@ -566,6 +566,15 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: The pinned libavutil `AVFrame` oracle now validates
+# `av_frame_apply_cropping()` for the high-depth packed RGB/RGBA family:
+# `rgb48le`, `rgb48be`, `bgr48le`, `bgr48be`, `rgba64le`, `rgba64be`,
+# `bgra64le`, and `bgra64be`. FFmpeg 8.1.1 returns `AVERROR_BUG` without
+# mutating for default nonzero-left crop on these formats, while
+# `AV_FRAME_CROP_UNALIGNED` applies exact-left cropping and resets crop fields
+# on success. This extends the prior gray8/RGB24/BGR24 and 32-bit packed
+# RGB/RGBA crop evidence without claiming other packed, planar, bitstream, or
+# hardware crop behavior.
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
 # `av_frame_apply_cropping()` for the 32-bit packed RGB/RGBA family (`rgba`,
 # `bgra`, `argb`, `abgr`, `0rgb`, `rgb0`, `0bgr`, and `bgr0`). FFmpeg 8.1.1
