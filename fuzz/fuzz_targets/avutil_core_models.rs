@@ -272,22 +272,48 @@ fn assert_channel_layout_byte_parser_fixtures() {
         ChannelLayoutSpec::parse("AMBI0+AMBI1+AMBI2+AMBI3+USR45").unwrap()
     );
 
-    for invalid in [
-        &b"FL@\xff+FR"[..],
-        &b"FL@Left\\\xff+FR"[..],
-        &b"ambisonic \xc3\x28"[..],
-    ] {
+    let raw_name = CustomChannelLayout::parse_channel_list_bytes(b"FL@\xff+FR").unwrap();
+    assert_eq!(raw_name.channels()[0].name_bytes(), &[0xff]);
+    assert_eq!(raw_name.describe_bytes(), b"2 channels (FL@\xff+FR)");
+    assert_eq!(raw_name.index_from_string_bytes(b"@\xff").unwrap(), 0);
+    assert_eq!(raw_name.index_from_string_bytes(b"FL@\xff").unwrap(), 0);
+
+    let escaped_name =
+        CustomChannelLayout::parse_channel_list_bytes(b"FL@Left\\\xff+FR").unwrap();
+    assert_eq!(escaped_name.channels()[0].name_bytes(), b"Left\xff");
+    assert_eq!(
+        escaped_name.describe_bytes(),
+        b"2 channels (FL@Left\xff+FR)"
+    );
+
+    let described_raw = ChannelLayoutSpec::parse_bytes(b"2 channels (FL@\xff+FR)").unwrap();
+    assert_eq!(described_raw.describe_bytes(), b"2 channels (FL@\xff+FR)");
+    assert_eq!(described_raw.index_from_string_bytes(b"FL@\xff").unwrap(), 0);
+
+    let truncated =
+        CustomChannelLayout::parse_channel_list_bytes(b"FL@1234567890123456+FR").unwrap();
+    assert_eq!(truncated.channels()[0].name_bytes(), b"123456789012345");
+    assert_eq!(truncated.index_from_string_bytes(b"@123456789012345").unwrap(), 0);
+    assert_eq!(
+        truncated
+            .index_from_string_bytes(b"@1234567890123456")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+
+    for invalid in [&b"\xffL@Name"[..], &b"ambisonic \xc3\x28"[..]] {
         assert_eq!(
             CustomChannelLayout::parse_channel_list_bytes(invalid)
                 .unwrap_err()
                 .kind(),
-            AvErrorKind::InvalidData
+            AvErrorKind::InvalidArgument
         );
         assert_eq!(
             ChannelLayoutSpec::parse_bytes(invalid)
                 .unwrap_err()
                 .kind(),
-            AvErrorKind::InvalidData
+            AvErrorKind::InvalidArgument
         );
     }
 

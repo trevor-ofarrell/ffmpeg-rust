@@ -487,15 +487,28 @@ fn native_mask_bit_from_channel_id(id: ChannelId) -> AvResult<u64> {
     }
 }
 
-fn utf8_channel_layout_bytes<'a>(value: &'a [u8], context: &str) -> AvResult<&'a str> {
-    std::str::from_utf8(value)
-        .map_err(|_| AvError::invalid_data(format!("{context} is not valid UTF-8")))
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    output
+}
+
+fn channel_lookup_utf8(name: &[u8]) -> AvResult<&str> {
+    std::str::from_utf8(name).map_err(|_| {
+        AvError::invalid_argument(format!(
+            "channel lookup {} is not valid UTF-8",
+            bytes_to_hex(name)
+        ))
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ChannelCustom {
     id: ChannelId,
-    name: String,
+    name: Vec<u8>,
 }
 
 impl ChannelCustom {
@@ -503,6 +516,10 @@ impl ChannelCustom {
     pub const MAX_NAME_BYTES: usize = Self::NAME_STORAGE_BYTES - 1;
 
     pub fn new(id: ChannelId, name: impl AsRef<str>) -> AvResult<Self> {
+        Self::new_bytes(id, name.as_ref().as_bytes())
+    }
+
+    pub fn new_bytes(id: ChannelId, name: impl AsRef<[u8]>) -> AvResult<Self> {
         if id == ChannelId::None {
             return Err(AvError::invalid_argument(
                 "custom channel id cannot be NONE",
@@ -514,7 +531,7 @@ impl ChannelCustom {
             ));
         }
         let name = name.as_ref();
-        if name.contains('\0') {
+        if name.contains(&0) {
             return Err(AvError::invalid_argument(
                 "custom channel name contains NUL byte",
             ));
@@ -527,14 +544,20 @@ impl ChannelCustom {
         }
         Ok(Self {
             id,
-            name: name.to_owned(),
+            name: name.to_vec(),
         })
+    }
+
+    fn from_parser_bytes(id: ChannelId, name: impl AsRef<[u8]>) -> AvResult<Self> {
+        let name = name.as_ref();
+        let end = name.len().min(Self::MAX_NAME_BYTES);
+        Self::new_bytes(id, &name[..end])
     }
 
     pub fn unknown() -> Self {
         Self {
             id: ChannelId::Unknown,
-            name: String::new(),
+            name: Vec::new(),
         }
     }
 
@@ -543,6 +566,14 @@ impl ChannelCustom {
     }
 
     pub fn name(&self) -> &str {
+        self.name_utf8().unwrap_or("")
+    }
+
+    pub fn name_utf8(&self) -> Option<&str> {
+        std::str::from_utf8(&self.name).ok()
+    }
+
+    pub fn name_bytes(&self) -> &[u8] {
         &self.name
     }
 
@@ -550,13 +581,14 @@ impl ChannelCustom {
         !self.name.is_empty()
     }
 
-    fn describe(&self) -> String {
-        let mut described = self.id.name();
+    fn describe_bytes(&self) -> Vec<u8> {
+        let described = self.id.name();
+        let mut bytes = described.into_bytes();
         if self.has_name() {
-            described.push('@');
-            described.push_str(&self.name);
+            bytes.push(b'@');
+            bytes.extend_from_slice(&self.name);
         }
-        described
+        bytes
     }
 }
 
@@ -593,18 +625,21 @@ impl CustomChannelLayout {
     }
 
     pub fn parse_channel_list_bytes(value: &[u8]) -> AvResult<Self> {
-        let value = utf8_channel_layout_bytes(value, "custom channel layout byte string")?;
-        Self::parse_channel_list(value)
+        Self::parse_channel_list_bytes_inner(value)
     }
 
     pub fn parse_channel_list(value: &str) -> AvResult<Self> {
-        let trimmed = Self::trim_ffmpeg_whitespace(value);
+        Self::parse_channel_list_bytes_inner(value.as_bytes())
+    }
+
+    fn parse_channel_list_bytes_inner(value: &[u8]) -> AvResult<Self> {
+        let trimmed = Self::trim_ffmpeg_whitespace_bytes(value);
         if trimmed.is_empty() {
             return Err(AvError::invalid_argument(
                 "custom channel layout string is empty",
             ));
         }
-        if trimmed.contains('\0') {
+        if trimmed.contains(&0) {
             return Err(AvError::invalid_argument(
                 "custom channel layout string contains NUL byte",
             ));
@@ -614,19 +649,26 @@ impl CustomChannelLayout {
         let mut rest = trimmed;
         while !rest.is_empty() {
             let token_start = rest;
-            let (id_name, custom_name, token_rest) = Self::parse_channel_list_token(rest);
+            let (id_name, custom_name, token_rest) = Self::parse_channel_list_token_bytes(rest);
             if id_name.is_empty() {
                 return Err(AvError::invalid_argument(format!(
-                    "custom channel token {token_start:?} has no channel id"
+                    "custom channel token {} has no channel id",
+                    bytes_to_hex(token_start)
                 )));
             }
-            let id = ChannelId::from_ffmpeg_string(&id_name).ok_or_else(|| {
+            let id_name = std::str::from_utf8(&id_name).map_err(|_| {
+                AvError::invalid_argument(format!(
+                    "custom channel id {} is not valid UTF-8",
+                    bytes_to_hex(&id_name)
+                ))
+            })?;
+            let id = ChannelId::from_ffmpeg_string(id_name).ok_or_else(|| {
                 AvError::invalid_argument(format!("unknown channel id {id_name:?}"))
             })?;
-            channels.push(ChannelCustom::new(id, custom_name)?);
+            channels.push(ChannelCustom::from_parser_bytes(id, custom_name)?);
 
             rest = token_rest;
-            if let Some(after_separator) = rest.strip_prefix('+') {
+            if let Some(after_separator) = rest.strip_prefix(b"+") {
                 rest = after_separator;
             }
         }
@@ -634,59 +676,55 @@ impl CustomChannelLayout {
         Self::new(channels)
     }
 
-    fn parse_channel_list_token(input: &str) -> (String, String, &str) {
-        if let Some((key, value_start)) = Self::parse_av_opt_key(input) {
-            let (value, rest) = Self::av_get_token(value_start, '+');
+    fn parse_channel_list_token_bytes(input: &[u8]) -> (Vec<u8>, Vec<u8>, &[u8]) {
+        if let Some((key, value_start)) = Self::parse_av_opt_key_bytes(input) {
+            let (value, rest) = Self::av_get_token_bytes(value_start, b'+');
             (key, value, rest)
         } else {
-            let (value, rest) = Self::av_get_token(input, '+');
-            (value, String::new(), rest)
+            let (value, rest) = Self::av_get_token_bytes(input, b'+');
+            (value, Vec::new(), rest)
         }
     }
 
-    fn parse_av_opt_key(input: &str) -> Option<(String, &str)> {
-        let rest = Self::trim_start_ffmpeg_whitespace(input);
+    fn parse_av_opt_key_bytes(input: &[u8]) -> Option<(Vec<u8>, &[u8])> {
+        let rest = Self::trim_start_ffmpeg_whitespace_bytes(input);
         let mut key_end = 0usize;
-        for (index, ch) in rest.char_indices() {
-            if Self::is_av_opt_key_char(ch) {
-                key_end = index + ch.len_utf8();
-            } else {
-                break;
-            }
+        while key_end < rest.len() && Self::is_av_opt_key_byte(rest[key_end]) {
+            key_end += 1;
         }
 
         let key = &rest[..key_end];
-        let rest = Self::trim_start_ffmpeg_whitespace(&rest[key_end..]);
-        let rest = rest.strip_prefix('@')?;
-        Some((key.to_owned(), rest))
+        let rest = Self::trim_start_ffmpeg_whitespace_bytes(&rest[key_end..]);
+        let rest = rest.strip_prefix(b"@")?;
+        Some((key.to_vec(), rest))
     }
 
-    fn av_get_token(input: &str, terminator: char) -> (String, &str) {
-        let mut rest = Self::trim_start_ffmpeg_whitespace(input);
-        let mut token = String::new();
+    fn av_get_token_bytes(input: &[u8], terminator: u8) -> (Vec<u8>, &[u8]) {
+        let mut rest = Self::trim_start_ffmpeg_whitespace_bytes(input);
+        let mut token = Vec::new();
         let mut protected_len = 0usize;
 
-        while let Some(ch) = rest.chars().next() {
-            if ch == terminator {
+        while let Some((&byte, after_byte)) = rest.split_first() {
+            if byte == terminator {
                 break;
             }
 
-            rest = &rest[ch.len_utf8()..];
-            match ch {
-                '\\' => {
-                    if let Some(escaped) = rest.chars().next() {
-                        rest = &rest[escaped.len_utf8()..];
+            rest = after_byte;
+            match byte {
+                b'\\' => {
+                    if let Some((&escaped, after_escaped)) = rest.split_first() {
+                        rest = after_escaped;
                         token.push(escaped);
                         protected_len = token.len();
                     } else {
-                        token.push('\\');
+                        token.push(b'\\');
                     }
                 }
-                '\'' => {
+                b'\'' => {
                     let mut closed_quote = false;
-                    while let Some(quoted) = rest.chars().next() {
-                        rest = &rest[quoted.len_utf8()..];
-                        if quoted == '\'' {
+                    while let Some((&quoted, after_quoted)) = rest.split_first() {
+                        rest = after_quoted;
+                        if quoted == b'\'' {
                             closed_quote = true;
                             break;
                         }
@@ -696,42 +734,50 @@ impl CustomChannelLayout {
                         protected_len = token.len();
                     }
                 }
-                _ => token.push(ch),
+                _ => token.push(byte),
             }
         }
 
         while token.len() > protected_len {
-            let Some(ch) = token.chars().next_back() else {
+            let Some(&byte) = token.last() else {
                 break;
             };
-            if !Self::is_ffmpeg_whitespace(ch) {
+            if !Self::is_ffmpeg_whitespace_byte(byte) {
                 break;
             }
-            let new_len = token.len() - ch.len_utf8();
-            token.truncate(new_len);
+            token.pop();
         }
 
         (token, rest)
     }
 
-    fn trim_ffmpeg_whitespace(value: &str) -> &str {
-        Self::trim_end_ffmpeg_whitespace(Self::trim_start_ffmpeg_whitespace(value))
+    fn trim_ffmpeg_whitespace_bytes(value: &[u8]) -> &[u8] {
+        Self::trim_end_ffmpeg_whitespace_bytes(Self::trim_start_ffmpeg_whitespace_bytes(value))
     }
 
-    fn trim_start_ffmpeg_whitespace(value: &str) -> &str {
-        value.trim_start_matches(Self::is_ffmpeg_whitespace)
+    fn trim_start_ffmpeg_whitespace_bytes(value: &[u8]) -> &[u8] {
+        let first = value
+            .iter()
+            .position(|byte| !Self::is_ffmpeg_whitespace_byte(*byte))
+            .unwrap_or(value.len());
+        &value[first..]
     }
 
-    fn trim_end_ffmpeg_whitespace(value: &str) -> &str {
-        value.trim_end_matches(Self::is_ffmpeg_whitespace)
+    fn trim_end_ffmpeg_whitespace_bytes(value: &[u8]) -> &[u8] {
+        let end = value
+            .iter()
+            .rposition(|byte| !Self::is_ffmpeg_whitespace_byte(*byte))
+            .map(|index| index + 1)
+            .unwrap_or(0);
+        &value[..end]
     }
 
-    fn is_ffmpeg_whitespace(ch: char) -> bool {
-        matches!(ch, ' ' | '\n' | '\t' | '\r')
+    fn is_ffmpeg_whitespace_byte(byte: u8) -> bool {
+        matches!(byte, b' ' | b'\n' | b'\t' | b'\r')
     }
 
-    fn is_av_opt_key_char(ch: char) -> bool {
-        ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '/' | '.')
+    fn is_av_opt_key_byte(byte: u8) -> bool {
+        byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'/' | b'.')
     }
 
     pub fn unknown(channel_count: u16) -> AvResult<Self> {
@@ -757,6 +803,11 @@ impl CustomChannelLayout {
 
     pub fn channel_from_string(&self, name: &str) -> Option<ChannelId> {
         let index = self.index_from_string(name).ok()?;
+        self.channel_from_index(index)
+    }
+
+    pub fn channel_from_string_bytes(&self, name: &[u8]) -> Option<ChannelId> {
+        let index = self.index_from_string_bytes(name).ok()?;
         self.channel_from_index(index)
     }
 
@@ -921,26 +972,38 @@ impl CustomChannelLayout {
     }
 
     pub fn index_from_string(&self, name: &str) -> AvResult<usize> {
+        self.index_from_string_bytes(name.as_bytes())
+    }
+
+    pub fn index_from_string_bytes(&self, name: &[u8]) -> AvResult<usize> {
         if name.is_empty() {
             return Err(AvError::invalid_argument("empty channel lookup"));
         }
-        if name.contains('\0') {
+        if name.contains(&0) {
             return Err(AvError::invalid_argument(
                 "channel lookup contains NUL byte",
             ));
         }
 
-        if let Some((id_part, custom_name)) = name.split_once('@') {
+        if let Some(at) = name.iter().position(|byte| *byte == b'@') {
+            let id_part = &name[..at];
+            let custom_name = &name[at + 1..];
             if !custom_name.is_empty() {
                 let id = if id_part.is_empty() {
                     None
                 } else {
+                    let id_part = std::str::from_utf8(id_part).map_err(|_| {
+                        AvError::invalid_argument(format!(
+                            "channel lookup id {} is not valid UTF-8",
+                            bytes_to_hex(id_part)
+                        ))
+                    })?;
                     Some(ChannelId::from_ffmpeg_string(id_part).ok_or_else(|| {
                         AvError::invalid_argument(format!("unknown channel id {id_part:?}"))
                     })?)
                 };
                 if let Some(index) = self.channels.iter().position(|channel| {
-                    channel.name() == custom_name
+                    channel.name_bytes() == custom_name
                         && match id {
                             Some(id) => channel.id() == id,
                             None => true,
@@ -950,31 +1013,42 @@ impl CustomChannelLayout {
                 }
             }
             return Err(AvError::invalid_argument(format!(
-                "channel name {name:?} is not present in custom layout"
+                "channel name {} is not present in custom layout",
+                bytes_to_hex(name)
             )));
         }
 
+        let name = std::str::from_utf8(name).map_err(|_| {
+            AvError::invalid_argument(format!(
+                "channel lookup {} is not valid UTF-8",
+                bytes_to_hex(name)
+            ))
+        })?;
         let id = ChannelId::from_ffmpeg_string(name)
             .ok_or_else(|| AvError::invalid_argument(format!("unknown channel id {name:?}")))?;
         self.index_from_channel(id)
     }
 
     pub fn describe(&self) -> String {
+        String::from_utf8_lossy(&self.describe_bytes()).into_owned()
+    }
+
+    pub fn describe_bytes(&self) -> Vec<u8> {
         if let Ok(description) = self.describe_ambisonic() {
-            return description;
+            return description.into_bytes();
         }
         if let Some(layout) = self.canonical_native_layout() {
-            return layout.name().to_owned();
+            return layout.name().as_bytes().to_vec();
         }
 
-        let mut description = format!("{} channels (", self.channel_count());
+        let mut description = format!("{} channels (", self.channel_count()).into_bytes();
         for (index, channel) in self.channels.iter().enumerate() {
             if index != 0 {
-                description.push('+');
+                description.push(b'+');
             }
-            description.push_str(&channel.describe());
+            description.extend_from_slice(&channel.describe_bytes());
         }
-        description.push(')');
+        description.push(b')');
         description
     }
 }
@@ -2288,8 +2362,28 @@ impl ChannelLayoutSpec {
     }
 
     pub fn parse_bytes(value: &[u8]) -> AvResult<Self> {
-        let value = utf8_channel_layout_bytes(value, "channel layout byte string")?;
-        Self::parse(value)
+        if value.contains(&0) {
+            return Err(AvError::invalid_argument(
+                "channel layout contains NUL byte",
+            ));
+        }
+
+        if let Ok(value) = std::str::from_utf8(value) {
+            return Self::parse(value);
+        }
+
+        if let Some(layout) = Self::parse_described_channel_list_bytes(value)? {
+            return Ok(layout);
+        }
+
+        if let Some(layout) = Self::parse_channel_list_bytes(value)? {
+            return Ok(layout);
+        }
+
+        Err(AvError::invalid_argument(format!(
+            "channel layout byte string {} is not valid UTF-8",
+            bytes_to_hex(value)
+        )))
     }
 
     pub fn parse(value: &str) -> AvResult<Self> {
@@ -2513,11 +2607,54 @@ impl ChannelLayoutSpec {
         Ok(Some(layout))
     }
 
+    fn parse_described_channel_list_bytes(value: &[u8]) -> AvResult<Option<Self>> {
+        let Some(split_at) = value
+            .windows(b" channels (".len())
+            .position(|window| window == b" channels (")
+        else {
+            return Ok(None);
+        };
+        let count_text = std::str::from_utf8(&value[..split_at]).map_err(|_| {
+            AvError::invalid_argument(format!(
+                "invalid channel count {}",
+                bytes_to_hex(&value[..split_at])
+            ))
+        })?;
+        let rest = &value[split_at + b" channels (".len()..];
+        let Some(channel_list) = rest.strip_suffix(b")") else {
+            return Err(AvError::invalid_argument(format!(
+                "unterminated channel layout list {}",
+                bytes_to_hex(value)
+            )));
+        };
+        let channels = parse_positive_channel_count(count_text).ok_or_else(|| {
+            AvError::invalid_argument(format!("invalid channel count {count_text:?}"))
+        })?;
+        let layout = Self::parse_channel_list_bytes(channel_list)?.ok_or_else(|| {
+            AvError::invalid_argument(format!(
+                "unsupported channel layout expression {}",
+                bytes_to_hex(channel_list)
+            ))
+        })?;
+        layout.validate_channel_count(channels)?;
+        Ok(Some(layout))
+    }
+
     fn parse_channel_list(value: &str) -> AvResult<Option<Self>> {
         if Self::looks_like_channel_list(value) {
             return Self::from_custom_channel_layout(CustomChannelLayout::parse_channel_list(
                 value,
             )?)
+            .map(Some);
+        }
+        Ok(None)
+    }
+
+    fn parse_channel_list_bytes(value: &[u8]) -> AvResult<Option<Self>> {
+        if Self::looks_like_channel_list_bytes(value) {
+            return Self::from_custom_channel_layout(
+                CustomChannelLayout::parse_channel_list_bytes(value)?,
+            )
             .map(Some);
         }
         Ok(None)
@@ -2532,6 +2669,21 @@ impl ChannelLayoutSpec {
             return true;
         }
         ChannelId::from_ffmpeg_string(value.trim()).is_some()
+    }
+
+    fn looks_like_channel_list_bytes(value: &[u8]) -> bool {
+        if value
+            .iter()
+            .any(|byte| matches!(*byte, b'@' | b'+' | b'\\' | b'\''))
+        {
+            return true;
+        }
+
+        let trimmed = CustomChannelLayout::trim_ffmpeg_whitespace_bytes(value);
+        let Ok(trimmed) = std::str::from_utf8(trimmed) else {
+            return false;
+        };
+        ChannelId::from_ffmpeg_string(trimmed).is_some()
     }
 
     pub fn as_native(&self) -> Option<ChannelLayout> {
@@ -2786,12 +2938,16 @@ impl ChannelLayoutSpec {
     }
 
     pub fn describe(&self) -> String {
+        String::from_utf8_lossy(&self.describe_bytes()).into_owned()
+    }
+
+    pub fn describe_bytes(&self) -> Vec<u8> {
         match self {
-            Self::Native(layout) => layout.name().to_owned(),
-            Self::NativeMask(layout) => layout.describe(),
-            Self::Ambisonic(layout) => layout.describe(),
-            Self::Custom(layout) => layout.describe(),
-            Self::Unspecified(layout) => layout.describe(),
+            Self::Native(layout) => layout.name().as_bytes().to_vec(),
+            Self::NativeMask(layout) => layout.describe().into_bytes(),
+            Self::Ambisonic(layout) => layout.describe().into_bytes(),
+            Self::Custom(layout) => layout.describe_bytes(),
+            Self::Unspecified(layout) => layout.describe().into_bytes(),
         }
     }
 
@@ -2826,17 +2982,26 @@ impl ChannelLayoutSpec {
     }
 
     pub fn index_from_string(&self, name: &str) -> AvResult<usize> {
+        self.index_from_string_bytes(name.as_bytes())
+    }
+
+    pub fn index_from_string_bytes(&self, name: &[u8]) -> AvResult<usize> {
         match self {
-            Self::Native(layout) => layout.index_from_string(name),
-            Self::NativeMask(layout) => layout.index_from_string(name),
-            Self::Ambisonic(layout) => layout.index_from_string(name),
-            Self::Custom(layout) => layout.index_from_string(name),
-            Self::Unspecified(layout) => layout.index_from_string(name),
+            Self::Custom(layout) => layout.index_from_string_bytes(name),
+            Self::Native(layout) => layout.index_from_string(channel_lookup_utf8(name)?),
+            Self::NativeMask(layout) => layout.index_from_string(channel_lookup_utf8(name)?),
+            Self::Ambisonic(layout) => layout.index_from_string(channel_lookup_utf8(name)?),
+            Self::Unspecified(layout) => layout.index_from_string(channel_lookup_utf8(name)?),
         }
     }
 
     pub fn channel_from_string(&self, name: &str) -> Option<ChannelId> {
         let index = self.index_from_string(name).ok()?;
+        self.channel_from_index(index)
+    }
+
+    pub fn channel_from_string_bytes(&self, name: &[u8]) -> Option<ChannelId> {
+        let index = self.index_from_string_bytes(name).ok()?;
         self.channel_from_index(index)
     }
 
@@ -3431,6 +3596,18 @@ mod tests {
         let quoted = CustomChannelLayout::parse_channel_list("FL@'Left Right'+FR").unwrap();
         assert_eq!(quoted.channels()[0].name(), "Left Right");
 
+        let truncated = CustomChannelLayout::parse_channel_list("FL@1234567890123456+FR").unwrap();
+        assert_eq!(truncated.channels()[0].name(), "123456789012345");
+        assert_eq!(truncated.describe(), "2 channels (FL@123456789012345+FR)");
+        assert_eq!(truncated.index_from_string("@123456789012345").unwrap(), 0);
+        assert_eq!(
+            truncated
+                .index_from_string("@1234567890123456")
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+
         let quoted_id = CustomChannelLayout::parse_channel_list("'FL'+FR").unwrap();
         assert_eq!(
             quoted_id.canonical_native_layout(),
@@ -3444,23 +3621,14 @@ mod tests {
             Some(ChannelId::Native(Channel::FrontLeft))
         );
 
-        for invalid in [
-            "",
-            "FL++FR",
-            "+FL",
-            "NONE",
-            "@Left",
-            "NOPE@Left",
-            "FL@custom-name-too-long",
-            "FL\0",
-        ] {
+        for invalid in ["", "FL++FR", "+FL", "NONE", "@Left", "NOPE@Left", "FL\0"] {
             let err = CustomChannelLayout::parse_channel_list(invalid).unwrap_err();
             assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         }
     }
 
     #[test]
-    fn channel_layout_parsers_reject_non_utf8_byte_inputs() {
+    fn channel_layout_parsers_preserve_raw_custom_name_bytes() {
         let custom_bytes =
             CustomChannelLayout::parse_channel_list_bytes(b"FL@Left\\+Right+USR45").unwrap();
         assert_eq!(
@@ -3483,20 +3651,59 @@ mod tests {
             ChannelLayoutSpec::parse("FL@Left\\@Name+FR").unwrap()
         );
 
-        for invalid in [
-            &b"FL@\xff+FR"[..],
-            &b"FL@Left\\\xff+FR"[..],
-            &b"ambisonic \xc3\x28"[..],
-        ] {
+        let raw_name = CustomChannelLayout::parse_channel_list_bytes(b"FL@\xff+FR").unwrap();
+        assert_eq!(raw_name.channels()[0].name_bytes(), &[0xff]);
+        assert_eq!(raw_name.channels()[0].name(), "");
+        assert_eq!(raw_name.describe_bytes(), b"2 channels (FL@\xff+FR)");
+        assert_eq!(raw_name.index_from_string_bytes(b"@\xff").unwrap(), 0);
+        assert_eq!(raw_name.index_from_string_bytes(b"FL@\xff").unwrap(), 0);
+        assert_eq!(
+            raw_name.channel_from_string_bytes(b"FL@\xff"),
+            Some(ChannelId::Native(Channel::FrontLeft))
+        );
+
+        let escaped_name =
+            CustomChannelLayout::parse_channel_list_bytes(b"FL@Left\\\xff+FR").unwrap();
+        assert_eq!(escaped_name.channels()[0].name_bytes(), b"Left\xff");
+        assert_eq!(
+            escaped_name.describe_bytes(),
+            b"2 channels (FL@Left\xff+FR)"
+        );
+
+        let described_raw = ChannelLayoutSpec::parse_bytes(b"2 channels (FL@\xff+FR)").unwrap();
+        assert_eq!(described_raw.describe_bytes(), b"2 channels (FL@\xff+FR)");
+        assert_eq!(
+            described_raw.index_from_string_bytes(b"FL@\xff").unwrap(),
+            0
+        );
+
+        let truncated =
+            CustomChannelLayout::parse_channel_list_bytes(b"FL@1234567890123456+FR").unwrap();
+        assert_eq!(truncated.channels()[0].name_bytes(), b"123456789012345");
+        assert_eq!(
+            truncated
+                .index_from_string_bytes(b"@123456789012345")
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            truncated
+                .index_from_string_bytes(b"@1234567890123456")
+                .unwrap_err()
+                .kind(),
+            AvErrorKind::InvalidArgument
+        );
+
+        for invalid in [&b"\xffL@Name"[..], &b"ambisonic \xc3\x28"[..]] {
             assert_eq!(
                 CustomChannelLayout::parse_channel_list_bytes(invalid)
                     .unwrap_err()
                     .kind(),
-                AvErrorKind::InvalidData
+                AvErrorKind::InvalidArgument
             );
             assert_eq!(
                 ChannelLayoutSpec::parse_bytes(invalid).unwrap_err().kind(),
-                AvErrorKind::InvalidData
+                AvErrorKind::InvalidArgument
             );
         }
 

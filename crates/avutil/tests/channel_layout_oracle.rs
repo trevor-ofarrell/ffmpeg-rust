@@ -16,6 +16,12 @@ struct ParserCase {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct ByteParserCase {
+    id: &'static str,
+    input: &'static [u8],
+}
+
+#[derive(Debug, Clone, Copy)]
 struct RetypeCase {
     id: &'static str,
     input: &'static str,
@@ -161,6 +167,45 @@ const PARSER_CASES: &[ParserCase] = &[
 
 const LOOKUP_NAMES: &[&str] = &[
     "FL", "FR", "FC", "AMBI0", "AMBI3", "USR45", "@Left", "FL@Left",
+];
+
+const BYTE_PARSER_CASES: &[ByteParserCase] = &[
+    ByteParserCase {
+        id: "raw-byte-name",
+        input: b"FL@\xff+FR",
+    },
+    ByteParserCase {
+        id: "escaped-byte-name",
+        input: b"FL@Left\\\xff+FR",
+    },
+    ByteParserCase {
+        id: "quoted-byte-name",
+        input: b"FL@'A\xffB'+FR",
+    },
+    ByteParserCase {
+        id: "overlong-name-truncates",
+        input: b"FL@1234567890123456+FR",
+    },
+    ByteParserCase {
+        id: "invalid-byte-id",
+        input: b"\xffL@A",
+    },
+    ByteParserCase {
+        id: "invalid-ambisonic-bytes",
+        input: b"ambisonic \xc3\x28",
+    },
+];
+
+const BYTE_LOOKUP_NAMES: &[&[u8]] = &[
+    b"@\xff",
+    b"FL@\xff",
+    b"@Left\xff",
+    b"FL@Left\xff",
+    b"@A\xffB",
+    b"FL@A\xffB",
+    b"@123456789012345",
+    b"@1234567890123456",
+    b"FR",
 ];
 
 const RETYPE_CASES: &[RetypeCase] = &[
@@ -619,7 +664,7 @@ fn default_ffmpeg_candidates(root: &Path) -> Vec<PathBuf> {
 }
 
 fn expected_parser_rows() -> BTreeMap<String, Vec<String>> {
-    PARSER_CASES
+    let mut rows = PARSER_CASES
         .iter()
         .map(|case| {
             (
@@ -627,7 +672,14 @@ fn expected_parser_rows() -> BTreeMap<String, Vec<String>> {
                 expected_parser_fields(case.input),
             )
         })
-        .collect()
+        .collect::<BTreeMap<_, _>>();
+    rows.extend(BYTE_PARSER_CASES.iter().map(|case| {
+        (
+            format!("parse-bytes:{}", case.id),
+            expected_byte_parser_fields(case.input),
+        )
+    }));
+    rows
 }
 
 fn expected_parser_fields(input: &str) -> Vec<String> {
@@ -635,6 +687,20 @@ fn expected_parser_fields(input: &str) -> Vec<String> {
         Ok(layout) => {
             let mut fields = vec!["ok".to_string()];
             fields.extend(layout_fields(&layout));
+            fields
+        }
+        Err(err) => vec![
+            "err".to_string(),
+            err.code().unwrap_or(AvErrorCode::EINVAL).raw().to_string(),
+        ],
+    }
+}
+
+fn expected_byte_parser_fields(input: &[u8]) -> Vec<String> {
+    match ChannelLayoutSpec::parse_bytes(input) {
+        Ok(layout) => {
+            let mut fields = vec!["ok".to_string()];
+            fields.extend(layout_byte_fields(&layout));
             fields
         }
         Err(err) => vec![
@@ -714,6 +780,27 @@ fn layout_fields(layout: &ChannelLayoutSpec) -> Vec<String> {
     fields
 }
 
+fn layout_byte_fields(layout: &ChannelLayoutSpec) -> Vec<String> {
+    let mut fields = vec![
+        layout_order_name(layout).to_string(),
+        layout.channel_count().to_string(),
+        format!("{:016x}", layout_native_mask(layout)),
+        bytes_to_hex(&layout.describe_bytes()),
+        channel_sequence(layout),
+        format!(
+            "{:016x}",
+            layout.subset_mask(ChannelLayout::stereo().channel_mask())
+        ),
+        custom_name_sequence_hex(layout),
+    ];
+    fields.extend(
+        BYTE_LOOKUP_NAMES
+            .iter()
+            .map(|name| layout_index_from_string_bytes_field(layout, name)),
+    );
+    fields
+}
+
 fn layout_order_name(layout: &ChannelLayoutSpec) -> &'static str {
     match layout {
         ChannelLayoutSpec::Native(_) | ChannelLayoutSpec::NativeMask(_) => "NATIVE",
@@ -729,6 +816,28 @@ fn layout_native_mask(layout: &ChannelLayoutSpec) -> u64 {
         ChannelLayoutSpec::NativeMask(layout) => layout.channel_mask(),
         ChannelLayoutSpec::Ambisonic(layout) => layout.extra_native_mask(),
         ChannelLayoutSpec::Custom(_) | ChannelLayoutSpec::Unspecified(_) => 0,
+    }
+}
+
+fn custom_name_sequence_hex(layout: &ChannelLayoutSpec) -> String {
+    let Some(custom) = layout.as_custom() else {
+        return "-".to_string();
+    };
+    let names = custom
+        .channels()
+        .iter()
+        .map(|channel| {
+            if channel.has_name() {
+                bytes_to_hex(channel.name_bytes())
+            } else {
+                "-".to_string()
+            }
+        })
+        .collect::<Vec<_>>();
+    if names.is_empty() {
+        "-".to_string()
+    } else {
+        names.join("+")
     }
 }
 
@@ -753,6 +862,22 @@ fn layout_index_from_string_field(layout: &ChannelLayoutSpec, name: &str) -> Str
         .index_from_string(name)
         .map(|index| index.to_string())
         .unwrap_or_else(|err| err.code().unwrap_or(AvErrorCode::EINVAL).raw().to_string())
+}
+
+fn layout_index_from_string_bytes_field(layout: &ChannelLayoutSpec, name: &[u8]) -> String {
+    layout
+        .index_from_string_bytes(name)
+        .map(|index| index.to_string())
+        .unwrap_or_else(|err| err.code().unwrap_or(AvErrorCode::EINVAL).raw().to_string())
+}
+
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    output
 }
 
 fn parse_parser_oracle_output(stdout: &str) -> BTreeMap<String, Vec<String>> {
@@ -832,16 +957,49 @@ fn parser_oracle_c_source() -> String {
         .map(|name| format!("    {},", c_string_literal(name)))
         .collect::<Vec<_>>()
         .join("\n");
+    let byte_arrays =
+        BYTE_PARSER_CASES
+            .iter()
+            .enumerate()
+            .map(|(index, case)| c_byte_array_definition(&format!("byte_case_{index}"), case.input))
+            .chain(BYTE_LOOKUP_NAMES.iter().enumerate().map(|(index, name)| {
+                c_byte_array_definition(&format!("byte_lookup_{index}"), name)
+            }))
+            .collect::<Vec<_>>()
+            .join("\n");
+    let byte_cases = BYTE_PARSER_CASES
+        .iter()
+        .enumerate()
+        .map(|(index, case)| {
+            format!(
+                "    {{ {}, byte_case_{index} }},",
+                c_string_literal(case.id)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let byte_lookups = BYTE_LOOKUP_NAMES
+        .iter()
+        .enumerate()
+        .map(|(index, _)| format!("    byte_lookup_{index},"))
+        .collect::<Vec<_>>()
+        .join("\n");
 
     format!(
         r#"#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <libavutil/channel_layout.h>
 
 struct parser_case {{
     const char *id;
     const char *input;
+}};
+
+struct byte_parser_case {{
+    const char *id;
+    const unsigned char *input;
 }};
 
 static const struct parser_case parser_cases[] = {{
@@ -850,6 +1008,16 @@ static const struct parser_case parser_cases[] = {{
 
 static const char *lookup_names[] = {{
 {lookups}
+}};
+
+{byte_arrays}
+
+static const struct byte_parser_case byte_parser_cases[] = {{
+{byte_cases}
+}};
+
+static const unsigned char *byte_lookup_names[] = {{
+{byte_lookups}
 }};
 
 static const char *order_name(enum AVChannelOrder order) {{
@@ -873,6 +1041,34 @@ static uint64_t comparable_mask(const AVChannelLayout *layout) {{
     return 0;
 }}
 
+static void print_hex_bytes(const unsigned char *bytes, size_t len) {{
+    for (size_t index = 0; index < len; index++)
+        printf("%02x", bytes[index]);
+}}
+
+static void print_cstr_hex(const char *text) {{
+    print_hex_bytes((const unsigned char *)text, strlen(text));
+}}
+
+static void print_custom_names_hex(const AVChannelLayout *layout) {{
+    if (layout->order != AV_CHANNEL_ORDER_CUSTOM) {{
+        putchar('-');
+        return;
+    }}
+
+    for (int index = 0; index < layout->nb_channels; index++) {{
+        if (index)
+            putchar('+');
+        size_t len = 0;
+        while (len < 16 && layout->u.map[index].name[len] != 0)
+            len++;
+        if (len)
+            print_hex_bytes((const unsigned char *)layout->u.map[index].name, len);
+        else
+            putchar('-');
+    }}
+}}
+
 static void print_channel_sequence(const AVChannelLayout *layout) {{
     int printed = 0;
     for (int index = 0; index < layout->nb_channels; index++) {{
@@ -894,6 +1090,12 @@ static void print_channel_sequence(const AVChannelLayout *layout) {{
 static void print_lookup_results(const AVChannelLayout *layout) {{
     for (size_t index = 0; index < sizeof(lookup_names) / sizeof(lookup_names[0]); index++) {{
         printf("|%d", av_channel_layout_index_from_string(layout, lookup_names[index]));
+    }}
+}}
+
+static void print_byte_lookup_results(const AVChannelLayout *layout) {{
+    for (size_t index = 0; index < sizeof(byte_lookup_names) / sizeof(byte_lookup_names[0]); index++) {{
+        printf("|%d", av_channel_layout_index_from_string(layout, (const char *)byte_lookup_names[index]));
     }}
 }}
 
@@ -926,9 +1128,42 @@ static void print_parse_case(const struct parser_case *test_case) {{
     av_channel_layout_uninit(&layout);
 }}
 
+static void print_byte_parse_case(const struct byte_parser_case *test_case) {{
+    AVChannelLayout layout = {{0}};
+    int ret = av_channel_layout_from_string(&layout, (const char *)test_case->input);
+    printf("parse-bytes:%s|", test_case->id);
+    if (ret < 0) {{
+        printf("err|%d\n", ret);
+        return;
+    }}
+
+    char description[512];
+    ret = av_channel_layout_describe(&layout, description, sizeof(description));
+    if (ret < 0)
+        snprintf(description, sizeof(description), "<describe-error:%d>", ret);
+
+    printf(
+        "ok|%s|%d|%016" PRIx64 "|",
+        order_name(layout.order),
+        layout.nb_channels,
+        comparable_mask(&layout)
+    );
+    print_cstr_hex(description);
+    putchar('|');
+    print_channel_sequence(&layout);
+    printf("|%016" PRIx64 "|", av_channel_layout_subset(&layout, AV_CH_LAYOUT_STEREO));
+    print_custom_names_hex(&layout);
+    print_byte_lookup_results(&layout);
+    putchar('\n');
+
+    av_channel_layout_uninit(&layout);
+}}
+
 int main(void) {{
     for (size_t index = 0; index < sizeof(parser_cases) / sizeof(parser_cases[0]); index++)
         print_parse_case(&parser_cases[index]);
+    for (size_t index = 0; index < sizeof(byte_parser_cases) / sizeof(byte_parser_cases[0]); index++)
+        print_byte_parse_case(&byte_parser_cases[index]);
     return 0;
 }}
 "#
@@ -1112,6 +1347,16 @@ fn c_string_literal(value: &str) -> String {
     }
     output.push('"');
     output
+}
+
+fn c_byte_array_definition(name: &str, value: &[u8]) -> String {
+    let bytes = value
+        .iter()
+        .map(|byte| format!("0x{byte:02x}"))
+        .chain(std::iter::once("0x00".to_string()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("static const unsigned char {name}[] = {{ {bytes} }};")
 }
 
 fn repo_root() -> PathBuf {
