@@ -495,6 +495,19 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
         ),
     );
     rows.insert(
+        "packet:display-rotation-set-get".to_string(),
+        display_rotation_fields(&[0.0, 90.0, -90.0, 180.0, 45.0, -45.0]),
+    );
+    rows.insert(
+        "packet:display-rotation-singular".to_string(),
+        vec![u8::from(
+            PacketDisplayMatrix::new([0; PacketDisplayMatrix::ELEMENTS])
+                .counterclockwise_rotation_degrees()
+                .is_none(),
+        )
+        .to_string()],
+    );
+    rows.insert(
         "packet:payload-layout-stereo3d".to_string(),
         payload_layout_fields(
             &PacketStereo3d::new(
@@ -1946,6 +1959,27 @@ fn payload_layout_fields(bytes: &[u8], offsets: &[usize]) -> Vec<String> {
     fields
 }
 
+fn display_rotation_fields(angles: &[f64]) -> Vec<String> {
+    let mut fields = Vec::new();
+    for &angle in angles {
+        let matrix = PacketDisplayMatrix::from_clockwise_rotation_degrees(angle)
+            .unwrap_or_else(|err| panic!("display rotation matrix for {angle}: {err}"));
+        fields.push(format!("{angle:.0}"));
+        fields.extend(matrix.elements().iter().map(ToString::to_string));
+        fields.push(rounded_rotation_field(
+            matrix.counterclockwise_rotation_degrees(),
+        ));
+    }
+    fields
+}
+
+fn rounded_rotation_field(rotation: Option<f64>) -> String {
+    match rotation {
+        Some(value) => (value.round() as i64).to_string(),
+        None => "nan".to_string(),
+    }
+}
+
 fn dictionary_payload_fields(bytes: &[u8]) -> Vec<String> {
     vec![
         u8::from(!bytes.is_empty()).to_string(),
@@ -2073,6 +2107,7 @@ fn compile_and_run_oracle(
 fn oracle_c_source() -> &'static str {
     r#"#include <inttypes.h>
 #include <limits.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -2955,6 +2990,35 @@ static void print_dictionary_unpack_ret(const char *name, const uint8_t *data, s
     av_dict_free(&dict);
 }
 
+static void print_display_rotation_case(double angle) {
+    int32_t matrix[9];
+    av_display_rotation_set(matrix, angle);
+    double rotation = av_display_rotation_get(matrix);
+    printf("|%.0f", angle);
+    for (int i = 0; i < 9; i++)
+        printf("|%d", matrix[i]);
+    printf("|");
+    if (isnan(rotation))
+        printf("nan");
+    else
+        printf("%lld", (long long)llround(rotation));
+}
+
+static void print_display_rotation_helpers(void) {
+    printf("packet:display-rotation-set-get");
+    print_display_rotation_case(0.0);
+    print_display_rotation_case(90.0);
+    print_display_rotation_case(-90.0);
+    print_display_rotation_case(180.0);
+    print_display_rotation_case(45.0);
+    print_display_rotation_case(-45.0);
+    printf("\n");
+
+    int32_t singular[9] = { 0 };
+    printf("packet:display-rotation-singular|%d\n",
+           isnan(av_display_rotation_get(singular)) ? 1 : 0);
+}
+
 static AVPacket *new_packet(void) {
     AVPacket *pkt = av_packet_alloc();
     fail_if(!pkt, "av_packet_alloc failed");
@@ -3569,6 +3633,7 @@ int main(void) {
     print_flag_inventory();
     print_picture_type_inventory();
     print_side_data_payload_layouts();
+    print_display_rotation_helpers();
 
     pkt = packet_with_common_props();
     av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });

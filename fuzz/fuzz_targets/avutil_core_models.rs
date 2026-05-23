@@ -12013,6 +12013,30 @@ fn exercise_fixtures() {
         PacketDisplayMatrix::parse(&packet_display_matrix_raw.to_bytes()).unwrap(),
         packet_display_matrix_raw
     );
+    let packet_rotation_matrix =
+        PacketDisplayMatrix::from_clockwise_rotation_degrees(90.0).unwrap();
+    assert_eq!(
+        packet_rotation_matrix.elements(),
+        [0, 65_536, 0, -65_536, 0, 0, 0, 0, 1_073_741_824]
+    );
+    assert_eq!(
+        packet_rotation_matrix
+            .counterclockwise_rotation_degrees()
+            .unwrap()
+            .round() as i32,
+        -90
+    );
+    assert!(
+        PacketDisplayMatrix::new([0; 9])
+            .counterclockwise_rotation_degrees()
+            .is_none()
+    );
+    assert_eq!(
+        PacketDisplayMatrix::from_clockwise_rotation_degrees(f64::NAN)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
     assert_eq!(
         SideData::new_display_matrix(packet_display_matrix)
             .unwrap()
