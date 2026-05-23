@@ -1626,6 +1626,40 @@ fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         vec![fifo.can_read().to_string()],
     );
 
+    let mut move_replace_src = packet_with_common_props();
+    fifo.write_move(&mut move_replace_src).unwrap();
+    rows.insert(
+        "packet:fifo-write-move-replace-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-write-move-replace-src".to_string(),
+        packet_fields(&move_replace_src),
+    );
+    rows.insert(
+        "packet:fifo-after-write-move-replace-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+    let mut move_replace_dst = Packet::new(vec![0x66, 0x77], 88);
+    move_replace_dst.set_pts(Some(33));
+    move_replace_dst.set_duration(3).unwrap();
+    move_replace_dst.push_side_data(SideData::new("palette", vec![0xab]).unwrap());
+    move_replace_dst.set_opaque(Some(PacketOpaque::new(0x6789).unwrap()));
+    move_replace_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0xcd])));
+    fifo.read_move(&mut move_replace_dst).unwrap();
+    rows.insert(
+        "packet:fifo-read-move-replace-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:fifo-read-move-replace-dst".to_string(),
+        packet_fields(&move_replace_dst),
+    );
+    rows.insert(
+        "packet:fifo-after-read-move-replace-can-read".to_string(),
+        vec![fifo.can_read().to_string()],
+    );
+
     let mut first = Packet::new(vec![1], 1);
     let mut second = Packet::new(vec![2], 2);
     fifo.write_move(&mut first).unwrap();
@@ -4735,6 +4769,40 @@ static void exercise_packet_fifo_api(void) {
            av_container_fifo_can_read(fifo));
     av_packet_free(&ref_replace_dst);
     av_packet_free(&ref_replace_src);
+
+    AVPacket *move_replace_src = packet_with_common_props();
+    ret = av_container_fifo_write(fifo, move_replace_src, 0);
+    printf("packet:fifo-write-move-replace-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_write move replace failed");
+    print_packet("packet:fifo-write-move-replace-src", move_replace_src);
+    printf("packet:fifo-after-write-move-replace-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+
+    AVPacket *move_replace_dst = new_packet();
+    fail_if(av_new_packet(move_replace_dst, 2) < 0,
+            "fifo move replace dst seed failed");
+    move_replace_dst->data[0] = 0x66;
+    move_replace_dst->data[1] = 0x77;
+    move_replace_dst->stream_index = 88;
+    move_replace_dst->pts = 33;
+    move_replace_dst->duration = 3;
+    uint8_t *move_replace_old_side = av_packet_new_side_data(
+        move_replace_dst, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!move_replace_old_side, "fifo move replace old side data failed");
+    move_replace_old_side[0] = 0xab;
+    move_replace_dst->opaque = (void *)(uintptr_t)0x6789;
+    move_replace_dst->opaque_ref = av_buffer_alloc(1);
+    fail_if(!move_replace_dst->opaque_ref,
+            "fifo move replace old opaque_ref failed");
+    move_replace_dst->opaque_ref->data[0] = 0xcd;
+    ret = av_container_fifo_read(fifo, move_replace_dst, 0);
+    printf("packet:fifo-read-move-replace-ret|%d\n", ret);
+    fail_if(ret < 0, "av_container_fifo_read move replace failed");
+    print_packet("packet:fifo-read-move-replace-dst", move_replace_dst);
+    printf("packet:fifo-after-read-move-replace-can-read|%zu\n",
+           av_container_fifo_can_read(fifo));
+    av_packet_free(&move_replace_dst);
+    av_packet_free(&move_replace_src);
 
     AVPacket *first = new_packet();
     fail_if(av_new_packet(first, 1) < 0, "fifo first seed failed");

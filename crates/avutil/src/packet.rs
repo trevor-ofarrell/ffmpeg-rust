@@ -11688,6 +11688,52 @@ mod tests {
             &[0x05, 0x06]
         );
 
+        let mut move_replace_src = Packet::from_data(vec![0x50, 0x60]).unwrap();
+        move_replace_src.set_pts(Some(77));
+        move_replace_src.set_duration(88).unwrap();
+        move_replace_src.push_side_data(SideData::new("skip_samples", vec![0x07, 0x08]).unwrap());
+        move_replace_src.set_opaque_ref(Some(BufferRef::from_vec(vec![0xab, 0xcd])));
+        let move_replace_src_payload = move_replace_src.data_buffer().clone();
+        let move_replace_src_opaque = move_replace_src.opaque_ref().unwrap().clone();
+        fifo.write_move(&mut move_replace_src).unwrap();
+        assert_eq!(fifo.can_read(), 1);
+        assert!(move_replace_src.is_empty());
+        assert!(move_replace_src.opaque_ref().is_none());
+
+        let mut move_replace_dst = Packet::new(vec![0x66, 0x77], 88);
+        move_replace_dst.set_pts(Some(33));
+        move_replace_dst.push_side_data(SideData::new("palette", vec![0xab]).unwrap());
+        move_replace_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0xcd])));
+        let old_move_dst_payload = move_replace_dst.data_buffer().clone();
+        let old_move_dst_opaque = move_replace_dst.opaque_ref().unwrap().clone();
+        fifo.read_move(&mut move_replace_dst).unwrap();
+        assert_eq!(fifo.can_read(), 0);
+        assert_eq!(move_replace_dst.data(), &[0x50, 0x60]);
+        assert_eq!(move_replace_dst.pts(), Some(77));
+        assert_eq!(move_replace_dst.duration(), 88);
+        assert!(move_replace_dst
+            .data_buffer()
+            .shares_storage(&move_replace_src_payload));
+        assert!(!move_replace_dst
+            .data_buffer()
+            .shares_storage(&old_move_dst_payload));
+        assert!(move_replace_dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&move_replace_src_opaque));
+        assert!(!move_replace_dst
+            .opaque_ref()
+            .unwrap()
+            .shares_storage(&old_move_dst_opaque));
+        assert!(move_replace_dst.side_data_by_kind("palette").is_none());
+        assert_eq!(
+            move_replace_dst
+                .side_data_by_kind("skip_samples")
+                .unwrap()
+                .data(),
+            &[0x07, 0x08]
+        );
+
         let mut first = Packet::new(vec![1], 1);
         let mut second = Packet::new(vec![2], 2);
         fifo.write_move(&mut first).unwrap();

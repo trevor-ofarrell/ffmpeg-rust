@@ -281,6 +281,15 @@ fate_tests = [
   "packet_oracle::upstream_fate_avpacket_passes",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket FIFO rows now validate move-read
+# replacement into a pre-populated destination through
+# packet:fifo-write-move-replace-*, packet:fifo-read-move-replace-*, and
+# packet:fifo-after-read-move-replace-can-read rows. The rows prove a move
+# write resets the source, the queued packet replaces old destination payload,
+# side data, opaque pointer metadata, opaque_ref, timestamps, flags, stream
+# index, and time base, and the FIFO drains back to zero readable packets.
+# Unit tests plus `avutil_core_models` cover old destination storage release
+# and moved storage transfer.
 # Latest update: pinned libavcodec AVPacket side-data rows now validate
 # zero-size `av_packet_add_side_data()` and standalone
 # `av_packet_side_data_add()` ownership insertion. FFmpeg accepts and retains

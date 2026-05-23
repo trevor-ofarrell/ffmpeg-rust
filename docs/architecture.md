@@ -485,4 +485,4 @@ The standalone packet side-data array rows intentionally diverge from the packet
 
 The packet oracle also includes `packet:side-duplicate-*` rows proving packet-owned duplicate-kind behavior: lookup returns the first matching duplicate, add-side-data replacement targets the first matching duplicate, shrink mutates the first matching duplicate while preserving later duplicates, and duplicate-rich free clears all packet-owned side data so later lookup returns missing.
 
-The packet oracle also includes `packet:fifo-*` rows for `av_container_fifo_alloc_avpacket()`, covering move/ref writes, move/ref reads including ref-read replacement into a pre-populated destination, source reset versus preservation, can-read counts, peek, drain, invalid peek, and empty-read behavior against the Rust `PacketFifo` model.
+The packet oracle also includes `packet:fifo-*` rows for `av_container_fifo_alloc_avpacket()`, covering move/ref writes, move/ref reads including ref-read and move-read replacement into pre-populated destinations, source reset versus preservation, can-read counts, peek, drain, invalid peek, and empty-read behavior against the Rust `PacketFifo` model.
