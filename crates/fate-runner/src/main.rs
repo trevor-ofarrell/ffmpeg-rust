@@ -482,6 +482,18 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/fftools/tests/pcm_oracle.rs",
+        exact_ids: &[
+            "fftools-ffmpeg-pcm-s16le-framecrc-null",
+            "fftools-ffmpeg-pcm-s16le-file-output",
+            "avutil-packet",
+            "avformat-pcm-s16le-demuxer",
+            "avformat-pcm-s16le-muxer",
+            "avformat-framecrc-muxer",
+        ],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/fftools/tests/wav_oracle.rs",
         exact_ids: &[
             "avformat-wav-demuxer",
@@ -1722,6 +1734,31 @@ mod tests {
                 "avformat-framecrc-muxer".to_string(),
                 "avformat-framehash-muxer".to_string(),
                 "avformat-streamhash-muxer".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_pcm_oracle_test_to_covered_components() {
+        let component_ids = component_ids_from_ledger(&ledger(&[
+            "fftools-ffmpeg-pcm-s16le-framecrc-null",
+            "fftools-ffmpeg-pcm-s16le-file-output",
+            "avutil-packet",
+            "avformat-pcm-s16le-demuxer",
+            "avformat-pcm-s16le-muxer",
+            "avformat-framecrc-muxer",
+        ]));
+        let paths = vec!["crates/fftools/tests/pcm_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec![
+                "fftools-ffmpeg-pcm-s16le-framecrc-null".to_string(),
+                "fftools-ffmpeg-pcm-s16le-file-output".to_string(),
+                "avutil-packet".to_string(),
+                "avformat-pcm-s16le-demuxer".to_string(),
+                "avformat-pcm-s16le-muxer".to_string(),
+                "avformat-framecrc-muxer".to_string(),
             ]
         );
     }

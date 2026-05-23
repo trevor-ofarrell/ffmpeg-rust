@@ -18,6 +18,20 @@ cargo test -p fftools --test rawvideo_oracle -- --ignored
 
 The current harness writes deterministic rawvideo inputs, runs Rust `ffmpeg-rs` to produce rawvideo file output, runs the pinned FFmpeg oracle with `-c:v copy -f rawvideo`, and compares the output bytes exactly. It also compares normalized rawvideo `framecrc`, `hash`, `md5`, `framehash`, `framemd5`, and `streamhash` stdout rows for the bounded `rgb24` streamcopy path.
 
+The raw PCM oracle harness lives in `crates/fftools/tests/pcm_oracle.rs` and is ignored by default because it requires the pinned oracle. It writes deterministic stereo `pcm_s16le`, compares normalized `framecrc` rows against FFmpeg `-c:a copy -f framecrc -`, and compares raw `s16le` output bytes against FFmpeg `-c:a copy -f s16le`:
+
+```sh
+FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg \
+  cargo test -p fftools --test pcm_oracle -- --ignored
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:FFMPEG_ORACLE = ".\third_party\ffmpeg-oracle\build\bin\ffmpeg.cmd"
+cargo test -p fftools --test pcm_oracle -- --ignored
+```
+
 `crates/avutil/tests/channel_layout_oracle.rs` is an ignored oracle harness for `ffmpeg -layouts`. It compares the oracle's individual-channel names/descriptions and standard-layout decompositions against `avutil::Channel::ALL` and `avutil::ChannelLayout::known_layouts()`:
 
 ```sh
@@ -36,6 +50,8 @@ The same oracle tests can be selected through the differential mapping file once
 
 ```sh
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg --component fftools-ffmpeg-rawvideo-file-output
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg --component avformat-pcm-s16le-demuxer --target oracle-pcm-s16le-framecrc-records
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg --component avformat-pcm-s16le-muxer --target oracle-pcm-s16le-file-output
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg --component avutil-channel-layout
 ```
 
@@ -43,6 +59,8 @@ On Windows PowerShell:
 
 ```powershell
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --oracle-ffmpeg .\third_party\ffmpeg-oracle\build\bin\ffmpeg.exe --component fftools-ffmpeg-rawvideo-file-output
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --oracle-ffmpeg .\third_party\ffmpeg-oracle\build\bin\ffmpeg.cmd --component avformat-pcm-s16le-demuxer --target oracle-pcm-s16le-framecrc-records
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --oracle-ffmpeg .\third_party\ffmpeg-oracle\build\bin\ffmpeg.cmd --component avformat-pcm-s16le-muxer --target oracle-pcm-s16le-file-output
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --oracle-ffmpeg .\third_party\ffmpeg-oracle\build\bin\ffmpeg.exe --component avutil-channel-layout
 ```
 
