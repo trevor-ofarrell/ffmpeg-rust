@@ -1745,6 +1745,24 @@ fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
 }
 
 fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    let mut empty_list = PacketSideDataList::new();
+    rows.insert(
+        "packet:array-empty-get".to_string(),
+        side_data_lookup_fields(empty_list.get(&PacketSideDataKind::Palette)),
+    );
+    assert!(empty_list
+        .remove_kind(&PacketSideDataKind::Palette)
+        .is_none());
+    rows.insert(
+        "packet:array-empty-remove".to_string(),
+        side_data_list_summary_fields(&empty_list),
+    );
+    empty_list.clear();
+    rows.insert(
+        "packet:array-empty-free".to_string(),
+        side_data_list_summary_fields(&empty_list),
+    );
+
     let mut list = PacketSideDataList::new();
     list.new_side_data(PacketSideDataKind::NewExtradata, 4)
         .unwrap()
@@ -3664,9 +3682,16 @@ static void exercise_side_data_capacity_api(void) {
 static void exercise_side_data_array_api(void) {
     AVPacketSideData *sd = NULL;
     int nb_sd = 0;
-    AVPacketSideData *entry = av_packet_side_data_new(&sd, &nb_sd,
-                                                      AV_PKT_DATA_NEW_EXTRADATA,
-                                                      4, 0);
+    AVPacketSideData *entry = NULL;
+    print_side_data_array_lookup("packet:array-empty-get", NULL, 0,
+                                 AV_PKT_DATA_PALETTE);
+    av_packet_side_data_remove(sd, &nb_sd, AV_PKT_DATA_PALETTE);
+    print_side_data_array_summary("packet:array-empty-remove", sd, nb_sd);
+    av_packet_side_data_free(&sd, &nb_sd);
+    print_side_data_array_summary("packet:array-empty-free", sd, nb_sd);
+
+    entry = av_packet_side_data_new(&sd, &nb_sd,
+                                    AV_PKT_DATA_NEW_EXTRADATA, 4, 0);
     fail_if(!entry, "av_packet_side_data_new failed");
     entry->data[0] = 0x11;
     entry->data[1] = 0x22;

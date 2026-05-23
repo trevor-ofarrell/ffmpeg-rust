@@ -7128,6 +7128,16 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .get(&PacketSideDataKind::Palette)
         .is_none());
 
+    let mut empty_side_data_list = PacketSideDataList::new();
+    assert!(empty_side_data_list
+        .get(&PacketSideDataKind::Palette)
+        .is_none());
+    assert!(empty_side_data_list
+        .remove_kind(&PacketSideDataKind::Palette)
+        .is_none());
+    empty_side_data_list.clear();
+    assert!(empty_side_data_list.is_empty());
+
     let mut capacity_packet = Packet::default();
     for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
         assert!(capacity_packet

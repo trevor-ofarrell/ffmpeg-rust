@@ -10386,6 +10386,10 @@ mod tests {
     fn packet_side_data_list_matches_standalone_array_lifecycle() {
         let mut list = PacketSideDataList::new();
         assert!(list.is_empty());
+        assert!(list.get(&PacketSideDataKind::Palette).is_none());
+        assert!(list.remove_kind(&PacketSideDataKind::Palette).is_none());
+        list.clear();
+        assert!(list.is_empty());
 
         let entry = list
             .new_side_data(PacketSideDataKind::NewExtradata, 0)
