@@ -24,6 +24,32 @@ fn rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle() {
     compare_rawvideo_framecrc_records("rgb24", "2x1", "25", &(0_u8..12).collect::<Vec<_>>());
 }
 
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn rawvideo_rgb24_framehash_records_match_ffmpeg_oracle() {
+    compare_rawvideo_frame_checksum_records(
+        "rgb24",
+        "2x1",
+        "25",
+        &(0_u8..12).collect::<Vec<_>>(),
+        "framehash",
+        &["-c:v", "copy"],
+    );
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn rawvideo_rgb24_framemd5_records_match_ffmpeg_oracle() {
+    compare_rawvideo_frame_checksum_records(
+        "rgb24",
+        "2x1",
+        "25",
+        &(0_u8..12).collect::<Vec<_>>(),
+        "framemd5",
+        &["-c:v", "copy"],
+    );
+}
+
 fn compare_rawvideo_file_output(pixel_format: &str, size: &str, rate: &str, payload: &[u8]) {
     let oracle = oracle_ffmpeg();
     let input_path = write_temp_bytes(&format!("{pixel_format}-input"), "raw", payload);
@@ -97,8 +123,30 @@ fn compare_rawvideo_file_output(pixel_format: &str, size: &str, rate: &str, payl
 }
 
 fn compare_rawvideo_framecrc_records(pixel_format: &str, size: &str, rate: &str, payload: &[u8]) {
+    compare_rawvideo_frame_checksum_records(
+        pixel_format,
+        size,
+        rate,
+        payload,
+        "framecrc",
+        &["-c:v", "copy"],
+    );
+}
+
+fn compare_rawvideo_frame_checksum_records(
+    pixel_format: &str,
+    size: &str,
+    rate: &str,
+    payload: &[u8],
+    output_format: &str,
+    oracle_extra_args: &[&str],
+) {
     let oracle = oracle_ffmpeg();
-    let input_path = write_temp_bytes(&format!("{pixel_format}-framecrc-input"), "raw", payload);
+    let input_path = write_temp_bytes(
+        &format!("{pixel_format}-{output_format}-input"),
+        "raw",
+        payload,
+    );
     let input_arg = input_path.to_string_lossy().into_owned();
 
     let rust = ffmpeg_output(&strings(&[
@@ -113,33 +161,32 @@ fn compare_rawvideo_framecrc_records(pixel_format: &str, size: &str, rate: &str,
         "-i",
         input_arg.as_str(),
         "-f",
-        "framecrc",
+        output_format,
         "-",
     ]))
-    .expect("Rust rawvideo framecrc path should execute");
+    .unwrap_or_else(|err| panic!("Rust rawvideo {output_format} path should execute: {err}"));
+
+    let mut oracle_args = strings(&[
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        pixel_format,
+        "-s",
+        size,
+        "-r",
+        rate,
+        "-i",
+        input_arg.as_str(),
+    ]);
+    oracle_args.extend(oracle_extra_args.iter().map(|arg| (*arg).to_string()));
+    oracle_args.extend(strings(&["-f", output_format, "-"]));
 
     let oracle_output = Command::new(&oracle)
-        .args([
-            "-nostdin",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            pixel_format,
-            "-s",
-            size,
-            "-r",
-            rate,
-            "-i",
-            input_arg.as_str(),
-            "-c:v",
-            "copy",
-            "-f",
-            "framecrc",
-            "-",
-        ])
+        .args(&oracle_args)
         .output()
         .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
 
@@ -147,26 +194,26 @@ fn compare_rawvideo_framecrc_records(pixel_format: &str, size: &str, rate: &str,
 
     assert!(
         oracle_output.status.success(),
-        "oracle failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        "oracle {output_format} failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
         oracle_output.status.code(),
         String::from_utf8_lossy(&oracle_output.stdout),
         String::from_utf8_lossy(&oracle_output.stderr)
     );
 
     let oracle_stdout =
-        String::from_utf8(oracle_output.stdout).expect("oracle framecrc output should be UTF-8");
+        String::from_utf8(oracle_output.stdout).expect("oracle checksum output should be UTF-8");
 
-    assert_eq!(rust.output_format(), Some("framecrc"));
+    assert_eq!(rust.output_format(), Some(output_format));
     assert_eq!(rust.packet_count(), 2);
     assert_eq!(rust.byte_count(), u64::try_from(payload.len()).unwrap());
     assert!(rust.stderr().is_empty());
     assert_eq!(
-        normalize_framecrc_records(rust.stdout()),
-        normalize_framecrc_records(&oracle_stdout)
+        normalize_frame_checksum_records(rust.stdout()),
+        normalize_frame_checksum_records(&oracle_stdout)
     );
 }
 
-fn normalize_framecrc_records(output: &str) -> Vec<String> {
+fn normalize_frame_checksum_records(output: &str) -> Vec<String> {
     output
         .lines()
         .filter(|line| !line.trim_start().starts_with('#') && !line.trim().is_empty())

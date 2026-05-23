@@ -203,13 +203,14 @@ fn exercise_framehash_muxers(packets: &[Packet]) {
             assert_eq!(record.digest(), &digest_for(algorithm, packet.data()));
             assert!(record
                 .line()
-                .contains(&format!("stream={}", packet.stream_index())));
+                .starts_with(&format!("{},", packet.stream_index())));
+            assert!(record.line().contains(&format!(
+                ", {:>8}, ",
+                packet.data().len()
+            )));
             assert!(record
                 .line()
-                .contains(&format!("size={}", packet.data().len())));
-            assert!(record
-                .line()
-                .contains(&format!("{}=", algorithm.name().to_ascii_lowercase())));
+                .contains(&digest_for(algorithm, packet.data()).hex()));
         }
 
         let before_finish = muxer.render();

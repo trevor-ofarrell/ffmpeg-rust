@@ -50,8 +50,8 @@ impl FrameCrcRecord {
         format!(
             "{}, {:>10}, {:>10}, {:>8}, {:>8}, 0x{:08x}\n",
             self.stream_index,
-            fmt_ts(self.pts),
             fmt_ts(self.dts),
+            fmt_ts(self.pts),
             self.duration,
             self.size,
             self.checksum
@@ -142,7 +142,10 @@ mod tests {
         assert_eq!(record.checksum(), ffmpeg_framecrc_checksum(b"abc"));
         assert_eq!(
             record.line(),
-            "2,         10,          8,        2,        3, 0x024a0126\n"
+            format!(
+                "{}, {:>10}, {:>10}, {:>8}, {:>8}, 0x{:08x}\n",
+                2, 8, 10, 2, 3, 0x024a0126_u32
+            )
         );
     }
 

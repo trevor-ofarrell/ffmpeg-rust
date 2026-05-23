@@ -465,8 +465,14 @@ const PATH_RULES: &[PathRule] = &[
         path: "crates/fftools/tests/rawvideo_oracle.rs",
         exact_ids: &[
             "fftools-ffmpeg-rawvideo-file-output",
+            "fftools-ffmpeg-rawvideo-framecrc-null",
+            "fftools-ffmpeg-framehash-output",
+            "fftools-ffmpeg-framemd5-output",
+            "avutil-packet",
             "avformat-rawvideo-demuxer",
             "avformat-rawvideo-muxer",
+            "avformat-framecrc-muxer",
+            "avformat-framehash-muxer",
         ],
         id_prefixes: &[],
     },
@@ -1678,8 +1684,14 @@ mod tests {
     fn changed_selection_maps_rawvideo_oracle_test_to_covered_components() {
         let component_ids = component_ids_from_ledger(&ledger(&[
             "fftools-ffmpeg-rawvideo-file-output",
+            "fftools-ffmpeg-rawvideo-framecrc-null",
+            "fftools-ffmpeg-framehash-output",
+            "fftools-ffmpeg-framemd5-output",
+            "avutil-packet",
             "avformat-rawvideo-demuxer",
             "avformat-rawvideo-muxer",
+            "avformat-framecrc-muxer",
+            "avformat-framehash-muxer",
         ]));
         let paths = vec!["crates/fftools/tests/rawvideo_oracle.rs".to_string()];
 
@@ -1687,8 +1699,14 @@ mod tests {
             changed_components(&component_ids, &paths),
             vec![
                 "fftools-ffmpeg-rawvideo-file-output".to_string(),
+                "fftools-ffmpeg-rawvideo-framecrc-null".to_string(),
+                "fftools-ffmpeg-framehash-output".to_string(),
+                "fftools-ffmpeg-framemd5-output".to_string(),
+                "avutil-packet".to_string(),
                 "avformat-rawvideo-demuxer".to_string(),
                 "avformat-rawvideo-muxer".to_string(),
+                "avformat-framecrc-muxer".to_string(),
+                "avformat-framehash-muxer".to_string(),
             ]
         );
     }

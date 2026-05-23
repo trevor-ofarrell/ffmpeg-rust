@@ -7,6 +7,10 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # zero. The ignored rawvideo oracle harness compares normalized `rgb24`
 # `-f framecrc -` rows against pinned FFmpeg streamcopy output, proving packet
 # count, PTS, DTS, duration, size, and checksum for that bounded media path.
+# Latest framehash/rawvideo evidence: `FrameHashMuxer` now emits FFmpeg-style
+# frame checksum rows ordered as stream, DTS, PTS, duration, size, digest. The
+# ignored rawvideo oracle harness compares normalized `rgb24` `-f framehash -`
+# and `-f framemd5 -` rows against pinned FFmpeg streamcopy output.
 # Latest avutil-packet evidence: default-native ABI layout rows now prove
 # pinned FFmpeg 8.1.1 `AVPacketSideData`, `AVPacket`, and deprecated
 # `AVPacketList` sizes, alignments, field offsets, and field sizes through C
@@ -314,8 +318,12 @@ unit_tests = [
 differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-libavcodec-packet-core",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framehash-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framemd5-records",
   "packet_oracle::libavcodec_packet_core_lifecycle_matches_packet_model",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
+  "rawvideo_oracle::rawvideo_rgb24_framehash_records_match_ffmpeg_oracle",
+  "rawvideo_oracle::rawvideo_rgb24_framemd5_records_match_ffmpeg_oracle",
 ]
 fate_tests = [
   "tests/fate/mappings.txt:avutil-packet|local-avutil-unit",
@@ -335,6 +343,11 @@ fuzz_targets = ["avutil_core_models"]
 # against pinned FFmpeg streamcopy output for bounded rgb24 input, covering
 # packet count, PTS, DTS, duration, size, and checksum outside the direct
 # libavcodec AVPacket helper harness.
+# Latest media-integration update: rawvideo framehash and framemd5 oracle rows
+# validate the same bounded Rust rawvideo demuxer -> Packet -> framehash muxer
+# CLI path against pinned FFmpeg streamcopy output, covering packet count, DTS,
+# PTS, duration, size, and per-packet SHA-256/MD5 digest fields outside the
+# direct libavcodec AVPacket helper harness.
 # Earlier update: pinned libavcodec AVPacket packet/frame bridge rows now
 # validate the full global side-data map inventory through
 # packet:frame-to-packet-map-inventory and
@@ -2878,7 +2891,7 @@ id = "fftools-ffmpeg-framehash-output"
 kind = "cli"
 ffmpeg_name = "ffmpeg framehash muxer stdout"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffmpeg -i <input> -f framehash -; ffmpeg -i <input> -f framehash -hash md5 -"
 rust_command = "cargo test -p fftools ffmpeg"
@@ -2886,10 +2899,13 @@ unit_tests = [
   "ffmpeg::tests::runs_mov_to_framehash_stdout_with_default_sha256",
   "ffmpeg::tests::runs_mov_to_framehash_stdout_with_md5_option",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-framehash-output|oracle-rawvideo-framehash-records",
+  "rawvideo_oracle::rawvideo_rgb24_framehash_records_match_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-framehash-output|local-ffmpeg-unit"]
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f framehash -`, defaults to SHA-256, and accepts output-scoped `-hash` for the same algorithms as the generic hash muxer. The current tests cover MOV packet-level SHA-256 and MD5 output through in-process helpers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential or upstream FATE coverage yet. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution supports one local seekable constrained input to stdout `-f framehash -`, defaults to SHA-256, and accepts output-scoped `-hash` for the same algorithms as the generic hash muxer. The current tests cover MOV packet-level SHA-256 and MD5 output through in-process helpers. The rawvideo oracle harness now compares normalized bounded rgb24 `-f framehash -` streamcopy packet rows against pinned FFmpeg 8.1.1 output, proving stream index, DTS, PTS, duration, size, and SHA-256 digest for that path. Broader input formats, alternate algorithms, byte-identical headers, upstream FATE, and actual fuzz execution remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -2897,7 +2913,7 @@ id = "fftools-ffmpeg-framemd5-output"
 kind = "cli"
 ffmpeg_name = "ffmpeg framemd5 muxer stdout"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffmpeg -i <input> -f framemd5 -"
 rust_command = "cargo test -p fftools ffmpeg"
@@ -2905,10 +2921,13 @@ unit_tests = [
   "ffmpeg::tests::runs_mov_to_framemd5_muxer_stdout",
   "ffmpeg::tests::rejects_hash_option_for_framemd5_muxer",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-framemd5-output|oracle-rawvideo-framemd5-records",
+  "rawvideo_oracle::rawvideo_rgb24_framemd5_records_match_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-framemd5-output|local-ffmpeg-unit"]
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "ffmpeg-rs command execution supports the dedicated stdout `-f framemd5 -` muxer for one local seekable constrained input by routing each packet payload through the Rust FrameHashMuxer with MD5 while preserving the observable output format name as `framemd5`. The dedicated framemd5 muxer rejects output-scoped `-hash` because algorithm selection belongs to the generic framehash muxer path. Output is a constrained deterministic subset, not byte-identical to upstream, and has no pinned-oracle differential or upstream FATE coverage yet. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution supports the dedicated stdout `-f framemd5 -` muxer for one local seekable constrained input by routing each packet payload through the Rust FrameHashMuxer with MD5 while preserving the observable output format name as `framemd5`. The dedicated framemd5 muxer rejects output-scoped `-hash` because algorithm selection belongs to the generic framehash muxer path. The rawvideo oracle harness now compares normalized bounded rgb24 `-f framemd5 -` streamcopy packet rows against pinned FFmpeg 8.1.1 output, proving stream index, DTS, PTS, duration, size, and MD5 digest for that path. Broader input formats, byte-identical headers, upstream FATE, and actual fuzz execution remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -3486,7 +3505,7 @@ id = "avformat-framehash-muxer"
 kind = "muxer"
 ffmpeg_name = "framehash/framemd5"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 3
 oracle_command = "ffmpeg -i <input> -f framehash -; ffmpeg -i <input> -f framemd5 -"
 rust_command = "cargo test -p avformat framehash_muxer"
@@ -3496,10 +3515,15 @@ unit_tests = [
   "framehash_muxer::tests::empty_packets_produce_zero_size_hash_records",
   "framehash_muxer::tests::finish_prevents_more_writes",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:avformat-framehash-muxer|oracle-rawvideo-framehash-records",
+  "tests/differential/mappings.txt:avformat-framehash-muxer|oracle-rawvideo-framemd5-records",
+  "rawvideo_oracle::rawvideo_rgb24_framehash_records_match_ffmpeg_oracle",
+  "rawvideo_oracle::rawvideo_rgb24_framemd5_records_match_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:avformat-framehash-muxer|local-avformat-framehash-unit"]
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "Initial internal framehash muxer records one hash line per packet with stream index, timestamps, duration, payload size, and Adler-32/CRC-32/MD5/SHA-160/SHA-224/SHA-256/SHA-384/SHA-512/SHA-512/224/SHA-512/256 digest support. It is wired to constrained ffmpeg-rs stdout framehash execution with default SHA-256 and output-scoped `-hash` selection, plus dedicated `-f framemd5 -` stdout execution. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet stream/timestamp/duration/size/hash fields, render/finish stability, and post-finish rejection, but actual local fuzz execution is blocked until cargo-fuzz is installed. Exact FFmpeg framehash/framemd5 output semantics, differential tests, and FATE are pending."
+notes = "Internal framehash muxer records one FFmpeg-style frame checksum row per packet with stream index, DTS, PTS, duration, payload size, and Adler-32/CRC-32/MD5/SHA-160/SHA-224/SHA-256/SHA-384/SHA-512/SHA-512/224/SHA-512/256 digest support. It is wired to constrained ffmpeg-rs stdout framehash execution with default SHA-256 and output-scoped `-hash` selection, plus dedicated `-f framemd5 -` stdout execution. The rawvideo oracle harness now compares normalized bounded rgb24 `-f framehash -` and `-f framemd5 -` streamcopy packet rows against pinned FFmpeg 8.1.1 output, proving stream index, DTS, PTS, duration, size, SHA-256 digest, and MD5 digest for that path. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet stream/timestamp/duration/size/hash fields, render/finish stability, and post-finish rejection, but actual local fuzz execution is blocked until cargo-fuzz is installed. Byte-identical headers, broader algorithms/input formats, upstream FATE, and sustained fuzz execution are pending."
 blocked_reason = ""
 
 [[component]]

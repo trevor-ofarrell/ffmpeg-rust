@@ -1785,13 +1785,23 @@ mod tests {
         assert!(output.stderr().is_empty());
         assert!(output
             .stdout()
-            .starts_with("# framehash-rs packet hashes algorithm=SHA256\n"));
+            .starts_with("#format: frame checksums\n#version: 2\n#hash: SHA256\n"));
         assert!(output.stdout().contains(&format!(
-            "stream=0 pts=0 dts=0 duration=1000 size=3 sha256={}\n",
+            "{}, {:>10}, {:>10}, {:>8}, {:>8}, {}\n",
+            0,
+            0,
+            0,
+            1000,
+            3,
             avutil::digest_to_hex(&avutil::sha256(b"abc"))
         )));
         assert!(output.stdout().contains(&format!(
-            "stream=0 pts=1000 dts=1000 duration=2000 size=4 sha256={}\n",
+            "{}, {:>10}, {:>10}, {:>8}, {:>8}, {}\n",
+            0,
+            1000,
+            1000,
+            2000,
+            4,
             avutil::digest_to_hex(&avutil::sha256(b"defg"))
         )));
     }
@@ -1818,7 +1828,12 @@ mod tests {
         assert_eq!(output.packet_count(), 1);
         assert_eq!(output.byte_count(), 3);
         assert!(output.stdout().contains(&format!(
-            "stream=0 pts=0 dts=0 duration=1000 size=3 md5={}\n",
+            "{}, {:>10}, {:>10}, {:>8}, {:>8}, {}\n",
+            0,
+            0,
+            0,
+            1000,
+            3,
             avutil::digest_to_hex(&avutil::md5(b"abc"))
         )));
     }
@@ -1846,9 +1861,14 @@ mod tests {
         assert!(output.stderr().is_empty());
         assert!(output
             .stdout()
-            .starts_with("# framehash-rs packet hashes algorithm=MD5\n"));
+            .starts_with("#format: frame checksums\n#version: 2\n#hash: MD5\n"));
         assert!(output.stdout().contains(&format!(
-            "stream=0 pts=0 dts=0 duration=1000 size=3 md5={}\n",
+            "{}, {:>10}, {:>10}, {:>8}, {:>8}, {}\n",
+            0,
+            0,
+            0,
+            1000,
+            3,
             avutil::digest_to_hex(&avutil::md5(b"abc"))
         )));
     }
@@ -2203,7 +2223,7 @@ mod tests {
         assert!(output.stderr().is_empty());
         assert!(output
             .stdout()
-            .contains("stream=0 pts=0 dts=0 duration=2 size=8"));
+            .contains("0,          0,          0,        2,        8"));
     }
 
     #[test]
@@ -2308,7 +2328,7 @@ mod tests {
         assert!(output.stderr().is_empty());
         assert!(output
             .stdout()
-            .contains("stream=0 pts=0 dts=0 duration=2 size=8"));
+            .contains("0,          0,          0,        2,        8"));
     }
 
     #[test]
@@ -5010,7 +5030,7 @@ mod tests {
         assert!(output.stderr().is_empty());
         assert!(output
             .stdout()
-            .contains("stream=0 pts=0 dts=0 duration=1 size=8"));
+            .contains("0,          0,          0,        1,        8"));
     }
 
     #[test]
@@ -5106,13 +5126,13 @@ mod tests {
         assert!(output.stderr().is_empty());
         assert!(output
             .stdout()
-            .contains("stream=0 pts=0 dts=0 duration=1 size=4"));
+            .contains("0,          0,          0,        1,        4"));
         assert!(output
             .stdout()
-            .contains("stream=0 pts=1 dts=1 duration=1 size=3"));
+            .contains("0,          1,          1,        1,        3"));
         assert!(output
             .stdout()
-            .contains("stream=0 pts=2 dts=2 duration=1 size=5"));
+            .contains("0,          2,          2,        1,        5"));
     }
 
     #[test]
@@ -5178,10 +5198,10 @@ mod tests {
         assert!(output.stderr().is_empty());
         assert!(output
             .stdout()
-            .contains("stream=0 pts=0 dts=0 duration=1 size=4"));
+            .contains("0,          0,          0,        1,        4"));
         assert!(output
             .stdout()
-            .contains("stream=0 pts=1 dts=1 duration=1 size=3"));
+            .contains("0,          1,          1,        1,        3"));
     }
 
     #[test]
@@ -5431,10 +5451,10 @@ mod tests {
         assert!(output.stderr().is_empty());
         assert!(output
             .stdout()
-            .contains("stream=0 pts=0 dts=0 duration=1 size=6"));
+            .contains("0,          0,          0,        1,        6"));
         assert!(output
             .stdout()
-            .contains("stream=0 pts=1 dts=1 duration=1 size=6"));
+            .contains("0,          1,          1,        1,        6"));
     }
 
     #[test]

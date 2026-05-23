@@ -62,13 +62,12 @@ impl FrameHashRecord {
 
     pub fn line(&self) -> String {
         format!(
-            "stream={} pts={} dts={} duration={} size={} {}={}\n",
+            "{}, {:>10}, {:>10}, {:>8}, {:>8}, {}\n",
             self.stream_index,
-            fmt_ts(self.pts),
             fmt_ts(self.dts),
+            fmt_ts(self.pts),
             self.duration,
             self.size,
-            self.algorithm.name().to_ascii_lowercase(),
             self.digest_hex()
         )
     }
@@ -112,7 +111,7 @@ impl FrameHashMuxer {
 
     pub fn render(&self) -> String {
         let mut output = format!(
-            "# framehash-rs packet hashes algorithm={}\n",
+            "#format: frame checksums\n#version: 2\n#hash: {}\n#stream#, dts,        pts, duration,     size, hash\n",
             self.algorithm.name()
         );
         for record in &self.records {
@@ -162,7 +161,12 @@ mod tests {
         assert_eq!(
             record.line(),
             format!(
-                "stream=2 pts=10 dts=8 duration=2 size=3 sha256={}\n",
+                "{}, {:>10}, {:>10}, {:>8}, {:>8}, {}\n",
+                2,
+                8,
+                10,
+                2,
+                3,
                 digest_to_hex(&sha256(b"abc"))
             )
         );
@@ -177,10 +181,18 @@ mod tests {
         let output = muxer.finish();
 
         assert!(muxer.is_finished());
-        assert!(output.starts_with("# framehash-rs packet hashes algorithm=MD5\n"));
-        assert!(output.contains("stream=0 pts=N/A dts=N/A duration=0 size=1 md5="));
-        assert!(output.contains("stream=1 pts=N/A dts=N/A duration=0 size=1 md5="));
-        assert!(output.find("stream=0").unwrap() < output.find("stream=1").unwrap());
+        assert!(output.starts_with(
+            "#format: frame checksums\n#version: 2\n#hash: MD5\n#stream#, dts,        pts, duration,     size, hash\n"
+        ));
+        assert!(output.contains(&format!(
+            "{}, {:>10}, {:>10}, {:>8}, {:>8}, ",
+            0, "N/A", "N/A", 0, 1
+        )));
+        assert!(output.contains(&format!(
+            "{}, {:>10}, {:>10}, {:>8}, {:>8}, ",
+            1, "N/A", "N/A", 0, 1
+        )));
+        assert!(output.find("0,").unwrap() < output.find("1,").unwrap());
     }
 
     #[test]
@@ -195,7 +207,12 @@ mod tests {
         assert_eq!(
             record.line(),
             format!(
-                "stream=0 pts=N/A dts=N/A duration=0 size=0 md5={}\n",
+                "{}, {:>10}, {:>10}, {:>8}, {:>8}, {}\n",
+                0,
+                "N/A",
+                "N/A",
+                0,
+                0,
                 digest_to_hex(&md5(b""))
             )
         );
