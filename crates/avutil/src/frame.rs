@@ -13645,7 +13645,20 @@ impl VideoFrame {
             | PixelFormat::BayerGbrg8
             | PixelFormat::BayerGrbg8 => 1,
             PixelFormat::Rgb24 | PixelFormat::Bgr24 => 3,
-            PixelFormat::Rgb565Be
+            PixelFormat::Ya8
+            | PixelFormat::Gray9Le
+            | PixelFormat::Gray9Be
+            | PixelFormat::Gray10Le
+            | PixelFormat::Gray10Be
+            | PixelFormat::Gray12Le
+            | PixelFormat::Gray12Be
+            | PixelFormat::Gray14Le
+            | PixelFormat::Gray14Be
+            | PixelFormat::Gray16Le
+            | PixelFormat::Gray16Be
+            | PixelFormat::GrayF16Le
+            | PixelFormat::GrayF16Be
+            | PixelFormat::Rgb565Be
             | PixelFormat::Rgb565Le
             | PixelFormat::Rgb555Be
             | PixelFormat::Rgb555Le
@@ -13669,7 +13682,15 @@ impl VideoFrame {
             | PixelFormat::Rgb48Be
             | PixelFormat::Bgr48Le
             | PixelFormat::Bgr48Be => 6,
-            PixelFormat::Rgba
+            PixelFormat::Ya16Le
+            | PixelFormat::Ya16Be
+            | PixelFormat::Yaf16Le
+            | PixelFormat::Yaf16Be
+            | PixelFormat::Gray32Le
+            | PixelFormat::Gray32Be
+            | PixelFormat::GrayF32Le
+            | PixelFormat::GrayF32Be
+            | PixelFormat::Rgba
             | PixelFormat::Bgra
             | PixelFormat::Argb
             | PixelFormat::Abgr
@@ -13677,13 +13698,15 @@ impl VideoFrame {
             | PixelFormat::Rgb0
             | PixelFormat::ZeroBgr
             | PixelFormat::Bgr0 => 4,
-            PixelFormat::Rgba64Le
+            PixelFormat::Yaf32Le
+            | PixelFormat::Yaf32Be
+            | PixelFormat::Rgba64Le
             | PixelFormat::Rgba64Be
             | PixelFormat::Bgra64Le
             | PixelFormat::Bgra64Be => 8,
             _ => {
                 return Err(AvError::unsupported(format!(
-                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, rgb24/bgr24, and selected high-depth packed RGB/RGBA video frames, not {}",
+                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, selected packed grayscale/gray-alpha, rgb24/bgr24, and selected high-depth packed RGB/RGBA video frames, not {}",
                     self.pixel_format.name()
                 )));
             }
@@ -20134,6 +20157,29 @@ mod tests {
             (PixelFormat::BayerGbrg16Be, 2, 64),
             (PixelFormat::BayerGrbg16Le, 2, 64),
             (PixelFormat::BayerGrbg16Be, 2, 64),
+            (PixelFormat::Ya8, 2, 64),
+            (PixelFormat::Ya16Le, 4, 64),
+            (PixelFormat::Ya16Be, 4, 64),
+            (PixelFormat::Yaf16Le, 4, 64),
+            (PixelFormat::Yaf16Be, 4, 64),
+            (PixelFormat::Yaf32Le, 8, 64),
+            (PixelFormat::Yaf32Be, 8, 64),
+            (PixelFormat::Gray9Le, 2, 64),
+            (PixelFormat::Gray9Be, 2, 64),
+            (PixelFormat::Gray10Le, 2, 64),
+            (PixelFormat::Gray10Be, 2, 64),
+            (PixelFormat::Gray12Le, 2, 64),
+            (PixelFormat::Gray12Be, 2, 64),
+            (PixelFormat::Gray14Le, 2, 64),
+            (PixelFormat::Gray14Be, 2, 64),
+            (PixelFormat::Gray16Le, 2, 64),
+            (PixelFormat::Gray16Be, 2, 64),
+            (PixelFormat::Gray32Le, 4, 64),
+            (PixelFormat::Gray32Be, 4, 64),
+            (PixelFormat::GrayF16Le, 2, 64),
+            (PixelFormat::GrayF16Be, 2, 64),
+            (PixelFormat::GrayF32Le, 4, 64),
+            (PixelFormat::GrayF32Be, 4, 64),
             (PixelFormat::Rgb48Le, 6, 192),
             (PixelFormat::Rgb48Be, 6, 192),
             (PixelFormat::Bgr48Le, 6, 192),

@@ -231,7 +231,8 @@ audio showing that high channel count alone does not allocate extended buffers,
 and writability for video, packed audio, direct planar audio, extended planar
 audio, and out-of-range indexes,
 `av_frame_apply_cropping()` for gray8 aligned, gray8 unaligned, byte-packed
-RGB/BGR/Bayer8 default and unaligned cases, RGB24 aligned, RGB24 unaligned,
+RGB/BGR/Bayer8 default and unaligned cases, packed high-bit grayscale and
+gray-alpha default and unaligned cases, RGB24 aligned, RGB24 unaligned,
 BGR24 aligned, BGR24 unaligned, selected packed RGB/RGBA and Bayer16 default
 and unaligned cases, and invalid crop rectangles,
 `AV_FRAME_DATA_*` numeric
@@ -305,14 +306,18 @@ keep the data pointer at least 32-byte aligned for gray8, byte-packed RGB/BGR
 `bayer_rggb8`, `bayer_gbrg8`, and `bayer_grbg8`), RGB24, and BGR24, exact-left
 behavior under `AV_FRAME_CROP_UNALIGNED`, crop-field reset on success, and
 `ERANGE` no-mutation behavior for invalid crop rectangles. They also prove the
-16-bit packed RGB/BGR family (`rgb565be`, `rgb565le`, `rgb555be`, `rgb555le`,
-`bgr565be`, `bgr565le`, `bgr555be`, `bgr555le`, `rgb444le`, `rgb444be`,
-`bgr444le`, and `bgr444be`), 32-bit packed RGB/RGBA family (`rgba`, `bgra`,
-`argb`, `abgr`, `0rgb`, `rgb0`, `0bgr`, and `bgr0`), and high-depth packed
-RGB/RGBA family (`rgb48le`, `rgb48be`, `bgr48le`, `bgr48be`, `rgba64le`,
-`rgba64be`, `bgra64le`, and `bgra64be`), and Bayer16 CFA family
-(`bayer_bggr16le`, `bayer_bggr16be`, `bayer_rggb16le`, `bayer_rggb16be`,
-`bayer_gbrg16le`, `bayer_gbrg16be`, `bayer_grbg16le`, and
+packed high-bit grayscale/gray-alpha family (`ya8`, `ya16le`, `ya16be`,
+`yaf16le`, `yaf16be`, `yaf32le`, `yaf32be`, `gray9le`, `gray9be`, `gray10le`,
+`gray10be`, `gray12le`, `gray12be`, `gray14le`, `gray14be`, `gray16le`,
+`gray16be`, `gray32le`, `gray32be`, `grayf16le`, `grayf16be`, `grayf32le`,
+and `grayf32be`), 16-bit packed RGB/BGR family (`rgb565be`, `rgb565le`,
+`rgb555be`, `rgb555le`, `bgr565be`, `bgr565le`, `bgr555be`, `bgr555le`,
+`rgb444le`, `rgb444be`, `bgr444le`, and `bgr444be`), 32-bit packed RGB/RGBA
+family (`rgba`, `bgra`, `argb`, `abgr`, `0rgb`, `rgb0`, `0bgr`, and `bgr0`),
+high-depth packed RGB/RGBA family (`rgb48le`, `rgb48be`, `bgr48le`,
+`bgr48be`, `rgba64le`, `rgba64be`, `bgra64le`, and `bgra64be`), and Bayer16
+CFA family (`bayer_bggr16le`, `bayer_bggr16be`, `bayer_rggb16le`,
+`bayer_rggb16be`, `bayer_gbrg16le`, `bayer_gbrg16be`, `bayer_grbg16le`, and
 `bayer_grbg16be`) return `AVERROR_BUG` without mutation for default
 nonzero-left crop while succeeding with exact-left behavior under
 `AV_FRAME_CROP_UNALIGNED`.

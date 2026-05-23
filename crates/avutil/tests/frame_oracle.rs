@@ -671,6 +671,29 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         (PixelFormat::BayerGbrg16Be, 2, 64),
         (PixelFormat::BayerGrbg16Le, 2, 64),
         (PixelFormat::BayerGrbg16Be, 2, 64),
+        (PixelFormat::Ya8, 2, 64),
+        (PixelFormat::Ya16Le, 4, 64),
+        (PixelFormat::Ya16Be, 4, 64),
+        (PixelFormat::Yaf16Le, 4, 64),
+        (PixelFormat::Yaf16Be, 4, 64),
+        (PixelFormat::Yaf32Le, 8, 64),
+        (PixelFormat::Yaf32Be, 8, 64),
+        (PixelFormat::Gray9Le, 2, 64),
+        (PixelFormat::Gray9Be, 2, 64),
+        (PixelFormat::Gray10Le, 2, 64),
+        (PixelFormat::Gray10Be, 2, 64),
+        (PixelFormat::Gray12Le, 2, 64),
+        (PixelFormat::Gray12Be, 2, 64),
+        (PixelFormat::Gray14Le, 2, 64),
+        (PixelFormat::Gray14Be, 2, 64),
+        (PixelFormat::Gray16Le, 2, 64),
+        (PixelFormat::Gray16Be, 2, 64),
+        (PixelFormat::Gray32Le, 4, 64),
+        (PixelFormat::Gray32Be, 4, 64),
+        (PixelFormat::GrayF16Le, 2, 64),
+        (PixelFormat::GrayF16Be, 2, 64),
+        (PixelFormat::GrayF32Le, 4, 64),
+        (PixelFormat::GrayF32Be, 4, 64),
         (PixelFormat::Rgb48Le, 6, 192),
         (PixelFormat::Rgb48Be, 6, 192),
         (PixelFormat::Bgr48Le, 6, 192),
@@ -2214,6 +2237,19 @@ static void print_video_planes(const AVFrame *frame)
     case AV_PIX_FMT_BAYER_GBRG16BE:
     case AV_PIX_FMT_BAYER_GRBG16LE:
     case AV_PIX_FMT_BAYER_GRBG16BE:
+    case AV_PIX_FMT_YA8:
+    case AV_PIX_FMT_GRAY9LE:
+    case AV_PIX_FMT_GRAY9BE:
+    case AV_PIX_FMT_GRAY10LE:
+    case AV_PIX_FMT_GRAY10BE:
+    case AV_PIX_FMT_GRAY12LE:
+    case AV_PIX_FMT_GRAY12BE:
+    case AV_PIX_FMT_GRAY14LE:
+    case AV_PIX_FMT_GRAY14BE:
+    case AV_PIX_FMT_GRAY16LE:
+    case AV_PIX_FMT_GRAY16BE:
+    case AV_PIX_FMT_GRAYF16LE:
+    case AV_PIX_FMT_GRAYF16BE:
         bytes_per_pixel = 2;
         break;
     case AV_PIX_FMT_RGB24:
@@ -2234,8 +2270,18 @@ static void print_video_planes(const AVFrame *frame)
     case AV_PIX_FMT_RGB0:
     case AV_PIX_FMT_0BGR:
     case AV_PIX_FMT_BGR0:
+    case AV_PIX_FMT_YA16LE:
+    case AV_PIX_FMT_YA16BE:
+    case AV_PIX_FMT_YAF16LE:
+    case AV_PIX_FMT_YAF16BE:
+    case AV_PIX_FMT_GRAY32LE:
+    case AV_PIX_FMT_GRAY32BE:
+    case AV_PIX_FMT_GRAYF32LE:
+    case AV_PIX_FMT_GRAYF32BE:
         bytes_per_pixel = 4;
         break;
+    case AV_PIX_FMT_YAF32LE:
+    case AV_PIX_FMT_YAF32BE:
     case AV_PIX_FMT_RGBA64LE:
     case AV_PIX_FMT_RGBA64BE:
     case AV_PIX_FMT_BGRA64LE:
@@ -3338,6 +3384,29 @@ int main(void)
     exercise_packed_crop_pair("bayer_gbrg16be", AV_PIX_FMT_BAYER_GBRG16BE, 2);
     exercise_packed_crop_pair("bayer_grbg16le", AV_PIX_FMT_BAYER_GRBG16LE, 2);
     exercise_packed_crop_pair("bayer_grbg16be", AV_PIX_FMT_BAYER_GRBG16BE, 2);
+    exercise_packed_crop_pair("ya8", AV_PIX_FMT_YA8, 2);
+    exercise_packed_crop_pair("ya16le", AV_PIX_FMT_YA16LE, 4);
+    exercise_packed_crop_pair("ya16be", AV_PIX_FMT_YA16BE, 4);
+    exercise_packed_crop_pair("yaf16le", AV_PIX_FMT_YAF16LE, 4);
+    exercise_packed_crop_pair("yaf16be", AV_PIX_FMT_YAF16BE, 4);
+    exercise_packed_crop_pair("yaf32le", AV_PIX_FMT_YAF32LE, 8);
+    exercise_packed_crop_pair("yaf32be", AV_PIX_FMT_YAF32BE, 8);
+    exercise_packed_crop_pair("gray9le", AV_PIX_FMT_GRAY9LE, 2);
+    exercise_packed_crop_pair("gray9be", AV_PIX_FMT_GRAY9BE, 2);
+    exercise_packed_crop_pair("gray10le", AV_PIX_FMT_GRAY10LE, 2);
+    exercise_packed_crop_pair("gray10be", AV_PIX_FMT_GRAY10BE, 2);
+    exercise_packed_crop_pair("gray12le", AV_PIX_FMT_GRAY12LE, 2);
+    exercise_packed_crop_pair("gray12be", AV_PIX_FMT_GRAY12BE, 2);
+    exercise_packed_crop_pair("gray14le", AV_PIX_FMT_GRAY14LE, 2);
+    exercise_packed_crop_pair("gray14be", AV_PIX_FMT_GRAY14BE, 2);
+    exercise_packed_crop_pair("gray16le", AV_PIX_FMT_GRAY16LE, 2);
+    exercise_packed_crop_pair("gray16be", AV_PIX_FMT_GRAY16BE, 2);
+    exercise_packed_crop_pair("gray32le", AV_PIX_FMT_GRAY32LE, 4);
+    exercise_packed_crop_pair("gray32be", AV_PIX_FMT_GRAY32BE, 4);
+    exercise_packed_crop_pair("grayf16le", AV_PIX_FMT_GRAYF16LE, 2);
+    exercise_packed_crop_pair("grayf16be", AV_PIX_FMT_GRAYF16BE, 2);
+    exercise_packed_crop_pair("grayf32le", AV_PIX_FMT_GRAYF32LE, 4);
+    exercise_packed_crop_pair("grayf32be", AV_PIX_FMT_GRAYF32BE, 4);
     exercise_packed_crop_pair("rgb48le", AV_PIX_FMT_RGB48LE, 6);
     exercise_packed_crop_pair("rgb48be", AV_PIX_FMT_RGB48BE, 6);
     exercise_packed_crop_pair("bgr48le", AV_PIX_FMT_BGR48LE, 6);
