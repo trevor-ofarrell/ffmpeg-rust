@@ -9071,6 +9071,86 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(moved_packet.flags().is_empty());
     assert!(moved_packet.side_data().is_empty());
 
+    let empty_lifecycle_source = Packet::default();
+    let mut empty_props_packet = Packet::from_data(vec![0x12, 0x34]).unwrap();
+    empty_props_packet.set_pts(Some(99));
+    empty_props_packet.set_duration(9).unwrap();
+    empty_props_packet
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
+    empty_props_packet
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    empty_props_packet.set_opaque_address(0x5678);
+    empty_props_packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0x90])));
+    empty_props_packet.copy_props_from(&empty_lifecycle_source);
+    assert_eq!(empty_props_packet.data(), &[0x12, 0x34]);
+    assert_eq!(empty_props_packet.pts(), None);
+    assert_eq!(empty_props_packet.dts(), None);
+    assert_eq!(empty_props_packet.duration(), 0);
+    assert_eq!(empty_props_packet.pos(), None);
+    assert_eq!(empty_props_packet.stream_index(), 0);
+    assert_eq!(empty_props_packet.time_base(), Rational::ZERO);
+    assert!(empty_props_packet.flags().is_empty());
+    assert!(empty_props_packet.side_data().is_empty());
+    assert!(empty_props_packet.opaque().is_none());
+    assert!(empty_props_packet.opaque_ref().is_none());
+
+    let mut empty_ref_packet = Packet::from_data(vec![0x55, 0x44]).unwrap();
+    empty_ref_packet.set_pts(Some(22));
+    empty_ref_packet.set_duration(2).unwrap();
+    empty_ref_packet
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    empty_ref_packet.set_opaque_address(0x5678);
+    empty_ref_packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0x99])));
+    empty_ref_packet.ref_from(&empty_lifecycle_source);
+    assert!(empty_ref_packet.is_empty());
+    assert_eq!(
+        empty_ref_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(empty_ref_packet.is_data_writable());
+    assert!(empty_ref_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .take(AV_INPUT_BUFFER_PADDING_SIZE)
+        .all(|byte| *byte == 0));
+    assert_eq!(empty_ref_packet.stream_index(), 0);
+    assert!(empty_ref_packet.side_data().is_empty());
+    assert!(empty_ref_packet.opaque().is_none());
+    assert!(empty_ref_packet.opaque_ref().is_none());
+
+    let empty_cloned_packet = empty_lifecycle_source.clone();
+    assert!(empty_cloned_packet.is_empty());
+    assert_eq!(
+        empty_cloned_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(empty_cloned_packet.is_data_writable());
+    assert_eq!(empty_cloned_packet.time_base(), Rational::ZERO);
+
+    let mut empty_move_source = Packet::default();
+    let mut empty_move_destination = Packet::from_data(vec![0x33, 0x22]).unwrap();
+    empty_move_destination.set_pts(Some(77));
+    empty_move_destination.set_duration(7).unwrap();
+    empty_move_destination
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    empty_move_destination.set_opaque_address(0x5678);
+    empty_move_destination.set_opaque_ref(Some(BufferRef::from_vec(vec![0x99])));
+    empty_move_destination.move_ref_from(&mut empty_move_source);
+    assert!(empty_move_destination.is_empty());
+    assert_eq!(empty_move_destination.data_buffer().padding_len(), 0);
+    assert_eq!(empty_move_destination.stream_index(), 0);
+    assert_eq!(empty_move_destination.pts(), None);
+    assert_eq!(empty_move_destination.dts(), None);
+    assert_eq!(empty_move_destination.duration(), 0);
+    assert_eq!(empty_move_destination.pos(), None);
+    assert_eq!(empty_move_destination.time_base(), Rational::ZERO);
+    assert!(empty_move_destination.side_data().is_empty());
+    assert!(empty_move_destination.opaque().is_none());
+    assert!(empty_move_destination.opaque_ref().is_none());
+    assert!(empty_move_source.is_empty());
+
     let mut props_packet = Packet::new(vec![0x44, 0x55], 2);
     let props_payload = props_packet.data().to_vec();
     props_packet.copy_props_from(&packet);

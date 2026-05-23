@@ -11170,6 +11170,99 @@ mod tests {
     }
 
     #[test]
+    fn packet_empty_source_lifecycle_matches_ffmpeg_reset_shapes() {
+        let empty_src = Packet::default();
+
+        let mut copied = Packet::from_data(vec![0x12, 0x34]).unwrap();
+        copied.set_pts(Some(99));
+        copied.set_duration(9).unwrap();
+        copied
+            .set_time_base(Rational::new(1, 1_000).unwrap())
+            .unwrap();
+        copied.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+        );
+        copied.set_opaque_address(0x5678);
+        copied.set_opaque_ref(Some(BufferRef::from_vec(vec![0x90])));
+
+        copied.copy_props_from(&empty_src);
+
+        assert_eq!(copied.data(), &[0x12, 0x34]);
+        assert_eq!(copied.pts(), None);
+        assert_eq!(copied.dts(), None);
+        assert_eq!(copied.duration(), 0);
+        assert_eq!(copied.pos(), None);
+        assert_eq!(copied.stream_index(), 0);
+        assert!(copied.flags().is_empty());
+        assert!(copied.side_data().is_empty());
+        assert!(copied.opaque().is_none());
+        assert!(copied.opaque_ref().is_none());
+        assert_eq!(copied.time_base(), Rational::ZERO);
+
+        let mut referenced = Packet::from_data(vec![0x55, 0x44]).unwrap();
+        referenced.set_pts(Some(22));
+        referenced.set_duration(2).unwrap();
+        referenced.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+        );
+        referenced.set_opaque_address(0x5678);
+        referenced.set_opaque_ref(Some(BufferRef::from_vec(vec![0x99])));
+
+        referenced.ref_from(&empty_src);
+
+        assert!(referenced.is_empty());
+        assert_eq!(
+            referenced.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(referenced
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .take(AV_INPUT_BUFFER_PADDING_SIZE)
+            .all(|byte| *byte == 0));
+        assert!(referenced.is_data_writable());
+        assert_eq!(referenced.stream_index(), 0);
+        assert!(referenced.side_data().is_empty());
+        assert!(referenced.opaque().is_none());
+        assert!(referenced.opaque_ref().is_none());
+
+        let cloned = empty_src.clone();
+        assert!(cloned.is_empty());
+        assert_eq!(
+            cloned.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(cloned.is_data_writable());
+        assert_eq!(cloned.time_base(), Rational::ZERO);
+
+        let mut move_src = Packet::default();
+        let mut moved = Packet::from_data(vec![0x33, 0x22]).unwrap();
+        moved.set_pts(Some(77));
+        moved.set_duration(7).unwrap();
+        moved.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+        );
+        moved.set_opaque_address(0x5678);
+        moved.set_opaque_ref(Some(BufferRef::from_vec(vec![0x99])));
+
+        moved.move_ref_from(&mut move_src);
+
+        assert!(moved.is_empty());
+        assert_eq!(moved.data_buffer().padding_len(), 0);
+        assert_eq!(moved.stream_index(), 0);
+        assert_eq!(moved.pts(), None);
+        assert_eq!(moved.dts(), None);
+        assert_eq!(moved.duration(), 0);
+        assert_eq!(moved.pos(), None);
+        assert_eq!(moved.time_base(), Rational::ZERO);
+        assert!(moved.side_data().is_empty());
+        assert!(moved.opaque().is_none());
+        assert!(moved.opaque_ref().is_none());
+        assert!(move_src.is_empty());
+    }
+
+    #[test]
     fn packet_clone_matches_ref_from_shape() {
         let mut src = Packet::from_data(vec![1, 2, 3]).unwrap();
         src.stream_index = 4;

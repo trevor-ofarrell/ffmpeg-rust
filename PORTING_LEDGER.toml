@@ -252,6 +252,7 @@ unit_tests = [
   "packet::tests::packet_ref_from_shares_payload_and_copies_side_data",
   "packet::tests::packet_ref_from_replaces_destination_and_releases_old_refs",
   "packet::tests::packet_ref_from_unpadded_payload_copies_into_refcounted_buffer",
+  "packet::tests::packet_empty_source_lifecycle_matches_ffmpeg_reset_shapes",
   "packet::tests::packet_clone_matches_ref_from_shape",
   "packet::tests::packet_clone_of_unpadded_payload_matches_refcounted_copy_shape",
   "packet::tests::packet_make_data_writable_detaches_shared_payload",
@@ -277,6 +278,16 @@ fate_tests = [
   "packet_oracle::upstream_fate_avpacket_passes",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket empty-source lifecycle coverage now
+# validates `av_packet_copy_props()`, `av_packet_ref()`, `av_packet_clone()`,
+# and `av_packet_move_ref()` when the source packet is empty and the
+# destination is pre-populated. FFmpeg preserves destination payload bytes for
+# copy-props while clearing metadata, side data, opaque pointer metadata, and
+# `opaque_ref`; ref/clone from an empty raw packet produce zero visible bytes
+# with zeroed input padding and a writable refcounted buffer; move-ref from an
+# empty packet transfers the unpadded default empty state and resets the source.
+# Rust unit tests and `avutil_core_models` fuzz-smoke coverage assert the same
+# split.
 # Latest update: pinned libavcodec AVPacket payload resize coverage now
 # validates `av_grow_packet()` on an empty packet plus stable growth-prefix
 # comparison for allocator-dependent newly visible bytes, and validates

@@ -185,6 +185,31 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     copied.copy_props_from(&src);
     rows.insert("packet:copy-props".to_string(), packet_fields(&copied));
 
+    let empty_src = Packet::default();
+    let mut copy_empty_dst = Packet::from_data(vec![0x12, 0x34]).unwrap();
+    copy_empty_dst.set_pts(Some(99));
+    copy_empty_dst.set_duration(9).unwrap();
+    copy_empty_dst
+        .set_time_base(Rational::new(1, 1_000).unwrap())
+        .unwrap();
+    copy_empty_dst
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    copy_empty_dst.set_opaque(Some(PacketOpaque::new(0x5678).unwrap()));
+    copy_empty_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0x90])));
+    copy_empty_dst.copy_props_from(&empty_src);
+    rows.insert(
+        "packet:copy-props-empty".to_string(),
+        packet_fields(&copy_empty_dst),
+    );
+    rows.insert(
+        "packet:copy-props-empty-side".to_string(),
+        side_data_summary_fields(&copy_empty_dst),
+    );
+    rows.insert(
+        "packet:copy-props-empty-payload".to_string(),
+        payload_visible_fields(&copy_empty_dst),
+    );
+
     let mut copy_replace_src = packet_with_common_props();
     copy_replace_src.push_side_data(
         SideData::new_with_kind(
@@ -258,6 +283,23 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     referenced.ref_from(&src);
     rows.insert("packet:ref".to_string(), packet_fields(&referenced));
 
+    let mut ref_empty_dst = Packet::from_data(vec![0x55, 0x44]).unwrap();
+    ref_empty_dst.set_pts(Some(22));
+    ref_empty_dst.set_duration(2).unwrap();
+    ref_empty_dst
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    ref_empty_dst.set_opaque(Some(PacketOpaque::new(0x5678).unwrap()));
+    ref_empty_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0x99])));
+    ref_empty_dst.ref_from(&empty_src);
+    rows.insert(
+        "packet:ref-empty".to_string(),
+        packet_fields(&ref_empty_dst),
+    );
+    rows.insert(
+        "packet:payload-ref-empty".to_string(),
+        payload_fields(&ref_empty_dst),
+    );
+
     let mut ref_replace_src = packet_with_common_props();
     ref_replace_src.push_side_data(
         SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x05, 0x06]).unwrap(),
@@ -286,11 +328,39 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     let cloned = src.clone();
     rows.insert("packet:clone".to_string(), packet_fields(&cloned));
 
+    let cloned_empty = empty_src.clone();
+    rows.insert(
+        "packet:clone-empty".to_string(),
+        packet_fields(&cloned_empty),
+    );
+    rows.insert(
+        "packet:payload-clone-empty".to_string(),
+        payload_fields(&cloned_empty),
+    );
+
     let mut move_src = packet_with_common_props();
     let mut move_dst = Packet::new(vec![0x44], 9);
     move_dst.move_ref_from(&mut move_src);
     rows.insert("packet:move-dst".to_string(), packet_fields(&move_dst));
     rows.insert("packet:move-src".to_string(), packet_fields(&move_src));
+
+    let mut move_empty_src = Packet::default();
+    let mut move_empty_dst = Packet::from_data(vec![0x33, 0x22]).unwrap();
+    move_empty_dst.set_pts(Some(77));
+    move_empty_dst.set_duration(7).unwrap();
+    move_empty_dst
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap());
+    move_empty_dst.set_opaque(Some(PacketOpaque::new(0x5678).unwrap()));
+    move_empty_dst.set_opaque_ref(Some(BufferRef::from_vec(vec![0x99])));
+    move_empty_dst.move_ref_from(&mut move_empty_src);
+    rows.insert(
+        "packet:move-empty-dst".to_string(),
+        packet_fields(&move_empty_dst),
+    );
+    rows.insert(
+        "packet:move-empty-src".to_string(),
+        packet_fields(&move_empty_src),
+    );
 
     let mut move_replace_src = packet_with_common_props();
     move_replace_src.push_side_data(
@@ -4546,6 +4616,31 @@ int main(void) {
     print_packet("packet:copy-props", dst);
     av_packet_free(&dst);
 
+    AVPacket *empty_src = new_packet();
+    AVPacket *copy_empty_dst = new_packet();
+    fail_if(av_new_packet(copy_empty_dst, 2) < 0,
+            "av_new_packet copy empty dst failed");
+    copy_empty_dst->data[0] = 0x12;
+    copy_empty_dst->data[1] = 0x34;
+    copy_empty_dst->pts = 99;
+    copy_empty_dst->duration = 9;
+    copy_empty_dst->time_base = (AVRational){ 1, 1000 };
+    uint8_t *copy_empty_old_side = av_packet_new_side_data(
+        copy_empty_dst, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!copy_empty_old_side, "copy props empty old side data failed");
+    copy_empty_old_side[0] = 0xee;
+    copy_empty_dst->opaque = (void *)(uintptr_t)0x5678;
+    copy_empty_dst->opaque_ref = av_buffer_alloc(1);
+    fail_if(!copy_empty_dst->opaque_ref,
+            "copy props empty old opaque_ref failed");
+    copy_empty_dst->opaque_ref->data[0] = 0x90;
+    fail_if(av_packet_copy_props(copy_empty_dst, empty_src) < 0,
+            "av_packet_copy_props empty source failed");
+    print_packet("packet:copy-props-empty", copy_empty_dst);
+    print_side_data_summary("packet:copy-props-empty-side", copy_empty_dst);
+    print_payload_visible("packet:copy-props-empty-payload", copy_empty_dst);
+    av_packet_free(&copy_empty_dst);
+
     AVPacket *copy_replace_src = packet_with_common_props();
     uint8_t *copy_replace_extra = av_packet_new_side_data(
         copy_replace_src, AV_PKT_DATA_SKIP_SAMPLES, 4);
@@ -4629,6 +4724,28 @@ int main(void) {
     print_packet("packet:ref", dst);
     av_packet_free(&dst);
 
+    AVPacket *ref_empty_dst = new_packet();
+    fail_if(av_new_packet(ref_empty_dst, 2) < 0,
+            "av_new_packet ref empty dst failed");
+    ref_empty_dst->data[0] = 0x55;
+    ref_empty_dst->data[1] = 0x44;
+    ref_empty_dst->pts = 22;
+    ref_empty_dst->duration = 2;
+    uint8_t *ref_empty_old_side = av_packet_new_side_data(
+        ref_empty_dst, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!ref_empty_old_side, "av_packet_ref empty old side data failed");
+    ref_empty_old_side[0] = 0xee;
+    ref_empty_dst->opaque = (void *)(uintptr_t)0x5678;
+    ref_empty_dst->opaque_ref = av_buffer_alloc(1);
+    fail_if(!ref_empty_dst->opaque_ref,
+            "av_packet_ref empty old opaque_ref failed");
+    ref_empty_dst->opaque_ref->data[0] = 0x99;
+    fail_if(av_packet_ref(ref_empty_dst, empty_src) < 0,
+            "av_packet_ref empty source failed");
+    print_packet("packet:ref-empty", ref_empty_dst);
+    print_payload("packet:payload-ref-empty", ref_empty_dst);
+    av_packet_free(&ref_empty_dst);
+
     AVPacket *ref_replace_src = packet_with_common_props();
     uint8_t *ref_replace_extra = av_packet_new_side_data(
         ref_replace_src, AV_PKT_DATA_SKIP_SAMPLES, 2);
@@ -4665,6 +4782,14 @@ int main(void) {
     fail_if(!cloned, "av_packet_clone failed");
     print_packet("packet:clone", cloned);
     av_packet_free(&cloned);
+
+    AVPacket *empty_cloned = av_packet_clone(empty_src);
+    fail_if(!empty_cloned, "av_packet_clone empty source failed");
+    print_packet("packet:clone-empty", empty_cloned);
+    print_payload("packet:payload-clone-empty", empty_cloned);
+    av_packet_free(&empty_cloned);
+    av_packet_free(&empty_src);
+
     av_packet_free(&src);
 
     src = packet_with_common_props();
@@ -4677,6 +4802,30 @@ int main(void) {
     print_packet("packet:move-src", src);
     av_packet_free(&dst);
     av_packet_free(&src);
+
+    AVPacket *move_empty_src = new_packet();
+    AVPacket *move_empty_dst = new_packet();
+    fail_if(av_new_packet(move_empty_dst, 2) < 0,
+            "av_new_packet move empty dst failed");
+    move_empty_dst->data[0] = 0x33;
+    move_empty_dst->data[1] = 0x22;
+    move_empty_dst->pts = 77;
+    move_empty_dst->duration = 7;
+    uint8_t *move_empty_old_side = av_packet_new_side_data(
+        move_empty_dst, AV_PKT_DATA_PALETTE, 1);
+    fail_if(!move_empty_old_side,
+            "av_packet_move_ref empty old side data failed");
+    move_empty_old_side[0] = 0xee;
+    move_empty_dst->opaque = (void *)(uintptr_t)0x5678;
+    move_empty_dst->opaque_ref = av_buffer_alloc(1);
+    fail_if(!move_empty_dst->opaque_ref,
+            "av_packet_move_ref empty old opaque_ref failed");
+    move_empty_dst->opaque_ref->data[0] = 0x99;
+    av_packet_move_ref(move_empty_dst, move_empty_src);
+    print_packet("packet:move-empty-dst", move_empty_dst);
+    print_packet("packet:move-empty-src", move_empty_src);
+    av_packet_free(&move_empty_dst);
+    av_packet_free(&move_empty_src);
 
     AVPacket *move_replace_src = packet_with_common_props();
     uint8_t *move_replace_extra = av_packet_new_side_data(
