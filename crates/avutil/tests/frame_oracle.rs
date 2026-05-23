@@ -1477,6 +1477,62 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         );
     }
 
+    for (pixel_format, name, bits_per_pixel) in [
+        (PixelFormat::MonoWhite, "monow", 1usize),
+        (PixelFormat::MonoBlack, "monob", 1usize),
+        (PixelFormat::Rgb4, "rgb4", 4usize),
+        (PixelFormat::Bgr4, "bgr4", 4usize),
+    ] {
+        let bitstream_crop_storage = bitstream_strided_storage(8, 4, bits_per_pixel, 64);
+        let mut crop_bitstream_default = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                vec![bitstream_crop_storage.clone()],
+                vec![64],
+            )
+            .unwrap(),
+        );
+        crop_bitstream_default.set_crop_offsets(1, 0, 1, 1);
+        let crop_bitstream_default_ret = crop_bitstream_default
+            .apply_cropping(FrameCropFlags::NONE)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-default-ret"),
+            vec![crop_bitstream_default_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-default"),
+            frame_fields(&crop_bitstream_default),
+        );
+
+        let mut crop_bitstream_unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                vec![bitstream_crop_storage],
+                vec![64],
+            )
+            .unwrap(),
+        );
+        crop_bitstream_unaligned.set_crop_offsets(1, 0, 1, 1);
+        let crop_bitstream_unaligned_ret = crop_bitstream_unaligned
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-unaligned-ret"),
+            vec![crop_bitstream_unaligned_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-unaligned"),
+            frame_fields(&crop_bitstream_unaligned),
+        );
+    }
+
     for (pixel_format, bytes_per_pixel, line_size) in [
         (PixelFormat::Rgb8, 1, 64),
         (PixelFormat::Bgr8, 1, 64),
@@ -2507,6 +2563,27 @@ fn packed_strided_storage(
     storage
 }
 
+fn bitstream_row_bytes(width: usize, bits_per_pixel: usize) -> usize {
+    (width * bits_per_pixel).div_ceil(8)
+}
+
+fn bitstream_strided_storage(
+    width: usize,
+    height: usize,
+    bits_per_pixel: usize,
+    line_size: usize,
+) -> Vec<u8> {
+    let visible_row_bytes = bitstream_row_bytes(width, bits_per_pixel);
+    let mut storage = vec![0; line_size * height];
+    for row in 0..height {
+        let dst_start = row * line_size;
+        for column in 0..visible_row_bytes {
+            storage[dst_start + column] = (row * 16 + column) as u8;
+        }
+    }
+    storage
+}
+
 fn strided_plane_sample_storage(
     width: usize,
     height: usize,
@@ -3148,6 +3225,20 @@ static void print_line_sizes(const int *line_sizes, int count)
     }
 }
 
+static int bitstream_row_bytes(enum AVPixelFormat format, int width)
+{
+    switch (format) {
+    case AV_PIX_FMT_MONOWHITE:
+    case AV_PIX_FMT_MONOBLACK:
+        return (width + 7) / 8;
+    case AV_PIX_FMT_RGB4:
+    case AV_PIX_FMT_BGR4:
+        return (width + 1) / 2;
+    default:
+        return 0;
+    }
+}
+
 static int planar_yuv_sample_bytes(enum AVPixelFormat format,
                                    int *log2_chroma_w,
                                    int *log2_chroma_h)
@@ -3404,6 +3495,13 @@ static void print_video_planes(const AVFrame *frame)
     if (frame->format == AV_PIX_FMT_GRAY8) {
         for (int row = 0; row < frame->height; row++)
             print_hex(frame->data[0] + row * frame->linesize[0], frame->width);
+        return;
+    }
+    int bitstream_bytes = bitstream_row_bytes(frame->format, frame->width);
+    if (bitstream_bytes > 0) {
+        for (int row = 0; row < frame->height; row++)
+            print_hex(frame->data[0] + row * frame->linesize[0],
+                      bitstream_bytes);
         return;
     }
     int bytes_per_pixel = 0;
@@ -3834,8 +3932,54 @@ static void print_frame(const char *name, const AVFrame *frame)
 }
 
 static void fill_video_packed(AVFrame *frame, int bytes_per_pixel);
+static void fill_video_bitstream(AVFrame *frame);
 static void fill_video_planar_yuv(AVFrame *frame);
 static void fill_video_yuv420p(AVFrame *frame);
+
+static void exercise_bitstream_crop_pair(const char *name,
+                                         enum AVPixelFormat format)
+{
+    char row[96];
+    AVFrame *crop_default = av_frame_alloc();
+    fail_if(!crop_default, "bitstream default crop allocation failed");
+    crop_default->format = format;
+    crop_default->width = 8;
+    crop_default->height = 4;
+    fail_if(av_frame_get_buffer(crop_default, 64) < 0,
+            "bitstream default crop get_buffer failed");
+    fill_video_bitstream(crop_default);
+    crop_default->crop_top = 1;
+    crop_default->crop_left = 1;
+    crop_default->crop_right = 1;
+    int crop_default_ret = av_frame_apply_cropping(crop_default, 0);
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-default-ret", name);
+    printf("%s|%d\n", row, crop_default_ret);
+    fail_if(crop_default_ret < 0, "bitstream default crop apply failed");
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-default", name);
+    print_frame(row, crop_default);
+
+    AVFrame *crop_unaligned = av_frame_alloc();
+    fail_if(!crop_unaligned, "bitstream unaligned crop allocation failed");
+    crop_unaligned->format = format;
+    crop_unaligned->width = 8;
+    crop_unaligned->height = 4;
+    fail_if(av_frame_get_buffer(crop_unaligned, 64) < 0,
+            "bitstream unaligned crop get_buffer failed");
+    fill_video_bitstream(crop_unaligned);
+    crop_unaligned->crop_top = 1;
+    crop_unaligned->crop_left = 1;
+    crop_unaligned->crop_right = 1;
+    int crop_unaligned_ret = av_frame_apply_cropping(
+        crop_unaligned, AV_FRAME_CROP_UNALIGNED);
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-unaligned-ret", name);
+    printf("%s|%d\n", row, crop_unaligned_ret);
+    fail_if(crop_unaligned_ret < 0, "bitstream unaligned crop apply failed");
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-unaligned", name);
+    print_frame(row, crop_unaligned);
+
+    av_frame_free(&crop_unaligned);
+    av_frame_free(&crop_default);
+}
 
 static void exercise_packed_crop_pair(const char *name,
                                       enum AVPixelFormat format,
@@ -4110,6 +4254,17 @@ static void fill_video_gray(AVFrame *frame, const uint8_t *data)
 static void fill_video_packed(AVFrame *frame, int bytes_per_pixel)
 {
     int visible_row_bytes = frame->width * bytes_per_pixel;
+    for (int row = 0; row < frame->height; row++) {
+        uint8_t *dst = frame->data[0] + row * frame->linesize[0];
+        for (int column = 0; column < visible_row_bytes; column++)
+            dst[column] = (uint8_t)(row * 16 + column);
+    }
+}
+
+static void fill_video_bitstream(AVFrame *frame)
+{
+    int visible_row_bytes = bitstream_row_bytes(frame->format, frame->width);
+    fail_if(visible_row_bytes <= 0, "unsupported bitstream fill format");
     for (int row = 0; row < frame->height; row++) {
         uint8_t *dst = frame->data[0] + row * frame->linesize[0];
         for (int column = 0; column < visible_row_bytes; column++)
@@ -4754,6 +4909,10 @@ int main(void)
             "crop_bgr24_unaligned apply failed");
     print_frame("frame:apply-crop-bgr24-unaligned", crop_bgr24_unaligned);
 
+    exercise_bitstream_crop_pair("monow", AV_PIX_FMT_MONOWHITE);
+    exercise_bitstream_crop_pair("monob", AV_PIX_FMT_MONOBLACK);
+    exercise_bitstream_crop_pair("rgb4", AV_PIX_FMT_RGB4);
+    exercise_bitstream_crop_pair("bgr4", AV_PIX_FMT_BGR4);
     exercise_packed_crop_pair("rgba", AV_PIX_FMT_RGBA, 4);
     exercise_packed_crop_pair("bgra", AV_PIX_FMT_BGRA, 4);
     exercise_packed_crop_pair("argb", AV_PIX_FMT_ARGB, 4);

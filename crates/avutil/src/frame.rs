@@ -15474,7 +15474,15 @@ fn crop_range_error(message: impl Into<String>) -> AvError {
 }
 
 fn is_frame_crop_bitstream_format(format: PixelFormat) -> bool {
-    matches!(format, PixelFormat::Xv30Be | PixelFormat::V30xBe)
+    matches!(
+        format,
+        PixelFormat::MonoWhite
+            | PixelFormat::MonoBlack
+            | PixelFormat::Rgb4
+            | PixelFormat::Bgr4
+            | PixelFormat::Xv30Be
+            | PixelFormat::V30xBe
+    )
 }
 
 fn planar_three_plane_crop_sample_bytes(format: PixelFormat) -> Option<usize> {
@@ -20549,6 +20557,42 @@ mod tests {
             data
         }
 
+        fn bitstream_row_bytes(width: usize, bits_per_pixel: usize) -> usize {
+            (width * bits_per_pixel).div_ceil(8)
+        }
+
+        fn bitstream_storage(
+            width: usize,
+            height: usize,
+            line_size: usize,
+            bits_per_pixel: usize,
+        ) -> Vec<u8> {
+            let visible_row_bytes = bitstream_row_bytes(width, bits_per_pixel);
+            let mut data = vec![0; height * line_size];
+            for row in 0..height {
+                for column in 0..visible_row_bytes {
+                    data[row * line_size + column] = (row * 16 + column) as u8;
+                }
+            }
+            data
+        }
+
+        fn bitstream_visible(
+            bits_per_pixel: usize,
+            start_row: usize,
+            width: usize,
+            height: usize,
+        ) -> Vec<u8> {
+            let row_bytes = bitstream_row_bytes(width, bits_per_pixel);
+            let mut data = Vec::with_capacity(row_bytes * height);
+            for row in start_row..start_row + height {
+                for column in 0..row_bytes {
+                    data.push((row * 16 + column) as u8);
+                }
+            }
+            data
+        }
+
         fn strided_plane_storage(
             width: usize,
             height: usize,
@@ -21396,6 +21440,83 @@ mod tests {
                     ),
                     plane_visible_sample_bytes(0xe0, 1, 1, 6, 3, sample_bytes),
                 ],
+                "{}",
+                format.name()
+            );
+        }
+
+        for (format, bits_per_pixel) in [
+            (PixelFormat::MonoWhite, 1usize),
+            (PixelFormat::MonoBlack, 1usize),
+            (PixelFormat::Rgb4, 4usize),
+            (PixelFormat::Bgr4, 4usize),
+        ] {
+            let line_size = 64;
+            let bitstream_crop_storage = bitstream_storage(8, 4, line_size, bits_per_pixel);
+            let mut bitstream_default = Frame::video(
+                VideoFrame::new_with_line_sizes(
+                    8,
+                    4,
+                    format,
+                    vec![bitstream_crop_storage.clone()],
+                    vec![line_size],
+                )
+                .unwrap(),
+            );
+            bitstream_default.set_crop_offsets(1, 0, 1, 1);
+            let before = bitstream_default.clone();
+            bitstream_default
+                .apply_cropping(FrameCropFlags::NONE)
+                .unwrap();
+            assert_ne!(bitstream_default, before, "{}", format.name());
+            assert_eq!(
+                bitstream_default.crop(),
+                FrameCrop::new(1, 0, 1, 0),
+                "{}",
+                format.name()
+            );
+            let FrameData::Video(video) = bitstream_default.data() else {
+                unreachable!("constructed bitstream crop frame changed variant");
+            };
+            assert_eq!(video.width(), 7, "{}", format.name());
+            assert_eq!(video.height(), 4, "{}", format.name());
+            assert_eq!(video.line_sizes(), &[line_size], "{}", format.name());
+            assert_eq!(
+                video.planes(),
+                &[bitstream_visible(bits_per_pixel, 0, 7, 4)],
+                "{}",
+                format.name()
+            );
+
+            let mut bitstream_unaligned = Frame::video(
+                VideoFrame::new_with_line_sizes(
+                    8,
+                    4,
+                    format,
+                    vec![bitstream_crop_storage],
+                    vec![line_size],
+                )
+                .unwrap(),
+            );
+            bitstream_unaligned.set_crop_offsets(1, 0, 1, 1);
+            bitstream_unaligned
+                .apply_cropping(FrameCropFlags::UNALIGNED)
+                .unwrap();
+            assert_eq!(
+                bitstream_unaligned.crop(),
+                FrameCrop::new(1, 0, 1, 0),
+                "{}",
+                format.name()
+            );
+            let FrameData::Video(video) = bitstream_unaligned.data() else {
+                unreachable!("constructed bitstream crop frame changed variant");
+            };
+            assert_eq!(video.width(), 7, "{}", format.name());
+            assert_eq!(video.height(), 4, "{}", format.name());
+            assert_eq!(video.line_sizes(), &[line_size], "{}", format.name());
+            assert_eq!(
+                video.planes(),
+                &[bitstream_visible(bits_per_pixel, 0, 7, 4)],
                 "{}",
                 format.name()
             );

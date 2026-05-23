@@ -234,7 +234,7 @@ audio, and out-of-range indexes,
 RGB/BGR/Bayer8 default and unaligned cases, packed high-bit grayscale and
 gray-alpha default and unaligned cases, RGB24 aligned, RGB24 unaligned,
 BGR24 aligned, BGR24 unaligned, selected packed RGB/RGBA and Bayer16 default
-and unaligned cases, and invalid crop rectangles,
+and unaligned cases, selected bitstream right/bottom-only cases, and invalid crop rectangles,
 `AV_FRAME_DATA_*` numeric
 values/names/descriptors/properties, `av_frame_side_data_name()` invalid
 raw-value boundaries, `AV_FRAME_SIDE_DATA_FLAG_*`,
@@ -564,6 +564,8 @@ The high-bit planar YUV `av_frame_apply_cropping()` slice was checked against pi
 The planar GBR `av_frame_apply_cropping()` slice was checked against pinned FFmpeg 8.1.1 libavutil through `crates/avutil/tests/frame_oracle.rs`. Covered rows are `gbrp`, integer/MSB `gbrp*`, and floating `gbrpf16*`/`gbrpf32*`. FFmpeg succeeds for default nonzero-left crop on one-byte `gbrp` by rounding left crop down to preserve 32-byte data-pointer alignment. For multi-byte planar GBR, default nonzero-left crop returns `AVERROR_BUG` without mutation; with `AV_FRAME_CROP_UNALIGNED`, FFmpeg applies exact plane offsets, full-resolution visible dimensions, and resets crop fields on success.
 
 The planar alpha `av_frame_apply_cropping()` slice was checked against pinned FFmpeg 8.1.1 libavutil through the same `frame_oracle.rs` harness. Covered rows are `yuva420p`, `yuva422p`, `yuva444p`, the high-bit `yuva*9/10/12/16*` variants present in FFmpeg 8.1.1, `gbrap`, integer `gbrap*`, and floating `gbrapf16*`/`gbrapf32*`. FFmpeg succeeds for default nonzero-left crop on one-byte YUVA/GBRA rows by rounding left crop down to preserve 32-byte data-pointer alignment. For multi-byte planar alpha formats, default nonzero-left crop returns `AVERROR_BUG` without mutation; with `AV_FRAME_CROP_UNALIGNED`, FFmpeg applies exact luma/chroma/alpha sample offsets and resets crop fields on success.
+
+The bitstream `av_frame_apply_cropping()` slice was checked against pinned FFmpeg 8.1.1 libavutil through the same `frame_oracle.rs` harness. Covered rows are `monow`, `monob`, `rgb4`, `bgr4`, plus the existing `xv30be`/`v30xbe` packed 4:4:4 bitstream rows. FFmpeg crops only right/bottom dimensions in the backing frame, preserves top/left crop fields, and does not advance data pointers for both default and `AV_FRAME_CROP_UNALIGNED`.
 
 The legacy/full-range 8-bit planar YUV `av_frame_apply_cropping()` slice was checked against pinned FFmpeg 8.1.1 libavutil through `crates/avutil/tests/frame_oracle.rs`. The covered rows are `yuvj420p`, `yuvj422p`, `yuv410p`, `yuv411p`, `yuvj411p`, `yuv440p`, `yuvj440p`, and `yuvj444p`. FFmpeg succeeds for default nonzero-left crop on these one-byte-per-sample planar formats by rounding luma left crop down to preserve 32-byte data-pointer alignment. With `AV_FRAME_CROP_UNALIGNED`, FFmpeg applies exact luma offsets, subsampled chroma offsets derived from the format chroma geometry, floor-shifted visible chroma dimensions, and resets crop fields on success.
 
