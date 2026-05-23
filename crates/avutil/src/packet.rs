@@ -6198,6 +6198,10 @@ mod tests {
             None
         );
         assert_eq!(
+            PacketSideDataKind::ffmpeg_side_data_name_for_value(i32::MIN),
+            None
+        );
+        assert_eq!(
             PacketSideDataKind::ffmpeg_side_data_name_for_value(41),
             None
         );

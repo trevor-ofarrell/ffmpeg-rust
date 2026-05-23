@@ -7024,6 +7024,33 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     side_data_list.clear();
     assert!(side_data_list.is_empty());
 
+    let mut duplicate_remove_list = PacketSideDataList::from_entries(vec![
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x44]).unwrap(),
+    ]);
+    let removed_duplicate = duplicate_remove_list
+        .remove_kind(&PacketSideDataKind::Palette)
+        .unwrap();
+    assert_eq!(removed_duplicate.data(), &[0x33]);
+    assert_eq!(duplicate_remove_list.len(), 3);
+    assert_eq!(
+        duplicate_remove_list.entries()[0].kind_id(),
+        &PacketSideDataKind::Palette
+    );
+    assert_eq!(duplicate_remove_list.entries()[0].data(), &[0x11]);
+    assert_eq!(
+        duplicate_remove_list.entries()[1].kind_id(),
+        &PacketSideDataKind::NewExtradata
+    );
+    assert_eq!(duplicate_remove_list.entries()[1].data(), &[0x22]);
+    assert_eq!(
+        duplicate_remove_list.entries()[2].kind_id(),
+        &PacketSideDataKind::SkipSamples
+    );
+    assert_eq!(duplicate_remove_list.entries()[2].data(), &[0x44]);
+
     let mut capacity_packet = Packet::default();
     for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
         assert!(capacity_packet
@@ -10213,7 +10240,12 @@ fn exercise_fixtures() {
         );
     }
     assert_eq!(PacketSideDataKind::from_ffmpeg_value(-1), None);
+    assert_eq!(PacketSideDataKind::from_ffmpeg_value(i32::MIN), None);
     assert_eq!(PacketSideDataKind::from_ffmpeg_value(41), None);
+    assert_eq!(
+        PacketSideDataKind::ffmpeg_side_data_name_for_value(i32::MIN),
+        None
+    );
     assert_eq!(
         PacketSideDataKind::ffmpeg_side_data_name_for_value(i32::MAX),
         None
