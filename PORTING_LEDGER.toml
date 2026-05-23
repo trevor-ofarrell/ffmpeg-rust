@@ -2,7 +2,8 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest avutil-packet evidence: packet-owned duplicate side-data get/new/add/shrink/free rows,
+# Latest avutil-packet evidence: packet-owned side-data size-null lookup rows,
+# packet-owned duplicate side-data get/new/add/shrink/free rows,
 # standalone duplicate side-data lookup/new/add/remove/free rows, and standalone side-data
 # array capacity-divergence rows now pass through the packet oracle,
 # while upstream FFmpeg's
@@ -314,6 +315,11 @@ notes = "FATE pass for the current bounded AVPacket helper surface under the sel
 # reset, and duplicate-rich standalone `av_packet_side_data_free()` resetting
 # the array count/pointer. Unit tests and `avutil_core_models` cover the same
 # packet/list clear invariants.
+# Latest size-null lookup slice: pinned libavcodec rows now validate that
+# `av_packet_get_side_data(..., size=NULL)` returns the same present data pointer
+# and missing NULL result as the ordinary lookup path without requiring a size
+# output pointer. The unit test strengthens typed Rust lookup coverage for the
+# same present and missing cases.
 blocked_reason = ""
 
 [[component]]

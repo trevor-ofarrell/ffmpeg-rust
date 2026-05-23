@@ -1467,7 +1467,15 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_lookup_fields(packet.side_data_by_kind("new_extradata")),
     );
     rows.insert(
+        "packet:side-get-shrunk-size-null".to_string(),
+        side_data_lookup_fields(packet.side_data_by_kind("new_extradata")),
+    );
+    rows.insert(
         "packet:side-get-missing".to_string(),
+        side_data_lookup_fields(packet.side_data_by_kind("palette")),
+    );
+    rows.insert(
+        "packet:side-get-missing-size-null".to_string(),
         side_data_lookup_fields(packet.side_data_by_kind("palette")),
     );
     let missing_shrink = packet
@@ -2489,6 +2497,16 @@ static void print_side_data_lookup(const char *name, const AVPacket *pkt,
     printf("\n");
 }
 
+static void print_side_data_lookup_size_null(const char *name,
+                                             const AVPacket *pkt,
+                                             enum AVPacketSideDataType type,
+                                             size_t expected_size) {
+    uint8_t *data = av_packet_get_side_data(pkt, type, NULL);
+    printf("%s|%d|%zu|", name, data != NULL, data ? expected_size : 0);
+    print_hex_or_dash(data, data ? (int)expected_size : 0);
+    printf("\n");
+}
+
 static void print_side_data_array_summary(const char *name,
                                           const AVPacketSideData *sd,
                                           int nb_sd) {
@@ -3436,7 +3454,11 @@ static void exercise_side_data_api(void) {
     printf("packet:side-shrink-ret|%d\n", ret);
     print_side_data_summary("packet:side-shrink", pkt);
     print_side_data_lookup("packet:side-get-shrunk", pkt, AV_PKT_DATA_NEW_EXTRADATA);
+    print_side_data_lookup_size_null("packet:side-get-shrunk-size-null", pkt,
+                                     AV_PKT_DATA_NEW_EXTRADATA, 2);
     print_side_data_lookup("packet:side-get-missing", pkt, AV_PKT_DATA_PALETTE);
+    print_side_data_lookup_size_null("packet:side-get-missing-size-null", pkt,
+                                     AV_PKT_DATA_PALETTE, 0);
     ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_PALETTE, 1);
     printf("packet:side-shrink-missing-ret|%d\n", ret);
     ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, 3);

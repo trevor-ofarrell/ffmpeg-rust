@@ -10128,9 +10128,19 @@ mod tests {
 
         assert!(packet.shrink_side_data("palette", 2).unwrap());
         assert_eq!(packet.side_data_by_kind("palette").unwrap().data(), &[0, 1]);
+        assert_eq!(
+            packet
+                .side_data_by_kind_id(&PacketSideDataKind::Palette)
+                .unwrap()
+                .data(),
+            &[0, 1]
+        );
         assert_eq!(packet.side_data()[1].kind(), "skip_samples");
         assert_eq!(packet.side_data()[2].data(), &[7, 8]);
         assert!(!packet.shrink_side_data("missing", 0).unwrap());
+        assert!(packet
+            .side_data_by_kind_id(&PacketSideDataKind::CpbProperties)
+            .is_none());
     }
 
     #[test]
