@@ -337,6 +337,7 @@ unit_tests = [
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-libavcodec-packet-core",
+  "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framehash-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framemd5-records",
@@ -347,6 +348,8 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-generated-md5",
   "packet_oracle::libavcodec_packet_core_lifecycle_matches_packet_model",
+  "rawvideo_oracle::rawvideo_rgb24_file_output_matches_ffmpeg_oracle",
+  "rawvideo_oracle::rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framehash_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framemd5_records_match_ffmpeg_oracle",
@@ -365,6 +368,10 @@ fate_tests = [
   "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest rawvideo file-output media-integration update: the rawvideo byte-copy
+# oracle row is now also mapped to avutil-packet, validating the Rust rawvideo
+# demuxer -> Packet -> rawvideo muxer path against pinned FFmpeg streamcopy
+# bytes for bounded rgb24 and gbrp10msble inputs.
 # Latest sample-backed media-integration update: the upstream WAV md5 FATE row
 # is now also mapped to avutil-packet, validating the Rust WAV demuxer ->
 # Packet -> md5 muxer path against pinned FFmpeg streamcopy output for the

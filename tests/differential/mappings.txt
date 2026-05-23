@@ -8,6 +8,7 @@
 fftools-ffmpeg-rawvideo-file-output|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
 avformat-rawvideo-demuxer|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
 avformat-rawvideo-muxer|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
+avutil-packet|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
 avformat-framecrc-muxer|oracle-rawvideo-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle|--|--ignored
 fftools-ffmpeg-rawvideo-framecrc-null|oracle-rawvideo-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle|--|--ignored
 avutil-packet|oracle-rawvideo-framecrc-records|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle|--|--ignored
