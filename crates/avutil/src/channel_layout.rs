@@ -2606,16 +2606,19 @@ impl ChannelLayoutSpec {
                 false,
             )),
             Self::Custom(layout) => {
-                let native = Self::from_native_channel_mask(layout.canonical_native_mask()?)?;
+                let native =
+                    Self::from_native_channel_mask(layout.canonical_native_mask().map_err(
+                        |_| AvError::unsupported("channel layout cannot be represented as native"),
+                    )?)?;
                 let lossy = layout.has_custom_names();
                 if lossy && !allow_lossy {
-                    return Err(AvError::invalid_argument(
+                    return Err(AvError::unsupported(
                         "custom layout with names cannot be represented losslessly as native",
                     ));
                 }
                 Ok(ChannelLayoutRetypeResult::new(native, lossy))
             }
-            Self::Ambisonic(_) | Self::Unspecified(_) => Err(AvError::invalid_argument(
+            Self::Ambisonic(_) | Self::Unspecified(_) => Err(AvError::unsupported(
                 "channel layout cannot be represented as native",
             )),
         }
@@ -2635,9 +2638,11 @@ impl ChannelLayoutSpec {
                 false,
             )),
             Self::Custom(layout) => {
-                let (ambisonic, lossy) = layout.ambisonic_layout_for_retype()?;
+                let (ambisonic, lossy) = layout.ambisonic_layout_for_retype().map_err(|_| {
+                    AvError::unsupported("channel layout cannot be represented as ambisonic")
+                })?;
                 if lossy && !allow_lossy {
-                    return Err(AvError::invalid_argument(
+                    return Err(AvError::unsupported(
                         "custom layout with names cannot be represented losslessly as ambisonic",
                     ));
                 }
@@ -2647,7 +2652,7 @@ impl ChannelLayoutSpec {
                 ))
             }
             Self::Native(_) | Self::NativeMask(_) | Self::Unspecified(_) => Err(
-                AvError::invalid_argument("channel layout cannot be represented as ambisonic"),
+                AvError::unsupported("channel layout cannot be represented as ambisonic"),
             ),
         }
     }
@@ -2672,7 +2677,7 @@ impl ChannelLayoutSpec {
                         .iter()
                         .all(|channel| channel.id() == ChannelId::Unknown);
                 if !lossless && !allow_lossy {
-                    return Err(AvError::invalid_argument(
+                    return Err(AvError::unsupported(
                         "custom layout cannot be represented losslessly as unspecified",
                     ));
                 }
@@ -2683,7 +2688,7 @@ impl ChannelLayoutSpec {
             }
             Self::Native(_) | Self::NativeMask(_) | Self::Ambisonic(_) => {
                 if !allow_lossy {
-                    return Err(AvError::invalid_argument(
+                    return Err(AvError::unsupported(
                         "channel layout cannot be represented losslessly as unspecified",
                     ));
                 }
@@ -5684,7 +5689,7 @@ mod tests {
         ] {
             assert_eq!(
                 layout.to_native_order_lossless().unwrap_err().kind(),
-                AvErrorKind::InvalidArgument
+                AvErrorKind::Unsupported
             );
         }
     }
@@ -5699,7 +5704,7 @@ mod tests {
                 .retype_to_native_order(false)
                 .unwrap_err()
                 .kind(),
-            AvErrorKind::InvalidArgument
+            AvErrorKind::Unsupported
         );
 
         let named_result = named_stereo.retype_to_native_order(true).unwrap();
@@ -5736,7 +5741,7 @@ mod tests {
         ] {
             assert_eq!(
                 layout.retype_to_native_order(true).unwrap_err().kind(),
-                AvErrorKind::InvalidArgument
+                AvErrorKind::Unsupported
             );
         }
     }
@@ -5765,7 +5770,7 @@ mod tests {
         );
         assert_eq!(
             named_raw.retype_to_native_order(false).unwrap_err().kind(),
-            AvErrorKind::InvalidArgument
+            AvErrorKind::Unsupported
         );
         let named_result = named_raw.retype_to_native_order(true).unwrap();
         assert!(named_result.is_lossy());
@@ -5799,7 +5804,7 @@ mod tests {
                     .retype_to_native_order(true)
                     .unwrap_err()
                     .kind(),
-                AvErrorKind::InvalidArgument
+                AvErrorKind::Unsupported
             );
         }
 
@@ -5813,7 +5818,7 @@ mod tests {
                     .retype_to_ambisonic_order(true)
                     .unwrap_err()
                     .kind(),
-                AvErrorKind::InvalidArgument
+                AvErrorKind::Unsupported
             );
         }
     }
@@ -5846,7 +5851,7 @@ mod tests {
                 .retype_to_ambisonic_order(false)
                 .unwrap_err()
                 .kind(),
-            AvErrorKind::InvalidArgument
+            AvErrorKind::Unsupported
         );
         let named_result = named_ambisonic.retype_to_ambisonic_order(true).unwrap();
         assert!(named_result.is_lossy());
@@ -5873,7 +5878,7 @@ mod tests {
         ] {
             assert_eq!(
                 layout.retype_to_ambisonic_order(true).unwrap_err().kind(),
-                AvErrorKind::InvalidArgument
+                AvErrorKind::Unsupported
             );
         }
     }
@@ -5918,7 +5923,7 @@ mod tests {
         ] {
             assert_eq!(
                 layout.to_unspecified_order_lossless().unwrap_err().kind(),
-                AvErrorKind::InvalidArgument
+                AvErrorKind::Unsupported
             );
         }
     }
@@ -5944,7 +5949,7 @@ mod tests {
                     .retype_to_unspecified_order(false)
                     .unwrap_err()
                     .kind(),
-                AvErrorKind::InvalidArgument
+                AvErrorKind::Unsupported
             );
             let result = layout.retype_to_unspecified_order(true).unwrap();
             assert!(result.is_lossy());

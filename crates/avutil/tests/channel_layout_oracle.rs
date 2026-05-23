@@ -1,4 +1,7 @@
-use avutil::{AvErrorCode, Channel, ChannelId, ChannelLayout, ChannelLayoutSpec};
+use avutil::{
+    channel_layout::ChannelLayoutRetypeResult, AvErrorCode, Channel, ChannelId, ChannelLayout,
+    ChannelLayoutSpec,
+};
 use std::{
     collections::BTreeMap,
     env, fs,
@@ -10,6 +13,23 @@ use std::{
 struct ParserCase {
     id: &'static str,
     input: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RetypeCase {
+    id: &'static str,
+    input: &'static str,
+    target: RetypeTarget,
+    allow_lossy: bool,
+    canonical: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RetypeTarget {
+    Native,
+    Custom,
+    Unspecified,
+    Ambisonic,
 }
 
 const PARSER_CASES: &[ParserCase] = &[
@@ -115,6 +135,107 @@ const LOOKUP_NAMES: &[&str] = &[
     "FL", "FR", "FC", "AMBI0", "AMBI3", "USR45", "@Left", "FL@Left",
 ];
 
+const RETYPE_CASES: &[RetypeCase] = &[
+    RetypeCase {
+        id: "native-to-custom",
+        input: "stereo",
+        target: RetypeTarget::Custom,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "native-to-unspec-lossy",
+        input: "stereo",
+        target: RetypeTarget::Unspecified,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "native-to-unspec-lossless-reject",
+        input: "stereo",
+        target: RetypeTarget::Unspecified,
+        allow_lossy: false,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "named-custom-to-native-lossy",
+        input: "FL@Left+FR@Right",
+        target: RetypeTarget::Native,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "named-custom-to-native-lossless-reject",
+        input: "FL@Left+FR@Right",
+        target: RetypeTarget::Native,
+        allow_lossy: false,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "duplicate-custom-to-native-reject",
+        input: "FL+FL",
+        target: RetypeTarget::Native,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "unspec-to-custom",
+        input: "2C",
+        target: RetypeTarget::Custom,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "ambisonic-to-custom",
+        input: "ambisonic 1+stereo",
+        target: RetypeTarget::Custom,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "named-custom-to-ambisonic-lossy",
+        input: "AMBI0@W+AMBI1@Y+AMBI2@Z+AMBI3@X+FL@Left+FR",
+        target: RetypeTarget::Ambisonic,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "named-custom-to-ambisonic-lossless-reject",
+        input: "AMBI0@W+AMBI1@Y+AMBI2@Z+AMBI3@X+FL@Left+FR",
+        target: RetypeTarget::Ambisonic,
+        allow_lossy: false,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "native-to-ambisonic-reject",
+        input: "stereo",
+        target: RetypeTarget::Ambisonic,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "incomplete-ambisonic-custom-reject",
+        input: "AMBI0+AMBI1",
+        target: RetypeTarget::Ambisonic,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "named-custom-canonical-noop",
+        input: "FL@Left+FR@Right",
+        target: RetypeTarget::Native,
+        allow_lossy: true,
+        canonical: true,
+    },
+    RetypeCase {
+        id: "duplicate-custom-canonical-noop",
+        input: "FL+FL",
+        target: RetypeTarget::Native,
+        allow_lossy: true,
+        canonical: true,
+    },
+];
+
 #[derive(Debug, Default)]
 struct LayoutInventory {
     channels: BTreeMap<String, String>,
@@ -204,6 +325,52 @@ fn libavutil_channel_layout_parser_vectors_match_current_model() {
             oracle
                 .get(&name)
                 .unwrap_or_else(|| panic!("missing parser oracle row `{name}`")),
+            &expected_fields,
+            "{name} diverged"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 libavutil oracle under third_party/ffmpeg-oracle/wsl"]
+fn libavutil_channel_layout_retype_vectors_match_current_model() {
+    let repo_root = repo_root();
+    let oracle_root = oracle_root(&repo_root);
+    let include_dir = oracle_root.join("wsl/include");
+    let libavutil = oracle_root.join("wsl/lib/libavutil.a");
+
+    assert!(
+        include_dir.join("libavutil/channel_layout.h").is_file(),
+        "missing pinned FFmpeg libavutil channel layout headers under `{}`",
+        include_dir.display()
+    );
+    assert!(
+        libavutil.is_file(),
+        "missing pinned FFmpeg libavutil static library `{}`",
+        libavutil.display()
+    );
+
+    let work_dir = repo_root.join("target/oracle/avutil-channel-layout");
+    fs::create_dir_all(&work_dir).expect("create avutil-channel-layout oracle work dir");
+    let source = work_dir.join("channel_layout_retype_oracle.c");
+    let executable = work_dir.join("channel_layout_retype_oracle");
+    fs::write(&source, retype_oracle_c_source())
+        .expect("write channel layout retype oracle C source");
+
+    let stdout = compile_and_run_oracle(&include_dir, &libavutil, &source, &executable);
+    let oracle = parse_parser_oracle_output(&stdout);
+
+    assert_eq!(
+        oracle.keys().collect::<Vec<_>>(),
+        expected_retype_rows().keys().collect::<Vec<_>>(),
+        "channel layout retype oracle row set diverged"
+    );
+
+    for (name, expected_fields) in expected_retype_rows() {
+        assert_eq!(
+            oracle
+                .get(&name)
+                .unwrap_or_else(|| panic!("missing retype oracle row `{name}`")),
             &expected_fields,
             "{name} diverged"
         );
@@ -340,23 +507,8 @@ fn expected_parser_rows() -> BTreeMap<String, Vec<String>> {
 fn expected_parser_fields(input: &str) -> Vec<String> {
     match ChannelLayoutSpec::parse(input) {
         Ok(layout) => {
-            let mut fields = vec![
-                "ok".to_string(),
-                layout_order_name(&layout).to_string(),
-                layout.channel_count().to_string(),
-                format!("{:016x}", layout_native_mask(&layout)),
-                layout.describe(),
-                channel_sequence(&layout),
-                format!(
-                    "{:016x}",
-                    layout.subset_mask(ChannelLayout::stereo().channel_mask())
-                ),
-            ];
-            fields.extend(
-                LOOKUP_NAMES
-                    .iter()
-                    .map(|name| layout_index_from_string_field(&layout, name)),
-            );
+            let mut fields = vec!["ok".to_string()];
+            fields.extend(layout_fields(&layout));
             fields
         }
         Err(err) => vec![
@@ -364,6 +516,76 @@ fn expected_parser_fields(input: &str) -> Vec<String> {
             err.code().unwrap_or(AvErrorCode::EINVAL).raw().to_string(),
         ],
     }
+}
+
+fn expected_retype_rows() -> BTreeMap<String, Vec<String>> {
+    RETYPE_CASES
+        .iter()
+        .map(|case| (format!("retype:{}", case.id), expected_retype_fields(case)))
+        .collect()
+}
+
+fn expected_retype_fields(case: &RetypeCase) -> Vec<String> {
+    let original = ChannelLayoutSpec::parse(case.input)
+        .unwrap_or_else(|err| panic!("Rust parser rejected retype case `{}`: {err}", case.id));
+    match retype_layout(&original, case) {
+        Ok(result) => {
+            let mut fields = vec![if result.is_lossy() {
+                "lossy".to_string()
+            } else {
+                "lossless".to_string()
+            }];
+            fields.extend(layout_fields(result.layout()));
+            fields
+        }
+        Err(err) => {
+            let mut fields = vec![
+                "err".to_string(),
+                err.code().unwrap_or(AvErrorCode::EINVAL).raw().to_string(),
+            ];
+            fields.extend(layout_fields(&original));
+            fields
+        }
+    }
+}
+
+fn retype_layout(
+    layout: &ChannelLayoutSpec,
+    case: &RetypeCase,
+) -> avutil::AvResult<ChannelLayoutRetypeResult> {
+    if case.canonical {
+        return layout.retype_to_canonical_order(case.allow_lossy);
+    }
+
+    match case.target {
+        RetypeTarget::Native => layout.retype_to_native_order(case.allow_lossy),
+        RetypeTarget::Custom => Ok(ChannelLayoutRetypeResult::new(
+            ChannelLayoutSpec::Custom(layout.to_custom_layout()?),
+            false,
+        )),
+        RetypeTarget::Unspecified => layout.retype_to_unspecified_order(case.allow_lossy),
+        RetypeTarget::Ambisonic => layout.retype_to_ambisonic_order(case.allow_lossy),
+    }
+}
+
+fn layout_fields(layout: &ChannelLayoutSpec) -> Vec<String> {
+    let mut fields = vec![
+        layout_order_name(layout).to_string(),
+        layout.channel_count().to_string(),
+        format!("{:016x}", layout_native_mask(layout)),
+        layout.describe(),
+        channel_sequence(layout),
+        format!(
+            "{:016x}",
+            layout.subset_mask(ChannelLayout::stereo().channel_mask())
+        ),
+    ];
+    fields.extend(
+        LOOKUP_NAMES
+            .iter()
+            .map(|name| layout_index_from_string_field(layout, name)),
+    );
+    fields
 }
 
 fn layout_order_name(layout: &ChannelLayoutSpec) -> &'static str {
@@ -585,6 +807,168 @@ int main(void) {{
 }}
 "#
     )
+}
+
+fn retype_oracle_c_source() -> String {
+    let cases = RETYPE_CASES
+        .iter()
+        .map(|case| {
+            format!(
+                "    {{ {}, {}, {}, {} }},",
+                c_string_literal(case.id),
+                c_string_literal(case.input),
+                c_retype_target(case.target),
+                c_retype_flags(case)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let lookups = LOOKUP_NAMES
+        .iter()
+        .map(|name| format!("    {},", c_string_literal(name)))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"#include <inttypes.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <libavutil/channel_layout.h>
+
+struct retype_case {{
+    const char *id;
+    const char *input;
+    enum AVChannelOrder target_order;
+    int flags;
+}};
+
+static const struct retype_case retype_cases[] = {{
+{cases}
+}};
+
+static const char *lookup_names[] = {{
+{lookups}
+}};
+
+static const char *order_name(enum AVChannelOrder order) {{
+    switch (order) {{
+    case AV_CHANNEL_ORDER_UNSPEC:
+        return "UNSPEC";
+    case AV_CHANNEL_ORDER_NATIVE:
+        return "NATIVE";
+    case AV_CHANNEL_ORDER_CUSTOM:
+        return "CUSTOM";
+    case AV_CHANNEL_ORDER_AMBISONIC:
+        return "AMBISONIC";
+    default:
+        return "UNKNOWN";
+    }}
+}}
+
+static uint64_t comparable_mask(const AVChannelLayout *layout) {{
+    if (layout->order == AV_CHANNEL_ORDER_NATIVE || layout->order == AV_CHANNEL_ORDER_AMBISONIC)
+        return layout->u.mask;
+    return 0;
+}}
+
+static void print_channel_sequence(const AVChannelLayout *layout) {{
+    int printed = 0;
+    for (int index = 0; index < layout->nb_channels; index++) {{
+        enum AVChannel channel = av_channel_layout_channel_from_index(layout, index);
+        if (channel == AV_CHAN_NONE)
+            continue;
+
+        char name[64];
+        av_channel_name(name, sizeof(name), channel);
+        if (printed)
+            putchar('+');
+        fputs(name, stdout);
+        printed++;
+    }}
+    if (!printed)
+        putchar('-');
+}}
+
+static void print_lookup_results(const AVChannelLayout *layout) {{
+    for (size_t index = 0; index < sizeof(lookup_names) / sizeof(lookup_names[0]); index++) {{
+        printf("|%d", av_channel_layout_index_from_string(layout, lookup_names[index]));
+    }}
+}}
+
+static void print_layout_fields(const AVChannelLayout *layout) {{
+    char description[512];
+    int ret = av_channel_layout_describe(layout, description, sizeof(description));
+    if (ret < 0)
+        snprintf(description, sizeof(description), "<describe-error:%d>", ret);
+
+    printf(
+        "%s|%d|%016" PRIx64 "|%s|",
+        order_name(layout->order),
+        layout->nb_channels,
+        comparable_mask(layout),
+        description
+    );
+    print_channel_sequence(layout);
+    printf("|%016" PRIx64, av_channel_layout_subset(layout, AV_CH_LAYOUT_STEREO));
+    print_lookup_results(layout);
+}}
+
+static void print_retype_case(const struct retype_case *test_case) {{
+    AVChannelLayout layout = {{0}};
+    int ret = av_channel_layout_from_string(&layout, test_case->input);
+    printf("retype:%s|", test_case->id);
+    if (ret < 0) {{
+        printf("parseerr|%d\n", ret);
+        return;
+    }}
+
+    ret = av_channel_layout_retype(&layout, test_case->target_order, test_case->flags);
+    if (ret < 0) {{
+        printf("err|%d|", ret);
+        print_layout_fields(&layout);
+        putchar('\n');
+        av_channel_layout_uninit(&layout);
+        return;
+    }}
+
+    printf("%s|", ret > 0 ? "lossy" : "lossless");
+    print_layout_fields(&layout);
+    putchar('\n');
+
+    av_channel_layout_uninit(&layout);
+}}
+
+int main(void) {{
+    for (size_t index = 0; index < sizeof(retype_cases) / sizeof(retype_cases[0]); index++)
+        print_retype_case(&retype_cases[index]);
+    return 0;
+}}
+"#
+    )
+}
+
+fn c_retype_target(target: RetypeTarget) -> &'static str {
+    match target {
+        RetypeTarget::Native => "AV_CHANNEL_ORDER_NATIVE",
+        RetypeTarget::Custom => "AV_CHANNEL_ORDER_CUSTOM",
+        RetypeTarget::Unspecified => "AV_CHANNEL_ORDER_UNSPEC",
+        RetypeTarget::Ambisonic => "AV_CHANNEL_ORDER_AMBISONIC",
+    }
+}
+
+fn c_retype_flags(case: &RetypeCase) -> String {
+    let mut flags = Vec::new();
+    if !case.allow_lossy {
+        flags.push("AV_CHANNEL_LAYOUT_RETYPE_FLAG_LOSSLESS");
+    }
+    if case.canonical {
+        flags.push("AV_CHANNEL_LAYOUT_RETYPE_FLAG_CANONICAL");
+    }
+    if flags.is_empty() {
+        "0".to_string()
+    } else {
+        flags.join(" | ")
+    }
 }
 
 fn c_string_literal(value: &str) -> String {
