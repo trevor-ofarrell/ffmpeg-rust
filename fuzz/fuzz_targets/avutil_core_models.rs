@@ -14102,25 +14102,57 @@ fn exercise_fixtures() {
         );
     }
 
-    let make_semiplanar_crop_storage = || {
+    let plane_visible_sample_bytes = |base: u8,
+                                      start_row: usize,
+                                      start_column_samples: usize,
+                                      width_samples: usize,
+                                      height: usize,
+                                      sample_bytes: usize| {
+        let start_column = start_column_samples * sample_bytes;
+        let width_bytes = width_samples * sample_bytes;
+        let mut data = Vec::with_capacity(width_bytes * height);
+        for row in start_row..start_row + height {
+            for column in start_column..start_column + width_bytes {
+                data.push(base.wrapping_add((row * 16 + column) as u8));
+            }
+        }
+        data
+    };
+
+    let make_semiplanar_crop_storage =
+        |log2_chroma_w: usize, log2_chroma_h: usize, chroma_line_size: usize| {
         let mut luma = vec![0; 64 * 4];
         for row in 0..4 {
             for column in 0..8 {
                 luma[row * 64 + column] = 0x10 + (row * 16 + column) as u8;
             }
         }
-        let mut chroma = vec![0; 64 * 2];
-        for row in 0..2 {
-            for column in 0..8 {
-                chroma[row * 64 + column] = 0x80 + (row * 16 + column) as u8;
+        let chroma_height = 4 >> log2_chroma_h;
+        let chroma_width_bytes = (8 >> log2_chroma_w) * 2;
+        let mut chroma = vec![0; chroma_line_size * chroma_height];
+        for row in 0..chroma_height {
+            for column in 0..chroma_width_bytes {
+                chroma[row * chroma_line_size + column] = 0x80 + (row * 16 + column) as u8;
             }
         }
         vec![luma, chroma]
     };
-    for format in [PixelFormat::Nv12, PixelFormat::Nv21] {
-        let storage = make_semiplanar_crop_storage();
+    for (format, log2_chroma_w, log2_chroma_h) in [
+        (PixelFormat::Nv12, 1usize, 1usize),
+        (PixelFormat::Nv21, 1usize, 1usize),
+        (PixelFormat::Nv16, 1usize, 0usize),
+        (PixelFormat::Nv24, 0usize, 0usize),
+        (PixelFormat::Nv42, 0usize, 0usize),
+    ] {
+        let line_sizes = if matches!(format, PixelFormat::Nv24 | PixelFormat::Nv42) {
+            vec![64, 128]
+        } else {
+            vec![64, 64]
+        };
+        let storage =
+            make_semiplanar_crop_storage(log2_chroma_w, log2_chroma_h, line_sizes[1]);
         let mut semiplanar_default_crop = Frame::video(
-            VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), vec![64, 64])
+            VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), line_sizes.clone())
                 .unwrap(),
         );
         semiplanar_default_crop.set_crop_offsets(1, 0, 1, 1);
@@ -14133,18 +14165,26 @@ fn exercise_fixtures() {
         };
         assert_eq!(semiplanar_default_video.width(), 7);
         assert_eq!(semiplanar_default_video.height(), 3);
-        assert_eq!(semiplanar_default_video.line_sizes(), &[64, 64]);
+        assert_eq!(semiplanar_default_video.line_sizes(), line_sizes.as_slice());
         assert_eq!(
             &semiplanar_default_video.planes()[0][..7],
             &[0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26]
         );
         assert_eq!(
             semiplanar_default_video.planes()[1].as_slice(),
-            &[0x80, 0x81, 0x82, 0x83, 0x84, 0x85]
+            plane_visible_sample_bytes(
+                0x80,
+                1 >> log2_chroma_h,
+                0,
+                7 >> log2_chroma_w,
+                3 >> log2_chroma_h,
+                2,
+            )
+            .as_slice()
         );
 
         let mut semiplanar_unaligned_crop = Frame::video(
-            VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), vec![64, 64])
+            VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), line_sizes.clone())
                 .unwrap(),
         );
         semiplanar_unaligned_crop.set_crop_offsets(1, 0, 1, 1);
@@ -14163,11 +14203,19 @@ fn exercise_fixtures() {
         );
         assert_eq!(
             semiplanar_unaligned_video.planes()[1].as_slice(),
-            &[0x80, 0x81, 0x82, 0x83, 0x84, 0x85]
+            plane_visible_sample_bytes(
+                0x80,
+                1 >> log2_chroma_h,
+                1 >> log2_chroma_w,
+                6 >> log2_chroma_w,
+                3 >> log2_chroma_h,
+                2,
+            )
+            .as_slice()
         );
 
         let mut semiplanar_even_unaligned_crop = Frame::video(
-            VideoFrame::new_with_line_sizes(8, 4, format, storage, vec![64, 64]).unwrap(),
+            VideoFrame::new_with_line_sizes(8, 4, format, storage, line_sizes).unwrap(),
         );
         semiplanar_even_unaligned_crop.set_crop_offsets(2, 0, 2, 2);
         semiplanar_even_unaligned_crop
@@ -14179,7 +14227,18 @@ fn exercise_fixtures() {
         };
         assert_eq!(semiplanar_even_video.width(), 4);
         assert_eq!(semiplanar_even_video.height(), 2);
-        assert_eq!(semiplanar_even_video.planes()[1].as_slice(), &[0x92, 0x93, 0x94, 0x95]);
+        assert_eq!(
+            semiplanar_even_video.planes()[1].as_slice(),
+            plane_visible_sample_bytes(
+                0x80,
+                2 >> log2_chroma_h,
+                2 >> log2_chroma_w,
+                4 >> log2_chroma_w,
+                2 >> log2_chroma_h,
+                2,
+            )
+            .as_slice()
+        );
     }
 
     for (format, bytes_per_pixel, line_size) in [

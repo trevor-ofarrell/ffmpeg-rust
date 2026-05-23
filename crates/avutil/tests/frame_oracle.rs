@@ -732,15 +732,33 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         frame_fields(&crop_yuv420p_odd_unaligned),
     );
 
-    for (pixel_format, name) in [(PixelFormat::Nv12, "nv12"), (PixelFormat::Nv21, "nv21")] {
-        let semiplanar_crop_storage = semiplanar_yuv_strided_storage(8, 4, 64, 1, 1);
+    for (pixel_format, name, log2_chroma_w, log2_chroma_h) in [
+        (PixelFormat::Nv12, "nv12", 1usize, 1usize),
+        (PixelFormat::Nv21, "nv21", 1usize, 1usize),
+        (PixelFormat::Nv16, "nv16", 1usize, 0usize),
+        (PixelFormat::Nv24, "nv24", 0usize, 0usize),
+        (PixelFormat::Nv42, "nv42", 0usize, 0usize),
+    ] {
+        let line_sizes = if matches!(pixel_format, PixelFormat::Nv24 | PixelFormat::Nv42) {
+            vec![64, 128]
+        } else {
+            vec![64, 64]
+        };
+        let semiplanar_crop_storage = semiplanar_yuv_strided_storage(
+            8,
+            4,
+            line_sizes[0],
+            line_sizes[1],
+            log2_chroma_w,
+            log2_chroma_h,
+        );
         let mut crop_semiplanar_default = Frame::video(
             VideoFrame::new_with_line_sizes(
                 8,
                 4,
                 pixel_format,
                 semiplanar_crop_storage.clone(),
-                vec![64, 64],
+                line_sizes.clone(),
             )
             .unwrap(),
         );
@@ -764,7 +782,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
                 4,
                 pixel_format,
                 semiplanar_crop_storage.clone(),
-                vec![64, 64],
+                line_sizes.clone(),
             )
             .unwrap(),
         );
@@ -788,7 +806,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
                 4,
                 pixel_format,
                 semiplanar_crop_storage.clone(),
-                vec![64, 64],
+                line_sizes.clone(),
             )
             .unwrap(),
         );
@@ -812,7 +830,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
                 4,
                 pixel_format,
                 semiplanar_crop_storage,
-                vec![64, 64],
+                line_sizes,
             )
             .unwrap(),
         );
@@ -2724,16 +2742,17 @@ fn planar_yuv_strided_storage(
 fn semiplanar_yuv_strided_storage(
     width: usize,
     height: usize,
-    line_size: usize,
+    luma_line_size: usize,
+    chroma_line_size: usize,
     log2_chroma_w: usize,
     log2_chroma_h: usize,
 ) -> Vec<Vec<u8>> {
     vec![
-        strided_plane_sample_storage(width, height, line_size, 0x10, 1),
+        strided_plane_sample_storage(width, height, luma_line_size, 0x10, 1),
         strided_plane_sample_storage(
             width >> log2_chroma_w,
             height >> log2_chroma_h,
-            line_size,
+            chroma_line_size,
             0x80,
             2,
         ),
@@ -3593,6 +3612,19 @@ static int semiplanar_yuv_layout(enum AVPixelFormat format,
     case AV_PIX_FMT_NV21:
         *log2_chroma_w = 1;
         *log2_chroma_h = 1;
+        *luma_sample_bytes = 1;
+        *chroma_pair_bytes = 2;
+        return 1;
+    case AV_PIX_FMT_NV16:
+        *log2_chroma_w = 1;
+        *log2_chroma_h = 0;
+        *luma_sample_bytes = 1;
+        *chroma_pair_bytes = 2;
+        return 1;
+    case AV_PIX_FMT_NV24:
+    case AV_PIX_FMT_NV42:
+        *log2_chroma_w = 0;
+        *log2_chroma_h = 0;
         *luma_sample_bytes = 1;
         *chroma_pair_bytes = 2;
         return 1;
@@ -5284,6 +5316,9 @@ int main(void)
     exercise_yuv420p_crop_pair();
     exercise_semiplanar_crop_pair(AV_PIX_FMT_NV12, "nv12");
     exercise_semiplanar_crop_pair(AV_PIX_FMT_NV21, "nv21");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_NV16, "nv16");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_NV24, "nv24");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_NV42, "nv42");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUVJ420P, "yuvj420p");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV422P, "yuv422p");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUVJ422P, "yuvj422p");

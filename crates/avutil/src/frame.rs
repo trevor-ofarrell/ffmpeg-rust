@@ -15762,7 +15762,11 @@ struct SemiplanarCropLayout {
 
 fn semiplanar_crop_layout(format: PixelFormat) -> Option<SemiplanarCropLayout> {
     match format {
-        PixelFormat::Nv12 | PixelFormat::Nv21 => Some(SemiplanarCropLayout {
+        PixelFormat::Nv12
+        | PixelFormat::Nv21
+        | PixelFormat::Nv16
+        | PixelFormat::Nv24
+        | PixelFormat::Nv42 => Some(SemiplanarCropLayout {
             luma_sample_bytes: 1,
             chroma_pair_bytes: 2,
         }),
@@ -20850,16 +20854,17 @@ mod tests {
         fn semiplanar_yuv_storage(
             width: usize,
             height: usize,
-            line_size: usize,
+            luma_line_size: usize,
+            chroma_line_size: usize,
             log2_chroma_w: usize,
             log2_chroma_h: usize,
         ) -> Vec<Vec<u8>> {
             vec![
-                strided_plane_sample_storage(width, height, line_size, 0x10, 1),
+                strided_plane_sample_storage(width, height, luma_line_size, 0x10, 1),
                 strided_plane_sample_storage(
                     width >> log2_chroma_w,
                     height >> log2_chroma_h,
-                    line_size,
+                    chroma_line_size,
                     0x80,
                     2,
                 ),
@@ -21253,12 +21258,28 @@ mod tests {
             );
         }
 
-        for format in [PixelFormat::Nv12, PixelFormat::Nv21] {
-            let log2_chroma_w = 1usize;
-            let log2_chroma_h = 1usize;
-            let storage = semiplanar_yuv_storage(8, 4, 64, log2_chroma_w, log2_chroma_h);
+        for (format, log2_chroma_w, log2_chroma_h) in [
+            (PixelFormat::Nv12, 1usize, 1usize),
+            (PixelFormat::Nv21, 1usize, 1usize),
+            (PixelFormat::Nv16, 1usize, 0usize),
+            (PixelFormat::Nv24, 0usize, 0usize),
+            (PixelFormat::Nv42, 0usize, 0usize),
+        ] {
+            let line_sizes = if matches!(format, PixelFormat::Nv24 | PixelFormat::Nv42) {
+                vec![64, 128]
+            } else {
+                vec![64, 64]
+            };
+            let storage = semiplanar_yuv_storage(
+                8,
+                4,
+                line_sizes[0],
+                line_sizes[1],
+                log2_chroma_w,
+                log2_chroma_h,
+            );
             let mut semiplanar_default = Frame::video(
-                VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), vec![64, 64])
+                VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), line_sizes.clone())
                     .unwrap(),
             );
             semiplanar_default.set_crop_offsets(1, 0, 1, 1);
@@ -21271,19 +21292,26 @@ mod tests {
             };
             assert_eq!(video.width(), 7, "{}", format.name());
             assert_eq!(video.height(), 3, "{}", format.name());
-            assert_eq!(video.line_sizes(), &[64, 64]);
+            assert_eq!(video.line_sizes(), line_sizes.as_slice());
             assert_eq!(
                 video.planes(),
                 &[
                     plane_visible(0x10, 1, 0, 7, 3),
-                    plane_visible_sample_bytes(0x80, 0, 0, 7 >> log2_chroma_w, 1, 2),
+                    plane_visible_sample_bytes(
+                        0x80,
+                        1 >> log2_chroma_h,
+                        0,
+                        7 >> log2_chroma_w,
+                        3 >> log2_chroma_h,
+                        2,
+                    ),
                 ],
                 "{}",
                 format.name()
             );
 
             let mut semiplanar_unaligned = Frame::video(
-                VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), vec![64, 64])
+                VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), line_sizes.clone())
                     .unwrap(),
             );
             semiplanar_unaligned.set_crop_offsets(1, 0, 1, 1);
@@ -21296,19 +21324,26 @@ mod tests {
             };
             assert_eq!(video.width(), 6, "{}", format.name());
             assert_eq!(video.height(), 3, "{}", format.name());
-            assert_eq!(video.line_sizes(), &[64, 64]);
+            assert_eq!(video.line_sizes(), line_sizes.as_slice());
             assert_eq!(
                 video.planes(),
                 &[
                     plane_visible(0x10, 1, 1, 6, 3),
-                    plane_visible_sample_bytes(0x80, 0, 0, 6 >> log2_chroma_w, 1, 2),
+                    plane_visible_sample_bytes(
+                        0x80,
+                        1 >> log2_chroma_h,
+                        1 >> log2_chroma_w,
+                        6 >> log2_chroma_w,
+                        3 >> log2_chroma_h,
+                        2,
+                    ),
                 ],
                 "{}",
                 format.name()
             );
 
             let mut semiplanar_even_unaligned = Frame::video(
-                VideoFrame::new_with_line_sizes(8, 4, format, storage, vec![64, 64]).unwrap(),
+                VideoFrame::new_with_line_sizes(8, 4, format, storage, line_sizes.clone()).unwrap(),
             );
             semiplanar_even_unaligned.set_crop_offsets(2, 0, 2, 2);
             semiplanar_even_unaligned
@@ -21320,12 +21355,19 @@ mod tests {
             };
             assert_eq!(video.width(), 4, "{}", format.name());
             assert_eq!(video.height(), 2, "{}", format.name());
-            assert_eq!(video.line_sizes(), &[64, 64]);
+            assert_eq!(video.line_sizes(), line_sizes.as_slice());
             assert_eq!(
                 video.planes(),
                 &[
                     plane_visible(0x10, 2, 2, 4, 2),
-                    plane_visible_sample_bytes(0x80, 1, 1, 4 >> log2_chroma_w, 1, 2),
+                    plane_visible_sample_bytes(
+                        0x80,
+                        2 >> log2_chroma_h,
+                        2 >> log2_chroma_w,
+                        4 >> log2_chroma_w,
+                        2 >> log2_chroma_h,
+                        2,
+                    ),
                 ],
                 "{}",
                 format.name()

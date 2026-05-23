@@ -357,10 +357,12 @@ entries under `AV_FRAME_SIDE_DATA_FLAG_UNIQUE`, and append MULTI entries even
 when `REPLACE` is set.
 The make-writable rows caught and now verify the pinned default 64-byte
 `av_frame_make_writable()` realignment path plus side-data deep-copy behavior.
-The semi-planar crop rows exercise `av_frame_apply_cropping()` for `nv12` and
-`nv21`, covering default luma-left alignment rounding, exact
-`AV_FRAME_CROP_UNALIGNED` luma offsets, and subsampled two-byte interleaved
-chroma offsets.
+The semi-planar crop rows exercise `av_frame_apply_cropping()` for `nv12`,
+`nv21`, `nv16`, `nv24`, and `nv42`, covering default luma-left alignment
+rounding, exact `AV_FRAME_CROP_UNALIGNED` luma offsets, and
+geometry-specific two-byte interleaved chroma offsets. The `nv24`/`nv42` rows
+also record the oracle-observed full-resolution chroma line size expansion
+under FFmpeg's default 64-byte allocation alignment.
 The harness is wired into
 `tests/differential/mappings.txt` as `avutil-frame|oracle-libavutil-frame-core`:
 
