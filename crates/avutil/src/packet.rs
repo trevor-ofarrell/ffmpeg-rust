@@ -16,6 +16,140 @@ pub const AV_NOPTS_VALUE: i64 = i64::MIN;
 pub const AV_PACKET_POS_UNKNOWN: i64 = -1;
 pub const AV_INPUT_BUFFER_PADDING_SIZE: usize = 64;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketAbiField {
+    pub name: &'static str,
+    pub offset: usize,
+    pub size: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PacketAbiLayout {
+    pub name: &'static str,
+    pub size: usize,
+    pub align: usize,
+    pub fields: &'static [PacketAbiField],
+}
+
+pub const AV_PACKET_SIDE_DATA_ABI_LAYOUT: PacketAbiLayout = PacketAbiLayout {
+    name: "AVPacketSideData",
+    size: 24,
+    align: 8,
+    fields: &[
+        PacketAbiField {
+            name: "data",
+            offset: 0,
+            size: 8,
+        },
+        PacketAbiField {
+            name: "size",
+            offset: 8,
+            size: 8,
+        },
+        PacketAbiField {
+            name: "type",
+            offset: 16,
+            size: 4,
+        },
+    ],
+};
+
+pub const AV_PACKET_ABI_LAYOUT: PacketAbiLayout = PacketAbiLayout {
+    name: "AVPacket",
+    size: 104,
+    align: 8,
+    fields: &[
+        PacketAbiField {
+            name: "buf",
+            offset: 0,
+            size: 8,
+        },
+        PacketAbiField {
+            name: "pts",
+            offset: 8,
+            size: 8,
+        },
+        PacketAbiField {
+            name: "dts",
+            offset: 16,
+            size: 8,
+        },
+        PacketAbiField {
+            name: "data",
+            offset: 24,
+            size: 8,
+        },
+        PacketAbiField {
+            name: "size",
+            offset: 32,
+            size: 4,
+        },
+        PacketAbiField {
+            name: "stream_index",
+            offset: 36,
+            size: 4,
+        },
+        PacketAbiField {
+            name: "flags",
+            offset: 40,
+            size: 4,
+        },
+        PacketAbiField {
+            name: "side_data",
+            offset: 48,
+            size: 8,
+        },
+        PacketAbiField {
+            name: "side_data_elems",
+            offset: 56,
+            size: 4,
+        },
+        PacketAbiField {
+            name: "duration",
+            offset: 64,
+            size: 8,
+        },
+        PacketAbiField {
+            name: "pos",
+            offset: 72,
+            size: 8,
+        },
+        PacketAbiField {
+            name: "opaque",
+            offset: 80,
+            size: 8,
+        },
+        PacketAbiField {
+            name: "opaque_ref",
+            offset: 88,
+            size: 8,
+        },
+        PacketAbiField {
+            name: "time_base",
+            offset: 96,
+            size: 8,
+        },
+    ],
+};
+
+pub const AV_PACKET_LIST_ABI_LAYOUT: PacketAbiLayout = PacketAbiLayout {
+    name: "AVPacketList",
+    size: 112,
+    align: 8,
+    fields: &[
+        PacketAbiField {
+            name: "pkt",
+            offset: 0,
+            size: 104,
+        },
+        PacketAbiField {
+            name: "next",
+            offset: 104,
+            size: 8,
+        },
+    ],
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PacketFlags {
     bits: u32,
@@ -6102,6 +6236,59 @@ mod tests {
         assert_eq!(packet.opaque_address(), None);
         assert!(packet.opaque_ref().is_none());
         assert_eq!(packet.time_base(), Rational::ZERO);
+    }
+
+    #[test]
+    fn packet_public_abi_layout_matches_pinned_default_native_profile() {
+        assert_eq!(AV_PACKET_SIDE_DATA_ABI_LAYOUT.name, "AVPacketSideData");
+        assert_eq!(AV_PACKET_SIDE_DATA_ABI_LAYOUT.size, 24);
+        assert_eq!(AV_PACKET_SIDE_DATA_ABI_LAYOUT.align, 8);
+        assert_eq!(
+            AV_PACKET_SIDE_DATA_ABI_LAYOUT.fields,
+            &[
+                PacketAbiField {
+                    name: "data",
+                    offset: 0,
+                    size: 8,
+                },
+                PacketAbiField {
+                    name: "size",
+                    offset: 8,
+                    size: 8,
+                },
+                PacketAbiField {
+                    name: "type",
+                    offset: 16,
+                    size: 4,
+                },
+            ]
+        );
+
+        assert_eq!(AV_PACKET_ABI_LAYOUT.name, "AVPacket");
+        assert_eq!(AV_PACKET_ABI_LAYOUT.size, 104);
+        assert_eq!(AV_PACKET_ABI_LAYOUT.align, 8);
+        assert_eq!(AV_PACKET_ABI_LAYOUT.fields.len(), 14);
+        assert_eq!(AV_PACKET_ABI_LAYOUT.fields[0].name, "buf");
+        assert_eq!(AV_PACKET_ABI_LAYOUT.fields[0].offset, 0);
+        assert_eq!(AV_PACKET_ABI_LAYOUT.fields[13].name, "time_base");
+        assert_eq!(AV_PACKET_ABI_LAYOUT.fields[13].offset, 96);
+        assert_eq!(AV_PACKET_ABI_LAYOUT.fields[13].size, 8);
+
+        for layout in [
+            AV_PACKET_SIDE_DATA_ABI_LAYOUT,
+            AV_PACKET_ABI_LAYOUT,
+            AV_PACKET_LIST_ABI_LAYOUT,
+        ] {
+            assert!(layout.align.is_power_of_two());
+            for field in layout.fields {
+                assert!(
+                    field.offset + field.size <= layout.size,
+                    "{}.{} extends beyond the pinned struct size",
+                    layout.name,
+                    field.name
+                );
+            }
+        }
     }
 
     #[test]

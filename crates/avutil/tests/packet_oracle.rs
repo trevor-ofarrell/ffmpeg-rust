@@ -22,7 +22,8 @@ use avutil::{
     PacketStereo3d, PacketStereo3dFlags, PacketStereo3dPrimaryEye, PacketStereo3dType,
     PacketStereo3dView, PacketSubtitlePosition, PacketThreeDReferenceDisplay,
     PacketThreeDReferenceDisplays, PacketWebVttIdentifier, PacketWebVttSettings, Rational, SetMode,
-    SideData, AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_POS_UNKNOWN,
+    SideData, AVPALETTE_SIZE, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE, AV_PACKET_ABI_LAYOUT,
+    AV_PACKET_LIST_ABI_LAYOUT, AV_PACKET_POS_UNKNOWN, AV_PACKET_SIDE_DATA_ABI_LAYOUT,
 };
 
 #[test]
@@ -157,6 +158,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     insert_side_data_name_boundary_row(&mut rows);
     insert_flag_inventory_row(&mut rows);
     insert_picture_type_inventory_row(&mut rows);
+    insert_packet_abi_layout_rows(&mut rows);
     insert_side_data_payload_layout_rows(&mut rows);
 
     let mut rescaled = packet_with_common_props();
@@ -472,6 +474,36 @@ fn insert_picture_type_inventory_row(rows: &mut BTreeMap<String, Vec<String>>) {
         fields.push(picture_type.ffmpeg_char().to_string());
     }
     rows.insert("packet:picture-type-inventory".to_string(), fields);
+}
+
+fn insert_packet_abi_layout_rows(rows: &mut BTreeMap<String, Vec<String>>) {
+    rows.insert(
+        "packet:abi-side-data-layout".to_string(),
+        packet_abi_layout_fields(&AV_PACKET_SIDE_DATA_ABI_LAYOUT),
+    );
+    rows.insert(
+        "packet:abi-avpacket-layout".to_string(),
+        packet_abi_layout_fields(&AV_PACKET_ABI_LAYOUT),
+    );
+    rows.insert(
+        "packet:abi-avpacket-list-layout".to_string(),
+        packet_abi_layout_fields(&AV_PACKET_LIST_ABI_LAYOUT),
+    );
+}
+
+fn packet_abi_layout_fields(layout: &avutil::PacketAbiLayout) -> Vec<String> {
+    let mut fields = vec![
+        layout.name.to_string(),
+        layout.size.to_string(),
+        layout.align.to_string(),
+        layout.fields.len().to_string(),
+    ];
+    for field in layout.fields {
+        fields.push(field.name.to_string());
+        fields.push(field.offset.to_string());
+        fields.push(field.size.to_string());
+    }
+    fields
 }
 
 fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -3241,6 +3273,42 @@ static void print_frame_side_data_array_summary(const char *name,
     printf("\n");
 }
 
+#define PRINT_ABI_FIELD(type, field) \
+    printf("|%s|%zu|%zu", #field, offsetof(type, field), sizeof(((type *)0)->field))
+
+static void print_packet_abi_layout(void) {
+    printf("packet:abi-side-data-layout|AVPacketSideData|%zu|%zu|3",
+           sizeof(AVPacketSideData), (size_t)_Alignof(AVPacketSideData));
+    PRINT_ABI_FIELD(AVPacketSideData, data);
+    PRINT_ABI_FIELD(AVPacketSideData, size);
+    PRINT_ABI_FIELD(AVPacketSideData, type);
+    printf("\n");
+
+    printf("packet:abi-avpacket-layout|AVPacket|%zu|%zu|14",
+           sizeof(AVPacket), (size_t)_Alignof(AVPacket));
+    PRINT_ABI_FIELD(AVPacket, buf);
+    PRINT_ABI_FIELD(AVPacket, pts);
+    PRINT_ABI_FIELD(AVPacket, dts);
+    PRINT_ABI_FIELD(AVPacket, data);
+    PRINT_ABI_FIELD(AVPacket, size);
+    PRINT_ABI_FIELD(AVPacket, stream_index);
+    PRINT_ABI_FIELD(AVPacket, flags);
+    PRINT_ABI_FIELD(AVPacket, side_data);
+    PRINT_ABI_FIELD(AVPacket, side_data_elems);
+    PRINT_ABI_FIELD(AVPacket, duration);
+    PRINT_ABI_FIELD(AVPacket, pos);
+    PRINT_ABI_FIELD(AVPacket, opaque);
+    PRINT_ABI_FIELD(AVPacket, opaque_ref);
+    PRINT_ABI_FIELD(AVPacket, time_base);
+    printf("\n");
+
+    printf("packet:abi-avpacket-list-layout|AVPacketList|%zu|%zu|2",
+           sizeof(AVPacketList), (size_t)_Alignof(AVPacketList));
+    PRINT_ABI_FIELD(AVPacketList, pkt);
+    PRINT_ABI_FIELD(AVPacketList, next);
+    printf("\n");
+}
+
 static void print_side_data_kind_inventory(void) {
 #define PRINT_SIDE_KIND(kind) do { \
     const char *name = av_packet_side_data_name(kind); \
@@ -5328,6 +5396,7 @@ int main(void) {
     print_side_data_name_boundaries();
     print_flag_inventory();
     print_picture_type_inventory();
+    print_packet_abi_layout();
     print_side_data_payload_layouts();
     print_display_rotation_helpers();
     print_display_rotation_get_affine_helpers();

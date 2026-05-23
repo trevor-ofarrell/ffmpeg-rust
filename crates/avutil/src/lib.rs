@@ -93,9 +93,10 @@ pub use options::{
 };
 pub use packet::{
     packet_pack_dictionary, packet_unpack_dictionary, Packet, PacketA53ClosedCaptions,
-    PacketActiveFormatDescription, PacketAmbientViewingEnvironment, PacketAudioServiceType,
-    PacketContentLightMetadata, PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf,
-    PacketDoviCompression, PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
+    PacketAbiField, PacketAbiLayout, PacketActiveFormatDescription,
+    PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
+    PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
+    PacketDynamicHdr10Plus, PacketEncryptionInfo, PacketEncryptionInitInfo,
     PacketEncryptionInitInfoEntry, PacketEncryptionSubsample, PacketExif, PacketFallbackTrack,
     PacketFifo, PacketFlags, PacketFrameCropping, PacketH263MbInfo, PacketH263MbInfoEntry,
     PacketHdrPlusColorTransformParams, PacketHdrPlusOverlapProcessOption, PacketHdrPlusPercentile,
@@ -112,7 +113,8 @@ pub use packet::{
     PacketStringMetadata, PacketStringMetadataEntry, PacketSubtitlePosition,
     PacketThreeDReferenceDisplay, PacketThreeDReferenceDisplays, PacketWebVttIdentifier,
     PacketWebVttSettings, SideData, AV_INPUT_BUFFER_PADDING_SIZE, AV_NOPTS_VALUE,
-    AV_PACKET_POS_UNKNOWN,
+    AV_PACKET_ABI_LAYOUT, AV_PACKET_LIST_ABI_LAYOUT, AV_PACKET_POS_UNKNOWN,
+    AV_PACKET_SIDE_DATA_ABI_LAYOUT,
 };
 pub use pixel::{
     PixelFormat, PixelFormatClass, PixelFormatDescriptor, AVPALETTE_COUNT, AVPALETTE_SIZE,

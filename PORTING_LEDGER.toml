@@ -2,7 +2,12 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest avutil-packet evidence: packet/frame side-data bridge map-inventory
+# Latest avutil-packet evidence: default-native ABI layout rows now prove
+# pinned FFmpeg 8.1.1 `AVPacketSideData`, `AVPacket`, and deprecated
+# `AVPacketList` sizes, alignments, field offsets, and field sizes through C
+# `sizeof`, `_Alignof`, and `offsetof` rows. Rust exposes matching
+# `PacketAbiLayout` metadata for the selected x86_64 oracle profile.
+# Earlier avutil-packet evidence: packet/frame side-data bridge map-inventory
 # rows now prove all 11 pinned FFmpeg 8.1.1 global packet/frame side-data
 # mappings in both directions while preserving expected kind order and payload
 # bytes. Unit, differential, upstream `fate-avpacket`, and
@@ -187,6 +192,7 @@ unit_tests = [
   "packet::tests::packet_side_data_rejects_malformed_h263_mb_info_payload",
   "packet::tests::packet_side_data_parses_quality_stats_payload",
   "packet::tests::packet_picture_type_values_and_chars_match_ffmpeg_8_1_1_header",
+  "packet::tests::packet_public_abi_layout_matches_pinned_default_native_profile",
   "packet::tests::packet_side_data_rejects_malformed_quality_stats_payload",
   "packet::tests::packet_side_data_parses_fallback_track_payload",
   "packet::tests::packet_side_data_rejects_malformed_fallback_track_payload",
@@ -310,7 +316,14 @@ fate_tests = [
   "packet_oracle::upstream_fate_avpacket_passes",
 ]
 fuzz_targets = ["avutil_core_models"]
-# Latest update: pinned libavcodec AVPacket packet/frame bridge rows now
+# Latest update: pinned libavcodec AVPacket ABI rows now validate the
+# default-native public layout through packet:abi-side-data-layout,
+# packet:abi-avpacket-layout, and packet:abi-avpacket-list-layout rows. The
+# rows prove struct sizes, alignments, field offsets, and field sizes for
+# AVPacketSideData, AVPacket, and deprecated AVPacketList against the installed
+# x86_64 FFmpeg 8.1.1 oracle. Unit tests cover the matching Rust
+# PacketAbiLayout metadata.
+# Earlier update: pinned libavcodec AVPacket packet/frame bridge rows now
 # validate the full global side-data map inventory through
 # packet:frame-to-packet-map-inventory and
 # packet:packet-to-frame-map-inventory rows. The rows prove all 11 supported
