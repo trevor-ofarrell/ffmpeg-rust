@@ -357,6 +357,13 @@ entries under `AV_FRAME_SIDE_DATA_FLAG_UNIQUE`, and append MULTI entries even
 when `REPLACE` is set.
 The make-writable rows caught and now verify the pinned default 64-byte
 `av_frame_make_writable()` realignment path plus side-data deep-copy behavior.
+The packed YUV 4:2:2 crop rows exercise `av_frame_apply_cropping()` for
+`yuyv422`, `uyvy422`, `yvyu422`, `y210le`, `y210be`, `y212le`, `y212be`,
+`y216le`, and `y216be`. The pinned rows prove default nonzero-left crop returns
+`AVERROR_BUG` without mutation for these multi-byte packed formats. With
+`AV_FRAME_CROP_UNALIGNED`, FFmpeg applies exact left offsets using two stored
+bytes per pixel for the 8-bit packed rows and four stored bytes per pixel for
+the high-bit rows, then resets crop fields on success.
 The semi-planar crop rows exercise `av_frame_apply_cropping()` for 8-bit
 `nv12`, `nv21`, `nv16`, `nv24`, and `nv42`, plus high-bit `nv20*` and the
 `p010*`/`p012*`/`p016*`/`p210*`/`p212*`/`p216*`/`p410*`/`p412*`/`p416*`

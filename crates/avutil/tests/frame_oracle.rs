@@ -1801,6 +1801,9 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         (PixelFormat::BayerRggb8, 1, 64),
         (PixelFormat::BayerGbrg8, 1, 64),
         (PixelFormat::BayerGrbg8, 1, 64),
+        (PixelFormat::Yuyv422, 2, 64),
+        (PixelFormat::Uyvy422, 2, 64),
+        (PixelFormat::Yvyu422, 2, 64),
         (PixelFormat::Rgba, 4, 64),
         (PixelFormat::Bgra, 4, 64),
         (PixelFormat::Argb, 4, 64),
@@ -1856,6 +1859,12 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         (PixelFormat::GrayF16Be, 2, 64),
         (PixelFormat::GrayF32Le, 4, 64),
         (PixelFormat::GrayF32Be, 4, 64),
+        (PixelFormat::Y210Le, 4, 64),
+        (PixelFormat::Y210Be, 4, 64),
+        (PixelFormat::Y212Le, 4, 64),
+        (PixelFormat::Y212Be, 4, 64),
+        (PixelFormat::Y216Le, 4, 64),
+        (PixelFormat::Y216Be, 4, 64),
         (PixelFormat::Rgb48Le, 6, 192),
         (PixelFormat::Rgb48Be, 6, 192),
         (PixelFormat::Bgr48Le, 6, 192),
@@ -3918,6 +3927,9 @@ static void print_video_planes(const AVFrame *frame)
     case AV_PIX_FMT_GRAY16BE:
     case AV_PIX_FMT_GRAYF16LE:
     case AV_PIX_FMT_GRAYF16BE:
+    case AV_PIX_FMT_YUYV422:
+    case AV_PIX_FMT_UYVY422:
+    case AV_PIX_FMT_YVYU422:
         bytes_per_pixel = 2;
         break;
     case AV_PIX_FMT_RGB24:
@@ -3959,6 +3971,12 @@ static void print_video_planes(const AVFrame *frame)
     case AV_PIX_FMT_GRAY32BE:
     case AV_PIX_FMT_GRAYF32LE:
     case AV_PIX_FMT_GRAYF32BE:
+    case AV_PIX_FMT_Y210LE:
+    case AV_PIX_FMT_Y210BE:
+    case AV_PIX_FMT_Y212LE:
+    case AV_PIX_FMT_Y212BE:
+    case AV_PIX_FMT_Y216LE:
+    case AV_PIX_FMT_Y216BE:
         bytes_per_pixel = 4;
         break;
     case AV_PIX_FMT_XYZ12LE:
@@ -5424,6 +5442,9 @@ int main(void)
     exercise_packed_crop_pair("bayer_rggb8", AV_PIX_FMT_BAYER_RGGB8, 1);
     exercise_packed_crop_pair("bayer_gbrg8", AV_PIX_FMT_BAYER_GBRG8, 1);
     exercise_packed_crop_pair("bayer_grbg8", AV_PIX_FMT_BAYER_GRBG8, 1);
+    exercise_packed_crop_pair("yuyv422", AV_PIX_FMT_YUYV422, 2);
+    exercise_packed_crop_pair("uyvy422", AV_PIX_FMT_UYVY422, 2);
+    exercise_packed_crop_pair("yvyu422", AV_PIX_FMT_YVYU422, 2);
     exercise_packed_crop_pair("rgb565be", AV_PIX_FMT_RGB565BE, 2);
     exercise_packed_crop_pair("rgb565le", AV_PIX_FMT_RGB565LE, 2);
     exercise_packed_crop_pair("rgb555be", AV_PIX_FMT_RGB555BE, 2);
@@ -5467,6 +5488,12 @@ int main(void)
     exercise_packed_crop_pair("grayf16be", AV_PIX_FMT_GRAYF16BE, 2);
     exercise_packed_crop_pair("grayf32le", AV_PIX_FMT_GRAYF32LE, 4);
     exercise_packed_crop_pair("grayf32be", AV_PIX_FMT_GRAYF32BE, 4);
+    exercise_packed_crop_pair("y210le", AV_PIX_FMT_Y210LE, 4);
+    exercise_packed_crop_pair("y210be", AV_PIX_FMT_Y210BE, 4);
+    exercise_packed_crop_pair("y212le", AV_PIX_FMT_Y212LE, 4);
+    exercise_packed_crop_pair("y212be", AV_PIX_FMT_Y212BE, 4);
+    exercise_packed_crop_pair("y216le", AV_PIX_FMT_Y216LE, 4);
+    exercise_packed_crop_pair("y216be", AV_PIX_FMT_Y216BE, 4);
     exercise_packed_crop_pair("rgb48le", AV_PIX_FMT_RGB48LE, 6);
     exercise_packed_crop_pair("rgb48be", AV_PIX_FMT_RGB48BE, 6);
     exercise_packed_crop_pair("bgr48le", AV_PIX_FMT_BGR48LE, 6);

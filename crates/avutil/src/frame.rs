@@ -13699,6 +13699,9 @@ impl VideoFrame {
             | PixelFormat::Gray16Be
             | PixelFormat::GrayF16Le
             | PixelFormat::GrayF16Be
+            | PixelFormat::Yuyv422
+            | PixelFormat::Uyvy422
+            | PixelFormat::Yvyu422
             | PixelFormat::Rgb565Be
             | PixelFormat::Rgb565Le
             | PixelFormat::Rgb555Be
@@ -13727,6 +13730,12 @@ impl VideoFrame {
             | PixelFormat::Gray32Be
             | PixelFormat::GrayF32Le
             | PixelFormat::GrayF32Be
+            | PixelFormat::Y210Le
+            | PixelFormat::Y210Be
+            | PixelFormat::Y212Le
+            | PixelFormat::Y212Be
+            | PixelFormat::Y216Le
+            | PixelFormat::Y216Be
             | PixelFormat::X2Rgb10Le
             | PixelFormat::X2Rgb10Be
             | PixelFormat::X2Bgr10Le
@@ -13767,7 +13776,7 @@ impl VideoFrame {
             | PixelFormat::Xv48Be => 8,
             _ => {
                 return Err(AvError::unsupported(format!(
-                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, selected packed grayscale/gray-alpha, selected planar YUV/GBR/YUVA/GBRA, rgb24/bgr24/vyu444, selected high-depth packed RGB/RGBA, and selected packed 4:4:4 RGB/YUV/XYZ video frames, not {}",
+                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, selected packed grayscale/gray-alpha, packed YUV 4:2:2, selected planar YUV/GBR/YUVA/GBRA, rgb24/bgr24/vyu444, selected high-depth packed RGB/RGBA, and selected packed 4:4:4 RGB/YUV/XYZ video frames, not {}",
                     self.pixel_format.name()
                 )));
             }
@@ -22003,6 +22012,9 @@ mod tests {
             (PixelFormat::BayerRggb8, 1, 64),
             (PixelFormat::BayerGbrg8, 1, 64),
             (PixelFormat::BayerGrbg8, 1, 64),
+            (PixelFormat::Yuyv422, 2, 64),
+            (PixelFormat::Uyvy422, 2, 64),
+            (PixelFormat::Yvyu422, 2, 64),
             (PixelFormat::Rgba, 4, 64),
             (PixelFormat::Bgra, 4, 64),
             (PixelFormat::Argb, 4, 64),
@@ -22058,6 +22070,12 @@ mod tests {
             (PixelFormat::GrayF16Be, 2, 64),
             (PixelFormat::GrayF32Le, 4, 64),
             (PixelFormat::GrayF32Be, 4, 64),
+            (PixelFormat::Y210Le, 4, 64),
+            (PixelFormat::Y210Be, 4, 64),
+            (PixelFormat::Y212Le, 4, 64),
+            (PixelFormat::Y212Be, 4, 64),
+            (PixelFormat::Y216Le, 4, 64),
+            (PixelFormat::Y216Be, 4, 64),
             (PixelFormat::Rgb48Le, 6, 192),
             (PixelFormat::Rgb48Be, 6, 192),
             (PixelFormat::Bgr48Le, 6, 192),
