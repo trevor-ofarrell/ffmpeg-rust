@@ -6965,6 +6965,42 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         &new_side_data_replacement[..strict_shrink_len]
     );
 
+    let mut duplicate_packet = Packet::default();
+    duplicate_packet
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap());
+    duplicate_packet.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
+    );
+    duplicate_packet
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap());
+    duplicate_packet
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x44]).unwrap());
+    assert_eq!(
+        duplicate_packet
+            .side_data_by_kind_id(&PacketSideDataKind::Palette)
+            .unwrap()
+            .data(),
+        &[0x11]
+    );
+    let replaced_packet_duplicate = duplicate_packet
+        .try_add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(replaced_packet_duplicate.data(), &[0x11]);
+    assert_eq!(duplicate_packet.side_data()[0].data(), &[0x55]);
+    assert_eq!(duplicate_packet.side_data()[2].data(), &[0x33]);
+    duplicate_packet
+        .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 0)
+        .unwrap();
+    assert_eq!(
+        duplicate_packet
+            .side_data_by_kind_id(&PacketSideDataKind::Palette)
+            .unwrap()
+            .data(),
+        &[]
+    );
+    assert_eq!(duplicate_packet.side_data()[2].data(), &[0x33]);
+
     let mut side_data_list = PacketSideDataList::new();
     let mut zero_side_data_list = PacketSideDataList::new();
     let zero_list_entry = zero_side_data_list

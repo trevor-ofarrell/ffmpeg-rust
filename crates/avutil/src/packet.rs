@@ -10267,6 +10267,11 @@ mod tests {
         assert_eq!(packet.side_data()[1].kind(), "skip_samples");
         assert_eq!(packet.side_data()[2].kind(), "palette");
         assert_eq!(packet.side_data()[2].data(), &[2]);
+        packet
+            .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 0)
+            .unwrap();
+        assert_eq!(packet.side_data()[0].data(), &[]);
+        assert_eq!(packet.side_data()[2].data(), &[2]);
 
         assert!(packet
             .add_side_data(SideData::new("new_extradata", vec![7]).unwrap())

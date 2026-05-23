@@ -1544,6 +1544,60 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_summary_fields(&packet),
     );
 
+    let mut duplicate_packet = Packet::default();
+    duplicate_packet
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap());
+    duplicate_packet.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
+    );
+    duplicate_packet
+        .push_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap());
+    duplicate_packet.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x44]).unwrap(),
+    );
+    rows.insert(
+        "packet:side-duplicate-before".to_string(),
+        side_data_summary_fields(&duplicate_packet),
+    );
+    rows.insert(
+        "packet:side-get-duplicate-palette".to_string(),
+        side_data_lookup_fields(
+            duplicate_packet.side_data_by_kind_id(&PacketSideDataKind::Palette),
+        ),
+    );
+    let replaced = duplicate_packet
+        .try_add_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap(),
+        )
+        .expect("duplicate packet side-data replacement should not hit capacity")
+        .expect("first palette packet side data should be replaced");
+    assert_eq!(replaced.data(), &[0x11]);
+    rows.insert(
+        "packet:side-add-duplicate-replace-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-add-duplicate-replace".to_string(),
+        side_data_summary_fields(&duplicate_packet),
+    );
+    duplicate_packet
+        .shrink_side_data_by_kind_id(&PacketSideDataKind::Palette, 0)
+        .expect("first palette packet side data should shrink");
+    rows.insert(
+        "packet:side-shrink-duplicate-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-shrink-duplicate".to_string(),
+        side_data_summary_fields(&duplicate_packet),
+    );
+    rows.insert(
+        "packet:side-get-duplicate-palette-shrunk".to_string(),
+        side_data_lookup_fields(
+            duplicate_packet.side_data_by_kind_id(&PacketSideDataKind::Palette),
+        ),
+    );
+
     let mut packet = Packet::default();
     packet
         .new_side_data(PacketSideDataKind::NewExtradata, 0)
@@ -3302,6 +3356,34 @@ static void exercise_side_data_api(void) {
     ret = av_packet_add_side_data(pkt, AV_PKT_DATA_PALETTE, owned, 1);
     printf("packet:side-add-append-ret|%d\n", ret);
     print_side_data_summary("packet:side-add-append", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    pkt->side_data = av_mallocz(4 * sizeof(*pkt->side_data));
+    fail_if(!pkt->side_data, "av_mallocz duplicate packet side data failed");
+    pkt->side_data_elems = 4;
+    pkt->side_data[0] = make_stack_side_data(AV_PKT_DATA_PALETTE, 0x11);
+    pkt->side_data[1] = make_stack_side_data(AV_PKT_DATA_NEW_EXTRADATA, 0x22);
+    pkt->side_data[2] = make_stack_side_data(AV_PKT_DATA_PALETTE, 0x33);
+    pkt->side_data[3] = make_stack_side_data(AV_PKT_DATA_SKIP_SAMPLES, 0x44);
+    print_side_data_summary("packet:side-duplicate-before", pkt);
+    print_side_data_lookup("packet:side-get-duplicate-palette", pkt,
+                           AV_PKT_DATA_PALETTE);
+    owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!owned, "av_mallocz duplicate packet side data replacement failed");
+    owned[0] = 0x55;
+    ret = av_packet_add_side_data(pkt, AV_PKT_DATA_PALETTE, owned, 1);
+    if (ret < 0)
+        av_free(owned);
+    printf("packet:side-add-duplicate-replace-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_add_side_data duplicate replace failed");
+    print_side_data_summary("packet:side-add-duplicate-replace", pkt);
+    ret = av_packet_shrink_side_data(pkt, AV_PKT_DATA_PALETTE, 0);
+    printf("packet:side-shrink-duplicate-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_shrink_side_data duplicate shrink failed");
+    print_side_data_summary("packet:side-shrink-duplicate", pkt);
+    print_side_data_lookup("packet:side-get-duplicate-palette-shrunk", pkt,
+                           AV_PKT_DATA_PALETTE);
     av_packet_free(&pkt);
 
     pkt = new_packet();
