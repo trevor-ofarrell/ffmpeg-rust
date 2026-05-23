@@ -3889,10 +3889,14 @@ impl PacketDisplayMatrix {
     pub fn counterclockwise_rotation_degrees(self) -> Option<f64> {
         let a = f64::from(self.elements[0]) / Self::FIXED_16_16_SCALE;
         let b = f64::from(self.elements[1]) / Self::FIXED_16_16_SCALE;
-        if a == 0.0 && b == 0.0 {
+        let c = f64::from(self.elements[3]) / Self::FIXED_16_16_SCALE;
+        let d = f64::from(self.elements[4]) / Self::FIXED_16_16_SCALE;
+        let x_scale = a.hypot(c);
+        let y_scale = b.hypot(d);
+        if x_scale == 0.0 || y_scale == 0.0 {
             return None;
         }
-        let rotation = -b.atan2(a).to_degrees();
+        let rotation = -(b / y_scale).atan2(a / x_scale).to_degrees();
         if rotation.is_finite() {
             Some(rotation)
         } else {
@@ -9568,6 +9572,34 @@ mod tests {
         assert!(PacketDisplayMatrix::new([0; 9])
             .counterclockwise_rotation_degrees()
             .is_none());
+        let raw_affine = PacketDisplayMatrix::new([
+            65_536,
+            12_345,
+            7,
+            -23_456,
+            32_768,
+            -9,
+            11,
+            -13,
+            1_073_741_824,
+        ]);
+        assert_eq!(
+            raw_affine
+                .counterclockwise_rotation_degrees()
+                .unwrap()
+                .round() as i32,
+            -21
+        );
+        assert!(
+            PacketDisplayMatrix::new([0, 65_536, 0, 0, 65_536, 0, 0, 0, 1_073_741_824,])
+                .counterclockwise_rotation_degrees()
+                .is_none()
+        );
+        assert!(
+            PacketDisplayMatrix::new([65_536, 0, 0, 65_536, 0, 0, 0, 0, 1_073_741_824,])
+                .counterclockwise_rotation_degrees()
+                .is_none()
+        );
         assert_eq!(
             PacketDisplayMatrix::from_clockwise_rotation_degrees(f64::NAN)
                 .unwrap_err()

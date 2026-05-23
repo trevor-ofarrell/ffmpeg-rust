@@ -507,6 +507,10 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
         )
         .to_string()],
     );
+    rows.insert(
+        "packet:display-rotation-get-affine".to_string(),
+        display_rotation_get_affine_fields(),
+    );
     rows.insert("packet:display-flip".to_string(), display_flip_fields());
     rows.insert(
         "packet:payload-layout-stereo3d".to_string(),
@@ -1981,6 +1985,55 @@ fn rounded_rotation_field(rotation: Option<f64>) -> String {
     }
 }
 
+fn display_rotation_get_affine_fields() -> Vec<String> {
+    let raw_affine = PacketDisplayMatrix::new([
+        65_536,
+        12_345,
+        7,
+        -23_456,
+        32_768,
+        -9,
+        11,
+        -13,
+        PacketDisplayMatrix::FIXED_2_30_ONE,
+    ]);
+    let x_axis_singular = PacketDisplayMatrix::new([
+        0,
+        65_536,
+        0,
+        0,
+        65_536,
+        0,
+        0,
+        0,
+        PacketDisplayMatrix::FIXED_2_30_ONE,
+    ]);
+    let y_axis_singular = PacketDisplayMatrix::new([
+        65_536,
+        0,
+        0,
+        65_536,
+        0,
+        0,
+        0,
+        0,
+        PacketDisplayMatrix::FIXED_2_30_ONE,
+    ]);
+
+    let mut fields = Vec::new();
+    for (name, matrix) in [
+        ("raw-affine", raw_affine),
+        ("x-axis-singular", x_axis_singular),
+        ("y-axis-singular", y_axis_singular),
+    ] {
+        fields.push(name.to_string());
+        fields.push(rounded_rotation_field(
+            matrix.counterclockwise_rotation_degrees(),
+        ));
+    }
+    fields
+}
+
 fn display_flip_fields() -> Vec<String> {
     let mut fields = Vec::new();
     let identity = PacketDisplayMatrix::identity();
@@ -3053,6 +3106,33 @@ static void print_display_rotation_helpers(void) {
            isnan(av_display_rotation_get(singular)) ? 1 : 0);
 }
 
+static void print_display_rotation_get_case(const char *name, const int32_t matrix[9]) {
+    double rotation = av_display_rotation_get(matrix);
+    printf("|%s|", name);
+    if (isnan(rotation))
+        printf("nan");
+    else
+        printf("%lld", (long long)llround(rotation));
+}
+
+static void print_display_rotation_get_affine_helpers(void) {
+    const int32_t raw_affine[9] = {
+        65536, 12345, 7, -23456, 32768, -9, 11, -13, 1073741824
+    };
+    const int32_t x_axis_singular[9] = {
+        0, 65536, 0, 0, 65536, 0, 0, 0, 1073741824
+    };
+    const int32_t y_axis_singular[9] = {
+        65536, 0, 0, 65536, 0, 0, 0, 0, 1073741824
+    };
+
+    printf("packet:display-rotation-get-affine");
+    print_display_rotation_get_case("raw-affine", raw_affine);
+    print_display_rotation_get_case("x-axis-singular", x_axis_singular);
+    print_display_rotation_get_case("y-axis-singular", y_axis_singular);
+    printf("\n");
+}
+
 static void print_display_flip_case(const char *name, const int32_t input[9], int hflip, int vflip) {
     int32_t matrix[9];
     for (int i = 0; i < 9; i++)
@@ -3702,6 +3782,7 @@ int main(void) {
     print_picture_type_inventory();
     print_side_data_payload_layouts();
     print_display_rotation_helpers();
+    print_display_rotation_get_affine_helpers();
     print_display_flip_helpers();
 
     pkt = packet_with_common_props();

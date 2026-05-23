@@ -12031,6 +12031,50 @@ fn exercise_fixtures() {
             .counterclockwise_rotation_degrees()
             .is_none()
     );
+    let packet_affine_rotation = PacketDisplayMatrix::new([
+        65_536,
+        12_345,
+        7,
+        -23_456,
+        32_768,
+        -9,
+        11,
+        -13,
+        1_073_741_824,
+    ]);
+    assert_eq!(
+        packet_affine_rotation
+            .counterclockwise_rotation_degrees()
+            .unwrap()
+            .round() as i32,
+        -21
+    );
+    assert!(PacketDisplayMatrix::new([
+        0,
+        65_536,
+        0,
+        0,
+        65_536,
+        0,
+        0,
+        0,
+        1_073_741_824,
+    ])
+    .counterclockwise_rotation_degrees()
+    .is_none());
+    assert!(PacketDisplayMatrix::new([
+        65_536,
+        0,
+        0,
+        65_536,
+        0,
+        0,
+        0,
+        0,
+        1_073_741_824,
+    ])
+    .counterclockwise_rotation_degrees()
+    .is_none());
     assert_eq!(
         PacketDisplayMatrix::from_clockwise_rotation_degrees(f64::NAN)
             .unwrap_err()
