@@ -27,6 +27,9 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # bounded `pcm_s16le` streamcopy output to pinned FFmpeg for `-f framecrc -`
 # rows and raw `-f s16le` file output, proving audio packet timing, duration,
 # size, checksum, and byte-preserving mux output through the Rust packet path.
+# Latest WAV media evidence: the generated WAV-to-MD5 oracle row is now mapped
+# to `avutil-packet`, proving the Rust WAV demuxer -> Packet -> md5 muxer path
+# against pinned FFmpeg streamcopy output for a bounded PCM s16le WAV fixture.
 # Latest avutil-packet evidence: default-native ABI layout rows now prove
 # pinned FFmpeg 8.1.1 `AVPacketSideData`, `AVPacket`, and deprecated
 # `AVPacketList` sizes, alignments, field offsets, and field sizes through C
@@ -341,6 +344,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-md5-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-file-output",
+  "tests/differential/mappings.txt:avutil-packet|oracle-wav-generated-md5",
   "packet_oracle::libavcodec_packet_core_lifecycle_matches_packet_model",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framehash_records_match_ffmpeg_oracle",
@@ -350,6 +354,7 @@ differential_tests = [
   "rawvideo_oracle::rawvideo_rgb24_md5_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_file_output_matches_ffmpeg_oracle",
+  "wav_oracle::wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle",
 ]
 fate_tests = [
   "tests/fate/mappings.txt:avutil-packet|local-avutil-unit",
@@ -389,6 +394,11 @@ fuzz_targets = ["avutil_core_models"]
 # against pinned FFmpeg streamcopy output, covering audio packet count, byte
 # count, sample-duration timing, framecrc checksum, and byte-preserving file
 # output outside the direct libavcodec AVPacket helper harness.
+# Latest media-integration update: the generated WAV md5 oracle row validates
+# the bounded Rust WAV demuxer -> Packet -> md5 muxer CLI path against pinned
+# FFmpeg streamcopy output for a generated PCM s16le WAV fixture, adding a
+# container-demuxed audio packet path outside the direct libavcodec AVPacket
+# helper harness.
 # Earlier update: pinned libavcodec AVPacket packet/frame bridge rows now
 # validate the full global side-data map inventory through
 # packet:frame-to-packet-map-inventory and
