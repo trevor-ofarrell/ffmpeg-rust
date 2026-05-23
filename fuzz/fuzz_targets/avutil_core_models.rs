@@ -7215,12 +7215,37 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(side_data_list
         .add_side_data(SideData::new_with_kind(other_list_kind.clone(), vec![0xee]).unwrap())
         .is_none());
+    let flags_kind = PacketSideDataKind::Unknown("vendor.private.flags-side-data".to_string());
+    let flags_entry = side_data_list
+        .new_side_data_with_flags(flags_kind.clone(), 2, 1)
+        .unwrap();
+    flags_entry.data_mut().copy_from_slice(&[0xc2, 0x58]);
+    assert_eq!(side_data_list.len(), 3);
+    let mut caller_owned =
+        Some(SideData::new_with_kind(flags_kind.clone(), vec![0x5a]).unwrap());
+    let replaced_flags = side_data_list
+        .try_add_side_data_with_flags(&mut caller_owned, 1)
+        .unwrap()
+        .unwrap();
+    assert_eq!(replaced_flags.data(), &[0xc2, 0x58]);
+    assert!(caller_owned.is_none());
+    assert_eq!(side_data_list.len(), 3);
+    assert_eq!(
+        side_data_list
+            .get(&flags_kind)
+            .unwrap()
+            .data(),
+        &[0x5a]
+    );
     let removed = side_data_list
         .remove_kind(&typed_side_data_kind)
         .unwrap();
     assert_eq!(removed.data(), replacement_payload.as_slice());
-    assert_eq!(side_data_list.len(), 1);
-    assert_eq!(side_data_list.entries()[0].kind_id(), &other_list_kind);
+    assert_eq!(side_data_list.len(), 2);
+    assert!(side_data_list
+        .get(&flags_kind)
+        .is_some());
+    assert!(side_data_list.get(&other_list_kind).is_some());
     assert!(side_data_list.remove_kind(&typed_side_data_kind).is_none());
     side_data_list.clear();
     assert!(side_data_list.is_empty());

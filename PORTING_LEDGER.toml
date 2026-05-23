@@ -2,10 +2,15 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest avutil-packet evidence: multi-key dictionary packing now has
-# pinned `av_packet_pack_dictionary()` / `av_packet_unpack_dictionary()`
-# rows proving duplicate AVDictionary entries are serialized in order and
-# unpack collapse follows FFmpeg's case-insensitive replacement shape.
+# Latest avutil-packet evidence: standalone `AVPacketSideData` flag rows now
+# prove pinned FFmpeg 8.1.1 ignores nonzero flags for both
+# `av_packet_side_data_new()` and `av_packet_side_data_add()`; the former
+# succeeds after caller-initialized allocation bytes, and the latter replaces
+# the first matching type while transferring caller ownership.
+# Earlier avutil-packet evidence: multi-key dictionary packing has pinned
+# `av_packet_pack_dictionary()` / `av_packet_unpack_dictionary()` rows proving
+# duplicate AVDictionary entries are serialized in order and unpack collapse
+# follows FFmpeg's case-insensitive replacement shape.
 # Earlier avutil-packet evidence: property-preserving `av_packet_from_data()`
 # data/size/buf replacement rows, zero-size side-data add rows, shared
 # refcounted payload grow rows, already-refcounted payload make-refcounted
@@ -372,6 +377,7 @@ fuzz_targets = ["avutil_core_models"]
 # bounded flag-aware surface, and unit plus `avutil_core_models` fuzz-smoke
 # fixtures cover the same non-deduplicating UNIQUE behavior.
 # Latest update: pinned libavcodec AVPacket side-data oracle coverage validates duplicate-type `av_packet_new_side_data()` and standalone `av_packet_side_data_new()` replacement semantics. Both APIs replace the first matching duplicate entry and leave later duplicates in place; the oracle rows write deterministic bytes before comparison because positive-size newly allocated side-data contents are allocator-dependent in FFmpeg. Rust unit tests and avutil_core_models fuzz-smoke fixtures cover the same first-match replacement shape.
+# Latest update: pinned libavcodec AVPacket side-data oracle coverage validates standalone nonzero flag behavior for `av_packet_side_data_new()` and `av_packet_side_data_add()`. FFmpeg 8.1.1 accepts both calls despite the documented currently-unused flags parameter, `new` exposes caller-initialized allocation bytes for comparison, and `add` replaces the first matching type while taking ownership of the caller buffer. Rust unit tests and avutil_core_models fuzz-smoke fixtures cover the same ignored-flag replacement shape.
 # Latest update: pinned libavcodec AVPacket side-data oracle coverage validates a capacity distinction between packet-owned side data and standalone `AVPacketSideData` arrays. Packet-owned `av_packet_add_side_data()` still rejects a new type at `AV_PKT_DATA_NB` with ERANGE, while standalone `av_packet_side_data_add()` accepts an out-of-range raw type past `AV_PKT_DATA_NB` and `av_packet_side_data_new()` can then replace that same raw type without growing the array. Rust `PacketSideDataList` now keeps that standalone behavior separate from the packet-owned capacity-checked API, with unit and avutil_core_models fuzz-smoke coverage.
 # Latest update: pinned libavutil display matrix oracle coverage validates av_display_rotation_get() for PacketDisplayMatrix through packet:display-rotation-get-affine rows. Rust now normalizes both matrix axes before extracting rotation, and unit plus avutil_core_models fuzz-smoke fixtures cover raw affine extraction and x-axis/y-axis singular None behavior.
 # Latest update: pinned libavcodec AVPacket side-data oracle coverage validates av_packet_side_data_name() NULL behavior at INT_MIN, packet-owned av_packet_get_side_data()/av_packet_new_side_data()/av_packet_add_side_data()/av_packet_shrink_side_data() duplicate-type behavior through packet:side-*duplicate* rows, and standalone av_packet_side_data_get()/new()/add()/remove() duplicate-type behavior through packet:array-*duplicate* rows. Rust unit tests and avutil_core_models fuzz-smoke fixtures now cover the same side-data name boundary plus packet-owned first-match lookup/new/replacement/shrink and standalone first-match lookup/new/replacement plus last-match swap removal shape.

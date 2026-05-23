@@ -4844,6 +4844,15 @@ impl PacketSideDataList {
         kind: PacketSideDataKind,
         size: usize,
     ) -> AvResult<&mut SideData> {
+        self.new_side_data_with_flags(kind, size, 0)
+    }
+
+    pub fn new_side_data_with_flags(
+        &mut self,
+        kind: PacketSideDataKind,
+        size: usize,
+        _flags: i32,
+    ) -> AvResult<&mut SideData> {
         let mut data = Vec::new();
         data.try_reserve_exact(size).map_err(|_| {
             AvError::with_code(
@@ -4859,6 +4868,21 @@ impl PacketSideDataList {
 
     pub fn try_add_side_data(&mut self, side_data: SideData) -> AvResult<Option<SideData>> {
         Ok(self.add_or_replace(side_data).0)
+    }
+
+    pub fn try_add_side_data_with_flags(
+        &mut self,
+        side_data: &mut Option<SideData>,
+        _flags: i32,
+    ) -> AvResult<Option<SideData>> {
+        let side_data = side_data.take().ok_or_else(|| {
+            AvError::with_code(
+                AvErrorKind::InvalidArgument,
+                AvErrorCode::EINVAL,
+                "packet side data add requires caller-owned data",
+            )
+        })?;
+        self.try_add_side_data(side_data)
     }
 
     pub fn add_side_data(&mut self, side_data: SideData) -> Option<SideData> {
@@ -10518,11 +10542,47 @@ mod tests {
         );
         assert_eq!(list.entries()[1].kind_id(), &PacketSideDataKind::Palette);
 
+        let new_flags = list
+            .new_side_data_with_flags(PacketSideDataKind::SkipSamples, 2, 1)
+            .unwrap();
+        new_flags.data_mut().copy_from_slice(&[0xc2, 0x58]);
+        assert_eq!(list.entries().len(), 3);
+        assert_eq!(
+            list.entries()[0].kind_id(),
+            &PacketSideDataKind::NewExtradata
+        );
+        assert_eq!(list.entries()[0].data(), &[0x55, 0x66, 0x77]);
+        assert_eq!(list.entries()[1].kind_id(), &PacketSideDataKind::Palette);
+        assert_eq!(list.entries()[1].data(), &[0x99]);
+        assert_eq!(
+            list.entries()[2].kind_id(),
+            &PacketSideDataKind::SkipSamples
+        );
+        assert_eq!(list.entries()[2].data(), &[0xc2, 0x58]);
+
+        let mut caller_owned =
+            Some(SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x5a]).unwrap());
+        let replaced = list
+            .try_add_side_data_with_flags(&mut caller_owned, 1)
+            .unwrap();
+        assert_eq!(replaced.unwrap().data(), &[0xc2, 0x58]);
+        assert!(caller_owned.is_none());
+        assert_eq!(list.entries().len(), 3);
+        assert_eq!(
+            list.get(&PacketSideDataKind::SkipSamples).unwrap().data(),
+            &[0x5a]
+        );
+
         let removed = list.remove_kind(&PacketSideDataKind::NewExtradata).unwrap();
         assert_eq!(removed.data(), &[0x55, 0x66, 0x77]);
-        assert_eq!(list.entries().len(), 1);
-        assert_eq!(list.entries()[0].kind_id(), &PacketSideDataKind::Palette);
-        assert_eq!(list.entries()[0].data(), &[0x99]);
+        assert_eq!(list.entries().len(), 2);
+        assert_eq!(
+            list.entries()[0].kind_id(),
+            &PacketSideDataKind::SkipSamples
+        );
+        assert_eq!(list.entries()[0].data(), &[0x5a]);
+        assert_eq!(list.entries()[1].kind_id(), &PacketSideDataKind::Palette);
+        assert_eq!(list.entries()[1].data(), &[0x99]);
         assert!(list
             .remove_kind(&PacketSideDataKind::NewExtradata)
             .is_none());

@@ -2140,6 +2140,39 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_lookup_fields(list.get(&PacketSideDataKind::Palette)),
     );
 
+    let new_flags = list
+        .new_side_data_with_flags(PacketSideDataKind::SkipSamples, 2, 1)
+        .unwrap();
+    new_flags.data_mut().copy_from_slice(&[0xc2, 0x58]);
+    rows.insert(
+        "packet:array-new-flags-nonzero-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-new-flags-nonzero".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+
+    let mut caller_owned =
+        Some(SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x5a]).unwrap());
+    let add_flags_replaced = list
+        .try_add_side_data_with_flags(&mut caller_owned, 1)
+        .unwrap();
+    assert_eq!(add_flags_replaced.unwrap().data(), &[0xc2, 0x58]);
+    assert!(caller_owned.is_none());
+    rows.insert(
+        "packet:array-add-flags-nonzero-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-flags-nonzero".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+    rows.insert(
+        "packet:array-add-flags-nonzero-owned".to_string(),
+        side_data_lookup_fields(caller_owned.as_ref()),
+    );
+
     let mut duplicate_list = PacketSideDataList::from_entries(vec![
         SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
         SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
@@ -3057,6 +3090,12 @@ static void print_side_data_array_lookup(const char *name,
     const AVPacketSideData *entry = av_packet_side_data_get(sd, nb_sd, type);
     printf("%s|%d|%zu|", name, entry != NULL, entry ? entry->size : 0);
     print_hex_or_dash(entry ? entry->data : NULL, entry ? (int)entry->size : 0);
+    printf("\n");
+}
+
+static void print_owned_side_data_byte(const char *name, const uint8_t *data) {
+    printf("%s|%d|%d|", name, data != NULL, data ? 1 : 0);
+    print_hex_or_dash(data, data ? 1 : 0);
     printf("\n");
 }
 
@@ -4209,6 +4248,26 @@ static void exercise_side_data_array_api(void) {
     print_side_data_array_summary("packet:array-add-append", sd, nb_sd);
     print_side_data_array_lookup("packet:array-get-palette", sd, nb_sd,
                                  AV_PKT_DATA_PALETTE);
+
+    entry = av_packet_side_data_new(&sd, &nb_sd, AV_PKT_DATA_SKIP_SAMPLES,
+                                    2, 1);
+    printf("packet:array-new-flags-nonzero-ret|%d\n", entry != NULL);
+    fail_if(!entry, "av_packet_side_data_new flags failed");
+    entry->data[0] = 0xc2;
+    entry->data[1] = 0x58;
+    print_side_data_array_summary("packet:array-new-flags-nonzero",
+                                  sd, nb_sd);
+
+    uint8_t *flags_owned = alloc_owned_side_data_byte(0x5a);
+    entry = av_packet_side_data_add(&sd, &nb_sd, AV_PKT_DATA_SKIP_SAMPLES,
+                                    flags_owned, 1, 1);
+    printf("packet:array-add-flags-nonzero-ret|%d\n", entry != NULL);
+    print_side_data_array_summary("packet:array-add-flags-nonzero",
+                                  sd, nb_sd);
+    print_owned_side_data_byte("packet:array-add-flags-nonzero-owned",
+                               entry ? NULL : flags_owned);
+    if (!entry)
+        av_free(flags_owned);
 
     AVPacketSideData duplicate_sd[4] = {
         make_stack_side_data(AV_PKT_DATA_PALETTE, 0x11),
