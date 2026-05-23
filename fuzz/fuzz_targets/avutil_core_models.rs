@@ -13531,7 +13531,7 @@ fn exercise_fixtures() {
             8,
             4,
             PixelFormat::Yuv420p,
-            yuv420p_storage,
+            yuv420p_storage.clone(),
             vec![64, 64, 64],
         )
         .unwrap(),
@@ -13552,6 +13552,74 @@ fn exercise_fixtures() {
     );
     assert_eq!(yuv420p_unaligned_crop_video.planes()[1], vec![0x91, 0x92]);
     assert_eq!(yuv420p_unaligned_crop_video.planes()[2], vec![0xd1, 0xd2]);
+
+    let mut yuv420p_odd_default_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Yuv420p,
+            yuv420p_storage.clone(),
+            vec![64, 64, 64],
+        )
+        .unwrap(),
+    );
+    yuv420p_odd_default_crop.set_crop_offsets(1, 0, 1, 1);
+    yuv420p_odd_default_crop
+        .apply_cropping(FrameCropFlags::NONE)
+        .unwrap();
+    let FrameData::Video(yuv420p_odd_default_crop_video) = yuv420p_odd_default_crop.data() else {
+        panic!("constructed odd yuv420p default crop frame changed variant");
+    };
+    assert_eq!(yuv420p_odd_default_crop.crop(), FrameCrop::default());
+    assert_eq!(yuv420p_odd_default_crop_video.width(), 7);
+    assert_eq!(yuv420p_odd_default_crop_video.height(), 3);
+    assert_eq!(
+        &yuv420p_odd_default_crop_video.planes()[0][..7],
+        &[0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26]
+    );
+    assert_eq!(
+        yuv420p_odd_default_crop_video.planes()[1],
+        vec![0x80, 0x81, 0x82]
+    );
+    assert_eq!(
+        yuv420p_odd_default_crop_video.planes()[2],
+        vec![0xc0, 0xc1, 0xc2]
+    );
+
+    let mut yuv420p_odd_unaligned_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Yuv420p,
+            yuv420p_storage,
+            vec![64, 64, 64],
+        )
+        .unwrap(),
+    );
+    yuv420p_odd_unaligned_crop.set_crop_offsets(1, 0, 1, 1);
+    yuv420p_odd_unaligned_crop
+        .apply_cropping(FrameCropFlags::UNALIGNED)
+        .unwrap();
+    let FrameData::Video(yuv420p_odd_unaligned_crop_video) =
+        yuv420p_odd_unaligned_crop.data()
+    else {
+        panic!("constructed odd yuv420p unaligned crop frame changed variant");
+    };
+    assert_eq!(yuv420p_odd_unaligned_crop.crop(), FrameCrop::default());
+    assert_eq!(yuv420p_odd_unaligned_crop_video.width(), 6);
+    assert_eq!(yuv420p_odd_unaligned_crop_video.height(), 3);
+    assert_eq!(
+        &yuv420p_odd_unaligned_crop_video.planes()[0][..6],
+        &[0x21, 0x22, 0x23, 0x24, 0x25, 0x26]
+    );
+    assert_eq!(
+        yuv420p_odd_unaligned_crop_video.planes()[1],
+        vec![0x80, 0x81, 0x82]
+    );
+    assert_eq!(
+        yuv420p_odd_unaligned_crop_video.planes()[2],
+        vec![0xc0, 0xc1, 0xc2]
+    );
 
     for (format, bytes_per_pixel, line_size) in [
         (PixelFormat::Rgb8, 1, 64),

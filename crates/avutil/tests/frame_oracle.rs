@@ -683,6 +683,55 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         frame_fields(&crop_yuv420p_unaligned),
     );
 
+    let yuv420p_odd_crop_storage = yuv420p_strided_storage(8, 4, 64);
+    let mut crop_yuv420p_odd_default = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Yuv420p,
+            yuv420p_odd_crop_storage.clone(),
+            vec![64, 64, 64],
+        )
+        .unwrap(),
+    );
+    crop_yuv420p_odd_default.set_crop_offsets(1, 0, 1, 1);
+    let crop_yuv420p_odd_default_ret = crop_yuv420p_odd_default
+        .apply_cropping(FrameCropFlags::NONE)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:apply-crop-yuv420p-odd-default-ret".to_string(),
+        vec![crop_yuv420p_odd_default_ret.to_string()],
+    );
+    rows.insert(
+        "frame:apply-crop-yuv420p-odd-default".to_string(),
+        frame_fields(&crop_yuv420p_odd_default),
+    );
+
+    let mut crop_yuv420p_odd_unaligned = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Yuv420p,
+            yuv420p_odd_crop_storage,
+            vec![64, 64, 64],
+        )
+        .unwrap(),
+    );
+    crop_yuv420p_odd_unaligned.set_crop_offsets(1, 0, 1, 1);
+    let crop_yuv420p_odd_unaligned_ret = crop_yuv420p_odd_unaligned
+        .apply_cropping(FrameCropFlags::UNALIGNED)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:apply-crop-yuv420p-odd-unaligned-ret".to_string(),
+        vec![crop_yuv420p_odd_unaligned_ret.to_string()],
+    );
+    rows.insert(
+        "frame:apply-crop-yuv420p-odd-unaligned".to_string(),
+        frame_fields(&crop_yuv420p_odd_unaligned),
+    );
+
     for (pixel_format, bytes_per_pixel, line_size) in [
         (PixelFormat::Rgb8, 1, 64),
         (PixelFormat::Bgr8, 1, 64),
@@ -2820,6 +2869,48 @@ static void exercise_yuv420p_crop_pair(void)
     fail_if(crop_unaligned_ret < 0, "yuv420p unaligned crop apply failed");
     print_frame("frame:apply-crop-yuv420p-unaligned", crop_unaligned);
 
+    AVFrame *crop_odd_default = av_frame_alloc();
+    fail_if(!crop_odd_default, "yuv420p odd default crop allocation failed");
+    crop_odd_default->format = AV_PIX_FMT_YUV420P;
+    crop_odd_default->width = 8;
+    crop_odd_default->height = 4;
+    fail_if(av_frame_get_buffer(crop_odd_default, 64) < 0,
+            "yuv420p odd default crop get_buffer failed");
+    fill_video_yuv420p(crop_odd_default);
+    crop_odd_default->crop_top = 1;
+    crop_odd_default->crop_left = 1;
+    crop_odd_default->crop_right = 1;
+    int crop_odd_default_ret = av_frame_apply_cropping(crop_odd_default, 0);
+    printf("frame:apply-crop-yuv420p-odd-default-ret|%d\n",
+           crop_odd_default_ret);
+    fail_if(crop_odd_default_ret < 0,
+            "yuv420p odd default crop apply failed");
+    print_frame("frame:apply-crop-yuv420p-odd-default",
+                crop_odd_default);
+
+    AVFrame *crop_odd_unaligned = av_frame_alloc();
+    fail_if(!crop_odd_unaligned,
+            "yuv420p odd unaligned crop allocation failed");
+    crop_odd_unaligned->format = AV_PIX_FMT_YUV420P;
+    crop_odd_unaligned->width = 8;
+    crop_odd_unaligned->height = 4;
+    fail_if(av_frame_get_buffer(crop_odd_unaligned, 64) < 0,
+            "yuv420p odd unaligned crop get_buffer failed");
+    fill_video_yuv420p(crop_odd_unaligned);
+    crop_odd_unaligned->crop_top = 1;
+    crop_odd_unaligned->crop_left = 1;
+    crop_odd_unaligned->crop_right = 1;
+    int crop_odd_unaligned_ret = av_frame_apply_cropping(
+        crop_odd_unaligned, AV_FRAME_CROP_UNALIGNED);
+    printf("frame:apply-crop-yuv420p-odd-unaligned-ret|%d\n",
+           crop_odd_unaligned_ret);
+    fail_if(crop_odd_unaligned_ret < 0,
+            "yuv420p odd unaligned crop apply failed");
+    print_frame("frame:apply-crop-yuv420p-odd-unaligned",
+                crop_odd_unaligned);
+
+    av_frame_free(&crop_odd_unaligned);
+    av_frame_free(&crop_odd_default);
     av_frame_free(&crop_unaligned);
     av_frame_free(&crop_default);
 }

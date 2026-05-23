@@ -13862,7 +13862,7 @@ impl VideoFrame {
             .height
             .checked_sub(crop.top + crop.bottom)
             .ok_or_else(|| crop_range_error("frame crop height underflow"))?;
-        let new_shapes = video_plane_shapes(self.pixel_format, new_width, new_height)?;
+        let new_shapes = yuv420p_cropped_plane_shapes(new_width, new_height)?;
 
         let plane_crop_tops = [crop.top, crop.top >> 1, crop.top >> 1];
         let plane_crop_lefts = [crop_left, crop_left >> 1, crop_left >> 1];
@@ -15186,6 +15186,29 @@ fn video_plane_shapes(
             ])
         }
     }
+}
+
+fn yuv420p_cropped_plane_shapes(width: usize, height: usize) -> AvResult<Vec<VideoPlaneShape>> {
+    if width == 0 || height == 0 {
+        return Err(AvError::invalid_argument(
+            "cropped yuv420p video dimensions must be non-zero",
+        ));
+    }
+
+    Ok(vec![
+        VideoPlaneShape {
+            row_bytes: width,
+            rows: height,
+        },
+        VideoPlaneShape {
+            row_bytes: width >> 1,
+            rows: height >> 1,
+        },
+        VideoPlaneShape {
+            row_bytes: width >> 1,
+            rows: height >> 1,
+        },
+    ])
 }
 
 fn video_line_sizes(
@@ -20356,6 +20379,71 @@ mod tests {
                 plane_visible(0x10, 2, 2, 4, 2),
                 plane_visible(0x80, 1, 1, 2, 1),
                 plane_visible(0xc0, 1, 1, 2, 1),
+            ]
+        );
+
+        let yuv420p_odd_storage = vec![
+            strided_plane_storage(8, 4, 64, 0x10),
+            strided_plane_storage(4, 2, 64, 0x80),
+            strided_plane_storage(4, 2, 64, 0xc0),
+        ];
+        let mut yuv420p_odd_default = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                PixelFormat::Yuv420p,
+                yuv420p_odd_storage.clone(),
+                vec![64, 64, 64],
+            )
+            .unwrap(),
+        );
+        yuv420p_odd_default.set_crop_offsets(1, 0, 1, 1);
+        yuv420p_odd_default
+            .apply_cropping(FrameCropFlags::NONE)
+            .unwrap();
+        assert_eq!(yuv420p_odd_default.crop(), FrameCrop::default());
+        let FrameData::Video(video) = yuv420p_odd_default.data() else {
+            unreachable!("constructed odd yuv420p default crop frame changed variant");
+        };
+        assert_eq!(video.width(), 7);
+        assert_eq!(video.height(), 3);
+        assert_eq!(video.line_sizes(), &[64, 64, 64]);
+        assert_eq!(
+            video.planes(),
+            &[
+                plane_visible(0x10, 1, 0, 7, 3),
+                plane_visible(0x80, 0, 0, 3, 1),
+                plane_visible(0xc0, 0, 0, 3, 1),
+            ]
+        );
+
+        let mut yuv420p_odd_unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                PixelFormat::Yuv420p,
+                yuv420p_odd_storage,
+                vec![64, 64, 64],
+            )
+            .unwrap(),
+        );
+        yuv420p_odd_unaligned.set_crop_offsets(1, 0, 1, 1);
+        yuv420p_odd_unaligned
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .unwrap();
+        assert_eq!(yuv420p_odd_unaligned.crop(), FrameCrop::default());
+        let FrameData::Video(video) = yuv420p_odd_unaligned.data() else {
+            unreachable!("constructed odd yuv420p unaligned crop frame changed variant");
+        };
+        assert_eq!(video.width(), 6);
+        assert_eq!(video.height(), 3);
+        assert_eq!(video.line_sizes(), &[64, 64, 64]);
+        assert_eq!(
+            video.planes(),
+            &[
+                plane_visible(0x10, 1, 1, 6, 3),
+                plane_visible(0x80, 0, 0, 3, 1),
+                plane_visible(0xc0, 0, 0, 3, 1),
             ]
         );
 
