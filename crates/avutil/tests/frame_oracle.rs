@@ -732,6 +732,105 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         frame_fields(&crop_yuv420p_odd_unaligned),
     );
 
+    for (pixel_format, name) in [(PixelFormat::Nv12, "nv12"), (PixelFormat::Nv21, "nv21")] {
+        let semiplanar_crop_storage = semiplanar_yuv_strided_storage(8, 4, 64, 1, 1);
+        let mut crop_semiplanar_default = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                semiplanar_crop_storage.clone(),
+                vec![64, 64],
+            )
+            .unwrap(),
+        );
+        crop_semiplanar_default.set_crop_offsets(1, 0, 1, 1);
+        let crop_semiplanar_default_ret = crop_semiplanar_default
+            .apply_cropping(FrameCropFlags::NONE)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-default-ret"),
+            vec![crop_semiplanar_default_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-default"),
+            frame_fields(&crop_semiplanar_default),
+        );
+
+        let mut crop_semiplanar_unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                semiplanar_crop_storage.clone(),
+                vec![64, 64],
+            )
+            .unwrap(),
+        );
+        crop_semiplanar_unaligned.set_crop_offsets(1, 0, 1, 1);
+        let crop_semiplanar_unaligned_ret = crop_semiplanar_unaligned
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-unaligned-ret"),
+            vec![crop_semiplanar_unaligned_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-unaligned"),
+            frame_fields(&crop_semiplanar_unaligned),
+        );
+
+        let mut crop_semiplanar_even_default = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                semiplanar_crop_storage.clone(),
+                vec![64, 64],
+            )
+            .unwrap(),
+        );
+        crop_semiplanar_even_default.set_crop_offsets(2, 0, 2, 2);
+        let crop_semiplanar_even_default_ret = crop_semiplanar_even_default
+            .apply_cropping(FrameCropFlags::NONE)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-even-default-ret"),
+            vec![crop_semiplanar_even_default_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-even-default"),
+            frame_fields(&crop_semiplanar_even_default),
+        );
+
+        let mut crop_semiplanar_even_unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                semiplanar_crop_storage,
+                vec![64, 64],
+            )
+            .unwrap(),
+        );
+        crop_semiplanar_even_unaligned.set_crop_offsets(2, 0, 2, 2);
+        let crop_semiplanar_even_unaligned_ret = crop_semiplanar_even_unaligned
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-even-unaligned-ret"),
+            vec![crop_semiplanar_even_unaligned_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-even-unaligned"),
+            frame_fields(&crop_semiplanar_even_unaligned),
+        );
+    }
+
     for (pixel_format, name, log2_chroma_w, log2_chroma_h) in [
         (PixelFormat::YuvJ420p, "yuvj420p", 1usize, 1usize),
         (PixelFormat::Yuv422p, "yuv422p", 1usize, 0usize),
@@ -2622,6 +2721,25 @@ fn planar_yuv_strided_storage(
     )
 }
 
+fn semiplanar_yuv_strided_storage(
+    width: usize,
+    height: usize,
+    line_size: usize,
+    log2_chroma_w: usize,
+    log2_chroma_h: usize,
+) -> Vec<Vec<u8>> {
+    vec![
+        strided_plane_sample_storage(width, height, line_size, 0x10, 1),
+        strided_plane_sample_storage(
+            width >> log2_chroma_w,
+            height >> log2_chroma_h,
+            line_size,
+            0x80,
+            2,
+        ),
+    ]
+}
+
 fn planar_yuv_strided_storage_with_sample_bytes(
     width: usize,
     height: usize,
@@ -3464,6 +3582,25 @@ static int planar_yuv_plane_count(enum AVPixelFormat format)
                : 0;
 }
 
+static int semiplanar_yuv_layout(enum AVPixelFormat format,
+                                 int *log2_chroma_w,
+                                 int *log2_chroma_h,
+                                 int *luma_sample_bytes,
+                                 int *chroma_pair_bytes)
+{
+    switch (format) {
+    case AV_PIX_FMT_NV12:
+    case AV_PIX_FMT_NV21:
+        *log2_chroma_w = 1;
+        *log2_chroma_h = 1;
+        *luma_sample_bytes = 1;
+        *chroma_pair_bytes = 2;
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static void print_video_planes(const AVFrame *frame)
 {
     if (frame->width <= 0 || frame->height <= 0 || frame->data[0] == NULL) {
@@ -3489,6 +3626,23 @@ static void print_video_planes(const AVFrame *frame)
                 print_hex(frame->data[plane] + row * frame->linesize[plane],
                           width * planar_yuv_bytes);
         }
+        return;
+    }
+
+    int luma_sample_bytes = 0;
+    int chroma_pair_bytes = 0;
+    if (semiplanar_yuv_layout(frame->format, &log2_chroma_w, &log2_chroma_h,
+                              &luma_sample_bytes, &chroma_pair_bytes)) {
+        int luma_row_bytes = frame->width * luma_sample_bytes;
+        int chroma_row_bytes = (frame->width >> log2_chroma_w) *
+                               chroma_pair_bytes;
+        for (int row = 0; row < frame->height; row++)
+            print_hex(frame->data[0] + row * frame->linesize[0],
+                      luma_row_bytes);
+        printf(",");
+        for (int row = 0; row < (frame->height >> log2_chroma_h); row++)
+            print_hex(frame->data[1] + row * frame->linesize[1],
+                      chroma_row_bytes);
         return;
     }
 
@@ -3879,6 +4033,11 @@ static int video_plane_count_for_format(enum AVPixelFormat format)
     int log2_chroma_h = 0;
     if (planar_yuv_sample_bytes(format, &log2_chroma_w, &log2_chroma_h))
         return planar_yuv_plane_count(format);
+    int luma_sample_bytes = 0;
+    int chroma_pair_bytes = 0;
+    if (semiplanar_yuv_layout(format, &log2_chroma_w, &log2_chroma_h,
+                              &luma_sample_bytes, &chroma_pair_bytes))
+        return 2;
     return 1;
 }
 
@@ -3934,6 +4093,7 @@ static void print_frame(const char *name, const AVFrame *frame)
 static void fill_video_packed(AVFrame *frame, int bytes_per_pixel);
 static void fill_video_bitstream(AVFrame *frame);
 static void fill_video_planar_yuv(AVFrame *frame);
+static void fill_video_semiplanar_yuv(AVFrame *frame);
 static void fill_video_yuv420p(AVFrame *frame);
 
 static void exercise_bitstream_crop_pair(const char *name,
@@ -4154,6 +4314,98 @@ static void exercise_planar_yuv_crop_pair(enum AVPixelFormat format,
     av_frame_free(&crop_default);
 }
 
+static void exercise_semiplanar_crop_pair(enum AVPixelFormat format,
+                                          const char *name)
+{
+    char row[128];
+    AVFrame *crop_default = av_frame_alloc();
+    fail_if(!crop_default, "semi-planar default crop allocation failed");
+    crop_default->format = format;
+    crop_default->width = 8;
+    crop_default->height = 4;
+    fail_if(av_frame_get_buffer(crop_default, 64) < 0,
+            "semi-planar default crop get_buffer failed");
+    fill_video_semiplanar_yuv(crop_default);
+    crop_default->crop_top = 1;
+    crop_default->crop_left = 1;
+    crop_default->crop_right = 1;
+    int crop_default_ret = av_frame_apply_cropping(crop_default, 0);
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-default-ret", name);
+    printf("%s|%d\n", row, crop_default_ret);
+    fail_if(crop_default_ret < 0,
+            "semi-planar default crop apply failed");
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-default", name);
+    print_frame(row, crop_default);
+
+    AVFrame *crop_unaligned = av_frame_alloc();
+    fail_if(!crop_unaligned, "semi-planar unaligned crop allocation failed");
+    crop_unaligned->format = format;
+    crop_unaligned->width = 8;
+    crop_unaligned->height = 4;
+    fail_if(av_frame_get_buffer(crop_unaligned, 64) < 0,
+            "semi-planar unaligned crop get_buffer failed");
+    fill_video_semiplanar_yuv(crop_unaligned);
+    crop_unaligned->crop_top = 1;
+    crop_unaligned->crop_left = 1;
+    crop_unaligned->crop_right = 1;
+    int crop_unaligned_ret = av_frame_apply_cropping(
+        crop_unaligned, AV_FRAME_CROP_UNALIGNED);
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-unaligned-ret", name);
+    printf("%s|%d\n", row, crop_unaligned_ret);
+    fail_if(crop_unaligned_ret < 0,
+            "semi-planar unaligned crop apply failed");
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-unaligned", name);
+    print_frame(row, crop_unaligned);
+
+    AVFrame *crop_even_default = av_frame_alloc();
+    fail_if(!crop_even_default,
+            "semi-planar even default crop allocation failed");
+    crop_even_default->format = format;
+    crop_even_default->width = 8;
+    crop_even_default->height = 4;
+    fail_if(av_frame_get_buffer(crop_even_default, 64) < 0,
+            "semi-planar even default crop get_buffer failed");
+    fill_video_semiplanar_yuv(crop_even_default);
+    crop_even_default->crop_top = 2;
+    crop_even_default->crop_left = 2;
+    crop_even_default->crop_right = 2;
+    int crop_even_default_ret = av_frame_apply_cropping(crop_even_default, 0);
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-even-default-ret",
+             name);
+    printf("%s|%d\n", row, crop_even_default_ret);
+    fail_if(crop_even_default_ret < 0,
+            "semi-planar even default crop apply failed");
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-even-default", name);
+    print_frame(row, crop_even_default);
+
+    AVFrame *crop_even_unaligned = av_frame_alloc();
+    fail_if(!crop_even_unaligned,
+            "semi-planar even unaligned crop allocation failed");
+    crop_even_unaligned->format = format;
+    crop_even_unaligned->width = 8;
+    crop_even_unaligned->height = 4;
+    fail_if(av_frame_get_buffer(crop_even_unaligned, 64) < 0,
+            "semi-planar even unaligned crop get_buffer failed");
+    fill_video_semiplanar_yuv(crop_even_unaligned);
+    crop_even_unaligned->crop_top = 2;
+    crop_even_unaligned->crop_left = 2;
+    crop_even_unaligned->crop_right = 2;
+    int crop_even_unaligned_ret = av_frame_apply_cropping(
+        crop_even_unaligned, AV_FRAME_CROP_UNALIGNED);
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-even-unaligned-ret",
+             name);
+    printf("%s|%d\n", row, crop_even_unaligned_ret);
+    fail_if(crop_even_unaligned_ret < 0,
+            "semi-planar even unaligned crop apply failed");
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-even-unaligned", name);
+    print_frame(row, crop_even_unaligned);
+
+    av_frame_free(&crop_even_unaligned);
+    av_frame_free(&crop_even_default);
+    av_frame_free(&crop_unaligned);
+    av_frame_free(&crop_default);
+}
+
 static void print_share(const char *name, const AVFrame *left,
                         const AVFrame *right)
 {
@@ -4312,6 +4564,34 @@ static void fill_video_planar_yuv(AVFrame *frame)
             for (int column = 0; column < visible_row_bytes; column++)
                 a[column] = (uint8_t)(0xe0 + row * 16 + column);
         }
+    }
+}
+
+static void fill_video_semiplanar_yuv(AVFrame *frame)
+{
+    int log2_chroma_w = 0;
+    int log2_chroma_h = 0;
+    int luma_sample_bytes = 0;
+    int chroma_pair_bytes = 0;
+    fail_if(!semiplanar_yuv_layout(frame->format, &log2_chroma_w,
+                                   &log2_chroma_h, &luma_sample_bytes,
+                                   &chroma_pair_bytes),
+            "unsupported semi-planar fill format");
+
+    for (int row = 0; row < frame->height; row++) {
+        uint8_t *dst = frame->data[0] + row * frame->linesize[0];
+        int visible_row_bytes = frame->width * luma_sample_bytes;
+        for (int column = 0; column < visible_row_bytes; column++)
+            dst[column] = (uint8_t)(0x10 + row * 16 + column);
+    }
+
+    int chroma_width = frame->width >> log2_chroma_w;
+    int chroma_height = frame->height >> log2_chroma_h;
+    for (int row = 0; row < chroma_height; row++) {
+        uint8_t *dst = frame->data[1] + row * frame->linesize[1];
+        int visible_row_bytes = chroma_width * chroma_pair_bytes;
+        for (int column = 0; column < visible_row_bytes; column++)
+            dst[column] = (uint8_t)(0x80 + row * 16 + column);
     }
 }
 
@@ -5002,6 +5282,8 @@ int main(void)
     exercise_packed_crop_pair("xyz12le", AV_PIX_FMT_XYZ12LE, 6);
     exercise_packed_crop_pair("xyz12be", AV_PIX_FMT_XYZ12BE, 6);
     exercise_yuv420p_crop_pair();
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_NV12, "nv12");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_NV21, "nv21");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUVJ420P, "yuvj420p");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV422P, "yuv422p");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUVJ422P, "yuvj422p");

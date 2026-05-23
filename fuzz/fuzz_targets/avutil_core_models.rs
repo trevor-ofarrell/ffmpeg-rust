@@ -14102,6 +14102,86 @@ fn exercise_fixtures() {
         );
     }
 
+    let make_semiplanar_crop_storage = || {
+        let mut luma = vec![0; 64 * 4];
+        for row in 0..4 {
+            for column in 0..8 {
+                luma[row * 64 + column] = 0x10 + (row * 16 + column) as u8;
+            }
+        }
+        let mut chroma = vec![0; 64 * 2];
+        for row in 0..2 {
+            for column in 0..8 {
+                chroma[row * 64 + column] = 0x80 + (row * 16 + column) as u8;
+            }
+        }
+        vec![luma, chroma]
+    };
+    for format in [PixelFormat::Nv12, PixelFormat::Nv21] {
+        let storage = make_semiplanar_crop_storage();
+        let mut semiplanar_default_crop = Frame::video(
+            VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), vec![64, 64])
+                .unwrap(),
+        );
+        semiplanar_default_crop.set_crop_offsets(1, 0, 1, 1);
+        semiplanar_default_crop
+            .apply_cropping(FrameCropFlags::NONE)
+            .unwrap();
+        assert_eq!(semiplanar_default_crop.crop(), FrameCrop::default());
+        let FrameData::Video(semiplanar_default_video) = semiplanar_default_crop.data() else {
+            panic!("constructed semi-planar default crop frame changed variant");
+        };
+        assert_eq!(semiplanar_default_video.width(), 7);
+        assert_eq!(semiplanar_default_video.height(), 3);
+        assert_eq!(semiplanar_default_video.line_sizes(), &[64, 64]);
+        assert_eq!(
+            &semiplanar_default_video.planes()[0][..7],
+            &[0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26]
+        );
+        assert_eq!(
+            semiplanar_default_video.planes()[1].as_slice(),
+            &[0x80, 0x81, 0x82, 0x83, 0x84, 0x85]
+        );
+
+        let mut semiplanar_unaligned_crop = Frame::video(
+            VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), vec![64, 64])
+                .unwrap(),
+        );
+        semiplanar_unaligned_crop.set_crop_offsets(1, 0, 1, 1);
+        semiplanar_unaligned_crop
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .unwrap();
+        assert_eq!(semiplanar_unaligned_crop.crop(), FrameCrop::default());
+        let FrameData::Video(semiplanar_unaligned_video) = semiplanar_unaligned_crop.data() else {
+            panic!("constructed semi-planar unaligned crop frame changed variant");
+        };
+        assert_eq!(semiplanar_unaligned_video.width(), 6);
+        assert_eq!(semiplanar_unaligned_video.height(), 3);
+        assert_eq!(
+            &semiplanar_unaligned_video.planes()[0][..6],
+            &[0x21, 0x22, 0x23, 0x24, 0x25, 0x26]
+        );
+        assert_eq!(
+            semiplanar_unaligned_video.planes()[1].as_slice(),
+            &[0x80, 0x81, 0x82, 0x83, 0x84, 0x85]
+        );
+
+        let mut semiplanar_even_unaligned_crop = Frame::video(
+            VideoFrame::new_with_line_sizes(8, 4, format, storage, vec![64, 64]).unwrap(),
+        );
+        semiplanar_even_unaligned_crop.set_crop_offsets(2, 0, 2, 2);
+        semiplanar_even_unaligned_crop
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .unwrap();
+        let FrameData::Video(semiplanar_even_video) = semiplanar_even_unaligned_crop.data()
+        else {
+            panic!("constructed semi-planar even crop frame changed variant");
+        };
+        assert_eq!(semiplanar_even_video.width(), 4);
+        assert_eq!(semiplanar_even_video.height(), 2);
+        assert_eq!(semiplanar_even_video.planes()[1].as_slice(), &[0x92, 0x93, 0x94, 0x95]);
+    }
+
     for (format, bytes_per_pixel, line_size) in [
         (PixelFormat::Rgb8, 1, 64),
         (PixelFormat::Bgr8, 1, 64),

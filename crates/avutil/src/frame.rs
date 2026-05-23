@@ -13672,6 +13672,9 @@ impl VideoFrame {
         if let Some(bytes_per_sample) = planar_three_plane_crop_sample_bytes(self.pixel_format) {
             return self.apply_planar_three_plane_cropping(crop, flags, bytes_per_sample);
         }
+        if let Some(layout) = semiplanar_crop_layout(self.pixel_format) {
+            return self.apply_semiplanar_cropping(crop, flags, layout);
+        }
         let crop_step = match self.pixel_format {
             PixelFormat::Gray8
             | PixelFormat::Rgb8
@@ -14022,6 +14025,113 @@ impl VideoFrame {
         ];
         let mut plane_buffers = Vec::with_capacity(3);
         for index in 0..3 {
+            let line_size = self.line_sizes[index];
+            let shape = new_shapes[index];
+            let start_offset = plane_crop_tops[index]
+                .checked_mul(line_size)
+                .and_then(|offset| offset.checked_add(plane_crop_lefts[index]))
+                .ok_or_else(|| AvError::invalid_argument("frame crop offset overflow"))?;
+            let storage_len = line_size
+                .checked_mul(shape.rows)
+                .ok_or_else(|| AvError::invalid_argument("frame crop line-size span overflow"))?;
+            let row_span = if shape.rows == 0 {
+                0
+            } else {
+                (shape.rows - 1)
+                    .checked_mul(line_size)
+                    .and_then(|prefix| prefix.checked_add(shape.row_bytes))
+                    .ok_or_else(|| AvError::invalid_argument("frame crop row span overflow"))?
+            };
+            let source = &self.plane_buffers[index];
+            let new_buffer = if start_offset
+                .checked_add(storage_len)
+                .is_some_and(|end| end <= source.len())
+            {
+                source.ref_slice(start_offset, storage_len)?
+            } else {
+                let end = start_offset
+                    .checked_add(row_span)
+                    .ok_or_else(|| AvError::invalid_argument("frame crop source span overflow"))?;
+                if end > source.len() {
+                    return Err(AvError::invalid_data(format!(
+                        "{} video frame crop plane {index} span {start_offset}..{end} exceeds {} bytes",
+                        self.pixel_format.name(),
+                        source.len()
+                    )));
+                }
+
+                let mut storage = vec![0; storage_len];
+                for row in 0..shape.rows {
+                    let src_start = start_offset + row * line_size;
+                    let src_end = src_start + shape.row_bytes;
+                    let dst_start = row * line_size;
+                    let dst_end = dst_start + shape.row_bytes;
+                    storage[dst_start..dst_end]
+                        .copy_from_slice(&source.as_slice()[src_start..src_end]);
+                }
+                BufferRef::from_vec(storage)
+            };
+            plane_buffers.push(new_buffer);
+        }
+
+        let planes = snapshot_video_plane_buffers(
+            &plane_buffers,
+            &new_shapes,
+            &self.line_sizes,
+            self.pixel_format.name(),
+        )?;
+
+        self.width = new_width;
+        self.height = new_height;
+        self.planes = planes;
+        self.plane_buffers = plane_buffers;
+        Ok(())
+    }
+
+    fn apply_semiplanar_cropping(
+        &mut self,
+        crop: FrameCrop,
+        flags: FrameCropFlags,
+        layout: SemiplanarCropLayout,
+    ) -> AvResult<()> {
+        if self.plane_buffers.len() != 2 || self.line_sizes.len() != 2 {
+            return Err(AvError::invalid_argument(format!(
+                "{} frame cropping requires two planes",
+                self.pixel_format.name()
+            )));
+        }
+
+        let crop_left = if layout.luma_sample_bytes == 1 {
+            adjusted_packed_crop_left(crop, self.line_sizes[0], flags, 1)?
+        } else if flags.contains(FrameCropFlags::UNALIGNED) || crop.left == 0 {
+            crop.left
+        } else {
+            return Err(AvError::bug(
+                "FFmpeg rejects default left cropping for selected multi-byte semi-planar video frames",
+            ));
+        };
+        let new_width = self
+            .width
+            .checked_sub(crop_left + crop.right)
+            .ok_or_else(|| crop_range_error("frame crop width underflow"))?;
+        let new_height = self
+            .height
+            .checked_sub(crop.top + crop.bottom)
+            .ok_or_else(|| crop_range_error("frame crop height underflow"))?;
+        let new_shapes = semiplanar_cropped_shapes(self.pixel_format, new_width, new_height)?;
+
+        let (log2_chroma_w, log2_chroma_h) = self.pixel_format.log2_chroma();
+        let plane_crop_tops = [crop.top, crop.top >> log2_chroma_h];
+        let plane_crop_lefts = [
+            crop_left
+                .checked_mul(layout.luma_sample_bytes)
+                .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?,
+            (crop_left >> log2_chroma_w)
+                .checked_mul(layout.chroma_pair_bytes)
+                .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?,
+        ];
+        let mut plane_buffers = Vec::with_capacity(2);
+        for index in 0..2 {
             let line_size = self.line_sizes[index];
             let shape = new_shapes[index];
             let start_offset = plane_crop_tops[index]
@@ -15437,6 +15547,46 @@ fn planar_four_plane_cropped_shapes(
     ])
 }
 
+fn semiplanar_cropped_shapes(
+    pixel_format: PixelFormat,
+    width: usize,
+    height: usize,
+) -> AvResult<Vec<VideoPlaneShape>> {
+    let layout = semiplanar_crop_layout(pixel_format).ok_or_else(|| {
+        AvError::unsupported(format!(
+            "semi-planar crop shapes are not implemented for {}",
+            pixel_format.name()
+        ))
+    })?;
+    if width == 0 || height == 0 {
+        return Err(AvError::invalid_argument(
+            "cropped semi-planar video dimensions must be non-zero",
+        ));
+    }
+
+    let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
+    let luma_row_bytes = checked_mul(
+        width,
+        layout.luma_sample_bytes,
+        "cropped semi-planar luma row bytes",
+    )?;
+    let chroma_row_bytes = checked_mul(
+        width >> log2_chroma_w,
+        layout.chroma_pair_bytes,
+        "cropped semi-planar chroma row bytes",
+    )?;
+    Ok(vec![
+        VideoPlaneShape {
+            row_bytes: luma_row_bytes,
+            rows: height,
+        },
+        VideoPlaneShape {
+            row_bytes: chroma_row_bytes,
+            rows: height >> log2_chroma_h,
+        },
+    ])
+}
+
 fn video_line_sizes(
     pixel_format: PixelFormat,
     width: usize,
@@ -15600,6 +15750,22 @@ fn planar_four_plane_crop_sample_bytes(format: PixelFormat) -> Option<usize> {
         | PixelFormat::Gbrap32Be
         | PixelFormat::GbrapF32Le
         | PixelFormat::GbrapF32Be => Some(4),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SemiplanarCropLayout {
+    luma_sample_bytes: usize,
+    chroma_pair_bytes: usize,
+}
+
+fn semiplanar_crop_layout(format: PixelFormat) -> Option<SemiplanarCropLayout> {
+    match format {
+        PixelFormat::Nv12 | PixelFormat::Nv21 => Some(SemiplanarCropLayout {
+            luma_sample_bytes: 1,
+            chroma_pair_bytes: 2,
+        }),
         _ => None,
     }
 }
@@ -20681,6 +20847,25 @@ mod tests {
             ]
         }
 
+        fn semiplanar_yuv_storage(
+            width: usize,
+            height: usize,
+            line_size: usize,
+            log2_chroma_w: usize,
+            log2_chroma_h: usize,
+        ) -> Vec<Vec<u8>> {
+            vec![
+                strided_plane_sample_storage(width, height, line_size, 0x10, 1),
+                strided_plane_sample_storage(
+                    width >> log2_chroma_w,
+                    height >> log2_chroma_h,
+                    line_size,
+                    0x80,
+                    2,
+                ),
+            ]
+        }
+
         fn planar_yuv_sample_storage(
             width: usize,
             height: usize,
@@ -21062,6 +21247,85 @@ mod tests {
                         6 >> log2_chroma_w,
                         3 >> log2_chroma_h,
                     ),
+                ],
+                "{}",
+                format.name()
+            );
+        }
+
+        for format in [PixelFormat::Nv12, PixelFormat::Nv21] {
+            let log2_chroma_w = 1usize;
+            let log2_chroma_h = 1usize;
+            let storage = semiplanar_yuv_storage(8, 4, 64, log2_chroma_w, log2_chroma_h);
+            let mut semiplanar_default = Frame::video(
+                VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), vec![64, 64])
+                    .unwrap(),
+            );
+            semiplanar_default.set_crop_offsets(1, 0, 1, 1);
+            semiplanar_default
+                .apply_cropping(FrameCropFlags::NONE)
+                .unwrap();
+            assert_eq!(semiplanar_default.crop(), FrameCrop::default());
+            let FrameData::Video(video) = semiplanar_default.data() else {
+                unreachable!("constructed semi-planar default crop frame changed variant");
+            };
+            assert_eq!(video.width(), 7, "{}", format.name());
+            assert_eq!(video.height(), 3, "{}", format.name());
+            assert_eq!(video.line_sizes(), &[64, 64]);
+            assert_eq!(
+                video.planes(),
+                &[
+                    plane_visible(0x10, 1, 0, 7, 3),
+                    plane_visible_sample_bytes(0x80, 0, 0, 7 >> log2_chroma_w, 1, 2),
+                ],
+                "{}",
+                format.name()
+            );
+
+            let mut semiplanar_unaligned = Frame::video(
+                VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), vec![64, 64])
+                    .unwrap(),
+            );
+            semiplanar_unaligned.set_crop_offsets(1, 0, 1, 1);
+            semiplanar_unaligned
+                .apply_cropping(FrameCropFlags::UNALIGNED)
+                .unwrap();
+            assert_eq!(semiplanar_unaligned.crop(), FrameCrop::default());
+            let FrameData::Video(video) = semiplanar_unaligned.data() else {
+                unreachable!("constructed semi-planar unaligned crop frame changed variant");
+            };
+            assert_eq!(video.width(), 6, "{}", format.name());
+            assert_eq!(video.height(), 3, "{}", format.name());
+            assert_eq!(video.line_sizes(), &[64, 64]);
+            assert_eq!(
+                video.planes(),
+                &[
+                    plane_visible(0x10, 1, 1, 6, 3),
+                    plane_visible_sample_bytes(0x80, 0, 0, 6 >> log2_chroma_w, 1, 2),
+                ],
+                "{}",
+                format.name()
+            );
+
+            let mut semiplanar_even_unaligned = Frame::video(
+                VideoFrame::new_with_line_sizes(8, 4, format, storage, vec![64, 64]).unwrap(),
+            );
+            semiplanar_even_unaligned.set_crop_offsets(2, 0, 2, 2);
+            semiplanar_even_unaligned
+                .apply_cropping(FrameCropFlags::UNALIGNED)
+                .unwrap();
+            assert_eq!(semiplanar_even_unaligned.crop(), FrameCrop::default());
+            let FrameData::Video(video) = semiplanar_even_unaligned.data() else {
+                unreachable!("constructed semi-planar even crop frame changed variant");
+            };
+            assert_eq!(video.width(), 4, "{}", format.name());
+            assert_eq!(video.height(), 2, "{}", format.name());
+            assert_eq!(video.line_sizes(), &[64, 64]);
+            assert_eq!(
+                video.planes(),
+                &[
+                    plane_visible(0x10, 2, 2, 4, 2),
+                    plane_visible_sample_bytes(0x80, 1, 1, 4 >> log2_chroma_w, 1, 2),
                 ],
                 "{}",
                 format.name()
