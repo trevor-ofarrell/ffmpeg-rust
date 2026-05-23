@@ -10675,6 +10675,16 @@ mod tests {
             &PacketSideDataKind::ReplayGain
         );
         assert_eq!(duplicate_list.entries()[2].data(), &[0x33]);
+
+        let mut new_ref_list = PacketSideDataList::new();
+        let new_ref =
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x66, 0x77]).unwrap();
+        let entry = new_ref_list
+            .add_from_frame_side_data_with_flags(&new_ref, FrameSideDataFlags::NEW_REF)
+            .unwrap();
+        assert_eq!(entry.kind_id(), &PacketSideDataKind::ReplayGain);
+        assert_eq!(entry.data(), &[0x66, 0x77]);
+        assert_eq!(new_ref_list.entries().len(), 1);
     }
 
     #[test]
@@ -10727,6 +10737,18 @@ mod tests {
             &FrameSideDataKind::ReplayGain
         );
         assert_eq!(frame.side_data()[1].data(), &[5]);
+
+        let mut new_ref_frame = Frame::empty();
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x66, 0x77])
+            .unwrap()
+            .add_to_frame(&mut new_ref_frame, FrameSideDataFlags::NEW_REF)
+            .unwrap();
+        assert_eq!(new_ref_frame.side_data().len(), 1);
+        assert_eq!(
+            new_ref_frame.side_data()[0].kind_id(),
+            &FrameSideDataKind::ReplayGain
+        );
+        assert_eq!(new_ref_frame.side_data()[0].data(), &[0x66, 0x77]);
 
         let unmapped = SideData::new_extradata(vec![0xaa]).unwrap();
         let err = unmapped

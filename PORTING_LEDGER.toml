@@ -277,6 +277,12 @@ fate_tests = [
   "packet_oracle::upstream_fate_avpacket_passes",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket packet/frame bridge coverage now
+# validates `AV_FRAME_SIDE_DATA_FLAG_NEW_REF` for both
+# `av_packet_side_data_from_frame()` and `av_packet_side_data_to_frame()`.
+# For this raw side-data conversion surface, FFmpeg returns success and emits
+# the same mapped side-data payload shape as ordinary copied insertion; Rust
+# unit tests and `avutil_core_models` cover the same bounded behavior.
 # Latest update: pinned libavcodec AVPacket packet-to-frame bridge coverage
 # validates `av_packet_side_data_to_frame(..., AV_FRAME_SIDE_DATA_FLAG_UNIQUE)`
 # with an existing matching frame side-data entry plus a nonmatching entry.

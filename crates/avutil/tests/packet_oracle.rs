@@ -2015,6 +2015,21 @@ fn insert_frame_packet_side_data_bridge_rows(rows: &mut BTreeMap<String, Vec<Str
         side_data_list_summary_fields(&unique_packet_list),
     );
 
+    let mut new_ref_packet_list = PacketSideDataList::new();
+    let new_ref_frame =
+        FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x66, 0x77]).unwrap();
+    new_ref_packet_list
+        .add_from_frame_side_data_with_flags(&new_ref_frame, FrameSideDataFlags::NEW_REF)
+        .unwrap();
+    rows.insert(
+        "packet:frame-to-packet-new-ref-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:frame-to-packet-new-ref".to_string(),
+        side_data_list_summary_fields(&new_ref_packet_list),
+    );
+
     let unmapped =
         FrameSideData::new_with_kind(FrameSideDataKind::A53ClosedCaptions, vec![0x55]).unwrap();
     let err = packet_list.add_from_frame_side_data(&unmapped).unwrap_err();
@@ -2084,6 +2099,20 @@ fn insert_frame_packet_side_data_bridge_rows(rows: &mut BTreeMap<String, Vec<Str
     rows.insert(
         "packet:packet-to-frame-unique".to_string(),
         frame_side_data_summary_fields(&frame),
+    );
+
+    let mut new_ref_frame = Frame::empty();
+    SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x66, 0x77])
+        .unwrap()
+        .add_to_frame(&mut new_ref_frame, FrameSideDataFlags::NEW_REF)
+        .unwrap();
+    rows.insert(
+        "packet:packet-to-frame-new-ref-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:packet-to-frame-new-ref".to_string(),
+        frame_side_data_summary_fields(&new_ref_frame),
     );
 
     let unmapped_packet = SideData::new_extradata(vec![0x77]).unwrap();
@@ -3917,6 +3946,24 @@ static void exercise_frame_packet_side_data_bridge_api(void) {
                                   unique_psd, unique_nb_psd);
     av_packet_side_data_free(&unique_psd, &unique_nb_psd);
 
+    AVPacketSideData *new_ref_psd = NULL;
+    int new_ref_nb_psd = 0;
+    AVFrameSideData **new_ref_fsd = NULL;
+    int new_ref_nb_fsd = 0;
+    AVFrameSideData *new_ref_frame = av_frame_side_data_new(
+        &new_ref_fsd, &new_ref_nb_fsd, AV_FRAME_DATA_REPLAYGAIN, 2, 0);
+    fail_if(!new_ref_frame, "av_frame_side_data_new bridge new-ref seed failed");
+    new_ref_frame->data[0] = 0x66;
+    new_ref_frame->data[1] = 0x77;
+    ret = av_packet_side_data_from_frame(&new_ref_psd, &new_ref_nb_psd,
+                                         new_ref_frame,
+                                         AV_FRAME_SIDE_DATA_FLAG_NEW_REF);
+    printf("packet:frame-to-packet-new-ref-ret|%d\n", ret);
+    print_side_data_array_summary("packet:frame-to-packet-new-ref",
+                                  new_ref_psd, new_ref_nb_psd);
+    av_frame_side_data_free(&new_ref_fsd, &new_ref_nb_fsd);
+    av_packet_side_data_free(&new_ref_psd, &new_ref_nb_psd);
+
     AVFrameSideData *unmapped_frame = av_frame_side_data_new(&fsd, &nb_fsd,
                                                              AV_FRAME_DATA_A53_CC,
                                                              1, 0);
@@ -3967,6 +4014,24 @@ static void exercise_frame_packet_side_data_bridge_api(void) {
                                        AV_FRAME_SIDE_DATA_FLAG_UNIQUE);
     printf("packet:packet-to-frame-unique-ret|%d\n", ret);
     print_frame_side_data_array_summary("packet:packet-to-frame-unique", fsd, nb_fsd);
+
+    AVPacketSideData *new_ref_to_psd = NULL;
+    int new_ref_to_nb_psd = 0;
+    AVFrameSideData **new_ref_to_fsd = NULL;
+    int new_ref_to_nb_fsd = 0;
+    AVPacketSideData *new_ref_packet = av_packet_side_data_new(
+        &new_ref_to_psd, &new_ref_to_nb_psd, AV_PKT_DATA_REPLAYGAIN, 2, 0);
+    fail_if(!new_ref_packet, "av_packet_side_data_new bridge to-frame new-ref seed failed");
+    new_ref_packet->data[0] = 0x66;
+    new_ref_packet->data[1] = 0x77;
+    ret = av_packet_side_data_to_frame(&new_ref_to_fsd, &new_ref_to_nb_fsd,
+                                       new_ref_packet,
+                                       AV_FRAME_SIDE_DATA_FLAG_NEW_REF);
+    printf("packet:packet-to-frame-new-ref-ret|%d\n", ret);
+    print_frame_side_data_array_summary("packet:packet-to-frame-new-ref",
+                                        new_ref_to_fsd, new_ref_to_nb_fsd);
+    av_frame_side_data_free(&new_ref_to_fsd, &new_ref_to_nb_fsd);
+    av_packet_side_data_free(&new_ref_to_psd, &new_ref_to_nb_psd);
 
     packet_entry = av_packet_side_data_new(&psd, &nb_psd,
                                            AV_PKT_DATA_NEW_EXTRADATA,
