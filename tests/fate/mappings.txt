@@ -12,6 +12,8 @@ avformat-mov-demuxer|local-mov-unit|.|cargo|test|-p|avformat|mov::tests
 avformat-audio-parameters|local-avformat-audio-unit|.|cargo|test|-p|avformat|audio
 avformat-rawvideo-demuxer|local-avformat-rawvideo-unit|.|cargo|test|-p|avformat|rawvideo
 avformat-rawvideo-muxer|local-avformat-rawvideo-unit|.|cargo|test|-p|avformat|rawvideo
+avformat-image2-demuxer|local-avformat-image2-unit|.|cargo|test|-p|avformat|image2
+avformat-image2-muxer|local-avformat-image2-unit|.|cargo|test|-p|avformat|image2
 avformat-avi-demuxer|local-avformat-avi-unit|.|cargo|test|-p|avformat|avi
 avformat-avi-muxer|local-avformat-avi-unit|.|cargo|test|-p|avformat|avi
 avformat-wav-demuxer|local-avformat-wav-unit|.|cargo|test|-p|avformat|wav

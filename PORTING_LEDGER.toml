@@ -13,6 +13,10 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # the Rust demuxer. This proves the current AVI path's zero stream handler,
 # `00dc` packet chunks, top-down-height demuxing, and 4-byte DIB scanline
 # padding exposed in packet payloads.
+# Latest image2 evidence: the ignored image2 oracle harness now compares a
+# valid bounded PPM single-image `-f image2` file-output streamcopy path against
+# pinned FFmpeg 8.1.1 `-c:v copy -f image2`, proving byte-preserving packet
+# transfer through the current Image2 demuxer, Packet path, and Image2 muxer.
 # Latest framecrc/rawvideo evidence: `FrameCrcMuxer` now emits FFmpeg-style
 # packet record rows using the framecrc Adler-style checksum initialized at
 # zero. The ignored rawvideo oracle harness compares normalized `rgb24`
@@ -356,6 +360,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-pcm-s16le-wav-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-wav-generated-md5",
+  "tests/differential/mappings.txt:avutil-packet|oracle-image2-file-output",
   "packet_oracle::libavcodec_packet_core_lifecycle_matches_packet_model",
   "rawvideo_oracle::rawvideo_rgb24_file_output_matches_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle",
@@ -371,6 +376,7 @@ differential_tests = [
   "pcm_oracle::pcm_s16le_file_output_matches_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_wav_file_output_matches_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle",
+  "image2_oracle::image2_ppm_single_file_output_matches_ffmpeg_oracle",
 ]
 fate_tests = [
   "tests/fate/mappings.txt:avutil-packet|local-avutil-unit",
@@ -388,6 +394,10 @@ fuzz_targets = ["avutil_core_models"]
 # row is now mapped to avutil-packet, validating the Rust rawvideo demuxer ->
 # Packet -> AVI muxer path against pinned FFmpeg rawvideo AVI packet semantics,
 # including 4-byte DIB scanline padding exposed in demuxed packets.
+# Latest image2 media-integration update: the image2 PPM single-file output
+# oracle row is now mapped to avutil-packet, validating the Rust image2
+# demuxer -> Packet -> image2 muxer path against pinned FFmpeg streamcopy
+# bytes for a bounded valid PPM input.
 # Latest yuv4mpegpipe media-integration update: the yuv4mpegpipe byte-copy
 # oracle row is now mapped to avutil-packet, validating the Rust rawvideo
 # yuv420p demuxer -> Packet -> yuv4mpegpipe muxer path against pinned FFmpeg
@@ -3395,19 +3405,22 @@ id = "fftools-ffmpeg-image2-file-output"
 kind = "cli"
 ffmpeg_name = "ffmpeg image2 to image2 file output"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
-oracle_command = "ffmpeg -f image2 -framerate <rate> -i <input-or-pattern> -f image2 <output-or-pattern>"
+oracle_command = "ffmpeg -f image2 -framerate <rate> -i <input.ppm> -c:v copy -f image2 <output.ppm>"
 rust_command = "cargo test -p fftools ffmpeg"
 unit_tests = [
   "ffmpeg::tests::runs_image2_single_to_image2_file_output",
   "ffmpeg::tests::runs_image2_sequence_to_image2_file_output",
   "ffmpeg::tests::rejects_image2_file_output_overwrite",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-image2-file-output|oracle-image2-file-output",
+  "image2_oracle::image2_ppm_single_file_output_matches_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-image2-file-output|local-ffmpeg-unit"]
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports packet-copy from explicit image2 single-file or contiguous %d/%0Nd sequence inputs to local image2 output files/patterns. It uses the Rust image2 demuxer and Image2Muxer, preflights generated output paths for create-new/no-overwrite behavior, writes generated entries to the filesystem, and rejects multi-frame input to a single-image output through the muxer instead of dropping frames. No oracle differential or upstream FATE coverage exists yet. Output -start_number is covered separately; glob patterns, timestamp modes, image codec validation, overwrite confirmation flags, and non-image2 inputs remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution supports packet-copy from explicit image2 single-file or contiguous %d/%0Nd sequence inputs to local image2 output files/patterns. It uses the Rust image2 demuxer and Image2Muxer, preflights generated output paths for create-new/no-overwrite behavior, writes generated entries to the filesystem, and rejects multi-frame input to a single-image output through the muxer instead of dropping frames. The pinned oracle row compares a valid bounded PPM single-image input against FFmpeg 8.1.1 `-c:v copy -f image2`, proving byte-preserving file output through the current constrained path. Output -start_number is covered separately; glob patterns, timestamp modes, image codec validation beyond the selected valid PPM fixture, overwrite confirmation flags, non-image2 inputs, sequence differentials, and upstream FATE coverage remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -3861,9 +3874,9 @@ id = "avformat-image2-demuxer"
 kind = "demuxer"
 ffmpeg_name = "image2"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 3
-oracle_command = "ffmpeg -f image2 -i <pattern> -f framecrc -"
+oracle_command = "ffmpeg -f image2 -framerate <rate> -i <input.ppm> -c:v copy -f image2 <output.ppm>"
 rust_command = "cargo test -p avformat image2"
 unit_tests = [
   "image2::tests::reads_numbered_sequence_in_frame_order",
@@ -3871,10 +3884,13 @@ unit_tests = [
   "image2::tests::validates_patterns_and_frame_rate",
   "image2::tests::rejects_unmatched_duplicate_non_contiguous_and_empty_entries",
 ]
-differential_tests = []
-fate_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:avformat-image2-demuxer|oracle-image2-file-output",
+  "image2_oracle::image2_ppm_single_file_output_matches_ffmpeg_oracle",
+]
+fate_tests = ["tests/fate/mappings.txt:avformat-image2-demuxer|local-avformat-image2-unit"]
 fuzz_targets = ["avformat_image2"]
-notes = "Initial image2 demuxer packetizes one single-image entry or contiguous %d/%0Nd numbered entries in deterministic frame order with PTS/duration assignment and path side data. A build-checked avformat_image2 cargo-fuzz target covers pattern parsing, entry sequence validation, packet timing/path side data, and mux-demux round trips; actual local fuzz execution is blocked until cargo-fuzz is installed. Filesystem discovery, glob patterns, timestamps, looping, codec probing, CLI wiring, differential tests, and FATE are pending."
+notes = "Initial image2 demuxer packetizes one single-image entry or contiguous %d/%0Nd numbered entries in deterministic frame order with PTS/duration assignment and path side data. The pinned PPM single-image oracle row proves this current demuxer feeds the Packet path and Image2Muxer into byte-identical FFmpeg 8.1.1 `-c:v copy -f image2` output for a bounded valid PPM input. A build-checked avformat_image2 cargo-fuzz target covers pattern parsing, entry sequence validation, packet timing/path side data, and mux-demux round trips; actual local fuzz execution is blocked until cargo-fuzz is installed. Filesystem discovery, glob patterns, timestamps, looping, codec probing, broader CLI wiring, sequence differentials, upstream FATE, and sustained fuzz execution remain pending. The local FATE-runner smoke mapping executes the image2 unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -4107,9 +4123,9 @@ id = "avformat-image2-muxer"
 kind = "muxer"
 ffmpeg_name = "image2"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 3
-oracle_command = "ffmpeg -i <input> -f image2 <pattern>"
+oracle_command = "ffmpeg -f image2 -framerate <rate> -i <input.ppm> -c:v copy -f image2 <output.ppm>"
 rust_command = "cargo test -p avformat image2"
 unit_tests = [
   "image2::tests::muxer_writes_numbered_sequence_and_round_trips_through_demuxer",
@@ -4118,10 +4134,13 @@ unit_tests = [
   "image2::tests::muxer_rejects_invalid_parameters_packets_and_duplicate_single_path",
   "image2::tests::muxer_finish_prevents_more_writes",
 ]
-differential_tests = []
-fate_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:avformat-image2-muxer|oracle-image2-file-output",
+  "image2_oracle::image2_ppm_single_file_output_matches_ffmpeg_oracle",
+]
+fate_tests = ["tests/fate/mappings.txt:avformat-image2-muxer|local-avformat-image2-unit"]
 fuzz_targets = ["avformat_image2"]
-notes = "Initial image2 muxer maps stream-0 packets to single-image or contiguous %d/%0Nd output entries, validates non-empty packet payloads, formats output paths from a configurable start number, rejects duplicate single-image writes, round-trips through the demuxer, and prevents writes after finish. It is wired to a constrained ffmpeg-rs image2 input to image2 filesystem-output path. A build-checked avformat_image2 cargo-fuzz target covers muxer path generation, invalid packet handling, finish behavior, and mux-demux round trips; actual local fuzz execution is blocked until cargo-fuzz is installed. Glob patterns, timestamp modes, looping, codec-specific image validation, broader CLI wiring, differential tests, and FATE are pending."
+notes = "Initial image2 muxer maps stream-0 packets to single-image or contiguous %d/%0Nd output entries, validates non-empty packet payloads, formats output paths from a configurable start number, rejects duplicate single-image writes, round-trips through the demuxer, and prevents writes after finish. It is wired to a constrained ffmpeg-rs image2 input to image2 filesystem-output path. The pinned PPM single-image oracle row compares Rust image2 output bytes against FFmpeg 8.1.1 `-c:v copy -f image2`, proving byte-preserving output for the selected valid PPM fixture. A build-checked avformat_image2 cargo-fuzz target covers muxer path generation, invalid packet handling, finish behavior, and mux-demux round trips; actual local fuzz execution is blocked until cargo-fuzz is installed. Glob patterns, timestamp modes, looping, codec-specific image validation beyond the selected PPM fixture, broader CLI wiring, sequence differentials, upstream FATE, and sustained fuzz execution remain pending. The local FATE-runner smoke mapping executes the image2 unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
