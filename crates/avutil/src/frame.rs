@@ -15300,12 +15300,44 @@ fn is_frame_crop_bitstream_format(format: PixelFormat) -> bool {
 fn planar_yuv_crop_sample_bytes(format: PixelFormat) -> Option<usize> {
     match format {
         PixelFormat::Yuv420p | PixelFormat::Yuv422p | PixelFormat::Yuv444p => Some(1),
-        PixelFormat::Yuv420p10Le
+        PixelFormat::Yuv420p9Le
+        | PixelFormat::Yuv420p9Be
+        | PixelFormat::Yuv422p9Le
+        | PixelFormat::Yuv422p9Be
+        | PixelFormat::Yuv444p9Le
+        | PixelFormat::Yuv444p9Be
+        | PixelFormat::Yuv420p10Le
         | PixelFormat::Yuv420p10Be
         | PixelFormat::Yuv422p10Le
         | PixelFormat::Yuv422p10Be
+        | PixelFormat::Yuv440p10Le
+        | PixelFormat::Yuv440p10Be
         | PixelFormat::Yuv444p10Le
-        | PixelFormat::Yuv444p10Be => Some(2),
+        | PixelFormat::Yuv444p10Be
+        | PixelFormat::Yuv444p10MsbLe
+        | PixelFormat::Yuv444p10MsbBe
+        | PixelFormat::Yuv420p12Le
+        | PixelFormat::Yuv420p12Be
+        | PixelFormat::Yuv422p12Le
+        | PixelFormat::Yuv422p12Be
+        | PixelFormat::Yuv440p12Le
+        | PixelFormat::Yuv440p12Be
+        | PixelFormat::Yuv444p12Le
+        | PixelFormat::Yuv444p12Be
+        | PixelFormat::Yuv444p12MsbLe
+        | PixelFormat::Yuv444p12MsbBe
+        | PixelFormat::Yuv420p14Le
+        | PixelFormat::Yuv420p14Be
+        | PixelFormat::Yuv422p14Le
+        | PixelFormat::Yuv422p14Be
+        | PixelFormat::Yuv444p14Le
+        | PixelFormat::Yuv444p14Be
+        | PixelFormat::Yuv420p16Le
+        | PixelFormat::Yuv420p16Be
+        | PixelFormat::Yuv422p16Le
+        | PixelFormat::Yuv422p16Be
+        | PixelFormat::Yuv444p16Le
+        | PixelFormat::Yuv444p16Be => Some(2),
         _ => None,
     }
 }
@@ -20687,12 +20719,44 @@ mod tests {
         }
 
         for (format, log2_chroma_w, log2_chroma_h) in [
+            (PixelFormat::Yuv420p9Le, 1usize, 1usize),
+            (PixelFormat::Yuv420p9Be, 1usize, 1usize),
+            (PixelFormat::Yuv422p9Le, 1usize, 0usize),
+            (PixelFormat::Yuv422p9Be, 1usize, 0usize),
+            (PixelFormat::Yuv444p9Le, 0usize, 0usize),
+            (PixelFormat::Yuv444p9Be, 0usize, 0usize),
             (PixelFormat::Yuv420p10Le, 1usize, 1usize),
             (PixelFormat::Yuv420p10Be, 1usize, 1usize),
             (PixelFormat::Yuv422p10Le, 1usize, 0usize),
             (PixelFormat::Yuv422p10Be, 1usize, 0usize),
+            (PixelFormat::Yuv440p10Le, 0usize, 1usize),
+            (PixelFormat::Yuv440p10Be, 0usize, 1usize),
             (PixelFormat::Yuv444p10Le, 0usize, 0usize),
             (PixelFormat::Yuv444p10Be, 0usize, 0usize),
+            (PixelFormat::Yuv444p10MsbLe, 0usize, 0usize),
+            (PixelFormat::Yuv444p10MsbBe, 0usize, 0usize),
+            (PixelFormat::Yuv420p12Le, 1usize, 1usize),
+            (PixelFormat::Yuv420p12Be, 1usize, 1usize),
+            (PixelFormat::Yuv422p12Le, 1usize, 0usize),
+            (PixelFormat::Yuv422p12Be, 1usize, 0usize),
+            (PixelFormat::Yuv440p12Le, 0usize, 1usize),
+            (PixelFormat::Yuv440p12Be, 0usize, 1usize),
+            (PixelFormat::Yuv444p12Le, 0usize, 0usize),
+            (PixelFormat::Yuv444p12Be, 0usize, 0usize),
+            (PixelFormat::Yuv444p12MsbLe, 0usize, 0usize),
+            (PixelFormat::Yuv444p12MsbBe, 0usize, 0usize),
+            (PixelFormat::Yuv420p14Le, 1usize, 1usize),
+            (PixelFormat::Yuv420p14Be, 1usize, 1usize),
+            (PixelFormat::Yuv422p14Le, 1usize, 0usize),
+            (PixelFormat::Yuv422p14Be, 1usize, 0usize),
+            (PixelFormat::Yuv444p14Le, 0usize, 0usize),
+            (PixelFormat::Yuv444p14Be, 0usize, 0usize),
+            (PixelFormat::Yuv420p16Le, 1usize, 1usize),
+            (PixelFormat::Yuv420p16Be, 1usize, 1usize),
+            (PixelFormat::Yuv422p16Le, 1usize, 0usize),
+            (PixelFormat::Yuv422p16Be, 1usize, 0usize),
+            (PixelFormat::Yuv444p16Le, 0usize, 0usize),
+            (PixelFormat::Yuv444p16Be, 0usize, 0usize),
         ] {
             let storage = planar_yuv_sample_storage(8, 4, 64, log2_chroma_w, log2_chroma_h, 2);
             let mut planar_default = Frame::video(
