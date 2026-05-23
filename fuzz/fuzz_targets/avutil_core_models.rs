@@ -13492,16 +13492,24 @@ fn exercise_fixtures() {
         &[19, 20, 21, 22, 23, 24]
     );
 
-    let mut yuv420p_storage = Vec::new();
-    for (width, height, base) in [(8, 4, 0x10_u8), (4, 2, 0x80), (4, 2, 0xc0)] {
-        let mut plane = vec![0; 64 * height];
-        for row in 0..height {
-            for column in 0..width {
-                plane[row * 64 + column] = base + (row * 16 + column) as u8;
+    let make_planar_yuv_storage = |log2_chroma_w: usize, log2_chroma_h: usize| {
+        let mut storage = Vec::new();
+        for (width, height, base) in [
+            (8, 4, 0x10_u8),
+            (8 >> log2_chroma_w, 4 >> log2_chroma_h, 0x80),
+            (8 >> log2_chroma_w, 4 >> log2_chroma_h, 0xc0),
+        ] {
+            let mut plane = vec![0; 64 * height];
+            for row in 0..height {
+                for column in 0..width {
+                    plane[row * 64 + column] = base + (row * 16 + column) as u8;
+                }
             }
+            storage.push(plane);
         }
-        yuv420p_storage.push(plane);
-    }
+        storage
+    };
+    let yuv420p_storage = make_planar_yuv_storage(1, 1);
     let mut yuv420p_default_crop = Frame::video(
         VideoFrame::new_with_line_sizes(
             8,
@@ -13620,6 +13628,72 @@ fn exercise_fixtures() {
         yuv420p_odd_unaligned_crop_video.planes()[2],
         vec![0xc0, 0xc1, 0xc2]
     );
+
+    for (format, log2_chroma_w, log2_chroma_h) in [
+        (PixelFormat::Yuv422p, 1usize, 0usize),
+        (PixelFormat::Yuv444p, 0usize, 0usize),
+    ] {
+        let planar_storage = make_planar_yuv_storage(log2_chroma_w, log2_chroma_h);
+        let mut planar_default_crop = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                format,
+                planar_storage.clone(),
+                vec![64, 64, 64],
+            )
+            .unwrap(),
+        );
+        planar_default_crop.set_crop_offsets(1, 0, 1, 1);
+        planar_default_crop
+            .apply_cropping(FrameCropFlags::NONE)
+            .unwrap();
+        let FrameData::Video(planar_default_crop_video) = planar_default_crop.data() else {
+            panic!("constructed planar YUV default crop frame changed variant");
+        };
+        assert_eq!(planar_default_crop.crop(), FrameCrop::default());
+        assert_eq!(planar_default_crop_video.width(), 7);
+        assert_eq!(planar_default_crop_video.height(), 3);
+        assert_eq!(
+            &planar_default_crop_video.planes()[0][..7],
+            &[0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26]
+        );
+        assert_eq!(
+            planar_default_crop_video.planes()[1].len(),
+            (7 >> log2_chroma_w) * (3 >> log2_chroma_h)
+        );
+        assert_eq!(
+            planar_default_crop_video.planes()[2].len(),
+            (7 >> log2_chroma_w) * (3 >> log2_chroma_h)
+        );
+
+        let mut planar_unaligned_crop = Frame::video(
+            VideoFrame::new_with_line_sizes(8, 4, format, planar_storage, vec![64, 64, 64])
+                .unwrap(),
+        );
+        planar_unaligned_crop.set_crop_offsets(1, 0, 1, 1);
+        planar_unaligned_crop
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .unwrap();
+        let FrameData::Video(planar_unaligned_crop_video) = planar_unaligned_crop.data() else {
+            panic!("constructed planar YUV unaligned crop frame changed variant");
+        };
+        assert_eq!(planar_unaligned_crop.crop(), FrameCrop::default());
+        assert_eq!(planar_unaligned_crop_video.width(), 6);
+        assert_eq!(planar_unaligned_crop_video.height(), 3);
+        assert_eq!(
+            &planar_unaligned_crop_video.planes()[0][..6],
+            &[0x21, 0x22, 0x23, 0x24, 0x25, 0x26]
+        );
+        assert_eq!(
+            planar_unaligned_crop_video.planes()[1].len(),
+            (6 >> log2_chroma_w) * (3 >> log2_chroma_h)
+        );
+        assert_eq!(
+            planar_unaligned_crop_video.planes()[2].len(),
+            (6 >> log2_chroma_w) * (3 >> log2_chroma_h)
+        );
+    }
 
     for (format, bytes_per_pixel, line_size) in [
         (PixelFormat::Rgb8, 1, 64),

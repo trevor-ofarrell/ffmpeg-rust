@@ -321,13 +321,13 @@ CFA family (`bayer_bggr16le`, `bayer_bggr16be`, `bayer_rggb16le`,
 `bayer_grbg16be`) return `AVERROR_BUG` without mutation for default
 nonzero-left crop while succeeding with exact-left behavior under
 `AV_FRAME_CROP_UNALIGNED`.
-The `frame:apply-crop-yuv420p-*` rows prove the first bounded planar crop
-case for `yuv420p`, including even and odd post-crop visible dimensions:
-default mode rounds the luma left crop down for FFmpeg's 32-byte data-pointer
-alignment rule, chroma plane starts are derived from the rounded 4:2:0 crop
-offsets, odd post-crop chroma visible dimensions use floor-shifted 4:2:0
-geometry, and `AV_FRAME_CROP_UNALIGNED` applies exact luma left crop with
-subsampled chroma offsets.
+The `frame:apply-crop-yuv420p-*`, `frame:apply-crop-yuv422p-*`, and
+`frame:apply-crop-yuv444p-*` rows prove the bounded 8-bit planar software-frame
+crop path for 4:2:0, 4:2:2, and 4:4:4 YUV. Default mode rounds the luma left
+crop down for FFmpeg's 32-byte data-pointer alignment rule, derives chroma plane
+starts from each format's rounded chroma offsets, keeps crop-visible chroma
+dimensions floor-shifted after cropping, and `AV_FRAME_CROP_UNALIGNED` applies
+exact luma crop with subsampled chroma offsets.
 The standalone side-data array rows exercise `av_frame_side_data_new()`,
 `av_frame_side_data_get()`, `av_frame_side_data_remove_by_props()`, and
 `av_frame_side_data_free()`: duplicate insertion without flags fails without
