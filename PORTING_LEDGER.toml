@@ -3,6 +3,7 @@ target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
 # Latest avutil-packet evidence: packet-owned side-data size-null lookup rows,
+# duplicate side-data copy/ref/clone collapse and move-ref transfer rows,
 # packet-owned duplicate side-data get/new/add/shrink/free rows,
 # standalone duplicate side-data lookup/new/add/remove/free rows, and standalone side-data
 # array capacity-divergence rows now pass through the packet oracle,
@@ -320,6 +321,11 @@ notes = "FATE pass for the current bounded AVPacket helper surface under the sel
 # and missing NULL result as the ordinary lookup path without requiring a size
 # output pointer. The unit test strengthens typed Rust lookup coverage for the
 # same present and missing cases.
+# Latest duplicate lifecycle slice: pinned libavcodec rows now validate that
+# `av_packet_ref()`, `av_packet_clone()`, and `av_packet_copy_props()` collapse
+# duplicate packet-owned side-data kinds by later-entry replacement, while
+# `av_packet_move_ref()` transfers the raw duplicate side-data array and resets
+# the source. Unit and fuzz-smoke coverage assert the same split.
 blocked_reason = ""
 
 [[component]]

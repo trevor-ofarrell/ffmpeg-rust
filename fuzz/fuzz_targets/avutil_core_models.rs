@@ -8678,8 +8678,37 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
 
     packet
         .push_side_data(SideData::new("ref_side_data", vec![0xbb, 0xcc]).unwrap());
+    packet.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
+    );
+    packet.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
+    );
+    packet.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
+    );
+    packet.push_side_data(
+        SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x44]).unwrap(),
+    );
+    let packet_side_data_signature = |packet: &Packet| {
+        packet
+            .side_data()
+            .iter()
+            .map(|side_data| (side_data.kind_id().clone(), side_data.data().to_vec()))
+            .collect::<Vec<_>>()
+    };
+    let expected_packet_side_data = vec![
+        (packet.side_data()[0].kind_id().clone(), vec![0xbb, 0xcc]),
+        (PacketSideDataKind::Palette, vec![0x33]),
+        (PacketSideDataKind::NewExtradata, vec![0x22]),
+        (PacketSideDataKind::SkipSamples, vec![0x44]),
+    ];
     let mut packet_ref = Packet::default();
     packet_ref.ref_from(&packet);
+    assert_eq!(
+        packet_side_data_signature(&packet_ref),
+        expected_packet_side_data
+    );
     assert_eq!(packet_ref.data(), packet.data());
     assert!(!packet_ref
         .data_buffer()
@@ -8706,6 +8735,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet_ref.time_base(), packet.time_base());
 
     let mut cloned_packet = packet.clone();
+    assert_eq!(
+        packet_side_data_signature(&cloned_packet),
+        expected_packet_side_data
+    );
     assert_eq!(cloned_packet.data(), packet.data());
     assert!(!cloned_packet
         .data_buffer()
@@ -8776,6 +8809,7 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert!(packet_ref.is_data_writable());
 
     let mut moved_packet = Packet::new(vec![0xee], 3);
+    let expected_moved_side_data = packet_side_data_signature(&packet_ref);
     moved_packet.move_ref_from(&mut packet_ref);
     assert!(packet_ref.is_empty());
     assert_eq!(packet_ref.stream_index(), 0);
@@ -8788,6 +8822,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(
         moved_packet.side_data_by_kind("ref_side_data").unwrap().data(),
         &[0xbb]
+    );
+    assert_eq!(
+        packet_side_data_signature(&moved_packet),
+        expected_moved_side_data
     );
     assert_eq!(
         moved_packet.opaque_ref().unwrap().as_slice(),
@@ -8814,6 +8852,10 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     let mut props_packet = Packet::new(vec![0x44, 0x55], 2);
     let props_payload = props_packet.data().to_vec();
     props_packet.copy_props_from(&packet);
+    assert_eq!(
+        packet_side_data_signature(&props_packet),
+        expected_packet_side_data
+    );
     assert_eq!(props_packet.data(), props_payload.as_slice());
     assert!(!props_packet
         .data_buffer()

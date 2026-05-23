@@ -5340,7 +5340,7 @@ impl Packet {
             pos: src.pos,
             stream_index: src.stream_index,
             flags: src.flags,
-            side_data: src.side_data.clone(),
+            side_data: clone_packet_side_data_for_ref(&src.side_data),
             opaque: src.opaque,
             opaque_ref: src.opaque_ref.clone(),
             time_base: src.time_base,
@@ -5365,7 +5365,7 @@ impl Packet {
         self.pos = src.pos;
         self.stream_index = src.stream_index;
         self.flags = src.flags;
-        self.side_data = src.side_data.clone();
+        self.side_data = clone_packet_side_data_for_ref(&src.side_data);
         self.opaque = src.opaque;
         self.opaque_ref = src.opaque_ref.clone();
         self.time_base = src.time_base;
@@ -5533,6 +5533,21 @@ fn packet_side_data_capacity_error() -> AvError {
         AvErrorCode::from_posix_errno(34),
         "packet side data entry limit exceeded",
     )
+}
+
+fn clone_packet_side_data_for_ref(side_data: &[SideData]) -> Vec<SideData> {
+    let mut copied = Vec::new();
+    for side_data in side_data.iter().cloned() {
+        if let Some(index) = copied
+            .iter()
+            .position(|existing: &SideData| existing.kind_id() == side_data.kind_id())
+        {
+            copied[index] = side_data;
+        } else {
+            copied.push(side_data);
+        }
+    }
+    copied
 }
 
 fn normalize_packet_side_data_name(name: &str) -> String {
@@ -11404,6 +11419,61 @@ mod tests {
 
         assert_eq!(dst.side_data_by_kind("palette").unwrap().data(), &[5]);
         assert_eq!(src.side_data_by_kind("palette").unwrap().data(), &[5, 6]);
+    }
+
+    #[test]
+    fn packet_lifecycle_preserves_duplicate_side_data_order() {
+        fn duplicate_signature(packet: &Packet) -> Vec<(PacketSideDataKind, Vec<u8>)> {
+            packet
+                .side_data()
+                .iter()
+                .map(|side_data| (side_data.kind_id().clone(), side_data.data().to_vec()))
+                .collect()
+        }
+
+        let mut src = Packet::new(vec![1, 2, 3], 4);
+        src.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x11]).unwrap(),
+        );
+        src.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::NewExtradata, vec![0x22]).unwrap(),
+        );
+        src.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x33]).unwrap(),
+        );
+        src.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::SkipSamples, vec![0x44]).unwrap(),
+        );
+        let moved_expected = duplicate_signature(&src);
+        let copied_expected = vec![
+            (PacketSideDataKind::Palette, vec![0x33]),
+            (PacketSideDataKind::NewExtradata, vec![0x22]),
+            (PacketSideDataKind::SkipSamples, vec![0x44]),
+        ];
+
+        let mut copied = Packet::new(vec![9], 9);
+        copied.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+        );
+        copied.copy_props_from(&src);
+        assert_eq!(duplicate_signature(&copied), copied_expected);
+        assert_eq!(copied.data(), &[9]);
+
+        let mut referenced = Packet::default();
+        referenced.ref_from(&src);
+        assert_eq!(duplicate_signature(&referenced), copied_expected);
+
+        let cloned = src.clone();
+        assert_eq!(duplicate_signature(&cloned), copied_expected);
+
+        let mut moved_src = src;
+        let mut moved_dst = Packet::new(vec![0xaa], 1);
+        moved_dst.push_side_data(
+            SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xee]).unwrap(),
+        );
+        moved_dst.move_ref_from(&mut moved_src);
+        assert_eq!(duplicate_signature(&moved_dst), moved_expected);
+        assert!(moved_src.side_data().is_empty());
     }
 
     #[test]

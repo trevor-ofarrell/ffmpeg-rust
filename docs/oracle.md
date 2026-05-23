@@ -170,6 +170,8 @@ The harness also includes `packet:move-replace-dst`, `packet:move-replace-dst-si
 
 The harness also includes `packet:copy-props-replace`, `packet:copy-props-replace-side`, and `packet:copy-props-replace-payload` rows for `av_packet_copy_props()`. These rows prove that a destination packet with existing payload, side data, opaque pointer metadata, and `opaque_ref` keeps its payload bytes while FFmpeg replaces the old metadata, side data, and `opaque_ref` with source properties.
 
+The harness also includes `packet:*duplicate-side` lifecycle rows, proving `av_packet_ref()`, `av_packet_clone()`, and `av_packet_copy_props()` collapse duplicate packet-owned side-data kinds by later-entry replacement while `av_packet_move_ref()` transfers the raw duplicate side-data array and resets the source.
+
 The harness also includes a `packet:payload-layout-palette` row, proving FFmpeg's packet palette side-data payload uses `AVPALETTE_SIZE` bytes. `PacketPalette` derives its modeled length from the same shared `AVPALETTE_COUNT` and `AVPALETTE_SIZE` constants used by the pixel-format model.
 
 The harness also includes a `packet:payload-layout-content-light` row, proving FFmpeg's packet content-light side-data payload uses the native 8-byte `AVContentLightMetadata` shape with `MaxCLL` at offset 0 and `MaxFALL` at offset 4.
