@@ -232,8 +232,8 @@ and writability for video, packed audio, direct planar audio, extended planar
 audio, and out-of-range indexes,
 `av_frame_apply_cropping()` for gray8 aligned, gray8 unaligned, byte-packed
 RGB/BGR/Bayer8 default and unaligned cases, RGB24 aligned, RGB24 unaligned,
-BGR24 aligned, BGR24 unaligned, selected packed RGB/RGBA default and
-unaligned cases, and invalid crop rectangles,
+BGR24 aligned, BGR24 unaligned, selected packed RGB/RGBA and Bayer16 default
+and unaligned cases, and invalid crop rectangles,
 `AV_FRAME_DATA_*` numeric
 values/names/descriptors/properties, `av_frame_side_data_name()` invalid
 raw-value boundaries, `AV_FRAME_SIDE_DATA_FLAG_*`,
@@ -310,8 +310,11 @@ behavior under `AV_FRAME_CROP_UNALIGNED`, crop-field reset on success, and
 `bgr444le`, and `bgr444be`), 32-bit packed RGB/RGBA family (`rgba`, `bgra`,
 `argb`, `abgr`, `0rgb`, `rgb0`, `0bgr`, and `bgr0`), and high-depth packed
 RGB/RGBA family (`rgb48le`, `rgb48be`, `bgr48le`, `bgr48be`, `rgba64le`,
-`rgba64be`, `bgra64le`, and `bgra64be`) return `AVERROR_BUG` without mutation
-for default nonzero-left crop while succeeding with exact-left behavior under
+`rgba64be`, `bgra64le`, and `bgra64be`), and Bayer16 CFA family
+(`bayer_bggr16le`, `bayer_bggr16be`, `bayer_rggb16le`, `bayer_rggb16be`,
+`bayer_gbrg16le`, `bayer_gbrg16be`, `bayer_grbg16le`, and
+`bayer_grbg16be`) return `AVERROR_BUG` without mutation for default
+nonzero-left crop while succeeding with exact-left behavior under
 `AV_FRAME_CROP_UNALIGNED`.
 The standalone side-data array rows exercise `av_frame_side_data_new()`,
 `av_frame_side_data_get()`, `av_frame_side_data_remove_by_props()`, and

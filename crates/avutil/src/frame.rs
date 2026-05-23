@@ -13656,7 +13656,15 @@ impl VideoFrame {
             | PixelFormat::Rgb444Le
             | PixelFormat::Rgb444Be
             | PixelFormat::Bgr444Le
-            | PixelFormat::Bgr444Be => 2,
+            | PixelFormat::Bgr444Be
+            | PixelFormat::BayerBggr16Le
+            | PixelFormat::BayerBggr16Be
+            | PixelFormat::BayerRggb16Le
+            | PixelFormat::BayerRggb16Be
+            | PixelFormat::BayerGbrg16Le
+            | PixelFormat::BayerGbrg16Be
+            | PixelFormat::BayerGrbg16Le
+            | PixelFormat::BayerGrbg16Be => 2,
             PixelFormat::Rgb48Le
             | PixelFormat::Rgb48Be
             | PixelFormat::Bgr48Le
@@ -20118,6 +20126,14 @@ mod tests {
             (PixelFormat::Rgb444Be, 2, 64),
             (PixelFormat::Bgr444Le, 2, 64),
             (PixelFormat::Bgr444Be, 2, 64),
+            (PixelFormat::BayerBggr16Le, 2, 64),
+            (PixelFormat::BayerBggr16Be, 2, 64),
+            (PixelFormat::BayerRggb16Le, 2, 64),
+            (PixelFormat::BayerRggb16Be, 2, 64),
+            (PixelFormat::BayerGbrg16Le, 2, 64),
+            (PixelFormat::BayerGbrg16Be, 2, 64),
+            (PixelFormat::BayerGrbg16Le, 2, 64),
+            (PixelFormat::BayerGrbg16Be, 2, 64),
             (PixelFormat::Rgb48Le, 6, 192),
             (PixelFormat::Rgb48Be, 6, 192),
             (PixelFormat::Bgr48Le, 6, 192),

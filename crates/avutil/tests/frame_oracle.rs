@@ -663,6 +663,14 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         (PixelFormat::Rgb444Be, 2, 64),
         (PixelFormat::Bgr444Le, 2, 64),
         (PixelFormat::Bgr444Be, 2, 64),
+        (PixelFormat::BayerBggr16Le, 2, 64),
+        (PixelFormat::BayerBggr16Be, 2, 64),
+        (PixelFormat::BayerRggb16Le, 2, 64),
+        (PixelFormat::BayerRggb16Be, 2, 64),
+        (PixelFormat::BayerGbrg16Le, 2, 64),
+        (PixelFormat::BayerGbrg16Be, 2, 64),
+        (PixelFormat::BayerGrbg16Le, 2, 64),
+        (PixelFormat::BayerGrbg16Be, 2, 64),
         (PixelFormat::Rgb48Le, 6, 192),
         (PixelFormat::Rgb48Be, 6, 192),
         (PixelFormat::Bgr48Le, 6, 192),
@@ -2198,6 +2206,14 @@ static void print_video_planes(const AVFrame *frame)
     case AV_PIX_FMT_RGB444BE:
     case AV_PIX_FMT_BGR444LE:
     case AV_PIX_FMT_BGR444BE:
+    case AV_PIX_FMT_BAYER_BGGR16LE:
+    case AV_PIX_FMT_BAYER_BGGR16BE:
+    case AV_PIX_FMT_BAYER_RGGB16LE:
+    case AV_PIX_FMT_BAYER_RGGB16BE:
+    case AV_PIX_FMT_BAYER_GBRG16LE:
+    case AV_PIX_FMT_BAYER_GBRG16BE:
+    case AV_PIX_FMT_BAYER_GRBG16LE:
+    case AV_PIX_FMT_BAYER_GRBG16BE:
         bytes_per_pixel = 2;
         break;
     case AV_PIX_FMT_RGB24:
@@ -3314,6 +3330,14 @@ int main(void)
     exercise_packed_crop_pair("rgb444be", AV_PIX_FMT_RGB444BE, 2);
     exercise_packed_crop_pair("bgr444le", AV_PIX_FMT_BGR444LE, 2);
     exercise_packed_crop_pair("bgr444be", AV_PIX_FMT_BGR444BE, 2);
+    exercise_packed_crop_pair("bayer_bggr16le", AV_PIX_FMT_BAYER_BGGR16LE, 2);
+    exercise_packed_crop_pair("bayer_bggr16be", AV_PIX_FMT_BAYER_BGGR16BE, 2);
+    exercise_packed_crop_pair("bayer_rggb16le", AV_PIX_FMT_BAYER_RGGB16LE, 2);
+    exercise_packed_crop_pair("bayer_rggb16be", AV_PIX_FMT_BAYER_RGGB16BE, 2);
+    exercise_packed_crop_pair("bayer_gbrg16le", AV_PIX_FMT_BAYER_GBRG16LE, 2);
+    exercise_packed_crop_pair("bayer_gbrg16be", AV_PIX_FMT_BAYER_GBRG16BE, 2);
+    exercise_packed_crop_pair("bayer_grbg16le", AV_PIX_FMT_BAYER_GRBG16LE, 2);
+    exercise_packed_crop_pair("bayer_grbg16be", AV_PIX_FMT_BAYER_GRBG16BE, 2);
     exercise_packed_crop_pair("rgb48le", AV_PIX_FMT_RGB48LE, 6);
     exercise_packed_crop_pair("rgb48be", AV_PIX_FMT_RGB48BE, 6);
     exercise_packed_crop_pair("bgr48le", AV_PIX_FMT_BGR48LE, 6);
