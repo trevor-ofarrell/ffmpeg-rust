@@ -9075,8 +9075,8 @@ fn exercise_fixtures() {
     ) in [
         ("xv30le", PixelFormat::Xv30Le, 10, 30, Some(4), 16),
         ("xv30be", PixelFormat::Xv30Be, 10, 30, Some(4), 16),
-        ("xv36le", PixelFormat::Xv36Le, 12, 36, Some(6), 24),
-        ("xv36be", PixelFormat::Xv36Be, 12, 36, Some(6), 24),
+        ("xv36le", PixelFormat::Xv36Le, 12, 36, Some(8), 32),
+        ("xv36be", PixelFormat::Xv36Be, 12, 36, Some(8), 32),
         ("xv48le", PixelFormat::Xv48Le, 16, 48, Some(8), 32),
         ("xv48be", PixelFormat::Xv48Be, 16, 48, Some(8), 32),
         ("v30xle", PixelFormat::V30xLe, 10, 30, Some(4), 16),
@@ -9800,7 +9800,7 @@ fn exercise_fixtures() {
     assert_eq!(PixelFormat::Xv30Le.bits_per_component(), 10);
     assert_eq!(PixelFormat::Xv30Le.bits_per_pixel(), bpp(30));
     assert_eq!(PixelFormat::Xv30Le.packed_bytes_per_pixel(), Some(4));
-    assert_eq!(PixelFormat::Xv36Be.frame_size(2, 2).unwrap(), 24);
+    assert_eq!(PixelFormat::Xv36Be.frame_size(2, 2).unwrap(), 32);
     assert_eq!(PixelFormat::Xv48Le.frame_size(2, 2).unwrap(), 32);
     assert_eq!(PixelFormat::V30xBe.frame_size(2, 2).unwrap(), 16);
     assert_eq!(
@@ -13509,6 +13509,10 @@ fn exercise_fixtures() {
         (PixelFormat::Rgb0, 4, 64),
         (PixelFormat::ZeroBgr, 4, 64),
         (PixelFormat::Bgr0, 4, 64),
+        (PixelFormat::X2Rgb10Le, 4, 64),
+        (PixelFormat::X2Rgb10Be, 4, 64),
+        (PixelFormat::X2Bgr10Le, 4, 64),
+        (PixelFormat::X2Bgr10Be, 4, 64),
         (PixelFormat::Rgb565Be, 2, 64),
         (PixelFormat::Rgb565Le, 2, 64),
         (PixelFormat::Rgb555Be, 2, 64),
@@ -13560,6 +13564,23 @@ fn exercise_fixtures() {
         (PixelFormat::Rgba64Be, 8, 64),
         (PixelFormat::Bgra64Le, 8, 64),
         (PixelFormat::Bgra64Be, 8, 64),
+        (PixelFormat::Ayuv64Le, 8, 64),
+        (PixelFormat::Ayuv64Be, 8, 64),
+        (PixelFormat::Vuya, 4, 64),
+        (PixelFormat::Vuyx, 4, 64),
+        (PixelFormat::Xv30Le, 4, 64),
+        (PixelFormat::Xv30Be, 4, 64),
+        (PixelFormat::Xv36Le, 8, 64),
+        (PixelFormat::Xv36Be, 8, 64),
+        (PixelFormat::Xv48Le, 8, 64),
+        (PixelFormat::Xv48Be, 8, 64),
+        (PixelFormat::V30xLe, 4, 64),
+        (PixelFormat::V30xBe, 4, 64),
+        (PixelFormat::Ayuv, 4, 64),
+        (PixelFormat::Uyva, 4, 64),
+        (PixelFormat::Vyu444, 3, 192),
+        (PixelFormat::Xyz12Le, 6, 192),
+        (PixelFormat::Xyz12Be, 6, 192),
     ] {
         let mut packed_crop_storage = vec![0; line_size * 4];
         for row in 0..4 {
@@ -13579,7 +13600,22 @@ fn exercise_fixtures() {
         );
         packed_default_crop.set_crop_offsets(1, 0, 1, 1);
         let packed_before = packed_default_crop.clone();
-        if bytes_per_pixel == 1 {
+        if matches!(format, PixelFormat::Xv30Be | PixelFormat::V30xBe) {
+            packed_default_crop
+                .apply_cropping(FrameCropFlags::NONE)
+                .unwrap();
+            assert_ne!(packed_default_crop, packed_before);
+            assert_eq!(packed_default_crop.crop(), FrameCrop::new(1, 0, 1, 0));
+            let FrameData::Video(packed_default_crop_video) = packed_default_crop.data() else {
+                panic!("constructed bitstream crop frame changed variant");
+            };
+            assert_eq!(packed_default_crop_video.width(), 7);
+            assert_eq!(packed_default_crop_video.height(), 4);
+            assert_eq!(
+                &packed_default_crop_video.planes()[0][..bytes_per_pixel],
+                (0..bytes_per_pixel as u8).collect::<Vec<_>>().as_slice()
+            );
+        } else if matches!(bytes_per_pixel, 1 | 3) {
             packed_default_crop
                 .apply_cropping(FrameCropFlags::NONE)
                 .unwrap();
@@ -13618,14 +13654,25 @@ fn exercise_fixtures() {
         let FrameData::Video(packed_unaligned_crop_video) = packed_unaligned_crop.data() else {
             panic!("constructed packed crop frame changed variant");
         };
-        assert_eq!(packed_unaligned_crop_video.width(), 6);
-        assert_eq!(packed_unaligned_crop_video.height(), 3);
-        let expected_prefix =
-            (16 + bytes_per_pixel as u8..16 + (bytes_per_pixel * 2) as u8).collect::<Vec<_>>();
-        assert_eq!(
-            &packed_unaligned_crop_video.planes()[0][..bytes_per_pixel],
-            expected_prefix.as_slice()
-        );
+        if matches!(format, PixelFormat::Xv30Be | PixelFormat::V30xBe) {
+            assert_eq!(packed_unaligned_crop.crop(), FrameCrop::new(1, 0, 1, 0));
+            assert_eq!(packed_unaligned_crop_video.width(), 7);
+            assert_eq!(packed_unaligned_crop_video.height(), 4);
+            assert_eq!(
+                &packed_unaligned_crop_video.planes()[0][..bytes_per_pixel],
+                (0..bytes_per_pixel as u8).collect::<Vec<_>>().as_slice()
+            );
+        } else {
+            assert_eq!(packed_unaligned_crop.crop(), FrameCrop::default());
+            assert_eq!(packed_unaligned_crop_video.width(), 6);
+            assert_eq!(packed_unaligned_crop_video.height(), 3);
+            let expected_prefix =
+                (16 + bytes_per_pixel as u8..16 + (bytes_per_pixel * 2) as u8).collect::<Vec<_>>();
+            assert_eq!(
+                &packed_unaligned_crop_video.planes()[0][..bytes_per_pixel],
+                expected_prefix.as_slice()
+            );
+        }
     }
 
     let mut invalid_crop = Frame::video(
@@ -23318,9 +23365,8 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::RgbF16Le
         | PixelFormat::RgbF16Be
         | PixelFormat::Xyz12Le
-        | PixelFormat::Xyz12Be
-        | PixelFormat::Xv36Le
-        | PixelFormat::Xv36Be => vec![width * 6],
+        | PixelFormat::Xyz12Be => vec![width * 6],
+        PixelFormat::Xv36Le | PixelFormat::Xv36Be => vec![width * 8],
         PixelFormat::RgbF32Le
         | PixelFormat::RgbF32Be
         | PixelFormat::Rgb96Le
@@ -23601,9 +23647,8 @@ fn expected_video_plane_shapes(
         | PixelFormat::RgbF16Le
         | PixelFormat::RgbF16Be
         | PixelFormat::Xyz12Le
-        | PixelFormat::Xyz12Be
-        | PixelFormat::Xv36Le
-        | PixelFormat::Xv36Be => vec![(width * 6, height)],
+        | PixelFormat::Xyz12Be => vec![(width * 6, height)],
+        PixelFormat::Xv36Le | PixelFormat::Xv36Be => vec![(width * 8, height)],
         PixelFormat::RgbF32Le
         | PixelFormat::RgbF32Be
         | PixelFormat::Rgb96Le

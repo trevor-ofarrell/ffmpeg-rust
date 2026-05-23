@@ -1121,8 +1121,13 @@ impl Frame {
     pub fn apply_cropping(&mut self, flags: FrameCropFlags) -> AvResult<()> {
         match &mut self.data {
             FrameData::Video(video) => {
+                let remaining_crop = if is_frame_crop_bitstream_format(video.pixel_format()) {
+                    FrameCrop::new(self.crop.top(), 0, self.crop.left(), 0)
+                } else {
+                    FrameCrop::default()
+                };
                 video.apply_cropping(self.crop, flags)?;
-                self.crop = FrameCrop::default();
+                self.crop = remaining_crop;
                 Ok(())
             }
             FrameData::Audio(_) | FrameData::Empty => Err(AvError::invalid_argument(
@@ -13634,6 +13639,33 @@ impl VideoFrame {
         if crop.is_empty() {
             return Ok(());
         }
+        if is_frame_crop_bitstream_format(self.pixel_format) {
+            let new_width = self
+                .width
+                .checked_sub(crop.right)
+                .ok_or_else(|| crop_range_error("frame crop width underflow"))?;
+            let new_height = self
+                .height
+                .checked_sub(crop.bottom)
+                .ok_or_else(|| crop_range_error("frame crop height underflow"))?;
+            let storage_len = self.line_sizes[0]
+                .checked_mul(new_height)
+                .ok_or_else(|| AvError::invalid_argument("frame crop line-size span overflow"))?;
+            let plane_buffers = vec![self.plane_buffers[0].ref_slice(0, storage_len)?];
+            let new_shapes = video_plane_shapes(self.pixel_format, new_width, new_height)?;
+            let planes = snapshot_video_plane_buffers(
+                &plane_buffers,
+                &new_shapes,
+                &self.line_sizes,
+                self.pixel_format.name(),
+            )?;
+
+            self.width = new_width;
+            self.height = new_height;
+            self.planes = planes;
+            self.plane_buffers = plane_buffers;
+            return Ok(());
+        }
         let crop_step = match self.pixel_format {
             PixelFormat::Gray8
             | PixelFormat::Rgb8
@@ -13644,7 +13676,7 @@ impl VideoFrame {
             | PixelFormat::BayerRggb8
             | PixelFormat::BayerGbrg8
             | PixelFormat::BayerGrbg8 => 1,
-            PixelFormat::Rgb24 | PixelFormat::Bgr24 => 3,
+            PixelFormat::Rgb24 | PixelFormat::Bgr24 | PixelFormat::Vyu444 => 3,
             PixelFormat::Ya8
             | PixelFormat::Gray9Le
             | PixelFormat::Gray9Be
@@ -13678,10 +13710,6 @@ impl VideoFrame {
             | PixelFormat::BayerGbrg16Be
             | PixelFormat::BayerGrbg16Le
             | PixelFormat::BayerGrbg16Be => 2,
-            PixelFormat::Rgb48Le
-            | PixelFormat::Rgb48Be
-            | PixelFormat::Bgr48Le
-            | PixelFormat::Bgr48Be => 6,
             PixelFormat::Ya16Le
             | PixelFormat::Ya16Be
             | PixelFormat::Yaf16Le
@@ -13690,6 +13718,10 @@ impl VideoFrame {
             | PixelFormat::Gray32Be
             | PixelFormat::GrayF32Le
             | PixelFormat::GrayF32Be
+            | PixelFormat::X2Rgb10Le
+            | PixelFormat::X2Rgb10Be
+            | PixelFormat::X2Bgr10Le
+            | PixelFormat::X2Bgr10Be
             | PixelFormat::Rgba
             | PixelFormat::Bgra
             | PixelFormat::Argb
@@ -13697,16 +13729,36 @@ impl VideoFrame {
             | PixelFormat::ZeroRgb
             | PixelFormat::Rgb0
             | PixelFormat::ZeroBgr
-            | PixelFormat::Bgr0 => 4,
+            | PixelFormat::Bgr0
+            | PixelFormat::Vuya
+            | PixelFormat::Vuyx
+            | PixelFormat::Xv30Le
+            | PixelFormat::Xv30Be
+            | PixelFormat::V30xLe
+            | PixelFormat::V30xBe
+            | PixelFormat::Ayuv
+            | PixelFormat::Uyva => 4,
+            PixelFormat::Rgb48Le
+            | PixelFormat::Rgb48Be
+            | PixelFormat::Bgr48Le
+            | PixelFormat::Bgr48Be
+            | PixelFormat::Xyz12Le
+            | PixelFormat::Xyz12Be => 6,
             PixelFormat::Yaf32Le
             | PixelFormat::Yaf32Be
             | PixelFormat::Rgba64Le
             | PixelFormat::Rgba64Be
             | PixelFormat::Bgra64Le
-            | PixelFormat::Bgra64Be => 8,
+            | PixelFormat::Bgra64Be
+            | PixelFormat::Ayuv64Le
+            | PixelFormat::Ayuv64Be
+            | PixelFormat::Xv36Le
+            | PixelFormat::Xv36Be
+            | PixelFormat::Xv48Le
+            | PixelFormat::Xv48Be => 8,
             _ => {
                 return Err(AvError::unsupported(format!(
-                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, selected packed grayscale/gray-alpha, rgb24/bgr24, and selected high-depth packed RGB/RGBA video frames, not {}",
+                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, selected packed grayscale/gray-alpha, rgb24/bgr24/vyu444, selected high-depth packed RGB/RGBA, and selected packed 4:4:4 RGB/YUV/XYZ video frames, not {}",
                     self.pixel_format.name()
                 )));
             }
@@ -14581,9 +14633,7 @@ fn video_plane_shapes(
         | PixelFormat::RgbF16Le
         | PixelFormat::RgbF16Be
         | PixelFormat::Xyz12Le
-        | PixelFormat::Xyz12Be
-        | PixelFormat::Xv36Le
-        | PixelFormat::Xv36Be => Ok(vec![VideoPlaneShape {
+        | PixelFormat::Xyz12Be => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 6, "six-byte packed video frame line size")?,
             rows: height,
         }]),
@@ -14609,6 +14659,8 @@ fn video_plane_shapes(
         | PixelFormat::Bgra64Be
         | PixelFormat::Ayuv64Le
         | PixelFormat::Ayuv64Be
+        | PixelFormat::Xv36Le
+        | PixelFormat::Xv36Be
         | PixelFormat::Xv48Le
         | PixelFormat::Xv48Be => Ok(vec![VideoPlaneShape {
             row_bytes: checked_mul(width, 8, "64-bit packed video frame line size")?,
@@ -15085,6 +15137,10 @@ fn crop_range_error(message: impl Into<String>) -> AvError {
     )
 }
 
+fn is_frame_crop_bitstream_format(format: PixelFormat) -> bool {
+    matches!(format, PixelFormat::Xv30Be | PixelFormat::V30xBe)
+}
+
 fn adjusted_packed_crop_left(
     crop: FrameCrop,
     line_size: usize,
@@ -15096,7 +15152,7 @@ fn adjusted_packed_crop_left(
     }
     if matches!(bytes_per_pixel, 2 | 4 | 6 | 8) {
         return Err(AvError::bug(
-            "FFmpeg rejects default left cropping for selected high-depth packed RGB frames",
+            "FFmpeg rejects default left cropping for selected multi-byte packed video frames",
         ));
     }
 
@@ -19295,8 +19351,8 @@ mod tests {
         let xyz12 = VideoFrame::new(3, 2, PixelFormat::Xyz12Le, vec![vec![0; 36]]).unwrap();
         assert_eq!(xyz12.line_sizes(), &[18]);
 
-        let xv36 = VideoFrame::new(3, 2, PixelFormat::Xv36Le, vec![vec![0; 36]]).unwrap();
-        assert_eq!(xv36.line_sizes(), &[18]);
+        let xv36 = VideoFrame::new(3, 2, PixelFormat::Xv36Le, vec![vec![0; 48]]).unwrap();
+        assert_eq!(xv36.line_sizes(), &[24]);
 
         let xv48 = VideoFrame::new(3, 2, PixelFormat::Xv48Be, vec![vec![0; 48]]).unwrap();
         assert_eq!(xv48.line_sizes(), &[24]);
@@ -20137,6 +20193,10 @@ mod tests {
             (PixelFormat::Rgb0, 4, 64),
             (PixelFormat::ZeroBgr, 4, 64),
             (PixelFormat::Bgr0, 4, 64),
+            (PixelFormat::X2Rgb10Le, 4, 64),
+            (PixelFormat::X2Rgb10Be, 4, 64),
+            (PixelFormat::X2Bgr10Le, 4, 64),
+            (PixelFormat::X2Bgr10Be, 4, 64),
             (PixelFormat::Rgb565Be, 2, 64),
             (PixelFormat::Rgb565Le, 2, 64),
             (PixelFormat::Rgb555Be, 2, 64),
@@ -20188,6 +20248,23 @@ mod tests {
             (PixelFormat::Rgba64Be, 8, 64),
             (PixelFormat::Bgra64Le, 8, 64),
             (PixelFormat::Bgra64Be, 8, 64),
+            (PixelFormat::Ayuv64Le, 8, 64),
+            (PixelFormat::Ayuv64Be, 8, 64),
+            (PixelFormat::Vuya, 4, 64),
+            (PixelFormat::Vuyx, 4, 64),
+            (PixelFormat::Xv30Le, 4, 64),
+            (PixelFormat::Xv30Be, 4, 64),
+            (PixelFormat::Xv36Le, 8, 64),
+            (PixelFormat::Xv36Be, 8, 64),
+            (PixelFormat::Xv48Le, 8, 64),
+            (PixelFormat::Xv48Be, 8, 64),
+            (PixelFormat::V30xLe, 4, 64),
+            (PixelFormat::V30xBe, 4, 64),
+            (PixelFormat::Ayuv, 4, 64),
+            (PixelFormat::Uyva, 4, 64),
+            (PixelFormat::Vyu444, 3, 192),
+            (PixelFormat::Xyz12Le, 6, 192),
+            (PixelFormat::Xyz12Be, 6, 192),
         ] {
             let packed_crop_storage = packed_storage(8, 4, bytes_per_pixel, line_size);
             let mut packed_default = Frame::video(
@@ -20202,7 +20279,23 @@ mod tests {
             );
             packed_default.set_crop_offsets(1, 0, 1, 1);
             let before = packed_default.clone();
-            if bytes_per_pixel == 1 {
+            if is_frame_crop_bitstream_format(format) {
+                packed_default.apply_cropping(FrameCropFlags::NONE).unwrap();
+                assert_ne!(packed_default, before);
+                assert_eq!(packed_default.crop(), FrameCrop::new(1, 0, 1, 0));
+                let FrameData::Video(video) = packed_default.data() else {
+                    unreachable!("constructed bitstream crop frame changed variant");
+                };
+                assert_eq!(video.width(), 7, "{}", format.name());
+                assert_eq!(video.height(), 4, "{}", format.name());
+                assert_eq!(video.line_sizes(), &[line_size], "{}", format.name());
+                assert_eq!(
+                    video.planes(),
+                    &[packed_visible(bytes_per_pixel, 0, 0, 7, 4)],
+                    "{}",
+                    format.name()
+                );
+            } else if matches!(bytes_per_pixel, 1 | 3) {
                 packed_default.apply_cropping(FrameCropFlags::NONE).unwrap();
                 assert_ne!(packed_default, before);
                 assert_eq!(packed_default.crop(), FrameCrop::default());
@@ -20248,15 +20341,29 @@ mod tests {
             let FrameData::Video(video) = packed_unaligned.data() else {
                 unreachable!("constructed packed crop frame changed variant");
             };
-            assert_eq!(video.width(), 6, "{}", format.name());
-            assert_eq!(video.height(), 3, "{}", format.name());
-            assert_eq!(video.line_sizes(), &[line_size], "{}", format.name());
-            assert_eq!(
-                video.planes(),
-                &[packed_visible(bytes_per_pixel, 1, 1, 6, 3)],
-                "{}",
-                format.name()
-            );
+            if is_frame_crop_bitstream_format(format) {
+                assert_eq!(packed_unaligned.crop(), FrameCrop::new(1, 0, 1, 0));
+                assert_eq!(video.width(), 7, "{}", format.name());
+                assert_eq!(video.height(), 4, "{}", format.name());
+                assert_eq!(video.line_sizes(), &[line_size], "{}", format.name());
+                assert_eq!(
+                    video.planes(),
+                    &[packed_visible(bytes_per_pixel, 0, 0, 7, 4)],
+                    "{}",
+                    format.name()
+                );
+            } else {
+                assert_eq!(packed_unaligned.crop(), FrameCrop::default());
+                assert_eq!(video.width(), 6, "{}", format.name());
+                assert_eq!(video.height(), 3, "{}", format.name());
+                assert_eq!(video.line_sizes(), &[line_size], "{}", format.name());
+                assert_eq!(
+                    video.planes(),
+                    &[packed_visible(bytes_per_pixel, 1, 1, 6, 3)],
+                    "{}",
+                    format.name()
+                );
+            }
         }
 
         let mut invalid = Frame::video(

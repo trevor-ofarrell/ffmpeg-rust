@@ -651,6 +651,10 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         (PixelFormat::Rgb0, 4, 64),
         (PixelFormat::ZeroBgr, 4, 64),
         (PixelFormat::Bgr0, 4, 64),
+        (PixelFormat::X2Rgb10Le, 4, 64),
+        (PixelFormat::X2Rgb10Be, 4, 64),
+        (PixelFormat::X2Bgr10Le, 4, 64),
+        (PixelFormat::X2Bgr10Be, 4, 64),
         (PixelFormat::Rgb565Be, 2, 64),
         (PixelFormat::Rgb565Le, 2, 64),
         (PixelFormat::Rgb555Be, 2, 64),
@@ -702,6 +706,23 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         (PixelFormat::Rgba64Be, 8, 64),
         (PixelFormat::Bgra64Le, 8, 64),
         (PixelFormat::Bgra64Be, 8, 64),
+        (PixelFormat::Ayuv64Le, 8, 64),
+        (PixelFormat::Ayuv64Be, 8, 64),
+        (PixelFormat::Vuya, 4, 64),
+        (PixelFormat::Vuyx, 4, 64),
+        (PixelFormat::Xv30Le, 4, 64),
+        (PixelFormat::Xv30Be, 4, 64),
+        (PixelFormat::Xv36Le, 8, 64),
+        (PixelFormat::Xv36Be, 8, 64),
+        (PixelFormat::Xv48Le, 8, 64),
+        (PixelFormat::Xv48Be, 8, 64),
+        (PixelFormat::V30xLe, 4, 64),
+        (PixelFormat::V30xBe, 4, 64),
+        (PixelFormat::Ayuv, 4, 64),
+        (PixelFormat::Uyva, 4, 64),
+        (PixelFormat::Vyu444, 3, 192),
+        (PixelFormat::Xyz12Le, 6, 192),
+        (PixelFormat::Xyz12Be, 6, 192),
     ] {
         let row_name = pixel_format.name();
         let packed_crop_storage = packed_strided_storage(8, 4, bytes_per_pixel, line_size);
@@ -2254,6 +2275,7 @@ static void print_video_planes(const AVFrame *frame)
         break;
     case AV_PIX_FMT_RGB24:
     case AV_PIX_FMT_BGR24:
+    case AV_PIX_FMT_VYU444:
         bytes_per_pixel = 3;
         break;
     case AV_PIX_FMT_RGB48LE:
@@ -2270,6 +2292,18 @@ static void print_video_planes(const AVFrame *frame)
     case AV_PIX_FMT_RGB0:
     case AV_PIX_FMT_0BGR:
     case AV_PIX_FMT_BGR0:
+    case AV_PIX_FMT_X2RGB10LE:
+    case AV_PIX_FMT_X2RGB10BE:
+    case AV_PIX_FMT_X2BGR10LE:
+    case AV_PIX_FMT_X2BGR10BE:
+    case AV_PIX_FMT_VUYA:
+    case AV_PIX_FMT_VUYX:
+    case AV_PIX_FMT_XV30LE:
+    case AV_PIX_FMT_XV30BE:
+    case AV_PIX_FMT_V30XLE:
+    case AV_PIX_FMT_V30XBE:
+    case AV_PIX_FMT_AYUV:
+    case AV_PIX_FMT_UYVA:
     case AV_PIX_FMT_YA16LE:
     case AV_PIX_FMT_YA16BE:
     case AV_PIX_FMT_YAF16LE:
@@ -2280,12 +2314,22 @@ static void print_video_planes(const AVFrame *frame)
     case AV_PIX_FMT_GRAYF32BE:
         bytes_per_pixel = 4;
         break;
+    case AV_PIX_FMT_XYZ12LE:
+    case AV_PIX_FMT_XYZ12BE:
+        bytes_per_pixel = 6;
+        break;
     case AV_PIX_FMT_YAF32LE:
     case AV_PIX_FMT_YAF32BE:
     case AV_PIX_FMT_RGBA64LE:
     case AV_PIX_FMT_RGBA64BE:
     case AV_PIX_FMT_BGRA64LE:
     case AV_PIX_FMT_BGRA64BE:
+    case AV_PIX_FMT_AYUV64LE:
+    case AV_PIX_FMT_AYUV64BE:
+    case AV_PIX_FMT_XV36LE:
+    case AV_PIX_FMT_XV36BE:
+    case AV_PIX_FMT_XV48LE:
+    case AV_PIX_FMT_XV48BE:
         bytes_per_pixel = 8;
         break;
     default:
@@ -3356,6 +3400,10 @@ int main(void)
     exercise_packed_crop_pair("rgb0", AV_PIX_FMT_RGB0, 4);
     exercise_packed_crop_pair("0bgr", AV_PIX_FMT_0BGR, 4);
     exercise_packed_crop_pair("bgr0", AV_PIX_FMT_BGR0, 4);
+    exercise_packed_crop_pair("x2rgb10le", AV_PIX_FMT_X2RGB10LE, 4);
+    exercise_packed_crop_pair("x2rgb10be", AV_PIX_FMT_X2RGB10BE, 4);
+    exercise_packed_crop_pair("x2bgr10le", AV_PIX_FMT_X2BGR10LE, 4);
+    exercise_packed_crop_pair("x2bgr10be", AV_PIX_FMT_X2BGR10BE, 4);
     exercise_packed_crop_pair("rgb8", AV_PIX_FMT_RGB8, 1);
     exercise_packed_crop_pair("bgr8", AV_PIX_FMT_BGR8, 1);
     exercise_packed_crop_pair("rgb4_byte", AV_PIX_FMT_RGB4_BYTE, 1);
@@ -3415,6 +3463,23 @@ int main(void)
     exercise_packed_crop_pair("rgba64be", AV_PIX_FMT_RGBA64BE, 8);
     exercise_packed_crop_pair("bgra64le", AV_PIX_FMT_BGRA64LE, 8);
     exercise_packed_crop_pair("bgra64be", AV_PIX_FMT_BGRA64BE, 8);
+    exercise_packed_crop_pair("ayuv64le", AV_PIX_FMT_AYUV64LE, 8);
+    exercise_packed_crop_pair("ayuv64be", AV_PIX_FMT_AYUV64BE, 8);
+    exercise_packed_crop_pair("vuya", AV_PIX_FMT_VUYA, 4);
+    exercise_packed_crop_pair("vuyx", AV_PIX_FMT_VUYX, 4);
+    exercise_packed_crop_pair("xv30le", AV_PIX_FMT_XV30LE, 4);
+    exercise_packed_crop_pair("xv30be", AV_PIX_FMT_XV30BE, 4);
+    exercise_packed_crop_pair("xv36le", AV_PIX_FMT_XV36LE, 8);
+    exercise_packed_crop_pair("xv36be", AV_PIX_FMT_XV36BE, 8);
+    exercise_packed_crop_pair("xv48le", AV_PIX_FMT_XV48LE, 8);
+    exercise_packed_crop_pair("xv48be", AV_PIX_FMT_XV48BE, 8);
+    exercise_packed_crop_pair("v30xle", AV_PIX_FMT_V30XLE, 4);
+    exercise_packed_crop_pair("v30xbe", AV_PIX_FMT_V30XBE, 4);
+    exercise_packed_crop_pair("ayuv", AV_PIX_FMT_AYUV, 4);
+    exercise_packed_crop_pair("uyva", AV_PIX_FMT_UYVA, 4);
+    exercise_packed_crop_pair("vyu444", AV_PIX_FMT_VYU444, 3);
+    exercise_packed_crop_pair("xyz12le", AV_PIX_FMT_XYZ12LE, 6);
+    exercise_packed_crop_pair("xyz12be", AV_PIX_FMT_XYZ12BE, 6);
 
     AVFrame *invalid_crop = av_frame_alloc();
     fail_if(!invalid_crop, "invalid_crop allocation failed");

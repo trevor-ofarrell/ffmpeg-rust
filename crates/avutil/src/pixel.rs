@@ -2403,7 +2403,7 @@ impl PixelFormat {
                 1,
                 false,
                 false,
-                Some(6),
+                Some(8),
                 0,
                 0,
             ),
@@ -2415,7 +2415,7 @@ impl PixelFormat {
                 1,
                 false,
                 false,
-                Some(6),
+                Some(8),
                 0,
                 0,
             ),
@@ -4455,10 +4455,15 @@ impl PixelFormat {
                 3,
                 "packed 8-bit VYU 4:4:4 pixel format frame size",
             )?]),
-            Self::Xyz12Le | Self::Xyz12Be | Self::Xv36Le | Self::Xv36Be => Ok(vec![checked_mul(
+            Self::Xyz12Le | Self::Xyz12Be => Ok(vec![checked_mul(
                 pixels,
                 6,
                 "packed six-byte pixel format frame size",
+            )?]),
+            Self::Xv36Le | Self::Xv36Be => Ok(vec![checked_mul(
+                pixels,
+                8,
+                "packed xv36 pixel format frame size",
             )?]),
             Self::Yuyv422 | Self::Uyvy422 | Self::Yvyu422 => {
                 if width % 2 != 0 {
@@ -5271,8 +5276,8 @@ mod tests {
         for (name, format, bytes_per_pixel) in [
             ("xv30le", PixelFormat::Xv30Le, 4),
             ("xv30be", PixelFormat::Xv30Be, 4),
-            ("xv36le", PixelFormat::Xv36Le, 6),
-            ("xv36be", PixelFormat::Xv36Be, 6),
+            ("xv36le", PixelFormat::Xv36Le, 8),
+            ("xv36be", PixelFormat::Xv36Be, 8),
             ("xv48le", PixelFormat::Xv48Le, 8),
             ("xv48be", PixelFormat::Xv48Be, 8),
             ("v30xle", PixelFormat::V30xLe, 4),
@@ -6595,8 +6600,8 @@ mod tests {
         for (format, name, bits_per_component, bits_per_pixel, bytes_per_pixel) in [
             (PixelFormat::Xv30Le, "xv30le", 10, bpp(30), 4),
             (PixelFormat::Xv30Be, "xv30be", 10, bpp(30), 4),
-            (PixelFormat::Xv36Le, "xv36le", 12, bpp(36), 6),
-            (PixelFormat::Xv36Be, "xv36be", 12, bpp(36), 6),
+            (PixelFormat::Xv36Le, "xv36le", 12, bpp(36), 8),
+            (PixelFormat::Xv36Be, "xv36be", 12, bpp(36), 8),
             (PixelFormat::Xv48Le, "xv48le", 16, bpp(48), 8),
             (PixelFormat::Xv48Be, "xv48be", 16, bpp(48), 8),
             (PixelFormat::V30xLe, "v30xle", 10, bpp(30), 4),
@@ -7018,7 +7023,7 @@ mod tests {
         assert_eq!(PixelFormat::Vuya.plane_sizes(2, 2).unwrap(), vec![16]);
         assert_eq!(PixelFormat::Vuyx.frame_size(3, 2).unwrap(), 24);
         assert_eq!(PixelFormat::Xv30Le.plane_sizes(3, 2).unwrap(), vec![24]);
-        assert_eq!(PixelFormat::Xv36Be.frame_size(3, 2).unwrap(), 36);
+        assert_eq!(PixelFormat::Xv36Be.frame_size(3, 2).unwrap(), 48);
         assert_eq!(PixelFormat::Xv48Le.frame_size(2, 2).unwrap(), 32);
         assert_eq!(PixelFormat::V30xBe.frame_size(3, 2).unwrap(), 24);
         assert_eq!(PixelFormat::Ayuv.frame_size(2, 2).unwrap(), 16);
@@ -7640,10 +7645,10 @@ mod tests {
         assert_eq!(planes, vec![(60..68).collect::<Vec<_>>()]);
 
         let planes = PixelFormat::Xv36Le
-            .split_planes(&(68..80).collect::<Vec<_>>(), 2, 1)
+            .split_planes(&(68..84).collect::<Vec<_>>(), 2, 1)
             .unwrap();
 
-        assert_eq!(planes, vec![(68..80).collect::<Vec<_>>()]);
+        assert_eq!(planes, vec![(68..84).collect::<Vec<_>>()]);
 
         let planes = PixelFormat::V30xBe
             .split_planes(&(80..88).collect::<Vec<_>>(), 2, 1)
