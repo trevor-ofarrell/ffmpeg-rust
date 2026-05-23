@@ -1865,6 +1865,21 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:side-new-zero".to_string(),
         side_data_summary_fields(&packet),
     );
+
+    let mut packet = Packet::default();
+    let appended = packet.add_side_data(SideData::new_extradata(Vec::new()).unwrap());
+    assert!(
+        appended.is_none(),
+        "zero-size new_extradata should append to an empty packet"
+    );
+    rows.insert(
+        "packet:side-add-zero-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:side-add-zero".to_string(),
+        side_data_summary_fields(&packet),
+    );
 }
 
 fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -2094,6 +2109,21 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         .unwrap();
     rows.insert(
         "packet:array-new-zero".to_string(),
+        side_data_list_summary_fields(&list),
+    );
+
+    let mut list = PacketSideDataList::new();
+    let appended = list.add_side_data(SideData::new_extradata(Vec::new()).unwrap());
+    assert!(
+        appended.is_none(),
+        "zero-size new_extradata should append to an empty standalone list"
+    );
+    rows.insert(
+        "packet:array-add-zero-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-add-zero".to_string(),
         side_data_list_summary_fields(&list),
     );
 
@@ -3921,6 +3951,17 @@ static void exercise_side_data_api(void) {
     fail_if(!sd, "av_packet_new_side_data zero failed");
     print_side_data_summary("packet:side-new-zero", pkt);
     av_packet_free(&pkt);
+
+    pkt = new_packet();
+    owned = av_mallocz(1);
+    fail_if(!owned, "av_mallocz zero packet side data failed");
+    ret = av_packet_add_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, owned, 0);
+    if (ret < 0)
+        av_free(owned);
+    printf("packet:side-add-zero-ret|%d\n", ret);
+    fail_if(ret < 0, "av_packet_add_side_data zero failed");
+    print_side_data_summary("packet:side-add-zero", pkt);
+    av_packet_free(&pkt);
 }
 
 static uint8_t *alloc_owned_side_data_byte(uint8_t value) {
@@ -4090,6 +4131,17 @@ static void exercise_side_data_array_api(void) {
                                     0, 0);
     fail_if(!entry, "av_packet_side_data_new zero failed");
     print_side_data_array_summary("packet:array-new-zero", sd, nb_sd);
+    av_packet_side_data_free(&sd, &nb_sd);
+
+    owned = av_mallocz(1);
+    fail_if(!owned, "av_mallocz zero array side data failed");
+    entry = av_packet_side_data_add(&sd, &nb_sd, AV_PKT_DATA_NEW_EXTRADATA,
+                                    owned, 0, 0);
+    printf("packet:array-add-zero-ret|%d\n", entry != NULL);
+    if (!entry)
+        av_free(owned);
+    fail_if(!entry, "av_packet_side_data_add zero failed");
+    print_side_data_array_summary("packet:array-add-zero", sd, nb_sd);
     av_packet_side_data_free(&sd, &nb_sd);
 
     for (int type = 0; type < AV_PKT_DATA_NB; type++) {

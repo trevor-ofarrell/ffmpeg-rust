@@ -200,7 +200,7 @@ The harness also includes a `packet:payload-layout-encryption-init-info` row, pr
 
 The harness also includes `packet:payload-layout-iamf-mix-gain-param`, `packet:payload-layout-iamf-demixing-info-param`, and `packet:payload-layout-iamf-recon-gain-info-param` rows. They allocate the native `AVIAMFParamDefinition` envelopes through FFmpeg's `av_iamf_param_definition_alloc()`, zero copied `AVClass *` pointer fields before byte comparison, and prove the pinned header offsets, subblock offsets/sizes/counts, mix-gain animation/rational fields, demixing `dmixp_mode`, and recon-gain 6x12 table layout.
 
-The harness also includes `packet:side-new-zero` and `packet:array-new-zero` rows, proving FFmpeg 8.1.1 accepts zero-size `AV_PKT_DATA_NEW_EXTRADATA` entries through both packet-owned and standalone side-data allocation APIs.
+The harness also includes `packet:side-new-zero`, `packet:array-new-zero`, `packet:side-add-zero*`, and `packet:array-add-zero*` rows, proving FFmpeg 8.1.1 accepts and retains zero-size `AV_PKT_DATA_NEW_EXTRADATA` entries through both packet-owned/standalone allocation APIs and packet-owned/standalone ownership-add APIs.
 
 The harness also includes `packet:payload-new-zero*`, `packet:payload-from-data-zero*`, `packet:payload-make-refcounted-empty*`, and `packet:payload-make-writable-empty*` rows, proving zero-size packet payload helpers keep zero visible payload bytes while retaining zeroed FFmpeg input padding and writable refcounted storage.
 

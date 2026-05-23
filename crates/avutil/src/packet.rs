@@ -10284,6 +10284,17 @@ mod tests {
             .unwrap()
             .data()
             .is_empty());
+
+        let mut packet = Packet::new(Vec::new(), 0);
+        assert!(packet
+            .add_side_data(SideData::new_extradata(Vec::new()).unwrap())
+            .is_none());
+        assert_eq!(packet.side_data().len(), 1);
+        assert!(packet
+            .side_data_by_kind_id(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .data()
+            .is_empty());
     }
 
     #[test]
@@ -10405,6 +10416,18 @@ mod tests {
         assert_eq!(entry.kind_id(), &PacketSideDataKind::NewExtradata);
         assert!(entry.data().is_empty());
         assert_eq!(list.len(), 1);
+        list.clear();
+        assert!(list.is_empty());
+
+        assert!(list
+            .add_side_data(SideData::new_extradata(Vec::new()).unwrap())
+            .is_none());
+        assert_eq!(list.len(), 1);
+        assert!(list
+            .get(&PacketSideDataKind::NewExtradata)
+            .unwrap()
+            .data()
+            .is_empty());
         list.clear();
         assert!(list.is_empty());
 
