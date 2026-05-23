@@ -357,12 +357,17 @@ entries under `AV_FRAME_SIDE_DATA_FLAG_UNIQUE`, and append MULTI entries even
 when `REPLACE` is set.
 The make-writable rows caught and now verify the pinned default 64-byte
 `av_frame_make_writable()` realignment path plus side-data deep-copy behavior.
-The semi-planar crop rows exercise `av_frame_apply_cropping()` for `nv12`,
-`nv21`, `nv16`, `nv24`, and `nv42`, covering default luma-left alignment
-rounding, exact `AV_FRAME_CROP_UNALIGNED` luma offsets, and
-geometry-specific two-byte interleaved chroma offsets. The `nv24`/`nv42` rows
-also record the oracle-observed full-resolution chroma line size expansion
-under FFmpeg's default 64-byte allocation alignment.
+The semi-planar crop rows exercise `av_frame_apply_cropping()` for 8-bit
+`nv12`, `nv21`, `nv16`, `nv24`, and `nv42`, plus high-bit `nv20*` and the
+`p010*`/`p012*`/`p016*`/`p210*`/`p212*`/`p216*`/`p410*`/`p412*`/`p416*`
+families. The 8-bit rows cover default luma-left alignment rounding, while the
+high-bit rows prove default nonzero-left crop returns `AVERROR_BUG` without
+mutation. `AV_FRAME_CROP_UNALIGNED` applies exact luma offsets and
+geometry-specific interleaved chroma offsets: two-byte chroma pairs for the
+8-bit rows and four-byte chroma pairs for high-bit rows. The `nv24`/`nv42` and
+`p410*`/`p412*`/`p416*` rows also record the oracle-observed full-resolution
+chroma line size expansion under FFmpeg's default 64-byte allocation
+alignment.
 The harness is wired into
 `tests/differential/mappings.txt` as `avutil-frame|oracle-libavutil-frame-core`:
 

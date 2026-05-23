@@ -751,6 +751,148 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             line_sizes[1],
             log2_chroma_w,
             log2_chroma_h,
+            (1, 2),
+        );
+        let mut crop_semiplanar_default = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                semiplanar_crop_storage.clone(),
+                line_sizes.clone(),
+            )
+            .unwrap(),
+        );
+        crop_semiplanar_default.set_crop_offsets(1, 0, 1, 1);
+        let crop_semiplanar_default_ret = crop_semiplanar_default
+            .apply_cropping(FrameCropFlags::NONE)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-default-ret"),
+            vec![crop_semiplanar_default_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-default"),
+            frame_fields(&crop_semiplanar_default),
+        );
+
+        let mut crop_semiplanar_unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                semiplanar_crop_storage.clone(),
+                line_sizes.clone(),
+            )
+            .unwrap(),
+        );
+        crop_semiplanar_unaligned.set_crop_offsets(1, 0, 1, 1);
+        let crop_semiplanar_unaligned_ret = crop_semiplanar_unaligned
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-unaligned-ret"),
+            vec![crop_semiplanar_unaligned_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-unaligned"),
+            frame_fields(&crop_semiplanar_unaligned),
+        );
+
+        let mut crop_semiplanar_even_default = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                semiplanar_crop_storage.clone(),
+                line_sizes.clone(),
+            )
+            .unwrap(),
+        );
+        crop_semiplanar_even_default.set_crop_offsets(2, 0, 2, 2);
+        let crop_semiplanar_even_default_ret = crop_semiplanar_even_default
+            .apply_cropping(FrameCropFlags::NONE)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-even-default-ret"),
+            vec![crop_semiplanar_even_default_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-even-default"),
+            frame_fields(&crop_semiplanar_even_default),
+        );
+
+        let mut crop_semiplanar_even_unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                semiplanar_crop_storage,
+                line_sizes,
+            )
+            .unwrap(),
+        );
+        crop_semiplanar_even_unaligned.set_crop_offsets(2, 0, 2, 2);
+        let crop_semiplanar_even_unaligned_ret = crop_semiplanar_even_unaligned
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-even-unaligned-ret"),
+            vec![crop_semiplanar_even_unaligned_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-even-unaligned"),
+            frame_fields(&crop_semiplanar_even_unaligned),
+        );
+    }
+
+    for (pixel_format, name, log2_chroma_w, log2_chroma_h) in [
+        (PixelFormat::Nv20Le, "nv20le", 1usize, 0usize),
+        (PixelFormat::Nv20Be, "nv20be", 1usize, 0usize),
+        (PixelFormat::P010Le, "p010le", 1usize, 1usize),
+        (PixelFormat::P010Be, "p010be", 1usize, 1usize),
+        (PixelFormat::P012Le, "p012le", 1usize, 1usize),
+        (PixelFormat::P012Be, "p012be", 1usize, 1usize),
+        (PixelFormat::P016Le, "p016le", 1usize, 1usize),
+        (PixelFormat::P016Be, "p016be", 1usize, 1usize),
+        (PixelFormat::P210Le, "p210le", 1usize, 0usize),
+        (PixelFormat::P210Be, "p210be", 1usize, 0usize),
+        (PixelFormat::P212Le, "p212le", 1usize, 0usize),
+        (PixelFormat::P212Be, "p212be", 1usize, 0usize),
+        (PixelFormat::P216Le, "p216le", 1usize, 0usize),
+        (PixelFormat::P216Be, "p216be", 1usize, 0usize),
+        (PixelFormat::P410Le, "p410le", 0usize, 0usize),
+        (PixelFormat::P410Be, "p410be", 0usize, 0usize),
+        (PixelFormat::P412Le, "p412le", 0usize, 0usize),
+        (PixelFormat::P412Be, "p412be", 0usize, 0usize),
+        (PixelFormat::P416Le, "p416le", 0usize, 0usize),
+        (PixelFormat::P416Be, "p416be", 0usize, 0usize),
+    ] {
+        let line_sizes = if matches!(
+            pixel_format,
+            PixelFormat::P410Le
+                | PixelFormat::P410Be
+                | PixelFormat::P412Le
+                | PixelFormat::P412Be
+                | PixelFormat::P416Le
+                | PixelFormat::P416Be
+        ) {
+            vec![64, 128]
+        } else {
+            vec![64, 64]
+        };
+        let semiplanar_crop_storage = semiplanar_yuv_strided_storage(
+            8,
+            4,
+            line_sizes[0],
+            line_sizes[1],
+            log2_chroma_w,
+            log2_chroma_h,
+            (2, 4),
         );
         let mut crop_semiplanar_default = Frame::video(
             VideoFrame::new_with_line_sizes(
@@ -2746,15 +2888,16 @@ fn semiplanar_yuv_strided_storage(
     chroma_line_size: usize,
     log2_chroma_w: usize,
     log2_chroma_h: usize,
+    sample_bytes: (usize, usize),
 ) -> Vec<Vec<u8>> {
     vec![
-        strided_plane_sample_storage(width, height, luma_line_size, 0x10, 1),
+        strided_plane_sample_storage(width, height, luma_line_size, 0x10, sample_bytes.0),
         strided_plane_sample_storage(
             width >> log2_chroma_w,
             height >> log2_chroma_h,
             chroma_line_size,
             0x80,
-            2,
+            sample_bytes.1,
         ),
     ]
 }
@@ -3628,6 +3771,46 @@ static int semiplanar_yuv_layout(enum AVPixelFormat format,
         *luma_sample_bytes = 1;
         *chroma_pair_bytes = 2;
         return 1;
+    case AV_PIX_FMT_NV20LE:
+    case AV_PIX_FMT_NV20BE:
+        *log2_chroma_w = 1;
+        *log2_chroma_h = 0;
+        *luma_sample_bytes = 2;
+        *chroma_pair_bytes = 4;
+        return 1;
+    case AV_PIX_FMT_P010LE:
+    case AV_PIX_FMT_P010BE:
+    case AV_PIX_FMT_P012LE:
+    case AV_PIX_FMT_P012BE:
+    case AV_PIX_FMT_P016LE:
+    case AV_PIX_FMT_P016BE:
+        *log2_chroma_w = 1;
+        *log2_chroma_h = 1;
+        *luma_sample_bytes = 2;
+        *chroma_pair_bytes = 4;
+        return 1;
+    case AV_PIX_FMT_P210LE:
+    case AV_PIX_FMT_P210BE:
+    case AV_PIX_FMT_P212LE:
+    case AV_PIX_FMT_P212BE:
+    case AV_PIX_FMT_P216LE:
+    case AV_PIX_FMT_P216BE:
+        *log2_chroma_w = 1;
+        *log2_chroma_h = 0;
+        *luma_sample_bytes = 2;
+        *chroma_pair_bytes = 4;
+        return 1;
+    case AV_PIX_FMT_P410LE:
+    case AV_PIX_FMT_P410BE:
+    case AV_PIX_FMT_P412LE:
+    case AV_PIX_FMT_P412BE:
+    case AV_PIX_FMT_P416LE:
+    case AV_PIX_FMT_P416BE:
+        *log2_chroma_w = 0;
+        *log2_chroma_h = 0;
+        *luma_sample_bytes = 2;
+        *chroma_pair_bytes = 4;
+        return 1;
     default:
         return 0;
     }
@@ -4364,8 +4547,6 @@ static void exercise_semiplanar_crop_pair(enum AVPixelFormat format,
     int crop_default_ret = av_frame_apply_cropping(crop_default, 0);
     snprintf(row, sizeof(row), "frame:apply-crop-%s-default-ret", name);
     printf("%s|%d\n", row, crop_default_ret);
-    fail_if(crop_default_ret < 0,
-            "semi-planar default crop apply failed");
     snprintf(row, sizeof(row), "frame:apply-crop-%s-default", name);
     print_frame(row, crop_default);
 
@@ -4405,8 +4586,6 @@ static void exercise_semiplanar_crop_pair(enum AVPixelFormat format,
     snprintf(row, sizeof(row), "frame:apply-crop-%s-even-default-ret",
              name);
     printf("%s|%d\n", row, crop_even_default_ret);
-    fail_if(crop_even_default_ret < 0,
-            "semi-planar even default crop apply failed");
     snprintf(row, sizeof(row), "frame:apply-crop-%s-even-default", name);
     print_frame(row, crop_even_default);
 
@@ -5319,6 +5498,26 @@ int main(void)
     exercise_semiplanar_crop_pair(AV_PIX_FMT_NV16, "nv16");
     exercise_semiplanar_crop_pair(AV_PIX_FMT_NV24, "nv24");
     exercise_semiplanar_crop_pair(AV_PIX_FMT_NV42, "nv42");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_NV20LE, "nv20le");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_NV20BE, "nv20be");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P010LE, "p010le");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P010BE, "p010be");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P012LE, "p012le");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P012BE, "p012be");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P016LE, "p016le");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P016BE, "p016be");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P210LE, "p210le");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P210BE, "p210be");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P212LE, "p212le");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P212BE, "p212be");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P216LE, "p216le");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P216BE, "p216be");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P410LE, "p410le");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P410BE, "p410be");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P412LE, "p412le");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P412BE, "p412be");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P416LE, "p416le");
+    exercise_semiplanar_crop_pair(AV_PIX_FMT_P416BE, "p416be");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUVJ420P, "yuvj420p");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV422P, "yuv422p");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUVJ422P, "yuvj422p");

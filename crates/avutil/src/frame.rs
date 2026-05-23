@@ -15770,6 +15770,29 @@ fn semiplanar_crop_layout(format: PixelFormat) -> Option<SemiplanarCropLayout> {
             luma_sample_bytes: 1,
             chroma_pair_bytes: 2,
         }),
+        PixelFormat::Nv20Le
+        | PixelFormat::Nv20Be
+        | PixelFormat::P010Le
+        | PixelFormat::P010Be
+        | PixelFormat::P012Le
+        | PixelFormat::P012Be
+        | PixelFormat::P016Le
+        | PixelFormat::P016Be
+        | PixelFormat::P210Le
+        | PixelFormat::P210Be
+        | PixelFormat::P212Le
+        | PixelFormat::P212Be
+        | PixelFormat::P216Le
+        | PixelFormat::P216Be
+        | PixelFormat::P410Le
+        | PixelFormat::P410Be
+        | PixelFormat::P412Le
+        | PixelFormat::P412Be
+        | PixelFormat::P416Le
+        | PixelFormat::P416Be => Some(SemiplanarCropLayout {
+            luma_sample_bytes: 2,
+            chroma_pair_bytes: 4,
+        }),
         _ => None,
     }
 }
@@ -20858,15 +20881,16 @@ mod tests {
             chroma_line_size: usize,
             log2_chroma_w: usize,
             log2_chroma_h: usize,
+            sample_bytes: (usize, usize),
         ) -> Vec<Vec<u8>> {
             vec![
-                strided_plane_sample_storage(width, height, luma_line_size, 0x10, 1),
+                strided_plane_sample_storage(width, height, luma_line_size, 0x10, sample_bytes.0),
                 strided_plane_sample_storage(
                     width >> log2_chroma_w,
                     height >> log2_chroma_h,
                     chroma_line_size,
                     0x80,
-                    2,
+                    sample_bytes.1,
                 ),
             ]
         }
@@ -21277,6 +21301,7 @@ mod tests {
                 line_sizes[1],
                 log2_chroma_w,
                 log2_chroma_h,
+                (1, 2),
             );
             let mut semiplanar_default = Frame::video(
                 VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), line_sizes.clone())
@@ -21367,6 +21392,147 @@ mod tests {
                         4 >> log2_chroma_w,
                         2 >> log2_chroma_h,
                         2,
+                    ),
+                ],
+                "{}",
+                format.name()
+            );
+        }
+
+        for (format, log2_chroma_w, log2_chroma_h) in [
+            (PixelFormat::Nv20Le, 1usize, 0usize),
+            (PixelFormat::Nv20Be, 1usize, 0usize),
+            (PixelFormat::P010Le, 1usize, 1usize),
+            (PixelFormat::P010Be, 1usize, 1usize),
+            (PixelFormat::P012Le, 1usize, 1usize),
+            (PixelFormat::P012Be, 1usize, 1usize),
+            (PixelFormat::P016Le, 1usize, 1usize),
+            (PixelFormat::P016Be, 1usize, 1usize),
+            (PixelFormat::P210Le, 1usize, 0usize),
+            (PixelFormat::P210Be, 1usize, 0usize),
+            (PixelFormat::P212Le, 1usize, 0usize),
+            (PixelFormat::P212Be, 1usize, 0usize),
+            (PixelFormat::P216Le, 1usize, 0usize),
+            (PixelFormat::P216Be, 1usize, 0usize),
+            (PixelFormat::P410Le, 0usize, 0usize),
+            (PixelFormat::P410Be, 0usize, 0usize),
+            (PixelFormat::P412Le, 0usize, 0usize),
+            (PixelFormat::P412Be, 0usize, 0usize),
+            (PixelFormat::P416Le, 0usize, 0usize),
+            (PixelFormat::P416Be, 0usize, 0usize),
+        ] {
+            let line_sizes = if matches!(
+                format,
+                PixelFormat::P410Le
+                    | PixelFormat::P410Be
+                    | PixelFormat::P412Le
+                    | PixelFormat::P412Be
+                    | PixelFormat::P416Le
+                    | PixelFormat::P416Be
+            ) {
+                vec![64, 128]
+            } else {
+                vec![64, 64]
+            };
+            let storage = semiplanar_yuv_storage(
+                8,
+                4,
+                line_sizes[0],
+                line_sizes[1],
+                log2_chroma_w,
+                log2_chroma_h,
+                (2, 4),
+            );
+
+            let mut semiplanar_default = Frame::video(
+                VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), line_sizes.clone())
+                    .unwrap(),
+            );
+            semiplanar_default.set_crop_offsets(1, 0, 1, 1);
+            let err = semiplanar_default
+                .apply_cropping(FrameCropFlags::NONE)
+                .unwrap_err();
+            assert_eq!(err.code().map(AvErrorCode::raw), Some(-558323010));
+            assert_eq!(semiplanar_default.crop(), FrameCrop::new(1, 0, 1, 1));
+            let FrameData::Video(video) = semiplanar_default.data() else {
+                unreachable!("constructed high-bit semiplanar default crop frame changed variant");
+            };
+            assert_eq!(video.width(), 8, "{}", format.name());
+            assert_eq!(video.height(), 4, "{}", format.name());
+            assert_eq!(video.line_sizes(), line_sizes.as_slice());
+
+            let mut semiplanar_unaligned = Frame::video(
+                VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), line_sizes.clone())
+                    .unwrap(),
+            );
+            semiplanar_unaligned.set_crop_offsets(1, 0, 1, 1);
+            semiplanar_unaligned
+                .apply_cropping(FrameCropFlags::UNALIGNED)
+                .unwrap();
+            assert_eq!(semiplanar_unaligned.crop(), FrameCrop::default());
+            let FrameData::Video(video) = semiplanar_unaligned.data() else {
+                unreachable!(
+                    "constructed high-bit semiplanar unaligned crop frame changed variant"
+                );
+            };
+            assert_eq!(video.width(), 6, "{}", format.name());
+            assert_eq!(video.height(), 3, "{}", format.name());
+            assert_eq!(video.line_sizes(), line_sizes.as_slice());
+            assert_eq!(
+                video.planes(),
+                &[
+                    plane_visible_sample_bytes(0x10, 1, 1, 6, 3, 2),
+                    plane_visible_sample_bytes(
+                        0x80,
+                        1 >> log2_chroma_h,
+                        1 >> log2_chroma_w,
+                        6 >> log2_chroma_w,
+                        3 >> log2_chroma_h,
+                        4,
+                    ),
+                ],
+                "{}",
+                format.name()
+            );
+
+            let mut semiplanar_even_default = Frame::video(
+                VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), line_sizes.clone())
+                    .unwrap(),
+            );
+            semiplanar_even_default.set_crop_offsets(2, 0, 2, 2);
+            let err = semiplanar_even_default
+                .apply_cropping(FrameCropFlags::NONE)
+                .unwrap_err();
+            assert_eq!(err.code().map(AvErrorCode::raw), Some(-558323010));
+            assert_eq!(semiplanar_even_default.crop(), FrameCrop::new(2, 0, 2, 2));
+
+            let mut semiplanar_even_unaligned = Frame::video(
+                VideoFrame::new_with_line_sizes(8, 4, format, storage, line_sizes.clone()).unwrap(),
+            );
+            semiplanar_even_unaligned.set_crop_offsets(2, 0, 2, 2);
+            semiplanar_even_unaligned
+                .apply_cropping(FrameCropFlags::UNALIGNED)
+                .unwrap();
+            assert_eq!(semiplanar_even_unaligned.crop(), FrameCrop::default());
+            let FrameData::Video(video) = semiplanar_even_unaligned.data() else {
+                unreachable!(
+                    "constructed high-bit semiplanar even unaligned crop frame changed variant"
+                );
+            };
+            assert_eq!(video.width(), 4, "{}", format.name());
+            assert_eq!(video.height(), 2, "{}", format.name());
+            assert_eq!(video.line_sizes(), line_sizes.as_slice());
+            assert_eq!(
+                video.planes(),
+                &[
+                    plane_visible_sample_bytes(0x10, 2, 2, 4, 2, 2),
+                    plane_visible_sample_bytes(
+                        0x80,
+                        2 >> log2_chroma_h,
+                        2 >> log2_chroma_w,
+                        4 >> log2_chroma_w,
+                        2 >> log2_chroma_h,
+                        4,
                     ),
                 ],
                 "{}",
