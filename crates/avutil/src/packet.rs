@@ -4857,6 +4857,10 @@ impl PacketSideDataList {
         Ok(self.add_or_replace(side_data).1)
     }
 
+    pub fn try_add_side_data(&mut self, side_data: SideData) -> AvResult<Option<SideData>> {
+        Ok(self.add_or_replace(side_data).0)
+    }
+
     pub fn add_side_data(&mut self, side_data: SideData) -> Option<SideData> {
         self.add_or_replace(side_data).0
     }
@@ -10452,6 +10456,59 @@ mod tests {
             &PacketSideDataKind::SkipSamples
         );
         assert_eq!(list.entries()[2].data(), &[0x33]);
+    }
+
+    #[test]
+    fn packet_side_data_list_accepts_entries_beyond_packet_owned_limit() {
+        let mut list = PacketSideDataList::new();
+        for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
+            assert!(list
+                .try_add_side_data(
+                    SideData::new_with_kind(kind.clone(), vec![index as u8]).unwrap()
+                )
+                .unwrap()
+                .is_none());
+        }
+
+        assert_eq!(
+            list.len(),
+            PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
+        );
+
+        let replaced = list
+            .try_add_side_data(
+                SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap(),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(replaced.data(), &[0]);
+        assert_eq!(
+            list.len(),
+            PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
+        );
+        assert_eq!(
+            list.get(&PacketSideDataKind::Palette).unwrap().data(),
+            &[0xaa]
+        );
+
+        let extra_kind = PacketSideDataKind::Unknown("vendor.private.extra_array_data".to_string());
+        assert!(list
+            .try_add_side_data(SideData::new_with_kind(extra_kind.clone(), vec![0xee]).unwrap())
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            list.len(),
+            PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS + 1
+        );
+        assert_eq!(list.get(&extra_kind).unwrap().data(), &[0xee]);
+
+        let entry = list.new_side_data(extra_kind.clone(), 1).unwrap();
+        assert_eq!(entry.data(), &[0]);
+        assert_eq!(
+            list.len(),
+            PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS + 1
+        );
+        assert_eq!(list.get(&extra_kind).unwrap().data(), &[0]);
     }
 
     #[test]

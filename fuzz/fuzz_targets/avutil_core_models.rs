@@ -7151,6 +7151,50 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
     );
 
+    let mut capacity_list = PacketSideDataList::new();
+    for (index, kind) in PacketSideDataKind::KNOWN.iter().enumerate() {
+        assert!(capacity_list
+            .try_add_side_data(SideData::new_with_kind(kind.clone(), vec![index as u8]).unwrap())
+            .unwrap()
+            .is_none());
+    }
+    assert_eq!(
+        capacity_list.len(),
+        PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
+    );
+    let replaced = capacity_list
+        .try_add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(replaced.data(), &[0]);
+    assert_eq!(
+        capacity_list
+            .get(&PacketSideDataKind::Palette)
+            .unwrap()
+            .data(),
+        &[0xaa]
+    );
+    let extra_list_kind =
+        PacketSideDataKind::Unknown("vendor.private.extra_array_data".to_string());
+    assert!(capacity_list
+        .try_add_side_data(SideData::new_with_kind(extra_list_kind.clone(), vec![0xee]).unwrap())
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        capacity_list.len(),
+        PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS + 1
+    );
+    assert_eq!(capacity_list.get(&extra_list_kind).unwrap().data(), &[0xee]);
+    let entry = capacity_list
+        .new_side_data(extra_list_kind.clone(), 1)
+        .unwrap();
+    assert_eq!(entry.data(), &[0]);
+    assert_eq!(
+        capacity_list.len(),
+        PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS + 1
+    );
+    assert_eq!(capacity_list.get(&extra_list_kind).unwrap().data(), &[0]);
+
     let mut packet_fifo = PacketFifo::new();
     assert_eq!(packet_fifo.can_read(), 0);
     assert!(packet_fifo.is_empty());
