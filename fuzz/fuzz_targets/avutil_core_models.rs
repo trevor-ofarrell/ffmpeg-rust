@@ -7375,6 +7375,41 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         bridge_replacement.as_slice()
     );
 
+    let mut duplicate_bridge_list = PacketSideDataList::from_entries(vec![
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x33]).unwrap(),
+    ]);
+    duplicate_bridge_list
+        .add_from_frame_side_data_with_flags(
+            &FrameSideData::new_with_kind(
+                FrameSideDataKind::ReplayGain,
+                bridge_replacement.clone(),
+            )
+            .unwrap(),
+            FrameSideDataFlags::UNIQUE,
+        )
+        .unwrap();
+    assert_eq!(duplicate_bridge_list.len(), 3);
+    assert_eq!(
+        duplicate_bridge_list.entries()[0].kind_id(),
+        &PacketSideDataKind::ReplayGain
+    );
+    assert_eq!(
+        duplicate_bridge_list.entries()[0].data(),
+        bridge_replacement.as_slice()
+    );
+    assert_eq!(
+        duplicate_bridge_list.entries()[1].kind_id(),
+        &PacketSideDataKind::DisplayMatrix
+    );
+    assert_eq!(duplicate_bridge_list.entries()[1].data(), &[0x22]);
+    assert_eq!(
+        duplicate_bridge_list.entries()[2].kind_id(),
+        &PacketSideDataKind::ReplayGain
+    );
+    assert_eq!(duplicate_bridge_list.entries()[2].data(), &[0x33]);
+
     let unmapped_frame_side_data =
         FrameSideData::new_with_kind(FrameSideDataKind::A53ClosedCaptions, vec![0xcc]).unwrap();
     let unmapped_frame_err = bridge_list

@@ -239,7 +239,7 @@ unit_tests = [
   "packet::tests::packet_side_data_list_duplicate_lookup_add_and_remove_match_standalone_array_semantics",
   "packet::tests::packet_side_data_list_accepts_entries_beyond_packet_owned_limit",
   "packet::tests::packet_side_data_maps_global_frame_side_data",
-  "packet::tests::packet_side_data_list_adds_from_frame_side_data_with_replacement",
+  "packet::tests::packet_side_data_list_adds_from_frame_side_data_with_flags",
   "packet::tests::packet_side_data_adds_to_frame_with_flags",
   "frame::tests::frame_add_side_data_with_flags_matches_array_insert_semantics",
   "packet::tests::packet_from_data_and_zeroed_constructors_add_input_padding",
@@ -276,6 +276,13 @@ fate_tests = [
   "packet_oracle::upstream_fate_avpacket_passes",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket frame-to-packet bridge coverage validates
+# `av_packet_side_data_from_frame(..., AV_FRAME_SIDE_DATA_FLAG_UNIQUE)` on a
+# duplicate-rich packet side-data array. FFmpeg replaces the first matching
+# packet side-data entry and leaves later duplicates intact; Rust
+# `PacketSideDataList::add_from_frame_side_data_with_flags` now exposes that
+# bounded flag-aware surface, and unit plus `avutil_core_models` fuzz-smoke
+# fixtures cover the same non-deduplicating UNIQUE behavior.
 # Latest update: pinned libavcodec AVPacket side-data oracle coverage validates duplicate-type `av_packet_new_side_data()` and standalone `av_packet_side_data_new()` replacement semantics. Both APIs replace the first matching duplicate entry and leave later duplicates in place; the oracle rows write deterministic bytes before comparison because positive-size newly allocated side-data contents are allocator-dependent in FFmpeg. Rust unit tests and avutil_core_models fuzz-smoke fixtures cover the same first-match replacement shape.
 # Latest update: pinned libavcodec AVPacket side-data oracle coverage validates a capacity distinction between packet-owned side data and standalone `AVPacketSideData` arrays. Packet-owned `av_packet_add_side_data()` still rejects a new type at `AV_PKT_DATA_NB` with ERANGE, while standalone `av_packet_side_data_add()` accepts an out-of-range raw type past `AV_PKT_DATA_NB` and `av_packet_side_data_new()` can then replace that same raw type without growing the array. Rust `PacketSideDataList` now keeps that standalone behavior separate from the packet-owned capacity-checked API, with unit and avutil_core_models fuzz-smoke coverage.
 # Latest update: pinned libavutil display matrix oracle coverage validates av_display_rotation_get() for PacketDisplayMatrix through packet:display-rotation-get-affine rows. Rust now normalizes both matrix axes before extracting rotation, and unit plus avutil_core_models fuzz-smoke fixtures cover raw affine extraction and x-axis/y-axis singular None behavior.
@@ -327,6 +334,11 @@ notes = "FATE pass for the current bounded AVPacket helper surface under the sel
 # and missing NULL result as the ordinary lookup path without requiring a size
 # output pointer. The unit test strengthens typed Rust lookup coverage for the
 # same present and missing cases.
+# Latest frame-to-packet bridge slice: pinned libavcodec rows now validate that
+# `av_packet_side_data_from_frame(..., AV_FRAME_SIDE_DATA_FLAG_UNIQUE)` replaces
+# only the first matching packet side-data entry and leaves later duplicates
+# intact. Unit and fuzz-smoke coverage assert the same flag-aware packet bridge
+# behavior.
 # Latest duplicate lifecycle slice: pinned libavcodec rows now validate that
 # `av_packet_ref()`, `av_packet_clone()`, and `av_packet_copy_props()` collapse
 # duplicate packet-owned side-data kinds by later-entry replacement, while

@@ -4869,6 +4869,14 @@ impl PacketSideDataList {
         &mut self,
         side_data: &FrameSideData,
     ) -> AvResult<&mut SideData> {
+        self.add_from_frame_side_data_with_flags(side_data, FrameSideDataFlags::EMPTY)
+    }
+
+    pub fn add_from_frame_side_data_with_flags(
+        &mut self,
+        side_data: &FrameSideData,
+        _flags: FrameSideDataFlags,
+    ) -> AvResult<&mut SideData> {
         let side_data = SideData::from_frame_side_data(side_data)?;
         Ok(self.add_or_replace(side_data).1)
     }
@@ -10616,7 +10624,7 @@ mod tests {
     }
 
     #[test]
-    fn packet_side_data_list_adds_from_frame_side_data_with_replacement() {
+    fn packet_side_data_list_adds_from_frame_side_data_with_flags() {
         let mut list = PacketSideDataList::new();
         let first =
             FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![1, 2, 3]).unwrap();
@@ -10638,6 +10646,35 @@ mod tests {
         assert_eq!(err.kind(), crate::AvErrorKind::InvalidArgument);
         assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
         assert_eq!(list.len(), 1);
+
+        let mut duplicate_list = PacketSideDataList::from_entries(vec![
+            SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+            SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+            SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x33]).unwrap(),
+        ]);
+        let unique =
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x44]).unwrap();
+        let entry = duplicate_list
+            .add_from_frame_side_data_with_flags(&unique, FrameSideDataFlags::UNIQUE)
+            .unwrap();
+        assert_eq!(entry.kind_id(), &PacketSideDataKind::ReplayGain);
+        assert_eq!(entry.data(), &[0x44]);
+        assert_eq!(duplicate_list.entries().len(), 3);
+        assert_eq!(
+            duplicate_list.entries()[0].kind_id(),
+            &PacketSideDataKind::ReplayGain
+        );
+        assert_eq!(duplicate_list.entries()[0].data(), &[0x44]);
+        assert_eq!(
+            duplicate_list.entries()[1].kind_id(),
+            &PacketSideDataKind::DisplayMatrix
+        );
+        assert_eq!(duplicate_list.entries()[1].data(), &[0x22]);
+        assert_eq!(
+            duplicate_list.entries()[2].kind_id(),
+            &PacketSideDataKind::ReplayGain
+        );
+        assert_eq!(duplicate_list.entries()[2].data(), &[0x33]);
     }
 
     #[test]

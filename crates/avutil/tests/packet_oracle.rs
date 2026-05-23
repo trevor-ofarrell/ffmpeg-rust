@@ -1997,6 +1997,24 @@ fn insert_frame_packet_side_data_bridge_rows(rows: &mut BTreeMap<String, Vec<Str
         side_data_list_summary_fields(&packet_list),
     );
 
+    let mut unique_packet_list = PacketSideDataList::from_entries(vec![
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x33]).unwrap(),
+    ]);
+    let unique = FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x44]).unwrap();
+    unique_packet_list
+        .add_from_frame_side_data_with_flags(&unique, FrameSideDataFlags::UNIQUE)
+        .unwrap();
+    rows.insert(
+        "packet:frame-to-packet-unique-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:frame-to-packet-unique".to_string(),
+        side_data_list_summary_fields(&unique_packet_list),
+    );
+
     let unmapped =
         FrameSideData::new_with_kind(FrameSideDataKind::A53ClosedCaptions, vec![0x55]).unwrap();
     let err = packet_list.add_from_frame_side_data(&unmapped).unwrap_err();
@@ -3860,6 +3878,25 @@ static void exercise_frame_packet_side_data_bridge_api(void) {
     ret = av_packet_side_data_from_frame(&psd, &nb_psd, frame_entry, 0);
     printf("packet:frame-to-packet-replace-ret|%d\n", ret);
     print_side_data_array_summary("packet:frame-to-packet-replace", psd, nb_psd);
+
+    AVPacketSideData *unique_psd = av_mallocz(3 * sizeof(*unique_psd));
+    fail_if(!unique_psd, "bridge unique packet side-data seed failed");
+    int unique_nb_psd = 3;
+    unique_psd[0] = make_stack_side_data(AV_PKT_DATA_REPLAYGAIN, 0x11);
+    unique_psd[1] = make_stack_side_data(AV_PKT_DATA_DISPLAYMATRIX, 0x22);
+    unique_psd[2] = make_stack_side_data(AV_PKT_DATA_REPLAYGAIN, 0x33);
+    AVFrameSideData *unique_frame = av_frame_side_data_new(
+        &fsd, &nb_fsd, AV_FRAME_DATA_REPLAYGAIN, 1,
+        AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    fail_if(!unique_frame, "av_frame_side_data_new bridge unique seed failed");
+    unique_frame->data[0] = 0x44;
+    ret = av_packet_side_data_from_frame(&unique_psd, &unique_nb_psd,
+                                         unique_frame,
+                                         AV_FRAME_SIDE_DATA_FLAG_UNIQUE);
+    printf("packet:frame-to-packet-unique-ret|%d\n", ret);
+    print_side_data_array_summary("packet:frame-to-packet-unique",
+                                  unique_psd, unique_nb_psd);
+    av_packet_side_data_free(&unique_psd, &unique_nb_psd);
 
     AVFrameSideData *unmapped_frame = av_frame_side_data_new(&fsd, &nb_fsd,
                                                              AV_FRAME_DATA_A53_CC,

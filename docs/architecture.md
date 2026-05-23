@@ -451,6 +451,8 @@ The packet oracle now also includes a `packet:payload-layout-dynamic-hdr10-plus`
 
 `PacketSideDataList` mirrors the current standalone `AVPacketSideData` array semantics for duplicate types and empty arrays: empty lookup/remove/free are no-ops, `get` returns the first matching entry, `add_side_data` replaces the first matching entry, `remove_kind` scans from the end, removes the last matching entry, and swap-fills with the previous tail, and `clear` mirrors `av_packet_side_data_free()` by resetting duplicate-rich arrays to empty state.
 
+`PacketSideDataList::add_from_frame_side_data_with_flags` models the bounded `av_packet_side_data_from_frame()` bridge surface. The pinned oracle proves `AV_FRAME_SIDE_DATA_FLAG_UNIQUE` still only replaces the first matching packet side-data entry and leaves later duplicates intact, so the Rust packet-side bridge keeps that non-deduplicating behavior separate from frame-owned side-data insertion semantics.
+
 The packet oracle now includes zero-size allocation rows for both packet-owned `av_packet_new_side_data()` and standalone `av_packet_side_data_new()`. The Rust `Packet::new_side_data` and `PacketSideDataList::new_side_data` APIs retain those zero-length entries, and `avutil_core_models` fuzz-smokes the same invariant.
 
 The packet oracle now includes zero-size payload rows for `av_new_packet(0)`, `av_packet_from_data(..., size=0)`, `av_packet_make_refcounted()` on an empty packet, and `av_packet_make_writable()` on an empty packet. The Rust `Packet::new_zeroed(0)`, `Packet::from_data(Vec::new())`, and empty-packet refcounted/writable helpers retain zero visible bytes while exposing zeroed FFmpeg input padding and writable storage.
