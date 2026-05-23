@@ -1997,6 +1997,25 @@ fn insert_frame_packet_side_data_bridge_rows(rows: &mut BTreeMap<String, Vec<Str
         side_data_list_summary_fields(&packet_list),
     );
 
+    let mut replace_flag_packet_list = PacketSideDataList::from_entries(vec![
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x33]).unwrap(),
+    ]);
+    let replace_flag =
+        FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x55]).unwrap();
+    replace_flag_packet_list
+        .add_from_frame_side_data_with_flags(&replace_flag, FrameSideDataFlags::REPLACE)
+        .unwrap();
+    rows.insert(
+        "packet:frame-to-packet-replace-flag-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:frame-to-packet-replace-flag".to_string(),
+        side_data_list_summary_fields(&replace_flag_packet_list),
+    );
+
     let mut unique_packet_list = PacketSideDataList::from_entries(vec![
         SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x11]).unwrap(),
         SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
@@ -2080,6 +2099,32 @@ fn insert_frame_packet_side_data_bridge_rows(rows: &mut BTreeMap<String, Vec<Str
     rows.insert(
         "packet:packet-to-frame-replace".to_string(),
         frame_side_data_summary_fields(&frame),
+    );
+
+    let mut replace_order_frame = Frame::empty();
+    replace_order_frame
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    replace_order_frame
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x55])
+        .unwrap()
+        .add_to_frame(&mut replace_order_frame, FrameSideDataFlags::REPLACE)
+        .unwrap();
+    rows.insert(
+        "packet:packet-to-frame-replace-order-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:packet-to-frame-replace-order".to_string(),
+        frame_side_data_summary_fields(&replace_order_frame),
     );
 
     frame
@@ -3927,6 +3972,27 @@ static void exercise_frame_packet_side_data_bridge_api(void) {
     printf("packet:frame-to-packet-replace-ret|%d\n", ret);
     print_side_data_array_summary("packet:frame-to-packet-replace", psd, nb_psd);
 
+    AVPacketSideData *replace_flag_psd = av_mallocz(3 * sizeof(*replace_flag_psd));
+    fail_if(!replace_flag_psd, "bridge replace-flag packet side-data seed failed");
+    int replace_flag_nb_psd = 3;
+    replace_flag_psd[0] = make_stack_side_data(AV_PKT_DATA_REPLAYGAIN, 0x11);
+    replace_flag_psd[1] = make_stack_side_data(AV_PKT_DATA_DISPLAYMATRIX, 0x22);
+    replace_flag_psd[2] = make_stack_side_data(AV_PKT_DATA_REPLAYGAIN, 0x33);
+    AVFrameSideData **replace_flag_fsd = NULL;
+    int replace_flag_nb_fsd = 0;
+    AVFrameSideData *replace_flag_frame = av_frame_side_data_new(
+        &replace_flag_fsd, &replace_flag_nb_fsd, AV_FRAME_DATA_REPLAYGAIN, 1, 0);
+    fail_if(!replace_flag_frame, "av_frame_side_data_new bridge replace-flag seed failed");
+    replace_flag_frame->data[0] = 0x55;
+    ret = av_packet_side_data_from_frame(&replace_flag_psd, &replace_flag_nb_psd,
+                                         replace_flag_frame,
+                                         AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    printf("packet:frame-to-packet-replace-flag-ret|%d\n", ret);
+    print_side_data_array_summary("packet:frame-to-packet-replace-flag",
+                                  replace_flag_psd, replace_flag_nb_psd);
+    av_frame_side_data_free(&replace_flag_fsd, &replace_flag_nb_fsd);
+    av_packet_side_data_free(&replace_flag_psd, &replace_flag_nb_psd);
+
     AVPacketSideData *unique_psd = av_mallocz(3 * sizeof(*unique_psd));
     fail_if(!unique_psd, "bridge unique packet side-data seed failed");
     int unique_nb_psd = 3;
@@ -4000,6 +4066,34 @@ static void exercise_frame_packet_side_data_bridge_api(void) {
                                        AV_FRAME_SIDE_DATA_FLAG_REPLACE);
     printf("packet:packet-to-frame-replace-ret|%d\n", ret);
     print_frame_side_data_array_summary("packet:packet-to-frame-replace", fsd, nb_fsd);
+
+    AVFrameSideData **replace_order_fsd = NULL;
+    int replace_order_nb_fsd = 0;
+    AVFrameSideData *replace_order_frame = av_frame_side_data_new(
+        &replace_order_fsd, &replace_order_nb_fsd,
+        AV_FRAME_DATA_REPLAYGAIN, 1, 0);
+    fail_if(!replace_order_frame, "av_frame_side_data_new bridge replace-order seed failed");
+    replace_order_frame->data[0] = 0x11;
+    AVFrameSideData *replace_order_display = av_frame_side_data_new(
+        &replace_order_fsd, &replace_order_nb_fsd,
+        AV_FRAME_DATA_DISPLAYMATRIX, 1, 0);
+    fail_if(!replace_order_display, "av_frame_side_data_new bridge replace-order display failed");
+    replace_order_display->data[0] = 0x22;
+    AVPacketSideData *replace_order_psd = NULL;
+    int replace_order_nb_psd = 0;
+    AVPacketSideData *replace_order_packet = av_packet_side_data_new(
+        &replace_order_psd, &replace_order_nb_psd,
+        AV_PKT_DATA_REPLAYGAIN, 1, 0);
+    fail_if(!replace_order_packet, "av_packet_side_data_new bridge replace-order seed failed");
+    replace_order_packet->data[0] = 0x55;
+    ret = av_packet_side_data_to_frame(&replace_order_fsd, &replace_order_nb_fsd,
+                                       replace_order_packet,
+                                       AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    printf("packet:packet-to-frame-replace-order-ret|%d\n", ret);
+    print_frame_side_data_array_summary("packet:packet-to-frame-replace-order",
+                                        replace_order_fsd, replace_order_nb_fsd);
+    av_frame_side_data_free(&replace_order_fsd, &replace_order_nb_fsd);
+    av_packet_side_data_free(&replace_order_psd, &replace_order_nb_psd);
 
     AVFrameSideData *display_entry = av_frame_side_data_new(
         &fsd, &nb_fsd, AV_FRAME_DATA_DISPLAYMATRIX, 1, 0);

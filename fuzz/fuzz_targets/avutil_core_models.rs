@@ -7375,6 +7375,41 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         bridge_replacement.as_slice()
     );
 
+    let mut replace_flag_bridge_list = PacketSideDataList::from_entries(vec![
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x33]).unwrap(),
+    ]);
+    replace_flag_bridge_list
+        .add_from_frame_side_data_with_flags(
+            &FrameSideData::new_with_kind(
+                FrameSideDataKind::ReplayGain,
+                bridge_replacement.clone(),
+            )
+            .unwrap(),
+            FrameSideDataFlags::REPLACE,
+        )
+        .unwrap();
+    assert_eq!(replace_flag_bridge_list.len(), 3);
+    assert_eq!(
+        replace_flag_bridge_list.entries()[0].kind_id(),
+        &PacketSideDataKind::ReplayGain
+    );
+    assert_eq!(
+        replace_flag_bridge_list.entries()[0].data(),
+        bridge_replacement.as_slice()
+    );
+    assert_eq!(
+        replace_flag_bridge_list.entries()[1].kind_id(),
+        &PacketSideDataKind::DisplayMatrix
+    );
+    assert_eq!(replace_flag_bridge_list.entries()[1].data(), &[0x22]);
+    assert_eq!(
+        replace_flag_bridge_list.entries()[2].kind_id(),
+        &PacketSideDataKind::ReplayGain
+    );
+    assert_eq!(replace_flag_bridge_list.entries()[2].data(), &[0x33]);
+
     let mut duplicate_bridge_list = PacketSideDataList::from_entries(vec![
         SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x11]).unwrap(),
         SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
@@ -7469,6 +7504,38 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         bridge_frame.side_data()[0].data(),
         bridge_replacement.as_slice()
     );
+
+    let mut replace_order_bridge_frame = Frame::default();
+    replace_order_bridge_frame
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    replace_order_bridge_frame
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    SideData::new_with_kind(PacketSideDataKind::ReplayGain, bridge_replacement.clone())
+        .unwrap()
+        .add_to_frame(&mut replace_order_bridge_frame, FrameSideDataFlags::REPLACE)
+        .unwrap();
+    assert_eq!(replace_order_bridge_frame.side_data().len(), 2);
+    assert_eq!(
+        replace_order_bridge_frame.side_data()[0].kind_id(),
+        &FrameSideDataKind::ReplayGain
+    );
+    assert_eq!(
+        replace_order_bridge_frame.side_data()[0].data(),
+        bridge_replacement.as_slice()
+    );
+    assert_eq!(
+        replace_order_bridge_frame.side_data()[1].kind_id(),
+        &FrameSideDataKind::DisplayMatrix
+    );
+    assert_eq!(replace_order_bridge_frame.side_data()[1].data(), &[0x22]);
 
     let mut unique_bridge_frame = Frame::default();
     SideData::new_with_kind(PacketSideDataKind::ReplayGain, bridge_replacement.clone())

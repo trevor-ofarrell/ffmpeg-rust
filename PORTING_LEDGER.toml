@@ -278,6 +278,12 @@ fate_tests = [
 ]
 fuzz_targets = ["avutil_core_models"]
 # Latest update: pinned libavcodec AVPacket packet/frame bridge coverage now
+# validates explicit `AV_FRAME_SIDE_DATA_FLAG_REPLACE` edge rows. Packet-side
+# `av_packet_side_data_from_frame()` replaces only the first matching mapped
+# packet side-data entry and preserves later duplicates; frame-side
+# `av_packet_side_data_to_frame()` replaces the matching entry in place while
+# preserving nonmatching entry order.
+# Latest update: pinned libavcodec AVPacket packet/frame bridge coverage now
 # validates `AV_FRAME_SIDE_DATA_FLAG_NEW_REF` for both
 # `av_packet_side_data_from_frame()` and `av_packet_side_data_to_frame()`.
 # For this raw side-data conversion surface, FFmpeg returns success and emits
