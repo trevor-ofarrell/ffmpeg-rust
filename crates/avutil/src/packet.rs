@@ -10434,10 +10434,19 @@ mod tests {
             list.get(&PacketSideDataKind::NewExtradata).unwrap().data(),
             &[0x00]
         );
+        {
+            let entry = list
+                .new_side_data(PacketSideDataKind::NewExtradata, 2)
+                .unwrap();
+            assert_eq!(entry.data(), &[0, 0]);
+            entry.data_mut().copy_from_slice(&[0x66, 0x77]);
+        }
+        assert_eq!(list.entries()[0].data(), &[0x66, 0x77]);
+        assert_eq!(list.entries()[2].data(), &[0x22]);
         let replaced = list
             .add_side_data(SideData::new_extradata(vec![0x44]).unwrap())
             .unwrap();
-        assert_eq!(replaced.data(), &[0x00]);
+        assert_eq!(replaced.data(), &[0x66, 0x77]);
         assert_eq!(list.entries()[0].data(), &[0x44]);
         assert_eq!(list.entries()[2].data(), &[0x22]);
 

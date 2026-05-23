@@ -1565,13 +1565,32 @@ fn insert_side_data_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
             duplicate_packet.side_data_by_kind_id(&PacketSideDataKind::Palette),
         ),
     );
+    let new_duplicate = duplicate_packet
+        .new_side_data(PacketSideDataKind::Palette, 2)
+        .expect("first duplicate packet side data should be replaced by new_side_data");
+    assert_eq!(new_duplicate.data(), &[0, 0]);
+    new_duplicate.data_mut().copy_from_slice(&[0x66, 0x77]);
+    rows.insert(
+        "packet:side-new-duplicate-replace-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:side-new-duplicate-replace".to_string(),
+        side_data_summary_fields(&duplicate_packet),
+    );
+    rows.insert(
+        "packet:side-get-duplicate-palette-new".to_string(),
+        side_data_lookup_fields(
+            duplicate_packet.side_data_by_kind_id(&PacketSideDataKind::Palette),
+        ),
+    );
     let replaced = duplicate_packet
         .try_add_side_data(
             SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap(),
         )
         .expect("duplicate packet side-data replacement should not hit capacity")
         .expect("first palette packet side data should be replaced");
-    assert_eq!(replaced.data(), &[0x11]);
+    assert_eq!(replaced.data(), &[0x66, 0x77]);
     rows.insert(
         "packet:side-add-duplicate-replace-ret".to_string(),
         vec!["0".to_string()],
@@ -1736,10 +1755,27 @@ fn insert_side_data_array_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:array-get-duplicate-palette".to_string(),
         side_data_lookup_fields(duplicate_list.get(&PacketSideDataKind::Palette)),
     );
+    let new_duplicate = duplicate_list
+        .new_side_data(PacketSideDataKind::Palette, 2)
+        .expect("first duplicate array side data should be replaced by new_side_data");
+    assert_eq!(new_duplicate.data(), &[0, 0]);
+    new_duplicate.data_mut().copy_from_slice(&[0x66, 0x77]);
+    rows.insert(
+        "packet:array-new-duplicate-replace-ret".to_string(),
+        vec!["1".to_string()],
+    );
+    rows.insert(
+        "packet:array-new-duplicate-replace".to_string(),
+        side_data_list_summary_fields(&duplicate_list),
+    );
+    rows.insert(
+        "packet:array-get-duplicate-palette-new".to_string(),
+        side_data_lookup_fields(duplicate_list.get(&PacketSideDataKind::Palette)),
+    );
     let replaced = duplicate_list
         .add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap())
         .expect("first palette side data should be replaced");
-    assert_eq!(replaced.data(), &[0x11]);
+    assert_eq!(replaced.data(), &[0x66, 0x77]);
     rows.insert(
         "packet:array-add-duplicate-replace-ret".to_string(),
         vec!["1".to_string()],
@@ -3423,6 +3459,14 @@ static void exercise_side_data_api(void) {
     print_side_data_summary("packet:side-duplicate-before", pkt);
     print_side_data_lookup("packet:side-get-duplicate-palette", pkt,
                            AV_PKT_DATA_PALETTE);
+    sd = av_packet_new_side_data(pkt, AV_PKT_DATA_PALETTE, 2);
+    printf("packet:side-new-duplicate-replace-ret|%d\n", sd != NULL);
+    fail_if(!sd, "av_packet_new_side_data duplicate replace failed");
+    sd[0] = 0x66;
+    sd[1] = 0x77;
+    print_side_data_summary("packet:side-new-duplicate-replace", pkt);
+    print_side_data_lookup("packet:side-get-duplicate-palette-new", pkt,
+                           AV_PKT_DATA_PALETTE);
     owned = av_mallocz(1 + AV_INPUT_BUFFER_PADDING_SIZE);
     fail_if(!owned, "av_mallocz duplicate packet side data replacement failed");
     owned[0] = 0x55;
@@ -3553,8 +3597,21 @@ static void exercise_side_data_array_api(void) {
                                  duplicate_sd, duplicate_nb_sd,
                                  AV_PKT_DATA_PALETTE);
     AVPacketSideData *duplicate_ptr = duplicate_sd;
-    uint8_t *duplicate_replacement = alloc_owned_side_data_byte(0x55);
     AVPacketSideData *duplicate_entry =
+        av_packet_side_data_new(&duplicate_ptr, &duplicate_nb_sd,
+                                AV_PKT_DATA_PALETTE, 2, 0);
+    printf("packet:array-new-duplicate-replace-ret|%d\n",
+           duplicate_entry != NULL);
+    fail_if(!duplicate_entry, "av_packet_side_data_new duplicate replace failed");
+    duplicate_entry->data[0] = 0x66;
+    duplicate_entry->data[1] = 0x77;
+    print_side_data_array_summary("packet:array-new-duplicate-replace",
+                                  duplicate_sd, duplicate_nb_sd);
+    print_side_data_array_lookup("packet:array-get-duplicate-palette-new",
+                                 duplicate_sd, duplicate_nb_sd,
+                                 AV_PKT_DATA_PALETTE);
+    uint8_t *duplicate_replacement = alloc_owned_side_data_byte(0x55);
+    duplicate_entry =
         av_packet_side_data_add(&duplicate_ptr, &duplicate_nb_sd,
                                 AV_PKT_DATA_PALETTE,
                                 duplicate_replacement, 1, 0);

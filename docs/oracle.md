@@ -210,7 +210,9 @@ The harness also includes `packet:side-add-capacity-*` and `packet:side-new-capa
 
 The harness also includes `packet:array-add-capacity-*` and `packet:array-new-capacity-overflow` rows, proving the standalone `AVPacketSideData` array helpers do not apply the same packet-owned `AV_PKT_DATA_NB` ceiling: `av_packet_side_data_add()` accepts an out-of-range raw type and grows the array from 41 to 42 entries, and `av_packet_side_data_new()` for that same raw type replaces the entry while keeping the count at 42.
 
-The harness also includes `packet:side-duplicate-*` rows, proving packet-owned duplicate-type side-data behavior: `av_packet_get_side_data()` returns the first matching duplicate entry, `av_packet_add_side_data()` replaces the first matching duplicate entry, and `av_packet_shrink_side_data()` shrinks the first matching duplicate entry while leaving later duplicates in place.
+The harness also includes `packet:side-duplicate-*` rows, proving packet-owned duplicate-type side-data behavior: `av_packet_get_side_data()` returns the first matching duplicate entry, `av_packet_new_side_data()` replaces the first matching duplicate entry, `av_packet_add_side_data()` replaces the first matching duplicate entry, and `av_packet_shrink_side_data()` shrinks the first matching duplicate entry while leaving later duplicates in place.
+
+The harness also includes `packet:array-new-duplicate-*` rows, proving standalone `av_packet_side_data_new()` duplicate-type behavior: the helper replaces the first matching duplicate entry while leaving later duplicates in place. The positive-size duplicate-new rows write deterministic bytes before comparison because FFmpeg allocator contents are not a stable oracle value until the caller initializes the returned buffer.
 
 The harness also includes `packet:fifo-*` rows, proving the packet-specialized container FIFO transfer semantics for move writes, ref writes, read draining, ref reads into pre-populated destinations, non-mutating peek, valid drain, can-read counts, invalid offset handling, and empty-read `EINVAL` handling.
 

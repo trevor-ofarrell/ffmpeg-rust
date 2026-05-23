@@ -6982,11 +6982,20 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .data(),
         &[0x11]
     );
+    let duplicate_packet_new_entry = duplicate_packet
+        .new_side_data(PacketSideDataKind::Palette, 2)
+        .unwrap();
+    assert_eq!(duplicate_packet_new_entry.data(), &[0, 0]);
+    duplicate_packet_new_entry
+        .data_mut()
+        .copy_from_slice(&[0x66, 0x77]);
+    assert_eq!(duplicate_packet.side_data()[0].data(), &[0x66, 0x77]);
+    assert_eq!(duplicate_packet.side_data()[2].data(), &[0x33]);
     let replaced_packet_duplicate = duplicate_packet
         .try_add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap())
         .unwrap()
         .unwrap();
-    assert_eq!(replaced_packet_duplicate.data(), &[0x11]);
+    assert_eq!(replaced_packet_duplicate.data(), &[0x66, 0x77]);
     assert_eq!(duplicate_packet.side_data()[0].data(), &[0x55]);
     assert_eq!(duplicate_packet.side_data()[2].data(), &[0x33]);
     duplicate_packet
@@ -7073,10 +7082,19 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .data(),
         &[0x11]
     );
+    let duplicate_list_new_entry = duplicate_remove_list
+        .new_side_data(PacketSideDataKind::Palette, 2)
+        .unwrap();
+    assert_eq!(duplicate_list_new_entry.data(), &[0, 0]);
+    duplicate_list_new_entry
+        .data_mut()
+        .copy_from_slice(&[0x66, 0x77]);
+    assert_eq!(duplicate_remove_list.entries()[0].data(), &[0x66, 0x77]);
+    assert_eq!(duplicate_remove_list.entries()[2].data(), &[0x33]);
     let replaced_duplicate = duplicate_remove_list
         .add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0x55]).unwrap())
         .unwrap();
-    assert_eq!(replaced_duplicate.data(), &[0x11]);
+    assert_eq!(replaced_duplicate.data(), &[0x66, 0x77]);
     assert_eq!(duplicate_remove_list.entries()[0].data(), &[0x55]);
     assert_eq!(duplicate_remove_list.entries()[2].data(), &[0x33]);
     let removed_duplicate = duplicate_remove_list
