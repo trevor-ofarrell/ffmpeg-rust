@@ -277,6 +277,12 @@ fate_tests = [
   "packet_oracle::upstream_fate_avpacket_passes",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket payload resize coverage now
+# validates `av_grow_packet()` on an empty packet plus stable growth-prefix
+# comparison for allocator-dependent newly visible bytes, and validates
+# `av_shrink_packet()` oversize no-op plus shrink-to-zero padded-buffer
+# behavior. Rust keeps newly grown bytes deterministically zeroed while oracle
+# rows compare FFmpeg's stable size, prefix, padding, and writability shape.
 # Latest update: pinned libavcodec AVPacket packet/frame bridge coverage now
 # validates explicit `AV_FRAME_SIDE_DATA_FLAG_REPLACE` edge rows. Packet-side
 # `av_packet_side_data_from_frame()` replaces only the first matching mapped

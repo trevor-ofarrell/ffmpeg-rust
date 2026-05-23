@@ -6621,6 +6621,50 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         padded_packet.data_buffer().padding_len(),
         AV_INPUT_BUFFER_PADDING_SIZE
     );
+    assert!(padded_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+
+    let mut empty_grown_packet = Packet::default();
+    empty_grown_packet.grow_data(3).unwrap();
+    assert_eq!(empty_grown_packet.data(), &[0, 0, 0]);
+    assert_eq!(
+        empty_grown_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(empty_grown_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(empty_grown_packet.is_data_writable());
+
+    let mut shrink_edge_packet = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+    shrink_edge_packet.shrink_data(9).unwrap();
+    assert_eq!(shrink_edge_packet.data(), &[0xaa, 0xbb, 0xcc]);
+    assert_eq!(
+        shrink_edge_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(shrink_edge_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    shrink_edge_packet.shrink_data(0).unwrap();
+    assert!(shrink_edge_packet.is_empty());
+    assert_eq!(
+        shrink_edge_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(shrink_edge_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(shrink_edge_packet.is_data_writable());
 
     let unpadded_grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
     let mut unpadded_grown_packet = Packet::new(payload.clone(), stream_index);

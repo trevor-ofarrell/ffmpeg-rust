@@ -1190,10 +1190,36 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     grow.make_data_writable().copy_from_slice(&[0xaa, 0xbb]);
     grow.grow_data(3).unwrap();
     rows.insert("packet:payload-grow-ret".to_string(), vec!["0".to_string()]);
-    rows.insert("packet:payload-grow".to_string(), payload_fields(&grow));
+    rows.insert(
+        "packet:payload-grow".to_string(),
+        payload_prefix_fields(&grow, 2),
+    );
 
     grow.shrink_data(2).unwrap();
     rows.insert("packet:payload-shrink".to_string(), payload_fields(&grow));
+
+    let mut grow_empty = Packet::default();
+    grow_empty.grow_data(3).unwrap();
+    rows.insert(
+        "packet:payload-grow-empty-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-empty".to_string(),
+        payload_prefix_fields(&grow_empty, 0),
+    );
+
+    let mut shrink_edges = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+    shrink_edges.shrink_data(9).unwrap();
+    rows.insert(
+        "packet:payload-shrink-oversize".to_string(),
+        payload_fields(&shrink_edges),
+    );
+    shrink_edges.shrink_data(0).unwrap();
+    rows.insert(
+        "packet:payload-shrink-zero".to_string(),
+        payload_fields(&shrink_edges),
+    );
 
     let mut grow_unrefcounted = Packet::new(vec![0xaa, 0xbb], 0);
     grow_unrefcounted.grow_data(2).unwrap();
@@ -4205,9 +4231,27 @@ static void exercise_payload_api(void) {
     pkt->data[1] = 0xbb;
     ret = av_grow_packet(pkt, 3);
     printf("packet:payload-grow-ret|%d\n", ret);
-    print_payload("packet:payload-grow", pkt);
+    print_payload_prefix("packet:payload-grow", pkt, 2);
     av_shrink_packet(pkt, 2);
     print_payload("packet:payload-shrink", pkt);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    ret = av_grow_packet(pkt, 3);
+    printf("packet:payload-grow-empty-ret|%d\n", ret);
+    fail_if(ret < 0, "av_grow_packet empty payload failed");
+    print_payload_prefix("packet:payload-grow-empty", pkt, 0);
+    av_packet_free(&pkt);
+
+    pkt = new_packet();
+    fail_if(av_new_packet(pkt, 3) < 0, "av_new_packet shrink edge payload failed");
+    pkt->data[0] = 0xaa;
+    pkt->data[1] = 0xbb;
+    pkt->data[2] = 0xcc;
+    av_shrink_packet(pkt, 9);
+    print_payload("packet:payload-shrink-oversize", pkt);
+    av_shrink_packet(pkt, 0);
+    print_payload("packet:payload-shrink-zero", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();

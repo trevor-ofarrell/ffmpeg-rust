@@ -10876,6 +10876,45 @@ mod tests {
 
         packet.shrink_data(99).unwrap();
         assert_eq!(packet.data(), &[0xaa, 0xbb]);
+
+        let mut empty = Packet::default();
+        empty.grow_data(3).unwrap();
+        assert_eq!(empty.data(), &[0, 0, 0]);
+        assert_eq!(
+            empty.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(empty
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(empty.is_data_writable());
+
+        let mut shrink_edges = Packet::from_data(vec![0xaa, 0xbb, 0xcc]).unwrap();
+        shrink_edges.shrink_data(9).unwrap();
+        assert_eq!(shrink_edges.data(), &[0xaa, 0xbb, 0xcc]);
+        assert_eq!(
+            shrink_edges.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(shrink_edges
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        shrink_edges.shrink_data(0).unwrap();
+        assert!(shrink_edges.data().is_empty());
+        assert_eq!(
+            shrink_edges.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(shrink_edges
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(shrink_edges.is_data_writable());
     }
 
     #[test]
