@@ -488,9 +488,11 @@ const PATH_RULES: &[PathRule] = &[
         path: "crates/fftools/tests/image2_oracle.rs",
         exact_ids: &[
             "fftools-ffmpeg-image2-file-output",
+            "fftools-ffmpeg-image2-sequence-framecrc-null",
             "avutil-packet",
             "avformat-image2-demuxer",
             "avformat-image2-muxer",
+            "avformat-framecrc-muxer",
         ],
         id_prefixes: &[],
     },
@@ -1803,9 +1805,11 @@ mod tests {
     fn changed_selection_maps_image2_oracle_test_to_covered_components() {
         let component_ids = component_ids_from_ledger(&ledger(&[
             "fftools-ffmpeg-image2-file-output",
+            "fftools-ffmpeg-image2-sequence-framecrc-null",
             "avutil-packet",
             "avformat-image2-demuxer",
             "avformat-image2-muxer",
+            "avformat-framecrc-muxer",
         ]));
         let paths = vec!["crates/fftools/tests/image2_oracle.rs".to_string()];
 
@@ -1813,9 +1817,11 @@ mod tests {
             changed_components(&component_ids, &paths),
             vec![
                 "fftools-ffmpeg-image2-file-output".to_string(),
+                "fftools-ffmpeg-image2-sequence-framecrc-null".to_string(),
                 "avutil-packet".to_string(),
                 "avformat-image2-demuxer".to_string(),
                 "avformat-image2-muxer".to_string(),
+                "avformat-framecrc-muxer".to_string(),
             ]
         );
     }
@@ -2092,6 +2098,19 @@ mod tests {
             "avformat-image2-muxer",
             "oracle-image2-sequence-file-output"
         )));
+        assert!(pairs.contains(&(
+            "fftools-ffmpeg-image2-sequence-framecrc-null",
+            "oracle-image2-sequence-framecrc-records"
+        )));
+        assert!(pairs.contains(&(
+            "avformat-image2-demuxer",
+            "oracle-image2-sequence-framecrc-records"
+        )));
+        assert!(pairs.contains(&(
+            "avformat-framecrc-muxer",
+            "oracle-image2-sequence-framecrc-records"
+        )));
+        assert!(pairs.contains(&("avutil-packet", "oracle-image2-sequence-framecrc-records")));
         assert!(pairs.contains(&("avutil-channel-layout", "oracle-ffmpeg-layouts")));
         assert!(pairs.contains(&("avformat-wav-demuxer", "oracle-wav-generated-md5")));
         assert!(pairs.contains(&("avutil-sample-format", "oracle-ffmpeg-sample-fmts")));
