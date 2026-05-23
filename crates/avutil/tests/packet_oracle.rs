@@ -6,8 +6,8 @@ use std::{
 };
 
 use avutil::{
-    packet_pack_dictionary, packet_unpack_dictionary, BufferRef, Dictionary, Frame, FrameSideData,
-    FrameSideDataFlags, FrameSideDataKind, Packet, PacketActiveFormatDescription,
+    packet_pack_dictionary, packet_unpack_dictionary, AvErrorCode, BufferRef, Dictionary, Frame,
+    FrameSideData, FrameSideDataFlags, FrameSideDataKind, Packet, PacketActiveFormatDescription,
     PacketAmbientViewingEnvironment, PacketAudioServiceType, PacketContentLightMetadata,
     PacketCpbProperties, PacketDisplayMatrix, PacketDolbyVisionConf, PacketDoviCompression,
     PacketDynamicHdr10Plus, PacketEncryptionSubsample, PacketFallbackTrack, PacketFifo,
@@ -1199,6 +1199,25 @@ fn insert_dictionary_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         "packet:dict-unpack-duplicate".to_string(),
         dictionary_fields(&duplicate),
     );
+
+    for (name, data) in [
+        ("packet:dict-unpack-empty-ret", b"".as_slice()),
+        (
+            "packet:dict-unpack-missing-final-nul-ret",
+            b"title\0Clip".as_slice(),
+        ),
+        (
+            "packet:dict-unpack-key-without-value-ret",
+            b"title\0".as_slice(),
+        ),
+        ("packet:dict-unpack-empty-key-ret", b"\0Clip\0".as_slice()),
+        (
+            "packet:dict-unpack-trailing-empty-key-ret",
+            b"title\0Clip\0\0".as_slice(),
+        ),
+    ] {
+        rows.insert(name.to_string(), dictionary_unpack_ret_fields(data));
+    }
 }
 
 fn insert_packet_fifo_rows(rows: &mut BTreeMap<String, Vec<String>>) {
@@ -1886,6 +1905,19 @@ fn dictionary_fields(dict: &Dictionary) -> Vec<String> {
         fields.push(entry.value().to_string());
     }
     fields
+}
+
+fn dictionary_unpack_ret_fields(data: &[u8]) -> Vec<String> {
+    let ret = match packet_unpack_dictionary(data) {
+        Ok(_) => 0,
+        Err(err) => {
+            assert_eq!(err.code(), Some(AvErrorCode::INVALIDDATA));
+            err.code()
+                .unwrap_or_else(|| panic!("dictionary unpack error without AVERROR code: {err}"))
+                .raw()
+        }
+    };
+    vec![ret.to_string()]
 }
 
 fn packet_side_data_type(kind: &PacketSideDataKind) -> String {
@@ -2860,6 +2892,13 @@ static void print_dictionary(const char *name, const AVDictionary *dict) {
     printf("\n");
 }
 
+static void print_dictionary_unpack_ret(const char *name, const uint8_t *data, size_t size) {
+    AVDictionary *dict = NULL;
+    int ret = av_packet_unpack_dictionary(data, size, &dict);
+    printf("%s|%d\n", name, ret);
+    av_dict_free(&dict);
+}
+
 static AVPacket *new_packet(void) {
     AVPacket *pkt = av_packet_alloc();
     fail_if(!pkt, "av_packet_alloc failed");
@@ -3308,6 +3347,26 @@ static void exercise_dictionary_api(void) {
     printf("packet:dict-unpack-duplicate-ret|%d\n", ret);
     print_dictionary("packet:dict-unpack-duplicate", unpacked);
     av_dict_free(&unpacked);
+
+    print_dictionary_unpack_ret("packet:dict-unpack-empty-ret", NULL, 0);
+    static const uint8_t missing_final_nul[] = {
+        't', 'i', 't', 'l', 'e', 0, 'C', 'l', 'i', 'p'
+    };
+    print_dictionary_unpack_ret("packet:dict-unpack-missing-final-nul-ret",
+                                missing_final_nul, sizeof(missing_final_nul));
+    static const uint8_t key_without_value[] = {
+        't', 'i', 't', 'l', 'e', 0
+    };
+    print_dictionary_unpack_ret("packet:dict-unpack-key-without-value-ret",
+                                key_without_value, sizeof(key_without_value));
+    static const uint8_t empty_key[] = { 0, 'C', 'l', 'i', 'p', 0 };
+    print_dictionary_unpack_ret("packet:dict-unpack-empty-key-ret",
+                                empty_key, sizeof(empty_key));
+    static const uint8_t trailing_empty_key[] = {
+        't', 'i', 't', 'l', 'e', 0, 'C', 'l', 'i', 'p', 0, 0
+    };
+    print_dictionary_unpack_ret("packet:dict-unpack-trailing-empty-key-ret",
+                                trailing_empty_key, sizeof(trailing_empty_key));
 }
 
 static void exercise_packet_fifo_api(void) {

@@ -8386,18 +8386,14 @@ mod tests {
             b"title\0".as_slice(),
             b"title\0Clip\0\0".as_slice(),
         ] {
-            assert_eq!(
-                packet_unpack_dictionary(data).unwrap_err().kind(),
-                crate::AvErrorKind::InvalidData
-            );
+            let err = packet_unpack_dictionary(data).unwrap_err();
+            assert_eq!(err.kind(), crate::AvErrorKind::InvalidData);
+            assert_eq!(err.code(), Some(AvErrorCode::INVALIDDATA));
         }
 
-        assert_eq!(
-            packet_unpack_dictionary(b"title\0\xff\xfe\0")
-                .unwrap_err()
-                .kind(),
-            crate::AvErrorKind::InvalidData
-        );
+        let err = packet_unpack_dictionary(b"title\0\xff\xfe\0").unwrap_err();
+        assert_eq!(err.kind(), crate::AvErrorKind::InvalidData);
+        assert_eq!(err.code(), Some(AvErrorCode::INVALIDDATA));
     }
 
     #[test]

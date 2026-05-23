@@ -8155,6 +8155,16 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
     assert_eq!(packet_unpack_dictionary(&packed_dict).unwrap(), dict);
     assert!(packet_pack_dictionary(&Dictionary::new()).is_empty());
     assert!(packet_unpack_dictionary(&[]).unwrap().is_empty());
+    for invalid_dict in [
+        b"title\0Clip".as_slice(),
+        b"\0Clip\0".as_slice(),
+        b"title\0".as_slice(),
+        b"title\0Clip\0\0".as_slice(),
+    ] {
+        let err = packet_unpack_dictionary(invalid_dict).unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidData);
+        assert_eq!(err.code(), Some(AvErrorCode::INVALIDDATA));
+    }
     match packet_unpack_dictionary(&typed_payload) {
         Ok(unpacked) => {
             for entry in unpacked.entries() {

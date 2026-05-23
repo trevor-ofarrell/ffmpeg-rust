@@ -2,6 +2,10 @@
 
 ## Current Status
 
+Latest `avutil-packet` dictionary-unpack oracle slice: `crates/avutil/tests/packet_oracle.rs` now pins `av_packet_unpack_dictionary()` return-code behavior for empty input plus malformed string-metadata payloads. Empty input returns success, while missing final NUL, key-without-value, empty-key, and trailing-empty-key inputs return `AVERROR_INVALIDDATA`. `crates/avutil/src/packet.rs` and `fuzz/fuzz_targets/avutil_core_models.rs` now assert the same typed error-code cases. Strict completion remains 11/96 because `avutil-packet` is still `differential_pass`, not complete; upstream FATE disposition, remaining ABI/media-integration vectors, and broader media integration remain pending.
+
+Latest validation commands for the `avutil-packet` dictionary-unpack slice passed: `cargo fmt --all`; `$env:CARGO_TARGET_DIR='target-codex-packet-dict-unit'; cargo test -p avutil --lib packet_dictionary -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex-packet-dict-fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `$env:CARGO_TARGET_DIR='target-codex-packet-dict-oracle-no-run'; cargo test -p avutil --test packet_oracle --no-run`; `$env:CARGO_TARGET_DIR='target-codex-packet-dict-oracle'; cargo test -p avutil --test packet_oracle -- --ignored --nocapture`; `cargo fmt --all -- --check`; `$env:CARGO_TARGET_DIR='target-codex-packet-dict-ledger'; cargo test -p fate-runner current_ledger`; `$env:CARGO_TARGET_DIR='target-codex-packet-dict-oracle-doctor'; cargo run -p xtask -- oracle-doctor`; `$env:CARGO_TARGET_DIR='target-codex-packet-dict-guard'; cargo run -p xtask -- guard-runtime`; `$env:CARGO_TARGET_DIR='target-codex-packet-dict-clippy'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex-packet-dict-fuzz-clippy'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex-packet-dict-fate-local'; cargo run -p fate-runner -- run --component avutil-packet`; `$env:CARGO_TARGET_DIR='target-codex-packet-dict-diff'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`; WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-packet-dict-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`; and `git diff --check`. The first WSL fuzz smoke reached `Done 4 runs` but the wrapper timed out while returning output; no fuzz process remained after polling, and the warmed rerun passed.
+
 Latest `avutil-channel-layout` default/check oracle slice: `crates/avutil/tests/channel_layout_oracle.rs` now compiles and runs a pinned libavutil helper for `av_channel_layout_default()` plus `av_channel_layout_check()` rows covering invalid negative/zero counts, source-order native defaults for 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, and 24 channels, and count-only unspecified fallbacks for 9, 11, 13, 15, 17, 23, 25, and 64 channels. `fuzz/fuzz_targets/avutil_core_models.rs` mirrors those deterministic default-layout fixtures. Strict completion remains 11/96 because `avutil-channel-layout` is still `differential_pass`, not complete; long-tail parser/retype/ambisonic semantics and sustained fuzz evidence are still unclaimed.
 
 Latest validation commands for the `avutil-channel-layout` default/check slice passed: `cargo fmt --all`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-unit'; cargo test -p avutil --lib channel_layout -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-oracle-no-run'; cargo test -p avutil --test channel_layout_oracle --no-run`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-oracle'; cargo test -p avutil --test channel_layout_oracle -- --ignored --nocapture`; `cargo fmt --all -- --check`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-ledger'; cargo test -p fate-runner current_ledger`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-oracle-doctor'; cargo run -p xtask -- oracle-doctor`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-guard'; cargo run -p xtask -- guard-runtime`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-clippy'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-fuzz-clippy'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-fate-local'; cargo run -p fate-runner -- run --component avutil-channel-layout`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-fate-upstream'; cargo run -p fate-runner -- run --mappings tests/fate/upstream-mappings.txt --component avutil-channel-layout --target fate-channel_layout`; `$env:CARGO_TARGET_DIR='target-codex-channel-default-diff'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-channel-layout --target oracle-ffmpeg-layouts --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`; WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-channel-default-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`; and `git diff --check`. The first WSL fuzz smoke timed out while compiling sanitizer instrumentation; the process exited and the cached rerun passed.
@@ -897,6 +901,23 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-packet` dictionary-unpack oracle slice:
+  - `cargo fmt --all`
+  - `$env:CARGO_TARGET_DIR='target-codex-packet-dict-unit'; cargo test -p avutil --lib packet_dictionary -- --nocapture`
+  - `$env:CARGO_TARGET_DIR='target-codex-packet-dict-fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_core_models`
+  - `$env:CARGO_TARGET_DIR='target-codex-packet-dict-oracle-no-run'; cargo test -p avutil --test packet_oracle --no-run`
+  - `$env:CARGO_TARGET_DIR='target-codex-packet-dict-oracle'; cargo test -p avutil --test packet_oracle -- --ignored --nocapture`
+  - `cargo fmt --all -- --check`
+  - `$env:CARGO_TARGET_DIR='target-codex-packet-dict-ledger'; cargo test -p fate-runner current_ledger`
+  - `$env:CARGO_TARGET_DIR='target-codex-packet-dict-oracle-doctor'; cargo run -p xtask -- oracle-doctor`
+  - `$env:CARGO_TARGET_DIR='target-codex-packet-dict-guard'; cargo run -p xtask -- guard-runtime`
+  - `$env:CARGO_TARGET_DIR='target-codex-packet-dict-clippy'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex-packet-dict-fuzz-clippy'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_core_models -- -D warnings`
+  - `$env:CARGO_TARGET_DIR='target-codex-packet-dict-fate-local'; cargo run -p fate-runner -- run --component avutil-packet`
+  - `$env:CARGO_TARGET_DIR='target-codex-packet-dict-diff'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-packet --target oracle-libavcodec-packet-core --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg.cmd`
+  - WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-packet-dict-fuzz-o1 cargo fuzz run avutil_core_models -- -runs=1`
+  - `git diff --check` passed with CRLF conversion warnings only.
 
 - Current `avutil-channel-layout` zero-order ambisonic oracle slice:
   - `cargo fmt --all`
@@ -6496,6 +6517,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+The current turn continues `avutil-packet`, the highest-priority incomplete infrastructure row after the completed primitives. The concrete slice adds pinned `av_packet_unpack_dictionary()` return-code evidence for empty input and malformed string-metadata payloads, plus unit and fuzz-smoke checks for the matching Rust `AVERROR_INVALIDDATA` cases. `avutil-packet` remains `differential_pass`, not `complete`, because upstream FATE disposition, remaining ABI/media-integration oracle vectors, and broader media integration still need closure.
+
 The current turn continues `avutil-channel-layout`, a priority-1 infrastructure row with active oracle evidence. The concrete slice adds pinned parser/compare evidence for invalid separators, invalid trailing described-count junk, plus-hex ambisonic order, signed-zero zero-order native-mask/list extras, and the matching compare equivalence/difference rows. `avutil-channel-layout` remains `differential_pass`, not `complete`, because full long-tail parser/retype/compare/ambisonic coverage and sustained fuzz execution remain pending.
 
 The current turn continues `avutil-channel-layout`, a priority-1 infrastructure row with active oracle evidence. The concrete slice adds direct pinned `av_channel_layout_channel_from_string()` raw-ID checks to the parser and retype oracle rows and deterministic fuzz fixture coverage for the same lookup shape. `avutil-channel-layout` remains `differential_pass`, not `complete`, because full long-tail parser/retype/compare/ambisonic coverage and sustained fuzz execution remain pending.
@@ -6848,9 +6871,9 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Continue `avutil-channel-layout` with remaining long-tail parser/retype/compare oracle vectors, especially full `AV_CHANNEL_ORDER_AMBISONIC` calibration and any remaining tokenizer edge cases.
-2. Continue `avutil-packet` toward strict completion by documenting upstream FATE disposition and identifying the remaining ABI/media-integration oracle vectors.
-3. Continue `avutil-buffer` toward strict completion by closing or explicitly bounding the remaining ABI/lifetime behaviors and documenting the FATE disposition for this low-level helper surface.
+1. Continue `avutil-packet` toward strict completion by documenting upstream FATE disposition and identifying the remaining ABI/media-integration oracle vectors.
+2. Continue `avutil-buffer` toward strict completion by closing or explicitly bounding the remaining ABI/lifetime behaviors and documenting the FATE disposition for this low-level helper surface.
+3. Continue `avutil-channel-layout` with remaining long-tail parser/retype/compare oracle vectors, especially full `AV_CHANNEL_ORDER_AMBISONIC` calibration and any remaining tokenizer edge cases.
 
 ## Known Blockers
 
@@ -6990,6 +7013,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added malformed dictionary-unpack return-code evidence for `avutil-packet`. `crates/avutil/tests/packet_oracle.rs` now emits pinned libavcodec rows for empty `av_packet_unpack_dictionary()` input and malformed missing-final-NUL, key-without-value, empty-key, and trailing-empty-key payloads; `crates/avutil/src/packet.rs` asserts the matching `AVERROR_INVALIDDATA` code in unit tests; `fuzz/fuzz_targets/avutil_core_models.rs` covers deterministic malformed dictionary fixtures; and docs/ledger/state record the evidence. `avutil-packet` remains `differential_pass`, not complete; strict completion remains 11/96.
 
 Latest slice: added bounded zero-order ambisonic parser/compare oracle coverage for `avutil-channel-layout`. `crates/avutil/tests/channel_layout_oracle.rs` now pins invalid `+FL`, `FL++FR`, and `2 channels ` parser failures, plus-hex ambisonic order parsing, zero-order native-mask/list extra parsing, plus-hex and signed-zero ambisonic equivalence, and zero-order native-extra equivalence/difference against pinned libavutil. `fuzz/fuzz_targets/avutil_core_models.rs` mirrors the deterministic rows. Docs/ledger/state record that `avutil-channel-layout` remains `differential_pass`, not complete; strict completion remains 11/96.
 
