@@ -2,6 +2,11 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest framecrc/rawvideo evidence: `FrameCrcMuxer` now emits FFmpeg-style
+# packet record rows using the framecrc Adler-style checksum initialized at
+# zero. The ignored rawvideo oracle harness compares normalized `rgb24`
+# `-f framecrc -` rows against pinned FFmpeg streamcopy output, proving packet
+# count, PTS, DTS, duration, size, and checksum for that bounded media path.
 # Latest avutil-packet evidence: default-native ABI layout rows now prove
 # pinned FFmpeg 8.1.1 `AVPacketSideData`, `AVPacket`, and deprecated
 # `AVPacketList` sizes, alignments, field offsets, and field sizes through C
@@ -308,7 +313,9 @@ unit_tests = [
 ]
 differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-libavcodec-packet-core",
+  "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framecrc-records",
   "packet_oracle::libavcodec_packet_core_lifecycle_matches_packet_model",
+  "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
 ]
 fate_tests = [
   "tests/fate/mappings.txt:avutil-packet|local-avutil-unit",
@@ -323,6 +330,11 @@ fuzz_targets = ["avutil_core_models"]
 # AVPacketSideData, AVPacket, and deprecated AVPacketList against the installed
 # x86_64 FFmpeg 8.1.1 oracle. Unit tests cover the matching Rust
 # PacketAbiLayout metadata.
+# Latest media-integration update: the rawvideo framecrc oracle row validates
+# packet records produced by the Rust rawvideo demuxer and framecrc muxer
+# against pinned FFmpeg streamcopy output for bounded rgb24 input, covering
+# packet count, PTS, DTS, duration, size, and checksum outside the direct
+# libavcodec AVPacket helper harness.
 # Earlier update: pinned libavcodec AVPacket packet/frame bridge rows now
 # validate the full global side-data map inventory through
 # packet:frame-to-packet-map-inventory and
@@ -1973,7 +1985,7 @@ id = "avutil-color"
 kind = "utility"
 ffmpeg_name = "av_get_known_color_name / av_parse_color / ffmpeg -colors"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffmpeg -colors"
 rust_command = "cargo test -p avutil color"
@@ -2172,6 +2184,10 @@ unit_tests = [
   "cli_logging::tests::malformed_loglevel_arguments_fall_back_to_default_formatting",
 ]
 differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-rawvideo-framecrc-null|oracle-rawvideo-framecrc-records",
+  "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
+]
 fate_tests = [
   "tests/fate/mappings.txt:fftools-option-parser|local-option-parser-unit",
   "tests/fate/mappings.txt:fftools-option-parser|local-cli-logging-unit",
@@ -3021,7 +3037,7 @@ id = "fftools-ffmpeg-rawvideo-framecrc-null"
 kind = "cli"
 ffmpeg_name = "ffmpeg rawvideo to framecrc/null"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffmpeg -f rawvideo -pix_fmt <fmt> -s <WxH> -r <rate> -i <input.raw> -f framecrc -; ffmpeg -f rawvideo -pix_fmt <fmt> -s <WxH> -r <rate> -i <input.raw> -f null -"
 rust_command = "cargo test -p fftools ffmpeg"
@@ -3083,10 +3099,13 @@ unit_tests = [
   "ffmpeg::tests::rejects_rawvideo_without_required_stream_parameters",
   "ffmpeg::tests::rejects_rawvideo_truncated_frame",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-rawvideo-framecrc-null|oracle-rawvideo-framecrc-records",
+  "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-rawvideo-framecrc-null|local-ffmpeg-unit"]
 fuzz_targets = []
-notes = "ffmpeg-rs command execution now supports exactly one local seekable rawvideo input and one stdout pipe output with explicit -f rawvideo plus required -pix_fmt, -s, and -r stream parameters. It uses the Rust rawvideo demuxer and Rust null/framecrc muxers, supports gray/gray8, ya8 plus gray8a/y400a aliases, ya16le, ya16be, gray9le, gray9be, gray10le, gray10be, gray12le, gray12be, gray14le, gray14be, gray16le, gray16be, gray32le, gray32be, grayf16le, grayf16be, grayf32le, grayf32be, rgb24, bgr24, rgb48le, rgb48be, bgr48le, bgr48be, rgba64le, rgba64be, bgra64le, bgra64be, rgba, bgra, argb, abgr, 0rgb, rgb0, 0bgr, bgr0, gbrp, gbrp9le, gbrp9be, gbrp10le, gbrp10be, gbrp12le, gbrp12be, gbrp14le, gbrp14be, gbrp16le, gbrp16be, yuv420p, yuv422p, yuv410p, yuv411p, yuv440p, and yuv444p input packetization through the shared PixelFormat model, accepts uppercase pixel-format spelling and high-bit-depth grayscale y9/y10/y12/y14 aliases through lowercase normalization, rejects missing parameters and partial frames, and has no oracle differential or upstream FATE coverage yet. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution now supports exactly one local seekable rawvideo input and one stdout pipe output with explicit -f rawvideo plus required -pix_fmt, -s, and -r stream parameters. It uses the Rust rawvideo demuxer and Rust null/framecrc muxers, supports gray/gray8, ya8 plus gray8a/y400a aliases, ya16le, ya16be, gray9le, gray9be, gray10le, gray10be, gray12le, gray12be, gray14le, gray14be, gray16le, gray16be, gray32le, gray32be, grayf16le, grayf16be, grayf32le, grayf32be, rgb24, bgr24, rgb48le, rgb48be, bgr48le, bgr48be, rgba64le, rgba64be, bgra64le, bgra64be, rgba, bgra, argb, abgr, 0rgb, rgb0, 0bgr, bgr0, gbrp, gbrp9le, gbrp9be, gbrp10le, gbrp10be, gbrp12le, gbrp12be, gbrp14le, gbrp14be, gbrp16le, gbrp16be, yuv420p, yuv422p, yuv410p, yuv411p, yuv440p, and yuv444p input packetization through the shared PixelFormat model, accepts uppercase pixel-format spelling and high-bit-depth grayscale y9/y10/y12/y14 aliases through lowercase normalization, rejects missing parameters and partial frames, and now has pinned differential evidence for normalized rgb24 framecrc packet records covering packet count, PTS, DTS, duration, size, and checksum. Broader rawvideo framecrc/null differentials and upstream FATE coverage remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 # Latest update: local rawvideo/null CLI coverage also exercises gbrp10msble packetization as a three-plane MSB-aligned planar GBR path with two stored bytes per component sample and twelve bytes per 2x1 frame.
 # Prior update: local rawvideo/null CLI coverage also exercises rgba128le packetization as a one-plane packed 32-bit integer RGBA path with alpha metadata and sixteen stored bytes per pixel. The focused target-codex unit test passes, while the broad local FATE mapping for this fftools component is currently blocked before execution by Windows Application Control on the default-target test executable.
 # Prior update: local rawvideo/null CLI coverage also exercises rgbaf32le packetization as a one-plane packed floating RGBA path with alpha metadata and sixteen stored bytes per pixel.
@@ -3114,7 +3133,7 @@ id = "fftools-ffmpeg-rawvideo-file-output"
 kind = "cli"
 ffmpeg_name = "ffmpeg rawvideo to rawvideo file"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffmpeg -f rawvideo -pix_fmt <fmt> -s <WxH> -r <rate> -i <input.raw> -f rawvideo <output.raw>"
 rust_command = "cargo test -p fftools ffmpeg"
@@ -3292,7 +3311,10 @@ unit_tests = [
   "avio::tests::skip_rejects_negative_positions",
   "avio::tests::writer_writes_seeks_overwrites_and_flushes",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-rawvideo-framecrc-null|oracle-rawvideo-framecrc-records",
+  "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
+]
 fate_tests = []
 fuzz_targets = []
 notes = "Initial seekable AVIO-like reader/writer implemented with shared avutil IO error conversion, exact-read EOF rewind, skip/seek, read-to-end, write, overwrite, and flush coverage. Protocols and non-seekable streams are pending."
@@ -3440,20 +3462,23 @@ id = "avformat-framecrc-muxer"
 kind = "muxer"
 ffmpeg_name = "framecrc"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 3
 oracle_command = "ffmpeg -i <input> -f framecrc -"
 rust_command = "cargo test -p avformat framecrc_muxer"
 unit_tests = [
-  "framecrc_muxer::tests::records_packet_crc_and_timing_fields",
+  "framecrc_muxer::tests::records_packet_checksum_and_timing_fields",
   "framecrc_muxer::tests::renders_multiple_records_in_write_order",
-  "framecrc_muxer::tests::empty_packets_produce_zero_size_crc_records",
+  "framecrc_muxer::tests::empty_packets_produce_zero_size_checksum_records",
   "framecrc_muxer::tests::finish_prevents_more_writes",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-rawvideo-framecrc-records",
+  "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:avformat-framecrc-muxer|local-avformat-framecrc-unit"]
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "Initial internal framecrc-style muxer records one CRC-32 line per packet with stream index, PTS/DTS, duration, size, and checksum. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet record fields, CRC stability, render/finish stability, and post-finish rejection, but actual local fuzz execution is blocked until cargo-fuzz is installed. Exact FFmpeg framecrc formatting, differential tests, and FATE are pending."
+notes = "Initial internal framecrc-style muxer records one FFmpeg-shaped comma-separated line per packet with stream index, PTS/DTS, duration, size, and the FFmpeg framecrc Adler-style checksum initialized at zero. The ignored rawvideo oracle row compares normalized rgb24 framecrc packet rows against pinned FFmpeg streamcopy output, proving bounded record parity for packet count, PTS, DTS, duration, payload size, and checksum while leaving header byte identity outside the current claim. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet record fields, checksum stability, render/finish stability, and post-finish rejection, but actual local fuzz execution is blocked until cargo-fuzz is installed. Broader input differential rows, byte-identical headers, and upstream FATE coverage are pending."
 blocked_reason = ""
 
 [[component]]

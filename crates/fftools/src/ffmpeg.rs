@@ -1753,10 +1753,10 @@ mod tests {
             .starts_with("# framecrc-rs packet checksums\n"));
         assert!(output
             .stdout()
-            .contains("stream=0 pts=0 dts=0 duration=1000 size=3 crc32=0x352441c2\n"));
+            .contains("0,          0,          0,     1000,        3, 0x024a0126\n"));
         assert!(output
             .stdout()
-            .contains("stream=0 pts=1000 dts=1000 duration=2000 size=4"));
+            .contains("0,       1000,       1000,     2000,        4"));
     }
 
     #[test]
@@ -2130,10 +2130,10 @@ mod tests {
         assert!(output.stderr().is_empty());
         assert!(output
             .stdout()
-            .contains("stream=0 pts=0 dts=0 duration=1 size=6"));
+            .contains("0,          0,          0,        1,        6"));
         assert!(output
             .stdout()
-            .contains("stream=0 pts=1 dts=1 duration=1 size=6"));
+            .contains("0,          1,          1,        1,        6"));
     }
 
     #[test]
@@ -2900,10 +2900,10 @@ mod tests {
         assert!(output.stderr().is_empty());
         assert!(output
             .stdout()
-            .contains("stream=0 pts=0 dts=0 duration=1 size=6"));
+            .contains("0,          0,          0,        1,        6"));
         assert!(output
             .stdout()
-            .contains("stream=0 pts=1 dts=1 duration=1 size=6"));
+            .contains("0,          1,          1,        1,        6"));
     }
 
     #[test]

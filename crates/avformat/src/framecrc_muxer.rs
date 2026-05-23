@@ -1,4 +1,4 @@
-use avutil::{crc32_ieee, AvError, AvResult, Packet};
+use avutil::{AvError, AvResult, Packet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FrameCrcRecord {
@@ -7,7 +7,7 @@ pub struct FrameCrcRecord {
     dts: Option<i64>,
     duration: i64,
     size: usize,
-    crc32: u32,
+    checksum: u32,
 }
 
 impl FrameCrcRecord {
@@ -18,7 +18,7 @@ impl FrameCrcRecord {
             dts: packet.dts(),
             duration: packet.duration(),
             size: packet.data().len(),
-            crc32: crc32_ieee(packet.data()),
+            checksum: ffmpeg_framecrc_checksum(packet.data()),
         }
     }
 
@@ -42,21 +42,32 @@ impl FrameCrcRecord {
         self.size
     }
 
-    pub fn crc32(&self) -> u32 {
-        self.crc32
+    pub fn checksum(&self) -> u32 {
+        self.checksum
     }
 
     pub fn line(&self) -> String {
         format!(
-            "stream={} pts={} dts={} duration={} size={} crc32=0x{:08x}\n",
+            "{}, {:>10}, {:>10}, {:>8}, {:>8}, 0x{:08x}\n",
             self.stream_index,
             fmt_ts(self.pts),
             fmt_ts(self.dts),
             self.duration,
             self.size,
-            self.crc32
+            self.checksum
         )
     }
+}
+
+pub fn ffmpeg_framecrc_checksum(data: &[u8]) -> u32 {
+    const MOD_ADLER: u32 = 65_521;
+    let mut a = 0_u32;
+    let mut b = 0_u32;
+    for byte in data {
+        a = (a + u32::from(*byte)) % MOD_ADLER;
+        b = (b + a) % MOD_ADLER;
+    }
+    (b << 16) | a
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -110,10 +121,10 @@ fn fmt_ts(value: Option<i64>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use avutil::{crc32_ieee, AvErrorKind};
+    use avutil::AvErrorKind;
 
     #[test]
-    fn records_packet_crc_and_timing_fields() {
+    fn records_packet_checksum_and_timing_fields() {
         let mut muxer = FrameCrcMuxer::new();
         let mut packet = Packet::new(b"abc".to_vec(), 2);
         packet.set_pts(Some(10));
@@ -128,10 +139,10 @@ mod tests {
         assert_eq!(record.dts(), Some(8));
         assert_eq!(record.duration(), 2);
         assert_eq!(record.size(), 3);
-        assert_eq!(record.crc32(), crc32_ieee(b"abc"));
+        assert_eq!(record.checksum(), ffmpeg_framecrc_checksum(b"abc"));
         assert_eq!(
             record.line(),
-            "stream=2 pts=10 dts=8 duration=2 size=3 crc32=0x352441c2\n"
+            "2,         10,          8,        2,        3, 0x024a0126\n"
         );
     }
 
@@ -145,23 +156,23 @@ mod tests {
 
         assert!(muxer.is_finished());
         assert!(output.starts_with("# framecrc-rs packet checksums\n"));
-        assert!(output.contains("stream=0 pts=N/A dts=N/A duration=0 size=1"));
-        assert!(output.contains("stream=1 pts=N/A dts=N/A duration=0 size=1"));
-        assert!(output.find("stream=0").unwrap() < output.find("stream=1").unwrap());
+        assert!(output.contains("0,        N/A,        N/A,        0,        1"));
+        assert!(output.contains("1,        N/A,        N/A,        0,        1"));
+        assert!(output.find("0,").unwrap() < output.find("1,").unwrap());
     }
 
     #[test]
-    fn empty_packets_produce_zero_size_crc_records() {
+    fn empty_packets_produce_zero_size_checksum_records() {
         let mut muxer = FrameCrcMuxer::new();
 
         muxer.write_packet(&Packet::new(Vec::new(), 0)).unwrap();
         let record = &muxer.records()[0];
 
         assert_eq!(record.size(), 0);
-        assert_eq!(record.crc32(), crc32_ieee(b""));
+        assert_eq!(record.checksum(), ffmpeg_framecrc_checksum(b""));
         assert_eq!(
             record.line(),
-            "stream=0 pts=N/A dts=N/A duration=0 size=0 crc32=0x00000000\n"
+            "0,        N/A,        N/A,        0,        0, 0x00000000\n"
         );
     }
 

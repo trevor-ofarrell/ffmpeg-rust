@@ -1,8 +1,8 @@
 #![no_main]
 
 use avformat::{
-    FrameCrcMuxer, FrameHashMuxer, HashAlgorithm, HashDigest, HashMuxer, NullMuxer,
-    StreamHashMuxer, StreamHashStreamType,
+    ffmpeg_framecrc_checksum, FrameCrcMuxer, FrameHashMuxer, HashAlgorithm, HashDigest, HashMuxer,
+    NullMuxer, StreamHashMuxer, StreamHashStreamType,
 };
 use avutil::{
     adler32, crc32_ieee, md5, murmur3, ripemd128, ripemd160, ripemd256, ripemd320, sha1,
@@ -148,13 +148,12 @@ fn exercise_framecrc_muxer(packets: &[Packet]) {
         assert_eq!(record.dts(), packet.dts());
         assert_eq!(record.duration(), packet.duration());
         assert_eq!(record.size(), packet.data().len());
-        assert_eq!(record.crc32(), crc32_ieee(packet.data()));
-        assert!(record
-            .line()
-            .contains(&format!("stream={}", packet.stream_index())));
-        assert!(record
-            .line()
-            .contains(&format!("size={}", packet.data().len())));
+        assert_eq!(record.checksum(), ffmpeg_framecrc_checksum(packet.data()));
+        assert!(record.line().starts_with(&format!("{},", packet.stream_index())));
+        assert!(record.line().contains(&format!(
+            ", {:>8}, 0x",
+            packet.data().len()
+        )));
     }
 
     let before_finish = muxer.render();

@@ -25,7 +25,7 @@ pub use avi::{
     AviStreamInfo,
 };
 pub use avio::{AvioReader, AvioWriter};
-pub use framecrc_muxer::{FrameCrcMuxer, FrameCrcRecord};
+pub use framecrc_muxer::{ffmpeg_framecrc_checksum, FrameCrcMuxer, FrameCrcRecord};
 pub use framehash_muxer::{FrameHashMuxer, FrameHashRecord};
 pub use hash_muxer::{HashAlgorithm, HashDigest, HashMuxer, HashMuxerReport};
 pub use image2::{Image2Demuxer, Image2Entry, Image2Frame, Image2Info, Image2Muxer, Image2Pattern};
