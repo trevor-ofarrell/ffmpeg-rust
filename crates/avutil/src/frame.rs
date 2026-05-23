@@ -13666,8 +13666,8 @@ impl VideoFrame {
             self.plane_buffers = plane_buffers;
             return Ok(());
         }
-        if let Some(bytes_per_sample) = planar_yuv_crop_sample_bytes(self.pixel_format) {
-            return self.apply_planar_yuv_cropping(crop, flags, bytes_per_sample);
+        if let Some(bytes_per_sample) = planar_three_plane_crop_sample_bytes(self.pixel_format) {
+            return self.apply_planar_three_plane_cropping(crop, flags, bytes_per_sample);
         }
         let crop_step = match self.pixel_format {
             PixelFormat::Gray8
@@ -13761,7 +13761,7 @@ impl VideoFrame {
             | PixelFormat::Xv48Be => 8,
             _ => {
                 return Err(AvError::unsupported(format!(
-                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, selected packed grayscale/gray-alpha, rgb24/bgr24/vyu444, selected high-depth packed RGB/RGBA, and selected packed 4:4:4 RGB/YUV/XYZ video frames, not {}",
+                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, selected packed grayscale/gray-alpha, selected planar YUV/GBR, rgb24/bgr24/vyu444, selected high-depth packed RGB/RGBA, and selected packed 4:4:4 RGB/YUV/XYZ video frames, not {}",
                     self.pixel_format.name()
                 )));
             }
@@ -13846,7 +13846,7 @@ impl VideoFrame {
         Ok(())
     }
 
-    fn apply_planar_yuv_cropping(
+    fn apply_planar_three_plane_cropping(
         &mut self,
         crop: FrameCrop,
         flags: FrameCropFlags,
@@ -13859,8 +13859,12 @@ impl VideoFrame {
             )));
         }
 
-        let crop_left =
-            adjusted_planar_yuv_crop_left(crop, self.line_sizes[0], flags, bytes_per_sample)?;
+        let crop_left = adjusted_planar_three_plane_crop_left(
+            crop,
+            self.line_sizes[0],
+            flags,
+            bytes_per_sample,
+        )?;
         let new_width = self
             .width
             .checked_sub(crop_left + crop.right)
@@ -13869,7 +13873,7 @@ impl VideoFrame {
             .height
             .checked_sub(crop.top + crop.bottom)
             .ok_or_else(|| crop_range_error("frame crop height underflow"))?;
-        let new_shapes = planar_yuv_cropped_plane_shapes(
+        let new_shapes = planar_three_plane_cropped_shapes(
             self.pixel_format,
             new_width,
             new_height,
@@ -15216,30 +15220,34 @@ fn video_plane_shapes(
     }
 }
 
-fn planar_yuv_cropped_plane_shapes(
+fn planar_three_plane_cropped_shapes(
     pixel_format: PixelFormat,
     width: usize,
     height: usize,
     bytes_per_sample: usize,
 ) -> AvResult<Vec<VideoPlaneShape>> {
-    if planar_yuv_crop_sample_bytes(pixel_format) != Some(bytes_per_sample) {
+    if planar_three_plane_crop_sample_bytes(pixel_format) != Some(bytes_per_sample) {
         return Err(AvError::unsupported(format!(
-            "planar YUV crop shapes are not implemented for {}",
+            "planar three-plane crop shapes are not implemented for {}",
             pixel_format.name()
         )));
     }
     if width == 0 || height == 0 {
         return Err(AvError::invalid_argument(
-            "cropped planar YUV video dimensions must be non-zero",
+            "cropped planar three-plane video dimensions must be non-zero",
         ));
     }
 
     let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
-    let luma_row_bytes = checked_mul(width, bytes_per_sample, "cropped planar YUV luma row bytes")?;
+    let luma_row_bytes = checked_mul(
+        width,
+        bytes_per_sample,
+        "cropped planar three-plane luma row bytes",
+    )?;
     let chroma_row_bytes = checked_mul(
         width >> log2_chroma_w,
         bytes_per_sample,
-        "cropped planar YUV chroma row bytes",
+        "cropped planar three-plane chroma row bytes",
     )?;
     Ok(vec![
         VideoPlaneShape {
@@ -15297,7 +15305,7 @@ fn is_frame_crop_bitstream_format(format: PixelFormat) -> bool {
     matches!(format, PixelFormat::Xv30Be | PixelFormat::V30xBe)
 }
 
-fn planar_yuv_crop_sample_bytes(format: PixelFormat) -> Option<usize> {
+fn planar_three_plane_crop_sample_bytes(format: PixelFormat) -> Option<usize> {
     match format {
         PixelFormat::Yuv420p
         | PixelFormat::YuvJ420p
@@ -15309,7 +15317,8 @@ fn planar_yuv_crop_sample_bytes(format: PixelFormat) -> Option<usize> {
         | PixelFormat::Yuv440p
         | PixelFormat::YuvJ440p
         | PixelFormat::Yuv444p
-        | PixelFormat::YuvJ444p => Some(1),
+        | PixelFormat::YuvJ444p
+        | PixelFormat::Gbrp => Some(1),
         PixelFormat::Yuv420p9Le
         | PixelFormat::Yuv420p9Be
         | PixelFormat::Yuv422p9Le
@@ -15347,12 +15356,29 @@ fn planar_yuv_crop_sample_bytes(format: PixelFormat) -> Option<usize> {
         | PixelFormat::Yuv422p16Le
         | PixelFormat::Yuv422p16Be
         | PixelFormat::Yuv444p16Le
-        | PixelFormat::Yuv444p16Be => Some(2),
+        | PixelFormat::Yuv444p16Be
+        | PixelFormat::Gbrp9Le
+        | PixelFormat::Gbrp9Be
+        | PixelFormat::Gbrp10Le
+        | PixelFormat::Gbrp10Be
+        | PixelFormat::Gbrp10MsbLe
+        | PixelFormat::Gbrp10MsbBe
+        | PixelFormat::Gbrp12Le
+        | PixelFormat::Gbrp12Be
+        | PixelFormat::Gbrp12MsbLe
+        | PixelFormat::Gbrp12MsbBe
+        | PixelFormat::Gbrp14Le
+        | PixelFormat::Gbrp14Be
+        | PixelFormat::Gbrp16Le
+        | PixelFormat::Gbrp16Be
+        | PixelFormat::GbrpF16Le
+        | PixelFormat::GbrpF16Be => Some(2),
+        PixelFormat::GbrpF32Le | PixelFormat::GbrpF32Be => Some(4),
         _ => None,
     }
 }
 
-fn adjusted_planar_yuv_crop_left(
+fn adjusted_planar_three_plane_crop_left(
     crop: FrameCrop,
     line_size: usize,
     flags: FrameCropFlags,
@@ -15364,7 +15390,7 @@ fn adjusted_planar_yuv_crop_left(
         Ok(crop.left)
     } else {
         Err(AvError::bug(
-            "FFmpeg rejects default left cropping for selected multi-byte planar YUV video frames",
+            "FFmpeg rejects default left cropping for selected multi-byte planar video frames",
         ))
     }
 }
@@ -20297,7 +20323,7 @@ mod tests {
             let mut data = vec![0; height * line_size];
             for row in 0..height {
                 for column in 0..width {
-                    data[row * line_size + column] = base + (row * 16 + column) as u8;
+                    data[row * line_size + column] = base.wrapping_add((row * 16 + column) as u8);
                 }
             }
             data
@@ -20313,7 +20339,7 @@ mod tests {
             let mut data = vec![0; height * line_size];
             for row in 0..height {
                 for column in 0..width * sample_bytes {
-                    data[row * line_size + column] = base + (row * 16 + column) as u8;
+                    data[row * line_size + column] = base.wrapping_add((row * 16 + column) as u8);
                 }
             }
             data
@@ -20329,7 +20355,7 @@ mod tests {
             let mut data = Vec::with_capacity(width * height);
             for row in start_row..start_row + height {
                 for column in start_column..start_column + width {
-                    data.push(base + (row * 16 + column) as u8);
+                    data.push(base.wrapping_add((row * 16 + column) as u8));
                 }
             }
             data
@@ -20660,6 +20686,7 @@ mod tests {
             (PixelFormat::YuvJ440p, 0usize, 1usize),
             (PixelFormat::Yuv444p, 0usize, 0usize),
             (PixelFormat::YuvJ444p, 0usize, 0usize),
+            (PixelFormat::Gbrp, 0usize, 0usize),
         ] {
             let storage = planar_yuv_storage(8, 4, 64, log2_chroma_w, log2_chroma_h);
             let mut planar_default = Frame::video(
@@ -20736,47 +20763,66 @@ mod tests {
             );
         }
 
-        for (format, log2_chroma_w, log2_chroma_h) in [
-            (PixelFormat::Yuv420p9Le, 1usize, 1usize),
-            (PixelFormat::Yuv420p9Be, 1usize, 1usize),
-            (PixelFormat::Yuv422p9Le, 1usize, 0usize),
-            (PixelFormat::Yuv422p9Be, 1usize, 0usize),
-            (PixelFormat::Yuv444p9Le, 0usize, 0usize),
-            (PixelFormat::Yuv444p9Be, 0usize, 0usize),
-            (PixelFormat::Yuv420p10Le, 1usize, 1usize),
-            (PixelFormat::Yuv420p10Be, 1usize, 1usize),
-            (PixelFormat::Yuv422p10Le, 1usize, 0usize),
-            (PixelFormat::Yuv422p10Be, 1usize, 0usize),
-            (PixelFormat::Yuv440p10Le, 0usize, 1usize),
-            (PixelFormat::Yuv440p10Be, 0usize, 1usize),
-            (PixelFormat::Yuv444p10Le, 0usize, 0usize),
-            (PixelFormat::Yuv444p10Be, 0usize, 0usize),
-            (PixelFormat::Yuv444p10MsbLe, 0usize, 0usize),
-            (PixelFormat::Yuv444p10MsbBe, 0usize, 0usize),
-            (PixelFormat::Yuv420p12Le, 1usize, 1usize),
-            (PixelFormat::Yuv420p12Be, 1usize, 1usize),
-            (PixelFormat::Yuv422p12Le, 1usize, 0usize),
-            (PixelFormat::Yuv422p12Be, 1usize, 0usize),
-            (PixelFormat::Yuv440p12Le, 0usize, 1usize),
-            (PixelFormat::Yuv440p12Be, 0usize, 1usize),
-            (PixelFormat::Yuv444p12Le, 0usize, 0usize),
-            (PixelFormat::Yuv444p12Be, 0usize, 0usize),
-            (PixelFormat::Yuv444p12MsbLe, 0usize, 0usize),
-            (PixelFormat::Yuv444p12MsbBe, 0usize, 0usize),
-            (PixelFormat::Yuv420p14Le, 1usize, 1usize),
-            (PixelFormat::Yuv420p14Be, 1usize, 1usize),
-            (PixelFormat::Yuv422p14Le, 1usize, 0usize),
-            (PixelFormat::Yuv422p14Be, 1usize, 0usize),
-            (PixelFormat::Yuv444p14Le, 0usize, 0usize),
-            (PixelFormat::Yuv444p14Be, 0usize, 0usize),
-            (PixelFormat::Yuv420p16Le, 1usize, 1usize),
-            (PixelFormat::Yuv420p16Be, 1usize, 1usize),
-            (PixelFormat::Yuv422p16Le, 1usize, 0usize),
-            (PixelFormat::Yuv422p16Be, 1usize, 0usize),
-            (PixelFormat::Yuv444p16Le, 0usize, 0usize),
-            (PixelFormat::Yuv444p16Be, 0usize, 0usize),
+        for (format, log2_chroma_w, log2_chroma_h, sample_bytes) in [
+            (PixelFormat::Yuv420p9Le, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuv420p9Be, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuv422p9Le, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuv422p9Be, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p9Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p9Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv420p10Le, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuv420p10Be, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuv422p10Le, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuv422p10Be, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuv440p10Le, 0usize, 1usize, 2usize),
+            (PixelFormat::Yuv440p10Be, 0usize, 1usize, 2usize),
+            (PixelFormat::Yuv444p10Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p10Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p10MsbLe, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p10MsbBe, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv420p12Le, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuv420p12Be, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuv422p12Le, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuv422p12Be, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuv440p12Le, 0usize, 1usize, 2usize),
+            (PixelFormat::Yuv440p12Be, 0usize, 1usize, 2usize),
+            (PixelFormat::Yuv444p12Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p12Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p12MsbLe, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p12MsbBe, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv420p14Le, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuv420p14Be, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuv422p14Le, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuv422p14Be, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p14Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p14Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv420p16Le, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuv420p16Be, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuv422p16Le, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuv422p16Be, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p16Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuv444p16Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp9Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp9Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp10Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp10Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp10MsbLe, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp10MsbBe, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp12Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp12Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp12MsbLe, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp12MsbBe, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp14Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp14Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp16Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrp16Be, 0usize, 0usize, 2usize),
+            (PixelFormat::GbrpF16Le, 0usize, 0usize, 2usize),
+            (PixelFormat::GbrpF16Be, 0usize, 0usize, 2usize),
+            (PixelFormat::GbrpF32Le, 0usize, 0usize, 4usize),
+            (PixelFormat::GbrpF32Be, 0usize, 0usize, 4usize),
         ] {
-            let storage = planar_yuv_sample_storage(8, 4, 64, log2_chroma_w, log2_chroma_h, 2);
+            let storage =
+                planar_yuv_sample_storage(8, 4, 64, log2_chroma_w, log2_chroma_h, sample_bytes);
             let mut planar_default = Frame::video(
                 VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), vec![64, 64, 64])
                     .unwrap(),
@@ -20801,14 +20847,14 @@ mod tests {
             assert_eq!(
                 video.planes(),
                 &[
-                    plane_visible_sample_bytes(0x10, 0, 0, 8, 4, 2),
+                    plane_visible_sample_bytes(0x10, 0, 0, 8, 4, sample_bytes),
                     plane_visible_sample_bytes(
                         0x80,
                         0,
                         0,
                         8 >> log2_chroma_w,
                         4 >> log2_chroma_h,
-                        2,
+                        sample_bytes,
                     ),
                     plane_visible_sample_bytes(
                         0xc0,
@@ -20816,7 +20862,7 @@ mod tests {
                         0,
                         8 >> log2_chroma_w,
                         4 >> log2_chroma_h,
-                        2,
+                        sample_bytes,
                     ),
                 ],
                 "{}",
@@ -20842,14 +20888,14 @@ mod tests {
             assert_eq!(
                 video.planes(),
                 &[
-                    plane_visible_sample_bytes(0x10, 1, 1, 6, 3, 2),
+                    plane_visible_sample_bytes(0x10, 1, 1, 6, 3, sample_bytes),
                     plane_visible_sample_bytes(
                         0x80,
                         1 >> log2_chroma_h,
                         1 >> log2_chroma_w,
                         6 >> log2_chroma_w,
                         3 >> log2_chroma_h,
-                        2,
+                        sample_bytes,
                     ),
                     plane_visible_sample_bytes(
                         0xc0,
@@ -20857,7 +20903,7 @@ mod tests {
                         1 >> log2_chroma_w,
                         6 >> log2_chroma_w,
                         3 >> log2_chroma_h,
-                        2,
+                        sample_bytes,
                     ),
                 ],
                 "{}",

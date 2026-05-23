@@ -743,6 +743,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         (PixelFormat::YuvJ440p, "yuvj440p", 0usize, 1usize),
         (PixelFormat::Yuv444p, "yuv444p", 0usize, 0usize),
         (PixelFormat::YuvJ444p, "yuvj444p", 0usize, 0usize),
+        (PixelFormat::Gbrp, "gbrp", 0usize, 0usize),
     ] {
         let planar_crop_storage =
             planar_yuv_strided_storage(8, 4, 64, log2_chroma_w, log2_chroma_h);
@@ -795,68 +796,324 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         );
     }
 
-    for (pixel_format, name, log2_chroma_w, log2_chroma_h) in [
-        (PixelFormat::Yuv420p9Le, "yuv420p9le", 1usize, 1usize),
-        (PixelFormat::Yuv420p9Be, "yuv420p9be", 1usize, 1usize),
-        (PixelFormat::Yuv422p9Le, "yuv422p9le", 1usize, 0usize),
-        (PixelFormat::Yuv422p9Be, "yuv422p9be", 1usize, 0usize),
-        (PixelFormat::Yuv444p9Le, "yuv444p9le", 0usize, 0usize),
-        (PixelFormat::Yuv444p9Be, "yuv444p9be", 0usize, 0usize),
-        (PixelFormat::Yuv420p10Le, "yuv420p10le", 1usize, 1usize),
-        (PixelFormat::Yuv420p10Be, "yuv420p10be", 1usize, 1usize),
-        (PixelFormat::Yuv422p10Le, "yuv422p10le", 1usize, 0usize),
-        (PixelFormat::Yuv422p10Be, "yuv422p10be", 1usize, 0usize),
-        (PixelFormat::Yuv440p10Le, "yuv440p10le", 0usize, 1usize),
-        (PixelFormat::Yuv440p10Be, "yuv440p10be", 0usize, 1usize),
-        (PixelFormat::Yuv444p10Le, "yuv444p10le", 0usize, 0usize),
-        (PixelFormat::Yuv444p10Be, "yuv444p10be", 0usize, 0usize),
+    for (pixel_format, name, log2_chroma_w, log2_chroma_h, sample_bytes) in [
+        (
+            PixelFormat::Yuv420p9Le,
+            "yuv420p9le",
+            1usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv420p9Be,
+            "yuv420p9be",
+            1usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv422p9Le,
+            "yuv422p9le",
+            1usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv422p9Be,
+            "yuv422p9be",
+            1usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv444p9Le,
+            "yuv444p9le",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv444p9Be,
+            "yuv444p9be",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv420p10Le,
+            "yuv420p10le",
+            1usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv420p10Be,
+            "yuv420p10be",
+            1usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv422p10Le,
+            "yuv422p10le",
+            1usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv422p10Be,
+            "yuv422p10be",
+            1usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv440p10Le,
+            "yuv440p10le",
+            0usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv440p10Be,
+            "yuv440p10be",
+            0usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv444p10Le,
+            "yuv444p10le",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv444p10Be,
+            "yuv444p10be",
+            0usize,
+            0usize,
+            2usize,
+        ),
         (
             PixelFormat::Yuv444p10MsbLe,
             "yuv444p10msble",
             0usize,
             0usize,
+            2usize,
         ),
         (
             PixelFormat::Yuv444p10MsbBe,
             "yuv444p10msbbe",
             0usize,
             0usize,
+            2usize,
         ),
-        (PixelFormat::Yuv420p12Le, "yuv420p12le", 1usize, 1usize),
-        (PixelFormat::Yuv420p12Be, "yuv420p12be", 1usize, 1usize),
-        (PixelFormat::Yuv422p12Le, "yuv422p12le", 1usize, 0usize),
-        (PixelFormat::Yuv422p12Be, "yuv422p12be", 1usize, 0usize),
-        (PixelFormat::Yuv440p12Le, "yuv440p12le", 0usize, 1usize),
-        (PixelFormat::Yuv440p12Be, "yuv440p12be", 0usize, 1usize),
-        (PixelFormat::Yuv444p12Le, "yuv444p12le", 0usize, 0usize),
-        (PixelFormat::Yuv444p12Be, "yuv444p12be", 0usize, 0usize),
+        (
+            PixelFormat::Yuv420p12Le,
+            "yuv420p12le",
+            1usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv420p12Be,
+            "yuv420p12be",
+            1usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv422p12Le,
+            "yuv422p12le",
+            1usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv422p12Be,
+            "yuv422p12be",
+            1usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv440p12Le,
+            "yuv440p12le",
+            0usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv440p12Be,
+            "yuv440p12be",
+            0usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv444p12Le,
+            "yuv444p12le",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv444p12Be,
+            "yuv444p12be",
+            0usize,
+            0usize,
+            2usize,
+        ),
         (
             PixelFormat::Yuv444p12MsbLe,
             "yuv444p12msble",
             0usize,
             0usize,
+            2usize,
         ),
         (
             PixelFormat::Yuv444p12MsbBe,
             "yuv444p12msbbe",
             0usize,
             0usize,
+            2usize,
         ),
-        (PixelFormat::Yuv420p14Le, "yuv420p14le", 1usize, 1usize),
-        (PixelFormat::Yuv420p14Be, "yuv420p14be", 1usize, 1usize),
-        (PixelFormat::Yuv422p14Le, "yuv422p14le", 1usize, 0usize),
-        (PixelFormat::Yuv422p14Be, "yuv422p14be", 1usize, 0usize),
-        (PixelFormat::Yuv444p14Le, "yuv444p14le", 0usize, 0usize),
-        (PixelFormat::Yuv444p14Be, "yuv444p14be", 0usize, 0usize),
-        (PixelFormat::Yuv420p16Le, "yuv420p16le", 1usize, 1usize),
-        (PixelFormat::Yuv420p16Be, "yuv420p16be", 1usize, 1usize),
-        (PixelFormat::Yuv422p16Le, "yuv422p16le", 1usize, 0usize),
-        (PixelFormat::Yuv422p16Be, "yuv422p16be", 1usize, 0usize),
-        (PixelFormat::Yuv444p16Le, "yuv444p16le", 0usize, 0usize),
-        (PixelFormat::Yuv444p16Be, "yuv444p16be", 0usize, 0usize),
+        (
+            PixelFormat::Yuv420p14Le,
+            "yuv420p14le",
+            1usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv420p14Be,
+            "yuv420p14be",
+            1usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv422p14Le,
+            "yuv422p14le",
+            1usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv422p14Be,
+            "yuv422p14be",
+            1usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv444p14Le,
+            "yuv444p14le",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv444p14Be,
+            "yuv444p14be",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv420p16Le,
+            "yuv420p16le",
+            1usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv420p16Be,
+            "yuv420p16be",
+            1usize,
+            1usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv422p16Le,
+            "yuv422p16le",
+            1usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv422p16Be,
+            "yuv422p16be",
+            1usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv444p16Le,
+            "yuv444p16le",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Yuv444p16Be,
+            "yuv444p16be",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (PixelFormat::Gbrp9Le, "gbrp9le", 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp9Be, "gbrp9be", 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp10Le, "gbrp10le", 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp10Be, "gbrp10be", 0usize, 0usize, 2usize),
+        (
+            PixelFormat::Gbrp10MsbLe,
+            "gbrp10msble",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Gbrp10MsbBe,
+            "gbrp10msbbe",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (PixelFormat::Gbrp12Le, "gbrp12le", 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp12Be, "gbrp12be", 0usize, 0usize, 2usize),
+        (
+            PixelFormat::Gbrp12MsbLe,
+            "gbrp12msble",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (
+            PixelFormat::Gbrp12MsbBe,
+            "gbrp12msbbe",
+            0usize,
+            0usize,
+            2usize,
+        ),
+        (PixelFormat::Gbrp14Le, "gbrp14le", 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp14Be, "gbrp14be", 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp16Le, "gbrp16le", 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp16Be, "gbrp16be", 0usize, 0usize, 2usize),
+        (PixelFormat::GbrpF16Le, "gbrpf16le", 0usize, 0usize, 2usize),
+        (PixelFormat::GbrpF16Be, "gbrpf16be", 0usize, 0usize, 2usize),
+        (PixelFormat::GbrpF32Le, "gbrpf32le", 0usize, 0usize, 4usize),
+        (PixelFormat::GbrpF32Be, "gbrpf32be", 0usize, 0usize, 4usize),
     ] {
-        let planar_crop_storage =
-            planar_yuv_strided_storage_with_sample_bytes(8, 4, 64, log2_chroma_w, log2_chroma_h, 2);
+        let planar_crop_storage = planar_yuv_strided_storage_with_sample_bytes(
+            8,
+            4,
+            64,
+            log2_chroma_w,
+            log2_chroma_h,
+            sample_bytes,
+        );
         let mut crop_planar_default = Frame::video(
             VideoFrame::new_with_line_sizes(
                 8,
@@ -1947,7 +2204,7 @@ fn strided_plane_sample_storage(
     for row in 0..height {
         let dst_start = row * line_size;
         for column in 0..width * sample_bytes {
-            storage[dst_start + column] = base + (row * 16 + column) as u8;
+            storage[dst_start + column] = base.wrapping_add((row * 16 + column) as u8);
         }
     }
     storage
@@ -2581,6 +2838,7 @@ static int planar_yuv_sample_bytes(enum AVPixelFormat format,
         return 1;
     case AV_PIX_FMT_YUV444P:
     case AV_PIX_FMT_YUVJ444P:
+    case AV_PIX_FMT_GBRP:
         return 1;
     case AV_PIX_FMT_YUV420P9LE:
     case AV_PIX_FMT_YUV420P9BE:
@@ -2655,7 +2913,26 @@ static int planar_yuv_sample_bytes(enum AVPixelFormat format,
         return 2;
     case AV_PIX_FMT_YUV444P16LE:
     case AV_PIX_FMT_YUV444P16BE:
+    case AV_PIX_FMT_GBRP9LE:
+    case AV_PIX_FMT_GBRP9BE:
+    case AV_PIX_FMT_GBRP10LE:
+    case AV_PIX_FMT_GBRP10BE:
+    case AV_PIX_FMT_GBRP10MSBLE:
+    case AV_PIX_FMT_GBRP10MSBBE:
+    case AV_PIX_FMT_GBRP12LE:
+    case AV_PIX_FMT_GBRP12BE:
+    case AV_PIX_FMT_GBRP12MSBLE:
+    case AV_PIX_FMT_GBRP12MSBBE:
+    case AV_PIX_FMT_GBRP14LE:
+    case AV_PIX_FMT_GBRP14BE:
+    case AV_PIX_FMT_GBRP16LE:
+    case AV_PIX_FMT_GBRP16BE:
+    case AV_PIX_FMT_GBRPF16LE:
+    case AV_PIX_FMT_GBRPF16BE:
         return 2;
+    case AV_PIX_FMT_GBRPF32LE:
+    case AV_PIX_FMT_GBRPF32BE:
+        return 4;
     default:
         return 0;
     }
@@ -4165,6 +4442,25 @@ int main(void)
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV422P16BE, "yuv422p16be");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV444P16LE, "yuv444p16le");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV444P16BE, "yuv444p16be");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP, "gbrp");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP9LE, "gbrp9le");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP9BE, "gbrp9be");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP10LE, "gbrp10le");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP10BE, "gbrp10be");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP10MSBLE, "gbrp10msble");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP10MSBBE, "gbrp10msbbe");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP12LE, "gbrp12le");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP12BE, "gbrp12be");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP12MSBLE, "gbrp12msble");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP12MSBBE, "gbrp12msbbe");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP14LE, "gbrp14le");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP14BE, "gbrp14be");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP16LE, "gbrp16le");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRP16BE, "gbrp16be");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRPF16LE, "gbrpf16le");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRPF16BE, "gbrpf16be");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRPF32LE, "gbrpf32le");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_GBRPF32BE, "gbrpf32be");
 
     AVFrame *invalid_crop = av_frame_alloc();
     fail_if(!invalid_crop, "invalid_crop allocation failed");

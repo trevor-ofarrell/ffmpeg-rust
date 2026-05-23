@@ -13503,7 +13503,8 @@ fn exercise_fixtures() {
                 let mut plane = vec![0; 64 * height];
                 for row in 0..height {
                     for column in 0..width * sample_bytes {
-                        plane[row * 64 + column] = base + (row * 16 + column) as u8;
+                        plane[row * 64 + column] =
+                            base.wrapping_add((row * 16 + column) as u8);
                     }
                 }
                 storage.push(plane);
@@ -13644,6 +13645,7 @@ fn exercise_fixtures() {
         (PixelFormat::YuvJ440p, 0usize, 1usize),
         (PixelFormat::Yuv444p, 0usize, 0usize),
         (PixelFormat::YuvJ444p, 0usize, 0usize),
+        (PixelFormat::Gbrp, 0usize, 0usize),
     ] {
         let planar_storage = make_planar_yuv_storage(log2_chroma_w, log2_chroma_h);
         let mut planar_default_crop = Frame::video(
@@ -13707,47 +13709,66 @@ fn exercise_fixtures() {
         );
     }
 
-    for (format, log2_chroma_w, log2_chroma_h) in [
-        (PixelFormat::Yuv420p9Le, 1usize, 1usize),
-        (PixelFormat::Yuv420p9Be, 1usize, 1usize),
-        (PixelFormat::Yuv422p9Le, 1usize, 0usize),
-        (PixelFormat::Yuv422p9Be, 1usize, 0usize),
-        (PixelFormat::Yuv444p9Le, 0usize, 0usize),
-        (PixelFormat::Yuv444p9Be, 0usize, 0usize),
-        (PixelFormat::Yuv420p10Le, 1usize, 1usize),
-        (PixelFormat::Yuv420p10Be, 1usize, 1usize),
-        (PixelFormat::Yuv422p10Le, 1usize, 0usize),
-        (PixelFormat::Yuv422p10Be, 1usize, 0usize),
-        (PixelFormat::Yuv440p10Le, 0usize, 1usize),
-        (PixelFormat::Yuv440p10Be, 0usize, 1usize),
-        (PixelFormat::Yuv444p10Le, 0usize, 0usize),
-        (PixelFormat::Yuv444p10Be, 0usize, 0usize),
-        (PixelFormat::Yuv444p10MsbLe, 0usize, 0usize),
-        (PixelFormat::Yuv444p10MsbBe, 0usize, 0usize),
-        (PixelFormat::Yuv420p12Le, 1usize, 1usize),
-        (PixelFormat::Yuv420p12Be, 1usize, 1usize),
-        (PixelFormat::Yuv422p12Le, 1usize, 0usize),
-        (PixelFormat::Yuv422p12Be, 1usize, 0usize),
-        (PixelFormat::Yuv440p12Le, 0usize, 1usize),
-        (PixelFormat::Yuv440p12Be, 0usize, 1usize),
-        (PixelFormat::Yuv444p12Le, 0usize, 0usize),
-        (PixelFormat::Yuv444p12Be, 0usize, 0usize),
-        (PixelFormat::Yuv444p12MsbLe, 0usize, 0usize),
-        (PixelFormat::Yuv444p12MsbBe, 0usize, 0usize),
-        (PixelFormat::Yuv420p14Le, 1usize, 1usize),
-        (PixelFormat::Yuv420p14Be, 1usize, 1usize),
-        (PixelFormat::Yuv422p14Le, 1usize, 0usize),
-        (PixelFormat::Yuv422p14Be, 1usize, 0usize),
-        (PixelFormat::Yuv444p14Le, 0usize, 0usize),
-        (PixelFormat::Yuv444p14Be, 0usize, 0usize),
-        (PixelFormat::Yuv420p16Le, 1usize, 1usize),
-        (PixelFormat::Yuv420p16Be, 1usize, 1usize),
-        (PixelFormat::Yuv422p16Le, 1usize, 0usize),
-        (PixelFormat::Yuv422p16Be, 1usize, 0usize),
-        (PixelFormat::Yuv444p16Le, 0usize, 0usize),
-        (PixelFormat::Yuv444p16Be, 0usize, 0usize),
+    for (format, log2_chroma_w, log2_chroma_h, sample_bytes) in [
+        (PixelFormat::Yuv420p9Le, 1usize, 1usize, 2usize),
+        (PixelFormat::Yuv420p9Be, 1usize, 1usize, 2usize),
+        (PixelFormat::Yuv422p9Le, 1usize, 0usize, 2usize),
+        (PixelFormat::Yuv422p9Be, 1usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p9Le, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p9Be, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv420p10Le, 1usize, 1usize, 2usize),
+        (PixelFormat::Yuv420p10Be, 1usize, 1usize, 2usize),
+        (PixelFormat::Yuv422p10Le, 1usize, 0usize, 2usize),
+        (PixelFormat::Yuv422p10Be, 1usize, 0usize, 2usize),
+        (PixelFormat::Yuv440p10Le, 0usize, 1usize, 2usize),
+        (PixelFormat::Yuv440p10Be, 0usize, 1usize, 2usize),
+        (PixelFormat::Yuv444p10Le, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p10Be, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p10MsbLe, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p10MsbBe, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv420p12Le, 1usize, 1usize, 2usize),
+        (PixelFormat::Yuv420p12Be, 1usize, 1usize, 2usize),
+        (PixelFormat::Yuv422p12Le, 1usize, 0usize, 2usize),
+        (PixelFormat::Yuv422p12Be, 1usize, 0usize, 2usize),
+        (PixelFormat::Yuv440p12Le, 0usize, 1usize, 2usize),
+        (PixelFormat::Yuv440p12Be, 0usize, 1usize, 2usize),
+        (PixelFormat::Yuv444p12Le, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p12Be, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p12MsbLe, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p12MsbBe, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv420p14Le, 1usize, 1usize, 2usize),
+        (PixelFormat::Yuv420p14Be, 1usize, 1usize, 2usize),
+        (PixelFormat::Yuv422p14Le, 1usize, 0usize, 2usize),
+        (PixelFormat::Yuv422p14Be, 1usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p14Le, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p14Be, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv420p16Le, 1usize, 1usize, 2usize),
+        (PixelFormat::Yuv420p16Be, 1usize, 1usize, 2usize),
+        (PixelFormat::Yuv422p16Le, 1usize, 0usize, 2usize),
+        (PixelFormat::Yuv422p16Be, 1usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p16Le, 0usize, 0usize, 2usize),
+        (PixelFormat::Yuv444p16Be, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp9Le, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp9Be, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp10Le, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp10Be, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp10MsbLe, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp10MsbBe, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp12Le, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp12Be, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp12MsbLe, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp12MsbBe, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp14Le, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp14Be, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp16Le, 0usize, 0usize, 2usize),
+        (PixelFormat::Gbrp16Be, 0usize, 0usize, 2usize),
+        (PixelFormat::GbrpF16Le, 0usize, 0usize, 2usize),
+        (PixelFormat::GbrpF16Be, 0usize, 0usize, 2usize),
+        (PixelFormat::GbrpF32Le, 0usize, 0usize, 4usize),
+        (PixelFormat::GbrpF32Be, 0usize, 0usize, 4usize),
     ] {
-        let planar_storage = make_planar_yuv_sample_storage(log2_chroma_w, log2_chroma_h, 2);
+        let planar_storage =
+            make_planar_yuv_sample_storage(log2_chroma_w, log2_chroma_h, sample_bytes);
         let mut planar_default_crop = Frame::video(
             VideoFrame::new_with_line_sizes(
                 8,
@@ -13773,19 +13794,18 @@ fn exercise_fixtures() {
         assert_eq!(planar_default_crop_video.width(), 8);
         assert_eq!(planar_default_crop_video.height(), 4);
         assert_eq!(
-            &planar_default_crop_video.planes()[0][..16],
-            &[
-                0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b,
-                0x1c, 0x1d, 0x1e, 0x1f
-            ]
+            &planar_default_crop_video.planes()[0][..8 * sample_bytes],
+            &(0..8 * sample_bytes)
+                .map(|column| 0x10 + column as u8)
+                .collect::<Vec<_>>()
         );
         assert_eq!(
             planar_default_crop_video.planes()[1].len(),
-            (8 >> log2_chroma_w) * (4 >> log2_chroma_h) * 2
+            (8 >> log2_chroma_w) * (4 >> log2_chroma_h) * sample_bytes
         );
         assert_eq!(
             planar_default_crop_video.planes()[2].len(),
-            (8 >> log2_chroma_w) * (4 >> log2_chroma_h) * 2
+            (8 >> log2_chroma_w) * (4 >> log2_chroma_h) * sample_bytes
         );
 
         let mut planar_unaligned_crop = Frame::video(
@@ -13803,18 +13823,18 @@ fn exercise_fixtures() {
         assert_eq!(planar_unaligned_crop_video.width(), 6);
         assert_eq!(planar_unaligned_crop_video.height(), 3);
         assert_eq!(
-            &planar_unaligned_crop_video.planes()[0][..12],
-            &[
-                0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d
-            ]
+            &planar_unaligned_crop_video.planes()[0][..6 * sample_bytes],
+            &(0..6 * sample_bytes)
+                .map(|column| 0x20 + sample_bytes as u8 + column as u8)
+                .collect::<Vec<_>>()
         );
         assert_eq!(
             planar_unaligned_crop_video.planes()[1].len(),
-            (6 >> log2_chroma_w) * (3 >> log2_chroma_h) * 2
+            (6 >> log2_chroma_w) * (3 >> log2_chroma_h) * sample_bytes
         );
         assert_eq!(
             planar_unaligned_crop_video.planes()[2].len(),
-            (6 >> log2_chroma_w) * (3 >> log2_chroma_h) * 2
+            (6 >> log2_chroma_w) * (3 >> log2_chroma_h) * sample_bytes
         );
     }
 
