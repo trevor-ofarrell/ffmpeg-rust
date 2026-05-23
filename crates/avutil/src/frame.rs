@@ -15299,7 +15299,17 @@ fn is_frame_crop_bitstream_format(format: PixelFormat) -> bool {
 
 fn planar_yuv_crop_sample_bytes(format: PixelFormat) -> Option<usize> {
     match format {
-        PixelFormat::Yuv420p | PixelFormat::Yuv422p | PixelFormat::Yuv444p => Some(1),
+        PixelFormat::Yuv420p
+        | PixelFormat::YuvJ420p
+        | PixelFormat::Yuv422p
+        | PixelFormat::YuvJ422p
+        | PixelFormat::Yuv410p
+        | PixelFormat::Yuv411p
+        | PixelFormat::YuvJ411p
+        | PixelFormat::Yuv440p
+        | PixelFormat::YuvJ440p
+        | PixelFormat::Yuv444p
+        | PixelFormat::YuvJ444p => Some(1),
         PixelFormat::Yuv420p9Le
         | PixelFormat::Yuv420p9Be
         | PixelFormat::Yuv422p9Le
@@ -20640,8 +20650,16 @@ mod tests {
         );
 
         for (format, log2_chroma_w, log2_chroma_h) in [
+            (PixelFormat::YuvJ420p, 1usize, 1usize),
             (PixelFormat::Yuv422p, 1usize, 0usize),
+            (PixelFormat::YuvJ422p, 1usize, 0usize),
+            (PixelFormat::Yuv410p, 2usize, 2usize),
+            (PixelFormat::Yuv411p, 2usize, 0usize),
+            (PixelFormat::YuvJ411p, 2usize, 0usize),
+            (PixelFormat::Yuv440p, 0usize, 1usize),
+            (PixelFormat::YuvJ440p, 0usize, 1usize),
             (PixelFormat::Yuv444p, 0usize, 0usize),
+            (PixelFormat::YuvJ444p, 0usize, 0usize),
         ] {
             let storage = planar_yuv_storage(8, 4, 64, log2_chroma_w, log2_chroma_h);
             let mut planar_default = Frame::video(

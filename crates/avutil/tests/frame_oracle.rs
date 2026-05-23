@@ -733,8 +733,16 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
 
     for (pixel_format, name, log2_chroma_w, log2_chroma_h) in [
+        (PixelFormat::YuvJ420p, "yuvj420p", 1usize, 1usize),
         (PixelFormat::Yuv422p, "yuv422p", 1usize, 0usize),
+        (PixelFormat::YuvJ422p, "yuvj422p", 1usize, 0usize),
+        (PixelFormat::Yuv410p, "yuv410p", 2usize, 2usize),
+        (PixelFormat::Yuv411p, "yuv411p", 2usize, 0usize),
+        (PixelFormat::YuvJ411p, "yuvj411p", 2usize, 0usize),
+        (PixelFormat::Yuv440p, "yuv440p", 0usize, 1usize),
+        (PixelFormat::YuvJ440p, "yuvj440p", 0usize, 1usize),
         (PixelFormat::Yuv444p, "yuv444p", 0usize, 0usize),
+        (PixelFormat::YuvJ444p, "yuvj444p", 0usize, 0usize),
     ] {
         let planar_crop_storage =
             planar_yuv_strided_storage(8, 4, 64, log2_chroma_w, log2_chroma_h);
@@ -2551,13 +2559,28 @@ static int planar_yuv_sample_bytes(enum AVPixelFormat format,
     *log2_chroma_h = 0;
     switch (format) {
     case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
         *log2_chroma_w = 1;
         *log2_chroma_h = 1;
         return 1;
     case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUVJ422P:
         *log2_chroma_w = 1;
         return 1;
+    case AV_PIX_FMT_YUV410P:
+        *log2_chroma_w = 2;
+        *log2_chroma_h = 2;
+        return 1;
+    case AV_PIX_FMT_YUV411P:
+    case AV_PIX_FMT_YUVJ411P:
+        *log2_chroma_w = 2;
+        return 1;
+    case AV_PIX_FMT_YUV440P:
+    case AV_PIX_FMT_YUVJ440P:
+        *log2_chroma_h = 1;
+        return 1;
     case AV_PIX_FMT_YUV444P:
+    case AV_PIX_FMT_YUVJ444P:
         return 1;
     case AV_PIX_FMT_YUV420P9LE:
     case AV_PIX_FMT_YUV420P9BE:
@@ -4094,8 +4117,16 @@ int main(void)
     exercise_packed_crop_pair("xyz12le", AV_PIX_FMT_XYZ12LE, 6);
     exercise_packed_crop_pair("xyz12be", AV_PIX_FMT_XYZ12BE, 6);
     exercise_yuv420p_crop_pair();
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUVJ420P, "yuvj420p");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV422P, "yuv422p");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUVJ422P, "yuvj422p");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV410P, "yuv410p");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV411P, "yuv411p");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUVJ411P, "yuvj411p");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV440P, "yuv440p");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUVJ440P, "yuvj440p");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV444P, "yuv444p");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUVJ444P, "yuvj444p");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV420P9LE, "yuv420p9le");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV420P9BE, "yuv420p9be");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV422P9LE, "yuv422p9le");

@@ -13634,8 +13634,16 @@ fn exercise_fixtures() {
     );
 
     for (format, log2_chroma_w, log2_chroma_h) in [
+        (PixelFormat::YuvJ420p, 1usize, 1usize),
         (PixelFormat::Yuv422p, 1usize, 0usize),
+        (PixelFormat::YuvJ422p, 1usize, 0usize),
+        (PixelFormat::Yuv410p, 2usize, 2usize),
+        (PixelFormat::Yuv411p, 2usize, 0usize),
+        (PixelFormat::YuvJ411p, 2usize, 0usize),
+        (PixelFormat::Yuv440p, 0usize, 1usize),
+        (PixelFormat::YuvJ440p, 0usize, 1usize),
         (PixelFormat::Yuv444p, 0usize, 0usize),
+        (PixelFormat::YuvJ444p, 0usize, 0usize),
     ] {
         let planar_storage = make_planar_yuv_storage(log2_chroma_w, log2_chroma_h);
         let mut planar_default_crop = Frame::video(
