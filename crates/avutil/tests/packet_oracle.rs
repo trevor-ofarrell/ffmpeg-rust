@@ -2413,6 +2413,27 @@ fn insert_frame_packet_side_data_bridge_rows(rows: &mut BTreeMap<String, Vec<Str
         side_data_list_summary_fields(&unique_packet_list),
     );
 
+    let mut combined_flag_packet_list = PacketSideDataList::from_entries(vec![
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x33]).unwrap(),
+    ]);
+    let combined = FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x99]).unwrap();
+    combined_flag_packet_list
+        .add_from_frame_side_data_with_flags(
+            &combined,
+            FrameSideDataFlags::UNIQUE.union(FrameSideDataFlags::REPLACE),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:frame-to-packet-unique-replace-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:frame-to-packet-unique-replace".to_string(),
+        side_data_list_summary_fields(&combined_flag_packet_list),
+    );
+
     let mut new_ref_packet_list = PacketSideDataList::new();
     let new_ref_frame =
         FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x66, 0x77]).unwrap();
@@ -2523,6 +2544,35 @@ fn insert_frame_packet_side_data_bridge_rows(rows: &mut BTreeMap<String, Vec<Str
     rows.insert(
         "packet:packet-to-frame-unique".to_string(),
         frame_side_data_summary_fields(&frame),
+    );
+
+    let mut combined_frame = Frame::empty();
+    combined_frame
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    combined_frame
+        .add_side_data_with_flags(
+            FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+            FrameSideDataFlags::EMPTY,
+        )
+        .unwrap();
+    SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x99])
+        .unwrap()
+        .add_to_frame(
+            &mut combined_frame,
+            FrameSideDataFlags::UNIQUE.union(FrameSideDataFlags::REPLACE),
+        )
+        .unwrap();
+    rows.insert(
+        "packet:packet-to-frame-unique-replace-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:packet-to-frame-unique-replace".to_string(),
+        frame_side_data_summary_fields(&combined_frame),
     );
 
     let mut new_ref_frame = Frame::empty();
@@ -4461,6 +4511,29 @@ static void exercise_frame_packet_side_data_bridge_api(void) {
                                   unique_psd, unique_nb_psd);
     av_packet_side_data_free(&unique_psd, &unique_nb_psd);
 
+    AVPacketSideData *combined_flag_psd = av_mallocz(3 * sizeof(*combined_flag_psd));
+    fail_if(!combined_flag_psd, "bridge unique-replace packet side-data seed failed");
+    int combined_flag_nb_psd = 3;
+    combined_flag_psd[0] = make_stack_side_data(AV_PKT_DATA_REPLAYGAIN, 0x11);
+    combined_flag_psd[1] = make_stack_side_data(AV_PKT_DATA_DISPLAYMATRIX, 0x22);
+    combined_flag_psd[2] = make_stack_side_data(AV_PKT_DATA_REPLAYGAIN, 0x33);
+    AVFrameSideData **combined_flag_fsd = NULL;
+    int combined_flag_nb_fsd = 0;
+    AVFrameSideData *combined_flag_frame = av_frame_side_data_new(
+        &combined_flag_fsd, &combined_flag_nb_fsd,
+        AV_FRAME_DATA_REPLAYGAIN, 1, 0);
+    fail_if(!combined_flag_frame, "av_frame_side_data_new bridge unique-replace seed failed");
+    combined_flag_frame->data[0] = 0x99;
+    ret = av_packet_side_data_from_frame(&combined_flag_psd, &combined_flag_nb_psd,
+                                         combined_flag_frame,
+                                         AV_FRAME_SIDE_DATA_FLAG_UNIQUE |
+                                             AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    printf("packet:frame-to-packet-unique-replace-ret|%d\n", ret);
+    print_side_data_array_summary("packet:frame-to-packet-unique-replace",
+                                  combined_flag_psd, combined_flag_nb_psd);
+    av_frame_side_data_free(&combined_flag_fsd, &combined_flag_nb_fsd);
+    av_packet_side_data_free(&combined_flag_psd, &combined_flag_nb_psd);
+
     AVPacketSideData *new_ref_psd = NULL;
     int new_ref_nb_psd = 0;
     AVFrameSideData **new_ref_fsd = NULL;
@@ -4557,6 +4630,35 @@ static void exercise_frame_packet_side_data_bridge_api(void) {
                                        AV_FRAME_SIDE_DATA_FLAG_UNIQUE);
     printf("packet:packet-to-frame-unique-ret|%d\n", ret);
     print_frame_side_data_array_summary("packet:packet-to-frame-unique", fsd, nb_fsd);
+
+    AVFrameSideData **unique_replace_fsd = NULL;
+    int unique_replace_nb_fsd = 0;
+    AVFrameSideData *unique_replace_replay = av_frame_side_data_new(
+        &unique_replace_fsd, &unique_replace_nb_fsd,
+        AV_FRAME_DATA_REPLAYGAIN, 1, 0);
+    fail_if(!unique_replace_replay, "av_frame_side_data_new bridge to-frame unique-replace replay failed");
+    unique_replace_replay->data[0] = 0x11;
+    AVFrameSideData *unique_replace_display = av_frame_side_data_new(
+        &unique_replace_fsd, &unique_replace_nb_fsd,
+        AV_FRAME_DATA_DISPLAYMATRIX, 1, 0);
+    fail_if(!unique_replace_display, "av_frame_side_data_new bridge to-frame unique-replace display failed");
+    unique_replace_display->data[0] = 0x22;
+    AVPacketSideData *unique_replace_psd = NULL;
+    int unique_replace_nb_psd = 0;
+    AVPacketSideData *unique_replace_packet = av_packet_side_data_new(
+        &unique_replace_psd, &unique_replace_nb_psd,
+        AV_PKT_DATA_REPLAYGAIN, 1, 0);
+    fail_if(!unique_replace_packet, "av_packet_side_data_new bridge to-frame unique-replace seed failed");
+    unique_replace_packet->data[0] = 0x99;
+    ret = av_packet_side_data_to_frame(&unique_replace_fsd, &unique_replace_nb_fsd,
+                                       unique_replace_packet,
+                                       AV_FRAME_SIDE_DATA_FLAG_UNIQUE |
+                                           AV_FRAME_SIDE_DATA_FLAG_REPLACE);
+    printf("packet:packet-to-frame-unique-replace-ret|%d\n", ret);
+    print_frame_side_data_array_summary("packet:packet-to-frame-unique-replace",
+                                        unique_replace_fsd, unique_replace_nb_fsd);
+    av_frame_side_data_free(&unique_replace_fsd, &unique_replace_nb_fsd);
+    av_packet_side_data_free(&unique_replace_psd, &unique_replace_nb_psd);
 
     AVPacketSideData *new_ref_to_psd = NULL;
     int new_ref_to_nb_psd = 0;

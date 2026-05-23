@@ -10870,6 +10870,38 @@ mod tests {
         );
         assert_eq!(duplicate_list.entries()[2].data(), &[0x33]);
 
+        let mut combined_flag_list = PacketSideDataList::from_entries(vec![
+            SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+            SideData::new_with_kind(PacketSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+            SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x33]).unwrap(),
+        ]);
+        let combined =
+            FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x99]).unwrap();
+        let entry = combined_flag_list
+            .add_from_frame_side_data_with_flags(
+                &combined,
+                FrameSideDataFlags::UNIQUE.union(FrameSideDataFlags::REPLACE),
+            )
+            .unwrap();
+        assert_eq!(entry.kind_id(), &PacketSideDataKind::ReplayGain);
+        assert_eq!(entry.data(), &[0x99]);
+        assert_eq!(combined_flag_list.entries().len(), 3);
+        assert_eq!(
+            combined_flag_list.entries()[0].kind_id(),
+            &PacketSideDataKind::ReplayGain
+        );
+        assert_eq!(combined_flag_list.entries()[0].data(), &[0x99]);
+        assert_eq!(
+            combined_flag_list.entries()[1].kind_id(),
+            &PacketSideDataKind::DisplayMatrix
+        );
+        assert_eq!(combined_flag_list.entries()[1].data(), &[0x22]);
+        assert_eq!(
+            combined_flag_list.entries()[2].kind_id(),
+            &PacketSideDataKind::ReplayGain
+        );
+        assert_eq!(combined_flag_list.entries()[2].data(), &[0x33]);
+
         let mut new_ref_list = PacketSideDataList::new();
         let new_ref =
             FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x66, 0x77]).unwrap();
@@ -10960,6 +10992,38 @@ mod tests {
             &FrameSideDataKind::ReplayGain
         );
         assert_eq!(frame.side_data()[1].data(), &[5]);
+
+        let mut combined_frame = Frame::empty();
+        combined_frame
+            .add_side_data_with_flags(
+                FrameSideData::new_with_kind(FrameSideDataKind::ReplayGain, vec![0x11]).unwrap(),
+                FrameSideDataFlags::EMPTY,
+            )
+            .unwrap();
+        combined_frame
+            .add_side_data_with_flags(
+                FrameSideData::new_with_kind(FrameSideDataKind::DisplayMatrix, vec![0x22]).unwrap(),
+                FrameSideDataFlags::EMPTY,
+            )
+            .unwrap();
+        SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x99])
+            .unwrap()
+            .add_to_frame(
+                &mut combined_frame,
+                FrameSideDataFlags::UNIQUE.union(FrameSideDataFlags::REPLACE),
+            )
+            .unwrap();
+        assert_eq!(combined_frame.side_data().len(), 2);
+        assert_eq!(
+            combined_frame.side_data()[0].kind_id(),
+            &FrameSideDataKind::DisplayMatrix
+        );
+        assert_eq!(combined_frame.side_data()[0].data(), &[0x22]);
+        assert_eq!(
+            combined_frame.side_data()[1].kind_id(),
+            &FrameSideDataKind::ReplayGain
+        );
+        assert_eq!(combined_frame.side_data()[1].data(), &[0x99]);
 
         let mut new_ref_frame = Frame::empty();
         SideData::new_with_kind(PacketSideDataKind::ReplayGain, vec![0x66, 0x77])
