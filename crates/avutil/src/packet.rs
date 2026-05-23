@@ -3900,6 +3900,24 @@ impl PacketDisplayMatrix {
         }
     }
 
+    pub fn flipped(mut self, horizontal: bool, vertical: bool) -> Self {
+        self.flip(horizontal, vertical);
+        self
+    }
+
+    pub fn flip(&mut self, horizontal: bool, vertical: bool) {
+        if horizontal {
+            self.elements[0] = self.elements[0].wrapping_neg();
+            self.elements[3] = self.elements[3].wrapping_neg();
+            self.elements[6] = self.elements[6].wrapping_neg();
+        }
+        if vertical {
+            self.elements[1] = self.elements[1].wrapping_neg();
+            self.elements[4] = self.elements[4].wrapping_neg();
+            self.elements[7] = self.elements[7].wrapping_neg();
+        }
+    }
+
     pub fn parse(data: &[u8]) -> AvResult<Self> {
         if data.len() != Self::DATA_LEN {
             return Err(AvError::invalid_data(format!(
@@ -9562,6 +9580,144 @@ mod tests {
                 .kind(),
             crate::AvErrorKind::InvalidArgument
         );
+    }
+
+    #[test]
+    fn packet_display_matrix_flip_helpers_match_ffmpeg_shape() {
+        let identity = PacketDisplayMatrix::identity();
+        let rot90 = PacketDisplayMatrix::from_clockwise_rotation_degrees(90.0).unwrap();
+        let raw = PacketDisplayMatrix::new([
+            65_536,
+            12_345,
+            7,
+            -23_456,
+            32_768,
+            -9,
+            11,
+            -13,
+            1_073_741_824,
+        ]);
+        let cases = [
+            (
+                identity,
+                false,
+                false,
+                [65_536, 0, 0, 0, 65_536, 0, 0, 0, 1_073_741_824],
+            ),
+            (
+                identity,
+                true,
+                false,
+                [-65_536, 0, 0, 0, 65_536, 0, 0, 0, 1_073_741_824],
+            ),
+            (
+                identity,
+                false,
+                true,
+                [65_536, 0, 0, 0, -65_536, 0, 0, 0, 1_073_741_824],
+            ),
+            (
+                identity,
+                true,
+                true,
+                [-65_536, 0, 0, 0, -65_536, 0, 0, 0, 1_073_741_824],
+            ),
+            (
+                rot90,
+                false,
+                false,
+                [0, 65_536, 0, -65_536, 0, 0, 0, 0, 1_073_741_824],
+            ),
+            (
+                rot90,
+                true,
+                false,
+                [0, 65_536, 0, 65_536, 0, 0, 0, 0, 1_073_741_824],
+            ),
+            (
+                rot90,
+                false,
+                true,
+                [0, -65_536, 0, -65_536, 0, 0, 0, 0, 1_073_741_824],
+            ),
+            (
+                rot90,
+                true,
+                true,
+                [0, -65_536, 0, 65_536, 0, 0, 0, 0, 1_073_741_824],
+            ),
+            (
+                raw,
+                false,
+                false,
+                [
+                    65_536,
+                    12_345,
+                    7,
+                    -23_456,
+                    32_768,
+                    -9,
+                    11,
+                    -13,
+                    1_073_741_824,
+                ],
+            ),
+            (
+                raw,
+                true,
+                false,
+                [
+                    -65_536,
+                    12_345,
+                    7,
+                    23_456,
+                    32_768,
+                    -9,
+                    -11,
+                    -13,
+                    1_073_741_824,
+                ],
+            ),
+            (
+                raw,
+                false,
+                true,
+                [
+                    65_536,
+                    -12_345,
+                    7,
+                    -23_456,
+                    -32_768,
+                    -9,
+                    11,
+                    13,
+                    1_073_741_824,
+                ],
+            ),
+            (
+                raw,
+                true,
+                true,
+                [
+                    -65_536,
+                    -12_345,
+                    7,
+                    23_456,
+                    -32_768,
+                    -9,
+                    -11,
+                    13,
+                    1_073_741_824,
+                ],
+            ),
+        ];
+
+        for (input, horizontal, vertical, expected) in cases {
+            assert_eq!(input.flipped(horizontal, vertical).elements(), expected);
+            let mut in_place = input;
+            in_place.flip(horizontal, vertical);
+            assert_eq!(in_place.elements(), expected);
+        }
     }
 
     #[test]

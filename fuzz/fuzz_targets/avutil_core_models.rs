@@ -12038,6 +12038,39 @@ fn exercise_fixtures() {
         AvErrorKind::InvalidArgument
     );
     assert_eq!(
+        packet_rotation_matrix.flipped(true, false).elements(),
+        [0, 65_536, 0, 65_536, 0, 0, 0, 0, 1_073_741_824]
+    );
+    assert_eq!(
+        packet_rotation_matrix.flipped(false, true).elements(),
+        [0, -65_536, 0, -65_536, 0, 0, 0, 0, 1_073_741_824]
+    );
+    let packet_raw_flip_matrix = PacketDisplayMatrix::new([
+        65_536,
+        12_345,
+        7,
+        -23_456,
+        32_768,
+        -9,
+        11,
+        -13,
+        1_073_741_824,
+    ]);
+    assert_eq!(
+        packet_raw_flip_matrix.flipped(true, true).elements(),
+        [
+            -65_536,
+            -12_345,
+            7,
+            23_456,
+            -32_768,
+            -9,
+            -11,
+            13,
+            1_073_741_824,
+        ]
+    );
+    assert_eq!(
         SideData::new_display_matrix(packet_display_matrix)
             .unwrap()
             .display_matrix()

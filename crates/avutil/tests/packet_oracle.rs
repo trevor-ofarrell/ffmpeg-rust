@@ -507,6 +507,7 @@ fn insert_side_data_payload_layout_rows(rows: &mut BTreeMap<String, Vec<String>>
         )
         .to_string()],
     );
+    rows.insert("packet:display-flip".to_string(), display_flip_fields());
     rows.insert(
         "packet:payload-layout-stereo3d".to_string(),
         payload_layout_fields(
@@ -1980,6 +1981,39 @@ fn rounded_rotation_field(rotation: Option<f64>) -> String {
     }
 }
 
+fn display_flip_fields() -> Vec<String> {
+    let mut fields = Vec::new();
+    let identity = PacketDisplayMatrix::identity();
+    let rot90 = PacketDisplayMatrix::from_clockwise_rotation_degrees(90.0)
+        .expect("display rotation matrix for 90 degrees");
+    let raw = PacketDisplayMatrix::new([
+        65_536,
+        12_345,
+        7,
+        -23_456,
+        32_768,
+        -9,
+        11,
+        -13,
+        PacketDisplayMatrix::FIXED_2_30_ONE,
+    ]);
+    for (name, matrix) in [("identity", identity), ("rot90", rot90), ("raw", raw)] {
+        for (horizontal, vertical) in [(false, false), (true, false), (false, true), (true, true)] {
+            fields.push(name.to_string());
+            fields.push(u8::from(horizontal).to_string());
+            fields.push(u8::from(vertical).to_string());
+            fields.extend(
+                matrix
+                    .flipped(horizontal, vertical)
+                    .elements()
+                    .iter()
+                    .map(ToString::to_string),
+            );
+        }
+    }
+    fields
+}
+
 fn dictionary_payload_fields(bytes: &[u8]) -> Vec<String> {
     vec![
         u8::from(!bytes.is_empty()).to_string(),
@@ -3019,6 +3053,40 @@ static void print_display_rotation_helpers(void) {
            isnan(av_display_rotation_get(singular)) ? 1 : 0);
 }
 
+static void print_display_flip_case(const char *name, const int32_t input[9], int hflip, int vflip) {
+    int32_t matrix[9];
+    for (int i = 0; i < 9; i++)
+        matrix[i] = input[i];
+    av_display_matrix_flip(matrix, hflip, vflip);
+    printf("|%s|%d|%d", name, hflip ? 1 : 0, vflip ? 1 : 0);
+    for (int i = 0; i < 9; i++)
+        printf("|%d", matrix[i]);
+}
+
+static void print_display_flip_helpers(void) {
+    const int32_t identity[9] = { 65536, 0, 0, 0, 65536, 0, 0, 0, 1073741824 };
+    int32_t rot90[9];
+    const int32_t raw[9] = {
+        65536, 12345, 7, -23456, 32768, -9, 11, -13, 1073741824
+    };
+    av_display_rotation_set(rot90, 90.0);
+
+    printf("packet:display-flip");
+    print_display_flip_case("identity", identity, 0, 0);
+    print_display_flip_case("identity", identity, 1, 0);
+    print_display_flip_case("identity", identity, 0, 1);
+    print_display_flip_case("identity", identity, 1, 1);
+    print_display_flip_case("rot90", rot90, 0, 0);
+    print_display_flip_case("rot90", rot90, 1, 0);
+    print_display_flip_case("rot90", rot90, 0, 1);
+    print_display_flip_case("rot90", rot90, 1, 1);
+    print_display_flip_case("raw", raw, 0, 0);
+    print_display_flip_case("raw", raw, 1, 0);
+    print_display_flip_case("raw", raw, 0, 1);
+    print_display_flip_case("raw", raw, 1, 1);
+    printf("\n");
+}
+
 static AVPacket *new_packet(void) {
     AVPacket *pkt = av_packet_alloc();
     fail_if(!pkt, "av_packet_alloc failed");
@@ -3634,6 +3702,7 @@ int main(void) {
     print_picture_type_inventory();
     print_side_data_payload_layouts();
     print_display_rotation_helpers();
+    print_display_flip_helpers();
 
     pkt = packet_with_common_props();
     av_packet_rescale_ts(pkt, (AVRational){ 1, 90000 }, (AVRational){ 1, 1000 });
