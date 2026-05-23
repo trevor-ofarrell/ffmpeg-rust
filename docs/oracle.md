@@ -301,10 +301,11 @@ against the Rust `FrameFifo` model.
 The `av_frame_apply_cropping` rows prove FFmpeg's default left-crop rounding to
 keep the data pointer at least 32-byte aligned for gray8, RGB24, and BGR24,
 exact-left behavior under `AV_FRAME_CROP_UNALIGNED`, crop-field reset on
-success, and `ERANGE` no-mutation behavior for invalid crop rectangles. A
-temporary RGBA default-crop calibration row returned `AVERROR_BUG`
-(`-558323010`) in the pinned oracle, so RGBA remains outside the claimed crop
-surface.
+success, and `ERANGE` no-mutation behavior for invalid crop rectangles. They
+also prove the 32-bit packed RGB/RGBA family (`rgba`, `bgra`, `argb`, `abgr`,
+`0rgb`, `rgb0`, `0bgr`, and `bgr0`) returns `AVERROR_BUG` without mutation for
+default nonzero-left crop while succeeding with exact-left behavior under
+`AV_FRAME_CROP_UNALIGNED`.
 The standalone side-data array rows exercise `av_frame_side_data_new()`,
 `av_frame_side_data_get()`, `av_frame_side_data_remove_by_props()`, and
 `av_frame_side_data_free()`: duplicate insertion without flags fails without

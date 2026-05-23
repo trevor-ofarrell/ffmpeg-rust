@@ -13492,6 +13492,68 @@ fn exercise_fixtures() {
         &[19, 20, 21, 22, 23, 24]
     );
 
+    for format in [
+        PixelFormat::Rgba,
+        PixelFormat::Bgra,
+        PixelFormat::Argb,
+        PixelFormat::Abgr,
+        PixelFormat::ZeroRgb,
+        PixelFormat::Rgb0,
+        PixelFormat::ZeroBgr,
+        PixelFormat::Bgr0,
+    ] {
+        let mut packed32_crop_storage = vec![0; 64 * 4];
+        for row in 0..4 {
+            for column in 0..32 {
+                packed32_crop_storage[row * 64 + column] = (row * 16 + column) as u8;
+            }
+        }
+        let mut packed32_default_crop = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                format,
+                vec![packed32_crop_storage.clone()],
+                vec![64],
+            )
+            .unwrap(),
+        );
+        packed32_default_crop.set_crop_offsets(1, 0, 1, 1);
+        let packed32_before = packed32_default_crop.clone();
+        let packed32_error = packed32_default_crop
+            .apply_cropping(FrameCropFlags::NONE)
+            .unwrap_err();
+        assert_eq!(
+            packed32_error.code().map(AvErrorCode::raw),
+            Some(AvErrorCode::BUG.raw())
+        );
+        assert_eq!(packed32_default_crop, packed32_before);
+
+        let mut packed32_unaligned_crop = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                format,
+                vec![packed32_crop_storage],
+                vec![64],
+            )
+            .unwrap(),
+        );
+        packed32_unaligned_crop.set_crop_offsets(1, 0, 1, 1);
+        packed32_unaligned_crop
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .unwrap();
+        let FrameData::Video(packed32_unaligned_crop_video) = packed32_unaligned_crop.data() else {
+            panic!("constructed packed32 crop frame changed variant");
+        };
+        assert_eq!(packed32_unaligned_crop_video.width(), 6);
+        assert_eq!(packed32_unaligned_crop_video.height(), 3);
+        assert_eq!(
+            &packed32_unaligned_crop_video.planes()[0][..8],
+            &[20, 21, 22, 23, 24, 25, 26, 27]
+        );
+    }
+
     let mut invalid_crop = Frame::video(
         VideoFrame::new_with_line_sizes(
             6,

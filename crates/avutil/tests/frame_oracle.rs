@@ -634,6 +634,67 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         frame_fields(&crop_bgr24_unaligned),
     );
 
+    for pixel_format in [
+        PixelFormat::Rgba,
+        PixelFormat::Bgra,
+        PixelFormat::Argb,
+        PixelFormat::Abgr,
+        PixelFormat::ZeroRgb,
+        PixelFormat::Rgb0,
+        PixelFormat::ZeroBgr,
+        PixelFormat::Bgr0,
+    ] {
+        let row_name = pixel_format.name();
+        let packed32_crop_storage = packed_strided_storage(8, 4, 4, 64);
+        let mut crop_packed32_default = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                vec![packed32_crop_storage.clone()],
+                vec![64],
+            )
+            .unwrap(),
+        );
+        crop_packed32_default.set_crop_offsets(1, 0, 1, 1);
+        let crop_packed32_default_ret = crop_packed32_default
+            .apply_cropping(FrameCropFlags::NONE)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{row_name}-default-ret"),
+            vec![crop_packed32_default_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{row_name}-default"),
+            frame_fields(&crop_packed32_default),
+        );
+
+        let mut crop_packed32_unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                vec![packed32_crop_storage],
+                vec![64],
+            )
+            .unwrap(),
+        );
+        crop_packed32_unaligned.set_crop_offsets(1, 0, 1, 1);
+        let crop_packed32_unaligned_ret = crop_packed32_unaligned
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{row_name}-unaligned-ret"),
+            vec![crop_packed32_unaligned_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{row_name}-unaligned"),
+            frame_fields(&crop_packed32_unaligned),
+        );
+    }
+
     let mut invalid_crop = Frame::video(
         VideoFrame::new_with_line_sizes(6, 4, PixelFormat::Gray8, vec![crop_storage], vec![64])
             .unwrap(),
@@ -2091,6 +2152,16 @@ static void print_video_planes(const AVFrame *frame)
     case AV_PIX_FMT_BGR24:
         bytes_per_pixel = 3;
         break;
+    case AV_PIX_FMT_RGBA:
+    case AV_PIX_FMT_BGRA:
+    case AV_PIX_FMT_ARGB:
+    case AV_PIX_FMT_ABGR:
+    case AV_PIX_FMT_0RGB:
+    case AV_PIX_FMT_RGB0:
+    case AV_PIX_FMT_0BGR:
+    case AV_PIX_FMT_BGR0:
+        bytes_per_pixel = 4;
+        break;
     default:
         break;
     }
@@ -2401,6 +2472,52 @@ static void print_frame(const char *name, const AVFrame *frame)
            frame->nb_side_data);
     print_side_summary(frame);
     printf("|%d\n", frame->hw_frames_ctx != NULL);
+}
+
+static void fill_video_packed(AVFrame *frame, int bytes_per_pixel);
+
+static void exercise_packed32_crop_pair(const char *name,
+                                        enum AVPixelFormat format)
+{
+    char row[96];
+    AVFrame *crop_default = av_frame_alloc();
+    fail_if(!crop_default, "packed32 default crop allocation failed");
+    crop_default->format = format;
+    crop_default->width = 8;
+    crop_default->height = 4;
+    fail_if(av_frame_get_buffer(crop_default, 64) < 0,
+            "packed32 default crop get_buffer failed");
+    fill_video_packed(crop_default, 4);
+    crop_default->crop_top = 1;
+    crop_default->crop_left = 1;
+    crop_default->crop_right = 1;
+    int crop_default_ret = av_frame_apply_cropping(crop_default, 0);
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-default-ret", name);
+    printf("%s|%d\n", row, crop_default_ret);
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-default", name);
+    print_frame(row, crop_default);
+
+    AVFrame *crop_unaligned = av_frame_alloc();
+    fail_if(!crop_unaligned, "packed32 unaligned crop allocation failed");
+    crop_unaligned->format = format;
+    crop_unaligned->width = 8;
+    crop_unaligned->height = 4;
+    fail_if(av_frame_get_buffer(crop_unaligned, 64) < 0,
+            "packed32 unaligned crop get_buffer failed");
+    fill_video_packed(crop_unaligned, 4);
+    crop_unaligned->crop_top = 1;
+    crop_unaligned->crop_left = 1;
+    crop_unaligned->crop_right = 1;
+    int crop_unaligned_ret = av_frame_apply_cropping(
+        crop_unaligned, AV_FRAME_CROP_UNALIGNED);
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-unaligned-ret", name);
+    printf("%s|%d\n", row, crop_unaligned_ret);
+    fail_if(crop_unaligned_ret < 0, "packed32 unaligned crop apply failed");
+    snprintf(row, sizeof(row), "frame:apply-crop-%s-unaligned", name);
+    print_frame(row, crop_unaligned);
+
+    av_frame_free(&crop_unaligned);
+    av_frame_free(&crop_default);
 }
 
 static void print_share(const char *name, const AVFrame *left,
@@ -3103,6 +3220,15 @@ int main(void)
     fail_if(crop_bgr24_unaligned_ret < 0,
             "crop_bgr24_unaligned apply failed");
     print_frame("frame:apply-crop-bgr24-unaligned", crop_bgr24_unaligned);
+
+    exercise_packed32_crop_pair("rgba", AV_PIX_FMT_RGBA);
+    exercise_packed32_crop_pair("bgra", AV_PIX_FMT_BGRA);
+    exercise_packed32_crop_pair("argb", AV_PIX_FMT_ARGB);
+    exercise_packed32_crop_pair("abgr", AV_PIX_FMT_ABGR);
+    exercise_packed32_crop_pair("0rgb", AV_PIX_FMT_0RGB);
+    exercise_packed32_crop_pair("rgb0", AV_PIX_FMT_RGB0);
+    exercise_packed32_crop_pair("0bgr", AV_PIX_FMT_0BGR);
+    exercise_packed32_crop_pair("bgr0", AV_PIX_FMT_BGR0);
 
     AVFrame *invalid_crop = av_frame_alloc();
     fail_if(!invalid_crop, "invalid_crop allocation failed");
