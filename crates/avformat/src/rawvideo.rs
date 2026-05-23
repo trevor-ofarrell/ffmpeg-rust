@@ -552,8 +552,8 @@ mod tests {
         for (format, width, height, payload_len, expected_size) in [
             (RawVideoPixelFormat::Xv30Le, 3, 2, 24, 24),
             (RawVideoPixelFormat::Xv30Be, 3, 2, 24, 24),
-            (RawVideoPixelFormat::Xv36Le, 3, 2, 36, 36),
-            (RawVideoPixelFormat::Xv36Be, 3, 2, 36, 36),
+            (RawVideoPixelFormat::Xv36Le, 3, 2, 48, 48),
+            (RawVideoPixelFormat::Xv36Be, 3, 2, 48, 48),
             (RawVideoPixelFormat::Xv48Le, 3, 2, 48, 48),
             (RawVideoPixelFormat::Xv48Be, 3, 2, 48, 48),
             (RawVideoPixelFormat::V30xLe, 3, 2, 24, 24),
@@ -1903,8 +1903,8 @@ mod tests {
         for (format, width, height, expected_size) in [
             (RawVideoPixelFormat::Xv30Le, 3, 2, 24),
             (RawVideoPixelFormat::Xv30Be, 3, 2, 24),
-            (RawVideoPixelFormat::Xv36Le, 3, 2, 36),
-            (RawVideoPixelFormat::Xv36Be, 3, 2, 36),
+            (RawVideoPixelFormat::Xv36Le, 3, 2, 48),
+            (RawVideoPixelFormat::Xv36Be, 3, 2, 48),
             (RawVideoPixelFormat::Xv48Le, 3, 2, 48),
             (RawVideoPixelFormat::Xv48Be, 3, 2, 48),
             (RawVideoPixelFormat::V30xLe, 3, 2, 24),

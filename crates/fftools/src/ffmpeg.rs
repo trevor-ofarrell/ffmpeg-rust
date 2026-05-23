@@ -1387,9 +1387,12 @@ fn run_avi_file_muxer<F>(
 where
     F: FnMut() -> Result<Option<Packet>, FfmpegError>,
 {
-    if pixel_format != RawVideoPixelFormat::Rgb24 {
+    if !matches!(
+        pixel_format,
+        RawVideoPixelFormat::Rgb24 | RawVideoPixelFormat::Bgr24
+    ) {
         return Err(FfmpegError::unsupported(
-            "ffmpeg-rs AVI output currently supports only rgb24 rawvideo input",
+            "ffmpeg-rs AVI output currently supports only rgb24 or bgr24 rawvideo input",
         ));
     }
 
@@ -1398,9 +1401,12 @@ where
         .map_err(|_| FfmpegError::invalid_data("AVI width does not fit u32"))?;
     let height = u32::try_from(height)
         .map_err(|_| FfmpegError::invalid_data("AVI height does not fit u32"))?;
-    let mut muxer = AviMuxer::new_rgb24(width, height, frame_rate).map_err(|err| {
-        FfmpegError::invalid_data(format!("failed to configure AVI muxer: {err}"))
-    })?;
+    let mut muxer = match pixel_format {
+        RawVideoPixelFormat::Rgb24 => AviMuxer::new_rgb24(width, height, frame_rate),
+        RawVideoPixelFormat::Bgr24 => AviMuxer::new_bgr24(width, height, frame_rate),
+        _ => unreachable!("unsupported AVI pixel format filtered above"),
+    }
+    .map_err(|err| FfmpegError::invalid_data(format!("failed to configure AVI muxer: {err}")))?;
 
     while let Some(packet) = read_packet()? {
         muxer
@@ -2105,12 +2111,12 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         let mut expected = Vec::new();
-        expected.extend_from_slice(&first);
-        expected.extend_from_slice(&second);
+        expected.extend_from_slice(&[0, 1, 2, 3, 4, 5, 0, 0]);
+        expected.extend_from_slice(&[6, 7, 8, 9, 10, 11, 0, 0]);
 
         assert_eq!(output.output_format(), Some("streamhash"));
         assert_eq!(output.packet_count(), 2);
-        assert_eq!(output.byte_count(), 12);
+        assert_eq!(output.byte_count(), 16);
         assert!(output.stderr().is_empty());
         assert_eq!(
             output.stdout(),
@@ -2146,14 +2152,14 @@ mod tests {
 
         assert_eq!(output.output_format(), Some("framecrc"));
         assert_eq!(output.packet_count(), 2);
-        assert_eq!(output.byte_count(), 12);
+        assert_eq!(output.byte_count(), 16);
         assert!(output.stderr().is_empty());
         assert!(output
             .stdout()
-            .contains("0,          0,          0,        1,        6"));
+            .contains("0,          0,          0,        1,        8"));
         assert!(output
             .stdout()
-            .contains("0,          1,          1,        1,        6"));
+            .contains("0,          1,          1,        1,        8"));
     }
 
     #[test]
@@ -2181,7 +2187,7 @@ mod tests {
 
         assert_eq!(output.output_format(), Some("null"));
         assert_eq!(output.packet_count(), 1);
-        assert_eq!(output.byte_count(), 6);
+        assert_eq!(output.byte_count(), 8);
         assert!(output.stdout().is_empty());
         assert!(output.stderr().is_empty());
     }
@@ -4821,10 +4827,69 @@ mod tests {
         assert_eq!(stream.frame_rate(), Rational::new(25, 1).unwrap());
         assert_eq!(stream.bit_count(), 24);
         assert_eq!(stream.compression(), "BI_RGB");
-        assert_eq!(first_packet.data(), first);
+        assert_eq!(first_packet.data(), [0, 1, 2, 3, 4, 5, 0, 0]);
         assert_eq!(first_packet.pts(), Some(0));
-        assert_eq!(second_packet.data(), second);
+        assert_eq!(second_packet.data(), [6, 7, 8, 9, 10, 11, 0, 0]);
         assert_eq!(second_packet.pts(), Some(1));
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
+    fn runs_rawvideo_bgr24_to_avi_file_output() {
+        let first = [0, 1, 2, 3, 4, 5];
+        let second = [6, 7, 8, 9, 10, 11];
+        let payload = [first.as_slice(), second.as_slice()].concat();
+        let input_path = write_temp_bytes("rawvideo-bgr24-avi-file-input", "raw", &payload);
+        let output_path = unique_temp_path("rawvideo-bgr24-avi-file-output", "avi");
+        let input_arg = input_path.to_string_lossy().into_owned();
+        let output_arg = output_path.to_string_lossy().into_owned();
+
+        let output = ffmpeg_output(&strings(&[
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr24",
+            "-s",
+            "2x1",
+            "-r",
+            "25",
+            "-i",
+            input_arg.as_str(),
+            "-f",
+            "avi",
+            output_arg.as_str(),
+        ]))
+        .expect("rawvideo bgr24 to AVI file output path should execute");
+        let written = fs::read(&output_path).expect("AVI output file should be readable");
+        let mut demuxer = avformat::AviDemuxer::open(&written).expect("AVI output should parse");
+        let first_packet = demuxer
+            .read_packet()
+            .expect("first AVI packet read should succeed")
+            .expect("first frame should exist");
+        let second_packet = demuxer
+            .read_packet()
+            .expect("second AVI packet read should succeed")
+            .expect("second frame should exist");
+
+        remove_temp_files(&[input_path, output_path]);
+
+        assert_eq!(output.output_format(), Some("avi"));
+        assert_eq!(output.packet_count(), 2);
+        assert_eq!(output.byte_count(), u64::try_from(written.len()).unwrap());
+        assert!(output.stdout().is_empty());
+        assert!(output.stderr().is_empty());
+        assert_eq!(demuxer.info().width(), 2);
+        assert_eq!(demuxer.info().height(), 1);
+        assert_eq!(demuxer.info().total_frames(), 2);
+        let stream = &demuxer.info().streams()[0];
+        assert_eq!(stream.handler(), "\0\0\0\0");
+        assert_eq!(stream.frame_rate(), Rational::new(25, 1).unwrap());
+        assert_eq!(stream.bit_count(), 24);
+        assert_eq!(stream.compression(), "BI_RGB");
+        assert_eq!(first_packet.data(), [0, 1, 2, 3, 4, 5, 0, 0]);
+        assert_eq!(first_packet.side_data()[0].data(), b"00dc");
+        assert_eq!(second_packet.data(), [6, 7, 8, 9, 10, 11, 0, 0]);
+        assert_eq!(second_packet.side_data()[0].data(), b"00dc");
         assert!(demuxer.read_packet().unwrap().is_none());
     }
 
@@ -4892,7 +4957,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_avi_file_output_for_non_rgb24_rawvideo() {
+    fn rejects_avi_file_output_for_non_rgb24_or_bgr24_rawvideo() {
         let input_path = write_temp_bytes("rawvideo-avi-yuv-input", "raw", &[0, 1, 2, 3, 4, 5]);
         let output_path = unique_temp_path("rawvideo-avi-yuv-output", "avi");
         let input_arg = input_path.to_string_lossy().into_owned();
@@ -4913,11 +4978,11 @@ mod tests {
             "avi",
             output_arg.as_str(),
         ]))
-        .expect_err("AVI output should reject non-rgb24 rawvideo input");
+        .expect_err("AVI output should reject non-rgb24/bgr24 rawvideo input");
 
         remove_temp_files(&[input_path, output_path]);
 
-        assert!(err.message().contains("supports only rgb24"));
+        assert!(err.message().contains("supports only rgb24 or bgr24"));
     }
 
     #[test]

@@ -7,6 +7,12 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # `av_packet_unref()` resets an already-empty allocated packet and remains
 # idempotent after releasing a populated packet. Rust unit and
 # `avutil_core_models` fuzz-model invariants cover the same reset shape.
+# Latest rawvideo/AVI evidence: the ignored rawvideo oracle harness now
+# compares bounded raw `bgr24` input to `-f avi` output against pinned FFmpeg
+# 8.1.1 `-c:v rawvideo -f avi` output after demuxing both AVI files through
+# the Rust demuxer. This proves the current AVI path's zero stream handler,
+# `00dc` packet chunks, top-down-height demuxing, and 4-byte DIB scanline
+# padding exposed in packet payloads.
 # Latest framecrc/rawvideo evidence: `FrameCrcMuxer` now emits FFmpeg-style
 # packet record rows using the framecrc Adler-style checksum initialized at
 # zero. The ignored rawvideo oracle harness compares normalized `rgb24`
@@ -338,6 +344,7 @@ unit_tests = [
 differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-libavcodec-packet-core",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-file-output",
+  "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-avi-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-yuv4mpegpipe-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framehash-records",
@@ -352,6 +359,7 @@ differential_tests = [
   "packet_oracle::libavcodec_packet_core_lifecycle_matches_packet_model",
   "rawvideo_oracle::rawvideo_rgb24_file_output_matches_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle",
+  "rawvideo_oracle::rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framehash_records_match_ffmpeg_oracle",
@@ -376,6 +384,10 @@ fuzz_targets = ["avutil_core_models"]
 # row is now mapped to avutil-packet, validating the Rust raw pcm_s16le
 # demuxer -> Packet -> WAV muxer path against pinned FFmpeg streamcopy bytes,
 # including FFmpeg's default RIFF LIST/INFO/ISFT encoder chunk.
+# Latest rawvideo to AVI media-integration update: the raw bgr24 to AVI oracle
+# row is now mapped to avutil-packet, validating the Rust rawvideo demuxer ->
+# Packet -> AVI muxer path against pinned FFmpeg rawvideo AVI packet semantics,
+# including 4-byte DIB scanline padding exposed in demuxed packets.
 # Latest yuv4mpegpipe media-integration update: the yuv4mpegpipe byte-copy
 # oracle row is now mapped to avutil-packet, validating the Rust rawvideo
 # yuv420p demuxer -> Packet -> yuv4mpegpipe muxer path against pinned FFmpeg
@@ -3272,21 +3284,25 @@ blocked_reason = "The current rgb24 and gbrp10msble rawvideo differential rows p
 [[component]]
 id = "fftools-ffmpeg-rawvideo-avi-file-output"
 kind = "cli"
-ffmpeg_name = "ffmpeg raw rgb24 to avi file"
+ffmpeg_name = "ffmpeg raw rgb24/bgr24 to avi file"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
-oracle_command = "ffmpeg -f rawvideo -pix_fmt rgb24 -s <WxH> -r <rate> -i <input.raw> -f avi <output.avi>"
+oracle_command = "ffmpeg -f rawvideo -pix_fmt bgr24 -s <WxH> -r <rate> -i <input.raw> -c:v rawvideo -f avi <output.avi>"
 rust_command = "cargo test -p fftools ffmpeg"
 unit_tests = [
   "ffmpeg::tests::runs_rawvideo_rgb24_to_avi_file_output",
+  "ffmpeg::tests::runs_rawvideo_bgr24_to_avi_file_output",
   "ffmpeg::tests::rejects_avi_file_output_overwrite",
-  "ffmpeg::tests::rejects_avi_file_output_for_non_rgb24_rawvideo",
+  "ffmpeg::tests::rejects_avi_file_output_for_non_rgb24_or_bgr24_rawvideo",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-rawvideo-avi-file-output|oracle-rawvideo-avi-file-output",
+  "rawvideo_oracle::rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-rawvideo-avi-file-output|local-ffmpeg-unit"]
 fuzz_targets = []
-notes = "ffmpeg-rs command execution supports explicit raw rgb24 input packet-copy to a local AVI output file with explicit -f rawvideo, -pix_fmt rgb24, -s, and -r input parameters and explicit -f avi output format. It uses the Rust rawvideo demuxer and constrained AviMuxer, creates output files with no overwrite, validates the generated output through the Rust AVI demuxer in tests, and rejects non-rgb24 rawvideo inputs instead of pretending to convert. No oracle differential or upstream FATE coverage exists yet. Audio streams, indexes, OpenDML, palettes, compressed video, color conversion, overwrite confirmation flags, broad muxer selection, and non-rawvideo inputs remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "ffmpeg-rs command execution supports explicit raw rgb24 or bgr24 input to a local AVI output file with explicit -f rawvideo, -pix_fmt rgb24/bgr24, -s, and -r input parameters and explicit -f avi output format. It uses the Rust rawvideo demuxer and constrained AviMuxer, creates output files with no overwrite, validates the generated output through the Rust AVI demuxer in tests, and rejects other rawvideo inputs instead of pretending to convert. The pinned bgr24 oracle row compares demuxed Rust AVI output against FFmpeg 8.1.1 `-c:v rawvideo -f avi` output, including zero stream handler, 00dc chunks, and 4-byte DIB scanline padding exposed in demuxed packet payloads. The rgb24 path remains local-only because FFmpeg's direct rgb24 AVI streamcopy emits unreadable empty packets for this constrained shape. Audio streams, indexes, OpenDML, palettes, compressed video, color conversion, overwrite confirmation flags, broad muxer selection, and upstream FATE coverage remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -3866,7 +3882,7 @@ id = "avformat-rawvideo-demuxer"
 kind = "demuxer"
 ffmpeg_name = "rawvideo"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 3
 oracle_command = "ffmpeg -f rawvideo -pix_fmt <fmt> -s <size> -framerate <rate> -i <input> -f framecrc -"
 rust_command = "cargo test -p avformat rawvideo"
@@ -3888,12 +3904,14 @@ unit_tests = [
 differential_tests = [
   "crates/fftools/tests/rawvideo_oracle.rs::rawvideo_rgb24_file_output_matches_ffmpeg_oracle",
   "crates/fftools/tests/rawvideo_oracle.rs::rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle",
+  "crates/fftools/tests/rawvideo_oracle.rs::rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle",
   "tests/differential/mappings.txt:avformat-rawvideo-demuxer|oracle-rawvideo-file-output",
+  "tests/differential/mappings.txt:avformat-rawvideo-demuxer|oracle-rawvideo-avi-file-output",
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-rawvideo-demuxer|local-avformat-rawvideo-unit"]
 fuzz_targets = ["avformat_rawvideo"]
-notes = "Initial rawvideo demuxer slices fixed-size frame packets for gray, ya8, ya16le, ya16be, gray9le, gray9be, gray10le, gray10be, gray12le, gray12be, gray14le, gray14be, gray16le, gray16be, gray32le, gray32be, grayf16le, grayf16be, grayf32le, grayf32be, rgb24, bgr24, rgb48le, rgb48be, bgr48le, bgr48be, rgba64le, rgba64be, bgra64le, bgra64be, rgba, bgra, argb, abgr, 0rgb, rgb0, 0bgr, bgr0, gbrp, gbrp9le, gbrp9be, gbrp10le, gbrp10be, gbrp12le, gbrp12be, gbrp14le, gbrp14be, gbrp16le, gbrp16be, yuv420p, yuv422p, yuv410p, yuv411p, yuv440p, and yuv444p with shared VideoStreamParameters dimensions/frame-size validation, frame-rate validation, monotonic PTS, and truncated-frame rejection. Build-checked cargo-fuzz target avformat_rawvideo exercises geometry/format/rate validation, frame slicing, packet timing, side-data invariants, and current PixelFormat inventory selection, but actual local fuzz execution is blocked until cargo-fuzz is installed. CLI wiring, probe integration, more pixel formats, differential tests, and upstream FATE are pending. The local FATE-runner smoke mapping executes the rawvideo unit filter only and does not count as upstream FATE parity."
-# Latest update: tests/differential/mappings.txt now selects the ignored rawvideo oracle integration harness for this demuxer and injects FFMPEG_ORACLE through a validated {oracle_ffmpeg} mapping environment value; local execution through the pinned WSL oracle wrapper passed for the current rgb24 and gbrp10msble rows.
+notes = "Initial rawvideo demuxer slices fixed-size frame packets for gray, ya8, ya16le, ya16be, gray9le, gray9be, gray10le, gray10be, gray12le, gray12be, gray14le, gray14be, gray16le, gray16be, gray32le, gray32be, grayf16le, grayf16be, grayf32le, grayf32be, rgb24, bgr24, rgb48le, rgb48be, bgr48le, bgr48be, rgba64le, rgba64be, bgra64le, bgra64be, rgba, bgra, argb, abgr, 0rgb, rgb0, 0bgr, bgr0, gbrp, gbrp9le, gbrp9be, gbrp10le, gbrp10be, gbrp12le, gbrp12be, gbrp14le, gbrp14be, gbrp16le, gbrp16be, yuv420p, yuv422p, yuv410p, yuv411p, yuv440p, and yuv444p with shared VideoStreamParameters dimensions/frame-size validation, frame-rate validation, monotonic PTS, and truncated-frame rejection. The ignored rawvideo oracle rows now cover byte-preserving rawvideo file-output for rgb24 and gbrp10msble plus raw bgr24 input into AVI output, proving the demuxed bgr24 packets feed the constrained AVI muxer into FFmpeg-matching 4-byte DIB scanline-padded AVI packets. Build-checked cargo-fuzz target avformat_rawvideo exercises geometry/format/rate validation, frame slicing, packet timing, side-data invariants, and current PixelFormat inventory selection, but actual local fuzz execution is blocked until cargo-fuzz is installed. Probe integration, more pixel formats, broader differential tests, upstream FATE, and sustained fuzz execution remain pending. The local FATE-runner smoke mapping executes the rawvideo unit filter only and does not count as upstream FATE parity."
+# Latest update: tests/differential/mappings.txt now selects the ignored rawvideo oracle integration harness for this demuxer and injects FFMPEG_ORACLE through a validated {oracle_ffmpeg} mapping environment value; local execution through the pinned WSL oracle wrapper passed for the current rgb24, gbrp10msble, and bgr24-to-AVI rows.
 # Prior update: an ignored fftools rawvideo oracle harness now exercises demux packetization against FFmpeg streamcopy rawvideo output for rgb24 and gbrp10msble.
 # Prior update: rawvideo demux frame-size and side-data coverage includes gbrp10msble frame slicing, rawvideo_pix_fmt side data, gbrp10msb/gbrp12msb payload sizing, and MSB-aligned yuv444p10/yuv444p12 payload sizing through the shared PixelFormat model.
 # Prior update: rawvideo demux frame-size and side-data coverage includes rgb96le and rgba128be frame slicing, rawvideo_pix_fmt side data, and rgb96/rgba128 payload sizing through the shared PixelFormat model.
@@ -4111,21 +4129,25 @@ id = "avformat-avi-demuxer"
 kind = "demuxer"
 ffmpeg_name = "avi"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 4
 oracle_command = "ffmpeg -i <input.avi> -f framecrc -"
 rust_command = "cargo test -p avformat avi"
 unit_tests = [
   "avi::tests::parses_video_metadata_and_movi_packets",
+  "avi::tests::parses_top_down_bitmap_height_as_positive_stream_height",
   "avi::tests::skips_unknown_chunks_and_reads_rec_lists",
   "avi::tests::rejects_bad_riff_headers_and_chunk_bounds",
   "avi::tests::rejects_missing_required_headers_and_stream_mismatch",
   "avi::tests::rejects_unsupported_streams_and_unknown_packet_streams",
 ]
-differential_tests = []
-fate_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:avformat-avi-demuxer|oracle-rawvideo-avi-file-output",
+  "rawvideo_oracle::rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle",
+]
+fate_tests = ["tests/fate/mappings.txt:avformat-avi-demuxer|local-avformat-avi-unit"]
 fuzz_targets = ["avformat_avi"]
-notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, and packet timing side data. It has a hand-written ProbeRegistry descriptor for RIFF/AVI signature, .avi extension, and common AVI MIME types, and is wired to constrained ffmpeg-rs AVI input to stdout null/framecrc output paths and ffprobe-rs AVI format/stream/packet summaries. Build-checked cargo-fuzz target avformat_avi exercises chunk parsing, stream metadata, packet timing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, broader CLI wiring, differential tests, and FATE are pending."
+notes = "Initial RIFF AVI demuxer parses constrained video-only AVI files with avih/strh/strf metadata, simple movi packet extraction, rec-list traversal, chunk bounds checks, unsupported stream rejection, and packet timing side data. It accepts FFmpeg's top-down negative BITMAPINFOHEADER height by exposing the positive stream height. It has a hand-written ProbeRegistry descriptor for RIFF/AVI signature, .avi extension, and common AVI MIME types, and is wired to constrained ffmpeg-rs AVI input to stdout null/framecrc output paths and ffprobe-rs AVI format/stream/packet summaries. The pinned raw bgr24 to AVI oracle row parses FFmpeg 8.1.1 `-c:v rawvideo -f avi` output through the Rust demuxer and compares stream metadata plus demuxed 00dc packet payloads against Rust AVI output. Build-checked cargo-fuzz target avformat_avi exercises chunk parsing, stream metadata, packet timing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Audio streams, indexes, OpenDML, palette handling, non-BI_RGB video, interleaving semantics, seeking, broader CLI wiring, upstream FATE, and sustained fuzz execution remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -4133,20 +4155,23 @@ id = "avformat-avi-muxer"
 kind = "muxer"
 ffmpeg_name = "avi"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 4
-oracle_command = "ffmpeg -i <input> -f avi <output.avi>"
+oracle_command = "ffmpeg -f rawvideo -pix_fmt bgr24 -s <WxH> -r <rate> -i <input.raw> -c:v rawvideo -f avi <output.avi>"
 rust_command = "cargo test -p avformat avi::tests"
 unit_tests = [
   "avi::tests::muxer_writes_headers_and_round_trips_through_demuxer",
   "avi::tests::muxer_rejects_invalid_parameters_and_packets",
   "avi::tests::muxer_finish_prevents_more_writes",
-  "avi::tests::muxer_pads_odd_sized_chunks_without_exposing_padding_as_payload",
+  "avi::tests::muxer_pads_scanlines_without_exposing_riff_chunk_padding_as_payload",
 ]
-differential_tests = []
-fate_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:avformat-avi-muxer|oracle-rawvideo-avi-file-output",
+  "rawvideo_oracle::rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle",
+]
+fate_tests = ["tests/fate/mappings.txt:avformat-avi-muxer|local-avformat-avi-unit"]
 fuzz_targets = ["avformat_avi_muxer"]
-notes = "Initial RIFF AVI muxer writes constrained one-stream RGB24 AVI files with shared VideoStreamParameters dimensions/frame-size validation, AVI-specific classic header limit checks, avih/strh/strf headers, 00db movi chunks, word padding, stream-0 payload validation, finalization checks, and demuxer round-trip tests. It is wired to a constrained ffmpeg-rs raw rgb24 to AVI file-output path. Build-checked cargo-fuzz target avformat_avi_muxer covers constructor validation, accepted/rejected packet writes, state non-mutation on rejected packets, header/render stability, word padding behavior, post-finish rejection, and AviDemuxer round trips, but actual local fuzz execution is blocked until cargo-fuzz is installed. Audio streams, indexes, OpenDML, palettes, compressed video, interleaving, metadata, broader CLI wiring, differential tests, and FATE are pending."
+notes = "Initial RIFF AVI muxer writes constrained one-stream RGB24/BGR24 AVI files with shared VideoStreamParameters dimensions/frame-size validation, AVI-specific classic header limit checks, avih/strh/strf headers, 00dc movi chunks, DIB 4-byte scanline padding, RIFF word padding, stream-0 unpadded rawvideo payload validation, finalization checks, and demuxer round-trip tests. It is wired to constrained ffmpeg-rs raw rgb24/bgr24 to AVI file-output paths. The pinned bgr24 oracle row compares demuxed Rust AVI output against FFmpeg 8.1.1 `-c:v rawvideo -f avi` output, including zero stream handler and scanline-padded packet payloads. Build-checked cargo-fuzz target avformat_avi_muxer covers constructor validation, accepted/rejected packet writes, state non-mutation on rejected packets, header/render stability, padding behavior, post-finish rejection, and AviDemuxer round trips, but actual local fuzz execution is blocked until cargo-fuzz is installed. Audio streams, indexes, OpenDML, palettes, compressed video, interleaving, metadata, broader CLI wiring, upstream FATE, and sustained fuzz execution remain pending."
 blocked_reason = ""
 
 [[component]]

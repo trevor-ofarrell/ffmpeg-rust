@@ -241,12 +241,21 @@ pub struct AviMuxer {
 
 impl AviMuxer {
     pub fn new_rgb24(width: u32, height: u32, frame_rate: Rational) -> AvResult<Self> {
-        let video = VideoStreamParameters::from_u32_with_context(
-            width,
-            height,
-            PixelFormat::Rgb24,
-            "AVI video",
-        )?;
+        Self::new_raw24(width, height, PixelFormat::Rgb24, frame_rate)
+    }
+
+    pub fn new_bgr24(width: u32, height: u32, frame_rate: Rational) -> AvResult<Self> {
+        Self::new_raw24(width, height, PixelFormat::Bgr24, frame_rate)
+    }
+
+    fn new_raw24(
+        width: u32,
+        height: u32,
+        pixel_format: PixelFormat,
+        frame_rate: Rational,
+    ) -> AvResult<Self> {
+        let video =
+            VideoStreamParameters::from_u32_with_context(width, height, pixel_format, "AVI video")?;
         validate_video_geometry(video)?;
         validate_positive_frame_rate(frame_rate)?;
 
@@ -299,13 +308,14 @@ impl AviMuxer {
             AvErrorKind::InvalidData,
             "AVI packet",
         )?;
+        let padded = pad_dib_rgb24_frame(packet.data(), self.video)?;
         if self.packets.len() == usize::try_from(u32::MAX).unwrap_or(usize::MAX) {
             return Err(AvError::invalid_argument(
                 "AVI frame count exceeds classic RIFF header range",
             ));
         }
 
-        self.packets.push(packet.data().to_vec());
+        self.packets.push(padded);
         Ok(())
     }
 
@@ -315,7 +325,7 @@ impl AviMuxer {
         })?;
         let width = video_width_u32(self.video)?;
         let height = video_height_u32(self.video)?;
-        let frame_size = self.video.frame_size();
+        let frame_size = dib_rgb24_frame_size(self.video)?;
         let frame_size_u32 = u32_len(frame_size, "AVI frame size")?;
         let frame_rate_num = positive_u32_from_i32(self.frame_rate.num(), "AVI frame rate")?;
         let frame_rate_den = positive_u32_from_i32(self.frame_rate.den(), "AVI frame rate")?;
@@ -342,7 +352,7 @@ impl AviMuxer {
                         write_chunk(
                             *STRH_ID,
                             &stream_header_payload(
-                                *b"DIB ",
+                                *b"\0\0\0\0",
                                 frame_rate_den,
                                 frame_rate_num,
                                 frame_count,
@@ -363,7 +373,7 @@ impl AviMuxer {
         let movi_chunks = self
             .packets
             .iter()
-            .map(|packet| write_chunk(*b"00db", packet))
+            .map(|packet| write_chunk(*b"00dc", packet))
             .collect::<AvResult<Vec<_>>>()?;
         let movi = write_list(*MOVI_LIST, &movi_chunks)?;
         write_riff_avi(&[hdrl, movi])
@@ -553,7 +563,54 @@ fn validate_video_geometry(video: VideoStreamParameters) -> AvResult<()> {
     i32_from_u32(video_width_u32(video)?, "AVI video width")?;
     i32_from_u32(video_height_u32(video)?, "AVI video height")?;
     u32_len(video.frame_size(), "AVI RGB24 frame size")?;
+    u32_len(dib_rgb24_frame_size(video)?, "AVI DIB RGB24 frame size")?;
     Ok(())
+}
+
+fn dib_rgb24_frame_size(video: VideoStreamParameters) -> AvResult<usize> {
+    let width = usize::try_from(video_width_u32(video)?)
+        .map_err(|_| AvError::invalid_argument("AVI video width is out of range"))?;
+    let height = usize::try_from(video_height_u32(video)?)
+        .map_err(|_| AvError::invalid_argument("AVI video height is out of range"))?;
+    let row_bytes = width
+        .checked_mul(3)
+        .ok_or_else(|| AvError::invalid_argument("AVI RGB24 row size overflow"))?;
+    let stride = dib_stride(row_bytes)?;
+    stride
+        .checked_mul(height)
+        .ok_or_else(|| AvError::invalid_argument("AVI RGB24 frame size overflow"))
+}
+
+fn pad_dib_rgb24_frame(data: &[u8], video: VideoStreamParameters) -> AvResult<Vec<u8>> {
+    let width = usize::try_from(video_width_u32(video)?)
+        .map_err(|_| AvError::invalid_argument("AVI video width is out of range"))?;
+    let height = usize::try_from(video_height_u32(video)?)
+        .map_err(|_| AvError::invalid_argument("AVI video height is out of range"))?;
+    let row_bytes = width
+        .checked_mul(3)
+        .ok_or_else(|| AvError::invalid_argument("AVI RGB24 row size overflow"))?;
+    let stride = dib_stride(row_bytes)?;
+    if row_bytes == stride {
+        return Ok(data.to_vec());
+    }
+
+    let mut padded = Vec::with_capacity(
+        stride
+            .checked_mul(height)
+            .ok_or_else(|| AvError::invalid_argument("AVI RGB24 frame size overflow"))?,
+    );
+    for row in data.chunks_exact(row_bytes) {
+        padded.extend_from_slice(row);
+        padded.resize(padded.len() + (stride - row_bytes), 0);
+    }
+    Ok(padded)
+}
+
+fn dib_stride(row_bytes: usize) -> AvResult<usize> {
+    row_bytes
+        .checked_add(3)
+        .map(|value| value & !3)
+        .ok_or_else(|| AvError::invalid_argument("AVI DIB stride overflow"))
 }
 
 fn validate_positive_frame_rate(frame_rate: Rational) -> AvResult<()> {
@@ -763,14 +820,26 @@ fn parse_bitmap_info(data: &[u8]) -> AvResult<AviBitmapInfo> {
     let bit_count = reader.read_u16_le()?;
     let compression_value = reader.read_u32_le()?;
 
-    if width <= 0 || height <= 0 {
+    if width <= 0 {
         return Err(AvError::unsupported(
-            "AVI video stream requires positive bottom-up dimensions",
+            "AVI video stream requires positive width",
+        ));
+    }
+    if height == 0 {
+        return Err(AvError::unsupported(
+            "AVI video stream requires non-zero height",
         ));
     }
     if planes != 1 {
         return Err(AvError::invalid_data("AVI video stream planes must be 1"));
     }
+    let height = if height < 0 {
+        height
+            .checked_neg()
+            .ok_or_else(|| AvError::invalid_data("AVI video height is out of range"))?
+    } else {
+        height
+    };
 
     Ok(AviBitmapInfo {
         width: u32::try_from(width)
@@ -1020,6 +1089,37 @@ mod tests {
     }
 
     #[test]
+    fn parses_top_down_bitmap_height_as_positive_stream_height() {
+        let frame = frame_bytes(6, 0x20);
+        let hdrl = list(
+            *HDRL_LIST,
+            &[
+                chunk(*AVIH_ID, &main_header(1, 2, 1, 1)),
+                list(
+                    *STRL_LIST,
+                    &[
+                        chunk(
+                            *STRH_ID,
+                            &stream_header(*b"vids", *b"\0\0\0\0", 1, 25, 1, 0),
+                        ),
+                        chunk(*STRF_ID, &bitmap_info(2, -1, 24, 0)),
+                    ],
+                ),
+            ],
+        );
+        let movi = list(*MOVI_LIST, &[chunk(*b"00db", &frame)]);
+        let mut demuxer = AviDemuxer::open(&riff_avi(&[hdrl, movi])).unwrap();
+
+        let stream = &demuxer.info().streams()[0];
+        assert_eq!(stream.width(), 2);
+        assert_eq!(stream.height(), 1);
+        assert_eq!(stream.handler(), "\0\0\0\0");
+        let packet = demuxer.read_packet().unwrap().unwrap();
+        assert_eq!(packet.data(), frame);
+        assert!(demuxer.read_packet().unwrap().is_none());
+    }
+
+    #[test]
     fn rejects_bad_riff_headers_and_chunk_bounds() {
         assert_eq!(
             AviDemuxer::open(b"not an avi").unwrap_err().kind(),
@@ -1137,14 +1237,14 @@ mod tests {
 
         let mut demuxer = AviDemuxer::open(&bytes).unwrap();
         assert_eq!(demuxer.info().microseconds_per_frame(), 40_000);
-        assert_eq!(demuxer.info().max_bytes_per_second(), 300);
+        assert_eq!(demuxer.info().max_bytes_per_second(), 400);
         assert_eq!(demuxer.info().total_frames(), 2);
         assert_eq!(demuxer.info().width(), 2);
         assert_eq!(demuxer.info().height(), 2);
         assert_eq!(demuxer.info().packet_count(), 2);
 
         let stream = &demuxer.info().streams()[0];
-        assert_eq!(stream.handler(), "DIB ");
+        assert_eq!(stream.handler(), "\0\0\0\0");
         assert_eq!(stream.time_base(), Rational::new(1, 25).unwrap());
         assert_eq!(stream.frame_rate(), Rational::new(25, 1).unwrap());
         assert_eq!(stream.length(), 2);
@@ -1154,15 +1254,18 @@ mod tests {
         assert_eq!(stream.bit_count(), 24);
         assert_eq!(stream.compression(), "BI_RGB");
 
+        let padded_first = dib_padded_frame(&first, 2);
+        let padded_second = dib_padded_frame(&second, 2);
+
         let first_packet = demuxer.read_packet().unwrap().unwrap();
-        assert_eq!(first_packet.data(), first);
+        assert_eq!(first_packet.data(), padded_first);
         assert_eq!(first_packet.pts(), Some(0));
         assert_eq!(first_packet.dts(), Some(0));
         assert_eq!(first_packet.duration(), 1);
-        assert_eq!(first_packet.side_data()[0].data(), b"00db");
+        assert_eq!(first_packet.side_data()[0].data(), b"00dc");
 
         let second_packet = demuxer.read_packet().unwrap().unwrap();
-        assert_eq!(second_packet.data(), second);
+        assert_eq!(second_packet.data(), padded_second);
         assert_eq!(second_packet.pts(), Some(1));
         assert!(demuxer.read_packet().unwrap().is_none());
     }
@@ -1240,7 +1343,7 @@ mod tests {
     }
 
     #[test]
-    fn muxer_pads_odd_sized_chunks_without_exposing_padding_as_payload() {
+    fn muxer_pads_scanlines_without_exposing_riff_chunk_padding_as_payload() {
         let frame = vec![1, 2, 3];
         let mut muxer = AviMuxer::new_rgb24(1, 1, Rational::new(1, 1).unwrap()).unwrap();
         muxer.write_packet(&Packet::new(frame.clone(), 0)).unwrap();
@@ -1250,7 +1353,7 @@ mod tests {
 
         let mut demuxer = AviDemuxer::open(&bytes).unwrap();
         let packet = demuxer.read_packet().unwrap().unwrap();
-        assert_eq!(packet.data(), frame);
+        assert_eq!(packet.data(), [1, 2, 3, 0]);
         assert!(demuxer.read_packet().unwrap().is_none());
     }
 
@@ -1381,6 +1484,17 @@ mod tests {
         (0..len)
             .map(|offset| start.wrapping_add(offset as u8))
             .collect()
+    }
+
+    fn dib_padded_frame(frame: &[u8], width: usize) -> Vec<u8> {
+        let row_bytes = width * 3;
+        let stride = (row_bytes + 3) & !3;
+        let mut padded = Vec::new();
+        for row in frame.chunks_exact(row_bytes) {
+            padded.extend_from_slice(row);
+            padded.resize(padded.len() + stride - row_bytes, 0);
+        }
+        padded
     }
 
     fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {

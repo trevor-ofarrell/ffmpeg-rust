@@ -1,3 +1,5 @@
+use avformat::{AviDemuxer, AviMediaType};
+use avutil::Rational;
 use fftools::ffmpeg_output;
 use std::{
     env, fs,
@@ -16,6 +18,12 @@ fn rawvideo_rgb24_file_output_matches_ffmpeg_oracle() {
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle() {
     compare_rawvideo_file_output("gbrp10msble", "2x1", "25", &(0_u8..24).collect::<Vec<_>>());
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle() {
+    compare_rawvideo_avi_file_output("bgr24", 2, 1, "25", &(0_u8..12).collect::<Vec<_>>());
 }
 
 #[test]
@@ -159,6 +167,177 @@ fn compare_rawvideo_file_output(pixel_format: &str, size: &str, rate: &str, payl
     assert!(rust.stdout().is_empty());
     assert!(rust.stderr().is_empty());
     assert_eq!(rust_bytes, oracle_bytes);
+}
+
+fn compare_rawvideo_avi_file_output(
+    pixel_format: &str,
+    width: u32,
+    height: u32,
+    rate: &str,
+    payload: &[u8],
+) {
+    let oracle = oracle_ffmpeg();
+    let size = format!("{width}x{height}");
+    let input_path = write_temp_bytes(&format!("{pixel_format}-avi-input"), "raw", payload);
+    let rust_output_path = unique_temp_path(&format!("{pixel_format}-rust-output"), "avi");
+    let oracle_output_path = unique_temp_path(&format!("{pixel_format}-oracle-output"), "avi");
+
+    let input_arg = input_path.to_string_lossy().into_owned();
+    let rust_output_arg = rust_output_path.to_string_lossy().into_owned();
+    let oracle_output_arg = oracle_output_path.to_string_lossy().into_owned();
+
+    let rust = ffmpeg_output(&strings(&[
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        pixel_format,
+        "-s",
+        size.as_str(),
+        "-r",
+        rate,
+        "-i",
+        input_arg.as_str(),
+        "-f",
+        "avi",
+        rust_output_arg.as_str(),
+    ]))
+    .expect("Rust rawvideo to AVI file-output path should execute");
+
+    let oracle_status = Command::new(&oracle)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            pixel_format,
+            "-s",
+            size.as_str(),
+            "-r",
+            rate,
+            "-i",
+            input_arg.as_str(),
+            "-c:v",
+            "rawvideo",
+            "-f",
+            "avi",
+            oracle_output_arg.as_str(),
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    assert!(
+        oracle_status.status.success(),
+        "oracle failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_status.status.code(),
+        String::from_utf8_lossy(&oracle_status.stdout),
+        String::from_utf8_lossy(&oracle_status.stderr)
+    );
+
+    let rust_bytes = fs::read(&rust_output_path).expect("Rust AVI output should be readable");
+    let oracle_bytes = fs::read(&oracle_output_path).expect("oracle AVI output should be readable");
+
+    remove_temp_files(&[input_path, rust_output_path, oracle_output_path]);
+
+    assert_eq!(rust.output_format(), Some("avi"));
+    assert_eq!(rust.packet_count(), 2);
+    assert_eq!(rust.byte_count(), u64::try_from(rust_bytes.len()).unwrap());
+    assert!(rust.stdout().is_empty());
+    assert!(rust.stderr().is_empty());
+
+    let mut rust_demuxer = AviDemuxer::open(&rust_bytes).expect("Rust AVI output should demux");
+    let mut oracle_demuxer =
+        AviDemuxer::open(&oracle_bytes).expect("oracle AVI output should demux");
+    compare_avi_demuxed_semantics(
+        &mut rust_demuxer,
+        &mut oracle_demuxer,
+        width,
+        height,
+        Rational::new(25, 1).unwrap(),
+        payload,
+    );
+}
+
+fn compare_avi_demuxed_semantics(
+    rust: &mut AviDemuxer,
+    oracle: &mut AviDemuxer,
+    expected_width: u32,
+    expected_height: u32,
+    expected_frame_rate: Rational,
+    expected_payload: &[u8],
+) {
+    assert_eq!(rust.info().width(), expected_width);
+    assert_eq!(oracle.info().width(), expected_width);
+    assert_eq!(rust.info().height(), expected_height);
+    assert_eq!(oracle.info().height(), expected_height);
+    assert_eq!(rust.info().total_frames(), oracle.info().total_frames());
+    assert_eq!(rust.info().packet_count(), oracle.info().packet_count());
+    assert_eq!(rust.info().streams().len(), 1);
+    assert_eq!(oracle.info().streams().len(), 1);
+
+    let rust_stream = &rust.info().streams()[0];
+    let oracle_stream = &oracle.info().streams()[0];
+    assert_eq!(rust_stream.index(), oracle_stream.index());
+    assert_eq!(rust_stream.media_type(), AviMediaType::Video);
+    assert_eq!(oracle_stream.media_type(), AviMediaType::Video);
+    assert_eq!(rust_stream.handler(), oracle_stream.handler());
+    assert_eq!(rust_stream.time_base(), oracle_stream.time_base());
+    assert_eq!(rust_stream.frame_rate(), expected_frame_rate);
+    assert_eq!(oracle_stream.frame_rate(), expected_frame_rate);
+    assert_eq!(rust_stream.length(), oracle_stream.length());
+    assert_eq!(rust_stream.sample_size(), oracle_stream.sample_size());
+    assert_eq!(rust_stream.width(), expected_width);
+    assert_eq!(oracle_stream.width(), expected_width);
+    assert_eq!(rust_stream.height(), expected_height);
+    assert_eq!(oracle_stream.height(), expected_height);
+    assert_eq!(rust_stream.bit_count(), 24);
+    assert_eq!(oracle_stream.bit_count(), 24);
+    assert_eq!(rust_stream.compression(), oracle_stream.compression());
+
+    let mut demuxed = Vec::new();
+    let mut packet_index = 0_i64;
+    loop {
+        let rust_packet = rust
+            .read_packet()
+            .expect("Rust AVI packet read should succeed");
+        let oracle_packet = oracle
+            .read_packet()
+            .expect("oracle AVI packet read should succeed");
+        match (rust_packet, oracle_packet) {
+            (Some(rust_packet), Some(oracle_packet)) => {
+                assert_eq!(rust_packet.stream_index(), oracle_packet.stream_index());
+                assert_eq!(rust_packet.pts(), Some(packet_index));
+                assert_eq!(oracle_packet.pts(), Some(packet_index));
+                assert_eq!(rust_packet.dts(), Some(packet_index));
+                assert_eq!(oracle_packet.dts(), Some(packet_index));
+                assert_eq!(rust_packet.duration(), oracle_packet.duration());
+                assert_eq!(rust_packet.side_data(), oracle_packet.side_data());
+                assert_eq!(rust_packet.data(), oracle_packet.data());
+                demuxed.extend_from_slice(rust_packet.data());
+                packet_index += 1;
+            }
+            (None, None) => break,
+            other => panic!("packet count mismatch between Rust and oracle AVI outputs: {other:?}"),
+        }
+    }
+
+    assert_eq!(
+        demuxed,
+        dib_padded_rgb24_payload(expected_payload, expected_width)
+    );
+}
+
+fn dib_padded_rgb24_payload(payload: &[u8], width: u32) -> Vec<u8> {
+    let row_bytes = usize::try_from(width).unwrap() * 3;
+    let stride = (row_bytes + 3) & !3;
+    let mut padded = Vec::new();
+    for row in payload.chunks_exact(row_bytes) {
+        padded.extend_from_slice(row);
+        padded.resize(padded.len() + stride - row_bytes, 0);
+    }
+    padded
 }
 
 fn compare_rawvideo_framecrc_records(pixel_format: &str, size: &str, rate: &str, payload: &[u8]) {

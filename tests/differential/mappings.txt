@@ -9,6 +9,11 @@ fftools-ffmpeg-rawvideo-file-output|oracle-rawvideo-file-output|.|cargo|env:FFMP
 avformat-rawvideo-demuxer|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
 avformat-rawvideo-muxer|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
 avutil-packet|oracle-rawvideo-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|--|--ignored
+fftools-ffmpeg-rawvideo-avi-file-output|oracle-rawvideo-avi-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle|--|--ignored
+avformat-rawvideo-demuxer|oracle-rawvideo-avi-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle|--|--ignored
+avformat-avi-muxer|oracle-rawvideo-avi-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle|--|--ignored
+avformat-avi-demuxer|oracle-rawvideo-avi-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle|--|--ignored
+avutil-packet|oracle-rawvideo-avi-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|rawvideo_oracle|rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle|--|--ignored
 fftools-ffmpeg-rawvideo-yuv4mpegpipe-file-output|oracle-rawvideo-yuv4mpegpipe-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|yuv4mpegpipe_oracle|rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle|--|--ignored
 avformat-yuv4mpegpipe-demuxer|oracle-rawvideo-yuv4mpegpipe-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|yuv4mpegpipe_oracle|rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle|--|--ignored
 avformat-yuv4mpegpipe-muxer|oracle-rawvideo-yuv4mpegpipe-file-output|.|cargo|env:FFMPEG_ORACLE={oracle_ffmpeg}|test|-p|fftools|--test|yuv4mpegpipe_oracle|rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle|--|--ignored

@@ -465,6 +465,7 @@ const PATH_RULES: &[PathRule] = &[
         path: "crates/fftools/tests/rawvideo_oracle.rs",
         exact_ids: &[
             "fftools-ffmpeg-rawvideo-file-output",
+            "fftools-ffmpeg-rawvideo-avi-file-output",
             "fftools-ffmpeg-rawvideo-framecrc-null",
             "fftools-ffmpeg-hash-output",
             "fftools-ffmpeg-md5-output",
@@ -474,6 +475,8 @@ const PATH_RULES: &[PathRule] = &[
             "avutil-packet",
             "avformat-rawvideo-demuxer",
             "avformat-rawvideo-muxer",
+            "avformat-avi-demuxer",
+            "avformat-avi-muxer",
             "avformat-hash-muxer",
             "avformat-framecrc-muxer",
             "avformat-framehash-muxer",
@@ -1722,6 +1725,7 @@ mod tests {
     fn changed_selection_maps_rawvideo_oracle_test_to_covered_components() {
         let component_ids = component_ids_from_ledger(&ledger(&[
             "fftools-ffmpeg-rawvideo-file-output",
+            "fftools-ffmpeg-rawvideo-avi-file-output",
             "fftools-ffmpeg-rawvideo-framecrc-null",
             "fftools-ffmpeg-hash-output",
             "fftools-ffmpeg-md5-output",
@@ -1731,6 +1735,8 @@ mod tests {
             "avutil-packet",
             "avformat-rawvideo-demuxer",
             "avformat-rawvideo-muxer",
+            "avformat-avi-demuxer",
+            "avformat-avi-muxer",
             "avformat-hash-muxer",
             "avformat-framecrc-muxer",
             "avformat-framehash-muxer",
@@ -1742,6 +1748,7 @@ mod tests {
             changed_components(&component_ids, &paths),
             vec![
                 "fftools-ffmpeg-rawvideo-file-output".to_string(),
+                "fftools-ffmpeg-rawvideo-avi-file-output".to_string(),
                 "fftools-ffmpeg-rawvideo-framecrc-null".to_string(),
                 "fftools-ffmpeg-hash-output".to_string(),
                 "fftools-ffmpeg-md5-output".to_string(),
@@ -1751,6 +1758,8 @@ mod tests {
                 "avutil-packet".to_string(),
                 "avformat-rawvideo-demuxer".to_string(),
                 "avformat-rawvideo-muxer".to_string(),
+                "avformat-avi-demuxer".to_string(),
+                "avformat-avi-muxer".to_string(),
                 "avformat-hash-muxer".to_string(),
                 "avformat-framecrc-muxer".to_string(),
                 "avformat-framehash-muxer".to_string(),
@@ -2027,6 +2036,12 @@ mod tests {
         )));
         assert!(pairs.contains(&("avformat-rawvideo-demuxer", "oracle-rawvideo-file-output")));
         assert!(pairs.contains(&("avformat-rawvideo-muxer", "oracle-rawvideo-file-output")));
+        assert!(pairs.contains(&(
+            "fftools-ffmpeg-rawvideo-avi-file-output",
+            "oracle-rawvideo-avi-file-output"
+        )));
+        assert!(pairs.contains(&("avformat-avi-muxer", "oracle-rawvideo-avi-file-output")));
+        assert!(pairs.contains(&("avformat-avi-demuxer", "oracle-rawvideo-avi-file-output")));
         assert!(pairs.contains(&("avutil-channel-layout", "oracle-ffmpeg-layouts")));
         assert!(pairs.contains(&("avformat-wav-demuxer", "oracle-wav-generated-md5")));
         assert!(pairs.contains(&("avutil-sample-format", "oracle-ffmpeg-sample-fmts")));
