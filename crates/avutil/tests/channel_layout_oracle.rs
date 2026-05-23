@@ -40,6 +40,14 @@ enum RetypeTarget {
 
 const PARSER_CASES: &[ParserCase] = &[
     ParserCase {
+        id: "empty",
+        input: "",
+    },
+    ParserCase {
+        id: "all-space",
+        input: " ",
+    },
+    ParserCase {
         id: "native-name",
         input: "stereo",
     },
@@ -54,6 +62,18 @@ const PARSER_CASES: &[ParserCase] = &[
     ParserCase {
         id: "sparse-mask",
         input: "0x5",
+    },
+    ParserCase {
+        id: "plus-hex-mask",
+        input: " +0x3",
+    },
+    ParserCase {
+        id: "octal-mask",
+        input: "03",
+    },
+    ParserCase {
+        id: "invalid-zero-mask",
+        input: "0x0",
     },
     ParserCase {
         id: "high-bit-mask",
@@ -76,8 +96,24 @@ const PARSER_CASES: &[ParserCase] = &[
         input: "2C",
     },
     ParserCase {
+        id: "plus-unspecified-count",
+        input: "+2C",
+    },
+    ParserCase {
         id: "described-native",
         input: "2 channels (FL+FR)",
+    },
+    ParserCase {
+        id: "leading-plus-described-native",
+        input: " +2 channels (FL+FR)",
+    },
+    ParserCase {
+        id: "described-sparse",
+        input: "2 channels (FL+FC)",
+    },
+    ParserCase {
+        id: "invalid-described-count-mismatch",
+        input: "1 channels (FL+FR)",
     },
     ParserCase {
         id: "described-custom",
@@ -90,6 +126,10 @@ const PARSER_CASES: &[ParserCase] = &[
     ParserCase {
         id: "escaped-custom-name",
         input: "FL@Left\\+Right+FR",
+    },
+    ParserCase {
+        id: "escaped-at-custom-name",
+        input: "FL@Left\\@Name+FR",
     },
     ParserCase {
         id: "repeated-at-name",
@@ -112,8 +152,20 @@ const PARSER_CASES: &[ParserCase] = &[
         input: "FL+FL",
     },
     ParserCase {
+        id: "unknown-unused-custom",
+        input: "UNK+UNSD",
+    },
+    ParserCase {
         id: "trailing-separator",
         input: "FL+",
+    },
+    ParserCase {
+        id: "zeroth-order-ambisonic",
+        input: "ambisonic 0",
+    },
+    ParserCase {
+        id: "signed-zero-ambisonic",
+        input: "ambisonic -0",
     },
     ParserCase {
         id: "ambisonic-list",
@@ -122,6 +174,18 @@ const PARSER_CASES: &[ParserCase] = &[
     ParserCase {
         id: "explicit-ambisonic",
         input: "ambisonic 1+stereo",
+    },
+    ParserCase {
+        id: "hex-order-ambisonic",
+        input: "ambisonic 0x1+stereo",
+    },
+    ParserCase {
+        id: "sparse-extra-ambisonic",
+        input: "ambisonic 1+FL+FC",
+    },
+    ParserCase {
+        id: "named-extra-ambisonic",
+        input: "ambisonic +1+FL@Left+FR@Right",
     },
     ParserCase {
         id: "zero-order-extra",
@@ -148,6 +212,18 @@ const PARSER_CASES: &[ParserCase] = &[
         input: "ambisonic -0+stereo",
     },
     ParserCase {
+        id: "invalid-ambisonic-trailing",
+        input: "ambisonic 1 trailing",
+    },
+    ParserCase {
+        id: "invalid-ambisonic-extra-ambisonic",
+        input: "ambisonic 1+AMBI0",
+    },
+    ParserCase {
+        id: "invalid-ambisonic-octal-junk",
+        input: "ambisonic 09",
+    },
+    ParserCase {
         id: "invalid-lowercase-list",
         input: "fl+fr",
     },
@@ -166,7 +242,8 @@ const PARSER_CASES: &[ParserCase] = &[
 ];
 
 const LOOKUP_NAMES: &[&str] = &[
-    "FL", "FR", "FC", "AMBI0", "AMBI3", "USR45", "@Left", "FL@Left",
+    "FL", "FR", "FC", "BR", "AMBI0", "AMBI3", "AMBI4", "UNK", "UNSD", "USR45", "USR0x2d", "USR055",
+    "USR-0", "@Left", "FL@Left", "@Right", "FR@Right", "NOPE",
 ];
 
 const BYTE_PARSER_CASES: &[ByteParserCase] = &[
@@ -280,10 +357,45 @@ const RETYPE_CASES: &[RetypeCase] = &[
         canonical: false,
     },
     RetypeCase {
+        id: "unspec-to-native-reject",
+        input: "2C",
+        target: RetypeTarget::Native,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "unknown-unused-to-unspec-lossy",
+        input: "UNK+UNSD",
+        target: RetypeTarget::Unspecified,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "unknown-unused-to-unspec-lossless-reject",
+        input: "UNK+UNSD",
+        target: RetypeTarget::Unspecified,
+        allow_lossy: false,
+        canonical: false,
+    },
+    RetypeCase {
         id: "ambisonic-to-custom",
         input: "ambisonic 1+stereo",
         target: RetypeTarget::Custom,
         allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "ambisonic-to-unspec-lossy",
+        input: "ambisonic 1+stereo",
+        target: RetypeTarget::Unspecified,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "ambisonic-to-unspec-lossless-reject",
+        input: "ambisonic 1+stereo",
+        target: RetypeTarget::Unspecified,
+        allow_lossy: false,
         canonical: false,
     },
     RetypeCase {
@@ -345,6 +457,27 @@ const RETYPE_CASES: &[RetypeCase] = &[
     RetypeCase {
         id: "duplicate-custom-canonical-noop",
         input: "FL+FL",
+        target: RetypeTarget::Native,
+        allow_lossy: true,
+        canonical: true,
+    },
+    RetypeCase {
+        id: "named-ambisonic-canonical-noop",
+        input: "AMBI0@W+AMBI1+AMBI2+AMBI3",
+        target: RetypeTarget::Native,
+        allow_lossy: true,
+        canonical: true,
+    },
+    RetypeCase {
+        id: "raw-ambisonic-extra-canonical",
+        input: "AMBI0+AMBI1+AMBI2+AMBI3+USR45",
+        target: RetypeTarget::Native,
+        allow_lossy: true,
+        canonical: true,
+    },
+    RetypeCase {
+        id: "unspec-canonical-noop",
+        input: "2C",
         target: RetypeTarget::Native,
         allow_lossy: true,
         canonical: true,

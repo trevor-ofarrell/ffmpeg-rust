@@ -141,12 +141,42 @@ fn assert_raw_channel_layout_retype_fixtures() {
         AvErrorKind::InvalidArgument
     );
     assert_eq!(
+        ChannelLayoutSpec::parse("").unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse(" ").unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
         ChannelLayoutSpec::parse(" 0x3").unwrap(),
         ChannelLayoutSpec::Native(ChannelLayout::stereo())
     );
     assert_eq!(
+        ChannelLayoutSpec::parse(" +0x3").unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("03").unwrap(),
+        ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("0x0").unwrap_err().kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
         ChannelLayoutSpec::parse(" +2 channels (FL+FR)").unwrap(),
         ChannelLayoutSpec::Native(ChannelLayout::stereo())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("+2C").unwrap(),
+        ChannelLayoutSpec::unspecified(2).unwrap()
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("1 channels (FL+FR)")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
     );
     assert_eq!(
         ChannelLayoutSpec::parse("0x3 ").unwrap_err().kind(),
@@ -161,6 +191,24 @@ fn assert_raw_channel_layout_retype_fixtures() {
             .unwrap_err()
             .kind(),
         AvErrorKind::InvalidArgument
+    );
+    let escaped_at = CustomChannelLayout::parse_channel_list("FL@Left\\@Name+FR").unwrap();
+    assert_eq!(escaped_at.channels()[0].name(), "Left@Name");
+    assert_eq!(escaped_at.index_from_string("FL@Left@Name").unwrap(), 0);
+    let unknown_unused = ChannelLayoutSpec::parse("UNK+UNSD").unwrap();
+    assert!(unknown_unused.as_custom().is_some());
+    let unknown_unused_unspec = unknown_unused.retype_to_unspecified_order(true).unwrap();
+    assert!(unknown_unused_unspec.is_lossy());
+    assert_eq!(
+        unknown_unused_unspec.into_layout(),
+        ChannelLayoutSpec::unspecified(2).unwrap()
+    );
+    assert_eq!(
+        unknown_unused
+            .retype_to_unspecified_order(false)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::Unsupported
     );
     assert_eq!(
         ChannelLayoutSpec::parse("USR+").unwrap(),
@@ -179,6 +227,51 @@ fn assert_raw_channel_layout_retype_fixtures() {
         ChannelLayoutSpec::Ambisonic(
             AmbisonicChannelLayout::new(0, Channel::FrontLeft.mask()).unwrap()
         )
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic 0").unwrap(),
+        ChannelLayoutSpec::Ambisonic(AmbisonicChannelLayout::new(0, 0).unwrap())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic -0").unwrap(),
+        ChannelLayoutSpec::Ambisonic(AmbisonicChannelLayout::new(0, 0).unwrap())
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic 0x1+stereo").unwrap(),
+        ChannelLayoutSpec::Ambisonic(
+            AmbisonicChannelLayout::new(1, ChannelLayout::stereo().channel_mask()).unwrap()
+        )
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic 1+FL+FC").unwrap(),
+        ChannelLayoutSpec::Ambisonic(
+            AmbisonicChannelLayout::new(1, Channel::FrontLeft.mask() | Channel::FrontCenter.mask())
+                .unwrap()
+        )
+    );
+    let named_extra = ChannelLayoutSpec::parse("ambisonic +1+FL@Left+FR@Right").unwrap();
+    assert!(named_extra.as_custom().is_some());
+    assert_eq!(
+        named_extra.describe(),
+        "ambisonic 1+2 channels (FL@Left+FR@Right)"
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic 1 trailing")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic 1+AMBI0")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
+    );
+    assert_eq!(
+        ChannelLayoutSpec::parse("ambisonic 09")
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::InvalidArgument
     );
     assert_eq!(
         ChannelId::from_ffmpeg_string("AMBI0x1tail"),
@@ -203,6 +296,39 @@ fn assert_raw_channel_layout_retype_fixtures() {
             .unwrap_err()
             .kind(),
         AvErrorKind::Unsupported
+    );
+    assert_eq!(
+        ChannelLayoutSpec::unspecified(2)
+            .unwrap()
+            .retype_to_native_order(true)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::Unsupported
+    );
+    let ambisonic_stereo =
+        ChannelLayoutSpec::parse("ambisonic 1+stereo").expect("ambisonic stereo parses");
+    let ambisonic_unspec = ambisonic_stereo.retype_to_unspecified_order(true).unwrap();
+    assert!(ambisonic_unspec.is_lossy());
+    assert_eq!(
+        ambisonic_unspec.into_layout(),
+        ChannelLayoutSpec::unspecified(6).unwrap()
+    );
+    assert_eq!(
+        ambisonic_stereo
+            .retype_to_unspecified_order(false)
+            .unwrap_err()
+            .kind(),
+        AvErrorKind::Unsupported
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("AMBI0@W+AMBI1+AMBI2+AMBI3").unwrap(),
+        )
+        .retype_to_canonical_order(true)
+        .unwrap()
+        .into_layout()
+        .describe(),
+        "ambisonic 1"
     );
 
     let raw_ambisonic_mask = 1u64 << 45;
@@ -240,6 +366,15 @@ fn assert_raw_channel_layout_retype_fixtures() {
             CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+USR45").unwrap(),
         )
         .retype_to_ambisonic_order(false)
+        .unwrap()
+        .into_layout(),
+        raw_ambisonic
+    );
+    assert_eq!(
+        ChannelLayoutSpec::Custom(
+            CustomChannelLayout::parse_channel_list("AMBI0+AMBI1+AMBI2+AMBI3+USR45").unwrap(),
+        )
+        .retype_to_canonical_order(true)
         .unwrap()
         .into_layout(),
         raw_ambisonic
