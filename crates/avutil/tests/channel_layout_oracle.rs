@@ -90,6 +90,18 @@ const PARSER_CASES: &[ParserCase] = &[
         input: "FL@Left@Again",
     },
     ParserCase {
+        id: "spaced-custom-key",
+        input: "FL @ Left + FR",
+    },
+    ParserCase {
+        id: "quoted-channel-id",
+        input: "'FL'+FR",
+    },
+    ParserCase {
+        id: "quoted-custom-name",
+        input: "FL@'Left Right'+FR",
+    },
+    ParserCase {
         id: "duplicate-native-custom",
         input: "FL+FL",
     },
@@ -112,6 +124,22 @@ const PARSER_CASES: &[ParserCase] = &[
     ParserCase {
         id: "raw-extra-ambisonic",
         input: "ambisonic 1+0x200000000000",
+    },
+    ParserCase {
+        id: "raw-users-base0",
+        input: "USR0x2d+USR056",
+    },
+    ParserCase {
+        id: "signed-zero-user",
+        input: "USR-0",
+    },
+    ParserCase {
+        id: "ambisonic-no-conversion-extra",
+        input: "AMBIx+USR-0",
+    },
+    ParserCase {
+        id: "signed-zero-explicit-ambisonic",
+        input: "ambisonic -0+stereo",
     },
     ParserCase {
         id: "invalid-lowercase-list",
@@ -179,6 +207,27 @@ const RETYPE_CASES: &[RetypeCase] = &[
         canonical: false,
     },
     RetypeCase {
+        id: "raw-users-to-native-lossless",
+        input: "USR45+USR46",
+        target: RetypeTarget::Native,
+        allow_lossy: false,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "named-raw-users-to-native-lossy",
+        input: "USR45@Wide+USR46",
+        target: RetypeTarget::Native,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "named-raw-users-to-native-lossless-reject",
+        input: "USR45@Wide+USR46",
+        target: RetypeTarget::Native,
+        allow_lossy: false,
+        canonical: false,
+    },
+    RetypeCase {
         id: "unspec-to-custom",
         input: "2C",
         target: RetypeTarget::Custom,
@@ -216,6 +265,27 @@ const RETYPE_CASES: &[RetypeCase] = &[
     RetypeCase {
         id: "incomplete-ambisonic-custom-reject",
         input: "AMBI0+AMBI1",
+        target: RetypeTarget::Ambisonic,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "raw-ambisonic-extra-to-ambisonic-lossless",
+        input: "AMBI0+AMBI1+AMBI2+AMBI3+USR45",
+        target: RetypeTarget::Ambisonic,
+        allow_lossy: false,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "named-raw-ambisonic-extra-to-ambisonic-lossy",
+        input: "AMBI0@W+AMBI1+AMBI2+AMBI3+USR45@Wide",
+        target: RetypeTarget::Ambisonic,
+        allow_lossy: true,
+        canonical: false,
+    },
+    RetypeCase {
+        id: "raw-ambisonic-extra-out-of-order-reject",
+        input: "AMBI0+AMBI1+AMBI2+AMBI3+USR46+USR45",
         target: RetypeTarget::Ambisonic,
         allow_lossy: true,
         canonical: false,

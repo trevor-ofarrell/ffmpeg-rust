@@ -195,14 +195,14 @@ fn assert_raw_channel_layout_retype_fixtures() {
             .retype_to_native_order(true)
             .unwrap_err()
             .kind(),
-        AvErrorKind::InvalidArgument
+        AvErrorKind::Unsupported
     );
     assert_eq!(
         ChannelLayoutSpec::Custom(CustomChannelLayout::parse_channel_list("USR63").unwrap())
             .retype_to_native_order(true)
             .unwrap_err()
             .kind(),
-        AvErrorKind::InvalidArgument
+        AvErrorKind::Unsupported
     );
 
     let raw_ambisonic_mask = 1u64 << 45;
@@ -251,7 +251,7 @@ fn assert_raw_channel_layout_retype_fixtures() {
         .retype_to_ambisonic_order(true)
         .unwrap_err()
         .kind(),
-        AvErrorKind::InvalidArgument
+        AvErrorKind::Unsupported
     );
 }
 
@@ -5892,7 +5892,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             .retype_to_ambisonic_order(false)
             .unwrap_err()
             .kind(),
-        AvErrorKind::InvalidArgument
+        AvErrorKind::Unsupported
     );
     let lossy_ambisonic = ChannelLayoutSpec::Custom(named_ambisonic_custom)
         .retype_to_ambisonic_order(true)
@@ -5951,7 +5951,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     );
     assert_eq!(
         custom_spec.to_native_order_lossless().unwrap_err().kind(),
-        AvErrorKind::InvalidArgument
+        AvErrorKind::Unsupported
     );
     let lossy_named_native = custom_spec.retype_to_native_order(true).unwrap();
     assert!(lossy_named_native.is_lossy());
@@ -5964,7 +5964,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             .retype_to_native_order(true)
             .unwrap_err()
             .kind(),
-        AvErrorKind::InvalidArgument
+        AvErrorKind::Unsupported
     );
     assert_eq!(
         ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(3).unwrap())
@@ -5977,7 +5977,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
             .to_unspecified_order_lossless()
             .unwrap_err()
             .kind(),
-        AvErrorKind::InvalidArgument
+        AvErrorKind::Unsupported
     );
     let lossy_native_unspecified = ChannelLayoutSpec::Native(layout)
         .retype_to_unspecified_order(true)
@@ -12462,7 +12462,7 @@ fn exercise_fixtures() {
             .to_native_order_lossless()
             .unwrap_err()
             .kind(),
-        AvErrorKind::InvalidArgument
+        AvErrorKind::Unsupported
     );
     let canonical_named_native = ChannelLayoutSpec::Custom(custom_layout.clone())
         .retype_to_canonical_order(true)
@@ -12502,7 +12502,7 @@ fn exercise_fixtures() {
             .retype_to_native_order(true)
             .unwrap_err()
             .kind(),
-        AvErrorKind::InvalidArgument
+        AvErrorKind::Unsupported
     );
     assert_eq!(
         ChannelLayoutSpec::Custom(CustomChannelLayout::unknown(2).unwrap())
@@ -12518,14 +12518,14 @@ fn exercise_fixtures() {
         .to_unspecified_order_lossless()
         .unwrap_err()
         .kind(),
-        AvErrorKind::InvalidArgument
+        AvErrorKind::Unsupported
     );
     assert_eq!(
         ChannelLayoutSpec::Ambisonic(explicit_ambisonic)
             .to_unspecified_order_lossless()
             .unwrap_err()
         .kind(),
-        AvErrorKind::InvalidArgument
+        AvErrorKind::Unsupported
     );
     let lossy_ambisonic_unspecified = ChannelLayoutSpec::Ambisonic(explicit_ambisonic)
         .retype_to_unspecified_order(true)
