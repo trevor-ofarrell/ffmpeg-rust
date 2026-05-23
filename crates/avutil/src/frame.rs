@@ -13666,6 +13666,9 @@ impl VideoFrame {
             self.plane_buffers = plane_buffers;
             return Ok(());
         }
+        if let Some(bytes_per_sample) = planar_four_plane_crop_sample_bytes(self.pixel_format) {
+            return self.apply_planar_four_plane_cropping(crop, flags, bytes_per_sample);
+        }
         if let Some(bytes_per_sample) = planar_three_plane_crop_sample_bytes(self.pixel_format) {
             return self.apply_planar_three_plane_cropping(crop, flags, bytes_per_sample);
         }
@@ -13761,7 +13764,7 @@ impl VideoFrame {
             | PixelFormat::Xv48Be => 8,
             _ => {
                 return Err(AvError::unsupported(format!(
-                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, selected packed grayscale/gray-alpha, selected planar YUV/GBR, rgb24/bgr24/vyu444, selected high-depth packed RGB/RGBA, and selected packed 4:4:4 RGB/YUV/XYZ video frames, not {}",
+                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, selected packed grayscale/gray-alpha, selected planar YUV/GBR/YUVA/GBRA, rgb24/bgr24/vyu444, selected high-depth packed RGB/RGBA, and selected packed 4:4:4 RGB/YUV/XYZ video frames, not {}",
                     self.pixel_format.name()
                 )));
             }
@@ -13841,6 +13844,126 @@ impl VideoFrame {
         self.width = new_width;
         self.height = new_height;
         self.line_sizes = line_sizes;
+        self.planes = planes;
+        self.plane_buffers = plane_buffers;
+        Ok(())
+    }
+
+    fn apply_planar_four_plane_cropping(
+        &mut self,
+        crop: FrameCrop,
+        flags: FrameCropFlags,
+        bytes_per_sample: usize,
+    ) -> AvResult<()> {
+        if self.plane_buffers.len() != 4 || self.line_sizes.len() != 4 {
+            return Err(AvError::invalid_argument(format!(
+                "{} frame cropping requires four planes",
+                self.pixel_format.name()
+            )));
+        }
+
+        let crop_left = adjusted_planar_four_plane_crop_left(
+            crop,
+            self.line_sizes[0],
+            flags,
+            bytes_per_sample,
+        )?;
+        let new_width = self
+            .width
+            .checked_sub(crop_left + crop.right)
+            .ok_or_else(|| crop_range_error("frame crop width underflow"))?;
+        let new_height = self
+            .height
+            .checked_sub(crop.top + crop.bottom)
+            .ok_or_else(|| crop_range_error("frame crop height underflow"))?;
+        let new_shapes = planar_four_plane_cropped_shapes(
+            self.pixel_format,
+            new_width,
+            new_height,
+            bytes_per_sample,
+        )?;
+
+        let (log2_chroma_w, log2_chroma_h) = self.pixel_format.log2_chroma();
+        let plane_crop_tops = [
+            crop.top,
+            crop.top >> log2_chroma_h,
+            crop.top >> log2_chroma_h,
+            crop.top,
+        ];
+        let plane_crop_lefts = [
+            crop_left
+                .checked_mul(bytes_per_sample)
+                .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?,
+            (crop_left >> log2_chroma_w)
+                .checked_mul(bytes_per_sample)
+                .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?,
+            (crop_left >> log2_chroma_w)
+                .checked_mul(bytes_per_sample)
+                .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?,
+            crop_left
+                .checked_mul(bytes_per_sample)
+                .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?,
+        ];
+        let mut plane_buffers = Vec::with_capacity(4);
+        for index in 0..4 {
+            let line_size = self.line_sizes[index];
+            let shape = new_shapes[index];
+            let start_offset = plane_crop_tops[index]
+                .checked_mul(line_size)
+                .and_then(|offset| offset.checked_add(plane_crop_lefts[index]))
+                .ok_or_else(|| AvError::invalid_argument("frame crop offset overflow"))?;
+            let storage_len = line_size
+                .checked_mul(shape.rows)
+                .ok_or_else(|| AvError::invalid_argument("frame crop line-size span overflow"))?;
+            let row_span = if shape.rows == 0 {
+                0
+            } else {
+                (shape.rows - 1)
+                    .checked_mul(line_size)
+                    .and_then(|prefix| prefix.checked_add(shape.row_bytes))
+                    .ok_or_else(|| AvError::invalid_argument("frame crop row span overflow"))?
+            };
+            let source = &self.plane_buffers[index];
+            let new_buffer = if start_offset
+                .checked_add(storage_len)
+                .is_some_and(|end| end <= source.len())
+            {
+                source.ref_slice(start_offset, storage_len)?
+            } else {
+                let end = start_offset
+                    .checked_add(row_span)
+                    .ok_or_else(|| AvError::invalid_argument("frame crop source span overflow"))?;
+                if end > source.len() {
+                    return Err(AvError::invalid_data(format!(
+                        "{} video frame crop plane {index} span {start_offset}..{end} exceeds {} bytes",
+                        self.pixel_format.name(),
+                        source.len()
+                    )));
+                }
+
+                let mut storage = vec![0; storage_len];
+                for row in 0..shape.rows {
+                    let src_start = start_offset + row * line_size;
+                    let src_end = src_start + shape.row_bytes;
+                    let dst_start = row * line_size;
+                    let dst_end = dst_start + shape.row_bytes;
+                    storage[dst_start..dst_end]
+                        .copy_from_slice(&source.as_slice()[src_start..src_end]);
+                }
+                BufferRef::from_vec(storage)
+            };
+            plane_buffers.push(new_buffer);
+        }
+
+        let planes = snapshot_video_plane_buffers(
+            &plane_buffers,
+            &new_shapes,
+            &self.line_sizes,
+            self.pixel_format.name(),
+        )?;
+
+        self.width = new_width;
+        self.height = new_height;
         self.planes = planes;
         self.plane_buffers = plane_buffers;
         Ok(())
@@ -15265,6 +15388,55 @@ fn planar_three_plane_cropped_shapes(
     ])
 }
 
+fn planar_four_plane_cropped_shapes(
+    pixel_format: PixelFormat,
+    width: usize,
+    height: usize,
+    bytes_per_sample: usize,
+) -> AvResult<Vec<VideoPlaneShape>> {
+    if planar_four_plane_crop_sample_bytes(pixel_format) != Some(bytes_per_sample) {
+        return Err(AvError::unsupported(format!(
+            "planar four-plane crop shapes are not implemented for {}",
+            pixel_format.name()
+        )));
+    }
+    if width == 0 || height == 0 {
+        return Err(AvError::invalid_argument(
+            "cropped planar four-plane video dimensions must be non-zero",
+        ));
+    }
+
+    let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
+    let luma_row_bytes = checked_mul(
+        width,
+        bytes_per_sample,
+        "cropped planar four-plane luma row bytes",
+    )?;
+    let chroma_row_bytes = checked_mul(
+        width >> log2_chroma_w,
+        bytes_per_sample,
+        "cropped planar four-plane chroma row bytes",
+    )?;
+    Ok(vec![
+        VideoPlaneShape {
+            row_bytes: luma_row_bytes,
+            rows: height,
+        },
+        VideoPlaneShape {
+            row_bytes: chroma_row_bytes,
+            rows: height >> log2_chroma_h,
+        },
+        VideoPlaneShape {
+            row_bytes: chroma_row_bytes,
+            rows: height >> log2_chroma_h,
+        },
+        VideoPlaneShape {
+            row_bytes: luma_row_bytes,
+            rows: height,
+        },
+    ])
+}
+
 fn video_line_sizes(
     pixel_format: PixelFormat,
     width: usize,
@@ -15375,6 +15547,69 @@ fn planar_three_plane_crop_sample_bytes(format: PixelFormat) -> Option<usize> {
         | PixelFormat::GbrpF16Be => Some(2),
         PixelFormat::GbrpF32Le | PixelFormat::GbrpF32Be => Some(4),
         _ => None,
+    }
+}
+
+fn planar_four_plane_crop_sample_bytes(format: PixelFormat) -> Option<usize> {
+    match format {
+        PixelFormat::Yuva420p
+        | PixelFormat::Yuva422p
+        | PixelFormat::Yuva444p
+        | PixelFormat::Gbrap => Some(1),
+        PixelFormat::Yuva420p9Le
+        | PixelFormat::Yuva420p9Be
+        | PixelFormat::Yuva422p9Le
+        | PixelFormat::Yuva422p9Be
+        | PixelFormat::Yuva444p9Le
+        | PixelFormat::Yuva444p9Be
+        | PixelFormat::Yuva420p10Le
+        | PixelFormat::Yuva420p10Be
+        | PixelFormat::Yuva422p10Le
+        | PixelFormat::Yuva422p10Be
+        | PixelFormat::Yuva444p10Le
+        | PixelFormat::Yuva444p10Be
+        | PixelFormat::Yuva422p12Le
+        | PixelFormat::Yuva422p12Be
+        | PixelFormat::Yuva444p12Le
+        | PixelFormat::Yuva444p12Be
+        | PixelFormat::Yuva420p16Le
+        | PixelFormat::Yuva420p16Be
+        | PixelFormat::Yuva422p16Le
+        | PixelFormat::Yuva422p16Be
+        | PixelFormat::Yuva444p16Le
+        | PixelFormat::Yuva444p16Be
+        | PixelFormat::Gbrap10Le
+        | PixelFormat::Gbrap10Be
+        | PixelFormat::Gbrap12Le
+        | PixelFormat::Gbrap12Be
+        | PixelFormat::Gbrap14Le
+        | PixelFormat::Gbrap14Be
+        | PixelFormat::Gbrap16Le
+        | PixelFormat::Gbrap16Be
+        | PixelFormat::GbrapF16Le
+        | PixelFormat::GbrapF16Be => Some(2),
+        PixelFormat::Gbrap32Le
+        | PixelFormat::Gbrap32Be
+        | PixelFormat::GbrapF32Le
+        | PixelFormat::GbrapF32Be => Some(4),
+        _ => None,
+    }
+}
+
+fn adjusted_planar_four_plane_crop_left(
+    crop: FrameCrop,
+    line_size: usize,
+    flags: FrameCropFlags,
+    bytes_per_sample: usize,
+) -> AvResult<usize> {
+    if bytes_per_sample == 1 {
+        adjusted_packed_crop_left(crop, line_size, flags, 1)
+    } else if flags.contains(FrameCropFlags::UNALIGNED) || crop.left == 0 {
+        Ok(crop.left)
+    } else {
+        Err(AvError::bug(
+            "FFmpeg rejects default left cropping for selected multi-byte planar alpha video frames",
+        ))
     }
 }
 
@@ -20429,6 +20664,32 @@ mod tests {
             ]
         }
 
+        fn planar_alpha_sample_storage(
+            width: usize,
+            height: usize,
+            line_size: usize,
+            log2_chroma_w: usize,
+            log2_chroma_h: usize,
+            sample_bytes: usize,
+        ) -> Vec<Vec<u8>> {
+            let mut storage = planar_yuv_sample_storage(
+                width,
+                height,
+                line_size,
+                log2_chroma_w,
+                log2_chroma_h,
+                sample_bytes,
+            );
+            storage.push(strided_plane_sample_storage(
+                width,
+                height,
+                line_size,
+                0xe0,
+                sample_bytes,
+            ));
+            storage
+        }
+
         let source_storage = storage(6, 4, 64);
         let mut aligned = Frame::video(
             VideoFrame::new_with_line_sizes(
@@ -20763,6 +21024,96 @@ mod tests {
             );
         }
 
+        for (format, log2_chroma_w, log2_chroma_h) in [
+            (PixelFormat::Yuva420p, 1usize, 1usize),
+            (PixelFormat::Yuva422p, 1usize, 0usize),
+            (PixelFormat::Yuva444p, 0usize, 0usize),
+            (PixelFormat::Gbrap, 0usize, 0usize),
+        ] {
+            let storage = planar_alpha_sample_storage(8, 4, 64, log2_chroma_w, log2_chroma_h, 1);
+            let mut planar_default = Frame::video(
+                VideoFrame::new_with_line_sizes(
+                    8,
+                    4,
+                    format,
+                    storage.clone(),
+                    vec![64, 64, 64, 64],
+                )
+                .unwrap(),
+            );
+            planar_default.set_crop_offsets(1, 0, 1, 1);
+            planar_default.apply_cropping(FrameCropFlags::NONE).unwrap();
+            assert_eq!(planar_default.crop(), FrameCrop::default());
+            let FrameData::Video(video) = planar_default.data() else {
+                unreachable!("constructed planar alpha default crop frame changed variant");
+            };
+            assert_eq!(video.width(), 7, "{}", format.name());
+            assert_eq!(video.height(), 3, "{}", format.name());
+            assert_eq!(video.line_sizes(), &[64, 64, 64, 64]);
+            assert_eq!(
+                video.planes(),
+                &[
+                    plane_visible(0x10, 1, 0, 7, 3),
+                    plane_visible(
+                        0x80,
+                        1 >> log2_chroma_h,
+                        0,
+                        7 >> log2_chroma_w,
+                        3 >> log2_chroma_h,
+                    ),
+                    plane_visible(
+                        0xc0,
+                        1 >> log2_chroma_h,
+                        0,
+                        7 >> log2_chroma_w,
+                        3 >> log2_chroma_h,
+                    ),
+                    plane_visible(0xe0, 1, 0, 7, 3),
+                ],
+                "{}",
+                format.name()
+            );
+
+            let mut planar_unaligned = Frame::video(
+                VideoFrame::new_with_line_sizes(8, 4, format, storage, vec![64, 64, 64, 64])
+                    .unwrap(),
+            );
+            planar_unaligned.set_crop_offsets(1, 0, 1, 1);
+            planar_unaligned
+                .apply_cropping(FrameCropFlags::UNALIGNED)
+                .unwrap();
+            assert_eq!(planar_unaligned.crop(), FrameCrop::default());
+            let FrameData::Video(video) = planar_unaligned.data() else {
+                unreachable!("constructed planar alpha unaligned crop frame changed variant");
+            };
+            assert_eq!(video.width(), 6, "{}", format.name());
+            assert_eq!(video.height(), 3, "{}", format.name());
+            assert_eq!(video.line_sizes(), &[64, 64, 64, 64]);
+            assert_eq!(
+                video.planes(),
+                &[
+                    plane_visible(0x10, 1, 1, 6, 3),
+                    plane_visible(
+                        0x80,
+                        1 >> log2_chroma_h,
+                        1 >> log2_chroma_w,
+                        6 >> log2_chroma_w,
+                        3 >> log2_chroma_h,
+                    ),
+                    plane_visible(
+                        0xc0,
+                        1 >> log2_chroma_h,
+                        1 >> log2_chroma_w,
+                        6 >> log2_chroma_w,
+                        3 >> log2_chroma_h,
+                    ),
+                    plane_visible(0xe0, 1, 1, 6, 3),
+                ],
+                "{}",
+                format.name()
+            );
+        }
+
         for (format, log2_chroma_w, log2_chroma_h, sample_bytes) in [
             (PixelFormat::Yuv420p9Le, 1usize, 1usize, 2usize),
             (PixelFormat::Yuv420p9Be, 1usize, 1usize, 2usize),
@@ -20905,6 +21256,145 @@ mod tests {
                         3 >> log2_chroma_h,
                         sample_bytes,
                     ),
+                ],
+                "{}",
+                format.name()
+            );
+        }
+
+        for (format, log2_chroma_w, log2_chroma_h, sample_bytes) in [
+            (PixelFormat::Yuva420p9Le, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuva420p9Be, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuva422p9Le, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuva422p9Be, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuva444p9Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuva444p9Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuva420p10Le, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuva420p10Be, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuva422p10Le, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuva422p10Be, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuva444p10Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuva444p10Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuva422p12Le, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuva422p12Be, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuva444p12Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuva444p12Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuva420p16Le, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuva420p16Be, 1usize, 1usize, 2usize),
+            (PixelFormat::Yuva422p16Le, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuva422p16Be, 1usize, 0usize, 2usize),
+            (PixelFormat::Yuva444p16Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Yuva444p16Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrap10Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrap10Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrap12Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrap12Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrap14Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrap14Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrap16Le, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrap16Be, 0usize, 0usize, 2usize),
+            (PixelFormat::GbrapF16Le, 0usize, 0usize, 2usize),
+            (PixelFormat::GbrapF16Be, 0usize, 0usize, 2usize),
+            (PixelFormat::Gbrap32Le, 0usize, 0usize, 4usize),
+            (PixelFormat::Gbrap32Be, 0usize, 0usize, 4usize),
+            (PixelFormat::GbrapF32Le, 0usize, 0usize, 4usize),
+            (PixelFormat::GbrapF32Be, 0usize, 0usize, 4usize),
+        ] {
+            let storage =
+                planar_alpha_sample_storage(8, 4, 64, log2_chroma_w, log2_chroma_h, sample_bytes);
+            let mut planar_default = Frame::video(
+                VideoFrame::new_with_line_sizes(
+                    8,
+                    4,
+                    format,
+                    storage.clone(),
+                    vec![64, 64, 64, 64],
+                )
+                .unwrap(),
+            );
+            planar_default.set_crop_offsets(1, 0, 1, 1);
+            let default_error = planar_default
+                .apply_cropping(FrameCropFlags::NONE)
+                .unwrap_err();
+            assert_eq!(
+                default_error.code().map(AvErrorCode::raw),
+                Some(AvErrorCode::BUG.raw()),
+                "{}",
+                format.name()
+            );
+            assert_eq!(planar_default.crop(), FrameCrop::new(1, 0, 1, 1));
+            let FrameData::Video(video) = planar_default.data() else {
+                unreachable!(
+                    "constructed high-bit planar alpha default crop frame changed variant"
+                );
+            };
+            assert_eq!(video.width(), 8, "{}", format.name());
+            assert_eq!(video.height(), 4, "{}", format.name());
+            assert_eq!(video.line_sizes(), &[64, 64, 64, 64]);
+            assert_eq!(
+                video.planes(),
+                &[
+                    plane_visible_sample_bytes(0x10, 0, 0, 8, 4, sample_bytes),
+                    plane_visible_sample_bytes(
+                        0x80,
+                        0,
+                        0,
+                        8 >> log2_chroma_w,
+                        4 >> log2_chroma_h,
+                        sample_bytes,
+                    ),
+                    plane_visible_sample_bytes(
+                        0xc0,
+                        0,
+                        0,
+                        8 >> log2_chroma_w,
+                        4 >> log2_chroma_h,
+                        sample_bytes,
+                    ),
+                    plane_visible_sample_bytes(0xe0, 0, 0, 8, 4, sample_bytes),
+                ],
+                "{}",
+                format.name()
+            );
+
+            let mut planar_unaligned = Frame::video(
+                VideoFrame::new_with_line_sizes(8, 4, format, storage, vec![64, 64, 64, 64])
+                    .unwrap(),
+            );
+            planar_unaligned.set_crop_offsets(1, 0, 1, 1);
+            planar_unaligned
+                .apply_cropping(FrameCropFlags::UNALIGNED)
+                .unwrap();
+            assert_eq!(planar_unaligned.crop(), FrameCrop::default());
+            let FrameData::Video(video) = planar_unaligned.data() else {
+                unreachable!(
+                    "constructed high-bit planar alpha unaligned crop frame changed variant"
+                );
+            };
+            assert_eq!(video.width(), 6, "{}", format.name());
+            assert_eq!(video.height(), 3, "{}", format.name());
+            assert_eq!(video.line_sizes(), &[64, 64, 64, 64]);
+            assert_eq!(
+                video.planes(),
+                &[
+                    plane_visible_sample_bytes(0x10, 1, 1, 6, 3, sample_bytes),
+                    plane_visible_sample_bytes(
+                        0x80,
+                        1 >> log2_chroma_h,
+                        1 >> log2_chroma_w,
+                        6 >> log2_chroma_w,
+                        3 >> log2_chroma_h,
+                        sample_bytes,
+                    ),
+                    plane_visible_sample_bytes(
+                        0xc0,
+                        1 >> log2_chroma_h,
+                        1 >> log2_chroma_w,
+                        6 >> log2_chroma_w,
+                        3 >> log2_chroma_h,
+                        sample_bytes,
+                    ),
+                    plane_visible_sample_bytes(0xe0, 1, 1, 6, 3, sample_bytes),
                 ],
                 "{}",
                 format.name()
