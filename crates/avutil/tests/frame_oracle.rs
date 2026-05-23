@@ -1842,6 +1842,7 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     }
 
     for (pixel_format, bytes_per_pixel, line_size) in [
+        (PixelFormat::Pal8, 1, 64),
         (PixelFormat::Rgb8, 1, 64),
         (PixelFormat::Bgr8, 1, 64),
         (PixelFormat::Rgb4Byte, 1, 64),
@@ -3969,6 +3970,7 @@ static void print_video_planes(const AVFrame *frame)
     int bytes_per_pixel = 0;
     switch (frame->format) {
     case AV_PIX_FMT_RGB8:
+    case AV_PIX_FMT_PAL8:
     case AV_PIX_FMT_BGR8:
     case AV_PIX_FMT_RGB4_BYTE:
     case AV_PIX_FMT_BGR4_BYTE:
@@ -5586,6 +5588,7 @@ int main(void)
     exercise_packed_crop_pair("x2rgb10be", AV_PIX_FMT_X2RGB10BE, 4);
     exercise_packed_crop_pair("x2bgr10le", AV_PIX_FMT_X2BGR10LE, 4);
     exercise_packed_crop_pair("x2bgr10be", AV_PIX_FMT_X2BGR10BE, 4);
+    exercise_packed_crop_pair("pal8", AV_PIX_FMT_PAL8, 1);
     exercise_packed_crop_pair("rgb8", AV_PIX_FMT_RGB8, 1);
     exercise_packed_crop_pair("bgr8", AV_PIX_FMT_BGR8, 1);
     exercise_packed_crop_pair("rgb4_byte", AV_PIX_FMT_RGB4_BYTE, 1);

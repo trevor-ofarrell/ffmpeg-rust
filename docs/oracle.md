@@ -232,7 +232,8 @@ and writability for video, packed audio, direct planar audio, extended planar
 audio, and out-of-range indexes,
 `av_frame_apply_cropping()` for gray8 aligned, gray8 unaligned, byte-packed
 RGB/BGR/Bayer8 default and unaligned cases, packed high-bit grayscale and
-gray-alpha default and unaligned cases, RGB24 aligned, RGB24 unaligned,
+gray-alpha default and unaligned cases, pal8 default and unaligned cases,
+RGB24 aligned, RGB24 unaligned,
 BGR24 aligned, BGR24 unaligned, selected packed RGB/RGBA and Bayer16 default
 and unaligned cases, selected bitstream right/bottom-only cases, and invalid crop rectangles,
 `AV_FRAME_DATA_*` numeric
@@ -303,8 +304,8 @@ against the Rust `FrameFifo` model.
 The `av_frame_apply_cropping` rows prove FFmpeg's default left-crop rounding to
 keep the data pointer at least 32-byte aligned for gray8, byte-packed RGB/BGR
 (`rgb8`, `bgr8`, `rgb4_byte`, and `bgr4_byte`), Bayer8 (`bayer_bggr8`,
-`bayer_rggb8`, `bayer_gbrg8`, and `bayer_grbg8`), RGB24, and BGR24, exact-left
-behavior under `AV_FRAME_CROP_UNALIGNED`, crop-field reset on success, and
+`bayer_rggb8`, `bayer_gbrg8`, and `bayer_grbg8`), paletted `pal8`, RGB24, and
+BGR24, exact-left behavior under `AV_FRAME_CROP_UNALIGNED`, crop-field reset on success, and
 `ERANGE` no-mutation behavior for invalid crop rectangles. They also prove the
 packed high-bit grayscale/gray-alpha family (`ya8`, `ya16le`, `ya16be`,
 `yaf16le`, `yaf16be`, `yaf32le`, `yaf32be`, `gray9le`, `gray9be`, `gray10le`,
@@ -381,6 +382,12 @@ The UYYVYY411 crop rows prove default nonzero-left
 first-component step of four bytes for one left pixel. Visible rows are sized as
 `ceil(width / 4) * 6`, and the current `av_frame_get_buffer(..., 64)` row for
 an 8x4 UYYVYY411 frame has a 128-byte line size.
+The pal8 crop rows prove FFmpeg treats the pixel index plane as a one-byte
+packed crop surface: default nonzero-left crop rounds the left offset down for
+the 32-byte data-pointer alignment rule, and `AV_FRAME_CROP_UNALIGNED` applies
+the exact one-byte left offset. The pinned `calc_cropping_offsets()` path keeps
+the palette plane offset at zero, so this row proves crop pointer math without
+claiming full `AVFrame.data[1]` palette side-plane/context propagation.
 The harness is wired into
 `tests/differential/mappings.txt` as `avutil-frame|oracle-libavutil-frame-core`:
 
@@ -543,7 +550,7 @@ The `avutil-sample-format` table-string, buffer-layout, fill-array, allocation, 
 
 The latest ambisonic lookup slice uses the pinned `av_channel_layout_channel_from_index`, `av_channel_layout_index_from_channel`, `av_channel_layout_index_from_string`, and `av_channel_layout_channel_from_string` behavior for the bounded explicit ambisonic surface: ambisonic ACNs map to the leading indexes, native extra-mask channels follow in mask-bit order, canonical strings map through the same lookup, and absent/custom-name/invalid lookups fail without producing channels. Broader `AV_CHANNEL_ORDER_AMBISONIC` retyping and oracle-vector calibration remain pending.
 
-The `pal8` rawvideo slice was checked against FFmpeg 8.1.1 `libavutil/pixfmt.h`, `libavutil/pixdesc.c`, `libavutil/imgutils.c`, and `libavcodec/rawdec.c`. FFmpeg's descriptor marks `pal8` as paletted and alpha-bearing, defines 256 RGB32 palette entries for 1024 palette bytes, includes the palette in image buffer sizing, and lets ordinary rawvideo packets carry only the index plane while the decoder supplies palette state separately. The Rust model currently covers the raw packet index plane and constants only.
+The `pal8` rawvideo slice was checked against FFmpeg 8.1.1 `libavutil/pixfmt.h`, `libavutil/pixdesc.c`, `libavutil/imgutils.c`, and `libavcodec/rawdec.c`. FFmpeg's descriptor marks `pal8` as paletted and alpha-bearing, defines 256 RGB32 palette entries for 1024 palette bytes, includes the palette in image buffer sizing, and lets ordinary rawvideo packets carry only the index plane while the decoder supplies palette state separately. The `av_frame_apply_cropping()` oracle rows further show that FFmpeg crops the one-byte index plane with default alignment rounding or exact `AV_FRAME_CROP_UNALIGNED` offsets while leaving the palette plane offset at zero. The Rust model currently covers the raw packet index plane, constants, and this bounded crop pointer behavior only.
 
 The 8-bit planar YUVA rawvideo slice was checked against FFmpeg 8.1.1 `libavutil/pixfmt.h` and `libavutil/pixdesc.c`. The pinned descriptors define `yuva420p` as 20 bpp with log2 chroma `(1,1)`, `yuva422p` as 24 bpp with `(1,0)`, and `yuva444p` as 32 bpp with `(0,0)`, all with four 8-bit planes and full-resolution alpha.
 

@@ -13680,6 +13680,7 @@ impl VideoFrame {
         }
         let crop_step = match self.pixel_format {
             PixelFormat::Gray8
+            | PixelFormat::Pal8
             | PixelFormat::Rgb8
             | PixelFormat::Bgr8
             | PixelFormat::Rgb4Byte
@@ -22191,6 +22192,7 @@ mod tests {
         }
 
         for (format, bytes_per_pixel, line_size) in [
+            (PixelFormat::Pal8, 1, 64),
             (PixelFormat::Rgb8, 1, 64),
             (PixelFormat::Bgr8, 1, 64),
             (PixelFormat::Rgb4Byte, 1, 64),

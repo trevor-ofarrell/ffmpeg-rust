@@ -14376,6 +14376,7 @@ fn exercise_fixtures() {
     }
 
     for (format, bytes_per_pixel, line_size) in [
+        (PixelFormat::Pal8, 1, 64),
         (PixelFormat::Rgb8, 1, 64),
         (PixelFormat::Bgr8, 1, 64),
         (PixelFormat::Rgb4Byte, 1, 64),
