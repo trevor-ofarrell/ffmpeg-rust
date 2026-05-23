@@ -10915,6 +10915,36 @@ mod tests {
             .iter()
             .all(|byte| *byte == 0));
         assert!(shrink_edges.is_data_writable());
+
+        let shared_src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+        let mut shared_dst = Packet::default();
+        shared_dst.ref_from(&shared_src);
+        assert!(shared_dst
+            .data_buffer()
+            .shares_storage(shared_src.data_buffer()));
+        assert!(!shared_dst.is_data_writable());
+        let shared_dst_ptr = shared_dst.data_buffer().as_padded_ptr();
+
+        shared_dst.grow_data(2).unwrap();
+
+        assert_eq!(shared_src.data(), &[0xaa, 0xbb]);
+        assert_eq!(&shared_dst.data()[..2], &[0xaa, 0xbb]);
+        assert_eq!(shared_dst.len(), 4);
+        assert!(!shared_dst
+            .data_buffer()
+            .shares_storage(shared_src.data_buffer()));
+        assert_ne!(shared_dst.data_buffer().as_padded_ptr(), shared_dst_ptr);
+        assert!(shared_dst.is_data_writable());
+        assert!(shared_src.is_data_writable());
+        assert_eq!(
+            shared_dst.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(shared_dst
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
     }
 
     #[test]

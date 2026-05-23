@@ -6666,6 +6666,27 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .all(|byte| *byte == 0));
     assert!(shrink_edge_packet.is_data_writable());
 
+    let shared_grow_src = Packet::from_data(payload.clone()).unwrap();
+    let mut shared_grow_dst = Packet::default();
+    shared_grow_dst.ref_from(&shared_grow_src);
+    assert!(shared_grow_dst
+        .data_buffer()
+        .shares_storage(shared_grow_src.data_buffer()));
+    let shared_grow_dst_ptr = shared_grow_dst.data_buffer().as_padded_ptr();
+    shared_grow_dst.grow_data(2).unwrap();
+    assert_eq!(shared_grow_src.data(), payload.as_slice());
+    assert_eq!(&shared_grow_dst.data()[..payload.len()], payload.as_slice());
+    assert_eq!(shared_grow_dst.len(), payload.len() + 2);
+    assert!(!shared_grow_dst
+        .data_buffer()
+        .shares_storage(shared_grow_src.data_buffer()));
+    assert_ne!(
+        shared_grow_dst.data_buffer().as_padded_ptr(),
+        shared_grow_dst_ptr
+    );
+    assert!(shared_grow_dst.is_data_writable());
+    assert!(shared_grow_src.is_data_writable());
+
     let unpadded_grow_by = usize::from(cursor.next().unwrap_or_default() % 8);
     let mut unpadded_grown_packet = Packet::new(payload.clone(), stream_index);
     unpadded_grown_packet.grow_data(unpadded_grow_by).unwrap();

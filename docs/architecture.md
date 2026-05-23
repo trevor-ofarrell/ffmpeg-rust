@@ -463,6 +463,8 @@ The packet oracle now includes zero-size payload rows for `av_new_packet(0)`, `a
 
 The packet oracle now includes already-refcounted payload rows for `av_packet_make_writable()` and `av_packet_make_refcounted()`. A unique refcounted packet keeps the same visible data pointer and writable padded storage after either helper, while a shared refcounted packet keeps shared storage and remains non-writable after `av_packet_make_refcounted()`.
 
+The packet oracle now includes a shared refcounted payload row for `av_grow_packet()`. FFmpeg detaches the grown packet from the shared source when the backing storage must grow, preserves source payload bytes, preserves the grown packet's stable prefix, and exposes writable padded destination storage while leaving newly visible grown bytes allocator-dependent.
+
 The packet oracle now includes raw data/size no-buffer payload rows for `av_grow_packet()` and `av_packet_make_writable()`. The Rust `Packet::new(...).grow_data(...)` and `Packet::new(...).make_writable()` helpers preserve original bytes, add zeroed FFmpeg input padding, and expose writable storage; the no-buffer grow row compares only length, preserved prefix, padding, and writability because FFmpeg leaves the newly visible grown bytes allocator-unspecified.
 
 The packet oracle now includes a raw data/size no-buffer row for `av_shrink_packet()`. FFmpeg preserves the truncated visible prefix and zeroes input padding but leaves `pkt->buf` NULL, so the row compares length, data, and padding while the safe Rust model keeps representing owned mutable storage as a writable `BufferRef`.

@@ -2,8 +2,9 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
-# Latest avutil-packet evidence: already-refcounted payload make-refcounted and
-# make-writable no-op rows, packet-to-frame and frame-to-packet
+# Latest avutil-packet evidence: shared refcounted payload grow rows,
+# already-refcounted payload make-refcounted and make-writable no-op rows,
+# packet-to-frame and frame-to-packet
 # `AV_FRAME_SIDE_DATA_FLAG_UNIQUE` bridge rows, empty standalone side-data
 # array no-op rows, packet-owned side-data size-null lookup rows,
 # duplicate side-data copy/ref/clone collapse and move-ref transfer rows,
@@ -280,6 +281,13 @@ fate_tests = [
   "packet_oracle::upstream_fate_avpacket_passes",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: pinned libavcodec AVPacket payload rows now validate
+# `av_grow_packet()` on a shared refcounted packet. FFmpeg detaches the grown
+# packet from the source, preserves the source payload and padding state,
+# preserves stable prefix bytes in the grown packet, and exposes writable
+# padded destination storage; newly visible grown bytes remain
+# allocator-dependent and are not compared. Unit tests and
+# `avutil_core_models` cover the same source-preservation and detach shape.
 # Latest update: pinned libavcodec AVPacket payload rows now validate
 # already-refcounted `av_packet_make_writable()` and
 # `av_packet_make_refcounted()` no-op behavior. Unique refcounted packets keep

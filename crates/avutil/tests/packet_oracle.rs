@@ -1291,6 +1291,31 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&shrink_edges),
     );
 
+    let shared_grow_src = Packet::from_data(vec![0xaa, 0xbb]).unwrap();
+    let mut shared_grow_dst = Packet::default();
+    shared_grow_dst.ref_from(&shared_grow_src);
+    let shared_grow_dst_ptr = shared_grow_dst.data_buffer().as_padded_ptr();
+    shared_grow_dst.grow_data(2).unwrap();
+    rows.insert(
+        "packet:payload-grow-shared-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-grow-shared-same-ptr".to_string(),
+        vec![
+            u8::from(shared_grow_dst.data_buffer().as_padded_ptr() == shared_grow_dst_ptr)
+                .to_string(),
+        ],
+    );
+    rows.insert(
+        "packet:payload-grow-shared-src".to_string(),
+        payload_fields(&shared_grow_src),
+    );
+    rows.insert(
+        "packet:payload-grow-shared-dst".to_string(),
+        payload_prefix_fields(&shared_grow_dst, 2),
+    );
+
     let mut grow_unrefcounted = Packet::new(vec![0xaa, 0xbb], 0);
     grow_unrefcounted.grow_data(2).unwrap();
     rows.insert(
@@ -4386,6 +4411,24 @@ static void exercise_payload_api(void) {
     av_shrink_packet(pkt, 0);
     print_payload("packet:payload-shrink-zero", pkt);
     av_packet_free(&pkt);
+
+    AVPacket *shared_grow_src = new_packet();
+    fail_if(av_new_packet(shared_grow_src, 2) < 0, "av_new_packet shared grow src failed");
+    shared_grow_src->data[0] = 0xaa;
+    shared_grow_src->data[1] = 0xbb;
+    AVPacket *shared_grow_dst = new_packet();
+    fail_if(av_packet_ref(shared_grow_dst, shared_grow_src) < 0,
+            "av_packet_ref shared grow dst failed");
+    uint8_t *shared_grow_dst_ptr = shared_grow_dst->data;
+    ret = av_grow_packet(shared_grow_dst, 2);
+    printf("packet:payload-grow-shared-ret|%d\n", ret);
+    fail_if(ret < 0, "av_grow_packet shared payload failed");
+    printf("packet:payload-grow-shared-same-ptr|%d\n",
+           shared_grow_dst->data == shared_grow_dst_ptr);
+    print_payload("packet:payload-grow-shared-src", shared_grow_src);
+    print_payload_prefix("packet:payload-grow-shared-dst", shared_grow_dst, 2);
+    av_packet_free(&shared_grow_dst);
+    av_packet_free(&shared_grow_src);
 
     pkt = new_packet();
     uint8_t grow_stack_data[2] = { 0xaa, 0xbb };
