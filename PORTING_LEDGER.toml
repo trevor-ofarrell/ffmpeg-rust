@@ -27,9 +27,10 @@ default_profile = "ffmpeg-8.1.1-default-native"
 # bounded `pcm_s16le` streamcopy output to pinned FFmpeg for `-f framecrc -`
 # rows and raw `-f s16le` file output, proving audio packet timing, duration,
 # size, checksum, and byte-preserving mux output through the Rust packet path.
-# Latest WAV media evidence: the generated WAV-to-MD5 oracle row is now mapped
-# to `avutil-packet`, proving the Rust WAV demuxer -> Packet -> md5 muxer path
-# against pinned FFmpeg streamcopy output for a bounded PCM s16le WAV fixture.
+# Latest WAV media evidence: the generated and sample-backed WAV-to-MD5
+# oracle rows are now mapped to `avutil-packet`, proving the Rust WAV demuxer
+# -> Packet -> md5 muxer path against pinned FFmpeg streamcopy output for both
+# a bounded generated PCM s16le WAV fixture and the installed FATE WAV sample.
 # Latest avutil-packet evidence: default-native ABI layout rows now prove
 # pinned FFmpeg 8.1.1 `AVPacketSideData`, `AVPacket`, and deprecated
 # `AVPacketList` sizes, alignments, field offsets, and field sizes through C
@@ -359,9 +360,15 @@ differential_tests = [
 fate_tests = [
   "tests/fate/mappings.txt:avutil-packet|local-avutil-unit",
   "tests/fate/upstream-mappings.txt:avutil-packet|fate-avpacket",
+  "tests/fate/upstream-mappings.txt:avutil-packet|fate-wav-pcm-s16le-md5",
   "packet_oracle::upstream_fate_avpacket_passes",
+  "wav_oracle::wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample",
 ]
 fuzz_targets = ["avutil_core_models"]
+# Latest sample-backed media-integration update: the upstream WAV md5 FATE row
+# is now also mapped to avutil-packet, validating the Rust WAV demuxer ->
+# Packet -> md5 muxer path against pinned FFmpeg streamcopy output for the
+# installed audio-reference/luckynight_2ch_44kHz_s16.wav FATE sample.
 # Latest update: pinned libavcodec AVPacket ABI rows now validate the
 # default-native public layout through packet:abi-side-data-layout,
 # packet:abi-avpacket-layout, and packet:abi-avpacket-list-layout rows. The

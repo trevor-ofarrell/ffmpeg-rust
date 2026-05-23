@@ -1347,7 +1347,7 @@ where
                 mapping.component_id, mapping.target
             ));
         }
-        return Ok(samples_root.to_string());
+        return Ok(prerequisite_path(samples_root));
     }
 
     for env_name in SAMPLES_ENV_VARS {
@@ -1358,7 +1358,7 @@ where
                     mapping.component_id, mapping.target
                 ));
             }
-            return Ok(samples_root);
+            return Ok(prerequisite_path(&samples_root));
         }
     }
 
@@ -1367,7 +1367,7 @@ where
         .copied()
         .find(|path| is_dir(path))
     {
-        return Ok(default_prerequisite_path(samples_root));
+        return Ok(prerequisite_path(samples_root));
     }
 
     Err(format!(
@@ -1395,7 +1395,7 @@ where
                 mapping.component_id, mapping.target
             ));
         }
-        return Ok(oracle_ffmpeg.to_string());
+        return Ok(prerequisite_path(oracle_ffmpeg));
     }
 
     for env_name in ORACLE_FFMPEG_ENV_VARS {
@@ -1406,7 +1406,7 @@ where
                     mapping.component_id, mapping.target
                 ));
             }
-            return Ok(oracle_ffmpeg);
+            return Ok(prerequisite_path(&oracle_ffmpeg));
         }
     }
 
@@ -1415,7 +1415,7 @@ where
         .copied()
         .find(|path| is_file(path))
     {
-        return Ok(default_prerequisite_path(oracle_ffmpeg));
+        return Ok(prerequisite_path(oracle_ffmpeg));
     }
 
     Err(format!(
@@ -1438,7 +1438,7 @@ fn path_is_file(path: &str) -> bool {
     Path::new(path).is_file()
 }
 
-fn default_prerequisite_path(path: &str) -> String {
+fn prerequisite_path(path: &str) -> String {
     let path = Path::new(path);
     if path.is_absolute() {
         path.display().to_string()
@@ -1603,6 +1603,15 @@ mod tests {
             .map(|id| format!("[[component]]\nid = \"{id}\"\n"))
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    fn abs_path(path: &str) -> String {
+        let path = Path::new(path);
+        if path.is_absolute() {
+            path.display().to_string()
+        } else {
+            env::current_dir().unwrap().join(path).display().to_string()
+        }
     }
 
     #[test]
@@ -2540,14 +2549,18 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             oracle_ffmpeg: Some("Cargo.toml".to_string()),
         };
         let resolved = resolve_fate_mapping(&mappings[0], &context).unwrap();
+        let expected_oracle = abs_path("Cargo.toml");
 
         assert_eq!(
             resolved.env,
-            vec![("FFMPEG_ORACLE".to_string(), "Cargo.toml".to_string())]
+            vec![("FFMPEG_ORACLE".to_string(), expected_oracle.clone())]
         );
         assert_eq!(
             format_mapping_command(&resolved),
-            "(cd . && FFMPEG_ORACLE=Cargo.toml cargo test -p fftools --test rawvideo_oracle -- --ignored)"
+            format!(
+                "(cd . && FFMPEG_ORACLE={} cargo test -p fftools --test rawvideo_oracle -- --ignored)",
+                expected_oracle
+            )
         );
     }
 
@@ -2571,18 +2584,22 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             samples_root: Some(".".to_string()),
             oracle_ffmpeg: Some("Cargo.toml".to_string()),
         };
+        let expected_samples = abs_path(".");
+        let expected_oracle = abs_path("Cargo.toml");
+        let expected_audio = format!("{expected_samples}/audio");
+        let expected_input = format!("{expected_samples}/audio/test.wav");
 
         assert_eq!(
             resolve_fate_mapping(&mapping, &context).unwrap(),
             FateMapping {
                 component_id: "avformat-wav-demuxer".to_string(),
                 target: "sample-framecrc".to_string(),
-                workdir: "./audio".to_string(),
-                program: "Cargo.toml".to_string(),
-                env: vec![("FFMPEG_ORACLE".to_string(), "Cargo.toml".to_string())],
+                workdir: expected_audio,
+                program: expected_oracle.clone(),
+                env: vec![("FFMPEG_ORACLE".to_string(), expected_oracle)],
                 args: vec![
                     "-i".to_string(),
-                    "./audio/test.wav".to_string(),
+                    expected_input,
                     "-f".to_string(),
                     "framecrc".to_string(),
                     "-".to_string(),
@@ -2608,6 +2625,10 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
         };
         let is_dir = |path: &str| path == "env/fate-samples";
         let is_file = |path: &str| path == "env/ffmpeg";
+        let expected_samples = abs_path("env/fate-samples");
+        let expected_ffmpeg = abs_path("env/ffmpeg");
+        let expected_audio = format!("{expected_samples}/audio");
+        let expected_input = format!("{expected_samples}/audio/test.wav");
 
         assert_eq!(
             resolve_fate_mapping_with(
@@ -2621,10 +2642,10 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             FateMapping {
                 component_id: "avformat-wav-demuxer".to_string(),
                 target: "sample-framecrc".to_string(),
-                workdir: "env/fate-samples/audio".to_string(),
-                program: "env/ffmpeg".to_string(),
-                env: vec![("FFMPEG_ORACLE".to_string(), "env/ffmpeg".to_string())],
-                args: vec!["env/fate-samples/audio/test.wav".to_string()],
+                workdir: expected_audio,
+                program: expected_ffmpeg.clone(),
+                env: vec![("FFMPEG_ORACLE".to_string(), expected_ffmpeg)],
+                args: vec![expected_input],
             }
         );
     }
@@ -2898,11 +2919,14 @@ avutil-error|error-unit|.|cargo|test|-p|avutil|error
             samples_root: Some(".".to_string()),
             oracle_ffmpeg: Some("Cargo.toml".to_string()),
         };
+        let expected_samples = abs_path(".");
+        let expected_oracle = abs_path("Cargo.toml");
         assert_eq!(
             fate_mapping_report_lines(&mappings, &context, true).unwrap(),
-            vec![
-                "avformat-wav-demuxer:sample-framecrc -> (cd . && Cargo.toml -version)".to_string()
-            ]
+            vec![format!(
+                "avformat-wav-demuxer:sample-framecrc -> (cd {} && {} -version)",
+                expected_samples, expected_oracle
+            )]
         );
     }
 
