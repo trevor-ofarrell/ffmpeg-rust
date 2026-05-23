@@ -2038,8 +2038,10 @@ fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         side_data_lookup_fields(packet.side_data_by_kind_id(&PacketSideDataKind::Palette)),
     );
 
+    let mut extra_owned =
+        Some(SideData::new("vendor.private.extra_packet_data", vec![0xee]).unwrap());
     let err = packet
-        .try_add_side_data(SideData::new("vendor.private.extra_packet_data", vec![0xee]).unwrap())
+        .try_add_side_data_owned(&mut extra_owned)
         .unwrap_err();
     rows.insert(
         "packet:side-add-capacity-overflow-ret".to_string(),
@@ -2052,6 +2054,10 @@ fn insert_side_data_capacity_rows(rows: &mut BTreeMap<String, Vec<String>>) {
     rows.insert(
         "packet:side-add-capacity-overflow-count".to_string(),
         vec![packet.side_data().len().to_string()],
+    );
+    rows.insert(
+        "packet:side-add-capacity-overflow-owned".to_string(),
+        side_data_lookup_fields(extra_owned.as_ref()),
     );
 
     let new_side_data_ok = packet
@@ -4186,6 +4192,8 @@ static void exercise_side_data_capacity_api(void) {
     ret = av_packet_add_side_data(pkt, (enum AVPacketSideDataType)AV_PKT_DATA_NB,
                                   extra, 1);
     printf("packet:side-add-capacity-overflow-ret|%d\n", ret);
+    print_owned_side_data_byte("packet:side-add-capacity-overflow-owned",
+                               ret < 0 ? extra : NULL);
     if (ret < 0)
         av_free(extra);
     printf("packet:side-add-capacity-overflow-count|%d\n",

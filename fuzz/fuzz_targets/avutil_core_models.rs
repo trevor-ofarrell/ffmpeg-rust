@@ -7325,10 +7325,13 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         capacity_packet.side_data().len(),
         PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
     );
+    let mut replacement =
+        Some(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap());
     let replaced = capacity_packet
-        .try_add_side_data(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap())
+        .try_add_side_data_owned(&mut replacement)
         .unwrap()
         .unwrap();
+    assert!(replacement.is_none());
     assert_eq!(replaced.data(), &[0]);
     assert_eq!(
         capacity_packet
@@ -7337,14 +7340,19 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
             .data(),
         &[0xaa]
     );
+    let mut extra_owned =
+        Some(SideData::new("vendor.private.extra_packet_data", vec![0xee]).unwrap());
     let capacity_err = capacity_packet
-        .try_add_side_data(SideData::new("vendor.private.extra_packet_data", vec![0xee]).unwrap())
+        .try_add_side_data_owned(&mut extra_owned)
         .unwrap_err();
     assert_eq!(capacity_err.kind(), AvErrorKind::InvalidArgument);
     assert_eq!(
         capacity_err.code(),
         Some(AvErrorCode::from_posix_errno(34))
     );
+    let extra_owned = extra_owned.as_ref().unwrap();
+    assert_eq!(extra_owned.kind(), "vendor.private.extra_packet_data");
+    assert_eq!(extra_owned.data(), &[0xee]);
     assert_eq!(
         capacity_packet.side_data().len(),
         PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS

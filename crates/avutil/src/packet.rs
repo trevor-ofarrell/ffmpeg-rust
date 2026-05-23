@@ -5228,6 +5228,26 @@ impl Packet {
         Ok(self.add_or_replace_side_data(side_data).0)
     }
 
+    pub fn try_add_side_data_owned(
+        &mut self,
+        side_data: &mut Option<SideData>,
+    ) -> AvResult<Option<SideData>> {
+        let kind = side_data
+            .as_ref()
+            .ok_or_else(|| {
+                AvError::with_code(
+                    AvErrorKind::InvalidArgument,
+                    AvErrorCode::EINVAL,
+                    "packet side data add requires caller-owned data",
+                )
+            })?
+            .kind_id()
+            .clone();
+        self.ensure_side_data_capacity_for(&kind)?;
+        let side_data = side_data.take().expect("side data checked above");
+        Ok(self.add_or_replace_side_data(side_data).0)
+    }
+
     pub fn add_side_data(&mut self, side_data: SideData) -> Option<SideData> {
         self.add_or_replace_side_data(side_data).0
     }
@@ -10422,12 +10442,16 @@ mod tests {
             PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
         );
 
+        let mut replacement =
+            Some(SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap());
         let replaced = packet
-            .try_add_side_data(
-                SideData::new_with_kind(PacketSideDataKind::Palette, vec![0xaa]).unwrap(),
-            )
+            .try_add_side_data_owned(&mut replacement)
             .unwrap()
             .unwrap();
+        assert!(
+            replacement.is_none(),
+            "successful av_packet_add_side_data-style replacement transfers caller ownership"
+        );
         assert_eq!(replaced.data(), &[0]);
         assert_eq!(
             packet.side_data().len(),
@@ -10441,13 +10465,18 @@ mod tests {
             &[0xaa]
         );
 
+        let mut extra_owned =
+            Some(SideData::new("vendor.private.extra_packet_data", vec![0xee]).unwrap());
         let err = packet
-            .try_add_side_data(
-                SideData::new("vendor.private.extra_packet_data", vec![0xee]).unwrap(),
-            )
+            .try_add_side_data_owned(&mut extra_owned)
             .unwrap_err();
         assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
         assert_eq!(err.code(), Some(AvErrorCode::from_posix_errno(34)));
+        let extra_owned = extra_owned
+            .as_ref()
+            .expect("failed av_packet_add_side_data-style append preserves caller ownership");
+        assert_eq!(extra_owned.kind(), "vendor.private.extra_packet_data");
+        assert_eq!(extra_owned.data(), &[0xee]);
         assert_eq!(
             packet.side_data().len(),
             PacketSideDataKind::MAX_FFMPEG_PACKET_SIDE_DATA_ELEMS
@@ -10455,6 +10484,14 @@ mod tests {
         assert!(packet
             .side_data_by_kind("vendor.private.extra_packet_data")
             .is_none());
+
+        let mut missing_owned = None;
+        let err = packet
+            .try_add_side_data_owned(&mut missing_owned)
+            .unwrap_err();
+        assert_eq!(err.kind(), AvErrorKind::InvalidArgument);
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert!(missing_owned.is_none());
 
         let err = packet
             .new_side_data(
