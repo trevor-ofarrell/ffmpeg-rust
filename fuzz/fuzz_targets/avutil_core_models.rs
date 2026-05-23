@@ -13441,6 +13441,57 @@ fn exercise_fixtures() {
         &[19, 20, 21, 22, 23, 24]
     );
 
+    let mut bgr_crop_storage = vec![0; 192 * 4];
+    for row in 0..4 {
+        for column in 0..24 {
+            bgr_crop_storage[row * 192 + column] = (row * 16 + column) as u8;
+        }
+    }
+    let mut bgr_aligned_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Bgr24,
+            vec![bgr_crop_storage.clone()],
+            vec![192],
+        )
+        .unwrap(),
+    );
+    bgr_aligned_crop.set_crop_offsets(1, 0, 1, 1);
+    bgr_aligned_crop
+        .apply_cropping(FrameCropFlags::NONE)
+        .unwrap();
+    let FrameData::Video(bgr_aligned_crop_video) = bgr_aligned_crop.data() else {
+        panic!("constructed bgr crop frame changed variant");
+    };
+    assert_eq!(bgr_aligned_crop_video.width(), 7);
+    assert_eq!(bgr_aligned_crop_video.height(), 3);
+    assert_eq!(&bgr_aligned_crop_video.planes()[0][..6], &[16, 17, 18, 19, 20, 21]);
+
+    let mut bgr_unaligned_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Bgr24,
+            vec![bgr_crop_storage],
+            vec![192],
+        )
+        .unwrap(),
+    );
+    bgr_unaligned_crop.set_crop_offsets(1, 0, 1, 1);
+    bgr_unaligned_crop
+        .apply_cropping(FrameCropFlags::UNALIGNED)
+        .unwrap();
+    let FrameData::Video(bgr_unaligned_crop_video) = bgr_unaligned_crop.data() else {
+        panic!("constructed bgr crop frame changed variant");
+    };
+    assert_eq!(bgr_unaligned_crop_video.width(), 6);
+    assert_eq!(bgr_unaligned_crop_video.height(), 3);
+    assert_eq!(
+        &bgr_unaligned_crop_video.planes()[0][..6],
+        &[19, 20, 21, 22, 23, 24]
+    );
+
     let mut invalid_crop = Frame::video(
         VideoFrame::new_with_line_sizes(
             6,

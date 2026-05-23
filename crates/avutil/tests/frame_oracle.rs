@@ -585,6 +585,55 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         frame_fields(&crop_rgb24_unaligned),
     );
 
+    let bgr_crop_storage = packed_strided_storage(8, 4, 3, 192);
+    let mut crop_bgr24_aligned = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Bgr24,
+            vec![bgr_crop_storage.clone()],
+            vec![192],
+        )
+        .unwrap(),
+    );
+    crop_bgr24_aligned.set_crop_offsets(1, 0, 1, 1);
+    let crop_bgr24_aligned_ret = crop_bgr24_aligned
+        .apply_cropping(FrameCropFlags::NONE)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:apply-crop-bgr24-aligned-ret".to_string(),
+        vec![crop_bgr24_aligned_ret.to_string()],
+    );
+    rows.insert(
+        "frame:apply-crop-bgr24-aligned".to_string(),
+        frame_fields(&crop_bgr24_aligned),
+    );
+
+    let mut crop_bgr24_unaligned = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Bgr24,
+            vec![bgr_crop_storage],
+            vec![192],
+        )
+        .unwrap(),
+    );
+    crop_bgr24_unaligned.set_crop_offsets(1, 0, 1, 1);
+    let crop_bgr24_unaligned_ret = crop_bgr24_unaligned
+        .apply_cropping(FrameCropFlags::UNALIGNED)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:apply-crop-bgr24-unaligned-ret".to_string(),
+        vec![crop_bgr24_unaligned_ret.to_string()],
+    );
+    rows.insert(
+        "frame:apply-crop-bgr24-unaligned".to_string(),
+        frame_fields(&crop_bgr24_unaligned),
+    );
+
     let mut invalid_crop = Frame::video(
         VideoFrame::new_with_line_sizes(6, 4, PixelFormat::Gray8, vec![crop_storage], vec![64])
             .unwrap(),
@@ -2036,10 +2085,19 @@ static void print_video_planes(const AVFrame *frame)
             print_hex(frame->data[0] + row * frame->linesize[0], frame->width);
         return;
     }
-    if (frame->format == AV_PIX_FMT_RGB24) {
+    int bytes_per_pixel = 0;
+    switch (frame->format) {
+    case AV_PIX_FMT_RGB24:
+    case AV_PIX_FMT_BGR24:
+        bytes_per_pixel = 3;
+        break;
+    default:
+        break;
+    }
+    if (bytes_per_pixel > 0) {
         for (int row = 0; row < frame->height; row++)
             print_hex(frame->data[0] + row * frame->linesize[0],
-                      frame->width * 3);
+                      frame->width * bytes_per_pixel);
         return;
     }
 
@@ -3009,6 +3067,43 @@ int main(void)
             "crop_rgb24_unaligned apply failed");
     print_frame("frame:apply-crop-rgb24-unaligned", crop_rgb24_unaligned);
 
+    AVFrame *crop_bgr24_aligned = av_frame_alloc();
+    fail_if(!crop_bgr24_aligned, "crop_bgr24_aligned allocation failed");
+    crop_bgr24_aligned->format = AV_PIX_FMT_BGR24;
+    crop_bgr24_aligned->width = 8;
+    crop_bgr24_aligned->height = 4;
+    fail_if(av_frame_get_buffer(crop_bgr24_aligned, 64) < 0,
+            "crop_bgr24_aligned get_buffer failed");
+    fill_video_packed(crop_bgr24_aligned, 3);
+    crop_bgr24_aligned->crop_top = 1;
+    crop_bgr24_aligned->crop_left = 1;
+    crop_bgr24_aligned->crop_right = 1;
+    int crop_bgr24_aligned_ret =
+        av_frame_apply_cropping(crop_bgr24_aligned, 0);
+    printf("frame:apply-crop-bgr24-aligned-ret|%d\n",
+           crop_bgr24_aligned_ret);
+    fail_if(crop_bgr24_aligned_ret < 0, "crop_bgr24_aligned apply failed");
+    print_frame("frame:apply-crop-bgr24-aligned", crop_bgr24_aligned);
+
+    AVFrame *crop_bgr24_unaligned = av_frame_alloc();
+    fail_if(!crop_bgr24_unaligned, "crop_bgr24_unaligned allocation failed");
+    crop_bgr24_unaligned->format = AV_PIX_FMT_BGR24;
+    crop_bgr24_unaligned->width = 8;
+    crop_bgr24_unaligned->height = 4;
+    fail_if(av_frame_get_buffer(crop_bgr24_unaligned, 64) < 0,
+            "crop_bgr24_unaligned get_buffer failed");
+    fill_video_packed(crop_bgr24_unaligned, 3);
+    crop_bgr24_unaligned->crop_top = 1;
+    crop_bgr24_unaligned->crop_left = 1;
+    crop_bgr24_unaligned->crop_right = 1;
+    int crop_bgr24_unaligned_ret = av_frame_apply_cropping(
+        crop_bgr24_unaligned, AV_FRAME_CROP_UNALIGNED);
+    printf("frame:apply-crop-bgr24-unaligned-ret|%d\n",
+           crop_bgr24_unaligned_ret);
+    fail_if(crop_bgr24_unaligned_ret < 0,
+            "crop_bgr24_unaligned apply failed");
+    print_frame("frame:apply-crop-bgr24-unaligned", crop_bgr24_unaligned);
+
     AVFrame *invalid_crop = av_frame_alloc();
     fail_if(!invalid_crop, "invalid_crop allocation failed");
     invalid_crop->format = AV_PIX_FMT_GRAY8;
@@ -3593,6 +3688,8 @@ int main(void)
     av_frame_free(&copy_data_video_dst);
     av_frame_free(&copy_data_video_src);
     av_frame_free(&invalid_crop);
+    av_frame_free(&crop_bgr24_unaligned);
+    av_frame_free(&crop_bgr24_aligned);
     av_frame_free(&crop_rgb24_unaligned);
     av_frame_free(&crop_rgb24_aligned);
     av_frame_free(&crop_unaligned);

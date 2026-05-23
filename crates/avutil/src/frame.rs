@@ -13636,10 +13636,10 @@ impl VideoFrame {
         }
         let crop_step = match self.pixel_format {
             PixelFormat::Gray8 => 1,
-            PixelFormat::Rgb24 => 3,
+            PixelFormat::Rgb24 | PixelFormat::Bgr24 => 3,
             _ => {
                 return Err(AvError::unsupported(format!(
-                    "frame cropping is currently implemented for gray and rgb24 video frames, not {}",
+                    "frame cropping is currently implemented for gray, rgb24, and bgr24 video frames, not {}",
                     self.pixel_format.name()
                 )));
             }
@@ -13690,7 +13690,7 @@ impl VideoFrame {
                 .ok_or_else(|| AvError::invalid_argument("frame crop source span overflow"))?;
             if end > source.len() {
                 return Err(AvError::invalid_data(format!(
-                    "gray video frame crop span {start_offset}..{end} exceeds {} bytes",
+                    "packed video frame crop span {start_offset}..{end} exceeds {} bytes",
                     source.len()
                 )));
             }
@@ -19887,7 +19887,7 @@ mod tests {
     }
 
     #[test]
-    fn frame_apply_cropping_matches_gray8_and_rgb24_alignment_rules() {
+    fn frame_apply_cropping_matches_gray8_rgb24_and_bgr24_alignment_rules() {
         fn storage(width: usize, height: usize, line_size: usize) -> Vec<u8> {
             let mut data = vec![0; height * line_size];
             for row in 0..height {
@@ -20004,6 +20004,43 @@ mod tests {
             .apply_cropping(FrameCropFlags::UNALIGNED)
             .unwrap();
         let FrameData::Video(video) = rgb_unaligned.data() else {
+            unreachable!("constructed video frame changed variant");
+        };
+        assert_eq!(video.width(), 6);
+        assert_eq!(video.height(), 3);
+        assert_eq!(video.line_sizes(), &[192]);
+        assert_eq!(video.planes(), &[packed_visible(3, 1, 1, 6, 3)]);
+
+        let bgr_storage = packed_storage(8, 4, 3, 192);
+        let mut bgr_aligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                PixelFormat::Bgr24,
+                vec![bgr_storage.clone()],
+                vec![192],
+            )
+            .unwrap(),
+        );
+        bgr_aligned.set_crop_offsets(1, 0, 1, 1);
+        bgr_aligned.apply_cropping(FrameCropFlags::NONE).unwrap();
+        let FrameData::Video(video) = bgr_aligned.data() else {
+            unreachable!("constructed video frame changed variant");
+        };
+        assert_eq!(video.width(), 7);
+        assert_eq!(video.height(), 3);
+        assert_eq!(video.line_sizes(), &[192]);
+        assert_eq!(video.planes(), &[packed_visible(3, 1, 0, 7, 3)]);
+
+        let mut bgr_unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(8, 4, PixelFormat::Bgr24, vec![bgr_storage], vec![192])
+                .unwrap(),
+        );
+        bgr_unaligned.set_crop_offsets(1, 0, 1, 1);
+        bgr_unaligned
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .unwrap();
+        let FrameData::Video(video) = bgr_unaligned.data() else {
             unreachable!("constructed video frame changed variant");
         };
         assert_eq!(video.width(), 6);

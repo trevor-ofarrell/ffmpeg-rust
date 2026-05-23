@@ -231,7 +231,8 @@ audio showing that high channel count alone does not allocate extended buffers,
 and writability for video, packed audio, direct planar audio, extended planar
 audio, and out-of-range indexes,
 `av_frame_apply_cropping()` for gray8 aligned, gray8 unaligned, RGB24
-aligned, RGB24 unaligned, and invalid crop rectangles,
+aligned, RGB24 unaligned, BGR24 aligned, BGR24 unaligned, and invalid crop
+rectangles,
 `AV_FRAME_DATA_*` numeric
 values/names/descriptors/properties, `av_frame_side_data_name()` invalid
 raw-value boundaries, `AV_FRAME_SIDE_DATA_FLAG_*`,
@@ -298,9 +299,12 @@ write/read behavior, non-mutating peek, readable counts, drain ordering,
 invalid peek `EINVAL`, and the oracle-observed empty-read `EINVAL` result
 against the Rust `FrameFifo` model.
 The `av_frame_apply_cropping` rows prove FFmpeg's default left-crop rounding to
-keep the data pointer at least 32-byte aligned for gray8 and RGB24, exact-left
-behavior under `AV_FRAME_CROP_UNALIGNED`, crop-field reset on success, and
-`ERANGE` no-mutation behavior for invalid crop rectangles.
+keep the data pointer at least 32-byte aligned for gray8, RGB24, and BGR24,
+exact-left behavior under `AV_FRAME_CROP_UNALIGNED`, crop-field reset on
+success, and `ERANGE` no-mutation behavior for invalid crop rectangles. A
+temporary RGBA default-crop calibration row returned `AVERROR_BUG`
+(`-558323010`) in the pinned oracle, so RGBA remains outside the claimed crop
+surface.
 The standalone side-data array rows exercise `av_frame_side_data_new()`,
 `av_frame_side_data_get()`, `av_frame_side_data_remove_by_props()`, and
 `av_frame_side_data_free()`: duplicate insertion without flags fails without
