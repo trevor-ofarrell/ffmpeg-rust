@@ -501,9 +501,11 @@ const PATH_RULES: &[PathRule] = &[
         path: "crates/fftools/tests/yuv4mpegpipe_oracle.rs",
         exact_ids: &[
             "fftools-ffmpeg-rawvideo-yuv4mpegpipe-file-output",
+            "fftools-ffmpeg-yuv4mpegpipe-framecrc-null",
             "avutil-packet",
             "avformat-yuv4mpegpipe-demuxer",
             "avformat-yuv4mpegpipe-muxer",
+            "avformat-framecrc-muxer",
         ],
         id_prefixes: &[],
     },
@@ -1785,9 +1787,11 @@ mod tests {
     fn changed_selection_maps_yuv4mpegpipe_oracle_test_to_covered_components() {
         let component_ids = component_ids_from_ledger(&ledger(&[
             "fftools-ffmpeg-rawvideo-yuv4mpegpipe-file-output",
+            "fftools-ffmpeg-yuv4mpegpipe-framecrc-null",
             "avutil-packet",
             "avformat-yuv4mpegpipe-demuxer",
             "avformat-yuv4mpegpipe-muxer",
+            "avformat-framecrc-muxer",
         ]));
         let paths = vec!["crates/fftools/tests/yuv4mpegpipe_oracle.rs".to_string()];
 
@@ -1795,9 +1799,11 @@ mod tests {
             changed_components(&component_ids, &paths),
             vec![
                 "fftools-ffmpeg-rawvideo-yuv4mpegpipe-file-output".to_string(),
+                "fftools-ffmpeg-yuv4mpegpipe-framecrc-null".to_string(),
                 "avutil-packet".to_string(),
                 "avformat-yuv4mpegpipe-demuxer".to_string(),
                 "avformat-yuv4mpegpipe-muxer".to_string(),
+                "avformat-framecrc-muxer".to_string(),
             ]
         );
     }
@@ -2089,6 +2095,19 @@ mod tests {
         assert!(pairs.contains(&("avformat-image2-demuxer", "oracle-image2-file-output")));
         assert!(pairs.contains(&("avformat-image2-muxer", "oracle-image2-file-output")));
         assert!(pairs.contains(&("avutil-packet", "oracle-image2-sequence-file-output")));
+        assert!(pairs.contains(&(
+            "fftools-ffmpeg-yuv4mpegpipe-framecrc-null",
+            "oracle-yuv4mpegpipe-framecrc-records"
+        )));
+        assert!(pairs.contains(&(
+            "avformat-yuv4mpegpipe-demuxer",
+            "oracle-yuv4mpegpipe-framecrc-records"
+        )));
+        assert!(pairs.contains(&(
+            "avformat-framecrc-muxer",
+            "oracle-yuv4mpegpipe-framecrc-records"
+        )));
+        assert!(pairs.contains(&("avutil-packet", "oracle-yuv4mpegpipe-framecrc-records")));
         assert!(pairs.contains(&(
             "fftools-ffmpeg-image2-file-output",
             "oracle-image2-sequence-file-output"
