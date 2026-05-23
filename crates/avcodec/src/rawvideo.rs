@@ -1061,7 +1061,8 @@ mod tests {
             FrameData::Audio(_) | FrameData::Empty => panic!("expected video frame"),
         }
 
-        assert!(RawVideoDecoder::new(6, 1, PixelFormat::Uyyvyy411).is_err());
+        let narrow = RawVideoDecoder::new(6, 1, PixelFormat::Uyyvyy411).unwrap();
+        assert_eq!(narrow.frame_size(), 12);
         assert_eq!(
             decoder
                 .decode_packet(&Packet::new(vec![0; 11], 0))

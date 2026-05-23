@@ -9136,7 +9136,7 @@ fn exercise_fixtures() {
     assert!(PixelFormat::Uyyvyy411.has_chroma_subsampling());
     assert_eq!(PixelFormat::Uyyvyy411.frame_size(4, 2).unwrap(), 12);
     assert_eq!(PixelFormat::Uyyvyy411.plane_sizes(4, 2).unwrap(), vec![12]);
-    assert!(PixelFormat::Uyyvyy411.frame_size(6, 2).is_err());
+    assert_eq!(PixelFormat::Uyyvyy411.frame_size(6, 2).unwrap(), 24);
     for (name, format) in [("nv12", PixelFormat::Nv12), ("nv21", PixelFormat::Nv21)] {
         let descriptor = format.descriptor();
         assert_eq!(PixelFormat::from_name(name), Some(format));
@@ -14578,6 +14578,58 @@ fn exercise_fixtures() {
             );
         }
     }
+
+    let mut uyyvyy411_crop_storage = vec![0; 128 * 4];
+    for row in 0..4 {
+        for column in 0..PixelFormat::Uyyvyy411.plane_sizes(8, 1).unwrap()[0] {
+            uyyvyy411_crop_storage[row * 128 + column] = (row * 16 + column) as u8;
+        }
+    }
+    let mut uyyvyy411_default_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Uyyvyy411,
+            vec![uyyvyy411_crop_storage.clone()],
+            vec![128],
+        )
+        .unwrap(),
+    );
+    uyyvyy411_default_crop.set_crop_offsets(1, 0, 1, 1);
+    let uyyvyy411_before = uyyvyy411_default_crop.clone();
+    let uyyvyy411_default_error = uyyvyy411_default_crop
+        .apply_cropping(FrameCropFlags::NONE)
+        .unwrap_err();
+    assert_eq!(
+        uyyvyy411_default_error.code().map(AvErrorCode::raw),
+        Some(AvErrorCode::BUG.raw())
+    );
+    assert_eq!(uyyvyy411_default_crop, uyyvyy411_before);
+
+    let mut uyyvyy411_unaligned_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Uyyvyy411,
+            vec![uyyvyy411_crop_storage],
+            vec![128],
+        )
+        .unwrap(),
+    );
+    uyyvyy411_unaligned_crop.set_crop_offsets(1, 0, 1, 1);
+    uyyvyy411_unaligned_crop
+        .apply_cropping(FrameCropFlags::UNALIGNED)
+        .unwrap();
+    assert_eq!(uyyvyy411_unaligned_crop.crop(), FrameCrop::default());
+    let FrameData::Video(uyyvyy411_unaligned_video) = uyyvyy411_unaligned_crop.data() else {
+        panic!("constructed uyyvyy411 crop frame changed variant");
+    };
+    assert_eq!(uyyvyy411_unaligned_video.width(), 6);
+    assert_eq!(uyyvyy411_unaligned_video.height(), 3);
+    assert_eq!(
+        &uyyvyy411_unaligned_video.planes()[0][..12],
+        &[20, 21, 22, 23, 24, 25, 26, 27, 0, 0, 0, 0]
+    );
 
     let mut invalid_crop = Frame::video(
         VideoFrame::new_with_line_sizes(
@@ -24234,7 +24286,7 @@ fn expected_video_line_sizes(pixel_format: PixelFormat, width: usize) -> Vec<usi
         | PixelFormat::Yuyv422
         | PixelFormat::Uyvy422
         | PixelFormat::Yvyu422 => vec![width * 2],
-        PixelFormat::Uyyvyy411 => vec![(width / 4) * 6],
+        PixelFormat::Uyyvyy411 => vec![width.div_ceil(4) * 6],
         PixelFormat::Y210Le
         | PixelFormat::Y210Be
         | PixelFormat::Y212Le
@@ -24513,7 +24565,7 @@ fn expected_video_plane_shapes(
         | PixelFormat::Yuyv422
         | PixelFormat::Uyvy422
         | PixelFormat::Yvyu422 => vec![(width * 2, height)],
-        PixelFormat::Uyyvyy411 => vec![((width / 4) * 6, height)],
+        PixelFormat::Uyyvyy411 => vec![(width.div_ceil(4) * 6, height)],
         PixelFormat::Y210Le
         | PixelFormat::Y210Be
         | PixelFormat::Y212Le

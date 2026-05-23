@@ -13675,6 +13675,9 @@ impl VideoFrame {
         if let Some(layout) = semiplanar_crop_layout(self.pixel_format) {
             return self.apply_semiplanar_cropping(crop, flags, layout);
         }
+        if self.pixel_format == PixelFormat::Uyyvyy411 {
+            return self.apply_uyyvyy411_cropping(crop, flags);
+        }
         let crop_step = match self.pixel_format {
             PixelFormat::Gray8
             | PixelFormat::Rgb8
@@ -13840,6 +13843,90 @@ impl VideoFrame {
             if end > source.len() {
                 return Err(AvError::invalid_data(format!(
                     "packed video frame crop span {start_offset}..{end} exceeds {} bytes",
+                    source.len()
+                )));
+            }
+
+            let mut storage = vec![0; storage_len];
+            for row in 0..new_height {
+                let src_start = start_offset + row * line_size;
+                let src_end = src_start + visible_row_bytes;
+                let dst_start = row * line_size;
+                let dst_end = dst_start + visible_row_bytes;
+                storage[dst_start..dst_end].copy_from_slice(&source.as_slice()[src_start..src_end]);
+            }
+            BufferRef::from_vec(storage)
+        };
+
+        let new_shapes = video_plane_shapes(self.pixel_format, new_width, new_height)?;
+        let line_sizes = vec![line_size];
+        let plane_buffers = vec![new_buffer];
+        let planes = snapshot_video_plane_buffers(
+            &plane_buffers,
+            &new_shapes,
+            &line_sizes,
+            self.pixel_format.name(),
+        )?;
+
+        self.width = new_width;
+        self.height = new_height;
+        self.line_sizes = line_sizes;
+        self.planes = planes;
+        self.plane_buffers = plane_buffers;
+        Ok(())
+    }
+
+    fn apply_uyyvyy411_cropping(&mut self, crop: FrameCrop, flags: FrameCropFlags) -> AvResult<()> {
+        if self.plane_buffers.len() != 1 || self.line_sizes.len() != 1 {
+            return Err(AvError::invalid_argument(
+                "uyyvyy411 frame cropping requires one plane",
+            ));
+        }
+
+        let crop_left = adjusted_packed_crop_left(crop, self.line_sizes[0], flags, 4)?;
+        let new_width = self
+            .width
+            .checked_sub(crop_left + crop.right)
+            .ok_or_else(|| crop_range_error("frame crop width underflow"))?;
+        let new_height = self
+            .height
+            .checked_sub(crop.top + crop.bottom)
+            .ok_or_else(|| crop_range_error("frame crop height underflow"))?;
+
+        let line_size = self.line_sizes[0];
+        let crop_left_bytes = crop_left
+            .checked_mul(4)
+            .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?;
+        let visible_row_bytes = uyyvyy411_row_bytes(new_width)?;
+        let start_offset = crop
+            .top
+            .checked_mul(line_size)
+            .and_then(|offset| offset.checked_add(crop_left_bytes))
+            .ok_or_else(|| AvError::invalid_argument("frame crop offset overflow"))?;
+        let row_span = if new_height == 0 {
+            0
+        } else {
+            (new_height - 1)
+                .checked_mul(line_size)
+                .and_then(|prefix| prefix.checked_add(visible_row_bytes))
+                .ok_or_else(|| AvError::invalid_argument("frame crop row span overflow"))?
+        };
+        let source = &self.plane_buffers[0];
+        let storage_len = line_size
+            .checked_mul(new_height)
+            .ok_or_else(|| AvError::invalid_argument("frame crop line-size span overflow"))?;
+        let new_buffer = if start_offset
+            .checked_add(storage_len)
+            .is_some_and(|end| end <= source.len())
+        {
+            source.ref_slice(start_offset, storage_len)?
+        } else {
+            let end = start_offset
+                .checked_add(row_span)
+                .ok_or_else(|| AvError::invalid_argument("frame crop source span overflow"))?;
+            if end > source.len() {
+                return Err(AvError::invalid_data(format!(
+                    "uyyvyy411 video frame crop span {start_offset}..{end} exceeds {} bytes",
                     source.len()
                 )));
             }
@@ -14983,7 +15070,7 @@ fn video_plane_shapes(
             }])
         }
         PixelFormat::Uyyvyy411 => Ok(vec![VideoPlaneShape {
-            row_bytes: checked_mul(width / 4, 6, "packed YUV 4:1:1 video frame line size")?,
+            row_bytes: uyyvyy411_row_bytes(width)?,
             rows: height,
         }]),
         PixelFormat::Y210Le
@@ -15472,6 +15559,14 @@ fn video_plane_shapes(
             ])
         }
     }
+}
+
+fn uyyvyy411_row_bytes(width: usize) -> AvResult<usize> {
+    checked_mul(
+        width.div_ceil(4),
+        6,
+        "packed YUV 4:1:1 video frame line size",
+    )
 }
 
 fn planar_three_plane_cropped_shapes(
@@ -20771,6 +20866,41 @@ mod tests {
             data
         }
 
+        fn uyyvyy411_row_bytes(width: usize) -> usize {
+            width.div_ceil(4) * 6
+        }
+
+        fn uyyvyy411_storage(width: usize, height: usize, line_size: usize) -> Vec<u8> {
+            let visible_row_bytes = uyyvyy411_row_bytes(width);
+            let mut data = vec![0; height * line_size];
+            for row in 0..height {
+                for column in 0..visible_row_bytes {
+                    data[row * line_size + column] = (row * 16 + column) as u8;
+                }
+            }
+            data
+        }
+
+        fn uyyvyy411_visible(
+            start_row: usize,
+            start_column_bytes: usize,
+            width: usize,
+            height: usize,
+        ) -> Vec<u8> {
+            let row_bytes = uyyvyy411_row_bytes(width);
+            let mut data = Vec::with_capacity(row_bytes * height);
+            for row in start_row..start_row + height {
+                for column in start_column_bytes..start_column_bytes + row_bytes {
+                    data.push(if column < uyyvyy411_row_bytes(8) {
+                        (row * 16 + column) as u8
+                    } else {
+                        0
+                    });
+                }
+            }
+            data
+        }
+
         fn bitstream_row_bytes(width: usize, bits_per_pixel: usize) -> usize {
             (width * bits_per_pixel).div_ceil(8)
         }
@@ -21084,6 +21214,51 @@ mod tests {
         assert_eq!(video.height(), 3);
         assert_eq!(video.line_sizes(), &[192]);
         assert_eq!(video.planes(), &[packed_visible(3, 1, 1, 6, 3)]);
+
+        let uyyvyy411_storage = uyyvyy411_storage(8, 4, 128);
+        let mut uyyvyy411_default = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                PixelFormat::Uyyvyy411,
+                vec![uyyvyy411_storage.clone()],
+                vec![128],
+            )
+            .unwrap(),
+        );
+        uyyvyy411_default.set_crop_offsets(1, 0, 1, 1);
+        let uyyvyy411_default_before = uyyvyy411_default.clone();
+        let err = uyyvyy411_default
+            .apply_cropping(FrameCropFlags::NONE)
+            .unwrap_err();
+        assert_eq!(
+            err.code().map(AvErrorCode::raw),
+            Some(AvErrorCode::BUG.raw())
+        );
+        assert_eq!(uyyvyy411_default, uyyvyy411_default_before);
+
+        let mut uyyvyy411_unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                PixelFormat::Uyyvyy411,
+                vec![uyyvyy411_storage],
+                vec![128],
+            )
+            .unwrap(),
+        );
+        uyyvyy411_unaligned.set_crop_offsets(1, 0, 1, 1);
+        uyyvyy411_unaligned
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .unwrap();
+        let FrameData::Video(video) = uyyvyy411_unaligned.data() else {
+            unreachable!("constructed uyyvyy411 crop frame changed variant");
+        };
+        assert_eq!(uyyvyy411_unaligned.crop(), FrameCrop::default());
+        assert_eq!(video.width(), 6);
+        assert_eq!(video.height(), 3);
+        assert_eq!(video.line_sizes(), &[128]);
+        assert_eq!(video.planes(), &[uyyvyy411_visible(1, 4, 6, 3)]);
 
         let yuv420p_storage = vec![
             strided_plane_storage(8, 4, 64, 0x10),

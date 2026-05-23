@@ -715,6 +715,19 @@ mod tests {
             .frame_size(),
             12
         );
+        assert_eq!(
+            RawVideoDemuxer::open(
+                &[0; 24],
+                6,
+                2,
+                RawVideoPixelFormat::Uyyvyy411,
+                Rational::new(1, 1).unwrap(),
+            )
+            .unwrap()
+            .info()
+            .frame_size(),
+            24
+        );
         for format in [
             RawVideoPixelFormat::Y210Le,
             RawVideoPixelFormat::Y210Be,
@@ -1472,13 +1485,13 @@ mod tests {
         )
         .is_ok());
         assert!(RawVideoDemuxer::open(
-            &[0; 12],
+            &[0; 24],
             6,
             2,
             RawVideoPixelFormat::Uyyvyy411,
             Rational::new(1, 1).unwrap(),
         )
-        .is_err());
+        .is_ok());
         assert!(RawVideoDemuxer::open(
             &[0; 12],
             4,
@@ -1794,6 +1807,15 @@ mod tests {
         .unwrap();
 
         assert_eq!(muxer.info().frame_size(), 12);
+        let narrow = RawVideoMuxer::new(
+            6,
+            2,
+            RawVideoPixelFormat::Uyyvyy411,
+            Rational::new(25, 1).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(narrow.info().frame_size(), 24);
     }
 
     #[test]
@@ -2678,7 +2700,7 @@ mod tests {
             RawVideoPixelFormat::Uyyvyy411,
             Rational::new(1, 1).unwrap(),
         )
-        .is_err());
+        .is_ok());
         assert!(RawVideoMuxer::new(
             4,
             2,

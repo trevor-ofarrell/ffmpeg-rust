@@ -543,7 +543,8 @@ fn exercise_fixtures() {
             .kind(),
         AvErrorKind::InvalidData
     );
-    assert!(RawVideoDecoder::new(6, 1, PixelFormat::Uyyvyy411).is_err());
+    let narrow_uyyvyy411 = RawVideoDecoder::new(6, 1, PixelFormat::Uyyvyy411).unwrap();
+    assert_eq!(narrow_uyyvyy411.frame_size(), 12);
 
     for format in [PixelFormat::Nv12, PixelFormat::Nv21] {
         let decoder = RawVideoDecoder::new(4, 2, format).unwrap();

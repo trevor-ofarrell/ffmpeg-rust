@@ -4479,13 +4479,11 @@ impl PixelFormat {
                 )?])
             }
             Self::Uyyvyy411 => {
-                if width % 4 != 0 {
-                    return Err(AvError::invalid_argument(format!(
-                        "{} pixel format width must be divisible by 4",
-                        self.name()
-                    )));
-                }
-                let row = checked_mul(width / 4, 6, "packed YUV 4:1:1 pixel format line size")?;
+                let row = checked_mul(
+                    width.div_ceil(4),
+                    6,
+                    "packed YUV 4:1:1 pixel format line size",
+                )?;
                 Ok(vec![checked_mul(
                     row,
                     height,
@@ -7034,6 +7032,7 @@ mod tests {
         assert_eq!(PixelFormat::Yvyu422.frame_size(4, 1).unwrap(), 8);
         assert_eq!(PixelFormat::Uyyvyy411.plane_sizes(4, 2).unwrap(), vec![12]);
         assert_eq!(PixelFormat::Uyyvyy411.frame_size(8, 1).unwrap(), 12);
+        assert_eq!(PixelFormat::Uyyvyy411.frame_size(6, 2).unwrap(), 24);
         assert_eq!(PixelFormat::Y210Le.plane_sizes(2, 2).unwrap(), vec![16]);
         assert_eq!(PixelFormat::Y210Be.frame_size(2, 2).unwrap(), 16);
         assert_eq!(PixelFormat::Y212Le.frame_size(2, 2).unwrap(), 16);
@@ -8048,10 +8047,7 @@ mod tests {
             PixelFormat::Yuyv422.frame_size(3, 2).unwrap_err().kind(),
             AvErrorKind::InvalidArgument
         );
-        assert_eq!(
-            PixelFormat::Uyyvyy411.frame_size(6, 2).unwrap_err().kind(),
-            AvErrorKind::InvalidArgument
-        );
+        assert_eq!(PixelFormat::Uyyvyy411.frame_size(6, 2).unwrap(), 24);
         assert_eq!(PixelFormat::Uyyvyy411.frame_size(4, 3).unwrap(), 18);
         assert_eq!(PixelFormat::Uyvy422.frame_size(2, 3).unwrap(), 12);
         assert_eq!(
