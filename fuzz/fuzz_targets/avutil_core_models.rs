@@ -505,6 +505,78 @@ fn assert_channel_layout_compare_fixtures() {
     );
 }
 
+fn assert_channel_layout_string_lookup_fixtures() {
+    let stereo = ChannelLayoutSpec::parse("stereo").unwrap();
+    assert_eq!(stereo.index_from_string("FR").unwrap(), 1);
+    assert_eq!(
+        stereo.channel_from_string("FR"),
+        Some(ChannelId::Native(Channel::FrontRight))
+    );
+    assert_eq!(stereo.index_from_string("USR-0").unwrap(), 0);
+    assert_eq!(
+        stereo.channel_from_string("USR-0"),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
+    assert_eq!(stereo.channel_from_string("BR"), None);
+    assert_eq!(stereo.channel_from_string("@Left"), None);
+
+    let named = ChannelLayoutSpec::parse("FL@Left+FR@Right").unwrap();
+    assert_eq!(named.index_from_string("@Left").unwrap(), 0);
+    assert_eq!(
+        named.channel_from_string("@Left"),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
+    assert_eq!(named.index_from_string("FR@Right").unwrap(), 1);
+    assert_eq!(
+        named.channel_from_string("FR@Right"),
+        Some(ChannelId::Native(Channel::FrontRight))
+    );
+    assert_eq!(named.channel_from_string("FL@Right"), None);
+
+    let unknown_unused = ChannelLayoutSpec::parse("UNK+UNSD").unwrap();
+    assert_eq!(
+        unknown_unused.channel_from_string("UNK"),
+        Some(ChannelId::Unknown)
+    );
+    assert_eq!(
+        unknown_unused.channel_from_string("UNSD"),
+        Some(ChannelId::Unused)
+    );
+    assert_eq!(unknown_unused.channel_from_string("FL"), None);
+    assert_eq!(ChannelLayoutSpec::parse("2C").unwrap().channel_from_string("FL"), None);
+
+    let ambisonic_extra = ChannelLayoutSpec::parse("ambisonic 1+0x200000000000").unwrap();
+    assert_eq!(
+        ambisonic_extra.channel_from_string("AMBI3"),
+        Some(ChannelId::Ambisonic(3))
+    );
+    assert_eq!(
+        ambisonic_extra.channel_from_string("USR45"),
+        Some(ChannelId::User(45))
+    );
+    assert_eq!(
+        ambisonic_extra.channel_from_string("USR055"),
+        Some(ChannelId::User(45))
+    );
+    assert_eq!(
+        ambisonic_extra.channel_from_string("USR0x2d"),
+        Some(ChannelId::User(45))
+    );
+    assert_eq!(ambisonic_extra.channel_from_string("AMBI4"), None);
+    assert_eq!(ambisonic_extra.channel_from_string("USR46"), None);
+
+    let raw_name = ChannelLayoutSpec::parse_bytes(b"FL@\xff+FR").unwrap();
+    assert_eq!(
+        raw_name.channel_from_string_bytes(b"@\xff"),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
+    assert_eq!(
+        raw_name.channel_from_string_bytes(b"FL@\xff"),
+        Some(ChannelId::Native(Channel::FrontLeft))
+    );
+    assert_eq!(raw_name.channel_from_string_bytes(b"@Left\xff"), None);
+}
+
 fn assert_color_parser_fixtures() {
     assert_eq!(
         parse_color("red").unwrap().rgba(),
@@ -4977,6 +5049,7 @@ fn exercise_sample_channel_and_audio_frame(cursor: &mut Cursor<'_>) {
     assert_raw_channel_layout_retype_fixtures();
     assert_channel_layout_byte_parser_fixtures();
     assert_channel_layout_compare_fixtures();
+    assert_channel_layout_string_lookup_fixtures();
 
     let sample_rate = sample_rate_from(cursor.next());
     let channels = channel_count_from(cursor.next());
@@ -8744,6 +8817,7 @@ fn exercise_fixtures() {
     assert_raw_channel_layout_retype_fixtures();
     assert_channel_layout_byte_parser_fixtures();
     assert_channel_layout_compare_fixtures();
+    assert_channel_layout_string_lookup_fixtures();
 
     assert_eq!(PixelFormat::from_name("gray8"), Some(PixelFormat::Gray8));
     assert_eq!(

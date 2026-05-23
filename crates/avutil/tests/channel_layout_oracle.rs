@@ -1080,6 +1080,11 @@ fn layout_fields(layout: &ChannelLayoutSpec) -> Vec<String> {
             .iter()
             .map(|name| layout_index_from_string_field(layout, name)),
     );
+    fields.extend(
+        LOOKUP_NAMES
+            .iter()
+            .map(|name| layout_channel_from_string_field(layout, name)),
+    );
     fields
 }
 
@@ -1100,6 +1105,11 @@ fn layout_byte_fields(layout: &ChannelLayoutSpec) -> Vec<String> {
         BYTE_LOOKUP_NAMES
             .iter()
             .map(|name| layout_index_from_string_bytes_field(layout, name)),
+    );
+    fields.extend(
+        BYTE_LOOKUP_NAMES
+            .iter()
+            .map(|name| layout_channel_from_string_bytes_field(layout, name)),
     );
     fields
 }
@@ -1172,6 +1182,22 @@ fn layout_index_from_string_bytes_field(layout: &ChannelLayoutSpec, name: &[u8])
         .index_from_string_bytes(name)
         .map(|index| index.to_string())
         .unwrap_or_else(|err| err.code().unwrap_or(AvErrorCode::EINVAL).raw().to_string())
+}
+
+fn layout_channel_from_string_field(layout: &ChannelLayoutSpec, name: &str) -> String {
+    layout
+        .channel_from_string(name)
+        .map(ChannelId::raw_id)
+        .unwrap_or(ChannelId::NONE_RAW)
+        .to_string()
+}
+
+fn layout_channel_from_string_bytes_field(layout: &ChannelLayoutSpec, name: &[u8]) -> String {
+    layout
+        .channel_from_string_bytes(name)
+        .map(ChannelId::raw_id)
+        .unwrap_or(ChannelId::NONE_RAW)
+        .to_string()
 }
 
 fn bytes_to_hex(bytes: &[u8]) -> String {
@@ -1394,11 +1420,17 @@ static void print_lookup_results(const AVChannelLayout *layout) {{
     for (size_t index = 0; index < sizeof(lookup_names) / sizeof(lookup_names[0]); index++) {{
         printf("|%d", av_channel_layout_index_from_string(layout, lookup_names[index]));
     }}
+    for (size_t index = 0; index < sizeof(lookup_names) / sizeof(lookup_names[0]); index++) {{
+        printf("|%d", av_channel_layout_channel_from_string(layout, lookup_names[index]));
+    }}
 }}
 
 static void print_byte_lookup_results(const AVChannelLayout *layout) {{
     for (size_t index = 0; index < sizeof(byte_lookup_names) / sizeof(byte_lookup_names[0]); index++) {{
         printf("|%d", av_channel_layout_index_from_string(layout, (const char *)byte_lookup_names[index]));
+    }}
+    for (size_t index = 0; index < sizeof(byte_lookup_names) / sizeof(byte_lookup_names[0]); index++) {{
+        printf("|%d", av_channel_layout_channel_from_string(layout, (const char *)byte_lookup_names[index]));
     }}
 }}
 
@@ -1614,6 +1646,9 @@ static void print_channel_sequence(const AVChannelLayout *layout) {{
 static void print_lookup_results(const AVChannelLayout *layout) {{
     for (size_t index = 0; index < sizeof(lookup_names) / sizeof(lookup_names[0]); index++) {{
         printf("|%d", av_channel_layout_index_from_string(layout, lookup_names[index]));
+    }}
+    for (size_t index = 0; index < sizeof(lookup_names) / sizeof(lookup_names[0]); index++) {{
+        printf("|%d", av_channel_layout_channel_from_string(layout, lookup_names[index]));
     }}
 }}
 
