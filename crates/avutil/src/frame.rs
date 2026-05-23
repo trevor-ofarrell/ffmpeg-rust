@@ -13666,8 +13666,8 @@ impl VideoFrame {
             self.plane_buffers = plane_buffers;
             return Ok(());
         }
-        if is_planar_8bit_yuv_crop_format(self.pixel_format) {
-            return self.apply_planar_8bit_yuv_cropping(crop, flags);
+        if let Some(bytes_per_sample) = planar_yuv_crop_sample_bytes(self.pixel_format) {
+            return self.apply_planar_yuv_cropping(crop, flags, bytes_per_sample);
         }
         let crop_step = match self.pixel_format {
             PixelFormat::Gray8
@@ -13846,10 +13846,11 @@ impl VideoFrame {
         Ok(())
     }
 
-    fn apply_planar_8bit_yuv_cropping(
+    fn apply_planar_yuv_cropping(
         &mut self,
         crop: FrameCrop,
         flags: FrameCropFlags,
+        bytes_per_sample: usize,
     ) -> AvResult<()> {
         if self.plane_buffers.len() != 3 || self.line_sizes.len() != 3 {
             return Err(AvError::invalid_argument(format!(
@@ -13858,7 +13859,8 @@ impl VideoFrame {
             )));
         }
 
-        let crop_left = adjusted_packed_crop_left(crop, self.line_sizes[0], flags, 1)?;
+        let crop_left =
+            adjusted_planar_yuv_crop_left(crop, self.line_sizes[0], flags, bytes_per_sample)?;
         let new_width = self
             .width
             .checked_sub(crop_left + crop.right)
@@ -13867,8 +13869,12 @@ impl VideoFrame {
             .height
             .checked_sub(crop.top + crop.bottom)
             .ok_or_else(|| crop_range_error("frame crop height underflow"))?;
-        let new_shapes =
-            planar_8bit_yuv_cropped_plane_shapes(self.pixel_format, new_width, new_height)?;
+        let new_shapes = planar_yuv_cropped_plane_shapes(
+            self.pixel_format,
+            new_width,
+            new_height,
+            bytes_per_sample,
+        )?;
 
         let (log2_chroma_w, log2_chroma_h) = self.pixel_format.log2_chroma();
         let plane_crop_tops = [
@@ -13877,9 +13883,15 @@ impl VideoFrame {
             crop.top >> log2_chroma_h,
         ];
         let plane_crop_lefts = [
-            crop_left,
-            crop_left >> log2_chroma_w,
-            crop_left >> log2_chroma_w,
+            crop_left
+                .checked_mul(bytes_per_sample)
+                .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?,
+            (crop_left >> log2_chroma_w)
+                .checked_mul(bytes_per_sample)
+                .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?,
+            (crop_left >> log2_chroma_w)
+                .checked_mul(bytes_per_sample)
+                .ok_or_else(|| AvError::invalid_argument("frame crop left offset overflow"))?,
         ];
         let mut plane_buffers = Vec::with_capacity(3);
         for index in 0..3 {
@@ -15204,14 +15216,15 @@ fn video_plane_shapes(
     }
 }
 
-fn planar_8bit_yuv_cropped_plane_shapes(
+fn planar_yuv_cropped_plane_shapes(
     pixel_format: PixelFormat,
     width: usize,
     height: usize,
+    bytes_per_sample: usize,
 ) -> AvResult<Vec<VideoPlaneShape>> {
-    if !is_planar_8bit_yuv_crop_format(pixel_format) {
+    if planar_yuv_crop_sample_bytes(pixel_format) != Some(bytes_per_sample) {
         return Err(AvError::unsupported(format!(
-            "planar 8-bit YUV crop shapes are not implemented for {}",
+            "planar YUV crop shapes are not implemented for {}",
             pixel_format.name()
         )));
     }
@@ -15222,17 +15235,23 @@ fn planar_8bit_yuv_cropped_plane_shapes(
     }
 
     let (log2_chroma_w, log2_chroma_h) = pixel_format.log2_chroma();
+    let luma_row_bytes = checked_mul(width, bytes_per_sample, "cropped planar YUV luma row bytes")?;
+    let chroma_row_bytes = checked_mul(
+        width >> log2_chroma_w,
+        bytes_per_sample,
+        "cropped planar YUV chroma row bytes",
+    )?;
     Ok(vec![
         VideoPlaneShape {
-            row_bytes: width,
+            row_bytes: luma_row_bytes,
             rows: height,
         },
         VideoPlaneShape {
-            row_bytes: width >> log2_chroma_w,
+            row_bytes: chroma_row_bytes,
             rows: height >> log2_chroma_h,
         },
         VideoPlaneShape {
-            row_bytes: width >> log2_chroma_w,
+            row_bytes: chroma_row_bytes,
             rows: height >> log2_chroma_h,
         },
     ])
@@ -15278,11 +15297,34 @@ fn is_frame_crop_bitstream_format(format: PixelFormat) -> bool {
     matches!(format, PixelFormat::Xv30Be | PixelFormat::V30xBe)
 }
 
-fn is_planar_8bit_yuv_crop_format(format: PixelFormat) -> bool {
-    matches!(
-        format,
-        PixelFormat::Yuv420p | PixelFormat::Yuv422p | PixelFormat::Yuv444p
-    )
+fn planar_yuv_crop_sample_bytes(format: PixelFormat) -> Option<usize> {
+    match format {
+        PixelFormat::Yuv420p | PixelFormat::Yuv422p | PixelFormat::Yuv444p => Some(1),
+        PixelFormat::Yuv420p10Le
+        | PixelFormat::Yuv420p10Be
+        | PixelFormat::Yuv422p10Le
+        | PixelFormat::Yuv422p10Be
+        | PixelFormat::Yuv444p10Le
+        | PixelFormat::Yuv444p10Be => Some(2),
+        _ => None,
+    }
+}
+
+fn adjusted_planar_yuv_crop_left(
+    crop: FrameCrop,
+    line_size: usize,
+    flags: FrameCropFlags,
+    bytes_per_sample: usize,
+) -> AvResult<usize> {
+    if bytes_per_sample == 1 {
+        adjusted_packed_crop_left(crop, line_size, flags, 1)
+    } else if flags.contains(FrameCropFlags::UNALIGNED) || crop.left == 0 {
+        Ok(crop.left)
+    } else {
+        Err(AvError::bug(
+            "FFmpeg rejects default left cropping for selected multi-byte planar YUV video frames",
+        ))
+    }
 }
 
 fn adjusted_packed_crop_left(
@@ -20219,6 +20261,22 @@ mod tests {
             data
         }
 
+        fn strided_plane_sample_storage(
+            width: usize,
+            height: usize,
+            line_size: usize,
+            base: u8,
+            sample_bytes: usize,
+        ) -> Vec<u8> {
+            let mut data = vec![0; height * line_size];
+            for row in 0..height {
+                for column in 0..width * sample_bytes {
+                    data[row * line_size + column] = base + (row * 16 + column) as u8;
+                }
+            }
+            data
+        }
+
         fn plane_visible(
             base: u8,
             start_row: usize,
@@ -20233,6 +20291,23 @@ mod tests {
                 }
             }
             data
+        }
+
+        fn plane_visible_sample_bytes(
+            base: u8,
+            start_row: usize,
+            start_column_samples: usize,
+            width_samples: usize,
+            height: usize,
+            sample_bytes: usize,
+        ) -> Vec<u8> {
+            plane_visible(
+                base,
+                start_row,
+                start_column_samples * sample_bytes,
+                width_samples * sample_bytes,
+                height,
+            )
         }
 
         fn planar_yuv_storage(
@@ -20255,6 +20330,33 @@ mod tests {
                     height >> log2_chroma_h,
                     line_size,
                     0xc0,
+                ),
+            ]
+        }
+
+        fn planar_yuv_sample_storage(
+            width: usize,
+            height: usize,
+            line_size: usize,
+            log2_chroma_w: usize,
+            log2_chroma_h: usize,
+            sample_bytes: usize,
+        ) -> Vec<Vec<u8>> {
+            vec![
+                strided_plane_sample_storage(width, height, line_size, 0x10, sample_bytes),
+                strided_plane_sample_storage(
+                    width >> log2_chroma_w,
+                    height >> log2_chroma_h,
+                    line_size,
+                    0x80,
+                    sample_bytes,
+                ),
+                strided_plane_sample_storage(
+                    width >> log2_chroma_w,
+                    height >> log2_chroma_h,
+                    line_size,
+                    0xc0,
+                    sample_bytes,
                 ),
             ]
         }
@@ -20577,6 +20679,103 @@ mod tests {
                         1 >> log2_chroma_w,
                         6 >> log2_chroma_w,
                         3 >> log2_chroma_h,
+                    ),
+                ],
+                "{}",
+                format.name()
+            );
+        }
+
+        for (format, log2_chroma_w, log2_chroma_h) in [
+            (PixelFormat::Yuv420p10Le, 1usize, 1usize),
+            (PixelFormat::Yuv420p10Be, 1usize, 1usize),
+            (PixelFormat::Yuv422p10Le, 1usize, 0usize),
+            (PixelFormat::Yuv422p10Be, 1usize, 0usize),
+            (PixelFormat::Yuv444p10Le, 0usize, 0usize),
+            (PixelFormat::Yuv444p10Be, 0usize, 0usize),
+        ] {
+            let storage = planar_yuv_sample_storage(8, 4, 64, log2_chroma_w, log2_chroma_h, 2);
+            let mut planar_default = Frame::video(
+                VideoFrame::new_with_line_sizes(8, 4, format, storage.clone(), vec![64, 64, 64])
+                    .unwrap(),
+            );
+            planar_default.set_crop_offsets(1, 0, 1, 1);
+            let default_error = planar_default
+                .apply_cropping(FrameCropFlags::NONE)
+                .unwrap_err();
+            assert_eq!(
+                default_error.code().map(AvErrorCode::raw),
+                Some(AvErrorCode::BUG.raw()),
+                "{}",
+                format.name()
+            );
+            assert_eq!(planar_default.crop(), FrameCrop::new(1, 0, 1, 1));
+            let FrameData::Video(video) = planar_default.data() else {
+                unreachable!("constructed high-bit planar YUV default crop frame changed variant");
+            };
+            assert_eq!(video.width(), 8, "{}", format.name());
+            assert_eq!(video.height(), 4, "{}", format.name());
+            assert_eq!(video.line_sizes(), &[64, 64, 64]);
+            assert_eq!(
+                video.planes(),
+                &[
+                    plane_visible_sample_bytes(0x10, 0, 0, 8, 4, 2),
+                    plane_visible_sample_bytes(
+                        0x80,
+                        0,
+                        0,
+                        8 >> log2_chroma_w,
+                        4 >> log2_chroma_h,
+                        2,
+                    ),
+                    plane_visible_sample_bytes(
+                        0xc0,
+                        0,
+                        0,
+                        8 >> log2_chroma_w,
+                        4 >> log2_chroma_h,
+                        2,
+                    ),
+                ],
+                "{}",
+                format.name()
+            );
+
+            let mut planar_unaligned = Frame::video(
+                VideoFrame::new_with_line_sizes(8, 4, format, storage, vec![64, 64, 64]).unwrap(),
+            );
+            planar_unaligned.set_crop_offsets(1, 0, 1, 1);
+            planar_unaligned
+                .apply_cropping(FrameCropFlags::UNALIGNED)
+                .unwrap();
+            assert_eq!(planar_unaligned.crop(), FrameCrop::default());
+            let FrameData::Video(video) = planar_unaligned.data() else {
+                unreachable!(
+                    "constructed high-bit planar YUV unaligned crop frame changed variant"
+                );
+            };
+            assert_eq!(video.width(), 6, "{}", format.name());
+            assert_eq!(video.height(), 3, "{}", format.name());
+            assert_eq!(video.line_sizes(), &[64, 64, 64]);
+            assert_eq!(
+                video.planes(),
+                &[
+                    plane_visible_sample_bytes(0x10, 1, 1, 6, 3, 2),
+                    plane_visible_sample_bytes(
+                        0x80,
+                        1 >> log2_chroma_h,
+                        1 >> log2_chroma_w,
+                        6 >> log2_chroma_w,
+                        3 >> log2_chroma_h,
+                        2,
+                    ),
+                    plane_visible_sample_bytes(
+                        0xc0,
+                        1 >> log2_chroma_h,
+                        1 >> log2_chroma_w,
+                        6 >> log2_chroma_w,
+                        3 >> log2_chroma_h,
+                        2,
                     ),
                 ],
                 "{}",

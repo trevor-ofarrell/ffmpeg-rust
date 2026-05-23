@@ -580,15 +580,21 @@ differential_tests = [
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
-# `av_frame_apply_cropping()` for bounded 8-bit planar software frames:
-# `yuv420p`, `yuv422p`, and `yuv444p`. FFmpeg 8.1.1 rounds default luma left
-# crop down to preserve the 32-byte data-pointer alignment rule, derives chroma
-# starts from each format's rounded chroma offsets, uses floor-shifted chroma
-# visible dimensions after cropping, and applies exact luma/chroma offsets under
-# `AV_FRAME_CROP_UNALIGNED`. Rust unit, oracle, local FATE, differential, and
-# avutil_core_models fuzz-smoke evidence cover this bounded row without claiming
-# high-bit planar formats, hardware, other bitstream, or other packed crop
-# behavior.
+# `av_frame_apply_cropping()` for bounded 10-bit planar software frames:
+# `yuv420p10le`, `yuv420p10be`, `yuv422p10le`, `yuv422p10be`,
+# `yuv444p10le`, and `yuv444p10be`. FFmpeg 8.1.1 returns `AVERROR_BUG`
+# without mutation for default nonzero-left crop on these two-byte-per-sample
+# formats, while `AV_FRAME_CROP_UNALIGNED` applies exact luma/chroma byte
+# offsets and resets crop fields on success. Rust unit, oracle, local FATE,
+# differential, and avutil_core_models fuzz-smoke evidence cover this bounded
+# row without claiming 9/12/14/16-bit planar variants, MSB-aligned variants,
+# hardware, other bitstream, or other packed crop behavior.
+# Prior update: The pinned libavutil `AVFrame` oracle validates bounded 8-bit
+# planar software frames: `yuv420p`, `yuv422p`, and `yuv444p`. FFmpeg 8.1.1
+# rounds default luma left crop down to preserve the 32-byte data-pointer
+# alignment rule, derives chroma starts from each format's rounded chroma
+# offsets, uses floor-shifted chroma visible dimensions after cropping, and
+# applies exact luma/chroma offsets under `AV_FRAME_CROP_UNALIGNED`.
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
 # `av_frame_apply_cropping()` for the byte-packed RGB/BGR/Bayer8 family:
 # `rgb8`, `bgr8`, `rgb4_byte`, `bgr4_byte`, `bayer_bggr8`, `bayer_rggb8`,

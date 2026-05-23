@@ -787,6 +787,65 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         );
     }
 
+    for (pixel_format, name, log2_chroma_w, log2_chroma_h) in [
+        (PixelFormat::Yuv420p10Le, "yuv420p10le", 1usize, 1usize),
+        (PixelFormat::Yuv420p10Be, "yuv420p10be", 1usize, 1usize),
+        (PixelFormat::Yuv422p10Le, "yuv422p10le", 1usize, 0usize),
+        (PixelFormat::Yuv422p10Be, "yuv422p10be", 1usize, 0usize),
+        (PixelFormat::Yuv444p10Le, "yuv444p10le", 0usize, 0usize),
+        (PixelFormat::Yuv444p10Be, "yuv444p10be", 0usize, 0usize),
+    ] {
+        let planar_crop_storage =
+            planar_yuv_strided_storage_with_sample_bytes(8, 4, 64, log2_chroma_w, log2_chroma_h, 2);
+        let mut crop_planar_default = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                planar_crop_storage.clone(),
+                vec![64, 64, 64],
+            )
+            .unwrap(),
+        );
+        crop_planar_default.set_crop_offsets(1, 0, 1, 1);
+        let crop_planar_default_ret = crop_planar_default
+            .apply_cropping(FrameCropFlags::NONE)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-default-ret"),
+            vec![crop_planar_default_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-default"),
+            frame_fields(&crop_planar_default),
+        );
+
+        let mut crop_planar_unaligned = Frame::video(
+            VideoFrame::new_with_line_sizes(
+                8,
+                4,
+                pixel_format,
+                planar_crop_storage,
+                vec![64, 64, 64],
+            )
+            .unwrap(),
+        );
+        crop_planar_unaligned.set_crop_offsets(1, 0, 1, 1);
+        let crop_planar_unaligned_ret = crop_planar_unaligned
+            .apply_cropping(FrameCropFlags::UNALIGNED)
+            .map(|_| 0)
+            .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+        rows.insert(
+            format!("frame:apply-crop-{name}-unaligned-ret"),
+            vec![crop_planar_unaligned_ret.to_string()],
+        );
+        rows.insert(
+            format!("frame:apply-crop-{name}-unaligned"),
+            frame_fields(&crop_planar_unaligned),
+        );
+    }
+
     for (pixel_format, bytes_per_pixel, line_size) in [
         (PixelFormat::Rgb8, 1, 64),
         (PixelFormat::Bgr8, 1, 64),
@@ -1817,11 +1876,17 @@ fn packed_strided_storage(
     storage
 }
 
-fn strided_plane_storage(width: usize, height: usize, line_size: usize, base: u8) -> Vec<u8> {
+fn strided_plane_sample_storage(
+    width: usize,
+    height: usize,
+    line_size: usize,
+    base: u8,
+    sample_bytes: usize,
+) -> Vec<u8> {
     let mut storage = vec![0; line_size * height];
     for row in 0..height {
         let dst_start = row * line_size;
-        for column in 0..width {
+        for column in 0..width * sample_bytes {
             storage[dst_start + column] = base + (row * 16 + column) as u8;
         }
     }
@@ -1839,19 +1904,39 @@ fn planar_yuv_strided_storage(
     log2_chroma_w: usize,
     log2_chroma_h: usize,
 ) -> Vec<Vec<u8>> {
+    planar_yuv_strided_storage_with_sample_bytes(
+        width,
+        height,
+        line_size,
+        log2_chroma_w,
+        log2_chroma_h,
+        1,
+    )
+}
+
+fn planar_yuv_strided_storage_with_sample_bytes(
+    width: usize,
+    height: usize,
+    line_size: usize,
+    log2_chroma_w: usize,
+    log2_chroma_h: usize,
+    sample_bytes: usize,
+) -> Vec<Vec<u8>> {
     vec![
-        strided_plane_storage(width, height, line_size, 0x10),
-        strided_plane_storage(
+        strided_plane_sample_storage(width, height, line_size, 0x10, sample_bytes),
+        strided_plane_sample_storage(
             width >> log2_chroma_w,
             height >> log2_chroma_h,
             line_size,
             0x80,
+            sample_bytes,
         ),
-        strided_plane_storage(
+        strided_plane_sample_storage(
             width >> log2_chroma_w,
             height >> log2_chroma_h,
             line_size,
             0xc0,
+            sample_bytes,
         ),
     ]
 }
@@ -2406,6 +2491,39 @@ static void print_line_sizes(const int *line_sizes, int count)
     }
 }
 
+static int planar_yuv_sample_bytes(enum AVPixelFormat format,
+                                   int *log2_chroma_w,
+                                   int *log2_chroma_h)
+{
+    *log2_chroma_w = 0;
+    *log2_chroma_h = 0;
+    switch (format) {
+    case AV_PIX_FMT_YUV420P:
+        *log2_chroma_w = 1;
+        *log2_chroma_h = 1;
+        return 1;
+    case AV_PIX_FMT_YUV422P:
+        *log2_chroma_w = 1;
+        return 1;
+    case AV_PIX_FMT_YUV444P:
+        return 1;
+    case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_YUV420P10BE:
+        *log2_chroma_w = 1;
+        *log2_chroma_h = 1;
+        return 2;
+    case AV_PIX_FMT_YUV422P10LE:
+    case AV_PIX_FMT_YUV422P10BE:
+        *log2_chroma_w = 1;
+        return 2;
+    case AV_PIX_FMT_YUV444P10LE:
+    case AV_PIX_FMT_YUV444P10BE:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
 static void print_video_planes(const AVFrame *frame)
 {
     if (frame->width <= 0 || frame->height <= 0 || frame->data[0] == NULL) {
@@ -2413,17 +2531,11 @@ static void print_video_planes(const AVFrame *frame)
         return;
     }
 
-    if (frame->format == AV_PIX_FMT_YUV420P ||
-        frame->format == AV_PIX_FMT_YUV422P ||
-        frame->format == AV_PIX_FMT_YUV444P) {
-        int log2_chroma_w = 0;
-        int log2_chroma_h = 0;
-        if (frame->format == AV_PIX_FMT_YUV420P) {
-            log2_chroma_w = 1;
-            log2_chroma_h = 1;
-        } else if (frame->format == AV_PIX_FMT_YUV422P) {
-            log2_chroma_w = 1;
-        }
+    int log2_chroma_w = 0;
+    int log2_chroma_h = 0;
+    int planar_yuv_bytes = planar_yuv_sample_bytes(
+        frame->format, &log2_chroma_w, &log2_chroma_h);
+    if (planar_yuv_bytes) {
         for (int plane = 0; plane < 3; plane++) {
             int width = plane == 0 ? frame->width : frame->width >> log2_chroma_w;
             int height = plane == 0 ? frame->height : frame->height >> log2_chroma_h;
@@ -2431,7 +2543,7 @@ static void print_video_planes(const AVFrame *frame)
                 printf(",");
             for (int row = 0; row < height; row++)
                 print_hex(frame->data[plane] + row * frame->linesize[plane],
-                          width);
+                          width * planar_yuv_bytes);
         }
         return;
     }
@@ -2812,14 +2924,11 @@ static void print_side_clone_row(const char *name, int ret,
 
 static int video_plane_count_for_format(enum AVPixelFormat format)
 {
-    switch (format) {
-    case AV_PIX_FMT_YUV420P:
-    case AV_PIX_FMT_YUV422P:
-    case AV_PIX_FMT_YUV444P:
+    int log2_chroma_w = 0;
+    int log2_chroma_h = 0;
+    if (planar_yuv_sample_bytes(format, &log2_chroma_w, &log2_chroma_h))
         return 3;
-    default:
-        return 1;
-    }
+    return 1;
 }
 
 static void print_frame(const char *name, const AVFrame *frame)
@@ -3021,7 +3130,6 @@ static void exercise_planar_yuv_crop_pair(enum AVPixelFormat format,
     int crop_default_ret = av_frame_apply_cropping(crop_default, 0);
     snprintf(row, sizeof(row), "frame:apply-crop-%s-default-ret", name);
     printf("%s|%d\n", row, crop_default_ret);
-    fail_if(crop_default_ret < 0, "planar YUV default crop apply failed");
     snprintf(row, sizeof(row), "frame:apply-crop-%s-default", name);
     print_frame(row, crop_default);
 
@@ -3163,26 +3271,26 @@ static void fill_video_yuv420p(AVFrame *frame)
 
 static void fill_video_planar_yuv(AVFrame *frame)
 {
+    int log2_chroma_w = 0;
+    int log2_chroma_h = 0;
+    int sample_bytes = planar_yuv_sample_bytes(
+        frame->format, &log2_chroma_w, &log2_chroma_h);
+    fail_if(!sample_bytes, "unsupported planar YUV fill format");
+
     for (int row = 0; row < frame->height; row++) {
         uint8_t *dst = frame->data[0] + row * frame->linesize[0];
-        for (int column = 0; column < frame->width; column++)
+        int visible_row_bytes = frame->width * sample_bytes;
+        for (int column = 0; column < visible_row_bytes; column++)
             dst[column] = (uint8_t)(0x10 + row * 16 + column);
     }
 
-    int log2_chroma_w = 0;
-    int log2_chroma_h = 0;
-    if (frame->format == AV_PIX_FMT_YUV420P) {
-        log2_chroma_w = 1;
-        log2_chroma_h = 1;
-    } else if (frame->format == AV_PIX_FMT_YUV422P) {
-        log2_chroma_w = 1;
-    }
     int chroma_width = frame->width >> log2_chroma_w;
     int chroma_height = frame->height >> log2_chroma_h;
     for (int row = 0; row < chroma_height; row++) {
         uint8_t *u = frame->data[1] + row * frame->linesize[1];
         uint8_t *v = frame->data[2] + row * frame->linesize[2];
-        for (int column = 0; column < chroma_width; column++) {
+        int visible_row_bytes = chroma_width * sample_bytes;
+        for (int column = 0; column < visible_row_bytes; column++) {
             u[column] = (uint8_t)(0x80 + row * 16 + column);
             v[column] = (uint8_t)(0xc0 + row * 16 + column);
         }
@@ -3874,6 +3982,12 @@ int main(void)
     exercise_yuv420p_crop_pair();
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV422P, "yuv422p");
     exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV444P, "yuv444p");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV420P10LE, "yuv420p10le");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV420P10BE, "yuv420p10be");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV422P10LE, "yuv422p10le");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV422P10BE, "yuv422p10be");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV444P10LE, "yuv444p10le");
+    exercise_planar_yuv_crop_pair(AV_PIX_FMT_YUV444P10BE, "yuv444p10be");
 
     AVFrame *invalid_crop = av_frame_alloc();
     fail_if(!invalid_crop, "invalid_crop allocation failed");
