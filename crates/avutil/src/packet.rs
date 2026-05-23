@@ -4968,6 +4968,13 @@ impl Packet {
         Ok(Self::with_buffer(buffer, 0))
     }
 
+    pub fn replace_data_from_vec(&mut self, data: Vec<u8>) -> AvResult<()> {
+        let mut buffer = BufferRef::from_vec(data);
+        buffer.resize_with_padding(buffer.len(), AV_INPUT_BUFFER_PADDING_SIZE)?;
+        self.data = buffer;
+        Ok(())
+    }
+
     pub fn new_zeroed(size: usize, stream_index: usize) -> AvResult<Self> {
         Ok(Self::with_buffer(
             BufferRef::zeroed_with_padding(size, AV_INPUT_BUFFER_PADDING_SIZE)?,
@@ -10868,6 +10875,52 @@ mod tests {
             .padding_slice()
             .iter()
             .all(|byte| *byte == 0));
+
+        let mut preserved = Packet::new(vec![0x99], 7);
+        preserved.set_pts(Some(90_000));
+        preserved.set_dts(Some(45_000));
+        preserved.set_duration(180_000).unwrap();
+        preserved.set_pos(Some(1_234)).unwrap();
+        preserved.set_flag(PacketFlags::KEY, true);
+        preserved.set_flag(PacketFlags::CORRUPT, true);
+        preserved
+            .set_time_base(Rational::new(1, 90_000).unwrap())
+            .unwrap();
+        preserved.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
+        preserved.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+        preserved.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad, 0xbe])));
+
+        preserved
+            .replace_data_from_vec(vec![0x10, 0x20, 0x30])
+            .unwrap();
+        assert_eq!(preserved.data(), &[0x10, 0x20, 0x30]);
+        assert_eq!(
+            preserved.data_buffer().padding_len(),
+            AV_INPUT_BUFFER_PADDING_SIZE
+        );
+        assert!(preserved
+            .data_buffer()
+            .padding_slice()
+            .iter()
+            .all(|byte| *byte == 0));
+        assert!(preserved.is_data_writable());
+        assert_eq!(preserved.stream_index(), 7);
+        assert_eq!(preserved.pts(), Some(90_000));
+        assert_eq!(preserved.dts(), Some(45_000));
+        assert_eq!(preserved.duration(), 180_000);
+        assert_eq!(preserved.pos(), Some(1_234));
+        assert!(preserved.flags().contains(PacketFlags::KEY));
+        assert!(preserved.flags().contains(PacketFlags::CORRUPT));
+        assert_eq!(preserved.time_base(), Rational::new(1, 90_000).unwrap());
+        assert_eq!(
+            preserved.side_data_by_kind("new_extradata").unwrap().data(),
+            &[0x11, 0x22, 0x33]
+        );
+        assert_eq!(preserved.opaque_address(), Some(0x1234));
+        assert_eq!(
+            preserved.opaque_ref().unwrap().as_slice(),
+            &[0xde, 0xad, 0xbe]
+        );
     }
 
     #[test]

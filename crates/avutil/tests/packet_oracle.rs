@@ -1236,6 +1236,23 @@ fn insert_payload_api_rows(rows: &mut BTreeMap<String, Vec<String>>) {
         payload_fields(&from_zero_data),
     );
 
+    let mut from_data_preserve = packet_with_common_props_no_payload();
+    from_data_preserve
+        .replace_data_from_vec(vec![0x10, 0x20, 0x30])
+        .unwrap();
+    rows.insert(
+        "packet:payload-from-data-preserve-ret".to_string(),
+        vec!["0".to_string()],
+    );
+    rows.insert(
+        "packet:payload-from-data-preserve".to_string(),
+        packet_fields(&from_data_preserve),
+    );
+    rows.insert(
+        "packet:payload-from-data-preserve-payload".to_string(),
+        payload_fields(&from_data_preserve),
+    );
+
     let raw_ref_src = Packet::new(vec![0xaa, 0xbb], 0);
     let mut raw_ref_dst = Packet::default();
     raw_ref_dst.ref_from(&raw_ref_src);
@@ -2458,6 +2475,17 @@ fn insert_frame_packet_side_data_bridge_rows(rows: &mut BTreeMap<String, Vec<Str
 
 fn packet_with_common_props() -> Packet {
     let mut packet = Packet::new(vec![0xaa, 0xbb, 0xcc], 7);
+    set_common_packet_props(&mut packet);
+    packet
+}
+
+fn packet_with_common_props_no_payload() -> Packet {
+    let mut packet = Packet::new(Vec::new(), 7);
+    set_common_packet_props(&mut packet);
+    packet
+}
+
+fn set_common_packet_props(packet: &mut Packet) {
     packet.set_pts(Some(90_000));
     packet.set_dts(Some(45_000));
     packet.set_duration(180_000).unwrap();
@@ -2470,7 +2498,6 @@ fn packet_with_common_props() -> Packet {
     packet.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
     packet.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
     packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad, 0xbe])));
-    packet
 }
 
 fn packet_with_duplicate_side_data() -> Packet {
@@ -3874,13 +3901,7 @@ static AVPacket *new_packet(void) {
     return pkt;
 }
 
-static AVPacket *packet_with_common_props(void) {
-    AVPacket *pkt = new_packet();
-    int ret = av_new_packet(pkt, 3);
-    fail_if(ret < 0, "av_new_packet failed");
-    pkt->data[0] = 0xaa;
-    pkt->data[1] = 0xbb;
-    pkt->data[2] = 0xcc;
+static void set_common_packet_props(AVPacket *pkt) {
     pkt->pts = 90000;
     pkt->dts = 45000;
     pkt->duration = 180000;
@@ -3900,6 +3921,22 @@ static AVPacket *packet_with_common_props(void) {
     sd[0] = 0x11;
     sd[1] = 0x22;
     sd[2] = 0x33;
+}
+
+static AVPacket *packet_with_common_props_no_payload(void) {
+    AVPacket *pkt = new_packet();
+    set_common_packet_props(pkt);
+    return pkt;
+}
+
+static AVPacket *packet_with_common_props(void) {
+    AVPacket *pkt = new_packet();
+    int ret = av_new_packet(pkt, 3);
+    fail_if(ret < 0, "av_new_packet failed");
+    pkt->data[0] = 0xaa;
+    pkt->data[1] = 0xbb;
+    pkt->data[2] = 0xcc;
+    set_common_packet_props(pkt);
     return pkt;
 }
 
@@ -4480,6 +4517,22 @@ static void exercise_payload_api(void) {
         fail_if(1, "av_packet_from_data zero-size payload failed");
     }
     print_payload("packet:payload-from-data-zero", pkt);
+    av_packet_free(&pkt);
+
+    pkt = packet_with_common_props_no_payload();
+    uint8_t *preserve_owned = av_mallocz(3 + AV_INPUT_BUFFER_PADDING_SIZE);
+    fail_if(!preserve_owned, "av_mallocz preserve payload from-data failed");
+    preserve_owned[0] = 0x10;
+    preserve_owned[1] = 0x20;
+    preserve_owned[2] = 0x30;
+    ret = av_packet_from_data(pkt, preserve_owned, 3);
+    printf("packet:payload-from-data-preserve-ret|%d\n", ret);
+    if (ret < 0) {
+        av_free(preserve_owned);
+        fail_if(1, "av_packet_from_data preserve payload failed");
+    }
+    print_packet("packet:payload-from-data-preserve", pkt);
+    print_payload("packet:payload-from-data-preserve-payload", pkt);
     av_packet_free(&pkt);
 
     pkt = new_packet();

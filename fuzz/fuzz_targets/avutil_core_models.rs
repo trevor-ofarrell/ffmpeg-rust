@@ -6567,6 +6567,59 @@ fn exercise_packet_and_hashes(cursor: &mut Cursor<'_>) {
         .all(|byte| *byte == 0));
     assert!(zero_from_data_packet.is_data_writable());
 
+    let replacement_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
+    let replacement_payload = payload_from(cursor, replacement_len);
+    let mut preserved_packet = Packet::new(vec![0xfe], stream_index);
+    preserved_packet.set_pts(Some(90_000));
+    preserved_packet.set_dts(Some(45_000));
+    preserved_packet.set_duration(180_000).unwrap();
+    preserved_packet.set_pos(Some(1_234)).unwrap();
+    preserved_packet.set_flag(PacketFlags::KEY, true);
+    preserved_packet.set_flag(PacketFlags::CORRUPT, true);
+    preserved_packet
+        .set_time_base(Rational::new(1, 90_000).unwrap())
+        .unwrap();
+    preserved_packet.push_side_data(SideData::new_extradata(vec![0x11, 0x22, 0x33]).unwrap());
+    preserved_packet.set_opaque(Some(PacketOpaque::new(0x1234).unwrap()));
+    preserved_packet.set_opaque_ref(Some(BufferRef::from_vec(vec![0xde, 0xad, 0xbe])));
+    preserved_packet
+        .replace_data_from_vec(replacement_payload.clone())
+        .unwrap();
+    assert_eq!(preserved_packet.data(), replacement_payload.as_slice());
+    assert_eq!(
+        preserved_packet.data_buffer().padding_len(),
+        AV_INPUT_BUFFER_PADDING_SIZE
+    );
+    assert!(preserved_packet
+        .data_buffer()
+        .padding_slice()
+        .iter()
+        .all(|byte| *byte == 0));
+    assert!(preserved_packet.is_data_writable());
+    assert_eq!(preserved_packet.stream_index(), stream_index);
+    assert_eq!(preserved_packet.pts(), Some(90_000));
+    assert_eq!(preserved_packet.dts(), Some(45_000));
+    assert_eq!(preserved_packet.duration(), 180_000);
+    assert_eq!(preserved_packet.pos(), Some(1_234));
+    assert!(preserved_packet.flags().contains(PacketFlags::KEY));
+    assert!(preserved_packet.flags().contains(PacketFlags::CORRUPT));
+    assert_eq!(
+        preserved_packet.time_base(),
+        Rational::new(1, 90_000).unwrap()
+    );
+    assert_eq!(
+        preserved_packet
+            .side_data_by_kind("new_extradata")
+            .unwrap()
+            .data(),
+        &[0x11, 0x22, 0x33]
+    );
+    assert_eq!(preserved_packet.opaque_address(), Some(0x1234));
+    assert_eq!(
+        preserved_packet.opaque_ref().unwrap().as_slice(),
+        &[0xde, 0xad, 0xbe]
+    );
+
     let mut empty_refcounted_packet = Packet::default();
     empty_refcounted_packet.make_refcounted().unwrap();
     assert!(empty_refcounted_packet.is_empty());
