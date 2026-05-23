@@ -13493,6 +13493,14 @@ fn exercise_fixtures() {
     );
 
     for (format, bytes_per_pixel, line_size) in [
+        (PixelFormat::Rgb8, 1, 64),
+        (PixelFormat::Bgr8, 1, 64),
+        (PixelFormat::Rgb4Byte, 1, 64),
+        (PixelFormat::Bgr4Byte, 1, 64),
+        (PixelFormat::BayerBggr8, 1, 64),
+        (PixelFormat::BayerRggb8, 1, 64),
+        (PixelFormat::BayerGbrg8, 1, 64),
+        (PixelFormat::BayerGrbg8, 1, 64),
         (PixelFormat::Rgba, 4, 64),
         (PixelFormat::Bgra, 4, 64),
         (PixelFormat::Argb, 4, 64),
@@ -13540,14 +13548,27 @@ fn exercise_fixtures() {
         );
         packed_default_crop.set_crop_offsets(1, 0, 1, 1);
         let packed_before = packed_default_crop.clone();
-        let packed_error = packed_default_crop
-            .apply_cropping(FrameCropFlags::NONE)
-            .unwrap_err();
-        assert_eq!(
-            packed_error.code().map(AvErrorCode::raw),
-            Some(AvErrorCode::BUG.raw())
-        );
-        assert_eq!(packed_default_crop, packed_before);
+        if bytes_per_pixel == 1 {
+            packed_default_crop
+                .apply_cropping(FrameCropFlags::NONE)
+                .unwrap();
+            assert_ne!(packed_default_crop, packed_before);
+            let FrameData::Video(packed_default_crop_video) = packed_default_crop.data() else {
+                panic!("constructed byte-packed crop frame changed variant");
+            };
+            assert_eq!(packed_default_crop_video.width(), 7);
+            assert_eq!(packed_default_crop_video.height(), 3);
+            assert_eq!(&packed_default_crop_video.planes()[0][..1], &[16]);
+        } else {
+            let packed_error = packed_default_crop
+                .apply_cropping(FrameCropFlags::NONE)
+                .unwrap_err();
+            assert_eq!(
+                packed_error.code().map(AvErrorCode::raw),
+                Some(AvErrorCode::BUG.raw())
+            );
+            assert_eq!(packed_default_crop, packed_before);
+        }
 
         let mut packed_unaligned_crop = Frame::video(
             VideoFrame::new_with_line_sizes(

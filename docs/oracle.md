@@ -230,9 +230,10 @@ audio showing that high channel count alone does not allocate extended buffers,
 `av_frame_get_plane_buffer()` lookup presence, visible plane bytes, refcount,
 and writability for video, packed audio, direct planar audio, extended planar
 audio, and out-of-range indexes,
-`av_frame_apply_cropping()` for gray8 aligned, gray8 unaligned, RGB24
-aligned, RGB24 unaligned, BGR24 aligned, BGR24 unaligned, selected packed
-RGB/RGBA default and unaligned cases, and invalid crop rectangles,
+`av_frame_apply_cropping()` for gray8 aligned, gray8 unaligned, byte-packed
+RGB/BGR/Bayer8 default and unaligned cases, RGB24 aligned, RGB24 unaligned,
+BGR24 aligned, BGR24 unaligned, selected packed RGB/RGBA default and
+unaligned cases, and invalid crop rectangles,
 `AV_FRAME_DATA_*` numeric
 values/names/descriptors/properties, `av_frame_side_data_name()` invalid
 raw-value boundaries, `AV_FRAME_SIDE_DATA_FLAG_*`,
@@ -299,17 +300,19 @@ write/read behavior, non-mutating peek, readable counts, drain ordering,
 invalid peek `EINVAL`, and the oracle-observed empty-read `EINVAL` result
 against the Rust `FrameFifo` model.
 The `av_frame_apply_cropping` rows prove FFmpeg's default left-crop rounding to
-keep the data pointer at least 32-byte aligned for gray8, RGB24, and BGR24,
-exact-left behavior under `AV_FRAME_CROP_UNALIGNED`, crop-field reset on
-success, and `ERANGE` no-mutation behavior for invalid crop rectangles. They
-also prove the 16-bit packed RGB/BGR family (`rgb565be`, `rgb565le`,
-`rgb555be`, `rgb555le`, `bgr565be`, `bgr565le`, `bgr555be`, `bgr555le`,
-`rgb444le`, `rgb444be`, `bgr444le`, and `bgr444be`), 32-bit packed RGB/RGBA
-family (`rgba`, `bgra`, `argb`, `abgr`, `0rgb`, `rgb0`, `0bgr`, and `bgr0`),
-and high-depth packed RGB/RGBA family (`rgb48le`, `rgb48be`, `bgr48le`,
-`bgr48be`, `rgba64le`, `rgba64be`, `bgra64le`, and `bgra64be`) return
-`AVERROR_BUG` without mutation for default nonzero-left crop while succeeding
-with exact-left behavior under `AV_FRAME_CROP_UNALIGNED`.
+keep the data pointer at least 32-byte aligned for gray8, byte-packed RGB/BGR
+(`rgb8`, `bgr8`, `rgb4_byte`, and `bgr4_byte`), Bayer8 (`bayer_bggr8`,
+`bayer_rggb8`, `bayer_gbrg8`, and `bayer_grbg8`), RGB24, and BGR24, exact-left
+behavior under `AV_FRAME_CROP_UNALIGNED`, crop-field reset on success, and
+`ERANGE` no-mutation behavior for invalid crop rectangles. They also prove the
+16-bit packed RGB/BGR family (`rgb565be`, `rgb565le`, `rgb555be`, `rgb555le`,
+`bgr565be`, `bgr565le`, `bgr555be`, `bgr555le`, `rgb444le`, `rgb444be`,
+`bgr444le`, and `bgr444be`), 32-bit packed RGB/RGBA family (`rgba`, `bgra`,
+`argb`, `abgr`, `0rgb`, `rgb0`, `0bgr`, and `bgr0`), and high-depth packed
+RGB/RGBA family (`rgb48le`, `rgb48be`, `bgr48le`, `bgr48be`, `rgba64le`,
+`rgba64be`, `bgra64le`, and `bgra64be`) return `AVERROR_BUG` without mutation
+for default nonzero-left crop while succeeding with exact-left behavior under
+`AV_FRAME_CROP_UNALIGNED`.
 The standalone side-data array rows exercise `av_frame_side_data_new()`,
 `av_frame_side_data_get()`, `av_frame_side_data_remove_by_props()`, and
 `av_frame_side_data_free()`: duplicate insertion without flags fails without

@@ -635,6 +635,14 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
 
     for (pixel_format, bytes_per_pixel, line_size) in [
+        (PixelFormat::Rgb8, 1, 64),
+        (PixelFormat::Bgr8, 1, 64),
+        (PixelFormat::Rgb4Byte, 1, 64),
+        (PixelFormat::Bgr4Byte, 1, 64),
+        (PixelFormat::BayerBggr8, 1, 64),
+        (PixelFormat::BayerRggb8, 1, 64),
+        (PixelFormat::BayerGbrg8, 1, 64),
+        (PixelFormat::BayerGrbg8, 1, 64),
         (PixelFormat::Rgba, 4, 64),
         (PixelFormat::Bgra, 4, 64),
         (PixelFormat::Argb, 4, 64),
@@ -2168,6 +2176,16 @@ static void print_video_planes(const AVFrame *frame)
     }
     int bytes_per_pixel = 0;
     switch (frame->format) {
+    case AV_PIX_FMT_RGB8:
+    case AV_PIX_FMT_BGR8:
+    case AV_PIX_FMT_RGB4_BYTE:
+    case AV_PIX_FMT_BGR4_BYTE:
+    case AV_PIX_FMT_BAYER_BGGR8:
+    case AV_PIX_FMT_BAYER_RGGB8:
+    case AV_PIX_FMT_BAYER_GBRG8:
+    case AV_PIX_FMT_BAYER_GRBG8:
+        bytes_per_pixel = 1;
+        break;
     case AV_PIX_FMT_RGB565BE:
     case AV_PIX_FMT_RGB565LE:
     case AV_PIX_FMT_RGB555BE:
@@ -3276,6 +3294,14 @@ int main(void)
     exercise_packed_crop_pair("rgb0", AV_PIX_FMT_RGB0, 4);
     exercise_packed_crop_pair("0bgr", AV_PIX_FMT_0BGR, 4);
     exercise_packed_crop_pair("bgr0", AV_PIX_FMT_BGR0, 4);
+    exercise_packed_crop_pair("rgb8", AV_PIX_FMT_RGB8, 1);
+    exercise_packed_crop_pair("bgr8", AV_PIX_FMT_BGR8, 1);
+    exercise_packed_crop_pair("rgb4_byte", AV_PIX_FMT_RGB4_BYTE, 1);
+    exercise_packed_crop_pair("bgr4_byte", AV_PIX_FMT_BGR4_BYTE, 1);
+    exercise_packed_crop_pair("bayer_bggr8", AV_PIX_FMT_BAYER_BGGR8, 1);
+    exercise_packed_crop_pair("bayer_rggb8", AV_PIX_FMT_BAYER_RGGB8, 1);
+    exercise_packed_crop_pair("bayer_gbrg8", AV_PIX_FMT_BAYER_GBRG8, 1);
+    exercise_packed_crop_pair("bayer_grbg8", AV_PIX_FMT_BAYER_GRBG8, 1);
     exercise_packed_crop_pair("rgb565be", AV_PIX_FMT_RGB565BE, 2);
     exercise_packed_crop_pair("rgb565le", AV_PIX_FMT_RGB565LE, 2);
     exercise_packed_crop_pair("rgb555be", AV_PIX_FMT_RGB555BE, 2);

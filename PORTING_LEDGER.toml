@@ -384,7 +384,17 @@ notes = "Initial reference-counted byte buffer model implemented with owned/copy
 # Previous nullable realloc slice: `BufferRef::realloc(&mut Option<BufferRef>, len)` models `av_buffer_realloc(&buf, len)` when `buf` is NULL, while preserving no-mutation failure behavior. The pinned libavutil oracle validates the NULL realloc status row.
 blocked_reason = ""
 
-# Latest packed16 crop slice: pinned libavutil rows now prove
+# Latest byte-packed crop slice: pinned libavutil rows now prove
+# `av_frame_apply_cropping()` for `rgb8`, `bgr8`, `rgb4_byte`,
+# `bgr4_byte`, `bayer_bggr8`, `bayer_rggb8`, `bayer_gbrg8`, and
+# `bayer_grbg8`. These formats follow the gray8/RGB24/BGR24 default path:
+# default nonzero-left crop succeeds after FFmpeg's 32-byte alignment
+# rounding, while `AV_FRAME_CROP_UNALIGNED` applies exact-left cropping and
+# resets crop fields on success. Rust `VideoFrame::apply_cropping()` now covers
+# gray8, byte-packed RGB/Bayer, RGB24, BGR24, 16-bit packed RGB/BGR, 32-bit
+# packed RGB/RGBA, 48-bit packed RGB/BGR, and 64-bit packed RGBA/BGRA for this
+# bounded surface with unit, oracle, FATE-runner, and fuzz-smoke evidence.
+# Previous packed16 crop slice: pinned libavutil rows prove
 # `av_frame_apply_cropping()` for `rgb565be`/`rgb565le`,
 # `rgb555be`/`rgb555le`, `bgr565be`/`bgr565le`, `bgr555be`/`bgr555le`,
 # `rgb444le`/`rgb444be`, and `bgr444le`/`bgr444be`. Like the prior
@@ -568,6 +578,15 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: The pinned libavutil `AVFrame` oracle now validates
+# `av_frame_apply_cropping()` for the byte-packed RGB/BGR/Bayer8 family:
+# `rgb8`, `bgr8`, `rgb4_byte`, `bgr4_byte`, `bayer_bggr8`, `bayer_rggb8`,
+# `bayer_gbrg8`, and `bayer_grbg8`. FFmpeg 8.1.1 succeeds for default
+# nonzero-left crop on these formats using the same alignment-rounded crop-left
+# behavior as gray8/RGB24/BGR24, while `AV_FRAME_CROP_UNALIGNED` applies
+# exact-left cropping and resets crop fields on success. This extends the prior
+# gray8/RGB24/BGR24 plus 16-bit/32-bit/high-depth packed RGB/RGBA crop evidence
+# without claiming other packed, planar, bitstream, or hardware crop behavior.
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
 # `av_frame_apply_cropping()` for the 16-bit packed RGB/BGR family:
 # `rgb565be`, `rgb565le`, `rgb555be`, `rgb555le`, `bgr565be`, `bgr565le`,

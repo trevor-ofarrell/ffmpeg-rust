@@ -13635,7 +13635,15 @@ impl VideoFrame {
             return Ok(());
         }
         let crop_step = match self.pixel_format {
-            PixelFormat::Gray8 => 1,
+            PixelFormat::Gray8
+            | PixelFormat::Rgb8
+            | PixelFormat::Bgr8
+            | PixelFormat::Rgb4Byte
+            | PixelFormat::Bgr4Byte
+            | PixelFormat::BayerBggr8
+            | PixelFormat::BayerRggb8
+            | PixelFormat::BayerGbrg8
+            | PixelFormat::BayerGrbg8 => 1,
             PixelFormat::Rgb24 | PixelFormat::Bgr24 => 3,
             PixelFormat::Rgb565Be
             | PixelFormat::Rgb565Le
@@ -13667,7 +13675,7 @@ impl VideoFrame {
             | PixelFormat::Bgra64Be => 8,
             _ => {
                 return Err(AvError::unsupported(format!(
-                    "frame cropping is currently implemented for gray8, rgb24/bgr24, and selected high-depth packed RGB/RGBA video frames, not {}",
+                    "frame cropping is currently implemented for gray8, selected byte-packed RGB/Bayer, rgb24/bgr24, and selected high-depth packed RGB/RGBA video frames, not {}",
                     self.pixel_format.name()
                 )));
             }
@@ -20082,6 +20090,14 @@ mod tests {
         assert_eq!(video.planes(), &[packed_visible(3, 1, 1, 6, 3)]);
 
         for (format, bytes_per_pixel, line_size) in [
+            (PixelFormat::Rgb8, 1, 64),
+            (PixelFormat::Bgr8, 1, 64),
+            (PixelFormat::Rgb4Byte, 1, 64),
+            (PixelFormat::Bgr4Byte, 1, 64),
+            (PixelFormat::BayerBggr8, 1, 64),
+            (PixelFormat::BayerRggb8, 1, 64),
+            (PixelFormat::BayerGbrg8, 1, 64),
+            (PixelFormat::BayerGrbg8, 1, 64),
             (PixelFormat::Rgba, 4, 64),
             (PixelFormat::Bgra, 4, 64),
             (PixelFormat::Argb, 4, 64),
@@ -20124,16 +20140,34 @@ mod tests {
             );
             packed_default.set_crop_offsets(1, 0, 1, 1);
             let before = packed_default.clone();
-            let err = packed_default
-                .apply_cropping(FrameCropFlags::NONE)
-                .unwrap_err();
-            assert_eq!(
-                err.code().map(AvErrorCode::raw),
-                Some(AvErrorCode::BUG.raw()),
-                "{} default crop should match FFmpeg's AVERROR_BUG path",
-                format.name()
-            );
-            assert_eq!(packed_default, before);
+            if bytes_per_pixel == 1 {
+                packed_default.apply_cropping(FrameCropFlags::NONE).unwrap();
+                assert_ne!(packed_default, before);
+                assert_eq!(packed_default.crop(), FrameCrop::default());
+                let FrameData::Video(video) = packed_default.data() else {
+                    unreachable!("constructed byte-packed crop frame changed variant");
+                };
+                assert_eq!(video.width(), 7, "{}", format.name());
+                assert_eq!(video.height(), 3, "{}", format.name());
+                assert_eq!(video.line_sizes(), &[line_size], "{}", format.name());
+                assert_eq!(
+                    video.planes(),
+                    &[packed_visible(bytes_per_pixel, 1, 0, 7, 3)],
+                    "{}",
+                    format.name()
+                );
+            } else {
+                let err = packed_default
+                    .apply_cropping(FrameCropFlags::NONE)
+                    .unwrap_err();
+                assert_eq!(
+                    err.code().map(AvErrorCode::raw),
+                    Some(AvErrorCode::BUG.raw()),
+                    "{} default crop should match FFmpeg's AVERROR_BUG path",
+                    format.name()
+                );
+                assert_eq!(packed_default, before);
+            }
 
             let mut packed_unaligned = Frame::video(
                 VideoFrame::new_with_line_sizes(
