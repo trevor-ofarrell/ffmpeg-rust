@@ -13492,6 +13492,67 @@ fn exercise_fixtures() {
         &[19, 20, 21, 22, 23, 24]
     );
 
+    let mut yuv420p_storage = Vec::new();
+    for (width, height, base) in [(8, 4, 0x10_u8), (4, 2, 0x80), (4, 2, 0xc0)] {
+        let mut plane = vec![0; 64 * height];
+        for row in 0..height {
+            for column in 0..width {
+                plane[row * 64 + column] = base + (row * 16 + column) as u8;
+            }
+        }
+        yuv420p_storage.push(plane);
+    }
+    let mut yuv420p_default_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Yuv420p,
+            yuv420p_storage.clone(),
+            vec![64, 64, 64],
+        )
+        .unwrap(),
+    );
+    yuv420p_default_crop.set_crop_offsets(2, 0, 2, 2);
+    yuv420p_default_crop
+        .apply_cropping(FrameCropFlags::NONE)
+        .unwrap();
+    let FrameData::Video(yuv420p_default_crop_video) = yuv420p_default_crop.data() else {
+        panic!("constructed yuv420p default crop frame changed variant");
+    };
+    assert_eq!(yuv420p_default_crop.crop(), FrameCrop::default());
+    assert_eq!(yuv420p_default_crop_video.width(), 6);
+    assert_eq!(yuv420p_default_crop_video.height(), 2);
+    assert_eq!(&yuv420p_default_crop_video.planes()[0][..6], &[0x30, 0x31, 0x32, 0x33, 0x34, 0x35]);
+    assert_eq!(yuv420p_default_crop_video.planes()[1], vec![0x90, 0x91, 0x92]);
+    assert_eq!(yuv420p_default_crop_video.planes()[2], vec![0xd0, 0xd1, 0xd2]);
+
+    let mut yuv420p_unaligned_crop = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Yuv420p,
+            yuv420p_storage,
+            vec![64, 64, 64],
+        )
+        .unwrap(),
+    );
+    yuv420p_unaligned_crop.set_crop_offsets(2, 0, 2, 2);
+    yuv420p_unaligned_crop
+        .apply_cropping(FrameCropFlags::UNALIGNED)
+        .unwrap();
+    let FrameData::Video(yuv420p_unaligned_crop_video) = yuv420p_unaligned_crop.data() else {
+        panic!("constructed yuv420p unaligned crop frame changed variant");
+    };
+    assert_eq!(yuv420p_unaligned_crop.crop(), FrameCrop::default());
+    assert_eq!(yuv420p_unaligned_crop_video.width(), 4);
+    assert_eq!(yuv420p_unaligned_crop_video.height(), 2);
+    assert_eq!(
+        &yuv420p_unaligned_crop_video.planes()[0][..4],
+        &[0x32, 0x33, 0x34, 0x35]
+    );
+    assert_eq!(yuv420p_unaligned_crop_video.planes()[1], vec![0x91, 0x92]);
+    assert_eq!(yuv420p_unaligned_crop_video.planes()[2], vec![0xd1, 0xd2]);
+
     for (format, bytes_per_pixel, line_size) in [
         (PixelFormat::Rgb8, 1, 64),
         (PixelFormat::Bgr8, 1, 64),

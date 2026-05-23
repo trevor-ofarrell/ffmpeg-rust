@@ -401,10 +401,10 @@ blocked_reason = ""
 # 32-bit and high-depth packed RGB/RGBA rows, default nonzero-left crop
 # returns `AVERROR_BUG` without mutation, while `AV_FRAME_CROP_UNALIGNED`
 # applies exact-left cropping and resets crop fields on success. Rust
-# `VideoFrame::apply_cropping()` now covers gray8, RGB24, BGR24, 16-bit
-# packed RGB/BGR, 32-bit packed RGB/RGBA, 48-bit packed RGB/BGR, and
-# 64-bit packed RGBA/BGRA for this bounded surface with unit, oracle,
-# FATE-runner, and fuzz-smoke evidence.
+# `VideoFrame::apply_cropping()` now covers gray8, RGB24, BGR24, bounded
+# even-dimension yuv420p, 16-bit packed RGB/BGR, 32-bit packed RGB/RGBA,
+# 48-bit packed RGB/BGR, and 64-bit packed RGBA/BGRA for this bounded surface
+# with unit, oracle, FATE-runner, and fuzz-smoke evidence.
 [[component]]
 id = "avutil-frame"
 kind = "utility"
@@ -578,6 +578,15 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avutil-frame|local-avutil-unit"]
 fuzz_targets = ["avutil_core_models"]
+# Latest update: The pinned libavutil `AVFrame` oracle now validates
+# `av_frame_apply_cropping()` for the first bounded planar software frame:
+# even post-crop `yuv420p`. FFmpeg 8.1.1 rounds default luma left crop down to
+# preserve the 32-byte data-pointer alignment rule, derives chroma plane starts
+# from the rounded 4:2:0 offsets, and applies exact luma/chroma offsets under
+# `AV_FRAME_CROP_UNALIGNED`. Rust unit, oracle, local FATE, differential, and
+# avutil_core_models fuzz-smoke evidence cover this bounded row without
+# claiming odd-dimension cropped yuv420p, other planar formats, hardware,
+# other bitstream, or other packed crop behavior.
 # Latest update: The pinned libavutil `AVFrame` oracle now validates
 # `av_frame_apply_cropping()` for the byte-packed RGB/BGR/Bayer8 family:
 # `rgb8`, `bgr8`, `rgb4_byte`, `bgr4_byte`, `bayer_bggr8`, `bayer_rggb8`,

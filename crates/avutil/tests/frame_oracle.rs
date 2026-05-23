@@ -634,6 +634,55 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         frame_fields(&crop_bgr24_unaligned),
     );
 
+    let yuv420p_crop_storage = yuv420p_strided_storage(8, 4, 64);
+    let mut crop_yuv420p_default = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Yuv420p,
+            yuv420p_crop_storage.clone(),
+            vec![64, 64, 64],
+        )
+        .unwrap(),
+    );
+    crop_yuv420p_default.set_crop_offsets(2, 0, 2, 2);
+    let crop_yuv420p_default_ret = crop_yuv420p_default
+        .apply_cropping(FrameCropFlags::NONE)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:apply-crop-yuv420p-default-ret".to_string(),
+        vec![crop_yuv420p_default_ret.to_string()],
+    );
+    rows.insert(
+        "frame:apply-crop-yuv420p-default".to_string(),
+        frame_fields(&crop_yuv420p_default),
+    );
+
+    let mut crop_yuv420p_unaligned = Frame::video(
+        VideoFrame::new_with_line_sizes(
+            8,
+            4,
+            PixelFormat::Yuv420p,
+            yuv420p_crop_storage,
+            vec![64, 64, 64],
+        )
+        .unwrap(),
+    );
+    crop_yuv420p_unaligned.set_crop_offsets(2, 0, 2, 2);
+    let crop_yuv420p_unaligned_ret = crop_yuv420p_unaligned
+        .apply_cropping(FrameCropFlags::UNALIGNED)
+        .map(|_| 0)
+        .unwrap_or_else(|err| err.code().map(AvErrorCode::raw).unwrap_or(-1));
+    rows.insert(
+        "frame:apply-crop-yuv420p-unaligned-ret".to_string(),
+        vec![crop_yuv420p_unaligned_ret.to_string()],
+    );
+    rows.insert(
+        "frame:apply-crop-yuv420p-unaligned".to_string(),
+        frame_fields(&crop_yuv420p_unaligned),
+    );
+
     for (pixel_format, bytes_per_pixel, line_size) in [
         (PixelFormat::Rgb8, 1, 64),
         (PixelFormat::Bgr8, 1, 64),
@@ -1664,6 +1713,25 @@ fn packed_strided_storage(
     storage
 }
 
+fn strided_plane_storage(width: usize, height: usize, line_size: usize, base: u8) -> Vec<u8> {
+    let mut storage = vec![0; line_size * height];
+    for row in 0..height {
+        let dst_start = row * line_size;
+        for column in 0..width {
+            storage[dst_start + column] = base + (row * 16 + column) as u8;
+        }
+    }
+    storage
+}
+
+fn yuv420p_strided_storage(width: usize, height: usize, line_size: usize) -> Vec<Vec<u8>> {
+    vec![
+        strided_plane_storage(width, height, line_size, 0x10),
+        strided_plane_storage(width >> 1, height >> 1, line_size, 0x80),
+        strided_plane_storage(width >> 1, height >> 1, line_size, 0xc0),
+    ]
+}
+
 fn frame_with_fifo_props() -> Frame {
     let video = VideoFrame::new_with_aligned_line_sizes(
         2,
@@ -2221,6 +2289,19 @@ static void print_video_planes(const AVFrame *frame)
         return;
     }
 
+    if (frame->format == AV_PIX_FMT_YUV420P) {
+        for (int plane = 0; plane < 3; plane++) {
+            int width = plane == 0 ? frame->width : frame->width >> 1;
+            int height = plane == 0 ? frame->height : frame->height >> 1;
+            if (plane)
+                printf(",");
+            for (int row = 0; row < height; row++)
+                print_hex(frame->data[plane] + row * frame->linesize[plane],
+                          width);
+        }
+        return;
+    }
+
     if (frame->format == AV_PIX_FMT_GRAY8) {
         for (int row = 0; row < frame->height; row++)
             print_hex(frame->data[0] + row * frame->linesize[0], frame->width);
@@ -2595,6 +2676,16 @@ static void print_side_clone_row(const char *name, int ret,
            source && entry ? source->data == entry->data : 0);
 }
 
+static int video_plane_count_for_format(enum AVPixelFormat format)
+{
+    switch (format) {
+    case AV_PIX_FMT_YUV420P:
+        return 3;
+    default:
+        return 1;
+    }
+}
+
 static void print_frame(const char *name, const AVFrame *frame)
 {
     const char *kind = "empty";
@@ -2604,7 +2695,7 @@ static void print_frame(const char *name, const AVFrame *frame)
     if (frame->width > 0 && frame->height > 0) {
         kind = "video";
         format = av_get_pix_fmt_name(frame->format);
-        plane_count = 1;
+        plane_count = video_plane_count_for_format(frame->format);
     } else if (frame->nb_samples > 0 && frame->ch_layout.nb_channels > 0) {
         kind = "audio";
         format = av_get_sample_fmt_name(frame->format);
@@ -2645,6 +2736,7 @@ static void print_frame(const char *name, const AVFrame *frame)
 }
 
 static void fill_video_packed(AVFrame *frame, int bytes_per_pixel);
+static void fill_video_yuv420p(AVFrame *frame);
 
 static void exercise_packed_crop_pair(const char *name,
                                       enum AVPixelFormat format,
@@ -2686,6 +2778,47 @@ static void exercise_packed_crop_pair(const char *name,
     fail_if(crop_unaligned_ret < 0, "packed unaligned crop apply failed");
     snprintf(row, sizeof(row), "frame:apply-crop-%s-unaligned", name);
     print_frame(row, crop_unaligned);
+
+    av_frame_free(&crop_unaligned);
+    av_frame_free(&crop_default);
+}
+
+static void exercise_yuv420p_crop_pair(void)
+{
+    AVFrame *crop_default = av_frame_alloc();
+    fail_if(!crop_default, "yuv420p default crop allocation failed");
+    crop_default->format = AV_PIX_FMT_YUV420P;
+    crop_default->width = 8;
+    crop_default->height = 4;
+    fail_if(av_frame_get_buffer(crop_default, 64) < 0,
+            "yuv420p default crop get_buffer failed");
+    fill_video_yuv420p(crop_default);
+    crop_default->crop_top = 2;
+    crop_default->crop_left = 2;
+    crop_default->crop_right = 2;
+    int crop_default_ret = av_frame_apply_cropping(crop_default, 0);
+    printf("frame:apply-crop-yuv420p-default-ret|%d\n",
+           crop_default_ret);
+    fail_if(crop_default_ret < 0, "yuv420p default crop apply failed");
+    print_frame("frame:apply-crop-yuv420p-default", crop_default);
+
+    AVFrame *crop_unaligned = av_frame_alloc();
+    fail_if(!crop_unaligned, "yuv420p unaligned crop allocation failed");
+    crop_unaligned->format = AV_PIX_FMT_YUV420P;
+    crop_unaligned->width = 8;
+    crop_unaligned->height = 4;
+    fail_if(av_frame_get_buffer(crop_unaligned, 64) < 0,
+            "yuv420p unaligned crop get_buffer failed");
+    fill_video_yuv420p(crop_unaligned);
+    crop_unaligned->crop_top = 2;
+    crop_unaligned->crop_left = 2;
+    crop_unaligned->crop_right = 2;
+    int crop_unaligned_ret = av_frame_apply_cropping(
+        crop_unaligned, AV_FRAME_CROP_UNALIGNED);
+    printf("frame:apply-crop-yuv420p-unaligned-ret|%d\n",
+           crop_unaligned_ret);
+    fail_if(crop_unaligned_ret < 0, "yuv420p unaligned crop apply failed");
+    print_frame("frame:apply-crop-yuv420p-unaligned", crop_unaligned);
 
     av_frame_free(&crop_unaligned);
     av_frame_free(&crop_default);
@@ -2795,6 +2928,26 @@ static void fill_video_packed(AVFrame *frame, int bytes_per_pixel)
         uint8_t *dst = frame->data[0] + row * frame->linesize[0];
         for (int column = 0; column < visible_row_bytes; column++)
             dst[column] = (uint8_t)(row * 16 + column);
+    }
+}
+
+static void fill_video_yuv420p(AVFrame *frame)
+{
+    for (int row = 0; row < frame->height; row++) {
+        uint8_t *dst = frame->data[0] + row * frame->linesize[0];
+        for (int column = 0; column < frame->width; column++)
+            dst[column] = (uint8_t)(0x10 + row * 16 + column);
+    }
+
+    int chroma_width = frame->width >> 1;
+    int chroma_height = frame->height >> 1;
+    for (int row = 0; row < chroma_height; row++) {
+        uint8_t *u = frame->data[1] + row * frame->linesize[1];
+        uint8_t *v = frame->data[2] + row * frame->linesize[2];
+        for (int column = 0; column < chroma_width; column++) {
+            u[column] = (uint8_t)(0x80 + row * 16 + column);
+            v[column] = (uint8_t)(0xc0 + row * 16 + column);
+        }
     }
 }
 
@@ -3480,6 +3633,7 @@ int main(void)
     exercise_packed_crop_pair("vyu444", AV_PIX_FMT_VYU444, 3);
     exercise_packed_crop_pair("xyz12le", AV_PIX_FMT_XYZ12LE, 6);
     exercise_packed_crop_pair("xyz12be", AV_PIX_FMT_XYZ12BE, 6);
+    exercise_yuv420p_crop_pair();
 
     AVFrame *invalid_crop = av_frame_alloc();
     fail_if(!invalid_crop, "invalid_crop allocation failed");
