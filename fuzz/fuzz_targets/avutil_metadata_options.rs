@@ -156,7 +156,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 16 {
+        match cursor.next().unwrap_or_default() % 18 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -291,6 +291,27 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 assert_eq!(options, before);
             }
             13 => {
+                let name = option_name_from(cursor);
+                let raw = option_value_string_from(cursor);
+                let flags = option_search_flags_from(cursor.next());
+                let before = options.clone();
+                let result = options.set_avoption_from_str_with_flags(&name, &raw, flags);
+                if result.is_ok() {
+                    assert_option_set_invariants(&options);
+                } else {
+                    assert_eq!(options, before);
+                }
+            }
+            14 => {
+                let name = option_name_from(cursor);
+                let flags = option_search_flags_from(cursor.next());
+                let before = options.clone();
+                if let Ok(value) = options.get_avoption_string_with_flags(&name, flags) {
+                    assert!(!value.as_bytes().contains(&0));
+                }
+                assert_eq!(options, before);
+            }
+            15 => {
                 let before = options.clone();
                 let entries = options.avoption_entries();
                 assert_eq!(
@@ -323,7 +344,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
                 assert_eq!(options, before);
             }
-            14 => {
+            16 => {
                 let name = option_name_from(cursor);
                 let before = options.clone();
                 let result = options.remove_definition(&name);
@@ -592,6 +613,12 @@ fn exercise_fixtures() {
         options.child("ENCODER").unwrap().options().get("THREADS"),
         Some(&OptionValue::Int(2))
     );
+    assert_eq!(
+        options
+            .get_avoption_string_with_flags("threads", OptionSearchFlags::CHILDREN)
+            .unwrap(),
+        "2"
+    );
     options
         .set_child_from_str("encoder", "threads", "8")
         .unwrap();
@@ -599,12 +626,27 @@ fn exercise_fixtures() {
         options.get_child_option("ENCODER", "THREADS").unwrap(),
         &OptionValue::Int(8)
     );
+    options
+        .set_avoption_from_str_with_flags("threads", "9", OptionSearchFlags::CHILDREN)
+        .unwrap();
+    assert_eq!(options.get("threads"), Some(&OptionValue::Int(8)));
+    assert_eq!(
+        options.get_child_option("encoder", "threads").unwrap(),
+        &OptionValue::Int(9)
+    );
+    assert_eq!(
+        options
+            .get_avoption_string_with_flags("threads", OptionSearchFlags::FAKE_OBJ)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::OPTION_NOT_FOUND)
+    );
     assert!(options
         .set_child("encoder", "threads", OptionValue::Int(99))
         .is_err());
     assert_eq!(
         options.get_child_option("encoder", "threads").unwrap(),
-        &OptionValue::Int(8)
+        &OptionValue::Int(9)
     );
     assert!(options
         .define_child(OptionChild::new("ENCODER", OptionSet::new(), "").unwrap())

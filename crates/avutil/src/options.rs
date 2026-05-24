@@ -895,6 +895,27 @@ impl OptionSet {
         Ok(format_avoption_value(&self.values[index]))
     }
 
+    pub fn get_avoption_string_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<String> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return Ok(format_avoption_value(&child.options.values[index]));
+                }
+            }
+        }
+
+        self.get_avoption_string(name)
+    }
+
     pub fn get_child_option(&self, child_name: &str, option_name: &str) -> AvResult<&OptionValue> {
         let child = self.child_by_name(child_name)?;
         let index = child.options.option_index(option_name)?;
@@ -942,6 +963,28 @@ impl OptionSet {
         let value = self.parse_avoption_value(index, raw)?;
         self.values[index] = value;
         Ok(())
+    }
+
+    pub fn set_avoption_from_str_with_flags(
+        &mut self,
+        name: &str,
+        raw: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &mut self.children {
+                if child.options.find_exact_index(name).is_some() {
+                    return child.options.set_avoption_from_str(name, raw);
+                }
+            }
+        }
+
+        self.set_avoption_from_str(name, raw)
     }
 
     pub fn set_child(
@@ -992,13 +1035,8 @@ impl OptionSet {
     }
 
     fn avoption_index(&self, name: &str) -> AvResult<usize> {
-        self.find_exact_index(name).ok_or_else(|| {
-            AvError::with_code(
-                AvErrorKind::NotFound,
-                AvErrorCode::OPTION_NOT_FOUND,
-                format!("unknown AVOption `{name}`"),
-            )
-        })
+        self.find_exact_index(name)
+            .ok_or_else(|| avoption_not_found_error(name))
     }
 
     fn avoption_query_ranges_index(&self, name: &str) -> AvResult<usize> {
@@ -1129,6 +1167,14 @@ impl OptionSet {
 
         Ok(())
     }
+}
+
+fn avoption_not_found_error(name: &str) -> AvError {
+    AvError::with_code(
+        AvErrorKind::NotFound,
+        AvErrorCode::OPTION_NOT_FOUND,
+        format!("unknown AVOption `{name}`"),
+    )
 }
 
 fn validate_name(name: &str) -> AvResult<String> {
@@ -2479,6 +2525,128 @@ mod tests {
             .unwrap();
         assert_eq!(child_found.child_name(), Some("decoder"));
         assert_eq!(child_found.name(), "threads");
+    }
+
+    #[test]
+    fn avoption_get_set_with_search_flags_use_child_target_before_root() {
+        let mut options = sample_options();
+        let mut child_options = OptionSet::new();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 16 },
+                    OptionValue::Int(2),
+                    "child worker count",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "child_only",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(5),
+                    "child-only value",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "child_readonly",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(0),
+                    "child read-only value",
+                    OptionFlags::from_bits_truncate(
+                        OptionFlags::DECODING_PARAM.bits() | OptionFlags::READONLY.bits(),
+                    ),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define_child(OptionChild::new("decoder", child_options, "").unwrap())
+            .unwrap();
+
+        assert_eq!(
+            options
+                .get_avoption_string_with_flags("threads", OptionSearchFlags::CHILDREN)
+                .unwrap(),
+            "2"
+        );
+        assert_eq!(
+            options
+                .get_avoption_string_with_flags("child_only", OptionSearchFlags::CHILDREN)
+                .unwrap(),
+            "5"
+        );
+        assert_eq!(
+            options
+                .get_avoption_string_with_flags("child_only", OptionSearchFlags::empty())
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::OPTION_NOT_FOUND)
+        );
+        assert_eq!(
+            options
+                .get_avoption_string_with_flags("threads", OptionSearchFlags::FAKE_OBJ)
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::OPTION_NOT_FOUND)
+        );
+
+        assert_eq!(
+            options
+                .set_avoption_from_str_with_flags("child_only", "7", OptionSearchFlags::empty())
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::OPTION_NOT_FOUND)
+        );
+        options
+            .set_avoption_from_str_with_flags("child_only", "7", OptionSearchFlags::CHILDREN)
+            .unwrap();
+        options
+            .set_avoption_from_str_with_flags("threads", "9", OptionSearchFlags::CHILDREN)
+            .unwrap();
+        assert_eq!(
+            options
+                .set_avoption_from_str_with_flags(
+                    "child_readonly",
+                    "4",
+                    OptionSearchFlags::CHILDREN
+                )
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options
+                .set_avoption_from_str_with_flags("threads", "10", OptionSearchFlags::FAKE_OBJ)
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::OPTION_NOT_FOUND)
+        );
+
+        assert_eq!(options.get_avoption_string("threads").unwrap(), "1");
+        assert_eq!(
+            options.get_child_option("decoder", "threads").unwrap(),
+            &OptionValue::Int(9)
+        );
+        assert_eq!(
+            options.get_child_option("decoder", "child_only").unwrap(),
+            &OptionValue::Int(7)
+        );
+        assert_eq!(
+            options
+                .get_child_option("decoder", "child_readonly")
+                .unwrap(),
+            &OptionValue::Int(0)
+        );
     }
 
     #[test]

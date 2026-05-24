@@ -2,6 +2,10 @@
 
 ## Current Status
 
+Latest `avutil-options` child-search slice: `crates/avutil/src/options.rs` now exposes `OptionSet::get_avoption_string_with_flags` and `OptionSet::set_avoption_from_str_with_flags` for bounded `av_opt_get`/`av_opt_set` behavior with `AV_OPT_SEARCH_CHILDREN`. Direct child option sets are searched before root options, root-only lookups still return `AVERROR_OPTION_NOT_FOUND` for child-only names, `AV_OPT_SEARCH_FAKE_OBJ` is treated as not gettable/settable, and read-only child targets preserve their existing values. `crates/avutil/tests/options_oracle.rs` now validates `av_opt_find2` target selection plus child get/set rows against pinned FFmpeg 8.1.1 libavutil, and `fuzz/fuzz_targets/avutil_metadata_options.rs` exercises child-search get/set invariants. `avutil-options` remains `differential_pass`, not complete, because full AVOption API parity, upstream FATE disposition, copy/dict/full recursive child-object semantics, expression/SI-prefix parsing, and CLI option-ordering integration remain pending.
+
+Latest validation commands for the `avutil-options` child-search slice passed: `cargo fmt --all`; `rustfmt fuzz\\fuzz_targets\\avutil_metadata_options.rs`; WSL `CARGO_TARGET_DIR=target-wsl-options-children-unit cargo test -p avutil --lib options -- --nocapture`; WSL `CARGO_TARGET_DIR=target-wsl-options-children-check cargo check --manifest-path fuzz/Cargo.toml --bin avutil_metadata_options`; WSL `CARGO_TARGET_DIR=target-wsl-options-children-oracle cargo test -p avutil --test options_oracle libavutil_option_helpers_match_current_model -- --ignored --nocapture`; WSL `CARGO_TARGET_DIR=target-wsl-options-children-diff cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-options --target oracle-libavutil-options --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg`; WSL `CARGO_TARGET_DIR=target-wsl-options-children-local cargo run -p fate-runner -- run --component avutil-options`; WSL `CARGO_TARGET_DIR=target-wsl-options-children-ledger-final cargo test -p fate-runner current_ledger -- --nocapture`; `cargo fmt --all -- --check`; `rustfmt --check fuzz\\fuzz_targets\\avutil_metadata_options.rs`; WSL `CARGO_TARGET_DIR=target-wsl-options-children-clippy cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`; WSL `CARGO_TARGET_DIR=target-wsl-options-children-fuzz-clippy cargo clippy --manifest-path fuzz/Cargo.toml --bin avutil_metadata_options -- -D warnings`; WSL `CARGO_TARGET_DIR=target-wsl-options-children-guard cargo run -p xtask -- guard-runtime`; WSL `CARGO_TARGET_DIR=target-wsl-options-children-doctor cargo run -p xtask -- oracle-doctor`; WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-options-children-fuzz-o1 cargo fuzz run avutil_metadata_options -- -runs=1`; and `git diff --check` with CRLF conversion warnings only. Windows-side fresh target directories for the focused unit test and fuzz check were blocked by Application Control (`os error 4551`), so WSL was used for the passing validation.
+
 Latest `avutil-options` query-ranges slice: `crates/avutil/src/options.rs` now exposes `AvOptionRangeEntry`, `AvOptionRanges`, and `OptionSet::query_avoption_ranges` for the bounded root-object `av_opt_query_ranges(..., flags=0)` compatibility path. The model reports FFmpeg-shaped single-component range rows for bool, int64, double, rational, and string options and preserves the pinned default implementation's odd missing-option `ENOMEM` return shape for exact lookup misses. `crates/avutil/tests/options_oracle.rs` now validates those range rows against pinned FFmpeg 8.1.1 libavutil, and `fuzz/fuzz_targets/avutil_metadata_options.rs` exercises query-range invariants and no-mutation behavior. `avutil-options` remains `differential_pass`, not complete, because full AVOption API parity, upstream FATE disposition, copy/dict/recursive child-object semantics, expression/SI-prefix parsing, and CLI option-ordering integration remain pending.
 
 Latest validation commands for the `avutil-options` query-ranges slice passed: `cargo fmt --all`; `rustfmt fuzz\\fuzz_targets\\avutil_metadata_options.rs`; `$env:CARGO_TARGET_DIR='target-codex-options-query-unit'; cargo test -p avutil --lib query_avoption_ranges_matches_bounded_ffmpeg_default_shape -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex-options-query-fuzz-check'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_metadata_options`; `$env:CARGO_TARGET_DIR='target-codex-options-query-oracle'; cargo test -p avutil --test options_oracle libavutil_option_helpers_match_current_model -- --ignored --nocapture`; `$env:CARGO_TARGET_DIR='target-codex-options-query-lib'; cargo test -p avutil --lib options -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex-options-query-ledger-pre'; cargo test -p fate-runner current_ledger -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex-options-query-diff'; cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-options --target oracle-libavutil-options --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`; `$env:CARGO_TARGET_DIR='target-codex-options-query-local'; cargo run -p fate-runner -- run --component avutil-options`; `cargo fmt --all -- --check`; `rustfmt --check fuzz\\fuzz_targets\\avutil_metadata_options.rs`; `$env:CARGO_TARGET_DIR='target-codex-options-query-ledger'; cargo test -p fate-runner current_ledger -- --nocapture`; `$env:CARGO_TARGET_DIR='target-codex-options-query-guard'; cargo run -p xtask -- guard-runtime`; `$env:CARGO_TARGET_DIR='target-codex-options-query-doctor'; cargo run -p xtask -- oracle-doctor`; `$env:CARGO_TARGET_DIR='target-codex-options-query-clippy'; cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`; `$env:CARGO_TARGET_DIR='target-codex-options-query-fuzz-clippy'; cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_metadata_options -- -D warnings`; WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-options-query-fuzz-o1 cargo fuzz run avutil_metadata_options -- -runs=1`; and `git diff --check` with CRLF conversion warnings only.
@@ -1125,6 +1129,26 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-options` child-search slice:
+  - `cargo fmt --all`
+  - `rustfmt fuzz\\fuzz_targets\\avutil_metadata_options.rs`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-unit cargo test -p avutil --lib avoption_get_set_with_search_flags_use_child_target_before_root -- --nocapture`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-unit cargo test -p avutil --lib options -- --nocapture`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-check cargo check --manifest-path fuzz/Cargo.toml --bin avutil_metadata_options`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-oracle cargo test -p avutil --test options_oracle libavutil_option_helpers_match_current_model -- --ignored --nocapture`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-diff cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-options --target oracle-libavutil-options --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-local cargo run -p fate-runner -- run --component avutil-options`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-ledger cargo test -p fate-runner current_ledger -- --nocapture`
+  - `cargo fmt --all -- --check`
+  - `rustfmt --check fuzz\\fuzz_targets\\avutil_metadata_options.rs`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-ledger-final cargo test -p fate-runner current_ledger -- --nocapture`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-clippy cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-fuzz-clippy cargo clippy --manifest-path fuzz/Cargo.toml --bin avutil_metadata_options -- -D warnings`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-guard cargo run -p xtask -- guard-runtime`
+  - WSL `CARGO_TARGET_DIR=target-wsl-options-children-doctor cargo run -p xtask -- oracle-doctor`
+  - WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-options-children-fuzz-o1 cargo fuzz run avutil_metadata_options -- -runs=1`
+  - `git diff --check` with CRLF conversion warnings only.
 
 - Current `avutil-options` query-ranges slice:
   - `cargo fmt --all`
@@ -6559,6 +6583,11 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Last Failing Commands
 
+- Current `avutil-options` child-search slice:
+  - Windows-side `$env:CARGO_TARGET_DIR='target-codex-options-children-unit'; cargo test -p avutil --lib avoption_get_set_with_search_flags_use_child_target_before_root -- --nocapture` was blocked before execution by Windows Application Control on the freshly built unit-test executable (`os error 4551`).
+  - Windows-side `$env:CARGO_TARGET_DIR='target-codex-options-children-check'; cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_metadata_options` was blocked before execution by Windows Application Control on a freshly built build script (`os error 4551`).
+  - The first WSL oracle rerun failed because the child read-only fixture used a nonzero Rust default while FFmpeg leaves READONLY storage at zero under `av_opt_set_defaults`; the fixture now uses a zero read-only default and the rerun passed.
+
 - Current `avutil-buffer` public-flag/FATE-disposition slice:
   - Windows-side `rustfmt fuzz\\fuzz_targets\\avutil_core_models.rs` overflowed its stack, including after setting `$env:RUST_MIN_STACK='33554432'`. WSL nightly rustfmt could format the file but rewrote a large pre-existing style surface, so that formatting churn was reverted and only the intended fuzz invariant was reapplied. Cargo check, fuzz clippy, and WSL cargo-fuzz smoke passed for the target.
 
@@ -7171,6 +7200,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-options` is the current focus. The latest coherent slice adds bounded `AV_OPT_SEARCH_CHILDREN` get/set parity through `OptionSet::get_avoption_string_with_flags` and `OptionSet::set_avoption_from_str_with_flags`, with pinned FFmpeg 8.1.1 libavutil evidence for child-before-root target selection, child-only get/set, read-only child rejection, root fallback, and `AV_OPT_SEARCH_FAKE_OBJ` not-found behavior. The component remains `differential_pass`, not complete, because copy/dict behavior, full recursive child-object coverage, expression/SI parsing, CLI option-ordering integration, upstream FATE disposition, and full AVOption API parity remain pending.
+
 `avutil-options` is the current focus. The latest coherent slice adds bounded root-object `av_opt_query_ranges(..., flags=0)` parity through `OptionSet::query_avoption_ranges`, including bool/int64/double/rational/string/read-only range rows and FFmpeg's default missing-option `ENOMEM` behavior. The component remains `differential_pass`, not complete, because copy/dict/recursive child-object semantics, expression/SI parsing, CLI option-ordering integration, upstream FATE disposition, and full AVOption API parity remain pending.
 
 `avutil-buffer` was the focus for this completed turn. The new ABI-layout row proves the public `AVBufferRef` struct layout for the pinned default-native oracle profile and keeps the component at `differential_pass`, not complete. The next best `avutil-buffer` work is FATE disposition plus remaining lifetime/ABI closure; otherwise continue the highest-priority incomplete infrastructure row.
@@ -7573,7 +7604,7 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Continue `avutil-options` by adding the next oracle-backed AVOption API slice, preferably copy/dict handling or recursive child-object get/set semantics.
+1. Continue `avutil-options` by adding the next oracle-backed AVOption API slice, preferably `av_opt_set_dict*`/copy handling or deeper recursive child-object coverage beyond the current direct-child get/set rows.
 2. Add or document upstream FATE disposition for `avutil-options`; if no standalone upstream AVOption FATE target exists, record the source-tree check without marking the component complete.
 3. Keep the local pinned oracle mandatory for strict progress: run `xtask oracle-doctor`, the relevant differential mapping, focused unit tests, clippy, runtime guard, and fuzz build/smoke checks for any parser or demuxer touched.
 

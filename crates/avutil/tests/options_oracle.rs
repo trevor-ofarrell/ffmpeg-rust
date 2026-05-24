@@ -6,8 +6,8 @@ use std::{
 };
 
 use avutil::{
-    AvOptionRanges, OptionConstant, OptionDefinition, OptionEntryMatch, OptionFlags, OptionKind,
-    OptionSearchFlags, OptionSet, OptionValue, Rational,
+    AvOptionRanges, OptionChild, OptionConstant, OptionDefinition, OptionEntryMatch, OptionFlags,
+    OptionKind, OptionSearchFlags, OptionSet, OptionValue, Rational,
 };
 
 #[test]
@@ -188,6 +188,95 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let mut options_with_child = sample_options_with_child();
+    insert_row(
+        &mut rows,
+        "find:children",
+        [
+            entry_target_name(options_with_child.find_avoption(
+                "threads",
+                None,
+                OptionFlags::empty(),
+                OptionSearchFlags::CHILDREN,
+            )),
+            entry_target_name(options_with_child.find_avoption(
+                "threads",
+                None,
+                OptionFlags::ENCODING_PARAM,
+                OptionSearchFlags::CHILDREN,
+            )),
+            entry_target_name(options_with_child.find_avoption(
+                "child_only",
+                None,
+                OptionFlags::DECODING_PARAM,
+                OptionSearchFlags::CHILDREN,
+            )),
+            entry_target_name(options_with_child.find_avoption(
+                "child_only",
+                None,
+                OptionFlags::empty(),
+                OptionSearchFlags::empty(),
+            )),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:children",
+        [
+            ret_value(
+                options_with_child
+                    .get_avoption_string_with_flags("child_only", OptionSearchFlags::empty()),
+            ),
+            ret_value(
+                options_with_child
+                    .get_avoption_string_with_flags("child_only", OptionSearchFlags::CHILDREN),
+            ),
+            ret_value(
+                options_with_child
+                    .get_avoption_string_with_flags("threads", OptionSearchFlags::CHILDREN),
+            ),
+            ret_value(
+                options_with_child
+                    .get_avoption_string_with_flags("threads", OptionSearchFlags::FAKE_OBJ),
+            ),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-children",
+        [
+            ret(options_with_child.set_avoption_from_str_with_flags(
+                "child_only",
+                "7",
+                OptionSearchFlags::empty(),
+            )),
+            ret(options_with_child.set_avoption_from_str_with_flags(
+                "child_only",
+                "7",
+                OptionSearchFlags::CHILDREN,
+            )),
+            ret(options_with_child.set_avoption_from_str_with_flags(
+                "threads",
+                "9",
+                OptionSearchFlags::CHILDREN,
+            )),
+            ret(options_with_child.set_avoption_from_str_with_flags(
+                "child_readonly",
+                "4",
+                OptionSearchFlags::CHILDREN,
+            )),
+            ret(options_with_child.set_avoption_from_str_with_flags(
+                "threads",
+                "10",
+                OptionSearchFlags::FAKE_OBJ,
+            )),
+        ],
+    );
+    rows.insert(
+        "state:children-after-set".to_string(),
+        child_state_fields(&options_with_child),
+    );
+
     let exact_error_results = [
         ret(options.set_avoption_from_str("THREADS", "9")),
         ret(options.set_avoption_from_str("preset_level", "SLOW")),
@@ -351,6 +440,53 @@ fn sample_options() -> OptionSet {
     options
 }
 
+fn sample_options_with_child() -> OptionSet {
+    let mut options = sample_options();
+    let mut child_options = OptionSet::new();
+    child_options
+        .define(
+            OptionDefinition::new_with_flags(
+                "threads",
+                OptionKind::Int { min: 1, max: 16 },
+                OptionValue::Int(2),
+                "child worker count",
+                OptionFlags::DECODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    child_options
+        .define(
+            OptionDefinition::new_with_flags(
+                "child_only",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(5),
+                "child-only value",
+                OptionFlags::DECODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    child_options
+        .define(
+            OptionDefinition::new_with_flags(
+                "child_readonly",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(0),
+                "child read-only value",
+                OptionFlags::from_bits_truncate(
+                    OptionFlags::DECODING_PARAM.bits() | OptionFlags::READONLY.bits(),
+                ),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define_child(OptionChild::new("decoder", child_options, "decoder options").unwrap())
+        .unwrap();
+    options
+}
+
 fn state_fields(options: &OptionSet) -> Vec<String> {
     vec![
         int_value(options, "threads").to_string(),
@@ -362,10 +498,26 @@ fn state_fields(options: &OptionSet) -> Vec<String> {
     ]
 }
 
+fn child_state_fields(options: &OptionSet) -> Vec<String> {
+    vec![
+        int_value(options, "threads").to_string(),
+        child_int_value(options, "decoder", "threads").to_string(),
+        child_int_value(options, "decoder", "child_only").to_string(),
+        child_int_value(options, "decoder", "child_readonly").to_string(),
+    ]
+}
+
 fn int_value(options: &OptionSet, name: &str) -> i64 {
     match options.get(name) {
         Some(OptionValue::Int(value)) => *value,
         other => panic!("expected int option `{name}`, got {other:?}"),
+    }
+}
+
+fn child_int_value(options: &OptionSet, child_name: &str, name: &str) -> i64 {
+    match options.get_child_option(child_name, name) {
+        Ok(OptionValue::Int(value)) => *value,
+        other => panic!("expected child int option `{child_name}.{name}`, got {other:?}"),
     }
 }
 
@@ -408,6 +560,12 @@ fn bool_int(value: bool) -> &'static str {
 fn entry_name(entry: Option<OptionEntryMatch<'_>>) -> String {
     entry
         .map(|entry| entry.name().to_owned())
+        .unwrap_or_else(|| "<null>".to_owned())
+}
+
+fn entry_target_name(entry: Option<OptionEntryMatch<'_>>) -> String {
+    entry
+        .map(|entry| format!("{}:{}", entry.child_name().unwrap_or("root"), entry.name()))
         .unwrap_or_else(|| "<null>".to_owned())
 }
 
@@ -563,8 +721,16 @@ fn oracle_c_source() -> &'static str {
 
 #define ROW_INT(name, value) printf("%s|%d\n", name, (int)(value))
 
+typedef struct ChildOptions {
+    const AVClass *av_class;
+    int64_t threads;
+    int64_t child_only;
+    int64_t child_readonly;
+} ChildOptions;
+
 typedef struct TestOptions {
     const AVClass *av_class;
+    ChildOptions child;
     int64_t threads;
     int bitexact;
     double quality;
@@ -573,6 +739,31 @@ typedef struct TestOptions {
     int64_t preset_level;
     int64_t exported;
 } TestOptions;
+
+static const AVOption child_options[] = {
+    { "threads", "child worker count", offsetof(ChildOptions, threads),
+      AV_OPT_TYPE_INT64, { .i64 = 2 }, 1, 16, AV_OPT_FLAG_DECODING_PARAM },
+    { "child_only", "child-only value", offsetof(ChildOptions, child_only),
+      AV_OPT_TYPE_INT64, { .i64 = 5 }, 0, 10, AV_OPT_FLAG_DECODING_PARAM },
+    { "child_readonly", "child read-only value", offsetof(ChildOptions, child_readonly),
+      AV_OPT_TYPE_INT64, { .i64 = 0 }, 0, 10, AV_OPT_FLAG_DECODING_PARAM | AV_OPT_FLAG_READONLY },
+    { NULL }
+};
+
+static const AVClass child_class = {
+    .class_name = "rust-options-oracle-child",
+    .item_name = av_default_item_name,
+    .option = child_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
+static void *test_child_next(void *obj, void *prev) {
+    TestOptions *ctx = (TestOptions *)obj;
+
+    if (prev)
+        return NULL;
+    return &ctx->child;
+}
 
 static const AVOption test_options[] = {
     { "threads", "worker count", offsetof(TestOptions, threads),
@@ -601,6 +792,7 @@ static const AVClass test_class = {
     .item_name = av_default_item_name,
     .option = test_options,
     .version = LIBAVUTIL_VERSION_INT,
+    .child_next = test_child_next,
 };
 
 static void print_flags(void) {
@@ -687,6 +879,34 @@ static void print_find_rows(const TestOptions *ctx) {
            option_name_or_null(av_opt_find(ctx, "exported", NULL, AV_OPT_FLAG_VIDEO_PARAM, 0)));
 }
 
+static const char *target_name_or_null(const TestOptions *ctx, const void *target) {
+    if (target == ctx)
+        return "root";
+    if (target == &ctx->child)
+        return "decoder";
+    return "<null>";
+}
+
+static void print_find2_value(const TestOptions *ctx, const char *name, int flags, int search_flags) {
+    void *target = NULL;
+    const AVOption *option = av_opt_find2((void *)ctx, name, NULL, flags, search_flags, &target);
+
+    if (!option) {
+        printf("|<null>");
+    } else {
+        printf("|%s:%s", target_name_or_null(ctx, target), option->name);
+    }
+}
+
+static void print_find_children_row(const TestOptions *ctx) {
+    printf("find:children");
+    print_find2_value(ctx, "threads", 0, AV_OPT_SEARCH_CHILDREN);
+    print_find2_value(ctx, "threads", AV_OPT_FLAG_ENCODING_PARAM, AV_OPT_SEARCH_CHILDREN);
+    print_find2_value(ctx, "child_only", AV_OPT_FLAG_DECODING_PARAM, AV_OPT_SEARCH_CHILDREN);
+    print_find2_value(ctx, "child_only", 0, 0);
+    printf("\n");
+}
+
 static void print_state(const char *name, const TestOptions *ctx) {
     printf("%s|%" PRId64 "|%d|%.17g|%d/%d|%s|%" PRId64 "\n",
            name,
@@ -699,9 +919,25 @@ static void print_state(const char *name, const TestOptions *ctx) {
            ctx->preset_level);
 }
 
+static void print_child_state(const char *name, const TestOptions *ctx) {
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%" PRId64 "\n",
+           name,
+           ctx->threads,
+           ctx->child.threads,
+           ctx->child.child_only,
+           ctx->child.child_readonly);
+}
+
 static void print_get_value(const TestOptions *ctx, const char *name) {
     uint8_t *value = NULL;
     int ret = av_opt_get(ctx, name, 0, &value);
+    printf("|%d:%s", ret, ret >= 0 && value ? (const char *)value : "<null>");
+    av_free(value);
+}
+
+static void print_get_value_flags(const TestOptions *ctx, const char *name, int search_flags) {
+    uint8_t *value = NULL;
+    int ret = av_opt_get((void *)ctx, name, search_flags, &value);
     printf("|%d:%s", ret, ret >= 0 && value ? (const char *)value : "<null>");
     av_free(value);
 }
@@ -721,6 +957,15 @@ static void print_get_errors(const TestOptions *ctx) {
     printf("get:errors");
     print_get_value(ctx, "THREADS");
     print_get_value(ctx, "fast");
+    printf("\n");
+}
+
+static void print_get_children_row(const TestOptions *ctx) {
+    printf("get:children");
+    print_get_value_flags(ctx, "child_only", 0);
+    print_get_value_flags(ctx, "child_only", AV_OPT_SEARCH_CHILDREN);
+    print_get_value_flags(ctx, "threads", AV_OPT_SEARCH_CHILDREN);
+    print_get_value_flags(ctx, "threads", AV_OPT_SEARCH_FAKE_OBJ);
     printf("\n");
 }
 
@@ -760,6 +1005,21 @@ static void print_query_ranges_row(const TestOptions *ctx) {
     printf("\n");
 }
 
+static void print_set_children_row(TestOptions *ctx) {
+    int ret_child_only_root = av_opt_set(ctx, "child_only", "7", 0);
+    int ret_child_only_child = av_opt_set(ctx, "child_only", "7", AV_OPT_SEARCH_CHILDREN);
+    int ret_threads_child = av_opt_set(ctx, "threads", "9", AV_OPT_SEARCH_CHILDREN);
+    int ret_child_readonly = av_opt_set(ctx, "child_readonly", "4", AV_OPT_SEARCH_CHILDREN);
+    int ret_threads_fake = av_opt_set(ctx, "threads", "10", AV_OPT_SEARCH_FAKE_OBJ);
+
+    printf("ret:set-children|%d|%d|%d|%d|%d\n",
+           ret_child_only_root,
+           ret_child_only_child,
+           ret_threads_child,
+           ret_child_readonly,
+           ret_threads_fake);
+}
+
 int main(void) {
     TestOptions ctx = { 0 };
     int ret_threads;
@@ -775,7 +1035,9 @@ int main(void) {
     int ret_readonly;
 
     ctx.av_class = &test_class;
+    ctx.child.av_class = &child_class;
     av_opt_set_defaults(&ctx);
+    av_opt_set_defaults(&ctx.child);
 
     print_flags();
     print_types();
@@ -786,6 +1048,10 @@ int main(void) {
     print_get_row("get:defaults", &ctx);
     print_get_errors(&ctx);
     print_query_ranges_row(&ctx);
+    print_find_children_row(&ctx);
+    print_get_children_row(&ctx);
+    print_set_children_row(&ctx);
+    print_child_state("state:children-after-set", &ctx);
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);
