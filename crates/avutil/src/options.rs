@@ -74,6 +74,64 @@ impl OptionRange {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AvOptionRangeEntry {
+    value_min: f64,
+    value_max: f64,
+    component_min: f64,
+    component_max: f64,
+    is_range: bool,
+}
+
+impl AvOptionRangeEntry {
+    pub fn value_min(&self) -> f64 {
+        self.value_min
+    }
+
+    pub fn value_max(&self) -> f64 {
+        self.value_max
+    }
+
+    pub fn component_min(&self) -> f64 {
+        self.component_min
+    }
+
+    pub fn component_max(&self) -> f64 {
+        self.component_max
+    }
+
+    pub fn is_range(&self) -> bool {
+        self.is_range
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AvOptionRanges {
+    ranges: Vec<AvOptionRangeEntry>,
+    nb_components: usize,
+}
+
+impl AvOptionRanges {
+    pub fn ranges(&self) -> &[AvOptionRangeEntry] {
+        &self.ranges
+    }
+
+    pub fn nb_ranges(&self) -> usize {
+        self.ranges.len()
+    }
+
+    pub fn nb_components(&self) -> usize {
+        self.nb_components
+    }
+
+    fn one(range: AvOptionRangeEntry) -> Self {
+        Self {
+            ranges: vec![range],
+            nb_components: 1,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct OptionConstant {
     name: String,
@@ -848,6 +906,11 @@ impl OptionSet {
         Ok(self.definitions[index].range())
     }
 
+    pub fn query_avoption_ranges(&self, name: &str) -> AvResult<AvOptionRanges> {
+        let index = self.avoption_query_ranges_index(name)?;
+        Ok(avoption_ranges_for_kind(self.definitions[index].kind()))
+    }
+
     pub fn child_range(
         &self,
         child_name: &str,
@@ -934,6 +997,16 @@ impl OptionSet {
                 AvErrorKind::NotFound,
                 AvErrorCode::OPTION_NOT_FOUND,
                 format!("unknown AVOption `{name}`"),
+            )
+        })
+    }
+
+    fn avoption_query_ranges_index(&self, name: &str) -> AvResult<usize> {
+        self.find_exact_index(name).ok_or_else(|| {
+            AvError::with_code(
+                AvErrorKind::NotFound,
+                AvErrorCode::ENOMEM,
+                format!("unknown AVOption range `{name}`"),
             )
         })
     }
@@ -1147,6 +1220,45 @@ fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
         }),
         OptionKind::Bool | OptionKind::String { .. } => None,
     }
+}
+
+fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
+    let mut range = AvOptionRangeEntry {
+        value_min: 0.0,
+        value_max: 0.0,
+        component_min: 0.0,
+        component_max: 0.0,
+        is_range: true,
+    };
+
+    match *kind {
+        OptionKind::Bool => {
+            range.value_min = 0.0;
+            range.value_max = 1.0;
+        }
+        OptionKind::Int { min, max } => {
+            range.value_min = min as f64;
+            range.value_max = max as f64;
+        }
+        OptionKind::Float { min, max } => {
+            range.value_min = min;
+            range.value_max = max;
+        }
+        OptionKind::Rational { min, max } => {
+            range.value_min = min.to_f64();
+            range.value_max = max.to_f64();
+            range.component_min = i32::MIN as f64;
+            range.component_max = i32::MAX as f64;
+        }
+        OptionKind::String { .. } => {
+            range.value_min = -1.0;
+            range.value_max = i32::MAX as f64;
+            range.component_min = 0.0;
+            range.component_max = 0x10ffff as f64;
+        }
+    }
+
+    AvOptionRanges::one(range)
 }
 
 fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<()> {
@@ -1644,6 +1756,42 @@ mod tests {
             "title=clip"
         );
         assert_eq!(options.get_avoption_string("preset_level").unwrap(), "8");
+    }
+
+    #[test]
+    fn query_avoption_ranges_matches_bounded_ffmpeg_default_shape() {
+        let options = sample_options();
+        let threads = options.query_avoption_ranges("threads").unwrap();
+        assert_eq!(threads.nb_ranges(), 1);
+        assert_eq!(threads.nb_components(), 1);
+        assert_eq!(threads.ranges()[0].value_min(), 1.0);
+        assert_eq!(threads.ranges()[0].value_max(), 64.0);
+        assert_eq!(threads.ranges()[0].component_min(), 0.0);
+        assert_eq!(threads.ranges()[0].component_max(), 0.0);
+        assert!(threads.ranges()[0].is_range());
+
+        let bitexact = options.query_avoption_ranges("bitexact").unwrap();
+        assert_eq!(bitexact.ranges()[0].value_min(), 0.0);
+        assert_eq!(bitexact.ranges()[0].value_max(), 1.0);
+
+        let metadata = options.query_avoption_ranges("metadata").unwrap();
+        assert_eq!(metadata.ranges()[0].value_min(), -1.0);
+        assert_eq!(metadata.ranges()[0].value_max(), i32::MAX as f64);
+        assert_eq!(metadata.ranges()[0].component_min(), 0.0);
+        assert_eq!(metadata.ranges()[0].component_max(), 0x10ffff as f64);
+
+        let aspect = options.query_avoption_ranges("aspect_ratio").unwrap();
+        assert_eq!(aspect.ranges()[0].value_min(), 1.0);
+        assert_eq!(
+            aspect.ranges()[0].value_max(),
+            Rational::new(16, 9).unwrap().to_f64()
+        );
+        assert_eq!(aspect.ranges()[0].component_min(), i32::MIN as f64);
+        assert_eq!(aspect.ranges()[0].component_max(), i32::MAX as f64);
+
+        let missing = options.query_avoption_ranges("THREADS").unwrap_err();
+        assert_eq!(missing.kind(), AvErrorKind::NotFound);
+        assert_eq!(missing.code(), Some(AvErrorCode::ENOMEM));
     }
 
     #[test]

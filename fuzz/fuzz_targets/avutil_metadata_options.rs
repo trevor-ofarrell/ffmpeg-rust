@@ -1,7 +1,7 @@
 #![no_main]
 
 use avutil::{
-    AvErrorCode, Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant,
+    AvErrorCode, AvOptionRanges, Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant,
     OptionDefinition, OptionEntryMatch, OptionFlags, OptionKind, OptionQuery, OptionSearchFlags,
     OptionSet, OptionValue, Rational, SetMode,
 };
@@ -156,7 +156,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 15 {
+        match cursor.next().unwrap_or_default() % 16 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -283,6 +283,14 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 assert_eq!(options, before);
             }
             12 => {
+                let name = option_name_from(cursor);
+                let before = options.clone();
+                if let Ok(ranges) = options.query_avoption_ranges(&name) {
+                    assert_avoption_ranges_are_valid(&ranges);
+                }
+                assert_eq!(options, before);
+            }
+            13 => {
                 let before = options.clone();
                 let entries = options.avoption_entries();
                 assert_eq!(
@@ -315,7 +323,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
                 assert_eq!(options, before);
             }
-            13 => {
+            14 => {
                 let name = option_name_from(cursor);
                 let before = options.clone();
                 let result = options.remove_definition(&name);
@@ -460,6 +468,22 @@ fn exercise_fixtures() {
     assert_eq!(options.get_avoption_string("aspect_ratio").unwrap(), "4/3");
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
     assert_eq!(options.get_avoption_string("preset_level").unwrap(), "2");
+    let threads_ranges = options.query_avoption_ranges("threads").unwrap();
+    assert_eq!(threads_ranges.nb_ranges(), 1);
+    assert_eq!(threads_ranges.nb_components(), 1);
+    assert_eq!(threads_ranges.ranges()[0].value_min(), 1.0);
+    assert_eq!(threads_ranges.ranges()[0].value_max(), 64.0);
+    let bitexact_ranges = options.query_avoption_ranges("bitexact").unwrap();
+    assert_eq!(bitexact_ranges.ranges()[0].value_min(), 0.0);
+    assert_eq!(bitexact_ranges.ranges()[0].value_max(), 1.0);
+    let metadata_ranges = options.query_avoption_ranges("metadata").unwrap();
+    assert_eq!(metadata_ranges.ranges()[0].value_min(), -1.0);
+    assert_eq!(metadata_ranges.ranges()[0].component_max(), 0x10ffff as f64);
+    let aspect_ranges = options.query_avoption_ranges("aspect_ratio").unwrap();
+    assert_eq!(aspect_ranges.ranges()[0].component_min(), i32::MIN as f64);
+    assert_eq!(aspect_ranges.ranges()[0].component_max(), i32::MAX as f64);
+    let missing_range = options.query_avoption_ranges("THREADS").unwrap_err();
+    assert_eq!(missing_range.code(), Some(AvErrorCode::ENOMEM));
 
     let missing_exact = options.set_avoption_from_str("THREADS", "9").unwrap_err();
     assert_eq!(missing_exact.code(), Some(AvErrorCode::OPTION_NOT_FOUND));
@@ -696,6 +720,21 @@ fn assert_option_set_invariants_at_depth(options: &OptionSet, depth: usize) {
         if depth < 2 {
             assert_option_set_invariants_at_depth(child.options(), depth + 1);
         }
+    }
+}
+
+fn assert_avoption_ranges_are_valid(ranges: &AvOptionRanges) {
+    assert!(ranges.nb_ranges() > 0);
+    assert!(ranges.nb_components() > 0);
+    assert_eq!(ranges.nb_ranges(), ranges.ranges().len());
+    for range in ranges.ranges() {
+        assert!(range.value_min().is_finite());
+        assert!(range.value_max().is_finite());
+        assert!(range.component_min().is_finite());
+        assert!(range.component_max().is_finite());
+        assert!(range.value_min() <= range.value_max());
+        assert!(range.component_min() <= range.component_max());
+        assert!(range.is_range());
     }
 }
 

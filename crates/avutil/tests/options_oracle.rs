@@ -6,8 +6,8 @@ use std::{
 };
 
 use avutil::{
-    OptionConstant, OptionDefinition, OptionEntryMatch, OptionFlags, OptionKind, OptionSearchFlags,
-    OptionSet, OptionValue, Rational,
+    AvOptionRanges, OptionConstant, OptionDefinition, OptionEntryMatch, OptionFlags, OptionKind,
+    OptionSearchFlags, OptionSet, OptionValue, Rational,
 };
 
 #[test]
@@ -170,6 +170,21 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         [
             ret_value(options.get_avoption_string("THREADS")),
             ret_value(options.get_avoption_string("fast")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "query-ranges:root",
+        [
+            ret_ranges(options.query_avoption_ranges("threads")),
+            ret_ranges(options.query_avoption_ranges("bitexact")),
+            ret_ranges(options.query_avoption_ranges("quality")),
+            ret_ranges(options.query_avoption_ranges("aspect_ratio")),
+            ret_ranges(options.query_avoption_ranges("metadata")),
+            ret_ranges(options.query_avoption_ranges("preset_level")),
+            ret_ranges(options.query_avoption_ranges("exported")),
+            ret_ranges(options.query_avoption_ranges("THREADS")),
+            ret_ranges(options.query_avoption_ranges("fast")),
         ],
     );
 
@@ -431,6 +446,35 @@ fn ret_value(result: avutil::AvResult<String>) -> String {
     }
 }
 
+fn ret_ranges(result: avutil::AvResult<AvOptionRanges>) -> String {
+    match result {
+        Ok(ranges) => {
+            let first = ranges.ranges().first().expect("one default range");
+            format!(
+                "{}:{}:{}:{}:{}:{}:{}:{}",
+                ranges.nb_components(),
+                ranges.nb_ranges(),
+                ranges.nb_components(),
+                format_c_g17(first.value_min()),
+                format_c_g17(first.value_max()),
+                format_c_g17(first.component_min()),
+                format_c_g17(first.component_max()),
+                i32::from(first.is_range())
+            )
+        }
+        Err(err) => format!(
+            "{}:<null>",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
+fn format_c_g17(value: f64) -> String {
+    value.to_string()
+}
+
 fn insert_row<const N: usize>(
     rows: &mut BTreeMap<String, Vec<String>>,
     name: &str,
@@ -680,6 +724,42 @@ static void print_get_errors(const TestOptions *ctx) {
     printf("\n");
 }
 
+static void print_query_range_value(const TestOptions *ctx, const char *name) {
+    AVOptionRanges *ranges = NULL;
+    int ret = av_opt_query_ranges(&ranges, (void *)ctx, name, 0);
+    if (ret < 0 || !ranges || !ranges->range ||
+        ranges->nb_ranges <= 0 || ranges->nb_components <= 0 ||
+        !ranges->range[0]) {
+        printf("|%d:<null>", ret);
+    } else {
+        const AVOptionRange *range = ranges->range[0];
+        printf("|%d:%d:%d:%.17g:%.17g:%.17g:%.17g:%d",
+               ret,
+               ranges->nb_ranges,
+               ranges->nb_components,
+               range->value_min,
+               range->value_max,
+               range->component_min,
+               range->component_max,
+               range->is_range);
+    }
+    av_opt_freep_ranges(&ranges);
+}
+
+static void print_query_ranges_row(const TestOptions *ctx) {
+    printf("query-ranges:root");
+    print_query_range_value(ctx, "threads");
+    print_query_range_value(ctx, "bitexact");
+    print_query_range_value(ctx, "quality");
+    print_query_range_value(ctx, "aspect_ratio");
+    print_query_range_value(ctx, "metadata");
+    print_query_range_value(ctx, "preset_level");
+    print_query_range_value(ctx, "exported");
+    print_query_range_value(ctx, "THREADS");
+    print_query_range_value(ctx, "fast");
+    printf("\n");
+}
+
 int main(void) {
     TestOptions ctx = { 0 };
     int ret_threads;
@@ -705,6 +785,7 @@ int main(void) {
     print_state("state:defaults", &ctx);
     print_get_row("get:defaults", &ctx);
     print_get_errors(&ctx);
+    print_query_ranges_row(&ctx);
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);
