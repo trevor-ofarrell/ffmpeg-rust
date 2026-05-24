@@ -1689,6 +1689,47 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             ret_value(typed_array_options.get_avoption_string("ints")),
         ],
     );
+
+    let mut typed_string_array_options = array_options();
+    typed_string_array_options
+        .set_avoption_from_str("words", "left,right\\,inner")
+        .unwrap();
+    let ret_string_insert = ret(typed_string_array_options.set_avoption_array(
+        "words",
+        1,
+        &[OptionValue::String("middle,comma".to_owned())],
+        OptionSearchFlags::empty(),
+    ));
+    let ret_string_replace = ret(typed_string_array_options.set_avoption_array(
+        "words",
+        2,
+        &[OptionValue::String("tail\\slash".to_owned())],
+        OptionSearchFlags::ARRAY_REPLACE,
+    ));
+    let ret_string_remove = ret(typed_string_array_options.remove_avoption_array(
+        "words",
+        0,
+        1,
+        OptionSearchFlags::empty(),
+    ));
+    insert_row(
+        &mut rows,
+        "ret:set-array-string-typed",
+        [ret_string_insert, ret_string_replace, ret_string_remove],
+    );
+    rows.insert(
+        "state:set-array-string-typed".to_string(),
+        array_state_fields(&typed_string_array_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-array-string-typed",
+        [
+            ret_array_size(typed_string_array_options.get_avoption_array_size("words")),
+            ret_array_values(typed_string_array_options.get_avoption_array("words", 0, 2)),
+            ret_value(typed_string_array_options.get_avoption_string("words")),
+        ],
+    );
     insert_row(
         &mut rows,
         "query-ranges:array",
@@ -4609,6 +4650,20 @@ static void print_get_array_int64_value(const void *ctx, const char *name,
     }
 }
 
+static void print_get_array_string_value(const void *ctx, const char *name,
+                                         unsigned start, unsigned count) {
+    char *values[8] = { 0 };
+    int ret = av_opt_get_array((void *)ctx, name, 0, start, count,
+                               AV_OPT_TYPE_STRING, values);
+    printf("|%d:%u", ret, ret < 0 ? 0 : count);
+    if (ret >= 0) {
+        for (unsigned i = 0; i < count; i++)
+            printf(":%s", values[i] ? values[i] : "<null>");
+        for (unsigned i = 0; i < count; i++)
+            av_freep(&values[i]);
+    }
+}
+
 static void print_array_rows(void) {
     ArrayOptions ctx;
     int ret_set_ints;
@@ -4621,9 +4676,14 @@ static void print_array_rows(void) {
     int ret_remove;
     int ret_wrong_type;
     int ret_remove_range;
+    int ret_string_insert;
+    int ret_string_replace;
+    int ret_string_remove;
     int64_t insert_value[] = { 8 };
     int64_t replace_value[] = { 5 };
     const char *bad_value[] = { "bad" };
+    const char *string_insert[] = { "middle,comma" };
+    const char *string_replace[] = { "tail\\slash" };
 
     init_array_context(&ctx);
     print_array_state("state:array-defaults", &ctx);
@@ -4678,6 +4738,24 @@ static void print_array_rows(void) {
     print_get_array_size_value(&ctx, "ints", 0);
     print_get_array_int64_value(&ctx, "ints", 0, 2);
     print_get_value(&ctx, "ints");
+    printf("\n");
+    av_opt_free(&ctx);
+
+    init_array_context(&ctx);
+    av_opt_set(&ctx, "words", "left,right\\,inner", 0);
+    ret_string_insert = av_opt_set_array(&ctx, "words", 0, 1, 1,
+                                         AV_OPT_TYPE_STRING, string_insert);
+    ret_string_replace = av_opt_set_array(&ctx, "words", AV_OPT_ARRAY_REPLACE, 2, 1,
+                                          AV_OPT_TYPE_STRING, string_replace);
+    ret_string_remove = av_opt_set_array(&ctx, "words", 0, 0, 1,
+                                         AV_OPT_TYPE_STRING, NULL);
+    printf("ret:set-array-string-typed|%d|%d|%d\n",
+           ret_string_insert, ret_string_replace, ret_string_remove);
+    print_array_state("state:set-array-string-typed", &ctx);
+    printf("get:set-array-string-typed");
+    print_get_array_size_value(&ctx, "words", 0);
+    print_get_array_string_value(&ctx, "words", 0, 2);
+    print_get_value(&ctx, "words");
     printf("\n");
 
     printf("query-ranges:array");

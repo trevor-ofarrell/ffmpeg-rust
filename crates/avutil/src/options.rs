@@ -6437,6 +6437,44 @@ mod tests {
             .unwrap();
         assert_eq!(options.get_avoption_string("ints").unwrap(), "5,4");
 
+        options
+            .set_avoption_from_str("words", "left|right\\|inner")
+            .unwrap();
+        options
+            .set_avoption_array(
+                "words",
+                1,
+                &[OptionValue::String("middle|pipe".to_owned())],
+                OptionSearchFlags::empty(),
+            )
+            .unwrap();
+        assert_eq!(
+            options.get_avoption_string("words").unwrap(),
+            "left|middle\\|pipe|right\\|inner"
+        );
+        options
+            .set_avoption_array(
+                "words",
+                2,
+                &[OptionValue::String("tail\\slash".to_owned())],
+                OptionSearchFlags::ARRAY_REPLACE,
+            )
+            .unwrap();
+        assert_eq!(
+            options.get_avoption_array("words", 1, 2).unwrap(),
+            vec![
+                OptionValue::String("middle|pipe".to_owned()),
+                OptionValue::String("tail\\slash".to_owned())
+            ]
+        );
+        options
+            .remove_avoption_array("words", 0, 1, OptionSearchFlags::empty())
+            .unwrap();
+        assert_eq!(
+            options.get_avoption_string("words").unwrap(),
+            "middle\\|pipe|tail\\\\slash"
+        );
+
         let before_typed_errors = options.clone();
         assert_eq!(
             options

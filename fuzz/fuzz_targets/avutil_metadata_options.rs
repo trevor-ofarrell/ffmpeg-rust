@@ -1302,6 +1302,36 @@ fn exercise_fixtures() {
         array_options.get_avoption_array("ints", 0, 2).unwrap(),
         vec![OptionValue::Int(3), OptionValue::Int(4)]
     );
+    array_options
+        .set_avoption_array(
+            "words",
+            1,
+            &[OptionValue::String("middle,comma".to_owned())],
+            OptionSearchFlags::empty(),
+        )
+        .unwrap();
+    array_options
+        .set_avoption_array(
+            "words",
+            2,
+            &[OptionValue::String("tail\\slash".to_owned())],
+            OptionSearchFlags::ARRAY_REPLACE,
+        )
+        .unwrap();
+    array_options
+        .remove_avoption_array("words", 0, 1, OptionSearchFlags::empty())
+        .unwrap();
+    assert_eq!(
+        array_options.get_avoption_array("words", 0, 2).unwrap(),
+        vec![
+            OptionValue::String("middle,comma".to_owned()),
+            OptionValue::String("tail\\slash".to_owned()),
+        ]
+    );
+    assert_eq!(
+        array_options.get_avoption_string("words").unwrap(),
+        "middle\\,comma,tail\\\\slash"
+    );
     let before_array_errors = array_options.clone();
     assert_eq!(
         array_options
