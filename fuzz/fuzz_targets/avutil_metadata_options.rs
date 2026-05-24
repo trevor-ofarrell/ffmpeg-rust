@@ -3,7 +3,7 @@
 use avutil::{
     AvErrorCode, AvOptionRanges, Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant,
     OptionDefinition, OptionEntryMatch, OptionFlags, OptionKind, OptionQuery, OptionSearchFlags,
-    OptionSerializeFlags, OptionSet, OptionValue, Rational, SetMode,
+    OptionSerializeFlags, OptionSet, OptionValue, Rational, RgbaColor, SetMode,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -937,6 +937,79 @@ fn exercise_fixtures() {
         Some(AvErrorCode::EINVAL)
     );
 
+    let mut color_options = OptionSet::new();
+    color_options
+        .define(
+            OptionDefinition::new(
+                "color",
+                OptionKind::Color,
+                OptionValue::Color(RgbaColor::from_rgba([0xFF, 0x00, 0x00, 0xFF])),
+                "color",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    color_options
+        .set_avoption_from_str("color", "Blue@0.5")
+        .unwrap();
+    assert_eq!(
+        color_options.get("color"),
+        Some(&OptionValue::Color(RgbaColor::from_rgba([
+            0x00, 0x00, 0xFF, 0x7F
+        ])))
+    );
+    color_options
+        .set_avoption_from_str("color", "#112233")
+        .unwrap();
+    assert_eq!(
+        color_options.get_avoption_string("color").unwrap(),
+        "0x112233ff"
+    );
+    color_options
+        .set_avoption_from_str("color", "0x11223344")
+        .unwrap();
+    assert_eq!(
+        color_options.get_avoption_string("color").unwrap(),
+        "0x11223344"
+    );
+    let before_name_error = color_options.clone();
+    assert_eq!(
+        color_options
+            .set_avoption_from_str("color", "not-a-color")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        color_options.get_avoption_string("color").unwrap(),
+        "0x112233ff"
+    );
+    assert_ne!(color_options, before_name_error);
+    assert_eq!(
+        color_options
+            .set_avoption_from_str("color", "red@2")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        color_options.get_avoption_string("color").unwrap(),
+        "0xff0000ff"
+    );
+    let before_numeric_errors = color_options.clone();
+    assert_eq!(
+        color_options
+            .set_avoption_int("color", 10)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(color_options, before_numeric_errors);
+    assert_eq!(
+        color_options.get_avoption_int("color").unwrap_err().code(),
+        Some(AvErrorCode::EINVAL)
+    );
+
     options.set_from_str("preset_level", "slow").unwrap();
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(8)));
     assert!(options
@@ -1486,7 +1559,7 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
     let name = option_name_from(cursor);
     let help = literal_from(cursor);
     let kind_tag = cursor.next().unwrap_or_default();
-    let kind = match kind_tag % 16 {
+    let kind = match kind_tag % 17 {
         0 => OptionKind::Bool,
         1 => OptionKind::Int { min: 0, max: 64 },
         2 => OptionKind::Int { min: 8, max: 1 },
@@ -1522,7 +1595,8 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
             min: Rational::new(120, 1).unwrap(),
             max: Rational::ONE,
         },
-        14 => OptionKind::String { allow_empty: true },
+        14 => OptionKind::Color,
+        15 => OptionKind::String { allow_empty: true },
         _ => OptionKind::String { allow_empty: false },
     };
     let default = default_value_for(&kind, cursor);
@@ -1661,6 +1735,12 @@ fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue 
                 OptionValue::VideoRate(Rational::ONE)
             }
         }
+        OptionKind::Color => OptionValue::Color(RgbaColor::from_rgba([
+            cursor.next().unwrap_or_default(),
+            cursor.next().unwrap_or_default(),
+            cursor.next().unwrap_or_default(),
+            cursor.next().unwrap_or_default(),
+        ])),
         OptionKind::String { allow_empty } => {
             let value = literal_from(cursor);
             if *allow_empty || !value.is_empty() {
@@ -1800,7 +1880,7 @@ fn sample_options() -> OptionSet {
 }
 
 fn option_name_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 16 {
+    match cursor.next().unwrap_or_default() % 17 {
         0 => "threads".to_owned(),
         1 => "THREADS".to_owned(),
         2 => "bitexact".to_owned(),
@@ -1816,12 +1896,13 @@ fn option_name_from(cursor: &mut Cursor<'_>) -> String {
         12 => "new_option".to_owned(),
         13 => "readonly".to_owned(),
         14 => "aspect_ratio".to_owned(),
+        15 => "color".to_owned(),
         _ => "preset_level".to_owned(),
     }
 }
 
 fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 46 {
+    match cursor.next().unwrap_or_default() % 52 {
         0 => "1".to_owned(),
         1 => "0".to_owned(),
         2 => "yes".to_owned(),
@@ -1868,12 +1949,18 @@ fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
         43 => "30000/1001".to_owned(),
         44 => "bad_rate".to_owned(),
         45 => "121".to_owned(),
+        46 => "red".to_owned(),
+        47 => "Blue@0.5".to_owned(),
+        48 => "#112233".to_owned(),
+        49 => "0x11223344".to_owned(),
+        50 => "not-a-color".to_owned(),
+        51 => "red@2".to_owned(),
         _ => literal_from(cursor),
     }
 }
 
 fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
-    match cursor.next().unwrap_or_default() % 8 {
+    match cursor.next().unwrap_or_default() % 9 {
         0 => OptionValue::Bool(cursor.next().unwrap_or_default().is_multiple_of(2)),
         1 => OptionValue::Int(i64::from(cursor.next().unwrap_or_default()) - 32),
         2 => {
@@ -1912,6 +1999,12 @@ fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
             };
             OptionValue::VideoRate(value)
         }
+        7 => OptionValue::Color(RgbaColor::from_rgba([
+            cursor.next().unwrap_or_default(),
+            cursor.next().unwrap_or_default(),
+            cursor.next().unwrap_or_default(),
+            cursor.next().unwrap_or_default(),
+        ])),
         _ => OptionValue::String(option_value_string_from(cursor)),
     }
 }

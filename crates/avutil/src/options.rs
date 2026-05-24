@@ -1,4 +1,5 @@
 use crate::{
+    color::{find_named_color, parse_color, RgbaColor},
     dict::{Dictionary, MatchMode, SetMode},
     AvError, AvErrorCode, AvErrorKind, AvResult, Rational,
 };
@@ -10,6 +11,7 @@ pub enum OptionValue {
     Duration(i64),
     ImageSize { width: i32, height: i32 },
     VideoRate(Rational),
+    Color(RgbaColor),
     Float(f64),
     Rational(Rational),
     String(String),
@@ -22,6 +24,7 @@ pub enum OptionKind {
     Duration { min: i64, max: i64 },
     ImageSize,
     VideoRate { min: Rational, max: Rational },
+    Color,
     Float { min: f64, max: f64 },
     Rational { min: Rational, max: Rational },
     String { allow_empty: bool },
@@ -570,6 +573,7 @@ impl OptionDefinition {
                 OptionValue::ImageSize { width, height }
             }
             OptionKind::VideoRate { .. } => OptionValue::VideoRate(parse_video_rate(raw)?),
+            OptionKind::Color => OptionValue::Color(parse_color(raw)?),
             OptionKind::Float { .. } => OptionValue::Float(parse_float(raw)?),
             OptionKind::Rational { .. } => OptionValue::Rational(parse_rational(raw)?),
             OptionKind::String { .. } => OptionValue::String(raw.to_owned()),
@@ -1043,6 +1047,19 @@ impl OptionSet {
     pub fn set_avoption_from_str(&mut self, name: &str, raw: &str) -> AvResult<()> {
         let index = self.avoption_index(name)?;
         self.ensure_writable(index)?;
+        if matches!(self.definitions[index].kind(), OptionKind::Color) {
+            let current = match self.values[index] {
+                OptionValue::Color(color) => color,
+                _ => {
+                    return Err(AvError::invalid_argument(
+                        "color AVOption storage does not match definition",
+                    ))
+                }
+            };
+            let (color, result) = parse_avoption_color_value(raw, current);
+            self.values[index] = OptionValue::Color(color);
+            return result;
+        }
         let value = self.parse_avoption_value(index, raw)?;
         self.values[index] = value;
         Ok(())
@@ -1588,7 +1605,7 @@ impl OptionSet {
     fn parse_avoption_value(&self, index: usize, raw: &str) -> AvResult<OptionValue> {
         if !matches!(
             self.definitions[index].kind(),
-            OptionKind::Duration { .. } | OptionKind::VideoRate { .. }
+            OptionKind::Duration { .. } | OptionKind::VideoRate { .. } | OptionKind::Color
         ) {
             if let Some(unit) = self.definitions[index].unit() {
                 if let Some(constant) = self.find_exact_constant(unit, raw) {
@@ -1603,7 +1620,8 @@ impl OptionSet {
             | OptionKind::String { .. }
             | OptionKind::Duration { .. }
             | OptionKind::ImageSize
-            | OptionKind::VideoRate { .. } => {
+            | OptionKind::VideoRate { .. }
+            | OptionKind::Color => {
                 if matches!(self.definitions[index].kind(), OptionKind::Duration { .. }) {
                     let duration = parse_duration(raw)?;
                     return avoption_value_from_numeric(
@@ -1879,9 +1897,107 @@ fn validate_help(help: &str) -> AvResult<String> {
     Ok(help.to_owned())
 }
 
+fn parse_avoption_color_value(raw: &str, current: RgbaColor) -> (RgbaColor, AvResult<()>) {
+    let mut rgba = current.rgba();
+    let (color_text, alpha_text) = raw.split_once('@').unwrap_or((raw, ""));
+    let has_alpha = raw.contains('@');
+    let (color_text, forced_hex) = if let Some(hex) = color_text.strip_prefix('#') {
+        (hex, true)
+    } else if let Some(hex) = color_text.strip_prefix("0x") {
+        (hex, true)
+    } else {
+        (color_text, false)
+    };
+
+    rgba[3] = 0xFF;
+
+    if color_text.eq_ignore_ascii_case("random") || color_text.eq_ignore_ascii_case("bikeshed") {
+        return (
+            RgbaColor::from_rgba(rgba),
+            Err(AvError::unsupported(
+                "random av_parse_color colors require a nondeterministic seed",
+            )),
+        );
+    }
+
+    if forced_hex || color_text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        match parse_avoption_hex_color(color_text) {
+            Ok(parsed) => rgba = parsed,
+            Err(err) => return (RgbaColor::from_rgba(rgba), Err(err)),
+        }
+    } else if let Some(named) = find_named_color(color_text) {
+        let rgb = named.rgb();
+        rgba[0] = rgb[0];
+        rgba[1] = rgb[1];
+        rgba[2] = rgb[2];
+    } else {
+        return (
+            RgbaColor::from_rgba(rgba),
+            Err(AvError::invalid_argument(format!(
+                "unknown color name `{color_text}`"
+            ))),
+        );
+    }
+
+    if has_alpha {
+        match parse_avoption_color_alpha(alpha_text) {
+            Ok(alpha) => rgba[3] = alpha,
+            Err(err) => return (RgbaColor::from_rgba(rgba), Err(err)),
+        }
+    }
+
+    (RgbaColor::from_rgba(rgba), Ok(()))
+}
+
+fn parse_avoption_hex_color(hex: &str) -> AvResult<[u8; 4]> {
+    if !matches!(hex.len(), 6 | 8) || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(AvError::invalid_argument(
+            "expected color hex value in RRGGBB or RRGGBBAA form",
+        ));
+    }
+
+    let mut value = u32::from_str_radix(hex, 16)
+        .map_err(|_| AvError::invalid_argument("invalid color hex value"))?;
+    let alpha = if hex.len() == 8 {
+        let alpha = value as u8;
+        value >>= 8;
+        alpha
+    } else {
+        0xFF
+    };
+
+    Ok([(value >> 16) as u8, (value >> 8) as u8, value as u8, alpha])
+}
+
+fn parse_avoption_color_alpha(alpha: &str) -> AvResult<u8> {
+    if let Some(hex) = alpha.strip_prefix("0x") {
+        if hex.is_empty() || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(AvError::invalid_argument("invalid hexadecimal alpha value"));
+        }
+        let value = u32::from_str_radix(hex, 16)
+            .map_err(|_| AvError::invalid_argument("invalid hexadecimal alpha value"))?;
+        return u8::try_from(value)
+            .map_err(|_| AvError::invalid_argument("hexadecimal alpha value out of range"));
+    }
+
+    let normalized = alpha
+        .parse::<f64>()
+        .map_err(|_| AvError::invalid_argument("invalid alpha value"))?;
+    if !normalized.is_finite() || !(0.0..=1.0).contains(&normalized) {
+        return Err(AvError::invalid_argument(
+            "alpha value must be a finite value between 0 and 1",
+        ));
+    }
+
+    Ok((255.0 * normalized).trunc() as u8)
+}
+
 fn validate_kind(kind: &OptionKind) -> AvResult<()> {
     match *kind {
-        OptionKind::Bool | OptionKind::ImageSize | OptionKind::String { .. } => Ok(()),
+        OptionKind::Bool
+        | OptionKind::ImageSize
+        | OptionKind::Color
+        | OptionKind::String { .. } => Ok(()),
         OptionKind::Int { min, max } => {
             if min > max {
                 return Err(AvError::invalid_argument(
@@ -1954,7 +2070,10 @@ fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
             min: OptionValue::VideoRate(min),
             max: OptionValue::VideoRate(max),
         }),
-        OptionKind::Bool | OptionKind::ImageSize | OptionKind::String { .. } => None,
+        OptionKind::Bool
+        | OptionKind::ImageSize
+        | OptionKind::Color
+        | OptionKind::String { .. } => None,
     }
 }
 
@@ -1992,6 +2111,7 @@ fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
             range.component_min = 1.0;
             range.component_max = i32::MAX as f64;
         }
+        OptionKind::Color => {}
         OptionKind::Float { min, max } => {
             range.value_min = min;
             range.value_max = max;
@@ -2114,6 +2234,9 @@ fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNu
         OptionValue::VideoRate(_) => Err(AvError::invalid_argument(format!(
             "AVOption `{name}` is not numeric"
         ))),
+        OptionValue::Color(_) => Err(AvError::invalid_argument(format!(
+            "AVOption `{name}` is not numeric"
+        ))),
         OptionValue::Float(value) => Ok(AvOptionNumberParts {
             num: *value,
             den: 1,
@@ -2167,6 +2290,15 @@ fn avoption_value_from_numeric(
             let rational = rational_from_avoption_numeric_input(input)?;
             validate_video_rate_bound(rational, "numeric AVOption video rate")?;
             Ok(OptionValue::VideoRate(rational))
+        }
+        OptionKind::Color => {
+            if value == 0.0 {
+                Err(AvError::invalid_argument(format!(
+                    "AVOption `{name}` is not numeric"
+                )))
+            } else {
+                Err(avoption_range_error(name, value, 0.0, 0.0))
+            }
         }
         OptionKind::Float { min, max } => {
             avoption_check_numeric_range(name, value, min, max)?;
@@ -2316,6 +2448,7 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
             }
             Ok(())
         }
+        (OptionKind::Color, OptionValue::Color(_)) => Ok(()),
         (OptionKind::Float { min, max }, OptionValue::Float(value)) => {
             if !value.is_finite() {
                 return Err(AvError::invalid_argument(
@@ -2391,6 +2524,9 @@ fn avoption_kind_min(kind: &OptionKind) -> AvResult<f64> {
             "image size AVOption does not have a scalar numeric minimum",
         )),
         OptionKind::VideoRate { min, .. } => Ok(min.to_f64()),
+        OptionKind::Color => Err(AvError::invalid_argument(
+            "color AVOption does not have a numeric minimum",
+        )),
         OptionKind::Float { min, .. } => Ok(min),
         OptionKind::Rational { min, .. } => Ok(min.to_f64()),
         OptionKind::String { .. } => Err(AvError::invalid_argument(
@@ -2408,6 +2544,9 @@ fn avoption_kind_max(kind: &OptionKind) -> AvResult<f64> {
             "image size AVOption does not have a scalar numeric maximum",
         )),
         OptionKind::VideoRate { max, .. } => Ok(max.to_f64()),
+        OptionKind::Color => Err(AvError::invalid_argument(
+            "color AVOption does not have a numeric maximum",
+        )),
         OptionKind::Float { max, .. } => Ok(max),
         OptionKind::Rational { max, .. } => Ok(max.to_f64()),
         OptionKind::String { .. } => Err(AvError::invalid_argument(
@@ -3386,6 +3525,13 @@ fn format_avoption_value(value: &OptionValue) -> String {
         OptionValue::Duration(value) => format_duration(*value),
         OptionValue::ImageSize { width, height } => format!("{width}x{height}"),
         OptionValue::VideoRate(value) => format!("{}/{}", value.num(), value.den()),
+        OptionValue::Color(value) => {
+            let rgba = value.rgba();
+            format!(
+                "0x{:02x}{:02x}{:02x}{:02x}",
+                rgba[0], rgba[1], rgba[2], rgba[3]
+            )
+        }
         OptionValue::Float(value) => format!("{value:.6}"),
         OptionValue::Rational(value) => format!("{}/{}", value.num(), value.den()),
         OptionValue::String(value) => value.clone(),
@@ -3913,6 +4059,109 @@ mod tests {
             Some(AvErrorCode::EINVAL)
         );
         assert_eq!(options, before_errors);
+    }
+
+    #[test]
+    fn color_options_parse_format_and_query_like_bounded_ffmpeg_shape() {
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new(
+                    "color",
+                    OptionKind::Color,
+                    OptionValue::Color(RgbaColor::from_rgba([0xFF, 0x00, 0x00, 0xFF])),
+                    "color",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(options.range("color").unwrap(), None);
+        let av_ranges = options.query_avoption_ranges("color").unwrap();
+        assert_eq!(av_ranges.nb_ranges(), 1);
+        assert_eq!(av_ranges.ranges()[0].value_min(), 0.0);
+        assert_eq!(av_ranges.ranges()[0].value_max(), 0.0);
+        assert_eq!(av_ranges.ranges()[0].component_min(), 0.0);
+        assert_eq!(av_ranges.ranges()[0].component_max(), 0.0);
+        assert_eq!(options.get_avoption_string("color").unwrap(), "0xff0000ff");
+
+        options.set_avoption_from_str("color", "Blue@0.5").unwrap();
+        assert_eq!(
+            options.get("color"),
+            Some(&OptionValue::Color(RgbaColor::from_rgba([
+                0x00, 0x00, 0xFF, 0x7F
+            ])))
+        );
+        assert_eq!(options.get_avoption_string("color").unwrap(), "0x0000ff7f");
+
+        options.set_avoption_from_str("color", "#112233").unwrap();
+        assert_eq!(
+            options.get("color"),
+            Some(&OptionValue::Color(RgbaColor::from_rgba([
+                0x11, 0x22, 0x33, 0xFF
+            ])))
+        );
+
+        options
+            .set_avoption_from_str("color", "0x11223344")
+            .unwrap();
+        assert_eq!(
+            options.get("color"),
+            Some(&OptionValue::Color(RgbaColor::from_rgba([
+                0x11, 0x22, 0x33, 0x44
+            ])))
+        );
+        assert_eq!(options.get_avoption_string("color").unwrap(), "0x11223344");
+
+        let before_name_error = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_from_str("color", "not-a-color")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.get("color"),
+            Some(&OptionValue::Color(RgbaColor::from_rgba([
+                0x11, 0x22, 0x33, 0xFF
+            ])))
+        );
+        assert_eq!(
+            options
+                .set_avoption_from_str("color", "red@2")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.get("color"),
+            Some(&OptionValue::Color(RgbaColor::from_rgba([
+                0xFF, 0x00, 0x00, 0xFF
+            ])))
+        );
+        assert_ne!(options, before_name_error);
+
+        let before_numeric_errors = options.clone();
+        assert_eq!(
+            options.set_avoption_int("color", 10).unwrap_err().code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(options, before_numeric_errors);
+        assert_eq!(
+            options.set_avoption_int("color", 0).unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_numeric_errors);
+        assert_eq!(
+            options.get_avoption_int("color").unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.get_avoption_q("color").unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_numeric_errors);
     }
 
     #[test]

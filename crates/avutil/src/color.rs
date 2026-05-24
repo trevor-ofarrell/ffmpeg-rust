@@ -705,26 +705,16 @@ fn parse_alpha(alpha: &str) -> AvResult<u8> {
         return parse_hex_alpha(hex);
     }
 
-    let normalized = if alpha.is_empty() {
-        0.0
-    } else {
-        alpha
-            .parse::<f64>()
-            .map_err(|_| AvError::invalid_argument("invalid alpha value"))?
-    };
+    let normalized = alpha
+        .parse::<f64>()
+        .map_err(|_| AvError::invalid_argument("invalid alpha value"))?;
     if !normalized.is_finite() || !(0.0..=1.0).contains(&normalized) {
         return Err(AvError::invalid_argument(
             "alpha value must be a finite value between 0 and 1",
         ));
     }
 
-    let alpha = 256.0 * normalized;
-    if alpha > 255.0 {
-        return Err(AvError::invalid_argument(
-            "normalized alpha value rounds outside the byte range",
-        ));
-    }
-
+    let alpha = 255.0 * normalized;
     Ok(alpha.trunc() as u8)
 }
 
@@ -856,13 +846,14 @@ mod tests {
         );
         assert_eq!(
             parse_color("Blue@0.5").unwrap().rgba(),
-            [0x00, 0x00, 0xFF, 0x80]
+            [0x00, 0x00, 0xFF, 0x7F]
         );
+        assert_eq!(parse_color("white@1").unwrap().alpha(), 0xFF);
+        assert_eq!(parse_color("red@0.999").unwrap().alpha(), 0xFE);
         assert_eq!(
             parse_color("#01020304@0x05").unwrap().rgba(),
             [0x01, 0x02, 0x03, 0x05]
         );
-        assert_eq!(parse_color("white@").unwrap().alpha(), 0x00);
     }
 
     #[test]
@@ -873,8 +864,7 @@ mod tests {
             "#11223z",
             "0X112233",
             "transparent",
-            "red@1.0",
-            "red@0.999",
+            "white@",
             "red@0x100",
             "red@0x",
             "red@@0.5",

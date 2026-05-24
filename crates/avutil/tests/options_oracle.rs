@@ -8,7 +8,7 @@ use std::{
 use avutil::{
     AvOptionRanges, Dictionary, MatchMode, OptionChild, OptionConstant, OptionDefinition,
     OptionEntryMatch, OptionFlags, OptionKind, OptionSearchFlags, OptionSerializeFlags, OptionSet,
-    OptionValue, Rational, SetMode,
+    OptionValue, Rational, RgbaColor, SetMode,
 };
 
 #[test]
@@ -1161,6 +1161,97 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let color_defaults = color_options();
+    insert_row(
+        &mut rows,
+        "state:color-defaults",
+        color_state_fields(&color_defaults),
+    );
+    insert_row(
+        &mut rows,
+        "get:color-defaults",
+        [
+            ret_value(color_defaults.get_avoption_string("color")),
+            ret_i64(color_defaults.get_avoption_int("color")),
+            ret_i64(color_defaults.get_avoption_int("scalar")),
+        ],
+    );
+
+    let mut color_set = color_options();
+    let ret_blue = ret(color_set.set_avoption_from_str("color", "Blue@0.5"));
+    let after_blue = color_value(&color_set, "color");
+    let ret_hex = ret(color_set.set_avoption_from_str("color", "#112233"));
+    let after_hex = color_value(&color_set, "color");
+    let ret_hex_alpha = ret(color_set.set_avoption_from_str("color", "0x11223344"));
+    let after_hex_alpha = color_value(&color_set, "color");
+    insert_row(
+        &mut rows,
+        "ret:set-color-strings",
+        [ret_blue, ret_hex, ret_hex_alpha],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-color-strings",
+        [
+            color_field(after_blue),
+            color_field(after_hex),
+            color_field(after_hex_alpha),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-color-strings",
+        [ret_value(color_set.get_avoption_string("color"))],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-color-errors",
+        [
+            ret(color_set.set_avoption_from_str("color", "not-a-color")),
+            ret(color_set.set_avoption_from_str("color", "red@2")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:after-color-errors",
+        color_state_fields(&color_set),
+    );
+
+    let mut typed_color_options = color_options();
+    insert_row(
+        &mut rows,
+        "ret:set-color-typed",
+        [
+            ret(typed_color_options.set_avoption_int("color", 10)),
+            ret(typed_color_options.set_avoption_int("color", 0)),
+            ret(typed_color_options.set_avoption_int("scalar", 6)),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-color-typed",
+        color_state_fields(&typed_color_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-color-typed",
+        [
+            ret_i64(typed_color_options.get_avoption_int("color")),
+            ret_f64(typed_color_options.get_avoption_double("color")),
+            ret_q(typed_color_options.get_avoption_q("color")),
+            ret_value(typed_color_options.get_avoption_string("color")),
+            ret_i64(typed_color_options.get_avoption_int("scalar")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "query-ranges:color",
+        [
+            ret_ranges(typed_color_options.query_avoption_ranges("color")),
+            ret_ranges(typed_color_options.query_avoption_ranges("missing")),
+        ],
+    );
+
     let error_results = [
         ret(options.set_avoption_from_str("bitexact", "maybe")),
         ret(options.set_avoption_from_str("exported", "6")),
@@ -1422,6 +1513,35 @@ fn video_rate_options() -> OptionSet {
     options
 }
 
+fn color_options() -> OptionSet {
+    let mut options = OptionSet::new();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "color",
+                OptionKind::Color,
+                OptionValue::Color(RgbaColor::from_rgba([0xFF, 0x00, 0x00, 0xFF])),
+                "color",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "scalar",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(4),
+                "scalar",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+}
+
 fn state_fields(options: &OptionSet) -> Vec<String> {
     vec![
         int_value(options, "threads").to_string(),
@@ -1485,6 +1605,17 @@ fn video_rate_state_fields(options: &OptionSet) -> [String; 3] {
     ]
 }
 
+fn color_state_fields(options: &OptionSet) -> [String; 5] {
+    let rgba = color_value(options, "color").rgba();
+    [
+        rgba[0].to_string(),
+        rgba[1].to_string(),
+        rgba[2].to_string(),
+        rgba[3].to_string(),
+        int_value(options, "scalar").to_string(),
+    ]
+}
+
 fn dict_fields(dict: &Dictionary) -> Vec<String> {
     let mut fields = vec![dict.len().to_string()];
     fields.extend(
@@ -1528,6 +1659,18 @@ fn video_rate_value(options: &OptionSet, name: &str) -> Rational {
         Some(OptionValue::VideoRate(value)) => *value,
         other => panic!("expected video-rate option `{name}`, got {other:?}"),
     }
+}
+
+fn color_value(options: &OptionSet, name: &str) -> RgbaColor {
+    match options.get(name) {
+        Some(OptionValue::Color(value)) => *value,
+        other => panic!("expected color option `{name}`, got {other:?}"),
+    }
+}
+
+fn color_field(value: RgbaColor) -> String {
+    let rgba = value.rgba();
+    format!("{}:{}:{}:{}", rgba[0], rgba[1], rgba[2], rgba[3])
 }
 
 fn bool_value(options: &OptionSet, name: &str) -> bool {
@@ -1830,6 +1973,12 @@ typedef struct VideoRateOptions {
     int64_t scalar;
 } VideoRateOptions;
 
+typedef struct ColorOptions {
+    const AVClass *av_class;
+    uint8_t color[4];
+    int64_t scalar;
+} ColorOptions;
+
 static const AVOption child_options[] = {
     { "threads", "child worker count", offsetof(ChildOptions, threads),
       AV_OPT_TYPE_INT64, { .i64 = 2 }, 1, 16, AV_OPT_FLAG_DECODING_PARAM },
@@ -1928,6 +2077,21 @@ static const AVClass video_rate_class = {
     .version = LIBAVUTIL_VERSION_INT,
 };
 
+static const AVOption color_options[] = {
+    { "color", "color", offsetof(ColorOptions, color),
+      AV_OPT_TYPE_COLOR, { .str = "red" }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
+    { "scalar", "scalar", offsetof(ColorOptions, scalar),
+      AV_OPT_TYPE_INT64, { .i64 = 4 }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL }
+};
+
+static const AVClass color_class = {
+    .class_name = "rust-options-oracle-color",
+    .item_name = av_default_item_name,
+    .option = color_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
 static void init_context(TestOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &test_class;
@@ -1951,6 +2115,12 @@ static void init_image_size_context(ImageSizeOptions *ctx) {
 static void init_video_rate_context(VideoRateOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &video_rate_class;
+    av_opt_set_defaults(ctx);
+}
+
+static void init_color_context(ColorOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &color_class;
     av_opt_set_defaults(ctx);
 }
 
@@ -2652,6 +2822,73 @@ static void print_video_rate_rows(void) {
     printf("\n");
 }
 
+static void print_color_state(const char *name, const ColorOptions *ctx) {
+    printf("%s|%d|%d|%d|%d|%" PRId64 "\n",
+           name, ctx->color[0], ctx->color[1], ctx->color[2], ctx->color[3], ctx->scalar);
+}
+
+static void print_color_rows(void) {
+    ColorOptions ctx;
+    int ret_blue;
+    int ret_hex;
+    int ret_hex_alpha;
+    int ret_bad;
+    int ret_bad_alpha;
+    int ret_numeric;
+    int ret_zero_numeric;
+    int ret_scalar;
+    uint8_t after_blue[4];
+    uint8_t after_hex[4];
+    uint8_t after_hex_alpha[4];
+
+    init_color_context(&ctx);
+    print_color_state("state:color-defaults", &ctx);
+    printf("get:color-defaults");
+    print_get_value(&ctx, "color");
+    print_get_int_value(&ctx, "color", 0);
+    print_get_int_value(&ctx, "scalar", 0);
+    printf("\n");
+
+    ret_blue = av_opt_set(&ctx, "color", "Blue@0.5", 0);
+    memcpy(after_blue, ctx.color, sizeof(after_blue));
+    ret_hex = av_opt_set(&ctx, "color", "112233", 0);
+    memcpy(after_hex, ctx.color, sizeof(after_hex));
+    ret_hex_alpha = av_opt_set(&ctx, "color", "0x11223344", 0);
+    memcpy(after_hex_alpha, ctx.color, sizeof(after_hex_alpha));
+    printf("ret:set-color-strings|%d|%d|%d\n", ret_blue, ret_hex, ret_hex_alpha);
+    printf("state:set-color-strings|%d:%d:%d:%d|%d:%d:%d:%d|%d:%d:%d:%d\n",
+           after_blue[0], after_blue[1], after_blue[2], after_blue[3],
+           after_hex[0], after_hex[1], after_hex[2], after_hex[3],
+           after_hex_alpha[0], after_hex_alpha[1], after_hex_alpha[2], after_hex_alpha[3]);
+    printf("get:set-color-strings");
+    print_get_value(&ctx, "color");
+    printf("\n");
+
+    ret_bad = av_opt_set(&ctx, "color", "not-a-color", 0);
+    ret_bad_alpha = av_opt_set(&ctx, "color", "red@2", 0);
+    printf("ret:set-color-errors|%d|%d\n", ret_bad, ret_bad_alpha);
+    print_color_state("state:after-color-errors", &ctx);
+
+    init_color_context(&ctx);
+    ret_numeric = av_opt_set_int(&ctx, "color", 10, 0);
+    ret_zero_numeric = av_opt_set_int(&ctx, "color", 0, 0);
+    ret_scalar = av_opt_set_int(&ctx, "scalar", 6, 0);
+    printf("ret:set-color-typed|%d|%d|%d\n", ret_numeric, ret_zero_numeric, ret_scalar);
+    print_color_state("state:set-color-typed", &ctx);
+    printf("get:set-color-typed");
+    print_get_int_value(&ctx, "color", 0);
+    print_get_double_value(&ctx, "color", 0);
+    print_get_q_value(&ctx, "color", 0);
+    print_get_value(&ctx, "color");
+    print_get_int_value(&ctx, "scalar", 0);
+    printf("\n");
+
+    printf("query-ranges:color");
+    print_query_range_value(&ctx, "color");
+    print_query_range_value(&ctx, "missing");
+    printf("\n");
+}
+
 static void print_set_from_string_rows(void) {
     static const char * const shorthand[] = { "threads", "bitexact", NULL };
     TestOptions ctx;
@@ -2859,6 +3096,7 @@ int main(void) {
     print_duration_rows();
     print_image_size_rows();
     print_video_rate_rows();
+    print_color_rows();
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);
