@@ -485,6 +485,104 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         [ret(mismatch_destination.copy_avoptions_from(&copy_source))],
     );
 
+    let mut string_named = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-named",
+        [ret_count(string_named.set_avoptions_from_string(
+            "threads=7:quality=0.25:metadata=from-string",
+            &[],
+            "=",
+            ":",
+        ))],
+    );
+    rows.insert(
+        "state:set-from-string-named".to_string(),
+        state_fields(&string_named),
+    );
+
+    let mut string_shorthand = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-shorthand",
+        [ret_count(string_shorthand.set_avoptions_from_string(
+            " 9 : yes : metadata = shorthand ",
+            &["threads", "bitexact"],
+            "=",
+            ":",
+        ))],
+    );
+    rows.insert(
+        "state:set-from-string-shorthand".to_string(),
+        state_fields(&string_shorthand),
+    );
+
+    let mut string_after_named_error = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-after-named-error",
+        [ret_count(
+            string_after_named_error.set_avoptions_from_string(
+                "10:quality=0.75:no",
+                &["threads", "bitexact"],
+                "=",
+                ":",
+            ),
+        )],
+    );
+    rows.insert(
+        "state:set-from-string-after-named-error".to_string(),
+        state_fields(&string_after_named_error),
+    );
+
+    let mut string_set_error = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-set-error",
+        [ret_count(string_set_error.set_avoptions_from_string(
+            "threads=11:bitexact=maybe",
+            &[],
+            "=",
+            ":",
+        ))],
+    );
+    rows.insert(
+        "state:set-from-string-set-error".to_string(),
+        state_fields(&string_set_error),
+    );
+
+    let mut string_not_found = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-not-found",
+        [ret_count(string_not_found.set_avoptions_from_string(
+            "threads=12:unknown=1",
+            &[],
+            "=",
+            ":",
+        ))],
+    );
+    rows.insert(
+        "state:set-from-string-not-found".to_string(),
+        state_fields(&string_not_found),
+    );
+
+    let mut string_no_shorthand = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-no-shorthand",
+        [ret_count(string_no_shorthand.set_avoptions_from_string(
+            "12",
+            &[],
+            "=",
+            ":",
+        ))],
+    );
+    rows.insert(
+        "state:set-from-string-no-shorthand".to_string(),
+        state_fields(&string_no_shorthand),
+    );
+
     let exact_error_results = [
         ret(options.set_avoption_from_str("THREADS", "9")),
         ret(options.set_avoption_from_str("preset_level", "SLOW")),
@@ -828,6 +926,16 @@ fn format_float(value: f64) -> String {
 fn ret(result: avutil::AvResult<()>) -> String {
     match result {
         Ok(()) => "0".to_owned(),
+        Err(err) => err
+            .code()
+            .map(|code| code.raw().to_string())
+            .unwrap_or_else(|| "no-code".to_owned()),
+    }
+}
+
+fn ret_count(result: avutil::AvResult<usize>) -> String {
+    match result {
+        Ok(count) => count.to_string(),
         Err(err) => err
             .code()
             .map(|code| code.raw().to_string())
@@ -1428,6 +1536,64 @@ static void print_copy_rows(void) {
     av_opt_free(&destination.child);
 }
 
+static void print_set_from_string_rows(void) {
+    static const char * const shorthand[] = { "threads", "bitexact", NULL };
+    TestOptions ctx;
+    int ret;
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "threads=7:quality=0.25:metadata=from-string",
+                                 NULL, "=", ":");
+    printf("ret:set-from-string-named|%d\n", ret);
+    print_state("state:set-from-string-named", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 " 9 : yes : metadata = shorthand ",
+                                 shorthand, "=", ":");
+    printf("ret:set-from-string-shorthand|%d\n", ret);
+    print_state("state:set-from-string-shorthand", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "10:quality=0.75:no",
+                                 shorthand, "=", ":");
+    printf("ret:set-from-string-after-named-error|%d\n", ret);
+    print_state("state:set-from-string-after-named-error", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "threads=11:bitexact=maybe",
+                                 NULL, "=", ":");
+    printf("ret:set-from-string-set-error|%d\n", ret);
+    print_state("state:set-from-string-set-error", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "threads=12:unknown=1",
+                                 NULL, "=", ":");
+    printf("ret:set-from-string-not-found|%d\n", ret);
+    print_state("state:set-from-string-not-found", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx, "12", NULL, "=", ":");
+    printf("ret:set-from-string-no-shorthand|%d\n", ret);
+    print_state("state:set-from-string-no-shorthand", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+}
+
 int main(void) {
     TestOptions ctx = { 0 };
     int ret_threads;
@@ -1459,6 +1625,7 @@ int main(void) {
     print_child_state("state:children-after-set", &ctx);
     print_set_dict_rows();
     print_copy_rows();
+    print_set_from_string_rows();
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);

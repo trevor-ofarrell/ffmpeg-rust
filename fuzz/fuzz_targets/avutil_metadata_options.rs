@@ -156,7 +156,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 20 {
+        match cursor.next().unwrap_or_default() % 21 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -339,6 +339,22 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
             }
             17 => {
+                let shorthand = ["threads", "bitexact"];
+                let opts = match cursor.next().unwrap_or_default() % 6 {
+                    0 => "threads=7:quality=0.25:metadata=from-string",
+                    1 => " 9 : yes : metadata = shorthand ",
+                    2 => "10:quality=0.75:no",
+                    3 => "threads=11:bitexact=maybe",
+                    4 => "threads=12:unknown=1",
+                    _ => "12",
+                };
+                let result = options.set_avoptions_from_string(opts, &shorthand, "=", ":");
+                if let Ok(count) = result {
+                    assert!(count <= 3);
+                }
+                assert_option_set_invariants(&options);
+            }
+            18 => {
                 let before = options.clone();
                 let entries = options.avoption_entries();
                 assert_eq!(
@@ -371,7 +387,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
                 assert_eq!(options, before);
             }
-            18 => {
+            19 => {
                 let name = option_name_from(cursor);
                 let before = options.clone();
                 let result = options.remove_definition(&name);
@@ -727,6 +743,58 @@ fn exercise_fixtures() {
         Some(&OptionValue::Bool(false))
     );
     assert_eq!(error_dict, original_error_dict);
+
+    let mut string_options = sample_options();
+    assert_eq!(
+        string_options
+            .set_avoptions_from_string(
+                "threads=7:quality=0.25:metadata=from-string",
+                &[],
+                "=",
+                ":",
+            )
+            .unwrap(),
+        3
+    );
+    assert_eq!(string_options.get("threads"), Some(&OptionValue::Int(7)));
+    assert_eq!(
+        string_options.get("metadata"),
+        Some(&OptionValue::String("from-string".to_owned()))
+    );
+    let mut shorthand_options = sample_options();
+    assert_eq!(
+        shorthand_options
+            .set_avoptions_from_string(
+                " 9 : yes : metadata = shorthand ",
+                &["threads", "bitexact"],
+                "=",
+                ":",
+            )
+            .unwrap(),
+        3
+    );
+    assert_eq!(shorthand_options.get("threads"), Some(&OptionValue::Int(9)));
+    assert_eq!(
+        shorthand_options.get("bitexact"),
+        Some(&OptionValue::Bool(true))
+    );
+    let mut partial_options = sample_options();
+    assert_eq!(
+        partial_options
+            .set_avoptions_from_string("10:quality=0.75:no", &["threads", "bitexact"], "=", ":",)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(partial_options.get("threads"), Some(&OptionValue::Int(10)));
+    assert_eq!(
+        partial_options.get("quality"),
+        Some(&OptionValue::Float(0.75))
+    );
+    assert_eq!(
+        partial_options.get("bitexact"),
+        Some(&OptionValue::Bool(false))
+    );
 
     let mut copy_source = sample_options();
     copy_source.set_avoption_from_str("threads", "12").unwrap();

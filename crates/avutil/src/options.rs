@@ -1021,6 +1021,54 @@ impl OptionSet {
         Ok(())
     }
 
+    pub fn set_avoptions_from_string(
+        &mut self,
+        opts: &str,
+        shorthand: &[&str],
+        key_val_sep: &str,
+        pairs_sep: &str,
+    ) -> AvResult<usize> {
+        validate_avoption_string_separators(key_val_sep, pairs_sep)?;
+
+        let mut rest = opts;
+        let mut shorthand_index = 0usize;
+        let mut shorthand_available = !shorthand.is_empty();
+        let mut count = 0usize;
+
+        while !rest.is_empty() {
+            let (raw_pair, next) = split_once_any(rest, pairs_sep);
+            rest = next.unwrap_or("");
+
+            let parsed = parse_avoption_string_pair(
+                raw_pair,
+                key_val_sep,
+                shorthand_available && shorthand_index < shorthand.len(),
+            )?;
+            let (key, value) = match parsed.key {
+                Some(key) => {
+                    shorthand_available = false;
+                    (key, parsed.value)
+                }
+                None => {
+                    let key = shorthand
+                        .get(shorthand_index)
+                        .copied()
+                        .ok_or_else(|| invalid_avoption_string(opts))?;
+                    if !is_valid_avoption_string_key(key) {
+                        return Err(invalid_avoption_string(opts));
+                    }
+                    shorthand_index += 1;
+                    (key.to_owned(), parsed.value)
+                }
+            };
+
+            self.set_avoption_from_str(&key, &value)?;
+            count += 1;
+        }
+
+        Ok(count)
+    }
+
     pub fn copy_avoptions_from(&mut self, source: &OptionSet) -> AvResult<()> {
         if !self.has_matching_avoption_schema(source) {
             return Err(AvError::invalid_argument(
@@ -1466,6 +1514,86 @@ fn parse_rational_part(part: &str, raw: &str) -> AvResult<i32> {
 
     part.parse::<i32>()
         .map_err(|_| AvError::invalid_argument(format!("invalid rational option value `{raw}`")))
+}
+
+struct ParsedAvOptionStringPair {
+    key: Option<String>,
+    value: String,
+}
+
+fn parse_avoption_string_pair(
+    raw_pair: &str,
+    key_val_sep: &str,
+    implicit_key_allowed: bool,
+) -> AvResult<ParsedAvOptionStringPair> {
+    let pair = trim_ascii_whitespace(raw_pair);
+    if pair.is_empty() {
+        return Err(invalid_avoption_string(raw_pair));
+    }
+
+    let (key, value) = split_once_any(pair, key_val_sep);
+    if let Some(value) = value {
+        let key = trim_ascii_whitespace(key);
+        if key.is_empty() || !is_valid_avoption_string_key(key) {
+            return Err(invalid_avoption_string(raw_pair));
+        }
+        return Ok(ParsedAvOptionStringPair {
+            key: Some(key.to_owned()),
+            value: trim_ascii_whitespace(value).to_owned(),
+        });
+    }
+
+    if !implicit_key_allowed {
+        return Err(invalid_avoption_string(raw_pair));
+    }
+
+    Ok(ParsedAvOptionStringPair {
+        key: None,
+        value: pair.to_owned(),
+    })
+}
+
+fn split_once_any<'a>(text: &'a str, separators: &str) -> (&'a str, Option<&'a str>) {
+    for (index, ch) in text.char_indices() {
+        if separators.contains(ch) {
+            let next = index + ch.len_utf8();
+            return (&text[..index], Some(&text[next..]));
+        }
+    }
+    (text, None)
+}
+
+fn validate_avoption_string_separators(key_val_sep: &str, pairs_sep: &str) -> AvResult<()> {
+    if key_val_sep.is_empty()
+        || pairs_sep.is_empty()
+        || key_val_sep
+            .chars()
+            .any(|ch| ch == '\0' || pairs_sep.contains(ch) || is_avoption_string_key_char(ch))
+        || pairs_sep
+            .chars()
+            .any(|ch| ch == '\0' || is_avoption_string_key_char(ch))
+    {
+        return Err(AvError::invalid_argument(
+            "invalid AVOption string separators",
+        ));
+    }
+    Ok(())
+}
+
+fn is_valid_avoption_string_key(key: &str) -> bool {
+    !key.is_empty() && key.chars().all(is_avoption_string_key_char)
+}
+
+fn is_avoption_string_key_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '-' | '.' | '/' | '_')
+}
+
+fn trim_ascii_whitespace(text: &str) -> &str {
+    text.trim_matches(|ch: char| ch.is_ascii_whitespace())
+}
+
+fn invalid_avoption_string(text: &str) -> AvError {
+    AvError::invalid_argument(format!("invalid AVOption string near `{text}`"))
 }
 
 fn format_avoption_value(value: &OptionValue) -> String {
@@ -2842,6 +2970,87 @@ mod tests {
             Some(&OptionValue::Bool(false))
         );
         assert_eq!(error_dict, original_error_dict);
+    }
+
+    #[test]
+    fn set_avoptions_from_string_matches_bounded_ffmpeg_shape() {
+        let mut named = sample_options();
+        assert_eq!(
+            named
+                .set_avoptions_from_string(
+                    "threads=7:quality=0.25:metadata=from-string",
+                    &[],
+                    "=",
+                    ":",
+                )
+                .unwrap(),
+            3
+        );
+        assert_eq!(named.get("threads"), Some(&OptionValue::Int(7)));
+        assert_eq!(named.get("quality"), Some(&OptionValue::Float(0.25)));
+        assert_eq!(
+            named.get("metadata"),
+            Some(&OptionValue::String("from-string".to_owned()))
+        );
+
+        let mut shorthand = sample_options();
+        assert_eq!(
+            shorthand
+                .set_avoptions_from_string(
+                    " 9 : yes : metadata = shorthand ",
+                    &["threads", "bitexact"],
+                    "=",
+                    ":",
+                )
+                .unwrap(),
+            3
+        );
+        assert_eq!(shorthand.get("threads"), Some(&OptionValue::Int(9)));
+        assert_eq!(shorthand.get("bitexact"), Some(&OptionValue::Bool(true)));
+        assert_eq!(
+            shorthand.get("metadata"),
+            Some(&OptionValue::String("shorthand".to_owned()))
+        );
+
+        let mut after_named_error = sample_options();
+        let err = after_named_error
+            .set_avoptions_from_string("10:quality=0.75:no", &["threads", "bitexact"], "=", ":")
+            .unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(
+            after_named_error.get("threads"),
+            Some(&OptionValue::Int(10))
+        );
+        assert_eq!(
+            after_named_error.get("quality"),
+            Some(&OptionValue::Float(0.75))
+        );
+        assert_eq!(
+            after_named_error.get("bitexact"),
+            Some(&OptionValue::Bool(false))
+        );
+
+        let mut set_error = sample_options();
+        let err = set_error
+            .set_avoptions_from_string("threads=11:bitexact=maybe", &[], "=", ":")
+            .unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(set_error.get("threads"), Some(&OptionValue::Int(11)));
+        assert_eq!(set_error.get("bitexact"), Some(&OptionValue::Bool(false)));
+
+        let mut not_found = sample_options();
+        let err = not_found
+            .set_avoptions_from_string("threads=12:unknown=1", &[], "=", ":")
+            .unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::OPTION_NOT_FOUND));
+        assert_eq!(not_found.get("threads"), Some(&OptionValue::Int(12)));
+
+        let mut no_shorthand = sample_options();
+        let err = no_shorthand
+            .set_avoptions_from_string("12", &[], "=", ":")
+            .unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(no_shorthand, sample_options());
     }
 
     #[test]
