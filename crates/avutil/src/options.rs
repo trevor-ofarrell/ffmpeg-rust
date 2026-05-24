@@ -2,6 +2,7 @@ use crate::{
     color::{find_named_color, parse_color, RgbaColor},
     dict::{Dictionary, MatchMode, SetMode},
     pixel::PixelFormat,
+    samplefmt::SampleFormat,
     AvError, AvErrorCode, AvErrorKind, AvResult, Rational,
 };
 
@@ -12,6 +13,7 @@ pub enum OptionValue {
     Duration(i64),
     ImageSize { width: i32, height: i32 },
     PixelFormat(Option<PixelFormat>),
+    SampleFormat(Option<SampleFormat>),
     VideoRate(Rational),
     Color(RgbaColor),
     Float(f64),
@@ -26,6 +28,7 @@ pub enum OptionKind {
     Duration { min: i64, max: i64 },
     ImageSize,
     PixelFormat { min: i32, max: i32 },
+    SampleFormat { min: i32, max: i32 },
     VideoRate { min: Rational, max: Rational },
     Color,
     Float { min: f64, max: f64 },
@@ -92,6 +95,15 @@ impl OptionRange {
                 if min > max {
                     return Err(AvError::invalid_argument(
                         "pixel format option range min must be <= max",
+                    ));
+                }
+            }
+            (OptionValue::SampleFormat(min), OptionValue::SampleFormat(max)) => {
+                let min = sample_format_avoption_index(*min);
+                let max = sample_format_avoption_index(*max);
+                if min > max {
+                    return Err(AvError::invalid_argument(
+                        "sample format option range min must be <= max",
                     ));
                 }
             }
@@ -586,6 +598,9 @@ impl OptionDefinition {
             }
             OptionKind::PixelFormat { min, max } => {
                 OptionValue::PixelFormat(parse_pixel_format(raw, min, max)?)
+            }
+            OptionKind::SampleFormat { min, max } => {
+                OptionValue::SampleFormat(parse_sample_format(raw, min, max)?)
             }
             OptionKind::VideoRate { .. } => OptionValue::VideoRate(parse_video_rate(raw)?),
             OptionKind::Color => OptionValue::Color(parse_color(raw)?),
@@ -1213,6 +1228,40 @@ impl OptionSet {
         self.set_avoption_pixel_format_at_index(index, value)
     }
 
+    pub fn set_avoption_sample_format(
+        &mut self,
+        name: &str,
+        value: Option<SampleFormat>,
+    ) -> AvResult<()> {
+        let index = self.avoption_index(name)?;
+        self.set_avoption_sample_format_at_index(index, value)
+    }
+
+    pub fn set_avoption_sample_format_with_flags(
+        &mut self,
+        name: &str,
+        value: Option<SampleFormat>,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &mut self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child
+                        .options
+                        .set_avoption_sample_format_at_index(index, value);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.set_avoption_sample_format_at_index(index, value)
+    }
+
     pub fn set_avoption_video_rate(&mut self, name: &str, value: Rational) -> AvResult<()> {
         let index = self.avoption_index(name)?;
         self.set_avoption_video_rate_at_index(index, value)
@@ -1335,6 +1384,33 @@ impl OptionSet {
 
         let index = self.avoption_index(name)?;
         self.get_avoption_pixel_format_at_index(index)
+    }
+
+    pub fn get_avoption_sample_format(&self, name: &str) -> AvResult<Option<SampleFormat>> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_sample_format_at_index(index)
+    }
+
+    pub fn get_avoption_sample_format_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<Option<SampleFormat>> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child.options.get_avoption_sample_format_at_index(index);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.get_avoption_sample_format_at_index(index)
     }
 
     pub fn get_avoption_video_rate(&self, name: &str) -> AvResult<Rational> {
@@ -1612,6 +1688,30 @@ impl OptionSet {
         Ok(())
     }
 
+    fn set_avoption_sample_format_at_index(
+        &mut self,
+        index: usize,
+        value: Option<SampleFormat>,
+    ) -> AvResult<()> {
+        self.ensure_writable(index)?;
+        if !matches!(
+            self.definitions[index].kind(),
+            OptionKind::SampleFormat { .. }
+        ) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not a sample format",
+                self.definitions[index].name()
+            )));
+        }
+        let value = avoption_value_from_numeric(
+            self.definitions[index].kind(),
+            self.definitions[index].name(),
+            AvOptionNumericInput::Int(i64::from(sample_format_avoption_index(value))),
+        )?;
+        self.values[index] = value;
+        Ok(())
+    }
+
     fn set_avoption_video_rate_at_index(&mut self, index: usize, value: Rational) -> AvResult<()> {
         self.ensure_writable(index)?;
         if !matches!(self.definitions[index].kind(), OptionKind::VideoRate { .. }) {
@@ -1690,6 +1790,25 @@ impl OptionSet {
         }
     }
 
+    fn get_avoption_sample_format_at_index(&self, index: usize) -> AvResult<Option<SampleFormat>> {
+        if !matches!(
+            self.definitions[index].kind(),
+            OptionKind::SampleFormat { .. }
+        ) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not a sample format",
+                self.definitions[index].name()
+            )));
+        }
+        match self.values[index] {
+            OptionValue::SampleFormat(value) => Ok(value),
+            _ => Err(AvError::invalid_argument(format!(
+                "AVOption `{}` storage is not a sample format",
+                self.definitions[index].name()
+            ))),
+        }
+    }
+
     pub fn set_child(
         &mut self,
         child_name: &str,
@@ -1740,6 +1859,7 @@ impl OptionSet {
             | OptionKind::Duration { .. }
             | OptionKind::ImageSize
             | OptionKind::PixelFormat { .. }
+            | OptionKind::SampleFormat { .. }
             | OptionKind::VideoRate { .. }
             | OptionKind::Color => {
                 if matches!(self.definitions[index].kind(), OptionKind::Duration { .. }) {
@@ -2144,6 +2264,40 @@ fn parse_pixel_format(raw: &str, min: i32, max: i32) -> AvResult<Option<PixelFor
     pixel_format_from_avoption_index(index)
 }
 
+const AV_SAMPLE_FMT_NB: i32 = 12;
+
+fn parse_sample_format(raw: &str, min: i32, max: i32) -> AvResult<Option<SampleFormat>> {
+    if raw == "none" {
+        return validate_sample_format_index(None, min, max).map(|_| None);
+    }
+
+    if let Some(format) = SampleFormat::from_name(raw) {
+        validate_sample_format_index(Some(format), min, max)?;
+        return Ok(Some(format));
+    }
+
+    let Some(index) = parse_c_auto_i32(raw) else {
+        return Err(AvError::invalid_argument(format!(
+            "unable to parse sample format option value `{raw}`"
+        )));
+    };
+    if !(0..AV_SAMPLE_FMT_NB).contains(&index) {
+        return Err(AvError::invalid_argument(format!(
+            "unable to parse sample format option value `{raw}`"
+        )));
+    }
+    if index < min || index > max {
+        return Err(avoption_range_error(
+            "sample format",
+            f64::from(index),
+            f64::from(min),
+            f64::from(max),
+        ));
+    }
+
+    sample_format_from_avoption_index(index)
+}
+
 fn parse_c_auto_i32(raw: &str) -> Option<i32> {
     let mut text = raw.trim_start();
     let mut sign = 1i64;
@@ -2270,6 +2424,61 @@ fn pixel_format_avoption_index(value: Option<PixelFormat>) -> AvResult<i32> {
     }
 }
 
+fn validate_sample_format_index(value: Option<SampleFormat>, min: i32, max: i32) -> AvResult<()> {
+    let index = sample_format_avoption_index(value);
+    if index < min || index > max {
+        return Err(avoption_range_error(
+            "sample format",
+            f64::from(index),
+            f64::from(min),
+            f64::from(max),
+        ));
+    }
+    Ok(())
+}
+
+fn sample_format_from_avoption_index(index: i32) -> AvResult<Option<SampleFormat>> {
+    let format = match index {
+        -1 => return Ok(None),
+        0 => SampleFormat::U8,
+        1 => SampleFormat::S16,
+        2 => SampleFormat::S32,
+        3 => SampleFormat::Flt,
+        4 => SampleFormat::Dbl,
+        5 => SampleFormat::U8P,
+        6 => SampleFormat::S16P,
+        7 => SampleFormat::S32P,
+        8 => SampleFormat::FltP,
+        9 => SampleFormat::DblP,
+        10 => SampleFormat::S64,
+        11 => SampleFormat::S64P,
+        _ => {
+            return Err(AvError::invalid_argument(format!(
+                "unsupported FFmpeg sample format index {index}"
+            )))
+        }
+    };
+    Ok(Some(format))
+}
+
+fn sample_format_avoption_index(value: Option<SampleFormat>) -> i32 {
+    match value {
+        None => -1,
+        Some(SampleFormat::U8) => 0,
+        Some(SampleFormat::S16) => 1,
+        Some(SampleFormat::S32) => 2,
+        Some(SampleFormat::Flt) => 3,
+        Some(SampleFormat::Dbl) => 4,
+        Some(SampleFormat::U8P) => 5,
+        Some(SampleFormat::S16P) => 6,
+        Some(SampleFormat::S32P) => 7,
+        Some(SampleFormat::FltP) => 8,
+        Some(SampleFormat::DblP) => 9,
+        Some(SampleFormat::S64) => 10,
+        Some(SampleFormat::S64P) => 11,
+    }
+}
+
 fn validate_kind(kind: &OptionKind) -> AvResult<()> {
     match *kind {
         OptionKind::Bool
@@ -2285,6 +2494,24 @@ fn validate_kind(kind: &OptionKind) -> AvResult<()> {
             if min < -1 {
                 return Err(AvError::invalid_argument(
                     "pixel format option min must be >= AV_PIX_FMT_NONE",
+                ));
+            }
+            Ok(())
+        }
+        OptionKind::SampleFormat { min, max } => {
+            if min > max {
+                return Err(AvError::invalid_argument(
+                    "sample format option min must be <= max",
+                ));
+            }
+            if min < -1 {
+                return Err(AvError::invalid_argument(
+                    "sample format option min must be >= AV_SAMPLE_FMT_NONE",
+                ));
+            }
+            if max >= AV_SAMPLE_FMT_NB {
+                return Err(AvError::invalid_argument(
+                    "sample format option max must be < AV_SAMPLE_FMT_NB",
                 ));
             }
             Ok(())
@@ -2361,7 +2588,7 @@ fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
             min: OptionValue::VideoRate(min),
             max: OptionValue::VideoRate(max),
         }),
-        OptionKind::PixelFormat { .. } => None,
+        OptionKind::PixelFormat { .. } | OptionKind::SampleFormat { .. } => None,
         OptionKind::Bool
         | OptionKind::ImageSize
         | OptionKind::Color
@@ -2398,6 +2625,10 @@ fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
             range.component_max = f64::from(i32::MAX / 128 / 8);
         }
         OptionKind::PixelFormat { min, max } => {
+            range.value_min = f64::from(min);
+            range.value_max = f64::from(max);
+        }
+        OptionKind::SampleFormat { min, max } => {
             range.value_min = f64::from(min);
             range.value_max = f64::from(max);
         }
@@ -2532,6 +2763,11 @@ fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNu
             den: 1,
             intnum: i64::from(pixel_format_avoption_index(*value)?),
         }),
+        OptionValue::SampleFormat(value) => Ok(AvOptionNumberParts {
+            num: 1.0,
+            den: 1,
+            intnum: i64::from(sample_format_avoption_index(*value)),
+        }),
         OptionValue::VideoRate(_) => Err(AvError::invalid_argument(format!(
             "AVOption `{name}` is not numeric"
         ))),
@@ -2595,6 +2831,16 @@ fn avoption_value_from_numeric(
             Ok(OptionValue::PixelFormat(pixel_format_from_avoption_index(
                 index,
             )?))
+        }
+        OptionKind::SampleFormat { min, max } => {
+            avoption_check_numeric_range(name, value, f64::from(min), f64::from(max))?;
+            let index = round_f64_ties_even_to_i64(value)?;
+            let index = i32::try_from(index).map_err(|_| {
+                AvError::invalid_argument("numeric AVOption sample format out of range")
+            })?;
+            Ok(OptionValue::SampleFormat(
+                sample_format_from_avoption_index(index)?,
+            ))
         }
         OptionKind::VideoRate { min, max } => {
             avoption_check_numeric_range(name, value, min.to_f64(), max.to_f64())?;
@@ -2753,6 +2999,9 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
         (OptionKind::PixelFormat { min, max }, OptionValue::PixelFormat(value)) => {
             validate_pixel_format_index(*value, *min, *max)
         }
+        (OptionKind::SampleFormat { min, max }, OptionValue::SampleFormat(value)) => {
+            validate_sample_format_index(*value, *min, *max)
+        }
         (OptionKind::VideoRate { min, max }, OptionValue::VideoRate(value)) => {
             validate_video_rate_bound(*value, "video rate option value")?;
             if value < min || value > max {
@@ -2838,6 +3087,7 @@ fn avoption_kind_min(kind: &OptionKind) -> AvResult<f64> {
             "image size AVOption does not have a scalar numeric minimum",
         )),
         OptionKind::PixelFormat { min, .. } => Ok(f64::from(min)),
+        OptionKind::SampleFormat { min, .. } => Ok(f64::from(min)),
         OptionKind::VideoRate { min, .. } => Ok(min.to_f64()),
         OptionKind::Color => Err(AvError::invalid_argument(
             "color AVOption does not have a numeric minimum",
@@ -2859,6 +3109,7 @@ fn avoption_kind_max(kind: &OptionKind) -> AvResult<f64> {
             "image size AVOption does not have a scalar numeric maximum",
         )),
         OptionKind::PixelFormat { max, .. } => Ok(f64::from(max)),
+        OptionKind::SampleFormat { max, .. } => Ok(f64::from(max)),
         OptionKind::VideoRate { max, .. } => Ok(max.to_f64()),
         OptionKind::Color => Err(AvError::invalid_argument(
             "color AVOption does not have a numeric maximum",
@@ -3842,6 +4093,8 @@ fn format_avoption_value(value: &OptionValue) -> String {
         OptionValue::ImageSize { width, height } => format!("{width}x{height}"),
         OptionValue::PixelFormat(None) => "none".to_owned(),
         OptionValue::PixelFormat(Some(value)) => value.name().to_owned(),
+        OptionValue::SampleFormat(None) => "none".to_owned(),
+        OptionValue::SampleFormat(Some(value)) => value.name().to_owned(),
         OptionValue::VideoRate(value) => format!("{}/{}", value.num(), value.den()),
         OptionValue::Color(value) => {
             let rgba = value.rgba();
@@ -4406,6 +4659,138 @@ mod tests {
         assert_eq!(
             options
                 .get_avoption_pixel_format("scalar")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_typed_errors);
+    }
+
+    #[test]
+    fn sample_format_options_parse_format_and_query_like_bounded_ffmpeg_shape() {
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new(
+                    "sample_fmt",
+                    OptionKind::SampleFormat { min: -1, max: 11 },
+                    OptionValue::SampleFormat(Some(SampleFormat::S16)),
+                    "sample format",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "scalar",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(4),
+                    "scalar",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(options.range("sample_fmt").unwrap(), None);
+        let av_ranges = options.query_avoption_ranges("sample_fmt").unwrap();
+        assert_eq!(av_ranges.nb_ranges(), 1);
+        assert_eq!(av_ranges.ranges()[0].value_min(), -1.0);
+        assert_eq!(av_ranges.ranges()[0].value_max(), 11.0);
+        assert_eq!(av_ranges.ranges()[0].component_min(), 0.0);
+        assert_eq!(av_ranges.ranges()[0].component_max(), 0.0);
+        assert_eq!(
+            options.get_avoption_sample_format("sample_fmt").unwrap(),
+            Some(SampleFormat::S16)
+        );
+        assert_eq!(options.get_avoption_string("sample_fmt").unwrap(), "s16");
+        assert_eq!(options.get_avoption_int("sample_fmt").unwrap(), 1);
+
+        options.set_avoption_from_str("sample_fmt", "fltp").unwrap();
+        assert_eq!(
+            options.get("sample_fmt"),
+            Some(&OptionValue::SampleFormat(Some(SampleFormat::FltP)))
+        );
+        assert_eq!(options.get_avoption_int("sample_fmt").unwrap(), 8);
+
+        options.set_avoption_from_str("sample_fmt", "none").unwrap();
+        assert_eq!(
+            options.get("sample_fmt"),
+            Some(&OptionValue::SampleFormat(None))
+        );
+        assert_eq!(options.get_avoption_string("sample_fmt").unwrap(), "none");
+        assert_eq!(options.get_avoption_int("sample_fmt").unwrap(), -1);
+
+        options.set_avoption_from_str("sample_fmt", "0x4").unwrap();
+        assert_eq!(
+            options.get("sample_fmt"),
+            Some(&OptionValue::SampleFormat(Some(SampleFormat::Dbl)))
+        );
+        assert_eq!(options.get_avoption_string("sample_fmt").unwrap(), "dbl");
+
+        let before_errors = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_from_str("sample_fmt", "bad")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_errors);
+        assert_eq!(
+            options
+                .set_avoption_from_str("sample_fmt", "12")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_errors);
+
+        options
+            .set_avoption_sample_format("sample_fmt", Some(SampleFormat::S32P))
+            .unwrap();
+        assert_eq!(
+            options.get_avoption_sample_format("sample_fmt").unwrap(),
+            Some(SampleFormat::S32P)
+        );
+        options
+            .set_avoption_sample_format("sample_fmt", None)
+            .unwrap();
+        assert_eq!(
+            options.get_avoption_sample_format("sample_fmt").unwrap(),
+            None
+        );
+        options.set_avoption_int("sample_fmt", 10).unwrap();
+        assert_eq!(
+            options.get_avoption_sample_format("sample_fmt").unwrap(),
+            Some(SampleFormat::S64)
+        );
+        assert_eq!(options.get_avoption_double("sample_fmt").unwrap(), 10.0);
+        assert_eq!(
+            options.get_avoption_q("sample_fmt").unwrap(),
+            Rational::new(10, 1).unwrap()
+        );
+        assert_eq!(options.get_avoption_string("sample_fmt").unwrap(), "s64");
+
+        let before_typed_errors = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_int("sample_fmt", 12)
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(options, before_typed_errors);
+        assert_eq!(
+            options
+                .set_avoption_sample_format("scalar", Some(SampleFormat::S16))
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options
+                .get_avoption_sample_format("scalar")
                 .unwrap_err()
                 .code(),
             Some(AvErrorCode::EINVAL)

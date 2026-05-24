@@ -8,7 +8,7 @@ use std::{
 use avutil::{
     AvOptionRanges, Dictionary, MatchMode, OptionChild, OptionConstant, OptionDefinition,
     OptionEntryMatch, OptionFlags, OptionKind, OptionSearchFlags, OptionSerializeFlags, OptionSet,
-    OptionValue, PixelFormat, Rational, RgbaColor, SetMode,
+    OptionValue, PixelFormat, Rational, RgbaColor, SampleFormat, SetMode,
 };
 
 #[test]
@@ -1162,6 +1162,103 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let sample_defaults = sample_format_options();
+    insert_row(
+        &mut rows,
+        "state:sample-format-defaults",
+        sample_format_state_fields(&sample_defaults),
+    );
+    insert_row(
+        &mut rows,
+        "get:sample-format-defaults",
+        [
+            ret_sample_format(sample_defaults.get_avoption_sample_format("sample_fmt")),
+            ret_value(sample_defaults.get_avoption_string("sample_fmt")),
+            ret_i64(sample_defaults.get_avoption_int("sample_fmt")),
+        ],
+    );
+
+    let mut sample_set = sample_format_options();
+    let ret_fltp = ret(sample_set.set_avoption_from_str("sample_fmt", "fltp"));
+    let after_fltp = sample_format_value(&sample_set, "sample_fmt");
+    let ret_none = ret(sample_set.set_avoption_from_str("sample_fmt", "none"));
+    let after_none = sample_format_value(&sample_set, "sample_fmt");
+    let ret_numeric = ret(sample_set.set_avoption_from_str("sample_fmt", "0x4"));
+    let after_numeric = sample_format_value(&sample_set, "sample_fmt");
+    insert_row(
+        &mut rows,
+        "ret:set-sample-format-strings",
+        [ret_fltp, ret_none, ret_numeric],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-sample-format-strings",
+        [
+            sample_format_field(after_fltp),
+            sample_format_field(after_none),
+            sample_format_field(after_numeric),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-sample-format-strings",
+        [ret_value(sample_set.get_avoption_string("sample_fmt"))],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-sample-format-errors",
+        [
+            ret(sample_set.set_avoption_from_str("sample_fmt", "bad")),
+            ret(sample_set.set_avoption_from_str("sample_fmt", "12")),
+            ret(sample_set.set_avoption_from_str("sample_fmt", "-1")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:after-sample-format-errors",
+        sample_format_state_fields(&sample_set),
+    );
+
+    let mut typed_sample_options = sample_format_options();
+    insert_row(
+        &mut rows,
+        "ret:set-sample-format-typed",
+        [
+            ret(typed_sample_options
+                .set_avoption_sample_format("sample_fmt", Some(SampleFormat::S32P))),
+            ret(typed_sample_options.set_avoption_sample_format("sample_fmt", None)),
+            ret(typed_sample_options.set_avoption_sample_format("scalar", Some(SampleFormat::S16))),
+            ret(typed_sample_options.set_avoption_int("sample_fmt", 10)),
+            ret(typed_sample_options.set_avoption_int("sample_fmt", 12)),
+            ret(typed_sample_options.set_avoption_int("scalar", 6)),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-sample-format-typed",
+        sample_format_state_fields(&typed_sample_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-sample-format-typed",
+        [
+            ret_sample_format(typed_sample_options.get_avoption_sample_format("sample_fmt")),
+            ret_i64(typed_sample_options.get_avoption_int("sample_fmt")),
+            ret_f64(typed_sample_options.get_avoption_double("sample_fmt")),
+            ret_q(typed_sample_options.get_avoption_q("sample_fmt")),
+            ret_value(typed_sample_options.get_avoption_string("sample_fmt")),
+            ret_sample_format(typed_sample_options.get_avoption_sample_format("scalar")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "query-ranges:sample-format",
+        [
+            ret_ranges(typed_sample_options.query_avoption_ranges("sample_fmt")),
+            ret_ranges(typed_sample_options.query_avoption_ranges("missing")),
+        ],
+    );
+
     let video_defaults = video_rate_options();
     insert_row(
         &mut rows,
@@ -1609,6 +1706,35 @@ fn pixel_format_options() -> OptionSet {
     options
 }
 
+fn sample_format_options() -> OptionSet {
+    let mut options = OptionSet::new();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "sample_fmt",
+                OptionKind::SampleFormat { min: -1, max: 11 },
+                OptionValue::SampleFormat(Some(SampleFormat::S16)),
+                "sample format",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "scalar",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(4),
+                "scalar",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+}
+
 fn video_rate_options() -> OptionSet {
     let mut options = OptionSet::new();
     options
@@ -1731,6 +1857,13 @@ fn pixel_format_state_fields(options: &OptionSet) -> [String; 2] {
     ]
 }
 
+fn sample_format_state_fields(options: &OptionSet) -> [String; 2] {
+    [
+        sample_format_field(sample_format_value(options, "sample_fmt")),
+        int_value(options, "scalar").to_string(),
+    ]
+}
+
 fn video_rate_state_fields(options: &OptionSet) -> [String; 3] {
     let rate = video_rate_value(options, "rate");
     [
@@ -1829,6 +1962,35 @@ fn pixel_format_index(value: Option<PixelFormat>) -> i32 {
         Some(PixelFormat::Nv12) => 23,
         Some(PixelFormat::Nv21) => 24,
         Some(format) => panic!("unsupported bounded pixel format `{}`", format.name()),
+    }
+}
+
+fn sample_format_value(options: &OptionSet, name: &str) -> Option<SampleFormat> {
+    match options.get(name) {
+        Some(OptionValue::SampleFormat(value)) => *value,
+        other => panic!("expected sample-format option `{name}`, got {other:?}"),
+    }
+}
+
+fn sample_format_field(value: Option<SampleFormat>) -> String {
+    sample_format_index(value).to_string()
+}
+
+fn sample_format_index(value: Option<SampleFormat>) -> i32 {
+    match value {
+        None => -1,
+        Some(SampleFormat::U8) => 0,
+        Some(SampleFormat::S16) => 1,
+        Some(SampleFormat::S32) => 2,
+        Some(SampleFormat::Flt) => 3,
+        Some(SampleFormat::Dbl) => 4,
+        Some(SampleFormat::U8P) => 5,
+        Some(SampleFormat::S16P) => 6,
+        Some(SampleFormat::S32P) => 7,
+        Some(SampleFormat::FltP) => 8,
+        Some(SampleFormat::DblP) => 9,
+        Some(SampleFormat::S64) => 10,
+        Some(SampleFormat::S64P) => 11,
     }
 }
 
@@ -2004,6 +2166,18 @@ fn ret_pixel_format(result: avutil::AvResult<Option<PixelFormat>>) -> String {
     }
 }
 
+fn ret_sample_format(result: avutil::AvResult<Option<SampleFormat>>) -> String {
+    match result {
+        Ok(value) => format!("0:{}", sample_format_index(value)),
+        Err(err) => format!(
+            "{}:-1",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
 fn ret_serialize(result: avutil::AvResult<String>) -> String {
     ret_value(result)
 }
@@ -2125,6 +2299,7 @@ fn oracle_c_source() -> &'static str {
 #include <libavutil/opt.h>
 #include <libavutil/pixfmt.h>
 #include <libavutil/rational.h>
+#include <libavutil/samplefmt.h>
 
 #define ROW_INT(name, value) printf("%s|%d\n", name, (int)(value))
 
@@ -2163,6 +2338,12 @@ typedef struct PixelFormatOptions {
     enum AVPixelFormat pix_fmt;
     int64_t scalar;
 } PixelFormatOptions;
+
+typedef struct SampleFormatOptions {
+    const AVClass *av_class;
+    enum AVSampleFormat sample_fmt;
+    int64_t scalar;
+} SampleFormatOptions;
 
 typedef struct VideoRateOptions {
     const AVClass *av_class;
@@ -2260,6 +2441,14 @@ static const AVOption pixel_format_options[] = {
     { NULL }
 };
 
+static const AVOption sample_format_options[] = {
+    { "sample_fmt", "sample format", offsetof(SampleFormatOptions, sample_fmt),
+      AV_OPT_TYPE_SAMPLE_FMT, { .i64 = AV_SAMPLE_FMT_S16 }, AV_SAMPLE_FMT_NONE, AV_SAMPLE_FMT_NB - 1, AV_OPT_FLAG_ENCODING_PARAM },
+    { "scalar", "scalar", offsetof(SampleFormatOptions, scalar),
+      AV_OPT_TYPE_INT64, { .i64 = 4 }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL }
+};
+
 static const AVClass image_size_class = {
     .class_name = "rust-options-oracle-image-size",
     .item_name = av_default_item_name,
@@ -2271,6 +2460,13 @@ static const AVClass pixel_format_class = {
     .class_name = "rust-options-oracle-pixel-format",
     .item_name = av_default_item_name,
     .option = pixel_format_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
+static const AVClass sample_format_class = {
+    .class_name = "rust-options-oracle-sample-format",
+    .item_name = av_default_item_name,
+    .option = sample_format_options,
     .version = LIBAVUTIL_VERSION_INT,
 };
 
@@ -2327,6 +2523,12 @@ static void init_image_size_context(ImageSizeOptions *ctx) {
 static void init_pixel_format_context(PixelFormatOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &pixel_format_class;
+    av_opt_set_defaults(ctx);
+}
+
+static void init_sample_format_context(SampleFormatOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &sample_format_class;
     av_opt_set_defaults(ctx);
 }
 
@@ -2566,6 +2768,12 @@ static void print_get_image_size_value(const void *ctx, const char *name, int se
 static void print_get_pixel_format_value(const void *ctx, const char *name, int search_flags) {
     enum AVPixelFormat value = AV_PIX_FMT_NONE;
     int ret = av_opt_get_pixel_fmt((void *)ctx, name, search_flags, &value);
+    printf("|%d:%d", ret, value);
+}
+
+static void print_get_sample_format_value(const void *ctx, const char *name, int search_flags) {
+    enum AVSampleFormat value = AV_SAMPLE_FMT_NONE;
+    int ret = av_opt_get_sample_fmt((void *)ctx, name, search_flags, &value);
     printf("|%d:%d", ret, value);
 }
 
@@ -3044,6 +3252,82 @@ static void print_pixel_format_rows(void) {
     printf("\n");
 }
 
+static void print_sample_format_state(const char *name, const SampleFormatOptions *ctx) {
+    printf("%s|%d|%" PRId64 "\n", name, ctx->sample_fmt, ctx->scalar);
+}
+
+static void print_sample_format_rows(void) {
+    SampleFormatOptions ctx;
+    int ret_fltp;
+    int ret_none;
+    int ret_numeric;
+    int ret_bad;
+    int ret_out_of_range;
+    int ret_negative_numeric;
+    int ret_typed;
+    int ret_typed_none;
+    int ret_wrong_type;
+    int ret_int;
+    int ret_int_range;
+    int ret_scalar;
+    enum AVSampleFormat after_fltp;
+    enum AVSampleFormat after_none;
+    enum AVSampleFormat after_numeric;
+
+    init_sample_format_context(&ctx);
+    print_sample_format_state("state:sample-format-defaults", &ctx);
+    printf("get:sample-format-defaults");
+    print_get_sample_format_value(&ctx, "sample_fmt", 0);
+    print_get_value(&ctx, "sample_fmt");
+    print_get_int_value(&ctx, "sample_fmt", 0);
+    printf("\n");
+
+    ret_fltp = av_opt_set(&ctx, "sample_fmt", "fltp", 0);
+    after_fltp = ctx.sample_fmt;
+    ret_none = av_opt_set(&ctx, "sample_fmt", "none", 0);
+    after_none = ctx.sample_fmt;
+    ret_numeric = av_opt_set(&ctx, "sample_fmt", "0x4", 0);
+    after_numeric = ctx.sample_fmt;
+    printf("ret:set-sample-format-strings|%d|%d|%d\n",
+           ret_fltp, ret_none, ret_numeric);
+    printf("state:set-sample-format-strings|%d|%d|%d\n",
+           after_fltp, after_none, after_numeric);
+    printf("get:set-sample-format-strings");
+    print_get_value(&ctx, "sample_fmt");
+    printf("\n");
+
+    ret_bad = av_opt_set(&ctx, "sample_fmt", "bad", 0);
+    ret_out_of_range = av_opt_set(&ctx, "sample_fmt", "12", 0);
+    ret_negative_numeric = av_opt_set(&ctx, "sample_fmt", "-1", 0);
+    printf("ret:set-sample-format-errors|%d|%d|%d\n",
+           ret_bad, ret_out_of_range, ret_negative_numeric);
+    print_sample_format_state("state:after-sample-format-errors", &ctx);
+
+    init_sample_format_context(&ctx);
+    ret_typed = av_opt_set_sample_fmt(&ctx, "sample_fmt", AV_SAMPLE_FMT_S32P, 0);
+    ret_typed_none = av_opt_set_sample_fmt(&ctx, "sample_fmt", AV_SAMPLE_FMT_NONE, 0);
+    ret_wrong_type = av_opt_set_sample_fmt(&ctx, "scalar", AV_SAMPLE_FMT_S16, 0);
+    ret_int = av_opt_set_int(&ctx, "sample_fmt", AV_SAMPLE_FMT_S64, 0);
+    ret_int_range = av_opt_set_int(&ctx, "sample_fmt", AV_SAMPLE_FMT_NB, 0);
+    ret_scalar = av_opt_set_int(&ctx, "scalar", 6, 0);
+    printf("ret:set-sample-format-typed|%d|%d|%d|%d|%d|%d\n",
+           ret_typed, ret_typed_none, ret_wrong_type, ret_int, ret_int_range, ret_scalar);
+    print_sample_format_state("state:set-sample-format-typed", &ctx);
+    printf("get:set-sample-format-typed");
+    print_get_sample_format_value(&ctx, "sample_fmt", 0);
+    print_get_int_value(&ctx, "sample_fmt", 0);
+    print_get_double_value(&ctx, "sample_fmt", 0);
+    print_get_q_value(&ctx, "sample_fmt", 0);
+    print_get_value(&ctx, "sample_fmt");
+    print_get_sample_format_value(&ctx, "scalar", 0);
+    printf("\n");
+
+    printf("query-ranges:sample-format");
+    print_query_range_value(&ctx, "sample_fmt");
+    print_query_range_value(&ctx, "missing");
+    printf("\n");
+}
+
 static void print_video_rate_state(const char *name, const VideoRateOptions *ctx) {
     printf("%s|%d|%d|%" PRId64 "\n", name, ctx->rate.num, ctx->rate.den, ctx->scalar);
 }
@@ -3400,6 +3684,7 @@ int main(void) {
     print_duration_rows();
     print_image_size_rows();
     print_pixel_format_rows();
+    print_sample_format_rows();
     print_video_rate_rows();
     print_color_rows();
 

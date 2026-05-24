@@ -3,7 +3,8 @@
 use avutil::{
     AvErrorCode, AvOptionRanges, Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant,
     OptionDefinition, OptionEntryMatch, OptionFlags, OptionKind, OptionQuery, OptionSearchFlags,
-    OptionSerializeFlags, OptionSet, OptionValue, PixelFormat, Rational, RgbaColor, SetMode,
+    OptionSerializeFlags, OptionSet, OptionValue, PixelFormat, Rational, RgbaColor, SampleFormat,
+    SetMode,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -933,6 +934,69 @@ fn exercise_fixtures() {
     );
     assert_eq!(pixel_format_options, before_pixel_format_errors);
 
+    let mut sample_format_options = OptionSet::new();
+    sample_format_options
+        .define(
+            OptionDefinition::new(
+                "sample_fmt",
+                OptionKind::SampleFormat { min: -1, max: 11 },
+                OptionValue::SampleFormat(Some(SampleFormat::S16)),
+                "sample format",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    sample_format_options
+        .set_avoption_from_str("sample_fmt", "fltp")
+        .unwrap();
+    assert_eq!(
+        sample_format_options.get("sample_fmt"),
+        Some(&OptionValue::SampleFormat(Some(SampleFormat::FltP)))
+    );
+    sample_format_options
+        .set_avoption_from_str("sample_fmt", "none")
+        .unwrap();
+    assert_eq!(
+        sample_format_options
+            .get_avoption_sample_format("sample_fmt")
+            .unwrap(),
+        None
+    );
+    sample_format_options
+        .set_avoption_sample_format("sample_fmt", Some(SampleFormat::Dbl))
+        .unwrap();
+    assert_eq!(
+        sample_format_options
+            .get_avoption_int("sample_fmt")
+            .unwrap(),
+        4
+    );
+    let before_sample_format_errors = sample_format_options.clone();
+    assert_eq!(
+        sample_format_options
+            .set_avoption_from_str("sample_fmt", "bad_sample_fmt")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(sample_format_options, before_sample_format_errors);
+    assert_eq!(
+        sample_format_options
+            .set_avoption_from_str("sample_fmt", "12")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(sample_format_options, before_sample_format_errors);
+    assert_eq!(
+        sample_format_options
+            .set_avoption_int("sample_fmt", 12)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(sample_format_options, before_sample_format_errors);
+
     let mut video_rate_options = OptionSet::new();
     video_rate_options
         .define(
@@ -1097,6 +1161,7 @@ fn exercise_fixtures() {
             "metadata",
             "size",
             "pix_fmt",
+            "sample_fmt",
             "aspect_ratio",
             "readonly",
             "preset_level",
@@ -1617,7 +1682,7 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
     let name = option_name_from(cursor);
     let help = literal_from(cursor);
     let kind_tag = cursor.next().unwrap_or_default();
-    let kind = match kind_tag % 19 {
+    let kind = match kind_tag % 21 {
         0 => OptionKind::Bool,
         1 => OptionKind::Int { min: 0, max: 64 },
         2 => OptionKind::Int { min: 8, max: 1 },
@@ -1647,16 +1712,18 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
         11 => OptionKind::ImageSize,
         12 => OptionKind::PixelFormat { min: -1, max: 24 },
         13 => OptionKind::PixelFormat { min: 24, max: -1 },
-        14 => OptionKind::VideoRate {
+        14 => OptionKind::SampleFormat { min: -1, max: 11 },
+        15 => OptionKind::SampleFormat { min: 11, max: -1 },
+        16 => OptionKind::VideoRate {
             min: Rational::ONE,
             max: Rational::new(120, 1).unwrap(),
         },
-        15 => OptionKind::VideoRate {
+        17 => OptionKind::VideoRate {
             min: Rational::new(120, 1).unwrap(),
             max: Rational::ONE,
         },
-        16 => OptionKind::Color,
-        17 => OptionKind::String { allow_empty: true },
+        18 => OptionKind::Color,
+        19 => OptionKind::String { allow_empty: true },
         _ => OptionKind::String { allow_empty: false },
     };
     let default = default_value_for(&kind, cursor);
@@ -1783,6 +1850,15 @@ fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue 
                 OptionValue::PixelFormat(Some(PixelFormat::Rgb24))
             }
         }
+        OptionKind::SampleFormat { min, max } => {
+            if *min <= 1 && *max >= 1 {
+                OptionValue::SampleFormat(Some(SampleFormat::S16))
+            } else if *min <= -1 && *max >= -1 {
+                OptionValue::SampleFormat(None)
+            } else {
+                OptionValue::SampleFormat(Some(SampleFormat::U8))
+            }
+        }
         OptionKind::Float { min, max } => {
             if min.is_finite() && max.is_finite() && min <= max {
                 OptionValue::Float(*min + (f64::from(cursor.next().unwrap_or_default()) / 255.0))
@@ -1895,6 +1971,17 @@ fn sample_options() -> OptionSet {
     options
         .define(
             OptionDefinition::new(
+                "sample_fmt",
+                OptionKind::SampleFormat { min: -1, max: 11 },
+                OptionValue::SampleFormat(Some(SampleFormat::S16)),
+                "sample format",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new(
                 "aspect_ratio",
                 OptionKind::Rational {
                     min: Rational::ONE,
@@ -1960,7 +2047,7 @@ fn sample_options() -> OptionSet {
 }
 
 fn option_name_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 18 {
+    match cursor.next().unwrap_or_default() % 19 {
         0 => "threads".to_owned(),
         1 => "THREADS".to_owned(),
         2 => "bitexact".to_owned(),
@@ -1978,12 +2065,13 @@ fn option_name_from(cursor: &mut Cursor<'_>) -> String {
         14 => "aspect_ratio".to_owned(),
         15 => "color".to_owned(),
         16 => "pix_fmt".to_owned(),
+        17 => "sample_fmt".to_owned(),
         _ => "preset_level".to_owned(),
     }
 }
 
 fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 58 {
+    match cursor.next().unwrap_or_default() % 64 {
         0 => "1".to_owned(),
         1 => "0".to_owned(),
         2 => "yes".to_owned(),
@@ -2042,12 +2130,18 @@ fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
         55 => "25".to_owned(),
         56 => "bad_pix_fmt".to_owned(),
         57 => "bgr24".to_owned(),
+        58 => "fltp".to_owned(),
+        59 => "s64".to_owned(),
+        60 => "s64p".to_owned(),
+        61 => "bad_sample_fmt".to_owned(),
+        62 => "12".to_owned(),
+        63 => "dbl".to_owned(),
         _ => literal_from(cursor),
     }
 }
 
 fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
-    match cursor.next().unwrap_or_default() % 10 {
+    match cursor.next().unwrap_or_default() % 11 {
         0 => OptionValue::Bool(cursor.next().unwrap_or_default().is_multiple_of(2)),
         1 => OptionValue::Int(i64::from(cursor.next().unwrap_or_default()) - 32),
         2 => {
@@ -2101,6 +2195,16 @@ fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
                 _ => None,
             };
             OptionValue::PixelFormat(value)
+        }
+        9 => {
+            let value = match cursor.next().unwrap_or_default() % 5 {
+                0 => Some(SampleFormat::S16),
+                1 => Some(SampleFormat::FltP),
+                2 => Some(SampleFormat::Dbl),
+                3 => Some(SampleFormat::S64P),
+                _ => None,
+            };
+            OptionValue::SampleFormat(value)
         }
         _ => OptionValue::String(option_value_string_from(cursor)),
     }
