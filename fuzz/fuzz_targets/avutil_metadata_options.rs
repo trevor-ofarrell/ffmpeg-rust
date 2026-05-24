@@ -423,7 +423,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 let name = option_name_from(cursor);
                 let flags = option_search_flags_from(cursor.next());
                 let before = options.clone();
-                let result = match cursor.next().unwrap_or_default() % 6 {
+                let result = match cursor.next().unwrap_or_default() % 8 {
                     0 => options
                         .set_avoption_int(&name, i64::from(cursor.next().unwrap_or_default()) - 64),
                     1 => options.set_avoption_int_with_flags(
@@ -448,13 +448,24 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                         )
                         .unwrap(),
                     ),
-                    _ => options.set_avoption_q_with_flags(
+                    5 => options.set_avoption_q_with_flags(
                         &name,
                         Rational::new(
                             i32::from(cursor.next().unwrap_or_default()) + 1,
                             i32::from(cursor.next().unwrap_or_default() % 16) + 1,
                         )
                         .unwrap(),
+                        flags,
+                    ),
+                    6 => options.set_avoption_image_size(
+                        &name,
+                        i32::from(cursor.next().unwrap_or_default()),
+                        i32::from(cursor.next().unwrap_or_default()),
+                    ),
+                    _ => options.set_avoption_image_size_with_flags(
+                        &name,
+                        i32::from(cursor.next().unwrap_or_default()),
+                        i32::from(cursor.next().unwrap_or_default()),
                         flags,
                     ),
                 };
@@ -468,6 +479,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 let _ = options.get_avoption_int_with_flags(&name, flags);
                 let _ = options.get_avoption_double_with_flags(&name, flags);
                 let _ = options.get_avoption_q_with_flags(&name, flags);
+                let _ = options.get_avoption_image_size_with_flags(&name, flags);
                 assert_eq!(options, before_get);
             }
             _ => {
@@ -800,6 +812,70 @@ fn exercise_fixtures() {
     );
     assert_eq!(duration_options, before_duration_errors);
 
+    let mut image_size_options = OptionSet::new();
+    image_size_options
+        .define(
+            OptionDefinition::new(
+                "size",
+                OptionKind::ImageSize,
+                OptionValue::ImageSize {
+                    width: 320,
+                    height: 240,
+                },
+                "image size",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    image_size_options
+        .set_avoption_from_str("size", "640x480")
+        .unwrap();
+    assert_eq!(
+        image_size_options.get("size"),
+        Some(&OptionValue::ImageSize {
+            width: 640,
+            height: 480
+        })
+    );
+    image_size_options
+        .set_avoption_from_str("size", "hd720")
+        .unwrap();
+    assert_eq!(
+        image_size_options.get_avoption_image_size("size").unwrap(),
+        (1280, 720)
+    );
+    image_size_options
+        .set_avoption_from_str("size", "none")
+        .unwrap();
+    assert_eq!(
+        image_size_options.get_avoption_string("size").unwrap(),
+        "0x0"
+    );
+    image_size_options
+        .set_avoption_image_size("size", 800, 600)
+        .unwrap();
+    assert_eq!(
+        image_size_options.get_avoption_image_size("size").unwrap(),
+        (800, 600)
+    );
+    let before_image_size_errors = image_size_options.clone();
+    assert_eq!(
+        image_size_options
+            .set_avoption_from_str("size", "bad_size")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(image_size_options, before_image_size_errors);
+    assert_eq!(
+        image_size_options
+            .set_avoption_image_size("size", -1, 480)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(image_size_options, before_image_size_errors);
+
     options.set_from_str("preset_level", "slow").unwrap();
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(8)));
     assert!(options
@@ -828,6 +904,7 @@ fn exercise_fixtures() {
             "bitexact",
             "quality",
             "metadata",
+            "size",
             "aspect_ratio",
             "readonly",
             "preset_level",
@@ -1341,7 +1418,7 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
     let name = option_name_from(cursor);
     let help = literal_from(cursor);
     let kind_tag = cursor.next().unwrap_or_default();
-    let kind = match kind_tag % 13 {
+    let kind = match kind_tag % 14 {
         0 => OptionKind::Bool,
         1 => OptionKind::Int { min: 0, max: 64 },
         2 => OptionKind::Int { min: 8, max: 1 },
@@ -1368,7 +1445,8 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
             max: 7_200_000_000,
         },
         10 => OptionKind::Duration { min: 8, max: 1 },
-        11 => OptionKind::String { allow_empty: true },
+        11 => OptionKind::ImageSize,
+        12 => OptionKind::String { allow_empty: true },
         _ => OptionKind::String { allow_empty: false },
     };
     let default = default_value_for(&kind, cursor);
@@ -1482,6 +1560,10 @@ fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue 
                 OptionValue::Duration(0)
             }
         }
+        OptionKind::ImageSize => OptionValue::ImageSize {
+            width: i32::from(cursor.next().unwrap_or_default()),
+            height: i32::from(cursor.next().unwrap_or_default()),
+        },
         OptionKind::Float { min, max } => {
             if min.is_finite() && max.is_finite() && min <= max {
                 OptionValue::Float(*min + (f64::from(cursor.next().unwrap_or_default()) / 255.0))
@@ -1556,6 +1638,20 @@ fn sample_options() -> OptionSet {
     options
         .define(
             OptionDefinition::new(
+                "size",
+                OptionKind::ImageSize,
+                OptionValue::ImageSize {
+                    width: 320,
+                    height: 240,
+                },
+                "image size",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new(
                 "aspect_ratio",
                 OptionKind::Rational {
                     min: Rational::ONE,
@@ -1621,27 +1717,28 @@ fn sample_options() -> OptionSet {
 }
 
 fn option_name_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 15 {
+    match cursor.next().unwrap_or_default() % 16 {
         0 => "threads".to_owned(),
         1 => "THREADS".to_owned(),
         2 => "bitexact".to_owned(),
         3 => "quality".to_owned(),
         4 => "metadata".to_owned(),
-        5 => "codec".to_owned(),
-        6 => "CODEC".to_owned(),
-        7 => String::new(),
-        8 => "bad\0name".to_owned(),
-        9 => literal_from(cursor),
-        10 => "new-option".to_owned(),
-        11 => "new_option".to_owned(),
-        12 => "readonly".to_owned(),
-        13 => "aspect_ratio".to_owned(),
+        5 => "size".to_owned(),
+        6 => "codec".to_owned(),
+        7 => "CODEC".to_owned(),
+        8 => String::new(),
+        9 => "bad\0name".to_owned(),
+        10 => literal_from(cursor),
+        11 => "new-option".to_owned(),
+        12 => "new_option".to_owned(),
+        13 => "readonly".to_owned(),
+        14 => "aspect_ratio".to_owned(),
         _ => "preset_level".to_owned(),
     }
 }
 
 fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 36 {
+    match cursor.next().unwrap_or_default() % 41 {
         0 => "1".to_owned(),
         1 => "0".to_owned(),
         2 => "yes".to_owned(),
@@ -1678,12 +1775,17 @@ fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
         33 => "1500ms".to_owned(),
         34 => "42us".to_owned(),
         35 => "bad_duration".to_owned(),
+        36 => "640x480".to_owned(),
+        37 => "hd720".to_owned(),
+        38 => "none".to_owned(),
+        39 => "bad_size".to_owned(),
+        40 => "0x480".to_owned(),
         _ => literal_from(cursor),
     }
 }
 
 fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
-    match cursor.next().unwrap_or_default() % 6 {
+    match cursor.next().unwrap_or_default() % 7 {
         0 => OptionValue::Bool(cursor.next().unwrap_or_default().is_multiple_of(2)),
         1 => OptionValue::Int(i64::from(cursor.next().unwrap_or_default()) - 32),
         2 => {
@@ -1708,6 +1810,10 @@ fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
             OptionValue::Rational(value)
         }
         4 => OptionValue::Duration(i64::from(cursor.next().unwrap_or_default()) * 1_000),
+        5 => OptionValue::ImageSize {
+            width: i32::from(cursor.next().unwrap_or_default()),
+            height: i32::from(cursor.next().unwrap_or_default()),
+        },
         _ => OptionValue::String(option_value_string_from(cursor)),
     }
 }

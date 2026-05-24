@@ -967,6 +967,102 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let image_defaults = image_size_options();
+    insert_row(
+        &mut rows,
+        "state:image-size-defaults",
+        image_size_state_fields(&image_defaults),
+    );
+    insert_row(
+        &mut rows,
+        "get:image-size-defaults",
+        [
+            ret_image_size(image_defaults.get_avoption_image_size("size")),
+            ret_value(image_defaults.get_avoption_string("size")),
+        ],
+    );
+
+    let mut image_set = image_size_options();
+    let ret_640 = ret(image_set.set_avoption_from_str("size", "640x480"));
+    let after_640 = image_size_value(&image_set, "size");
+    let ret_hd720 = ret(image_set.set_avoption_from_str("size", "hd720"));
+    let after_hd720 = image_size_value(&image_set, "size");
+    let ret_none = ret(image_set.set_avoption_from_str("size", "none"));
+    let after_none = image_size_value(&image_set, "size");
+    insert_row(
+        &mut rows,
+        "ret:set-image-size-strings",
+        [ret_640, ret_hd720, ret_none],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-image-size-strings",
+        [
+            after_640.0.to_string(),
+            after_640.1.to_string(),
+            after_hd720.0.to_string(),
+            after_hd720.1.to_string(),
+            after_none.0.to_string(),
+            after_none.1.to_string(),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-image-size-strings",
+        [
+            ret_image_size(image_set.get_avoption_image_size("size")),
+            ret_value(image_set.get_avoption_string("size")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-image-size-errors",
+        [
+            ret(image_set.set_avoption_from_str("size", "bad")),
+            ret(image_set.set_avoption_from_str("size", "0x480")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:after-image-size-errors",
+        image_size_state_fields(&image_set),
+    );
+
+    let mut typed_image_options = image_size_options();
+    insert_row(
+        &mut rows,
+        "ret:set-image-size-typed",
+        [
+            ret(typed_image_options.set_avoption_image_size("size", 800, 600)),
+            ret(typed_image_options.set_avoption_image_size("size", -1, 480)),
+            ret(typed_image_options.set_avoption_image_size("scalar", 1, 1)),
+            ret(typed_image_options.set_avoption_int("size", 10)),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-image-size-typed",
+        image_size_state_fields(&typed_image_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-image-size-typed",
+        [
+            ret_image_size(typed_image_options.get_avoption_image_size("size")),
+            ret_value(typed_image_options.get_avoption_string("size")),
+            ret_image_size(typed_image_options.get_avoption_image_size("scalar")),
+            ret_i64(typed_image_options.get_avoption_int("size")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "query-ranges:image-size",
+        [
+            ret_ranges(typed_image_options.query_avoption_ranges("size")),
+            ret_ranges(typed_image_options.query_avoption_ranges("missing")),
+        ],
+    );
+
     let error_results = [
         ret(options.set_avoption_from_str("bitexact", "maybe")),
         ret(options.set_avoption_from_str("exported", "6")),
@@ -1164,6 +1260,38 @@ fn duration_options() -> OptionSet {
     options
 }
 
+fn image_size_options() -> OptionSet {
+    let mut options = OptionSet::new();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "size",
+                OptionKind::ImageSize,
+                OptionValue::ImageSize {
+                    width: 320,
+                    height: 240,
+                },
+                "image size",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "scalar",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(4),
+                "scalar",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+}
+
 fn state_fields(options: &OptionSet) -> Vec<String> {
     vec![
         int_value(options, "threads").to_string(),
@@ -1209,6 +1337,15 @@ fn child_option_state_fields(options: &OptionSet) -> Vec<String> {
     ]
 }
 
+fn image_size_state_fields(options: &OptionSet) -> [String; 3] {
+    let (width, height) = image_size_value(options, "size");
+    [
+        width.to_string(),
+        height.to_string(),
+        int_value(options, "scalar").to_string(),
+    ]
+}
+
 fn dict_fields(dict: &Dictionary) -> Vec<String> {
     let mut fields = vec![dict.len().to_string()];
     fields.extend(
@@ -1237,6 +1374,13 @@ fn duration_value(options: &OptionSet, name: &str) -> i64 {
     match options.get(name) {
         Some(OptionValue::Duration(value)) => *value,
         other => panic!("expected duration option `{name}`, got {other:?}"),
+    }
+}
+
+fn image_size_value(options: &OptionSet, name: &str) -> (i32, i32) {
+    match options.get(name) {
+        Some(OptionValue::ImageSize { width, height }) => (*width, *height),
+        other => panic!("expected image-size option `{name}`, got {other:?}"),
     }
 }
 
@@ -1362,6 +1506,18 @@ fn ret_q(result: avutil::AvResult<Rational>) -> String {
         Ok(value) => format!("0:{}/{}", value.num(), value.den()),
         Err(err) => format!(
             "{}:0/1",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
+fn ret_image_size(result: avutil::AvResult<(i32, i32)>) -> String {
+    match result {
+        Ok((width, height)) => format!("0:{width}x{height}"),
+        Err(err) => format!(
+            "{}:0x0",
             err.code()
                 .map(|code| code.raw().to_string())
                 .unwrap_or_else(|| "no-code".to_owned())
@@ -1516,6 +1672,12 @@ typedef struct DurationOptions {
     int64_t timeout;
 } DurationOptions;
 
+typedef struct ImageSizeOptions {
+    const AVClass *av_class;
+    int size[2];
+    int64_t scalar;
+} ImageSizeOptions;
+
 static const AVOption child_options[] = {
     { "threads", "child worker count", offsetof(ChildOptions, threads),
       AV_OPT_TYPE_INT64, { .i64 = 2 }, 1, 16, AV_OPT_FLAG_DECODING_PARAM },
@@ -1584,6 +1746,21 @@ static const AVClass duration_class = {
     .version = LIBAVUTIL_VERSION_INT,
 };
 
+static const AVOption image_size_options[] = {
+    { "size", "image size", offsetof(ImageSizeOptions, size),
+      AV_OPT_TYPE_IMAGE_SIZE, { .str = "320x240" }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
+    { "scalar", "scalar", offsetof(ImageSizeOptions, scalar),
+      AV_OPT_TYPE_INT64, { .i64 = 4 }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL }
+};
+
+static const AVClass image_size_class = {
+    .class_name = "rust-options-oracle-image-size",
+    .item_name = av_default_item_name,
+    .option = image_size_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
 static void init_context(TestOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &test_class;
@@ -1595,6 +1772,12 @@ static void init_context(TestOptions *ctx) {
 static void init_duration_context(DurationOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &duration_class;
+    av_opt_set_defaults(ctx);
+}
+
+static void init_image_size_context(ImageSizeOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &image_size_class;
     av_opt_set_defaults(ctx);
 }
 
@@ -1810,6 +1993,13 @@ static void print_get_q_value(const void *ctx, const char *name, int search_flag
     AVRational value = { 0, 1 };
     int ret = av_opt_get_q((void *)ctx, name, search_flags, &value);
     printf("|%d:%d/%d", ret, value.num, value.den);
+}
+
+static void print_get_image_size_value(const void *ctx, const char *name, int search_flags) {
+    int width = 0;
+    int height = 0;
+    int ret = av_opt_get_image_size((void *)ctx, name, search_flags, &width, &height);
+    printf("|%d:%dx%d", ret, width, height);
 }
 
 static void print_get_row(const char *name, const TestOptions *ctx) {
@@ -2130,6 +2320,77 @@ static void print_duration_rows(void) {
     printf("\n");
 }
 
+static void print_image_size_state(const char *name, const ImageSizeOptions *ctx) {
+    printf("%s|%d|%d|%" PRId64 "\n", name, ctx->size[0], ctx->size[1], ctx->scalar);
+}
+
+static void print_image_size_rows(void) {
+    ImageSizeOptions ctx;
+    int ret_640;
+    int ret_hd720;
+    int ret_none;
+    int ret_bad;
+    int ret_zero;
+    int ret_typed;
+    int ret_negative;
+    int ret_wrong_type;
+    int ret_numeric;
+    int after_640[2];
+    int after_hd720[2];
+    int after_none[2];
+
+    init_image_size_context(&ctx);
+    print_image_size_state("state:image-size-defaults", &ctx);
+    printf("get:image-size-defaults");
+    print_get_image_size_value(&ctx, "size", 0);
+    print_get_value(&ctx, "size");
+    printf("\n");
+
+    ret_640 = av_opt_set(&ctx, "size", "640x480", 0);
+    after_640[0] = ctx.size[0];
+    after_640[1] = ctx.size[1];
+    ret_hd720 = av_opt_set(&ctx, "size", "hd720", 0);
+    after_hd720[0] = ctx.size[0];
+    after_hd720[1] = ctx.size[1];
+    ret_none = av_opt_set(&ctx, "size", "none", 0);
+    after_none[0] = ctx.size[0];
+    after_none[1] = ctx.size[1];
+    printf("ret:set-image-size-strings|%d|%d|%d\n", ret_640, ret_hd720, ret_none);
+    printf("state:set-image-size-strings|%d|%d|%d|%d|%d|%d\n",
+           after_640[0], after_640[1],
+           after_hd720[0], after_hd720[1],
+           after_none[0], after_none[1]);
+    printf("get:set-image-size-strings");
+    print_get_image_size_value(&ctx, "size", 0);
+    print_get_value(&ctx, "size");
+    printf("\n");
+
+    ret_bad = av_opt_set(&ctx, "size", "bad", 0);
+    ret_zero = av_opt_set(&ctx, "size", "0x480", 0);
+    printf("ret:set-image-size-errors|%d|%d\n", ret_bad, ret_zero);
+    print_image_size_state("state:after-image-size-errors", &ctx);
+
+    init_image_size_context(&ctx);
+    ret_typed = av_opt_set_image_size(&ctx, "size", 800, 600, 0);
+    ret_negative = av_opt_set_image_size(&ctx, "size", -1, 480, 0);
+    ret_wrong_type = av_opt_set_image_size(&ctx, "scalar", 1, 1, 0);
+    ret_numeric = av_opt_set_int(&ctx, "size", 10, 0);
+    printf("ret:set-image-size-typed|%d|%d|%d|%d\n",
+           ret_typed, ret_negative, ret_wrong_type, ret_numeric);
+    print_image_size_state("state:set-image-size-typed", &ctx);
+    printf("get:set-image-size-typed");
+    print_get_image_size_value(&ctx, "size", 0);
+    print_get_value(&ctx, "size");
+    print_get_image_size_value(&ctx, "scalar", 0);
+    print_get_int_value(&ctx, "size", 0);
+    printf("\n");
+
+    printf("query-ranges:image-size");
+    print_query_range_value(&ctx, "size");
+    print_query_range_value(&ctx, "missing");
+    printf("\n");
+}
+
 static void print_set_from_string_rows(void) {
     static const char * const shorthand[] = { "threads", "bitexact", NULL };
     TestOptions ctx;
@@ -2335,6 +2596,7 @@ int main(void) {
     print_serialize_rows();
     print_typed_get_set_rows();
     print_duration_rows();
+    print_image_size_rows();
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);

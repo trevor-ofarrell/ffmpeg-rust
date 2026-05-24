@@ -8,6 +8,7 @@ pub enum OptionValue {
     Bool(bool),
     Int(i64),
     Duration(i64),
+    ImageSize { width: i32, height: i32 },
     Float(f64),
     Rational(Rational),
     String(String),
@@ -18,6 +19,7 @@ pub enum OptionKind {
     Bool,
     Int { min: i64, max: i64 },
     Duration { min: i64, max: i64 },
+    ImageSize,
     Float { min: f64, max: f64 },
     Rational { min: Rational, max: Rational },
     String { allow_empty: bool },
@@ -552,6 +554,10 @@ impl OptionDefinition {
             OptionKind::Bool => OptionValue::Bool(parse_bool(raw)?),
             OptionKind::Int { .. } => OptionValue::Int(parse_int(raw)?),
             OptionKind::Duration { .. } => OptionValue::Duration(parse_duration(raw)?),
+            OptionKind::ImageSize => {
+                let (width, height) = parse_image_size(raw)?;
+                OptionValue::ImageSize { width, height }
+            }
             OptionKind::Float { .. } => OptionValue::Float(parse_float(raw)?),
             OptionKind::Rational { .. } => OptionValue::Rational(parse_rational(raw)?),
             OptionKind::String { .. } => OptionValue::String(raw.to_owned()),
@@ -1098,6 +1104,37 @@ impl OptionSet {
         )
     }
 
+    pub fn set_avoption_image_size(&mut self, name: &str, width: i32, height: i32) -> AvResult<()> {
+        let index = self.avoption_index(name)?;
+        self.set_avoption_image_size_at_index(index, width, height)
+    }
+
+    pub fn set_avoption_image_size_with_flags(
+        &mut self,
+        name: &str,
+        width: i32,
+        height: i32,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &mut self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child
+                        .options
+                        .set_avoption_image_size_at_index(index, width, height);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.set_avoption_image_size_at_index(index, width, height)
+    }
+
     pub fn get_avoption_int(&self, name: &str) -> AvResult<i64> {
         let index = self.avoption_index(name)?;
         self.get_avoption_number_at_index(index)?.to_int()
@@ -1138,6 +1175,33 @@ impl OptionSet {
     ) -> AvResult<Rational> {
         self.get_avoption_number_with_flags(name, search_flags)?
             .to_rational()
+    }
+
+    pub fn get_avoption_image_size(&self, name: &str) -> AvResult<(i32, i32)> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_image_size_at_index(index)
+    }
+
+    pub fn get_avoption_image_size_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<(i32, i32)> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child.options.get_avoption_image_size_at_index(index);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.get_avoption_image_size_at_index(index)
     }
 
     pub fn set_avoptions_from_dict(
@@ -1356,6 +1420,29 @@ impl OptionSet {
         Ok(())
     }
 
+    fn set_avoption_image_size_at_index(
+        &mut self,
+        index: usize,
+        width: i32,
+        height: i32,
+    ) -> AvResult<()> {
+        self.ensure_writable(index)?;
+        if !matches!(self.definitions[index].kind(), OptionKind::ImageSize) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not an image size",
+                self.definitions[index].name()
+            )));
+        }
+        if width < 0 || height < 0 {
+            return Err(AvError::invalid_argument(format!(
+                "invalid negative image size {width}x{height}"
+            )));
+        }
+
+        self.values[index] = OptionValue::ImageSize { width, height };
+        Ok(())
+    }
+
     fn get_avoption_number_with_flags(
         &self,
         name: &str,
@@ -1380,6 +1467,22 @@ impl OptionSet {
 
     fn get_avoption_number_at_index(&self, index: usize) -> AvResult<AvOptionNumberParts> {
         avoption_number_parts(self.definitions[index].name(), &self.values[index])
+    }
+
+    fn get_avoption_image_size_at_index(&self, index: usize) -> AvResult<(i32, i32)> {
+        if !matches!(self.definitions[index].kind(), OptionKind::ImageSize) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not an image size",
+                self.definitions[index].name()
+            )));
+        }
+        match self.values[index] {
+            OptionValue::ImageSize { width, height } => Ok((width, height)),
+            _ => Err(AvError::invalid_argument(format!(
+                "AVOption `{}` storage is not an image size",
+                self.definitions[index].name()
+            ))),
+        }
     }
 
     pub fn set_child(
@@ -1424,7 +1527,10 @@ impl OptionSet {
         }
 
         match self.definitions[index].kind() {
-            OptionKind::Bool | OptionKind::String { .. } | OptionKind::Duration { .. } => {
+            OptionKind::Bool
+            | OptionKind::String { .. }
+            | OptionKind::Duration { .. }
+            | OptionKind::ImageSize => {
                 if matches!(self.definitions[index].kind(), OptionKind::Duration { .. }) {
                     let duration = parse_duration(raw)?;
                     return avoption_value_from_numeric(
@@ -1694,7 +1800,7 @@ fn validate_help(help: &str) -> AvResult<String> {
 
 fn validate_kind(kind: &OptionKind) -> AvResult<()> {
     match *kind {
-        OptionKind::Bool | OptionKind::String { .. } => Ok(()),
+        OptionKind::Bool | OptionKind::ImageSize | OptionKind::String { .. } => Ok(()),
         OptionKind::Int { min, max } => {
             if min > max {
                 return Err(AvError::invalid_argument(
@@ -1753,7 +1859,7 @@ fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
             min: OptionValue::Rational(min),
             max: OptionValue::Rational(max),
         }),
-        OptionKind::Bool | OptionKind::String { .. } => None,
+        OptionKind::Bool | OptionKind::ImageSize | OptionKind::String { .. } => None,
     }
 }
 
@@ -1778,6 +1884,12 @@ fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
         OptionKind::Duration { min, max } => {
             range.value_min = min as f64;
             range.value_max = max as f64;
+        }
+        OptionKind::ImageSize => {
+            range.value_min = 0.0;
+            range.value_max = f64::from(i32::MAX / 8);
+            range.component_min = 0.0;
+            range.component_max = f64::from(i32::MAX / 128 / 8);
         }
         OptionKind::Float { min, max } => {
             range.value_min = min;
@@ -1895,6 +2007,9 @@ fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNu
             den: 1,
             intnum: *value,
         }),
+        OptionValue::ImageSize { .. } => Err(AvError::invalid_argument(format!(
+            "AVOption `{name}` is not numeric"
+        ))),
         OptionValue::Float(value) => Ok(AvOptionNumberParts {
             num: *value,
             den: 1,
@@ -1933,6 +2048,15 @@ fn avoption_value_from_numeric(
         OptionKind::Duration { min, max } => {
             avoption_check_numeric_range(name, value, min as f64, max as f64)?;
             Ok(OptionValue::Duration(round_f64_ties_even_to_i64(value)?))
+        }
+        OptionKind::ImageSize => {
+            if value == 0.0 {
+                Err(AvError::invalid_argument(format!(
+                    "AVOption `{name}` is not numeric"
+                )))
+            } else {
+                Err(avoption_range_error(name, value, 0.0, 0.0))
+            }
         }
         OptionKind::Float { min, max } => {
             avoption_check_numeric_range(name, value, min, max)?;
@@ -2043,6 +2167,14 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
             }
             Ok(())
         }
+        (OptionKind::ImageSize, OptionValue::ImageSize { width, height }) => {
+            if *width < 0 || *height < 0 {
+                return Err(AvError::invalid_argument(format!(
+                    "image size option value {width}x{height} must not be negative"
+                )));
+            }
+            Ok(())
+        }
         (OptionKind::Float { min, max }, OptionValue::Float(value)) => {
             if !value.is_finite() {
                 return Err(AvError::invalid_argument(
@@ -2104,6 +2236,9 @@ fn avoption_kind_min(kind: &OptionKind) -> AvResult<f64> {
         OptionKind::Bool => Ok(0.0),
         OptionKind::Int { min, .. } => Ok(min as f64),
         OptionKind::Duration { min, .. } => Ok(min as f64),
+        OptionKind::ImageSize => Err(AvError::invalid_argument(
+            "image size AVOption does not have a scalar numeric minimum",
+        )),
         OptionKind::Float { min, .. } => Ok(min),
         OptionKind::Rational { min, .. } => Ok(min.to_f64()),
         OptionKind::String { .. } => Err(AvError::invalid_argument(
@@ -2117,6 +2252,9 @@ fn avoption_kind_max(kind: &OptionKind) -> AvResult<f64> {
         OptionKind::Bool => Ok(1.0),
         OptionKind::Int { max, .. } => Ok(max as f64),
         OptionKind::Duration { max, .. } => Ok(max as f64),
+        OptionKind::ImageSize => Err(AvError::invalid_argument(
+            "image size AVOption does not have a scalar numeric maximum",
+        )),
         OptionKind::Float { max, .. } => Ok(max),
         OptionKind::Rational { max, .. } => Ok(max.to_f64()),
         OptionKind::String { .. } => Err(AvError::invalid_argument(
@@ -2539,6 +2677,124 @@ fn parse_float(raw: &str) -> AvResult<f64> {
         .map_err(|_| AvError::invalid_argument(format!("invalid float option value `{raw}`")))
 }
 
+fn parse_image_size(raw: &str) -> AvResult<(i32, i32)> {
+    if raw == "none" {
+        return Ok((0, 0));
+    }
+
+    for (name, width, height) in VIDEO_SIZE_ABBREVIATIONS {
+        if raw == *name {
+            return Ok((*width, *height));
+        }
+    }
+
+    let (width, mut pos) = parse_image_size_decimal(raw, 0)?;
+    if pos < raw.len() {
+        if raw[pos..]
+            .chars()
+            .next()
+            .expect("separator exists")
+            .len_utf8()
+            != 1
+        {
+            return Err(image_size_parse_error(raw));
+        }
+        pos += 1;
+    }
+    let (height, pos) = parse_image_size_decimal(raw, pos)?;
+    if pos != raw.len() || width <= 0 || height <= 0 {
+        return Err(image_size_parse_error(raw));
+    }
+
+    Ok((width, height))
+}
+
+fn parse_image_size_decimal(raw: &str, start: usize) -> AvResult<(i32, usize)> {
+    let bytes = raw.as_bytes();
+    let mut pos = start;
+    while matches!(bytes.get(pos), Some(byte) if byte.is_ascii_whitespace()) {
+        pos += 1;
+    }
+    if matches!(bytes.get(pos), Some(b'+') | Some(b'-')) {
+        pos += 1;
+    }
+    let digits_start = pos;
+    while matches!(bytes.get(pos), Some(b'0'..=b'9')) {
+        pos += 1;
+    }
+    if pos == digits_start {
+        return Err(image_size_parse_error(raw));
+    }
+
+    raw[start..pos]
+        .trim_start()
+        .parse::<i32>()
+        .map(|value| (value, pos))
+        .map_err(|_| image_size_parse_error(raw))
+}
+
+const VIDEO_SIZE_ABBREVIATIONS: &[(&str, i32, i32)] = &[
+    ("ntsc", 720, 480),
+    ("pal", 720, 576),
+    ("qntsc", 352, 240),
+    ("qpal", 352, 288),
+    ("sntsc", 640, 480),
+    ("spal", 768, 576),
+    ("film", 352, 240),
+    ("ntsc-film", 352, 240),
+    ("sqcif", 128, 96),
+    ("qcif", 176, 144),
+    ("cif", 352, 288),
+    ("4cif", 704, 576),
+    ("16cif", 1408, 1152),
+    ("qqvga", 160, 120),
+    ("qvga", 320, 240),
+    ("vga", 640, 480),
+    ("svga", 800, 600),
+    ("xga", 1024, 768),
+    ("uxga", 1600, 1200),
+    ("qxga", 2048, 1536),
+    ("sxga", 1280, 1024),
+    ("qsxga", 2560, 2048),
+    ("hsxga", 5120, 4096),
+    ("wvga", 852, 480),
+    ("wxga", 1366, 768),
+    ("wsxga", 1600, 1024),
+    ("wuxga", 1920, 1200),
+    ("woxga", 2560, 1600),
+    ("wqhd", 2560, 1440),
+    ("wqsxga", 3200, 2048),
+    ("wquxga", 3840, 2400),
+    ("whsxga", 6400, 4096),
+    ("whuxga", 7680, 4800),
+    ("cga", 320, 200),
+    ("ega", 640, 350),
+    ("hd480", 852, 480),
+    ("hd720", 1280, 720),
+    ("hd1080", 1920, 1080),
+    ("quadhd", 2560, 1440),
+    ("2k", 2048, 1080),
+    ("2kdci", 2048, 1080),
+    ("2kflat", 1998, 1080),
+    ("2kscope", 2048, 858),
+    ("4k", 4096, 2160),
+    ("4kdci", 4096, 2160),
+    ("4kflat", 3996, 2160),
+    ("4kscope", 4096, 1716),
+    ("nhd", 640, 360),
+    ("hqvga", 240, 160),
+    ("wqvga", 400, 240),
+    ("fwqvga", 432, 240),
+    ("hvga", 480, 320),
+    ("qhd", 960, 540),
+    ("uhd2160", 3840, 2160),
+    ("uhd4320", 7680, 4320),
+];
+
+fn image_size_parse_error(raw: &str) -> AvError {
+    AvError::invalid_argument(format!("invalid image size option value `{raw}`"))
+}
+
 fn parse_duration(raw: &str) -> AvResult<i64> {
     const USECS_PER_SEC: i128 = 1_000_000;
 
@@ -2914,6 +3170,7 @@ fn format_avoption_value(value: &OptionValue) -> String {
         OptionValue::Bool(true) => "true".to_owned(),
         OptionValue::Int(value) => value.to_string(),
         OptionValue::Duration(value) => format_duration(*value),
+        OptionValue::ImageSize { width, height } => format!("{width}x{height}"),
         OptionValue::Float(value) => format!("{value:.6}"),
         OptionValue::Rational(value) => format!("{}/{}", value.num(), value.den()),
         OptionValue::String(value) => value.clone(),
@@ -3243,6 +3500,107 @@ mod tests {
                 .unwrap_err()
                 .code(),
             Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(options, before_errors);
+    }
+
+    #[test]
+    fn image_size_options_parse_format_and_query_like_bounded_ffmpeg_shape() {
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new(
+                    "size",
+                    OptionKind::ImageSize,
+                    OptionValue::ImageSize {
+                        width: 320,
+                        height: 240,
+                    },
+                    "image size",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(options.range("size").unwrap(), None);
+        let av_ranges = options.query_avoption_ranges("size").unwrap();
+        assert_eq!(av_ranges.nb_ranges(), 1);
+        assert_eq!(av_ranges.ranges()[0].value_min(), 0.0);
+        assert_eq!(av_ranges.ranges()[0].value_max(), f64::from(i32::MAX / 8));
+        assert_eq!(av_ranges.ranges()[0].component_min(), 0.0);
+        assert_eq!(
+            av_ranges.ranges()[0].component_max(),
+            f64::from(i32::MAX / 128 / 8)
+        );
+        assert_eq!(options.get_avoption_string("size").unwrap(), "320x240");
+
+        options.set_avoption_from_str("size", "640x480").unwrap();
+        assert_eq!(
+            options.get("size"),
+            Some(&OptionValue::ImageSize {
+                width: 640,
+                height: 480
+            })
+        );
+        assert_eq!(options.get_avoption_image_size("size").unwrap(), (640, 480));
+        assert_eq!(options.get_avoption_string("size").unwrap(), "640x480");
+
+        options.set_avoption_from_str("size", "hd720").unwrap();
+        assert_eq!(
+            options.get("size"),
+            Some(&OptionValue::ImageSize {
+                width: 1280,
+                height: 720
+            })
+        );
+        assert_eq!(options.get_avoption_string("size").unwrap(), "1280x720");
+
+        options.set_avoption_from_str("size", "none").unwrap();
+        assert_eq!(
+            options.get("size"),
+            Some(&OptionValue::ImageSize {
+                width: 0,
+                height: 0
+            })
+        );
+        assert_eq!(options.get_avoption_string("size").unwrap(), "0x0");
+
+        options.set_avoption_image_size("size", 800, 600).unwrap();
+        assert_eq!(options.get_avoption_image_size("size").unwrap(), (800, 600));
+        assert_eq!(options.get_avoption_string("size").unwrap(), "800x600");
+
+        let before_errors = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_from_str("size", "bad")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_errors);
+        assert_eq!(
+            options
+                .set_avoption_from_str("size", "0x480")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_errors);
+        assert_eq!(
+            options
+                .set_avoption_image_size("size", -1, 480)
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_errors);
+        assert_eq!(
+            options.set_avoption_int("size", 10).unwrap_err().code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(
+            options.get_avoption_int("size").unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
         );
         assert_eq!(options, before_errors);
     }
