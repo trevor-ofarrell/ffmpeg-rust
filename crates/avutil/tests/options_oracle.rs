@@ -7,8 +7,8 @@ use std::{
 
 use avutil::{
     AvOptionRanges, Dictionary, MatchMode, OptionChild, OptionConstant, OptionDefinition,
-    OptionEntryMatch, OptionFlags, OptionKind, OptionSearchFlags, OptionSet, OptionValue, Rational,
-    SetMode,
+    OptionEntryMatch, OptionFlags, OptionKind, OptionSearchFlags, OptionSerializeFlags, OptionSet,
+    OptionValue, Rational, SetMode,
 };
 
 #[test]
@@ -146,6 +146,15 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         [
             OptionSearchFlags::CHILDREN.bits().to_string(),
             OptionSearchFlags::FAKE_OBJ.bits().to_string(),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "serialize-flags",
+        [
+            OptionSerializeFlags::SKIP_DEFAULTS.bits().to_string(),
+            OptionSerializeFlags::OPT_FLAGS_EXACT.bits().to_string(),
+            OptionSerializeFlags::SEARCH_CHILDREN.bits().to_string(),
         ],
     );
 
@@ -583,6 +592,106 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         state_fields(&string_no_shorthand),
     );
 
+    let serialize_defaults = sample_options();
+    insert_row(
+        &mut rows,
+        "serialize:defaults",
+        [
+            ret_serialize(serialize_defaults.serialize_avoptions(
+                OptionFlags::empty(),
+                OptionSerializeFlags::empty(),
+                '=',
+                ',',
+            )),
+            ret_serialize(serialize_defaults.serialize_avoptions(
+                OptionFlags::ENCODING_PARAM,
+                OptionSerializeFlags::OPT_FLAGS_EXACT,
+                '=',
+                ',',
+            )),
+            ret_serialize(serialize_defaults.serialize_avoptions(
+                OptionFlags::empty(),
+                OptionSerializeFlags::OPT_FLAGS_EXACT,
+                '=',
+                ',',
+            )),
+            ret_serialize(serialize_defaults.serialize_avoptions(
+                OptionFlags::EXPORT,
+                OptionSerializeFlags::empty(),
+                '=',
+                ',',
+            )),
+        ],
+    );
+
+    let mut serialize_changed = sample_options();
+    serialize_changed
+        .set_avoption_from_str("threads", "8")
+        .unwrap();
+    serialize_changed
+        .set_avoption_from_str("bitexact", "true")
+        .unwrap();
+    serialize_changed
+        .set_avoption_from_str("metadata", "title=clip,segment\\one")
+        .unwrap();
+    serialize_changed
+        .set_avoption_from_str("preset_level", "slow")
+        .unwrap();
+    insert_row(
+        &mut rows,
+        "serialize:skip-defaults",
+        [ret_serialize(serialize_changed.serialize_avoptions(
+            OptionFlags::empty(),
+            OptionSerializeFlags::SKIP_DEFAULTS,
+            '=',
+            ',',
+        ))],
+    );
+
+    let serialize_children = sample_options_with_child();
+    insert_row(
+        &mut rows,
+        "serialize:children",
+        [
+            ret_serialize(serialize_children.serialize_avoptions(
+                OptionFlags::empty(),
+                OptionSerializeFlags::SEARCH_CHILDREN,
+                '=',
+                ',',
+            )),
+            ret_serialize(serialize_children.serialize_avoptions(
+                OptionFlags::DECODING_PARAM,
+                OptionSerializeFlags::SEARCH_CHILDREN,
+                '=',
+                ',',
+            )),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "serialize:invalid-separators",
+        [
+            ret_serialize(serialize_defaults.serialize_avoptions(
+                OptionFlags::empty(),
+                OptionSerializeFlags::empty(),
+                '=',
+                '=',
+            )),
+            ret_serialize(serialize_defaults.serialize_avoptions(
+                OptionFlags::empty(),
+                OptionSerializeFlags::empty(),
+                '\\',
+                ',',
+            )),
+            ret_serialize(serialize_defaults.serialize_avoptions(
+                OptionFlags::empty(),
+                OptionSerializeFlags::empty(),
+                '=',
+                '\0',
+            )),
+        ],
+    );
+
     let exact_error_results = [
         ret(options.set_avoption_from_str("THREADS", "9")),
         ret(options.set_avoption_from_str("preset_level", "SLOW")),
@@ -730,7 +839,7 @@ fn sample_options() -> OptionSet {
         )
         .unwrap();
     options
-        .define(
+        .define_with_current_value(
             OptionDefinition::new_with_flags(
                 "exported",
                 OptionKind::Int { min: 0, max: 8 },
@@ -741,6 +850,7 @@ fn sample_options() -> OptionSet {
                 ),
             )
             .unwrap(),
+            OptionValue::Int(0),
         )
         .unwrap();
     options
@@ -953,6 +1063,10 @@ fn ret_value(result: avutil::AvResult<String>) -> String {
                 .unwrap_or_else(|| "no-code".to_owned())
         ),
     }
+}
+
+fn ret_serialize(result: avutil::AvResult<String>) -> String {
+    ret_value(result)
 }
 
 fn ret_ranges(result: avutil::AvResult<AvOptionRanges>) -> String {
@@ -1213,6 +1327,13 @@ static void print_search_flags(void) {
     printf("search-flags|%d|%d\n",
            AV_OPT_SEARCH_CHILDREN,
            AV_OPT_SEARCH_FAKE_OBJ);
+}
+
+static void print_serialize_flags(void) {
+    printf("serialize-flags|%d|%d|%d\n",
+           AV_OPT_SERIALIZE_SKIP_DEFAULTS,
+           AV_OPT_SERIALIZE_OPT_FLAGS_EXACT,
+           AV_OPT_SERIALIZE_SEARCH_CHILDREN);
 }
 
 static const char *option_name_or_null(const AVOption *option) {
@@ -1594,6 +1715,66 @@ static void print_set_from_string_rows(void) {
     av_opt_free(&ctx.child);
 }
 
+static void print_serialize_value(TestOptions *ctx, int opt_flags, int flags,
+                                  char key_val_sep, char pairs_sep) {
+    char *buf = NULL;
+    int ret = av_opt_serialize(ctx, opt_flags, flags, &buf, key_val_sep, pairs_sep);
+
+    printf("|%d:%s", ret, ret >= 0 && buf ? buf : "<null>");
+    av_free(buf);
+}
+
+static void print_serialize_invalid_value(TestOptions *ctx, int opt_flags, int flags,
+                                          char key_val_sep, char pairs_sep) {
+    char *buf = NULL;
+    int ret = av_opt_serialize(ctx, opt_flags, flags, &buf, key_val_sep, pairs_sep);
+
+    printf("|%d:<null>", ret);
+    av_free(buf);
+}
+
+static void print_serialize_rows(void) {
+    TestOptions defaults;
+    TestOptions changed;
+    TestOptions children;
+
+    init_context(&defaults);
+    printf("serialize:defaults");
+    print_serialize_value(&defaults, 0, 0, '=', ',');
+    print_serialize_value(&defaults, AV_OPT_FLAG_ENCODING_PARAM,
+                          AV_OPT_SERIALIZE_OPT_FLAGS_EXACT, '=', ',');
+    print_serialize_value(&defaults, 0, AV_OPT_SERIALIZE_OPT_FLAGS_EXACT, '=', ',');
+    print_serialize_value(&defaults, AV_OPT_FLAG_EXPORT, 0, '=', ',');
+    printf("\n");
+    av_opt_free(&defaults);
+    av_opt_free(&defaults.child);
+
+    init_context(&changed);
+    av_opt_set(&changed, "threads", "8", 0);
+    av_opt_set(&changed, "bitexact", "true", 0);
+    av_opt_set(&changed, "metadata", "title=clip,segment\\one", 0);
+    av_opt_set(&changed, "preset_level", "slow", 0);
+    printf("serialize:skip-defaults");
+    print_serialize_value(&changed, 0, AV_OPT_SERIALIZE_SKIP_DEFAULTS, '=', ',');
+    printf("\n");
+    av_opt_free(&changed);
+    av_opt_free(&changed.child);
+
+    init_context(&children);
+    printf("serialize:children");
+    print_serialize_value(&children, 0, AV_OPT_SERIALIZE_SEARCH_CHILDREN, '=', ',');
+    print_serialize_value(&children, AV_OPT_FLAG_DECODING_PARAM,
+                          AV_OPT_SERIALIZE_SEARCH_CHILDREN, '=', ',');
+    printf("\n");
+    printf("serialize:invalid-separators");
+    print_serialize_invalid_value(&children, 0, 0, '=', '=');
+    print_serialize_invalid_value(&children, 0, 0, '\\', ',');
+    print_serialize_invalid_value(&children, 0, 0, '=', '\0');
+    printf("\n");
+    av_opt_free(&children);
+    av_opt_free(&children.child);
+}
+
 int main(void) {
     TestOptions ctx = { 0 };
     int ret_threads;
@@ -1613,6 +1794,7 @@ int main(void) {
     print_flags();
     print_types();
     print_search_flags();
+    print_serialize_flags();
     print_next_order(&ctx);
     print_find_rows(&ctx);
     print_state("state:defaults", &ctx);
@@ -1626,6 +1808,7 @@ int main(void) {
     print_set_dict_rows();
     print_copy_rows();
     print_set_from_string_rows();
+    print_serialize_rows();
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);

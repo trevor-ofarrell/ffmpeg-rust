@@ -93,7 +93,7 @@ pub use logging::{
 pub use options::{
     AvOptionRangeEntry, AvOptionRanges, OptionChild, OptionConstant, OptionDefinition, OptionEntry,
     OptionEntryMatch, OptionFlags, OptionKind, OptionMatch, OptionQuery, OptionRange,
-    OptionSearchFlags, OptionSet, OptionValue,
+    OptionSearchFlags, OptionSerializeFlags, OptionSet, OptionValue,
 };
 pub use packet::{
     packet_pack_dictionary, packet_unpack_dictionary, Packet, PacketA53ClosedCaptions,

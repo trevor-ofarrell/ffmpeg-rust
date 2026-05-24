@@ -311,6 +311,48 @@ impl OptionSearchFlags {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct OptionSerializeFlags {
+    bits: u32,
+}
+
+impl OptionSerializeFlags {
+    pub const SKIP_DEFAULTS: Self = Self { bits: 1 << 0 };
+    pub const OPT_FLAGS_EXACT: Self = Self { bits: 1 << 1 };
+    pub const SEARCH_CHILDREN: Self = Self { bits: 1 << 2 };
+
+    const KNOWN_BITS: u32 =
+        Self::SKIP_DEFAULTS.bits | Self::OPT_FLAGS_EXACT.bits | Self::SEARCH_CHILDREN.bits;
+
+    pub const fn empty() -> Self {
+        Self { bits: 0 }
+    }
+
+    pub const fn all() -> Self {
+        Self {
+            bits: Self::KNOWN_BITS,
+        }
+    }
+
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        Self {
+            bits: bits & Self::KNOWN_BITS,
+        }
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.bits
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        (self.bits & other.bits) == other.bits
+    }
+
+    pub const fn intersects(self, other: Self) -> bool {
+        (self.bits & other.bits) != 0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OptionQuery {
     name: Option<String>,
@@ -744,15 +786,25 @@ impl OptionSet {
     }
 
     pub fn define(&mut self, definition: OptionDefinition) -> AvResult<()> {
+        let current = definition.default().clone();
+        self.define_with_current_value(definition, current)
+    }
+
+    pub fn define_with_current_value(
+        &mut self,
+        definition: OptionDefinition,
+        current: OptionValue,
+    ) -> AvResult<()> {
         if self.find_index(definition.name()).is_some() {
             return Err(AvError::invalid_argument(format!(
                 "duplicate option `{}`",
                 definition.name()
             )));
         }
+        definition.validate_value(&current)?;
 
         let entry_key = OptionEntryKey::definition(definition.name());
-        self.values.push(definition.default().clone());
+        self.values.push(current);
         self.definitions.push(definition);
         self.entries.push(entry_key);
         Ok(())
@@ -1069,6 +1121,38 @@ impl OptionSet {
         Ok(count)
     }
 
+    pub fn serialize_avoptions(
+        &self,
+        opt_flags: OptionFlags,
+        serialize_flags: OptionSerializeFlags,
+        key_val_sep: char,
+        pairs_sep: char,
+    ) -> AvResult<String> {
+        validate_avoption_serialize_separators(key_val_sep, pairs_sep)?;
+
+        let opt_flags = OptionFlags::from_bits_truncate(opt_flags.bits());
+        let serialize_flags = OptionSerializeFlags::from_bits_truncate(serialize_flags.bits());
+        let mut fields = Vec::new();
+
+        self.collect_serialized_avoptions(
+            opt_flags,
+            serialize_flags,
+            key_val_sep,
+            pairs_sep,
+            &mut fields,
+        );
+
+        let mut output = String::new();
+        for (index, field) in fields.iter().enumerate() {
+            if index > 0 {
+                output.push(pairs_sep);
+            }
+            output.push_str(field);
+        }
+
+        Ok(output)
+    }
+
     pub fn copy_avoptions_from(&mut self, source: &OptionSet) -> AvResult<()> {
         if !self.has_matching_avoption_schema(source) {
             return Err(AvError::invalid_argument(
@@ -1082,6 +1166,50 @@ impl OptionSet {
 
         self.values = source.values.clone();
         Ok(())
+    }
+
+    fn collect_serialized_avoptions(
+        &self,
+        opt_flags: OptionFlags,
+        serialize_flags: OptionSerializeFlags,
+        key_val_sep: char,
+        pairs_sep: char,
+        fields: &mut Vec<String>,
+    ) {
+        if serialize_flags.contains(OptionSerializeFlags::SEARCH_CHILDREN) {
+            for child in &self.children {
+                child.options().collect_serialized_avoptions(
+                    opt_flags,
+                    serialize_flags,
+                    key_val_sep,
+                    pairs_sep,
+                    fields,
+                );
+            }
+        }
+
+        for (definition, value) in self.definitions.iter().zip(&self.values) {
+            if !definition_matches_serialize_flags(definition, opt_flags, serialize_flags) {
+                continue;
+            }
+
+            if serialize_flags.contains(OptionSerializeFlags::SKIP_DEFAULTS)
+                && value == definition.default()
+            {
+                continue;
+            }
+
+            let mut field = String::new();
+            push_avoption_serialize_escaped(&mut field, definition.name(), key_val_sep, pairs_sep);
+            field.push(key_val_sep);
+            push_avoption_serialize_escaped(
+                &mut field,
+                &format_avoption_value(value),
+                key_val_sep,
+                pairs_sep,
+            );
+            fields.push(field);
+        }
     }
 
     pub fn set_child(
@@ -1580,6 +1708,22 @@ fn validate_avoption_string_separators(key_val_sep: &str, pairs_sep: &str) -> Av
     Ok(())
 }
 
+fn validate_avoption_serialize_separators(key_val_sep: char, pairs_sep: char) -> AvResult<()> {
+    if key_val_sep == '\0'
+        || pairs_sep == '\0'
+        || key_val_sep == pairs_sep
+        || key_val_sep == '\\'
+        || pairs_sep == '\\'
+    {
+        return Err(AvError::with_code(
+            AvErrorKind::InvalidArgument,
+            AvErrorCode::EINVAL,
+            "invalid AVOption serialize separators",
+        ));
+    }
+    Ok(())
+}
+
 fn is_valid_avoption_string_key(key: &str) -> bool {
     !key.is_empty() && key.chars().all(is_avoption_string_key_char)
 }
@@ -1604,6 +1748,32 @@ fn format_avoption_value(value: &OptionValue) -> String {
         OptionValue::Float(value) => format!("{value:.6}"),
         OptionValue::Rational(value) => format!("{}/{}", value.num(), value.den()),
         OptionValue::String(value) => value.clone(),
+    }
+}
+
+fn definition_matches_serialize_flags(
+    definition: &OptionDefinition,
+    opt_flags: OptionFlags,
+    serialize_flags: OptionSerializeFlags,
+) -> bool {
+    if serialize_flags.contains(OptionSerializeFlags::OPT_FLAGS_EXACT) {
+        definition.flags() == opt_flags
+    } else {
+        definition.flags().contains(opt_flags)
+    }
+}
+
+fn push_avoption_serialize_escaped(
+    output: &mut String,
+    value: &str,
+    key_val_sep: char,
+    pairs_sep: char,
+) {
+    for ch in value.chars() {
+        if ch == '\\' || ch == key_val_sep || ch == pairs_sep {
+            output.push('\\');
+        }
+        output.push(ch);
     }
 }
 
@@ -1714,6 +1884,22 @@ mod tests {
             OptionSearchFlags::CHILDREN.bits() | OptionSearchFlags::FAKE_OBJ.bits()
         );
         assert_eq!(OptionSearchFlags::empty().bits(), 0);
+    }
+
+    #[test]
+    fn option_serialize_flags_match_ffmpeg_bits_and_truncate_unknown_bits() {
+        assert_eq!(OptionSerializeFlags::SKIP_DEFAULTS.bits(), 1 << 0);
+        assert_eq!(OptionSerializeFlags::OPT_FLAGS_EXACT.bits(), 1 << 1);
+        assert_eq!(OptionSerializeFlags::SEARCH_CHILDREN.bits(), 1 << 2);
+
+        let truncated = OptionSerializeFlags::from_bits_truncate(u32::MAX);
+
+        assert_eq!(truncated, OptionSerializeFlags::all());
+        assert!(truncated.contains(OptionSerializeFlags::SKIP_DEFAULTS));
+        assert!(truncated.contains(OptionSerializeFlags::OPT_FLAGS_EXACT));
+        assert!(truncated.contains(OptionSerializeFlags::SEARCH_CHILDREN));
+        assert!(truncated.intersects(OptionSerializeFlags::SEARCH_CHILDREN));
+        assert_eq!(OptionSerializeFlags::empty().bits(), 0);
     }
 
     #[test]
@@ -2106,20 +2292,17 @@ mod tests {
     #[test]
     fn readonly_options_reject_mutation_without_changing_value() {
         let mut options = OptionSet::new();
-        options
-            .define(
-                OptionDefinition::new_with_flags(
-                    "exported",
-                    OptionKind::Int { min: 0, max: 8 },
-                    OptionValue::Int(4),
-                    "read-only exported value",
-                    OptionFlags::from_bits_truncate(
-                        OptionFlags::EXPORT.bits() | OptionFlags::READONLY.bits(),
-                    ),
-                )
-                .unwrap(),
-            )
-            .unwrap();
+        let definition = OptionDefinition::new_with_flags(
+            "exported",
+            OptionKind::Int { min: 0, max: 8 },
+            OptionValue::Int(4),
+            "read-only exported value",
+            OptionFlags::from_bits_truncate(
+                OptionFlags::EXPORT.bits() | OptionFlags::READONLY.bits(),
+            ),
+        )
+        .unwrap();
+        options.define(definition).unwrap();
 
         let typed_err = options.set("exported", OptionValue::Int(5)).unwrap_err();
         let parsed_err = options.set_from_str("exported", "6").unwrap_err();
@@ -2132,6 +2315,49 @@ mod tests {
             .unwrap()
             .flags()
             .contains(OptionFlags::READONLY));
+    }
+
+    #[test]
+    fn definitions_can_model_current_storage_distinct_from_declared_default() {
+        let mut options = OptionSet::new();
+        let definition = OptionDefinition::new_with_flags(
+            "exported",
+            OptionKind::Int { min: 0, max: 8 },
+            OptionValue::Int(4),
+            "read-only exported value",
+            OptionFlags::from_bits_truncate(
+                OptionFlags::EXPORT.bits() | OptionFlags::READONLY.bits(),
+            ),
+        )
+        .unwrap();
+
+        options
+            .define_with_current_value(definition, OptionValue::Int(0))
+            .unwrap();
+
+        assert_eq!(
+            options.definition("exported").unwrap().default(),
+            &OptionValue::Int(4)
+        );
+        assert_eq!(options.get("exported"), Some(&OptionValue::Int(0)));
+        assert!(options.set_avoption_from_str("exported", "4").is_err());
+        assert_eq!(
+            options
+                .serialize_avoptions(OptionFlags::EXPORT, OptionSerializeFlags::empty(), '=', ',',)
+                .unwrap(),
+            "exported=0"
+        );
+        assert_eq!(
+            options
+                .serialize_avoptions(
+                    OptionFlags::empty(),
+                    OptionSerializeFlags::SKIP_DEFAULTS,
+                    '=',
+                    ',',
+                )
+                .unwrap(),
+            "exported=0"
+        );
     }
 
     #[test]
@@ -3054,6 +3280,124 @@ mod tests {
     }
 
     #[test]
+    fn serialize_avoptions_matches_bounded_ffmpeg_shape() {
+        let defaults = sample_flagged_options();
+        assert_eq!(
+            defaults
+                .serialize_avoptions(
+                    OptionFlags::empty(),
+                    OptionSerializeFlags::empty(),
+                    '=',
+                    ',',
+                )
+                .unwrap(),
+            "threads=1,bitexact=false,quality=0.500000,aspect_ratio=1/1,metadata=default,preset_level=0,exported=0"
+        );
+        assert_eq!(
+            defaults
+                .serialize_avoptions(
+                    OptionFlags::ENCODING_PARAM,
+                    OptionSerializeFlags::OPT_FLAGS_EXACT,
+                    '=',
+                    ',',
+                )
+                .unwrap(),
+            "threads=1,bitexact=false,quality=0.500000,aspect_ratio=1/1,metadata=default,preset_level=0"
+        );
+        assert_eq!(
+            defaults
+                .serialize_avoptions(
+                    OptionFlags::empty(),
+                    OptionSerializeFlags::OPT_FLAGS_EXACT,
+                    '=',
+                    ',',
+                )
+                .unwrap(),
+            ""
+        );
+        assert_eq!(
+            defaults
+                .serialize_avoptions(OptionFlags::EXPORT, OptionSerializeFlags::empty(), '=', ',',)
+                .unwrap(),
+            "exported=0"
+        );
+
+        let mut changed = sample_flagged_options();
+        changed.set_avoption_from_str("threads", "8").unwrap();
+        changed.set_avoption_from_str("bitexact", "true").unwrap();
+        changed
+            .set_avoption_from_str("metadata", "title=clip,segment\\one")
+            .unwrap();
+        changed
+            .set_avoption_from_str("preset_level", "slow")
+            .unwrap();
+        assert_eq!(
+            changed
+                .serialize_avoptions(
+                    OptionFlags::empty(),
+                    OptionSerializeFlags::SKIP_DEFAULTS,
+                    '=',
+                    ',',
+                )
+                .unwrap(),
+            "threads=8,bitexact=true,metadata=title\\=clip\\,segment\\\\one,preset_level=8,exported=0"
+        );
+
+        let with_child = sample_flagged_options_with_child();
+        assert_eq!(
+            with_child
+                .serialize_avoptions(
+                    OptionFlags::empty(),
+                    OptionSerializeFlags::SEARCH_CHILDREN,
+                    '=',
+                    ',',
+                )
+                .unwrap(),
+            "threads=2,child_only=5,child_readonly=0,threads=1,bitexact=false,quality=0.500000,aspect_ratio=1/1,metadata=default,preset_level=0,exported=0"
+        );
+        assert_eq!(
+            with_child
+                .serialize_avoptions(
+                    OptionFlags::DECODING_PARAM,
+                    OptionSerializeFlags::SEARCH_CHILDREN,
+                    '=',
+                    ',',
+                )
+                .unwrap(),
+            "threads=2,child_only=5,child_readonly=0"
+        );
+
+        assert_eq!(
+            defaults
+                .serialize_avoptions(
+                    OptionFlags::empty(),
+                    OptionSerializeFlags::empty(),
+                    '=',
+                    '=',
+                )
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert!(defaults
+            .serialize_avoptions(
+                OptionFlags::empty(),
+                OptionSerializeFlags::empty(),
+                '\\',
+                ',',
+            )
+            .is_err());
+        assert!(defaults
+            .serialize_avoptions(
+                OptionFlags::empty(),
+                OptionSerializeFlags::empty(),
+                '=',
+                '\0',
+            )
+            .is_err());
+    }
+
+    #[test]
     fn copy_avoptions_from_matches_bounded_ffmpeg_root_shape() {
         fn child_options() -> OptionSet {
             let mut child = OptionSet::new();
@@ -3195,6 +3539,171 @@ mod tests {
         assert!(query.searches_children());
         assert_eq!(query.name(), None);
         assert_eq!(query.unit(), None);
+    }
+
+    fn sample_flagged_options() -> OptionSet {
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 64 },
+                    OptionValue::Int(1),
+                    "worker count",
+                    OptionFlags::ENCODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "bitexact",
+                    OptionKind::Bool,
+                    OptionValue::Bool(false),
+                    "bit-exact output",
+                    OptionFlags::ENCODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "quality",
+                    OptionKind::Float { min: 0.0, max: 1.0 },
+                    OptionValue::Float(0.5),
+                    "quality",
+                    OptionFlags::ENCODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "aspect_ratio",
+                    OptionKind::Rational {
+                        min: Rational::ONE,
+                        max: Rational::new(16, 9).unwrap(),
+                    },
+                    OptionValue::Rational(Rational::ONE),
+                    "aspect ratio",
+                    OptionFlags::ENCODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "metadata",
+                    OptionKind::String { allow_empty: false },
+                    OptionValue::String("default".to_string()),
+                    "metadata",
+                    OptionFlags::ENCODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new_with_flags_and_unit(
+                    "preset_level",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(0),
+                    "preset level",
+                    OptionFlags::ENCODING_PARAM,
+                    Some("PRESET"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define_constant(
+                OptionConstant::new_with_flags(
+                    "PRESET",
+                    "fast",
+                    OptionValue::Int(2),
+                    "fast preset",
+                    OptionFlags::ENCODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define_constant(
+                OptionConstant::new_with_flags(
+                    "PRESET",
+                    "slow",
+                    OptionValue::Int(8),
+                    "slow preset",
+                    OptionFlags::ENCODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let exported = OptionDefinition::new_with_flags(
+            "exported",
+            OptionKind::Int { min: 0, max: 8 },
+            OptionValue::Int(4),
+            "read-only exported value",
+            OptionFlags::from_bits_truncate(
+                OptionFlags::EXPORT.bits() | OptionFlags::READONLY.bits(),
+            ),
+        )
+        .unwrap();
+        options
+            .define_with_current_value(exported, OptionValue::Int(0))
+            .unwrap();
+        options
+    }
+
+    fn sample_flagged_options_with_child() -> OptionSet {
+        let mut options = sample_flagged_options();
+        let mut child_options = OptionSet::new();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 16 },
+                    OptionValue::Int(2),
+                    "child worker count",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "child_only",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(5),
+                    "child-only value",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "child_readonly",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(0),
+                    "child read-only value",
+                    OptionFlags::from_bits_truncate(
+                        OptionFlags::DECODING_PARAM.bits() | OptionFlags::READONLY.bits(),
+                    ),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define_child(OptionChild::new("decoder", child_options, "decoder options").unwrap())
+            .unwrap();
+        options
     }
 
     fn sample_options() -> OptionSet {

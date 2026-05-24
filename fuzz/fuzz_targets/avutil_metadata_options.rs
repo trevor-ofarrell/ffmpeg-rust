@@ -3,7 +3,7 @@
 use avutil::{
     AvErrorCode, AvOptionRanges, Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant,
     OptionDefinition, OptionEntryMatch, OptionFlags, OptionKind, OptionQuery, OptionSearchFlags,
-    OptionSet, OptionValue, Rational, SetMode,
+    OptionSerializeFlags, OptionSet, OptionValue, Rational, SetMode,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -156,7 +156,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 21 {
+        match cursor.next().unwrap_or_default() % 22 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -355,6 +355,19 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 assert_option_set_invariants(&options);
             }
             18 => {
+                let opt_flags = option_flags_from(cursor.next());
+                let serialize_flags = option_serialize_flags_from(cursor.next());
+                let key_val_sep = separator_char_from(cursor.next());
+                let pairs_sep = separator_char_from(cursor.next());
+                let before = options.clone();
+                let result =
+                    options.serialize_avoptions(opt_flags, serialize_flags, key_val_sep, pairs_sep);
+                if let Ok(serialized) = result {
+                    assert!(!serialized.as_bytes().contains(&0));
+                }
+                assert_eq!(options, before);
+            }
+            19 => {
                 let before = options.clone();
                 let entries = options.avoption_entries();
                 assert_eq!(
@@ -387,7 +400,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
                 assert_eq!(options, before);
             }
-            19 => {
+            20 => {
                 let name = option_name_from(cursor);
                 let before = options.clone();
                 let result = options.remove_definition(&name);
@@ -794,6 +807,28 @@ fn exercise_fixtures() {
     assert_eq!(
         partial_options.get("bitexact"),
         Some(&OptionValue::Bool(false))
+    );
+    let serialized = options
+        .serialize_avoptions(
+            OptionFlags::empty(),
+            OptionSerializeFlags::empty(),
+            '=',
+            ',',
+        )
+        .unwrap();
+    assert!(serialized.contains("threads=8"));
+    assert!(serialized.contains("metadata=title\\=clip"));
+    assert_eq!(
+        options
+            .serialize_avoptions(
+                OptionFlags::empty(),
+                OptionSerializeFlags::empty(),
+                '=',
+                '=',
+            )
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
     );
 
     let mut copy_source = sample_options();
@@ -1437,6 +1472,23 @@ fn option_search_flags_from(byte: Option<u8>) -> OptionSearchFlags {
     }
 
     OptionSearchFlags::from_bits_truncate(bits | 0x8000_0000)
+}
+
+fn option_serialize_flags_from(byte: Option<u8>) -> OptionSerializeFlags {
+    let raw = u32::from(byte.unwrap_or_default());
+    let mut bits = 0;
+
+    if raw & 0x01 != 0 {
+        bits |= OptionSerializeFlags::SKIP_DEFAULTS.bits();
+    }
+    if raw & 0x02 != 0 {
+        bits |= OptionSerializeFlags::OPT_FLAGS_EXACT.bits();
+    }
+    if raw & 0x04 != 0 {
+        bits |= OptionSerializeFlags::SEARCH_CHILDREN.bits();
+    }
+
+    OptionSerializeFlags::from_bits_truncate(bits | 0x8000_0000)
 }
 
 fn option_definition_unit_from(cursor: &mut Cursor<'_>) -> Option<String> {
