@@ -6,7 +6,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use avutil::{BufferPool, BufferPoolAllocation, BufferPoolCallbacks, BufferRef};
+use avutil::{
+    BufferPool, BufferPoolAllocation, BufferPoolCallbacks, BufferRef, AV_BUFFER_REF_ABI_LAYOUT,
+};
 
 type ReleaseRows = Arc<Mutex<Vec<(usize, Vec<u8>)>>>;
 
@@ -56,6 +58,11 @@ fn libavutil_buffer_refs_match_current_model() {
 
 fn expected_rows() -> BTreeMap<String, Vec<String>> {
     let mut rows = BTreeMap::new();
+
+    rows.insert(
+        "buffer:abi-avbufferref-layout".to_string(),
+        buffer_abi_layout_fields(&AV_BUFFER_REF_ABI_LAYOUT),
+    );
 
     rows.insert(
         "buffer:alloc".to_string(),
@@ -918,6 +925,21 @@ fn buffer_fields(buffer: &BufferRef) -> Vec<String> {
     ]
 }
 
+fn buffer_abi_layout_fields(layout: &avutil::BufferAbiLayout) -> Vec<String> {
+    let mut fields = vec![
+        layout.name.to_string(),
+        layout.size.to_string(),
+        layout.align.to_string(),
+        layout.fields.len().to_string(),
+    ];
+    for field in layout.fields {
+        fields.push(field.name.to_string());
+        fields.push(field.offset.to_string());
+        fields.push(field.size.to_string());
+    }
+    fields
+}
+
 fn buffer_status_fields(buffer: &BufferRef) -> Vec<String> {
     vec![
         buffer.len().to_string(),
@@ -1190,7 +1212,21 @@ static void print_create_release(const char *label) {
     printf("\n");
 }
 
+#define PRINT_ABI_FIELD(type, field) \
+    printf("|%s|%zu|%zu", #field, offsetof(type, field), sizeof(((type *)0)->field))
+
+static void print_buffer_abi_layout(void) {
+    printf("buffer:abi-avbufferref-layout|AVBufferRef|%zu|%zu|3",
+           sizeof(AVBufferRef), (size_t)_Alignof(AVBufferRef));
+    PRINT_ABI_FIELD(AVBufferRef, buffer);
+    PRINT_ABI_FIELD(AVBufferRef, data);
+    PRINT_ABI_FIELD(AVBufferRef, size);
+    printf("\n");
+}
+
 int main(void) {
+    print_buffer_abi_layout();
+
     AVBufferRef *buf = av_buffer_alloc(4);
     fail_if(!buf, "av_buffer_alloc failed");
     print_status("buffer:alloc", buf);

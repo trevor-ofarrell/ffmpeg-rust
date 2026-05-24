@@ -2,6 +2,44 @@ use crate::{AvError, AvResult};
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BufferAbiField {
+    pub name: &'static str,
+    pub offset: usize,
+    pub size: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BufferAbiLayout {
+    pub name: &'static str,
+    pub size: usize,
+    pub align: usize,
+    pub fields: &'static [BufferAbiField],
+}
+
+pub const AV_BUFFER_REF_ABI_LAYOUT: BufferAbiLayout = BufferAbiLayout {
+    name: "AVBufferRef",
+    size: 24,
+    align: 8,
+    fields: &[
+        BufferAbiField {
+            name: "buffer",
+            offset: 0,
+            size: 8,
+        },
+        BufferAbiField {
+            name: "data",
+            offset: 8,
+            size: 8,
+        },
+        BufferAbiField {
+            name: "size",
+            offset: 16,
+            size: 8,
+        },
+    ],
+};
+
 #[derive(Clone)]
 pub struct BufferPoolCallbacks {
     allocate: PoolAllocateCallback,
@@ -1291,6 +1329,43 @@ impl BufferSlice {
 mod tests {
     use super::*;
     use crate::AvErrorKind;
+
+    #[test]
+    fn buffer_ref_public_abi_layout_matches_pinned_default_native_profile() {
+        assert_eq!(AV_BUFFER_REF_ABI_LAYOUT.name, "AVBufferRef");
+        assert_eq!(AV_BUFFER_REF_ABI_LAYOUT.size, 24);
+        assert_eq!(AV_BUFFER_REF_ABI_LAYOUT.align, 8);
+        assert_eq!(
+            AV_BUFFER_REF_ABI_LAYOUT.fields,
+            &[
+                BufferAbiField {
+                    name: "buffer",
+                    offset: 0,
+                    size: 8,
+                },
+                BufferAbiField {
+                    name: "data",
+                    offset: 8,
+                    size: 8,
+                },
+                BufferAbiField {
+                    name: "size",
+                    offset: 16,
+                    size: 8,
+                },
+            ]
+        );
+
+        assert!(AV_BUFFER_REF_ABI_LAYOUT.align.is_power_of_two());
+        for field in AV_BUFFER_REF_ABI_LAYOUT.fields {
+            assert!(
+                field.offset + field.size <= AV_BUFFER_REF_ABI_LAYOUT.size,
+                "{}.{} extends beyond the pinned struct size",
+                AV_BUFFER_REF_ABI_LAYOUT.name,
+                field.name
+            );
+        }
+    }
 
     #[test]
     fn buffer_ref_wraps_owned_and_copied_bytes() {
