@@ -1261,6 +1261,71 @@ fn exercise_fixtures() {
     );
     assert_eq!(dictionary_options, before_dictionary_errors);
 
+    let mut array_options = OptionSet::new();
+    array_options
+        .define(
+            OptionDefinition::new(
+                "ints",
+                OptionKind::array(OptionKind::Int { min: 0, max: 10 }, 0, Some(4), ',').unwrap(),
+                OptionValue::Array(vec![OptionValue::Int(1), OptionValue::Int(2)]),
+                "integer array",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    array_options
+        .define(
+            OptionDefinition::new(
+                "words",
+                OptionKind::array(OptionKind::String { allow_empty: true }, 0, Some(3), ',')
+                    .unwrap(),
+                OptionValue::Array(vec![
+                    OptionValue::String("alpha".to_owned()),
+                    OptionValue::String("beta,gamma".to_owned()),
+                ]),
+                "string array",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(array_options.get_avoption_string("ints").unwrap(), "1,2");
+    assert_eq!(
+        array_options.get_avoption_string("words").unwrap(),
+        "alpha,beta\\,gamma"
+    );
+    array_options.set_avoption_from_str("ints", "3,4").unwrap();
+    array_options
+        .set_avoption_from_str("words", "left,right\\,inner")
+        .unwrap();
+    assert_eq!(array_options.get_avoption_array_size("ints").unwrap(), 2);
+    assert_eq!(
+        array_options.get_avoption_array("ints", 0, 2).unwrap(),
+        vec![OptionValue::Int(3), OptionValue::Int(4)]
+    );
+    let before_array_errors = array_options.clone();
+    assert_eq!(
+        array_options
+            .set_avoption_from_str("ints", "7,11")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(
+        array_options
+            .set_avoption_from_str("words", "a,b,c,d")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        array_options
+            .query_avoption_ranges("ints")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::ENOSYS)
+    );
+    assert_eq!(array_options, before_array_errors);
+
     let mut video_rate_options = OptionSet::new();
     video_rate_options
         .define(
@@ -1993,7 +2058,8 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
         19 => OptionKind::Color,
         20 => OptionKind::Binary,
         21 => OptionKind::Dictionary,
-        22 => OptionKind::String { allow_empty: true },
+        22 => OptionKind::array(OptionKind::Int { min: 0, max: 10 }, 0, Some(4), ',').unwrap(),
+        23 => OptionKind::String { allow_empty: true },
         _ => OptionKind::String { allow_empty: false },
     };
     let default = default_value_for(&kind, cursor);
@@ -2168,6 +2234,20 @@ fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue 
             OptionValue::Binary(value)
         }
         OptionKind::Dictionary => OptionValue::Dictionary(generated_options_dictionary(cursor)),
+        OptionKind::Array(array) => {
+            let max_len = array.max_len().unwrap_or(4).min(4);
+            let min_len = array.min_len().min(max_len);
+            let extra = if max_len > min_len {
+                usize::from(cursor.next().unwrap_or_default()) % (max_len - min_len + 1)
+            } else {
+                0
+            };
+            let len = min_len + extra;
+            let values = (0..len)
+                .map(|_| default_value_for(array.element(), cursor))
+                .collect();
+            OptionValue::Array(values)
+        }
         OptionKind::String { allow_empty } => {
             let value = literal_from(cursor);
             if *allow_empty || !value.is_empty() {

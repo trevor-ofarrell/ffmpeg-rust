@@ -1573,6 +1573,131 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let array_defaults = array_options();
+    rows.insert(
+        "state:array-defaults".to_string(),
+        array_state_fields(&array_defaults),
+    );
+    insert_row(
+        &mut rows,
+        "get:array-defaults",
+        [
+            ret_value(array_defaults.get_avoption_string("ints")),
+            ret_value(array_defaults.get_avoption_string("words")),
+            ret_array_size(array_defaults.get_avoption_array_size("ints")),
+            ret_array_values(array_defaults.get_avoption_array("ints", 0, 2)),
+            ret_i64(array_defaults.get_avoption_int("ints")),
+        ],
+    );
+
+    let mut array_set = array_options();
+    let ret_set_ints = ret(array_set.set_avoption_from_str("ints", "3,4"));
+    let ret_set_words =
+        ret(array_set.set_avoption_from_str("words", "left,right\\,inner,slash\\\\tail"));
+    insert_row(
+        &mut rows,
+        "ret:set-array-strings",
+        [ret_set_ints, ret_set_words],
+    );
+    rows.insert(
+        "state:set-array-strings".to_string(),
+        array_state_fields(&array_set),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-array-strings",
+        [
+            ret_value(array_set.get_avoption_string("ints")),
+            ret_value(array_set.get_avoption_string("words")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-array-errors",
+        [
+            ret(array_set.set_avoption_from_str("ints", "7,11")),
+            ret(array_set.set_avoption_from_str("words", "a,b,c,d")),
+        ],
+    );
+    rows.insert(
+        "state:after-array-errors".to_string(),
+        array_state_fields(&array_set),
+    );
+
+    let mut array_required = array_options();
+    insert_row(
+        &mut rows,
+        "ret:set-array-required-min",
+        [ret(array_required.set_avoption_from_str("required", "9"))],
+    );
+    rows.insert(
+        "state:after-array-required-min".to_string(),
+        array_required_fields(&array_required),
+    );
+
+    let mut typed_array_options = array_options();
+    typed_array_options
+        .set_avoption_from_str("ints", "3,4")
+        .unwrap();
+    let ret_insert = ret(typed_array_options.set_avoption_array(
+        "ints",
+        1,
+        &[OptionValue::Int(8)],
+        OptionSearchFlags::empty(),
+    ));
+    let ret_replace = ret(typed_array_options.set_avoption_array(
+        "ints",
+        1,
+        &[OptionValue::Int(5)],
+        OptionSearchFlags::ARRAY_REPLACE,
+    ));
+    let ret_remove =
+        ret(typed_array_options.remove_avoption_array("ints", 0, 1, OptionSearchFlags::empty()));
+    insert_row(
+        &mut rows,
+        "ret:set-array-typed",
+        [
+            ret_insert,
+            ret_replace,
+            ret_remove,
+            ret(typed_array_options.set_avoption_array(
+                "ints",
+                0,
+                &[OptionValue::String("bad".to_owned())],
+                OptionSearchFlags::empty(),
+            )),
+            ret(typed_array_options.remove_avoption_array(
+                "ints",
+                0,
+                3,
+                OptionSearchFlags::empty(),
+            )),
+            ret_array_size(typed_array_options.get_avoption_array_size("scalar")),
+            ret_array_values(typed_array_options.get_avoption_array("ints", 2, 1)),
+        ],
+    );
+    rows.insert(
+        "state:set-array-typed".to_string(),
+        array_state_fields(&typed_array_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-array-typed",
+        [
+            ret_array_size(typed_array_options.get_avoption_array_size("ints")),
+            ret_array_values(typed_array_options.get_avoption_array("ints", 0, 2)),
+            ret_value(typed_array_options.get_avoption_string("ints")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "query-ranges:array",
+        [
+            ret_ranges(typed_array_options.query_avoption_ranges("ints")),
+            ret_ranges(typed_array_options.query_avoption_ranges("missing")),
+        ],
+    );
+
     let video_defaults = video_rate_options();
     insert_row(
         &mut rows,
@@ -2152,6 +2277,63 @@ fn dictionary_options() -> OptionSet {
     options
 }
 
+fn array_options() -> OptionSet {
+    let mut options = OptionSet::new();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "ints",
+                OptionKind::array(OptionKind::Int { min: 0, max: 10 }, 0, Some(4), ',').unwrap(),
+                OptionValue::Array(vec![OptionValue::Int(1), OptionValue::Int(2)]),
+                "integer array",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "words",
+                OptionKind::array(OptionKind::String { allow_empty: true }, 0, Some(3), ',')
+                    .unwrap(),
+                OptionValue::Array(vec![
+                    OptionValue::String("alpha".to_owned()),
+                    OptionValue::String("beta,gamma".to_owned()),
+                ]),
+                "string array",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "required",
+                OptionKind::array(OptionKind::Int { min: 0, max: 10 }, 2, Some(3), ',').unwrap(),
+                OptionValue::Array(vec![OptionValue::Int(3), OptionValue::Int(4)]),
+                "required integer array",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "scalar",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(4),
+                "scalar",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+}
+
 fn video_rate_options() -> OptionSet {
     let mut options = OptionSet::new();
     options
@@ -2312,6 +2494,24 @@ fn dictionary_sequence_fields<const N: usize>(values: [&Dictionary; N]) -> Vec<S
     fields
 }
 
+fn array_state_fields(options: &OptionSet) -> Vec<String> {
+    let mut fields = array_fields(&array_value(options, "ints"));
+    fields.extend(array_fields(&array_value(options, "words")));
+    fields.extend(array_fields(&array_value(options, "required")));
+    fields.push(int_value(options, "scalar").to_string());
+    fields
+}
+
+fn array_required_fields(options: &OptionSet) -> Vec<String> {
+    array_fields(&array_value(options, "required"))
+}
+
+fn array_fields(values: &[OptionValue]) -> Vec<String> {
+    let mut fields = vec![values.len().to_string()];
+    fields.extend(values.iter().map(array_value_field));
+    fields
+}
+
 fn video_rate_state_fields(options: &OptionSet) -> [String; 3] {
     let rate = video_rate_value(options, "rate");
     [
@@ -2463,6 +2663,42 @@ fn dictionary_value(options: &OptionSet, name: &str) -> Dictionary {
     }
 }
 
+fn array_value(options: &OptionSet, name: &str) -> Vec<OptionValue> {
+    match options.get(name) {
+        Some(OptionValue::Array(value)) => value.clone(),
+        other => panic!("expected array option `{name}`, got {other:?}"),
+    }
+}
+
+fn array_value_field(value: &OptionValue) -> String {
+    match value {
+        OptionValue::Bool(value) => bool_int(*value).to_owned(),
+        OptionValue::Int(value) => value.to_string(),
+        OptionValue::Duration(value) => value.to_string(),
+        OptionValue::ImageSize { width, height } => format!("{width}x{height}"),
+        OptionValue::PixelFormat(value) => pixel_format_field(*value),
+        OptionValue::SampleFormat(value) => sample_format_field(*value),
+        OptionValue::ChannelLayout(value) => value.describe(),
+        OptionValue::VideoRate(value) | OptionValue::Rational(value) => {
+            format!("{}/{}", value.num(), value.den())
+        }
+        OptionValue::Color(value) => {
+            let rgba = value.rgba();
+            format!(
+                "0x{:02x}{:02x}{:02x}{:02x}",
+                rgba[0], rgba[1], rgba[2], rgba[3]
+            )
+        }
+        OptionValue::Binary(value) => binary_field(value),
+        OptionValue::Dictionary(value) => value
+            .to_pairs_string('=', ':')
+            .expect("dictionary AVOption values use valid separators"),
+        OptionValue::Array(values) => format!("nested:{}", values.len()),
+        OptionValue::Float(value) => format!("{value:.6}"),
+        OptionValue::String(value) => value.clone(),
+    }
+}
+
 fn binary_field(value: &[u8]) -> String {
     let mut formatted = String::with_capacity(value.len() * 2);
     for byte in value {
@@ -2569,6 +2805,34 @@ fn ret_count(result: avutil::AvResult<usize>) -> String {
             .code()
             .map(|code| code.raw().to_string())
             .unwrap_or_else(|| "no-code".to_owned()),
+    }
+}
+
+fn ret_array_size(result: avutil::AvResult<usize>) -> String {
+    match result {
+        Ok(count) => format!("0:{count}"),
+        Err(err) => format!(
+            "{}:0",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
+fn ret_array_values(result: avutil::AvResult<Vec<OptionValue>>) -> String {
+    match result {
+        Ok(values) => {
+            let mut fields = vec!["0".to_owned(), values.len().to_string()];
+            fields.extend(values.iter().map(array_value_field));
+            fields.join(":")
+        }
+        Err(err) => format!(
+            "{}:0",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
     }
 }
 
@@ -2877,6 +3141,17 @@ typedef struct DictionaryOptions {
     int64_t scalar;
 } DictionaryOptions;
 
+typedef struct ArrayOptions {
+    const AVClass *av_class;
+    int64_t *ints;
+    unsigned ints_count;
+    char **words;
+    unsigned words_count;
+    int64_t *required;
+    unsigned required_count;
+    int64_t scalar;
+} ArrayOptions;
+
 typedef struct VideoRateOptions {
     const AVClass *av_class;
     AVRational rate;
@@ -3007,6 +3282,39 @@ static const AVOption dictionary_options[] = {
     { NULL }
 };
 
+static const AVOptionArrayDef ints_array_def = {
+    .def = "1,2",
+    .size_min = 0,
+    .size_max = 4,
+    .sep = ',',
+};
+
+static const AVOptionArrayDef words_array_def = {
+    .def = "alpha,beta\\,gamma",
+    .size_min = 0,
+    .size_max = 3,
+    .sep = ',',
+};
+
+static const AVOptionArrayDef required_array_def = {
+    .def = "3,4",
+    .size_min = 2,
+    .size_max = 3,
+    .sep = ',',
+};
+
+static const AVOption array_options[] = {
+    { "ints", "integer array", offsetof(ArrayOptions, ints),
+      AV_OPT_TYPE_INT64 | AV_OPT_TYPE_FLAG_ARRAY, { .arr = &ints_array_def }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
+    { "words", "string array", offsetof(ArrayOptions, words),
+      AV_OPT_TYPE_STRING | AV_OPT_TYPE_FLAG_ARRAY, { .arr = &words_array_def }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
+    { "required", "required integer array", offsetof(ArrayOptions, required),
+      AV_OPT_TYPE_INT64 | AV_OPT_TYPE_FLAG_ARRAY, { .arr = &required_array_def }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
+    { "scalar", "scalar", offsetof(ArrayOptions, scalar),
+      AV_OPT_TYPE_INT64, { .i64 = 4 }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL }
+};
+
 static const AVClass image_size_class = {
     .class_name = "rust-options-oracle-image-size",
     .item_name = av_default_item_name,
@@ -3046,6 +3354,13 @@ static const AVClass dictionary_class = {
     .class_name = "rust-options-oracle-dictionary",
     .item_name = av_default_item_name,
     .option = dictionary_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
+static const AVClass array_class = {
+    .class_name = "rust-options-oracle-array",
+    .item_name = av_default_item_name,
+    .option = array_options,
     .version = LIBAVUTIL_VERSION_INT,
 };
 
@@ -3126,6 +3441,12 @@ static void init_binary_context(BinaryOptions *ctx) {
 static void init_dictionary_context(DictionaryOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &dictionary_class;
+    av_opt_set_defaults(ctx);
+}
+
+static void init_array_context(ArrayOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &array_class;
     av_opt_set_defaults(ctx);
 }
 
@@ -4244,6 +4565,128 @@ static void print_dictionary_rows(void) {
     av_opt_free(&ctx);
 }
 
+static void print_int64_array_values(const int64_t *values, unsigned count) {
+    printf("|%u", count);
+    for (unsigned i = 0; i < count; i++)
+        printf("|%" PRId64, values[i]);
+}
+
+static void print_string_array_values(char *const *values, unsigned count) {
+    printf("|%u", count);
+    for (unsigned i = 0; i < count; i++)
+        printf("|%s", values[i] ? values[i] : "<null>");
+}
+
+static void print_array_state(const char *name, const ArrayOptions *ctx) {
+    printf("%s", name);
+    print_int64_array_values(ctx->ints, ctx->ints_count);
+    print_string_array_values(ctx->words, ctx->words_count);
+    print_int64_array_values(ctx->required, ctx->required_count);
+    printf("|%" PRId64 "\n", ctx->scalar);
+}
+
+static void print_array_required_state(const char *name, const ArrayOptions *ctx) {
+    printf("%s", name);
+    print_int64_array_values(ctx->required, ctx->required_count);
+    printf("\n");
+}
+
+static void print_get_array_size_value(const void *ctx, const char *name, int search_flags) {
+    unsigned size = 0;
+    int ret = av_opt_get_array_size((void *)ctx, name, search_flags, &size);
+    printf("|%d:%u", ret, size);
+}
+
+static void print_get_array_int64_value(const void *ctx, const char *name,
+                                        unsigned start, unsigned count) {
+    int64_t values[8] = { 0 };
+    int ret = av_opt_get_array((void *)ctx, name, 0, start, count,
+                               AV_OPT_TYPE_INT64, values);
+    printf("|%d:%u", ret, ret < 0 ? 0 : count);
+    if (ret >= 0) {
+        for (unsigned i = 0; i < count; i++)
+            printf(":%" PRId64, values[i]);
+    }
+}
+
+static void print_array_rows(void) {
+    ArrayOptions ctx;
+    int ret_set_ints;
+    int ret_set_words;
+    int ret_int_range;
+    int ret_words_max;
+    int ret_required_min;
+    int ret_insert;
+    int ret_replace;
+    int ret_remove;
+    int ret_wrong_type;
+    int ret_remove_range;
+    int64_t insert_value[] = { 8 };
+    int64_t replace_value[] = { 5 };
+    const char *bad_value[] = { "bad" };
+
+    init_array_context(&ctx);
+    print_array_state("state:array-defaults", &ctx);
+    printf("get:array-defaults");
+    print_get_value(&ctx, "ints");
+    print_get_value(&ctx, "words");
+    print_get_array_size_value(&ctx, "ints", 0);
+    print_get_array_int64_value(&ctx, "ints", 0, 2);
+    print_get_int_value(&ctx, "ints", 0);
+    printf("\n");
+
+    ret_set_ints = av_opt_set(&ctx, "ints", "3,4", 0);
+    ret_set_words = av_opt_set(&ctx, "words", "left,right\\,inner,slash\\\\tail", 0);
+    printf("ret:set-array-strings|%d|%d\n", ret_set_ints, ret_set_words);
+    print_array_state("state:set-array-strings", &ctx);
+    printf("get:set-array-strings");
+    print_get_value(&ctx, "ints");
+    print_get_value(&ctx, "words");
+    printf("\n");
+
+    ret_int_range = av_opt_set(&ctx, "ints", "7,11", 0);
+    ret_words_max = av_opt_set(&ctx, "words", "a,b,c,d", 0);
+    printf("ret:set-array-errors|%d|%d\n", ret_int_range, ret_words_max);
+    print_array_state("state:after-array-errors", &ctx);
+    av_opt_free(&ctx);
+
+    init_array_context(&ctx);
+    ret_required_min = av_opt_set(&ctx, "required", "9", 0);
+    printf("ret:set-array-required-min|%d\n", ret_required_min);
+    print_array_required_state("state:after-array-required-min", &ctx);
+    av_opt_free(&ctx);
+
+    init_array_context(&ctx);
+    av_opt_set(&ctx, "ints", "3,4", 0);
+    ret_insert = av_opt_set_array(&ctx, "ints", 0, 1, 1,
+                                  AV_OPT_TYPE_INT64, insert_value);
+    ret_replace = av_opt_set_array(&ctx, "ints", AV_OPT_ARRAY_REPLACE, 1, 1,
+                                   AV_OPT_TYPE_INT64, replace_value);
+    ret_remove = av_opt_set_array(&ctx, "ints", 0, 0, 1,
+                                  AV_OPT_TYPE_INT64, NULL);
+    ret_wrong_type = av_opt_set_array(&ctx, "ints", 0, 0, 1,
+                                      AV_OPT_TYPE_STRING, bad_value);
+    ret_remove_range = av_opt_set_array(&ctx, "ints", 0, 0, 3,
+                                        AV_OPT_TYPE_INT64, NULL);
+    printf("ret:set-array-typed|%d|%d|%d|%d|%d",
+           ret_insert, ret_replace, ret_remove, ret_wrong_type, ret_remove_range);
+    print_get_array_size_value(&ctx, "scalar", 0);
+    print_get_array_int64_value(&ctx, "ints", 2, 1);
+    printf("\n");
+    print_array_state("state:set-array-typed", &ctx);
+    printf("get:set-array-typed");
+    print_get_array_size_value(&ctx, "ints", 0);
+    print_get_array_int64_value(&ctx, "ints", 0, 2);
+    print_get_value(&ctx, "ints");
+    printf("\n");
+
+    printf("query-ranges:array");
+    print_query_range_value(&ctx, "ints");
+    print_query_range_value(&ctx, "missing");
+    printf("\n");
+    av_opt_free(&ctx);
+}
+
 static void print_video_rate_state(const char *name, const VideoRateOptions *ctx) {
     printf("%s|%d|%d|%" PRId64 "\n", name, ctx->rate.num, ctx->rate.den, ctx->scalar);
 }
@@ -4604,6 +5047,7 @@ int main(void) {
     print_channel_layout_rows();
     print_binary_rows();
     print_dictionary_rows();
+    print_array_rows();
     print_video_rate_rows();
     print_color_rows();
 

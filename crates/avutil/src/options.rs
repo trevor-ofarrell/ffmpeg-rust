@@ -19,6 +19,7 @@ pub enum OptionValue {
     Color(RgbaColor),
     Binary(Vec<u8>),
     Dictionary(Dictionary),
+    Array(Vec<OptionValue>),
     Float(f64),
     Rational(Rational),
     String(String),
@@ -37,9 +38,72 @@ pub enum OptionKind {
     Color,
     Binary,
     Dictionary,
+    Array(OptionArrayKind),
     Float { min: f64, max: f64 },
     Rational { min: Rational, max: Rational },
     String { allow_empty: bool },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct OptionArrayKind {
+    element: Box<OptionKind>,
+    min_len: usize,
+    max_len: Option<usize>,
+    separator: char,
+}
+
+impl OptionArrayKind {
+    pub fn new(
+        element: OptionKind,
+        min_len: usize,
+        max_len: Option<usize>,
+        separator: char,
+    ) -> AvResult<Self> {
+        let separator = if separator == '\0' { ',' } else { separator };
+        if let Some(max_len) = max_len {
+            if min_len > max_len {
+                return Err(AvError::invalid_argument(
+                    "array option minimum length must be <= maximum length",
+                ));
+            }
+        }
+        validate_array_separator(separator)?;
+        validate_array_element_kind(&element)?;
+
+        Ok(Self {
+            element: Box::new(element),
+            min_len,
+            max_len,
+            separator,
+        })
+    }
+
+    pub fn element(&self) -> &OptionKind {
+        &self.element
+    }
+
+    pub fn min_len(&self) -> usize {
+        self.min_len
+    }
+
+    pub fn max_len(&self) -> Option<usize> {
+        self.max_len
+    }
+
+    pub fn separator(&self) -> char {
+        self.separator
+    }
+}
+
+impl OptionKind {
+    pub fn array(
+        element: OptionKind,
+        min_len: usize,
+        max_len: Option<usize>,
+        separator: char,
+    ) -> AvResult<Self> {
+        OptionArrayKind::new(element, min_len, max_len, separator).map(Self::Array)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -340,8 +404,9 @@ pub struct OptionSearchFlags {
 impl OptionSearchFlags {
     pub const CHILDREN: Self = Self { bits: 1 << 0 };
     pub const FAKE_OBJ: Self = Self { bits: 1 << 1 };
+    pub const ARRAY_REPLACE: Self = Self { bits: 1 << 3 };
 
-    const KNOWN_BITS: u32 = Self::CHILDREN.bits | Self::FAKE_OBJ.bits;
+    const KNOWN_BITS: u32 = Self::CHILDREN.bits | Self::FAKE_OBJ.bits | Self::ARRAY_REPLACE.bits;
 
     pub const fn empty() -> Self {
         Self { bits: 0 }
@@ -613,6 +678,7 @@ impl OptionDefinition {
             OptionKind::Color => OptionValue::Color(parse_color(raw)?),
             OptionKind::Binary => OptionValue::Binary(parse_binary(raw)?),
             OptionKind::Dictionary => OptionValue::Dictionary(parse_dictionary(raw)?),
+            OptionKind::Array(ref array) => OptionValue::Array(parse_option_array(raw, array)?),
             OptionKind::Float { .. } => OptionValue::Float(parse_float(raw)?),
             OptionKind::Rational { .. } => OptionValue::Rational(parse_rational(raw)?),
             OptionKind::String { .. } => OptionValue::String(raw.to_owned()),
@@ -1018,7 +1084,10 @@ impl OptionSet {
 
     pub fn get_avoption_string(&self, name: &str) -> AvResult<String> {
         let index = self.avoption_index(name)?;
-        Ok(format_avoption_value(&self.values[index]))
+        Ok(format_avoption_value_for_kind(
+            self.definitions[index].kind(),
+            &self.values[index],
+        ))
     }
 
     pub fn get_avoption_string_with_flags(
@@ -1034,7 +1103,10 @@ impl OptionSet {
         if search_flags.contains(OptionSearchFlags::CHILDREN) {
             for child in &self.children {
                 if let Some(index) = child.options.find_exact_index(name) {
-                    return Ok(format_avoption_value(&child.options.values[index]));
+                    return Ok(format_avoption_value_for_kind(
+                        child.options.definitions[index].kind(),
+                        &child.options.values[index],
+                    ));
                 }
             }
         }
@@ -1067,7 +1139,7 @@ impl OptionSet {
         }
         if matches!(
             self.definitions[index].kind(),
-            OptionKind::Binary | OptionKind::Dictionary
+            OptionKind::Binary | OptionKind::Dictionary | OptionKind::Array(_)
         ) {
             return Err(AvError::with_code(
                 AvErrorKind::Unsupported,
@@ -1145,6 +1217,23 @@ impl OptionSet {
                     return Err(err);
                 }
             }
+        }
+        if let OptionKind::Array(array) = self.definitions[index].kind() {
+            let values = parse_avoption_array(raw, array, self.definitions[index].name())?;
+            if values.len() < array.min_len() {
+                self.values[index] = OptionValue::Array(Vec::new());
+                return Err(AvError::with_code(
+                    AvErrorKind::InvalidArgument,
+                    AvErrorCode::EINVAL,
+                    format!(
+                        "Cannot assign fewer than {} elements to array option {}",
+                        array.min_len(),
+                        self.definitions[index].name()
+                    ),
+                ));
+            }
+            self.values[index] = OptionValue::Array(values);
+            return Ok(());
         }
         let value = self.parse_avoption_value(index, raw)?;
         self.values[index] = value;
@@ -1652,6 +1741,124 @@ impl OptionSet {
         self.get_avoption_dictionary_at_index(index)
     }
 
+    pub fn get_avoption_array_size(&self, name: &str) -> AvResult<usize> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_array_size_at_index(index)
+    }
+
+    pub fn get_avoption_array_size_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<usize> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child.options.get_avoption_array_size_at_index(index);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.get_avoption_array_size_at_index(index)
+    }
+
+    pub fn get_avoption_array(
+        &self,
+        name: &str,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<OptionValue>> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_array_at_index(index, start_elem, nb_elems)
+    }
+
+    pub fn get_avoption_array_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<OptionValue>> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child
+                        .options
+                        .get_avoption_array_at_index(index, start_elem, nb_elems);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.get_avoption_array_at_index(index, start_elem, nb_elems)
+    }
+
+    pub fn set_avoption_array(
+        &mut self,
+        name: &str,
+        start_elem: usize,
+        values: &[OptionValue],
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &mut self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child.options.set_avoption_array_at_index(
+                        index,
+                        start_elem,
+                        values,
+                        search_flags,
+                    );
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.set_avoption_array_at_index(index, start_elem, values, search_flags)
+    }
+
+    pub fn remove_avoption_array(
+        &mut self,
+        name: &str,
+        start_elem: usize,
+        nb_elems: usize,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &mut self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child
+                        .options
+                        .remove_avoption_array_at_index(index, start_elem, nb_elems);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.remove_avoption_array_at_index(index, start_elem, nb_elems)
+    }
+
     pub fn set_avoptions_from_dict(
         &mut self,
         options: &mut Dictionary,
@@ -1822,7 +2029,7 @@ impl OptionSet {
             field.push(key_val_sep);
             push_avoption_serialize_escaped(
                 &mut field,
-                &format_avoption_value(value),
+                &format_avoption_value_for_kind(definition.kind(), value),
                 key_val_sep,
                 pairs_sep,
             );
@@ -2128,6 +2335,163 @@ impl OptionSet {
         }
     }
 
+    fn get_avoption_array_size_at_index(&self, index: usize) -> AvResult<usize> {
+        if !matches!(self.definitions[index].kind(), OptionKind::Array(_)) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not an array",
+                self.definitions[index].name()
+            )));
+        }
+        match &self.values[index] {
+            OptionValue::Array(values) => Ok(values.len()),
+            _ => Err(AvError::invalid_argument(format!(
+                "AVOption `{}` storage is not an array",
+                self.definitions[index].name()
+            ))),
+        }
+    }
+
+    fn get_avoption_array_at_index(
+        &self,
+        index: usize,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<OptionValue>> {
+        if !matches!(self.definitions[index].kind(), OptionKind::Array(_)) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not an array",
+                self.definitions[index].name()
+            )));
+        }
+        let values = match &self.values[index] {
+            OptionValue::Array(values) => values,
+            _ => {
+                return Err(AvError::invalid_argument(format!(
+                    "AVOption `{}` storage is not an array",
+                    self.definitions[index].name()
+                )))
+            }
+        };
+        if start_elem >= values.len() || values.len().saturating_sub(start_elem) < nb_elems {
+            return Err(AvError::invalid_argument(format!(
+                "array AVOption `{}` range is outside the current array",
+                self.definitions[index].name()
+            )));
+        }
+
+        Ok(values[start_elem..start_elem + nb_elems].to_vec())
+    }
+
+    fn set_avoption_array_at_index(
+        &mut self,
+        index: usize,
+        start_elem: usize,
+        values: &[OptionValue],
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        self.ensure_writable(index)?;
+        let array = match self.definitions[index].kind() {
+            OptionKind::Array(array) => array,
+            _ => {
+                return Err(AvError::invalid_argument(format!(
+                    "AVOption `{}` is not an array",
+                    self.definitions[index].name()
+                )))
+            }
+        };
+        let current = match &self.values[index] {
+            OptionValue::Array(values) => values,
+            _ => {
+                return Err(AvError::invalid_argument(format!(
+                    "AVOption `{}` storage is not an array",
+                    self.definitions[index].name()
+                )))
+            }
+        };
+        if start_elem > current.len() {
+            return Err(AvError::invalid_argument(format!(
+                "array AVOption `{}` insertion point is outside the current array",
+                self.definitions[index].name()
+            )));
+        }
+        for value in values {
+            validate_value_for_kind(array.element(), value)?;
+        }
+
+        let replacing = search_flags.contains(OptionSearchFlags::ARRAY_REPLACE);
+        let new_len = if replacing {
+            start_elem
+                .checked_add(values.len())
+                .map(|end| end.max(current.len()))
+        } else {
+            current.len().checked_add(values.len())
+        }
+        .ok_or_else(|| {
+            AvError::invalid_argument(format!(
+                "array AVOption `{}` size overflow",
+                self.definitions[index].name()
+            ))
+        })?;
+        validate_array_len(array, new_len, self.definitions[index].name())?;
+
+        let mut updated = current.clone();
+        if replacing {
+            if start_elem + values.len() > updated.len() {
+                updated.resize(
+                    start_elem + values.len(),
+                    OptionValue::String(String::new()),
+                );
+            }
+            for (offset, value) in values.iter().enumerate() {
+                updated[start_elem + offset] = value.clone();
+            }
+        } else {
+            updated.splice(start_elem..start_elem, values.iter().cloned());
+        }
+        self.values[index] = OptionValue::Array(updated);
+        Ok(())
+    }
+
+    fn remove_avoption_array_at_index(
+        &mut self,
+        index: usize,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<()> {
+        self.ensure_writable(index)?;
+        let array = match self.definitions[index].kind() {
+            OptionKind::Array(array) => array,
+            _ => {
+                return Err(AvError::invalid_argument(format!(
+                    "AVOption `{}` is not an array",
+                    self.definitions[index].name()
+                )))
+            }
+        };
+        let current = match &self.values[index] {
+            OptionValue::Array(values) => values,
+            _ => {
+                return Err(AvError::invalid_argument(format!(
+                    "AVOption `{}` storage is not an array",
+                    self.definitions[index].name()
+                )))
+            }
+        };
+        if start_elem > current.len() || current.len().saturating_sub(start_elem) < nb_elems {
+            return Err(AvError::invalid_argument(format!(
+                "array AVOption `{}` removal range is outside the current array",
+                self.definitions[index].name()
+            )));
+        }
+        let new_len = current.len() - nb_elems;
+        validate_array_len(array, new_len, self.definitions[index].name())?;
+
+        let mut updated = current.clone();
+        updated.drain(start_elem..start_elem + nb_elems);
+        self.values[index] = OptionValue::Array(updated);
+        Ok(())
+    }
+
     pub fn set_child(
         &mut self,
         child_name: &str,
@@ -2168,6 +2532,7 @@ impl OptionSet {
                 | OptionKind::ChannelLayout
                 | OptionKind::Binary
                 | OptionKind::Dictionary
+                | OptionKind::Array(_)
         ) {
             if let Some(unit) = self.definitions[index].unit() {
                 if let Some(constant) = self.find_exact_constant(unit, raw) {
@@ -2187,7 +2552,8 @@ impl OptionSet {
             | OptionKind::ChannelLayout
             | OptionKind::VideoRate { .. }
             | OptionKind::Color
-            | OptionKind::Dictionary => {
+            | OptionKind::Dictionary
+            | OptionKind::Array(_) => {
                 if matches!(self.definitions[index].kind(), OptionKind::Duration { .. }) {
                     let duration = parse_duration(raw)?;
                     return avoption_value_from_numeric(
@@ -2203,6 +2569,13 @@ impl OptionSet {
                         self.definitions[index].name(),
                         AvOptionNumericInput::Rational(rate),
                     );
+                }
+                if let OptionKind::Array(array) = self.definitions[index].kind() {
+                    return Ok(OptionValue::Array(parse_avoption_array(
+                        raw,
+                        array,
+                        self.definitions[index].name(),
+                    )?));
                 }
                 self.definitions[index].parse_value(raw)
             }
@@ -2695,6 +3068,166 @@ fn parse_dictionary(raw: &str) -> AvResult<Dictionary> {
     Ok(dict)
 }
 
+fn parse_option_array(raw: &str, array: &OptionArrayKind) -> AvResult<Vec<OptionValue>> {
+    let values = parse_array_elements(raw, array, "array option", |token| {
+        parse_scalar_option_value_for_kind(array.element(), token)
+    })?;
+    validate_array_len(array, values.len(), "array option")?;
+    Ok(values)
+}
+
+fn parse_avoption_array(
+    raw: &str,
+    array: &OptionArrayKind,
+    name: &str,
+) -> AvResult<Vec<OptionValue>> {
+    parse_array_elements(raw, array, name, |token| {
+        parse_scalar_avoption_value_for_kind(array.element(), name, token)
+    })
+}
+
+fn parse_array_elements<F>(
+    raw: &str,
+    array: &OptionArrayKind,
+    name: &str,
+    mut parse_element: F,
+) -> AvResult<Vec<OptionValue>>
+where
+    F: FnMut(&str) -> AvResult<OptionValue>,
+{
+    let mut values = Vec::new();
+    if raw.is_empty() {
+        return Ok(values);
+    }
+
+    let separator = array.separator();
+    let mut token = String::new();
+    let mut chars = raw.chars().peekable();
+    let mut last_was_separator = false;
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(escaped) = chars.next() {
+                token.push(escaped);
+            } else {
+                token.push(ch);
+            }
+            last_was_separator = false;
+            continue;
+        }
+
+        if ch == separator {
+            push_parsed_array_element(&mut values, &token, array, name, &mut parse_element)?;
+            token.clear();
+            last_was_separator = true;
+            continue;
+        }
+
+        token.push(ch);
+        last_was_separator = false;
+    }
+
+    if !last_was_separator {
+        push_parsed_array_element(&mut values, &token, array, name, &mut parse_element)?;
+    }
+
+    Ok(values)
+}
+
+fn push_parsed_array_element<F>(
+    values: &mut Vec<OptionValue>,
+    token: &str,
+    array: &OptionArrayKind,
+    name: &str,
+    parse_element: &mut F,
+) -> AvResult<()>
+where
+    F: FnMut(&str) -> AvResult<OptionValue>,
+{
+    if array
+        .max_len()
+        .is_some_and(|max_len| values.len() >= max_len)
+    {
+        return Err(AvError::with_code(
+            AvErrorKind::InvalidArgument,
+            AvErrorCode::EINVAL,
+            format!(
+                "Cannot assign more than {} elements to array option {}",
+                array.max_len().expect("checked above"),
+                name
+            ),
+        ));
+    }
+
+    let value = parse_element(token)?;
+    validate_value_for_kind(array.element(), &value)?;
+    values.push(value);
+    Ok(())
+}
+
+fn parse_scalar_option_value_for_kind(kind: &OptionKind, raw: &str) -> AvResult<OptionValue> {
+    match kind {
+        OptionKind::Bool => Ok(OptionValue::Bool(parse_bool(raw)?)),
+        OptionKind::Int { .. } => Ok(OptionValue::Int(parse_int(raw)?)),
+        OptionKind::Duration { .. } => Ok(OptionValue::Duration(parse_duration(raw)?)),
+        OptionKind::ImageSize => {
+            let (width, height) = parse_image_size(raw)?;
+            Ok(OptionValue::ImageSize { width, height })
+        }
+        OptionKind::PixelFormat { min, max } => Ok(OptionValue::PixelFormat(parse_pixel_format(
+            raw, *min, *max,
+        )?)),
+        OptionKind::SampleFormat { min, max } => Ok(OptionValue::SampleFormat(
+            parse_sample_format(raw, *min, *max)?,
+        )),
+        OptionKind::ChannelLayout => Ok(OptionValue::ChannelLayout(parse_channel_layout(raw)?)),
+        OptionKind::VideoRate { .. } => Ok(OptionValue::VideoRate(parse_video_rate(raw)?)),
+        OptionKind::Color => Ok(OptionValue::Color(parse_color(raw)?)),
+        OptionKind::Binary => Ok(OptionValue::Binary(parse_binary(raw)?)),
+        OptionKind::Dictionary => Ok(OptionValue::Dictionary(parse_dictionary(raw)?)),
+        OptionKind::Array(_) => Err(AvError::invalid_argument(
+            "nested AVOption arrays are not supported",
+        )),
+        OptionKind::Float { .. } => Ok(OptionValue::Float(parse_float(raw)?)),
+        OptionKind::Rational { .. } => Ok(OptionValue::Rational(parse_rational(raw)?)),
+        OptionKind::String { .. } => Ok(OptionValue::String(raw.to_owned())),
+    }
+}
+
+fn parse_scalar_avoption_value_for_kind(
+    kind: &OptionKind,
+    name: &str,
+    raw: &str,
+) -> AvResult<OptionValue> {
+    match kind {
+        OptionKind::Duration { .. } => {
+            avoption_value_from_numeric(kind, name, AvOptionNumericInput::Int(parse_duration(raw)?))
+        }
+        OptionKind::VideoRate { .. } => avoption_value_from_numeric(
+            kind,
+            name,
+            AvOptionNumericInput::Rational(parse_video_rate(raw)?),
+        ),
+        OptionKind::Int { .. } | OptionKind::Float { .. } | OptionKind::Rational { .. } => {
+            if matches!(kind, OptionKind::Rational { .. }) {
+                if let Some(rational) = parse_avoption_exact_rational_literal(raw)? {
+                    return avoption_value_from_numeric(
+                        kind,
+                        name,
+                        AvOptionNumericInput::Rational(rational),
+                    );
+                }
+            }
+            avoption_value_from_numeric(
+                kind,
+                name,
+                AvOptionNumericInput::Double(parse_avoption_numeric_expression(raw, &[])?),
+            )
+        }
+        _ => parse_scalar_option_value_for_kind(kind, raw),
+    }
+}
+
 fn hex_nibble(byte: u8) -> Option<u8> {
     match byte {
         b'0'..=b'9' => Some(byte - b'0'),
@@ -2894,6 +3427,18 @@ fn validate_kind(kind: &OptionKind) -> AvResult<()> {
         | OptionKind::Binary
         | OptionKind::Dictionary
         | OptionKind::String { .. } => Ok(()),
+        OptionKind::Array(ref array) => {
+            validate_array_element_kind(array.element())?;
+            validate_array_separator(array.separator())?;
+            if let Some(max_len) = array.max_len() {
+                if array.min_len() > max_len {
+                    return Err(AvError::invalid_argument(
+                        "array option minimum length must be <= maximum length",
+                    ));
+                }
+            }
+            Ok(())
+        }
         OptionKind::PixelFormat { min, max } => {
             if min > max {
                 return Err(AvError::invalid_argument(
@@ -2975,6 +3520,52 @@ fn validate_kind(kind: &OptionKind) -> AvResult<()> {
     }
 }
 
+fn validate_array_element_kind(kind: &OptionKind) -> AvResult<()> {
+    if matches!(kind, OptionKind::Array(_)) {
+        return Err(AvError::invalid_argument(
+            "nested array AVOptions are not supported",
+        ));
+    }
+    validate_kind(kind)
+}
+
+fn validate_array_separator(separator: char) -> AvResult<()> {
+    if !separator.is_ascii()
+        || !(separator.is_ascii_graphic() || separator == ' ')
+        || separator.is_ascii_alphanumeric()
+        || separator == '\\'
+    {
+        return Err(AvError::invalid_argument(
+            "array option separator must be printable ASCII, non-alphanumeric, and not backslash",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_array_len(array: &OptionArrayKind, len: usize, name: &str) -> AvResult<()> {
+    if len < array.min_len() {
+        return Err(AvError::with_code(
+            AvErrorKind::InvalidArgument,
+            AvErrorCode::EINVAL,
+            format!(
+                "Cannot assign fewer than {} elements to array option {}",
+                array.min_len(),
+                name
+            ),
+        ));
+    }
+    if let Some(max_len) = array.max_len() {
+        if len > max_len {
+            return Err(AvError::with_code(
+                AvErrorKind::InvalidArgument,
+                AvErrorCode::EINVAL,
+                format!("Cannot assign more than {max_len} elements to array option {name}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
     match *kind {
         OptionKind::Int { min, max } => Some(OptionRange {
@@ -3001,7 +3592,8 @@ fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
         | OptionKind::SampleFormat { .. }
         | OptionKind::ChannelLayout
         | OptionKind::Binary
-        | OptionKind::Dictionary => None,
+        | OptionKind::Dictionary
+        | OptionKind::Array(_) => None,
         OptionKind::Bool
         | OptionKind::ImageSize
         | OptionKind::Color
@@ -3048,6 +3640,7 @@ fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
         OptionKind::ChannelLayout => {}
         OptionKind::Binary => {}
         OptionKind::Dictionary => {}
+        OptionKind::Array(_) => {}
         OptionKind::VideoRate { .. } => {
             range.value_min = 1.0;
             range.value_max = i32::MAX as f64;
@@ -3199,6 +3792,9 @@ fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNu
         OptionValue::Dictionary(_) => Err(AvError::invalid_argument(format!(
             "AVOption `{name}` is not numeric"
         ))),
+        OptionValue::Array(_) => Err(AvError::invalid_argument(format!(
+            "AVOption `{name}` is not numeric"
+        ))),
         OptionValue::Float(value) => Ok(AvOptionNumberParts {
             num: *value,
             den: 1,
@@ -3301,6 +3897,15 @@ fn avoption_value_from_numeric(
             }
         }
         OptionKind::Dictionary => {
+            if value == 0.0 {
+                Err(AvError::invalid_argument(format!(
+                    "AVOption `{name}` is not numeric"
+                )))
+            } else {
+                Err(avoption_range_error(name, value, 0.0, 0.0))
+            }
+        }
+        OptionKind::Array(_) => {
             if value == 0.0 {
                 Err(AvError::invalid_argument(format!(
                     "AVOption `{name}` is not numeric"
@@ -3467,6 +4072,13 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
         (OptionKind::Color, OptionValue::Color(_)) => Ok(()),
         (OptionKind::Binary, OptionValue::Binary(_)) => Ok(()),
         (OptionKind::Dictionary, OptionValue::Dictionary(_)) => Ok(()),
+        (OptionKind::Array(array), OptionValue::Array(values)) => {
+            validate_array_len(array, values.len(), "array option")?;
+            for value in values {
+                validate_value_for_kind(array.element(), value)?;
+            }
+            Ok(())
+        }
         (OptionKind::Float { min, max }, OptionValue::Float(value)) => {
             if !value.is_finite() {
                 return Err(AvError::invalid_argument(
@@ -3556,6 +4168,9 @@ fn avoption_kind_min(kind: &OptionKind) -> AvResult<f64> {
         OptionKind::Dictionary => Err(AvError::invalid_argument(
             "dictionary AVOption does not have a numeric minimum",
         )),
+        OptionKind::Array(_) => Err(AvError::invalid_argument(
+            "array AVOption does not have a numeric minimum",
+        )),
         OptionKind::Float { min, .. } => Ok(min),
         OptionKind::Rational { min, .. } => Ok(min.to_f64()),
         OptionKind::String { .. } => Err(AvError::invalid_argument(
@@ -3586,6 +4201,9 @@ fn avoption_kind_max(kind: &OptionKind) -> AvResult<f64> {
         )),
         OptionKind::Dictionary => Err(AvError::invalid_argument(
             "dictionary AVOption does not have a numeric maximum",
+        )),
+        OptionKind::Array(_) => Err(AvError::invalid_argument(
+            "array AVOption does not have a numeric maximum",
         )),
         OptionKind::Float { max, .. } => Ok(max),
         OptionKind::Rational { max, .. } => Ok(max.to_f64()),
@@ -4557,6 +5175,33 @@ fn invalid_avoption_string(text: &str) -> AvError {
     AvError::invalid_argument(format!("invalid AVOption string near `{text}`"))
 }
 
+fn format_avoption_value_for_kind(kind: &OptionKind, value: &OptionValue) -> String {
+    if let (OptionKind::Array(array), OptionValue::Array(values)) = (kind, value) {
+        return format_avoption_array(values, array.separator());
+    }
+    format_avoption_value(value)
+}
+
+fn format_avoption_array(values: &[OptionValue], separator: char) -> String {
+    let mut output = String::new();
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            output.push(separator);
+        }
+        push_avoption_array_escaped(&mut output, &format_avoption_value(value), separator);
+    }
+    output
+}
+
+fn push_avoption_array_escaped(output: &mut String, value: &str, separator: char) {
+    for ch in value.chars() {
+        if ch == '\\' || ch == separator {
+            output.push('\\');
+        }
+        output.push(ch);
+    }
+}
+
 fn format_avoption_value(value: &OptionValue) -> String {
     match value {
         OptionValue::Bool(false) => "false".to_owned(),
@@ -4588,6 +5233,7 @@ fn format_avoption_value(value: &OptionValue) -> String {
         OptionValue::Dictionary(value) => value
             .to_pairs_string('=', ':')
             .expect("dictionary AVOption values use valid separators"),
+        OptionValue::Array(values) => format_avoption_array(values, ','),
         OptionValue::Float(value) => format!("{value:.6}"),
         OptionValue::Rational(value) => format!("{}/{}", value.num(), value.den()),
         OptionValue::String(value) => value.clone(),
@@ -4716,15 +5362,19 @@ mod tests {
     fn option_search_flags_match_ffmpeg_bits_and_truncate_unknown_bits() {
         assert_eq!(OptionSearchFlags::CHILDREN.bits(), 1 << 0);
         assert_eq!(OptionSearchFlags::FAKE_OBJ.bits(), 1 << 1);
+        assert_eq!(OptionSearchFlags::ARRAY_REPLACE.bits(), 1 << 3);
 
         let truncated = OptionSearchFlags::from_bits_truncate(u32::MAX);
 
         assert!(truncated.contains(OptionSearchFlags::CHILDREN));
         assert!(truncated.contains(OptionSearchFlags::FAKE_OBJ));
+        assert!(truncated.contains(OptionSearchFlags::ARRAY_REPLACE));
         assert!(truncated.intersects(OptionSearchFlags::CHILDREN));
         assert_eq!(
             truncated.bits(),
-            OptionSearchFlags::CHILDREN.bits() | OptionSearchFlags::FAKE_OBJ.bits()
+            OptionSearchFlags::CHILDREN.bits()
+                | OptionSearchFlags::FAKE_OBJ.bits()
+                | OptionSearchFlags::ARRAY_REPLACE.bits()
         );
         assert_eq!(OptionSearchFlags::empty().bits(), 0);
     }
@@ -5632,6 +6282,188 @@ mod tests {
         assert_eq!(
             options
                 .get_avoption_dictionary("scalar")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_typed_errors);
+    }
+
+    #[test]
+    fn array_options_parse_format_and_mutate_like_bounded_ffmpeg_shape() {
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new(
+                    "ints",
+                    OptionKind::array(OptionKind::Int { min: 0, max: 10 }, 0, Some(4), ',')
+                        .unwrap(),
+                    OptionValue::Array(vec![OptionValue::Int(1), OptionValue::Int(2)]),
+                    "integer array",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "words",
+                    OptionKind::array(OptionKind::String { allow_empty: true }, 0, Some(3), '|')
+                        .unwrap(),
+                    OptionValue::Array(vec![
+                        OptionValue::String("alpha".to_owned()),
+                        OptionValue::String("beta|gamma".to_owned()),
+                    ]),
+                    "string array",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "required",
+                    OptionKind::array(OptionKind::Int { min: 0, max: 10 }, 2, Some(3), ',')
+                        .unwrap(),
+                    OptionValue::Array(vec![OptionValue::Int(3), OptionValue::Int(4)]),
+                    "required integer array",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "scalar",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(4),
+                    "scalar",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(options.range("ints").unwrap(), None);
+        assert_eq!(options.get_avoption_array_size("ints").unwrap(), 2);
+        assert_eq!(
+            options.get_avoption_array("ints", 0, 2).unwrap(),
+            vec![OptionValue::Int(1), OptionValue::Int(2)]
+        );
+        assert_eq!(options.get_avoption_string("ints").unwrap(), "1,2");
+        assert_eq!(
+            options.get_avoption_string("words").unwrap(),
+            "alpha|beta\\|gamma"
+        );
+        assert_eq!(
+            options.query_avoption_ranges("ints").unwrap_err().code(),
+            Some(AvErrorCode::ENOSYS)
+        );
+
+        options.set_avoption_from_str("ints", "3,4").unwrap();
+        assert_eq!(
+            options.get("ints"),
+            Some(&OptionValue::Array(vec![
+                OptionValue::Int(3),
+                OptionValue::Int(4)
+            ]))
+        );
+        assert_eq!(options.get_avoption_string("ints").unwrap(), "3,4");
+
+        options
+            .set_avoption_from_str("words", "left|right\\|inner|slash\\\\tail")
+            .unwrap();
+        assert_eq!(
+            options.get("words"),
+            Some(&OptionValue::Array(vec![
+                OptionValue::String("left".to_owned()),
+                OptionValue::String("right|inner".to_owned()),
+                OptionValue::String("slash\\tail".to_owned()),
+            ]))
+        );
+        assert_eq!(
+            options.get_avoption_string("words").unwrap(),
+            "left|right\\|inner|slash\\\\tail"
+        );
+
+        let before_parse_errors = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_from_str("ints", "7,11")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(
+            options
+                .set_avoption_from_str("words", "a|b|c|d")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_parse_errors);
+
+        assert_eq!(
+            options
+                .set_avoption_from_str("required", "9")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.get("required"),
+            Some(&OptionValue::Array(Vec::new()))
+        );
+
+        options
+            .set_avoption_array(
+                "ints",
+                1,
+                &[OptionValue::Int(8)],
+                OptionSearchFlags::empty(),
+            )
+            .unwrap();
+        assert_eq!(options.get_avoption_string("ints").unwrap(), "3,8,4");
+        options
+            .set_avoption_array(
+                "ints",
+                1,
+                &[OptionValue::Int(5)],
+                OptionSearchFlags::ARRAY_REPLACE,
+            )
+            .unwrap();
+        assert_eq!(options.get_avoption_string("ints").unwrap(), "3,5,4");
+        options
+            .remove_avoption_array("ints", 0, 1, OptionSearchFlags::empty())
+            .unwrap();
+        assert_eq!(options.get_avoption_string("ints").unwrap(), "5,4");
+
+        let before_typed_errors = options.clone();
+        assert_eq!(
+            options
+                .get_avoption_array_size("scalar")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.get_avoption_array("ints", 2, 1).unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options
+                .set_avoption_array(
+                    "ints",
+                    0,
+                    &[OptionValue::String("bad".to_owned())],
+                    OptionSearchFlags::empty()
+                )
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options
+                .remove_avoption_array("ints", 0, 3, OptionSearchFlags::empty())
                 .unwrap_err()
                 .code(),
             Some(AvErrorCode::EINVAL)
