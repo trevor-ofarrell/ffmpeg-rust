@@ -556,12 +556,14 @@ FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p avutil 
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-color --target oracle-ffmpeg-colors --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
-`crates/fftools/tests/wav_oracle.rs` contains ignored WAV oracle tests for the current demuxer path. `wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle` creates a small PCM s16le WAV fixture through the Rust WAV muxer and compares Rust `-i <generated.wav> -f md5 -` output against pinned FFmpeg 8.1.1 `-c:a copy -f md5 -` output, so it requires only the oracle binary. It is wired into `tests/differential/mappings.txt` as both `avformat-wav-demuxer|oracle-wav-generated-md5` and `avutil-packet|oracle-wav-generated-md5`:
+`crates/fftools/tests/wav_oracle.rs` contains ignored WAV oracle tests for the current demuxer path. `wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle` creates a small PCM s16le WAV fixture through the Rust WAV muxer and compares Rust `-i <generated.wav> -f md5 -` output against pinned FFmpeg 8.1.1 `-c:a copy -f md5 -` output, so it requires only the oracle binary. `wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle` uses the same style of generated fixture and compares normalized Rust `-i <generated.wav> -f framecrc -` packet rows against pinned FFmpeg 8.1.1 `-c:a copy -f framecrc`, proving packet count, byte count, DTS, PTS, duration, size, and checksum. The generated rows are wired into `tests/differential/mappings.txt` as `oracle-wav-generated-md5` and `oracle-wav-generated-framecrc-records` for the relevant WAV, packet, framecrc, MD5, and CLI rows:
 
 ```sh
 FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p fftools --test wav_oracle wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle -- --ignored
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avformat-wav-demuxer --target oracle-wav-generated-md5 --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-packet --target oracle-wav-generated-md5 --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p fftools --test wav_oracle wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle -- --ignored
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component avutil-packet --component avformat-wav-demuxer --component avformat-framecrc-muxer --component fftools-ffmpeg-wav-framecrc-null --target oracle-wav-generated-framecrc-records --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
 `wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample` uses the FATE PCM s16le sample and is wired through `tests/fate/upstream-mappings.txt` as both `avformat-wav-demuxer|fate-wav-pcm-s16le-md5` and `avutil-packet|fate-wav-pcm-s16le-md5`. Run it directly with:

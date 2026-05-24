@@ -23,10 +23,80 @@ fn wav_pcm_s16le_generated_md5_matches_ffmpeg_oracle() {
 }
 
 #[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle() {
+    let payload = [
+        0x00, 0x00, 0x01, 0x00, 0xfe, 0xff, 0x7f, 0x00, 0x80, 0xff, 0x34, 0x12,
+    ];
+    let path = write_generated_wav("generated-pcm-s16le-framecrc", 2, 44_100, &payload);
+
+    compare_wav_framecrc(&path, payload.len());
+    remove_temp_file(&path);
+}
+
+#[test]
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle plus FATE_WAV_SAMPLE or FATE_SAMPLES"]
 fn wav_pcm_s16le_md5_matches_ffmpeg_oracle_sample() {
     let sample = fate_wav_sample();
     compare_wav_md5(&sample);
+}
+
+fn compare_wav_framecrc(sample_path: &Path, payload_len: usize) {
+    assert!(
+        sample_path.is_file(),
+        "WAV oracle input must point to an existing PCM s16le WAV file, got `{}`",
+        sample_path.display()
+    );
+
+    let oracle = oracle_ffmpeg();
+    let sample_arg = sample_path.to_string_lossy().into_owned();
+
+    let rust = ffmpeg_output(&strings(&[
+        "-hide_banner",
+        "-i",
+        sample_arg.as_str(),
+        "-f",
+        "framecrc",
+        "-",
+    ]))
+    .expect("Rust WAV framecrc command path should execute");
+
+    let oracle_output = Command::new(&oracle)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            sample_arg.as_str(),
+            "-c:a",
+            "copy",
+            "-f",
+            "framecrc",
+            "-",
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    assert!(
+        oracle_output.status.success(),
+        "oracle framecrc failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_output.status.code(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+
+    let oracle_stdout =
+        String::from_utf8(oracle_output.stdout).expect("oracle framecrc output should be UTF-8");
+
+    assert_eq!(rust.output_format(), Some("framecrc"));
+    assert_eq!(rust.packet_count(), 1);
+    assert_eq!(rust.byte_count(), u64::try_from(payload_len).unwrap());
+    assert!(rust.stderr().is_empty());
+    assert_eq!(
+        normalize_framecrc_records(rust.stdout()),
+        normalize_framecrc_records(&oracle_stdout)
+    );
 }
 
 fn compare_wav_md5(sample_path: &Path) {
@@ -80,6 +150,14 @@ fn compare_wav_md5(sample_path: &Path) {
     assert_eq!(rust.output_format(), Some("md5"));
     assert_eq!(rust.stdout().trim_end(), oracle_stdout.trim_end());
     assert!(rust.stderr().is_empty());
+}
+
+fn normalize_framecrc_records(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#') && !line.trim().is_empty())
+        .map(|line| line.split(',').map(str::trim).collect::<Vec<_>>().join("|"))
+        .collect()
 }
 
 fn fate_wav_sample() -> PathBuf {

@@ -13,10 +13,10 @@ The current code has meaningful local coverage for shared `avutil` primitives, i
 Strict parity status is still low:
 
 - Ledger rows currently tracked: 96
-- Rows marked `implemented`: 44
+- Rows marked `implemented`: 43
 - Rows marked `scaffolded`: 1
 - Rows marked `complete`: 11
-- Rows marked `differential_pass`, `fate_pass`, or `fuzzed`: 40
+- Rows marked `differential_pass`, `fate_pass`, or `fuzzed`: 41
 - Pinned FFmpeg oracle: installed locally through WSL wrappers under ignored `third_party/ffmpeg-oracle/`
 - Generated FFmpeg inventory snapshot: present locally under ignored `compat/ffmpeg-8.1.1/`
 - Upstream FATE sample execution: limited; one WAV sample is installed locally, but the full sample tree is still absent
