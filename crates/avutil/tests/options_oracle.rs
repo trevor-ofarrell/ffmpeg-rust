@@ -1803,6 +1803,58 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let mut zero_count_array_options = array_options();
+    zero_count_array_options
+        .set_avoption_from_str("ints", "3,4")
+        .unwrap();
+    let ret_zero_insert = ret(zero_count_array_options.set_avoption_array(
+        "ints",
+        2,
+        &[],
+        OptionSearchFlags::empty(),
+    ));
+    let ret_zero_replace = ret(zero_count_array_options.set_avoption_array(
+        "ints",
+        2,
+        &[],
+        OptionSearchFlags::ARRAY_REPLACE,
+    ));
+    let ret_zero_remove = ret(zero_count_array_options.remove_avoption_array(
+        "ints",
+        2,
+        0,
+        OptionSearchFlags::empty(),
+    ));
+    insert_row(
+        &mut rows,
+        "ret:set-array-zero-count",
+        [
+            ret_zero_insert,
+            ret_zero_replace,
+            ret_zero_remove,
+            ret_array_values(zero_count_array_options.get_avoption_array("ints", 3, 0)),
+        ],
+    );
+    rows.insert(
+        "state:set-array-zero-count".to_string(),
+        array_state_fields(&zero_count_array_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-array-zero-count",
+        [
+            ret_array_size(zero_count_array_options.get_avoption_array_size("ints")),
+            ret_array_values(zero_count_array_options.get_avoption_array("ints", 0, 2)),
+            ret_array_values(zero_count_array_options.get_avoption_array("ints", 2, 0)),
+            ret_array_strings(zero_count_array_options.get_avoption_array_strings("ints", 2, 0)),
+            ret_array_doubles(zero_count_array_options.get_avoption_array_doubles("ints", 2, 0)),
+            ret_array_rationals(
+                zero_count_array_options.get_avoption_array_rationals("ints", 2, 0),
+            ),
+            ret_value(zero_count_array_options.get_avoption_string("ints")),
+        ],
+    );
+
     let mut typed_string_array_options = array_options();
     typed_string_array_options
         .set_avoption_from_str("words", "left,right\\,inner")
@@ -4876,6 +4928,9 @@ static void print_array_rows(void) {
     int ret_int_q_replace;
     int ret_int_numeric_remove;
     int ret_int_q_bad;
+    int ret_zero_insert;
+    int ret_zero_replace;
+    int ret_zero_remove;
     int64_t insert_value[] = { 8 };
     int64_t replace_value[] = { 5 };
     const char *bad_value[] = { "bad" };
@@ -4985,6 +5040,30 @@ static void print_array_rows(void) {
     print_get_array_int64_value(&ctx, "ints", 0, 2);
     print_get_array_double_value(&ctx, "ints", 0, 2);
     print_get_array_q_value(&ctx, "ints", 0, 2);
+    print_get_value(&ctx, "ints");
+    printf("\n");
+    av_opt_free(&ctx);
+
+    init_array_context(&ctx);
+    av_opt_set(&ctx, "ints", "3,4", 0);
+    ret_zero_insert = av_opt_set_array(&ctx, "ints", 0, 2, 0,
+                                       AV_OPT_TYPE_INT64, insert_value);
+    ret_zero_replace = av_opt_set_array(&ctx, "ints", AV_OPT_ARRAY_REPLACE, 2, 0,
+                                        AV_OPT_TYPE_INT64, replace_value);
+    ret_zero_remove = av_opt_set_array(&ctx, "ints", 0, 2, 0,
+                                       AV_OPT_TYPE_INT64, NULL);
+    printf("ret:set-array-zero-count|%d|%d|%d",
+           ret_zero_insert, ret_zero_replace, ret_zero_remove);
+    print_get_array_int64_value(&ctx, "ints", 3, 0);
+    printf("\n");
+    print_array_state("state:set-array-zero-count", &ctx);
+    printf("get:set-array-zero-count");
+    print_get_array_size_value(&ctx, "ints", 0);
+    print_get_array_int64_value(&ctx, "ints", 0, 2);
+    print_get_array_int64_value(&ctx, "ints", 2, 0);
+    print_get_array_string_value(&ctx, "ints", 2, 0);
+    print_get_array_double_value(&ctx, "ints", 2, 0);
+    print_get_array_q_value(&ctx, "ints", 2, 0);
     print_get_value(&ctx, "ints");
     printf("\n");
     av_opt_free(&ctx);

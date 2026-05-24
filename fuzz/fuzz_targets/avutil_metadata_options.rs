@@ -1363,6 +1363,51 @@ fn exercise_fixtures() {
             .unwrap(),
         vec![Rational::new(6, 1).unwrap(), Rational::new(9, 1).unwrap()]
     );
+    assert_eq!(
+        array_options
+            .get_avoption_array("ints", 2, 0)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        array_options
+            .get_avoption_array_strings("ints", 2, 0)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        array_options
+            .get_avoption_array_doubles("ints", 2, 0)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        array_options
+            .get_avoption_array_rationals("ints", 2, 0)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    array_options
+        .set_avoption_array("ints", 2, &[], OptionSearchFlags::empty())
+        .unwrap();
+    array_options
+        .set_avoption_array("ints", 2, &[], OptionSearchFlags::ARRAY_REPLACE)
+        .unwrap();
+    array_options
+        .remove_avoption_array("ints", 2, 0, OptionSearchFlags::empty())
+        .unwrap();
+    assert_eq!(array_options.get_avoption_string("ints").unwrap(), "6,9");
+    assert_eq!(
+        array_options
+            .get_avoption_array("ints", 3, 0)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
     array_options
         .set_avoption_array(
             "words",

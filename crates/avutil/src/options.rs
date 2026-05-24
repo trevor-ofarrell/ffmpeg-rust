@@ -6750,6 +6750,41 @@ mod tests {
             options.get_avoption_array_rationals("ints", 0, 2).unwrap(),
             vec![Rational::new(6, 1).unwrap(), Rational::new(9, 1).unwrap()]
         );
+        assert_eq!(
+            options.get_avoption_array("ints", 2, 0).unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options
+                .get_avoption_array_strings("ints", 2, 0)
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options
+                .get_avoption_array_doubles("ints", 2, 0)
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options
+                .get_avoption_array_rationals("ints", 2, 0)
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        options
+            .set_avoption_array("ints", 2, &[], OptionSearchFlags::empty())
+            .unwrap();
+        options
+            .set_avoption_array("ints", 2, &[], OptionSearchFlags::ARRAY_REPLACE)
+            .unwrap();
+        options
+            .remove_avoption_array("ints", 2, 0, OptionSearchFlags::empty())
+            .unwrap();
+        assert_eq!(options.get_avoption_string("ints").unwrap(), "6,9");
 
         options
             .set_avoption_from_str("words", "left|right\\|inner")
@@ -6799,6 +6834,10 @@ mod tests {
         );
         assert_eq!(
             options.get_avoption_array("ints", 2, 1).unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.get_avoption_array("ints", 3, 0).unwrap_err().code(),
             Some(AvErrorCode::EINVAL)
         );
         assert_eq!(
