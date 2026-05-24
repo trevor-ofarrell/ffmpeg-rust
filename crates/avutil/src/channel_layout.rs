@@ -2335,6 +2335,10 @@ impl ChannelLayoutSpec {
         Self::Native(layout)
     }
 
+    pub fn empty() -> Self {
+        Self::Unspecified(UnspecifiedChannelLayout { channels: 0 })
+    }
+
     pub fn native_mask(mask: u64) -> AvResult<Self> {
         Ok(Self::NativeMask(NativeChannelMaskLayout::new(mask)?))
     }

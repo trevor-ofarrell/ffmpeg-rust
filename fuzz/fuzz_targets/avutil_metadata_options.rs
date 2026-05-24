@@ -1,10 +1,10 @@
 #![no_main]
 
 use avutil::{
-    AvErrorCode, AvOptionRanges, Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant,
-    OptionDefinition, OptionEntryMatch, OptionFlags, OptionKind, OptionQuery, OptionSearchFlags,
-    OptionSerializeFlags, OptionSet, OptionValue, PixelFormat, Rational, RgbaColor, SampleFormat,
-    SetMode,
+    AvErrorCode, AvOptionRanges, ChannelLayout, ChannelLayoutSpec, Dictionary, DictionarySet,
+    MatchMode, OptionChild, OptionConstant, OptionDefinition, OptionEntryMatch, OptionFlags,
+    OptionKind, OptionQuery, OptionSearchFlags, OptionSerializeFlags, OptionSet, OptionValue,
+    PixelFormat, Rational, RgbaColor, SampleFormat, SetMode,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -997,6 +997,93 @@ fn exercise_fixtures() {
     );
     assert_eq!(sample_format_options, before_sample_format_errors);
 
+    let mut channel_layout_options = OptionSet::new();
+    channel_layout_options
+        .define(
+            OptionDefinition::new(
+                "layout",
+                OptionKind::ChannelLayout,
+                OptionValue::ChannelLayout(ChannelLayoutSpec::native(ChannelLayout::stereo())),
+                "channel layout",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    channel_layout_options
+        .set_avoption_from_str("layout", "mono")
+        .unwrap();
+    assert_eq!(
+        channel_layout_options.get("layout"),
+        Some(&OptionValue::ChannelLayout(ChannelLayoutSpec::native(
+            ChannelLayout::mono()
+        )))
+    );
+    channel_layout_options
+        .set_avoption_from_str("layout", "5.1")
+        .unwrap();
+    assert_eq!(
+        channel_layout_options
+            .get_avoption_channel_layout("layout")
+            .unwrap()
+            .describe(),
+        "5.1"
+    );
+    channel_layout_options
+        .set_avoption_from_str("layout", "2C")
+        .unwrap();
+    assert_eq!(
+        channel_layout_options
+            .get_avoption_string("layout")
+            .unwrap(),
+        "2 channels"
+    );
+    assert_eq!(
+        channel_layout_options
+            .set_avoption_from_str("layout", "bad_layout")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        channel_layout_options
+            .get_avoption_string("layout")
+            .unwrap(),
+        "0 channels"
+    );
+    channel_layout_options
+        .set_avoption_channel_layout("layout", ChannelLayoutSpec::native(ChannelLayout::stereo()))
+        .unwrap();
+    let before_channel_layout_errors = channel_layout_options.clone();
+    assert_eq!(
+        channel_layout_options
+            .set_avoption_int("layout", 2)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(
+        channel_layout_options
+            .set_avoption_int("layout", 0)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        channel_layout_options
+            .get_avoption_int("layout")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        channel_layout_options
+            .query_avoption_ranges("layout")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::ENOSYS)
+    );
+    assert_eq!(channel_layout_options, before_channel_layout_errors);
+
     let mut video_rate_options = OptionSet::new();
     video_rate_options
         .define(
@@ -1162,6 +1249,7 @@ fn exercise_fixtures() {
             "size",
             "pix_fmt",
             "sample_fmt",
+            "layout",
             "aspect_ratio",
             "readonly",
             "preset_level",
@@ -1682,7 +1770,7 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
     let name = option_name_from(cursor);
     let help = literal_from(cursor);
     let kind_tag = cursor.next().unwrap_or_default();
-    let kind = match kind_tag % 21 {
+    let kind = match kind_tag % 22 {
         0 => OptionKind::Bool,
         1 => OptionKind::Int { min: 0, max: 64 },
         2 => OptionKind::Int { min: 8, max: 1 },
@@ -1722,8 +1810,9 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
             min: Rational::new(120, 1).unwrap(),
             max: Rational::ONE,
         },
-        18 => OptionKind::Color,
-        19 => OptionKind::String { allow_empty: true },
+        18 => OptionKind::ChannelLayout,
+        19 => OptionKind::Color,
+        20 => OptionKind::String { allow_empty: true },
         _ => OptionKind::String { allow_empty: false },
     };
     let default = default_value_for(&kind, cursor);
@@ -1859,6 +1948,9 @@ fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue 
                 OptionValue::SampleFormat(Some(SampleFormat::U8))
             }
         }
+        OptionKind::ChannelLayout => {
+            OptionValue::ChannelLayout(ChannelLayoutSpec::native(ChannelLayout::stereo()))
+        }
         OptionKind::Float { min, max } => {
             if min.is_finite() && max.is_finite() && min <= max {
                 OptionValue::Float(*min + (f64::from(cursor.next().unwrap_or_default()) / 255.0))
@@ -1982,6 +2074,17 @@ fn sample_options() -> OptionSet {
     options
         .define(
             OptionDefinition::new(
+                "layout",
+                OptionKind::ChannelLayout,
+                OptionValue::ChannelLayout(ChannelLayoutSpec::native(ChannelLayout::stereo())),
+                "channel layout",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new(
                 "aspect_ratio",
                 OptionKind::Rational {
                     min: Rational::ONE,
@@ -2047,7 +2150,7 @@ fn sample_options() -> OptionSet {
 }
 
 fn option_name_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 19 {
+    match cursor.next().unwrap_or_default() % 20 {
         0 => "threads".to_owned(),
         1 => "THREADS".to_owned(),
         2 => "bitexact".to_owned(),
@@ -2066,12 +2169,13 @@ fn option_name_from(cursor: &mut Cursor<'_>) -> String {
         15 => "color".to_owned(),
         16 => "pix_fmt".to_owned(),
         17 => "sample_fmt".to_owned(),
+        18 => "layout".to_owned(),
         _ => "preset_level".to_owned(),
     }
 }
 
 fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 64 {
+    match cursor.next().unwrap_or_default() % 69 {
         0 => "1".to_owned(),
         1 => "0".to_owned(),
         2 => "yes".to_owned(),
@@ -2136,12 +2240,17 @@ fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
         61 => "bad_sample_fmt".to_owned(),
         62 => "12".to_owned(),
         63 => "dbl".to_owned(),
+        64 => "mono".to_owned(),
+        65 => "5.1".to_owned(),
+        66 => "2C".to_owned(),
+        67 => "bad_layout".to_owned(),
+        68 => "0x3".to_owned(),
         _ => literal_from(cursor),
     }
 }
 
 fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
-    match cursor.next().unwrap_or_default() % 11 {
+    match cursor.next().unwrap_or_default() % 12 {
         0 => OptionValue::Bool(cursor.next().unwrap_or_default().is_multiple_of(2)),
         1 => OptionValue::Int(i64::from(cursor.next().unwrap_or_default()) - 32),
         2 => {
@@ -2205,6 +2314,15 @@ fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
                 _ => None,
             };
             OptionValue::SampleFormat(value)
+        }
+        10 => {
+            let value = match cursor.next().unwrap_or_default() % 4 {
+                0 => ChannelLayoutSpec::native(ChannelLayout::stereo()),
+                1 => ChannelLayoutSpec::native(ChannelLayout::mono()),
+                2 => ChannelLayoutSpec::native(ChannelLayout::five_one()),
+                _ => ChannelLayoutSpec::unspecified(2).unwrap(),
+            };
+            OptionValue::ChannelLayout(value)
         }
         _ => OptionValue::String(option_value_string_from(cursor)),
     }

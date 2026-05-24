@@ -6,9 +6,10 @@ use std::{
 };
 
 use avutil::{
-    AvOptionRanges, Dictionary, MatchMode, OptionChild, OptionConstant, OptionDefinition,
-    OptionEntryMatch, OptionFlags, OptionKind, OptionSearchFlags, OptionSerializeFlags, OptionSet,
-    OptionValue, PixelFormat, Rational, RgbaColor, SampleFormat, SetMode,
+    AvOptionRanges, ChannelLayout, ChannelLayoutSpec, Dictionary, MatchMode, OptionChild,
+    OptionConstant, OptionDefinition, OptionEntryMatch, OptionFlags, OptionKind, OptionSearchFlags,
+    OptionSerializeFlags, OptionSet, OptionValue, PixelFormat, Rational, RgbaColor, SampleFormat,
+    SetMode,
 };
 
 #[test]
@@ -1259,6 +1260,106 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let channel_layout_defaults = channel_layout_options();
+    insert_row(
+        &mut rows,
+        "state:channel-layout-defaults",
+        channel_layout_state_fields(&channel_layout_defaults),
+    );
+    insert_row(
+        &mut rows,
+        "get:channel-layout-defaults",
+        [
+            ret_channel_layout(channel_layout_defaults.get_avoption_channel_layout("layout")),
+            ret_value(channel_layout_defaults.get_avoption_string("layout")),
+            ret_i64(channel_layout_defaults.get_avoption_int("layout")),
+        ],
+    );
+
+    let mut channel_layout_set = channel_layout_options();
+    let ret_mono = ret(channel_layout_set.set_avoption_from_str("layout", "mono"));
+    let after_mono = channel_layout_value(&channel_layout_set, "layout");
+    let ret_five_one = ret(channel_layout_set.set_avoption_from_str("layout", "5.1"));
+    let after_five_one = channel_layout_value(&channel_layout_set, "layout");
+    let ret_unspecified = ret(channel_layout_set.set_avoption_from_str("layout", "2C"));
+    let after_unspecified = channel_layout_value(&channel_layout_set, "layout");
+    insert_row(
+        &mut rows,
+        "ret:set-channel-layout-strings",
+        [ret_mono, ret_five_one, ret_unspecified],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-channel-layout-strings",
+        [
+            after_mono.describe(),
+            after_five_one.describe(),
+            after_unspecified.describe(),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-channel-layout-strings",
+        [ret_value(channel_layout_set.get_avoption_string("layout"))],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-channel-layout-errors",
+        [
+            ret(channel_layout_set.set_avoption_from_str("layout", "bad")),
+            ret(channel_layout_set.set_avoption_from_str("layout", "0")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:after-channel-layout-errors",
+        channel_layout_state_fields(&channel_layout_set),
+    );
+
+    let mut typed_channel_layout_options = channel_layout_options();
+    insert_row(
+        &mut rows,
+        "ret:set-channel-layout-typed",
+        [
+            ret(typed_channel_layout_options.set_avoption_channel_layout(
+                "layout",
+                ChannelLayoutSpec::native(ChannelLayout::mono()),
+            )),
+            ret(typed_channel_layout_options.set_avoption_channel_layout(
+                "scalar",
+                ChannelLayoutSpec::native(ChannelLayout::stereo()),
+            )),
+            ret(typed_channel_layout_options.set_avoption_int("layout", 2)),
+            ret(typed_channel_layout_options.set_avoption_int("layout", 0)),
+            ret(typed_channel_layout_options.set_avoption_int("scalar", 6)),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-channel-layout-typed",
+        channel_layout_state_fields(&typed_channel_layout_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-channel-layout-typed",
+        [
+            ret_channel_layout(typed_channel_layout_options.get_avoption_channel_layout("layout")),
+            ret_i64(typed_channel_layout_options.get_avoption_int("layout")),
+            ret_f64(typed_channel_layout_options.get_avoption_double("layout")),
+            ret_q(typed_channel_layout_options.get_avoption_q("layout")),
+            ret_value(typed_channel_layout_options.get_avoption_string("layout")),
+            ret_channel_layout(typed_channel_layout_options.get_avoption_channel_layout("scalar")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "query-ranges:channel-layout",
+        [
+            ret_ranges(typed_channel_layout_options.query_avoption_ranges("layout")),
+            ret_ranges(typed_channel_layout_options.query_avoption_ranges("missing")),
+        ],
+    );
+
     let video_defaults = video_rate_options();
     insert_row(
         &mut rows,
@@ -1735,6 +1836,35 @@ fn sample_format_options() -> OptionSet {
     options
 }
 
+fn channel_layout_options() -> OptionSet {
+    let mut options = OptionSet::new();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "layout",
+                OptionKind::ChannelLayout,
+                OptionValue::ChannelLayout(ChannelLayoutSpec::native(ChannelLayout::stereo())),
+                "channel layout",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "scalar",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(4),
+                "scalar",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+}
+
 fn video_rate_options() -> OptionSet {
     let mut options = OptionSet::new();
     options
@@ -1860,6 +1990,13 @@ fn pixel_format_state_fields(options: &OptionSet) -> [String; 2] {
 fn sample_format_state_fields(options: &OptionSet) -> [String; 2] {
     [
         sample_format_field(sample_format_value(options, "sample_fmt")),
+        int_value(options, "scalar").to_string(),
+    ]
+}
+
+fn channel_layout_state_fields(options: &OptionSet) -> [String; 2] {
+    [
+        channel_layout_value(options, "layout").describe(),
         int_value(options, "scalar").to_string(),
     ]
 }
@@ -1991,6 +2128,13 @@ fn sample_format_index(value: Option<SampleFormat>) -> i32 {
         Some(SampleFormat::DblP) => 9,
         Some(SampleFormat::S64) => 10,
         Some(SampleFormat::S64P) => 11,
+    }
+}
+
+fn channel_layout_value(options: &OptionSet, name: &str) -> ChannelLayoutSpec {
+    match options.get(name) {
+        Some(OptionValue::ChannelLayout(value)) => value.clone(),
+        other => panic!("expected channel-layout option `{name}`, got {other:?}"),
     }
 }
 
@@ -2178,6 +2322,18 @@ fn ret_sample_format(result: avutil::AvResult<Option<SampleFormat>>) -> String {
     }
 }
 
+fn ret_channel_layout(result: avutil::AvResult<ChannelLayoutSpec>) -> String {
+    match result {
+        Ok(value) => format!("0:{}", value.describe()),
+        Err(err) => format!(
+            "{}:0 channels",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
 fn ret_serialize(result: avutil::AvResult<String>) -> String {
     ret_value(result)
 }
@@ -2294,6 +2450,7 @@ fn oracle_c_source() -> &'static str {
 #include <string.h>
 
 #include <libavutil/avutil.h>
+#include <libavutil/channel_layout.h>
 #include <libavutil/dict.h>
 #include <libavutil/mem.h>
 #include <libavutil/opt.h>
@@ -2344,6 +2501,12 @@ typedef struct SampleFormatOptions {
     enum AVSampleFormat sample_fmt;
     int64_t scalar;
 } SampleFormatOptions;
+
+typedef struct ChannelLayoutOptions {
+    const AVClass *av_class;
+    AVChannelLayout layout;
+    int64_t scalar;
+} ChannelLayoutOptions;
 
 typedef struct VideoRateOptions {
     const AVClass *av_class;
@@ -2449,6 +2612,14 @@ static const AVOption sample_format_options[] = {
     { NULL }
 };
 
+static const AVOption channel_layout_options[] = {
+    { "layout", "channel layout", offsetof(ChannelLayoutOptions, layout),
+      AV_OPT_TYPE_CHLAYOUT, { .str = "stereo" }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
+    { "scalar", "scalar", offsetof(ChannelLayoutOptions, scalar),
+      AV_OPT_TYPE_INT64, { .i64 = 4 }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL }
+};
+
 static const AVClass image_size_class = {
     .class_name = "rust-options-oracle-image-size",
     .item_name = av_default_item_name,
@@ -2467,6 +2638,13 @@ static const AVClass sample_format_class = {
     .class_name = "rust-options-oracle-sample-format",
     .item_name = av_default_item_name,
     .option = sample_format_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
+static const AVClass channel_layout_class = {
+    .class_name = "rust-options-oracle-channel-layout",
+    .item_name = av_default_item_name,
+    .option = channel_layout_options,
     .version = LIBAVUTIL_VERSION_INT,
 };
 
@@ -2529,6 +2707,12 @@ static void init_pixel_format_context(PixelFormatOptions *ctx) {
 static void init_sample_format_context(SampleFormatOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &sample_format_class;
+    av_opt_set_defaults(ctx);
+}
+
+static void init_channel_layout_context(ChannelLayoutOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &channel_layout_class;
     av_opt_set_defaults(ctx);
 }
 
@@ -2775,6 +2959,22 @@ static void print_get_sample_format_value(const void *ctx, const char *name, int
     enum AVSampleFormat value = AV_SAMPLE_FMT_NONE;
     int ret = av_opt_get_sample_fmt((void *)ctx, name, search_flags, &value);
     printf("|%d:%d", ret, value);
+}
+
+static void describe_channel_layout(const AVChannelLayout *layout, char *buffer, size_t size) {
+    int ret = av_channel_layout_describe(layout, buffer, size);
+    if (ret < 0) {
+        snprintf(buffer, size, "<err:%d>", ret);
+    }
+}
+
+static void print_get_channel_layout_value(const void *ctx, const char *name, int search_flags) {
+    AVChannelLayout value = { 0 };
+    char desc[256] = { 0 };
+    int ret = av_opt_get_chlayout((void *)ctx, name, search_flags, &value);
+    describe_channel_layout(&value, desc, sizeof(desc));
+    printf("|%d:%s", ret, desc);
+    av_channel_layout_uninit(&value);
 }
 
 static void print_get_video_rate_value(const void *ctx, const char *name, int search_flags) {
@@ -3328,6 +3528,83 @@ static void print_sample_format_rows(void) {
     printf("\n");
 }
 
+static void print_channel_layout_state(const char *name, const ChannelLayoutOptions *ctx) {
+    char desc[256] = { 0 };
+    describe_channel_layout(&ctx->layout, desc, sizeof(desc));
+    printf("%s|%s|%" PRId64 "\n", name, desc, ctx->scalar);
+}
+
+static void print_channel_layout_rows(void) {
+    ChannelLayoutOptions ctx;
+    int ret_mono;
+    int ret_five_one;
+    int ret_unspecified;
+    int ret_bad;
+    int ret_zero;
+    int ret_typed;
+    int ret_wrong_type;
+    int ret_int_range;
+    int ret_int_zero;
+    int ret_scalar;
+    AVChannelLayout mono = AV_CHANNEL_LAYOUT_MONO;
+    AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
+    char after_mono[256] = { 0 };
+    char after_five_one[256] = { 0 };
+    char after_unspecified[256] = { 0 };
+
+    init_channel_layout_context(&ctx);
+    print_channel_layout_state("state:channel-layout-defaults", &ctx);
+    printf("get:channel-layout-defaults");
+    print_get_channel_layout_value(&ctx, "layout", 0);
+    print_get_value(&ctx, "layout");
+    print_get_int_value(&ctx, "layout", 0);
+    printf("\n");
+
+    ret_mono = av_opt_set(&ctx, "layout", "mono", 0);
+    describe_channel_layout(&ctx.layout, after_mono, sizeof(after_mono));
+    ret_five_one = av_opt_set(&ctx, "layout", "5.1", 0);
+    describe_channel_layout(&ctx.layout, after_five_one, sizeof(after_five_one));
+    ret_unspecified = av_opt_set(&ctx, "layout", "2C", 0);
+    describe_channel_layout(&ctx.layout, after_unspecified, sizeof(after_unspecified));
+    printf("ret:set-channel-layout-strings|%d|%d|%d\n",
+           ret_mono, ret_five_one, ret_unspecified);
+    printf("state:set-channel-layout-strings|%s|%s|%s\n",
+           after_mono, after_five_one, after_unspecified);
+    printf("get:set-channel-layout-strings");
+    print_get_value(&ctx, "layout");
+    printf("\n");
+
+    ret_bad = av_opt_set(&ctx, "layout", "bad", 0);
+    ret_zero = av_opt_set(&ctx, "layout", "0", 0);
+    printf("ret:set-channel-layout-errors|%d|%d\n", ret_bad, ret_zero);
+    print_channel_layout_state("state:after-channel-layout-errors", &ctx);
+
+    av_channel_layout_uninit(&ctx.layout);
+    init_channel_layout_context(&ctx);
+    ret_typed = av_opt_set_chlayout(&ctx, "layout", &mono, 0);
+    ret_wrong_type = av_opt_set_chlayout(&ctx, "scalar", &stereo, 0);
+    ret_int_range = av_opt_set_int(&ctx, "layout", 2, 0);
+    ret_int_zero = av_opt_set_int(&ctx, "layout", 0, 0);
+    ret_scalar = av_opt_set_int(&ctx, "scalar", 6, 0);
+    printf("ret:set-channel-layout-typed|%d|%d|%d|%d|%d\n",
+           ret_typed, ret_wrong_type, ret_int_range, ret_int_zero, ret_scalar);
+    print_channel_layout_state("state:set-channel-layout-typed", &ctx);
+    printf("get:set-channel-layout-typed");
+    print_get_channel_layout_value(&ctx, "layout", 0);
+    print_get_int_value(&ctx, "layout", 0);
+    print_get_double_value(&ctx, "layout", 0);
+    print_get_q_value(&ctx, "layout", 0);
+    print_get_value(&ctx, "layout");
+    print_get_channel_layout_value(&ctx, "scalar", 0);
+    printf("\n");
+
+    printf("query-ranges:channel-layout");
+    print_query_range_value(&ctx, "layout");
+    print_query_range_value(&ctx, "missing");
+    printf("\n");
+    av_channel_layout_uninit(&ctx.layout);
+}
+
 static void print_video_rate_state(const char *name, const VideoRateOptions *ctx) {
     printf("%s|%d|%d|%" PRId64 "\n", name, ctx->rate.num, ctx->rate.den, ctx->scalar);
 }
@@ -3685,6 +3962,7 @@ int main(void) {
     print_image_size_rows();
     print_pixel_format_rows();
     print_sample_format_rows();
+    print_channel_layout_rows();
     print_video_rate_rows();
     print_color_rows();
 

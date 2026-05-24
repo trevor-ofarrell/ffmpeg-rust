@@ -3,7 +3,7 @@ use crate::{
     dict::{Dictionary, MatchMode, SetMode},
     pixel::PixelFormat,
     samplefmt::SampleFormat,
-    AvError, AvErrorCode, AvErrorKind, AvResult, Rational,
+    AvError, AvErrorCode, AvErrorKind, AvResult, ChannelLayoutSpec, Rational,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,6 +14,7 @@ pub enum OptionValue {
     ImageSize { width: i32, height: i32 },
     PixelFormat(Option<PixelFormat>),
     SampleFormat(Option<SampleFormat>),
+    ChannelLayout(ChannelLayoutSpec),
     VideoRate(Rational),
     Color(RgbaColor),
     Float(f64),
@@ -29,6 +30,7 @@ pub enum OptionKind {
     ImageSize,
     PixelFormat { min: i32, max: i32 },
     SampleFormat { min: i32, max: i32 },
+    ChannelLayout,
     VideoRate { min: Rational, max: Rational },
     Color,
     Float { min: f64, max: f64 },
@@ -602,6 +604,7 @@ impl OptionDefinition {
             OptionKind::SampleFormat { min, max } => {
                 OptionValue::SampleFormat(parse_sample_format(raw, min, max)?)
             }
+            OptionKind::ChannelLayout => OptionValue::ChannelLayout(parse_channel_layout(raw)?),
             OptionKind::VideoRate { .. } => OptionValue::VideoRate(parse_video_rate(raw)?),
             OptionKind::Color => OptionValue::Color(parse_color(raw)?),
             OptionKind::Float { .. } => OptionValue::Float(parse_float(raw)?),
@@ -1046,6 +1049,16 @@ impl OptionSet {
 
     pub fn query_avoption_ranges(&self, name: &str) -> AvResult<AvOptionRanges> {
         let index = self.avoption_query_ranges_index(name)?;
+        if matches!(self.definitions[index].kind(), OptionKind::ChannelLayout) {
+            return Err(AvError::with_code(
+                AvErrorKind::Unsupported,
+                AvErrorCode::ENOSYS,
+                format!(
+                    "AVOption `{}` does not expose query ranges",
+                    self.definitions[index].name()
+                ),
+            ));
+        }
         Ok(avoption_ranges_for_kind(self.definitions[index].kind()))
     }
 
@@ -1089,6 +1102,18 @@ impl OptionSet {
             let (color, result) = parse_avoption_color_value(raw, current);
             self.values[index] = OptionValue::Color(color);
             return result;
+        }
+        if matches!(self.definitions[index].kind(), OptionKind::ChannelLayout) {
+            match self.parse_avoption_value(index, raw) {
+                Ok(value) => {
+                    self.values[index] = value;
+                    return Ok(());
+                }
+                Err(err) => {
+                    self.values[index] = OptionValue::ChannelLayout(ChannelLayoutSpec::empty());
+                    return Err(err);
+                }
+            }
         }
         let value = self.parse_avoption_value(index, raw)?;
         self.values[index] = value;
@@ -1262,6 +1287,40 @@ impl OptionSet {
         self.set_avoption_sample_format_at_index(index, value)
     }
 
+    pub fn set_avoption_channel_layout(
+        &mut self,
+        name: &str,
+        value: ChannelLayoutSpec,
+    ) -> AvResult<()> {
+        let index = self.avoption_index(name)?;
+        self.set_avoption_channel_layout_at_index(index, value)
+    }
+
+    pub fn set_avoption_channel_layout_with_flags(
+        &mut self,
+        name: &str,
+        value: ChannelLayoutSpec,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &mut self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child
+                        .options
+                        .set_avoption_channel_layout_at_index(index, value.clone());
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.set_avoption_channel_layout_at_index(index, value)
+    }
+
     pub fn set_avoption_video_rate(&mut self, name: &str, value: Rational) -> AvResult<()> {
         let index = self.avoption_index(name)?;
         self.set_avoption_video_rate_at_index(index, value)
@@ -1411,6 +1470,33 @@ impl OptionSet {
 
         let index = self.avoption_index(name)?;
         self.get_avoption_sample_format_at_index(index)
+    }
+
+    pub fn get_avoption_channel_layout(&self, name: &str) -> AvResult<ChannelLayoutSpec> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_channel_layout_at_index(index)
+    }
+
+    pub fn get_avoption_channel_layout_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<ChannelLayoutSpec> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child.options.get_avoption_channel_layout_at_index(index);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.get_avoption_channel_layout_at_index(index)
     }
 
     pub fn get_avoption_video_rate(&self, name: &str) -> AvResult<Rational> {
@@ -1712,6 +1798,22 @@ impl OptionSet {
         Ok(())
     }
 
+    fn set_avoption_channel_layout_at_index(
+        &mut self,
+        index: usize,
+        value: ChannelLayoutSpec,
+    ) -> AvResult<()> {
+        self.ensure_writable(index)?;
+        if !matches!(self.definitions[index].kind(), OptionKind::ChannelLayout) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not a channel layout",
+                self.definitions[index].name()
+            )));
+        }
+        self.values[index] = OptionValue::ChannelLayout(value);
+        Ok(())
+    }
+
     fn set_avoption_video_rate_at_index(&mut self, index: usize, value: Rational) -> AvResult<()> {
         self.ensure_writable(index)?;
         if !matches!(self.definitions[index].kind(), OptionKind::VideoRate { .. }) {
@@ -1809,6 +1911,22 @@ impl OptionSet {
         }
     }
 
+    fn get_avoption_channel_layout_at_index(&self, index: usize) -> AvResult<ChannelLayoutSpec> {
+        if !matches!(self.definitions[index].kind(), OptionKind::ChannelLayout) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not a channel layout",
+                self.definitions[index].name()
+            )));
+        }
+        match &self.values[index] {
+            OptionValue::ChannelLayout(value) => Ok(value.clone()),
+            _ => Err(AvError::invalid_argument(format!(
+                "AVOption `{}` storage is not a channel layout",
+                self.definitions[index].name()
+            ))),
+        }
+    }
+
     pub fn set_child(
         &mut self,
         child_name: &str,
@@ -1843,7 +1961,10 @@ impl OptionSet {
     fn parse_avoption_value(&self, index: usize, raw: &str) -> AvResult<OptionValue> {
         if !matches!(
             self.definitions[index].kind(),
-            OptionKind::Duration { .. } | OptionKind::VideoRate { .. } | OptionKind::Color
+            OptionKind::Duration { .. }
+                | OptionKind::VideoRate { .. }
+                | OptionKind::Color
+                | OptionKind::ChannelLayout
         ) {
             if let Some(unit) = self.definitions[index].unit() {
                 if let Some(constant) = self.find_exact_constant(unit, raw) {
@@ -1860,6 +1981,7 @@ impl OptionSet {
             | OptionKind::ImageSize
             | OptionKind::PixelFormat { .. }
             | OptionKind::SampleFormat { .. }
+            | OptionKind::ChannelLayout
             | OptionKind::VideoRate { .. }
             | OptionKind::Color => {
                 if matches!(self.definitions[index].kind(), OptionKind::Duration { .. }) {
@@ -2298,6 +2420,16 @@ fn parse_sample_format(raw: &str, min: i32, max: i32) -> AvResult<Option<SampleF
     sample_format_from_avoption_index(index)
 }
 
+fn parse_channel_layout(raw: &str) -> AvResult<ChannelLayoutSpec> {
+    ChannelLayoutSpec::parse(raw).map_err(|err| {
+        AvError::with_code(
+            AvErrorKind::InvalidArgument,
+            AvErrorCode::EINVAL,
+            err.to_string(),
+        )
+    })
+}
+
 fn parse_c_auto_i32(raw: &str) -> Option<i32> {
     let mut text = raw.trim_start();
     let mut sign = 1i64;
@@ -2483,6 +2615,7 @@ fn validate_kind(kind: &OptionKind) -> AvResult<()> {
     match *kind {
         OptionKind::Bool
         | OptionKind::ImageSize
+        | OptionKind::ChannelLayout
         | OptionKind::Color
         | OptionKind::String { .. } => Ok(()),
         OptionKind::PixelFormat { min, max } => {
@@ -2588,7 +2721,9 @@ fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
             min: OptionValue::VideoRate(min),
             max: OptionValue::VideoRate(max),
         }),
-        OptionKind::PixelFormat { .. } | OptionKind::SampleFormat { .. } => None,
+        OptionKind::PixelFormat { .. }
+        | OptionKind::SampleFormat { .. }
+        | OptionKind::ChannelLayout => None,
         OptionKind::Bool
         | OptionKind::ImageSize
         | OptionKind::Color
@@ -2632,6 +2767,7 @@ fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
             range.value_min = f64::from(min);
             range.value_max = f64::from(max);
         }
+        OptionKind::ChannelLayout => {}
         OptionKind::VideoRate { .. } => {
             range.value_min = 1.0;
             range.value_max = i32::MAX as f64;
@@ -2768,6 +2904,9 @@ fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNu
             den: 1,
             intnum: i64::from(sample_format_avoption_index(*value)),
         }),
+        OptionValue::ChannelLayout(_) => Err(AvError::invalid_argument(format!(
+            "AVOption `{name}` is not numeric"
+        ))),
         OptionValue::VideoRate(_) => Err(AvError::invalid_argument(format!(
             "AVOption `{name}` is not numeric"
         ))),
@@ -2841,6 +2980,15 @@ fn avoption_value_from_numeric(
             Ok(OptionValue::SampleFormat(
                 sample_format_from_avoption_index(index)?,
             ))
+        }
+        OptionKind::ChannelLayout => {
+            if value == 0.0 {
+                Err(AvError::invalid_argument(format!(
+                    "AVOption `{name}` is not numeric"
+                )))
+            } else {
+                Err(avoption_range_error(name, value, 0.0, 0.0))
+            }
         }
         OptionKind::VideoRate { min, max } => {
             avoption_check_numeric_range(name, value, min.to_f64(), max.to_f64())?;
@@ -3002,6 +3150,7 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
         (OptionKind::SampleFormat { min, max }, OptionValue::SampleFormat(value)) => {
             validate_sample_format_index(*value, *min, *max)
         }
+        (OptionKind::ChannelLayout, OptionValue::ChannelLayout(_)) => Ok(()),
         (OptionKind::VideoRate { min, max }, OptionValue::VideoRate(value)) => {
             validate_video_rate_bound(*value, "video rate option value")?;
             if value < min || value > max {
@@ -3088,6 +3237,9 @@ fn avoption_kind_min(kind: &OptionKind) -> AvResult<f64> {
         )),
         OptionKind::PixelFormat { min, .. } => Ok(f64::from(min)),
         OptionKind::SampleFormat { min, .. } => Ok(f64::from(min)),
+        OptionKind::ChannelLayout => Err(AvError::invalid_argument(
+            "channel layout AVOption does not have a numeric minimum",
+        )),
         OptionKind::VideoRate { min, .. } => Ok(min.to_f64()),
         OptionKind::Color => Err(AvError::invalid_argument(
             "color AVOption does not have a numeric minimum",
@@ -3110,6 +3262,9 @@ fn avoption_kind_max(kind: &OptionKind) -> AvResult<f64> {
         )),
         OptionKind::PixelFormat { max, .. } => Ok(f64::from(max)),
         OptionKind::SampleFormat { max, .. } => Ok(f64::from(max)),
+        OptionKind::ChannelLayout => Err(AvError::invalid_argument(
+            "channel layout AVOption does not have a numeric maximum",
+        )),
         OptionKind::VideoRate { max, .. } => Ok(max.to_f64()),
         OptionKind::Color => Err(AvError::invalid_argument(
             "color AVOption does not have a numeric maximum",
@@ -4095,6 +4250,7 @@ fn format_avoption_value(value: &OptionValue) -> String {
         OptionValue::PixelFormat(Some(value)) => value.name().to_owned(),
         OptionValue::SampleFormat(None) => "none".to_owned(),
         OptionValue::SampleFormat(Some(value)) => value.name().to_owned(),
+        OptionValue::ChannelLayout(value) => value.describe(),
         OptionValue::VideoRate(value) => format!("{}/{}", value.num(), value.den()),
         OptionValue::Color(value) => {
             let rgba = value.rgba();
@@ -4791,6 +4947,121 @@ mod tests {
         assert_eq!(
             options
                 .get_avoption_sample_format("scalar")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_typed_errors);
+    }
+
+    #[test]
+    fn channel_layout_options_parse_format_and_query_like_bounded_ffmpeg_shape() {
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new(
+                    "layout",
+                    OptionKind::ChannelLayout,
+                    OptionValue::ChannelLayout(ChannelLayoutSpec::native(
+                        crate::ChannelLayout::stereo(),
+                    )),
+                    "channel layout",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "scalar",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(4),
+                    "scalar",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(options.range("layout").unwrap(), None);
+        assert_eq!(
+            options.query_avoption_ranges("layout").unwrap_err().code(),
+            Some(AvErrorCode::ENOSYS)
+        );
+        assert_eq!(
+            options.get_avoption_channel_layout("layout").unwrap(),
+            ChannelLayoutSpec::native(crate::ChannelLayout::stereo())
+        );
+        assert_eq!(options.get_avoption_string("layout").unwrap(), "stereo");
+        assert_eq!(
+            options.get_avoption_int("layout").unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+
+        options.set_avoption_from_str("layout", "mono").unwrap();
+        assert_eq!(
+            options.get("layout"),
+            Some(&OptionValue::ChannelLayout(ChannelLayoutSpec::native(
+                crate::ChannelLayout::mono()
+            )))
+        );
+        assert_eq!(options.get_avoption_string("layout").unwrap(), "mono");
+
+        options.set_avoption_from_str("layout", "5.1").unwrap();
+        assert_eq!(options.get_avoption_string("layout").unwrap(), "5.1");
+
+        options.set_avoption_from_str("layout", "2C").unwrap();
+        assert_eq!(
+            options
+                .get_avoption_channel_layout("layout")
+                .unwrap()
+                .describe(),
+            "2 channels"
+        );
+        assert_eq!(options.get_avoption_string("layout").unwrap(), "2 channels");
+
+        assert_eq!(
+            options
+                .set_avoption_from_str("layout", "bad")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options.get_avoption_string("layout").unwrap(), "0 channels");
+
+        options
+            .set_avoption_channel_layout(
+                "layout",
+                ChannelLayoutSpec::native(crate::ChannelLayout::mono()),
+            )
+            .unwrap();
+        assert_eq!(options.get_avoption_string("layout").unwrap(), "mono");
+
+        let before_typed_errors = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_channel_layout(
+                    "scalar",
+                    ChannelLayoutSpec::native(crate::ChannelLayout::stereo()),
+                )
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.set_avoption_int("layout", 2).unwrap_err().code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(
+            options.set_avoption_int("layout", 0).unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.get_avoption_q("layout").unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options
+                .get_avoption_channel_layout("scalar")
                 .unwrap_err()
                 .code(),
             Some(AvErrorCode::EINVAL)
