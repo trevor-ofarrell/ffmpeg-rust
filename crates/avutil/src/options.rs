@@ -7,6 +7,7 @@ use crate::{
 pub enum OptionValue {
     Bool(bool),
     Int(i64),
+    Duration(i64),
     Float(f64),
     Rational(Rational),
     String(String),
@@ -16,6 +17,7 @@ pub enum OptionValue {
 pub enum OptionKind {
     Bool,
     Int { min: i64, max: i64 },
+    Duration { min: i64, max: i64 },
     Float { min: f64, max: f64 },
     Rational { min: Rational, max: Rational },
     String { allow_empty: bool },
@@ -34,6 +36,13 @@ impl OptionRange {
                 if min > max {
                     return Err(AvError::invalid_argument(
                         "integer option range min must be <= max",
+                    ));
+                }
+            }
+            (OptionValue::Duration(min), OptionValue::Duration(max)) => {
+                if min > max {
+                    return Err(AvError::invalid_argument(
+                        "duration option range min must be <= max",
                     ));
                 }
             }
@@ -542,6 +551,7 @@ impl OptionDefinition {
         let parsed = match self.kind {
             OptionKind::Bool => OptionValue::Bool(parse_bool(raw)?),
             OptionKind::Int { .. } => OptionValue::Int(parse_int(raw)?),
+            OptionKind::Duration { .. } => OptionValue::Duration(parse_duration(raw)?),
             OptionKind::Float { .. } => OptionValue::Float(parse_float(raw)?),
             OptionKind::Rational { .. } => OptionValue::Rational(parse_rational(raw)?),
             OptionKind::String { .. } => OptionValue::String(raw.to_owned()),
@@ -1404,15 +1414,25 @@ impl OptionSet {
     }
 
     fn parse_avoption_value(&self, index: usize, raw: &str) -> AvResult<OptionValue> {
-        if let Some(unit) = self.definitions[index].unit() {
-            if let Some(constant) = self.find_exact_constant(unit, raw) {
-                self.definitions[index].validate_value(constant.value())?;
-                return Ok(constant.value().clone());
+        if !matches!(self.definitions[index].kind(), OptionKind::Duration { .. }) {
+            if let Some(unit) = self.definitions[index].unit() {
+                if let Some(constant) = self.find_exact_constant(unit, raw) {
+                    self.definitions[index].validate_value(constant.value())?;
+                    return Ok(constant.value().clone());
+                }
             }
         }
 
         match self.definitions[index].kind() {
-            OptionKind::Bool | OptionKind::String { .. } => {
+            OptionKind::Bool | OptionKind::String { .. } | OptionKind::Duration { .. } => {
+                if matches!(self.definitions[index].kind(), OptionKind::Duration { .. }) {
+                    let duration = parse_duration(raw)?;
+                    return avoption_value_from_numeric(
+                        self.definitions[index].kind(),
+                        self.definitions[index].name(),
+                        AvOptionNumericInput::Int(duration),
+                    );
+                }
                 self.definitions[index].parse_value(raw)
             }
             OptionKind::Int { .. } | OptionKind::Float { .. } | OptionKind::Rational { .. } => {
@@ -1683,6 +1703,14 @@ fn validate_kind(kind: &OptionKind) -> AvResult<()> {
             }
             Ok(())
         }
+        OptionKind::Duration { min, max } => {
+            if min > max {
+                return Err(AvError::invalid_argument(
+                    "duration option min must be <= max",
+                ));
+            }
+            Ok(())
+        }
         OptionKind::Float { min, max } => {
             if !min.is_finite() || !max.is_finite() {
                 return Err(AvError::invalid_argument(
@@ -1713,6 +1741,10 @@ fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
             min: OptionValue::Int(min),
             max: OptionValue::Int(max),
         }),
+        OptionKind::Duration { min, max } => Some(OptionRange {
+            min: OptionValue::Duration(min),
+            max: OptionValue::Duration(max),
+        }),
         OptionKind::Float { min, max } => Some(OptionRange {
             min: OptionValue::Float(min),
             max: OptionValue::Float(max),
@@ -1740,6 +1772,10 @@ fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
             range.value_max = 1.0;
         }
         OptionKind::Int { min, max } => {
+            range.value_min = min as f64;
+            range.value_max = max as f64;
+        }
+        OptionKind::Duration { min, max } => {
             range.value_min = min as f64;
             range.value_max = max as f64;
         }
@@ -1854,6 +1890,11 @@ fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNu
             den: 1,
             intnum: *value,
         }),
+        OptionValue::Duration(value) => Ok(AvOptionNumberParts {
+            num: 1.0,
+            den: 1,
+            intnum: *value,
+        }),
         OptionValue::Float(value) => Ok(AvOptionNumberParts {
             num: *value,
             den: 1,
@@ -1888,6 +1929,10 @@ fn avoption_value_from_numeric(
         OptionKind::Int { min, max } => {
             avoption_check_numeric_range(name, value, min as f64, max as f64)?;
             Ok(OptionValue::Int(round_f64_ties_even_to_i64(value)?))
+        }
+        OptionKind::Duration { min, max } => {
+            avoption_check_numeric_range(name, value, min as f64, max as f64)?;
+            Ok(OptionValue::Duration(round_f64_ties_even_to_i64(value)?))
         }
         OptionKind::Float { min, max } => {
             avoption_check_numeric_range(name, value, min, max)?;
@@ -1990,6 +2035,14 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
             }
             Ok(())
         }
+        (OptionKind::Duration { min, max }, OptionValue::Duration(value)) => {
+            if value < min || value > max {
+                return Err(AvError::invalid_argument(format!(
+                    "duration option value {value} outside range {min}..={max}"
+                )));
+            }
+            Ok(())
+        }
         (OptionKind::Float { min, max }, OptionValue::Float(value)) => {
             if !value.is_finite() {
                 return Err(AvError::invalid_argument(
@@ -2050,6 +2103,7 @@ fn avoption_kind_min(kind: &OptionKind) -> AvResult<f64> {
     match *kind {
         OptionKind::Bool => Ok(0.0),
         OptionKind::Int { min, .. } => Ok(min as f64),
+        OptionKind::Duration { min, .. } => Ok(min as f64),
         OptionKind::Float { min, .. } => Ok(min),
         OptionKind::Rational { min, .. } => Ok(min.to_f64()),
         OptionKind::String { .. } => Err(AvError::invalid_argument(
@@ -2062,6 +2116,7 @@ fn avoption_kind_max(kind: &OptionKind) -> AvResult<f64> {
     match *kind {
         OptionKind::Bool => Ok(1.0),
         OptionKind::Int { max, .. } => Ok(max as f64),
+        OptionKind::Duration { max, .. } => Ok(max as f64),
         OptionKind::Float { max, .. } => Ok(max),
         OptionKind::Rational { max, .. } => Ok(max.to_f64()),
         OptionKind::String { .. } => Err(AvError::invalid_argument(
@@ -2484,6 +2539,193 @@ fn parse_float(raw: &str) -> AvResult<f64> {
         .map_err(|_| AvError::invalid_argument(format!("invalid float option value `{raw}`")))
 }
 
+fn parse_duration(raw: &str) -> AvResult<i64> {
+    const USECS_PER_SEC: i128 = 1_000_000;
+
+    if raw.is_empty() {
+        return Err(duration_parse_error(raw));
+    }
+
+    let (negative, rest) = if let Some(rest) = raw.strip_prefix('-') {
+        (true, rest)
+    } else if let Some(rest) = raw.strip_prefix('+') {
+        (false, rest)
+    } else {
+        (false, raw)
+    };
+    if rest.is_empty() {
+        return Err(duration_parse_error(raw));
+    }
+
+    let parts = rest.split(':').collect::<Vec<_>>();
+    if parts.is_empty() || parts.len() > 3 || parts.iter().any(|part| part.is_empty()) {
+        return Err(duration_parse_error(raw));
+    }
+
+    let (seconds, micros, suffix) = match parts.as_slice() {
+        [seconds] => parse_duration_seconds(seconds, raw)?,
+        [minutes, seconds] => {
+            let minutes = parse_duration_component(minutes, raw)?;
+            let (seconds, micros, suffix) = parse_duration_seconds(seconds, raw)?;
+            let seconds = minutes
+                .checked_mul(60)
+                .and_then(|minutes| minutes.checked_add(seconds))
+                .ok_or_else(|| duration_range_error(raw))?;
+            (seconds, micros, suffix)
+        }
+        [hours, minutes, seconds] => {
+            let hours = parse_duration_component(hours, raw)?;
+            let minutes = parse_duration_component(minutes, raw)?;
+            let (seconds, micros, suffix) = parse_duration_seconds(seconds, raw)?;
+            let seconds = hours
+                .checked_mul(3600)
+                .and_then(|hours| minutes.checked_mul(60).and_then(|m| hours.checked_add(m)))
+                .and_then(|total| total.checked_add(seconds))
+                .ok_or_else(|| duration_range_error(raw))?;
+            (seconds, micros, suffix)
+        }
+        _ => unreachable!("duration part count checked above"),
+    };
+
+    let (scale, micros) = match suffix {
+        "" | "s" => (USECS_PER_SEC, micros),
+        "ms" => (1_000, micros / 1_000),
+        "us" => (1, 0),
+        _ => return Err(duration_parse_error(raw)),
+    };
+
+    let total = seconds
+        .checked_mul(scale)
+        .and_then(|seconds| seconds.checked_add(micros))
+        .ok_or_else(|| duration_range_error(raw))?;
+    let signed = if negative {
+        total
+            .checked_neg()
+            .ok_or_else(|| duration_range_error(raw))?
+    } else {
+        total
+    };
+    i64::try_from(signed).map_err(|_| duration_range_error(raw))
+}
+
+fn parse_duration_component(part: &str, raw: &str) -> AvResult<i128> {
+    if part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(duration_parse_error(raw));
+    }
+    parse_duration_decimal(part, raw)
+}
+
+fn parse_duration_seconds<'a>(part: &'a str, raw: &str) -> AvResult<(i128, i128, &'a str)> {
+    let bytes = part.as_bytes();
+    let mut pos = 0usize;
+    while matches!(bytes.get(pos), Some(b'0'..=b'9')) {
+        pos += 1;
+    }
+    if pos == 0 {
+        return Err(duration_parse_error(raw));
+    }
+    let seconds = parse_duration_decimal(&part[..pos], raw)?;
+
+    let mut micros = 0i128;
+    if matches!(bytes.get(pos), Some(b'.')) {
+        pos += 1;
+        let mut digits = 0usize;
+        while let Some(byte @ b'0'..=b'9') = bytes.get(pos).copied() {
+            if digits < 6 {
+                micros = micros
+                    .checked_mul(10)
+                    .and_then(|value| value.checked_add(i128::from(byte - b'0')))
+                    .ok_or_else(|| duration_range_error(raw))?;
+                digits += 1;
+            }
+            pos += 1;
+        }
+        while digits < 6 {
+            micros = micros
+                .checked_mul(10)
+                .ok_or_else(|| duration_range_error(raw))?;
+            digits += 1;
+        }
+    }
+
+    Ok((seconds, micros, &part[pos..]))
+}
+
+fn parse_duration_decimal(digits: &str, raw: &str) -> AvResult<i128> {
+    let mut value = 0i128;
+    for byte in digits.bytes() {
+        if !byte.is_ascii_digit() {
+            return Err(duration_parse_error(raw));
+        }
+        value = value
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(i128::from(byte - b'0')))
+            .ok_or_else(|| duration_range_error(raw))?;
+    }
+    Ok(value)
+}
+
+fn duration_parse_error(raw: &str) -> AvError {
+    AvError::with_code(
+        AvErrorKind::InvalidArgument,
+        AvErrorCode::EINVAL,
+        format!("invalid duration option value `{raw}`"),
+    )
+}
+
+fn duration_range_error(raw: &str) -> AvError {
+    AvError::with_code(
+        AvErrorKind::InvalidArgument,
+        AvErrorCode::from_posix_errno(34),
+        format!("duration option value `{raw}` out of range"),
+    )
+}
+
+fn format_duration(value: i64) -> String {
+    if value == i64::MAX {
+        return "INT64_MAX".to_owned();
+    }
+    if value == i64::MIN {
+        return "INT64_MIN".to_owned();
+    }
+
+    let mut duration = value;
+    let mut output = String::new();
+    if duration < 0 {
+        output.push('-');
+        duration = -duration;
+    }
+
+    let seconds = duration / 1_000_000;
+    let micros = duration % 1_000_000;
+    if duration > 3_600_000_000 {
+        output.push_str(&format!(
+            "{}:{:02}:{:02}.{:06}",
+            seconds / 3600,
+            (seconds / 60) % 60,
+            seconds % 60,
+            micros
+        ));
+    } else if duration > 60_000_000 {
+        output.push_str(&format!(
+            "{}:{:02}.{:06}",
+            seconds / 60,
+            seconds % 60,
+            micros
+        ));
+    } else {
+        output.push_str(&format!("{}.{:06}", seconds, micros));
+    }
+
+    while output.ends_with('0') {
+        output.pop();
+    }
+    if output.ends_with('.') {
+        output.pop();
+    }
+    output
+}
+
 fn parse_rational(raw: &str) -> AvResult<Rational> {
     let (num, den) = if let Some((num, den)) = raw.split_once('/') {
         (
@@ -2671,6 +2913,7 @@ fn format_avoption_value(value: &OptionValue) -> String {
         OptionValue::Bool(false) => "false".to_owned(),
         OptionValue::Bool(true) => "true".to_owned(),
         OptionValue::Int(value) => value.to_string(),
+        OptionValue::Duration(value) => format_duration(*value),
         OptionValue::Float(value) => format!("{value:.6}"),
         OptionValue::Rational(value) => format!("{}/{}", value.num(), value.den()),
         OptionValue::String(value) => value.clone(),
@@ -2883,6 +3126,7 @@ mod tests {
     #[test]
     fn option_ranges_validate_and_expose_numeric_bounds() {
         assert!(OptionRange::new(OptionValue::Int(8), OptionValue::Int(1)).is_err());
+        assert!(OptionRange::new(OptionValue::Duration(8), OptionValue::Duration(1)).is_err());
         assert!(OptionRange::new(OptionValue::Float(f64::NAN), OptionValue::Float(1.0)).is_err());
         assert!(OptionRange::new(
             OptionValue::Rational(Rational::ONE),
@@ -2916,6 +3160,91 @@ mod tests {
             options.range("missing").unwrap_err().kind(),
             AvErrorKind::NotFound
         );
+    }
+
+    #[test]
+    fn duration_options_parse_format_and_query_like_bounded_ffmpeg_shape() {
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new(
+                    "timeout",
+                    OptionKind::Duration {
+                        min: 0,
+                        max: 7_200_000_000,
+                    },
+                    OptionValue::Duration(0),
+                    "timeout",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let range = options.range("timeout").unwrap().unwrap();
+        assert_eq!(range.min(), &OptionValue::Duration(0));
+        assert_eq!(range.max(), &OptionValue::Duration(7_200_000_000));
+        let av_ranges = options.query_avoption_ranges("timeout").unwrap();
+        assert_eq!(av_ranges.nb_ranges(), 1);
+        assert_eq!(av_ranges.ranges()[0].value_min(), 0.0);
+        assert_eq!(av_ranges.ranges()[0].value_max(), 7_200_000_000.0);
+        assert_eq!(options.get_avoption_string("timeout").unwrap(), "0");
+
+        options.set_avoption_from_str("timeout", "1.5").unwrap();
+        assert_eq!(
+            options.get("timeout"),
+            Some(&OptionValue::Duration(1_500_000))
+        );
+        assert_eq!(options.get_avoption_string("timeout").unwrap(), "1.5");
+
+        options
+            .set_avoption_from_str("timeout", "00:01:02.250")
+            .unwrap();
+        assert_eq!(
+            options.get("timeout"),
+            Some(&OptionValue::Duration(62_250_000))
+        );
+        assert_eq!(options.get_avoption_string("timeout").unwrap(), "1:02.25");
+
+        options.set_avoption_from_str("timeout", "1500ms").unwrap();
+        assert_eq!(
+            options.get("timeout"),
+            Some(&OptionValue::Duration(1_500_000))
+        );
+        assert_eq!(options.get_avoption_string("timeout").unwrap(), "1.5");
+
+        options.set_avoption_from_str("timeout", "42us").unwrap();
+        assert_eq!(options.get("timeout"), Some(&OptionValue::Duration(42)));
+        assert_eq!(options.get_avoption_string("timeout").unwrap(), "0.000042");
+
+        options.set_avoption_int("timeout", 90_500_000).unwrap();
+        assert_eq!(options.get_avoption_int("timeout").unwrap(), 90_500_000);
+        assert_eq!(
+            options.get_avoption_double("timeout").unwrap(),
+            90_500_000.0
+        );
+        assert_eq!(
+            options.get_avoption_q("timeout").unwrap(),
+            Rational::new(90_500_000, 1).unwrap()
+        );
+        assert_eq!(options.get_avoption_string("timeout").unwrap(), "1:30.5");
+
+        let before_errors = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_from_str("timeout", "bad")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_errors);
+        assert_eq!(
+            options
+                .set_avoption_from_str("timeout", "-1")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(options, before_errors);
     }
 
     #[test]

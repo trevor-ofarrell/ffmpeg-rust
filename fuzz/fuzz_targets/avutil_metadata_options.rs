@@ -731,6 +731,75 @@ fn exercise_fixtures() {
     );
     assert_eq!(expression_options, before_expression_errors);
 
+    let mut duration_options = OptionSet::new();
+    duration_options
+        .define(
+            OptionDefinition::new(
+                "timeout",
+                OptionKind::Duration {
+                    min: 0,
+                    max: 7_200_000_000,
+                },
+                OptionValue::Duration(0),
+                "timeout",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    duration_options
+        .set_avoption_from_str("timeout", "00:01:02.250")
+        .unwrap();
+    assert_eq!(
+        duration_options.get("timeout"),
+        Some(&OptionValue::Duration(62_250_000))
+    );
+    assert_eq!(
+        duration_options.get_avoption_string("timeout").unwrap(),
+        "1:02.25"
+    );
+    duration_options
+        .set_avoption_from_str("timeout", "1500ms")
+        .unwrap();
+    assert_eq!(
+        duration_options.get("timeout"),
+        Some(&OptionValue::Duration(1_500_000))
+    );
+    duration_options
+        .set_avoption_from_str("timeout", "42us")
+        .unwrap();
+    assert_eq!(
+        duration_options.get("timeout"),
+        Some(&OptionValue::Duration(42))
+    );
+    duration_options
+        .set_avoption_int("timeout", 90_500_000)
+        .unwrap();
+    assert_eq!(
+        duration_options.get_avoption_int("timeout").unwrap(),
+        90_500_000
+    );
+    assert_eq!(
+        duration_options.get_avoption_q("timeout").unwrap(),
+        Rational::new(90_500_000, 1).unwrap()
+    );
+    let before_duration_errors = duration_options.clone();
+    assert_eq!(
+        duration_options
+            .set_avoption_from_str("timeout", "bad_duration")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(duration_options, before_duration_errors);
+    assert_eq!(
+        duration_options
+            .set_avoption_from_str("timeout", "-1")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(duration_options, before_duration_errors);
+
     options.set_from_str("preset_level", "slow").unwrap();
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(8)));
     assert!(options
@@ -1138,6 +1207,7 @@ fn assert_option_set_invariants_at_depth(options: &OptionSet, depth: usize) {
             definition.validate_value(range.max()).unwrap();
             match (range.min(), range.max()) {
                 (OptionValue::Int(min), OptionValue::Int(max)) => assert!(min <= max),
+                (OptionValue::Duration(min), OptionValue::Duration(max)) => assert!(min <= max),
                 (OptionValue::Float(min), OptionValue::Float(max)) => {
                     assert!(min.is_finite());
                     assert!(max.is_finite());
@@ -1271,7 +1341,7 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
     let name = option_name_from(cursor);
     let help = literal_from(cursor);
     let kind_tag = cursor.next().unwrap_or_default();
-    let kind = match kind_tag % 11 {
+    let kind = match kind_tag % 13 {
         0 => OptionKind::Bool,
         1 => OptionKind::Int { min: 0, max: 64 },
         2 => OptionKind::Int { min: 8, max: 1 },
@@ -1293,7 +1363,12 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
             min: Rational::from_raw(1, 0),
             max: Rational::ONE,
         },
-        9 => OptionKind::String { allow_empty: true },
+        9 => OptionKind::Duration {
+            min: 0,
+            max: 7_200_000_000,
+        },
+        10 => OptionKind::Duration { min: 8, max: 1 },
+        11 => OptionKind::String { allow_empty: true },
         _ => OptionKind::String { allow_empty: false },
     };
     let default = default_value_for(&kind, cursor);
@@ -1398,6 +1473,13 @@ fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue 
                 )
             } else {
                 OptionValue::Int(0)
+            }
+        }
+        OptionKind::Duration { min, max } => {
+            if min <= max {
+                OptionValue::Duration(*min)
+            } else {
+                OptionValue::Duration(0)
             }
         }
         OptionKind::Float { min, max } => {
@@ -1559,7 +1641,7 @@ fn option_name_from(cursor: &mut Cursor<'_>) -> String {
 }
 
 fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 32 {
+    match cursor.next().unwrap_or_default() % 36 {
         0 => "1".to_owned(),
         1 => "0".to_owned(),
         2 => "yes".to_owned(),
@@ -1591,12 +1673,17 @@ fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
         28 => "1+1/2".to_owned(),
         29 => "1K".to_owned(),
         30 => "2*".to_owned(),
+        31 => "1.5".to_owned(),
+        32 => "00:01:02.250".to_owned(),
+        33 => "1500ms".to_owned(),
+        34 => "42us".to_owned(),
+        35 => "bad_duration".to_owned(),
         _ => literal_from(cursor),
     }
 }
 
 fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
-    match cursor.next().unwrap_or_default() % 5 {
+    match cursor.next().unwrap_or_default() % 6 {
         0 => OptionValue::Bool(cursor.next().unwrap_or_default().is_multiple_of(2)),
         1 => OptionValue::Int(i64::from(cursor.next().unwrap_or_default()) - 32),
         2 => {
@@ -1620,6 +1707,7 @@ fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
             };
             OptionValue::Rational(value)
         }
+        4 => OptionValue::Duration(i64::from(cursor.next().unwrap_or_default()) * 1_000),
         _ => OptionValue::String(option_value_string_from(cursor)),
     }
 }

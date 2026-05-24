@@ -887,6 +887,86 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         child_state_fields(&typed_children),
     );
 
+    let mut duration_set = duration_options();
+    let ret_duration_15 = ret(duration_set.set_avoption_from_str("timeout", "1.5"));
+    let duration_after_15 = duration_value(&duration_set, "timeout").to_string();
+    let ret_duration_clock = ret(duration_set.set_avoption_from_str("timeout", "00:01:02.250"));
+    let duration_after_clock = duration_value(&duration_set, "timeout").to_string();
+    let ret_duration_ms = ret(duration_set.set_avoption_from_str("timeout", "1500ms"));
+    let duration_after_ms = duration_value(&duration_set, "timeout").to_string();
+    let ret_duration_us = ret(duration_set.set_avoption_from_str("timeout", "42us"));
+    let duration_after_us = duration_value(&duration_set, "timeout").to_string();
+    insert_row(
+        &mut rows,
+        "ret:set-duration-strings",
+        [
+            ret_duration_15,
+            ret_duration_clock,
+            ret_duration_ms,
+            ret_duration_us,
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-duration-strings",
+        [
+            duration_after_15,
+            duration_after_clock,
+            duration_after_ms,
+            duration_after_us,
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-duration-strings",
+        [ret_value(duration_set.get_avoption_string("timeout"))],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-duration-errors",
+        [
+            ret(duration_set.set_avoption_from_str("timeout", "bad")),
+            ret(duration_set.set_avoption_from_str("timeout", "-1")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:after-duration-errors",
+        [duration_value(&duration_set, "timeout").to_string()],
+    );
+
+    let mut typed_duration_options = duration_options();
+    insert_row(
+        &mut rows,
+        "ret:set-duration-typed",
+        [ret(
+            typed_duration_options.set_avoption_int("timeout", 90_500_000)
+        )],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-duration-typed",
+        [duration_value(&typed_duration_options, "timeout").to_string()],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-duration-typed",
+        [
+            ret_i64(typed_duration_options.get_avoption_int("timeout")),
+            ret_f64(typed_duration_options.get_avoption_double("timeout")),
+            ret_q(typed_duration_options.get_avoption_q("timeout")),
+            ret_value(typed_duration_options.get_avoption_string("timeout")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "query-ranges:duration",
+        [
+            ret_ranges(typed_duration_options.query_avoption_ranges("timeout")),
+            ret_ranges(typed_duration_options.query_avoption_ranges("missing")),
+        ],
+    );
+
     let error_results = [
         ret(options.set_avoption_from_str("bitexact", "maybe")),
         ret(options.set_avoption_from_str("exported", "6")),
@@ -1064,6 +1144,26 @@ fn sample_options_with_child() -> OptionSet {
     options
 }
 
+fn duration_options() -> OptionSet {
+    let mut options = OptionSet::new();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "timeout",
+                OptionKind::Duration {
+                    min: 0,
+                    max: 7_200_000_000,
+                },
+                OptionValue::Duration(0),
+                "timeout",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+}
+
 fn state_fields(options: &OptionSet) -> Vec<String> {
     vec![
         int_value(options, "threads").to_string(),
@@ -1130,6 +1230,13 @@ fn child_int_value(options: &OptionSet, child_name: &str, name: &str) -> i64 {
     match options.get_child_option(child_name, name) {
         Ok(OptionValue::Int(value)) => *value,
         other => panic!("expected child int option `{child_name}.{name}`, got {other:?}"),
+    }
+}
+
+fn duration_value(options: &OptionSet, name: &str) -> i64 {
+    match options.get(name) {
+        Some(OptionValue::Duration(value)) => *value,
+        other => panic!("expected duration option `{name}`, got {other:?}"),
     }
 }
 
@@ -1404,6 +1511,11 @@ typedef struct TestOptions {
     int64_t exported;
 } TestOptions;
 
+typedef struct DurationOptions {
+    const AVClass *av_class;
+    int64_t timeout;
+} DurationOptions;
+
 static const AVOption child_options[] = {
     { "threads", "child worker count", offsetof(ChildOptions, threads),
       AV_OPT_TYPE_INT64, { .i64 = 2 }, 1, 16, AV_OPT_FLAG_DECODING_PARAM },
@@ -1459,12 +1571,31 @@ static const AVClass test_class = {
     .child_next = test_child_next,
 };
 
+static const AVOption duration_options[] = {
+    { "timeout", "timeout", offsetof(DurationOptions, timeout),
+      AV_OPT_TYPE_DURATION, { .i64 = 0 }, 0, 7200000000LL, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL }
+};
+
+static const AVClass duration_class = {
+    .class_name = "rust-options-oracle-duration",
+    .item_name = av_default_item_name,
+    .option = duration_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
 static void init_context(TestOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &test_class;
     ctx->child.av_class = &child_class;
     av_opt_set_defaults(ctx);
     av_opt_set_defaults(&ctx->child);
+}
+
+static void init_duration_context(DurationOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &duration_class;
+    av_opt_set_defaults(ctx);
 }
 
 static void print_flags(void) {
@@ -1649,33 +1780,33 @@ static void print_dict_entries(const AVDictionary *dict) {
     }
 }
 
-static void print_get_value(const TestOptions *ctx, const char *name) {
+static void print_get_value(const void *ctx, const char *name) {
     uint8_t *value = NULL;
-    int ret = av_opt_get(ctx, name, 0, &value);
+    int ret = av_opt_get((void *)ctx, name, 0, &value);
     printf("|%d:%s", ret, ret >= 0 && value ? (const char *)value : "<null>");
     av_free(value);
 }
 
-static void print_get_value_flags(const TestOptions *ctx, const char *name, int search_flags) {
+static void print_get_value_flags(const void *ctx, const char *name, int search_flags) {
     uint8_t *value = NULL;
     int ret = av_opt_get((void *)ctx, name, search_flags, &value);
     printf("|%d:%s", ret, ret >= 0 && value ? (const char *)value : "<null>");
     av_free(value);
 }
 
-static void print_get_int_value(const TestOptions *ctx, const char *name, int search_flags) {
+static void print_get_int_value(const void *ctx, const char *name, int search_flags) {
     int64_t value = 0;
     int ret = av_opt_get_int((void *)ctx, name, search_flags, &value);
     printf("|%d:%" PRId64, ret, value);
 }
 
-static void print_get_double_value(const TestOptions *ctx, const char *name, int search_flags) {
+static void print_get_double_value(const void *ctx, const char *name, int search_flags) {
     double value = 0.0;
     int ret = av_opt_get_double((void *)ctx, name, search_flags, &value);
     printf("|%d:%.17g", ret, value);
 }
 
-static void print_get_q_value(const TestOptions *ctx, const char *name, int search_flags) {
+static void print_get_q_value(const void *ctx, const char *name, int search_flags) {
     AVRational value = { 0, 1 };
     int ret = av_opt_get_q((void *)ctx, name, search_flags, &value);
     printf("|%d:%d/%d", ret, value.num, value.den);
@@ -1708,7 +1839,7 @@ static void print_get_children_row(const TestOptions *ctx) {
     printf("\n");
 }
 
-static void print_query_range_value(const TestOptions *ctx, const char *name) {
+static void print_query_range_value(const void *ctx, const char *name) {
     AVOptionRanges *ranges = NULL;
     int ret = av_opt_query_ranges(&ranges, (void *)ctx, name, 0);
     if (ret < 0 || !ranges || !ranges->range ||
@@ -1942,6 +2073,63 @@ static void print_typed_get_set_rows(void) {
     av_opt_free(&ctx.child);
 }
 
+static void print_duration_state(const char *name, const DurationOptions *ctx) {
+    printf("%s|%" PRId64 "\n", name, ctx->timeout);
+}
+
+static void print_duration_rows(void) {
+    DurationOptions ctx;
+    int ret_15;
+    int ret_clock;
+    int ret_ms;
+    int ret_us;
+    int ret_bad;
+    int ret_range;
+    int ret_typed;
+    int64_t after_15;
+    int64_t after_clock;
+    int64_t after_ms;
+    int64_t after_us;
+
+    init_duration_context(&ctx);
+    ret_15 = av_opt_set(&ctx, "timeout", "1.5", 0);
+    after_15 = ctx.timeout;
+    ret_clock = av_opt_set(&ctx, "timeout", "00:01:02.250", 0);
+    after_clock = ctx.timeout;
+    ret_ms = av_opt_set(&ctx, "timeout", "1500ms", 0);
+    after_ms = ctx.timeout;
+    ret_us = av_opt_set(&ctx, "timeout", "42us", 0);
+    after_us = ctx.timeout;
+    printf("ret:set-duration-strings|%d|%d|%d|%d\n",
+           ret_15, ret_clock, ret_ms, ret_us);
+    printf("state:set-duration-strings|%" PRId64 "|%" PRId64 "|%" PRId64 "|%" PRId64 "\n",
+           after_15, after_clock, after_ms, after_us);
+    printf("get:set-duration-strings");
+    print_get_value(&ctx, "timeout");
+    printf("\n");
+
+    ret_bad = av_opt_set(&ctx, "timeout", "bad", 0);
+    ret_range = av_opt_set(&ctx, "timeout", "-1", 0);
+    printf("ret:set-duration-errors|%d|%d\n", ret_bad, ret_range);
+    print_duration_state("state:after-duration-errors", &ctx);
+
+    init_duration_context(&ctx);
+    ret_typed = av_opt_set_int(&ctx, "timeout", 90500000, 0);
+    printf("ret:set-duration-typed|%d\n", ret_typed);
+    print_duration_state("state:set-duration-typed", &ctx);
+    printf("get:set-duration-typed");
+    print_get_int_value(&ctx, "timeout", 0);
+    print_get_double_value(&ctx, "timeout", 0);
+    print_get_q_value(&ctx, "timeout", 0);
+    print_get_value(&ctx, "timeout");
+    printf("\n");
+
+    printf("query-ranges:duration");
+    print_query_range_value(&ctx, "timeout");
+    print_query_range_value(&ctx, "missing");
+    printf("\n");
+}
+
 static void print_set_from_string_rows(void) {
     static const char * const shorthand[] = { "threads", "bitexact", NULL };
     TestOptions ctx;
@@ -2146,6 +2334,7 @@ int main(void) {
     print_expression_rows();
     print_serialize_rows();
     print_typed_get_set_rows();
+    print_duration_rows();
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);
