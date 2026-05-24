@@ -8,7 +8,7 @@ use std::{
 use avutil::{
     AvOptionRanges, Dictionary, MatchMode, OptionChild, OptionConstant, OptionDefinition,
     OptionEntryMatch, OptionFlags, OptionKind, OptionSearchFlags, OptionSerializeFlags, OptionSet,
-    OptionValue, Rational, RgbaColor, SetMode,
+    OptionValue, PixelFormat, Rational, RgbaColor, SetMode,
 };
 
 #[test]
@@ -1063,6 +1063,105 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let pixel_defaults = pixel_format_options();
+    insert_row(
+        &mut rows,
+        "state:pixel-format-defaults",
+        pixel_format_state_fields(&pixel_defaults),
+    );
+    insert_row(
+        &mut rows,
+        "get:pixel-format-defaults",
+        [
+            ret_pixel_format(pixel_defaults.get_avoption_pixel_format("pix_fmt")),
+            ret_value(pixel_defaults.get_avoption_string("pix_fmt")),
+            ret_i64(pixel_defaults.get_avoption_int("pix_fmt")),
+        ],
+    );
+
+    let mut pixel_set = pixel_format_options();
+    let ret_rgb24 = ret(pixel_set.set_avoption_from_str("pix_fmt", "rgb24"));
+    let after_rgb24 = pixel_format_value(&pixel_set, "pix_fmt");
+    let ret_gray = ret(pixel_set.set_avoption_from_str("pix_fmt", "gray"));
+    let after_gray = pixel_format_value(&pixel_set, "pix_fmt");
+    let ret_none = ret(pixel_set.set_avoption_from_str("pix_fmt", "none"));
+    let after_none = pixel_format_value(&pixel_set, "pix_fmt");
+    let ret_numeric = ret(pixel_set.set_avoption_from_str("pix_fmt", "0x3"));
+    let after_numeric = pixel_format_value(&pixel_set, "pix_fmt");
+    insert_row(
+        &mut rows,
+        "ret:set-pixel-format-strings",
+        [ret_rgb24, ret_gray, ret_none, ret_numeric],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-pixel-format-strings",
+        [
+            pixel_format_field(after_rgb24),
+            pixel_format_field(after_gray),
+            pixel_format_field(after_none),
+            pixel_format_field(after_numeric),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-pixel-format-strings",
+        [ret_value(pixel_set.get_avoption_string("pix_fmt"))],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-pixel-format-errors",
+        [
+            ret(pixel_set.set_avoption_from_str("pix_fmt", "bad")),
+            ret(pixel_set.set_avoption_from_str("pix_fmt", "25")),
+            ret(pixel_set.set_avoption_from_str("pix_fmt", "-1")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:after-pixel-format-errors",
+        pixel_format_state_fields(&pixel_set),
+    );
+
+    let mut typed_pixel_options = pixel_format_options();
+    insert_row(
+        &mut rows,
+        "ret:set-pixel-format-typed",
+        [
+            ret(typed_pixel_options.set_avoption_pixel_format("pix_fmt", Some(PixelFormat::Rgb24))),
+            ret(typed_pixel_options.set_avoption_pixel_format("pix_fmt", None)),
+            ret(typed_pixel_options.set_avoption_pixel_format("scalar", Some(PixelFormat::Rgb24))),
+            ret(typed_pixel_options.set_avoption_int("pix_fmt", 3)),
+            ret(typed_pixel_options.set_avoption_int("pix_fmt", 25)),
+            ret(typed_pixel_options.set_avoption_int("scalar", 6)),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-pixel-format-typed",
+        pixel_format_state_fields(&typed_pixel_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-pixel-format-typed",
+        [
+            ret_pixel_format(typed_pixel_options.get_avoption_pixel_format("pix_fmt")),
+            ret_i64(typed_pixel_options.get_avoption_int("pix_fmt")),
+            ret_f64(typed_pixel_options.get_avoption_double("pix_fmt")),
+            ret_q(typed_pixel_options.get_avoption_q("pix_fmt")),
+            ret_value(typed_pixel_options.get_avoption_string("pix_fmt")),
+            ret_pixel_format(typed_pixel_options.get_avoption_pixel_format("scalar")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "query-ranges:pixel-format",
+        [
+            ret_ranges(typed_pixel_options.query_avoption_ranges("pix_fmt")),
+            ret_ranges(typed_pixel_options.query_avoption_ranges("missing")),
+        ],
+    );
+
     let video_defaults = video_rate_options();
     insert_row(
         &mut rows,
@@ -1481,6 +1580,35 @@ fn image_size_options() -> OptionSet {
     options
 }
 
+fn pixel_format_options() -> OptionSet {
+    let mut options = OptionSet::new();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "pix_fmt",
+                OptionKind::PixelFormat { min: -1, max: 24 },
+                OptionValue::PixelFormat(Some(PixelFormat::Yuv420p)),
+                "pixel format",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "scalar",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(4),
+                "scalar",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+}
+
 fn video_rate_options() -> OptionSet {
     let mut options = OptionSet::new();
     options
@@ -1596,6 +1724,13 @@ fn image_size_state_fields(options: &OptionSet) -> [String; 3] {
     ]
 }
 
+fn pixel_format_state_fields(options: &OptionSet) -> [String; 2] {
+    [
+        pixel_format_field(pixel_format_value(options, "pix_fmt")),
+        int_value(options, "scalar").to_string(),
+    ]
+}
+
 fn video_rate_state_fields(options: &OptionSet) -> [String; 3] {
     let rate = video_rate_value(options, "rate");
     [
@@ -1651,6 +1786,49 @@ fn image_size_value(options: &OptionSet, name: &str) -> (i32, i32) {
     match options.get(name) {
         Some(OptionValue::ImageSize { width, height }) => (*width, *height),
         other => panic!("expected image-size option `{name}`, got {other:?}"),
+    }
+}
+
+fn pixel_format_value(options: &OptionSet, name: &str) -> Option<PixelFormat> {
+    match options.get(name) {
+        Some(OptionValue::PixelFormat(value)) => *value,
+        other => panic!("expected pixel-format option `{name}`, got {other:?}"),
+    }
+}
+
+fn pixel_format_field(value: Option<PixelFormat>) -> String {
+    pixel_format_index(value).to_string()
+}
+
+fn pixel_format_index(value: Option<PixelFormat>) -> i32 {
+    match value {
+        None => -1,
+        Some(PixelFormat::Yuv420p) => 0,
+        Some(PixelFormat::Yuyv422) => 1,
+        Some(PixelFormat::Rgb24) => 2,
+        Some(PixelFormat::Bgr24) => 3,
+        Some(PixelFormat::Yuv422p) => 4,
+        Some(PixelFormat::Yuv444p) => 5,
+        Some(PixelFormat::Yuv410p) => 6,
+        Some(PixelFormat::Yuv411p) => 7,
+        Some(PixelFormat::Gray8) => 8,
+        Some(PixelFormat::MonoWhite) => 9,
+        Some(PixelFormat::MonoBlack) => 10,
+        Some(PixelFormat::Pal8) => 11,
+        Some(PixelFormat::YuvJ420p) => 12,
+        Some(PixelFormat::YuvJ422p) => 13,
+        Some(PixelFormat::YuvJ444p) => 14,
+        Some(PixelFormat::Uyvy422) => 15,
+        Some(PixelFormat::Uyyvyy411) => 16,
+        Some(PixelFormat::Bgr8) => 17,
+        Some(PixelFormat::Bgr4) => 18,
+        Some(PixelFormat::Bgr4Byte) => 19,
+        Some(PixelFormat::Rgb8) => 20,
+        Some(PixelFormat::Rgb4) => 21,
+        Some(PixelFormat::Rgb4Byte) => 22,
+        Some(PixelFormat::Nv12) => 23,
+        Some(PixelFormat::Nv21) => 24,
+        Some(format) => panic!("unsupported bounded pixel format `{}`", format.name()),
     }
 }
 
@@ -1814,6 +1992,18 @@ fn ret_image_size(result: avutil::AvResult<(i32, i32)>) -> String {
     }
 }
 
+fn ret_pixel_format(result: avutil::AvResult<Option<PixelFormat>>) -> String {
+    match result {
+        Ok(value) => format!("0:{}", pixel_format_index(value)),
+        Err(err) => format!(
+            "{}:-1",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
 fn ret_serialize(result: avutil::AvResult<String>) -> String {
     ret_value(result)
 }
@@ -1933,6 +2123,7 @@ fn oracle_c_source() -> &'static str {
 #include <libavutil/dict.h>
 #include <libavutil/mem.h>
 #include <libavutil/opt.h>
+#include <libavutil/pixfmt.h>
 #include <libavutil/rational.h>
 
 #define ROW_INT(name, value) printf("%s|%d\n", name, (int)(value))
@@ -1966,6 +2157,12 @@ typedef struct ImageSizeOptions {
     int size[2];
     int64_t scalar;
 } ImageSizeOptions;
+
+typedef struct PixelFormatOptions {
+    const AVClass *av_class;
+    enum AVPixelFormat pix_fmt;
+    int64_t scalar;
+} PixelFormatOptions;
 
 typedef struct VideoRateOptions {
     const AVClass *av_class;
@@ -2055,10 +2252,25 @@ static const AVOption image_size_options[] = {
     { NULL }
 };
 
+static const AVOption pixel_format_options[] = {
+    { "pix_fmt", "pixel format", offsetof(PixelFormatOptions, pix_fmt),
+      AV_OPT_TYPE_PIXEL_FMT, { .i64 = AV_PIX_FMT_YUV420P }, AV_PIX_FMT_NONE, 24, AV_OPT_FLAG_ENCODING_PARAM },
+    { "scalar", "scalar", offsetof(PixelFormatOptions, scalar),
+      AV_OPT_TYPE_INT64, { .i64 = 4 }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL }
+};
+
 static const AVClass image_size_class = {
     .class_name = "rust-options-oracle-image-size",
     .item_name = av_default_item_name,
     .option = image_size_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
+static const AVClass pixel_format_class = {
+    .class_name = "rust-options-oracle-pixel-format",
+    .item_name = av_default_item_name,
+    .option = pixel_format_options,
     .version = LIBAVUTIL_VERSION_INT,
 };
 
@@ -2109,6 +2321,12 @@ static void init_duration_context(DurationOptions *ctx) {
 static void init_image_size_context(ImageSizeOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &image_size_class;
+    av_opt_set_defaults(ctx);
+}
+
+static void init_pixel_format_context(PixelFormatOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &pixel_format_class;
     av_opt_set_defaults(ctx);
 }
 
@@ -2343,6 +2561,12 @@ static void print_get_image_size_value(const void *ctx, const char *name, int se
     int height = 0;
     int ret = av_opt_get_image_size((void *)ctx, name, search_flags, &width, &height);
     printf("|%d:%dx%d", ret, width, height);
+}
+
+static void print_get_pixel_format_value(const void *ctx, const char *name, int search_flags) {
+    enum AVPixelFormat value = AV_PIX_FMT_NONE;
+    int ret = av_opt_get_pixel_fmt((void *)ctx, name, search_flags, &value);
+    printf("|%d:%d", ret, value);
 }
 
 static void print_get_video_rate_value(const void *ctx, const char *name, int search_flags) {
@@ -2740,6 +2964,86 @@ static void print_image_size_rows(void) {
     printf("\n");
 }
 
+static void print_pixel_format_state(const char *name, const PixelFormatOptions *ctx) {
+    printf("%s|%d|%" PRId64 "\n", name, ctx->pix_fmt, ctx->scalar);
+}
+
+static void print_pixel_format_rows(void) {
+    PixelFormatOptions ctx;
+    int ret_rgb24;
+    int ret_gray;
+    int ret_none;
+    int ret_numeric;
+    int ret_bad;
+    int ret_out_of_range;
+    int ret_negative_numeric;
+    int ret_typed;
+    int ret_typed_none;
+    int ret_wrong_type;
+    int ret_int;
+    int ret_int_range;
+    int ret_scalar;
+    enum AVPixelFormat after_rgb24;
+    enum AVPixelFormat after_gray;
+    enum AVPixelFormat after_none;
+    enum AVPixelFormat after_numeric;
+
+    init_pixel_format_context(&ctx);
+    print_pixel_format_state("state:pixel-format-defaults", &ctx);
+    printf("get:pixel-format-defaults");
+    print_get_pixel_format_value(&ctx, "pix_fmt", 0);
+    print_get_value(&ctx, "pix_fmt");
+    print_get_int_value(&ctx, "pix_fmt", 0);
+    printf("\n");
+
+    ret_rgb24 = av_opt_set(&ctx, "pix_fmt", "rgb24", 0);
+    after_rgb24 = ctx.pix_fmt;
+    ret_gray = av_opt_set(&ctx, "pix_fmt", "gray", 0);
+    after_gray = ctx.pix_fmt;
+    ret_none = av_opt_set(&ctx, "pix_fmt", "none", 0);
+    after_none = ctx.pix_fmt;
+    ret_numeric = av_opt_set(&ctx, "pix_fmt", "0x3", 0);
+    after_numeric = ctx.pix_fmt;
+    printf("ret:set-pixel-format-strings|%d|%d|%d|%d\n",
+           ret_rgb24, ret_gray, ret_none, ret_numeric);
+    printf("state:set-pixel-format-strings|%d|%d|%d|%d\n",
+           after_rgb24, after_gray, after_none, after_numeric);
+    printf("get:set-pixel-format-strings");
+    print_get_value(&ctx, "pix_fmt");
+    printf("\n");
+
+    ret_bad = av_opt_set(&ctx, "pix_fmt", "bad", 0);
+    ret_out_of_range = av_opt_set(&ctx, "pix_fmt", "25", 0);
+    ret_negative_numeric = av_opt_set(&ctx, "pix_fmt", "-1", 0);
+    printf("ret:set-pixel-format-errors|%d|%d|%d\n",
+           ret_bad, ret_out_of_range, ret_negative_numeric);
+    print_pixel_format_state("state:after-pixel-format-errors", &ctx);
+
+    init_pixel_format_context(&ctx);
+    ret_typed = av_opt_set_pixel_fmt(&ctx, "pix_fmt", AV_PIX_FMT_RGB24, 0);
+    ret_typed_none = av_opt_set_pixel_fmt(&ctx, "pix_fmt", AV_PIX_FMT_NONE, 0);
+    ret_wrong_type = av_opt_set_pixel_fmt(&ctx, "scalar", AV_PIX_FMT_RGB24, 0);
+    ret_int = av_opt_set_int(&ctx, "pix_fmt", AV_PIX_FMT_BGR24, 0);
+    ret_int_range = av_opt_set_int(&ctx, "pix_fmt", 25, 0);
+    ret_scalar = av_opt_set_int(&ctx, "scalar", 6, 0);
+    printf("ret:set-pixel-format-typed|%d|%d|%d|%d|%d|%d\n",
+           ret_typed, ret_typed_none, ret_wrong_type, ret_int, ret_int_range, ret_scalar);
+    print_pixel_format_state("state:set-pixel-format-typed", &ctx);
+    printf("get:set-pixel-format-typed");
+    print_get_pixel_format_value(&ctx, "pix_fmt", 0);
+    print_get_int_value(&ctx, "pix_fmt", 0);
+    print_get_double_value(&ctx, "pix_fmt", 0);
+    print_get_q_value(&ctx, "pix_fmt", 0);
+    print_get_value(&ctx, "pix_fmt");
+    print_get_pixel_format_value(&ctx, "scalar", 0);
+    printf("\n");
+
+    printf("query-ranges:pixel-format");
+    print_query_range_value(&ctx, "pix_fmt");
+    print_query_range_value(&ctx, "missing");
+    printf("\n");
+}
+
 static void print_video_rate_state(const char *name, const VideoRateOptions *ctx) {
     printf("%s|%d|%d|%" PRId64 "\n", name, ctx->rate.num, ctx->rate.den, ctx->scalar);
 }
@@ -3095,6 +3399,7 @@ int main(void) {
     print_typed_get_set_rows();
     print_duration_rows();
     print_image_size_rows();
+    print_pixel_format_rows();
     print_video_rate_rows();
     print_color_rows();
 

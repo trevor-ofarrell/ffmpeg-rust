@@ -1,6 +1,7 @@
 use crate::{
     color::{find_named_color, parse_color, RgbaColor},
     dict::{Dictionary, MatchMode, SetMode},
+    pixel::PixelFormat,
     AvError, AvErrorCode, AvErrorKind, AvResult, Rational,
 };
 
@@ -10,6 +11,7 @@ pub enum OptionValue {
     Int(i64),
     Duration(i64),
     ImageSize { width: i32, height: i32 },
+    PixelFormat(Option<PixelFormat>),
     VideoRate(Rational),
     Color(RgbaColor),
     Float(f64),
@@ -23,6 +25,7 @@ pub enum OptionKind {
     Int { min: i64, max: i64 },
     Duration { min: i64, max: i64 },
     ImageSize,
+    PixelFormat { min: i32, max: i32 },
     VideoRate { min: Rational, max: Rational },
     Color,
     Float { min: f64, max: f64 },
@@ -80,6 +83,15 @@ impl OptionRange {
                 if min > max {
                     return Err(AvError::invalid_argument(
                         "video rate option range min must be <= max",
+                    ));
+                }
+            }
+            (OptionValue::PixelFormat(min), OptionValue::PixelFormat(max)) => {
+                let min = pixel_format_avoption_index(*min)?;
+                let max = pixel_format_avoption_index(*max)?;
+                if min > max {
+                    return Err(AvError::invalid_argument(
+                        "pixel format option range min must be <= max",
                     ));
                 }
             }
@@ -571,6 +583,9 @@ impl OptionDefinition {
             OptionKind::ImageSize => {
                 let (width, height) = parse_image_size(raw)?;
                 OptionValue::ImageSize { width, height }
+            }
+            OptionKind::PixelFormat { min, max } => {
+                OptionValue::PixelFormat(parse_pixel_format(raw, min, max)?)
             }
             OptionKind::VideoRate { .. } => OptionValue::VideoRate(parse_video_rate(raw)?),
             OptionKind::Color => OptionValue::Color(parse_color(raw)?),
@@ -1164,6 +1179,40 @@ impl OptionSet {
         self.set_avoption_image_size_at_index(index, width, height)
     }
 
+    pub fn set_avoption_pixel_format(
+        &mut self,
+        name: &str,
+        value: Option<PixelFormat>,
+    ) -> AvResult<()> {
+        let index = self.avoption_index(name)?;
+        self.set_avoption_pixel_format_at_index(index, value)
+    }
+
+    pub fn set_avoption_pixel_format_with_flags(
+        &mut self,
+        name: &str,
+        value: Option<PixelFormat>,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &mut self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child
+                        .options
+                        .set_avoption_pixel_format_at_index(index, value);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.set_avoption_pixel_format_at_index(index, value)
+    }
+
     pub fn set_avoption_video_rate(&mut self, name: &str, value: Rational) -> AvResult<()> {
         let index = self.avoption_index(name)?;
         self.set_avoption_video_rate_at_index(index, value)
@@ -1259,6 +1308,33 @@ impl OptionSet {
 
         let index = self.avoption_index(name)?;
         self.get_avoption_image_size_at_index(index)
+    }
+
+    pub fn get_avoption_pixel_format(&self, name: &str) -> AvResult<Option<PixelFormat>> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_pixel_format_at_index(index)
+    }
+
+    pub fn get_avoption_pixel_format_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<Option<PixelFormat>> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child.options.get_avoption_pixel_format_at_index(index);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.get_avoption_pixel_format_at_index(index)
     }
 
     pub fn get_avoption_video_rate(&self, name: &str) -> AvResult<Rational> {
@@ -1512,6 +1588,30 @@ impl OptionSet {
         Ok(())
     }
 
+    fn set_avoption_pixel_format_at_index(
+        &mut self,
+        index: usize,
+        value: Option<PixelFormat>,
+    ) -> AvResult<()> {
+        self.ensure_writable(index)?;
+        if !matches!(
+            self.definitions[index].kind(),
+            OptionKind::PixelFormat { .. }
+        ) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not a pixel format",
+                self.definitions[index].name()
+            )));
+        }
+        let value = avoption_value_from_numeric(
+            self.definitions[index].kind(),
+            self.definitions[index].name(),
+            AvOptionNumericInput::Int(i64::from(pixel_format_avoption_index(value)?)),
+        )?;
+        self.values[index] = value;
+        Ok(())
+    }
+
     fn set_avoption_video_rate_at_index(&mut self, index: usize, value: Rational) -> AvResult<()> {
         self.ensure_writable(index)?;
         if !matches!(self.definitions[index].kind(), OptionKind::VideoRate { .. }) {
@@ -1571,6 +1671,25 @@ impl OptionSet {
         }
     }
 
+    fn get_avoption_pixel_format_at_index(&self, index: usize) -> AvResult<Option<PixelFormat>> {
+        if !matches!(
+            self.definitions[index].kind(),
+            OptionKind::PixelFormat { .. }
+        ) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not a pixel format",
+                self.definitions[index].name()
+            )));
+        }
+        match self.values[index] {
+            OptionValue::PixelFormat(value) => Ok(value),
+            _ => Err(AvError::invalid_argument(format!(
+                "AVOption `{}` storage is not a pixel format",
+                self.definitions[index].name()
+            ))),
+        }
+    }
+
     pub fn set_child(
         &mut self,
         child_name: &str,
@@ -1620,6 +1739,7 @@ impl OptionSet {
             | OptionKind::String { .. }
             | OptionKind::Duration { .. }
             | OptionKind::ImageSize
+            | OptionKind::PixelFormat { .. }
             | OptionKind::VideoRate { .. }
             | OptionKind::Color => {
                 if matches!(self.definitions[index].kind(), OptionKind::Duration { .. }) {
@@ -1992,12 +2112,183 @@ fn parse_avoption_color_alpha(alpha: &str) -> AvResult<u8> {
     Ok((255.0 * normalized).trunc() as u8)
 }
 
+fn parse_pixel_format(raw: &str, min: i32, max: i32) -> AvResult<Option<PixelFormat>> {
+    if raw == "none" {
+        return validate_pixel_format_index(None, min, max).map(|_| None);
+    }
+
+    if let Some(format) = PixelFormat::from_name(raw) {
+        validate_pixel_format_index(Some(format), min, max)?;
+        return Ok(Some(format));
+    }
+
+    let Some(index) = parse_c_auto_i32(raw) else {
+        return Err(AvError::invalid_argument(format!(
+            "unable to parse pixel format option value `{raw}`"
+        )));
+    };
+    if index < 0 {
+        return Err(AvError::invalid_argument(format!(
+            "unable to parse pixel format option value `{raw}`"
+        )));
+    }
+    if index < min || index > max {
+        return Err(avoption_range_error(
+            "pixel format",
+            f64::from(index),
+            f64::from(min),
+            f64::from(max),
+        ));
+    }
+
+    pixel_format_from_avoption_index(index)
+}
+
+fn parse_c_auto_i32(raw: &str) -> Option<i32> {
+    let mut text = raw.trim_start();
+    let mut sign = 1i64;
+    if let Some(rest) = text.strip_prefix('+') {
+        text = rest;
+    } else if let Some(rest) = text.strip_prefix('-') {
+        text = rest;
+        sign = -1;
+    }
+
+    let (base, digits) = if let Some(rest) = text.strip_prefix("0x") {
+        (16, rest)
+    } else if let Some(rest) = text.strip_prefix("0X") {
+        (16, rest)
+    } else if text.len() > 1 {
+        match text.strip_prefix('0') {
+            Some(rest) if !rest.is_empty() => (8, rest),
+            _ => (10, text),
+        }
+    } else {
+        (10, text)
+    };
+
+    if digits.is_empty() {
+        return None;
+    }
+
+    let valid = match base {
+        8 => digits.bytes().all(|byte| matches!(byte, b'0'..=b'7')),
+        10 => digits.bytes().all(|byte| byte.is_ascii_digit()),
+        16 => digits.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        _ => false,
+    };
+    if !valid {
+        return None;
+    }
+
+    let value = i64::from_str_radix(digits, base).ok()?.checked_mul(sign)?;
+    i32::try_from(value).ok()
+}
+
+fn validate_pixel_format_index(value: Option<PixelFormat>, min: i32, max: i32) -> AvResult<()> {
+    let index = pixel_format_avoption_index(value)?;
+    if index < min || index > max {
+        return Err(avoption_range_error(
+            "pixel format",
+            f64::from(index),
+            f64::from(min),
+            f64::from(max),
+        ));
+    }
+    Ok(())
+}
+
+fn pixel_format_from_avoption_index(index: i32) -> AvResult<Option<PixelFormat>> {
+    let format = match index {
+        -1 => return Ok(None),
+        0 => PixelFormat::Yuv420p,
+        1 => PixelFormat::Yuyv422,
+        2 => PixelFormat::Rgb24,
+        3 => PixelFormat::Bgr24,
+        4 => PixelFormat::Yuv422p,
+        5 => PixelFormat::Yuv444p,
+        6 => PixelFormat::Yuv410p,
+        7 => PixelFormat::Yuv411p,
+        8 => PixelFormat::Gray8,
+        9 => PixelFormat::MonoWhite,
+        10 => PixelFormat::MonoBlack,
+        11 => PixelFormat::Pal8,
+        12 => PixelFormat::YuvJ420p,
+        13 => PixelFormat::YuvJ422p,
+        14 => PixelFormat::YuvJ444p,
+        15 => PixelFormat::Uyvy422,
+        16 => PixelFormat::Uyyvyy411,
+        17 => PixelFormat::Bgr8,
+        18 => PixelFormat::Bgr4,
+        19 => PixelFormat::Bgr4Byte,
+        20 => PixelFormat::Rgb8,
+        21 => PixelFormat::Rgb4,
+        22 => PixelFormat::Rgb4Byte,
+        23 => PixelFormat::Nv12,
+        24 => PixelFormat::Nv21,
+        _ => {
+            return Err(AvError::invalid_argument(format!(
+                "unsupported bounded FFmpeg pixel format index {index}"
+            )))
+        }
+    };
+    Ok(Some(format))
+}
+
+fn pixel_format_avoption_index(value: Option<PixelFormat>) -> AvResult<i32> {
+    match value {
+        None => Ok(-1),
+        Some(PixelFormat::Yuv420p) => Ok(0),
+        Some(PixelFormat::Yuyv422) => Ok(1),
+        Some(PixelFormat::Rgb24) => Ok(2),
+        Some(PixelFormat::Bgr24) => Ok(3),
+        Some(PixelFormat::Yuv422p) => Ok(4),
+        Some(PixelFormat::Yuv444p) => Ok(5),
+        Some(PixelFormat::Yuv410p) => Ok(6),
+        Some(PixelFormat::Yuv411p) => Ok(7),
+        Some(PixelFormat::Gray8) => Ok(8),
+        Some(PixelFormat::MonoWhite) => Ok(9),
+        Some(PixelFormat::MonoBlack) => Ok(10),
+        Some(PixelFormat::Pal8) => Ok(11),
+        Some(PixelFormat::YuvJ420p) => Ok(12),
+        Some(PixelFormat::YuvJ422p) => Ok(13),
+        Some(PixelFormat::YuvJ444p) => Ok(14),
+        Some(PixelFormat::Uyvy422) => Ok(15),
+        Some(PixelFormat::Uyyvyy411) => Ok(16),
+        Some(PixelFormat::Bgr8) => Ok(17),
+        Some(PixelFormat::Bgr4) => Ok(18),
+        Some(PixelFormat::Bgr4Byte) => Ok(19),
+        Some(PixelFormat::Rgb8) => Ok(20),
+        Some(PixelFormat::Rgb4) => Ok(21),
+        Some(PixelFormat::Rgb4Byte) => Ok(22),
+        Some(PixelFormat::Nv12) => Ok(23),
+        Some(PixelFormat::Nv21) => Ok(24),
+        Some(format) => Err(AvError::unsupported(format!(
+            "pixel format `{}` is outside the bounded AVOption index model",
+            format.name()
+        ))),
+    }
+}
+
 fn validate_kind(kind: &OptionKind) -> AvResult<()> {
     match *kind {
         OptionKind::Bool
         | OptionKind::ImageSize
         | OptionKind::Color
         | OptionKind::String { .. } => Ok(()),
+        OptionKind::PixelFormat { min, max } => {
+            if min > max {
+                return Err(AvError::invalid_argument(
+                    "pixel format option min must be <= max",
+                ));
+            }
+            if min < -1 {
+                return Err(AvError::invalid_argument(
+                    "pixel format option min must be >= AV_PIX_FMT_NONE",
+                ));
+            }
+            Ok(())
+        }
         OptionKind::Int { min, max } => {
             if min > max {
                 return Err(AvError::invalid_argument(
@@ -2070,6 +2361,7 @@ fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
             min: OptionValue::VideoRate(min),
             max: OptionValue::VideoRate(max),
         }),
+        OptionKind::PixelFormat { .. } => None,
         OptionKind::Bool
         | OptionKind::ImageSize
         | OptionKind::Color
@@ -2104,6 +2396,10 @@ fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
             range.value_max = f64::from(i32::MAX / 8);
             range.component_min = 0.0;
             range.component_max = f64::from(i32::MAX / 128 / 8);
+        }
+        OptionKind::PixelFormat { min, max } => {
+            range.value_min = f64::from(min);
+            range.value_max = f64::from(max);
         }
         OptionKind::VideoRate { .. } => {
             range.value_min = 1.0;
@@ -2231,6 +2527,11 @@ fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNu
         OptionValue::ImageSize { .. } => Err(AvError::invalid_argument(format!(
             "AVOption `{name}` is not numeric"
         ))),
+        OptionValue::PixelFormat(value) => Ok(AvOptionNumberParts {
+            num: 1.0,
+            den: 1,
+            intnum: i64::from(pixel_format_avoption_index(*value)?),
+        }),
         OptionValue::VideoRate(_) => Err(AvError::invalid_argument(format!(
             "AVOption `{name}` is not numeric"
         ))),
@@ -2284,6 +2585,16 @@ fn avoption_value_from_numeric(
             } else {
                 Err(avoption_range_error(name, value, 0.0, 0.0))
             }
+        }
+        OptionKind::PixelFormat { min, max } => {
+            avoption_check_numeric_range(name, value, f64::from(min), f64::from(max))?;
+            let index = round_f64_ties_even_to_i64(value)?;
+            let index = i32::try_from(index).map_err(|_| {
+                AvError::invalid_argument("numeric AVOption pixel format out of range")
+            })?;
+            Ok(OptionValue::PixelFormat(pixel_format_from_avoption_index(
+                index,
+            )?))
         }
         OptionKind::VideoRate { min, max } => {
             avoption_check_numeric_range(name, value, min.to_f64(), max.to_f64())?;
@@ -2439,6 +2750,9 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
             }
             Ok(())
         }
+        (OptionKind::PixelFormat { min, max }, OptionValue::PixelFormat(value)) => {
+            validate_pixel_format_index(*value, *min, *max)
+        }
         (OptionKind::VideoRate { min, max }, OptionValue::VideoRate(value)) => {
             validate_video_rate_bound(*value, "video rate option value")?;
             if value < min || value > max {
@@ -2523,6 +2837,7 @@ fn avoption_kind_min(kind: &OptionKind) -> AvResult<f64> {
         OptionKind::ImageSize => Err(AvError::invalid_argument(
             "image size AVOption does not have a scalar numeric minimum",
         )),
+        OptionKind::PixelFormat { min, .. } => Ok(f64::from(min)),
         OptionKind::VideoRate { min, .. } => Ok(min.to_f64()),
         OptionKind::Color => Err(AvError::invalid_argument(
             "color AVOption does not have a numeric minimum",
@@ -2543,6 +2858,7 @@ fn avoption_kind_max(kind: &OptionKind) -> AvResult<f64> {
         OptionKind::ImageSize => Err(AvError::invalid_argument(
             "image size AVOption does not have a scalar numeric maximum",
         )),
+        OptionKind::PixelFormat { max, .. } => Ok(f64::from(max)),
         OptionKind::VideoRate { max, .. } => Ok(max.to_f64()),
         OptionKind::Color => Err(AvError::invalid_argument(
             "color AVOption does not have a numeric maximum",
@@ -3524,6 +3840,8 @@ fn format_avoption_value(value: &OptionValue) -> String {
         OptionValue::Int(value) => value.to_string(),
         OptionValue::Duration(value) => format_duration(*value),
         OptionValue::ImageSize { width, height } => format!("{width}x{height}"),
+        OptionValue::PixelFormat(None) => "none".to_owned(),
+        OptionValue::PixelFormat(Some(value)) => value.name().to_owned(),
         OptionValue::VideoRate(value) => format!("{}/{}", value.num(), value.den()),
         OptionValue::Color(value) => {
             let rgba = value.rgba();
@@ -3964,6 +4282,135 @@ mod tests {
             Some(AvErrorCode::EINVAL)
         );
         assert_eq!(options, before_errors);
+    }
+
+    #[test]
+    fn pixel_format_options_parse_format_and_query_like_bounded_ffmpeg_shape() {
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new(
+                    "pix_fmt",
+                    OptionKind::PixelFormat { min: -1, max: 24 },
+                    OptionValue::PixelFormat(Some(PixelFormat::Yuv420p)),
+                    "pixel format",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "scalar",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(4),
+                    "scalar",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(options.range("pix_fmt").unwrap(), None);
+        let av_ranges = options.query_avoption_ranges("pix_fmt").unwrap();
+        assert_eq!(av_ranges.nb_ranges(), 1);
+        assert_eq!(av_ranges.ranges()[0].value_min(), -1.0);
+        assert_eq!(av_ranges.ranges()[0].value_max(), 24.0);
+        assert_eq!(av_ranges.ranges()[0].component_min(), 0.0);
+        assert_eq!(av_ranges.ranges()[0].component_max(), 0.0);
+        assert_eq!(
+            options.get_avoption_pixel_format("pix_fmt").unwrap(),
+            Some(PixelFormat::Yuv420p)
+        );
+        assert_eq!(options.get_avoption_string("pix_fmt").unwrap(), "yuv420p");
+        assert_eq!(options.get_avoption_int("pix_fmt").unwrap(), 0);
+
+        options.set_avoption_from_str("pix_fmt", "rgb24").unwrap();
+        assert_eq!(
+            options.get("pix_fmt"),
+            Some(&OptionValue::PixelFormat(Some(PixelFormat::Rgb24)))
+        );
+        assert_eq!(options.get_avoption_int("pix_fmt").unwrap(), 2);
+
+        options.set_avoption_from_str("pix_fmt", "gray").unwrap();
+        assert_eq!(
+            options.get("pix_fmt"),
+            Some(&OptionValue::PixelFormat(Some(PixelFormat::Gray8)))
+        );
+        assert_eq!(options.get_avoption_string("pix_fmt").unwrap(), "gray");
+
+        options.set_avoption_from_str("pix_fmt", "none").unwrap();
+        assert_eq!(
+            options.get("pix_fmt"),
+            Some(&OptionValue::PixelFormat(None))
+        );
+        assert_eq!(options.get_avoption_string("pix_fmt").unwrap(), "none");
+        assert_eq!(options.get_avoption_int("pix_fmt").unwrap(), -1);
+
+        options.set_avoption_from_str("pix_fmt", "0x3").unwrap();
+        assert_eq!(
+            options.get("pix_fmt"),
+            Some(&OptionValue::PixelFormat(Some(PixelFormat::Bgr24)))
+        );
+        assert_eq!(options.get_avoption_string("pix_fmt").unwrap(), "bgr24");
+
+        let before_errors = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_from_str("pix_fmt", "bad")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_errors);
+        assert_eq!(
+            options
+                .set_avoption_from_str("pix_fmt", "25")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(options, before_errors);
+
+        options
+            .set_avoption_pixel_format("pix_fmt", Some(PixelFormat::Rgb24))
+            .unwrap();
+        assert_eq!(
+            options.get_avoption_pixel_format("pix_fmt").unwrap(),
+            Some(PixelFormat::Rgb24)
+        );
+        options.set_avoption_pixel_format("pix_fmt", None).unwrap();
+        assert_eq!(options.get_avoption_pixel_format("pix_fmt").unwrap(), None);
+        options.set_avoption_int("pix_fmt", 3).unwrap();
+        assert_eq!(
+            options.get_avoption_pixel_format("pix_fmt").unwrap(),
+            Some(PixelFormat::Bgr24)
+        );
+        assert_eq!(options.get_avoption_double("pix_fmt").unwrap(), 3.0);
+        assert_eq!(
+            options.get_avoption_q("pix_fmt").unwrap(),
+            Rational::new(3, 1).unwrap()
+        );
+        let before_typed_errors = options.clone();
+        assert_eq!(
+            options.set_avoption_int("pix_fmt", 25).unwrap_err().code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(options, before_typed_errors);
+        assert_eq!(
+            options
+                .set_avoption_pixel_format("scalar", Some(PixelFormat::Rgb24))
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options
+                .get_avoption_pixel_format("scalar")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_typed_errors);
     }
 
     #[test]
