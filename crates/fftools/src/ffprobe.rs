@@ -836,6 +836,7 @@ fn report_from_avi(path: &str, input_size: u64, info: &AviInfo) -> FfprobeReport
                 time_base_den,
             );
             let codec_type = avi_codec_type(stream.media_type()).to_owned();
+            let codec_tag_string = codec_tag_string_for_tag(stream.handler());
             FfprobeStreamReport {
                 index: stream.index(),
                 id: u32::try_from(stream.index()).unwrap_or(u32::MAX),
@@ -846,7 +847,7 @@ fn report_from_avi(path: &str, input_size: u64, info: &AviInfo) -> FfprobeReport
                 field_order: field_order_for_codec_type(&codec_type),
                 codec_type,
                 codec_tag: fourcc_codec_tag(stream.handler()),
-                codec_tag_string: Some(stream.handler().to_owned()),
+                codec_tag_string,
                 width: Some(stream.width()),
                 height: Some(stream.height()),
                 coded_width: Some(stream.width()),
@@ -1244,7 +1245,7 @@ fn field_order_for_codec_type(codec_type: &str) -> Option<String> {
 
 fn codec_name_for_tag(tag: &str) -> Option<&'static str> {
     match tag {
-        "DIB " | "raw " => Some("rawvideo"),
+        "\0\0\0\0" | "DIB " | "raw " => Some("rawvideo"),
         "avc1" | "avc3" => Some("h264"),
         "hvc1" | "hev1" => Some("hevc"),
         "mp4v" => Some("mpeg4"),
@@ -1257,7 +1258,7 @@ fn codec_name_for_tag(tag: &str) -> Option<&'static str> {
 
 fn codec_long_name_for_tag(tag: &str) -> Option<&'static str> {
     match tag {
-        "DIB " | "raw " => Some("raw video"),
+        "\0\0\0\0" | "DIB " | "raw " => Some("raw video"),
         "avc1" | "avc3" => Some("H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10"),
         "hvc1" | "hev1" => Some("H.265 / HEVC (High Efficiency Video Coding)"),
         "mp4v" => Some("MPEG-4 part 2"),
@@ -1270,7 +1271,21 @@ fn codec_long_name_for_tag(tag: &str) -> Option<&'static str> {
 
 fn fourcc_codec_tag(tag: &str) -> Option<String> {
     let bytes: [u8; 4] = tag.as_bytes().try_into().ok()?;
-    Some(format!("0x{:08x}", u32::from_le_bytes(bytes)))
+    let tag = u32::from_le_bytes(bytes);
+    if tag == 0 {
+        Some("0x0000".to_string())
+    } else {
+        Some(format!("0x{tag:08x}"))
+    }
+}
+
+fn codec_tag_string_for_tag(tag: &str) -> Option<String> {
+    let bytes: [u8; 4] = tag.as_bytes().try_into().ok()?;
+    if bytes == [0; 4] {
+        Some("[0][0][0][0]".to_string())
+    } else {
+        Some(tag.to_owned())
+    }
 }
 
 fn average_frame_rate(
@@ -1324,9 +1339,9 @@ fn gcd_u128(mut left: u128, mut right: u128) -> u128 {
 
 fn packet_flags(bits: u32) -> String {
     if bits & 1 != 0 {
-        "K_".to_string()
+        "K__".to_string()
     } else {
-        "__".to_string()
+        "___".to_string()
     }
 }
 
@@ -1969,7 +1984,7 @@ mod tests {
         assert!(rendered.contains("pts_time=0.000000\n"));
         assert!(rendered.contains("duration_time=0.011111\n"));
         assert!(rendered.contains("size=3\n"));
-        assert!(rendered.contains("flags=K_\n"));
+        assert!(rendered.contains("flags=K__\n"));
         assert!(rendered.contains("[FORMAT]\n"));
     }
 
@@ -2410,11 +2425,11 @@ mod tests {
         assert!(stdout.contains("duration=1000\n"));
         assert!(stdout.contains("duration_time=0.011111\n"));
         assert!(stdout.contains("size=3\n"));
-        assert!(stdout.contains("flags=K_\n"));
+        assert!(stdout.contains("flags=K__\n"));
         assert!(stdout.contains("pts=1000\n"));
         assert!(stdout.contains("duration=2000\n"));
         assert!(stdout.contains("size=4\n"));
-        assert!(stdout.contains("flags=__\n"));
+        assert!(stdout.contains("flags=___\n"));
     }
 
     #[test]
@@ -2440,7 +2455,7 @@ mod tests {
         assert!(stdout.contains("\"pts\": 1000"));
         assert!(stdout.contains("\"pts_time\": \"0.011111\""));
         assert!(stdout.contains("\"duration_time\": \"0.022222\""));
-        assert!(stdout.contains("\"flags\": \"__\""));
+        assert!(stdout.contains("\"flags\": \"___\""));
         assert!(!stdout.contains("\"streams\""));
         assert!(!stdout.contains("\"format\""));
     }
@@ -2571,8 +2586,8 @@ mod tests {
         assert!(stdout.contains("\"codec_name\": \"rawvideo\""));
         assert!(stdout.contains("\"codec_long_name\": \"raw video\""));
         assert!(stdout.contains("\"codec_type\": \"video\""));
-        assert!(stdout.contains("\"codec_tag_string\": \"DIB \""));
-        assert!(stdout.contains("\"codec_tag\": \"0x20424944\""));
+        assert!(stdout.contains("\"codec_tag_string\": \"[0][0][0][0]\""));
+        assert!(stdout.contains("\"codec_tag\": \"0x0000\""));
         assert!(stdout.contains("\"width\": 2"));
         assert!(stdout.contains("\"height\": 1"));
         assert!(stdout.contains("\"coded_width\": 2"));
@@ -2725,8 +2740,8 @@ mod tests {
         assert!(stdout.contains("dts_time=0.000000\n"));
         assert!(stdout.contains("duration=1\n"));
         assert!(stdout.contains("duration_time=0.040000\n"));
-        assert!(stdout.contains("size=6\n"));
-        assert!(stdout.contains("flags=__\n"));
+        assert!(stdout.contains("size=8\n"));
+        assert!(stdout.contains("flags=K__\n"));
         assert!(stdout.contains("pts=1\n"));
         assert!(stdout.contains("dts=1\n"));
         assert!(stdout.contains("pts_time=0.040000\n"));
@@ -2824,7 +2839,7 @@ mod tests {
                 duration: 1_000,
                 duration_time: "0.011111".to_string(),
                 size: 3,
-                flags: "K_".to_string(),
+                flags: "K__".to_string(),
             }],
         }
     }

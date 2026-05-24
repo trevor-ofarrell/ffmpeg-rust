@@ -3,7 +3,8 @@ use crate::{
     VideoStreamParameters,
 };
 use avutil::{
-    AvError, AvErrorKind, AvResult, ByteReader, ByteWriter, Packet, PixelFormat, Rational, SideData,
+    AvError, AvErrorKind, AvResult, ByteReader, ByteWriter, Packet, PacketFlags, PixelFormat,
+    Rational, SideData,
 };
 
 const RIFF_ID: &[u8; 4] = b"RIFF";
@@ -894,6 +895,7 @@ fn parse_movi_payload(
         packet.set_pts(Some(pts));
         packet.set_dts(Some(pts));
         packet.set_duration(1)?;
+        packet.set_flag(PacketFlags::KEY, true);
         packet.push_side_data(SideData::new("avi_chunk_id", chunk.id.to_vec())?);
         next_pts[stream_index] = pts
             .checked_add(1)

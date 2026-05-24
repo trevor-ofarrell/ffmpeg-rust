@@ -2,6 +2,14 @@ target_version = "8.1.1"
 target_release = "Hoare"
 default_profile = "ffmpeg-8.1.1-default-native"
 
+# Latest ffprobe MOV evidence: a generated two-frame RGB24 MOV oracle row now
+# compares selected default-output fields from Rust ffprobe-rs against pinned
+# FFmpeg 8.1.1 ffprobe for format counts/name/duration/size/probe score,
+# stream codec/tag/dimensions/timing/count fields, and packet timing/size/K__
+# flags. The mapped fftools-ffprobe rows advanced to differential_pass, not
+# complete, because tags, field-order/id/pos/disposition deltas, JSON byte
+# identity, broader formats, FATE coverage, and fuzz/invalid-input closure
+# remain pending.
 # Latest avutil-packet evidence: `packet:unref-empty` and
 # `packet:unref-repeat` rows now prove pinned FFmpeg 8.1.1
 # `av_packet_unref()` resets an already-empty allocated packet and remains
@@ -2392,7 +2400,7 @@ id = "fftools-ffprobe-mov-show-format"
 kind = "cli"
 ffmpeg_name = "ffprobe MOV/MP4 -show_format/-show_streams"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_format -show_streams -of json <input.mp4>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2408,10 +2416,10 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
   "ffprobe::tests::rejects_unmatched_local_input_format",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-mov-show-format|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-show-format|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Format reports include local input byte length as size, zero nb_programs/nb_stream_groups counters for the current no-program/no-stream-group demuxer model, and MOV movie-level metadata tags parsed from udta/meta/ilst atoms. Stream reports include initial codec_name, codec_long_name, profile, level, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, field_order=unknown because MOV field-order metadata is not parsed yet, MOV raw VisualSampleEntry depth as bits_per_raw_sample, MOV non-empty sample-entry extradata_size, MOV avcC-derived is_avc and nal_length_size, time_base from parsed mdhd media timescale, start_pts/start_time for non-empty zero-origin streams, r_frame_rate and avg_frame_rate for constrained parsed timing, duration_ts/duration from parsed mdhd media duration and timescale, MOV mdhd language and hdlr handler_name as stream tags when present, constrained nb_read_frames when -count_frames is requested, nb_read_packets when -count_packets is requested, and MOV visual sample-entry side fields for sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and has no oracle differential coverage yet. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
+notes = "Initial ffprobe-rs command execution path supports local seekable MOV/MP4 files for -show_format and -show_streams using the Rust MOV probe descriptor and MovDemuxer. Format reports include local input byte length as size, zero nb_programs/nb_stream_groups counters for the current no-program/no-stream-group demuxer model, and MOV movie-level metadata tags parsed from udta/meta/ilst atoms. Stream reports include initial codec_name, codec_long_name, profile, level, codec_type, codec_tag_string, numeric codec_tag, width/height, constrained coded_width/coded_height mirroring parsed dimensions, field_order=unknown because MOV field-order metadata is not parsed yet, MOV raw VisualSampleEntry depth as bits_per_raw_sample, MOV non-empty sample-entry extradata_size, MOV avcC-derived is_avc and nal_length_size, time_base from parsed mdhd media timescale, start_pts/start_time for non-empty zero-origin streams, r_frame_rate and avg_frame_rate for constrained parsed timing, duration_ts/duration from parsed mdhd media duration and timescale, MOV mdhd language and hdlr handler_name as stream tags when present, constrained nb_read_frames when -count_frames is requested, nb_read_packets when -count_packets is requested, and MOV visual sample-entry side fields for sample_aspect_ratio, display_aspect_ratio, color_range, color_space, color_transfer, and color_primaries when the constrained Rust demuxer has enough metadata. Output supports the default and json writers for a small deterministic summary but is not byte-identical to upstream and the generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending. Tests cover the in-process command path because Windows Application Control blocks separate cargo-built integration test executables in this environment."
 blocked_reason = ""
 
 [[component]]
@@ -2419,7 +2427,7 @@ id = "fftools-ffprobe-format-size"
 kind = "cli"
 ffmpeg_name = "ffprobe format size field"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_format <input.mp4>; ffprobe -show_format -of json <input.mp4>; ffprobe -show_format <input.avi>; ffprobe -show_format -of json <input.avi>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2431,10 +2439,10 @@ unit_tests = [
   "ffprobe::tests::opens_local_avi_file_for_show_format",
   "ffprobe::tests::outputs_avi_format_size_json",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-format-size|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-format-size|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now carries local input byte length into format reports and renders it as size in default and JSON -show_format output for constrained MOV/MP4 and AVI inputs. Current tests prove exact byte length for generated MOV and AVI fixtures. No pinned-oracle differential or upstream FATE coverage exists yet."
+notes = "ffprobe-rs now carries local input byte length into format reports and renders it as size in default and JSON -show_format output for constrained MOV/MP4 and AVI inputs. Current tests prove exact byte length for generated MOV and AVI fixtures. The generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2442,7 +2450,7 @@ id = "fftools-ffprobe-format-program-counts"
 kind = "cli"
 ffmpeg_name = "ffprobe format nb_programs/nb_stream_groups fields"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_format <input.mp4>; ffprobe -show_format -of json <input.mp4>; ffprobe -show_format <input.avi>; ffprobe -show_format -of json <input.avi>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2454,10 +2462,10 @@ unit_tests = [
   "ffprobe::tests::opens_local_avi_file_for_show_format",
   "ffprobe::tests::outputs_avi_format_size_json",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-format-program-counts|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-format-program-counts|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now reports nb_programs=0 and nb_stream_groups=0 in -show_format default and JSON output for constrained MOV/MP4 and AVI inputs, matching the current demuxer model where no programs or stream groups are parsed. No pinned-oracle differential or upstream FATE coverage exists yet."
+notes = "ffprobe-rs now reports nb_programs=0 and nb_stream_groups=0 in -show_format default and JSON output for constrained MOV/MP4 and AVI inputs, matching the current demuxer model where no programs or stream groups are parsed. The generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2484,7 +2492,7 @@ id = "fftools-ffprobe-mov-show-packets"
 kind = "cli"
 ffmpeg_name = "ffprobe MOV/MP4 -show_packets"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_packets -of json <input.mp4>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2494,10 +2502,10 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_packet_sections",
   "ffprobe::tests::outputs_mov_packet_json_without_stream_or_format_sections",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-mov-show-packets|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-mov-show-packets|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet stream index, PTS/DTS, time fields, duration, size, and key flags in default and json writers. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential coverage yet."
+notes = "Initial ffprobe-rs -show_packets support collects packets from the Rust MOV demuxer for local seekable one-track MOV/MP4 inputs and renders packet stream index, PTS/DTS, time fields, duration, size, and key flags in default and json writers. Output is a constrained deterministic subset, not byte-identical to upstream, and the generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2546,7 +2554,7 @@ id = "fftools-ffprobe-stream-codec-fields"
 kind = "cli"
 ffmpeg_name = "ffprobe stream codec fields"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams -of json <input.avi>"
 rust_command = "cargo test -p fftools --lib ffprobe"
@@ -2556,10 +2564,10 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_audio_handler_codec_type_json",
   "ffprobe::tests::outputs_avi_stream_json",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-stream-codec-fields|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-codec-fields|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, coded_width/coded_height, MOV audio sample_rate/channels/bits_per_sample when parsed from AudioSampleEntry, start_pts/start_time, r_frame_rate, and avg_frame_rate for constrained MOV/MP4 and AVI streams using Rust demuxer metadata. MOV codec_type is derived from known hdlr handler types when available, with tests covering video and an audio-handler fixture; AVI codec_type comes from the parsed stream media type. The codec-name map is deliberately limited to known tags currently represented by the Rust parsers, including mp4a AAC in the audio fixture, and there is no pinned-oracle differential or upstream FATE coverage yet."
+notes = "ffprobe-rs stream reports now carry codec_name, codec_long_name, codec_type, codec_tag_string, numeric codec_tag, width/height, coded_width/coded_height, MOV audio sample_rate/channels/bits_per_sample when parsed from AudioSampleEntry, start_pts/start_time, r_frame_rate, and avg_frame_rate for constrained MOV/MP4 and AVI streams using Rust demuxer metadata. MOV codec_type is derived from known hdlr handler types when available, with tests covering video and an audio-handler fixture; AVI codec_type comes from the parsed stream media type. The codec-name map is deliberately limited to known tags currently represented by the Rust parsers, including mp4a AAC in the audio fixture, and the generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2606,7 +2614,7 @@ id = "fftools-ffprobe-stream-duration"
 kind = "cli"
 ffmpeg_name = "ffprobe stream duration_ts/duration fields"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_streams <input.mp4>; ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams -of json <input.avi>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2615,10 +2623,10 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_stream_json",
   "ffprobe::tests::outputs_avi_stream_json",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-stream-duration|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-duration|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry duration_ts and duration for constrained MOV/MP4 and AVI streams. MOV uses parsed mdhd media duration and timescale; AVI uses parsed stream length and time base. The current assertions cover default output plus MOV/AVI JSON fixtures, but there is no pinned-oracle differential or upstream FATE coverage yet."
+notes = "ffprobe-rs stream reports now carry duration_ts and duration for constrained MOV/MP4 and AVI streams. MOV uses parsed mdhd media duration and timescale; AVI uses parsed stream length and time base. The current assertions cover default output plus MOV/AVI JSON fixtures, but the generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2626,7 +2634,7 @@ id = "fftools-ffprobe-stream-time-base"
 kind = "cli"
 ffmpeg_name = "ffprobe stream time_base field"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_streams <input.mp4>; ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams -of json <input.avi>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2635,10 +2643,10 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_stream_json",
   "ffprobe::tests::outputs_avi_stream_json",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-stream-time-base|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-time-base|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry time_base for constrained MOV/MP4 and AVI streams. MOV uses the parsed mdhd media timescale as 1/<timescale>; AVI uses parsed stream scale/rate. The current assertions cover default output plus MOV/AVI JSON fixtures, but there is no pinned-oracle differential or upstream FATE coverage yet."
+notes = "ffprobe-rs stream reports now carry time_base for constrained MOV/MP4 and AVI streams. MOV uses the parsed mdhd media timescale as 1/<timescale>; AVI uses parsed stream scale/rate. The current assertions cover default output plus MOV/AVI JSON fixtures, but the generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2646,7 +2654,7 @@ id = "fftools-ffprobe-stream-codec-long-name"
 kind = "cli"
 ffmpeg_name = "ffprobe stream codec_long_name field"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams -of json <input.avi>"
 rust_command = "cargo test -p fftools --lib ffprobe"
@@ -2657,10 +2665,10 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_audio_handler_codec_type_json",
   "ffprobe::tests::outputs_avi_stream_json",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-stream-codec-long-name|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-codec-long-name|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry codec_long_name for the constrained FourCC-to-codec map already used by codec_name: raw video, H.264/AVC, HEVC, MPEG-4 part 2, mp4a/AAC, and initial MOV PCM tags. Fixture coverage proves raw MOV, H.264 MOV, mp4a audio MOV, and raw AVI JSON/default output. No pinned-oracle differential or upstream FATE coverage exists yet."
+notes = "ffprobe-rs stream reports now carry codec_long_name for the constrained FourCC-to-codec map already used by codec_name: raw video, H.264/AVC, HEVC, MPEG-4 part 2, mp4a/AAC, and initial MOV PCM tags. Fixture coverage proves raw MOV, H.264 MOV, mp4a audio MOV, and raw AVI JSON/default output. The generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2668,7 +2676,7 @@ id = "fftools-ffprobe-stream-r-frame-rate"
 kind = "cli"
 ffmpeg_name = "ffprobe stream r_frame_rate field"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams -of json <input.avi>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2678,10 +2686,10 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
   "ffprobe::tests::outputs_avi_stream_json",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-stream-r-frame-rate|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-r-frame-rate|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry r_frame_rate alongside avg_frame_rate for constrained MOV/MP4 and AVI video streams. AVI uses the parsed stream frame_rate; MOV currently derives from sample count, media duration, and media timescale for the simple sample-table fixtures. Broader upstream rate-guessing parity, differential tests, and FATE coverage are still pending."
+notes = "ffprobe-rs stream reports now carry r_frame_rate alongside avg_frame_rate for constrained MOV/MP4 and AVI video streams. AVI uses the parsed stream frame_rate; MOV currently derives from sample count, media duration, and media timescale for the simple sample-table fixtures. Broader upstream rate-guessing parity, full JSON byte-identity, and FATE coverage are still pending. The generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2689,7 +2697,7 @@ id = "fftools-ffprobe-stream-start-time"
 kind = "cli"
 ffmpeg_name = "ffprobe stream start_pts/start_time fields"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams -of json <input.avi>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2699,10 +2707,10 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
   "ffprobe::tests::outputs_avi_stream_json",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-stream-start-time|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-start-time|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry start_pts=0 and start_time=0.000000 for non-empty constrained MOV/MP4 and AVI streams. This is limited to the current zero-origin demuxer model: MOV edit lists are explicitly rejected, fragments are unsupported, and AVI packet PTS starts at zero. No pinned-oracle differential or upstream FATE coverage exists yet."
+notes = "ffprobe-rs stream reports now carry start_pts=0 and start_time=0.000000 for non-empty constrained MOV/MP4 and AVI streams. This is limited to the current zero-origin demuxer model: MOV edit lists are explicitly rejected, fragments are unsupported, and AVI packet PTS starts at zero. The generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2710,7 +2718,7 @@ id = "fftools-ffprobe-stream-coded-dimensions"
 kind = "cli"
 ffmpeg_name = "ffprobe stream coded_width/coded_height fields"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams -of json <input.avi>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2720,10 +2728,10 @@ unit_tests = [
   "ffprobe::tests::outputs_mov_visual_stream_aspect_and_color_json",
   "ffprobe::tests::outputs_avi_stream_json",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-stream-coded-dimensions|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-coded-dimensions|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now carry coded_width/coded_height for constrained MOV/MP4 and AVI video streams. The current demuxer model has no separate coded/display dimensions, cropping, or codec parser dimensions, so coded dimensions mirror parsed stream dimensions where present. No pinned-oracle differential or upstream FATE coverage exists yet."
+notes = "ffprobe-rs stream reports now carry coded_width/coded_height for constrained MOV/MP4 and AVI video streams. The current demuxer model has no separate coded/display dimensions, cropping, or codec parser dimensions, so coded dimensions mirror parsed stream dimensions where present. The generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2772,7 +2780,7 @@ id = "fftools-ffprobe-count-packets"
 kind = "cli"
 ffmpeg_name = "ffprobe -count_packets stream nb_read_packets"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -count_packets -show_streams <input.mp4>; ffprobe -count_packets -show_streams -of json <input.mp4>; ffprobe -count_packets -show_streams <input.avi>; ffprobe -count_packets -show_streams -of json <input.avi>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2783,10 +2791,10 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_packet_count_json",
   "ffprobe::tests::outputs_avi_stream_packet_count_default",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-count-packets|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-count-packets|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now accepts -count_packets for constrained MOV/MP4 and AVI local inputs, collects packets through the Rust demuxers, and renders nb_read_packets on stream reports without emitting a packets section unless -show_packets is also requested. The current tests prove JSON and default output for one-stream MOV and AVI fixtures. No pinned-oracle differential or upstream FATE coverage exists yet."
+notes = "ffprobe-rs now accepts -count_packets for constrained MOV/MP4 and AVI local inputs, collects packets through the Rust demuxers, and renders nb_read_packets on stream reports without emitting a packets section unless -show_packets is also requested. The current tests prove JSON and default output for one-stream MOV and AVI fixtures. The generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2794,7 +2802,7 @@ id = "fftools-ffprobe-count-frames"
 kind = "cli"
 ffmpeg_name = "ffprobe -count_frames stream nb_read_frames"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -count_frames -show_streams <input.mp4>; ffprobe -count_frames -show_streams -of json <input.mp4>; ffprobe -count_frames -show_streams <input.avi>; ffprobe -count_frames -show_streams -of json <input.avi>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2805,10 +2813,10 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_frame_count_json",
   "ffprobe::tests::outputs_avi_stream_frame_count_default",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-count-frames|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-count-frames|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs now accepts -count_frames for constrained MOV/MP4 and AVI local inputs and renders nb_read_frames on stream reports without emitting a packets section. The current implementation uses already parsed MOV sample counts and AVI stream lengths, so it is useful for the current one-frame-per-sample fixtures but is not a general decoder-backed frame counter. The current tests prove JSON and default output for one-stream MOV and AVI fixtures. No pinned-oracle differential or upstream FATE coverage exists yet."
+notes = "ffprobe-rs now accepts -count_frames for constrained MOV/MP4 and AVI local inputs and renders nb_read_frames on stream reports without emitting a packets section. The current implementation uses already parsed MOV sample counts and AVI stream lengths, so it is useful for the current one-frame-per-sample fixtures but is not a general decoder-backed frame counter. The current tests prove JSON and default output for one-stream MOV and AVI fixtures. The generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]
@@ -2816,7 +2824,7 @@ id = "fftools-ffprobe-stream-nb-frames"
 kind = "cli"
 ffmpeg_name = "ffprobe stream nb_frames field"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffprobe -show_streams <input.mp4>; ffprobe -show_streams -of json <input.mp4>; ffprobe -show_streams <input.avi>; ffprobe -show_streams -of json <input.avi>"
 rust_command = "cargo test -p fftools ffprobe"
@@ -2833,10 +2841,10 @@ unit_tests = [
   "ffprobe::tests::outputs_avi_stream_packet_count_json",
   "ffprobe::tests::outputs_avi_stream_packet_count_default",
 ]
-differential_tests = []
+differential_tests = ["tests/differential/mappings.txt:fftools-ffprobe-stream-nb-frames|oracle-ffprobe-mov-core-fields"]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffprobe-stream-nb-frames|local-ffprobe-unit"]
 fuzz_targets = []
-notes = "ffprobe-rs stream reports now have explicit tests for nb_frames in default and JSON output. The constrained MOV path uses parsed sample_count and the constrained AVI path uses stream length; these are one-packet/one-frame fixture counts, not decoder-derived frame counts. No pinned-oracle differential or upstream FATE coverage exists yet."
+notes = "ffprobe-rs stream reports now have explicit tests for nb_frames in default and JSON output. The constrained MOV path uses parsed sample_count and the constrained AVI path uses stream length; these are one-packet/one-frame fixture counts, not decoder-derived frame counts. The generated MOV core-fields oracle row now provides bounded pinned-oracle differential coverage for the selected rawvideo MOV default-output fields; broader inputs, full JSON byte-identity, tags, field-order/id/pos/disposition deltas, and upstream FATE coverage remain pending."
 blocked_reason = ""
 
 [[component]]

@@ -496,6 +496,26 @@ const PATH_RULES: &[PathRule] = &[
         id_prefixes: &[],
     },
     PathRule {
+        path: "crates/fftools/tests/ffprobe_mov_oracle.rs",
+        exact_ids: &[
+            "fftools-ffprobe-mov-show-format",
+            "fftools-ffprobe-format-size",
+            "fftools-ffprobe-format-program-counts",
+            "fftools-ffprobe-mov-show-packets",
+            "fftools-ffprobe-stream-codec-fields",
+            "fftools-ffprobe-stream-codec-long-name",
+            "fftools-ffprobe-stream-duration",
+            "fftools-ffprobe-stream-time-base",
+            "fftools-ffprobe-stream-r-frame-rate",
+            "fftools-ffprobe-stream-start-time",
+            "fftools-ffprobe-stream-coded-dimensions",
+            "fftools-ffprobe-count-packets",
+            "fftools-ffprobe-count-frames",
+            "fftools-ffprobe-stream-nb-frames",
+        ],
+        id_prefixes: &[],
+    },
+    PathRule {
         path: "crates/fftools/tests/image2_oracle.rs",
         exact_ids: &[
             "fftools-ffmpeg-image2-file-output",
@@ -1815,6 +1835,47 @@ mod tests {
                 "avutil-packet".to_string(),
                 "avformat-mov-demuxer".to_string(),
                 "avformat-framecrc-muxer".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn changed_selection_maps_ffprobe_mov_oracle_test_to_covered_components() {
+        let component_ids = component_ids_from_ledger(&ledger(&[
+            "fftools-ffprobe-mov-show-format",
+            "fftools-ffprobe-format-size",
+            "fftools-ffprobe-format-program-counts",
+            "fftools-ffprobe-mov-show-packets",
+            "fftools-ffprobe-stream-codec-fields",
+            "fftools-ffprobe-stream-codec-long-name",
+            "fftools-ffprobe-stream-duration",
+            "fftools-ffprobe-stream-time-base",
+            "fftools-ffprobe-stream-r-frame-rate",
+            "fftools-ffprobe-stream-start-time",
+            "fftools-ffprobe-stream-coded-dimensions",
+            "fftools-ffprobe-count-packets",
+            "fftools-ffprobe-count-frames",
+            "fftools-ffprobe-stream-nb-frames",
+        ]));
+        let paths = vec!["crates/fftools/tests/ffprobe_mov_oracle.rs".to_string()];
+
+        assert_eq!(
+            changed_components(&component_ids, &paths),
+            vec![
+                "fftools-ffprobe-mov-show-format".to_string(),
+                "fftools-ffprobe-format-size".to_string(),
+                "fftools-ffprobe-format-program-counts".to_string(),
+                "fftools-ffprobe-mov-show-packets".to_string(),
+                "fftools-ffprobe-stream-codec-fields".to_string(),
+                "fftools-ffprobe-stream-codec-long-name".to_string(),
+                "fftools-ffprobe-stream-duration".to_string(),
+                "fftools-ffprobe-stream-time-base".to_string(),
+                "fftools-ffprobe-stream-r-frame-rate".to_string(),
+                "fftools-ffprobe-stream-start-time".to_string(),
+                "fftools-ffprobe-stream-coded-dimensions".to_string(),
+                "fftools-ffprobe-count-packets".to_string(),
+                "fftools-ffprobe-count-frames".to_string(),
+                "fftools-ffprobe-stream-nb-frames".to_string(),
             ]
         );
     }

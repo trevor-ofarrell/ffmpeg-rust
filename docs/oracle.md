@@ -489,6 +489,13 @@ The same harness also checks that `--version` is not a clean successful version 
 cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-version --target oracle-double-dash-version-rejection --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
 ```
 
+`crates/fftools/tests/ffprobe_mov_oracle.rs` is an ignored oracle harness for a bounded generated MOV `ffprobe` path. It uses pinned FFmpeg 8.1.1 to create a two-frame rawvideo MOV fixture with edit lists disabled, then compares Rust `ffprobe-rs` default output against pinned `ffprobe` for selected shared fields: format counts/name/duration/size/probe score, stream codec/tag/dimensions/timing/count fields, and packet stream index, PTS/DTS, duration, size, and packet flags. It is wired into `tests/differential/mappings.txt` as the shared `oracle-ffprobe-mov-core-fields` target for the mapped `fftools-ffprobe-*` rows. The target is bounded evidence, not full ffprobe JSON or field-complete parity:
+
+```sh
+FFMPEG_ORACLE=./third_party/ffmpeg-oracle/build/bin/ffmpeg cargo test -p fftools --test ffprobe_mov_oracle mov_rgb24_ffprobe_core_fields_match_ffmpeg_oracle -- --ignored
+cargo run -p fate-runner -- run --mappings tests/differential/mappings.txt --component fftools-ffprobe-mov-show-format --target oracle-ffprobe-mov-core-fields --oracle-ffmpeg ./third_party/ffmpeg-oracle/build/bin/ffmpeg
+```
+
 The first rawvideo oracle harness lives at `crates/fftools/tests/rawvideo_oracle.rs` and is ignored by default so ordinary local test runs do not claim oracle parity without an oracle binary. Run it with a pinned FFmpeg 8.1.1 binary:
 
 ```sh
