@@ -6,8 +6,9 @@ use std::{
 };
 
 use avutil::{
-    AvOptionRanges, OptionChild, OptionConstant, OptionDefinition, OptionEntryMatch, OptionFlags,
-    OptionKind, OptionSearchFlags, OptionSet, OptionValue, Rational,
+    AvOptionRanges, Dictionary, MatchMode, OptionChild, OptionConstant, OptionDefinition,
+    OptionEntryMatch, OptionFlags, OptionKind, OptionSearchFlags, OptionSet, OptionValue, Rational,
+    SetMode,
 };
 
 #[test]
@@ -277,6 +278,71 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         child_state_fields(&options_with_child),
     );
 
+    let mut dict_options = sample_options();
+    let mut dict = Dictionary::new();
+    for (key, value) in [
+        ("threads", "11"),
+        ("unknown", "first"),
+        ("bitexact", "true"),
+        ("unknown", "second"),
+        ("metadata", "from-dict"),
+    ] {
+        dict.set_with_mode(key, value, MatchMode::CaseSensitive, SetMode::AllowMultiple)
+            .unwrap();
+    }
+    let mut dict_result = vec![ret(
+        dict_options.set_avoptions_from_dict(&mut dict, OptionSearchFlags::empty())
+    )];
+    dict_result.extend(dict_fields(&dict));
+    rows.insert("ret:set-dict-root".to_string(), dict_result);
+    rows.insert(
+        "state:set-dict-root".to_string(),
+        state_fields(&dict_options),
+    );
+
+    let mut dict_child_options = sample_options_with_child();
+    let mut child_dict = Dictionary::new();
+    for (key, value) in [
+        ("threads", "9"),
+        ("child_only", "6"),
+        ("quality", "0.25"),
+        ("unknown", "value"),
+    ] {
+        child_dict
+            .set_with_mode(key, value, MatchMode::CaseSensitive, SetMode::AllowMultiple)
+            .unwrap();
+    }
+    let mut child_dict_result = vec![ret(
+        dict_child_options.set_avoptions_from_dict(&mut child_dict, OptionSearchFlags::CHILDREN)
+    )];
+    child_dict_result.extend(dict_fields(&child_dict));
+    rows.insert("ret:set-dict-children".to_string(), child_dict_result);
+    rows.insert(
+        "state:set-dict-children".to_string(),
+        child_dict_state_fields(&dict_child_options),
+    );
+
+    let mut dict_error_options = sample_options();
+    let mut error_dict = Dictionary::new();
+    for (key, value) in [
+        ("threads", "13"),
+        ("bitexact", "maybe"),
+        ("unknown", "later"),
+    ] {
+        error_dict
+            .set_with_mode(key, value, MatchMode::CaseSensitive, SetMode::AllowMultiple)
+            .unwrap();
+    }
+    let mut error_dict_result = vec![ret(
+        dict_error_options.set_avoptions_from_dict(&mut error_dict, OptionSearchFlags::empty())
+    )];
+    error_dict_result.extend(dict_fields(&error_dict));
+    rows.insert("ret:set-dict-error".to_string(), error_dict_result);
+    rows.insert(
+        "state:set-dict-error".to_string(),
+        state_fields(&dict_error_options),
+    );
+
     let exact_error_results = [
         ret(options.set_avoption_from_str("THREADS", "9")),
         ret(options.set_avoption_from_str("preset_level", "SLOW")),
@@ -507,6 +573,25 @@ fn child_state_fields(options: &OptionSet) -> Vec<String> {
     ]
 }
 
+fn child_dict_state_fields(options: &OptionSet) -> Vec<String> {
+    vec![
+        int_value(options, "threads").to_string(),
+        child_int_value(options, "decoder", "threads").to_string(),
+        child_int_value(options, "decoder", "child_only").to_string(),
+        format_float(float_value(options, "quality")),
+    ]
+}
+
+fn dict_fields(dict: &Dictionary) -> Vec<String> {
+    let mut fields = vec![dict.len().to_string()];
+    fields.extend(
+        dict.entries()
+            .iter()
+            .map(|entry| format!("{}={}", entry.key(), entry.value())),
+    );
+    fields
+}
+
 fn int_value(options: &OptionSet, name: &str) -> i64 {
     match options.get(name) {
         Some(OptionValue::Int(value)) => *value,
@@ -713,8 +798,10 @@ fn oracle_c_source() -> &'static str {
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <libavutil/avutil.h>
+#include <libavutil/dict.h>
 #include <libavutil/mem.h>
 #include <libavutil/opt.h>
 #include <libavutil/rational.h>
@@ -794,6 +881,14 @@ static const AVClass test_class = {
     .version = LIBAVUTIL_VERSION_INT,
     .child_next = test_child_next,
 };
+
+static void init_context(TestOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &test_class;
+    ctx->child.av_class = &child_class;
+    av_opt_set_defaults(ctx);
+    av_opt_set_defaults(&ctx->child);
+}
 
 static void print_flags(void) {
     printf("flags|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d\n",
@@ -928,6 +1023,24 @@ static void print_child_state(const char *name, const TestOptions *ctx) {
            ctx->child.child_readonly);
 }
 
+static void print_child_dict_state(const char *name, const TestOptions *ctx) {
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "|%.17g\n",
+           name,
+           ctx->threads,
+           ctx->child.threads,
+           ctx->child.child_only,
+           ctx->quality);
+}
+
+static void print_dict_entries(const AVDictionary *dict) {
+    const AVDictionaryEntry *entry = NULL;
+
+    printf("|%d", av_dict_count(dict));
+    while ((entry = av_dict_iterate(dict, entry))) {
+        printf("|%s=%s", entry->key, entry->value);
+    }
+}
+
 static void print_get_value(const TestOptions *ctx, const char *name) {
     uint8_t *value = NULL;
     int ret = av_opt_get(ctx, name, 0, &value);
@@ -1020,6 +1133,58 @@ static void print_set_children_row(TestOptions *ctx) {
            ret_threads_fake);
 }
 
+static void print_set_dict_rows(void) {
+    TestOptions root_ctx;
+    TestOptions child_ctx;
+    TestOptions error_ctx;
+    AVDictionary *root_dict = NULL;
+    AVDictionary *child_dict = NULL;
+    AVDictionary *error_dict = NULL;
+    int ret;
+
+    init_context(&root_ctx);
+    av_dict_set(&root_dict, "threads", "11", AV_DICT_MULTIKEY);
+    av_dict_set(&root_dict, "unknown", "first", AV_DICT_MULTIKEY);
+    av_dict_set(&root_dict, "bitexact", "true", AV_DICT_MULTIKEY);
+    av_dict_set(&root_dict, "unknown", "second", AV_DICT_MULTIKEY);
+    av_dict_set(&root_dict, "metadata", "from-dict", AV_DICT_MULTIKEY);
+    ret = av_opt_set_dict2(&root_ctx, &root_dict, 0);
+    printf("ret:set-dict-root|%d", ret);
+    print_dict_entries(root_dict);
+    printf("\n");
+    print_state("state:set-dict-root", &root_ctx);
+    av_dict_free(&root_dict);
+    av_opt_free(&root_ctx);
+    av_opt_free(&root_ctx.child);
+
+    init_context(&child_ctx);
+    av_dict_set(&child_dict, "threads", "9", AV_DICT_MULTIKEY);
+    av_dict_set(&child_dict, "child_only", "6", AV_DICT_MULTIKEY);
+    av_dict_set(&child_dict, "quality", "0.25", AV_DICT_MULTIKEY);
+    av_dict_set(&child_dict, "unknown", "value", AV_DICT_MULTIKEY);
+    ret = av_opt_set_dict2(&child_ctx, &child_dict, AV_OPT_SEARCH_CHILDREN);
+    printf("ret:set-dict-children|%d", ret);
+    print_dict_entries(child_dict);
+    printf("\n");
+    print_child_dict_state("state:set-dict-children", &child_ctx);
+    av_dict_free(&child_dict);
+    av_opt_free(&child_ctx);
+    av_opt_free(&child_ctx.child);
+
+    init_context(&error_ctx);
+    av_dict_set(&error_dict, "threads", "13", AV_DICT_MULTIKEY);
+    av_dict_set(&error_dict, "bitexact", "maybe", AV_DICT_MULTIKEY);
+    av_dict_set(&error_dict, "unknown", "later", AV_DICT_MULTIKEY);
+    ret = av_opt_set_dict2(&error_ctx, &error_dict, 0);
+    printf("ret:set-dict-error|%d", ret);
+    print_dict_entries(error_dict);
+    printf("\n");
+    print_state("state:set-dict-error", &error_ctx);
+    av_dict_free(&error_dict);
+    av_opt_free(&error_ctx);
+    av_opt_free(&error_ctx.child);
+}
+
 int main(void) {
     TestOptions ctx = { 0 };
     int ret_threads;
@@ -1034,10 +1199,7 @@ int main(void) {
     int ret_invalid_bool;
     int ret_readonly;
 
-    ctx.av_class = &test_class;
-    ctx.child.av_class = &child_class;
-    av_opt_set_defaults(&ctx);
-    av_opt_set_defaults(&ctx.child);
+    init_context(&ctx);
 
     print_flags();
     print_types();
@@ -1052,6 +1214,7 @@ int main(void) {
     print_get_children_row(&ctx);
     print_set_children_row(&ctx);
     print_child_state("state:children-after-set", &ctx);
+    print_set_dict_rows();
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);

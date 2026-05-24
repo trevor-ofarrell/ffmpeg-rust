@@ -156,7 +156,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 18 {
+        match cursor.next().unwrap_or_default() % 19 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -312,6 +312,19 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 assert_eq!(options, before);
             }
             15 => {
+                let mut dict = generated_options_dictionary(cursor);
+                let before_dict = dict.clone();
+                let flags = option_search_flags_from(cursor.next());
+                let result = options.set_avoptions_from_dict(&mut dict, flags);
+                if result.is_ok() {
+                    assert_valid_dictionary(&dict);
+                    assert_option_set_invariants(&options);
+                } else {
+                    assert_eq!(dict, before_dict);
+                    assert_option_set_invariants(&options);
+                }
+            }
+            16 => {
                 let before = options.clone();
                 let entries = options.avoption_entries();
                 assert_eq!(
@@ -344,7 +357,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
                 assert_eq!(options, before);
             }
-            16 => {
+            17 => {
                 let name = option_name_from(cursor);
                 let before = options.clone();
                 let result = options.remove_definition(&name);
@@ -652,6 +665,55 @@ fn exercise_fixtures() {
         .define_child(OptionChild::new("ENCODER", OptionSet::new(), "").unwrap())
         .is_err());
 
+    let mut dict_options = sample_options();
+    let mut option_dict = Dictionary::new();
+    for (key, value) in [
+        ("threads", "11"),
+        ("unknown", "first"),
+        ("bitexact", "true"),
+        ("unknown", "second"),
+        ("metadata", "from-dict"),
+    ] {
+        option_dict
+            .set_with_mode(key, value, MatchMode::CaseSensitive, SetMode::AllowMultiple)
+            .unwrap();
+    }
+    dict_options
+        .set_avoptions_from_dict(&mut option_dict, OptionSearchFlags::empty())
+        .unwrap();
+    assert_eq!(dict_options.get("threads"), Some(&OptionValue::Int(11)));
+    assert_eq!(dict_options.get("bitexact"), Some(&OptionValue::Bool(true)));
+    assert_eq!(
+        option_dict
+            .entries()
+            .iter()
+            .map(|entry| (entry.key(), entry.value()))
+            .collect::<Vec<_>>(),
+        vec![("unknown", "first"), ("unknown", "second")]
+    );
+
+    let mut error_options = sample_options();
+    let mut error_dict = Dictionary::new();
+    for (key, value) in [
+        ("threads", "13"),
+        ("bitexact", "maybe"),
+        ("unknown", "later"),
+    ] {
+        error_dict
+            .set_with_mode(key, value, MatchMode::CaseSensitive, SetMode::AllowMultiple)
+            .unwrap();
+    }
+    let original_error_dict = error_dict.clone();
+    assert!(error_options
+        .set_avoptions_from_dict(&mut error_dict, OptionSearchFlags::empty())
+        .is_err());
+    assert_eq!(error_options.get("threads"), Some(&OptionValue::Int(13)));
+    assert_eq!(
+        error_options.get("bitexact"),
+        Some(&OptionValue::Bool(false))
+    );
+    assert_eq!(error_dict, original_error_dict);
+
     let exported = options.definitions_matching(&OptionQuery::exported());
     assert_eq!(exported.len(), 1);
     assert_eq!(exported[0].definition().name(), "readonly");
@@ -887,6 +949,19 @@ fn generated_child(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionChild> {
     let options = generated_child_options(cursor);
     let help = literal_from(cursor);
     OptionChild::new(name, options, help)
+}
+
+fn generated_options_dictionary(cursor: &mut Cursor<'_>) -> Dictionary {
+    let mut dict = Dictionary::new();
+    let entry_count = usize::from(cursor.next().unwrap_or_default()) % 5;
+
+    for _ in 0..entry_count {
+        let key = option_name_from(cursor);
+        let value = option_value_string_from(cursor);
+        let _ = dict.set_with_mode(key, value, MatchMode::CaseSensitive, SetMode::AllowMultiple);
+    }
+
+    dict
 }
 
 fn generated_query(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionQuery> {

@@ -1,4 +1,7 @@
-use crate::{AvError, AvErrorCode, AvErrorKind, AvResult, Rational};
+use crate::{
+    dict::{Dictionary, MatchMode, SetMode},
+    AvError, AvErrorCode, AvErrorKind, AvResult, Rational,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OptionValue {
@@ -985,6 +988,37 @@ impl OptionSet {
         }
 
         self.set_avoption_from_str(name, raw)
+    }
+
+    pub fn set_avoptions_from_dict(
+        &mut self,
+        options: &mut Dictionary,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        let original_entries: Vec<_> = options
+            .entries()
+            .iter()
+            .map(|entry| (entry.key().to_owned(), entry.value().to_owned()))
+            .collect();
+        let mut remaining = Dictionary::new();
+
+        for (key, value) in &original_entries {
+            match self.set_avoption_from_str_with_flags(key, value, search_flags) {
+                Ok(()) => {}
+                Err(err) if err.code() == Some(AvErrorCode::OPTION_NOT_FOUND) => {
+                    remaining.set_with_mode(
+                        key.clone(),
+                        value.clone(),
+                        MatchMode::CaseSensitive,
+                        SetMode::AllowMultiple,
+                    )?;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+
+        *options = remaining;
+        Ok(())
     }
 
     pub fn set_child(
@@ -2650,6 +2684,146 @@ mod tests {
     }
 
     #[test]
+    fn set_avoptions_from_dict_matches_bounded_ffmpeg_remainder_shape() {
+        let mut options = sample_options();
+        let mut dict = Dictionary::new();
+        dict.set_with_mode(
+            "threads",
+            "11",
+            MatchMode::CaseSensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "unknown",
+            "first",
+            MatchMode::CaseSensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "bitexact",
+            "true",
+            MatchMode::CaseSensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "unknown",
+            "second",
+            MatchMode::CaseSensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+        dict.set_with_mode(
+            "metadata",
+            "from-dict",
+            MatchMode::CaseSensitive,
+            SetMode::AllowMultiple,
+        )
+        .unwrap();
+
+        options
+            .set_avoptions_from_dict(&mut dict, OptionSearchFlags::empty())
+            .unwrap();
+
+        assert_eq!(options.get("threads"), Some(&OptionValue::Int(11)));
+        assert_eq!(options.get("bitexact"), Some(&OptionValue::Bool(true)));
+        assert_eq!(
+            options.get("metadata"),
+            Some(&OptionValue::String("from-dict".to_owned()))
+        );
+        assert_eq!(
+            dictionary_pairs(&dict),
+            vec![("unknown", "first"), ("unknown", "second")]
+        );
+
+        let mut child_options = OptionSet::new();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 16 },
+                    OptionValue::Int(2),
+                    "child worker count",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "child_only",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(5),
+                    "child-only value",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let mut with_child = sample_options();
+        with_child
+            .define_child(OptionChild::new("decoder", child_options, "").unwrap())
+            .unwrap();
+        let mut child_dict = Dictionary::new();
+        for (key, value) in [
+            ("threads", "9"),
+            ("child_only", "6"),
+            ("quality", "0.25"),
+            ("unknown", "value"),
+        ] {
+            child_dict
+                .set_with_mode(key, value, MatchMode::CaseSensitive, SetMode::AllowMultiple)
+                .unwrap();
+        }
+
+        with_child
+            .set_avoptions_from_dict(&mut child_dict, OptionSearchFlags::CHILDREN)
+            .unwrap();
+
+        assert_eq!(with_child.get("threads"), Some(&OptionValue::Int(1)));
+        assert_eq!(
+            with_child.get_child_option("decoder", "threads").unwrap(),
+            &OptionValue::Int(9)
+        );
+        assert_eq!(
+            with_child
+                .get_child_option("decoder", "child_only")
+                .unwrap(),
+            &OptionValue::Int(6)
+        );
+        assert_eq!(with_child.get("quality"), Some(&OptionValue::Float(0.25)));
+        assert_eq!(dictionary_pairs(&child_dict), vec![("unknown", "value")]);
+
+        let mut error_options = sample_options();
+        let mut error_dict = Dictionary::new();
+        for (key, value) in [
+            ("threads", "13"),
+            ("bitexact", "maybe"),
+            ("unknown", "later"),
+        ] {
+            error_dict
+                .set_with_mode(key, value, MatchMode::CaseSensitive, SetMode::AllowMultiple)
+                .unwrap();
+        }
+        let original_error_dict = error_dict.clone();
+
+        let err = error_options
+            .set_avoptions_from_dict(&mut error_dict, OptionSearchFlags::empty())
+            .unwrap_err();
+
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(error_options.get("threads"), Some(&OptionValue::Int(13)));
+        assert_eq!(
+            error_options.get("bitexact"),
+            Some(&OptionValue::Bool(false))
+        );
+        assert_eq!(error_dict, original_error_dict);
+    }
+
+    #[test]
     fn option_queries_validate_name_and_unit_metadata() {
         assert!(OptionQuery::new().with_name("").is_err());
         assert!(OptionQuery::new().with_name("bad\0name").is_err());
@@ -2746,5 +2920,12 @@ mod tests {
             )
             .unwrap();
         options
+    }
+
+    fn dictionary_pairs(dict: &Dictionary) -> Vec<(&str, &str)> {
+        dict.entries()
+            .iter()
+            .map(|entry| (entry.key(), entry.value()))
+            .collect()
     }
 }
