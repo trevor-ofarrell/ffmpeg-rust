@@ -340,12 +340,14 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
             }
             17 => {
                 let shorthand = ["threads", "bitexact"];
-                let opts = match cursor.next().unwrap_or_default() % 6 {
+                let opts = match cursor.next().unwrap_or_default() % 8 {
                     0 => "threads=7:quality=0.25:metadata=from-string",
                     1 => " 9 : yes : metadata = shorthand ",
                     2 => "10:quality=0.75:no",
                     3 => "threads=11:bitexact=maybe",
                     4 => "threads=12:unknown=1",
+                    5 => "metadata=title\\:clip\\=one\\\\two:threads=14:preset_level=slow",
+                    6 => "metadata=' title : clip = one ':threads=15",
                     _ => "12",
                 };
                 let result = options.set_avoptions_from_string(opts, &shorthand, "=", ":");
@@ -807,6 +809,31 @@ fn exercise_fixtures() {
     assert_eq!(
         partial_options.get("bitexact"),
         Some(&OptionValue::Bool(false))
+    );
+    let mut escaped_options = sample_options();
+    escaped_options
+        .set_avoptions_from_string(
+            "metadata=title\\:clip\\=one\\\\two:threads=14:preset_level=slow",
+            &[],
+            "=",
+            ":",
+        )
+        .unwrap();
+    assert_eq!(
+        escaped_options.get("metadata"),
+        Some(&OptionValue::String("title:clip=one\\two".to_owned()))
+    );
+    assert_eq!(
+        escaped_options.get("preset_level"),
+        Some(&OptionValue::Int(8))
+    );
+    let mut quoted_options = sample_options();
+    quoted_options
+        .set_avoptions_from_string("metadata=' title : clip = one ':threads=15", &[], "=", ":")
+        .unwrap();
+    assert_eq!(
+        quoted_options.get("metadata"),
+        Some(&OptionValue::String(" title : clip = one ".to_owned()))
     );
     let serialized = options
         .serialize_avoptions(

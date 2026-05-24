@@ -1088,14 +1088,22 @@ impl OptionSet {
         let mut count = 0usize;
 
         while !rest.is_empty() {
-            let (raw_pair, next) = split_once_any(rest, pairs_sep);
-            rest = next.unwrap_or("");
-
             let parsed = parse_avoption_string_pair(
-                raw_pair,
+                rest,
                 key_val_sep,
+                pairs_sep,
                 shorthand_available && shorthand_index < shorthand.len(),
             )?;
+            rest = parsed.rest;
+            if !rest.is_empty() {
+                let separator_len = rest
+                    .chars()
+                    .next()
+                    .map(char::len_utf8)
+                    .expect("non-empty rest has a separator");
+                rest = &rest[separator_len..];
+            }
+
             let (key, value) = match parsed.key {
                 Some(key) => {
                     shorthand_available = false;
@@ -1644,51 +1652,116 @@ fn parse_rational_part(part: &str, raw: &str) -> AvResult<i32> {
         .map_err(|_| AvError::invalid_argument(format!("invalid rational option value `{raw}`")))
 }
 
-struct ParsedAvOptionStringPair {
+struct ParsedAvOptionStringPair<'a> {
     key: Option<String>,
     value: String,
+    rest: &'a str,
 }
 
-fn parse_avoption_string_pair(
-    raw_pair: &str,
+fn parse_avoption_string_pair<'a>(
+    opts: &'a str,
     key_val_sep: &str,
+    pairs_sep: &str,
     implicit_key_allowed: bool,
-) -> AvResult<ParsedAvOptionStringPair> {
-    let pair = trim_ascii_whitespace(raw_pair);
-    if pair.is_empty() {
-        return Err(invalid_avoption_string(raw_pair));
-    }
-
-    let (key, value) = split_once_any(pair, key_val_sep);
-    if let Some(value) = value {
-        let key = trim_ascii_whitespace(key);
-        if key.is_empty() || !is_valid_avoption_string_key(key) {
-            return Err(invalid_avoption_string(raw_pair));
-        }
+) -> AvResult<ParsedAvOptionStringPair<'a>> {
+    if let Some((key, value_start)) = parse_avoption_string_key(opts, key_val_sep) {
+        let (value, rest) = parse_avoption_token(value_start, pairs_sep);
         return Ok(ParsedAvOptionStringPair {
             key: Some(key.to_owned()),
-            value: trim_ascii_whitespace(value).to_owned(),
+            value,
+            rest,
         });
     }
 
     if !implicit_key_allowed {
-        return Err(invalid_avoption_string(raw_pair));
+        return Err(invalid_avoption_string(opts));
     }
 
+    let (value, rest) = parse_avoption_token(opts, pairs_sep);
     Ok(ParsedAvOptionStringPair {
         key: None,
-        value: pair.to_owned(),
+        value,
+        rest,
     })
 }
 
-fn split_once_any<'a>(text: &'a str, separators: &str) -> (&'a str, Option<&'a str>) {
-    for (index, ch) in text.char_indices() {
-        if separators.contains(ch) {
-            let next = index + ch.len_utf8();
-            return (&text[..index], Some(&text[next..]));
+fn parse_avoption_string_key<'a>(opts: &'a str, key_val_sep: &str) -> Option<(&'a str, &'a str)> {
+    let key_start = skip_ffmpeg_token_whitespace(opts);
+    let mut key_end = key_start.len();
+    for (index, ch) in key_start.char_indices() {
+        if !is_avoption_string_key_char(ch) {
+            key_end = index;
+            break;
+        }
+        key_end = index + ch.len_utf8();
+    }
+
+    let (key, after_key) = key_start.split_at(key_end);
+    let after_key = skip_ffmpeg_token_whitespace(after_key);
+    let separator = after_key.chars().next()?;
+    if !key_val_sep.contains(separator) {
+        return None;
+    }
+
+    Some((key, &after_key[separator.len_utf8()..]))
+}
+
+fn parse_avoption_token<'a>(opts: &'a str, terms: &str) -> (String, &'a str) {
+    let mut rest = skip_ffmpeg_token_whitespace(opts);
+    let mut output = String::new();
+    let mut protected_len = 0usize;
+
+    while let Some(ch) = rest.chars().next() {
+        if terms.contains(ch) {
+            break;
+        }
+
+        rest = &rest[ch.len_utf8()..];
+        if ch == '\\' {
+            if let Some(escaped) = rest.chars().next() {
+                output.push(escaped);
+                rest = &rest[escaped.len_utf8()..];
+                protected_len = output.len();
+            } else {
+                output.push(ch);
+            }
+        } else if ch == '\'' {
+            let mut closed = false;
+            while let Some(quoted) = rest.chars().next() {
+                rest = &rest[quoted.len_utf8()..];
+                if quoted == '\'' {
+                    protected_len = output.len();
+                    closed = true;
+                    break;
+                }
+                output.push(quoted);
+            }
+            if !closed {
+                break;
+            }
+        } else {
+            output.push(ch);
         }
     }
-    (text, None)
+
+    while output.len() > protected_len
+        && output
+            .chars()
+            .last()
+            .is_some_and(is_ffmpeg_token_whitespace)
+    {
+        output.pop();
+    }
+
+    (output, rest)
+}
+
+fn skip_ffmpeg_token_whitespace(text: &str) -> &str {
+    text.trim_start_matches(is_ffmpeg_token_whitespace)
+}
+
+fn is_ffmpeg_token_whitespace(ch: char) -> bool {
+    matches!(ch, ' ' | '\n' | '\t' | '\r')
 }
 
 fn validate_avoption_string_separators(key_val_sep: &str, pairs_sep: &str) -> AvResult<()> {
@@ -1730,10 +1803,6 @@ fn is_valid_avoption_string_key(key: &str) -> bool {
 
 fn is_avoption_string_key_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '-' | '.' | '/' | '_')
-}
-
-fn trim_ascii_whitespace(text: &str) -> &str {
-    text.trim_matches(|ch: char| ch.is_ascii_whitespace())
 }
 
 fn invalid_avoption_string(text: &str) -> AvError {
@@ -3277,6 +3346,43 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
         assert_eq!(no_shorthand, sample_options());
+
+        let mut escaped = sample_options();
+        assert_eq!(
+            escaped
+                .set_avoptions_from_string(
+                    "metadata=title\\:clip\\=one\\\\two:threads=14:preset_level=slow",
+                    &[],
+                    "=",
+                    ":",
+                )
+                .unwrap(),
+            3
+        );
+        assert_eq!(escaped.get("threads"), Some(&OptionValue::Int(14)));
+        assert_eq!(
+            escaped.get("metadata"),
+            Some(&OptionValue::String("title:clip=one\\two".to_owned()))
+        );
+        assert_eq!(escaped.get("preset_level"), Some(&OptionValue::Int(8)));
+
+        let mut quoted = sample_options();
+        assert_eq!(
+            quoted
+                .set_avoptions_from_string(
+                    "metadata=' title : clip = one ':threads=15",
+                    &[],
+                    "=",
+                    ":",
+                )
+                .unwrap(),
+            2
+        );
+        assert_eq!(quoted.get("threads"), Some(&OptionValue::Int(15)));
+        assert_eq!(
+            quoted.get("metadata"),
+            Some(&OptionValue::String(" title : clip = one ".to_owned()))
+        );
     }
 
     #[test]

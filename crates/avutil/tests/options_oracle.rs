@@ -592,6 +592,38 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         state_fields(&string_no_shorthand),
     );
 
+    let mut string_escaped = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-escaped",
+        [ret_count(string_escaped.set_avoptions_from_string(
+            "metadata=title\\:clip\\=one\\\\two:threads=14:preset_level=slow",
+            &[],
+            "=",
+            ":",
+        ))],
+    );
+    rows.insert(
+        "state:set-from-string-escaped".to_string(),
+        state_fields(&string_escaped),
+    );
+
+    let mut string_quoted = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-from-string-quoted",
+        [ret_count(string_quoted.set_avoptions_from_string(
+            "metadata=' title : clip = one ':threads=15",
+            &[],
+            "=",
+            ":",
+        ))],
+    );
+    rows.insert(
+        "state:set-from-string-quoted".to_string(),
+        state_fields(&string_quoted),
+    );
+
     let serialize_defaults = sample_options();
     insert_row(
         &mut rows,
@@ -1711,6 +1743,24 @@ static void print_set_from_string_rows(void) {
     ret = av_opt_set_from_string(&ctx, "12", NULL, "=", ":");
     printf("ret:set-from-string-no-shorthand|%d\n", ret);
     print_state("state:set-from-string-no-shorthand", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "metadata=title\\:clip\\=one\\\\two:threads=14:preset_level=slow",
+                                 NULL, "=", ":");
+    printf("ret:set-from-string-escaped|%d\n", ret);
+    print_state("state:set-from-string-escaped", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret = av_opt_set_from_string(&ctx,
+                                 "metadata=' title : clip = one ':threads=15",
+                                 NULL, "=", ":");
+    printf("ret:set-from-string-quoted|%d\n", ret);
+    print_state("state:set-from-string-quoted", &ctx);
     av_opt_free(&ctx);
     av_opt_free(&ctx.child);
 }
