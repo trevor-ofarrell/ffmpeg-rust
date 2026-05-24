@@ -1,9 +1,9 @@
 #![no_main]
 
 use avutil::{
-    Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant, OptionDefinition,
-    OptionEntryMatch, OptionFlags, OptionKind, OptionQuery, OptionSearchFlags, OptionSet,
-    OptionValue, Rational, SetMode,
+    AvErrorCode, Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant,
+    OptionDefinition, OptionEntryMatch, OptionFlags, OptionKind, OptionQuery, OptionSearchFlags,
+    OptionSet, OptionValue, Rational, SetMode,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -156,7 +156,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 13 {
+        match cursor.next().unwrap_or_default() % 14 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -263,6 +263,17 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
             }
             10 => {
+                let name = option_name_from(cursor);
+                let raw = option_value_string_from(cursor);
+                let before = options.clone();
+                let result = options.set_avoption_from_str(&name, &raw);
+                if result.is_ok() {
+                    assert_option_value_is_valid(&options, &name);
+                } else {
+                    assert_eq!(options, before);
+                }
+            }
+            11 => {
                 let before = options.clone();
                 let entries = options.avoption_entries();
                 assert_eq!(
@@ -295,7 +306,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
                 assert_eq!(options, before);
             }
-            11 => {
+            12 => {
                 let name = option_name_from(cursor);
                 let before = options.clone();
                 let result = options.remove_definition(&name);
@@ -435,6 +446,19 @@ fn exercise_fixtures() {
         options.get("aspect_ratio"),
         Some(&OptionValue::Rational(Rational::new(4, 3).unwrap()))
     );
+    assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
+
+    let missing_exact = options.set_avoption_from_str("THREADS", "9").unwrap_err();
+    assert_eq!(missing_exact.code(), Some(AvErrorCode::OPTION_NOT_FOUND));
+    assert_eq!(options.get("threads"), Some(&OptionValue::Int(8)));
+    let before_exact_error = options.clone();
+    assert!(options
+        .set_avoption_from_str("preset_level", "FAST")
+        .is_err());
+    assert_eq!(options, before_exact_error);
+    options
+        .set_avoption_from_str("preset_level", "fast")
+        .unwrap();
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
     options.set_from_str("preset_level", "slow").unwrap();
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(8)));

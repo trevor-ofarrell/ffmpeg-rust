@@ -153,20 +153,31 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     );
     rows.insert("state:defaults".to_string(), state_fields(&options));
 
+    let exact_error_results = [
+        ret(options.set_avoption_from_str("THREADS", "9")),
+        ret(options.set_avoption_from_str("preset_level", "SLOW")),
+        ret(options.set_avoption_from_str("fast", "2")),
+    ];
+    insert_row(&mut rows, "ret:set-exact-errors", exact_error_results);
+    rows.insert(
+        "state:after-exact-errors".to_string(),
+        state_fields(&options),
+    );
+
     let set_results = [
-        ret(options.set_from_str("threads", "8")),
-        ret(options.set_from_str("bitexact", "yes")),
-        ret(options.set_from_str("quality", "0.75")),
-        ret(options.set_from_str("aspect_ratio", "4/3")),
-        ret(options.set_from_str("metadata", "title=clip")),
-        ret(options.set_from_str("preset_level", "slow")),
+        ret(options.set_avoption_from_str("threads", "8")),
+        ret(options.set_avoption_from_str("bitexact", "yes")),
+        ret(options.set_avoption_from_str("quality", "0.75")),
+        ret(options.set_avoption_from_str("aspect_ratio", "4/3")),
+        ret(options.set_avoption_from_str("metadata", "title=clip")),
+        ret(options.set_avoption_from_str("preset_level", "slow")),
     ];
     insert_row(&mut rows, "ret:set-supported", set_results);
     rows.insert("state:set-supported".to_string(), state_fields(&options));
 
     let error_results = [
-        ret(options.set_from_str("bitexact", "maybe")),
-        ret(options.set_from_str("exported", "6")),
+        ret(options.set_avoption_from_str("bitexact", "maybe")),
+        ret(options.set_avoption_from_str("exported", "6")),
     ];
     insert_row(&mut rows, "ret:set-errors", error_results);
     rows.insert("state:after-errors".to_string(), state_fields(&options));
@@ -607,6 +618,9 @@ int main(void) {
     int ret_aspect;
     int ret_metadata;
     int ret_preset;
+    int ret_upper_threads;
+    int ret_upper_preset;
+    int ret_const_name;
     int ret_invalid_bool;
     int ret_readonly;
 
@@ -619,6 +633,13 @@ int main(void) {
     print_next_order(&ctx);
     print_find_rows(&ctx);
     print_state("state:defaults", &ctx);
+
+    ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
+    ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);
+    ret_const_name = av_opt_set(&ctx, "fast", "2", 0);
+    printf("ret:set-exact-errors|%d|%d|%d\n",
+           ret_upper_threads, ret_upper_preset, ret_const_name);
+    print_state("state:after-exact-errors", &ctx);
 
     ret_threads = av_opt_set(&ctx, "threads", "8", 0);
     ret_bitexact = av_opt_set(&ctx, "bitexact", "yes", 0);

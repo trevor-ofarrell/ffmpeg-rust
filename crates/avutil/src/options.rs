@@ -1,4 +1,4 @@
-use crate::{AvError, AvErrorKind, AvResult, Rational};
+use crate::{AvError, AvErrorCode, AvErrorKind, AvResult, Rational};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OptionValue {
@@ -868,6 +868,14 @@ impl OptionSet {
         Ok(())
     }
 
+    pub fn set_avoption_from_str(&mut self, name: &str, raw: &str) -> AvResult<()> {
+        let index = self.avoption_index(name)?;
+        self.ensure_writable(index)?;
+        let value = self.parse_avoption_value(index, raw)?;
+        self.values[index] = value;
+        Ok(())
+    }
+
     pub fn set_child(
         &mut self,
         child_name: &str,
@@ -899,9 +907,30 @@ impl OptionSet {
         self.definitions[index].parse_value(raw)
     }
 
+    fn parse_avoption_value(&self, index: usize, raw: &str) -> AvResult<OptionValue> {
+        if let Some(unit) = self.definitions[index].unit() {
+            if let Some(constant) = self.find_exact_constant(unit, raw) {
+                self.definitions[index].validate_value(constant.value())?;
+                return Ok(constant.value().clone());
+            }
+        }
+
+        self.definitions[index].parse_value(raw)
+    }
+
     fn option_index(&self, name: &str) -> AvResult<usize> {
         self.find_index(name)
             .ok_or_else(|| AvError::new(AvErrorKind::NotFound, format!("unknown option `{name}`")))
+    }
+
+    fn avoption_index(&self, name: &str) -> AvResult<usize> {
+        self.find_exact_index(name).ok_or_else(|| {
+            AvError::with_code(
+                AvErrorKind::NotFound,
+                AvErrorCode::OPTION_NOT_FOUND,
+                format!("unknown AVOption `{name}`"),
+            )
+        })
     }
 
     fn child_by_name(&self, name: &str) -> AvResult<&OptionChild> {
@@ -928,8 +957,19 @@ impl OptionSet {
             .position(|definition| ascii_eq_ignore_case(definition.name(), name))
     }
 
+    fn find_exact_index(&self, name: &str) -> Option<usize> {
+        self.definitions
+            .iter()
+            .position(|definition| definition.name() == name)
+    }
+
     fn find_constant(&self, unit: &str, name: &str) -> Option<&OptionConstant> {
         self.find_constant_index(unit, name)
+            .map(|index| &self.constants[index])
+    }
+
+    fn find_exact_constant(&self, unit: &str, name: &str) -> Option<&OptionConstant> {
+        self.find_exact_constant_index(unit, name)
             .map(|index| &self.constants[index])
     }
 
@@ -938,6 +978,12 @@ impl OptionSet {
             ascii_eq_ignore_case(constant.unit(), unit)
                 && ascii_eq_ignore_case(constant.name(), name)
         })
+    }
+
+    fn find_exact_constant_index(&self, unit: &str, name: &str) -> Option<usize> {
+        self.constants
+            .iter()
+            .position(|constant| constant.unit() == unit && constant.name() == name)
     }
 
     fn entry_for_key(&self, key: &OptionEntryKey) -> Option<OptionEntry<'_>> {
@@ -1514,6 +1560,35 @@ mod tests {
             options.get("metadata"),
             Some(&OptionValue::String("title=clip".to_string()))
         );
+    }
+
+    #[test]
+    fn set_avoption_from_str_uses_ffmpeg_exact_lookup_shape() {
+        let mut options = sample_options();
+
+        let missing_option = options.set_avoption_from_str("THREADS", "8").unwrap_err();
+        assert_eq!(missing_option.kind(), AvErrorKind::NotFound);
+        assert_eq!(missing_option.code(), Some(AvErrorCode::OPTION_NOT_FOUND));
+        assert_eq!(options.get("threads"), Some(&OptionValue::Int(1)));
+
+        options.set_avoption_from_str("threads", "8").unwrap();
+        assert_eq!(options.get("THREADS"), Some(&OptionValue::Int(8)));
+
+        options
+            .set_avoption_from_str("preset_level", "fast")
+            .unwrap();
+        assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
+
+        let before = options.clone();
+        assert!(options
+            .set_avoption_from_str("preset_level", "FAST")
+            .is_err());
+        assert_eq!(options, before);
+        assert!(options.set_avoption_from_str("fast", "2").is_err());
+        assert_eq!(options, before);
+
+        options.set_from_str("preset_level", "FAST").unwrap();
+        assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
     }
 
     #[test]
