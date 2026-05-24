@@ -1840,6 +1840,78 @@ impl OptionSet {
         self.get_avoption_array_strings_at_index(index, start_elem, nb_elems)
     }
 
+    pub fn get_avoption_array_doubles(
+        &self,
+        name: &str,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<f64>> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_array_doubles_at_index(index, start_elem, nb_elems)
+    }
+
+    pub fn get_avoption_array_doubles_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<f64>> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child
+                        .options
+                        .get_avoption_array_doubles_at_index(index, start_elem, nb_elems);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.get_avoption_array_doubles_at_index(index, start_elem, nb_elems)
+    }
+
+    pub fn get_avoption_array_rationals(
+        &self,
+        name: &str,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<Rational>> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_array_rationals_at_index(index, start_elem, nb_elems)
+    }
+
+    pub fn get_avoption_array_rationals_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<Rational>> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child
+                        .options
+                        .get_avoption_array_rationals_at_index(index, start_elem, nb_elems);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.get_avoption_array_rationals_at_index(index, start_elem, nb_elems)
+    }
+
     pub fn set_avoption_array(
         &mut self,
         name: &str,
@@ -2450,6 +2522,64 @@ impl OptionSet {
             .iter()
             .map(format_avoption_value)
             .collect())
+    }
+
+    fn get_avoption_array_numbers_at_index(
+        &self,
+        index: usize,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<AvOptionNumberParts>> {
+        if !matches!(self.definitions[index].kind(), OptionKind::Array(_)) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not an array",
+                self.definitions[index].name()
+            )));
+        }
+        let values = match &self.values[index] {
+            OptionValue::Array(values) => values,
+            _ => {
+                return Err(AvError::invalid_argument(format!(
+                    "AVOption `{}` storage is not an array",
+                    self.definitions[index].name()
+                )))
+            }
+        };
+        if start_elem >= values.len() || values.len().saturating_sub(start_elem) < nb_elems {
+            return Err(AvError::invalid_argument(format!(
+                "array AVOption `{}` range is outside the current array",
+                self.definitions[index].name()
+            )));
+        }
+
+        values[start_elem..start_elem + nb_elems]
+            .iter()
+            .map(|value| avoption_number_parts(self.definitions[index].name(), value))
+            .collect()
+    }
+
+    fn get_avoption_array_doubles_at_index(
+        &self,
+        index: usize,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<f64>> {
+        self.get_avoption_array_numbers_at_index(index, start_elem, nb_elems)?
+            .into_iter()
+            .map(AvOptionNumberParts::to_double)
+            .collect()
+    }
+
+    fn get_avoption_array_rationals_at_index(
+        &self,
+        index: usize,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<Rational>> {
+        self.get_avoption_array_numbers_at_index(index, start_elem, nb_elems)?
+            .into_iter()
+            .map(AvOptionNumberParts::to_rational)
+            .collect()
     }
 
     fn set_avoption_array_at_index(
@@ -3320,8 +3450,41 @@ fn coerce_avoption_array_element(
         return Ok(parsed);
     }
 
+    if let Some(input) = avoption_numeric_input_from_value(value)? {
+        let parsed = avoption_value_from_numeric(kind, name, input)?;
+        validate_value_for_kind(kind, &parsed)?;
+        return Ok(parsed);
+    }
+
     validate_value_for_kind(kind, value)?;
     unreachable!("validate_value_for_kind returned Ok above")
+}
+
+fn avoption_numeric_input_from_value(
+    value: &OptionValue,
+) -> AvResult<Option<AvOptionNumericInput>> {
+    match value {
+        OptionValue::Bool(value) => Ok(Some(AvOptionNumericInput::Int(i64::from(*value)))),
+        OptionValue::Int(value) | OptionValue::Duration(value) => {
+            Ok(Some(AvOptionNumericInput::Int(*value)))
+        }
+        OptionValue::PixelFormat(value) => Ok(Some(AvOptionNumericInput::Int(i64::from(
+            pixel_format_avoption_index(*value)?,
+        )))),
+        OptionValue::SampleFormat(value) => Ok(Some(AvOptionNumericInput::Int(i64::from(
+            sample_format_avoption_index(*value),
+        )))),
+        OptionValue::Float(value) => Ok(Some(AvOptionNumericInput::Double(*value))),
+        OptionValue::Rational(value) => Ok(Some(AvOptionNumericInput::Rational(*value))),
+        OptionValue::String(_)
+        | OptionValue::ImageSize { .. }
+        | OptionValue::ChannelLayout(_)
+        | OptionValue::VideoRate(_)
+        | OptionValue::Color(_)
+        | OptionValue::Binary(_)
+        | OptionValue::Dictionary(_)
+        | OptionValue::Array(_) => Ok(None),
+    }
 }
 
 fn hex_nibble(byte: u8) -> Option<u8> {
@@ -6557,6 +6720,36 @@ mod tests {
             .remove_avoption_array("ints", 0, 1, OptionSearchFlags::empty())
             .unwrap();
         assert_eq!(options.get_avoption_string("ints").unwrap(), "6,9");
+        options.set_avoption_from_str("ints", "3,4").unwrap();
+        options
+            .set_avoption_array(
+                "ints",
+                1,
+                &[OptionValue::Float(6.0)],
+                OptionSearchFlags::empty(),
+            )
+            .unwrap();
+        assert_eq!(options.get_avoption_string("ints").unwrap(), "3,6,4");
+        options
+            .set_avoption_array(
+                "ints",
+                2,
+                &[OptionValue::Rational(Rational::new(9, 1).unwrap())],
+                OptionSearchFlags::ARRAY_REPLACE,
+            )
+            .unwrap();
+        options
+            .remove_avoption_array("ints", 0, 1, OptionSearchFlags::empty())
+            .unwrap();
+        assert_eq!(options.get_avoption_string("ints").unwrap(), "6,9");
+        assert_eq!(
+            options.get_avoption_array_doubles("ints", 0, 2).unwrap(),
+            vec![6.0, 9.0]
+        );
+        assert_eq!(
+            options.get_avoption_array_rationals("ints", 0, 2).unwrap(),
+            vec![Rational::new(6, 1).unwrap(), Rational::new(9, 1).unwrap()]
+        );
 
         options
             .set_avoption_from_str("words", "left|right\\|inner")
@@ -6619,6 +6812,18 @@ mod tests {
                 .unwrap_err()
                 .code(),
             Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options
+                .set_avoption_array(
+                    "ints",
+                    0,
+                    &[OptionValue::Rational(Rational::new(11, 1).unwrap())],
+                    OptionSearchFlags::empty()
+                )
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::from_posix_errno(34))
         );
         assert_eq!(
             options

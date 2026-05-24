@@ -1745,6 +1745,64 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let mut typed_int_numeric_array_options = array_options();
+    typed_int_numeric_array_options
+        .set_avoption_from_str("ints", "3,4")
+        .unwrap();
+    let ret_int_double_insert = ret(typed_int_numeric_array_options.set_avoption_array(
+        "ints",
+        1,
+        &[OptionValue::Float(6.0)],
+        OptionSearchFlags::empty(),
+    ));
+    let ret_int_q_replace = ret(typed_int_numeric_array_options.set_avoption_array(
+        "ints",
+        2,
+        &[OptionValue::Rational(Rational::new(9, 1).unwrap())],
+        OptionSearchFlags::ARRAY_REPLACE,
+    ));
+    let ret_int_numeric_remove = ret(typed_int_numeric_array_options.remove_avoption_array(
+        "ints",
+        0,
+        1,
+        OptionSearchFlags::empty(),
+    ));
+    let ret_int_q_bad = ret(typed_int_numeric_array_options.set_avoption_array(
+        "ints",
+        0,
+        &[OptionValue::Rational(Rational::new(11, 1).unwrap())],
+        OptionSearchFlags::empty(),
+    ));
+    insert_row(
+        &mut rows,
+        "ret:set-array-int-numeric-typed",
+        [
+            ret_int_double_insert,
+            ret_int_q_replace,
+            ret_int_numeric_remove,
+            ret_int_q_bad,
+        ],
+    );
+    rows.insert(
+        "state:set-array-int-numeric-typed".to_string(),
+        array_state_fields(&typed_int_numeric_array_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-array-int-numeric-typed",
+        [
+            ret_array_size(typed_int_numeric_array_options.get_avoption_array_size("ints")),
+            ret_array_values(typed_int_numeric_array_options.get_avoption_array("ints", 0, 2)),
+            ret_array_doubles(
+                typed_int_numeric_array_options.get_avoption_array_doubles("ints", 0, 2),
+            ),
+            ret_array_rationals(
+                typed_int_numeric_array_options.get_avoption_array_rationals("ints", 0, 2),
+            ),
+            ret_value(typed_int_numeric_array_options.get_avoption_string("ints")),
+        ],
+    );
+
     let mut typed_string_array_options = array_options();
     typed_string_array_options
         .set_avoption_from_str("words", "left,right\\,inner")
@@ -2937,6 +2995,42 @@ fn ret_array_strings(result: avutil::AvResult<Vec<String>>) -> String {
         Ok(values) => {
             let mut fields = vec!["0".to_owned(), values.len().to_string()];
             fields.extend(values);
+            fields.join(":")
+        }
+        Err(err) => format!(
+            "{}:0",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
+fn ret_array_doubles(result: avutil::AvResult<Vec<f64>>) -> String {
+    match result {
+        Ok(values) => {
+            let mut fields = vec!["0".to_owned(), values.len().to_string()];
+            fields.extend(values.into_iter().map(format_c_g17));
+            fields.join(":")
+        }
+        Err(err) => format!(
+            "{}:0",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
+fn ret_array_rationals(result: avutil::AvResult<Vec<Rational>>) -> String {
+    match result {
+        Ok(values) => {
+            let mut fields = vec!["0".to_owned(), values.len().to_string()];
+            fields.extend(
+                values
+                    .into_iter()
+                    .map(|value| format!("{}/{}", value.num(), value.den())),
+            );
             fields.join(":")
         }
         Err(err) => format!(
@@ -4735,6 +4829,30 @@ static void print_get_array_string_value(const void *ctx, const char *name,
     }
 }
 
+static void print_get_array_double_value(const void *ctx, const char *name,
+                                         unsigned start, unsigned count) {
+    double values[8] = { 0 };
+    int ret = av_opt_get_array((void *)ctx, name, 0, start, count,
+                               AV_OPT_TYPE_DOUBLE, values);
+    printf("|%d:%u", ret, ret < 0 ? 0 : count);
+    if (ret >= 0) {
+        for (unsigned i = 0; i < count; i++)
+            printf(":%.17g", values[i]);
+    }
+}
+
+static void print_get_array_q_value(const void *ctx, const char *name,
+                                    unsigned start, unsigned count) {
+    AVRational values[8] = { 0 };
+    int ret = av_opt_get_array((void *)ctx, name, 0, start, count,
+                               AV_OPT_TYPE_RATIONAL, values);
+    printf("|%d:%u", ret, ret < 0 ? 0 : count);
+    if (ret >= 0) {
+        for (unsigned i = 0; i < count; i++)
+            printf(":%d/%d", values[i].num, values[i].den);
+    }
+}
+
 static void print_array_rows(void) {
     ArrayOptions ctx;
     int ret_set_ints;
@@ -4754,6 +4872,10 @@ static void print_array_rows(void) {
     int ret_int_string_replace;
     int ret_int_string_remove;
     int ret_int_string_bad;
+    int ret_int_double_insert;
+    int ret_int_q_replace;
+    int ret_int_numeric_remove;
+    int ret_int_q_bad;
     int64_t insert_value[] = { 8 };
     int64_t replace_value[] = { 5 };
     const char *bad_value[] = { "bad" };
@@ -4762,6 +4884,9 @@ static void print_array_rows(void) {
     const char *int_string_insert[] = { "6" };
     const char *int_string_replace[] = { "9" };
     const char *int_string_bad[] = { "bad" };
+    double int_double_insert[] = { 6.0 };
+    AVRational int_q_replace[] = { { 9, 1 } };
+    AVRational int_q_bad[] = { { 11, 1 } };
 
     init_array_context(&ctx);
     print_array_state("state:array-defaults", &ctx);
@@ -4837,6 +4962,29 @@ static void print_array_rows(void) {
     print_get_array_size_value(&ctx, "ints", 0);
     print_get_array_int64_value(&ctx, "ints", 0, 2);
     print_get_array_string_value(&ctx, "ints", 0, 2);
+    print_get_value(&ctx, "ints");
+    printf("\n");
+    av_opt_free(&ctx);
+
+    init_array_context(&ctx);
+    av_opt_set(&ctx, "ints", "3,4", 0);
+    ret_int_double_insert = av_opt_set_array(&ctx, "ints", 0, 1, 1,
+                                             AV_OPT_TYPE_DOUBLE, int_double_insert);
+    ret_int_q_replace = av_opt_set_array(&ctx, "ints", AV_OPT_ARRAY_REPLACE, 2, 1,
+                                         AV_OPT_TYPE_RATIONAL, int_q_replace);
+    ret_int_numeric_remove = av_opt_set_array(&ctx, "ints", 0, 0, 1,
+                                              AV_OPT_TYPE_INT64, NULL);
+    ret_int_q_bad = av_opt_set_array(&ctx, "ints", 0, 0, 1,
+                                     AV_OPT_TYPE_RATIONAL, int_q_bad);
+    printf("ret:set-array-int-numeric-typed|%d|%d|%d|%d\n",
+           ret_int_double_insert, ret_int_q_replace,
+           ret_int_numeric_remove, ret_int_q_bad);
+    print_array_state("state:set-array-int-numeric-typed", &ctx);
+    printf("get:set-array-int-numeric-typed");
+    print_get_array_size_value(&ctx, "ints", 0);
+    print_get_array_int64_value(&ctx, "ints", 0, 2);
+    print_get_array_double_value(&ctx, "ints", 0, 2);
+    print_get_array_q_value(&ctx, "ints", 0, 2);
     print_get_value(&ctx, "ints");
     printf("\n");
     av_opt_free(&ctx);

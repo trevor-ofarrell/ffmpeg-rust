@@ -1331,6 +1331,38 @@ fn exercise_fixtures() {
             .unwrap(),
         vec!["6".to_owned(), "9".to_owned()]
     );
+    array_options.set_avoption_from_str("ints", "3,4").unwrap();
+    array_options
+        .set_avoption_array(
+            "ints",
+            1,
+            &[OptionValue::Float(6.0)],
+            OptionSearchFlags::empty(),
+        )
+        .unwrap();
+    array_options
+        .set_avoption_array(
+            "ints",
+            2,
+            &[OptionValue::Rational(Rational::new(9, 1).unwrap())],
+            OptionSearchFlags::ARRAY_REPLACE,
+        )
+        .unwrap();
+    array_options
+        .remove_avoption_array("ints", 0, 1, OptionSearchFlags::empty())
+        .unwrap();
+    assert_eq!(
+        array_options
+            .get_avoption_array_doubles("ints", 0, 2)
+            .unwrap(),
+        vec![6.0, 9.0]
+    );
+    assert_eq!(
+        array_options
+            .get_avoption_array_rationals("ints", 0, 2)
+            .unwrap(),
+        vec![Rational::new(6, 1).unwrap(), Rational::new(9, 1).unwrap()]
+    );
     array_options
         .set_avoption_array(
             "words",
@@ -1375,6 +1407,18 @@ fn exercise_fixtures() {
             .unwrap_err()
             .code(),
         Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        array_options
+            .set_avoption_array(
+                "ints",
+                0,
+                &[OptionValue::Rational(Rational::new(11, 1).unwrap())],
+                OptionSearchFlags::empty()
+            )
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
     );
     assert_eq!(
         array_options
