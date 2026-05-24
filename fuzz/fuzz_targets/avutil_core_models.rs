@@ -71,9 +71,9 @@ use avutil::{
     SampleFormatNumericKind, HashAlgorithm, HashContext, Murmur3, Ripemd128, Ripemd160,
     Ripemd256, Ripemd320, Sha1, Sha224, Sha256, Sha384, Sha512, Sha512Trunc224,
     Sha512Trunc256, SideData, VideoFrame, AV_ERROR_MAX_STRING_SIZE, AV_HASH_MAX_SIZE,
-    AV_INPUT_BUFFER_PADDING_SIZE, AV_LOG_FORCE_COLOR_ENV, AV_LOG_FORCE_NOCOLOR_ENV,
-    AV_NUM_DATA_POINTERS, AV_TIME_BASE, AV_TIME_BASE_Q, AVPALETTE_COUNT, AVPALETTE_SIZE,
-    MatchMode, SetMode, packet_pack_dictionary,
+    AV_BUFFER_FLAG_READONLY, AV_INPUT_BUFFER_PADDING_SIZE, AV_LOG_FORCE_COLOR_ENV,
+    AV_LOG_FORCE_NOCOLOR_ENV, AV_NUM_DATA_POINTERS, AV_TIME_BASE, AV_TIME_BASE_Q,
+    AVPALETTE_COUNT, AVPALETTE_SIZE, MatchMode, SetMode, packet_pack_dictionary,
     packet_unpack_dictionary,
 };
 use libfuzzer_sys::fuzz_target;
@@ -870,6 +870,8 @@ fn exercise_color_parser(cursor: &mut Cursor<'_>) {
 }
 
 fn exercise_buffers(cursor: &mut Cursor<'_>) {
+    assert_eq!(AV_BUFFER_FLAG_READONLY, 1);
+
     let payload_len = usize::from(cursor.next().unwrap_or_default()) % (MAX_PAYLOAD + 1);
     let payload = payload_from(cursor, payload_len);
     let mut buffer = if cursor.next().unwrap_or_default().is_multiple_of(2) {

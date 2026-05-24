@@ -40,6 +40,8 @@ pub const AV_BUFFER_REF_ABI_LAYOUT: BufferAbiLayout = BufferAbiLayout {
     ],
 };
 
+pub const AV_BUFFER_FLAG_READONLY: i32 = 1 << 0;
+
 #[derive(Clone)]
 pub struct BufferPoolCallbacks {
     allocate: PoolAllocateCallback,
@@ -1331,7 +1333,7 @@ mod tests {
     use crate::AvErrorKind;
 
     #[test]
-    fn buffer_ref_public_abi_layout_matches_pinned_default_native_profile() {
+    fn buffer_ref_public_abi_and_flags_match_pinned_default_native_profile() {
         assert_eq!(AV_BUFFER_REF_ABI_LAYOUT.name, "AVBufferRef");
         assert_eq!(AV_BUFFER_REF_ABI_LAYOUT.size, 24);
         assert_eq!(AV_BUFFER_REF_ABI_LAYOUT.align, 8);
@@ -1365,6 +1367,8 @@ mod tests {
                 field.name
             );
         }
+
+        assert_eq!(AV_BUFFER_FLAG_READONLY, 1);
     }
 
     #[test]

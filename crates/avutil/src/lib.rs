@@ -22,7 +22,7 @@ pub use bitreader::BitReader;
 pub use bitwriter::BitWriter;
 pub use buffer::{
     BufferAbiField, BufferAbiLayout, BufferPool, BufferPoolAllocation, BufferPoolCallbacks,
-    BufferRef, BufferSlice, AV_BUFFER_REF_ABI_LAYOUT,
+    BufferRef, BufferSlice, AV_BUFFER_FLAG_READONLY, AV_BUFFER_REF_ABI_LAYOUT,
 };
 pub use byteio::{ByteReader, ByteWriter};
 pub use channel_layout::{

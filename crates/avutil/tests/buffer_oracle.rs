@@ -7,7 +7,8 @@ use std::{
 };
 
 use avutil::{
-    BufferPool, BufferPoolAllocation, BufferPoolCallbacks, BufferRef, AV_BUFFER_REF_ABI_LAYOUT,
+    BufferPool, BufferPoolAllocation, BufferPoolCallbacks, BufferRef, AV_BUFFER_FLAG_READONLY,
+    AV_BUFFER_REF_ABI_LAYOUT,
 };
 
 type ReleaseRows = Arc<Mutex<Vec<(usize, Vec<u8>)>>>;
@@ -62,6 +63,10 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     rows.insert(
         "buffer:abi-avbufferref-layout".to_string(),
         buffer_abi_layout_fields(&AV_BUFFER_REF_ABI_LAYOUT),
+    );
+    rows.insert(
+        "buffer:flag-readonly".to_string(),
+        vec![AV_BUFFER_FLAG_READONLY.to_string()],
     );
 
     rows.insert(
@@ -1224,8 +1229,13 @@ static void print_buffer_abi_layout(void) {
     printf("\n");
 }
 
+static void print_buffer_flag_constants(void) {
+    printf("buffer:flag-readonly|%d\n", AV_BUFFER_FLAG_READONLY);
+}
+
 int main(void) {
     print_buffer_abi_layout();
+    print_buffer_flag_constants();
 
     AVBufferRef *buf = av_buffer_alloc(4);
     fail_if(!buf, "av_buffer_alloc failed");
