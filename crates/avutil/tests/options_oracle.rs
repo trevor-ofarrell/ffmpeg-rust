@@ -1360,6 +1360,112 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let binary_defaults = binary_options();
+    insert_row(
+        &mut rows,
+        "state:binary-defaults",
+        binary_state_fields(&binary_defaults),
+    );
+    insert_row(
+        &mut rows,
+        "get:binary-defaults",
+        [
+            ret_value(binary_defaults.get_avoption_string("blob")),
+            ret_i64(binary_defaults.get_avoption_int("blob")),
+        ],
+    );
+
+    let mut binary_set = binary_options();
+    let ret_hex = ret(binary_set.set_avoption_from_str("blob", "0f10Aa"));
+    let after_hex = binary_value(&binary_set, "blob");
+    let ret_empty = ret(binary_set.set_avoption_from_str("blob", ""));
+    let after_empty = binary_value(&binary_set, "blob");
+    let ret_dead = ret(binary_set.set_avoption_from_str("blob", "deAd"));
+    let after_dead = binary_value(&binary_set, "blob");
+    insert_row(
+        &mut rows,
+        "ret:set-binary-strings",
+        [ret_hex, ret_empty, ret_dead],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-binary-strings",
+        [
+            after_hex.len().to_string(),
+            binary_field(&after_hex),
+            after_empty.len().to_string(),
+            binary_field(&after_empty),
+            after_dead.len().to_string(),
+            binary_field(&after_dead),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-binary-strings",
+        [ret_value(binary_set.get_avoption_string("blob"))],
+    );
+    let ret_odd = ret(binary_set.set_avoption_from_str("blob", "abc"));
+    binary_set.set_avoption_from_str("blob", "beef").unwrap();
+    let ret_non_hex = ret(binary_set.set_avoption_from_str("blob", "0g"));
+    insert_row(&mut rows, "ret:set-binary-errors", [ret_odd, ret_non_hex]);
+    insert_row(
+        &mut rows,
+        "state:after-binary-errors",
+        binary_state_fields(&binary_set),
+    );
+
+    let mut typed_binary_options = binary_options();
+    let ret_typed = ret(typed_binary_options.set_avoption_binary("blob", &[0xDE, 0xAD]));
+    let after_typed = binary_value(&typed_binary_options, "blob");
+    let ret_typed_empty = ret(typed_binary_options.set_avoption_binary("blob", &[]));
+    let after_typed_empty = binary_value(&typed_binary_options, "blob");
+    insert_row(
+        &mut rows,
+        "ret:set-binary-typed",
+        [
+            ret_typed,
+            ret_typed_empty,
+            ret(typed_binary_options.set_avoption_binary("scalar", &[1])),
+            ret(typed_binary_options.set_avoption_int("blob", 2)),
+            ret(typed_binary_options.set_avoption_int("blob", 0)),
+            ret(typed_binary_options.set_avoption_int("scalar", 6)),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-binary-typed",
+        [
+            after_typed.len().to_string(),
+            binary_field(&after_typed),
+            after_typed_empty.len().to_string(),
+            binary_field(&after_typed_empty),
+            binary_value(&typed_binary_options, "blob")
+                .len()
+                .to_string(),
+            binary_field(&binary_value(&typed_binary_options, "blob")),
+            int_value(&typed_binary_options, "scalar").to_string(),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-binary-typed",
+        [
+            ret_value(typed_binary_options.get_avoption_string("blob")),
+            ret_i64(typed_binary_options.get_avoption_int("blob")),
+            ret_q(typed_binary_options.get_avoption_q("blob")),
+            ret_value(typed_binary_options.get_avoption_string("scalar")),
+            ret_value(typed_binary_options.get_avoption_string("missing")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "query-ranges:binary",
+        [
+            ret_ranges(typed_binary_options.query_avoption_ranges("blob")),
+            ret_ranges(typed_binary_options.query_avoption_ranges("missing")),
+        ],
+    );
+
     let video_defaults = video_rate_options();
     insert_row(
         &mut rows,
@@ -1865,6 +1971,35 @@ fn channel_layout_options() -> OptionSet {
     options
 }
 
+fn binary_options() -> OptionSet {
+    let mut options = OptionSet::new();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "blob",
+                OptionKind::Binary,
+                OptionValue::Binary(vec![0x00, 0x01, 0xAA, 0xFF]),
+                "binary data",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "scalar",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(4),
+                "scalar",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+}
+
 fn video_rate_options() -> OptionSet {
     let mut options = OptionSet::new();
     options
@@ -1997,6 +2132,15 @@ fn sample_format_state_fields(options: &OptionSet) -> [String; 2] {
 fn channel_layout_state_fields(options: &OptionSet) -> [String; 2] {
     [
         channel_layout_value(options, "layout").describe(),
+        int_value(options, "scalar").to_string(),
+    ]
+}
+
+fn binary_state_fields(options: &OptionSet) -> [String; 3] {
+    let binary = binary_value(options, "blob");
+    [
+        binary.len().to_string(),
+        binary_field(&binary),
         int_value(options, "scalar").to_string(),
     ]
 }
@@ -2136,6 +2280,22 @@ fn channel_layout_value(options: &OptionSet, name: &str) -> ChannelLayoutSpec {
         Some(OptionValue::ChannelLayout(value)) => value.clone(),
         other => panic!("expected channel-layout option `{name}`, got {other:?}"),
     }
+}
+
+fn binary_value(options: &OptionSet, name: &str) -> Vec<u8> {
+    match options.get(name) {
+        Some(OptionValue::Binary(value)) => value.clone(),
+        other => panic!("expected binary option `{name}`, got {other:?}"),
+    }
+}
+
+fn binary_field(value: &[u8]) -> String {
+    let mut formatted = String::with_capacity(value.len() * 2);
+    for byte in value {
+        use std::fmt::Write as _;
+        let _ = write!(&mut formatted, "{byte:02X}");
+    }
+    formatted
 }
 
 fn video_rate_value(options: &OptionSet, name: &str) -> Rational {
@@ -2508,6 +2668,13 @@ typedef struct ChannelLayoutOptions {
     int64_t scalar;
 } ChannelLayoutOptions;
 
+typedef struct BinaryOptions {
+    const AVClass *av_class;
+    uint8_t *blob;
+    int blob_size;
+    int64_t scalar;
+} BinaryOptions;
+
 typedef struct VideoRateOptions {
     const AVClass *av_class;
     AVRational rate;
@@ -2620,6 +2787,14 @@ static const AVOption channel_layout_options[] = {
     { NULL }
 };
 
+static const AVOption binary_options[] = {
+    { "blob", "binary data", offsetof(BinaryOptions, blob),
+      AV_OPT_TYPE_BINARY, { .str = "0001aaff" }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
+    { "scalar", "scalar", offsetof(BinaryOptions, scalar),
+      AV_OPT_TYPE_INT64, { .i64 = 4 }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL }
+};
+
 static const AVClass image_size_class = {
     .class_name = "rust-options-oracle-image-size",
     .item_name = av_default_item_name,
@@ -2645,6 +2820,13 @@ static const AVClass channel_layout_class = {
     .class_name = "rust-options-oracle-channel-layout",
     .item_name = av_default_item_name,
     .option = channel_layout_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
+static const AVClass binary_class = {
+    .class_name = "rust-options-oracle-binary",
+    .item_name = av_default_item_name,
+    .option = binary_options,
     .version = LIBAVUTIL_VERSION_INT,
 };
 
@@ -2713,6 +2895,12 @@ static void init_sample_format_context(SampleFormatOptions *ctx) {
 static void init_channel_layout_context(ChannelLayoutOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &channel_layout_class;
+    av_opt_set_defaults(ctx);
+}
+
+static void init_binary_context(BinaryOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &binary_class;
     av_opt_set_defaults(ctx);
 }
 
@@ -3605,6 +3793,104 @@ static void print_channel_layout_rows(void) {
     av_channel_layout_uninit(&ctx.layout);
 }
 
+static void print_binary_hex(const uint8_t *data, int len) {
+    for (int i = 0; i < len; i++)
+        printf("%02X", data[i]);
+}
+
+static void print_binary_state(const char *name, const BinaryOptions *ctx) {
+    printf("%s|%d|", name, ctx->blob_size);
+    print_binary_hex(ctx->blob, ctx->blob_size);
+    printf("|%" PRId64 "\n", ctx->scalar);
+}
+
+static void print_binary_rows(void) {
+    BinaryOptions ctx;
+    int ret_hex;
+    int ret_empty;
+    int ret_dead;
+    int ret_odd;
+    int ret_non_hex;
+    int ret_typed;
+    int ret_typed_empty;
+    int ret_wrong_type;
+    int ret_int_range;
+    int ret_int_zero;
+    int ret_scalar;
+    uint8_t typed[] = { 0xDE, 0xAD };
+    int after_hex_len;
+    int after_empty_len;
+    int after_dead_len;
+    int after_typed_len;
+    int after_typed_empty_len;
+    uint8_t after_hex[8] = { 0 };
+    uint8_t after_dead[8] = { 0 };
+    uint8_t after_typed[8] = { 0 };
+
+    init_binary_context(&ctx);
+    print_binary_state("state:binary-defaults", &ctx);
+    printf("get:binary-defaults");
+    print_get_value(&ctx, "blob");
+    print_get_int_value(&ctx, "blob", 0);
+    printf("\n");
+
+    ret_hex = av_opt_set(&ctx, "blob", "0f10Aa", 0);
+    after_hex_len = ctx.blob_size;
+    memcpy(after_hex, ctx.blob, ctx.blob_size);
+    ret_empty = av_opt_set(&ctx, "blob", "", 0);
+    after_empty_len = ctx.blob_size;
+    ret_dead = av_opt_set(&ctx, "blob", "deAd", 0);
+    after_dead_len = ctx.blob_size;
+    memcpy(after_dead, ctx.blob, ctx.blob_size);
+    printf("ret:set-binary-strings|%d|%d|%d\n", ret_hex, ret_empty, ret_dead);
+    printf("state:set-binary-strings|%d|", after_hex_len);
+    print_binary_hex(after_hex, after_hex_len);
+    printf("|%d||%d|", after_empty_len, after_dead_len);
+    print_binary_hex(after_dead, after_dead_len);
+    printf("\n");
+    printf("get:set-binary-strings");
+    print_get_value(&ctx, "blob");
+    printf("\n");
+
+    ret_odd = av_opt_set(&ctx, "blob", "abc", 0);
+    av_opt_set(&ctx, "blob", "beef", 0);
+    ret_non_hex = av_opt_set(&ctx, "blob", "0g", 0);
+    printf("ret:set-binary-errors|%d|%d\n", ret_odd, ret_non_hex);
+    print_binary_state("state:after-binary-errors", &ctx);
+
+    av_opt_free(&ctx);
+    init_binary_context(&ctx);
+    ret_typed = av_opt_set_bin(&ctx, "blob", typed, 2, 0);
+    after_typed_len = ctx.blob_size;
+    memcpy(after_typed, ctx.blob, ctx.blob_size);
+    ret_typed_empty = av_opt_set_bin(&ctx, "blob", typed, 0, 0);
+    after_typed_empty_len = ctx.blob_size;
+    ret_wrong_type = av_opt_set_bin(&ctx, "scalar", typed, 1, 0);
+    ret_int_range = av_opt_set_int(&ctx, "blob", 2, 0);
+    ret_int_zero = av_opt_set_int(&ctx, "blob", 0, 0);
+    ret_scalar = av_opt_set_int(&ctx, "scalar", 6, 0);
+    printf("ret:set-binary-typed|%d|%d|%d|%d|%d|%d\n",
+           ret_typed, ret_typed_empty, ret_wrong_type, ret_int_range, ret_int_zero, ret_scalar);
+    printf("state:set-binary-typed|%d|", after_typed_len);
+    print_binary_hex(after_typed, after_typed_len);
+    printf("|%d||%d|", after_typed_empty_len, ctx.blob_size);
+    print_binary_hex(ctx.blob, ctx.blob_size);
+    printf("|%" PRId64 "\n", ctx.scalar);
+    printf("get:set-binary-typed");
+    print_get_value(&ctx, "blob");
+    print_get_int_value(&ctx, "blob", 0);
+    print_get_q_value(&ctx, "blob", 0);
+    print_get_value(&ctx, "scalar");
+    print_get_value(&ctx, "missing");
+    printf("\n");
+
+    printf("query-ranges:binary");
+    print_query_range_value(&ctx, "blob");
+    print_query_range_value(&ctx, "missing");
+    printf("\n");
+    av_opt_free(&ctx);
+}
+
 static void print_video_rate_state(const char *name, const VideoRateOptions *ctx) {
     printf("%s|%d|%d|%" PRId64 "\n", name, ctx->rate.num, ctx->rate.den, ctx->scalar);
 }
@@ -3963,6 +4249,7 @@ int main(void) {
     print_pixel_format_rows();
     print_sample_format_rows();
     print_channel_layout_rows();
+    print_binary_rows();
     print_video_rate_rows();
     print_color_rows();
 

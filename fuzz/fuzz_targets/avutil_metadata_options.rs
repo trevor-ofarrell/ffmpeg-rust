@@ -1084,6 +1084,91 @@ fn exercise_fixtures() {
     );
     assert_eq!(channel_layout_options, before_channel_layout_errors);
 
+    let mut binary_options = OptionSet::new();
+    binary_options
+        .define(
+            OptionDefinition::new(
+                "blob",
+                OptionKind::Binary,
+                OptionValue::Binary(vec![0x00, 0x01, 0xAA, 0xFF]),
+                "binary data",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    binary_options
+        .define(
+            OptionDefinition::new(
+                "scalar",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(4),
+                "scalar",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    binary_options
+        .set_avoption_from_str("blob", "0f10Aa")
+        .unwrap();
+    assert_eq!(
+        binary_options.get("blob"),
+        Some(&OptionValue::Binary(vec![0x0F, 0x10, 0xAA]))
+    );
+    assert_eq!(
+        binary_options.get_avoption_string("blob").unwrap(),
+        "0F10AA"
+    );
+    binary_options.set_avoption_from_str("blob", "").unwrap();
+    assert_eq!(
+        binary_options.get("blob"),
+        Some(&OptionValue::Binary(Vec::new()))
+    );
+    binary_options
+        .set_avoption_from_str("blob", "deAd")
+        .unwrap();
+    assert_eq!(binary_options.get_avoption_string("blob").unwrap(), "DEAD");
+    assert_eq!(
+        binary_options
+            .set_avoption_from_str("blob", "abc")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        binary_options.get("blob"),
+        Some(&OptionValue::Binary(Vec::new()))
+    );
+    binary_options
+        .set_avoption_binary("blob", &[0xBE, 0xEF])
+        .unwrap();
+    assert_eq!(
+        binary_options.get_avoption_binary("blob").unwrap(),
+        vec![0xBE, 0xEF]
+    );
+    let before_binary_errors = binary_options.clone();
+    assert_eq!(
+        binary_options
+            .set_avoption_int("blob", 2)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(
+        binary_options
+            .set_avoption_int("blob", 0)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        binary_options
+            .query_avoption_ranges("blob")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::ENOSYS)
+    );
+    assert_eq!(binary_options, before_binary_errors);
+
     let mut video_rate_options = OptionSet::new();
     video_rate_options
         .define(
@@ -1250,6 +1335,7 @@ fn exercise_fixtures() {
             "pix_fmt",
             "sample_fmt",
             "layout",
+            "blob",
             "aspect_ratio",
             "readonly",
             "preset_level",
@@ -1770,7 +1856,7 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
     let name = option_name_from(cursor);
     let help = literal_from(cursor);
     let kind_tag = cursor.next().unwrap_or_default();
-    let kind = match kind_tag % 22 {
+    let kind = match kind_tag % 23 {
         0 => OptionKind::Bool,
         1 => OptionKind::Int { min: 0, max: 64 },
         2 => OptionKind::Int { min: 8, max: 1 },
@@ -1812,7 +1898,8 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
         },
         18 => OptionKind::ChannelLayout,
         19 => OptionKind::Color,
-        20 => OptionKind::String { allow_empty: true },
+        20 => OptionKind::Binary,
+        21 => OptionKind::String { allow_empty: true },
         _ => OptionKind::String { allow_empty: false },
     };
     let default = default_value_for(&kind, cursor);
@@ -1978,6 +2065,14 @@ fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue 
             cursor.next().unwrap_or_default(),
             cursor.next().unwrap_or_default(),
         ])),
+        OptionKind::Binary => {
+            let len = usize::from(cursor.next().unwrap_or_default()) % 8;
+            let mut value = Vec::with_capacity(len);
+            for _ in 0..len {
+                value.push(cursor.next().unwrap_or_default());
+            }
+            OptionValue::Binary(value)
+        }
         OptionKind::String { allow_empty } => {
             let value = literal_from(cursor);
             if *allow_empty || !value.is_empty() {
@@ -2085,6 +2180,17 @@ fn sample_options() -> OptionSet {
     options
         .define(
             OptionDefinition::new(
+                "blob",
+                OptionKind::Binary,
+                OptionValue::Binary(vec![0x00, 0x01, 0xAA, 0xFF]),
+                "binary data",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new(
                 "aspect_ratio",
                 OptionKind::Rational {
                     min: Rational::ONE,
@@ -2150,7 +2256,7 @@ fn sample_options() -> OptionSet {
 }
 
 fn option_name_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 20 {
+    match cursor.next().unwrap_or_default() % 21 {
         0 => "threads".to_owned(),
         1 => "THREADS".to_owned(),
         2 => "bitexact".to_owned(),
@@ -2170,12 +2276,13 @@ fn option_name_from(cursor: &mut Cursor<'_>) -> String {
         16 => "pix_fmt".to_owned(),
         17 => "sample_fmt".to_owned(),
         18 => "layout".to_owned(),
+        19 => "blob".to_owned(),
         _ => "preset_level".to_owned(),
     }
 }
 
 fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 69 {
+    match cursor.next().unwrap_or_default() % 73 {
         0 => "1".to_owned(),
         1 => "0".to_owned(),
         2 => "yes".to_owned(),
@@ -2245,12 +2352,16 @@ fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
         66 => "2C".to_owned(),
         67 => "bad_layout".to_owned(),
         68 => "0x3".to_owned(),
+        69 => "0001aaff".to_owned(),
+        70 => "0f10Aa".to_owned(),
+        71 => "abc".to_owned(),
+        72 => "0g".to_owned(),
         _ => literal_from(cursor),
     }
 }
 
 fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
-    match cursor.next().unwrap_or_default() % 12 {
+    match cursor.next().unwrap_or_default() % 13 {
         0 => OptionValue::Bool(cursor.next().unwrap_or_default().is_multiple_of(2)),
         1 => OptionValue::Int(i64::from(cursor.next().unwrap_or_default()) - 32),
         2 => {
@@ -2323,6 +2434,14 @@ fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
                 _ => ChannelLayoutSpec::unspecified(2).unwrap(),
             };
             OptionValue::ChannelLayout(value)
+        }
+        11 => {
+            let len = usize::from(cursor.next().unwrap_or_default()) % 8;
+            let mut value = Vec::with_capacity(len);
+            for _ in 0..len {
+                value.push(cursor.next().unwrap_or_default());
+            }
+            OptionValue::Binary(value)
         }
         _ => OptionValue::String(option_value_string_from(cursor)),
     }
