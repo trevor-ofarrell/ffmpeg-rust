@@ -1042,6 +1042,94 @@ impl OptionSet {
         self.set_avoption_from_str(name, raw)
     }
 
+    pub fn set_avoption_int(&mut self, name: &str, value: i64) -> AvResult<()> {
+        let index = self.avoption_index(name)?;
+        self.set_avoption_number_at_index(index, AvOptionNumericInput::Int(value))
+    }
+
+    pub fn set_avoption_int_with_flags(
+        &mut self,
+        name: &str,
+        value: i64,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        self.set_avoption_number_with_flags(name, AvOptionNumericInput::Int(value), search_flags)
+    }
+
+    pub fn set_avoption_double(&mut self, name: &str, value: f64) -> AvResult<()> {
+        let index = self.avoption_index(name)?;
+        self.set_avoption_number_at_index(index, AvOptionNumericInput::Double(value))
+    }
+
+    pub fn set_avoption_double_with_flags(
+        &mut self,
+        name: &str,
+        value: f64,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        self.set_avoption_number_with_flags(name, AvOptionNumericInput::Double(value), search_flags)
+    }
+
+    pub fn set_avoption_q(&mut self, name: &str, value: Rational) -> AvResult<()> {
+        let index = self.avoption_index(name)?;
+        self.set_avoption_number_at_index(index, AvOptionNumericInput::Rational(value))
+    }
+
+    pub fn set_avoption_q_with_flags(
+        &mut self,
+        name: &str,
+        value: Rational,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        self.set_avoption_number_with_flags(
+            name,
+            AvOptionNumericInput::Rational(value),
+            search_flags,
+        )
+    }
+
+    pub fn get_avoption_int(&self, name: &str) -> AvResult<i64> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_number_at_index(index)?.to_int()
+    }
+
+    pub fn get_avoption_int_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<i64> {
+        self.get_avoption_number_with_flags(name, search_flags)?
+            .to_int()
+    }
+
+    pub fn get_avoption_double(&self, name: &str) -> AvResult<f64> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_number_at_index(index)?.to_double()
+    }
+
+    pub fn get_avoption_double_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<f64> {
+        self.get_avoption_number_with_flags(name, search_flags)?
+            .to_double()
+    }
+
+    pub fn get_avoption_q(&self, name: &str) -> AvResult<Rational> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_number_at_index(index)?.to_rational()
+    }
+
+    pub fn get_avoption_q_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<Rational> {
+        self.get_avoption_number_with_flags(name, search_flags)?
+            .to_rational()
+    }
+
     pub fn set_avoptions_from_dict(
         &mut self,
         options: &mut Dictionary,
@@ -1218,6 +1306,70 @@ impl OptionSet {
             );
             fields.push(field);
         }
+    }
+
+    fn set_avoption_number_with_flags(
+        &mut self,
+        name: &str,
+        value: AvOptionNumericInput,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &mut self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child.options.set_avoption_number_at_index(index, value);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.set_avoption_number_at_index(index, value)
+    }
+
+    fn set_avoption_number_at_index(
+        &mut self,
+        index: usize,
+        input: AvOptionNumericInput,
+    ) -> AvResult<()> {
+        self.ensure_writable(index)?;
+        let value = avoption_value_from_numeric(
+            self.definitions[index].kind(),
+            self.definitions[index].name(),
+            input,
+        )?;
+        self.values[index] = value;
+        Ok(())
+    }
+
+    fn get_avoption_number_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<AvOptionNumberParts> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child.options.get_avoption_number_at_index(index);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.get_avoption_number_at_index(index)
+    }
+
+    fn get_avoption_number_at_index(&self, index: usize) -> AvResult<AvOptionNumberParts> {
+        avoption_number_parts(self.definitions[index].name(), &self.values[index])
     }
 
     pub fn set_child(
@@ -1544,6 +1696,221 @@ fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
     }
 
     AvOptionRanges::one(range)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum AvOptionNumericInput {
+    Int(i64),
+    Double(f64),
+    Rational(Rational),
+}
+
+impl AvOptionNumericInput {
+    fn value(self) -> AvResult<f64> {
+        match self {
+            Self::Int(value) => Ok(value as f64),
+            Self::Double(value) => {
+                if value.is_finite() {
+                    Ok(value)
+                } else {
+                    Err(AvError::invalid_argument(
+                        "numeric AVOption value must be finite",
+                    ))
+                }
+            }
+            Self::Rational(value) => {
+                validate_rational_bound(value, "numeric AVOption rational")?;
+                Ok(value.to_f64())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct AvOptionNumberParts {
+    num: f64,
+    den: i32,
+    intnum: i64,
+}
+
+impl AvOptionNumberParts {
+    fn to_double(self) -> AvResult<f64> {
+        if self.den == 0 {
+            return Err(AvError::invalid_argument(
+                "numeric AVOption denominator must not be zero",
+            ));
+        }
+        Ok(self.num * self.intnum as f64 / f64::from(self.den))
+    }
+
+    fn to_int(self) -> AvResult<i64> {
+        if self.den == 0 {
+            return Err(AvError::invalid_argument(
+                "numeric AVOption denominator must not be zero",
+            ));
+        }
+
+        if self.num == f64::from(self.den) {
+            return Ok(self.intnum);
+        }
+
+        trunc_f64_to_i64(self.num * self.intnum as f64 / f64::from(self.den))
+    }
+
+    fn to_rational(self) -> AvResult<Rational> {
+        if self.den == 0 {
+            return Err(AvError::invalid_argument(
+                "numeric AVOption denominator must not be zero",
+            ));
+        }
+
+        if self.num == 1.0 {
+            let num = match i32::try_from(self.intnum) {
+                Ok(num) => num,
+                Err(_) => return Rational::from_f64_limited(self.to_double()?, 1 << 24),
+            };
+            return Rational::new(num, self.den);
+        }
+
+        Rational::from_f64_limited(self.to_double()?, 1 << 24)
+    }
+}
+
+fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNumberParts> {
+    match value {
+        OptionValue::Bool(value) => Ok(AvOptionNumberParts {
+            num: 1.0,
+            den: 1,
+            intnum: i64::from(*value),
+        }),
+        OptionValue::Int(value) => Ok(AvOptionNumberParts {
+            num: 1.0,
+            den: 1,
+            intnum: *value,
+        }),
+        OptionValue::Float(value) => Ok(AvOptionNumberParts {
+            num: *value,
+            den: 1,
+            intnum: 1,
+        }),
+        OptionValue::Rational(value) => {
+            validate_rational_bound(*value, "numeric AVOption rational")?;
+            Ok(AvOptionNumberParts {
+                num: 1.0,
+                den: value.den(),
+                intnum: i64::from(value.num()),
+            })
+        }
+        OptionValue::String(_) => Err(AvError::invalid_argument(format!(
+            "AVOption `{name}` is not numeric"
+        ))),
+    }
+}
+
+fn avoption_value_from_numeric(
+    kind: &OptionKind,
+    name: &str,
+    input: AvOptionNumericInput,
+) -> AvResult<OptionValue> {
+    let value = input.value()?;
+
+    match *kind {
+        OptionKind::Bool => {
+            avoption_check_numeric_range(name, value, 0.0, 1.0)?;
+            Ok(OptionValue::Bool(round_f64_ties_even_to_i64(value)? != 0))
+        }
+        OptionKind::Int { min, max } => {
+            avoption_check_numeric_range(name, value, min as f64, max as f64)?;
+            Ok(OptionValue::Int(round_f64_ties_even_to_i64(value)?))
+        }
+        OptionKind::Float { min, max } => {
+            avoption_check_numeric_range(name, value, min, max)?;
+            Ok(OptionValue::Float(value))
+        }
+        OptionKind::Rational { min, max } => {
+            avoption_check_numeric_range(name, value, min.to_f64(), max.to_f64())?;
+            let rational = match input {
+                AvOptionNumericInput::Int(value) => {
+                    let value = i32::try_from(value).map_err(|_| {
+                        AvError::invalid_argument(
+                            "numeric AVOption rational numerator out of range",
+                        )
+                    })?;
+                    Rational::new(value, 1)?
+                }
+                AvOptionNumericInput::Double(value) => Rational::from_f64_limited(value, 1 << 24)?,
+                AvOptionNumericInput::Rational(value) => {
+                    validate_rational_bound(value, "numeric AVOption rational")?;
+                    value
+                }
+            };
+            validate_rational_bound(rational, "numeric AVOption rational")?;
+            Ok(OptionValue::Rational(rational))
+        }
+        OptionKind::String { .. } => {
+            if value == 0.0 {
+                Err(AvError::invalid_argument(format!(
+                    "AVOption `{name}` is not numeric"
+                )))
+            } else {
+                Err(avoption_range_error(name, value, 0.0, 0.0))
+            }
+        }
+    }
+}
+
+fn avoption_check_numeric_range(name: &str, value: f64, min: f64, max: f64) -> AvResult<()> {
+    if !value.is_finite() {
+        return Err(AvError::invalid_argument(
+            "numeric AVOption value must be finite",
+        ));
+    }
+
+    if value < min || value > max {
+        return Err(avoption_range_error(name, value, min, max));
+    }
+
+    Ok(())
+}
+
+fn avoption_range_error(name: &str, value: f64, min: f64, max: f64) -> AvError {
+    AvError::with_code(
+        AvErrorKind::InvalidArgument,
+        AvErrorCode::from_posix_errno(34),
+        format!("AVOption `{name}` value {value} outside range {min}..={max}"),
+    )
+}
+
+fn round_f64_ties_even_to_i64(value: f64) -> AvResult<i64> {
+    if !value.is_finite() || value < i64::MIN as f64 || value > i64::MAX as f64 {
+        return Err(AvError::invalid_argument(
+            "numeric AVOption integer value out of range",
+        ));
+    }
+
+    let floor = value.floor();
+    let fraction = value - floor;
+    let rounded = if fraction < 0.5 {
+        floor
+    } else if fraction > 0.5 {
+        floor + 1.0
+    } else if (floor as i64) % 2 == 0 {
+        floor
+    } else {
+        floor + 1.0
+    };
+
+    Ok(rounded as i64)
+}
+
+fn trunc_f64_to_i64(value: f64) -> AvResult<i64> {
+    if !value.is_finite() || value < i64::MIN as f64 || value > i64::MAX as f64 {
+        return Err(AvError::invalid_argument(
+            "numeric AVOption integer value out of range",
+        ));
+    }
+
+    Ok(value.trunc() as i64)
 }
 
 fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<()> {
@@ -2240,6 +2607,134 @@ mod tests {
             "title=clip"
         );
         assert_eq!(options.get_avoption_string("preset_level").unwrap(), "8");
+    }
+
+    #[test]
+    fn typed_avoption_get_set_matches_bounded_ffmpeg_shape() {
+        let mut options = sample_options();
+        options
+            .define_with_current_value(
+                OptionDefinition::new_with_flags(
+                    "exported",
+                    OptionKind::Int { min: 0, max: 8 },
+                    OptionValue::Int(4),
+                    "read-only exported value",
+                    OptionFlags::READONLY,
+                )
+                .unwrap(),
+                OptionValue::Int(0),
+            )
+            .unwrap();
+
+        options.set_avoption_int("threads", 21).unwrap();
+        options.set_avoption_int("bitexact", 1).unwrap();
+        options.set_avoption_double("quality", 0.625).unwrap();
+        options
+            .set_avoption_q("aspect_ratio", Rational::new(3, 2).unwrap())
+            .unwrap();
+        options.set_avoption_int("preset_level", 6).unwrap();
+
+        assert_eq!(options.get("threads"), Some(&OptionValue::Int(21)));
+        assert_eq!(options.get("bitexact"), Some(&OptionValue::Bool(true)));
+        assert_eq!(options.get("quality"), Some(&OptionValue::Float(0.625)));
+        assert_eq!(
+            options.get("aspect_ratio"),
+            Some(&OptionValue::Rational(Rational::new(3, 2).unwrap()))
+        );
+        assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(6)));
+
+        assert_eq!(options.get_avoption_int("threads").unwrap(), 21);
+        assert_eq!(options.get_avoption_double("threads").unwrap(), 21.0);
+        assert_eq!(
+            options.get_avoption_q("threads").unwrap(),
+            Rational::new(21, 1).unwrap()
+        );
+        assert_eq!(options.get_avoption_int("bitexact").unwrap(), 1);
+        assert_eq!(options.get_avoption_double("quality").unwrap(), 0.625);
+        assert_eq!(options.get_avoption_int("quality").unwrap(), 0);
+        assert_eq!(
+            options.get_avoption_q("aspect_ratio").unwrap(),
+            Rational::new(3, 2).unwrap()
+        );
+
+        assert_eq!(
+            options.set_avoption_int("metadata", 1).unwrap_err().code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(
+            options.set_avoption_int("threads", 128).unwrap_err().code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(
+            options.set_avoption_int("exported", 1).unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.get_avoption_int("metadata").unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.get_avoption_int("missing").unwrap_err().code(),
+            Some(AvErrorCode::OPTION_NOT_FOUND)
+        );
+
+        let mut parent = sample_options();
+        let mut child_options = OptionSet::new();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 16 },
+                    OptionValue::Int(2),
+                    "child worker count",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "child_only",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(5),
+                    "child-only value",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        parent
+            .define_child(OptionChild::new("decoder", child_options, "").unwrap())
+            .unwrap();
+
+        parent
+            .set_avoption_int_with_flags("threads", 9, OptionSearchFlags::CHILDREN)
+            .unwrap();
+        parent
+            .set_avoption_int_with_flags("child_only", 7, OptionSearchFlags::CHILDREN)
+            .unwrap();
+
+        assert_eq!(parent.get_avoption_int("threads").unwrap(), 1);
+        assert_eq!(
+            parent
+                .get_avoption_int_with_flags("threads", OptionSearchFlags::CHILDREN)
+                .unwrap(),
+            9
+        );
+        assert_eq!(
+            parent
+                .get_avoption_int_with_flags("child_only", OptionSearchFlags::CHILDREN)
+                .unwrap(),
+            7
+        );
+        assert_eq!(
+            parent
+                .set_avoption_int_with_flags("threads", 10, OptionSearchFlags::FAKE_OBJ)
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::OPTION_NOT_FOUND)
+        );
     }
 
     #[test]

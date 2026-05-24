@@ -156,7 +156,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 22 {
+        match cursor.next().unwrap_or_default() % 23 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -419,6 +419,57 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                     }
                 }
             }
+            21 => {
+                let name = option_name_from(cursor);
+                let flags = option_search_flags_from(cursor.next());
+                let before = options.clone();
+                let result = match cursor.next().unwrap_or_default() % 6 {
+                    0 => options
+                        .set_avoption_int(&name, i64::from(cursor.next().unwrap_or_default()) - 64),
+                    1 => options.set_avoption_int_with_flags(
+                        &name,
+                        i64::from(cursor.next().unwrap_or_default()) - 64,
+                        flags,
+                    ),
+                    2 => options.set_avoption_double(
+                        &name,
+                        f64::from(cursor.next().unwrap_or_default()) / 32.0,
+                    ),
+                    3 => options.set_avoption_double_with_flags(
+                        &name,
+                        f64::from(cursor.next().unwrap_or_default()) / 32.0,
+                        flags,
+                    ),
+                    4 => options.set_avoption_q(
+                        &name,
+                        Rational::new(
+                            i32::from(cursor.next().unwrap_or_default()) + 1,
+                            i32::from(cursor.next().unwrap_or_default() % 16) + 1,
+                        )
+                        .unwrap(),
+                    ),
+                    _ => options.set_avoption_q_with_flags(
+                        &name,
+                        Rational::new(
+                            i32::from(cursor.next().unwrap_or_default()) + 1,
+                            i32::from(cursor.next().unwrap_or_default() % 16) + 1,
+                        )
+                        .unwrap(),
+                        flags,
+                    ),
+                };
+                if result.is_ok() {
+                    assert_option_set_invariants(&options);
+                } else {
+                    assert_eq!(options, before);
+                }
+
+                let before_get = options.clone();
+                let _ = options.get_avoption_int_with_flags(&name, flags);
+                let _ = options.get_avoption_double_with_flags(&name, flags);
+                let _ = options.get_avoption_q_with_flags(&name, flags);
+                assert_eq!(options, before_get);
+            }
             _ => {
                 let before = options.clone();
                 if cursor.next().unwrap_or_default().is_multiple_of(2) {
@@ -564,6 +615,68 @@ fn exercise_fixtures() {
     let missing_range = options.query_avoption_ranges("THREADS").unwrap_err();
     assert_eq!(missing_range.code(), Some(AvErrorCode::ENOMEM));
 
+    let mut typed_options = sample_options();
+    typed_options.set_avoption_int("threads", 21).unwrap();
+    typed_options.set_avoption_int("bitexact", 1).unwrap();
+    typed_options.set_avoption_double("quality", 0.625).unwrap();
+    typed_options
+        .set_avoption_q("aspect_ratio", Rational::new(3, 2).unwrap())
+        .unwrap();
+    typed_options.set_avoption_int("preset_level", 6).unwrap();
+    assert_eq!(typed_options.get("threads"), Some(&OptionValue::Int(21)));
+    assert_eq!(
+        typed_options.get("bitexact"),
+        Some(&OptionValue::Bool(true))
+    );
+    assert_eq!(
+        typed_options.get("quality"),
+        Some(&OptionValue::Float(0.625))
+    );
+    assert_eq!(typed_options.get_avoption_int("threads").unwrap(), 21);
+    assert_eq!(typed_options.get_avoption_double("threads").unwrap(), 21.0);
+    assert_eq!(
+        typed_options.get_avoption_q("aspect_ratio").unwrap(),
+        Rational::new(3, 2).unwrap()
+    );
+    assert_eq!(typed_options.get_avoption_int("quality").unwrap(), 0);
+    let typed_before_errors = typed_options.clone();
+    assert_eq!(
+        typed_options
+            .set_avoption_int("metadata", 1)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(
+        typed_options
+            .set_avoption_int("threads", 128)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(
+        typed_options
+            .set_avoption_int("readonly", 1)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        typed_options
+            .get_avoption_int("metadata")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        typed_options
+            .get_avoption_int("missing")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::OPTION_NOT_FOUND)
+    );
+    assert_eq!(typed_options, typed_before_errors);
+
     let missing_exact = options.set_avoption_from_str("THREADS", "9").unwrap_err();
     assert_eq!(missing_exact.code(), Some(AvErrorCode::OPTION_NOT_FOUND));
     let missing_get = options.get_avoption_string("THREADS").unwrap_err();
@@ -692,6 +805,16 @@ fn exercise_fixtures() {
         options.get_child_option("encoder", "threads").unwrap(),
         &OptionValue::Int(9)
     );
+    options
+        .set_avoption_int_with_flags("threads", 10, OptionSearchFlags::CHILDREN)
+        .unwrap();
+    assert_eq!(options.get("threads"), Some(&OptionValue::Int(8)));
+    assert_eq!(
+        options
+            .get_avoption_int_with_flags("threads", OptionSearchFlags::CHILDREN)
+            .unwrap(),
+        10
+    );
     assert_eq!(
         options
             .get_avoption_string_with_flags("threads", OptionSearchFlags::FAKE_OBJ)
@@ -704,7 +827,7 @@ fn exercise_fixtures() {
         .is_err());
     assert_eq!(
         options.get_child_option("encoder", "threads").unwrap(),
-        &OptionValue::Int(9)
+        &OptionValue::Int(10)
     );
     assert!(options
         .define_child(OptionChild::new("ENCODER", OptionSet::new(), "").unwrap())

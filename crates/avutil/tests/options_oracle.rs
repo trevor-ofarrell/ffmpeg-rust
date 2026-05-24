@@ -758,6 +758,97 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let mut typed_options = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-typed",
+        [
+            ret(typed_options.set_avoption_int("threads", 21)),
+            ret(typed_options.set_avoption_int("bitexact", 1)),
+            ret(typed_options.set_avoption_double("quality", 0.625)),
+            ret(typed_options.set_avoption_q("aspect_ratio", Rational::new(3, 2).unwrap())),
+            ret(typed_options.set_avoption_int("preset_level", 6)),
+        ],
+    );
+    rows.insert("state:set-typed".to_string(), state_fields(&typed_options));
+    insert_row(
+        &mut rows,
+        "get:set-typed",
+        [
+            ret_i64(typed_options.get_avoption_int("threads")),
+            ret_f64(typed_options.get_avoption_double("quality")),
+            ret_q(typed_options.get_avoption_q("aspect_ratio")),
+            ret_i64(typed_options.get_avoption_int("bitexact")),
+            ret_f64(typed_options.get_avoption_double("threads")),
+            ret_q(typed_options.get_avoption_q("threads")),
+            ret_i64(typed_options.get_avoption_int("quality")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-typed-errors",
+        [
+            ret(typed_options.set_avoption_int("metadata", 1)),
+            ret(typed_options.set_avoption_int("threads", 128)),
+            ret(typed_options.set_avoption_int("exported", 1)),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:typed-errors",
+        [
+            ret_i64(typed_options.get_avoption_int("metadata")),
+            ret_i64(typed_options.get_avoption_int("missing")),
+        ],
+    );
+    rows.insert(
+        "state:after-typed-errors".to_string(),
+        state_fields(&typed_options),
+    );
+
+    let mut typed_children = sample_options_with_child();
+    insert_row(
+        &mut rows,
+        "ret:set-typed-children",
+        [
+            ret(typed_children.set_avoption_int_with_flags(
+                "threads",
+                9,
+                OptionSearchFlags::CHILDREN,
+            )),
+            ret(typed_children.set_avoption_int_with_flags(
+                "child_only",
+                7,
+                OptionSearchFlags::CHILDREN,
+            )),
+            ret(typed_children.set_avoption_int_with_flags(
+                "threads",
+                10,
+                OptionSearchFlags::FAKE_OBJ,
+            )),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:typed-children",
+        [
+            ret_i64(
+                typed_children.get_avoption_int_with_flags("threads", OptionSearchFlags::CHILDREN),
+            ),
+            ret_i64(
+                typed_children
+                    .get_avoption_int_with_flags("child_only", OptionSearchFlags::CHILDREN),
+            ),
+            ret_i64(
+                typed_children.get_avoption_int_with_flags("threads", OptionSearchFlags::FAKE_OBJ),
+            ),
+        ],
+    );
+    rows.insert(
+        "state:set-typed-children".to_string(),
+        child_state_fields(&typed_children),
+    );
+
     let error_results = [
         ret(options.set_avoption_from_str("bitexact", "maybe")),
         ret(options.set_avoption_from_str("exported", "6")),
@@ -1090,6 +1181,42 @@ fn ret_value(result: avutil::AvResult<String>) -> String {
         Ok(value) => format!("0:{value}"),
         Err(err) => format!(
             "{}:<null>",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
+fn ret_i64(result: avutil::AvResult<i64>) -> String {
+    match result {
+        Ok(value) => format!("0:{value}"),
+        Err(err) => format!(
+            "{}:0",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
+fn ret_f64(result: avutil::AvResult<f64>) -> String {
+    match result {
+        Ok(value) => format!("0:{}", format_c_g17(value)),
+        Err(err) => format!(
+            "{}:0",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
+fn ret_q(result: avutil::AvResult<Rational>) -> String {
+    match result {
+        Ok(value) => format!("0:{}/{}", value.num(), value.den()),
+        Err(err) => format!(
+            "{}:0/1",
             err.code()
                 .map(|code| code.raw().to_string())
                 .unwrap_or_else(|| "no-code".to_owned())
@@ -1498,6 +1625,24 @@ static void print_get_value_flags(const TestOptions *ctx, const char *name, int 
     av_free(value);
 }
 
+static void print_get_int_value(const TestOptions *ctx, const char *name, int search_flags) {
+    int64_t value = 0;
+    int ret = av_opt_get_int((void *)ctx, name, search_flags, &value);
+    printf("|%d:%" PRId64, ret, value);
+}
+
+static void print_get_double_value(const TestOptions *ctx, const char *name, int search_flags) {
+    double value = 0.0;
+    int ret = av_opt_get_double((void *)ctx, name, search_flags, &value);
+    printf("|%d:%.17g", ret, value);
+}
+
+static void print_get_q_value(const TestOptions *ctx, const char *name, int search_flags) {
+    AVRational value = { 0, 1 };
+    int ret = av_opt_get_q((void *)ctx, name, search_flags, &value);
+    printf("|%d:%d/%d", ret, value.num, value.den);
+}
+
 static void print_get_row(const char *name, const TestOptions *ctx) {
     printf("%s", name);
     print_get_value(ctx, "threads");
@@ -1689,6 +1834,76 @@ static void print_copy_rows(void) {
     av_opt_free(&destination.child);
 }
 
+static void print_typed_get_set_rows(void) {
+    TestOptions ctx;
+    int ret_threads;
+    int ret_bitexact;
+    int ret_quality;
+    int ret_aspect;
+    int ret_preset;
+    int ret_metadata_number;
+    int ret_threads_range;
+    int ret_exported_readonly;
+    int ret_child_threads;
+    int ret_child_only;
+    int ret_threads_fake;
+
+    init_context(&ctx);
+    ret_threads = av_opt_set_int(&ctx, "threads", 21, 0);
+    ret_bitexact = av_opt_set_int(&ctx, "bitexact", 1, 0);
+    ret_quality = av_opt_set_double(&ctx, "quality", 0.625, 0);
+    ret_aspect = av_opt_set_q(&ctx, "aspect_ratio", (AVRational){ 3, 2 }, 0);
+    ret_preset = av_opt_set_int(&ctx, "preset_level", 6, 0);
+    printf("ret:set-typed|%d|%d|%d|%d|%d\n",
+           ret_threads,
+           ret_bitexact,
+           ret_quality,
+           ret_aspect,
+           ret_preset);
+    print_state("state:set-typed", &ctx);
+    printf("get:set-typed");
+    print_get_int_value(&ctx, "threads", 0);
+    print_get_double_value(&ctx, "quality", 0);
+    print_get_q_value(&ctx, "aspect_ratio", 0);
+    print_get_int_value(&ctx, "bitexact", 0);
+    print_get_double_value(&ctx, "threads", 0);
+    print_get_q_value(&ctx, "threads", 0);
+    print_get_int_value(&ctx, "quality", 0);
+    printf("\n");
+
+    ret_metadata_number = av_opt_set_int(&ctx, "metadata", 1, 0);
+    ret_threads_range = av_opt_set_int(&ctx, "threads", 128, 0);
+    ret_exported_readonly = av_opt_set_int(&ctx, "exported", 1, 0);
+    printf("ret:set-typed-errors|%d|%d|%d\n",
+           ret_metadata_number,
+           ret_threads_range,
+           ret_exported_readonly);
+    printf("get:typed-errors");
+    print_get_int_value(&ctx, "metadata", 0);
+    print_get_int_value(&ctx, "missing", 0);
+    printf("\n");
+    print_state("state:after-typed-errors", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+
+    init_context(&ctx);
+    ret_child_threads = av_opt_set_int(&ctx, "threads", 9, AV_OPT_SEARCH_CHILDREN);
+    ret_child_only = av_opt_set_int(&ctx, "child_only", 7, AV_OPT_SEARCH_CHILDREN);
+    ret_threads_fake = av_opt_set_int(&ctx, "threads", 10, AV_OPT_SEARCH_FAKE_OBJ);
+    printf("ret:set-typed-children|%d|%d|%d\n",
+           ret_child_threads,
+           ret_child_only,
+           ret_threads_fake);
+    printf("get:typed-children");
+    print_get_int_value(&ctx, "threads", AV_OPT_SEARCH_CHILDREN);
+    print_get_int_value(&ctx, "child_only", AV_OPT_SEARCH_CHILDREN);
+    print_get_int_value(&ctx, "threads", AV_OPT_SEARCH_FAKE_OBJ);
+    printf("\n");
+    print_child_state("state:set-typed-children", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+}
+
 static void print_set_from_string_rows(void) {
     static const char * const shorthand[] = { "threads", "bitexact", NULL };
     TestOptions ctx;
@@ -1859,6 +2074,7 @@ int main(void) {
     print_copy_rows();
     print_set_from_string_rows();
     print_serialize_rows();
+    print_typed_get_set_rows();
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);
