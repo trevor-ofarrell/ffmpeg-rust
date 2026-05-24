@@ -152,6 +152,26 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
     rows.insert("state:defaults".to_string(), state_fields(&options));
+    insert_row(
+        &mut rows,
+        "get:defaults",
+        [
+            ret_value(options.get_avoption_string("threads")),
+            ret_value(options.get_avoption_string("bitexact")),
+            ret_value(options.get_avoption_string("quality")),
+            ret_value(options.get_avoption_string("aspect_ratio")),
+            ret_value(options.get_avoption_string("metadata")),
+            ret_value(options.get_avoption_string("preset_level")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:errors",
+        [
+            ret_value(options.get_avoption_string("THREADS")),
+            ret_value(options.get_avoption_string("fast")),
+        ],
+    );
 
     let exact_error_results = [
         ret(options.set_avoption_from_str("THREADS", "9")),
@@ -174,6 +194,18 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
     ];
     insert_row(&mut rows, "ret:set-supported", set_results);
     rows.insert("state:set-supported".to_string(), state_fields(&options));
+    insert_row(
+        &mut rows,
+        "get:set-supported",
+        [
+            ret_value(options.get_avoption_string("threads")),
+            ret_value(options.get_avoption_string("bitexact")),
+            ret_value(options.get_avoption_string("quality")),
+            ret_value(options.get_avoption_string("aspect_ratio")),
+            ret_value(options.get_avoption_string("metadata")),
+            ret_value(options.get_avoption_string("preset_level")),
+        ],
+    );
 
     let error_results = [
         ret(options.set_avoption_from_str("bitexact", "maybe")),
@@ -387,6 +419,18 @@ fn ret(result: avutil::AvResult<()>) -> String {
     }
 }
 
+fn ret_value(result: avutil::AvResult<String>) -> String {
+    match result {
+        Ok(value) => format!("0:{value}"),
+        Err(err) => format!(
+            "{}:<null>",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
 fn insert_row<const N: usize>(
     rows: &mut BTreeMap<String, Vec<String>>,
     name: &str,
@@ -469,6 +513,7 @@ fn oracle_c_source() -> &'static str {
 #include <stdio.h>
 
 #include <libavutil/avutil.h>
+#include <libavutil/mem.h>
 #include <libavutil/opt.h>
 #include <libavutil/rational.h>
 
@@ -610,6 +655,31 @@ static void print_state(const char *name, const TestOptions *ctx) {
            ctx->preset_level);
 }
 
+static void print_get_value(const TestOptions *ctx, const char *name) {
+    uint8_t *value = NULL;
+    int ret = av_opt_get(ctx, name, 0, &value);
+    printf("|%d:%s", ret, ret >= 0 && value ? (const char *)value : "<null>");
+    av_free(value);
+}
+
+static void print_get_row(const char *name, const TestOptions *ctx) {
+    printf("%s", name);
+    print_get_value(ctx, "threads");
+    print_get_value(ctx, "bitexact");
+    print_get_value(ctx, "quality");
+    print_get_value(ctx, "aspect_ratio");
+    print_get_value(ctx, "metadata");
+    print_get_value(ctx, "preset_level");
+    printf("\n");
+}
+
+static void print_get_errors(const TestOptions *ctx) {
+    printf("get:errors");
+    print_get_value(ctx, "THREADS");
+    print_get_value(ctx, "fast");
+    printf("\n");
+}
+
 int main(void) {
     TestOptions ctx = { 0 };
     int ret_threads;
@@ -633,6 +703,8 @@ int main(void) {
     print_next_order(&ctx);
     print_find_rows(&ctx);
     print_state("state:defaults", &ctx);
+    print_get_row("get:defaults", &ctx);
+    print_get_errors(&ctx);
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);
@@ -650,6 +722,7 @@ int main(void) {
     printf("ret:set-supported|%d|%d|%d|%d|%d|%d\n",
            ret_threads, ret_bitexact, ret_quality, ret_aspect, ret_metadata, ret_preset);
     print_state("state:set-supported", &ctx);
+    print_get_row("get:set-supported", &ctx);
 
     ret_invalid_bool = av_opt_set(&ctx, "bitexact", "maybe", 0);
     ret_readonly = av_opt_set(&ctx, "exported", "6", 0);

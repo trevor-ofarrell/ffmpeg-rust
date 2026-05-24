@@ -832,6 +832,11 @@ impl OptionSet {
         self.find_index(name).map(|index| &self.values[index])
     }
 
+    pub fn get_avoption_string(&self, name: &str) -> AvResult<String> {
+        let index = self.avoption_index(name)?;
+        Ok(format_avoption_value(&self.values[index]))
+    }
+
     pub fn get_child_option(&self, child_name: &str, option_name: &str) -> AvResult<&OptionValue> {
         let child = self.child_by_name(child_name)?;
         let index = child.options.option_index(option_name)?;
@@ -1250,6 +1255,17 @@ fn parse_rational_part(part: &str, raw: &str) -> AvResult<i32> {
         .map_err(|_| AvError::invalid_argument(format!("invalid rational option value `{raw}`")))
 }
 
+fn format_avoption_value(value: &OptionValue) -> String {
+    match value {
+        OptionValue::Bool(false) => "false".to_owned(),
+        OptionValue::Bool(true) => "true".to_owned(),
+        OptionValue::Int(value) => value.to_string(),
+        OptionValue::Float(value) => format!("{value:.6}"),
+        OptionValue::Rational(value) => format!("{}/{}", value.num(), value.den()),
+        OptionValue::String(value) => value.clone(),
+    }
+}
+
 fn ascii_eq_ignore_case(left: &str, right: &str) -> bool {
     left.len() == right.len()
         && left
@@ -1589,6 +1605,45 @@ mod tests {
 
         options.set_from_str("preset_level", "FAST").unwrap();
         assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
+    }
+
+    #[test]
+    fn get_avoption_string_formats_values_like_bounded_ffmpeg_surface() {
+        let mut options = sample_options();
+
+        assert_eq!(options.get_avoption_string("threads").unwrap(), "1");
+        assert_eq!(options.get_avoption_string("bitexact").unwrap(), "false");
+        assert_eq!(options.get_avoption_string("quality").unwrap(), "0.500000");
+        assert_eq!(options.get_avoption_string("aspect_ratio").unwrap(), "1/1");
+        assert_eq!(options.get_avoption_string("metadata").unwrap(), "default");
+        assert_eq!(options.get_avoption_string("preset_level").unwrap(), "0");
+
+        let missing = options.get_avoption_string("THREADS").unwrap_err();
+        assert_eq!(missing.kind(), AvErrorKind::NotFound);
+        assert_eq!(missing.code(), Some(AvErrorCode::OPTION_NOT_FOUND));
+
+        options.set_avoption_from_str("threads", "8").unwrap();
+        options.set_avoption_from_str("bitexact", "yes").unwrap();
+        options.set_avoption_from_str("quality", "0.75").unwrap();
+        options
+            .set_avoption_from_str("aspect_ratio", "4/3")
+            .unwrap();
+        options
+            .set_avoption_from_str("metadata", "title=clip")
+            .unwrap();
+        options
+            .set_avoption_from_str("preset_level", "slow")
+            .unwrap();
+
+        assert_eq!(options.get_avoption_string("threads").unwrap(), "8");
+        assert_eq!(options.get_avoption_string("bitexact").unwrap(), "true");
+        assert_eq!(options.get_avoption_string("quality").unwrap(), "0.750000");
+        assert_eq!(options.get_avoption_string("aspect_ratio").unwrap(), "4/3");
+        assert_eq!(
+            options.get_avoption_string("metadata").unwrap(),
+            "title=clip"
+        );
+        assert_eq!(options.get_avoption_string("preset_level").unwrap(), "8");
     }
 
     #[test]

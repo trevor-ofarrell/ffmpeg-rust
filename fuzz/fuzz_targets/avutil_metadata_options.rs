@@ -156,7 +156,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 14 {
+        match cursor.next().unwrap_or_default() % 15 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -274,6 +274,15 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
             }
             11 => {
+                let name = option_name_from(cursor);
+                let before = options.clone();
+                let result = options.get_avoption_string(&name);
+                if let Ok(value) = result {
+                    assert!(!value.as_bytes().contains(&0));
+                }
+                assert_eq!(options, before);
+            }
+            12 => {
                 let before = options.clone();
                 let entries = options.avoption_entries();
                 assert_eq!(
@@ -306,7 +315,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
                 assert_eq!(options, before);
             }
-            12 => {
+            13 => {
                 let name = option_name_from(cursor);
                 let before = options.clone();
                 let result = options.remove_definition(&name);
@@ -441,15 +450,21 @@ fn exercise_fixtures() {
     options.set_from_str("metadata", "title=clip").unwrap();
     options.set_from_str("preset_level", "FAST").unwrap();
     assert_eq!(options.get("threads"), Some(&OptionValue::Int(8)));
+    assert_eq!(options.get_avoption_string("threads").unwrap(), "8");
     assert_eq!(options.get("BITEXACT"), Some(&OptionValue::Bool(true)));
+    assert_eq!(options.get_avoption_string("bitexact").unwrap(), "true");
     assert_eq!(
         options.get("aspect_ratio"),
         Some(&OptionValue::Rational(Rational::new(4, 3).unwrap()))
     );
+    assert_eq!(options.get_avoption_string("aspect_ratio").unwrap(), "4/3");
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
+    assert_eq!(options.get_avoption_string("preset_level").unwrap(), "2");
 
     let missing_exact = options.set_avoption_from_str("THREADS", "9").unwrap_err();
     assert_eq!(missing_exact.code(), Some(AvErrorCode::OPTION_NOT_FOUND));
+    let missing_get = options.get_avoption_string("THREADS").unwrap_err();
+    assert_eq!(missing_get.code(), Some(AvErrorCode::OPTION_NOT_FOUND));
     assert_eq!(options.get("threads"), Some(&OptionValue::Int(8)));
     let before_exact_error = options.clone();
     assert!(options
