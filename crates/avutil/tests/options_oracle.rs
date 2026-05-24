@@ -1466,6 +1466,113 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let dictionary_defaults = dictionary_options();
+    rows.insert(
+        "state:dictionary-defaults".to_string(),
+        dictionary_state_fields(&dictionary_defaults),
+    );
+    insert_row(
+        &mut rows,
+        "get:dictionary-defaults",
+        [
+            ret_value(dictionary_defaults.get_avoption_string("dict")),
+            ret_dictionary(dictionary_defaults.get_avoption_dictionary("dict")),
+            ret_value(dictionary_defaults.get_avoption_string("empty")),
+            ret_dictionary(dictionary_defaults.get_avoption_dictionary("empty")),
+            ret_i64(dictionary_defaults.get_avoption_int("dict")),
+        ],
+    );
+
+    let mut dictionary_set = dictionary_options();
+    let ret_escaped =
+        ret(dictionary_set.set_avoption_from_str("dict", "artist=rust:comment=hello\\:there"));
+    let after_escaped = dictionary_value(&dictionary_set, "dict");
+    let ret_empty = ret(dictionary_set.set_avoption_from_str("dict", ""));
+    let after_empty = dictionary_value(&dictionary_set, "dict");
+    let ret_quoted = ret(dictionary_set.set_avoption_from_str("dict", "quoted='a:b':space=trim "));
+    let after_quoted = dictionary_value(&dictionary_set, "dict");
+    insert_row(
+        &mut rows,
+        "ret:set-dictionary-strings",
+        [ret_escaped, ret_empty, ret_quoted],
+    );
+    rows.insert(
+        "state:set-dictionary-strings".to_string(),
+        dictionary_sequence_fields([&after_escaped, &after_empty, &after_quoted]),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-dictionary-strings",
+        [ret_value(dictionary_set.get_avoption_string("dict"))],
+    );
+
+    let before_dictionary_errors = dictionary_value(&dictionary_set, "dict");
+    let ret_missing_separator = ret(dictionary_set.set_avoption_from_str("dict", "missing"));
+    let ret_empty_value = ret(dictionary_set.set_avoption_from_str("dict", "key="));
+    insert_row(
+        &mut rows,
+        "ret:set-dictionary-errors",
+        [ret_missing_separator, ret_empty_value],
+    );
+    rows.insert(
+        "state:after-dictionary-errors".to_string(),
+        dictionary_sequence_fields([
+            &before_dictionary_errors,
+            &dictionary_value(&dictionary_set, "dict"),
+        ]),
+    );
+
+    let mut typed_dictionary_options = dictionary_options();
+    let mut typed_dict = Dictionary::new();
+    typed_dict.set("typed", "one").unwrap();
+    typed_dict.set("note", "two:three").unwrap();
+    let ret_typed = ret(typed_dictionary_options.set_avoption_dictionary("dict", &typed_dict));
+    let after_typed = dictionary_value(&typed_dictionary_options, "dict");
+    let empty_dict = Dictionary::new();
+    let ret_typed_empty =
+        ret(typed_dictionary_options.set_avoption_dictionary("dict", &empty_dict));
+    let after_typed_empty = dictionary_value(&typed_dictionary_options, "dict");
+    insert_row(
+        &mut rows,
+        "ret:set-dictionary-typed",
+        [
+            ret_typed,
+            ret_typed_empty,
+            ret(typed_dictionary_options.set_avoption_dictionary("scalar", &typed_dict)),
+            ret(typed_dictionary_options.set_avoption_int("dict", 2)),
+            ret(typed_dictionary_options.set_avoption_int("dict", 0)),
+            ret(typed_dictionary_options.set_avoption_int("scalar", 6)),
+        ],
+    );
+    let final_typed_dict = dictionary_value(&typed_dictionary_options, "dict");
+    rows.insert("state:set-dictionary-typed".to_string(), {
+        let mut fields =
+            dictionary_sequence_fields([&after_typed, &after_typed_empty, &final_typed_dict]);
+        fields.push(int_value(&typed_dictionary_options, "scalar").to_string());
+        fields
+    });
+    insert_row(
+        &mut rows,
+        "get:set-dictionary-typed",
+        [
+            ret_value(typed_dictionary_options.get_avoption_string("dict")),
+            ret_dictionary(typed_dictionary_options.get_avoption_dictionary("dict")),
+            ret_i64(typed_dictionary_options.get_avoption_int("dict")),
+            ret_q(typed_dictionary_options.get_avoption_q("dict")),
+            ret_value(typed_dictionary_options.get_avoption_string("scalar")),
+            ret_dictionary(typed_dictionary_options.get_avoption_dictionary("scalar")),
+            ret_value(typed_dictionary_options.get_avoption_string("missing")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "query-ranges:dictionary",
+        [
+            ret_ranges(typed_dictionary_options.query_avoption_ranges("dict")),
+            ret_ranges(typed_dictionary_options.query_avoption_ranges("missing")),
+        ],
+    );
+
     let video_defaults = video_rate_options();
     insert_row(
         &mut rows,
@@ -2000,6 +2107,51 @@ fn binary_options() -> OptionSet {
     options
 }
 
+fn dictionary_options() -> OptionSet {
+    let mut default_dict = Dictionary::new();
+    default_dict.set("title", "clip").unwrap();
+    default_dict.set("note", "hello:world").unwrap();
+
+    let mut options = OptionSet::new();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "dict",
+                OptionKind::Dictionary,
+                OptionValue::Dictionary(default_dict),
+                "dictionary data",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "empty",
+                OptionKind::Dictionary,
+                OptionValue::Dictionary(Dictionary::new()),
+                "empty dictionary",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "scalar",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(4),
+                "scalar",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+}
+
 fn video_rate_options() -> OptionSet {
     let mut options = OptionSet::new();
     options
@@ -2145,6 +2297,21 @@ fn binary_state_fields(options: &OptionSet) -> [String; 3] {
     ]
 }
 
+fn dictionary_state_fields(options: &OptionSet) -> Vec<String> {
+    let mut fields = dict_fields(&dictionary_value(options, "dict"));
+    fields.push(dictionary_value(options, "empty").len().to_string());
+    fields.push(int_value(options, "scalar").to_string());
+    fields
+}
+
+fn dictionary_sequence_fields<const N: usize>(values: [&Dictionary; N]) -> Vec<String> {
+    let mut fields = Vec::new();
+    for value in values {
+        fields.extend(dict_fields(value));
+    }
+    fields
+}
+
 fn video_rate_state_fields(options: &OptionSet) -> [String; 3] {
     let rate = video_rate_value(options, "rate");
     [
@@ -2286,6 +2453,13 @@ fn binary_value(options: &OptionSet, name: &str) -> Vec<u8> {
     match options.get(name) {
         Some(OptionValue::Binary(value)) => value.clone(),
         other => panic!("expected binary option `{name}`, got {other:?}"),
+    }
+}
+
+fn dictionary_value(options: &OptionSet, name: &str) -> Dictionary {
+    match options.get(name) {
+        Some(OptionValue::Dictionary(value)) => value.clone(),
+        other => panic!("expected dictionary option `{name}`, got {other:?}"),
     }
 }
 
@@ -2494,6 +2668,27 @@ fn ret_channel_layout(result: avutil::AvResult<ChannelLayoutSpec>) -> String {
     }
 }
 
+fn ret_dictionary(result: avutil::AvResult<Dictionary>) -> String {
+    match result {
+        Ok(value) => {
+            let mut fields = vec!["0".to_owned(), value.len().to_string()];
+            fields.extend(
+                value
+                    .entries()
+                    .iter()
+                    .map(|entry| format!("{}={}", entry.key(), entry.value())),
+            );
+            fields.join(":")
+        }
+        Err(err) => format!(
+            "{}:0",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
 fn ret_serialize(result: avutil::AvResult<String>) -> String {
     ret_value(result)
 }
@@ -2675,6 +2870,13 @@ typedef struct BinaryOptions {
     int64_t scalar;
 } BinaryOptions;
 
+typedef struct DictionaryOptions {
+    const AVClass *av_class;
+    AVDictionary *dict;
+    AVDictionary *empty;
+    int64_t scalar;
+} DictionaryOptions;
+
 typedef struct VideoRateOptions {
     const AVClass *av_class;
     AVRational rate;
@@ -2795,6 +2997,16 @@ static const AVOption binary_options[] = {
     { NULL }
 };
 
+static const AVOption dictionary_options[] = {
+    { "dict", "dictionary data", offsetof(DictionaryOptions, dict),
+      AV_OPT_TYPE_DICT, { .str = "title=clip:note=hello\\:world" }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
+    { "empty", "empty dictionary", offsetof(DictionaryOptions, empty),
+      AV_OPT_TYPE_DICT, { .str = NULL }, 0, 0, AV_OPT_FLAG_ENCODING_PARAM },
+    { "scalar", "scalar", offsetof(DictionaryOptions, scalar),
+      AV_OPT_TYPE_INT64, { .i64 = 4 }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL }
+};
+
 static const AVClass image_size_class = {
     .class_name = "rust-options-oracle-image-size",
     .item_name = av_default_item_name,
@@ -2827,6 +3039,13 @@ static const AVClass binary_class = {
     .class_name = "rust-options-oracle-binary",
     .item_name = av_default_item_name,
     .option = binary_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
+static const AVClass dictionary_class = {
+    .class_name = "rust-options-oracle-dictionary",
+    .item_name = av_default_item_name,
+    .option = dictionary_options,
     .version = LIBAVUTIL_VERSION_INT,
 };
 
@@ -2901,6 +3120,12 @@ static void init_channel_layout_context(ChannelLayoutOptions *ctx) {
 static void init_binary_context(BinaryOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &binary_class;
+    av_opt_set_defaults(ctx);
+}
+
+static void init_dictionary_context(DictionaryOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &dictionary_class;
     av_opt_set_defaults(ctx);
 }
 
@@ -3163,6 +3388,23 @@ static void print_get_channel_layout_value(const void *ctx, const char *name, in
     describe_channel_layout(&value, desc, sizeof(desc));
     printf("|%d:%s", ret, desc);
     av_channel_layout_uninit(&value);
+}
+
+static void print_get_dict_value(const void *ctx, const char *name, int search_flags) {
+    AVDictionary *value = NULL;
+    const AVDictionaryEntry *entry = NULL;
+    int ret = av_opt_get_dict_val((void *)ctx, name, search_flags, &value);
+
+    printf("|%d", ret);
+    if (ret >= 0) {
+        printf(":%d", av_dict_count(value));
+        while ((entry = av_dict_iterate(value, entry))) {
+            printf(":%s=%s", entry->key, entry->value);
+        }
+    } else {
+        printf(":0");
+    }
+    av_dict_free(&value);
 }
 
 static void print_get_video_rate_value(const void *ctx, const char *name, int search_flags) {
@@ -3891,6 +4133,117 @@ static void print_binary_rows(void) {
     av_opt_free(&ctx);
 }
 
+static void print_dictionary_state(const char *name, const DictionaryOptions *ctx) {
+    printf("%s", name);
+    print_dict_entries(ctx->dict);
+    printf("|%d|%" PRId64 "\n", av_dict_count(ctx->empty), ctx->scalar);
+}
+
+static void print_dictionary_sequence(const AVDictionary *dict) {
+    print_dict_entries(dict);
+}
+
+static void print_dictionary_rows(void) {
+    DictionaryOptions ctx;
+    AVDictionary *typed = NULL;
+    AVDictionary *empty = NULL;
+    AVDictionary *after_escaped = NULL;
+    AVDictionary *after_empty = NULL;
+    AVDictionary *after_quoted = NULL;
+    AVDictionary *before_errors = NULL;
+    AVDictionary *after_typed = NULL;
+    AVDictionary *after_typed_empty = NULL;
+    int ret_escaped;
+    int ret_empty;
+    int ret_quoted;
+    int ret_missing_separator;
+    int ret_empty_value;
+    int ret_typed;
+    int ret_typed_empty;
+    int ret_wrong_type;
+    int ret_int_range;
+    int ret_int_zero;
+    int ret_scalar;
+
+    init_dictionary_context(&ctx);
+    print_dictionary_state("state:dictionary-defaults", &ctx);
+    printf("get:dictionary-defaults");
+    print_get_value(&ctx, "dict");
+    print_get_dict_value(&ctx, "dict", 0);
+    print_get_value(&ctx, "empty");
+    print_get_dict_value(&ctx, "empty", 0);
+    print_get_int_value(&ctx, "dict", 0);
+    printf("\n");
+
+    ret_escaped = av_opt_set(&ctx, "dict", "artist=rust:comment=hello\\:there", 0);
+    av_dict_copy(&after_escaped, ctx.dict, 0);
+    ret_empty = av_opt_set(&ctx, "dict", "", 0);
+    av_dict_copy(&after_empty, ctx.dict, 0);
+    ret_quoted = av_opt_set(&ctx, "dict", "quoted='a:b':space=trim ", 0);
+    av_dict_copy(&after_quoted, ctx.dict, 0);
+    printf("ret:set-dictionary-strings|%d|%d|%d\n", ret_escaped, ret_empty, ret_quoted);
+    printf("state:set-dictionary-strings");
+    print_dictionary_sequence(after_escaped);
+    print_dictionary_sequence(after_empty);
+    print_dictionary_sequence(after_quoted);
+    printf("\n");
+    printf("get:set-dictionary-strings");
+    print_get_value(&ctx, "dict");
+    printf("\n");
+
+    av_dict_copy(&before_errors, ctx.dict, 0);
+    ret_missing_separator = av_opt_set(&ctx, "dict", "missing", 0);
+    ret_empty_value = av_opt_set(&ctx, "dict", "key=", 0);
+    printf("ret:set-dictionary-errors|%d|%d\n", ret_missing_separator, ret_empty_value);
+    printf("state:after-dictionary-errors");
+    print_dictionary_sequence(before_errors);
+    print_dictionary_sequence(ctx.dict);
+    printf("\n");
+
+    av_opt_free(&ctx);
+    init_dictionary_context(&ctx);
+    av_dict_set(&typed, "typed", "one", 0);
+    av_dict_set(&typed, "note", "two:three", 0);
+    ret_typed = av_opt_set_dict_val(&ctx, "dict", typed, 0);
+    av_dict_copy(&after_typed, ctx.dict, 0);
+    ret_typed_empty = av_opt_set_dict_val(&ctx, "dict", empty, 0);
+    av_dict_copy(&after_typed_empty, ctx.dict, 0);
+    ret_wrong_type = av_opt_set_dict_val(&ctx, "scalar", typed, 0);
+    ret_int_range = av_opt_set_int(&ctx, "dict", 2, 0);
+    ret_int_zero = av_opt_set_int(&ctx, "dict", 0, 0);
+    ret_scalar = av_opt_set_int(&ctx, "scalar", 6, 0);
+    printf("ret:set-dictionary-typed|%d|%d|%d|%d|%d|%d\n",
+           ret_typed, ret_typed_empty, ret_wrong_type, ret_int_range, ret_int_zero, ret_scalar);
+    printf("state:set-dictionary-typed");
+    print_dictionary_sequence(after_typed);
+    print_dictionary_sequence(after_typed_empty);
+    print_dictionary_sequence(ctx.dict);
+    printf("|%" PRId64 "\n", ctx.scalar);
+    printf("get:set-dictionary-typed");
+    print_get_value(&ctx, "dict");
+    print_get_dict_value(&ctx, "dict", 0);
+    print_get_int_value(&ctx, "dict", 0);
+    print_get_q_value(&ctx, "dict", 0);
+    print_get_value(&ctx, "scalar");
+    print_get_dict_value(&ctx, "scalar", 0);
+    print_get_value(&ctx, "missing");
+    printf("\n");
+
+    printf("query-ranges:dictionary");
+    print_query_range_value(&ctx, "dict");
+    print_query_range_value(&ctx, "missing");
+    printf("\n");
+
+    av_dict_free(&typed);
+    av_dict_free(&after_escaped);
+    av_dict_free(&after_empty);
+    av_dict_free(&after_quoted);
+    av_dict_free(&before_errors);
+    av_dict_free(&after_typed);
+    av_dict_free(&after_typed_empty);
+    av_opt_free(&ctx);
+}
+
 static void print_video_rate_state(const char *name, const VideoRateOptions *ctx) {
     printf("%s|%d|%d|%" PRId64 "\n", name, ctx->rate.num, ctx->rate.den, ctx->scalar);
 }
@@ -4250,6 +4603,7 @@ int main(void) {
     print_sample_format_rows();
     print_channel_layout_rows();
     print_binary_rows();
+    print_dictionary_rows();
     print_video_rate_rows();
     print_color_rows();
 

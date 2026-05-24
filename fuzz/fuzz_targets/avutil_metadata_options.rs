@@ -1169,6 +1169,98 @@ fn exercise_fixtures() {
     );
     assert_eq!(binary_options, before_binary_errors);
 
+    let mut default_dict = Dictionary::new();
+    default_dict.set("title", "clip").unwrap();
+    default_dict.set("note", "hello:world").unwrap();
+    let mut dictionary_options = OptionSet::new();
+    dictionary_options
+        .define(
+            OptionDefinition::new(
+                "dict",
+                OptionKind::Dictionary,
+                OptionValue::Dictionary(default_dict),
+                "dictionary data",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    dictionary_options
+        .define(
+            OptionDefinition::new(
+                "scalar",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(4),
+                "scalar",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        dictionary_options.get_avoption_string("dict").unwrap(),
+        "title=clip:note=hello\\:world"
+    );
+    dictionary_options
+        .set_avoption_from_str("dict", "artist=rust:comment='a:b'")
+        .unwrap();
+    assert_eq!(
+        dictionary_options
+            .get_avoption_dictionary("dict")
+            .unwrap()
+            .get("comment"),
+        Some("a:b")
+    );
+    assert_eq!(
+        dictionary_options.get_avoption_string("dict").unwrap(),
+        "artist=rust:comment=a\\:b"
+    );
+    dictionary_options
+        .set_avoption_from_str("dict", "")
+        .unwrap();
+    assert!(dictionary_options
+        .get_avoption_dictionary("dict")
+        .unwrap()
+        .is_empty());
+    dictionary_options
+        .set_avoption_from_str("dict", "key=value")
+        .unwrap();
+    let before_dictionary_errors = dictionary_options.clone();
+    assert_eq!(
+        dictionary_options
+            .set_avoption_from_str("dict", "missing")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        dictionary_options
+            .set_avoption_from_str("dict", "key=")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        dictionary_options
+            .set_avoption_int("dict", 2)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(
+        dictionary_options
+            .set_avoption_int("dict", 0)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(
+        dictionary_options
+            .query_avoption_ranges("dict")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::ENOSYS)
+    );
+    assert_eq!(dictionary_options, before_dictionary_errors);
+
     let mut video_rate_options = OptionSet::new();
     video_rate_options
         .define(
@@ -1336,6 +1428,7 @@ fn exercise_fixtures() {
             "sample_fmt",
             "layout",
             "blob",
+            "dict",
             "aspect_ratio",
             "readonly",
             "preset_level",
@@ -1856,7 +1949,7 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
     let name = option_name_from(cursor);
     let help = literal_from(cursor);
     let kind_tag = cursor.next().unwrap_or_default();
-    let kind = match kind_tag % 23 {
+    let kind = match kind_tag % 24 {
         0 => OptionKind::Bool,
         1 => OptionKind::Int { min: 0, max: 64 },
         2 => OptionKind::Int { min: 8, max: 1 },
@@ -1899,7 +1992,8 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
         18 => OptionKind::ChannelLayout,
         19 => OptionKind::Color,
         20 => OptionKind::Binary,
-        21 => OptionKind::String { allow_empty: true },
+        21 => OptionKind::Dictionary,
+        22 => OptionKind::String { allow_empty: true },
         _ => OptionKind::String { allow_empty: false },
     };
     let default = default_value_for(&kind, cursor);
@@ -2073,6 +2167,7 @@ fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue 
             }
             OptionValue::Binary(value)
         }
+        OptionKind::Dictionary => OptionValue::Dictionary(generated_options_dictionary(cursor)),
         OptionKind::String { allow_empty } => {
             let value = literal_from(cursor);
             if *allow_empty || !value.is_empty() {
@@ -2188,6 +2283,20 @@ fn sample_options() -> OptionSet {
             .unwrap(),
         )
         .unwrap();
+    let mut metadata_dict = Dictionary::new();
+    metadata_dict.set("title", "clip").unwrap();
+    metadata_dict.set("note", "hello:world").unwrap();
+    options
+        .define(
+            OptionDefinition::new(
+                "dict",
+                OptionKind::Dictionary,
+                OptionValue::Dictionary(metadata_dict),
+                "dictionary data",
+            )
+            .unwrap(),
+        )
+        .unwrap();
     options
         .define(
             OptionDefinition::new(
@@ -2256,7 +2365,7 @@ fn sample_options() -> OptionSet {
 }
 
 fn option_name_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 21 {
+    match cursor.next().unwrap_or_default() % 22 {
         0 => "threads".to_owned(),
         1 => "THREADS".to_owned(),
         2 => "bitexact".to_owned(),
@@ -2277,12 +2386,13 @@ fn option_name_from(cursor: &mut Cursor<'_>) -> String {
         17 => "sample_fmt".to_owned(),
         18 => "layout".to_owned(),
         19 => "blob".to_owned(),
+        20 => "dict".to_owned(),
         _ => "preset_level".to_owned(),
     }
 }
 
 fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 73 {
+    match cursor.next().unwrap_or_default() % 77 {
         0 => "1".to_owned(),
         1 => "0".to_owned(),
         2 => "yes".to_owned(),
@@ -2356,12 +2466,16 @@ fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
         70 => "0f10Aa".to_owned(),
         71 => "abc".to_owned(),
         72 => "0g".to_owned(),
+        73 => "title=clip:note=hello\\:world".to_owned(),
+        74 => "artist=rust:comment='a:b'".to_owned(),
+        75 => "missing-separator".to_owned(),
+        76 => "key=".to_owned(),
         _ => literal_from(cursor),
     }
 }
 
 fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
-    match cursor.next().unwrap_or_default() % 13 {
+    match cursor.next().unwrap_or_default() % 14 {
         0 => OptionValue::Bool(cursor.next().unwrap_or_default().is_multiple_of(2)),
         1 => OptionValue::Int(i64::from(cursor.next().unwrap_or_default()) - 32),
         2 => {
@@ -2443,6 +2557,7 @@ fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
             }
             OptionValue::Binary(value)
         }
+        12 => OptionValue::Dictionary(generated_options_dictionary(cursor)),
         _ => OptionValue::String(option_value_string_from(cursor)),
     }
 }

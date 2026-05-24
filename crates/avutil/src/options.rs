@@ -18,6 +18,7 @@ pub enum OptionValue {
     VideoRate(Rational),
     Color(RgbaColor),
     Binary(Vec<u8>),
+    Dictionary(Dictionary),
     Float(f64),
     Rational(Rational),
     String(String),
@@ -35,6 +36,7 @@ pub enum OptionKind {
     VideoRate { min: Rational, max: Rational },
     Color,
     Binary,
+    Dictionary,
     Float { min: f64, max: f64 },
     Rational { min: Rational, max: Rational },
     String { allow_empty: bool },
@@ -610,6 +612,7 @@ impl OptionDefinition {
             OptionKind::VideoRate { .. } => OptionValue::VideoRate(parse_video_rate(raw)?),
             OptionKind::Color => OptionValue::Color(parse_color(raw)?),
             OptionKind::Binary => OptionValue::Binary(parse_binary(raw)?),
+            OptionKind::Dictionary => OptionValue::Dictionary(parse_dictionary(raw)?),
             OptionKind::Float { .. } => OptionValue::Float(parse_float(raw)?),
             OptionKind::Rational { .. } => OptionValue::Rational(parse_rational(raw)?),
             OptionKind::String { .. } => OptionValue::String(raw.to_owned()),
@@ -1062,7 +1065,10 @@ impl OptionSet {
                 ),
             ));
         }
-        if matches!(self.definitions[index].kind(), OptionKind::Binary) {
+        if matches!(
+            self.definitions[index].kind(),
+            OptionKind::Binary | OptionKind::Dictionary
+        ) {
             return Err(AvError::with_code(
                 AvErrorKind::Unsupported,
                 AvErrorCode::ENOSYS,
@@ -1402,6 +1408,34 @@ impl OptionSet {
         self.set_avoption_binary_at_index(index, value)
     }
 
+    pub fn set_avoption_dictionary(&mut self, name: &str, value: &Dictionary) -> AvResult<()> {
+        let index = self.avoption_index(name)?;
+        self.set_avoption_dictionary_at_index(index, value)
+    }
+
+    pub fn set_avoption_dictionary_with_flags(
+        &mut self,
+        name: &str,
+        value: &Dictionary,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &mut self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child.options.set_avoption_dictionary_at_index(index, value);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.set_avoption_dictionary_at_index(index, value)
+    }
+
     pub fn get_avoption_int(&self, name: &str) -> AvResult<i64> {
         let index = self.avoption_index(name)?;
         self.get_avoption_number_at_index(index)?.to_int()
@@ -1589,6 +1623,33 @@ impl OptionSet {
 
         let index = self.avoption_index(name)?;
         self.get_avoption_binary_at_index(index)
+    }
+
+    pub fn get_avoption_dictionary(&self, name: &str) -> AvResult<Dictionary> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_dictionary_at_index(index)
+    }
+
+    pub fn get_avoption_dictionary_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<Dictionary> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child.options.get_avoption_dictionary_at_index(index);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.get_avoption_dictionary_at_index(index)
     }
 
     pub fn set_avoptions_from_dict(
@@ -1923,6 +1984,22 @@ impl OptionSet {
         Ok(())
     }
 
+    fn set_avoption_dictionary_at_index(
+        &mut self,
+        index: usize,
+        value: &Dictionary,
+    ) -> AvResult<()> {
+        self.ensure_writable(index)?;
+        if !matches!(self.definitions[index].kind(), OptionKind::Dictionary) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not a dictionary",
+                self.definitions[index].name()
+            )));
+        }
+        self.values[index] = OptionValue::Dictionary(value.clone());
+        Ok(())
+    }
+
     fn get_avoption_number_with_flags(
         &self,
         name: &str,
@@ -2035,6 +2112,22 @@ impl OptionSet {
         }
     }
 
+    fn get_avoption_dictionary_at_index(&self, index: usize) -> AvResult<Dictionary> {
+        if !matches!(self.definitions[index].kind(), OptionKind::Dictionary) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not a dictionary",
+                self.definitions[index].name()
+            )));
+        }
+        match &self.values[index] {
+            OptionValue::Dictionary(value) => Ok(value.clone()),
+            _ => Err(AvError::invalid_argument(format!(
+                "AVOption `{}` storage is not a dictionary",
+                self.definitions[index].name()
+            ))),
+        }
+    }
+
     pub fn set_child(
         &mut self,
         child_name: &str,
@@ -2074,6 +2167,7 @@ impl OptionSet {
                 | OptionKind::Color
                 | OptionKind::ChannelLayout
                 | OptionKind::Binary
+                | OptionKind::Dictionary
         ) {
             if let Some(unit) = self.definitions[index].unit() {
                 if let Some(constant) = self.find_exact_constant(unit, raw) {
@@ -2092,7 +2186,8 @@ impl OptionSet {
             | OptionKind::SampleFormat { .. }
             | OptionKind::ChannelLayout
             | OptionKind::VideoRate { .. }
-            | OptionKind::Color => {
+            | OptionKind::Color
+            | OptionKind::Dictionary => {
                 if matches!(self.definitions[index].kind(), OptionKind::Duration { .. }) {
                     let duration = parse_duration(raw)?;
                     return avoption_value_from_numeric(
@@ -2565,6 +2660,41 @@ fn parse_binary(raw: &str) -> AvResult<Vec<u8>> {
     Ok(parsed)
 }
 
+fn parse_dictionary(raw: &str) -> AvResult<Dictionary> {
+    let mut dict = Dictionary::new();
+    let mut rest = raw;
+
+    while !rest.is_empty() {
+        let (key, key_rest) = parse_avoption_token(rest, "=");
+        if key.is_empty() || !key_rest.starts_with('=') {
+            return Err(AvError::with_code(
+                AvErrorKind::InvalidArgument,
+                AvErrorCode::EINVAL,
+                "dictionary AVOption entry is missing a key/value separator",
+            ));
+        }
+
+        let value_start = &key_rest[1..];
+        let (value, value_rest) = parse_avoption_token(value_start, ":");
+        if value.is_empty() {
+            return Err(AvError::with_code(
+                AvErrorKind::InvalidArgument,
+                AvErrorCode::EINVAL,
+                "dictionary AVOption entry has an empty value",
+            ));
+        }
+
+        dict.set_with_mode(key, value, MatchMode::CaseInsensitive, SetMode::Overwrite)?;
+        rest = if value_rest.is_empty() {
+            value_rest
+        } else {
+            &value_rest[1..]
+        };
+    }
+
+    Ok(dict)
+}
+
 fn hex_nibble(byte: u8) -> Option<u8> {
     match byte {
         b'0'..=b'9' => Some(byte - b'0'),
@@ -2762,6 +2892,7 @@ fn validate_kind(kind: &OptionKind) -> AvResult<()> {
         | OptionKind::ChannelLayout
         | OptionKind::Color
         | OptionKind::Binary
+        | OptionKind::Dictionary
         | OptionKind::String { .. } => Ok(()),
         OptionKind::PixelFormat { min, max } => {
             if min > max {
@@ -2869,7 +3000,8 @@ fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
         OptionKind::PixelFormat { .. }
         | OptionKind::SampleFormat { .. }
         | OptionKind::ChannelLayout
-        | OptionKind::Binary => None,
+        | OptionKind::Binary
+        | OptionKind::Dictionary => None,
         OptionKind::Bool
         | OptionKind::ImageSize
         | OptionKind::Color
@@ -2915,6 +3047,7 @@ fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
         }
         OptionKind::ChannelLayout => {}
         OptionKind::Binary => {}
+        OptionKind::Dictionary => {}
         OptionKind::VideoRate { .. } => {
             range.value_min = 1.0;
             range.value_max = i32::MAX as f64;
@@ -3063,6 +3196,9 @@ fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNu
         OptionValue::Binary(_) => Err(AvError::invalid_argument(format!(
             "AVOption `{name}` is not numeric"
         ))),
+        OptionValue::Dictionary(_) => Err(AvError::invalid_argument(format!(
+            "AVOption `{name}` is not numeric"
+        ))),
         OptionValue::Float(value) => Ok(AvOptionNumberParts {
             num: *value,
             den: 1,
@@ -3156,6 +3292,15 @@ fn avoption_value_from_numeric(
             }
         }
         OptionKind::Binary => {
+            if value == 0.0 {
+                Err(AvError::invalid_argument(format!(
+                    "AVOption `{name}` is not numeric"
+                )))
+            } else {
+                Err(avoption_range_error(name, value, 0.0, 0.0))
+            }
+        }
+        OptionKind::Dictionary => {
             if value == 0.0 {
                 Err(AvError::invalid_argument(format!(
                     "AVOption `{name}` is not numeric"
@@ -3321,6 +3466,7 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
         }
         (OptionKind::Color, OptionValue::Color(_)) => Ok(()),
         (OptionKind::Binary, OptionValue::Binary(_)) => Ok(()),
+        (OptionKind::Dictionary, OptionValue::Dictionary(_)) => Ok(()),
         (OptionKind::Float { min, max }, OptionValue::Float(value)) => {
             if !value.is_finite() {
                 return Err(AvError::invalid_argument(
@@ -3407,6 +3553,9 @@ fn avoption_kind_min(kind: &OptionKind) -> AvResult<f64> {
         OptionKind::Binary => Err(AvError::invalid_argument(
             "binary AVOption does not have a numeric minimum",
         )),
+        OptionKind::Dictionary => Err(AvError::invalid_argument(
+            "dictionary AVOption does not have a numeric minimum",
+        )),
         OptionKind::Float { min, .. } => Ok(min),
         OptionKind::Rational { min, .. } => Ok(min.to_f64()),
         OptionKind::String { .. } => Err(AvError::invalid_argument(
@@ -3434,6 +3583,9 @@ fn avoption_kind_max(kind: &OptionKind) -> AvResult<f64> {
         )),
         OptionKind::Binary => Err(AvError::invalid_argument(
             "binary AVOption does not have a numeric maximum",
+        )),
+        OptionKind::Dictionary => Err(AvError::invalid_argument(
+            "dictionary AVOption does not have a numeric maximum",
         )),
         OptionKind::Float { max, .. } => Ok(max),
         OptionKind::Rational { max, .. } => Ok(max.to_f64()),
@@ -4433,6 +4585,9 @@ fn format_avoption_value(value: &OptionValue) -> String {
             }
             formatted
         }
+        OptionValue::Dictionary(value) => value
+            .to_pairs_string('=', ':')
+            .expect("dictionary AVOption values use valid separators"),
         OptionValue::Float(value) => format!("{value:.6}"),
         OptionValue::Rational(value) => format!("{}/{}", value.num(), value.den()),
         OptionValue::String(value) => value.clone(),
@@ -5357,6 +5512,128 @@ mod tests {
         );
         assert_eq!(
             options.get_avoption_binary("scalar").unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_typed_errors);
+    }
+
+    #[test]
+    fn dictionary_options_parse_format_and_query_like_bounded_ffmpeg_shape() {
+        let mut default_dict = Dictionary::new();
+        default_dict.set("title", "clip").unwrap();
+        default_dict.set("note", "hello:world").unwrap();
+
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new(
+                    "dict",
+                    OptionKind::Dictionary,
+                    OptionValue::Dictionary(default_dict.clone()),
+                    "dictionary data",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define(
+                OptionDefinition::new(
+                    "scalar",
+                    OptionKind::Int { min: 0, max: 10 },
+                    OptionValue::Int(4),
+                    "scalar",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        assert_eq!(options.range("dict").unwrap(), None);
+        assert_eq!(
+            options.get("dict"),
+            Some(&OptionValue::Dictionary(default_dict))
+        );
+        assert_eq!(
+            options.get_avoption_string("dict").unwrap(),
+            "title=clip:note=hello\\:world"
+        );
+        assert_eq!(
+            options.query_avoption_ranges("dict").unwrap_err().code(),
+            Some(AvErrorCode::ENOSYS)
+        );
+
+        options
+            .set_avoption_from_str("dict", "artist=rust:comment='a:b'")
+            .unwrap();
+        let parsed = options.get_avoption_dictionary("dict").unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed.get("artist"), Some("rust"));
+        assert_eq!(parsed.get("comment"), Some("a:b"));
+        assert_eq!(
+            options.get_avoption_string("dict").unwrap(),
+            "artist=rust:comment=a\\:b"
+        );
+
+        options.set_avoption_from_str("dict", "").unwrap();
+        assert!(options.get_avoption_dictionary("dict").unwrap().is_empty());
+        assert_eq!(options.get_avoption_string("dict").unwrap(), "");
+
+        options.set_avoption_from_str("dict", "key=value").unwrap();
+        let before_parse_error = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_from_str("dict", "missing-separator")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_parse_error);
+
+        let mut typed = Dictionary::new();
+        typed.set("typed", "one").unwrap();
+        typed.set("note", "two:three").unwrap();
+        options.set_avoption_dictionary("dict", &typed).unwrap();
+        assert_eq!(
+            options.get_avoption_string("dict").unwrap(),
+            "typed=one:note=two\\:three"
+        );
+        typed.set("typed", "mutated").unwrap();
+        assert_eq!(
+            options
+                .get_avoption_dictionary("dict")
+                .unwrap()
+                .get("typed"),
+            Some("one")
+        );
+
+        let empty = Dictionary::new();
+        options.set_avoption_dictionary("dict", &empty).unwrap();
+        assert_eq!(options.get_avoption_string("dict").unwrap(), "");
+
+        let before_typed_errors = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_dictionary("scalar", &typed)
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.set_avoption_int("dict", 2).unwrap_err().code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(
+            options.set_avoption_int("dict", 0).unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.get_avoption_q("dict").unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options
+                .get_avoption_dictionary("scalar")
+                .unwrap_err()
+                .code(),
             Some(AvErrorCode::EINVAL)
         );
         assert_eq!(options, before_typed_errors);
