@@ -467,6 +467,7 @@ const PATH_RULES: &[PathRule] = &[
             "fftools-ffmpeg-rawvideo-file-output",
             "fftools-ffmpeg-rawvideo-avi-file-output",
             "fftools-ffmpeg-rawvideo-framecrc-null",
+            "fftools-ffmpeg-avi-framecrc-null",
             "fftools-ffmpeg-hash-output",
             "fftools-ffmpeg-md5-output",
             "fftools-ffmpeg-framehash-output",
@@ -1744,6 +1745,7 @@ mod tests {
             "fftools-ffmpeg-rawvideo-file-output",
             "fftools-ffmpeg-rawvideo-avi-file-output",
             "fftools-ffmpeg-rawvideo-framecrc-null",
+            "fftools-ffmpeg-avi-framecrc-null",
             "fftools-ffmpeg-hash-output",
             "fftools-ffmpeg-md5-output",
             "fftools-ffmpeg-framehash-output",
@@ -1767,6 +1769,7 @@ mod tests {
                 "fftools-ffmpeg-rawvideo-file-output".to_string(),
                 "fftools-ffmpeg-rawvideo-avi-file-output".to_string(),
                 "fftools-ffmpeg-rawvideo-framecrc-null".to_string(),
+                "fftools-ffmpeg-avi-framecrc-null".to_string(),
                 "fftools-ffmpeg-hash-output".to_string(),
                 "fftools-ffmpeg-md5-output".to_string(),
                 "fftools-ffmpeg-framehash-output".to_string(),
@@ -2094,6 +2097,13 @@ mod tests {
         )));
         assert!(pairs.contains(&("avformat-avi-muxer", "oracle-rawvideo-avi-file-output")));
         assert!(pairs.contains(&("avformat-avi-demuxer", "oracle-rawvideo-avi-file-output")));
+        assert!(pairs.contains(&(
+            "fftools-ffmpeg-avi-framecrc-null",
+            "oracle-avi-framecrc-records"
+        )));
+        assert!(pairs.contains(&("avformat-avi-demuxer", "oracle-avi-framecrc-records")));
+        assert!(pairs.contains(&("avformat-framecrc-muxer", "oracle-avi-framecrc-records")));
+        assert!(pairs.contains(&("avutil-packet", "oracle-avi-framecrc-records")));
         assert!(pairs.contains(&(
             "fftools-ffmpeg-image2-file-output",
             "oracle-image2-file-output"

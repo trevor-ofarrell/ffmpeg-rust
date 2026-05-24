@@ -1,5 +1,5 @@
-use avformat::{AviDemuxer, AviMediaType};
-use avutil::Rational;
+use avformat::{AviDemuxer, AviMediaType, AviMuxer};
+use avutil::{Packet, Rational};
 use fftools::ffmpeg_output;
 use std::{
     env, fs,
@@ -24,6 +24,20 @@ fn rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle() {
 #[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
 fn rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle() {
     compare_rawvideo_avi_file_output("bgr24", 2, 1, "25", &(0_u8..12).collect::<Vec<_>>());
+}
+
+#[test]
+#[ignore = "requires pinned FFmpeg 8.1.1 oracle; set FFMPEG_ORACLE or install third_party/ffmpeg-oracle/build/bin/ffmpeg"]
+fn avi_rgb24_framecrc_records_match_ffmpeg_oracle() {
+    let first = [0_u8, 1, 2, 3, 4, 5];
+    let second = [6_u8, 7, 8, 9, 10, 11];
+    let avi = avi_file_bytes(
+        2,
+        1,
+        Rational::new(25, 1).unwrap(),
+        &[first.as_slice(), second.as_slice()],
+    );
+    compare_avi_framecrc_records(&avi, 2, 16);
 }
 
 #[test]
@@ -329,6 +343,17 @@ fn compare_avi_demuxed_semantics(
     );
 }
 
+fn avi_file_bytes(width: u32, height: u32, frame_rate: Rational, frames: &[&[u8]]) -> Vec<u8> {
+    let mut muxer =
+        AviMuxer::new_rgb24(width, height, frame_rate).expect("AVI muxer should be constructible");
+    for frame in frames {
+        muxer
+            .write_packet(&Packet::new((*frame).to_vec(), 0))
+            .expect("test AVI packet should be valid");
+    }
+    muxer.finish().expect("test AVI should finish")
+}
+
 fn dib_padded_rgb24_payload(payload: &[u8], width: u32) -> Vec<u8> {
     let row_bytes = usize::try_from(width).unwrap() * 3;
     let stride = (row_bytes + 3) & !3;
@@ -424,6 +449,64 @@ fn compare_rawvideo_frame_checksum_records(
     assert_eq!(rust.output_format(), Some(output_format));
     assert_eq!(rust.packet_count(), 2);
     assert_eq!(rust.byte_count(), u64::try_from(payload.len()).unwrap());
+    assert!(rust.stderr().is_empty());
+    assert_eq!(
+        normalize_frame_checksum_records(rust.stdout()),
+        normalize_frame_checksum_records(&oracle_stdout)
+    );
+}
+
+fn compare_avi_framecrc_records(avi: &[u8], packet_count: u64, expected_byte_count: usize) {
+    let oracle = oracle_ffmpeg();
+    let input_path = write_temp_bytes("avi-framecrc-input", "avi", avi);
+    let input_arg = input_path.to_string_lossy().into_owned();
+
+    let rust = ffmpeg_output(&strings(&[
+        "-hide_banner",
+        "-i",
+        input_arg.as_str(),
+        "-f",
+        "framecrc",
+        "-",
+    ]))
+    .unwrap_or_else(|err| panic!("Rust AVI framecrc path should execute: {err}"));
+
+    let oracle_output = Command::new(&oracle)
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            input_arg.as_str(),
+            "-c:v",
+            "copy",
+            "-f",
+            "framecrc",
+            "-",
+        ])
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run oracle `{}`: {err}", oracle.display()));
+
+    remove_temp_files(&[input_path]);
+
+    assert!(
+        oracle_output.status.success(),
+        "oracle AVI framecrc failed with status {:?}\nstdout:\n{}\nstderr:\n{}",
+        oracle_output.status.code(),
+        String::from_utf8_lossy(&oracle_output.stdout),
+        String::from_utf8_lossy(&oracle_output.stderr)
+    );
+
+    let oracle_stdout =
+        String::from_utf8(oracle_output.stdout).expect("oracle checksum output should be UTF-8");
+
+    assert_eq!(rust.output_format(), Some("framecrc"));
+    assert_eq!(rust.packet_count(), packet_count);
+    assert_eq!(
+        rust.byte_count(),
+        u64::try_from(expected_byte_count).unwrap()
+    );
     assert!(rust.stderr().is_empty());
     assert_eq!(
         normalize_frame_checksum_records(rust.stdout()),
