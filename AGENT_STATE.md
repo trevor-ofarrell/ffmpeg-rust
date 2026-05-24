@@ -2,6 +2,8 @@
 
 ## Current Status
 
+Latest `avutil-options` array string-conversion slice: the local FFmpeg oracle is installed and verifies the new bounded `AV_OPT_TYPE_FLAG_ARRAY` string-typed integer-array conversion rows. `crates/avutil/src/options.rs` now allows string-typed array elements to convert through the AVOption scalar parser for integer array storage, adds `get_avoption_array_strings` helpers for `av_opt_get_array(..., AV_OPT_TYPE_STRING)`-style readback, and preserves invalid string rejection without mutation. `crates/avutil/tests/options_oracle.rs` validates numeric string insert/replace/remove, invalid string preservation, and per-element string readback against pinned FFmpeg 8.1.1 libavutil; `fuzz/fuzz_targets/avutil_metadata_options.rs` has matching deterministic fixtures. `avutil-options` remains `fate_pass`, not complete, because broader array conversion/raw-pointer edge behavior, full AVOption API parity, full pixel-format enum coverage, recursive child traversal breadth, broader parser edges, CLI option ordering, and final completion closure remain pending.
+
 Latest `avutil-options` array string-typed slice in progress: the local FFmpeg oracle is installed and already verifies the new bounded `AV_OPT_TYPE_FLAG_ARRAY` string-array rows through WSL `cargo test -p avutil --test options_oracle libavutil_option_helpers_match_current_model -- --ignored --nocapture`. `crates/avutil/tests/options_oracle.rs` now validates `av_opt_set_array(..., AV_OPT_TYPE_STRING)` insert/replace/remove behavior and `av_opt_get_array(..., AV_OPT_TYPE_STRING)` allocated string readback against pinned FFmpeg 8.1.1 libavutil. `crates/avutil/src/options.rs` and `fuzz/fuzz_targets/avutil_metadata_options.rs` now include matching deterministic string-array typed mutation fixtures. `avutil-options` remains `fate_pass`, not complete, because broader array conversion/raw-pointer edge behavior, full AVOption API parity, full pixel-format enum coverage, recursive child traversal breadth, broader parser edges, CLI option ordering, and final completion closure remain pending.
 
 Latest `avutil-options` array slice: the local FFmpeg oracle is installed and verified by `cargo run -p xtask -- oracle-doctor`; `crates/avutil/src/options.rs` now has bounded `OptionKind::Array` / `OptionValue::Array` support for `AV_OPT_TYPE_FLAG_ARRAY`-shaped options. The model validates scalar element kinds, length bounds, and separators; AVOption-shaped string setters split on the declared separator, preserve escaped separators/backslashes, preserve old storage on range/max parse errors, and clear storage on minimum-length string-set failures; string getters format with separator-aware escaping; typed helpers model bounded `av_opt_get_array_size`, `av_opt_get_array`, and `av_opt_set_array` insert/replace/remove behavior; numeric getters return `EINVAL`; and range queries return `ENOSYS`. `crates/avutil/tests/options_oracle.rs` validates these rows against pinned FFmpeg 8.1.1 libavutil, and `fuzz/fuzz_targets/avutil_metadata_options.rs` now includes generated and deterministic array fixtures. `avutil-options` remains `fate_pass`, not complete, because full AVOption API parity, broader recursive child-object semantics, broader array conversion and raw-pointer edge behavior, full pixel-format enum coverage, broader parser edges, CLI option ordering, and broader completion closure remain pending.
@@ -1185,6 +1187,26 @@ Raw PCM and WAV format paths now use the shared audio format primitives instead 
 The `fftools_option_parser` fuzz target also now generates and round-trips output-scoped `-hash` options with a valid hash-output fixture, and accepts compound loglevel directives in its global-option invariant checks.
 
 ## Last Successful Commands
+
+- Current `avutil-options` string-typed integer-array conversion slice:
+  - `cargo test -p avutil --lib array_options_parse_format_and_mutate_like_bounded_ffmpeg_shape -- --nocapture`
+  - `cargo check --manifest-path fuzz\\Cargo.toml --bin avutil_metadata_options`
+  - WSL `cargo test -p avutil --test options_oracle libavutil_option_helpers_match_current_model -- --ignored --nocapture`
+  - `cargo fmt --all`
+  - `rustfmt fuzz\\fuzz_targets\\avutil_metadata_options.rs`
+  - `cargo test -p avutil --lib options -- --nocapture`
+  - `cargo test -p fate-runner current_ledger -- --nocapture`
+  - `cargo run -p fate-runner -- run --component avutil-options`
+  - `cargo run -p fate-runner -- run --mappings tests\\differential\\mappings.txt --component avutil-options --target oracle-libavutil-options --oracle-ffmpeg .\\third_party\\ffmpeg-oracle\\build\\bin\\ffmpeg.cmd`
+  - `cargo run -p fate-runner -- run --mappings tests\\fate\\upstream-mappings.txt --component avutil-options --target fate-opt`
+  - `cargo run -p xtask -- oracle-doctor`
+  - `cargo run -p xtask -- guard-runtime`
+  - `cargo fmt --all -- --check`
+  - `rustfmt --check fuzz\\fuzz_targets\\avutil_metadata_options.rs`
+  - `cargo clippy -p avutil -p fate-runner --all-targets --all-features -- -D warnings`
+  - `cargo clippy --manifest-path fuzz\\Cargo.toml --bin avutil_metadata_options -- -D warnings`
+  - WSL `RUST_MIN_STACK=33554432 CXXFLAGS='-O1' HOST_CXXFLAGS='-O1' CARGO_TARGET_DIR=target-wsl-options-array-convert-fuzz-o1 cargo fuzz run avutil_metadata_options -- -runs=1`
+  - `git diff --check` passed with CRLF conversion warnings only
 
 - Current `avutil-options` string-array typed slice:
   - `cargo test -p avutil --lib array_options_parse_format_and_mutate_like_bounded_ffmpeg_shape -- --nocapture`
@@ -7387,6 +7409,8 @@ The `fftools_option_parser` fuzz target also now generates and round-trips outpu
 
 ## Current Focus Component
 
+`avutil-options` remains the current focus. The latest coherent slice is adding bounded string-typed integer-array conversion parity for `AV_OPT_TYPE_FLAG_ARRAY`: numeric string insert/replace/remove through `av_opt_set_array(..., AV_OPT_TYPE_STRING)`, invalid string preservation, per-element `av_opt_get_array(..., AV_OPT_TYPE_STRING)` readback helpers, unit coverage, pinned libavutil differential coverage, and deterministic fuzz fixtures. The component remains `fate_pass`, not complete, because full AVOption API parity, broader array conversion/raw-pointer edge behavior, full pixel-format enum coverage, recursive child traversal breadth, broader parser edges, CLI option ordering, and final completion closure still need strict evidence.
+
 `avutil-options` remains the current focus. The latest coherent slice is adding bounded string-array typed parity for `AV_OPT_TYPE_FLAG_ARRAY`: `av_opt_set_array(..., AV_OPT_TYPE_STRING)` insert/replace/remove rows, `av_opt_get_array(..., AV_OPT_TYPE_STRING)` allocated string readback rows, unit coverage, pinned libavutil differential coverage, and deterministic fuzz fixtures. The component remains `fate_pass`, not complete, because full AVOption API parity, broader array conversion/raw-pointer edge behavior, full pixel-format enum coverage, recursive child traversal breadth, broader parser edges, CLI option ordering, and final completion closure still need strict evidence.
 
 `avutil-options` remains the current focus. The latest coherent slice adds bounded `AV_OPT_TYPE_FLAG_ARRAY` parity: array option descriptors and values, escaped separator/backslash string parsing and formatting, array size/get helpers, `av_opt_set_array`-shaped insert/replace/remove mutation, wrong-type/range/max errors, minimum-length string-set clearing, numeric getter EINVAL rows, range-query ENOSYS rows, unit coverage, differential oracle coverage, upstream `fate-opt` continuity, and fuzz fixtures. The component remains `fate_pass`, not complete, because full AVOption API parity, broader array conversion and raw-pointer edge behavior, full pixel-format enum coverage, recursive child traversal breadth, broader parser edges, CLI option ordering, and final completion closure still need strict evidence.
@@ -7815,7 +7839,7 @@ This slice does not mark channel layout handling complete. The broader goal rema
 
 ## Next 3 Concrete Actions
 
-1. Finish validation and commit the current string-array typed AVOption slice, then add the next oracle-backed AVOption API slice, likely broader array conversion/raw-pointer edge behavior, full pixel-format enum coverage beyond the current 0..24 bounded map, broader duration/color parser edge cases, broader `av_opt_set_from_string` edge cases, fuller expression parser coverage, or a broader child-object helper that can be pinned cleanly against libavutil.
+1. Commit the current string-typed integer-array AVOption conversion slice, then add the next oracle-backed AVOption API slice, likely broader array conversion/raw-pointer edge behavior, full pixel-format enum coverage beyond the current 0..24 bounded map, broader duration/color parser edge cases, broader `av_opt_set_from_string` edge cases, fuller expression parser coverage, or a broader child-object helper that can be pinned cleanly against libavutil.
 2. Keep `avutil-options` at `fate_pass`, not complete, until the remaining API, CLI-ordering, fuzz, and documented limitation gaps are closed.
 3. Keep the local pinned oracle mandatory for strict progress: run `xtask oracle-doctor`, the relevant differential/upstream FATE mapping, focused unit tests, clippy, runtime guard, and fuzz build/smoke checks for any parser or demuxer touched.
 
@@ -7965,6 +7989,8 @@ This slice does not mark channel layout handling complete. The broader goal rema
 - Windows Application Control intermittently blocks freshly built child executables and separate integration-test executables. During recent packet slices it blocked focused `avutil` and `fftools` unit-test executables in multiple target directories; `target-avutil-opaque-ref-test` and `target-avutil-timebase-test` have launched the same focused packet tests successfully, and the current packet side-data slices validate through `target-avutil-timebase-test`. During the dict iterator slice it blocked the freshly built `target-avutil-dict-iter-test` `fate-runner.exe`; rerunning the same local FATE mapping through the default `target` cache passed. The current ffprobe MOV command-path coverage is kept in the `fftools` unit-test binary instead of a process-spawn integration test.
 
 ## Summary Of Latest Commit Or Changes
+
+Latest slice: added bounded AVOption string-typed integer-array conversion parity. `crates/avutil/src/options.rs` now converts string-typed array values through the AVOption scalar parser for integer arrays and exposes `get_avoption_array_strings` helpers for per-element string readback. `crates/avutil/tests/options_oracle.rs` compares numeric string insert/replace/remove, invalid string preservation, and per-element string readback rows against pinned FFmpeg 8.1.1 libavutil. `fuzz/fuzz_targets/avutil_metadata_options.rs`, docs, ledger, and state record the narrowed array conversion evidence. `avutil-options` remains `fate_pass`; no component was marked complete, so strict completion count is unchanged.
 
 Latest slice in progress: added bounded AVOption string-array typed oracle parity. `crates/avutil/tests/options_oracle.rs` now compares `av_opt_set_array(..., AV_OPT_TYPE_STRING)` insert/replace/remove rows and `av_opt_get_array(..., AV_OPT_TYPE_STRING)` allocated string readback rows against pinned FFmpeg 8.1.1 libavutil. `crates/avutil/src/options.rs` and `fuzz/fuzz_targets/avutil_metadata_options.rs` include matching deterministic fixtures. Docs and ledger record the narrowed array evidence. `avutil-options` remains `fate_pass`; no component was marked complete, so strict completion count is unchanged.
 

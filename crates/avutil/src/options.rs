@@ -1804,6 +1804,42 @@ impl OptionSet {
         self.get_avoption_array_at_index(index, start_elem, nb_elems)
     }
 
+    pub fn get_avoption_array_strings(
+        &self,
+        name: &str,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<String>> {
+        let index = self.avoption_index(name)?;
+        self.get_avoption_array_strings_at_index(index, start_elem, nb_elems)
+    }
+
+    pub fn get_avoption_array_strings_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<String>> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child
+                        .options
+                        .get_avoption_array_strings_at_index(index, start_elem, nb_elems);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.get_avoption_array_strings_at_index(index, start_elem, nb_elems)
+    }
+
     pub fn set_avoption_array(
         &mut self,
         name: &str,
@@ -2382,6 +2418,40 @@ impl OptionSet {
         Ok(values[start_elem..start_elem + nb_elems].to_vec())
     }
 
+    fn get_avoption_array_strings_at_index(
+        &self,
+        index: usize,
+        start_elem: usize,
+        nb_elems: usize,
+    ) -> AvResult<Vec<String>> {
+        if !matches!(self.definitions[index].kind(), OptionKind::Array(_)) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not an array",
+                self.definitions[index].name()
+            )));
+        }
+        let values = match &self.values[index] {
+            OptionValue::Array(values) => values,
+            _ => {
+                return Err(AvError::invalid_argument(format!(
+                    "AVOption `{}` storage is not an array",
+                    self.definitions[index].name()
+                )))
+            }
+        };
+        if start_elem >= values.len() || values.len().saturating_sub(start_elem) < nb_elems {
+            return Err(AvError::invalid_argument(format!(
+                "array AVOption `{}` range is outside the current array",
+                self.definitions[index].name()
+            )));
+        }
+
+        Ok(values[start_elem..start_elem + nb_elems]
+            .iter()
+            .map(format_avoption_value)
+            .collect())
+    }
+
     fn set_avoption_array_at_index(
         &mut self,
         index: usize,
@@ -2414,17 +2484,24 @@ impl OptionSet {
                 self.definitions[index].name()
             )));
         }
-        for value in values {
-            validate_value_for_kind(array.element(), value)?;
-        }
+        let coerced_values: Vec<_> = values
+            .iter()
+            .map(|value| {
+                coerce_avoption_array_element(
+                    array.element(),
+                    self.definitions[index].name(),
+                    value,
+                )
+            })
+            .collect::<AvResult<_>>()?;
 
         let replacing = search_flags.contains(OptionSearchFlags::ARRAY_REPLACE);
         let new_len = if replacing {
             start_elem
-                .checked_add(values.len())
+                .checked_add(coerced_values.len())
                 .map(|end| end.max(current.len()))
         } else {
-            current.len().checked_add(values.len())
+            current.len().checked_add(coerced_values.len())
         }
         .ok_or_else(|| {
             AvError::invalid_argument(format!(
@@ -2436,17 +2513,17 @@ impl OptionSet {
 
         let mut updated = current.clone();
         if replacing {
-            if start_elem + values.len() > updated.len() {
+            if start_elem + coerced_values.len() > updated.len() {
                 updated.resize(
-                    start_elem + values.len(),
+                    start_elem + coerced_values.len(),
                     OptionValue::String(String::new()),
                 );
             }
-            for (offset, value) in values.iter().enumerate() {
-                updated[start_elem + offset] = value.clone();
+            for (offset, value) in coerced_values.into_iter().enumerate() {
+                updated[start_elem + offset] = value;
             }
         } else {
-            updated.splice(start_elem..start_elem, values.iter().cloned());
+            updated.splice(start_elem..start_elem, coerced_values);
         }
         self.values[index] = OptionValue::Array(updated);
         Ok(())
@@ -3226,6 +3303,25 @@ fn parse_scalar_avoption_value_for_kind(
         }
         _ => parse_scalar_option_value_for_kind(kind, raw),
     }
+}
+
+fn coerce_avoption_array_element(
+    kind: &OptionKind,
+    name: &str,
+    value: &OptionValue,
+) -> AvResult<OptionValue> {
+    if validate_value_for_kind(kind, value).is_ok() {
+        return Ok(value.clone());
+    }
+
+    if let OptionValue::String(raw) = value {
+        let parsed = parse_scalar_avoption_value_for_kind(kind, name, raw)?;
+        validate_value_for_kind(kind, &parsed)?;
+        return Ok(parsed);
+    }
+
+    validate_value_for_kind(kind, value)?;
+    unreachable!("validate_value_for_kind returned Ok above")
 }
 
 fn hex_nibble(byte: u8) -> Option<u8> {
@@ -6436,6 +6532,31 @@ mod tests {
             .remove_avoption_array("ints", 0, 1, OptionSearchFlags::empty())
             .unwrap();
         assert_eq!(options.get_avoption_string("ints").unwrap(), "5,4");
+        options
+            .set_avoption_array(
+                "ints",
+                1,
+                &[OptionValue::String("6".to_owned())],
+                OptionSearchFlags::empty(),
+            )
+            .unwrap();
+        assert_eq!(options.get_avoption_string("ints").unwrap(), "5,6,4");
+        assert_eq!(
+            options.get_avoption_array_strings("ints", 0, 3).unwrap(),
+            vec!["5".to_owned(), "6".to_owned(), "4".to_owned()]
+        );
+        options
+            .set_avoption_array(
+                "ints",
+                2,
+                &[OptionValue::String("9".to_owned())],
+                OptionSearchFlags::ARRAY_REPLACE,
+            )
+            .unwrap();
+        options
+            .remove_avoption_array("ints", 0, 1, OptionSearchFlags::empty())
+            .unwrap();
+        assert_eq!(options.get_avoption_string("ints").unwrap(), "6,9");
 
         options
             .set_avoption_from_str("words", "left|right\\|inner")

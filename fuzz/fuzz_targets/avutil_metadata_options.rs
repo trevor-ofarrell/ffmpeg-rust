@@ -1304,6 +1304,35 @@ fn exercise_fixtures() {
     );
     array_options
         .set_avoption_array(
+            "ints",
+            1,
+            &[OptionValue::String("6".to_owned())],
+            OptionSearchFlags::empty(),
+        )
+        .unwrap();
+    array_options
+        .set_avoption_array(
+            "ints",
+            2,
+            &[OptionValue::String("9".to_owned())],
+            OptionSearchFlags::ARRAY_REPLACE,
+        )
+        .unwrap();
+    array_options
+        .remove_avoption_array("ints", 0, 1, OptionSearchFlags::empty())
+        .unwrap();
+    assert_eq!(
+        array_options.get_avoption_array("ints", 0, 2).unwrap(),
+        vec![OptionValue::Int(6), OptionValue::Int(9)]
+    );
+    assert_eq!(
+        array_options
+            .get_avoption_array_strings("ints", 0, 2)
+            .unwrap(),
+        vec!["6".to_owned(), "9".to_owned()]
+    );
+    array_options
+        .set_avoption_array(
             "words",
             1,
             &[OptionValue::String("middle,comma".to_owned())],

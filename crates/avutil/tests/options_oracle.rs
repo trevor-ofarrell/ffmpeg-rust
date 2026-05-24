@@ -1690,6 +1690,61 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let mut typed_int_string_array_options = array_options();
+    typed_int_string_array_options
+        .set_avoption_from_str("ints", "3,4")
+        .unwrap();
+    let ret_int_string_insert = ret(typed_int_string_array_options.set_avoption_array(
+        "ints",
+        1,
+        &[OptionValue::String("6".to_owned())],
+        OptionSearchFlags::empty(),
+    ));
+    let ret_int_string_replace = ret(typed_int_string_array_options.set_avoption_array(
+        "ints",
+        2,
+        &[OptionValue::String("9".to_owned())],
+        OptionSearchFlags::ARRAY_REPLACE,
+    ));
+    let ret_int_string_remove = ret(typed_int_string_array_options.remove_avoption_array(
+        "ints",
+        0,
+        1,
+        OptionSearchFlags::empty(),
+    ));
+    let ret_int_string_bad = ret(typed_int_string_array_options.set_avoption_array(
+        "ints",
+        0,
+        &[OptionValue::String("bad".to_owned())],
+        OptionSearchFlags::empty(),
+    ));
+    insert_row(
+        &mut rows,
+        "ret:set-array-int-string-typed",
+        [
+            ret_int_string_insert,
+            ret_int_string_replace,
+            ret_int_string_remove,
+            ret_int_string_bad,
+        ],
+    );
+    rows.insert(
+        "state:set-array-int-string-typed".to_string(),
+        array_state_fields(&typed_int_string_array_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-array-int-string-typed",
+        [
+            ret_array_size(typed_int_string_array_options.get_avoption_array_size("ints")),
+            ret_array_values(typed_int_string_array_options.get_avoption_array("ints", 0, 2)),
+            ret_array_strings(
+                typed_int_string_array_options.get_avoption_array_strings("ints", 0, 2),
+            ),
+            ret_value(typed_int_string_array_options.get_avoption_string("ints")),
+        ],
+    );
+
     let mut typed_string_array_options = array_options();
     typed_string_array_options
         .set_avoption_from_str("words", "left,right\\,inner")
@@ -2866,6 +2921,22 @@ fn ret_array_values(result: avutil::AvResult<Vec<OptionValue>>) -> String {
         Ok(values) => {
             let mut fields = vec!["0".to_owned(), values.len().to_string()];
             fields.extend(values.iter().map(array_value_field));
+            fields.join(":")
+        }
+        Err(err) => format!(
+            "{}:0",
+            err.code()
+                .map(|code| code.raw().to_string())
+                .unwrap_or_else(|| "no-code".to_owned())
+        ),
+    }
+}
+
+fn ret_array_strings(result: avutil::AvResult<Vec<String>>) -> String {
+    match result {
+        Ok(values) => {
+            let mut fields = vec!["0".to_owned(), values.len().to_string()];
+            fields.extend(values);
             fields.join(":")
         }
         Err(err) => format!(
@@ -4679,11 +4750,18 @@ static void print_array_rows(void) {
     int ret_string_insert;
     int ret_string_replace;
     int ret_string_remove;
+    int ret_int_string_insert;
+    int ret_int_string_replace;
+    int ret_int_string_remove;
+    int ret_int_string_bad;
     int64_t insert_value[] = { 8 };
     int64_t replace_value[] = { 5 };
     const char *bad_value[] = { "bad" };
     const char *string_insert[] = { "middle,comma" };
     const char *string_replace[] = { "tail\\slash" };
+    const char *int_string_insert[] = { "6" };
+    const char *int_string_replace[] = { "9" };
+    const char *int_string_bad[] = { "bad" };
 
     init_array_context(&ctx);
     print_array_state("state:array-defaults", &ctx);
@@ -4737,6 +4815,28 @@ static void print_array_rows(void) {
     printf("get:set-array-typed");
     print_get_array_size_value(&ctx, "ints", 0);
     print_get_array_int64_value(&ctx, "ints", 0, 2);
+    print_get_value(&ctx, "ints");
+    printf("\n");
+    av_opt_free(&ctx);
+
+    init_array_context(&ctx);
+    av_opt_set(&ctx, "ints", "3,4", 0);
+    ret_int_string_insert = av_opt_set_array(&ctx, "ints", 0, 1, 1,
+                                             AV_OPT_TYPE_STRING, int_string_insert);
+    ret_int_string_replace = av_opt_set_array(&ctx, "ints", AV_OPT_ARRAY_REPLACE, 2, 1,
+                                              AV_OPT_TYPE_STRING, int_string_replace);
+    ret_int_string_remove = av_opt_set_array(&ctx, "ints", 0, 0, 1,
+                                             AV_OPT_TYPE_STRING, NULL);
+    ret_int_string_bad = av_opt_set_array(&ctx, "ints", 0, 0, 1,
+                                          AV_OPT_TYPE_STRING, int_string_bad);
+    printf("ret:set-array-int-string-typed|%d|%d|%d|%d\n",
+           ret_int_string_insert, ret_int_string_replace,
+           ret_int_string_remove, ret_int_string_bad);
+    print_array_state("state:set-array-int-string-typed", &ctx);
+    printf("get:set-array-int-string-typed");
+    print_get_array_size_value(&ctx, "ints", 0);
+    print_get_array_int64_value(&ctx, "ints", 0, 2);
+    print_get_array_string_value(&ctx, "ints", 0, 2);
     print_get_value(&ctx, "ints");
     printf("\n");
     av_opt_free(&ctx);
