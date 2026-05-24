@@ -1411,7 +1411,73 @@ impl OptionSet {
             }
         }
 
-        self.definitions[index].parse_value(raw)
+        match self.definitions[index].kind() {
+            OptionKind::Bool | OptionKind::String { .. } => {
+                self.definitions[index].parse_value(raw)
+            }
+            OptionKind::Int { .. } | OptionKind::Float { .. } | OptionKind::Rational { .. } => {
+                if matches!(self.definitions[index].kind(), OptionKind::Rational { .. }) {
+                    if let Some(rational) = parse_avoption_exact_rational_literal(raw)? {
+                        return avoption_value_from_numeric(
+                            self.definitions[index].kind(),
+                            self.definitions[index].name(),
+                            AvOptionNumericInput::Rational(rational),
+                        );
+                    }
+                }
+
+                let constants = self.avoption_expression_constants(index)?;
+                let value = parse_avoption_numeric_expression(raw, &constants)?;
+                avoption_value_from_numeric(
+                    self.definitions[index].kind(),
+                    self.definitions[index].name(),
+                    AvOptionNumericInput::Double(value),
+                )
+            }
+        }
+    }
+
+    fn avoption_expression_constants(
+        &self,
+        index: usize,
+    ) -> AvResult<Vec<AvOptionExpressionConstant>> {
+        let definition = &self.definitions[index];
+        let mut constants = Vec::new();
+
+        if let Some(unit) = definition.unit() {
+            for constant in &self.constants {
+                if constant.unit() == unit {
+                    constants.push(AvOptionExpressionConstant {
+                        name: constant.name().to_owned(),
+                        value: avoption_number_parts(constant.name(), constant.value())?
+                            .to_double()?,
+                    });
+                }
+            }
+        }
+
+        constants.push(AvOptionExpressionConstant {
+            name: "default".to_owned(),
+            value: avoption_number_parts(definition.name(), definition.default())?.to_double()?,
+        });
+        constants.push(AvOptionExpressionConstant {
+            name: "max".to_owned(),
+            value: avoption_kind_max(definition.kind())?,
+        });
+        constants.push(AvOptionExpressionConstant {
+            name: "min".to_owned(),
+            value: avoption_kind_min(definition.kind())?,
+        });
+        constants.push(AvOptionExpressionConstant {
+            name: "none".to_owned(),
+            value: 0.0,
+        });
+        constants.push(AvOptionExpressionConstant {
+            name: "all".to_owned(),
+            value: -1.0,
+        });
+
+        Ok(constants)
     }
 
     fn option_index(&self, name: &str) -> AvResult<usize> {
@@ -1972,6 +2038,430 @@ fn validate_rational_bound(value: Rational, label: &str) -> AvResult<()> {
         )));
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct AvOptionExpressionConstant {
+    name: String,
+    value: f64,
+}
+
+fn avoption_kind_min(kind: &OptionKind) -> AvResult<f64> {
+    match *kind {
+        OptionKind::Bool => Ok(0.0),
+        OptionKind::Int { min, .. } => Ok(min as f64),
+        OptionKind::Float { min, .. } => Ok(min),
+        OptionKind::Rational { min, .. } => Ok(min.to_f64()),
+        OptionKind::String { .. } => Err(AvError::invalid_argument(
+            "string AVOption does not have a numeric minimum",
+        )),
+    }
+}
+
+fn avoption_kind_max(kind: &OptionKind) -> AvResult<f64> {
+    match *kind {
+        OptionKind::Bool => Ok(1.0),
+        OptionKind::Int { max, .. } => Ok(max as f64),
+        OptionKind::Float { max, .. } => Ok(max),
+        OptionKind::Rational { max, .. } => Ok(max.to_f64()),
+        OptionKind::String { .. } => Err(AvError::invalid_argument(
+            "string AVOption does not have a numeric maximum",
+        )),
+    }
+}
+
+fn parse_avoption_exact_rational_literal(raw: &str) -> AvResult<Option<Rational>> {
+    let raw = raw.trim_start();
+    let Some((num, pos)) = parse_signed_decimal_i32(raw, 0) else {
+        return Ok(None);
+    };
+    let Some(separator) = raw.as_bytes().get(pos).copied() else {
+        return Ok(None);
+    };
+    if separator != b'/' && separator != b':' {
+        return Ok(None);
+    }
+
+    let Some((den, pos)) = parse_signed_decimal_i32(raw, pos + 1) else {
+        return Ok(None);
+    };
+    if pos != raw.len() {
+        return Ok(None);
+    }
+
+    Rational::new(num, den)
+        .map(Some)
+        .map_err(|_| AvError::invalid_argument(format!("invalid rational option value `{raw}`")))
+}
+
+fn parse_signed_decimal_i32(raw: &str, start: usize) -> Option<(i32, usize)> {
+    let bytes = raw.as_bytes();
+    let mut pos = start;
+    if matches!(bytes.get(pos), Some(b'+') | Some(b'-')) {
+        pos += 1;
+    }
+
+    let digits_start = pos;
+    while matches!(bytes.get(pos), Some(b'0'..=b'9')) {
+        pos += 1;
+    }
+    if pos == digits_start {
+        return None;
+    }
+
+    raw[start..pos]
+        .parse::<i32>()
+        .ok()
+        .map(|value| (value, pos))
+}
+
+fn parse_avoption_numeric_expression(
+    raw: &str,
+    constants: &[AvOptionExpressionConstant],
+) -> AvResult<f64> {
+    let source: String = raw.chars().filter(|ch| !ch.is_ascii_whitespace()).collect();
+    if source.is_empty() {
+        return Err(AvError::invalid_argument(
+            "empty numeric AVOption expression",
+        ));
+    }
+
+    let mut parser = AvOptionExpressionParser {
+        source: &source,
+        pos: 0,
+        constants,
+    };
+    let value = parser.parse_expression()?;
+    if parser.pos != parser.source.len() {
+        return Err(AvError::invalid_argument(format!(
+            "invalid numeric AVOption expression `{raw}`"
+        )));
+    }
+    if value.is_nan() {
+        return Err(AvError::invalid_argument(format!(
+            "invalid numeric AVOption expression `{raw}`"
+        )));
+    }
+
+    Ok(value)
+}
+
+struct AvOptionExpressionParser<'a> {
+    source: &'a str,
+    pos: usize,
+    constants: &'a [AvOptionExpressionConstant],
+}
+
+impl AvOptionExpressionParser<'_> {
+    fn parse_expression(&mut self) -> AvResult<f64> {
+        let mut value = self.parse_sum()?;
+        while self.consume_ascii(b';') {
+            value = self.parse_sum()?;
+        }
+        Ok(value)
+    }
+
+    fn parse_sum(&mut self) -> AvResult<f64> {
+        let mut value = self.parse_product()?;
+        loop {
+            if self.consume_ascii(b'+') {
+                value += self.parse_product()?;
+            } else if self.consume_ascii(b'-') {
+                value -= self.parse_product()?;
+            } else {
+                return Ok(value);
+            }
+        }
+    }
+
+    fn parse_product(&mut self) -> AvResult<f64> {
+        let mut value = self.parse_power()?;
+        loop {
+            if self.consume_ascii(b'*') {
+                value *= self.parse_power()?;
+            } else if self.consume_ascii(b'/') {
+                value /= self.parse_power()?;
+            } else {
+                return Ok(value);
+            }
+        }
+    }
+
+    fn parse_power(&mut self) -> AvResult<f64> {
+        let mut value = self.parse_unary()?;
+        while self.consume_ascii(b'^') {
+            value = value.powf(self.parse_unary()?);
+        }
+        Ok(value)
+    }
+
+    fn parse_unary(&mut self) -> AvResult<f64> {
+        if self.consume_ascii(b'+') {
+            return self.parse_unary();
+        }
+        if self.consume_ascii(b'-') {
+            return Ok(-self.parse_unary()?);
+        }
+        self.parse_primary()
+    }
+
+    fn parse_primary(&mut self) -> AvResult<f64> {
+        if self.consume_ascii(b'(') {
+            let value = self.parse_expression()?;
+            if !self.consume_ascii(b')') {
+                return Err(AvError::invalid_argument(
+                    "unclosed numeric AVOption expression group",
+                ));
+            }
+            return Ok(value);
+        }
+
+        if let Some(value) = self.parse_number()? {
+            return Ok(value);
+        }
+        if let Some(value) = self.parse_constant() {
+            return Ok(value);
+        }
+
+        Err(AvError::invalid_argument(format!(
+            "invalid numeric AVOption expression `{}`",
+            self.source
+        )))
+    }
+
+    fn parse_number(&mut self) -> AvResult<Option<f64>> {
+        let start = self.pos;
+        let mut value = if self.remaining().starts_with("0x") || self.remaining().starts_with("0X")
+        {
+            self.pos += 2;
+            let digits_start = self.pos;
+            while self
+                .peek_ascii()
+                .is_some_and(|byte| byte.is_ascii_hexdigit())
+            {
+                self.pos += 1;
+            }
+            if self.pos == digits_start {
+                self.pos = start;
+                return Ok(None);
+            }
+            u128::from_str_radix(&self.source[digits_start..self.pos], 16)
+                .map(|value| value as f64)
+                .map_err(|_| AvError::invalid_argument("invalid hexadecimal AVOption number"))?
+        } else {
+            let mut has_digits = false;
+            while matches!(self.peek_ascii(), Some(b'0'..=b'9')) {
+                has_digits = true;
+                self.pos += 1;
+            }
+            if self.consume_ascii(b'.') {
+                while matches!(self.peek_ascii(), Some(b'0'..=b'9')) {
+                    has_digits = true;
+                    self.pos += 1;
+                }
+            }
+            if !has_digits {
+                self.pos = start;
+                return Ok(None);
+            }
+
+            let exponent_start = self.pos;
+            if matches!(self.peek_ascii(), Some(b'e') | Some(b'E')) {
+                self.pos += 1;
+                if matches!(self.peek_ascii(), Some(b'+') | Some(b'-')) {
+                    self.pos += 1;
+                }
+                let digits_start = self.pos;
+                while matches!(self.peek_ascii(), Some(b'0'..=b'9')) {
+                    self.pos += 1;
+                }
+                if self.pos == digits_start {
+                    self.pos = exponent_start;
+                }
+            }
+
+            self.source[start..self.pos]
+                .parse::<f64>()
+                .map_err(|_| AvError::invalid_argument("invalid AVOption number"))?
+        };
+
+        self.apply_number_suffixes(&mut value);
+        Ok(Some(value))
+    }
+
+    fn apply_number_suffixes(&mut self, value: &mut f64) {
+        if self.remaining().starts_with("dB") {
+            *value = 10.0_f64.powf(*value / 20.0);
+            self.pos += 2;
+        } else if let Some(prefix) = self.peek_char().and_then(avoption_si_prefix) {
+            if self.remaining_after_char().starts_with('i') {
+                *value *= prefix.binary;
+                self.pos += 2;
+            } else {
+                *value *= prefix.decimal;
+                self.pos += 1;
+            }
+        }
+
+        if self.consume_ascii(b'B') {
+            *value *= 8.0;
+        }
+    }
+
+    fn parse_constant(&mut self) -> Option<f64> {
+        for constant in self.constants {
+            if self.identifier_matches(&constant.name) {
+                self.pos += constant.name.len();
+                return Some(constant.value);
+            }
+        }
+
+        for (name, value) in [
+            ("E", std::f64::consts::E),
+            ("PI", std::f64::consts::PI),
+            ("PHI", 1.618_033_988_749_895_f64),
+            ("QP2LAMBDA", 118.0),
+        ] {
+            if self.identifier_matches(name) {
+                self.pos += name.len();
+                return Some(value);
+            }
+        }
+
+        None
+    }
+
+    fn identifier_matches(&self, prefix: &str) -> bool {
+        let remaining = self.remaining();
+        if !remaining.starts_with(prefix) {
+            return false;
+        }
+        match remaining.as_bytes().get(prefix.len()) {
+            Some(byte) => !is_avoption_identifier_char(*byte),
+            None => true,
+        }
+    }
+
+    fn remaining(&self) -> &str {
+        &self.source[self.pos..]
+    }
+
+    fn remaining_after_char(&self) -> &str {
+        let Some(ch) = self.peek_char() else {
+            return "";
+        };
+        &self.source[self.pos + ch.len_utf8()..]
+    }
+
+    fn peek_ascii(&self) -> Option<u8> {
+        self.source.as_bytes().get(self.pos).copied()
+    }
+
+    fn peek_char(&self) -> Option<char> {
+        self.remaining().chars().next()
+    }
+
+    fn consume_ascii(&mut self, byte: u8) -> bool {
+        if self.peek_ascii() == Some(byte) {
+            self.pos += 1;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct AvOptionSiPrefix {
+    binary: f64,
+    decimal: f64,
+}
+
+fn avoption_si_prefix(ch: char) -> Option<AvOptionSiPrefix> {
+    let prefix = match ch {
+        'y' => AvOptionSiPrefix {
+            binary: 8.271_806_125_530_277e-25,
+            decimal: 1e-24,
+        },
+        'z' => AvOptionSiPrefix {
+            binary: 8.470_329_472_543_003e-22,
+            decimal: 1e-21,
+        },
+        'a' => AvOptionSiPrefix {
+            binary: 8.673_617_379_884_036e-19,
+            decimal: 1e-18,
+        },
+        'f' => AvOptionSiPrefix {
+            binary: 8.881_784_197_001_252e-16,
+            decimal: 1e-15,
+        },
+        'p' => AvOptionSiPrefix {
+            binary: 9.094_947_017_729_282e-13,
+            decimal: 1e-12,
+        },
+        'n' => AvOptionSiPrefix {
+            binary: 9.313_225_746_154_785e-10,
+            decimal: 1e-9,
+        },
+        'u' => AvOptionSiPrefix {
+            binary: 9.536_743_164_062_5e-7,
+            decimal: 1e-6,
+        },
+        'm' => AvOptionSiPrefix {
+            binary: 9.765_625e-4,
+            decimal: 1e-3,
+        },
+        'c' => AvOptionSiPrefix {
+            binary: 9.843_133_202_303_695e-3,
+            decimal: 1e-2,
+        },
+        'd' => AvOptionSiPrefix {
+            binary: 9.921_256_574_801_246e-2,
+            decimal: 1e-1,
+        },
+        'h' => AvOptionSiPrefix {
+            binary: 1.015_936_673_259_648e2,
+            decimal: 1e2,
+        },
+        'k' | 'K' => AvOptionSiPrefix {
+            binary: 1.024e3,
+            decimal: 1e3,
+        },
+        'M' => AvOptionSiPrefix {
+            binary: 1.048_576e6,
+            decimal: 1e6,
+        },
+        'G' => AvOptionSiPrefix {
+            binary: 1.073_741_824e9,
+            decimal: 1e9,
+        },
+        'T' => AvOptionSiPrefix {
+            binary: 1.099_511_627_776e12,
+            decimal: 1e12,
+        },
+        'P' => AvOptionSiPrefix {
+            binary: 1.125_899_906_842_624e15,
+            decimal: 1e15,
+        },
+        'E' => AvOptionSiPrefix {
+            binary: 1.152_921_504_606_847e18,
+            decimal: 1e18,
+        },
+        'Z' => AvOptionSiPrefix {
+            binary: 1.180_591_620_717_411_3e21,
+            decimal: 1e21,
+        },
+        'Y' => AvOptionSiPrefix {
+            binary: 1.208_925_819_614_629_2e24,
+            decimal: 1e24,
+        },
+        _ => return None,
+    };
+    Some(prefix)
+}
+
+fn is_avoption_identifier_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 fn parse_bool(raw: &str) -> AvResult<bool> {
@@ -2568,6 +3058,46 @@ mod tests {
 
         options.set_from_str("preset_level", "FAST").unwrap();
         assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
+    }
+
+    #[test]
+    fn set_avoption_from_str_parses_bounded_ffmpeg_numeric_expressions() {
+        let mut options = sample_options();
+
+        options.set_avoption_from_str("threads", " 2 * 3 ").unwrap();
+        options.set_avoption_from_str("quality", "500m").unwrap();
+        options
+            .set_avoption_from_str("aspect_ratio", "1+1/2")
+            .unwrap();
+        options
+            .set_avoption_from_str("preset_level", "slow+2")
+            .unwrap();
+
+        assert_eq!(options.get("threads"), Some(&OptionValue::Int(6)));
+        assert_eq!(options.get("quality"), Some(&OptionValue::Float(0.5)));
+        assert_eq!(
+            options.get("aspect_ratio"),
+            Some(&OptionValue::Rational(Rational::new(3, 2).unwrap()))
+        );
+        assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(10)));
+
+        let before = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_from_str("threads", "1K")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(options, before);
+        assert_eq!(
+            options
+                .set_avoption_from_str("quality", "2*")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before);
     }
 
     #[test]

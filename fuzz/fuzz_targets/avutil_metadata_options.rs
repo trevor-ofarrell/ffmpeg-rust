@@ -691,6 +691,46 @@ fn exercise_fixtures() {
         .set_avoption_from_str("preset_level", "fast")
         .unwrap();
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(2)));
+
+    let mut expression_options = sample_options();
+    expression_options
+        .set_avoption_from_str("threads", "2*3")
+        .unwrap();
+    expression_options
+        .set_avoption_from_str("quality", "500m")
+        .unwrap();
+    expression_options
+        .set_avoption_from_str("aspect_ratio", "1+1/2")
+        .unwrap();
+    expression_options
+        .set_avoption_from_str("preset_level", "slow+2")
+        .unwrap();
+    assert_eq!(
+        expression_options.get("threads"),
+        Some(&OptionValue::Int(6))
+    );
+    assert_eq!(
+        expression_options.get("quality"),
+        Some(&OptionValue::Float(0.5))
+    );
+    assert_eq!(
+        expression_options.get("aspect_ratio"),
+        Some(&OptionValue::Rational(Rational::new(3, 2).unwrap()))
+    );
+    assert_eq!(
+        expression_options.get("preset_level"),
+        Some(&OptionValue::Int(10))
+    );
+    let before_expression_errors = expression_options.clone();
+    assert_eq!(
+        expression_options
+            .set_avoption_from_str("threads", "1K")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(expression_options, before_expression_errors);
+
     options.set_from_str("preset_level", "slow").unwrap();
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(8)));
     assert!(options
@@ -1519,7 +1559,7 @@ fn option_name_from(cursor: &mut Cursor<'_>) -> String {
 }
 
 fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 26 {
+    match cursor.next().unwrap_or_default() % 32 {
         0 => "1".to_owned(),
         1 => "0".to_owned(),
         2 => "yes".to_owned(),
@@ -1545,6 +1585,12 @@ fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
         22 => "1/0".to_owned(),
         23 => "1/".to_owned(),
         24 => "2/1".to_owned(),
+        25 => "2*3".to_owned(),
+        26 => "500m".to_owned(),
+        27 => "slow+2".to_owned(),
+        28 => "1+1/2".to_owned(),
+        29 => "1K".to_owned(),
+        30 => "2*".to_owned(),
         _ => literal_from(cursor),
     }
 }

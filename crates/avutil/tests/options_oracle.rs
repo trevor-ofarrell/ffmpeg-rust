@@ -758,6 +758,44 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let mut expression_options = sample_options();
+    insert_row(
+        &mut rows,
+        "ret:set-expressions",
+        [
+            ret(expression_options.set_avoption_from_str("threads", " 2 * 3 ")),
+            ret(expression_options.set_avoption_from_str("quality", "500m")),
+            ret(expression_options.set_avoption_from_str("aspect_ratio", "1+1/2")),
+            ret(expression_options.set_avoption_from_str("preset_level", "slow+2")),
+        ],
+    );
+    rows.insert(
+        "state:set-expressions".to_string(),
+        state_fields(&expression_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-expressions",
+        [
+            ret_value(expression_options.get_avoption_string("threads")),
+            ret_value(expression_options.get_avoption_string("quality")),
+            ret_value(expression_options.get_avoption_string("aspect_ratio")),
+            ret_value(expression_options.get_avoption_string("preset_level")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-expression-errors",
+        [
+            ret(expression_options.set_avoption_from_str("threads", "1K")),
+            ret(expression_options.set_avoption_from_str("quality", "2*")),
+        ],
+    );
+    rows.insert(
+        "state:after-expression-errors".to_string(),
+        state_fields(&expression_options),
+    );
+
     let mut typed_options = sample_options();
     insert_row(
         &mut rows,
@@ -1980,6 +2018,38 @@ static void print_set_from_string_rows(void) {
     av_opt_free(&ctx.child);
 }
 
+static void print_expression_rows(void) {
+    TestOptions ctx;
+    int ret_threads;
+    int ret_quality;
+    int ret_aspect;
+    int ret_preset;
+    int ret_range;
+    int ret_parse;
+
+    init_context(&ctx);
+    ret_threads = av_opt_set(&ctx, "threads", " 2 * 3 ", 0);
+    ret_quality = av_opt_set(&ctx, "quality", "500m", 0);
+    ret_aspect = av_opt_set(&ctx, "aspect_ratio", "1+1/2", 0);
+    ret_preset = av_opt_set(&ctx, "preset_level", "slow+2", 0);
+    printf("ret:set-expressions|%d|%d|%d|%d\n",
+           ret_threads, ret_quality, ret_aspect, ret_preset);
+    print_state("state:set-expressions", &ctx);
+    printf("get:set-expressions");
+    print_get_value(&ctx, "threads");
+    print_get_value(&ctx, "quality");
+    print_get_value(&ctx, "aspect_ratio");
+    print_get_value(&ctx, "preset_level");
+    printf("\n");
+
+    ret_range = av_opt_set(&ctx, "threads", "1K", 0);
+    ret_parse = av_opt_set(&ctx, "quality", "2*", 0);
+    printf("ret:set-expression-errors|%d|%d\n", ret_range, ret_parse);
+    print_state("state:after-expression-errors", &ctx);
+    av_opt_free(&ctx);
+    av_opt_free(&ctx.child);
+}
+
 static void print_serialize_value(TestOptions *ctx, int opt_flags, int flags,
                                   char key_val_sep, char pairs_sep) {
     char *buf = NULL;
@@ -2073,6 +2143,7 @@ int main(void) {
     print_set_dict_rows();
     print_copy_rows();
     print_set_from_string_rows();
+    print_expression_rows();
     print_serialize_rows();
     print_typed_get_set_rows();
 
