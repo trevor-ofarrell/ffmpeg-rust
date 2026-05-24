@@ -80,6 +80,7 @@ pub struct OptionConstant {
     unit: String,
     value: OptionValue,
     help: String,
+    flags: OptionFlags,
 }
 
 impl OptionConstant {
@@ -88,6 +89,16 @@ impl OptionConstant {
         name: impl Into<String>,
         value: OptionValue,
         help: impl Into<String>,
+    ) -> AvResult<Self> {
+        Self::new_with_flags(unit, name, value, help, OptionFlags::empty())
+    }
+
+    pub fn new_with_flags(
+        unit: impl Into<String>,
+        name: impl Into<String>,
+        value: OptionValue,
+        help: impl Into<String>,
+        flags: OptionFlags,
     ) -> AvResult<Self> {
         let unit = validate_unit(&unit.into())?;
         let name = validate_name(&name.into())?;
@@ -98,6 +109,7 @@ impl OptionConstant {
             unit,
             value,
             help,
+            flags: OptionFlags::from_bits_truncate(flags.bits()),
         })
     }
 
@@ -115,6 +127,10 @@ impl OptionConstant {
 
     pub fn help(&self) -> &str {
         &self.help
+    }
+
+    pub fn flags(&self) -> OptionFlags {
+        self.flags
     }
 }
 
@@ -197,6 +213,40 @@ impl OptionFlags {
         } else {
             self.remove(other);
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct OptionSearchFlags {
+    bits: u32,
+}
+
+impl OptionSearchFlags {
+    pub const CHILDREN: Self = Self { bits: 1 << 0 };
+    pub const FAKE_OBJ: Self = Self { bits: 1 << 1 };
+
+    const KNOWN_BITS: u32 = Self::CHILDREN.bits | Self::FAKE_OBJ.bits;
+
+    pub const fn empty() -> Self {
+        Self { bits: 0 }
+    }
+
+    pub const fn from_bits_truncate(bits: u32) -> Self {
+        Self {
+            bits: bits & Self::KNOWN_BITS,
+        }
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.bits
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        (self.bits & other.bits) == other.bits
+    }
+
+    pub const fn intersects(self, other: Self) -> bool {
+        (self.bits & other.bits) != 0
     }
 }
 
@@ -433,6 +483,87 @@ impl<'a> OptionMatch<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OptionEntry<'a> {
+    Definition(&'a OptionDefinition),
+    Constant(&'a OptionConstant),
+}
+
+impl<'a> OptionEntry<'a> {
+    pub fn name(&self) -> &'a str {
+        match self {
+            Self::Definition(definition) => definition.name(),
+            Self::Constant(constant) => constant.name(),
+        }
+    }
+
+    pub fn unit(&self) -> Option<&'a str> {
+        match self {
+            Self::Definition(definition) => definition.unit(),
+            Self::Constant(constant) => Some(constant.unit()),
+        }
+    }
+
+    pub fn flags(&self) -> OptionFlags {
+        match self {
+            Self::Definition(definition) => definition.flags(),
+            Self::Constant(constant) => constant.flags(),
+        }
+    }
+
+    pub fn is_constant(&self) -> bool {
+        matches!(self, Self::Constant(_))
+    }
+
+    pub fn definition(&self) -> Option<&'a OptionDefinition> {
+        match self {
+            Self::Definition(definition) => Some(definition),
+            Self::Constant(_) => None,
+        }
+    }
+
+    pub fn constant(&self) -> Option<&'a OptionConstant> {
+        match self {
+            Self::Definition(_) => None,
+            Self::Constant(constant) => Some(constant),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OptionEntryMatch<'a> {
+    child_name: Option<&'a str>,
+    entry: OptionEntry<'a>,
+}
+
+impl<'a> OptionEntryMatch<'a> {
+    fn root(entry: OptionEntry<'a>) -> Self {
+        Self {
+            child_name: None,
+            entry,
+        }
+    }
+
+    fn child(child_name: &'a str, entry: OptionEntry<'a>) -> Self {
+        Self {
+            child_name: Some(child_name),
+            entry,
+        }
+    }
+
+    pub fn child_name(&self) -> Option<&'a str> {
+        self.child_name
+    }
+
+    pub fn entry(&self) -> OptionEntry<'a> {
+        self.entry
+    }
+
+    pub fn name(&self) -> &'a str {
+        self.entry.name()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct OptionChild {
     name: String,
@@ -473,11 +604,47 @@ impl OptionChild {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OptionEntryKey {
+    Definition { name: String },
+    Constant { unit: String, name: String },
+}
+
+impl OptionEntryKey {
+    fn definition(name: &str) -> Self {
+        Self::Definition {
+            name: name.to_owned(),
+        }
+    }
+
+    fn constant(unit: &str, name: &str) -> Self {
+        Self::Constant {
+            unit: unit.to_owned(),
+            name: name.to_owned(),
+        }
+    }
+
+    fn matches_definition(&self, name: &str) -> bool {
+        matches!(self, Self::Definition { name: key_name } if ascii_eq_ignore_case(key_name, name))
+    }
+
+    fn matches_constant(&self, unit: &str, name: &str) -> bool {
+        matches!(
+            self,
+            Self::Constant {
+                unit: key_unit,
+                name: key_name
+            } if ascii_eq_ignore_case(key_unit, unit) && ascii_eq_ignore_case(key_name, name)
+        )
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct OptionSet {
     definitions: Vec<OptionDefinition>,
     values: Vec<OptionValue>,
     constants: Vec<OptionConstant>,
+    entries: Vec<OptionEntryKey>,
     children: Vec<OptionChild>,
 }
 
@@ -523,8 +690,10 @@ impl OptionSet {
             )));
         }
 
+        let entry_key = OptionEntryKey::definition(definition.name());
         self.values.push(definition.default().clone());
         self.definitions.push(definition);
+        self.entries.push(entry_key);
         Ok(())
     }
 
@@ -540,7 +709,9 @@ impl OptionSet {
             )));
         }
 
+        let entry_key = OptionEntryKey::constant(constant.unit(), constant.name());
         self.constants.push(constant);
+        self.entries.push(entry_key);
         Ok(())
     }
 
@@ -560,6 +731,8 @@ impl OptionSet {
         let index = self.option_index(name)?;
         let definition = self.definitions.remove(index);
         let value = self.values.remove(index);
+        self.entries
+            .retain(|entry| !entry.matches_definition(definition.name()));
         Ok((definition, value))
     }
 
@@ -570,7 +743,10 @@ impl OptionSet {
                 format!("unknown option constant `{name}` for unit `{unit}`"),
             )
         })?;
-        Ok(self.constants.remove(index))
+        let constant = self.constants.remove(index);
+        self.entries
+            .retain(|entry| !entry.matches_constant(constant.unit(), constant.name()));
+        Ok(constant)
     }
 
     pub fn remove_child(&mut self, name: &str) -> AvResult<OptionChild> {
@@ -611,6 +787,35 @@ impl OptionSet {
 
     pub fn first_definition_matching<'a>(&'a self, query: &OptionQuery) -> Option<OptionMatch<'a>> {
         self.definitions_matching(query).into_iter().next()
+    }
+
+    pub fn avoption_entries(&self) -> Vec<OptionEntryMatch<'_>> {
+        self.entries
+            .iter()
+            .filter_map(|key| self.entry_for_key(key).map(OptionEntryMatch::root))
+            .collect()
+    }
+
+    pub fn find_avoption(
+        &self,
+        name: &str,
+        unit: Option<&str>,
+        opt_flags: OptionFlags,
+        search_flags: OptionSearchFlags,
+    ) -> Option<OptionEntryMatch<'_>> {
+        let opt_flags = OptionFlags::from_bits_truncate(opt_flags.bits());
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &self.children {
+                if let Some(found) = child.options().find_root_avoption(name, unit, opt_flags) {
+                    return Some(OptionEntryMatch::child(child.name(), found));
+                }
+            }
+        }
+
+        self.find_root_avoption(name, unit, opt_flags)
+            .map(OptionEntryMatch::root)
     }
 
     pub fn child(&self, name: &str) -> Option<&OptionChild> {
@@ -733,6 +938,52 @@ impl OptionSet {
             ascii_eq_ignore_case(constant.unit(), unit)
                 && ascii_eq_ignore_case(constant.name(), name)
         })
+    }
+
+    fn entry_for_key(&self, key: &OptionEntryKey) -> Option<OptionEntry<'_>> {
+        match key {
+            OptionEntryKey::Definition { name } => self
+                .definitions
+                .iter()
+                .find(|definition| ascii_eq_ignore_case(definition.name(), name))
+                .map(OptionEntry::Definition),
+            OptionEntryKey::Constant { unit, name } => self
+                .constants
+                .iter()
+                .find(|constant| {
+                    ascii_eq_ignore_case(constant.unit(), unit)
+                        && ascii_eq_ignore_case(constant.name(), name)
+                })
+                .map(OptionEntry::Constant),
+        }
+    }
+
+    fn find_root_avoption(
+        &self,
+        name: &str,
+        unit: Option<&str>,
+        opt_flags: OptionFlags,
+    ) -> Option<OptionEntry<'_>> {
+        for key in &self.entries {
+            let entry = self.entry_for_key(key)?;
+            if !entry.flags().contains(opt_flags) {
+                continue;
+            }
+
+            match (unit, entry) {
+                (None, OptionEntry::Definition(definition)) if definition.name() == name => {
+                    return Some(entry);
+                }
+                (Some(unit), OptionEntry::Constant(constant))
+                    if constant.name() == name && constant.unit() == unit =>
+                {
+                    return Some(entry);
+                }
+                _ => {}
+            }
+        }
+
+        None
     }
 
     fn find_child_index(&self, name: &str) -> Option<usize> {
@@ -1043,6 +1294,23 @@ mod tests {
         assert!(truncated.contains(OptionFlags::CHILD_CONSTS));
         assert!(truncated.intersects(OptionFlags::EXPORT));
         assert!(!OptionFlags::VIDEO_PARAM.intersects(OptionFlags::AUDIO_PARAM));
+    }
+
+    #[test]
+    fn option_search_flags_match_ffmpeg_bits_and_truncate_unknown_bits() {
+        assert_eq!(OptionSearchFlags::CHILDREN.bits(), 1 << 0);
+        assert_eq!(OptionSearchFlags::FAKE_OBJ.bits(), 1 << 1);
+
+        let truncated = OptionSearchFlags::from_bits_truncate(u32::MAX);
+
+        assert!(truncated.contains(OptionSearchFlags::CHILDREN));
+        assert!(truncated.contains(OptionSearchFlags::FAKE_OBJ));
+        assert!(truncated.intersects(OptionSearchFlags::CHILDREN));
+        assert_eq!(
+            truncated.bits(),
+            OptionSearchFlags::CHILDREN.bits() | OptionSearchFlags::FAKE_OBJ.bits()
+        );
+        assert_eq!(OptionSearchFlags::empty().bits(), 0);
     }
 
     #[test]
@@ -1772,6 +2040,167 @@ mod tests {
         );
         assert_eq!(decoding, vec![(Some("decoder"), "threads")]);
         assert!(writable_child.is_empty());
+    }
+
+    #[test]
+    fn avoption_entries_and_find_follow_ffmpeg_search_shape() {
+        let mut options = sample_options();
+        options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "exported",
+                    OptionKind::Int { min: 0, max: 8 },
+                    OptionValue::Int(4),
+                    "exported value",
+                    OptionFlags::from_bits_truncate(
+                        OptionFlags::EXPORT.bits() | OptionFlags::READONLY.bits(),
+                    ),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let entries: Vec<_> = options
+            .avoption_entries()
+            .into_iter()
+            .map(|found| {
+                (
+                    found.child_name(),
+                    found.name(),
+                    found.entry().is_constant(),
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            entries,
+            vec![
+                (None, "threads", false),
+                (None, "bitexact", false),
+                (None, "quality", false),
+                (None, "metadata", false),
+                (None, "aspect_ratio", false),
+                (None, "preset_level", false),
+                (None, "fast", true),
+                (None, "slow", true),
+                (None, "exported", false),
+            ]
+        );
+
+        assert_eq!(
+            options
+                .find_avoption(
+                    "threads",
+                    None,
+                    OptionFlags::empty(),
+                    OptionSearchFlags::empty()
+                )
+                .unwrap()
+                .name(),
+            "threads"
+        );
+        assert!(options
+            .find_avoption(
+                "THREADS",
+                None,
+                OptionFlags::empty(),
+                OptionSearchFlags::empty()
+            )
+            .is_none());
+        assert!(options
+            .find_avoption(
+                "fast",
+                None,
+                OptionFlags::empty(),
+                OptionSearchFlags::empty()
+            )
+            .is_none());
+        assert_eq!(
+            options
+                .find_avoption(
+                    "fast",
+                    Some("preset"),
+                    OptionFlags::empty(),
+                    OptionSearchFlags::empty()
+                )
+                .unwrap()
+                .name(),
+            "fast"
+        );
+        assert!(options
+            .find_avoption(
+                "FAST",
+                Some("preset"),
+                OptionFlags::empty(),
+                OptionSearchFlags::empty()
+            )
+            .is_none());
+        assert!(options
+            .find_avoption(
+                "slow",
+                Some("PRESET"),
+                OptionFlags::empty(),
+                OptionSearchFlags::empty()
+            )
+            .is_none());
+        assert_eq!(
+            options
+                .find_avoption(
+                    "exported",
+                    None,
+                    OptionFlags::from_bits_truncate(
+                        OptionFlags::EXPORT.bits() | OptionFlags::READONLY.bits()
+                    ),
+                    OptionSearchFlags::empty()
+                )
+                .unwrap()
+                .name(),
+            "exported"
+        );
+        assert!(options
+            .find_avoption(
+                "exported",
+                None,
+                OptionFlags::VIDEO_PARAM,
+                OptionSearchFlags::empty()
+            )
+            .is_none());
+
+        let mut child_options = OptionSet::new();
+        child_options
+            .define(
+                OptionDefinition::new_with_flags(
+                    "threads",
+                    OptionKind::Int { min: 1, max: 16 },
+                    OptionValue::Int(2),
+                    "child worker count",
+                    OptionFlags::DECODING_PARAM,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        options
+            .define_child(OptionChild::new("decoder", child_options, "").unwrap())
+            .unwrap();
+
+        assert!(options
+            .find_avoption(
+                "threads",
+                None,
+                OptionFlags::DECODING_PARAM,
+                OptionSearchFlags::empty()
+            )
+            .is_none());
+        let child_found = options
+            .find_avoption(
+                "threads",
+                None,
+                OptionFlags::DECODING_PARAM,
+                OptionSearchFlags::CHILDREN,
+            )
+            .unwrap();
+        assert_eq!(child_found.child_name(), Some("decoder"));
+        assert_eq!(child_found.name(), "threads");
     }
 
     #[test]

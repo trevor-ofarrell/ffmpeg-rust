@@ -91,8 +91,8 @@ pub use logging::{
     AV_LOG_FORCE_NOCOLOR_ENV,
 };
 pub use options::{
-    OptionChild, OptionConstant, OptionDefinition, OptionFlags, OptionKind, OptionMatch,
-    OptionQuery, OptionRange, OptionSet, OptionValue,
+    OptionChild, OptionConstant, OptionDefinition, OptionEntry, OptionEntryMatch, OptionFlags,
+    OptionKind, OptionMatch, OptionQuery, OptionRange, OptionSearchFlags, OptionSet, OptionValue,
 };
 pub use packet::{
     packet_pack_dictionary, packet_unpack_dictionary, Packet, PacketA53ClosedCaptions,

@@ -2,7 +2,8 @@
 
 use avutil::{
     Dictionary, DictionarySet, MatchMode, OptionChild, OptionConstant, OptionDefinition,
-    OptionFlags, OptionKind, OptionQuery, OptionSet, OptionValue, Rational, SetMode,
+    OptionEntryMatch, OptionFlags, OptionKind, OptionQuery, OptionSearchFlags, OptionSet,
+    OptionValue, Rational, SetMode,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -155,7 +156,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 12 {
+        match cursor.next().unwrap_or_default() % 13 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -262,6 +263,39 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
             }
             10 => {
+                let before = options.clone();
+                let entries = options.avoption_entries();
+                assert_eq!(
+                    entries.len(),
+                    options.definitions().len() + options.constants().len()
+                );
+                for entry in &entries {
+                    assert!(entry.child_name().is_none());
+                }
+
+                let name = option_name_from(cursor);
+                let unit = if cursor.next().unwrap_or_default().is_multiple_of(2) {
+                    Some(option_unit_from(cursor))
+                } else {
+                    None
+                };
+                let flags = option_flags_from(cursor.next());
+                let search_flags = option_search_flags_from(cursor.next());
+
+                if let Some(found) =
+                    options.find_avoption(&name, unit.as_deref(), flags, search_flags)
+                {
+                    assert_avoption_match_satisfies_query(
+                        found,
+                        &name,
+                        unit.as_deref(),
+                        flags,
+                        search_flags,
+                    );
+                }
+                assert_eq!(options, before);
+            }
+            11 => {
                 let name = option_name_from(cursor);
                 let before = options.clone();
                 let result = options.remove_definition(&name);
@@ -419,6 +453,62 @@ fn exercise_fixtures() {
         .unwrap()
         .flags()
         .contains(OptionFlags::READONLY));
+    assert_eq!(
+        options
+            .avoption_entries()
+            .iter()
+            .map(|entry| entry.name())
+            .collect::<Vec<_>>(),
+        vec![
+            "threads",
+            "bitexact",
+            "quality",
+            "metadata",
+            "aspect_ratio",
+            "readonly",
+            "preset_level",
+            "fast",
+            "slow",
+        ]
+    );
+    assert_eq!(
+        options
+            .find_avoption(
+                "threads",
+                None,
+                OptionFlags::empty(),
+                OptionSearchFlags::empty()
+            )
+            .unwrap()
+            .name(),
+        "threads"
+    );
+    assert!(options
+        .find_avoption(
+            "THREADS",
+            None,
+            OptionFlags::empty(),
+            OptionSearchFlags::empty()
+        )
+        .is_none());
+    assert!(options
+        .find_avoption(
+            "fast",
+            None,
+            OptionFlags::empty(),
+            OptionSearchFlags::empty()
+        )
+        .is_none());
+    let preset = options
+        .find_avoption(
+            "fast",
+            Some("preset"),
+            OptionFlags::empty(),
+            OptionSearchFlags::empty(),
+        )
+        .unwrap();
+    assert_eq!(preset.name(), "fast");
+    assert!(preset.entry().is_constant());
 
     let mut child_options = OptionSet::new();
     child_options
@@ -545,6 +635,17 @@ fn assert_option_set_invariants_at_depth(options: &OptionSet, depth: usize) {
         assert!(!constant.unit().is_empty());
         assert!(!constant.unit().as_bytes().contains(&0));
         assert!(!constant.help().as_bytes().contains(&0));
+        assert_eq!(constant.flags().bits() & !OptionFlags::all().bits(), 0);
+    }
+    let entries = options.avoption_entries();
+    assert_eq!(
+        entries.len(),
+        options.definitions().len() + options.constants().len()
+    );
+    for entry in entries {
+        assert!(entry.child_name().is_none());
+        assert!(!entry.name().is_empty());
+        assert_eq!(entry.entry().flags().bits() & !OptionFlags::all().bits(), 0);
     }
     for (index, child) in options.children().iter().enumerate() {
         assert!(!child.name().is_empty());
@@ -591,6 +692,32 @@ fn assert_option_match_satisfies_query(query: &OptionQuery, found: avutil::Optio
     }
 }
 
+fn assert_avoption_match_satisfies_query(
+    found: OptionEntryMatch<'_>,
+    name: &str,
+    unit: Option<&str>,
+    flags: OptionFlags,
+    search_flags: OptionSearchFlags,
+) {
+    let entry = found.entry();
+    assert_eq!(entry.name(), name);
+    assert!(entry.flags().contains(flags));
+
+    match unit {
+        Some(unit) => {
+            assert!(entry.is_constant());
+            assert_eq!(entry.unit(), Some(unit));
+        }
+        None => {
+            assert!(!entry.is_constant());
+        }
+    }
+
+    if found.child_name().is_some() {
+        assert!(search_flags.contains(OptionSearchFlags::CHILDREN));
+    }
+}
+
 fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefinition> {
     let name = option_name_from(cursor);
     let help = literal_from(cursor);
@@ -631,7 +758,8 @@ fn generated_constant(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionConstan
     let name = option_constant_name_from(cursor);
     let value = option_value_from(cursor);
     let help = literal_from(cursor);
-    OptionConstant::new(unit, name, value, help)
+    let flags = option_flags_from(cursor.next());
+    OptionConstant::new_with_flags(unit, name, value, help, flags)
 }
 
 fn generated_child(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionChild> {
@@ -823,12 +951,26 @@ fn sample_options() -> OptionSet {
         .unwrap();
     options
         .define_constant(
-            OptionConstant::new("preset", "fast", OptionValue::Int(2), "fast preset").unwrap(),
+            OptionConstant::new_with_flags(
+                "preset",
+                "fast",
+                OptionValue::Int(2),
+                "fast preset",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
         )
         .unwrap();
     options
         .define_constant(
-            OptionConstant::new("preset", "slow", OptionValue::Int(8), "slow preset").unwrap(),
+            OptionConstant::new_with_flags(
+                "preset",
+                "slow",
+                OptionValue::Int(8),
+                "slow preset",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
         )
         .unwrap();
     options
@@ -944,6 +1086,20 @@ fn option_flags_from(byte: Option<u8>) -> OptionFlags {
     }
 
     OptionFlags::from_bits_truncate(bits | 0x8000_0000)
+}
+
+fn option_search_flags_from(byte: Option<u8>) -> OptionSearchFlags {
+    let raw = u32::from(byte.unwrap_or_default());
+    let mut bits = 0;
+
+    if raw & 0x01 != 0 {
+        bits |= OptionSearchFlags::CHILDREN.bits();
+    }
+    if raw & 0x02 != 0 {
+        bits |= OptionSearchFlags::FAKE_OBJ.bits();
+    }
+
+    OptionSearchFlags::from_bits_truncate(bits | 0x8000_0000)
 }
 
 fn option_definition_unit_from(cursor: &mut Cursor<'_>) -> Option<String> {

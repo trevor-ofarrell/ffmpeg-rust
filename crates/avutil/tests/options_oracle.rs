@@ -6,7 +6,8 @@ use std::{
 };
 
 use avutil::{
-    OptionConstant, OptionDefinition, OptionFlags, OptionKind, OptionSet, OptionValue, Rational,
+    OptionConstant, OptionDefinition, OptionEntryMatch, OptionFlags, OptionKind, OptionSearchFlags,
+    OptionSet, OptionValue, Rational,
 };
 
 #[test]
@@ -82,8 +83,74 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
             "17", "18", "19", "20", "65536",
         ],
     );
+    insert_row(
+        &mut rows,
+        "search-flags",
+        [
+            OptionSearchFlags::CHILDREN.bits().to_string(),
+            OptionSearchFlags::FAKE_OBJ.bits().to_string(),
+        ],
+    );
 
     let mut options = sample_options();
+    rows.insert(
+        "next:order".to_string(),
+        options
+            .avoption_entries()
+            .into_iter()
+            .map(|entry| entry.name().to_owned())
+            .collect(),
+    );
+    insert_row(
+        &mut rows,
+        "find:root",
+        [
+            entry_name(options.find_avoption(
+                "threads",
+                None,
+                OptionFlags::ENCODING_PARAM,
+                OptionSearchFlags::empty(),
+            )),
+            entry_name(options.find_avoption(
+                "THREADS",
+                None,
+                OptionFlags::empty(),
+                OptionSearchFlags::empty(),
+            )),
+            entry_name(options.find_avoption(
+                "fast",
+                None,
+                OptionFlags::empty(),
+                OptionSearchFlags::empty(),
+            )),
+            entry_name(options.find_avoption(
+                "fast",
+                Some("PRESET"),
+                OptionFlags::ENCODING_PARAM,
+                OptionSearchFlags::empty(),
+            )),
+            entry_name(options.find_avoption(
+                "slow",
+                Some("preset"),
+                OptionFlags::empty(),
+                OptionSearchFlags::empty(),
+            )),
+            entry_name(options.find_avoption(
+                "exported",
+                None,
+                OptionFlags::from_bits_truncate(
+                    OptionFlags::EXPORT.bits() | OptionFlags::READONLY.bits(),
+                ),
+                OptionSearchFlags::empty(),
+            )),
+            entry_name(options.find_avoption(
+                "exported",
+                None,
+                OptionFlags::VIDEO_PARAM,
+                OptionSearchFlags::empty(),
+            )),
+        ],
+    );
     rows.insert("state:defaults".to_string(), state_fields(&options));
 
     let set_results = [
@@ -187,12 +254,26 @@ fn sample_options() -> OptionSet {
         .unwrap();
     options
         .define_constant(
-            OptionConstant::new("PRESET", "fast", OptionValue::Int(2), "fast preset").unwrap(),
+            OptionConstant::new_with_flags(
+                "PRESET",
+                "fast",
+                OptionValue::Int(2),
+                "fast preset",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
         )
         .unwrap();
     options
         .define_constant(
-            OptionConstant::new("PRESET", "slow", OptionValue::Int(8), "slow preset").unwrap(),
+            OptionConstant::new_with_flags(
+                "PRESET",
+                "slow",
+                OptionValue::Int(8),
+                "slow preset",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
         )
         .unwrap();
     options
@@ -264,6 +345,12 @@ fn bool_int(value: bool) -> &'static str {
     } else {
         "0"
     }
+}
+
+fn entry_name(entry: Option<OptionEntryMatch<'_>>) -> String {
+    entry
+        .map(|entry| entry.name().to_owned())
+        .unwrap_or_else(|| "<null>".to_owned())
 }
 
 fn format_float(value: f64) -> String {
@@ -469,6 +556,37 @@ static void print_types(void) {
            AV_OPT_TYPE_FLAG_ARRAY);
 }
 
+static void print_search_flags(void) {
+    printf("search-flags|%d|%d\n",
+           AV_OPT_SEARCH_CHILDREN,
+           AV_OPT_SEARCH_FAKE_OBJ);
+}
+
+static const char *option_name_or_null(const AVOption *option) {
+    return option ? option->name : "<null>";
+}
+
+static void print_next_order(const TestOptions *ctx) {
+    const AVOption *option = NULL;
+
+    printf("next:order");
+    while ((option = av_opt_next(ctx, option))) {
+        printf("|%s", option->name);
+    }
+    printf("\n");
+}
+
+static void print_find_rows(const TestOptions *ctx) {
+    printf("find:root|%s|%s|%s|%s|%s|%s|%s\n",
+           option_name_or_null(av_opt_find(ctx, "threads", NULL, AV_OPT_FLAG_ENCODING_PARAM, 0)),
+           option_name_or_null(av_opt_find(ctx, "THREADS", NULL, 0, 0)),
+           option_name_or_null(av_opt_find(ctx, "fast", NULL, 0, 0)),
+           option_name_or_null(av_opt_find(ctx, "fast", "PRESET", AV_OPT_FLAG_ENCODING_PARAM, 0)),
+           option_name_or_null(av_opt_find(ctx, "slow", "preset", 0, 0)),
+           option_name_or_null(av_opt_find(ctx, "exported", NULL, AV_OPT_FLAG_EXPORT | AV_OPT_FLAG_READONLY, 0)),
+           option_name_or_null(av_opt_find(ctx, "exported", NULL, AV_OPT_FLAG_VIDEO_PARAM, 0)));
+}
+
 static void print_state(const char *name, const TestOptions *ctx) {
     printf("%s|%" PRId64 "|%d|%.17g|%d/%d|%s|%" PRId64 "\n",
            name,
@@ -497,6 +615,9 @@ int main(void) {
 
     print_flags();
     print_types();
+    print_search_flags();
+    print_next_order(&ctx);
+    print_find_rows(&ctx);
     print_state("state:defaults", &ctx);
 
     ret_threads = av_opt_set(&ctx, "threads", "8", 0);
