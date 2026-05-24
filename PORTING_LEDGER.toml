@@ -353,6 +353,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-avi-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-avi-framecrc-records",
+  "tests/differential/mappings.txt:avutil-packet|oracle-mov-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-yuv4mpegpipe-file-output",
   "tests/differential/mappings.txt:avutil-packet|oracle-yuv4mpegpipe-framecrc-records",
   "tests/differential/mappings.txt:avutil-packet|oracle-rawvideo-framecrc-records",
@@ -375,6 +376,7 @@ differential_tests = [
   "rawvideo_oracle::rawvideo_gbrp10msble_file_output_matches_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_bgr24_avi_file_output_matches_ffmpeg_oracle",
   "rawvideo_oracle::avi_rgb24_framecrc_records_match_ffmpeg_oracle",
+  "mov_oracle::mov_rgb24_framecrc_records_match_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::rawvideo_yuv420p_yuv4mpegpipe_file_output_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
@@ -417,6 +419,10 @@ fuzz_targets = ["avutil_core_models"]
 # oracle row is now mapped to avutil-packet, validating the Rust AVI demuxer ->
 # Packet -> framecrc muxer path against pinned FFmpeg streamcopy packet records,
 # including DIB scanline padding in packet payload sizes and checksums.
+# Latest MOV framecrc media-integration update: the generated MOV framecrc
+# oracle row is now mapped to avutil-packet, validating the Rust MOV demuxer ->
+# Packet -> framecrc muxer path against pinned FFmpeg streamcopy packet records
+# for a bounded two-frame rgb24 MOV fixture generated with edit lists disabled.
 # Latest image2 media-integration update: the image2 PPM single-file and
 # numbered-sequence output oracle rows are now mapped to avutil-packet,
 # validating the Rust image2 demuxer -> Packet -> image2 muxer path against
@@ -2953,7 +2959,7 @@ id = "fftools-ffmpeg-mov-framecrc-null"
 kind = "cli"
 ffmpeg_name = "ffmpeg MOV/MP4 to framecrc/null"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 2
 oracle_command = "ffmpeg -i <input.mp4> -f framecrc -; ffmpeg -i <input.mp4> -f null -"
 rust_command = "cargo test -p fftools ffmpeg"
@@ -2965,10 +2971,13 @@ unit_tests = [
   "ffmpeg::tests::rejects_non_file_input_and_non_stdout_output",
   "ffmpeg::tests::rejects_unmatched_local_input_format",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:fftools-ffmpeg-mov-framecrc-null|oracle-mov-framecrc-records",
+  "mov_oracle::mov_rgb24_framecrc_records_match_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:fftools-ffmpeg-mov-framecrc-null|local-ffmpeg-unit"]
 fuzz_targets = []
-notes = "Initial ffmpeg-rs command execution path supports exactly one local seekable MOV/MP4 input and one stdout pipe output with explicit -f null or -f framecrc. It uses the Rust MOV probe/demuxer and Rust null/framecrc muxers, rejects unsupported inputs, output endpoints, muxers, and options, and has in-process unit coverage because process-spawn integration tests are blocked by Windows Application Control. Output is a constrained deterministic subset, not byte-identical to upstream, and has no oracle differential or upstream FATE coverage yet. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
+notes = "Initial ffmpeg-rs command execution path supports exactly one local seekable MOV/MP4 input and one stdout pipe output with explicit -f null or -f framecrc. It uses the Rust MOV probe/demuxer and Rust null/framecrc muxers, rejects unsupported inputs, output endpoints, muxers, and options, and has in-process unit coverage because process-spawn integration tests are blocked by Windows Application Control. The ignored MOV framecrc oracle row generates a bounded two-frame rgb24 MOV fixture through pinned FFmpeg 8.1.1 with `-use_editlist 0`, then compares Rust MOV demuxer -> Packet -> framecrc packet records against pinned FFmpeg streamcopy output for packet count, byte count, PTS, DTS, duration, payload size, and checksum. Null output, general MOV/MP4 inputs, edit-list timelines, and upstream FATE coverage remain pending. The local FATE-runner smoke mapping executes the shared ffmpeg unit filter only and does not count as upstream FATE parity."
 blocked_reason = ""
 
 [[component]]
@@ -3676,6 +3685,7 @@ unit_tests = [
 differential_tests = [
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-rawvideo-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-avi-framecrc-records",
+  "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-mov-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-pcm-s16le-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-wav-generated-framecrc-records",
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-yuv4mpegpipe-framecrc-records",
@@ -3683,6 +3693,7 @@ differential_tests = [
   "tests/differential/mappings.txt:avformat-framecrc-muxer|oracle-image2-sequence-framecrc-records",
   "rawvideo_oracle::rawvideo_rgb24_framecrc_records_match_ffmpeg_oracle",
   "rawvideo_oracle::avi_rgb24_framecrc_records_match_ffmpeg_oracle",
+  "mov_oracle::mov_rgb24_framecrc_records_match_ffmpeg_oracle",
   "pcm_oracle::pcm_s16le_framecrc_records_match_ffmpeg_oracle",
   "wav_oracle::wav_pcm_s16le_generated_framecrc_matches_ffmpeg_oracle",
   "yuv4mpegpipe_oracle::yuv4mpegpipe_yuv420p_framecrc_records_match_ffmpeg_oracle",
@@ -3691,7 +3702,7 @@ differential_tests = [
 ]
 fate_tests = ["tests/fate/mappings.txt:avformat-framecrc-muxer|local-avformat-framecrc-unit"]
 fuzz_targets = ["avformat_packet_muxers"]
-notes = "Initial internal framecrc-style muxer records one FFmpeg-shaped comma-separated line per packet with stream index, PTS/DTS, duration, size, and the FFmpeg framecrc Adler-style checksum initialized at zero. The ignored rawvideo oracle row compares normalized rgb24 framecrc packet rows against pinned FFmpeg streamcopy output, proving bounded video record parity for packet count, PTS, DTS, duration, payload size, and checksum. The ignored generated AVI oracle row compares normalized RGB24 AVI input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after AVI demuxing including DIB scanline-padding payload sizes and checksums. The ignored raw PCM oracle row compares normalized stereo pcm_s16le framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded audio packet timing, duration, payload size, and checksum. The ignored generated WAV oracle row compares normalized PCM s16le WAV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after WAV demuxing. The ignored yuv4mpegpipe oracle row compares normalized two-frame yuv420p YUV4MPEG2 input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded demuxed video packets. The ignored image2 oracle rows compare normalized single-frame and two-frame PPM sequence framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded encoded-image packets. Header byte identity remains outside the current claim. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet record fields, checksum stability, render/finish stability, and post-finish rejection. Broader input differential rows, byte-identical headers, upstream FATE coverage, and sustained fuzz execution are pending."
+notes = "Initial internal framecrc-style muxer records one FFmpeg-shaped comma-separated line per packet with stream index, PTS/DTS, duration, size, and the FFmpeg framecrc Adler-style checksum initialized at zero. The ignored rawvideo oracle row compares normalized rgb24 framecrc packet rows against pinned FFmpeg streamcopy output, proving bounded video record parity for packet count, PTS, DTS, duration, payload size, and checksum. The ignored generated AVI oracle row compares normalized RGB24 AVI input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after AVI demuxing including DIB scanline-padding payload sizes and checksums. The ignored generated MOV oracle row compares normalized rgb24 MOV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after MOV demuxing for packet timing, payload sizes, and checksums. The ignored raw PCM oracle row compares normalized stereo pcm_s16le framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded audio packet timing, duration, payload size, and checksum. The ignored generated WAV oracle row compares normalized PCM s16le WAV input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape after WAV demuxing. The ignored yuv4mpegpipe oracle row compares normalized two-frame yuv420p YUV4MPEG2 input framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded demuxed video packets. The ignored image2 oracle rows compare normalized single-frame and two-frame PPM sequence framecrc packet rows against pinned FFmpeg streamcopy output, proving the same record shape for bounded encoded-image packets. Header byte identity remains outside the current claim. Build-checked cargo-fuzz target avformat_packet_muxers covers per-packet record fields, checksum stability, render/finish stability, and post-finish rejection. Broader input differential rows, byte-identical headers, upstream FATE coverage, and sustained fuzz execution are pending."
 blocked_reason = ""
 
 [[component]]
@@ -4269,7 +4280,7 @@ id = "avformat-mov-demuxer"
 kind = "demuxer"
 ffmpeg_name = "mov,mp4,m4a,3gp,3g2,mj2"
 upstream_profile = "ffmpeg-8.1.1-default-native"
-status = "implemented"
+status = "differential_pass"
 priority = 4
 oracle_command = "ffmpeg -i <input.mp4> -f framecrc -"
 rust_command = "cargo test -p avformat mov::tests"
@@ -4337,7 +4348,10 @@ unit_tests = [
   "mov::tests::reads_signed_composition_offsets_for_packet_pts",
   "mov::tests::rejects_invalid_sample_tables_and_truncated_mdat_payloads",
 ]
-differential_tests = []
+differential_tests = [
+  "tests/differential/mappings.txt:avformat-mov-demuxer|oracle-mov-framecrc-records",
+  "mov_oracle::mov_rgb24_framecrc_records_match_ffmpeg_oracle",
+]
 fate_tests = ["tests/fate/mappings.txt:avformat-mov-demuxer|local-mov-unit"]
 # Local smoke mapping only; upstream FFmpeg FATE media parity remains pending.
 # Current sbtt coverage parses content encoding, MIME format, optional btrt/txtC, and malformed sbtt rejection.
@@ -4348,6 +4362,7 @@ fate_tests = ["tests/fate/mappings.txt:avformat-mov-demuxer|local-mov-unit"]
 # Current tx3g sample payload coverage parses text lengths, UTF-8/UTF-16 strings, styl/hlit/hclr/krok/dlay/href/tbox/blnk/twrp/disp modifiers, packet side-data counts, and malformed payload rejection.
 # Current wvtt sample payload coverage parses vttc/vtte/vtta samples, typed cue child boxes, packet side-data counts, and malformed payload rejection.
 # Latest subtitle/data sample-entry coverage includes typed optional btrt parsing for stpp, wvtt, and metx, preserved metx child boxes, and malformed duplicate/truncated btrt rejection.
+# Latest MOV framecrc oracle coverage validates a pinned FFmpeg-generated two-frame rgb24 MOV fixture with edit lists disabled through the Rust MOV demuxer and framecrc muxer against FFmpeg streamcopy packet records.
 # Current avformat_mov fuzz build coverage seeds tx3g/stpp/sbtt/stxt/wvtt/metx/mett/urim MOV fixtures and asserts typed sample-entry detail invariants; actual fuzz execution remains blocked.
 fuzz_targets = ["avformat_mov"]
 notes = "Initial MOV/MP4 demuxer validates classic, extended-size, and size-zero boxes; parses ftyp, mvhd, tkhd, mdhd language metadata, and mdia/hdlr handler type plus handler-name metadata; extracts common movie-level and track-level udta/meta/ilst data values for UTF-8 and UTF-16 text fields, classic gnre genre indexes, one-byte integer/boolean atoms, iTunes-style freeform ---- atoms, covr cover-art payloads, and track/disc number pairs while rejecting malformed metadata atoms, invalid text encodings, malformed hdlr names, malformed genre indexes, short integer/boolean payloads, malformed freeform payloads, and short cover-art data payloads; registers a hand-written ftyp/extension/MIME probe descriptor; records generic stsd codec parameters with codec tag, data reference index, and sample-entry extra data; parses AudioSampleEntry version/revision/vendor/base channel-count/sample-size/compression-id/packet-size/sample-rate/child boxes for known audio sample-entry tags including samr/sawb/fLaC/alac, including version-1 samples-per-packet/bytes-per-packet/bytes-per-frame/bytes-per-sample fields, version-2 sizeOfStructOnly/audioSampleRate/numAudioChannels/constBitsPerChannel/formatSpecificFlags/constBytesPerAudioPacket/constLPCMFramesPerAudioPacket fields, direct esds full-box descriptor payloads, btrt buffer-size/max-bitrate/average-bitrate fields, damr AMR vendor/decoder-version/mode-set/mode-change-period/frames-per-sample fields, required AC-3 dac3 fscod/bsid/bsmod/acmod/lfeon/bit-rate-code fields for ac-3 sample entries, required E-AC-3 dec3 data-rate/independent-substream/dependent-substream/chan-loc fields for ec-3 sample entries, mandatory Opus dOps version/output-channel-count/pre-skip/input-sample-rate/output-gain/channel-mapping-family fields plus optional stream-count/coupled-count/channel-mapping tables for Opus sample entries, required FLAC dfLa version/flags/native-metadata-block fields plus parsed STREAMINFO sample-rate/channel-count/bit-depth/block-size/total-samples/MD5 fields for fLaC sample entries, required ALAC alac full-box fields plus parsed frame-length/compatible-version/bit-depth/tuning/channel-count/max-run/max-frame-bytes/average-bit-rate/sample-rate fields and optional ALAC channel-layout info for alac sample entries in both direct and wave/alac compatibility forms, structured wave extension atoms with nested frma original format, esds full-box descriptor payload, nested alac compatibility payloads, and terminator validation, and structured chan channel-layout atoms with channel layout tag, bitmap, labels, flags, and coordinate bits; parses tx3g timed-text sample-entry display/default-box/default-style fields and child boxes; parses stpp XML subtitle sample-entry null-terminated namespace, schema-location, auxiliary-MIME-types strings, and optional child boxes; parses sbtt text subtitle and stxt simple text content-encoding/MIME strings plus optional btrt/txtC child boxes; parses wvtt WebVTT sample-entry child boxes including required vttC configuration text and optional vlab source labels; parses boxed wvtt WebVTT media samples with vttc cue boxes, vtte empty cues, vtta additional text, vsid/iden/ctim/sttg/payl cue children, source-label validation, and packet side-data counts; parses metx XML metadata strings, mett text metadata strings with optional btrt/txtC child boxes, and urim URI metadata sample entries with required uri full boxes, optional uriI initialization full boxes, optional btrt, and preserved child boxes; parses VisualSampleEntry width, height, frame count, compressor name, depth, child boxes, structured avcC version/profile/level/NAL-length-size/SPS/PPS data, structured hvcC profile/timing/NAL-length-size/NAL-array data, pasp pixel aspect ratio, and nclx/nclc/rICC/prof colr color information for known video sample entries and raw entries with full visual payloads; explicitly rejects fragmented mvex/moof layouts, edit-list edts boxes, multiple populated tracks, multiple stsd sample entries, and sample description indexes other than 1; parses simple stsd/stts/ctts/stsc/stsz/stss/stco/co64 tables for one populated track including multi-chunk stsc transitions and sample ranges split across multiple mdat boxes; emits packets with PTS/DTS/duration, key flags, and side data; and rejects malformed sample tables, unknown/truncated AudioSampleEntry versions, invalid version-2 struct offsets or sample rates, malformed direct AudioSampleEntry esds, btrt, damr, dac3, dec3, dOps, dfLa, or alac payloads, duplicate or missing required AC-3 dac3 boxes, duplicate or missing required E-AC-3 dec3 boxes, duplicate or missing required Opus dOps boxes, duplicate or missing required FLAC dfLa boxes, duplicate/missing/conflicting required ALAC alac boxes, malformed FLAC metadata block sequences or STREAMINFO payloads, mismatched FLAC sample-entry channel/bit-depth fields, malformed ALAC config/channel-layout payloads, mismatched ALAC sample-entry channel/bit-depth/sample-rate fields, malformed AudioSampleEntry wave/frma/esds/alac/terminator data, malformed chan version/flags/descriptor payloads, malformed AudioSampleEntry child boxes, malformed tx3g/stpp/sbtt/stxt/wvtt/metx/mett/urim sample-entry payloads, malformed wvtt media sample payloads, malformed VisualSampleEntry child boxes, malformed avcC/hvcC/pasp/colr payloads, and truncated media data. Build-checked cargo-fuzz target avformat_mov exercises box parsing, sample-table packet extraction, stream metadata, packet timing, WebVTT sample payload parsing, and side-data invariants, but actual local fuzz execution is blocked until cargo-fuzz is installed. Packet extraction for multiple populated tracks, actual fragment parsing, edit-list timeline application, additional codec-specific audio extensions beyond direct esds/btrt/damr/dac3/dec3/dOps/dfLa/alac/wave/chan, WebVTT rendering/timing parity, broader subtitle/data sample-entry coverage, deeper VPS/SPS/PPS bitstream validation, CLI wiring, differential tests, and FATE are pending."
