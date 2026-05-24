@@ -1021,6 +1021,21 @@ impl OptionSet {
         Ok(())
     }
 
+    pub fn copy_avoptions_from(&mut self, source: &OptionSet) -> AvResult<()> {
+        if !self.has_matching_avoption_schema(source) {
+            return Err(AvError::invalid_argument(
+                "source and destination AVOption classes differ",
+            ));
+        }
+
+        for (definition, value) in source.definitions.iter().zip(&source.values) {
+            definition.validate_value(value)?;
+        }
+
+        self.values = source.values.clone();
+        Ok(())
+    }
+
     pub fn set_child(
         &mut self,
         child_name: &str,
@@ -1186,6 +1201,12 @@ impl OptionSet {
         self.children
             .iter()
             .position(|child| ascii_eq_ignore_case(child.name(), name))
+    }
+
+    fn has_matching_avoption_schema(&self, source: &OptionSet) -> bool {
+        self.definitions == source.definitions
+            && self.constants == source.constants
+            && self.entries == source.entries
     }
 
     fn ensure_writable(&self, index: usize) -> AvResult<()> {
@@ -2821,6 +2842,131 @@ mod tests {
             Some(&OptionValue::Bool(false))
         );
         assert_eq!(error_dict, original_error_dict);
+    }
+
+    #[test]
+    fn copy_avoptions_from_matches_bounded_ffmpeg_root_shape() {
+        fn child_options() -> OptionSet {
+            let mut child = OptionSet::new();
+            child
+                .define(
+                    OptionDefinition::new_with_flags(
+                        "threads",
+                        OptionKind::Int { min: 1, max: 16 },
+                        OptionValue::Int(2),
+                        "child worker count",
+                        OptionFlags::DECODING_PARAM,
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            child
+                .define(
+                    OptionDefinition::new_with_flags(
+                        "child_only",
+                        OptionKind::Int { min: 0, max: 10 },
+                        OptionValue::Int(5),
+                        "child-only value",
+                        OptionFlags::DECODING_PARAM,
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            child
+        }
+
+        let mut source = sample_options();
+        source
+            .define_child(OptionChild::new("decoder", child_options(), "").unwrap())
+            .unwrap();
+        source.set_avoption_from_str("threads", "12").unwrap();
+        source.set_avoption_from_str("bitexact", "true").unwrap();
+        source.set_avoption_from_str("quality", "0.875").unwrap();
+        source.set_avoption_from_str("aspect_ratio", "3/2").unwrap();
+        source.set_avoption_from_str("metadata", "source").unwrap();
+        source
+            .set_avoption_from_str("preset_level", "slow")
+            .unwrap();
+        source
+            .set_child_from_str("decoder", "threads", "11")
+            .unwrap();
+        source
+            .set_child_from_str("decoder", "child_only", "6")
+            .unwrap();
+
+        let mut destination = sample_options();
+        destination
+            .define_child(OptionChild::new("decoder", child_options(), "").unwrap())
+            .unwrap();
+        destination.set_avoption_from_str("threads", "3").unwrap();
+        destination
+            .set_avoption_from_str("metadata", "destination")
+            .unwrap();
+        destination
+            .set_child_from_str("decoder", "threads", "14")
+            .unwrap();
+        destination
+            .set_child_from_str("decoder", "child_only", "4")
+            .unwrap();
+
+        destination.copy_avoptions_from(&source).unwrap();
+
+        assert_eq!(destination.get("threads"), Some(&OptionValue::Int(12)));
+        assert_eq!(destination.get("bitexact"), Some(&OptionValue::Bool(true)));
+        assert_eq!(destination.get("quality"), Some(&OptionValue::Float(0.875)));
+        assert_eq!(
+            destination.get("aspect_ratio"),
+            Some(&OptionValue::Rational(Rational::new(3, 2).unwrap()))
+        );
+        assert_eq!(
+            destination.get("metadata"),
+            Some(&OptionValue::String("source".to_owned()))
+        );
+        assert_eq!(destination.get("preset_level"), Some(&OptionValue::Int(8)));
+        assert_eq!(
+            destination.get_child_option("decoder", "threads").unwrap(),
+            &OptionValue::Int(14)
+        );
+        assert_eq!(
+            destination
+                .get_child_option("decoder", "child_only")
+                .unwrap(),
+            &OptionValue::Int(4)
+        );
+
+        source
+            .set_avoption_from_str("metadata", "mutated-source")
+            .unwrap();
+        assert_eq!(
+            destination.get("metadata"),
+            Some(&OptionValue::String("source".to_owned()))
+        );
+
+        let child_source = source.child("decoder").unwrap().options().clone();
+        let mut child_destination = destination.child("decoder").unwrap().options().clone();
+        child_destination
+            .copy_avoptions_from(&child_source)
+            .unwrap();
+        assert_eq!(
+            child_destination.get("threads"),
+            Some(&OptionValue::Int(11))
+        );
+        assert_eq!(
+            child_destination.get("child_only"),
+            Some(&OptionValue::Int(6))
+        );
+
+        let mut mismatch = OptionSet::new();
+        mismatch
+            .define(
+                OptionDefinition::new("other", OptionKind::Bool, OptionValue::Bool(false), "")
+                    .unwrap(),
+            )
+            .unwrap();
+        let before_mismatch = mismatch.clone();
+        let err = mismatch.copy_avoptions_from(&source).unwrap_err();
+        assert_eq!(err.code(), Some(AvErrorCode::EINVAL));
+        assert_eq!(mismatch, before_mismatch);
     }
 
     #[test]

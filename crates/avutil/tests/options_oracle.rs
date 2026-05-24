@@ -343,6 +343,92 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         state_fields(&dict_error_options),
     );
 
+    let mut copy_source = sample_options_with_child();
+    copy_source.set_avoption_from_str("threads", "12").unwrap();
+    copy_source
+        .set_avoption_from_str("bitexact", "true")
+        .unwrap();
+    copy_source
+        .set_avoption_from_str("quality", "0.875")
+        .unwrap();
+    copy_source
+        .set_avoption_from_str("aspect_ratio", "3/2")
+        .unwrap();
+    copy_source
+        .set_avoption_from_str("metadata", "source")
+        .unwrap();
+    copy_source
+        .set_avoption_from_str("preset_level", "slow")
+        .unwrap();
+    copy_source
+        .set_child_from_str("decoder", "threads", "11")
+        .unwrap();
+    copy_source
+        .set_child_from_str("decoder", "child_only", "6")
+        .unwrap();
+
+    let mut copy_destination = sample_options_with_child();
+    copy_destination
+        .set_avoption_from_str("threads", "3")
+        .unwrap();
+    copy_destination
+        .set_avoption_from_str("quality", "0.125")
+        .unwrap();
+    copy_destination
+        .set_avoption_from_str("aspect_ratio", "4/3")
+        .unwrap();
+    copy_destination
+        .set_avoption_from_str("metadata", "destination")
+        .unwrap();
+    copy_destination
+        .set_avoption_from_str("preset_level", "fast")
+        .unwrap();
+    copy_destination
+        .set_child_from_str("decoder", "threads", "14")
+        .unwrap();
+    copy_destination
+        .set_child_from_str("decoder", "child_only", "4")
+        .unwrap();
+
+    let copy_ret = copy_destination.copy_avoptions_from(&copy_source);
+    insert_row(&mut rows, "ret:copy-root", [ret(copy_ret)]);
+    rows.insert(
+        "state:copy-root-src".to_string(),
+        copy_state_fields(&copy_source),
+    );
+    rows.insert(
+        "state:copy-root-dst".to_string(),
+        copy_state_fields(&copy_destination),
+    );
+    copy_source
+        .set_avoption_from_str("metadata", "mutated-source")
+        .unwrap();
+    rows.insert(
+        "state:copy-root-dst-after-src-mutate".to_string(),
+        copy_state_fields(&copy_destination),
+    );
+
+    let child_source = copy_source.child("decoder").unwrap().options().clone();
+    let mut child_destination = copy_destination.child("decoder").unwrap().options().clone();
+    let copy_child_ret = child_destination.copy_avoptions_from(&child_source);
+    insert_row(&mut rows, "ret:copy-child", [ret(copy_child_ret)]);
+    rows.insert(
+        "state:copy-child-dst".to_string(),
+        child_option_state_fields(&child_destination),
+    );
+
+    let mut mismatch_destination = OptionSet::new();
+    mismatch_destination
+        .define(
+            OptionDefinition::new("other", OptionKind::Bool, OptionValue::Bool(false), "").unwrap(),
+        )
+        .unwrap();
+    insert_row(
+        &mut rows,
+        "ret:copy-class-mismatch",
+        [ret(mismatch_destination.copy_avoptions_from(&copy_source))],
+    );
+
     let exact_error_results = [
         ret(options.set_avoption_from_str("THREADS", "9")),
         ret(options.set_avoption_from_str("preset_level", "SLOW")),
@@ -579,6 +665,22 @@ fn child_dict_state_fields(options: &OptionSet) -> Vec<String> {
         child_int_value(options, "decoder", "threads").to_string(),
         child_int_value(options, "decoder", "child_only").to_string(),
         format_float(float_value(options, "quality")),
+    ]
+}
+
+fn copy_state_fields(options: &OptionSet) -> Vec<String> {
+    let mut fields = state_fields(options);
+    fields.push(child_int_value(options, "decoder", "threads").to_string());
+    fields.push(child_int_value(options, "decoder", "child_only").to_string());
+    fields.push(child_int_value(options, "decoder", "child_readonly").to_string());
+    fields
+}
+
+fn child_option_state_fields(options: &OptionSet) -> Vec<String> {
+    vec![
+        int_value(options, "threads").to_string(),
+        int_value(options, "child_only").to_string(),
+        int_value(options, "child_readonly").to_string(),
     ]
 }
 
@@ -1032,6 +1134,30 @@ static void print_child_dict_state(const char *name, const TestOptions *ctx) {
            ctx->quality);
 }
 
+static void print_copy_state(const char *name, const TestOptions *ctx) {
+    printf("%s|%" PRId64 "|%d|%.17g|%d/%d|%s|%" PRId64
+           "|%" PRId64 "|%" PRId64 "|%" PRId64 "\n",
+           name,
+           ctx->threads,
+           ctx->bitexact,
+           ctx->quality,
+           ctx->aspect_ratio.num,
+           ctx->aspect_ratio.den,
+           ctx->metadata ? ctx->metadata : "<null>",
+           ctx->preset_level,
+           ctx->child.threads,
+           ctx->child.child_only,
+           ctx->child.child_readonly);
+}
+
+static void print_child_option_state(const char *name, const ChildOptions *ctx) {
+    printf("%s|%" PRId64 "|%" PRId64 "|%" PRId64 "\n",
+           name,
+           ctx->threads,
+           ctx->child_only,
+           ctx->child_readonly);
+}
+
 static void print_dict_entries(const AVDictionary *dict) {
     const AVDictionaryEntry *entry = NULL;
 
@@ -1185,6 +1311,67 @@ static void print_set_dict_rows(void) {
     av_opt_free(&error_ctx.child);
 }
 
+static void print_copy_rows(void) {
+    TestOptions source;
+    TestOptions destination;
+    ChildOptions child_source;
+    ChildOptions child_destination;
+    ChildOptions mismatch_destination;
+    int ret;
+
+    init_context(&source);
+    init_context(&destination);
+
+    av_opt_set(&source, "threads", "12", 0);
+    av_opt_set(&source, "bitexact", "true", 0);
+    av_opt_set(&source, "quality", "0.875", 0);
+    av_opt_set(&source, "aspect_ratio", "3/2", 0);
+    av_opt_set(&source, "metadata", "source", 0);
+    av_opt_set(&source, "preset_level", "slow", 0);
+    av_opt_set(&source.child, "threads", "11", 0);
+    av_opt_set(&source.child, "child_only", "6", 0);
+
+    av_opt_set(&destination, "threads", "3", 0);
+    av_opt_set(&destination, "quality", "0.125", 0);
+    av_opt_set(&destination, "aspect_ratio", "4/3", 0);
+    av_opt_set(&destination, "metadata", "destination", 0);
+    av_opt_set(&destination, "preset_level", "fast", 0);
+    av_opt_set(&destination.child, "threads", "14", 0);
+    av_opt_set(&destination.child, "child_only", "4", 0);
+
+    ret = av_opt_copy(&destination, &source);
+    printf("ret:copy-root|%d\n", ret);
+    print_copy_state("state:copy-root-src", &source);
+    print_copy_state("state:copy-root-dst", &destination);
+    av_opt_set(&source, "metadata", "mutated-source", 0);
+    print_copy_state("state:copy-root-dst-after-src-mutate", &destination);
+
+    memset(&child_source, 0, sizeof(child_source));
+    memset(&child_destination, 0, sizeof(child_destination));
+    child_source.av_class = &child_class;
+    child_destination.av_class = &child_class;
+    av_opt_set_defaults(&child_source);
+    av_opt_set_defaults(&child_destination);
+    av_opt_set(&child_source, "threads", "11", 0);
+    av_opt_set(&child_source, "child_only", "6", 0);
+    av_opt_set(&child_destination, "threads", "14", 0);
+    av_opt_set(&child_destination, "child_only", "4", 0);
+    ret = av_opt_copy(&child_destination, &child_source);
+    printf("ret:copy-child|%d\n", ret);
+    print_child_option_state("state:copy-child-dst", &child_destination);
+
+    memset(&mismatch_destination, 0, sizeof(mismatch_destination));
+    mismatch_destination.av_class = &child_class;
+    av_opt_set_defaults(&mismatch_destination);
+    ret = av_opt_copy(&mismatch_destination, &source);
+    printf("ret:copy-class-mismatch|%d\n", ret);
+
+    av_opt_free(&source);
+    av_opt_free(&source.child);
+    av_opt_free(&destination);
+    av_opt_free(&destination.child);
+}
+
 int main(void) {
     TestOptions ctx = { 0 };
     int ret_threads;
@@ -1215,6 +1402,7 @@ int main(void) {
     print_set_children_row(&ctx);
     print_child_state("state:children-after-set", &ctx);
     print_set_dict_rows();
+    print_copy_rows();
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);

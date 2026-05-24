@@ -156,7 +156,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
     let op_count = usize::from(cursor.next().unwrap_or_default()) % (MAX_OPS + 1);
 
     for _ in 0..op_count {
-        match cursor.next().unwrap_or_default() % 19 {
+        match cursor.next().unwrap_or_default() % 20 {
             0 => {
                 let before = options.clone();
                 let definition = generated_definition(cursor);
@@ -325,6 +325,20 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
             }
             16 => {
+                let mut source = sample_options();
+                let known_name = option_name_from(cursor);
+                let raw = option_value_string_from(cursor);
+                let _ = source.set_avoption_from_str(&known_name, &raw);
+                let before = options.clone();
+                let result = options.copy_avoptions_from(&source);
+                if result.is_ok() {
+                    assert_root_option_values_match(&options, &source);
+                    assert_option_set_invariants(&options);
+                } else {
+                    assert_eq!(options, before);
+                }
+            }
+            17 => {
                 let before = options.clone();
                 let entries = options.avoption_entries();
                 assert_eq!(
@@ -357,7 +371,7 @@ fn exercise_options(cursor: &mut Cursor<'_>) {
                 }
                 assert_eq!(options, before);
             }
-            17 => {
+            18 => {
                 let name = option_name_from(cursor);
                 let before = options.clone();
                 let result = options.remove_definition(&name);
@@ -714,6 +728,55 @@ fn exercise_fixtures() {
     );
     assert_eq!(error_dict, original_error_dict);
 
+    let mut copy_source = sample_options();
+    copy_source.set_avoption_from_str("threads", "12").unwrap();
+    copy_source
+        .set_avoption_from_str("bitexact", "true")
+        .unwrap();
+    copy_source
+        .set_avoption_from_str("quality", "0.875")
+        .unwrap();
+    copy_source
+        .set_avoption_from_str("aspect_ratio", "3/2")
+        .unwrap();
+    copy_source
+        .set_avoption_from_str("metadata", "source")
+        .unwrap();
+    copy_source
+        .set_avoption_from_str("preset_level", "slow")
+        .unwrap();
+    let mut copy_destination = sample_options();
+    copy_destination
+        .set_avoption_from_str("threads", "3")
+        .unwrap();
+    copy_destination
+        .set_avoption_from_str("metadata", "destination")
+        .unwrap();
+    copy_destination.copy_avoptions_from(&copy_source).unwrap();
+    assert_root_option_values_match(&copy_destination, &copy_source);
+    copy_source
+        .set_avoption_from_str("metadata", "mutated-source")
+        .unwrap();
+    assert_eq!(
+        copy_destination.get("metadata"),
+        Some(&OptionValue::String("source".to_owned()))
+    );
+    let mut mismatch_destination = OptionSet::new();
+    mismatch_destination
+        .define(
+            OptionDefinition::new("other", OptionKind::Bool, OptionValue::Bool(false), "").unwrap(),
+        )
+        .unwrap();
+    let before_mismatch = mismatch_destination.clone();
+    assert_eq!(
+        mismatch_destination
+            .copy_avoptions_from(&copy_source)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(mismatch_destination, before_mismatch);
+
     let exported = options.definitions_matching(&OptionQuery::exported());
     assert_eq!(exported.len(), 1);
     assert_eq!(exported[0].definition().name(), "readonly");
@@ -824,6 +887,17 @@ fn assert_option_set_invariants_at_depth(options: &OptionSet, depth: usize) {
         if depth < 2 {
             assert_option_set_invariants_at_depth(child.options(), depth + 1);
         }
+    }
+}
+
+fn assert_root_option_values_match(actual: &OptionSet, expected: &OptionSet) {
+    for definition in expected.definitions() {
+        assert_eq!(
+            actual.get(definition.name()),
+            expected.get(definition.name()),
+            "copied root option `{}` diverged",
+            definition.name()
+        );
     }
 }
 
