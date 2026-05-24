@@ -9,6 +9,7 @@ pub enum OptionValue {
     Int(i64),
     Duration(i64),
     ImageSize { width: i32, height: i32 },
+    VideoRate(Rational),
     Float(f64),
     Rational(Rational),
     String(String),
@@ -20,6 +21,7 @@ pub enum OptionKind {
     Int { min: i64, max: i64 },
     Duration { min: i64, max: i64 },
     ImageSize,
+    VideoRate { min: Rational, max: Rational },
     Float { min: f64, max: f64 },
     Rational { min: Rational, max: Rational },
     String { allow_empty: bool },
@@ -66,6 +68,15 @@ impl OptionRange {
                 if min > max {
                     return Err(AvError::invalid_argument(
                         "rational option range min must be <= max",
+                    ));
+                }
+            }
+            (OptionValue::VideoRate(min), OptionValue::VideoRate(max)) => {
+                validate_video_rate_bound(*min, "range min")?;
+                validate_video_rate_bound(*max, "range max")?;
+                if min > max {
+                    return Err(AvError::invalid_argument(
+                        "video rate option range min must be <= max",
                     ));
                 }
             }
@@ -558,6 +569,7 @@ impl OptionDefinition {
                 let (width, height) = parse_image_size(raw)?;
                 OptionValue::ImageSize { width, height }
             }
+            OptionKind::VideoRate { .. } => OptionValue::VideoRate(parse_video_rate(raw)?),
             OptionKind::Float { .. } => OptionValue::Float(parse_float(raw)?),
             OptionKind::Rational { .. } => OptionValue::Rational(parse_rational(raw)?),
             OptionKind::String { .. } => OptionValue::String(raw.to_owned()),
@@ -1135,6 +1147,34 @@ impl OptionSet {
         self.set_avoption_image_size_at_index(index, width, height)
     }
 
+    pub fn set_avoption_video_rate(&mut self, name: &str, value: Rational) -> AvResult<()> {
+        let index = self.avoption_index(name)?;
+        self.set_avoption_video_rate_at_index(index, value)
+    }
+
+    pub fn set_avoption_video_rate_with_flags(
+        &mut self,
+        name: &str,
+        value: Rational,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<()> {
+        let search_flags = OptionSearchFlags::from_bits_truncate(search_flags.bits());
+        if search_flags.contains(OptionSearchFlags::FAKE_OBJ) {
+            return Err(avoption_not_found_error(name));
+        }
+
+        if search_flags.contains(OptionSearchFlags::CHILDREN) {
+            for child in &mut self.children {
+                if let Some(index) = child.options.find_exact_index(name) {
+                    return child.options.set_avoption_video_rate_at_index(index, value);
+                }
+            }
+        }
+
+        let index = self.avoption_index(name)?;
+        self.set_avoption_video_rate_at_index(index, value)
+    }
+
     pub fn get_avoption_int(&self, name: &str) -> AvResult<i64> {
         let index = self.avoption_index(name)?;
         self.get_avoption_number_at_index(index)?.to_int()
@@ -1202,6 +1242,18 @@ impl OptionSet {
 
         let index = self.avoption_index(name)?;
         self.get_avoption_image_size_at_index(index)
+    }
+
+    pub fn get_avoption_video_rate(&self, name: &str) -> AvResult<Rational> {
+        self.get_avoption_q(name)
+    }
+
+    pub fn get_avoption_video_rate_with_flags(
+        &self,
+        name: &str,
+        search_flags: OptionSearchFlags,
+    ) -> AvResult<Rational> {
+        self.get_avoption_q_with_flags(name, search_flags)
     }
 
     pub fn set_avoptions_from_dict(
@@ -1443,6 +1495,23 @@ impl OptionSet {
         Ok(())
     }
 
+    fn set_avoption_video_rate_at_index(&mut self, index: usize, value: Rational) -> AvResult<()> {
+        self.ensure_writable(index)?;
+        if !matches!(self.definitions[index].kind(), OptionKind::VideoRate { .. }) {
+            return Err(AvError::invalid_argument(format!(
+                "AVOption `{}` is not a video rate",
+                self.definitions[index].name()
+            )));
+        }
+        let value = avoption_value_from_numeric(
+            self.definitions[index].kind(),
+            self.definitions[index].name(),
+            AvOptionNumericInput::Rational(value),
+        )?;
+        self.values[index] = value;
+        Ok(())
+    }
+
     fn get_avoption_number_with_flags(
         &self,
         name: &str,
@@ -1517,7 +1586,10 @@ impl OptionSet {
     }
 
     fn parse_avoption_value(&self, index: usize, raw: &str) -> AvResult<OptionValue> {
-        if !matches!(self.definitions[index].kind(), OptionKind::Duration { .. }) {
+        if !matches!(
+            self.definitions[index].kind(),
+            OptionKind::Duration { .. } | OptionKind::VideoRate { .. }
+        ) {
             if let Some(unit) = self.definitions[index].unit() {
                 if let Some(constant) = self.find_exact_constant(unit, raw) {
                     self.definitions[index].validate_value(constant.value())?;
@@ -1530,13 +1602,22 @@ impl OptionSet {
             OptionKind::Bool
             | OptionKind::String { .. }
             | OptionKind::Duration { .. }
-            | OptionKind::ImageSize => {
+            | OptionKind::ImageSize
+            | OptionKind::VideoRate { .. } => {
                 if matches!(self.definitions[index].kind(), OptionKind::Duration { .. }) {
                     let duration = parse_duration(raw)?;
                     return avoption_value_from_numeric(
                         self.definitions[index].kind(),
                         self.definitions[index].name(),
                         AvOptionNumericInput::Int(duration),
+                    );
+                }
+                if matches!(self.definitions[index].kind(), OptionKind::VideoRate { .. }) {
+                    let rate = parse_video_rate(raw)?;
+                    return avoption_value_from_numeric(
+                        self.definitions[index].kind(),
+                        self.definitions[index].name(),
+                        AvOptionNumericInput::Rational(rate),
                     );
                 }
                 self.definitions[index].parse_value(raw)
@@ -1838,6 +1919,16 @@ fn validate_kind(kind: &OptionKind) -> AvResult<()> {
             }
             Ok(())
         }
+        OptionKind::VideoRate { min, max } => {
+            validate_video_rate_bound(min, "option min")?;
+            validate_video_rate_bound(max, "option max")?;
+            if min > max {
+                return Err(AvError::invalid_argument(
+                    "video rate option min must be <= max",
+                ));
+            }
+            Ok(())
+        }
     }
 }
 
@@ -1858,6 +1949,10 @@ fn range_for_kind(kind: &OptionKind) -> Option<OptionRange> {
         OptionKind::Rational { min, max } => Some(OptionRange {
             min: OptionValue::Rational(min),
             max: OptionValue::Rational(max),
+        }),
+        OptionKind::VideoRate { min, max } => Some(OptionRange {
+            min: OptionValue::VideoRate(min),
+            max: OptionValue::VideoRate(max),
         }),
         OptionKind::Bool | OptionKind::ImageSize | OptionKind::String { .. } => None,
     }
@@ -1890,6 +1985,12 @@ fn avoption_ranges_for_kind(kind: &OptionKind) -> AvOptionRanges {
             range.value_max = f64::from(i32::MAX / 8);
             range.component_min = 0.0;
             range.component_max = f64::from(i32::MAX / 128 / 8);
+        }
+        OptionKind::VideoRate { .. } => {
+            range.value_min = 1.0;
+            range.value_max = i32::MAX as f64;
+            range.component_min = 1.0;
+            range.component_max = i32::MAX as f64;
         }
         OptionKind::Float { min, max } => {
             range.value_min = min;
@@ -2010,6 +2111,9 @@ fn avoption_number_parts(name: &str, value: &OptionValue) -> AvResult<AvOptionNu
         OptionValue::ImageSize { .. } => Err(AvError::invalid_argument(format!(
             "AVOption `{name}` is not numeric"
         ))),
+        OptionValue::VideoRate(_) => Err(AvError::invalid_argument(format!(
+            "AVOption `{name}` is not numeric"
+        ))),
         OptionValue::Float(value) => Ok(AvOptionNumberParts {
             num: *value,
             den: 1,
@@ -2058,6 +2162,12 @@ fn avoption_value_from_numeric(
                 Err(avoption_range_error(name, value, 0.0, 0.0))
             }
         }
+        OptionKind::VideoRate { min, max } => {
+            avoption_check_numeric_range(name, value, min.to_f64(), max.to_f64())?;
+            let rational = rational_from_avoption_numeric_input(input)?;
+            validate_video_rate_bound(rational, "numeric AVOption video rate")?;
+            Ok(OptionValue::VideoRate(rational))
+        }
         OptionKind::Float { min, max } => {
             avoption_check_numeric_range(name, value, min, max)?;
             Ok(OptionValue::Float(value))
@@ -2090,6 +2200,28 @@ fn avoption_value_from_numeric(
             } else {
                 Err(avoption_range_error(name, value, 0.0, 0.0))
             }
+        }
+    }
+}
+
+fn rational_from_avoption_numeric_input(input: AvOptionNumericInput) -> AvResult<Rational> {
+    match input {
+        AvOptionNumericInput::Int(value) => {
+            let value = i32::try_from(value).map_err(|_| {
+                AvError::invalid_argument("numeric AVOption rational numerator out of range")
+            })?;
+            Rational::new(value, 1)
+        }
+        AvOptionNumericInput::Double(value) => {
+            let mut rational = Rational::from_f64_limited(value, 1 << 24)?;
+            if (rational.num() == 0 || rational.den() == 0) && value != 0.0 {
+                rational = Rational::from_f64_limited(value, i32::MAX)?;
+            }
+            Ok(rational)
+        }
+        AvOptionNumericInput::Rational(value) => {
+            validate_rational_bound(value, "numeric AVOption rational")?;
+            Ok(value)
         }
     }
 }
@@ -2175,6 +2307,15 @@ fn validate_value_for_kind(kind: &OptionKind, value: &OptionValue) -> AvResult<(
             }
             Ok(())
         }
+        (OptionKind::VideoRate { min, max }, OptionValue::VideoRate(value)) => {
+            validate_video_rate_bound(*value, "video rate option value")?;
+            if value < min || value > max {
+                return Err(AvError::invalid_argument(format!(
+                    "video rate option value {value} outside range {min}..={max}"
+                )));
+            }
+            Ok(())
+        }
         (OptionKind::Float { min, max }, OptionValue::Float(value)) => {
             if !value.is_finite() {
                 return Err(AvError::invalid_argument(
@@ -2225,6 +2366,16 @@ fn validate_rational_bound(value: Rational, label: &str) -> AvResult<()> {
     Ok(())
 }
 
+fn validate_video_rate_bound(value: Rational, label: &str) -> AvResult<()> {
+    validate_rational_bound(value, label)?;
+    if value.num() <= 0 {
+        return Err(AvError::invalid_argument(format!(
+            "{label} must have a positive numerator"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct AvOptionExpressionConstant {
     name: String,
@@ -2239,6 +2390,7 @@ fn avoption_kind_min(kind: &OptionKind) -> AvResult<f64> {
         OptionKind::ImageSize => Err(AvError::invalid_argument(
             "image size AVOption does not have a scalar numeric minimum",
         )),
+        OptionKind::VideoRate { min, .. } => Ok(min.to_f64()),
         OptionKind::Float { min, .. } => Ok(min),
         OptionKind::Rational { min, .. } => Ok(min.to_f64()),
         OptionKind::String { .. } => Err(AvError::invalid_argument(
@@ -2255,6 +2407,7 @@ fn avoption_kind_max(kind: &OptionKind) -> AvResult<f64> {
         OptionKind::ImageSize => Err(AvError::invalid_argument(
             "image size AVOption does not have a scalar numeric maximum",
         )),
+        OptionKind::VideoRate { max, .. } => Ok(max.to_f64()),
         OptionKind::Float { max, .. } => Ok(max),
         OptionKind::Rational { max, .. } => Ok(max.to_f64()),
         OptionKind::String { .. } => Err(AvError::invalid_argument(
@@ -2791,8 +2944,69 @@ const VIDEO_SIZE_ABBREVIATIONS: &[(&str, i32, i32)] = &[
     ("uhd4320", 7680, 4320),
 ];
 
+const VIDEO_RATE_ABBREVIATIONS: &[(&str, Rational)] = &[
+    ("ntsc", Rational::from_raw(30000, 1001)),
+    ("pal", Rational::from_raw(25, 1)),
+    ("qntsc", Rational::from_raw(30000, 1001)),
+    ("qpal", Rational::from_raw(25, 1)),
+    ("sntsc", Rational::from_raw(30000, 1001)),
+    ("spal", Rational::from_raw(25, 1)),
+    ("film", Rational::from_raw(24, 1)),
+    ("ntsc-film", Rational::from_raw(24000, 1001)),
+];
+
 fn image_size_parse_error(raw: &str) -> AvError {
     AvError::invalid_argument(format!("invalid image size option value `{raw}`"))
+}
+
+fn parse_video_rate(raw: &str) -> AvResult<Rational> {
+    for (name, rate) in VIDEO_RATE_ABBREVIATIONS {
+        if raw == *name {
+            return Ok(*rate);
+        }
+    }
+
+    let mut rate = parse_video_rate_with_max(raw, 1_001_000)?;
+    if rate.num() == 0 || rate.den() == 0 {
+        rate = parse_video_rate_with_max(raw, i32::MAX)?;
+    }
+    if rate.num() <= 0 || rate.den() <= 0 {
+        return Err(video_rate_parse_error(raw));
+    }
+    Ok(rate)
+}
+
+fn parse_video_rate_with_max(raw: &str, max: i32) -> AvResult<Rational> {
+    if let Some((num, den)) = parse_video_rate_colon_pair(raw) {
+        let (rate, _) = Rational::reduce_i64(i64::from(num), i64::from(den), max)
+            .map_err(|_| video_rate_parse_error(raw))?;
+        return Ok(rate);
+    }
+
+    let value = parse_avoption_numeric_expression(raw, &[])?;
+    Rational::from_f64_limited(value, max).map_err(|_| video_rate_parse_error(raw))
+}
+
+fn parse_video_rate_colon_pair(raw: &str) -> Option<(i32, i32)> {
+    let raw = raw.trim_start();
+    let (num, pos) = parse_signed_decimal_i32(raw, 0)?;
+    if raw.as_bytes().get(pos).copied()? != b':' {
+        return None;
+    }
+    let (den, pos) = parse_signed_decimal_i32(raw, pos + 1)?;
+    if pos == raw.len() {
+        Some((num, den))
+    } else {
+        None
+    }
+}
+
+fn video_rate_parse_error(raw: &str) -> AvError {
+    AvError::with_code(
+        AvErrorKind::InvalidArgument,
+        AvErrorCode::EINVAL,
+        format!("invalid video rate option value `{raw}`"),
+    )
 }
 
 fn parse_duration(raw: &str) -> AvResult<i64> {
@@ -3171,6 +3385,7 @@ fn format_avoption_value(value: &OptionValue) -> String {
         OptionValue::Int(value) => value.to_string(),
         OptionValue::Duration(value) => format_duration(*value),
         OptionValue::ImageSize { width, height } => format!("{width}x{height}"),
+        OptionValue::VideoRate(value) => format!("{}/{}", value.num(), value.den()),
         OptionValue::Float(value) => format!("{value:.6}"),
         OptionValue::Rational(value) => format!("{}/{}", value.num(), value.den()),
         OptionValue::String(value) => value.clone(),
@@ -3600,6 +3815,101 @@ mod tests {
         );
         assert_eq!(
             options.get_avoption_int("size").unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_errors);
+    }
+
+    #[test]
+    fn video_rate_options_parse_format_and_query_like_bounded_ffmpeg_shape() {
+        let mut options = OptionSet::new();
+        options
+            .define(
+                OptionDefinition::new(
+                    "rate",
+                    OptionKind::VideoRate {
+                        min: Rational::ONE,
+                        max: Rational::new(120, 1).unwrap(),
+                    },
+                    OptionValue::VideoRate(Rational::new(25, 1).unwrap()),
+                    "video rate",
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let range = options.range("rate").unwrap().unwrap();
+        assert_eq!(range.min(), &OptionValue::VideoRate(Rational::ONE));
+        assert_eq!(
+            range.max(),
+            &OptionValue::VideoRate(Rational::new(120, 1).unwrap())
+        );
+        let av_ranges = options.query_avoption_ranges("rate").unwrap();
+        assert_eq!(av_ranges.nb_ranges(), 1);
+        assert_eq!(av_ranges.ranges()[0].value_min(), 1.0);
+        assert_eq!(av_ranges.ranges()[0].value_max(), i32::MAX as f64);
+        assert_eq!(av_ranges.ranges()[0].component_min(), 1.0);
+        assert_eq!(av_ranges.ranges()[0].component_max(), i32::MAX as f64);
+        assert_eq!(options.get_avoption_string("rate").unwrap(), "25/1");
+
+        options.set_avoption_from_str("rate", "ntsc").unwrap();
+        assert_eq!(
+            options.get("rate"),
+            Some(&OptionValue::VideoRate(Rational::new(30000, 1001).unwrap()))
+        );
+        assert_eq!(options.get_avoption_string("rate").unwrap(), "30000/1001");
+
+        options.set_avoption_from_str("rate", "film").unwrap();
+        assert_eq!(
+            options.get("rate"),
+            Some(&OptionValue::VideoRate(Rational::new(24, 1).unwrap()))
+        );
+
+        options.set_avoption_from_str("rate", "30000/1001").unwrap();
+        assert_eq!(
+            options.get("rate"),
+            Some(&OptionValue::VideoRate(Rational::new(30000, 1001).unwrap()))
+        );
+
+        options
+            .set_avoption_video_rate("rate", Rational::new(50, 1).unwrap())
+            .unwrap();
+        assert_eq!(options.get_avoption_string("rate").unwrap(), "50/1");
+        options
+            .set_avoption_q("rate", Rational::new(60, 1).unwrap())
+            .unwrap();
+        assert_eq!(options.get_avoption_string("rate").unwrap(), "60/1");
+
+        let before_errors = options.clone();
+        assert_eq!(
+            options
+                .set_avoption_from_str("rate", "bad")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_errors);
+        assert_eq!(
+            options
+                .set_avoption_from_str("rate", "0")
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(options, before_errors);
+        assert_eq!(
+            options
+                .set_avoption_video_rate("rate", Rational::ZERO)
+                .unwrap_err()
+                .code(),
+            Some(AvErrorCode::from_posix_errno(34))
+        );
+        assert_eq!(
+            options.get_avoption_video_rate("rate").unwrap_err().code(),
+            Some(AvErrorCode::EINVAL)
+        );
+        assert_eq!(
+            options.get_avoption_q("rate").unwrap_err().code(),
             Some(AvErrorCode::EINVAL)
         );
         assert_eq!(options, before_errors);

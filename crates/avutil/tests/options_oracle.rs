@@ -1063,6 +1063,104 @@ fn expected_rows() -> BTreeMap<String, Vec<String>> {
         ],
     );
 
+    let video_defaults = video_rate_options();
+    insert_row(
+        &mut rows,
+        "state:video-rate-defaults",
+        video_rate_state_fields(&video_defaults),
+    );
+    insert_row(
+        &mut rows,
+        "get:video-rate-defaults",
+        [
+            ret_q(video_defaults.get_avoption_video_rate("rate")),
+            ret_value(video_defaults.get_avoption_string("rate")),
+            ret_q(video_defaults.get_avoption_video_rate("scalar")),
+        ],
+    );
+
+    let mut video_set = video_rate_options();
+    let ret_ntsc = ret(video_set.set_avoption_from_str("rate", "ntsc"));
+    let after_ntsc = video_rate_value(&video_set, "rate");
+    let ret_film = ret(video_set.set_avoption_from_str("rate", "film"));
+    let after_film = video_rate_value(&video_set, "rate");
+    let ret_fraction = ret(video_set.set_avoption_from_str("rate", "30000/1001"));
+    let after_fraction = video_rate_value(&video_set, "rate");
+    let ret_integer = ret(video_set.set_avoption_from_str("rate", "25"));
+    let after_integer = video_rate_value(&video_set, "rate");
+    insert_row(
+        &mut rows,
+        "ret:set-video-rate-strings",
+        [ret_ntsc, ret_film, ret_fraction, ret_integer],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-video-rate-strings",
+        [
+            format!("{}/{}", after_ntsc.num(), after_ntsc.den()),
+            format!("{}/{}", after_film.num(), after_film.den()),
+            format!("{}/{}", after_fraction.num(), after_fraction.den()),
+            format!("{}/{}", after_integer.num(), after_integer.den()),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "get:set-video-rate-strings",
+        [ret_value(video_set.get_avoption_string("rate"))],
+    );
+    insert_row(
+        &mut rows,
+        "ret:set-video-rate-errors",
+        [
+            ret(video_set.set_avoption_from_str("rate", "bad")),
+            ret(video_set.set_avoption_from_str("rate", "0")),
+            ret(video_set.set_avoption_from_str("rate", "-25")),
+            ret(video_set.set_avoption_from_str("rate", "121")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:after-video-rate-errors",
+        video_rate_state_fields(&video_set),
+    );
+
+    let mut typed_video_options = video_rate_options();
+    insert_row(
+        &mut rows,
+        "ret:set-video-rate-typed",
+        [
+            ret(typed_video_options.set_avoption_video_rate("rate", Rational::new(50, 1).unwrap())),
+            ret(typed_video_options.set_avoption_video_rate("rate", Rational::ZERO)),
+            ret(typed_video_options.set_avoption_video_rate("scalar", Rational::ONE)),
+            ret(typed_video_options.set_avoption_q("rate", Rational::new(60, 1).unwrap())),
+            ret(typed_video_options.set_avoption_int("rate", 75)),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "state:set-video-rate-typed",
+        video_rate_state_fields(&typed_video_options),
+    );
+    insert_row(
+        &mut rows,
+        "get:set-video-rate-typed",
+        [
+            ret_q(typed_video_options.get_avoption_video_rate("rate")),
+            ret_q(typed_video_options.get_avoption_q("rate")),
+            ret_i64(typed_video_options.get_avoption_int("rate")),
+            ret_value(typed_video_options.get_avoption_string("rate")),
+            ret_q(typed_video_options.get_avoption_video_rate("scalar")),
+        ],
+    );
+    insert_row(
+        &mut rows,
+        "query-ranges:video-rate",
+        [
+            ret_ranges(typed_video_options.query_avoption_ranges("rate")),
+            ret_ranges(typed_video_options.query_avoption_ranges("missing")),
+        ],
+    );
+
     let error_results = [
         ret(options.set_avoption_from_str("bitexact", "maybe")),
         ret(options.set_avoption_from_str("exported", "6")),
@@ -1292,6 +1390,38 @@ fn image_size_options() -> OptionSet {
     options
 }
 
+fn video_rate_options() -> OptionSet {
+    let mut options = OptionSet::new();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "rate",
+                OptionKind::VideoRate {
+                    min: Rational::ONE,
+                    max: Rational::new(120, 1).unwrap(),
+                },
+                OptionValue::VideoRate(Rational::new(25, 1).unwrap()),
+                "video rate",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+        .define(
+            OptionDefinition::new_with_flags(
+                "scalar",
+                OptionKind::Int { min: 0, max: 10 },
+                OptionValue::Int(4),
+                "scalar",
+                OptionFlags::ENCODING_PARAM,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    options
+}
+
 fn state_fields(options: &OptionSet) -> Vec<String> {
     vec![
         int_value(options, "threads").to_string(),
@@ -1346,6 +1476,15 @@ fn image_size_state_fields(options: &OptionSet) -> [String; 3] {
     ]
 }
 
+fn video_rate_state_fields(options: &OptionSet) -> [String; 3] {
+    let rate = video_rate_value(options, "rate");
+    [
+        rate.num().to_string(),
+        rate.den().to_string(),
+        int_value(options, "scalar").to_string(),
+    ]
+}
+
 fn dict_fields(dict: &Dictionary) -> Vec<String> {
     let mut fields = vec![dict.len().to_string()];
     fields.extend(
@@ -1381,6 +1520,13 @@ fn image_size_value(options: &OptionSet, name: &str) -> (i32, i32) {
     match options.get(name) {
         Some(OptionValue::ImageSize { width, height }) => (*width, *height),
         other => panic!("expected image-size option `{name}`, got {other:?}"),
+    }
+}
+
+fn video_rate_value(options: &OptionSet, name: &str) -> Rational {
+    match options.get(name) {
+        Some(OptionValue::VideoRate(value)) => *value,
+        other => panic!("expected video-rate option `{name}`, got {other:?}"),
     }
 }
 
@@ -1678,6 +1824,12 @@ typedef struct ImageSizeOptions {
     int64_t scalar;
 } ImageSizeOptions;
 
+typedef struct VideoRateOptions {
+    const AVClass *av_class;
+    AVRational rate;
+    int64_t scalar;
+} VideoRateOptions;
+
 static const AVOption child_options[] = {
     { "threads", "child worker count", offsetof(ChildOptions, threads),
       AV_OPT_TYPE_INT64, { .i64 = 2 }, 1, 16, AV_OPT_FLAG_DECODING_PARAM },
@@ -1761,6 +1913,21 @@ static const AVClass image_size_class = {
     .version = LIBAVUTIL_VERSION_INT,
 };
 
+static const AVOption video_rate_options[] = {
+    { "rate", "video rate", offsetof(VideoRateOptions, rate),
+      AV_OPT_TYPE_VIDEO_RATE, { .str = "25" }, 1, 120, AV_OPT_FLAG_ENCODING_PARAM },
+    { "scalar", "scalar", offsetof(VideoRateOptions, scalar),
+      AV_OPT_TYPE_INT64, { .i64 = 4 }, 0, 10, AV_OPT_FLAG_ENCODING_PARAM },
+    { NULL }
+};
+
+static const AVClass video_rate_class = {
+    .class_name = "rust-options-oracle-video-rate",
+    .item_name = av_default_item_name,
+    .option = video_rate_options,
+    .version = LIBAVUTIL_VERSION_INT,
+};
+
 static void init_context(TestOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &test_class;
@@ -1778,6 +1945,12 @@ static void init_duration_context(DurationOptions *ctx) {
 static void init_image_size_context(ImageSizeOptions *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->av_class = &image_size_class;
+    av_opt_set_defaults(ctx);
+}
+
+static void init_video_rate_context(VideoRateOptions *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->av_class = &video_rate_class;
     av_opt_set_defaults(ctx);
 }
 
@@ -2000,6 +2173,12 @@ static void print_get_image_size_value(const void *ctx, const char *name, int se
     int height = 0;
     int ret = av_opt_get_image_size((void *)ctx, name, search_flags, &width, &height);
     printf("|%d:%dx%d", ret, width, height);
+}
+
+static void print_get_video_rate_value(const void *ctx, const char *name, int search_flags) {
+    AVRational value = { 0, 1 };
+    int ret = av_opt_get_video_rate((void *)ctx, name, search_flags, &value);
+    printf("|%d:%d/%d", ret, value.num, value.den);
 }
 
 static void print_get_row(const char *name, const TestOptions *ctx) {
@@ -2391,6 +2570,88 @@ static void print_image_size_rows(void) {
     printf("\n");
 }
 
+static void print_video_rate_state(const char *name, const VideoRateOptions *ctx) {
+    printf("%s|%d|%d|%" PRId64 "\n", name, ctx->rate.num, ctx->rate.den, ctx->scalar);
+}
+
+static void print_video_rate_rows(void) {
+    VideoRateOptions ctx;
+    int ret_ntsc;
+    int ret_film;
+    int ret_fraction;
+    int ret_integer;
+    int ret_bad;
+    int ret_zero;
+    int ret_negative;
+    int ret_too_high;
+    int ret_typed;
+    int ret_zero_typed;
+    int ret_wrong_type;
+    int ret_q;
+    int ret_int;
+    AVRational after_ntsc;
+    AVRational after_film;
+    AVRational after_fraction;
+    AVRational after_integer;
+
+    init_video_rate_context(&ctx);
+    print_video_rate_state("state:video-rate-defaults", &ctx);
+    printf("get:video-rate-defaults");
+    print_get_video_rate_value(&ctx, "rate", 0);
+    print_get_value(&ctx, "rate");
+    print_get_video_rate_value(&ctx, "scalar", 0);
+    printf("\n");
+
+    ret_ntsc = av_opt_set(&ctx, "rate", "ntsc", 0);
+    after_ntsc = ctx.rate;
+    ret_film = av_opt_set(&ctx, "rate", "film", 0);
+    after_film = ctx.rate;
+    ret_fraction = av_opt_set(&ctx, "rate", "30000/1001", 0);
+    after_fraction = ctx.rate;
+    ret_integer = av_opt_set(&ctx, "rate", "25", 0);
+    after_integer = ctx.rate;
+    printf("ret:set-video-rate-strings|%d|%d|%d|%d\n",
+           ret_ntsc, ret_film, ret_fraction, ret_integer);
+    printf("state:set-video-rate-strings|%d/%d|%d/%d|%d/%d|%d/%d\n",
+           after_ntsc.num, after_ntsc.den,
+           after_film.num, after_film.den,
+           after_fraction.num, after_fraction.den,
+           after_integer.num, after_integer.den);
+    printf("get:set-video-rate-strings");
+    print_get_value(&ctx, "rate");
+    printf("\n");
+
+    ret_bad = av_opt_set(&ctx, "rate", "bad", 0);
+    ret_zero = av_opt_set(&ctx, "rate", "0", 0);
+    ret_negative = av_opt_set(&ctx, "rate", "-25", 0);
+    ret_too_high = av_opt_set(&ctx, "rate", "121", 0);
+    printf("ret:set-video-rate-errors|%d|%d|%d|%d\n",
+           ret_bad, ret_zero, ret_negative, ret_too_high);
+    print_video_rate_state("state:after-video-rate-errors", &ctx);
+
+    init_video_rate_context(&ctx);
+    ret_typed = av_opt_set_video_rate(&ctx, "rate", (AVRational){ 50, 1 }, 0);
+    ret_zero_typed = av_opt_set_video_rate(&ctx, "rate", (AVRational){ 0, 1 }, 0);
+    ret_wrong_type = av_opt_set_video_rate(&ctx, "scalar", (AVRational){ 1, 1 }, 0);
+    ret_q = av_opt_set_q(&ctx, "rate", (AVRational){ 60, 1 }, 0);
+    ret_int = av_opt_set_int(&ctx, "rate", 75, 0);
+    printf("ret:set-video-rate-typed|%d|%d|%d|%d|%d\n",
+           ret_typed, ret_zero_typed, ret_wrong_type, ret_q, ret_int);
+    print_video_rate_state("state:set-video-rate-typed", &ctx);
+    printf("get:set-video-rate-typed");
+    print_get_video_rate_value(&ctx, "rate", 0);
+    print_get_q_value(&ctx, "rate", 0);
+    print_get_int_value(&ctx, "rate", 0);
+    print_get_value(&ctx, "rate");
+    print_get_video_rate_value(&ctx, "scalar", 0);
+    printf("\n");
+
+    printf("query-ranges:video-rate");
+    print_query_range_value(&ctx, "rate");
+    print_query_range_value(&ctx, "missing");
+    printf("\n");
+}
+
 static void print_set_from_string_rows(void) {
     static const char * const shorthand[] = { "threads", "bitexact", NULL };
     TestOptions ctx;
@@ -2597,6 +2858,7 @@ int main(void) {
     print_typed_get_set_rows();
     print_duration_rows();
     print_image_size_rows();
+    print_video_rate_rows();
 
     ret_upper_threads = av_opt_set(&ctx, "THREADS", "9", 0);
     ret_upper_preset = av_opt_set(&ctx, "preset_level", "SLOW", 0);

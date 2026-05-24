@@ -876,6 +876,67 @@ fn exercise_fixtures() {
     );
     assert_eq!(image_size_options, before_image_size_errors);
 
+    let mut video_rate_options = OptionSet::new();
+    video_rate_options
+        .define(
+            OptionDefinition::new(
+                "rate",
+                OptionKind::VideoRate {
+                    min: Rational::ONE,
+                    max: Rational::new(120, 1).unwrap(),
+                },
+                OptionValue::VideoRate(Rational::new(25, 1).unwrap()),
+                "video rate",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    video_rate_options
+        .set_avoption_from_str("rate", "ntsc")
+        .unwrap();
+    assert_eq!(
+        video_rate_options.get("rate"),
+        Some(&OptionValue::VideoRate(Rational::new(30000, 1001).unwrap()))
+    );
+    video_rate_options
+        .set_avoption_from_str("rate", "film")
+        .unwrap();
+    assert_eq!(
+        video_rate_options.get_avoption_string("rate").unwrap(),
+        "24/1"
+    );
+    video_rate_options
+        .set_avoption_video_rate("rate", Rational::new(50, 1).unwrap())
+        .unwrap();
+    assert_eq!(
+        video_rate_options.get_avoption_string("rate").unwrap(),
+        "50/1"
+    );
+    let before_video_rate_errors = video_rate_options.clone();
+    assert_eq!(
+        video_rate_options
+            .set_avoption_from_str("rate", "bad_rate")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+    assert_eq!(video_rate_options, before_video_rate_errors);
+    assert_eq!(
+        video_rate_options
+            .set_avoption_video_rate("rate", Rational::ZERO)
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::from_posix_errno(34))
+    );
+    assert_eq!(video_rate_options, before_video_rate_errors);
+    assert_eq!(
+        video_rate_options
+            .get_avoption_video_rate("rate")
+            .unwrap_err()
+            .code(),
+        Some(AvErrorCode::EINVAL)
+    );
+
     options.set_from_str("preset_level", "slow").unwrap();
     assert_eq!(options.get("preset_level"), Some(&OptionValue::Int(8)));
     assert!(options
@@ -1295,6 +1356,13 @@ fn assert_option_set_invariants_at_depth(options: &OptionSet, depth: usize) {
                     assert!(max.den() > 0);
                     assert!(min <= max);
                 }
+                (OptionValue::VideoRate(min), OptionValue::VideoRate(max)) => {
+                    assert!(min.num() > 0);
+                    assert!(min.den() > 0);
+                    assert!(max.num() > 0);
+                    assert!(max.den() > 0);
+                    assert!(min <= max);
+                }
                 _ => unreachable!("option ranges are numeric"),
             }
         }
@@ -1418,7 +1486,7 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
     let name = option_name_from(cursor);
     let help = literal_from(cursor);
     let kind_tag = cursor.next().unwrap_or_default();
-    let kind = match kind_tag % 14 {
+    let kind = match kind_tag % 16 {
         0 => OptionKind::Bool,
         1 => OptionKind::Int { min: 0, max: 64 },
         2 => OptionKind::Int { min: 8, max: 1 },
@@ -1446,7 +1514,15 @@ fn generated_definition(cursor: &mut Cursor<'_>) -> avutil::AvResult<OptionDefin
         },
         10 => OptionKind::Duration { min: 8, max: 1 },
         11 => OptionKind::ImageSize,
-        12 => OptionKind::String { allow_empty: true },
+        12 => OptionKind::VideoRate {
+            min: Rational::ONE,
+            max: Rational::new(120, 1).unwrap(),
+        },
+        13 => OptionKind::VideoRate {
+            min: Rational::new(120, 1).unwrap(),
+            max: Rational::ONE,
+        },
+        14 => OptionKind::String { allow_empty: true },
         _ => OptionKind::String { allow_empty: false },
     };
     let default = default_value_for(&kind, cursor);
@@ -1576,6 +1652,13 @@ fn default_value_for(kind: &OptionKind, cursor: &mut Cursor<'_>) -> OptionValue 
                 OptionValue::Rational(*min)
             } else {
                 OptionValue::Rational(Rational::ONE)
+            }
+        }
+        OptionKind::VideoRate { min, max } => {
+            if min.num() > 0 && min.den() > 0 && max.num() > 0 && max.den() > 0 && min <= max {
+                OptionValue::VideoRate(*min)
+            } else {
+                OptionValue::VideoRate(Rational::ONE)
             }
         }
         OptionKind::String { allow_empty } => {
@@ -1738,7 +1821,7 @@ fn option_name_from(cursor: &mut Cursor<'_>) -> String {
 }
 
 fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
-    match cursor.next().unwrap_or_default() % 41 {
+    match cursor.next().unwrap_or_default() % 46 {
         0 => "1".to_owned(),
         1 => "0".to_owned(),
         2 => "yes".to_owned(),
@@ -1780,12 +1863,17 @@ fn option_value_string_from(cursor: &mut Cursor<'_>) -> String {
         38 => "none".to_owned(),
         39 => "bad_size".to_owned(),
         40 => "0x480".to_owned(),
+        41 => "ntsc".to_owned(),
+        42 => "film".to_owned(),
+        43 => "30000/1001".to_owned(),
+        44 => "bad_rate".to_owned(),
+        45 => "121".to_owned(),
         _ => literal_from(cursor),
     }
 }
 
 fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
-    match cursor.next().unwrap_or_default() % 7 {
+    match cursor.next().unwrap_or_default() % 8 {
         0 => OptionValue::Bool(cursor.next().unwrap_or_default().is_multiple_of(2)),
         1 => OptionValue::Int(i64::from(cursor.next().unwrap_or_default()) - 32),
         2 => {
@@ -1814,6 +1902,16 @@ fn option_value_from(cursor: &mut Cursor<'_>) -> OptionValue {
             width: i32::from(cursor.next().unwrap_or_default()),
             height: i32::from(cursor.next().unwrap_or_default()),
         },
+        6 => {
+            let value = match cursor.next().unwrap_or_default() % 5 {
+                0 => Rational::ONE,
+                1 => Rational::new(25, 1).unwrap(),
+                2 => Rational::new(30000, 1001).unwrap(),
+                3 => Rational::from_raw(1, 0),
+                _ => Rational::ZERO,
+            };
+            OptionValue::VideoRate(value)
+        }
         _ => OptionValue::String(option_value_string_from(cursor)),
     }
 }
